@@ -1,0 +1,371 @@
+// ----
+// ---- file   : WaveformUtils.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 21Dec2018
+// ---- changed: ..., 10Jun2025
+// ----
+// ----
+// ----
+
+module MWaveformUtils;
+
+
+// <class.png>
+class WaveformUtils {
+   // (note) [10Jun2025] moved from PageSample
+
+   // <method.png>
+   public static Normalize(FloatArray smp, int numCh, int offset, int numFrames) {
+      local FloatArray faDst; faDst.visit(smp, offset*numCh, numFrames*numCh);
+      faDst.scale(faDst, 1.0f / faDst.absMax);
+   }
+
+   // <method.png>
+   public static RenderSine(FloatArray smp, int numCh, float sr, int offset, int numFrames, float hz) {
+      int k = offset * numCh;
+      float a = 0.0f;
+      float w = (2PI * hz) / sr;
+      loop(numFrames)
+      {
+         float f = sin(a);
+         smp[k++] = f;
+         if(numCh > 1)
+            smp[k++] = f;
+         a += w;
+      }
+   }
+
+   // <method.png>
+   public static RenderTriangle(FloatArray smp, int numCh, float sr, int offset, int numFrames, float hz) {
+      int k = offset * numCh;
+      float a = 0.25f;
+      float w = hz / sr;
+      loop(numFrames)
+      {
+         float f = (a < 0.5f) ? (-1.0 + a * 4.0f) : (1.0 - (a - 0.5f)*4);
+         smp[k++] = f;
+         if(numCh > 1)
+            smp[k++] = f;
+         a += w;
+         a = frac(a);
+      }
+   }
+
+   // <method.png>
+   public static RenderSawUp(FloatArray smp, int numCh, float sr, int offset, int numFrames, float hz) {
+      int k = offset * numCh;
+      float a = 0.0f;
+      float w = hz / sr;
+      loop(numFrames)
+      {
+         float f = -1.0 + (a * 2.0f);
+         smp[k++] = f;
+         if(numCh > 1)
+            smp[k++] = f;
+         a += w;
+         a = frac(a);
+      }
+   }
+
+   // <method.png>
+   public static RenderSawDown(FloatArray smp, int numCh, float sr, int offset, int numFrames, float hz) {
+      int k = offset * numCh;
+      float a = 0.0f;
+      float w = hz / sr;
+      loop(numFrames)
+      {
+         float f = 1.0 - (a * 2.0f);
+         smp[k++] = f;
+         if(numCh > 1)
+            smp[k++] = f;
+         a += w;
+         a = frac(a);
+      }
+   }
+
+   // <method.png>
+   public static RenderPulse(FloatArray smp, int numCh, float sr, int offset, int numFrames, float hz, float pw) {
+      int k = offset * numCh;
+      float a = 0.0f;
+      float w = hz / sr;
+      loop(numFrames)
+      {
+         float f = (a < pw) ? 1.0 : -1.0;
+         smp[k++] = f;
+         if(numCh > 1)
+            smp[k++] = f;
+         a += w;
+         a = frac(a);
+      }
+   }
+
+   // <method.png>
+   public static RenderWhiteNoise(FloatArray smp, int numCh, int offset, int numFrames) {
+      int k = offset * numCh;
+      loop(numFrames)
+      {
+         float f = rand(2.0f) - 1.0f;
+         smp[k++] = f;
+         if(numCh > 1)
+            smp[k++] = f;
+      }
+   }
+
+   // <method.png>
+   public static RenderPinkNoise_PKe(FloatArray smp, int numCh, float sr, int offset, int numFrames) {
+      // by Paul Kellet, see <http://www.firstpr.com.au/dsp/pink-noise/#Filtering>
+      //  (note) 1/f², power density decreases 3dB/oct
+      int k = offset * numCh;
+      float b0 = 0;
+      float b1 = 0;
+      float b2 = 0;
+      float b3 = 0;
+      float b4 = 0;
+      float b5 = 0;
+      float b6 = 0;
+      loop(numFrames)
+      {
+         // (todo) support samplerates other than 44.1kHz
+         float white = rand(0.3f) - 0.15f;
+         b0 = 0.99886 * b0 + white * 0.0555179;
+         b1 = 0.99332 * b1 + white * 0.0750759;
+         b2 = 0.96900 * b2 + white * 0.1538520;
+         b3 = 0.86650 * b3 + white * 0.3104856;
+         b4 = 0.55000 * b4 + white * 0.5329522;
+         b5 = -0.7616 * b5 - white * 0.0168980;
+         float pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+         b6 = white * 0.115926;
+
+         // pink = (pink * 2.0f) - 1.0f;
+         smp[k++] = pink;
+         if(numCh > 1)
+            smp[k++] = pink;
+      }
+   }
+
+   // <method.png>
+   public static RenderPinkNoise_FFT(FloatArray smp, int numCh, int offset, int numFrames) {
+      // (note) power density decreases 3dB/oct
+      int k = offset * numCh;
+      local StFFT fft;
+      local FloatArray faWhiteNoise; faWhiteNoise.alloc(32768); faWhiteNoise.useAll();
+      local FloatArray faPinkNoise; faPinkNoise.alloc(32768);
+      fft.setWindowSize(15/*fft_win_bits*/);
+      fft.setEnableWindow(false);
+      fft.setInputSamples(faWhiteNoise, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+      int numLeft = numFrames;
+      int numBlocks = (numFrames + 32767) / 32768;
+      loop(numBlocks)
+      {
+         int i = 0;
+         loop(32768)
+            faWhiteNoise[i++] = rand(2.0f) - 1.0f;
+
+         fft.fft(32768/2/*frameOffset*/, 0/*chOffset*/);
+         fft.pinkNoiseFilter();
+         faPinkNoise.empty();
+         fft.ifft(faPinkNoise);
+
+         // Copy to samples
+         int num = (numLeft < 32768) ? numLeft : 32768;
+         int j = 0;
+         loop(num)
+         {
+            float pink = faPinkNoise[j++];
+            smp[k++] = pink;
+            if(numCh > 1)
+               smp[k++] = pink;
+         }
+
+         numLeft -= num;
+      }
+
+      // // sv_wave.normalizeSelection(true/*bUndoBegin*/);
+      Normalize(smp, numCh, offset, numFrames);
+   }
+
+   // <method.png>
+   public static RenderBlueNoise_FFT(FloatArray smp, int numCh, int offset, int numFrames) {
+      // (note) power density increases 3dB/oct
+      int k = offset * numCh;
+      local StFFT fft;
+      local FloatArray faWhiteNoise; faWhiteNoise.alloc(32768); faWhiteNoise.useAll();
+      local FloatArray faBlueNoise; faBlueNoise.alloc(32768);
+      fft.setWindowSize(15/*fft_win_bits*/);
+      fft.setEnableWindow(false);
+      fft.setInputSamples(faWhiteNoise, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+      int numLeft = numFrames;
+      int numBlocks = (numFrames + 32767) / 32768;
+      loop(numBlocks)
+      {
+         int i = 0;
+         loop(32768)
+            faWhiteNoise[i++] = rand(2.0f) - 1.0f;
+
+         fft.fft(32768/2/*frameOffset*/, 0/*chOffset*/);
+         fft.blueNoiseFilter();
+         // // fft.shiftBins(5000);
+         faBlueNoise.empty();
+         fft.ifft(faBlueNoise);
+
+         // Copy to samples
+         int num = (numLeft < 32768) ? numLeft : 32768;
+         int j = 0;
+         loop(num)
+         {
+            float blue = faBlueNoise[j++];
+            smp[k++] = blue;
+            if(numCh > 1)
+               smp[k++] = blue;
+         }
+
+         numLeft -= num;
+      }
+   }
+
+   // <method.png>
+   public static RenderBrownNoise_FFT(FloatArray smp, int numCh, int offset, int numFrames) {
+      // (note) power density decreases 6dB/oct
+      int k = offset * numCh;
+      local StFFT fft;
+      local FloatArray faWhiteNoise; faWhiteNoise.alloc(32768); faWhiteNoise.useAll();
+      local FloatArray faBrownNoise1; faBrownNoise1.alloc(32768);
+      local FloatArray faBrownNoise2; faBrownNoise2.alloc(32768);
+      local FloatArray faBrownNoise3; faBrownNoise3.alloc(32768);
+      fft.setWindowSize(15/*fft_win_bits*/);
+      fft.setEnableWindow(false);
+      fft.setInputSamples(faWhiteNoise, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+      int numLeft = numFrames;
+      int numBlocks = (numFrames + 32767) / 32768;
+      FloatArray faNoiseCur  <= faBrownNoise1;
+      FloatArray faNoiseNext <= faBrownNoise2;
+      int i;
+
+      i = 0;
+      loop(32768)
+         faWhiteNoise[i++] = rand(2.0f) - 1.0f;
+      fft.fft(32768/2/*frameOffset*/, 0/*chOffset*/);
+      fft.brownNoiseFilter();
+      faNoiseCur.empty();
+      fft.ifft(faNoiseCur);
+
+      i = 0;
+      loop(32768)
+         faWhiteNoise[i++] = rand(2.0f) - 1.0f;
+      fft.fft(32768/2/*frameOffset*/, 0/*chOffset*/);
+      fft.brownNoiseFilter();
+      faNoiseNext.empty();
+      fft.ifft(faNoiseNext);
+
+      FloatArray *faTmp;
+
+      loop(numBlocks)
+      {
+         // Copy to samples
+         int num = (numLeft < 16384) ? numLeft : 16384;
+         int j = 0;
+         float t = 0;
+         float brown;
+         i = 16384;
+         loop(num)
+         {
+            brown = faNoiseCur[i++];
+            if(j >= (16384-384))
+            {
+               brown += (faNoiseNext[j] - brown) * t;
+               t += 1.0f / 384.0;
+            }
+            j++;
+            smp[k++] = brown;
+            if(numCh > 1)
+               smp[k++] = brown;
+         }
+
+         numLeft -= num;
+
+         faTmp       <= deref faNoiseCur;
+         faNoiseCur  <= deref faNoiseNext;
+         faNoiseNext <= deref faTmp;
+
+         i = 0;
+         loop(32768)
+            faWhiteNoise[i++] = rand(2.0f) - 1.0f;
+         fft.fft(32768/2/*frameOffset*/, 0/*chOffset*/);
+         fft.brownNoiseFilter();
+         faNoiseNext.empty();
+         fft.ifft(faNoiseNext);
+
+         num = (numLeft < 16384) ? numLeft : 16384;
+         t = 0;
+         i = 16384;
+         j = 0;
+         loop(num)
+         {
+            brown = faNoiseCur[i++];
+            if(j >= (16384-384))
+            {
+               brown += (faNoiseNext[j] - brown) * t;
+               t += 1.0f / 384.0;
+            }
+            j++;
+            smp[k++] = brown;
+            if(numCh > 1)
+               smp[k++] = brown;
+         }
+
+         numLeft -= num;
+
+         faTmp       <= deref faNoiseCur;
+         faNoiseCur  <= deref faNoiseNext;
+         faNoiseNext <= deref faTmp;
+      }
+
+      // // sv_wave.normalizeSelection(false/*bUndoBegin*/);
+      Normalize(smp, numCh, offset, numFrames);
+   }
+
+   // <method.png>
+   public static RenderVioletNoise_FFT(FloatArray smp, int numCh, int offset, int numFrames) {
+      // (note) power density increases 6dB/oct
+      int k = offset * numCh;
+      local StFFT fft;
+      local FloatArray faWhiteNoise; faWhiteNoise.alloc(32768); faWhiteNoise.useAll();
+      local FloatArray faVioletNoise; faVioletNoise.alloc(32768);
+      fft.setWindowSize(15/*fft_win_bits*/);
+      fft.setEnableWindow(false);
+      fft.setInputSamples(faWhiteNoise, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+      int numLeft = numFrames;
+      int numBlocks = (numFrames + 32767) / 32768;
+      loop(numBlocks)
+      {
+         int i = 0;
+         loop(32768)
+            faWhiteNoise[i++] = rand(2.0f) - 1.0f;
+
+         fft.fft(32768/2/*frameOffset*/, 0/*chOffset*/);
+         fft.violetNoiseFilter();
+         faVioletNoise.empty();
+         fft.ifft(faVioletNoise);
+
+         // Copy to samples
+         int num = (numLeft < 32768) ? numLeft : 32768;
+         int j = 0;
+         loop(num)
+         {
+            float violet = faVioletNoise[j++];
+            smp[k++] = violet;
+            if(numCh > 1)
+               smp[k++] = violet;
+         }
+
+         numLeft -= num;
+      }
+   }
+
+}

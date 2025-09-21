@@ -1,0 +1,682 @@
+// ----
+// ---- file   : Waveforms.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2009-2018 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 26Dec2009, 28Dec2009, 14Jan2010, 01Mar2010, 02Jul2010, 15Jul2010, 21Nov2010
+// ----          21Nov2010, 17Feb2011, 07Mar2011, 14Mar2011, 23May2013, 26May2013, 28May2013
+// ----          05Jun2013, 11Aug2014, 24Jan2018, 24Mar2023
+// ----
+// ----
+// ----
+
+// (todo) can this be removed ?
+
+module MWaveforms;
+
+use tkportaudio;
+use tksampler;
+
+use namespace st2;
+
+
+class Waveforms {
+   //
+   // StWaveform handling
+   //
+
+   static PointerArray waveforms; // All currently loaded waveforms.
+
+   define int TYPE_EMBEDDED   = 0; // saved with module/song
+   define int TYPE_PROCEDURAL = 1; // only allocation size and attributes are stored
+   define int TYPE_REPOSITORY = 2; // extern file, relative path (see STConfig.sample_rootpath)
+   define int TYPE_PROJECT    = 3; // extern file in "samples/" folder (in the dir. the .st2 file is stored) (not used ATM)
+
+   static StringArray type_names = ["embedded", "procedural", "repository", "project"];
+
+   static StWaveform *waveform_clipboard; // (deletable) waveform
+
+
+   static method Init() {
+   }
+
+   static method Exit() {
+      FreeAll();
+   }
+
+   static method FreeAll() {
+      waveforms.free();
+   }
+
+   static IsExternal(StWaveform _wf) : boolean {
+      return ( [TYPE_PROJECT, TYPE_REPOSITORY].contains(_wf.uiGetType()) );
+   }
+
+   static CreateNewWaveformName() : String {
+      return "New waveform #"+(waveforms.numElements + 1);
+   }
+
+   static Add(StWaveform _wf) {
+      // find unused slot
+      int idx = waveforms.indexOfPointer(null, 0);
+      if(-1 == idx)
+      {
+         idx = waveforms.numElements;
+      }
+
+      _wf.uiSetId(idx);
+
+      waveforms[idx] = deref _wf;
+
+      Global.Debug("Waveforms::Add: added waveform id="+idx+" wf="+#(_wf));
+   }
+
+   static EnumerateWaveforms() {
+      StWaveform *wf;
+      int idx = 0;
+      foreach wf in waveforms
+      {
+         wf.uiSetId(idx);
+         idx++;
+      }
+   }
+
+   static Remove(StWaveform _wf) {
+      Global.Debug("Waveforms::Remove: remove waveform "+#(_wf));
+
+      // Invalidate clipboard when it refs the waveform
+      // ManageInstrumentsDialog.HandleRemoveWaveform(_wf);
+
+      waveforms.remove(_wf);
+
+      EnumerateWaveforms();
+   }
+
+   static GetNum() : int {
+      return waveforms.numElements;
+   }
+
+   static GetByIdx(int _idx) : StWaveform {
+      return waveforms.get(_idx);
+   }
+
+   static GetIdxByObject(StWaveform _wf) : int {
+      int idx = waveforms.indexOfPointer(_wf, 0);
+      return idx;
+   }
+
+   static CreateProcedural(StWaveform _wf,
+                           int        _numChannels,
+                           float      _sampleRate,
+                           float      _baseFreq,
+                           int        _numFrames,
+                           StSample   _sampleHint
+                           ) : StWaveform {
+      // if wf != null, replace waveform samples with file content, otherwise create new waveform
+      StWaveform *wf;
+
+      if(null == _wf)
+      {
+         wf <= new StWaveform;
+      }
+      else
+      {
+         wf <= _wf;
+      }
+
+      wf.uiSetType(TYPE_PROCEDURAL);
+
+      wf.numChannels   = _numChannels;
+      wf.sampleRate    = _sampleRate;
+      wf.baseFrequency = _baseFreq;
+
+      // Allocate and initialize sample data
+      wf.alloc(_numChannels, _numFrames);
+      FloatArray smp <= wf.sampleData;
+      smp.fill(0.0f);
+
+      // Update sample
+      if(null != _sampleHint)
+      {
+         _sampleHint.waveform = wf;
+      }
+
+      // Add waveform
+      if(null == _wf)
+      {
+         Add(deref wf);
+      }
+
+      // Update StSample objects which use this waveform
+      HandleUpdate(wf);
+
+      return wf;
+   }
+
+   static CreateFromFile(StWaveform _wf,
+                         String fileName,
+                         Object _retFileInfo,
+                         StSample _sampleHint,
+                         WavIO_BWF _bwfHint
+                         ) : StWaveform {
+      // if wf != null, replace waveform samples with file content, otherwise create new waveform
+      FloatArray dat;
+      dat.free();
+      StWaveform *wf;
+
+      Integer ioSampleRate;
+      Integer ioNumCh;
+
+      // Try to load sample data
+      try {
+
+         if(null == _wf)
+         {
+            wf <= new StWaveform;
+         }
+         else
+         {
+            wf <= _wf;
+         }
+
+         if(null != _sampleHint)
+         {
+            _sampleHint.waveform = wf;
+         }
+
+         if(WavIO.LoadLocal(fileName, dat, ioSampleRate, ioNumCh, _retFileInfo, _sampleHint, _bwfHint))
+         {
+            Global.Debug("WavIO.LoadLocal(fileName=\""+fileName+"\") OK. rate="+ioSampleRate);
+
+            // Implicitely create/add new Waveform object
+            if(null == _wf)
+            {
+               Add(deref wf);
+            }
+
+            // Copy loaded sample data by value
+            wf.alloc(ioNumCh, dat.numElements/ioNumCh);
+            FloatArray smp <= wf.sampleData;
+            smp = dat;
+
+            // (Re-)initialize waveform info
+            String wfName;
+            int idx = fileName.lastIndexOf("/");
+            if(-1 != idx)
+            {
+               fileName.substring(idx+1, 99999) => wfName;
+            }
+            else
+            {
+               wfName = fileName;
+            }
+
+            wf.name        = wfName; // waveformName = loaded fileName
+            wf.numChannels = ioNumCh;
+            //////////wf.baseFrequency = 440.0f;///ioSampleRate / 2;
+            wf.sampleRate    = ioSampleRate;
+            wf.loopOffset    = 0;
+            wf.loopLen       = 0;
+
+            // Update StSample objects which use this waveform
+            HandleUpdate(wf);
+
+            return wf;
+         }
+         else
+         {
+            // Global.ShowErrorDialog("Failed to load waveform", "Failed to load waveform from file \"" + fileName + "\".");
+            Global.Error("Failed to load waveform from file \"" + fileName + "\".");
+         }
+      }
+      catch(Error e)
+      {
+         // Global.ShowErrorDialog("Failed to load waveform", "Failed to load waveform from file \"" + fileName + "\".\nMessage=" + e.message);
+         Global.Error("Failed to load waveform from file \"" + fileName + "\".\nMessage=" + e.message);
+         dat.free();
+         throw e;
+      }
+
+      // Free temporary sample data
+      dat.free();
+
+      return wf;
+   }
+
+   static BuildExternalPathName(StWaveform _wf) : String {
+      String wfFilename = "";
+      if(TYPE_REPOSITORY == _wf.uiGetType())
+      {
+         wfFilename = STConfig.sample_rootpath;
+         if(!wfFilename.isBlank())
+         {
+            wfFilename += "/";
+         }
+      }
+      else if(TYPE_PROJECT == _wf.uiGetType())
+      {
+         wfFilename = tkfileutils_getcwd();
+         wfFilename += "/samples/";
+      }
+      wfFilename += _wf.uiGetPathName();
+
+      return wfFilename;
+   }
+
+   static ExternalFileExists(StWaveform _wf) : boolean {
+      String wfFilename = BuildExternalPathName(_wf);
+      File f;
+      if(f.openLocal(wfFilename, IOS_IN))
+      {
+         f.close();
+         return true;
+      }
+      return false;
+   }
+
+   static CreateFromUIPathName(StWaveform wf) {
+      String wfFilename = BuildExternalPathName(wf);
+      Global.Debug("s::CreateFromUIPathName: external pathname=\""+wfFilename+"\"");
+
+      String wfFileInfo;
+      CreateFromFile(wf, wfFilename, wfFileInfo, null/*sampleHint*/, null/*bwfHint*/);
+      Global.Debug("Waveforms::CreateFromUIPathName: external fileinfo=\""+wfFileInfo+"\".");
+   }
+
+   static DetermineUIPathNameFromRepositoryPath(StWaveform _wf, String _absPathName) {
+      String relPathName = _absPathName.replace(STConfig.sample_rootpath+"/", "");
+      _wf.uiSetPathName(relPathName);
+   }
+
+   static GetNumReferences(StWaveform _wf) : int {
+      PointerArray pa <= GetReferences(_wf);
+      return pa.numElements;
+   }
+
+   static GetReferences(StWaveform _wf) : PointerArray {
+
+      Global.Debug2("Waveforms::GetReferences:");
+
+      // Return all objects that reference the given waveform
+      //    - iterate STX_AudioInstrument list
+      //       - iterate samples list
+      PointerArray ret;
+      ret.empty();
+
+      // Count number of samples that use this waveform
+      StSample *smp;
+      Project *song;
+      // foreach song in all_songs
+      // {
+      //    // ST_InstrumentMap imap <= song.instrument_map;
+      //    // STX_AudioInstrument *ins;
+      //    // foreach ins in imap.instruments
+      //    // {
+      //    //    if(ins instanceof STX_AudioInstrument)
+      //    //    {
+      //    //       StSampleBank sb <= ins.sample_bank;
+      //    //       smp <= sb.firstSample;
+      //    //       while(null != smp)
+      //    //       {
+      //    //          if(@(smp.waveform) == @(_wf))
+      //    //          {
+      //    //             ret.add(smp);
+      //    //             Global.Debug("waveform ref#"+ret.numElements+": sample \""+smp.name+"\" in instrument \""+ins.name+"\".");
+      //    //          }
+      //    //          smp <= smp.next;
+      //    //       }
+      //    //    }
+      //    // }
+
+      //    if(@(song.render_waveform) == @(_wf))
+      //    {
+      //       ret.add(song);
+      //       Global.Debug2("waveform ref#"+ret.numElements+": subsong \""+song.sub_name+"\" in song \""+song.song_name+"\".");
+      //    }
+      // }
+
+      // Count clipboard waveform
+      //  Note: when deleting a waveform, the clipboard is silently unset to discard the reference
+      // smp <= EditInstrumentAudioDialog.sample_clipboard;
+      // if(null != smp)
+      // {
+      //    if(@(smp.waveform) == @(_wf))
+      //    {
+      //       ret.add(smp);
+      //    }
+      // }
+
+      return ret;
+   }
+
+   static HandleShiftRegion(StWaveform _wf, int offset, int len) {
+      PointerArray refs <= GetReferences(_wf);
+      Global.Debug("Waveforms::HandleShiftRegion: refs="+#(refs));
+
+      StSample *smp;
+      foreach smp in refs
+      {
+         if(smp instanceof StSample)
+         {
+            smp.handleShiftSampleArea(offset, len);
+         }
+      }
+   }
+
+   static HandleUpdate(StWaveform _wf) {
+      // Update all samples that reference the given waveform
+      //
+      //  This is called when a waveform has been modified and its length has changed
+      //
+
+      PointerArray refs <= GetReferences(_wf);
+      Global.Debug("Waveforms::HandleUpdate: refs="+#(refs));
+
+      StSample *smp;
+      foreach smp in refs
+      {
+         if(smp instanceof StSample)
+         {
+            smp.verifySampleAreas(); // Verify sample offset/length and loop entries
+         }
+      }
+   }
+
+   static DeleteUnusedWaveforms() : int {
+      StWaveform *wf;
+
+      int numDeleted = 0;
+      int wfIdx = 0;
+      while(wfIdx < waveforms.numElements)
+      {
+         wf <= waveforms.get(wfIdx);
+         // EditInstrumentAudioDialog.UnsetClipboardWaveform(wf);
+         // ManageInstrumentsDialog.HandleRemoveWaveform(wf);
+         int numRefs = GetNumReferences(wf);
+         if(0 == numRefs)
+         {
+            Remove(wf);
+            numDeleted++;
+         }
+         else
+         {
+            wfIdx++;
+         }
+      }
+
+      return numDeleted;
+   }
+
+   static Copy(StWaveform s, StWaveform d, int _appendixNr) {
+
+      // Copy sample data
+      FloatArray sDat <= s.sampleData;
+      d.alloc(s.numChannels, s.numFrames);
+      FloatArray dDat <= d.sampleData;
+      dDat = sDat;
+
+      // Copy basic properties
+      if(-1 == _appendixNr)
+      {
+         d.name = s.name;
+      }
+      else
+      {
+         d.name = Utils.BuildCopiedName(s.name, _appendixNr);
+      }
+      d.sampleRate    = s.sampleRate;
+      d.baseFrequency = s.baseFrequency;
+      d.loopOffset    = s.loopOffset;
+      d.loopLen       = s.loopLen;
+
+      // Copy editor info
+      d.uiSetType(s.uiGetType());
+      d.uiSetOffset(s.uiGetOffset());
+      d.uiSetZoom(s.uiGetZoom());
+      d.uiSetPathName(s.uiGetPathName());
+   }
+
+   static CopyToClipboard(StWaveform _wf) {
+      waveform_clipboard <= new StWaveform;
+
+      Copy(_wf, waveform_clipboard, -1);
+   }
+
+   static DetermineMaxCopyNr(String _s) : int {
+
+      String prefix;
+      Utils.ExtractCopyPrefix(_s, prefix);
+
+      int maxNr = 0;
+      StWaveform *wf;
+      foreach wf in waveforms
+      {
+         String n <= wf.name;
+         if(null != n)
+         {
+            if(n.startsWith(prefix))
+            {
+               int nr = Utils.DetermineCopyNr(n);
+               if(nr > maxNr)
+                  maxNr = nr;
+            }
+         }
+      }
+      return maxNr;
+   }
+
+   static CopyClipboardToNewWaveform() {
+      StWaveform wf <= new StWaveform;
+      int maxNr = DetermineMaxCopyNr(waveform_clipboard.name);
+      Copy(waveform_clipboard, wf, maxNr+1);
+      Add(deref wf);
+   }
+
+   static AddClipboardAsNewWaveform() {
+      if(null != waveform_clipboard)
+      {
+         Add(deref waveform_clipboard);
+         int maxNr = DetermineMaxCopyNr(waveform_clipboard.name);
+         waveform_clipboard.name = Utils.BuildCopiedName(waveform_clipboard.name, maxNr+1);
+         waveform_clipboard <= null;
+      }
+   }
+
+   static UndoCalcMemUsage() : int {
+      StWaveform *wf;
+      int r = 0;
+      foreach wf in waveforms
+      {
+         SampleViewUndo undo <= wf.uiGetUndo();
+         if(null != undo)
+         {
+            r += undo.total_mem_usage_undo;
+         }
+      }
+      return r;
+   }
+
+   static UndoGetMemUsageString() : String {
+      Float f = (UndoCalcMemUsage() / (1024.0f*1024));
+      return f.printf("%.1f");
+   }
+
+   static UndoPurgeAll() {
+      StWaveform *wf;
+      foreach wf in waveforms
+      {
+         SampleViewUndo undo <= wf.uiGetUndo();
+         if(null != undo)
+         {
+            undo.free();
+            // // wf.uiSetUndo(null);
+         }
+      }
+
+      Global.SuccessShort("Cleared all waveform undo histories");
+   }
+
+   static UndoAutoPurge2(StWaveform _exclude) : boolean {
+      StWaveform *wf;
+
+      // Pass1: determine oldest entry
+      int minTime = milliSeconds();
+      SampleViewUndo purgeUndo <= null;
+      StWaveform     purgeWaveform <= null;
+
+      foreach wf in waveforms
+      {
+         if(@(wf) != @(_exclude))
+         {
+            SampleViewUndo undo <= wf.uiGetUndo();
+            if(null != undo)
+            {
+               int ts = undo.getOldestUndoTimeStamp();
+               if(ts > 0)
+               {
+                  if(ts < minTime)
+                  {
+                     ts = minTime;
+                     purgeUndo     <= undo;
+                     purgeWaveform <= wf;
+                  }
+               }
+            }
+         }
+      }
+
+      if(null != purgeUndo)
+      {
+         if(purgeUndo.freeOldestUndo())
+         {
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   static UndoAutoPurge(StWaveform _exclude) {
+      float szMB;
+
+      if(STConfig.sampleview_undo_autopurge_threshold > 0)
+      {
+         szMB = UndoCalcMemUsage() / (1024.0f*1024);
+
+         while(szMB >= STConfig.sampleview_undo_autopurge_threshold)
+         {
+            Global.Debug2("Waveforms::UndoAutoPurge: threshold exceeded ("+szMB+" >= "+STConfig.sampleview_undo_autopurge_threshold+"), purging..");
+
+            if(!UndoAutoPurge2(_exclude))
+            {
+               _exclude <= null;
+               UndoAutoPurge2(null);
+            }
+
+            szMB = UndoCalcMemUsage() / (1024.0f*1024);
+         }
+      }
+
+   }
+
+   static RedoCalcMemUsage() : int {
+      StWaveform *wf;
+      int r = 0;
+      foreach wf in waveforms
+      {
+         SampleViewUndo undo <= wf.uiGetUndo();
+         if(null != undo)
+         {
+            r += undo.total_mem_usage_redo;
+         }
+      }
+      return r;
+   }
+
+   static RedoGetMemUsageString() : String {
+      Float f = (RedoCalcMemUsage() / (1024.0f*1024));
+      return f.printf("%.1f");
+   }
+
+   static RedoPurgeAll() {
+      StWaveform *wf;
+      foreach wf in waveforms
+      {
+         SampleViewUndo undo <= wf.uiGetUndo();
+         if(null != undo)
+         {
+            undo.freeRedo();
+            // // wf.uiSetUndo(null);
+         }
+      }
+
+      Global.SuccessShort("Cleared all waveform redo histories");
+   }
+
+   static RedoAutoPurge2(StWaveform _exclude) : boolean {
+      StWaveform *wf;
+
+      // Pass1: determine oldest entry
+      int minTime = milliSeconds();
+      SampleViewUndo purgeUndo <= null;
+      StWaveform     purgeWaveform <= null;
+
+      foreach wf in waveforms
+      {
+         if(@(wf) != @(_exclude))
+         {
+            SampleViewUndo undo <= wf.uiGetUndo();
+            if(null != undo)
+            {
+               int ts = undo.getOldestRedoTimeStamp();
+               if(ts > 0)
+               {
+                  if(ts < minTime)
+                  {
+                     ts = minTime;
+                     purgeUndo     <= undo;
+                     purgeWaveform <= wf;
+                  }
+               }
+            }
+         }
+      }
+
+      if(null != purgeUndo)
+      {
+         if(purgeUndo.freeOldestRedo())
+         {
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   static RedoAutoPurge(StWaveform _exclude) {
+      float szMB;
+
+      if(STConfig.sampleview_redo_autopurge_threshold > 0)
+      {
+         szMB = RedoCalcMemUsage() / (1024.0f*1024);
+
+         while(szMB >= STConfig.sampleview_redo_autopurge_threshold)
+         {
+            Global.Debug2("Waveforms::RedoAutoPurge: threshold exceeded ("+szMB+" >= "+STConfig.sampleview_redo_autopurge_threshold+"), purging..");
+
+            if(!RedoAutoPurge2(_exclude))
+            {
+               _exclude <= null;
+               RedoAutoPurge2(null);
+            }
+
+            szMB = RedoCalcMemUsage() / (1024.0f*1024);
+         }
+      }
+   }
+
+}

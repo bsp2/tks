@@ -1,0 +1,278 @@
+// ----
+// ---- file   : ModSync.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 16Feb2021
+// ---- changed: 29Jul2023, 06Jan2024, 21Jan2024, 19Sep2024, 07Jan2025
+// ----
+// ----
+// ----
+
+module MModSync;
+
+use tksdl;
+use tksampler;
+
+namespace st2;
+
+
+// <class.png>
+class ModSync : Mod {
+   // (note) uses tksampler voice plugin effect (fx_example voice plugin library)
+   define String FX_ID = "bsp dly 1";
+
+   float delay; // -100ms.+100ms
+
+   protected float effective_delay;  // 0..200ms
+
+   protected StPluginShared *shared;
+   protected StPluginVoice  *voice;
+   protected FloatArray      io_buf;  // interleaved stereo buffer
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      delay = 0.0f;
+      effective_delay = 0.0f;
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      io_buf.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+      handleReloadVoicePlugin(true/*bReload*/);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+
+      voice <= null;
+      shared <= null;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "Sync";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModSync cl <= new ModSync;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModSync);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModSync)
+      {
+         ModSync o <= _o;
+         delay = o.delay;
+         effective_delay = o.effective_delay;
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method handleReloadVoicePlugin(boolean _bReload) {
+      // called when voice plugin DLL is unloaded or reloaded
+      voice <= null;
+      shared <= null;
+      if(_bReload)
+      {
+         StPluginInfo info <= VoicePlugins.FindVoicePluginInfoById(FX_ID);
+         if(null != info)
+         {
+            shared <= info.createSharedInstance();
+            if(null != shared)
+            {
+               voice <= shared.createVoiceInstance(Audio.mix_rate, 0/*voiceIdx*/);
+               // // trace "[trc] ModSync::handleReloadVoicePlugin: voice="+#(voice);
+               shared.setParamValue(3/*PARAM_SMOOTH*/, 0.0f);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method updateAllDelaysAfterTimeChange() {
+      local FloatArray allDelayTimes;
+
+      Track *track;
+      Lane *lane;
+      ModSync *modSync;
+
+      // Find minimum delay time (all instances)
+      foreach track in current_project.tracks
+      {
+         foreach lane in track.lanes
+         {
+            foreach modSync in lane.mods
+            {
+               if(modSync instanceof ModSync)
+               {
+                  allDelayTimes.add(modSync.delay);
+                  break;  // allow only one sync per lane
+               }
+            }
+         }
+      }
+
+      // minDelay equals 0ms effective delay
+      float minDelay = allDelayTimes.min;
+
+      // => calc effective_delay times and update all ModSync instances
+      foreach track in current_project.tracks
+      {
+         foreach lane in track.lanes
+         {
+            foreach modSync in lane.mods
+            {
+               if(modSync instanceof ModSync)
+               {
+                  modSync.effective_delay = modSync.delay - minDelay;
+                  break;  // allow only one sync per lane
+               }
+            }
+         }
+      }
+
+   }
+
+   // <method_set.png>
+   public =replay= method setDelay(float _delay) {
+      _delay = mathClampf(_delay, -100.0f, 100.0f);
+
+      if(delay != _delay)
+      {
+         delay = _delay;
+
+         updateAllDelaysAfterTimeChange();
+
+         current_project.markAsModified();
+      }
+   }
+
+   // <method_get.png>
+   public method getInfoString() : String {
+      return delay+" ms  (effective="+effective_delay+" ms)";
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 1;
+
+      // Delay
+      _ofs.f32 = delay;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Delay
+            delay = _ifs.f32;
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModSync::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public virtual loadStatePost(local boolean _bThreaded) : boolean {
+      updateAllDelaysAfterTimeChange();
+      return true;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying) // // || (true == STConfig.b_process_when_muted))
+      {
+         // (note) max (effective) delay is 371ms
+         local float delayRel = effective_delay * (88200.0f / (1000.0 * 32768.0/*ST_DELAY_SIZE*/));
+
+         if((delayRel > 0.0) && (null != voice))
+         {
+            // Interleave
+            tksampleedit_copy_dualmono_to_stereo(io_buf, 0,
+                                                 inL, inR, 0,
+                                                 _numFrames
+                                                 );
+
+            // Process delay
+            shared.setParamValue(1/*PARAM_TIME*/, delayRel);
+            voice.processReplace(io_buf, _numFrames);
+
+            // De-Interleave
+            tksampleedit_copy_stereo_to_dualmono(outL, outR, 0,
+                                                 io_buf, 0,
+                                                 _numFrames
+                                                 );
+         }
+         else
+         {
+            // Bypass (copy input to output)
+            tksampleedit_copy_dualmono_to_dualmono(outL, outR, 0,
+                                                   inL, inR, 0,
+                                                   _numFrames
+                                                   );
+         }
+
+      }
+   }
+
+}

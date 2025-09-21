@@ -1,0 +1,284 @@
+// ----
+// ---- file   : ModAudio2RPN.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 07Dec2021
+// ---- changed: 09Dec2021, 27Dec2021, 03Dec2023, 19Sep2024, 07Jan2025
+// ----
+// ----
+// ----
+
+module MModAudio2RPN;
+
+use tksdl;
+
+namespace st2;
+
+
+// <class.png>
+class ModAudio2RPN : Mod {
+
+   define int PARAM_NONE         = 0;
+   define int PARAM_SLEW_RISE    = 1;  // 0..1
+   define int PARAM_SLEW_FALL    = 2;  // 0..1
+   define int PARAM_CURVE        = 3;  // 0..1 => -1..1
+   define int NUM_PARAMS         = 4;
+
+   byte midi_ch;  // 0..15
+   byte rpn;      // 0..15 => RPN 100..115 (ctl_1..ctl_16)
+
+   float slew_rise;
+   float slew_fall;
+   float curve;     // -1..1 => log..lin..exp
+
+   protected float dest_val;
+   protected float last_out;
+
+   protected short last_rpn_out;
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      slew_rise = 0.9;
+      slew_fall = 0.9;
+      curve     = 0.0;
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      last_rpn_out = -1;
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "Audio2RPN";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModAudio2RPN cl <= new ModAudio2RPN;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModAudio2RPN);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModAudio2RPN)
+      {
+         ModAudio2RPN o <= _o;
+         midi_ch    = o.midi_ch;
+         rpn        = o.rpn;
+         slew_rise  = o.slew_rise;
+         slew_fall  = o.slew_fall;
+         curve      = o.curve;
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      _retParamNames = [
+         "-",           //  0: PARAM_NONE
+         "Slew Rise",   //  1: PARAM_SLEW_RISE
+         "Slew Fall",   //  2: PARAM_SLEW_FALL
+         "Curve",       //  3: PARAM_CURVE
+                        ];
+
+      return true;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // trace "xxx ModGain::setParameterValue: idx="+_idx+" value="+_value;
+
+      switch(_idx)
+      {
+         case PARAM_SLEW_RISE:
+            setSlewRise(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_SLEW_FALL:
+            setSlewFall(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_CURVE:
+            setCurve(_value * 2.0f - 1.0f);
+            queueUIUpdate();
+            break;
+      }
+   }
+
+   // <method.png>
+   public method setMidiCh(local byte _ch) {
+      mtx_param.lock();
+      midi_ch = _ch;
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public method setRPN(local int _rpn) {
+      mtx_param.lock();
+      rpn = _rpn;
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public method setSlewRise(local float _f) {
+      mtx_param.lock();
+      slew_rise = _f;
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public method setSlewFall(local float _f) {
+      mtx_param.lock();
+      slew_fall = _f;
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public method setCurve(local float _f) {
+      mtx_param.lock();
+      curve = _f;
+      mtx_param.unlock();
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 1;
+
+      _ofs.i8  = midi_ch;
+      _ofs.i8  = rpn;
+      _ofs.f32 = slew_rise;
+      _ofs.f32 = slew_fall;
+      _ofs.f32 = curve;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            midi_ch    = _ifs.u8;
+            rpn        = _ifs.u8;
+            slew_rise  = _ifs.f32;
+            slew_fall  = _ifs.f32;
+            curve      = _ifs.f32;
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModAudio2RPN::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying)
+      {
+         mtx_param.lock();
+
+         local float slewRise = 1.0f - slew_rise;
+         slewRise *= slewRise * slewRise;
+
+         local float slewFall = 1.0f - slew_fall;
+         slewFall *= slewFall * slewFall;
+
+         local float lastOut = last_out;
+         local int frameIdx = 0;
+
+         loop(_numFrames)
+         {
+            dest_val = inL[frameIdx];
+
+            if(dest_val >= lastOut)
+               lastOut += (dest_val - lastOut) * slewRise;
+            else
+               lastOut += (dest_val - lastOut) * slewFall;
+
+            // Pass through
+            outL[frameIdx] = dest_val;
+            outR[frameIdx] = inR[frameIdx];
+            frameIdx++;
+         }
+
+         last_out = lastOut;
+
+         local float outRPN = mathLogLinExpf(lastOut, curve);
+         outRPN = mathClampf( ((outRPN >= 0.0f) ? (outRPN * 8191) : (outRPN * 8192)) + 8192, 0, 16383);
+         if(int(outRPN) != last_rpn_out)
+         {
+            last_rpn_out = outRPN;
+            local MIDIPipeFrame frame <= replay.midi_output_frame;
+            frame.rpn(true/*bSet*/, 0/*devIdx*/, midi_ch, rpn + 100/*ctl_1, see internal.msp*/, outRPN);
+         }
+
+         mtx_param.unlock();
+      }
+   }
+
+}

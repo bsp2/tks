@@ -1,0 +1,226 @@
+// ----
+// ---- file   : AudioScriptHost.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 22Aug2024
+// ---- changed: 23Aug2024
+// ----
+// ----
+// ----
+
+module MAudioScriptHost;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class AudioScriptHost : RemoteScriptHost {
+
+   public method init() : boolean {
+      setEnableDebug(Configuration.debugLevel > 0);
+      // // setLineOffset(2);  // skip implicit namespace header lines
+      return initRemoteScriptHost("audio", 0/*reqSz=def*/);
+   }
+
+   public virtual handleRequest(local String _sReq) : String {
+      // if(b_debug) trace "[trc] AudioHost::handleRequest: sReq=\""+_sReq+"\"";
+      local String r <= RemoteScriptHost::handleRequest(
+         // "use namespace st2;\nuse namespace ui;\n"+_sReq.trim()
+         _sReq.trim()
+                                                        );
+      UI.RedrawAll();
+      return deref r;
+   }
+}
+
+
+// <class.png>
+class API {
+   // simplified utility methods intented for remote scripts
+
+   // Query number of samples
+   // @return number of samples
+   static method GetNumSamples() : int {
+      return current_project.getNumSamples();
+   }
+
+   // Get sample by index.
+   // @arg index sample index (0..n)
+   // @return null if index is out of bounds.
+   static method GetSample(int _index) : Sample {
+      Sample s <= current_project.getSampleByIdx(_index);
+      if(null == s)
+         trace "[~~~] API.GetSample: sample index="+_index+" not found (num="+current_project.getNumSamples()+")";
+      return s;
+   }
+
+   // Get sample name by index.
+   // @arg index sample index (0..n)
+   // @return null if index is out of bounds.
+   static method GetSampleName(int _index) : String {
+      Sample s <= current_project.getSampleByIdx(_index);
+      if(null != s)
+      {
+         return s.unique_name;
+      }
+      else
+         trace "[~~~] API.GetSampleName: sample index="+_index+" not found (num="+current_project.getNumSamples()+")";
+      return null;
+   }
+
+   // Find sample by name.
+   // @arg sampleName sample name
+   // @return null if sample does not exist.
+   static method FindSample(String _sampleName) : Sample {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null == s)
+         trace "[~~~] API.FindSample: sample \""+_sampleName+"\" not found";
+      return s;
+   }
+
+   // Return sample waveform path name (in project directory)
+   // @arg sampleName sample name
+   // @return null if sample does not exist or is procedural.
+   static method FindSampleWavPath(String _sampleName) : String {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         if(!s.b_procedural)
+         {
+            local String sampleRootPath <= Global.GetProjectSamplesWavRootPath();
+            return Utils.ToNativePathName(sampleRootPath + "/" + s.unique_name + ".wav");
+         }
+      }
+      else
+         trace "[~~~] API.FindSampleWavPath: sample \""+_sampleName+"\" not found";
+      return null;
+   }
+
+   // Check if number of sample channels is 1
+   // @arg sampleName sample name
+   // @return false if sample does not exist or is not a mono sample.
+   static method IsMonoSample(String _sampleName) : boolean {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         return (1 == wf.numChannels);
+      }
+      else
+         trace "[~~~] API.IsMonoSample: sample \""+_sampleName+"\" not found";
+      return false;
+   }
+
+   // Check if number of sample channels is 2
+   // @arg sampleName sample name
+   // @return false if sample does not exist or is not a stereo sample.
+   static method IsStereoSample(String _sampleName) : boolean {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         return (2 == wf.numChannels);
+      }
+      else
+         trace "[~~~] API.IsStereoSample: sample \""+_sampleName+"\" not found";
+      return false;
+   }
+
+   // Return number of sample channels
+   // @arg sampleName sample name
+   // @return 0 if sample does not exist
+   static method FindSampleChannels(String _sampleName) : int {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         return wf.numChannels;
+      }
+      else
+         trace "[~~~] API.FindSampleChannels: sample \""+_sampleName+"\" not found";
+      return 0;
+   }
+
+   // Find sample rate by sample name
+   // @arg sampleName sample name
+   // @return -1 if sample does not exist.
+   static method FindSampleRate(String _sampleName) : float {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         return wf.sampleRate;
+      }
+      else
+         trace "[~~~] API.FindSampleRate: sample \""+_sampleName+"\" not found";
+      return -1.0f;
+   }
+
+   // Find per sample frame phase increment for MIDI note
+   // Returns normalized, per-sample-frame phase increment for the given MIDI note frequency.
+   // See render_sine.tks example.
+   // @arg sampleName sample name
+   // @arg note MIDI note (clipped to 0..127)
+   // @return phase increment (0..1) or -1 if sample does not exist.
+   static method FindSampleFrameStep(String _sampleName, float _note) : float {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         return Audio.NoteToFreq(_note) / wf.sampleRate;
+      }
+      else
+         trace "[~~~] API.FindSampleFrameStep: sample \""+_sampleName+"\" not found";
+      return -1.0f;
+   }
+
+   // Find sample data by sample name
+   //  (note) returned array is not resizable but has read/write access
+   // @arg sampleName sample name
+   // @return null if sample does not exist.
+   static method FindSampleData(String _sampleName) : FloatArray {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         FloatArray smpDat <= wf.sampleData;
+         local FloatArray r; r.visit(smpDat, 0, smpDat.numElements);
+         return deref r;
+      }
+      else
+         trace "[~~~] API.FindSampleData: sample \""+_sampleName+"\" not found";
+      return null;
+   }
+
+   // Select sample and show in sample editor
+   // @arg sampleName sample name
+   // @return true if sample was selected, false if it does not exist
+   static method SelectSample(String _sampleName) : boolean {
+      Sample s <= current_project.findSampleByUniqueName(_sampleName);
+      if(null != s)
+      {
+         if(0 == UI.GetNumModalFloatingLayers())
+         {
+            PageSample pgSample <= root_form.pg_sample;
+            pgSample.autoselect_sample_idx = current_project.getSampleIdx(s);
+            if(!pgSample.pageIsCurrent())
+               root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+            else
+               pgSample.pageUpdate();
+            return (@(pgSample.getSelectedSample()) == @(s));
+         }
+         else
+            trace "[~~~] API.SelectSample: blocked by modal dialog(s)";
+      }
+      else
+         trace "[~~~] API.SelectSample: sample \""+_sampleName+"\" not found";
+      return false;
+   }
+
+}

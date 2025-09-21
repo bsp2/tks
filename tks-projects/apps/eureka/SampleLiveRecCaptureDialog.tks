@@ -1,0 +1,299 @@
+// ----
+// ---- file   : SampleLiveRecCaptureDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 27Apr2021
+// ---- changed: 28Apr2021, 02May2021, 13May2022, 04Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module MSampleLiveRecCaptureDialog;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class SampleLiveRecCaptureDialog extends Dialog {
+
+   Sample         *sample;
+   StSample       *zone;
+   SampleView     *sv_wave;
+   PointerArray   *zones;
+   StSamplePlayer *sp;
+
+   protected XMLForm *xfm;
+
+   protected FloatParam *bt_clear;
+   protected FloatParam *fp_cyclelen;
+   protected CheckBox   *cb_wt;
+   protected FloatParam *bt_capture;
+
+
+   // <ui_init.png>
+   public method initSampleLiveRecCaptureDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleLiveRecCaptureDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSampleLiveRecCaptureDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "LiveRec Capture-to-Clipboard",
+                 263, 82,
+                 260, 66
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(bt_clear);
+      layers.add(fp_cyclelen);
+      layers.add(bt_capture);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showSampleLiveRecCaptureDialog() {
+
+      PageSample pgSample <= root_form.pg_sample;
+      sample  <= pgSample.getSelectedSample();
+
+      if(null != sample)
+      {
+         if(1 == sample.waveform.numChannels)
+         {
+            sv_wave <= pgSample.sv_wave;
+            zones   <= pgSample.getSelectedZones();
+            sp      <= pgSample.getCurrentSamplePlayer();
+
+            if(zones.numElements > 0)
+            {
+               zone <= zones.get(0);
+
+               if(zone.liveRecEnable)
+               {
+                  if(zone.liveRecCopy)
+                  {
+                     recursiveBuildTabCycleLists();
+
+                     showNearMouse(-280, -50);
+                  }
+                  else
+                  {
+                     Global.Warning("zone liveRec copy mode is not enabled");
+                  }
+               }
+               else
+               {
+                  Global.Warning("zone liveRec is not enabled");
+               }
+            }
+            else
+            {
+               Global.Warning("no zones");
+            }
+         }
+         else
+         {
+            Global.Warning("sample must be MONO");
+         }
+      }
+      else
+      {
+         Global.Warning("no sample");
+      }
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      relayout();
+      resizeToMinimum();
+
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(bt_capture);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAppendToClipboard() {
+      StSampleVoice v <= sp.findLastStartedVoiceBySample(zone);
+      if(null != v)
+      {
+         local FloatArray fa;
+         fa.alloc(128*1024);
+         fa.useAll();
+         int copyLoopLen;
+         if(STSAMPLE_LIVEREC_OSC_MODE_OFF != zone.liveRecOscMode)
+            copyLoopLen = v.liveRecGetOverrideLoopLen();
+         else
+            copyLoopLen = v.liveRecGetOverrideSmpDatSz();
+         if(copyLoopLen > 0)
+         {
+            if(v.copyOverrideBufferToFloatArray(fa))
+            {
+               fa.numElements = copyLoopLen;
+
+               if(cb_wt.isSelected())
+               {
+                  local FloatArray faRes;
+                  int cycleLen = fp_cyclelen.getFloatValue();
+                  faRes.alloc(cycleLen);
+                  float step = float(copyLoopLen) / float(cycleLen);
+                  float idx = 0;
+                  loop(cycleLen)
+                  {
+                     faRes.add(fa.winLinear(idx));
+                     idx += step;
+                  }
+                  SampleView.AppendSamplesToClipboard(faRes, 1/*srcNumCh*/, SampleView.CHANNEL_MASK_L);
+                  // Global.Print("Append "+faRes.numElements+" cycle frames to SampleView clipboard");
+               }
+               else
+               {
+                  local FloatArray faZero;
+                  faZero.allocAndFill(SampleView.NUM_BORDER_SILENCE_FRAMES, 0.0f);
+                  SampleView.AppendSamplesToClipboard(faZero, 1/*srcNumCh*/, SampleView.CHANNEL_MASK_L);
+                  SampleView.AppendSamplesToClipboard(fa, 1/*srcNumCh*/, SampleView.CHANNEL_MASK_L);
+                  // Global.Print("Append "+fa.numElements+" frames to SampleView clipboard (+zero padding)");
+               }
+            }
+            else
+            {
+               Global.Warning("buffer-copy failed");
+            }
+         }
+         else
+         {
+            Global.Warning("copy-loop-len is 0");
+         }
+      }
+      else
+      {
+         Global.Warning("no active voice (play a note!)");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx SampleLiveRecCaptureDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageSample pgSample <= root_form.pg_sample;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(bt_clear):
+            SampleView.FreeClipboard();
+            Global.Print("Clear SampleView clipboard");
+            return true;
+
+         case @(cb_wt):
+            Global.Print("Wavetable mode is "+Utils.GetEnableString(cb_wt.isSelected()));
+            return true;
+
+         case @(fp_cyclelen):
+            Global.Print("Wavetable Cycle-Len is "+fp_cyclelen.getFloatValue()+" frames");
+            return true;
+
+         case @(bt_capture):
+            handleAppendToClipboard();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,1426 @@
+// ----
+// ---- file   : ModCLAP.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 03Jul2024
+// ---- changed: 04Jul2024, 05Jul2024, 06Jul2024, 13Sep2024, 17Sep2024, 19Sep2024, 22Sep2024
+// ----          07Jan2025, 08Jan2025, 21Jun2025
+// ----
+// ----
+// ----
+
+module MModCLAP;
+
+use tksdl;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ModCLAP : Mod {
+
+   // (note) inputs 3+4 are the sidechain inputs
+   // (note) additional input/output buffers are created on demand
+   define int CLAP_DEF_NUM_IN_BUFFERS  = 4;
+   define int CLAP_DEF_NUM_OUT_BUFFERS = 4;
+
+   String unique_id_string;  // "vendor`name`id`" (see CLAPPluginEntry::getUniqueIDString())
+   CLAPPlugin *plugin;  // null when plugin is not available
+
+   Buffer patch_data;
+
+   String last_io_patch_name;  // base filename
+
+   // protected int debug_frame_count;
+
+   protected String clipboard_name;  // used for clipboard instances where no actual plugin instance is available
+
+   protected HostMIDIEvents vel_events;  // when using velocity curve (temporary)
+   protected HostMIDIEvents events_from_frame;
+
+   protected Integer tmp_io;
+
+   protected boolean b_editor_shown_at_least_once;  // hack for tracking other windows created/focused by editor
+   // // IntArray other_window_hwnds;  // (todo) remove
+
+   static GenericParamDialogCLAP *dlg_genericparam;  // for plugins without a custom editor
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(CLAP_DEF_NUM_IN_BUFFERS, CLAP_DEF_NUM_OUT_BUFFERS);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      unload();
+      Mod::exit();
+   }
+
+   // <method_exit.png>
+   public virtual unload() {
+      // When changing patch variations
+
+      closeEditor();
+
+      // patch data may be needed after switching patch variations (for cloning / restoring)
+      queryPatchData();
+
+      unloadPluginBackToPool();
+
+      b_postload_done = false;
+   }
+
+   // <method_get.png>
+   public method isBlacklistedFromPool() : boolean {
+      String *filter;
+      foreach filter in STConfig.clap_pool_blacklist
+      {
+         if(unique_id_string & filter)
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method unloadPluginBackToPool() {
+      if(null != plugin)
+      {
+         plugin.stopProcessing();
+         plugin.closeEditor();
+
+         if(STConfig.b_plugin_pooling)
+         {
+            CLAP.AddPluginBackToPool(unique_id_string, deref plugin);
+            plugin <= null;
+         }
+         else
+         {
+            freePlugin();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method freePlugin() {
+
+      if(null != plugin)
+      {
+         plugin.stopProcessing();
+         plugin.closeEditor();
+         plugin.destroyPluginInstance();
+         plugin <= null;
+         // // other_window_hwnds.free();
+      }
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      if(null != plugin)
+         return !plugin.isInstrument();
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual canDoRelativeParams() : boolean {
+      // CLAP supports relative parameter modulation natively => no 'shadow plugin' workarounds needed
+      return true;
+   }
+
+   // <method_set.png>
+   public =replay= virtual setEnableRelativeParams(boolean _bEnabled) {
+      // (note) CLAP plugins support relative parameter modulation => no 'shadow plugin' workarounds needed
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModCLAP cl <= new ModCLAP;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+
+      if(_bFullInit)
+      {
+         cl.unique_id_string = unique_id_string;
+
+         if(!cl.loadStatePost(false/*bThreaded*/))
+            trace "[---] ModCLAP::modClone: loadStatePost() failed";
+
+         return deref cl;
+      }
+      else
+      {
+         cl.unique_id_string = unique_id_string;
+         return deref cl;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      if(_o instanceof ModCLAP)
+      {
+         ModCLAP o <= _o;
+         return (unique_id_string == o.unique_id_string);
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModCLAP)
+      {
+         ModCLAP o <= _o;
+
+         if(null != o.plugin)
+         {
+            o.queryPatchData();
+         }
+         // else: no actual instance (just the clipboard)
+
+         Global.Debug("ModCLAP::modCopyPatchFrom: o="+#(o)+" o.patch_data="+#(o.patch_data));
+
+         if(null != o.patch_data)
+         {
+            if(null == patch_data)
+               patch_data <= new Buffer;
+
+            patch_data = o.patch_data;
+
+            if(null != plugin)
+            {
+               restorePatchData();
+            }
+            else
+            {
+               // else: no actual instance (just the clipboard)
+               // (todo) OR: copying patch data while cloning patch variation (plugins are already unloaded)
+               clipboard_name = o.getName();
+            }
+         }
+         else
+         {
+            patch_data <= null;
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method loadInitPatch(_filterHintOrNull) : boolean {
+      String dirName = getCLAPPatchDir();
+      String fileName = "init";
+      boolean bLoaded = false;
+      String pathName;
+
+      // Try to load init_delay, init_reverb, .. patch
+      if(null != _filterHintOrNull)
+      {
+         if(!_filterHintOrNull.isBlank())
+         {
+            fileName = Utils.ConvertToFileName("init_"+_filterHintOrNull.toLower());
+
+            Global.Debug("ModCLAP::loadInitPatch: try read \""+fileName+"\"");
+
+            pathName = dirName+"/"+fileName+".clp";
+            Global.Debug("ModCLAP::loadInitPatch: check exists \""+pathName+"\"");
+
+            if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+            {
+               Global.Debug("ModCLAP::loadInitPatch: try load \""+pathName+"\"");
+               bLoaded = loadPatch(pathName);
+            }
+         }
+      }
+
+      // Fallback to default init patch
+      if(!bLoaded)
+      {
+         pathName = dirName+"/init.clp";
+         Global.Debug("ModCLAP::loadInitPatch: check exists \""+pathName+"\"");
+
+         if(!bLoaded && Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+         {
+            Global.Debug("ModCLAP::loadInitPatch: try load \""+pathName+"\"");
+            bLoaded = loadPatch(pathName);
+         }
+      }
+
+      return bLoaded;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      // trace "xxx ModCLAP::getName: display_name=\""+display_name+"\" plugin="+#(plugin)+" unique_id_string=\""+unique_id_string+"\"";
+      if(!display_name.isBlank())
+         return display_name;
+
+      if(null != plugin)
+         return plugin.getName();
+      else
+      {
+         // Plugin not available, extract name from UID
+         local StringArray a <= unique_id_string.splitChar('`');  // [0]=vendor [1]=name [2]=id
+         return Object(a.get(1));
+      }
+
+      return clipboard_name;
+   }
+
+   // <method_get.png>
+   public method getUniqueIDString() : String {
+      if(null != plugin)
+         return unique_id_string;
+      return "n/a";
+   }
+
+   // <method.png>
+   public method loadPluginByUniqueIDString(local String _uniqueIDString) : boolean {
+      local boolean r = false;
+
+      inputs.free();
+      outputs.free();
+
+      local CLAPPluginEntry en <= CLAP.FindCLAPPluginEntryByUniqueIDString(_uniqueIDString);
+      if(null != en)
+      {
+         boolean bLoaded = false;
+         local int msInit = milliSeconds();
+
+         if(STConfig.b_plugin_pooling)
+            plugin <= en.unlinkNextFromPool();
+
+         if(null == plugin)
+         {
+            plugin <= en.lazyLoadBundleAndCreatePluginInstance(chunk_sz, Audio.mix_rate);
+            bLoaded = (null != plugin);
+
+            // if(bLoaded)
+            // {
+            // }
+         }
+         else
+         {
+            bLoaded = true;
+         }
+
+         if(bLoaded)
+         {
+            unique_id_string = _uniqueIDString;
+
+            if(CLAP.b_clap_debug)
+            {
+               trace "[...]                vendor=\"" +plugin.vendor+"\".";
+            }
+            if(CLAP.b_clap_debug)
+            {
+               trace "[...]                  name=\"" +plugin.name+"\".";
+            }
+            if(CLAP.b_clap_debug)
+            {
+               trace "[...]                    id="   +plugin.id;
+               trace "[...]          isInstrument="   +plugin.isInstrument();
+               trace "[...]             hasEditor="   +plugin.hasEditor();
+               // trace "[...]  numMidiInputChannels="   +plugin.numMidiInputChannels;
+               // trace "[...] numMidiOutputChannels="   +plugin.numMidiOutputChannels;
+               // trace "[...]          initialDelay="   +plugin.initialDelay;
+            }
+
+            // Add input channels
+            trace "[...]         numInputChannels="+plugin.numInputChannels;
+
+            // (todo) remove ?
+            if(plugin.numInputChannels != inputs.numElements)
+            {
+               Global.Debug("ModCLAP::loadPluginByUniqueIDString: plugin #inputs changed: old="+inputs.numElements+" new="+plugin.numInputChannels);
+            }
+
+            // Add input channels
+            //   (note) CLAP inputs can be multi-channel but inputChannels are always mono (name = inputName+"L"/"R")
+            inputs.free();
+            local int inIdx = 0;
+            loop(plugin.numInputChannels)
+            {
+               addInput(plugin.getInputChannelName(inIdx));
+
+               if(CLAP.b_clap_debug)
+                  trace "[...] inputChannel["+inIdx+"] name=\""+plugin.getInputChannelName(inIdx)+"\"";
+
+               // Next input channel
+               inIdx++;
+            }
+
+            // Add output channels
+            //   (note) CLAP outputs can be multi-channel but outputChannels are always mono (name = outputName+"L"/"R")
+            trace "[...]        numOutputChannels="+plugin.numOutputChannels;
+            local int outIdx = 0;
+
+            // (todo) remove ?
+            if(plugin.numOutputChannels != outputs.numElements)
+            {
+               Global.Debug("ModCLAP::loadPluginByUniqueIDString: plugin #outputs changed: old="+outputs.numElements+" new="+plugin.numOutputChannels);
+            }
+
+            outputs.free();
+            loop(plugin.numOutputChannels)
+            {
+               addOutput(plugin.getOutputChannelName(outIdx));
+
+               if(CLAP.b_clap_debug)
+                  trace "[...] outputChannel["+outIdx+"] name=\""+plugin.getOutputChannelName(outIdx)+"\"";
+
+               // Next output channel
+               outIdx++;
+            }
+
+            if(inputs.numElements < 2)
+               b_mono_in = true;
+
+            if(outputs.numElements < 2)
+               b_mono_out = true;
+
+            // Lazy-add input buffers
+            loop(plugin.numInputChannels - input_bufs.numElements)
+               addInputBuf();
+
+            // Set input buffer refs
+            local int ioIdx = 0;
+            loop(input_bufs.numElements)
+            {
+               plugin.setExtInputChannelBuffer(ioIdx, input_bufs.get(ioIdx));
+               ioIdx++;
+            }
+
+            // Lazy-add output buffers
+            loop(plugin.numOutputChannels - output_bufs.numElements)
+               addOutputBuf();
+
+            // Set output buffer refs
+            ioIdx = 0;
+            loop(output_bufs.numElements)
+            {
+               plugin.setExtOutputChannelBuffer(ioIdx, output_bufs.get(ioIdx));
+               ioIdx++;
+            }
+
+            // Show parameter names and values
+            trace "[...]       numParameters="+plugin.numParameters;
+
+            if(CLAP.b_clap_debug)
+            {
+               local PointerArray pa;
+               pa.empty();
+               local int paramIdx = 0;
+
+               loop(plugin.numParameters)
+               {
+                  local String paramName <= plugin.getParameterName(paramIdx);
+                  local float paramVal = plugin.getParameter(paramIdx);
+                  pa.add(#((deref paramName) + " ("+paramVal+")"));
+
+                  // Next param
+                  paramIdx++;
+               }
+
+               trace "[...]          paramNames="+pa;
+            }
+
+            updatePluginTransportPlaying(plugin);
+
+            // Start processing
+            plugin.startProcessing();
+
+            msInit = milliSeconds() - msInit;
+            Global.Debug("msInit: "+msInit);
+            // Global.Debug("msEditor: "+msEditor);
+            // Global.Debug("  msExit: "+msExit);
+
+            r = true;
+         }
+         else
+         {
+            trace "[---] failed to open CLAP plugin uniqueID=\""+_uniqueIDString+"\"";
+            plugin <= null;
+         }
+      }
+      else
+      {
+         Global.Warning("ModCLAP::loadPluginByUniqueIDString: id \""+_uniqueIDString+"\" not found in plugin cache !!");
+         plugin <= null;
+      }
+
+      // Some plugins change the current working directory
+      tkfileutils_setcwd(program_directory);
+
+      return r;
+   }
+
+   // <method_update.png>
+   protected method updatePluginTransportPlaying(local CLAPPlugin _plugin) {
+      local String sUID <= getUniqueIDString();
+      _plugin.setEnableReportTransportPlaying(true);
+      local String *blackListEntry;
+      foreach blackListEntry in STConfig.clap_transport_blacklist
+      {
+         if(sUID & blackListEntry)
+         {
+            _plugin.setEnableReportTransportPlaying(false);
+            break;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getLatencyNumFrames() : int {
+      if(null != plugin)
+         return plugin.latency;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      if(null != plugin)
+         return plugin.numParameters;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      boolean r = false;
+
+      _retParamNames.empty();
+
+      if(null != plugin)
+      {
+         int numParams = plugin.numParameters;
+         if(numParams > 0)
+         {
+            int paramIdx = 0;
+            loop(numParams)
+               _retParamNames.add(plugin.getParameterName(paramIdx++));
+
+            r = true;
+         }
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public virtual isAnyParameterModulatable() : boolean {
+      if(null != plugin)
+      {
+         int paramIdx = 0;
+         loop(plugin.getNumParameters())
+         {
+            if(plugin.isParameterModulatable(paramIdx))
+               return true;
+            paramIdx++;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isParameterModulatable(local int _paramIdx) : boolean {
+      if(null != plugin)
+      {
+         // // local boolean ret = plugin.isParameterModulatable(_paramIdx);
+         // // // if(ret)
+         // // trace "xxx ModCLAP::isParameterModulatable(paramIdx="+_paramIdx+") => ret="+ret;
+         return plugin.isParameterModulatable(_paramIdx);
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isParameterStepped(local int _paramIdx) : boolean {
+      if(null != plugin)
+         return plugin.isParameterStepped(_paramIdx);
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getParameterMinValue(local int _paramIdx) : float {
+      if(null != plugin)
+         return plugin.getParameterMinValue(_paramIdx);
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public virtual getParameterMaxValue(local int _paramIdx) : float {
+      if(null != plugin)
+         return plugin.getParameterMaxValue(_paramIdx);
+      return 1.0f;
+   }
+
+   // <method_get.png>
+   public virtual getParameterValue(local int _idx) : float {
+      if(null != plugin)
+         return plugin.getParameter(_idx);
+      return 0.0f;
+   }
+
+   // // // <method_get.png>
+   // // public virtual getParameterValueRelBase(local int _idx) : float {
+   // // }
+
+   // <method_get.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      mtx_param.lock();
+      if(null != plugin)
+         plugin.setParameter(_idx, _value);
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public virtual parameterValueToText(local int _idx, local float _value) : String {
+      if(null != plugin)
+         return plugin.parameterValueToText(_idx, _value);
+      return null;
+   }
+
+   // <method.png>
+   public virtual parameterTextToValue(local int _idx, local String _text) : float {
+      if(null != plugin)
+         return plugin.parameterTextToValue(_idx, _text);
+      return 0.0f;
+   }
+
+   // <method.png>
+   public method queryPatchData() : boolean {
+      if(null != plugin)
+      {
+         patch_data.free();
+         boolean bDone = false;
+         local DummyStream ds;
+         if(plugin.saveState(ds)) // Query patch size
+         {
+            patch_data.size = ds.size;
+            if(plugin.saveState(patch_data))  // Query patch bytes
+            {
+               Global.Debug("ModCLAP::queryPatchData: size="+patch_data.size);
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method restorePatchData() : boolean {
+      local boolean r = false;
+
+      if(null != plugin)
+      {
+         if(patch_data.size > 0)
+         {
+            local boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+
+            patch_data.offset = 0;
+            r = plugin.loadState(patch_data);
+
+            CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+         }
+         else
+         {
+            Global.Warning("ModCLAP::restorePatchData: patchData is empty (skipped).");
+         }
+      }
+      else
+      {
+         Global.Error("ModCLAP::restorePatchData: plugin is null.");
+      }
+
+      trace "[trc] LEAVE restorePatchDataEx: mod="+#(this);
+      return r;
+   }
+
+   // <method.png>
+   public =replay= virtual stopVoices() {
+      // Stop all voices and reverb/delay trails
+      if(null != plugin)
+         plugin.reset();
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 2;
+
+      // Unique ID string
+      Utils.WriteString(_ofs, unique_id_string);
+
+      // Write #input channels (placeholder until plugin has actually been loaded)
+      _ofs.i16 = inputs.numElements;
+
+      ModIO *io;
+      int i;
+
+      // Write basic input channel information (placeholder until plugin has actually been loaded)
+      for(i = 0; i < inputs.numElements; i++)
+      {
+         io <= inputs.get(i);
+
+         // Input name
+         Utils.WriteString(_ofs, io.name);
+
+         // Next input channel
+      }
+
+      // Write #output channels (placeholder until plugin has actually been loaded)
+      _ofs.i16 = outputs.numElements;
+
+      // Write basic output channel information (placeholder until plugin has actually been loaded)
+      for(i = 0; i < outputs.numElements; i++)
+      {
+         io <= outputs.get(i);
+
+         // Output name
+         Utils.WriteString(_ofs, io.name);
+
+         // Next output channel
+      }
+
+      // Last I/O patch name (v2+)
+      Utils.WriteString(_ofs, last_io_patch_name);
+
+      // Write patch data
+      queryPatchData();
+      _ofs.i32 = patch_data.size;
+      _ofs.yacStreamWriteBuffer(patch_data, 0, patch_data.size);
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         b_postload_done = false;
+
+         if(ver >= 1)
+         {
+            ModIO *io;
+            String ioName;
+
+            // Unique ID string
+            Utils.ReadString(_ifs, unique_id_string);
+
+            Global.Debug("ModCLAP::loadState: unique_id_string=\""+unique_id_string+"\" ver="+ver+" instance_id="+instance_id);
+
+            // Read #input channels (placeholder until plugin has actually been loaded)
+            int numInputs = _ifs.u16;
+
+            // Read basic input channel information (placeholder until plugin has actually been loaded)
+            inputs.free();
+
+            loop(numInputs)
+            {
+               // Read input name
+               Utils.ReadString(_ifs, ioName);
+
+               addInput(ioName);
+
+               // Next input port
+            }
+
+            // Read #output channels (placeholder until plugin has actually been loaded)
+            int numOutputs = _ifs.u16;
+            outputs.free();
+
+            loop(numOutputs)
+            {
+               // Read output name
+               Utils.ReadString(_ifs, ioName);
+
+               addOutput(ioName);
+
+               // Next output channel
+            }
+
+            if(ver >= 2)
+            {
+               // Last I/O patch name (v2+)
+               Utils.ReadString(_ifs, last_io_patch_name);
+            }
+
+            // Read patch data
+            //  (note) plugin instantiated and patch_data restored in loadStatePost()
+            patch_data.free();
+            int patchDataSize = _ifs.i32;
+            _ifs.yacStreamReadBuffer(patch_data, 0, patchDataSize, true/*resize*/);
+
+            // Succeeded
+            r = true;
+
+         } // if version check
+         else
+         {
+            Global.Error("ModCLAP::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public virtual isThreadedPostLoadSupported() : boolean {
+      // (todo) white/black lists ?
+      return STConfig.b_threaded_post_load_unknown;
+   }
+
+   // <load.png>
+   public virtual loadStatePost(local boolean _bThreaded) : boolean {
+
+      Global.Debug("ModCLAP::loadStatePost: bThreaded="+_bThreaded+" b_postload_done="+b_postload_done);
+
+      // (possibly) multi-threaded
+      local boolean r = b_postload_done;
+
+      if(!r)
+      {
+         if(_bThreaded)
+         {
+            if(!isThreadedPostLoadSupported())
+            {
+               // Will be initialized later (in single thread)
+               return true;
+            }
+         }
+
+         Global.Debug2("ModCLAP::loadStatePost: unique_id_string="+unique_id_string+" bThreaded="+_bThreaded);
+
+         // Load plugin and instantiate effect
+         //  - alloc/query inputs and outputs
+         //  - update plugin_version
+         if(loadPluginByUniqueIDString(unique_id_string))
+         {
+            Global.Debug2("ModCLAP::loadStatePost: plugin \""+unique_id_string+"\" loaded and initialized.");
+
+            restorePatchData();
+
+            Global.Debug("ModCLAP::loadStatePost: restored patch data (unique_id_string=\""+unique_id_string+"\")");
+            r = true;
+         }
+         else
+         {
+            trace "[---] ModCLAP::loadStatePost: FAILED, unique_id_string=\""+unique_id_string+"\"";
+         }
+
+         b_postload_done = true;
+         b_postload = r;
+      }
+      else
+      {
+         // Already initialized
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getCLAPPatchDir() : String {
+      return Utils.FixFileName(STConfig.clappatch_rootpath+"/"+Utils.ConvertToFileName(plugin.id)); // unique_id_string
+   }
+
+   // <load.png>
+   public =replay= method loadPatch(String _pathName) : boolean {
+      boolean r = false;
+
+      if(null == plugin)
+         return false;
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      local File f;
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_IN))
+      {
+         int fsize = f.size;
+
+         patch_data.free();
+         f.readBuffer(patch_data, 0, fsize, true/*bResize*/);
+         f.close();
+
+         restorePatchData();
+         current_project.markAsModified();
+         UpdateLastIOPatchNameFromPathName(last_io_patch_name, _pathName);
+         r = true;
+      }
+      else
+      {
+         trace "[---] ModCLAP::loadPatch: failed to open \""+_pathName+"\" for reading.";
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      return r;
+   }
+
+   // <save.png>
+   public method savePatch(String _pathName) : boolean {
+      boolean r = false;
+      if(null != plugin)
+      {
+         if(!queryPatchData())
+         {
+            trace "[---] ModCLAP::savePatch: queryPatchData() failed.";
+            return false;
+         }
+
+         _pathName.replace(".clp", "");
+         _pathName.append(".clp");
+
+         local File f;
+         if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_OUT))
+         {
+            UpdateLastIOPatchNameFromPathName(last_io_patch_name, _pathName);
+
+            f.writeBuffer(patch_data, 0, patch_data.size);
+            f.close();
+
+            Global.Debug("ModCLAP::savePatch: size="+patch_data.size+" ("+((patch_data.size)/1024.0f)+"k)");
+            r = true;
+         }
+         else
+         {
+            trace "[---] ModCLAP::savePatch: failed to open \""+_pathName+"\" for writing.";
+         }
+      }
+      return r;
+   }
+
+   // <replay.png>
+   public method processVelocityCurvesHostEvents(local int _fltDev, local int _fltCh, local int _forceCh, local int _globalCh,
+                                                 local int _minMillisec, local int _maxMillisec
+                                                 ) {
+      local int numEv = vel_events.numMIDIEvents;
+
+      if(numEv > 0)
+      {
+         local int evIdx = 0;
+
+         loop(numEv)
+         {
+            local float vel;
+            if(b_enable_noteon_velocity_env)
+            {
+               vel  = vel_events.getNormalizedNoteOnVelocityByEventIdx(evIdx,
+                                                                       _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                       _minMillisec, _maxMillisec
+                                                                       );
+            }
+            else
+            {
+               vel = -1.0f;
+            }
+
+            if(vel > 0.0f)
+            {
+               // (todo) optimize
+               CurveDialog.LockRecalcMutex();
+               noteon_velocity_env.time = vel;
+               vel = noteon_velocity_env.get();
+               CurveDialog.UnlockRecalcMutex();
+               vel_events.setNormalizedNoteOnVelocityByEventIdx(evIdx,
+                                                                _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                _minMillisec, _maxMillisec,
+                                                                vel
+                                                                );
+            }
+            else if(b_enable_noteoff_velocity_env)
+            {
+               vel = vel_events.getNormalizedNoteOffVelocityByEventIdx(evIdx,
+                                                                       _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                       _minMillisec, _maxMillisec
+                                                                       );
+
+               if(vel >= 0.0f)
+               {
+                  CurveDialog.LockRecalcMutex();
+                  noteoff_velocity_env.time = vel;
+                  vel = noteoff_velocity_env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  vel_events.setNormalizedNoteOffVelocityByEventIdx(evIdx,
+                                                                    _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                    _minMillisec, _maxMillisec,
+                                                                    vel
+                                                                    );
+               }
+            }
+
+            evIdx++;
+         }
+      }
+   }
+
+   // <replay.png>
+   protected method recalcModMatrixForParamCLAP(local int _paramIdx) {
+
+      local float curVal = ModMatrixEntry.INVALID_VALUE;
+
+      local PointerArray paramRefs <= mod_matrix_param_refs.get(_paramIdx);
+
+      // (note) use relative parameter modulation when at least one modmatrix entry is relative
+      local boolean bRelative = false;
+
+      if(null != paramRefs)
+      {
+         local ModMatrixEntry *mme;
+         foreach mme in paramRefs
+         {
+            if(ModMatrixEntry.INVALID_VALUE != mme.last_ctl_value)
+            {
+               local float modVal = mme.last_ctl_value;
+
+               // Apply curve to modVal
+               if(mme.b_enable_input_mapper_env)
+               {
+                  // (todo) optimize / use per-track mutex
+                  CurveDialog.LockRecalcMutex();
+                  local Envelope env <= mme.input_mapper_env;
+                  env.time = modVal;
+                  modVal = env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  modVal = mathPowerf(modVal, mme.input_mapper_env_state.out_exponent);
+               }
+
+               // Rescale normalized ctl value (0..1) to value range
+               local float minVal = mme.value_min;
+               local float maxVal = mme.value_max;
+
+               if(mme.b_asym)
+               {
+                  // 0..0.5 => minVal..0
+                  // 0.5..1 => 0..maxVal
+                  if(modVal < 0.5)
+                     modVal = minVal * ((0.5 - modVal) * 2.0);
+                  else
+                     modVal = maxVal * ((modVal - 0.5) * 2.0);
+               }
+               else
+               {
+                  // 0..1 => minVal..maxVal
+                  modVal = minVal + ((maxVal - minVal) * modVal);
+               }
+
+               bRelative |= mme.b_relative;
+
+               if(ModMatrixEntry.INVALID_VALUE == curVal)
+               {
+                  // First entry
+                  if(mme.b_relative)
+                     curVal = 0.0f;
+                  else
+                     curVal = plugin.getParameter(_paramIdx);
+               }
+
+               // (note) first entry should use amount=100%
+               curVal = mathLerpf(curVal, modVal, mme.amount);
+
+            } // if !INVALID_VALUE (have ctl input)
+
+            // Next entry
+         } // foreach mme in paramRefs
+
+      } // if paramRefs
+
+      if(ModMatrixEntry.INVALID_VALUE != curVal)
+      {
+         if(bRelative)
+         {
+            // trace "xxx ModCLAP: call plugin.setParameterMod("+_paramIdx+", "+curVal+")";
+            plugin.setParameterMod(_paramIdx, curVal/*offset*/);
+         }
+         else
+         {
+            // Clamp to parameter range
+            curVal = mathClampf(curVal,
+                                plugin.getParameterMinValue(_paramIdx),
+                                plugin.getParameterMaxValue(_paramIdx)
+                                );
+
+            // Update parameter
+            plugin.setParameter(_paramIdx, curVal);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method processModMatrixEventsCLAP(local int _fltDev, local int _fltCh, local int _globalCh) {
+
+      local MIDIPipeFrame fr <= replay.midi_input_frame;
+      local int numEv = fr.numEvents;
+
+      local IntArray tmpParams <= mod_matrix_temp_param_indices;
+      tmpParams.empty();
+
+      if(numEv > 0)
+      {
+         local int evIdx = 0;
+         loop(numEv)
+         {
+            // in 0..TOTAL_NUM_SOURCE-1 range
+            local int srcIdx =
+               fr.modMatrixCheckEventByFlt(evIdx,
+                                           _fltDev,
+                                           _fltCh,
+                                           _globalCh,
+                                           tmp_modmatrix_val,   // returns normalized 0..1 value
+                                           tmp_modmatrix_vel    // returns normalized velocity value
+                                           );
+
+            if(-1 != srcIdx)
+            {
+               local PointerArray *srcRefs;
+               local ModMatrixEntry *mme;
+
+               // Iterate all entries that reference the given srcidx and update their current ctl value
+               srcRefs <= mod_matrix_src_refs.get(srcIdx);
+               if(null != srcRefs)
+               {
+                  foreach mme in srcRefs
+                  {
+                     mme.last_ctl_value = mme.pickValue(srcIdx, tmp_modmatrix_val, tmp_modmatrix_vel);
+
+                     if(!tmpParams.contains(mme.param_idx))
+                        tmpParams.add(mme.param_idx);
+                  }
+               }
+
+               // Iterate all affected parameters and recalculate the modmatrix output(s)
+               local int paramIdx;
+               foreach paramIdx in tmpParams
+                  recalcModMatrixForParamCLAP(paramIdx);
+
+            } // if -1 != srcIdx
+
+            // Next event
+            evIdx++;
+
+         } // loop events
+      } // if have events
+   }
+
+   // <replay.png>
+   protected method resetAllControllers() {
+
+      local ModMatrixEntry *mme;
+      foreach mme in mod_matrix
+         mme.last_ctl_value = ModMatrixEntry.INVALID_VALUE;
+
+      if(null != plugin)
+      {
+         plugin.resetParameterMods_Sync();
+
+         // trace "xxx ModCLAP::resetAllControllers: call plugin.reset()";
+         plugin.reset();
+      }
+   }
+
+   // <method.png>
+   public method handleAutomateEvent(CLAPAutomateEvent _ev, Track _track, Lane _lane) {
+
+      Global.Debug3("ModCLAP::handleAutomateEvent: paramIdx="+_ev.param_idx+" value="+_ev.value+" begin="+_ev.b_begin);
+
+      // Remember parameter index in history (for UI, e.g. when selecting destination param in modmatrix)
+      addToUIParamHistory(_ev.param_idx);
+
+      if(-1 == _ev.b_begin)
+      {
+         if(_track.isMirrorMode())
+         {
+            // Update other lanes
+            int laneIdx = 0;
+            Lane *lane;
+            foreach lane in _track.lanes
+            {
+               if(_track.multi_lane_offset <= laneIdx < (_track.multi_lane_offset + _track.multi_num_channels))
+               {
+                  if(@(lane) != @(_lane))
+                  {
+                     ModCLAP modOther <= lane.findModAtY(ui_grid_y);
+                     if(modOther instanceof ModCLAP)
+                     {
+                        if(modOther.modIsPatchCompatibleWith(this))
+                        {
+                           CLAPPlugin pluginOther <= modOther.plugin;
+                           if(0)
+                           {
+                              if(pluginOther.getParameter(_ev.param_idx) != _ev.value)
+                                 current_project.markAsModified();
+                           }
+                           pluginOther.setParameter(_ev.param_idx, _ev.value);
+                        } // if patch compatible
+                     } // if clap
+                  } // if not self
+               } // if >= lane_offset
+               laneIdx++;
+            } // loo lanes
+         } // if mirror
+      } // if param update
+   }
+
+   // <method.png>
+   protected =replay= method syncMirrorLaneModsToThis(Track _track, Lane _lane) {
+
+      // Update parameter
+      if(_track.isMirrorMode())
+      {
+         // Update other lanes
+         int laneIdx = 0;
+         Lane *lane;
+         foreach lane in _track.lanes
+         {
+            if(_track.multi_lane_offset <= laneIdx < (_track.multi_lane_offset + _track.multi_num_channels))
+            {
+               if(@(lane) != @(_lane))
+               {
+                  ModCLAP modOther <= lane.findModAtY(ui_grid_y);
+                  if(modOther instanceof ModCLAP)
+                  {
+                     if(modOther.modIsPatchCompatibleWith(this))
+                     {
+                        modOther.modCopyPatchFrom(this);
+                     } // if patch compatible
+                  } // if clap
+               } // if not self
+            } // if >= lane_offset
+            laneIdx++;
+         } // loo lanes
+      } // if mirror
+
+   }
+
+   // <method_get.png>
+   protected method forceGenericEditor() : boolean {
+      StringArray a <= STConfig.clap_genericparam_forced;
+      String *s;
+      foreach s in a
+      {
+         if(unique_id_string & s)
+            return true;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public virtual showEditor() {
+
+      if(null != plugin)
+      {
+         boolean bUseEditor = plugin.hasEditor();
+
+         if(bUseEditor)
+            bUseEditor = !forceGenericEditor() ^ (VMOD_LSHIFT == UI.GetKeyMod());
+
+         if(bUseEditor)
+         {
+            if(!b_editor_shown_at_least_once)
+            {
+               // Find other windows that the editor creates (yeah, this is quite a dirty hack!)
+               b_editor_shown_at_least_once = true;
+               // // other_windows_create.empty();
+               // // other_windows_focus.empty();
+               // // other_window_listener <= this;  // let's pray that we are not deleted before the timeout expires :D
+               // // other_window_start_ms = milliSeconds();
+               // // b_track_other_windows = true;  // namespace var (see eureka.tks)
+               // // // (note) the monitoring result is handled after a timeout in PageTrack
+            }
+
+            if(null != plugin)
+               plugin.showEditor();
+
+            // // int hwnd;
+            // // foreach hwnd in other_window_hwnds
+            // // {
+            // //    Global.Debug("ModCLAP::showEditor: show other window hWnd="+hwnd);
+            // //    SDL.showOtherWindow(hwnd);
+            // // }
+         }
+         else
+         {
+            showGenericParamDialog();
+         }
+
+         // (note) There's no way of knowing whether the patch was modified since not all controls
+         //         send parameter notifications.
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_show.png>
+   public method showGenericParamDialog() {
+      if(null == dlg_genericparam)
+      {
+         dlg_genericparam <= new GenericParamDialogCLAP;
+         dlg_genericparam.initGenericParamDialogCLAP();
+      }
+      dlg_genericparam.showGenericParamDialogCLAP(this);
+   }
+
+   // <method.png>
+   public virtual hideEditor() {
+      if(null != plugin)
+      {
+         String sUID <= getUniqueIDString();
+         Global.Debug("ModCLAP::hideEditor: sUID=\""+sUID+"\"");
+         String *blackListEntry;
+         foreach blackListEntry in STConfig.clap_hide_blacklist
+         {
+            if(sUID & blackListEntry)
+               return closeEditor();
+         }
+
+         plugin.hideEditor();
+
+         // // int hwnd;
+         // // foreach hwnd in other_window_hwnds
+         // // {
+         // //    Global.Debug("ModCLAP::showEditor: hide other window hWnd="+hwnd);
+         // //    SDL.hideOtherWindow(hwnd);
+         // // }
+      }
+   }
+
+   // <method.png>
+   public virtual closeEditor() {
+      if(null != plugin)
+         plugin.closeEditor();
+   }
+
+   // <method.png>
+   public virtual isEditorVisible() : boolean {
+      if(null != plugin)
+         return plugin.isEditorVisible();
+      return false;
+   }
+
+   // // // <method.png>
+   // // public method setOtherWindows(IntArray _hwnds) {
+   // //    other_window_hwnds = _hwnds;
+   // // }
+
+   // <method.png>
+   public =replay= method syncMainAndMirrorMods(Track _track, Lane _lane) {
+      queryPatchData();
+
+      if((null != _track) && (null != _lane))
+      {
+         syncMirrorLaneModsToThis(_track, _lane);
+      }
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+
+      // trace "xxx process CLAP numFrames="+_numFrames+" debug_frame_count="+debug_frame_count;
+      // trace "xxx process CLAP bPlaying="+_bPlaying;
+
+      if(null != plugin)
+      {
+         mtx_param.lock();
+
+         if(replay.b_reset_all_controllers)
+            resetAllControllers();
+
+         if(replay.b_have_events)
+         {
+            processParamSetChange(_fltDev, _fltCh);
+
+            processModMatrixEventsCLAP(_fltDev, _fltCh, _globalCh);
+
+            //
+            // (note) always process note on/off velocity curves _after_ modmatrix since
+            //         each modmatrix entry can have its own curve (and an on/off velocity src type)
+            //
+            local HostMIDIEvents *events;
+            local MIDIPipeFrame frame <= replay.midi_input_frame;
+
+            if(b_enable_noteon_velocity_env || b_enable_noteoff_velocity_env)
+            {
+               vel_frame = frame;
+               frame <= vel_frame;
+               processVelocityCurvesFrame(_fltDev, _fltCh);  // note on and off velocities
+            }
+
+            // Convert MIDIPipeFrame to HostMIDIEvents
+            events <= events_from_frame;
+            events.empty();
+            MIDI.AddMIDIPipeFrameToHostMIDIEvents(frame, events, tmp_io, input_filter/*VRR*/);
+
+            if(_bPlaying || (false != STConfig.b_process_when_muted))
+            {
+               // Queue all MIDI input events that match the track's/mod's input filter (devidx+ch)
+               // trace "xxx ModCLAP::process: numFrames="+_numFrames+" plugin="+#(plugin);
+               plugin.queueHostMIDIEventsByFlt(events,
+                                               _fltDev,
+                                               _fltCh,
+                                               _forceCh,
+                                               _globalCh,
+                                               input_filter,
+                                               replay.current_midi_input_millisec_min,
+                                               replay.current_midi_input_millisec_max
+                                               );
+            }
+
+         } // if replay.b_have_events
+
+         if(!replay.b_process_audio)
+         {
+            // (todo) unreachable ?!
+            // Audio.RenderSineStereo(output_bufs.get(0), 0, _numFrames, 1);
+         }
+         else
+         {
+            if(_bPlaying)
+            {
+               plugin.process(_numFrames);
+            }
+            else
+            {
+               local boolean bEffect = isEffect();
+               if( (!bEffect && (true == STConfig.b_process_when_muted)) ||
+                   (bEffect && (true == STConfig.b_process_when_muted) && (true == STConfig.b_process_effect_when_muted))
+                   )
+               {
+                  plugin.process(_numFrames);
+               }
+               else
+               {
+                  plugin.processSilence(_numFrames);
+               }
+            }
+
+         }
+
+         // debug_frame_count += _numFrames;
+         mtx_param.unlock();
+
+      } // if null != plugin
+   }
+
+}

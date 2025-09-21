@@ -1,0 +1,942 @@
+// ----
+// ---- file   : SampleTimeline.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 27Jun2021
+// ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 04Apr2025
+// ----          05Apr2025, 06Apr2025, 09Apr2025, 01May2025, 06May2025, 14Jun2025, 22Jun2025
+// ----
+// ----
+// ----
+
+module MSampleTimelineModel;
+
+use namespace ui;
+namespace st2;
+
+
+// <class.png>
+class SampleTimelineModelClip {
+   int     uid;
+   int     start;
+   int     end;
+   int     offset;      // units
+   String  name;
+   int     track_idx;
+   boolean b_mute;
+   int     sample_idx;  // index into current_project.samples. -1=unassigned
+   boolean b_release;   // 1=send regular note-off, 0=send allNotesOff (quick fade-out, e.g. after split)
+   float   vel_on;      // 1..127
+   float   vel_off;     // 0..127
+   float   cc_mw;       // -1=keep, 0..127
+   float   cc_bc;       // -1=keep, 0..127
+   float   cc_fc;       // -1=keep, 0..127
+   float   cc_ex;       // -1=keep, 0..127
+
+   FloatArray lane_level_mod;  // lane send level modulation (-1..1, relative to base send level)
+   FloatArray lane_pan_mod;    // lane panning (stereo balance) (-1..1, relative to base pan)
+
+
+   // <method.png>
+   public method initClip() {
+      sample_idx = -1;
+
+      lane_level_mod.allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
+      lane_pan_mod  .allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
+
+      b_release = true;
+      vel_on    = 127.0f;
+      vel_off   = 0.0f;
+      cc_mw     = -1.0f;
+      cc_bc     = -1.0f;
+      cc_fc     = -1.0f;
+      cc_ex     = -1.0f;
+   }
+
+   // <method.png>
+   public method copyFrom(SampleTimelineModelClip _o, boolean _bCopyTrackIdx) {
+      // (note) don't copy uid
+      start      = _o.start;
+      end        = _o.end;
+      offset     = _o.offset;
+      name       = _o.name;
+      if(_bCopyTrackIdx)
+         track_idx = _o.track_idx;
+      b_mute     = _o.b_mute;
+      sample_idx = _o.sample_idx;
+      b_release  = _o.b_release;
+      vel_on     = _o.vel_on;
+      vel_off    = _o.vel_off;
+      cc_mw      = _o.cc_mw;
+      cc_bc      = _o.cc_bc;
+      cc_fc      = _o.cc_fc;
+      cc_ex      = _o.cc_ex;
+
+      lane_level_mod = _o.lane_level_mod;
+      lane_pan_mod   = _o.lane_pan_mod;
+   }
+
+   // <method.png>
+   public method autoGenName() {
+      local Integer io = @(this);
+      name = "clip "+uid+" "+io.printf("0x%08x");
+   }
+
+   // <method_set.png>
+   public =replay= method setSampleIdx(int _sampleIdx) {
+      sample_idx = _sampleIdx;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendPanMod(int _sendIdx, float _pan) {
+      lane_pan_mod[_sendIdx] = _pan;
+      // (note) caller must queue lane send level update
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendLevelMod(int _sendIdx, float _levelMod) {
+      lane_level_mod[_sendIdx] = _levelMod;
+      // (note) caller must queue lane send level update
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRelease(boolean _bEnable) {
+      b_release = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setVelOn(float _vel) {
+      vel_on = _vel;
+   }
+
+   // <method_set.png>
+   public =replay= method setVelOff(float _vel) {
+      vel_off = _vel;
+   }
+
+   // <method_set.png>
+   public =replay= method setCCMW(float _val) {
+      cc_mw = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setCCBC(float _val) {
+      cc_bc = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setCCFC(float _val) {
+      cc_fc = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setCCEX(float _val) {
+      cc_ex = _val;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 2;  // [01May2025] was 3
+
+      ofs.i32 = uid;
+      ofs.i32 = start;
+      ofs.i32 = end;
+      ofs.i32 = offset;
+      name.yacSerialize(ofs, false/*bRTTI*/);
+      ofs.i8  = b_mute;
+      ofs.i32 = sample_idx;
+      ofs.i8  = b_release;
+      ofs.f32 = vel_on;
+      ofs.f32 = vel_off;
+      ofs.f32 = cc_mw;
+      ofs.f32 = cc_bc;
+      ofs.f32 = cc_fc;
+      ofs.f32 = cc_ex;
+
+      // Lane send level mod
+      boolean bHaveLevelMod = (-1 != lane_level_mod.indexOfNot(0.0f, 0));
+      ofs.i8 = bHaveLevelMod;
+      if(bHaveLevelMod)
+      {
+         Utils.WriteFloatArray(ofs, lane_level_mod);
+      }
+
+      // Lane send pan mod
+      boolean bHavePanMod = (-1 != lane_pan_mod.indexOfNot(0.0f, 0));
+      ofs.i8 = bHavePanMod;
+      if(bHavePanMod)
+      {
+         Utils.WriteFloatArray(ofs, lane_pan_mod);
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.i16;
+
+      // trace "xxx SampleTimelineModelClip::loadState: ver="+ver;
+
+      if(ver >= 1)
+      {
+         uid    = ifs.i32;
+         start  = ifs.i32;
+         end    = ifs.i32;
+         offset = ifs.i32;
+         name.yacDeserialize(ifs, false/*bRTTI*/);
+         b_mute = ifs.b8;
+         sample_idx = ifs.i32;
+
+         if(ver >= 2)
+         {
+            b_release = ifs.b8;
+            vel_on    = ifs.f32;
+            vel_off   = ifs.f32;
+            cc_mw     = ifs.f32;
+            cc_bc     = ifs.f32;
+            cc_fc     = ifs.f32;
+            cc_ex     = ifs.f32;
+         }
+
+         // Lane send level mod
+         boolean bHaveLevelMod = ifs.b8;
+         if(bHaveLevelMod)
+         {
+            Utils.ReadFloatArray(ifs, lane_level_mod);
+         }
+
+         // Lane send pan mod
+         boolean bHavePanMod = ifs.b8;
+         if(bHavePanMod)
+         {
+            Utils.ReadFloatArray(ifs, lane_pan_mod);
+         }
+
+         return true;
+      }
+      else
+      {
+         trace "[---] SampleTimelineModelClip::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class SampleTimelineModelTrack {
+   SampleTimelineModel *model;
+   SampleTimelineModelClip *[] clips;
+   int track_idx;
+   int replay_clip_idx_hint;
+   String name;
+   boolean b_mute;
+
+   FloatArray lane_level;  // lane send levels
+   FloatArray lane_pan;    // lane panning (stereo balance)
+
+   float lane_sends_slew_amt;  // 1=instant .. 0=never. def=0.1
+
+   int preferred_namespace_idx;  // namespace hint. 0=global
+
+
+
+   // <method_init.png>
+   public method initTrack(int _trackIdx) {
+      track_idx = _trackIdx;
+
+      lane_level.allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
+      lane_pan  .allocAndFill(SampleTimelineReplayTrack.NUM_LANE_SENDS, 0.0f);
+
+      // default = send to lane 1
+      lane_level[0] = 1.0f;
+      lane_pan[0]   = 0.0f;
+
+      lane_sends_slew_amt = SampleTimelineReplayTrack.SEND_SLEW_MEDIUM;
+   }
+
+   // (todo)
+   public method copyFrom(SampleTimelineModelTrack _o) {
+      // (todo) copy clips
+
+      name = _o.name;
+      b_mute = _o.b_mute;
+
+      lane_level = _o.lane_level;
+      lane_pan   = _o.lane_pan;
+
+      lane_sends_slew_amt = _o.lane_sends_slew_amt;
+
+      preferred_namespace_idx = _o.preferred_namespace_idx;
+   }
+
+   // <method.png>
+   public method handleShiftSampleIds(int _idxStart, int _shift) {
+      SampleTimelineModelClip *clip;
+      foreach clip in clips
+      {
+         if(clip.sample_idx >= _idxStart)
+            clip.sample_idx = clip.sample_idx + _shift;
+      }
+   }
+
+   // <method.png>
+   public method handleSwapSamples(int _smpIdxA, int _smpIdxB) {
+      SampleTimelineModelClip *clip;
+      foreach clip in clips
+      {
+         if(clip.sample_idx == _smpIdxA)
+            clip.sample_idx = _smpIdxB;
+         else if(clip.sample_idx == _smpIdxB)
+            clip.sample_idx = _smpIdxA;
+      }
+   }
+
+   // <method_find.png>
+   public method findNumSampleRefsBySampleIdx(int _sampleIdx) : int {
+      int numRefs = 0;
+      SampleTimelineModelClip *clip;
+      foreach clip in clips
+      {
+         if(clip.sample_idx == _sampleIdx)
+            numRefs++;
+      }
+      return numRefs;
+   }
+
+   // <method_add.png>
+   public =replay= method addClip(SampleTimelineModelClip _clip) : SampleTimelineModelClip {
+      _clip.track_idx = track_idx;
+      clips.add(#(deref _clip));
+   }
+
+   // <method_new.png>
+   public =replay= method newClip() : SampleTimelineModelClip {
+      SampleTimelineModelClip clip <= new SampleTimelineModelClip;
+      clip.initClip();
+      addClip(deref clip);
+      return clip;
+   }
+
+   // <method_new.png>
+   public method newClipInit(int _uid, int _start, int _end) : SampleTimelineModelClip {
+      SampleTimelineModelClip clip <= newClip();
+      clip.uid   = _uid;
+      clip.start = _start;
+      clip.end   = _end;
+      return clip;
+   }
+
+   // <method_new.png>
+   public method newClipInitAutoId(int _start, int _end) : SampleTimelineModelClip {
+      SampleTimelineModelClip clip <= newClip();
+      clip.uid   = model.next_clip_uid++;
+      clip.start = _start;
+      clip.end   = _end;
+      return clip;
+   }
+
+   // <method_remove.png>
+   public =replay= method unlinkClip(SampleTimelineModelClip _clip) : SampleTimelineModelClip {
+      return clips.unlink(_clip);
+   }
+
+   // <method.png>
+   public =replay= method sortClipsByStartPosition() {
+      local IntArray iaStart;
+      SampleTimelineModelClip *clip;
+      foreach clip in clips
+      {
+         iaStart.add(clip.start);
+      }
+      local IntArray iaSorted;
+      iaStart.sortByValue(iaSorted);
+      clips.rearrange(iaSorted);
+   }
+
+   // <method_remove.png>
+   public =replay= method deleteClip(SampleTimelineModelClip _clip) {
+      int idx = clips.indexOfPointer(_clip, 0);
+      if(idx >= 0)
+         clips.delete(idx);
+   }
+
+   // <method.png>
+   public method mergeClips(int _uidL, int _uidR) : boolean {
+      // (todo) mergeClips
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendLevel(int _sendIdx, float _level) {
+      lane_level[_sendIdx] = _level;
+      SampleTimeline parentSampleTimeline <= model.parent_sample_timeline;
+      parentSampleTimeline.b_update_lane_sends = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendPan(int _sendIdx, float _pan) {
+      lane_pan[_sendIdx] = _pan;
+      SampleTimeline parentSampleTimeline <= model.parent_sample_timeline;
+      parentSampleTimeline.b_update_lane_sends = true;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 2;
+
+      // name
+      name.yacSerialize(ofs, false/*bRTTI*/);
+
+      // mute
+      ofs.i8 = b_mute;
+
+      // clips
+      ofs.i16 = clips.numElements;
+      SampleTimelineModelClip *clip;
+      foreach clip in clips
+      {
+         clip.saveState(ofs);
+      }
+
+      // Lane send levels
+      Utils.WriteFloatArray(ofs, lane_level);
+
+      // Lane send pan(balance)
+      Utils.WriteFloatArray(ofs, lane_pan);
+
+      // Lane sends slew amt
+      ofs.f32 = lane_sends_slew_amt;
+
+      // Preferred namespace idx (v2+)
+      ofs.i8 = preferred_namespace_idx;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bKeepLaneSends) : boolean {
+      // ver
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // name
+         name.yacDeserialize(ifs, false/*bRTTI*/);
+
+         // mute
+         b_mute = ifs.b8;
+
+         // clips
+         clips.free();
+         int numClips = ifs.u16;
+         // trace "xxx SampleTimelineModelTrack::loadState: numClips="+numClips;
+         int clipNr = 0;
+         loop(numClips)
+         {
+            SampleTimelineModelClip clip <= newClip();
+            if(!clip.loadState(ifs))
+            {
+               trace "[---] SampleTimelineModelTrack::loadState: failed to load clip "+clipNr+"/"+numClips;
+               return false;
+            }
+            if(clip.uid >= model.next_clip_uid)
+               model.next_clip_uid = clip.uid + 1;
+            clipNr++;
+         }
+
+         if(!_bKeepLaneSends)
+         {
+            // Lane send level
+            Utils.ReadFloatArray(ifs, lane_level);
+            // // trace "xxx read lane_level="+lane_level;
+            // trace "xxx read lane_level.numElements="+lane_level.numElements;
+
+            // Lane send pan(balance)
+            Utils.ReadFloatArray(ifs, lane_pan);
+            // // trace "xxx read lane_pan="+lane_pan;
+            // trace "xxx read lane_pan.numElements="+lane_pan.numElements;
+
+            // Lane sends slew amt
+            lane_sends_slew_amt = ifs.f32;
+            // trace "xxx SampleTimelineModelTrack::loadState: read lane_sends_slew_amt="+lane_sends_slew_amt;
+         }
+         else
+         {
+            local FloatArray faDummy;
+            // dummy read: Lane send level
+            Utils.ReadFloatArray(ifs, faDummy);
+
+            // dummy read: Lane send pan(balance)
+            Utils.ReadFloatArray(ifs, faDummy);
+
+            // dummy read: Lane sends slew amt
+            ifs.getF32();
+         }
+
+         if(ver >= 2)
+         {
+            // Preferred namespace idx (v2+)
+            preferred_namespace_idx = ifs.u8;
+         }
+
+         if(1) trace "[trc] SampleTimelineModelTrack::loadState: END read track_idx="+track_idx;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] SampleTimelineModelTrack::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class SampleTimelineModel {
+   define int DEFAULT_NUM_UNITS_PER_BEAT = 1024;  // PPQ   (1024=1 quarter)
+   define int DEFAULT_NUM_BEATS_PER_BAR  = 4;     // 4/4
+   define int DEFAULT_NUM_UNITS_PER_BAR  = (DEFAULT_NUM_BEATS_PER_BAR * DEFAULT_NUM_UNITS_PER_BEAT);
+   define int DEFAULT_CANVAS_SIZE = 32/*bars*/ * DEFAULT_NUM_UNITS_PER_BAR;
+
+   SampleTimeline *parent_sample_timeline;
+
+   int   num_units_per_beat;
+   int   num_beats_per_bar;
+   int   canvas_size;        // grid units (mirrored to Timeline::canvas_size in timelineInitTracks())
+   float beats_per_minute;   // when SampleTimeline b_use_project_bpm=maybe
+
+   String name;  // "pattern" name
+
+   SampleTimelineModelTrack *[] tracks;
+
+   TimelineEditorState editor_state;
+
+   static SampleTimelineModelClip *[] clipboard;
+   int clipboard_w;  // num units
+   int clipboard_h;  // num tracks
+
+   int next_clip_uid;
+
+
+   // <method_init.png>
+   public method initModel(boolean _bLoad) {
+
+      next_clip_uid = 1;
+
+      num_units_per_beat = DEFAULT_NUM_UNITS_PER_BEAT;
+      num_beats_per_bar  = DEFAULT_NUM_BEATS_PER_BAR;
+      canvas_size        = DEFAULT_CANVAS_SIZE;
+      beats_per_minute   = 120.0f;
+
+      // Debug: create random tracks + clips
+      if(0)
+      {
+         debugCreateRandomTracksAndClips();
+      }
+
+      // Create empty tracks
+      if(!_bLoad)
+      {
+         loop(4)
+            newTrack();
+      }
+   }
+
+   // <method.png>
+   protected method debugCreateRandomTracksAndClips() {
+      SampleTimelineModelTrack *track;
+      SampleTimelineModelClip *clip;
+
+      int numUnitsPerBar = num_units_per_beat * num_beats_per_bar;
+
+      srand(0x12345678);
+      int y = 0;
+      loop(20)
+         // loop(1)
+      {
+         int x = 0;
+         track <= newTrack();
+         // loop(400)
+         loop(10)
+         {
+            int skipX = rand(10) * numUnitsPerBar;
+            int lenX = numUnitsPerBar + rand(8)*numUnitsPerBar;
+            x += skipX;
+            if(x < canvas_size)
+            {
+               if( (x+lenX) > canvas_size )
+                  lenX = canvas_size - x;
+               clip <= track.newClipInit(next_clip_uid++, x, x + lenX);
+               clip.autoGenName();
+            }
+
+            x += lenX;
+         }
+         y++;
+      }
+   }
+
+   // <replay.png>
+   public method invalidateClipIndexHints() {
+      local SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         track.replay_clip_idx_hint = -1;
+      }
+   }
+
+   // <method_new.png>
+   protected =replay= method newTrack() : SampleTimelineModelTrack {
+      Global.Debug2("SampleTimelineModel::newTrack: idx="+tracks.numElements);
+      SampleTimelineModelTrack track <= new SampleTimelineModelTrack;
+      track.initTrack(tracks.numElements/*trackIdx*/);
+      track.model <= this;
+      tracks.add(#(deref track));
+      return track;
+   }
+
+   // <method_new.png>
+   public =replay= method newTrackAt(int _idx) : SampleTimelineModelTrack {
+      if(_idx > tracks.numElements)
+         _idx = tracks.numElements;
+      Global.Debug2("SampleTimelineModel::newTrackAt: idx="+_idx);
+      SampleTimelineModelTrack track <= new SampleTimelineModelTrack;
+      track.initTrack(tracks.numElements/*trackIdx*/);
+      track.model <= this;
+      tracks.insert(_idx, #(deref track));
+      return track;
+   }
+
+   // <method_remove.png>
+   public =replay= method deleteTrack(int _idx) : boolean {
+      if(0 <= _idx < tracks.numElements)
+      {
+         Global.Debug2("SampleTimelineModel::deleteTrack: idx="+_idx);
+         tracks.delete(_idx);
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method haveAnyClips() : boolean {
+      SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         if!(track.clips.isEmpty())
+            return true;
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public method findClipByUID(int _uid) : SampleTimelineModelClip {
+      SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         SampleTimelineModelClip *clip;
+         foreach clip in track.clips
+         {
+            if(clip.uid == _uid)
+               return clip;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method copyClipSelectionToClipboard(IntArray _clipUIDs) {
+      clipboard.free();
+      int uid;
+      int minStart = (1<<30);
+      int maxEnd = 0;
+      int minTrackIdx = 9999999;
+      int maxTrackIdx = 0;
+      SampleTimelineModelClip *cbClip;
+      foreach uid in _clipUIDs
+      {
+         SampleTimelineModelClip clip <= findClipByUID(uid);
+         if(null != clip)
+         {
+            minTrackIdx = mathMini(minTrackIdx, clip.track_idx);
+            minStart = mathMini(minStart, clip.start);
+
+            maxTrackIdx = mathMaxi(maxTrackIdx, clip.track_idx);
+            maxEnd = mathMaxi(maxEnd, clip.end);
+
+            cbClip <= new SampleTimelineModelClip;
+            cbClip.initClip();
+            cbClip.copyFrom(clip, true/*bCopyTrackIdx*/);
+            clipboard.add(#(deref cbClip));
+         }
+      }
+
+      // Adjust clip position so that left/top clip is at (units=0; track_idx=0)
+      foreach cbClip in clipboard
+      {
+         cbClip.start     = cbClip.start - minStart;
+         cbClip.end       = cbClip.end - minStart;
+         cbClip.track_idx = cbClip.track_idx - minTrackIdx;
+      }
+
+      clipboard_w = maxEnd - minStart;
+      clipboard_h = maxTrackIdx - minTrackIdx + 1;
+
+      Global.Debug2("SampleTimelineModel::copyClipSelectionToClipboard: copy "+clipboard.numElements+" clip(s) geo=("+clipboard_w+";"+clipboard_h+")");
+   }
+
+   // <method.png>
+   public method setClipboardToNewSampleClip(int _sampleIdx, int _numUnits) {
+      clipboard.free();
+      local SampleTimelineModelClip cbClip;
+      cbClip.initClip();
+      cbClip.sample_idx = _sampleIdx;
+      cbClip.end = _numUnits;
+      Global.Debug("SampleTimelineModel::setClipboardToNewSampleClip: sampleIdx="+_sampleIdx+" numUnits"+_numUnits);
+      clipboard.add(#(deref cbClip));
+   }
+
+   // <method_get.png>
+   public method haveClipsInRect(int _units, int _trackIdx, int _numUnits, int _numTracks) : boolean {
+      int trackIdx = _trackIdx;
+      loop(_numTracks)
+      {
+         SampleTimelineModelTrack track <= tracks.get(trackIdx);
+         if(null != track)
+         {
+            SampleTimelineModelClip *clip;
+            foreach clip in track.clips
+            {
+               if( (clip.start <= _units < clip.end) ||
+                   (clip.start <= (_units + _numUnits) < clip.end) ||
+                   ( (_units <= clip.start) && ((_units + _numUnits) >= clip.end) )
+                   )
+                  return true;
+            }
+         }
+
+         // Next tracks
+         trackIdx++;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method canPasteClipboard(int _units, int _trackIdx) : boolean {
+      if( (_units + clipboard_w) <= canvas_size )
+      {
+         if( (_trackIdx + clipboard_h) <= tracks.numElements )
+         {
+            SampleTimelineModelClip *cbClip;
+            foreach cbClip in clipboard
+            {
+               int destTrackIdx = _trackIdx + cbClip.track_idx;
+               SampleTimelineModelTrack track <= tracks.get(destTrackIdx);
+               int newStart = cbClip.start + _units;
+               int newEnd   = cbClip.end   + _units;
+
+               SampleTimelineModelClip *clip;
+               foreach clip in track.clips
+               {
+                  if( (clip.start <= newStart < clip.end) ||
+                      (clip.start <= newEnd < clip.end) ||
+                      ( (newStart <= clip.start) && (newEnd >= clip.end) )
+                      )
+                     return false;
+               }
+            }
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_add.png>
+   public method pasteClipboard(int _units, int _trackIdx) : boolean {
+      if( (_units + clipboard_w) <= canvas_size )
+      {
+         if( (_trackIdx + clipboard_h) <= tracks.numElements )
+         {
+            SampleTimelineModelClip *cbClip;
+            foreach cbClip in clipboard
+            {
+               int destTrackIdx = _trackIdx + cbClip.track_idx;
+               SampleTimelineModelTrack track <= tracks.get(destTrackIdx);
+               SampleTimelineModelClip clip <= track.newClip();
+               clip.uid = next_clip_uid++;
+               clip.copyFrom(cbClip, false/*bCopyTrackIdx*/);
+               clip.start += _units;
+               clip.end   += _units;
+               clip.autoGenName();
+            }
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method handleShiftSampleIds(int _idxStart, int _shift) {
+      SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         track.handleShiftSampleIds(_idxStart, _shift);
+      }
+   }
+
+   // <method.png>
+   public method handleSwapSamples(int _smpIdxA, int _smpIdxB) {
+      SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         track.handleSwapSamples(_smpIdxA, _smpIdxB);
+      }
+   }
+
+   // <method_find.png>
+   public method findNumSampleRefsBySampleIdx(int _sampleIdx) : int {
+      int numRefs = 0;
+      SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         numRefs += track.findNumSampleRefsBySampleIdx(_sampleIdx);
+      }
+      return numRefs;
+   }
+
+   // <method_get.png>
+   public method getClipboardNumUnits() : int {
+      int ret = 0;
+      if(null != clipboard)
+      {
+         if(clipboard.numElements > 0)
+         {
+            SampleTimelineModelClip *modelClip;
+            int tMin = 99999999;
+            int tMax = 0;
+            foreach modelClip in clipboard
+            {
+               tMin = mathMini(tMin, modelClip.start);
+               tMax = mathMaxi(tMax, modelClip.end);
+            }
+            ret = tMax - tMin;
+         }
+      }
+      return ret;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 3;
+
+      // num units per beat
+      ofs.i16 = num_units_per_beat;
+
+      // num beats per bar
+      ofs.i8 = num_beats_per_bar;
+
+      // canvas size
+      ofs.i32 = canvas_size;
+
+      // beats_per_minute (v3+)
+      ofs.f32 = beats_per_minute;
+
+      // name (v2+)
+      name.yacSerialize(ofs, false/*bRTTI*/);
+
+      // tracks
+      ofs.i16 = tracks.numElements;
+      SampleTimelineModelTrack *track;
+      foreach track in tracks
+      {
+         track.saveState(ofs);
+      }
+
+      editor_state.saveState(ofs);
+   }
+
+   // <save.png>
+   public method saveStateToBuffer(Buffer _b) {
+      local DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      saveState(ds);
+
+      _b.size = ds.offset;
+      _b.offset = 0;
+      saveState(_b);
+      _b.offset = 0;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.i16;
+      Global.Debug2("SampleTimelineModel::loadState: ver="+ver);
+
+      tracks.free();
+
+      next_clip_uid = 1;
+
+      if(ver >= 1)
+      {
+         // num units per beat
+         num_units_per_beat = ifs.u16;
+
+         // num beats per bar
+         num_beats_per_bar = ifs.u8;
+
+         // canvas size
+         canvas_size = ifs.i32;
+
+         if(ver >= 3)
+         {
+            // beats_per_minute (v3+)
+            beats_per_minute = ifs.f32;
+         }
+
+         if(ver >= 2)
+         {
+            name.yacDeserialize(ifs, false/*bRTTI*/);
+         }
+
+         // tracks
+         tracks.free();
+         int numTracks = ifs.u16;
+         int trackNr = 0;
+         loop(numTracks)
+         {
+            SampleTimelineModelTrack track <= newTrack();
+            if(!track.loadState(ifs, false/*bKeepLaneSends*/))
+            {
+               trace "[---] SampleTimelineModel::loadState: failed to load track "+trackNr+"/"+numTracks;
+               return false;
+            }
+            trackNr++;
+         }
+
+         return editor_state.loadState(ifs);
+      }
+      else
+      {
+         trace "[---] SampleTimelineModel::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+
+   // <load.png>
+   public =replay= method loadStateFromBuffer(Buffer _b) : boolean {
+      _b.offset = 0;
+      return loadState(_b);
+   }
+
+}

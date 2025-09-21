@@ -1,0 +1,420 @@
+// ----
+// ---- file   : AudioTrack.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 06Dec2018, 07Dec2018, 11Dec2018, 12Dec2018, 15Dec2018, 16Dec2018, 22Dec2018
+// ----          05Jan2019, 18Jan2019, 31May2019, 09Feb2020, 14May2020, 15May2020, 17Aug2020
+// ----          27Nov2020, 08Feb2021, 25Aug2021, 26Sep2022, 13Feb2023, 24Mar2023, 29Jul2023
+// ----          23Sep2024, 24Sep2024
+// ----
+// ----
+// ----
+
+module MAudioTrack;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <class.png>
+class AudioTrack {
+
+   String name;
+
+   boolean b_stereo;
+   boolean b_record;
+   boolean b_sw_monitor;
+
+   define int SRC_NONE      = 0;
+   define int SRC_AUDIO_IN  = 1;
+   define int SRC_AUDIO_OUT = 2;
+   define int SRC_TRACK     = 3;
+   int src_type;       // recording source
+   int src_ch_off;     // recording source channel offset (SRC_AUDIO_* only)
+   int src_track_idx;  // recording source track idx (SRC_AUDIO_* only)
+
+   // Should later be an array
+   AudioClip *clip;
+
+   define int MAX_HISTORY_NUM_FRAMES = 4096;
+   RingBuffer history_ring_buffer;  // used when STConfig.atrk_rec_skip_num_frames < 0 and b_record=true
+
+
+   // <method_init.png>
+   public method init() {
+      b_stereo = true;
+
+      clip <= new AudioClip;
+      clip.init();
+      clip.num_channels = 1 + b_stereo;
+
+      b_record = false;
+
+      history_ring_buffer.init(b_stereo?2:1, MAX_HISTORY_NUM_FRAMES);
+   }
+
+   // <method_exit.png>
+   public method exit() {
+   }
+
+   // <method_set.png>
+   public method markAsModified() {
+      clip.b_modified = true;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= setEnableRecord(boolean _bEnable) {
+      b_record = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      name = _name;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableStereo(boolean _bEnable) {
+
+      if(b_stereo != _bEnable)
+      {
+         if(null != clip)
+         {
+            clip.convertToNumChannels(1 + _bEnable);
+
+            b_stereo = _bEnable;
+         }
+         else
+         {
+            b_stereo = _bEnable;
+
+            clip <= new AudioClip;
+            clip.init();
+            clip.num_channels = 1 + b_stereo;
+         }
+
+         history_ring_buffer.init(b_stereo?2:1, MAX_HISTORY_NUM_FRAMES);
+
+         markAsModified();
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableSWMonitor(boolean _bEnable) {
+      b_sw_monitor = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setSrcType(int _type) {
+      src_type = _type;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setSrcChOff(int _off) {
+      src_ch_off = _off;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setSrcTrackIdx(int _idx) {
+      src_track_idx = _idx;
+      current_project.markAsModified();
+   }
+
+   // <method_handle.png>
+   public method handleTrackReorder(IntArray _reorderMap) {
+      // trace "xxx AudioTrack::handleTrackReorder: src_track_idx old="+src_track_idx;
+      src_track_idx = _reorderMap.get(src_track_idx);
+      // trace "xxx AudioTrack::handleTrackReorder: src_track_idx new="+src_track_idx;
+      current_project.markAsModified();
+   }
+
+   // <method.png>
+   public method prepareRecord() {
+      if(b_record)
+         clip.prepareRecord();
+   }
+
+   // <method.png>
+   public method addSampleFrames(FloatArray _src, int _srcOff, int _numSrcChannels, int _numFrames) {
+      // audio output + track output
+      // append from interleaved 'src'.
+      boolean bActive = (AudioClip.LC_STATE_SILENCE != clip.live_capture_state);
+      if(!replay.b_live_capture || bActive)
+      {
+         if(replay.b_live_capture && bActive)
+            clip.handleLiveCaptureInput(_src, _srcOff, _numSrcChannels, _numFrames);
+
+         if(!replay.b_live_capture || (bActive && (AudioClip.LC_STATE_WAITING != clip.live_capture_state) && (AudioClip.LC_STATE_SIGNAL_WAITFADE != clip.live_capture_state) ) )
+            clip.addSampleFrames(_src, _srcOff, _numSrcChannels, _numFrames);
+      }
+   }
+
+   // <method.png>
+   public method addHistorySampleFrames(FloatArray _src, int _srcOff, int _numSrcChannels, int _numFrames) {
+      // audio output + track output
+      // armed for recording but not recording, yet.
+      // update history ring buffer from interleaved 'src'.
+      local int numCh = mathMini(b_stereo ? 2 : 1, _numSrcChannels);
+      history_ring_buffer.appendFrames(_src,
+                                       _numSrcChannels,
+                                       0/*srcChOff*/,
+                                       _srcOff/*srcFrameOff*/,
+                                       numCh,
+                                       _numFrames
+                                       );
+   }
+
+   // <method.png>
+   public method addSampleFramesInputRing(int _srcCh, int _srcOff, int _numFrames) {
+      // audio input
+      boolean bActive = (AudioClip.LC_STATE_SILENCE != clip.live_capture_state);
+      if(!replay.b_live_capture || bActive)
+      {
+         if(replay.b_live_capture && (AudioClip.LC_STATE_SILENCE != clip.live_capture_state))
+            clip.handleLiveCaptureInputRing(_srcCh, _srcOff, _numFrames);
+
+         if(!replay.b_live_capture || (bActive && (AudioClip.LC_STATE_WAITING != clip.live_capture_state) && (AudioClip.LC_STATE_SIGNAL_WAITFADE != clip.live_capture_state) ) )
+            clip.addSampleFramesInputRing(_srcCh, _srcOff, _numFrames);
+      }
+   }
+
+   // <method.png>
+   public method addHistorySampleFramesInputRing(int _srcCh, int _srcOff, int _numFrames) {
+      // armed for recording but not recording, yet. update history ring buffer.
+      local int numCh = b_stereo ? 2 : 1;
+      local FloatArray inBufL <= replay.input_buffers.get(_srcCh + 0);
+      local FloatArray inBufR <= replay.input_buffers.get(_srcCh + 1);
+      if(null != inBufL && null != inBufR)
+      {
+         // trace "xxx addHistorySampleFramesInputRing: srcCh="+_srcCh+" srcOff="+_srcOff+" numFrames="+_numFrames;
+         history_ring_buffer.appendFramesDualMonoRing(inBufL,
+                                                      inBufR,
+                                                      Replay.INPUT_RINGBUFFER_SIZE/*ringSz*/,
+                                                      1/*srcNumCh*/,
+                                                      0/*srcChOff*/,
+                                                      _srcOff/*srcFrameOff*/,
+                                                      _numFrames/*numFrames*/
+                                                      );
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 3;
+
+      // Stereo
+      ofs.i8 = b_stereo;
+
+      // Src type
+      ofs.i8 = src_type;
+
+      // Src ch_off
+      ofs.i8 = src_ch_off;
+
+      // Src track idx
+      ofs.i8 = src_track_idx;
+
+      // Track name
+      Utils.WriteString(ofs, name);
+
+      // Record enable (v3+)
+      ofs.i8 = b_record;
+
+      // Clip (v2+)
+      clip.saveState(ofs);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      boolean r = false;
+
+      // Version
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Stereo
+         b_stereo = ifs.b8;
+
+         // Src type
+         src_type = ifs.u8;
+
+         // Src ch_off
+         src_ch_off = ifs.u8;
+
+         // Src track idx
+         src_track_idx = ifs.u8;
+
+         // Track name
+         Utils.ReadString(ifs, name);
+
+         if(ver >= 3)
+         {
+            // Record enable (v3+)
+            b_record = ifs.b8;
+         }
+
+         if(ver >= 2)
+         {
+            // Clip (v2+)
+             r = clip.loadState(ifs);
+         }
+
+         r = true;
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getInfoString() : String {
+      int numFrames = clip.getTotalNumFrames();
+      if(numFrames > 0)
+      {
+         float sec = numFrames / Audio.mix_rate;
+         Integer ioMin = sec / 60.0f;
+         Integer ioSec = int(sec) % 60;
+         Float foRate = Audio.mix_rate / 1000.0;
+
+         return "Rec: "+ioMin.printf("%d")+"m"+ioSec.printf("%02d")+"s ("+numFrames+" frames, "+(clip.segments.numElements)+" chunk"+Utils.GetPluralString(clip.segments.numElements)+") @"+foRate.printf("%3.1f")+"kHz";
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method getCurrentSampleData() : FloatArray {
+      if(null != clip)
+         return clip.getCurrentSampleData();
+      return null;
+   }
+
+   // <method_get.png>
+   public method getCurrentWaveform() : FloatArray {
+      if(null != clip)
+         return clip.getCurrentWaveform();
+      return null;
+   }
+
+   // <method_get.png>
+   public method getFirstClipSampleRate() : float {
+      if(null != clip)
+         return clip.sample_rate;
+      return -1;
+   }
+
+   // <method.png>
+   public method mergeClipSegments() {
+      if(null != clip)
+         clip.mergeSegments();
+   }
+
+   // <method.png>
+   public method tryCopyToLiveCaptureBuffer(boolean _bForce) : boolean {
+      // called periodically during recording
+      if(null != clip)
+      {
+         if((AudioClip.LC_STATE_SILENCE == clip.live_capture_state) || ((AudioClip.LC_STATE_WAITING != clip.live_capture_state) && _bForce))
+         {
+            return clip.copyToLiveCaptureBuffer(_bForce);
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method handleSWMonitor(PointerArray _inputBufs, int _readFrameIdx, int _ringSz,
+                                 FloatArray _mixBuffer, int _off, int _mixBufNumCh,
+                                 int _numFrames
+                                 ) {
+      // (note) mixbuffer is interleaved (num_out_ch)
+      FloatArray *inBufL;
+      FloatArray *inBufR;
+
+      if(SRC_AUDIO_IN == src_type)
+      {
+         inBufL <= _inputBufs.get(src_ch_off);
+
+         if(b_stereo)
+         {
+            tksampleedit_add_amp_mono_adv_ring_to_mono_adv(_mixBuffer, _off, _mixBufNumCh,
+                                                           inBufL, _readFrameIdx, 1, _ringSz,
+                                                           1.0,
+                                                           _numFrames
+                                                           );
+
+            inBufR <= _inputBufs.get(src_ch_off+1);
+            if(null != inBufR)
+            {
+               tksampleedit_add_amp_mono_adv_ring_to_mono_adv(_mixBuffer, _off+1, _mixBufNumCh,
+                                                              inBufR, _readFrameIdx, 1, _ringSz,
+                                                              1.0,
+                                                              _numFrames
+                                                              );
+            }
+         }
+         else if(null != inBufL)
+         {
+            // Mono to stereo
+            tksampleedit_add_amp_mono_adv_ring_to_mono_adv(_mixBuffer, _off, _mixBufNumCh,
+                                                           inBufL, _readFrameIdx, 1, _ringSz,
+                                                           1.0,
+                                                           _numFrames
+                                                           );
+
+            tksampleedit_add_amp_mono_adv_ring_to_mono_adv(_mixBuffer, _off+1, _mixBufNumCh,
+                                                           inBufL, _readFrameIdx, 1, _ringSz,
+                                                           1.0,
+                                                           _numFrames
+                                                           );
+
+         }
+      }
+      else if(AudioTrack.SRC_AUDIO_OUT == src_type)
+      {
+         // intentionally left blank (already audible)
+      }
+      else if(AudioTrack.SRC_TRACK == src_type)
+      {
+         // intentionally left blank (already audible)
+      }
+   }
+
+   // <method.png>
+   public method getPeakAvgTrackers() : PointerArray {
+      // called by AudioTrackForm::handleAutoSelectSrcIdx()
+      switch(src_type)
+      {
+         case SRC_NONE:
+            break;
+
+         case SRC_AUDIO_IN:
+            return replay.input_ch_peakavg;
+
+         case SRC_AUDIO_OUT:
+            return replay.output_ch_peakavg;
+
+         case SRC_TRACK:
+            local PointerArray ret <= new PointerArray;
+            Track *track;
+            foreach track in current_project.tracks
+               ret.add(track.ui_peakavg_l);
+            return deref ret;
+      }
+      return null;
+   }
+
+}

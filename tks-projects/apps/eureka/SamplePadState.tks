@@ -1,0 +1,2205 @@
+// ----
+// ---- file   : SamplePadState.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 01Jul2022
+// ---- changed: 02Jul2022, 03Jul2022, 04Jul2022, 08Jul2022, 09Jul2022, 10Jul2022, 16Jul2022
+// ----          17Jul2022, 22Jul2022, 10Mar2023, 16Aug2023, 18Aug2023, 01Feb2024, 13Sep2024
+// ----          14Sep2024, 15Sep2024, 18Sep2024, 30Dec2024, 22Mar2025, 23Mar2025, 04Apr2025
+// ----
+// ----
+// ----
+
+module MSamplePadState;
+
+use namespace ui;
+namespace st2;
+
+
+// <class.png>
+class SamplePad {
+
+   int pad_idx;
+
+   int sample_idx; // index in global sample list. -1=unused
+   int root_key;   // which sample note to trigger when pad is triggered. -1=chromatic mode (always trigger)
+   float level;    // StSampleVoice volume modulation (0..1)
+   float pan;      // StSampleVoice pan modulation (-1..1)
+
+   int voice_key;  // last assigned voice_key. -1=not playing
+   int voice_note; // (todo) remove ? (never read)
+
+   String autoload_unique_name;  // after loading patch
+   String autoload_suggested_pathname;
+
+   FloatArray initial_perf_ctl;  // STSAMPLEPLAYER_NUM_PERFCTL. -1=skip, 0..127. Same setup as Sample.initial_perf_ctl
+
+   int link_group_id;   // 0..7 => a,b,c,d,e,f,g,h, -1=none
+   int mutex_group_id;  // 0..7 => A,B,C,D,E,F,G,H, -1=none
+
+   FloatArray lane_level_mod;  // lane send level modulation (-1..1, relative to kit send level)
+   FloatArray lane_pan_mod;    // lane panning (stereo balance) (-1..1, relative to kit pan)
+
+
+   // <method_init.png>
+   public method initSamplePad(int _padIdx) {
+      pad_idx    = _padIdx;
+      sample_idx = -1;
+      root_key   = 5*12/*C-5*/;
+      level      = 1.0f;
+      pan        = 0.0f;
+
+      voice_key = -1;
+
+      initial_perf_ctl.allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, -1);
+
+      link_group_id = -1;
+      mutex_group_id = -1;
+
+      lane_level_mod.allocAndFill(SamplePadCommon.NUM_LANE_SENDS, 0.0f);
+      lane_pan_mod  .allocAndFill(SamplePadCommon.NUM_LANE_SENDS, 0.0f);
+   }
+
+   // <method_init.png>
+   public method copyFrom(SamplePad _o, boolean _bKeepSends) {
+      sample_idx = _o.sample_idx;
+      root_key   = _o.root_key;
+      level      = _o.level;
+      pan        = _o.pan;
+
+      autoload_unique_name = _o.autoload_unique_name;
+      autoload_suggested_pathname = _o.autoload_suggested_pathname;
+
+      initial_perf_ctl = _o.initial_perf_ctl;
+
+      link_group_id  = _o.link_group_id;
+      mutex_group_id = _o.mutex_group_id;
+
+      if(!_bKeepSends)
+      {
+         lane_level_mod = _o.lane_level_mod;
+         lane_pan_mod   = _o.lane_pan_mod;
+      }
+   }
+
+   // <method_get.png>
+   public method getName() : String {
+      return STConfig.drum_pad_names.get(pad_idx);
+   }
+
+   // <method_get.png>
+   public method getSampleName() : String {
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+         return sample.unique_name;
+      return null;
+   }
+
+   // <method.png>
+   public method handleAutoUnloadSample() : boolean {
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         // // trace "xxx SamplePad::handleAutoUnloadSample: sample_idx="+sample_idx+" sample.b_autoload="+sample.b_autoload;
+         if(sample.b_autoload)
+         {
+            int numSampleRefs = current_project.findNumSampleRefsBySampleIdx(sample_idx);
+            Global.Debug2("SamplePad::handleAutoUnloadSample: sample_idx="+sample_idx+" #refs="+numSampleRefs);
+            if(1 == numSampleRefs)
+               current_project.deleteSample(sample);
+            sample_idx = -1;
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method handleAutoLoadSample(String _dirNameOverrideOrNull, int _nspIdx) {
+      // Called after loading TrackPatch(Variation) from file
+      if(!autoload_unique_name.isBlank())
+      {
+         local Sample sample <= current_project.findSampleByUniqueName(autoload_unique_name);
+         if(null == sample)
+         {
+            sample <= current_project.newSample(autoload_unique_name, -1/*idxHint*/);
+            if(null != sample)
+            {
+               boolean bLoaded = false;
+               local String *pathName;
+               if(null != _dirNameOverrideOrNull)
+               {
+                  pathName <= _dirNameOverrideOrNull + "/"+autoload_unique_name+Global.SAMPLE_FILE_SUFFIX;
+                  Global.Debug("SamplePad::handleAutoLoadSample: try auto-load sample \""+pathName+"\"");
+                  bLoaded = sample.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bReloadPatchPlugins*/);
+               }
+               else
+               {
+                  pathName <= autoload_suggested_pathname + "/" + autoload_unique_name + Global.SAMPLE_FILE_SUFFIX;
+                  bLoaded = sample.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bReloadPatchPlugins*/);
+
+                  if(!bLoaded)
+                  {
+                     pathName <= Samples.FindSamplePathnameByUniqueName(autoload_unique_name);
+                     if(null != pathName)
+                     {
+                        Global.Debug("SamplePad::handleAutoLoadSample: try auto-load sample \""+pathName+"\"");
+                        bLoaded = sample.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bReloadPatchPlugins*/);
+                     }
+                     else
+                     {
+                        Global.Error("auto-load sample \""+pathName+"\" not found in sample cache");
+                     }
+                  }
+               }
+
+               if(bLoaded)
+               {
+                  sample_idx = current_project.getSampleIdx(sample);
+                  Global.Info("SamplePad::handleAutoLoadSample: auto-loaded sample \""+pathName+"\" => sample_idx="+sample_idx);
+                  sample.b_autoload = true;
+                  sample.setNamespaceIdx(_nspIdx);
+               }
+               else
+               {
+                  Global.Error("failed to auto-load sample \""+autoload_unique_name+"\"");
+               }
+            }
+            else
+               Global.Error("failed to create sample");  // should not be reachable
+         }
+         else
+         {
+            sample_idx = current_project.getSampleIdx(sample);
+            Global.Info("use pre-loaded project sample \""+autoload_unique_name+"\" => sample_idx="+sample_idx);
+         }
+      }
+   }
+
+   // <method.png>
+   public method clearSampleAutoload() {
+      // When sample was selected via combobox (prgchg is handled directly)
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         sample.b_autoload = false;
+      }
+   }
+
+   // <method_get.png>
+   public method getUnsavedSampleName(String _retName) {
+      // Check if ref'd sample is present in sample repository
+      //  (note) called before saving track patch manually
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         String pathName <= Samples.FindSamplePathnameByUniqueName(sample.unique_name);
+         if(null == pathName)
+         {
+            // Sample not present in repository
+            _retName = sample.unique_name;
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setSampleIdx(int _sampleIdx) {
+      sample_idx = _sampleIdx;
+   }
+
+   // <method_set.png>
+   public =replay= method setRootKey(int _rootKey) {
+      root_key = _rootKey;
+   }
+
+   // <method_set.png>
+   public =replay= method setLinkGroup(int _linkGroup) {
+      link_group_id = _linkGroup;
+   }
+
+   // <method_set.png>
+   public =replay= method setMutexGroup(int _mutexGroup) {
+      mutex_group_id = _mutexGroup;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendLevelMod(int _sendIdx, float _levelMod) {
+      lane_level_mod[_sendIdx] = _levelMod;
+      // // trace "xxx setLaneSendLevelMod: sendIdx="+_sendIdx+" mod="+_levelMod;
+      // (note) caller must queue kit lane send level update
+   }
+
+   // <method_get.png>
+   public method getLaneSendLevelMod(int _sendIdx) : float {
+      // called by UI
+      return lane_level_mod.get(_sendIdx);
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendPanMod(int _sendIdx, float _pan) {
+      lane_pan_mod[_sendIdx] = _pan;
+      // (note) caller must queue kit lane send level update
+   }
+
+   // <method_get.png>
+   public method getLaneSendPanMod(int _sendIdx) : float {
+      // called by UI
+      return lane_pan_mod.get(_sendIdx);
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs)  {
+
+      // Write version
+      _ofs.i16 = 4;
+
+      // Sample Idx
+      _ofs.i16 = sample_idx;
+
+      // Root Key
+      _ofs.i8 = root_key;
+
+      // Level
+      _ofs.f32 = level;
+
+      // Pan
+      _ofs.f32 = pan;
+
+      // Autoload
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         // Autoload
+         _ofs.i8 = true;  // bHaveAutoLoadInfo
+
+         // Sample name
+         Utils.WriteString(_ofs, sample.unique_name);
+
+         // Suggested path name
+         Utils.WriteString(_ofs, sample.suggested_pathname);
+      }
+      else
+      {
+         // Autoload not available
+         _ofs.i8 = false;
+      }
+
+      // Initial performance controllers (v2+)
+      Utils.WriteFloatArray(_ofs, initial_perf_ctl);
+
+      // Link Group (v3+)
+      _ofs.i8 = link_group_id;
+
+      // Mutex Group (v3+)
+      _ofs.i8 = mutex_group_id;
+
+      // Lane send level mod (v4+)
+      Utils.WriteFloatArray(_ofs, lane_level_mod);
+
+      // Lane send pan mod (v4+)
+      Utils.WriteFloatArray(_ofs, lane_pan_mod);
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, boolean _bKeepLaneSends) : boolean {
+
+      // Version
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Sample Idx
+         sample_idx = _ifs.s16;
+
+         // Root Key
+         root_key = _ifs.s8;
+
+         // Level
+         level = _ifs.f32;
+
+         // Pan
+         pan = _ifs.f32;
+
+         // Autoload
+         boolean bHaveAutoLoadInfo = _ifs.b8;
+
+         if(bHaveAutoLoadInfo)
+         {
+            // Sample name
+            Utils.ReadString(_ifs, autoload_unique_name);
+
+            // Suggested path name
+            Utils.ReadString(_ifs, autoload_suggested_pathname);
+
+            Global.Debug2("SamplePad::loadState: autoload_suggested_pathname=\""+autoload_suggested_pathname+"\" autoload_unique_name=\""+autoload_unique_name+"\"");
+         }
+         else
+         {
+            autoload_unique_name.empty();
+            autoload_suggested_pathname.empty();
+         }
+
+         // Initial performance controllers (v2+)
+         if(ver >= 2)
+         {
+            Utils.ReadFloatArray(_ifs, initial_perf_ctl);
+         }
+
+         // Link Group (v3+)
+         if(ver >= 3)
+            link_group_id = _ifs.s8;
+
+         // Mutex Group (v3+)
+         if(ver >= 3)
+            mutex_group_id = _ifs.s8;
+
+         if(ver >= 4)
+         {
+            local FloatArray faDummy;
+            if(_bKeepLaneSends)
+            {
+               // dummy read: Lane send level mod (v4+)
+               Utils.ReadFloatArray(_ifs, faDummy);
+
+               // dummy read: Lane send pan mod (v4+)
+               Utils.ReadFloatArray(_ifs, faDummy);
+            }
+            else
+            {
+               // Lane send level mod (v4+)
+               Utils.ReadFloatArray(_ifs, lane_level_mod);
+
+               // Lane send pan mod (v4+)
+               Utils.ReadFloatArray(_ifs, lane_pan_mod);
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] SamplePadKit::loadState: invalid ver="+ver;
+      }
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class SamplePadKitVariation {
+   String name;
+   SamplePad *[] pads;
+   FloatArray initial_perf_ctl;  // STSAMPLEPLAYER_NUM_PERFCTL. -128=skip, -128..127. Same setup as Sample.initial_perf_ctl
+   boolean b_enable_perf_ctl;
+   boolean b_perf_ctl_only;      // true=update perfctls when var is selected but continue playing previous variation pads
+
+   public boolean b_edited;  // true=variation was selected in editor at least once
+
+
+   // <method_init.png>
+   public method initSamplePadKitVariation() {
+
+      int padIdx = 0;
+      loop(SamplePadKit.NUM_PADS)
+      {
+         SamplePad sp <= new SamplePad;
+         sp.initSamplePad(padIdx++);
+         pads.add(#(deref sp));
+      }
+
+      initial_perf_ctl.allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, -128/*none*/);
+      b_enable_perf_ctl = true;
+      b_perf_ctl_only = false;
+   }
+
+   // <method_init.png>
+   public method copyFrom(SamplePadKitVariation _o, boolean _bKeepSends) {
+      name = _o.name;
+
+      SamplePad *pad;
+      int padIdx = 0;
+      foreach pad in pads
+      {
+         SamplePad *padO <= _o.pads.get(padIdx++);
+         pad.copyFrom(padO, _bKeepSends);
+      }
+
+      initial_perf_ctl  = _o.initial_perf_ctl;
+      b_enable_perf_ctl = _o.b_enable_perf_ctl;
+      b_perf_ctl_only   = _o.b_perf_ctl_only;
+
+      b_edited = _o.b_edited;
+   }
+
+   // <method.png>
+   public method autoUnloadSamples() : boolean {
+      // called before loading track patch
+      SamplePad *pad;
+      foreach pad in pads
+         pad.handleAutoUnloadSample();
+   }
+
+   // <method.png>
+   public method autoLoadSamples(String _dirNameOverrideOrNull, SamplePadKit _parentKit) : boolean {
+      // called after loading track patch
+      SamplePad *pad;
+      int padIdx = 0;
+      foreach pad in pads
+      {
+         SamplePadCommon padCommon <= _parentKit.getPadCommonByIndex(padIdx++);
+         pad.handleAutoLoadSample(_dirNameOverrideOrNull, padCommon.namespace_idx);
+      }
+   }
+
+   // <method_get.png>
+   public method isEmpty() : boolean {
+      SamplePad *pad;
+      foreach pad in pads
+      {
+         if(pad.sample_idx >= 0)
+            return false;
+      }
+      return true;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePerfCtl(boolean _bEnable) {
+      b_enable_perf_ctl = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePerfCtlOnly(boolean _bEnable) {
+      b_perf_ctl_only = _bEnable;
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs)  {
+
+      // Write version
+      _ofs.i16 = 4;
+
+      // b_edited (v2+)
+      _ofs.i8 = b_edited;
+
+      if(b_edited)
+      {
+         // Name
+         Utils.WriteString(_ofs, name);
+
+         // Pads
+         _ofs.i8 = SamplePadKit.NUM_PADS;
+         SamplePad *pad;
+         foreach pad in pads
+         {
+            pad.saveState(_ofs);
+         }
+
+         // Initial performance controllers (v3+)
+         _ofs.i8 = b_enable_perf_ctl;
+         Utils.WriteFloatArray(_ofs, initial_perf_ctl);
+
+         // Performance-controller-only variation (v4+)
+         _ofs.i8 = b_perf_ctl_only;
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, boolean _bKeepLaneSends) : boolean {
+
+      // Version
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         if(ver >= 2)
+            b_edited = _ifs.b8;
+         else
+            b_edited = true;
+
+         if(b_edited)
+         {
+            // Name
+            Utils.ReadString(_ifs, name);
+
+            // Pads
+            int numPads = _ifs.u8;
+            if(SamplePadKit.NUM_PADS == numPads)
+            {
+               SamplePad *pad;
+               int padNr = 1;
+               foreach pad in pads
+               {
+                  if(!pad.loadState(_ifs, _bKeepLaneSends))
+                  {
+                     trace "[---] SamplePadKitVariation::loadState: failed to load pad "+padNr+"/"+numPads;
+                     return false;
+                  }
+                  padNr++;
+               }
+
+               if(ver >= 3)
+               {
+                  // Initial performance controllers (v3+)
+                  b_enable_perf_ctl = _ifs.b8;
+                  Utils.ReadFloatArray(_ifs, initial_perf_ctl);
+
+                  // // if(1) // convert to bipolar (-128=none)
+                  // // {
+                  // //    int pcIdx = 0;
+                  // //    loop(initial_perf_ctl.numElements)
+                  // //    {
+                  // //       if(initial_perf_ctl[pcIdx] < 0.0f)
+                  // //          initial_perf_ctl[pcIdx] = -128.0f;
+                  // //       pcIdx++;
+                  // //    }
+                  // // }
+               }
+
+               if(ver >= 4)
+               {
+                  // Performance-controller-only variation (v4+)
+                  b_perf_ctl_only = _ifs.b8;
+               }
+            }
+            else
+            {
+               trace "[---] SamplePadKitVariation::loadState: invalid numPads="+numPads;
+               return false;
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] SamplePadKitVariation::loadState: invalid ver="+ver;
+      }
+
+      return false;
+   }
+}
+
+// <class.png>
+class SamplePadCommon {
+   // common to all variations, i.e. one instance per pad
+   define int NUM_LANE_SENDS = 8;
+
+   define int ACTIVE_TIMEOUT = 7000;   // number of 64 sample frames (~10sec release phase)
+   define int ACTIVE_TIMEOUT_MUTEX = 200;  // after forced mutex voice-stop
+
+   SamplePadKit *parent_kit;
+   public Track *parent_track;
+
+   define int STATE_PLAY = 0;
+   define int STATE_MUTE = 1;
+   define int STATE_SOLO = 2;
+   int play_state;
+   boolean b_force_mute;  // calculated.
+
+   String name;  // (todo) remove (unused)
+
+   StSamplePlayer sample_player;
+   int active_timeout;  // !=0: pad is active (render samples + sends)  (<0: note on, >0: note off)
+
+   int note_nr;  // determined by SamplePadKit.layout
+   int pad_idx;  // determined by SamplePadKit.layout (0..31)
+
+   int namespace_idx;  // default sample namespace
+
+   float level;
+   float pan;
+   float stereo_width;
+
+   FloatArray lane_level;  // lane send levels
+   FloatArray lane_pan;    // lane panning (stereo balance)
+
+   FloatArray current_lane_sends_l;  // lane send levels (left channel)
+   FloatArray current_lane_sends_r;  // lane send levels (right channel)
+
+   FloatArray target_lane_sends_l;  // (slew target) lane send levels (left channel)
+   FloatArray target_lane_sends_r;  // (slew target) lane send levels (right channel)
+
+   define float SEND_SLEW_OFF    = 1.0;    // instant
+   define float SEND_SLEW_FAST   = 0.1;    // ~0.25sec
+   define float SEND_SLEW_MEDIUM = 0.01;   // ~1.5sec
+   define float SEND_SLEW_SLOW   = 0.001;  // ~5sec
+   static FloatArray send_slew_tbl = [ SEND_SLEW_OFF, SEND_SLEW_FAST, SEND_SLEW_MEDIUM, SEND_SLEW_SLOW ];
+
+   float lane_sends_slew_amt;  // 1=instant .. 0=never. def=0.1
+
+
+   // <method_init.png>
+   public method initSamplePadCommon(SamplePadKit _kit) {
+
+      parent_kit <= _kit;
+      parent_track <= (null != _kit) ? _kit.parent_track : null;
+
+      level = 1.0;
+      pan = 0.0;
+      stereo_width = 1.0f;
+
+      sample_player.allocVoices(STConfig.sample_pad_num_voices);
+      sample_player.volume           = level;
+      sample_player.defaultMixRate   = Audio.mix_rate;
+      sample_player.defaultFreqTable = Audio.default_freq_table;
+
+      lane_level.allocAndFill(NUM_LANE_SENDS, 0.0f);
+      lane_pan  .allocAndFill(NUM_LANE_SENDS, 0.0f);
+
+      current_lane_sends_l.allocAndFill(NUM_LANE_SENDS, 0.0f);
+      current_lane_sends_r.allocAndFill(NUM_LANE_SENDS, 0.0f);
+
+      target_lane_sends_l.allocAndFill(NUM_LANE_SENDS, 0.0f);
+      target_lane_sends_r.allocAndFill(NUM_LANE_SENDS, 0.0f);
+
+      lane_sends_slew_amt = SEND_SLEW_MEDIUM;
+
+      _kit.b_update_lane_sends = true;
+
+      // default = send to lane 1
+      lane_level[0] = 1.0f;
+      lane_pan[0]   = 0.0f;
+
+      current_lane_sends_l[0] = 1.0f;
+      current_lane_sends_r[0] = 1.0f;
+
+      target_lane_sends_l[0] = 1.0f;
+      target_lane_sends_r[0] = 1.0f;
+   }
+
+   // <method_init.png>
+   public method copyFrom(SamplePadCommon _o) {
+      name = _o.name;
+
+      // (note) keep note_nr and pad_idx
+
+      namespace_idx = _o.namespace_idx;
+
+      level = _o.level;
+      pan   = _o.pan;
+      stereo_width = _o.stereo_width;
+
+      lane_level = _o.lane_level;
+      lane_pan   = _o.lane_pan;
+
+      current_lane_sends_l = _o.current_lane_sends_l;
+      current_lane_sends_r = _o.current_lane_sends_r;
+
+      target_lane_sends_l = _o.target_lane_sends_l;
+      target_lane_sends_r = _o.target_lane_sends_r;
+
+      parent_kit.b_update_lane_sends = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setPlayState(int _state) {
+      play_state = _state;
+      parent_kit.updateForceMuteStates();
+   }
+
+   // <method_get.png>
+   public method isPlaying() : boolean {
+      return !b_force_mute && (STATE_MUTE != play_state);
+   }
+
+   // <method_get.png>
+   public method getName() : String {
+      return STConfig.drum_pad_names.get(pad_idx);
+   }
+
+   // <method_update.png>
+   module method updateLaneSendLevelLR(local FloatArray _varModLevel, local FloatArray _varModPan) {
+      // (note) called in process()
+      // // trace "xxx updateLaneSendLevelLR";
+
+      local int sendIdx = 0;
+      loop(NUM_LANE_SENDS)
+      {
+         // Linear (center max=1.0)
+         local float t = mathClampf(pan + lane_pan[sendIdx] + _varModPan[sendIdx], -1.0f, 1.0f);
+         local float levelL = (t < 0.0f) ? 1.0 : (1.0f - t);
+         local float levelR = (t > 0.0f) ? 1.0 : (1.0f + t);
+
+         t = mathClampf(level * mathClampf(lane_level[sendIdx] + _varModLevel[sendIdx], 0.0f, 1.0f), 0.0f, 8.0f);
+         local float tL = levelL * t;
+         local float tR = levelR * t;
+         target_lane_sends_l[sendIdx] = tL;
+         target_lane_sends_r[sendIdx] = tR;
+         if(lane_sends_slew_amt < 1.0)
+         {
+            current_lane_sends_l[sendIdx] = mathLerpf(current_lane_sends_l[sendIdx], tL, lane_sends_slew_amt);
+            current_lane_sends_r[sendIdx] = mathLerpf(current_lane_sends_r[sendIdx], tR, lane_sends_slew_amt);
+         }
+         else
+         {
+            current_lane_sends_l[sendIdx] = tL;
+            current_lane_sends_r[sendIdx] = tR;
+         }
+
+         // Next send
+         sendIdx++;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendLevel(int _sendIdx, float _level) {
+      lane_level[_sendIdx] = _level;
+      parent_kit.b_update_lane_sends = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendPan(int _sendIdx, float _pan) {
+      lane_pan[_sendIdx] = _pan;
+      parent_kit.b_update_lane_sends = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneSendSlewAmt(float _amt) {
+      lane_sends_slew_amt = _amt;
+      parent_kit.b_ui_slew_amt_changed = true;
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs)  {
+
+      // Write version
+      _ofs.i16 = 5;
+
+      // // // Preferred namespace hint (pre v3)
+      // // _ofs.i8 = namespace_idx;
+      String nspName = current_project.getSampleNamespaceNameByIdx(namespace_idx);
+      Utils.WriteString(_ofs, nspName); // v3+
+
+      // Name
+      Utils.WriteString(_ofs, name);
+
+      // Level
+      _ofs.f32 = level;
+
+      // Pan
+      _ofs.f32 = pan;
+
+      // Stereo Width
+      _ofs.f32 = stereo_width;
+
+      // Play state (v4+)
+      _ofs.i8 = play_state;
+
+      // Lane send level (v2+)
+      Utils.WriteFloatArray(_ofs, lane_level);
+
+      // Lane send pan (v2+)
+      Utils.WriteFloatArray(_ofs, lane_pan);
+
+      // Lane sends slew amount (v5+)
+      _ofs.f32 = lane_sends_slew_amt;
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, boolean _bKeepLaneSends) : boolean {
+
+      // Version
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         if(ver <= 2)
+         {
+            // Preferred namespace hint (pre v3)
+            namespace_idx = _ifs.u8;
+         }
+         else
+         {
+            // v3+
+            local String nspName;
+            Utils.ReadString(_ifs, nspName);
+            namespace_idx = current_project.getOrCreateSampleNamespace(nspName);
+         }
+
+         // Name
+         Utils.ReadString(_ifs, name);
+
+         // Level
+         level = _ifs.f32;
+
+         // Pan
+         pan = _ifs.f32;
+
+         // Stereo Width
+         stereo_width = _ifs.f32;
+
+         if(ver >= 4)
+         {
+            // Play state (v4+)
+            play_state = _ifs.i8;
+         }
+
+         if(ver >= 2)
+         {
+            local FloatArray faDummy;
+            if(_bKeepLaneSends)
+            {
+               // dummy read: Lane send level (v2+)
+               Utils.ReadFloatArray(_ifs, faDummy);
+
+               // dummy read: Lane send pan (v2+)
+               Utils.ReadFloatArray(_ifs, faDummy);
+            }
+            else
+            {
+               // Lane send level (v2+)
+               Utils.ReadFloatArray(_ifs, lane_level);
+
+               // Lane send pan (v2+)
+               Utils.ReadFloatArray(_ifs, lane_pan);
+            }
+         }
+
+         if(ver >= 5)
+         {
+            // Lane sends slew amount (v5+)
+            lane_sends_slew_amt = _ifs.f32;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] SamplePadCommon::loadState: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method process(local FloatArray _mixBuffer, local int _numFrames) {
+
+      if(0 != active_timeout)
+      {
+         if(active_timeout > 0)
+            active_timeout--;
+
+         _mixBuffer.fill(0);
+         // // sample_player.renderWithInputs(_mixBuffer, parent_track.input_bufs, true/*bRender*/, replay.process_tick_nr);
+
+         sample_player.render(_mixBuffer);
+
+         local int sendIdx = 0;
+         loop(NUM_LANE_SENDS)
+         {
+            if( (current_lane_sends_l[sendIdx] + current_lane_sends_r[sendIdx]) > 0.0f )
+            {
+               FloatArray laneInputBuf <= parent_track.getLaneInputBuffer(sendIdx/*laneIdx*/, true/*bOverride*/);
+               if(null != laneInputBuf)
+               {
+                  tksampleedit_add_pan_stereo_to_stereo(laneInputBuf, 0/*outOff*/, _mixBuffer, 0/*inoff*/,
+                                                        current_lane_sends_l[sendIdx], current_lane_sends_r[sendIdx],
+                                                        _numFrames
+                                                        );
+               }
+            }
+
+            // Next send
+            sendIdx++;
+         }
+      }
+   }
+
+}
+
+// <class.png>
+class SamplePadKit {
+   define int NUM_PADS = 32;
+   define int NUM_VARIATIONS = 8;
+
+   public Track *parent_track;
+
+   public boolean b_edited;  // true=track mode was changed to DRUM at least once
+
+   String name;
+   String info;
+
+   public int default_namespace_idx;  // 0=default, 1..Sample.NUM_NAMESPACES-1
+
+   public SamplePadKitVariation *[] variations;
+   module int replay_variation_idx;
+   public SamplePadCommon *[] pads;
+   public int edit_variation_idx;  // always valid
+   public int edit_pad_idx;        // always valid
+   public int var_base_note;       // variation-select MIDI base note (0..127). default=12*3=C-3
+   public int layout;
+   public boolean b_show_bank_b;   // true=show bank b pads in UI
+
+   FloatArray mix_buffer;  // current chunk mix_buffer, interleaved stereo
+
+   protected int ui_queued_edit_variation_idx;  // -1=none. used by UI when editor follows replay variation
+   protected int ui_queued_edit_pad_idx;        // -1=none. used by UI when editor follows last played pad
+
+   public IntArray perf_ctl_bipolar_flags; // STSAMPLEPLAYER_NUM_PERFCTL. 1=CC modulation is bipolar (-127..+127), 0=unipolar (0..127)
+   protected FloatArray current_perf_ctl;  // External MIDI CC modulation. STSAMPLEPLAYER_NUM_PERFCTL. -1=undefined (after reset). Same setup as Sample.initial_perf_ctl.
+   protected FloatArray active_var_perf_ctl; // copied from SamplePadKitVariation.initial_perf_ctl (initially -128=none)
+   protected FloatArray effective_perf_ctl;  // temporary during replay (merge initial sample+pad and midi ctls)
+   protected boolean b_update_perf_ctl;      // true=sampleplayer performance controller update pending (temp flag)
+   boolean b_update_lane_sends;  // 1=call updateLaneSendLevelLR() in process()
+
+   boolean b_ui_slew_amt_changed;
+
+   MIDIPipeEvent pev;
+
+
+   // <method_init.png>
+   public method initSamplePadKit(Track _track) {
+
+      parent_track <= _track;
+
+      loop(NUM_PADS)
+      {
+         SamplePadCommon sc <= new SamplePadCommon;
+         sc.initSamplePadCommon(this);
+         pads.add(#(deref sc));
+      }
+
+      SamplePadKitVariation *kv;
+      loop(NUM_VARIATIONS)
+      {
+         kv <= new SamplePadKitVariation;
+         kv.initSamplePadKitVariation();
+         variations.add(#(deref kv));
+      }
+      kv <= variations[0];
+      kv.b_edited = true;
+
+      mix_buffer.alloc(Audio.STREAM_MAX_FRAMES * 2);
+      mix_buffer.useAll();
+
+      setLayout(STConfig.default_drum_pad_layout);
+      b_show_bank_b = false;
+
+      ui_queued_edit_variation_idx = -1;
+      ui_queued_edit_pad_idx       = -1;
+
+      perf_ctl_bipolar_flags.allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, false);
+      active_var_perf_ctl   .allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, -128/*none*/);
+      current_perf_ctl      .allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, -1/*none*/);
+      effective_perf_ctl    .allocAndFill(STSAMPLEPLAYER_NUM_PERFCTL, 0);
+      b_update_perf_ctl = false;
+
+      default_namespace_idx = current_project.getOrCreateSampleNamespace(STConfig.sample_pad_default_namespace/*drumkit*/);
+
+      var_base_note = STConfig.sample_pad_variation_select_base_note;
+
+      b_update_lane_sends = true;
+   }
+
+   // <method_get.png>
+   public =replay= method checkResetQueuedEditVariationIdx() : int {
+      return = ui_queued_edit_variation_idx;
+      ui_queued_edit_variation_idx = -1;
+   }
+
+   // <method_get.png>
+   public =replay= method checkResetQueuedEditPadIdx() : int {
+      return = ui_queued_edit_pad_idx;
+      ui_queued_edit_pad_idx = -1;
+   }
+
+   // <method_init.png>
+   public method copyFrom(SamplePadKit _o, boolean _bCopyEditIdx) {
+      b_edited = _o.b_edited;
+
+      name = _o.name;
+      info = _o.info;
+
+      default_namespace_idx = _o.default_namespace_idx;
+
+      SamplePadKitVariation *v;
+      int variationIdx = 0;
+      foreach v in variations
+      {
+         SamplePadKitVariation vo <= _o.variations.get(variationIdx++);
+         v.copyFrom(vo, false/*bKeepSends*/);
+      }
+
+      replay_variation_idx = _o.replay_variation_idx;
+
+      SamplePadCommon *c;
+      int padCommonIdx = 0;
+      foreach c in pads
+      {
+         SamplePadCommon co <= _o.pads.get(padCommonIdx++);
+         c.copyFrom(co);
+      }
+
+      if(_bCopyEditIdx)
+      {
+         edit_variation_idx   = _o.edit_variation_idx;
+         edit_pad_idx         = _o.edit_pad_idx;
+         replay_variation_idx = _o.replay_variation_idx;
+      }
+
+      layout             = _o.layout;
+      b_show_bank_b      = _o.b_show_bank_b;
+
+      perf_ctl_bipolar_flags = _o.perf_ctl_bipolar_flags;
+
+      active_var_perf_ctl = _o.active_var_perf_ctl;  // copy temp state
+
+      b_update_lane_sends = true;
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      autoUnloadSamples();
+      SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         StSamplePlayer sp <= sc.sample_player;
+         sp.resetVoices();
+         sp.unloadVoicePlugins();
+      }
+   }
+
+   // <method_get.png>
+   public method getPadCommonByIndex(int _idx) : SamplePadCommon {
+      return pads.get(_idx);
+   }
+
+   // <method.png>
+   public method handleReloadVoicePlugins(boolean _bReload) {
+      // (note) =replay= locked by caller
+      SamplePadCommon *sc;
+      if(!_bReload)
+      {
+         foreach sc in pads
+         {
+            StSamplePlayer sp <= sc.sample_player;
+            sp.resetVoices();
+            sp.unloadVoicePlugins();
+         }
+      }
+   }
+
+   // <method.png>
+   public method unloadVoicePlugins() {
+      handleReloadVoicePlugins(false/*bReload*/);
+   }
+
+   // <method.png>
+   public method handleReorderVoicePlugins(StSampleBank _sb, IntArray _ia) {
+      SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         StSamplePlayer sp <= sc.sample_player;
+         sp.handleReorderVoicePlugins(_sb, _ia);
+      }
+   }
+
+   // <method.png>
+   protected method updatePads(IntArray _padIndices, IntArray _padNotes) {
+      int i = 0;
+      loop(_padIndices.numElements)
+      {
+         int padIdx = _padIndices[i];
+         SamplePadCommon sc <= pads[padIdx];
+         sc.note_nr = _padNotes[i];
+         sc.pad_idx = padIdx;
+
+         // Next pad
+         i++;
+      }
+   }
+
+   // <method.png>
+   protected method updatePadsFromLayout() {
+      SamplePadCommon *sc;
+
+      foreach sc in pads
+         sc.note_nr = -1;
+
+      switch(layout)
+      {
+         case 0: // 8x2
+            updatePads(STConfig.drum_pad_indices_8x2_a, STConfig.drum_pad_notes_8x2_a);
+            updatePads(STConfig.drum_pad_indices_8x2_b, STConfig.drum_pad_notes_8x2_b);
+            break;
+
+         case 1: // 4x4
+            updatePads(STConfig.drum_pad_indices_4x4_a, STConfig.drum_pad_notes_4x4_a);
+            updatePads(STConfig.drum_pad_indices_4x4_b, STConfig.drum_pad_notes_4x4_b);
+            break;
+
+         case 2: // 3x4
+            updatePads(STConfig.drum_pad_indices_3x4_a, STConfig.drum_pad_notes_3x4_a);
+            updatePads(STConfig.drum_pad_indices_3x4_b, STConfig.drum_pad_notes_3x4_b);
+            break;
+
+         case 3: // 4x3
+            updatePads(STConfig.drum_pad_indices_4x3, STConfig.drum_pad_notes_4x3);
+            // (note) has no "B" config
+            break;
+
+         case 4: // 4x2
+            updatePads(STConfig.drum_pad_indices_4x2_a, STConfig.drum_pad_notes_4x2_a);
+            updatePads(STConfig.drum_pad_indices_4x2_b, STConfig.drum_pad_notes_4x2_b);
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setLayout(int _layout) {
+      layout = _layout;
+      updatePadsFromLayout();
+   }
+
+   // <method_set.png>
+   public method setEditPadIdx(int _padIdx) {
+      edit_pad_idx = _padIdx;
+
+      SamplePad sp <= getEditSamplePad();
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.autoselect_sample_idx = sp.sample_idx;
+   }
+
+   // <method.png>
+   public method autoLoadSamples(String _dirNameOverrideOrNull) : boolean {
+      SamplePadKitVariation *kv;
+      foreach kv in variations
+      {
+         kv.autoLoadSamples(_dirNameOverrideOrNull, this);
+      }
+   }
+
+   // <method.png>
+   public method autoUnloadSamples() : boolean {
+      SamplePadKitVariation *kv;
+      foreach kv in variations
+         kv.autoUnloadSamples();
+   }
+
+   // <method_find.png>
+   public method findNumSampleNamespaceRefsByNamespaceIdx(int _namespaceIdx) : int {
+      int numRefs = 0;
+
+      if(default_namespace_idx == _namespaceIdx)
+         numRefs++;
+
+      SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         if(sc.namespace_idx == _namespaceIdx)
+            numRefs++;
+      }
+
+      return numRefs;
+   }
+
+   // <method.png>
+   public method remapSampleNamespaceIndices(IntArray _iaRemap) {
+      default_namespace_idx = _iaRemap.get(default_namespace_idx);
+
+      SamplePadCommon *sc;
+      foreach sc in pads
+         sc.namespace_idx = _iaRemap.get(sc.namespace_idx);
+   }
+
+   // <method_find.png>
+   public method findNumSampleRefsBySampleIdx(int _sampleIdx) : int {
+      int numRefs = 0;
+
+      SamplePadKitVariation *kv;
+      foreach kv in variations
+      {
+         SamplePad *pad;
+         foreach pad in kv.pads
+         {
+            if(pad.sample_idx == _sampleIdx)
+            {
+               numRefs++;
+               // (todo) returning here will prevent multiple refs to the same sample from being duplicated (e.g. sd/sd2)
+               // (todo) make this configurable (auto-duplication of _all_ pads can be handy for quickly creating unique samples for further editing)
+               if(!STConfig.b_sample_pad_consolidate_autoduplicate_all_refs)
+                  return numRefs;  // count only one ref per kit
+            }
+         }
+      }
+
+      return numRefs;
+   }
+
+   // <method.png>
+   public method handleShiftSampleIds(int _idxStart, int _shift) {
+      // called while =replay= is locked
+      SamplePadKitVariation *kv;
+      int variationIdx = 0;
+      foreach kv in variations
+      {
+         SamplePad *pad;
+         int padIdx = 0;
+         foreach pad in kv.pads
+         {
+            if(pad.sample_idx >= _idxStart)
+            {
+               Global.Debug2("SamplePadKit::handleShiftSampleIds: variationIdx="+variationIdx+" padIdx="+padIdx+" idxStart="+_idxStart+" shift="+_shift+" oldId="+pad.sample_idx+" newId="+(pad.sample_idx+_shift));
+               pad.sample_idx = pad.sample_idx + _shift;
+            }
+            padIdx++;
+         }
+         variationIdx++;
+      }
+   }
+
+   // <method.png>
+   public method handleSwapSamples(int _smpIdxA, int _smpIdxB) {
+      // called while =replay= is locked
+      SamplePadKitVariation *kv;
+      int variationIdx = 0;
+      foreach kv in variations
+      {
+         SamplePad *pad;
+         int padIdx = 0;
+         foreach pad in kv.pads
+         {
+            if(pad.sample_idx == _smpIdxA)
+            {
+               Global.Debug2("SamplePadKit::handleSwapSamples: variationIdx="+variationIdx+" padIdx="+padIdx+" smpIdx="+pad.sample_idx+" => "+_smpIdxB);
+               pad.sample_idx = _smpIdxB;
+            }
+            else if(pad.sample_idx == _smpIdxB)
+            {
+               Global.Debug2("SamplePadKit::handleSwapSamples: variationIdx="+variationIdx+" padIdx="+padIdx+" smpId="+pad.sample_idx+" => "+_smpIdxA);
+               pad.sample_idx = _smpIdxA;
+            }
+
+            padIdx++;
+         }
+         variationIdx++;
+      }
+   }
+
+   // <method_replace.png>
+   public =replay= method replaceSampleIds(int _oldPadSampleId, int _newPadSampleId) {
+      SamplePadKitVariation *kv;
+      foreach kv in variations
+      {
+         SamplePad *pad;
+         foreach pad in kv.pads
+         {
+            if(pad.sample_idx == _oldPadSampleId)
+               pad.sample_idx = _newPadSampleId;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method unloadSamples() {
+      SamplePadKitVariation *kv;
+      foreach kv in variations
+      {
+         SamplePad *pad;
+         foreach pad in kv.pads
+         {
+            if(-1 != pad.sample_idx)
+            {
+               Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+               if(null != sample)
+               {
+                  int numRefs = current_project.findNumSampleRefsBySampleIdx(pad.sample_idx);
+                  if(1 == numRefs)
+                  {
+                     Global.Debug("SamplePadState::unloadSamples: delete sample \""+sample.unique_name+"\" id="+pad.sample_idx);
+                     current_project.deleteSample(sample);
+                  }
+               }
+               pad.sample_idx = -1;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method unsetSampleNamespaceRefs() {
+      // called when browsing kit presets
+      default_namespace_idx = 0;
+      SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         sc.namespace_idx = 0;
+      }
+   }
+
+   // <method_get.png>
+   public method getEditSamplePadCommon() : SamplePadCommon {
+      // used by UI
+      return pads.get(edit_pad_idx);
+   }
+
+   // <method_get.png>
+   public method getEditKitVariation() : SamplePadKitVariation {
+      // used by UI
+      return variations.get(edit_variation_idx);
+   }
+
+   // <method_get.png>
+   public =replay= method setEditKitVariation(int _idx) {
+      if(0 <= _idx < NUM_VARIATIONS)
+      {
+         edit_variation_idx = _idx;
+         replay_variation_idx = _idx;
+         b_update_lane_sends = true;
+      }
+   }
+
+   // <method_get.png>
+   public method isEditKitVariationEmpty() : boolean {
+      SamplePadKitVariation kv <= getEditKitVariation();
+      return (null != kv) ? kv.isEmpty() : true;
+   }
+
+   // <method_get.png>
+   public method getEditSamplePad() : SamplePad {
+      // used by UI
+      SamplePadKitVariation kv <= getEditKitVariation();
+      return kv.pads.get(edit_pad_idx);
+   }
+
+   // <method_get.png>
+   public method getKitNamespaceIdxForImport() : int {
+      int drumNamespaceIdx = default_namespace_idx;
+      if(drumNamespaceIdx <= 0)
+         drumNamespaceIdx = current_project.getOrCreateSampleNamespace(STConfig.sample_pad_default_namespace);
+      if(drumNamespaceIdx <= 0)
+      {
+         trace "[---] failed to create sample_pad_default_namespace=\""+STConfig.sample_pad_default_namespace+"\"";
+         drumNamespaceIdx = 0;
+      }
+      return drumNamespaceIdx;
+   }
+
+   // <method_set.png>
+   public =replay= method setVarBaseNote(byte _note) {
+      var_base_note = _note;
+   }
+
+   // <method_set.png>
+   public =replay= method setPerfCtlBipolarFlag(int _perfCtlIdx, boolean _bEnable) {
+      perf_ctl_bipolar_flags[_perfCtlIdx] = _bEnable;
+      b_update_perf_ctl = true;
+   }
+
+   // <method_set.png>
+   protected method setSlewAmount(float _amt, boolean _bAllPads) {
+      // when selecting slew speed via MIDI G#3..B-3
+      // trace "xxx setSlewAmountAllPads(amt="+_amt+") bAllPads="+_bAllPads;
+      if(_amt <= 0.0f)
+         _amt = 1.0f;
+      local SamplePadCommon *sc;
+      if(_bAllPads)
+      {
+         foreach sc in pads
+            sc.lane_sends_slew_amt = _amt;
+      }
+      else
+      {
+         sc <= pads.get(edit_pad_idx);
+         sc.lane_sends_slew_amt = _amt;
+      }
+      b_ui_slew_amt_changed = true;
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs)  {
+
+      // Write version
+      _ofs.i16 = 5;
+
+      // b_edited
+      _ofs.i8 = b_edited;
+
+      if(b_edited)
+      {
+         // Name (v2+)
+         Utils.WriteString(_ofs, name);
+
+         // Info (v3+)
+         Utils.WriteString(_ofs, info);
+
+         // Default namespace (v3+)
+         String nspName = current_project.getSampleNamespaceNameByIdx(default_namespace_idx);
+         Utils.WriteString(_ofs, nspName); // v3+
+
+         // Layout
+         _ofs.i8 = layout;
+
+         // Show bank B
+         _ofs.i8 = b_show_bank_b;
+
+         // Common pads
+         _ofs.i8 = NUM_PADS;
+         SamplePadCommon *sc;
+         foreach sc in pads
+         {
+            sc.saveState(_ofs);
+         }
+
+         // Variations
+         _ofs.i8 = NUM_VARIATIONS;
+         SamplePadKitVariation *kv;
+         foreach kv in variations
+         {
+            kv.saveState(_ofs);
+         }
+
+         // Edit variation index
+         _ofs.i8 = edit_variation_idx;
+
+         // Edit pad
+         _ofs.i8 = edit_pad_idx;
+
+         // Variation-select MIDI base note (v4+)
+         _ofs.i8 = var_base_note;
+
+         // External MIDI CC bipolar flags (v5+)
+         Utils.WriteByteArray(_ofs, perf_ctl_bipolar_flags);
+
+         replay_variation_idx = edit_variation_idx;
+         queueVariationPerfCtl(edit_variation_idx);
+      }
+   }
+
+   // <save.png>
+   public method saveFile(String _pathName) : boolean {
+      local File f;
+      if(f.openLocal(_pathName, IOS_OUT))
+      {
+         f.i8 = 'E';
+         f.i8 = 'D';
+         f.i8 = 'K';
+         f.i8 = '.';
+
+         saveState(f);
+         f.close();
+         return true;
+      }
+      else
+      {
+         trace "[---] SamplePadKit::saveFile: failed to open \""+_pathName+"\" for writing";
+         return false;
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, boolean _bKeepLaneSends) : boolean {
+
+      // Version
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         // b_edited
+         b_edited = _ifs.b8;
+
+         if(b_edited)
+         {
+            if(ver >= 2)
+            {
+               // Name (v2+)
+               Utils.ReadString(_ifs, name);
+            }
+
+            if(ver >= 3)
+            {
+               // Info (v3+)
+               Utils.ReadString(_ifs, info);
+            }
+
+            if(ver >= 3)
+            {
+               // Default namespace (v3+)
+               local String nspName;
+               Utils.ReadString(_ifs, nspName);
+               default_namespace_idx = current_project.getOrCreateSampleNamespace(nspName);
+            }
+
+            // Layout
+            layout = _ifs.u8;
+
+            // Show bank B
+            b_show_bank_b = _ifs.b8;
+
+            // Common pads
+            int numPads = _ifs.u8;
+            if(SamplePadKit.NUM_PADS == numPads)
+            {
+               SamplePadCommon *sc;
+               int padNr = 1;
+               foreach sc in pads
+               {
+                  if(!sc.loadState(_ifs, _bKeepLaneSends))
+                  {
+                     trace "[---] SamplePadKit::loadState: failed to load pad "+padNr+"/"+numPads;
+                     return false;
+                  }
+                  padNr++;
+               }
+               updateForceMuteStates();
+            }
+            else
+            {
+               trace "[---] SamplePadKit::loadState: invalid numPads="+numPads;
+               return false;
+            }
+
+            // Variations
+            int numVariations = _ifs.u8;
+            if(SamplePadKit.NUM_VARIATIONS == numVariations)
+            {
+               SamplePadKitVariation *kv;
+               int variationNr = 1;
+               foreach kv in variations
+               {
+                  if(!kv.loadState(_ifs, _bKeepLaneSends))
+                  {
+                     trace "[---] SamplePadKit::loadState: failed to load variation "+variationNr+"/"+numVariations;
+                     return false;
+                  }
+                  variationNr++;
+               }
+            }
+            else
+            {
+               trace "[---] SamplePadKit::loadState: invalid numPads="+numPads;
+               return false;
+            }
+
+            // Edit variation index
+            edit_variation_idx = _ifs.u8;
+            replay_variation_idx = edit_variation_idx;
+
+            // Edit pad
+            edit_pad_idx = _ifs.u8;
+
+            if(ver >= 4)
+            {
+               // Variation-select MIDI base note (v4+)
+               var_base_note = _ifs.u8;
+            }
+
+            if(ver >= 5)
+            {
+               // External MIDI CC bipolar flags (v5+)
+               Utils.ReadByteArray(_ifs, perf_ctl_bipolar_flags);
+            }
+
+         } // if b_edited
+
+         // Succeeded
+
+         // call updateLaneSendLevelLR() in next process()
+         b_update_lane_sends = true;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] SamplePadKit::loadState: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <load.png>
+   public method loadFile(String _pathName, boolean _bKeepLaneSends) : boolean {
+      local File f;
+      if(f.openLocal(_pathName, IOS_IN))
+      {
+         if('E' == f.u8)
+            if('D' == f.u8)
+               if('K' == f.u8)
+                  if('.' == f.u8)
+                  {
+                     loadState(f, _bKeepLaneSends);
+                     f.close();
+                     return true;
+                  }
+         trace "[---] SamplePadKit::loadFile: invalid 4CC while reading \""+_pathName+"\"";
+      }
+      else
+      {
+         trace "[---] SamplePadKit::loadFile: failed to open \""+_pathName+"\" for reading";
+      }
+      return false;
+   }
+
+   // <method_update.png>
+   public method updateForceMuteStates() {
+      local boolean bAnySolo = false;
+      local SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         if(SamplePadCommon.STATE_SOLO == sc.play_state)
+         {
+            bAnySolo = true;
+            break;
+         }
+      }
+
+      foreach sc in pads
+         sc.b_force_mute = bAnySolo ? (SamplePadCommon.STATE_SOLO != sc.play_state) : false;
+   }
+
+   // <replay.png>
+   public method resetAllSampleVoices(Sample _sampleOrNull) {
+      // (note) caller must lock =mutex=
+      local SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         StSamplePlayer sp <= sc.sample_player;
+         if(null != _sampleOrNull)
+         {
+            StSample smp <= _sampleOrNull.sample_bank.firstSample;
+            while(null != smp)
+            {
+               sp.resetVoicesBySample(smp);
+               smp <= smp.next;
+            }
+         }
+         else
+         {
+            sp.resetVoices();
+         }
+      }
+   }
+
+   // <replay.png>
+   protected method calcEffectivePerfCtl(local SamplePadKitVariation _kv,
+                                         local Sample                _sample,
+                                         local SamplePad             _pad
+                                         ) {
+      effective_perf_ctl = _sample.initial_perf_ctl;  // -1 or 0..127
+      effective_perf_ctl.mergeArraySkipVal(_pad.initial_perf_ctl, -1);  // -1 or 0..127 (override sample perfctl if not -1)
+
+      // Add bipolar modulation from kit variation
+      local FloatArray kvPerfCtl <= active_var_perf_ctl;
+      local int idx = 0;
+      local float valP;
+      local float valN;
+      local float valC;
+      // // trace "xxx calcEffectivePerfCtl: initial effective_perf_ctl="+#(effective_perf_ctl);
+      // // trace "xxx calcEffectivePerfCtl: kvPerfCtl=="+#(kvPerfCtl);
+      // // trace "xxx calcEffectivePerfCtl: current_perf_ctl=="+#(current_perf_ctl);
+      loop(effective_perf_ctl.numElements)
+      {
+         valP = effective_perf_ctl.get(idx);
+         valN = kvPerfCtl.get(idx);
+         if(valN >= -127.0f)  // -128=none (<-127 to be precise)
+         {
+            if(valP >= 0.0f)
+               valN = mathClampf(valP + valN, 0.0f, 127.0f);
+            else
+               valN = mathClampf(valN, 0.0f, 127.0f);
+         }
+         else
+         {
+            // variation perfctl is not set, use value from sample or pad
+            valN = valP;
+         }
+
+         // Add uni or bipolar modulation from external MIDI CCs (knobs / faders / touchstrips / pressure sensitive buttons / ..)
+         valC = current_perf_ctl.get(idx);
+         if(valC >= 0.0f)
+         {
+            if(perf_ctl_bipolar_flags.get(idx))
+            {
+               // bipolar external CC
+               valC =
+                  (valC >= 64.0)
+                  ? ((valC-64.0f) * (127.0f/63.0f))  // 64..127 => 0..+127
+                  : ((valC-64.0f) * (127.0f/64.0f))  // 64..0   => 0..-127
+                  ;
+            }
+            if(valN >= 0.0f)
+               valN = mathClampf(valN + valC, 0.0f, 127.0f);
+            else
+               valN = mathClampf(valC, 0.0f, 127.0f);
+         }
+         // else: no external MIDI modulation
+
+         effective_perf_ctl[idx] = valN;
+
+         // Next controller
+         idx++;
+      }
+   }
+
+   // <replay.png>
+   protected method noteOff(local SamplePadKitVariation kv, local int note, local float velocity) {
+      local SamplePadCommon *sc;
+      local SamplePad *pad;
+      local StSamplePlayer *sp;
+      local byte linkGroupMatch = -1;
+
+      foreach sc in pads
+      {
+         pad <= kv.pads.get(sc.pad_idx);
+         if(-1 != pad.voice_key)
+         {
+            if( (pad.root_key < 0) || (sc.note_nr == note) || ((-1 != linkGroupMatch) && (pad.link_group_id == linkGroupMatch)) )
+            {
+               // // // local int playNote = (pad.root_key < 0) ? note/*chromatic*/ : pad.root_key/*fixed note*/;
+               sc.active_timeout = SamplePadCommon.ACTIVE_TIMEOUT;
+               sp <= sc.sample_player;
+               // // trace "xxx SamplePadKit::noteOff: pad.voice_key="+pad.voice_key;
+               sp.noteOffByKey(pad.voice_key, velocity);
+               pad.voice_key = -1;
+               linkGroupMatch = pad.link_group_id;
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   protected method noteOn(local SamplePadKitVariation kv, local int note, local float velocity) {
+      local SamplePadCommon *sc;
+      local SamplePad *pad;
+      local StSamplePlayer *sp;
+
+      local byte linkGroupMatch = -1;
+
+      foreach sc in pads
+      {
+         // // trace "xxx sc.pad_idx="+sc.pad_idx;
+         // // trace "xxx sc.note_nr="+sc.note_nr;
+         pad <= kv.pads.get(sc.pad_idx);
+
+         if( (pad.root_key < 0) || (sc.note_nr == note) || ((-1 != linkGroupMatch) && (pad.link_group_id == linkGroupMatch)) )
+         {
+            sp <= sc.sample_player;
+            local int playNote = (pad.root_key < 0) ? note/*chromatic*/ : pad.root_key/*fixed note*/;
+
+            if(-1 != pad.voice_key)
+            {
+               noteOff(kv, playNote, 0/*velocity*/);
+            }
+
+            if(-1 != pad.mutex_group_id)
+            {
+               local SamplePad *padMtx;
+               foreach padMtx in kv.pads
+               {
+                  if(@(padMtx) != @(pad))
+                  {
+                     if(pad.mutex_group_id == padMtx.mutex_group_id)
+                     {
+                        if(-1 != padMtx.voice_key)
+                        {
+                           sp.stopVoicesByKey(padMtx.voice_key);
+                           padMtx.voice_key = -1;
+                           sc.active_timeout = SamplePadCommon.ACTIVE_TIMEOUT_MUTEX;
+                        }
+                     }
+                  }
+               }
+            }
+
+            local Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+            if(null != sample)
+            {
+               pad.voice_note = playNote;
+               calcEffectivePerfCtl(kv, sample, pad);
+               sp.updatePerfCtls(effective_perf_ctl);
+               b_update_perf_ctl = false;
+
+               if(sc.isPlaying())
+               {
+                  sc.active_timeout = -SamplePadCommon.ACTIVE_TIMEOUT;
+                  sp.setLastStartedSampleBankHint(sample.sample_bank);
+                  pad.voice_key = sp.startSampleBank(sample.sample_bank,
+                                                     null/*freqTable*/, playNote, velocity,
+                                                     0.0f/*modVal*/,
+                                                     pad.level/*volume*/,
+                                                     pad.pan/*pan*/,
+                                                     0/*freq*/
+                                                     );
+                  // // trace "xxx SamplePadKit::noteOn: sc.pad_idx="+sc.pad_idx+" sc.note_nr="+sc.note_nr+" note="+note+" root_key="+pad.root_key+" pad.voice_key="+pad.voice_key;
+                  sp.initStartedVoicesByKey(pad.voice_key);
+               }
+
+               ui_queued_edit_pad_idx = pad.pad_idx;
+            }
+
+            linkGroupMatch = pad.link_group_id;
+         }
+      }
+   }
+
+   // <replay.png>
+   protected method resetAllControllers() {
+
+      Global.Debug2("SamplePadState::resetAllControllers");
+
+      local SamplePadCommon *padCommon;
+      foreach padCommon in pads
+      {
+         StSamplePlayer samplePlayer <= padCommon.sample_player;
+         samplePlayer.resetModulators();
+         samplePlayer.updateSampleOff(0.0);
+         samplePlayer.updateFreq(0.0);
+         samplePlayer.updateVol(1.0);
+         samplePlayer.updatePan(0.0);
+      }
+
+      current_perf_ctl.fill(-1);
+      b_update_perf_ctl = true;
+   }
+
+   // <replay.png>
+   public =replay= method queueUpdatePerfCtl() {
+      // called by SamplePadForm when variation initial perfctl was edited
+      b_update_perf_ctl = true;
+   }
+
+   // <replay.png>
+   public method queueVariationPerfCtl(local int _variationIdx) {
+      local SamplePadKitVariation kv <= variations[_variationIdx];
+      active_var_perf_ctl = kv.initial_perf_ctl;
+      // // trace "xxx queueVariationPerfCtl: variationIdx="+_variationIdx+" active_var_perf_ctl="+#(active_var_perf_ctl);
+      b_update_perf_ctl = true;
+   }
+
+   // <replay.png>
+   public =replay= method queueVariationPerfCtl_Sync(local int _variationIdx) {
+      // called when variation perf_ctls are enabled or variation is selected in UI
+      queueVariationPerfCtl(_variationIdx);
+   }
+
+   // <replay.png>
+   public =replay= method queueUpdateLaneSends() {
+      // called by SamplePadForm UI after editing per-pad-variation lane level or pan
+      b_update_lane_sends = true;
+   }
+
+   // <method.png>
+   public =replay= checkResetLaneSlewAmtChanged() : boolean {
+      return = b_ui_slew_amt_changed;
+      b_ui_slew_amt_changed = false;
+      return;
+   }
+
+   // <replay.png>
+   protected method setCurrentPerfCtlLSB(local int _perfCtlIdx, local byte _ccValLSB) {
+      local float cur = current_perf_ctl[_perfCtlIdx];
+      if(cur < 0.0f)
+         cur = (_ccValLSB / 128.0);  // was unset, set LSB only
+      else
+         cur = int(cur) + (_ccValLSB / 128.0);  // keep MSB and add LSB
+      current_perf_ctl[_perfCtlIdx] = cur;
+      // // trace "xxx current_perf_ctl["+_perfCtlIdx+"] = "+cur+" (_ccValLSB="+_ccValLSB+")";  // xxxxxxxx
+   }
+
+   // <replay.png>
+   protected method processMIDI(local MIDIPipeFrame fr,
+                                local int _fltDev, local int _fltCh
+                                ) {
+      local int evIdx = 0;
+      local int note;
+      local SamplePadKitVariation kv <= variations[replay_variation_idx];
+
+      // Handle pitchbend
+      local float pb = fr.getFilteredPitchbend(_fltDev, _fltCh);
+      if(pb >= 0.0f)
+      {
+         current_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND] = pb;
+         b_update_perf_ctl = true;
+      }
+
+      // Handle CCs
+      local int numCC = fr.getNumEventsCCByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numCC)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, _fltDev, _fltCh))
+         {
+            switch(pev.ccId)
+            {
+               case 1: // CC1_MODWHEEL MSB
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 33: // CC1_MODWHEEL LSB
+                  setCurrentPerfCtlLSB(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, pev.ccValue);
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 2: // CC2_BREATHCTL MSB
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 34: // CC2_BREATHCTL LSB
+                  setCurrentPerfCtlLSB(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, pev.ccValue);
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 4: // CC4_FOOTCTL MSB
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 36: // CC4_FOOTCTL LSB
+                  setCurrentPerfCtlLSB(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, pev.ccValue);
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 7: // CC7_VOLUME
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC7_VOLUME] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 8: // CC8_BALANCE
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC8_BALANCE] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 10: // CC10_PAN
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC10_PAN] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 11: // CC11_EXPRESSION MSB
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 43: // CC11_EXPRESSION LSB
+                  setCurrentPerfCtlLSB(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, pev.ccValue);
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 16: // CC16_GENERAL_1
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 17: // CC17_GENERAL_2
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 18: // CC18_GENERAL_3
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 19: // CC19_GENERAL_4
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 74: // CC74_BRIGHTNESS
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC74_BRIGHTNESS] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 80: // CC80_GENERAL_5
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 81: // CC81_GENERAL_6
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 82: // CC82_GENERAL_7
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 83: // CC83_GENERAL_8
+                  current_perf_ctl[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] = pev.ccValue;
+                  b_update_perf_ctl = true;
+                  break;
+
+               case 121:  // Controller Reset
+                  resetAllControllers();
+                  break;
+
+               case 123:  // All Notes off
+                  SamplePadCommon *sc;
+                  foreach sc in pads
+                  {
+                     sc.active_timeout = 0;
+                     StSamplePlayer samplePlayer <= sc.sample_player;
+                     samplePlayer.allNotesOff();
+                  }
+                  SamplePad *pad;
+                  foreach pad in kv.pads
+                  {
+                     pad.voice_key = -1;
+                  }
+                  break;
+            }
+         }
+
+         // Next CC event
+         evIdx++;
+      }
+
+      // Handle note-offs (pre note-on)
+      local int numNoteOffPre = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOffPre)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
+         {
+            if(pev.isNoteOffPre())
+            {
+               noteOff(kv, pev.note, pev.velocity / 127.0);
+            }
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+
+      // Handle note-ons
+      local int numNoteOn = fr.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDev, _fltCh))
+         {
+            // // trace "xxx noteOn: pev.note="+pev.note+" replay_variation_idx="+replay_variation_idx;
+
+            if(var_base_note <= pev.note < (var_base_note + NUM_VARIATIONS))
+            {
+               // Select variation
+               local int varIdx = pev.note - var_base_note;
+               local SamplePadKitVariation kvNew <= variations[varIdx];
+               if(!kvNew.b_perf_ctl_only)
+               {
+                  replay_variation_idx = varIdx;
+                  kv <= kvNew;
+                  b_update_lane_sends = true;
+               }
+               ui_queued_edit_variation_idx = varIdx;
+               if(kvNew.b_enable_perf_ctl)
+                  queueVariationPerfCtl(varIdx);
+               // // trace "xxx select varIdx="+varIdx+" var_base_note="+var_base_note+" => new replay_variation_idx="+replay_variation_idx+" new active_var_perf_ctl="+#(active_var_perf_ctl);
+            }
+            else if(STConfig.sample_pad_variation_slew_base_note <= pev.note <= (STConfig.sample_pad_variation_slew_base_note + 3))
+            {
+               // Select variation-change send level/pan slew speed
+               local int slewIdx = pev.note - STConfig.sample_pad_variation_slew_base_note;
+               setSlewAmount(SamplePadCommon.send_slew_tbl.get(slewIdx), (0 == UI.GetKeyMod())/*bAllPads*/);
+            }
+            else
+            {
+               // Trigger pad
+               noteOn(kv, pev.note, pev.velocity / 127.0);
+            }
+         }
+
+         // Next note-on event
+         evIdx++;
+      }
+
+      // Handle note-offs (post note-on)
+      local int numNoteOffPost = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOffPost)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
+         {
+            if(!pev.isNoteOffPre())
+            {
+               noteOff(kv, pev.note, pev.velocity / 127.0);
+            }
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+   }
+
+   // <replay.png>
+   public method process(local int _curTrackIdx, local int _numFrames) {
+
+      if(replay.b_reset_all_controllers)
+         resetAllControllers();
+
+      // Process MIDI events
+      if(replay.b_have_events)
+      {
+         local MIDIPipeFrame inputFrame <= replay.midi_input_frame;
+         processMIDI(inputFrame, parent_track.dev_idx, parent_track.midi_ch);
+      }
+
+      // (todo) pad recording
+      // local FloatArray trackInputBuf <= current_project.getTrackInputBuffer(_curTrackIdx, _curTrackIdx);
+
+      // Render samples
+      mix_buffer.numElements = _numFrames * 2;  // (note) cleared in sc.process()
+      // // if(b_update_perf_ctl)
+      // //    trace "xxx SamplePadState: update current_perf_ctl="+#(current_perf_ctl);
+      local SamplePadKitVariation kv <= variations[replay_variation_idx];
+
+      local SamplePadCommon *sc;
+      foreach sc in pads
+      {
+         local SamplePad pad <= kv.pads.get(sc.pad_idx);
+
+         if(b_update_lane_sends || sc.lane_sends_slew_amt < 1.0)
+         {
+            sc.updateLaneSendLevelLR(pad.lane_level_mod, pad.lane_pan_mod);
+         }
+
+         if(b_update_perf_ctl)
+         {
+            local Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+            if(null != sample)
+            {
+               calcEffectivePerfCtl(kv, sample, pad);
+               // // trace "xxx pad_idx="+sc.pad_idx+" effective_perf_ctl="+#(effective_perf_ctl);
+
+               StSamplePlayer samplePlayer <= sc.sample_player;
+               samplePlayer.updatePerfCtls(effective_perf_ctl);  // skips values < 0
+
+               local float pb = effective_perf_ctl[STSAMPLEPLAYER_PERFCTL_PITCHBEND];
+               if(pb >= 0)
+               {
+                  local float freq;
+                  if(pb >= 8192.0)
+                  {
+                     pb = (pb - 8192.0) / 8191.0;
+                     freq = sample.pitchbend_up  * pb;
+                  }
+                  else
+                  {
+                     pb = (pb - 8192.0) / 8192.0;
+                     freq = sample.pitchbend_down * pb;
+                  }
+                  samplePlayer.updateFreq(freq);
+               }
+            } // if sample
+         }
+
+         sc.process(mix_buffer, _numFrames);
+      }
+
+      b_update_perf_ctl = false;
+      b_update_lane_sends = false;
+   }
+
+}

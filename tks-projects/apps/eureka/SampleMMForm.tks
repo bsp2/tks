@@ -1,0 +1,1001 @@
+// ----
+// ---- file   : SampleMMForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 11May2019
+// ---- changed: 12May2019, 17May2019, 17Feb2020, 19Feb2020, 22May2020, 22Dec2022, 30Dec2022
+// ----          16Aug2023, 21Sep2023, 10Jan2024, 14Jan2024, 17Jan2024, 03Oct2024, 03Jan2025
+// ----          04Jan2025
+// ----
+// ----
+// ----
+
+module MSampleMMForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleMMForm : XMLForm, ActionProvider {
+
+   define String ACTION_SAMPLEMM_ENTRY_EDITED;
+   define String ACTION_SAMPLEMM_UPDATE_ENTRIES;
+
+   StSample *sample;
+   Sample *sample_sci;
+   int mm_idx;
+
+   protected Label       *lb_nr;
+   protected CheckBox    *cb_enable;
+   protected ComboBox    *cm_op;
+   protected FloatParam  *fp_slew_up;
+   protected FloatParam  *fp_slew_down;
+   protected ComboBox    *cm_slew_reset;
+   protected ComboBox    *cm_src;
+   protected FloatParam  *fp_curve;
+   protected FloatParam  *fp_amt;
+   protected ComboBox    *cm_dst;
+
+   protected PopupMenu *pm_context;
+
+   static boolean    clipboard_enable;
+   static int        clipboard_op;
+   static float      clipboard_slew_up;
+   static float      clipboard_slew_down;
+   static int        clipboard_slew_reset;
+   static float      clipboard_curve;
+   static int        clipboard_src;
+   static float      clipboard_amt;
+   static int        clipboard_dst;
+   static FloatArray clipboard_var;  // all (16) variation delta values for copied mod entry
+
+   static SamplePluginModImportDialog *dlg_modimport;
+
+
+   // <ui_init.png>
+   public method initSampleMMForm(int _idx) : boolean {
+      mm_idx = _idx;
+
+      if(!initPakFile("SampleMMForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      lb_nr.setCaption((mm_idx+1)+":");
+      cm_op.setOptions(Sample.mm_op_names);
+      cm_op.setOptionsLong(Sample.mm_op_names_long);
+      cm_src.setOptions(Sample.mm_src_names);
+      cm_dst.setOptions(Sample.mm_dst_names);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_SAMPLEMM_ENTRY_EDITED,
+              ACTION_SAMPLEMM_UPDATE_ENTRIES,
+              ];
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      sample_sci.markParamsAsModified();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_SAMPLEMM_ENTRY_EDITED), this));
+   }
+
+   // <method.png>
+   protected method provideUpdateEntries() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_SAMPLEMM_UPDATE_ENTRIES), this));
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           cb_enable,
+                           cm_op,
+                           fp_slew_up,
+                           fp_slew_down,
+                           cm_slew_reset,
+                           cm_src,
+                           fp_curve,
+                           fp_amt,
+                           cm_dst
+                         ]
+                        );
+   }
+
+   // <ui_show.png>
+   public method showSample(StSample _sample, Sample _sampleSCI) {
+      sample <= _sample;
+      sample_sci <= _sampleSCI;
+
+      boolean bEditable = (null != sample);
+
+      cb_enable    .setEditable(bEditable);
+      cm_op        .setEditable(bEditable);
+      fp_slew_up   .setEditable(bEditable);
+      fp_slew_down .setEditable(bEditable);
+      cm_slew_reset.setEditable(bEditable);
+      cm_src       .setEditable(bEditable);
+      fp_curve     .setEditable(bEditable);
+      fp_amt       .setEditable(bEditable);
+      cm_dst       .setEditable(bEditable);
+
+      if(bEditable)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         cm_dst.setOptions(pgSample.mm_dst_names);
+         updateWidgets();
+      }
+      else
+      {
+         cb_enable    .setSelected(false);
+         cm_op        .setSelectedOption(-1);
+         fp_slew_up   .setValue(0.0f);
+         fp_slew_down .setValue(0.0f);
+         cm_slew_reset.setSelectedOption(0/*-*/);
+         cm_src       .setSelectedOption(-1);
+         fp_curve     .setValue(0.0f);
+         fp_amt       .setValue(0.0f);
+         cm_dst       .setSelectedOption(-1);
+      }
+   }
+
+   // <method.png>
+   protected static MMVarCopyModAll(StSample s, int mmIdxDst, int mmIdxSrc) {
+      local FloatArray data <= s.mmVarGetData();
+      int offDst = mmIdxDst;
+      int offSrc = mmIdxSrc;
+      loop(STSAMPLE_MMVAR_NUM)
+      {
+         data[offDst] = data[offSrc];
+
+         // Next variation
+         offDst += STSAMPLE_NUM_MODMATRIX_ENTRIES;
+         offSrc += STSAMPLE_NUM_MODMATRIX_ENTRIES;
+      }
+   }
+
+   // <method.png>
+   protected static MMVarSetModAll(StSample s, int mmIdx, float f) {
+      local FloatArray data <= s.mmVarGetData();
+      int off = mmIdx;
+      loop(STSAMPLE_MMVAR_NUM)
+      {
+         data[off] = f;
+
+         // Next variation
+         off += STSAMPLE_NUM_MODMATRIX_ENTRIES;
+      }
+   }
+
+   // <method.png>
+   protected static MMVarGetMod(StSample s, int varIdx, int mmIdx) : float {
+      local FloatArray data <= s.mmVarGetData();
+      int off = STSAMPLE_NUM_MODMATRIX_ENTRIES * varIdx + mmIdx;
+      // trace "xxx MMVarGetMod: varIdx="+varIdx+" mmIdx="+mmIdx+" => off="+off+" value="+data.get(off)+" (data="+#(data)+")";
+      return data.get(off);
+   }
+
+   // <method.png>
+   protected static MMVarSetMod(StSample s, int varIdx, int mmIdx, float f) : float {
+      local FloatArray data <= s.mmVarGetData();
+      int off = STSAMPLE_NUM_MODMATRIX_ENTRIES * varIdx + mmIdx;
+      data[off] = f;
+   }
+
+   // <ui_update.png>
+   protected method updateWidgets() {
+      cb_enable    .setSelected      (sample.getMMEnable   (mm_idx));
+      cm_op        .setSelectedOption(sample.getMMOp       (mm_idx));
+      fp_slew_up   .setValue         (sample.getMMSlewUp   (mm_idx) * 99.9f);
+      fp_slew_down .setValue         (sample.getMMSlewDown (mm_idx) * 99.9f);
+      cm_slew_reset.setSelectedOption(sample.getMMSlewReset(mm_idx));
+      cm_src       .setSelectedOption(sample.getMMSrc      (mm_idx));
+      fp_curve     .setValue         (sample.getMMCurve    (mm_idx));
+      float amt = sample.getMMAmt(mm_idx);
+      if(sample.mmVarGetEnable())
+         amt += MMVarGetMod(sample, sample.mmVarGetEditIdx(), mm_idx);
+      fp_amt       .setValue         (amt);
+      cm_dst       .setSelectedOption(sample.getMMDst      (mm_idx));
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleInsert(boolean _bModulate, boolean _bQuiet) : int {
+      int retIdx = -1;
+
+      if((mm_idx+1) < STSAMPLE_NUM_MODMATRIX_ENTRIES)
+      {
+         StSample *s;
+         PageSample pgSample <= root_form.pg_sample;
+         local PointerArray zones <= pgSample.getSelectedZones();
+
+         // Find last unused MM entry after current one
+         int idx = STSAMPLE_NUM_MODMATRIX_ENTRIES - 1;
+         while(idx > mm_idx)
+         {
+            boolean bUnused = true;
+            foreach s in zones
+            {
+               bUnused = (STSAMPLE_MM_SRC_NONE == s.getMMSrc(idx));
+               if(!bUnused)
+                  break;
+            }
+
+            if(bUnused)
+               break;
+            idx--;
+         }
+
+         if(idx > mm_idx)
+         {
+            // Move all modmatrix entries between mm_idx..idx-1
+            int num = (mm_idx - idx);
+            while(idx > mm_idx)
+            {
+               foreach s in zones
+               {
+                  s.setMMEnable    (idx, s.getMMEnable   (idx-1));
+                  s.setMMOp        (idx, s.getMMOp       (idx-1));
+                  s.setMMSlewUp    (idx, s.getMMSlewUp   (idx-1));
+                  s.setMMSlewDown  (idx, s.getMMSlewDown (idx-1));
+                  s.setMMSlewReset (idx, s.getMMSlewReset(idx-1));
+                  s.setMMCurve     (idx, s.getMMCurve    (idx-1));
+                  s.setMMSrc       (idx, s.getMMSrc      (idx-1));
+                  s.setMMDst       (idx, s.getMMDst      (idx-1));
+                  s.setMMAmt       (idx, s.getMMAmt      (idx-1));
+                  s.setMMSignalTap (idx, s.getMMSignalTap(idx-1));
+                  MMVarCopyModAll(s, idx, idx-1);
+               }
+
+               idx--;
+            }
+
+            // Retarget MM_DST_MOD_x_AMOUNT destinations
+            foreach s in zones
+            {
+               int i = 0;
+               loop(STSAMPLE_NUM_MODMATRIX_ENTRIES)
+               {
+                  int mmDst = s.getMMDst(i);
+                  if(STSAMPLE_MM_DST_MOD_1_AMOUNT <= mmDst <= STSAMPLE_MM_DST_MOD_16_AMOUNT)
+                  {
+                     mmDst -= STSAMPLE_MM_DST_MOD_1_AMOUNT;
+                     if(mmDst >= mm_idx)
+                     {
+                        mmDst = (mmDst + 1) + STSAMPLE_MM_DST_MOD_1_AMOUNT;
+                        if(mmDst <= STSAMPLE_MM_DST_MOD_16_AMOUNT)
+                           s.setMMDst(i, mmDst);
+                     }
+                  }
+                  i++;
+               }
+            }
+
+            foreach s in zones
+            {
+               if(_bModulate)
+               {
+                  // Modulate next entry
+                  s.setMMEnable   (idx, true);
+                  s.setMMOp       (idx, STSAMPLE_MM_OP_AUTO);
+                  s.setMMSrc      (idx, STSAMPLE_MM_SRC_CC1_MODWHEEL);
+                  s.setMMDst      (idx, STSAMPLE_MM_DST_MOD_1_AMOUNT + idx + 1);
+               }
+               else
+               {
+                  // Init empty
+                  s.setMMEnable   (idx, false);
+                  s.setMMOp       (idx, STSAMPLE_MM_OP_AUTO);
+                  s.setMMSrc      (idx, STSAMPLE_MM_SRC_NONE);
+                  s.setMMDst      (idx, STSAMPLE_MM_DST_NONE);
+               }
+               s.setMMSlewUp   (idx, 0.0f);
+               s.setMMSlewDown (idx, 0.0f);
+               s.setMMSlewReset(idx, STSAMPLE_MM_SLEW_RESET_OFF);
+               s.setMMCurve    (idx, 0.0f);
+               s.setMMAmt      (idx, 0.0f);
+               s.setMMSignalTap(idx, false);
+               MMVarSetModAll(s, idx, 0.0f);
+            }
+
+            if(!_bQuiet)
+               Global.Print("Insert MM entry at #"+(mm_idx+1)+" (move "+num+" zone+"+Utils.GetPluralString(num)+" and update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+            provideUpdateEntries();
+
+            // Succeeded
+            retIdx = idx;
+         }
+         else
+         {
+            Global.Warning("Insert: failed to find unused MM entry (in "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+         }
+      }
+      else
+      {
+         Global.Warning("Cannot insert after last MM entry");
+      }
+      return retIdx;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClone() {
+      if((mm_idx+1) < STSAMPLE_NUM_MODMATRIX_ENTRIES)
+      {
+         handleCopy();
+
+         if(sample.getMMEnable(mm_idx+1))
+         {
+            // Next entry is used, insert empty one and shift following entries
+            if(!sample.getMMEnable(STSAMPLE_NUM_MODMATRIX_ENTRIES-1))
+            {
+               handleInsert(false/*bModulate*/, false/*bQuiet*/);
+               handlePaste();
+               Global.Print("Clone modmatrix entry "+(mm_idx+1));
+            }
+            else
+            {
+               Global.Warning("Clone failed: last entry is in use (cannot insert)");
+            }
+         }
+         else
+         {
+            // Next entry is unused, paste w/o insert
+            PageSample pgSample <= root_form.pg_sample;
+            SampleMMForm fNext <= pgSample.getSampleMMFormByIdx(mm_idx+1);
+            fNext.handlePaste();
+            Global.Print("Clone modmatrix entry "+(mm_idx+1));
+         }
+      }
+      else
+      {
+         Global.Warning("Cannot clone last entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDelete() {
+
+      if((mm_idx+1) < STSAMPLE_NUM_MODMATRIX_ENTRIES)
+      {
+         StSample *s;
+         PageSample pgSample <= root_form.pg_sample;
+         local PointerArray zones <= pgSample.getSelectedZones();
+
+         // Move all modmatrix entries between mm_idx..NUM_ENTRIES-1
+         int idx = mm_idx + 1;
+         while(idx < STSAMPLE_NUM_MODMATRIX_ENTRIES)
+         {
+            foreach s in zones
+            {
+               s.setMMEnable    (idx-1, s.getMMEnable   (idx));
+               s.setMMOp        (idx-1, s.getMMOp       (idx));
+               s.setMMSlewUp    (idx-1, s.getMMSlewUp   (idx));
+               s.setMMSlewDown  (idx-1, s.getMMSlewDown (idx));
+               s.setMMSlewReset (idx-1, s.getMMSlewReset(idx));
+               s.setMMCurve     (idx-1, s.getMMCurve    (idx));
+               s.setMMSrc       (idx-1, s.getMMSrc      (idx));
+               s.setMMDst       (idx-1, s.getMMDst      (idx));
+               s.setMMAmt       (idx-1, s.getMMAmt      (idx));
+               s.setMMSignalTap (idx-1, s.getMMSignalTap(idx));
+               MMVarCopyModAll(s, idx-1, idx);
+            }
+
+            idx++;
+         }
+
+         // Retarget MM_DST_MOD_x_AMOUNT destinations
+         foreach s in zones
+         {
+            int i = 0;
+            loop(STSAMPLE_NUM_MODMATRIX_ENTRIES)
+            {
+               int mmDst = s.getMMDst(i);
+               if(STSAMPLE_MM_DST_MOD_1_AMOUNT <= mmDst <= STSAMPLE_MM_DST_MOD_16_AMOUNT)
+               {
+                  mmDst -= STSAMPLE_MM_DST_MOD_1_AMOUNT;
+                  if(mmDst >= mm_idx)
+                  {
+                     mmDst = (mmDst - 1) + STSAMPLE_MM_DST_MOD_1_AMOUNT;
+                     if(mmDst >= STSAMPLE_MM_DST_MOD_1_AMOUNT)
+                        s.setMMDst(i, mmDst);
+                  }
+               }
+               i++;
+            }
+         }
+
+         idx = STSAMPLE_NUM_MODMATRIX_ENTRIES - 1;
+         foreach s in zones
+         {
+            // Init empty
+            s.setMMEnable   (idx, false);
+            s.setMMOp       (idx, STSAMPLE_MM_OP_AUTO);
+            s.setMMSlewUp   (idx, 0.0f);
+            s.setMMSlewDown (idx, 0.0f);
+            s.setMMSlewReset(idx, STSAMPLE_MM_SLEW_RESET_OFF);
+            s.setMMCurve    (idx, 0.0f);
+            s.setMMSrc      (idx, STSAMPLE_MM_SRC_NONE);
+            s.setMMDst      (idx, STSAMPLE_MM_DST_NONE);
+            s.setMMAmt      (idx, 0.0f);
+            s.setMMSignalTap(idx, false);
+            MMVarSetModAll(s, idx, 0.0f);
+         }
+
+         Global.Print("Delete MM entry #"+(mm_idx+1)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+         provideUpdateEntries();
+      }
+      else
+      {
+         handleClear(false/*bQuiet*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_enable.isSelected();
+      foreach s in zones
+      {
+         s.setMMEnable(mm_idx, bEnable);
+      }
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOpChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      int op = cm_op.getSelectedOption();
+      foreach s in zones
+      {
+         s.setMMOp(mm_idx, op);
+      }
+
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" operator is \""+cm_op.getSelectedOptionNameLong()+"\" ("+op+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCurveChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      Float c = fp_curve.getFloatValue();
+      foreach s in zones
+      {
+         s.setMMCurve(mm_idx, c);
+      }
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" curve is "+c.printf("%1.3f"));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSlewUpChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      Float amt = fp_slew_up.getFloatValue();
+      float f = amt / 99.9f;  // 99=>0.990990990991
+      foreach s in zones
+      {
+         s.setMMSlewUp(mm_idx, f);
+      }
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" slew up is "+amt.printf("%3.3f"));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSlewDownChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      Float amt = fp_slew_down.getFloatValue();
+      float f = amt / 99.9f;
+      foreach s in zones
+      {
+         s.setMMSlewDown(mm_idx, f);
+      }
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" slew down is "+amt.printf("%3.3f"));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSlewResetChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      int resetMode = cm_slew_reset.getSelectedOption();
+      foreach s in zones
+      {
+         s.setMMSlewReset(mm_idx, resetMode);
+      }
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" slew reset mode is \""+cm_slew_reset.getSelectedOptionName()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSrcChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      int src = cm_src.getSelectedOption();
+      foreach s in zones
+      {
+         s.setMMSrc(mm_idx, src);
+      }
+
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" source is \""+cm_src.getSelectedOptionName()+"\" ("+src+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmtChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      Float amt = fp_amt.getFloatValue();
+
+      boolean bVar = sample.mmVarGetEnable();
+      if(bVar)
+      {
+         int editVarIdx = sample.mmVarGetEditIdx();
+
+         foreach s in zones
+         {
+            float baseAmt = s.getMMAmt(mm_idx);
+            MMVarSetMod(s, editVarIdx, mm_idx, amt - baseAmt);  // store delta to base mod matrix
+            trace "xxx SampleMMForm::handleAmtChanged: s="+#(s)+" mm_idx="+mm_idx+" amt="+amt+" baseAmt="+baseAmt+" => delta0"+(amt - baseAmt);
+         }
+      }
+      else
+      {
+         // Update base mod matrix
+         foreach s in zones
+         {
+            s.setMMAmt(mm_idx, amt);
+         }
+      }
+
+      provideEdited();
+      amt *= 100;
+      if(bVar)
+         Global.Print("MM Var #"+(editVarIdx+1)+" Entry #"+(mm_idx+1)+" amount is "+amt.printf("%3.3f")+"%");
+      else
+         Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" amount is "+amt.printf("%3.3f")+"%");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDstChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      int dst = cm_dst.getSelectedOption();
+      foreach s in zones
+      {
+         s.setMMDst(mm_idx, dst);
+      }
+
+      provideEdited();
+      Global.Print("Mod Matrix Entry #"+(mm_idx+1)+" destination is \""+cm_dst.getSelectedOptionName()+"\" ("+dst+")");
+   }
+
+   // <method.png>
+   protected method copyToClipboard() {
+      clipboard_enable     = sample.getMMEnable   (mm_idx);
+      clipboard_op         = sample.getMMOp       (mm_idx);
+      clipboard_slew_up    = sample.getMMSlewUp   (mm_idx);
+      clipboard_slew_down  = sample.getMMSlewDown (mm_idx);
+      clipboard_slew_reset = sample.getMMSlewReset(mm_idx);
+      clipboard_curve      = sample.getMMCurve    (mm_idx);
+      clipboard_src        = sample.getMMSrc      (mm_idx);
+      clipboard_amt        = sample.getMMAmt      (mm_idx);
+      clipboard_dst        = sample.getMMDst      (mm_idx);
+
+      clipboard_var.alloc(STSAMPLE_MMVAR_NUM);
+      int varIdx = 0;
+      loop(STSAMPLE_MMVAR_NUM)
+         clipboard_var.add(MMVarGetMod(sample, varIdx++, mm_idx));
+   }
+
+   // <ui_handle.png>
+   protected method handleCut() {
+      copyToClipboard();
+      handleClear(true/*bQuiet*/);
+      Global.Print("Cut modmatrix entry "+(mm_idx+1)+" to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      copyToClipboard();
+      Global.Print("Copy modmatrix entry "+(mm_idx+1)+" to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != sample)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         local PointerArray zones <= pgSample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            s.setMMEnable   (mm_idx, clipboard_enable);
+            s.setMMOp       (mm_idx, clipboard_op);
+            s.setMMSlewUp   (mm_idx, clipboard_slew_up);
+            s.setMMSlewDown (mm_idx, clipboard_slew_down);
+            s.setMMSlewReset(mm_idx, clipboard_slew_reset);
+            s.setMMCurve    (mm_idx, clipboard_curve);
+            s.setMMSrc      (mm_idx, clipboard_src);
+            s.setMMAmt      (mm_idx, clipboard_amt);
+            s.setMMDst      (mm_idx, clipboard_dst);
+            s.setMMSignalTap(mm_idx, false);
+
+            int varIdx = 0;
+            loop(STSAMPLE_MMVAR_NUM)
+            {
+               MMVarSetMod(sample, varIdx, mm_idx, clipboard_var.get(varIdx));
+               varIdx++;
+            }
+
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+         Global.Print("Paste modmatrix entry "+(mm_idx+1)+" from clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClear(boolean _bQuiet) {
+      if(null != sample)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         local PointerArray zones <= pgSample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            s.setMMEnable     (mm_idx, false);
+            s.setMMOp         (mm_idx, STSAMPLE_MM_OP_AUTO);
+            s.setMMSlewUp     (mm_idx, 0.0f);
+            s.setMMSlewDown   (mm_idx, 0.0f);
+            s.setMMSlewReset  (mm_idx, STSAMPLE_MM_SLEW_RESET_OFF);
+            s.setMMCurve      (mm_idx, 0.0f);
+            s.setMMSrc        (mm_idx, STSAMPLE_MM_SRC_NONE);
+            s.setMMAmt        (mm_idx, 0.0f);
+            s.setMMDst        (mm_idx, STSAMPLE_MM_DST_NONE);
+            s.setMMSignalTap  (mm_idx, false);
+            MMVarSetModAll(s, mm_idx, 0.0f);
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         if(!_bQuiet)
+            Global.Print("Clear modmatrix entry "+(mm_idx+1));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClearInactive() {
+      if(null != sample)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         local PointerArray zones <= pgSample.getSelectedZones();
+         StSample *s;
+         int numCleared = 0;
+         foreach s in zones
+         {
+            int mmIdx = 0;
+            loop(STSAMPLE_NUM_MODMATRIX_ENTRIES)
+            {
+               if(false == s.getMMEnable(mmIdx))
+               {
+                  s.setMMOp         (mmIdx, STSAMPLE_MM_OP_AUTO);
+                  s.setMMSlewUp     (mmIdx, 0.0f);
+                  s.setMMSlewDown   (mmIdx, 0.0f);
+                  s.setMMSlewReset  (mmIdx, STSAMPLE_MM_SLEW_RESET_OFF);
+                  s.setMMCurve      (mmIdx, 0.0f);
+                  s.setMMSrc        (mmIdx, STSAMPLE_MM_SRC_NONE);
+                  s.setMMAmt        (mmIdx, 0.0f);
+                  s.setMMDst        (mmIdx, STSAMPLE_MM_DST_NONE);
+                  s.setMMSignalTap  (mmIdx, false);
+                  MMVarSetModAll(s, mmIdx, 0.0f);
+                  numCleared++;
+               }
+               mmIdx++;
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+         provideUpdateEntries();
+
+         Global.Print("Clear modmatrix "+numCleared+" "+Utils.GetPluralStringEx(numCleared, "entry", "entries"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleToggleSignalTap() {
+      if(null != sample)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         local PointerArray zones <= pgSample.getSelectedZones();
+         StSample *s;
+         boolean bEnable = !sample.getMMSignalTap(mm_idx);
+         foreach s in zones
+         {
+            s.setMMSignalTap(mm_idx, bEnable);
+         }
+
+         provideEdited();
+
+         Global.Print("Mod Matrix entry "+(mm_idx+1)+" Signal Tap is "+Utils.GetEnableString(bEnable));
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != sample)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Insert", "insert");
+         pmb.setToolTipCaption("Insert empty entry");
+
+         pmb <= pm.addDefaultButton("Clone", "clone");
+         pmb.setToolTipCaption("Clone / Duplicate entry\n\n (note) copy entry, insert + paste");
+
+         pmb <= pm.addDefaultButton("Modulate", "modulate");
+         pmb.setToolTipCaption("Insert entry and target current entry amount");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Import voice plugin mods..", "mod_import");
+         pmb.setToolTipCaption("Import modmatrix entries from voice plugin modulation targets (show selection dialog)");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Delete", "delete");
+         pmb.setToolTipCaption("Delete entry and move subsequent entries");
+         pmb <= pm.addDefaultButton("Clear", "clear");
+         pmb.setToolTipCaption("Clear / Reset entry");
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Cut", "cut");
+         pmb.setToolTipCaption("Cut to clipboard and reset entry");
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setToolTipCaption("Copy to clipboard");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setToolTipCaption("Paste from clipboard");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Clear All Inactive Entries", "clear_all_inactive");
+         pmb.setToolTipCaption("Clear / Reset all currently disabled / inactive entries");
+
+         pm.addSeparator();
+         pmb <= pm.addCheckButton("Signal Tap", sample.getMMSignalTap(mm_idx), "signal_tap");
+         pmb.setToolTipCaption("Toggle signal tap (debug console)");
+
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show Mod Entry context menu.");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showSamplePluginModImportDialog() {
+      if(null != sample)
+      {
+         if(null == dlg_modimport)
+         {
+            dlg_modimport <= new SamplePluginModImportDialog;
+            dlg_modimport.initSamplePluginModImportDialog();
+
+            dlg_modimport.restoreGeometryIfValid(UI.IsHiDPI()
+                                                 ? STConfig.pgsample_modimport_geo_hidpi
+                                                 : STConfig.pgsample_modimport_geo_lodpi
+                                                 );
+         }
+
+         dlg_modimport.showSamplePluginModImportDialog(sample, this/*recipient*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportPluginMods(PointerArray _entries) {
+      int numImported = 0;
+      int numFailed = 0;
+      PageSample pgSample <= root_form.pg_sample;
+      local PointerArray zones <= pgSample.getSelectedZones();
+      if(_entries.numElements > 0)
+      {
+         int enIdx = _entries.numElements;
+         loop(_entries.numElements)
+         {
+            SamplePluginModImportEntry en <= _entries.get(--enIdx);
+            int mmIdx = handleInsert(false/*bModulate*/, true/*bQuiet*/);
+            trace "[trc] SampleMMForm::handleImportPluginMods: import mmIdx="+mmIdx+" en.plugin_name=\""+en.plugin_name+"\" en.mod_name=\""+en.mod_name+"\"";
+            if(mmIdx >= 0)
+            {
+               StSample *s;
+               foreach s in zones
+               {
+                  s.setMMEnable(mmIdx, true);
+                  s.setMMSrc   (mmIdx, STSAMPLE_MM_SRC_CONST_1);
+                  s.setMMDst   (mmIdx, STSAMPLE_MM_DST_PLUGIN_1_MOD_1 + en.plugin_idx*8 + en.mod_idx);
+               }        
+               numImported++;
+            }
+            else
+            {
+               numFailed++;
+            }
+         }
+
+         if(numImported > 0)
+         {
+            pgSample.updateMM(false/*bUpdateVarForm*/);
+            provideEdited();
+         }
+      }
+
+      if(numFailed > 0)
+         Global.Print("Import "+numImported+" mod"+Utils.GetPluralString(numImported)+" ("+numFailed+" failed)");
+      else if(numImported > 0)
+         Global.Success("Import "+numImported+" mod"+Utils.GetPluralString(numImported));
+      else
+         Global.Print("no mods imported");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+         showContextMenu();
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(dlg_modimport):
+            if(SamplePluginModImportDialog.ACTION_OK == acName)
+            {
+               handleImportPluginMods(dlg_modimport.getSelectedEntries());
+            }
+            else
+            {
+               Global.Print("Cancel SamplePluginModImportDialog");
+            }
+            dlg_modimport <= null;
+            return true;
+
+         case @(pm_context):
+            Global.Debug2("SampleMMForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "insert":
+                  handleInsert(false/*bModulate*/, false/*bQuiet*/);
+                  return true;
+
+               case "clone":
+                  handleClone();
+                  return true;
+
+               case "modulate":
+                  handleInsert(true/*bModulate*/, false/*bQuiet*/);
+                  return true;
+
+               case "delete":
+                  handleDelete();
+                  return true;
+
+               case "cut":
+                  handleCut();
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+
+               case "clear":
+                  handleClear(false/*bQuiet*/);
+                  return true;
+
+               case "clear_all_inactive":
+                  handleClearInactive();
+                  return true;
+
+               case "mod_import":
+                  showSamplePluginModImportDialog();
+                  return true;
+
+               case "signal_tap":
+                  handleToggleSignalTap();
+                  return true;
+            }
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            return true;
+
+         case @(cm_op):
+            handleOpChanged();
+            return true;
+
+         case @(fp_slew_up):
+            handleSlewUpChanged();
+            return true;
+
+         case @(fp_slew_down):
+            handleSlewDownChanged();
+            return true;
+
+         case @(cm_slew_reset):
+            handleSlewResetChanged();
+            return true;
+
+         case @(cm_src):
+            handleSrcChanged();
+            return true;
+
+         case @(fp_curve):
+            handleCurveChanged();
+            return true;
+
+         case @(fp_amt):
+            handleAmtChanged();
+            return true;
+
+         case @(cm_dst):
+            handleDstChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

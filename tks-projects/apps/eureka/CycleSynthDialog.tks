@@ -1,0 +1,2012 @@
+// ----
+// ---- file   : CycleSynthDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 18Aug2020
+// ---- changed: 19Aug2020, 20Aug2020, 12Oct2020, 13Oct2020, 30Jul2021, 31Jul2021, 01Aug2021
+// ----          31Aug2021, 19Feb2023, 01Apr2023, 07Apr2023, 19Apr2023, 20Apr2023, 04May2023
+// ----          05May2023, 06May2023, 17Sep2023, 21Sep2023, 04Oct2023, 30Oct2023, 02Nov2023
+// ----          11Nov2023, 23Nov2023, 02Dec2023, 07Dec2023, 17Jan2024, 18Jan2024, 10Feb2024
+// ----          14Feb2024, 23Feb2024, 25Feb2024, 19Apr2024, 25Apr2024, 05Jul2024, 11Aug2024
+// ----          12Aug2024, 13Aug2024, 15Sep2024, 03Oct2024, 12Dec2024, 13Dec2024, 17Dec2024
+// ----          29Dec2024, 11Jan2025, 10Jun2025, 11Jun2025, 21Jun2025
+// ----
+// ----
+// ----
+
+module MCycleSynthDialog;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug = false;
+boolean b_debug2 = false;
+
+
+// <class.png>
+class CycleSynthDialog extends Dialog {
+
+   define String TA_RECALC;
+   protected TimerAction *ta_recalc;
+   static int recalc_mode;  // 0=autorecalc off, 1=recalc/reschedule(old), 2=recalc/schedule(new)
+
+   Sample     *sample;       // => currently selected sample
+   CycleState *cycle_state;  // => sample.cycle_state
+   CyclePatch *patch;        // => sample.cycle_state.patches[i]
+
+   protected XMLForm *xfm;
+
+   protected Panel *pn_header;
+
+   protected ComboBox  *cm_patch;
+   protected CheckBox  *cb_patchbyzone;
+   protected ComboBox  *cm_shared_patch;
+   protected ComboBox  *cm_zone;
+   protected Button    *bt_copy;
+   protected Button    *bt_paste;
+
+   protected Panel     *pn_machine;
+   protected ComboBox  *cm_machine;
+   protected Button    *bt_machine_load;
+   protected CheckBox  *cb_machine_autoload;
+   protected Button    *bt_machine_save;
+   protected Button    *bt_machine_edit;
+
+   protected Button    *bt_curve_edit;
+
+   protected CheckBox  *cb_lofi;
+
+   protected ComboBox  *cm_recalc;
+
+   protected Button    *bt_tools;
+   protected PopupMenu *pm_tools;
+
+   protected Button    *bt_fit;
+
+   static CycleMachineEditDialog *dlg_machine;
+   // // protected int          machine_cursor_x;  // (todo) remove and use patch.getSavedBufferX("main") instead ?
+   // // protected int          machine_cursor_y;
+   // ""=main machine source
+   //  or buffer name (.mybuf)
+   //  or global include file name (w/o .cy suffix)
+   protected String       machine_edit_buffer;
+
+   String last_preset_name;
+   protected CycleSaveMachinePresetDialog *dlg_preset_save;
+   StringArray preset_machines;
+
+   ScrollPane *sp_args;
+   CycleArgForm *[] f_args;
+
+   static CyclePatch *patch_clipboard;
+
+   static CycleCurveDialog *dlg_curve;
+
+   static boolean b_auto_export;
+
+   public int last_touched_arg_idx;
+
+   protected static CycleTemplateSelectionDialog *dlg_templateselection;
+
+
+   // <ui_init.png>
+   public method initCycleSynthDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("CycleSynthDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initCycleSynthDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      int argIdx = 0;
+      loop(CyclePatch.NUM_ARGS)
+      {
+         CycleArgForm argForm <= xfm.findLayerById("arg_"+argIdx);
+         argForm.initArgForm();
+         f_args.add(argForm);
+         argIdx++;
+      }
+
+      initWindow(xfm,
+                 "Synth Dialog",
+                 263,  82,
+                 842*UI.font_scaling, 350*UI.font_scaling
+                 );
+
+      initTimers();
+
+      recalc_mode = 2;
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   public method initTimers() {
+      ta_recalc <= TimerAction.New(TA_RECALC, this, STConfig.cycle_recalc_interval_delayed);
+      ta_recalc.setDefaultTicks(STConfig.cycle_recalc_interval_delayed/*def*/,
+                                STConfig.cycle_recalc_interval_smooth/*short*/,
+                                STConfig.cycle_recalc_interval_delayed/*medium*/,
+                                STConfig.cycle_recalc_interval_delayed/*long*/
+                                );
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      showMachineEditor();
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(cm_patch);
+      layers.add(cb_patchbyzone);
+      layers.add(cm_shared_patch);
+      layers.add(cm_zone);
+      layers.add(bt_machine_edit);
+      layers.add(bt_curve_edit);
+      layers.add(cb_lofi);
+      layers.add(bt_copy);
+      layers.add(bt_paste);
+      layers.add(cm_machine);
+      layers.add(bt_machine_load);
+      layers.add(cb_machine_autoload);
+      layers.add(bt_machine_save);
+
+      if(null != patch)
+      {
+         CycleArgForm *f;
+         foreach f in f_args
+            f.addTabCycleOverrides(layers);
+      }
+
+      layers.add(cm_recalc);
+      layers.add(bt_tools);
+      layers.add(bt_fit);
+   }
+
+   // <ui_show.png>
+   public method showCycleSynthDialog() {
+
+      PageSample pgSample <= root_form.pg_sample;
+      sample <= pgSample.getSelectedSample();
+      cycle_state <= sample.cycle_state;
+
+      cm_recalc.setSelectedOption(recalc_mode);
+
+      cb_patchbyzone.setSelected(cycle_state.b_patch_by_zone);
+
+      scanMachinePresets();
+      pn_machine.relayout();
+
+      if(cycle_state.b_patch_by_zone)
+         setLastSelectedPatchByZone();
+
+      Global.Debug("showCycleSynthDialog: cycle_state.last_selected_patch_idx="+cycle_state.last_selected_patch_idx);
+
+      patch <= cycle_state.patches.get(cycle_state.last_selected_patch_idx);
+
+      recursiveBuildTabCycleLists();
+
+      updateZoneOptions();
+      updatePatchOptions();
+
+      cm_patch.setSelectedOption(cycle_state.last_selected_patch_idx);
+
+      handlePatchChanged(false/*bFromUI*/);
+
+      setWindowTitle("Sample Synth: "+sample.unique_name);
+
+      show();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      resizeToMinimumX();
+      resizeAtLeastToMinimum();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(cm_patch);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.cycle_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.cycle_geo_lodpi);
+
+      Dialog::hide();
+      ta_recalc.cancel();
+
+      // recalc-all flag may have changed due to shared patches/args
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.updateCycleRecalcAll();
+   }
+
+   // <method.png>
+   public static GetOrCreatePatchClipboard() : CyclePatch {
+      if(null == patch_clipboard)
+      {
+         patch_clipboard <= new CyclePatch;
+         patch_clipboard.init(null/*emptyPatch*/, -1/*patchIdx*/);
+      }
+      return patch_clipboard;
+   }
+
+   // <method.png>
+   public method copyToClipboard() {
+      GetOrCreatePatchClipboard();
+      patch_clipboard.copyFrom(patch);
+      patch_clipboard.setSharedPatchIdx(patch.patch_idx);
+      Global.Print("Copy patch to clipboard");
+   }
+
+   // <method.png>
+   public method pasteFromClipboard(boolean _bShared) {
+      if(null != patch_clipboard)
+      {
+         patch.copyFrom(patch_clipboard);
+
+         if(_bShared) {
+
+            patch.setSharedPatchIdx(patch_clipboard.shared_patch_idx);
+            patch.setSourceBufferMain("# shared\n");
+         }
+
+         reparse(true/*bMessage*/);
+         current_project.markAsModified();
+
+         if(_bShared) {
+            // Enable arg sharing
+            String *argId;
+            foreach argId in patch.arg_values
+            {
+               patch.setSharedArgFlag(argId, true/*bShared*/);
+            }
+         }
+
+         handlePatchChanged(false/*bFromUI*/);
+
+         ta_recalc.schedule();
+
+         Global.Print("Paste patch clipboard");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateMachineEditDialogCurveAndArg() {
+      if(null != dlg_machine && dlg_machine.isFloatingLayerVisible())
+      {
+         dlg_machine.updateCurve();  // curve caption change
+         dlg_machine.updateArg();
+      }
+   }
+
+   // <method.png>
+   public method reparse(boolean _bMessage) {
+      if(b_debug2)
+         trace "[trc] CycleSynthDialog::reparse";
+
+      if(patch.reparse(sample, patch.getDefaultSampleRate(sample), _bMessage))
+      {
+         CyScript script <= patch.cycle;
+         if(b_debug)
+            script.debugPrintTree();
+
+         highlightAndGoToErrorLine();
+
+         updateMachineEditDialogCurveAndArg();
+      }
+
+      updateArgs();
+   }
+
+   // <method.png>
+   public method queueRecalcEx(TimerAction _ta) {
+      if(b_debug2)
+         trace "[trc] CycleSynthDialog::queueRecalcEx";
+      if(1 == recalc_mode || b_auto_export)
+      {
+         // 'delayed'
+         _ta.rescheduleLong();
+      }
+      else if(2 == recalc_mode)
+      {
+         // 'smooth'
+         _ta.scheduleShort();
+      }
+   }
+
+   // <method.png>
+   public method queueRecalc() {
+      queueRecalcEx(ta_recalc);
+   }
+
+   // <method.png>
+   public method recalc(boolean _bMessage) {
+      if(b_debug2)
+         trace "[trc] CycleSynthDialog::recalc";
+
+      CyScript script <= patch.cycle;
+
+      if(null == script)
+      {
+         reparse(_bMessage);
+         script <= patch.cycle;
+      }
+
+      if(cycle_state.b_recalc_all)
+      {
+         // Drum-Loops etc
+         sample.recalcCyclePatches();
+      }
+      else
+      {
+         patch.recalc(sample, _bMessage);
+      }
+
+      UI.RedrawAll();
+   }
+
+   // <ui_update.png>
+   protected method updatePatchOptions() {
+
+      local StringArray opt;
+      local StringArray optLong;
+      Integer patchNr = 1;
+      int patchIdx = 0;
+      loop(CycleState.MAX_PATCHES)
+      {
+         CyclePatch sp <= cycle_state.patches.get(patchIdx);
+         local String zoneName = cm_zone.getOptionNameByIdx(sp.target_zone_idx + CyclePatch.TARGET_ZONE_UI_SHIFT);
+         if(sp.target_zone_idx >= 0)
+         {
+            zoneName.substring(4,-1);
+            opt    .add(patchNr.printf("%02d")+": "+zoneName);
+            optLong.add(patchNr.printf("%02d")+": "+zoneName);
+         }
+         else if(CyclePatch.TARGET_ZONE_GLOBAL_PLUGIN == sp.target_zone_idx)
+         {
+            opt    .add(patchNr.printf("%02d")+": <G>");
+            optLong.add(patchNr.printf("%02d")+": "+zoneName);
+         }
+         else if(CyclePatch.TARGET_ZONE_PATCH_PLUGIN == sp.target_zone_idx)
+         {
+            opt    .add(patchNr.printf("%02d")+": <P>");
+            optLong.add(patchNr.printf("%02d")+": "+zoneName);
+         }
+         else if(CyclePatch.TARGET_ZONE_NONE == sp.target_zone_idx)
+         {
+            opt    .add(patchNr.printf("%02d")+": -");
+            optLong.add(patchNr.printf("%02d")+": -");
+         }
+         else
+         {
+            // Should not be reachable
+            opt    .add(patchNr.printf("%02d")+": zone"+sp.target_zone_idx);
+            optLong.add(patchNr.printf("%02d")+": zone"+sp.target_zone_idx);
+         }
+         patchNr++;
+         patchIdx++;
+      }
+      cm_patch.setOptions(opt);
+      cm_patch.setOptionsLong(optLong);
+
+      opt.insert(0, "-");
+      optLong.insert(0, "-");
+      cm_shared_patch.setOptions(opt);
+      cm_shared_patch.setOptionsLong(optLong);
+   }
+
+   // <ui_update.png>
+   protected method updateZoneOptions() {
+
+      local StringArray opt;
+      local StringArray optLong;
+      local Integer zoneNr = 1;
+      StSample s <= sample.sample_bank.firstSample;
+
+      opt.add("<global plugin>");
+      optLong.add("<global plugin>");  // -3
+
+      opt.add("<patch plugin>");
+      optLong.add("<patch plugin>");   // -2
+
+      opt.add("-");
+      optLong.add("-");                // -1
+
+      while(null != s)
+      {
+         local String sOpt <= zoneNr.printf("%02d")+": "+s.name;
+         opt.add(sOpt);
+         optLong.add(sOpt);
+         zoneNr++;
+         s <= s.next;
+      }
+      cm_zone.setOptions(opt);
+      cm_zone.setOptionsLong(optLong);
+   }
+
+   // <method.png>
+   protected method selectMachineBySource() {
+      String *s;
+      local String curSrc <= patch.getSourceBufferRefMain().trim();
+      int machineIdx = 1;
+      foreach s in preset_machines
+      {
+         if(curSrc.compareIgnoreWhitespace(s))
+         {
+            Global.Debug2("CycleSynthDialog::selectMachineBySource: match machineIdx="+machineIdx+" s.checksum="+s.checksumIgnoreWhitespace+" curSrc.checksum="+curSrc.checksumIgnoreWhitespace);
+            cm_machine.setSelectedOption(machineIdx);
+            last_preset_name = cm_machine.getSelectedOptionName();
+            return;
+         }
+         machineIdx++;
+      }
+      cm_machine.setSelectedOption(0); // <custom>
+      if!(last_preset_name >= " edited")
+         last_preset_name.append(" edited");
+   }
+
+   // <ui_update.png>
+   protected method updateArgs() {
+      CycleArgForm *argForm;
+      int argIdx = 0;
+      foreach argForm in f_args
+      {
+         argForm.showArg(this, argIdx++, cycle_state);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchChanged(boolean _bFromUI) {
+      int patchIdx = cm_patch.getSelectedOption();
+      if(_bFromUI)
+      {
+         if(patchIdx != cycle_state.last_selected_patch_idx)
+         {
+            cycle_state.last_selected_patch_idx = patchIdx;
+            current_project.markAsModified();
+         }
+         patch <= cycle_state.patches.get(patchIdx);
+      }
+      // // trace "xxx CycleSynthDialog::handlePatchChanged: bFromUI="+_bFromUI+" patchIdx="+patchIdx+" patch="+#(patch);
+
+      if(null != patch)  // (note) [13Dec2024] should not be null (added while debugging hashtable issue)
+      {
+         cm_zone.setSelectedOption(patch.target_zone_idx + CyclePatch.TARGET_ZONE_UI_SHIFT);
+         cm_shared_patch.setSelectedOption(patch.shared_patch_idx + 1/*-*/);
+         cb_lofi.setSelected(patch.b_lofi);
+
+         selectMachineBySource();
+
+         reparse(_bFromUI/*bMessage*/);
+         redraw();
+
+         if(_bFromUI)
+            Global.Print("Select patch #"+(patchIdx+1)+" (\""+patch.patch_name+"\")");
+      }
+      else
+      {
+         cm_zone.setSelectedOption(0/*-*/);
+         cm_shared_patch.setSelectedOption(0/*-*/);
+         cb_lofi.setSelected(false);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSharedPatchChanged() {
+      int patchIdx = cm_shared_patch.getSelectedOption() - 1/*-*/;
+      patch.setSharedPatchIdx(patchIdx);
+
+      reparse(false/*bMessage*/);
+      recalc(false/*bMessage*/);
+      redraw();
+
+      Global.Print("Shared patch is "+((-1 == patchIdx) ? "<none>" : (patchIdx+1)));
+   }
+
+   // <ui_handle.png>
+   protected method handleLoFiChanged() {
+      patch.b_lofi = cb_lofi.isSelected();
+      Global.Print("8bit Lo-Fi mode is "+Utils.GetEnableString(patch.b_lofi));
+      current_project.markAsModified();
+      recalc(false/*bMessage*/);
+   }
+
+   // <ui_handle.png>
+   protected method setLastSelectedPatchByZone() {
+      PageSample pgSample <= root_form.pg_sample;
+      StSample s <= pgSample.getFirstSelectedZone();
+      if(null != s)
+      {
+         int zoneIdx = sample.getZoneIdx(s);  /* 0..n */
+
+         CyclePatch *sp;
+         int spIdx = 0;
+         int spIdxGlobalPlugin = -1;
+         int spIdxPatchPlugin = -1;
+         boolean bFound = false;
+         foreach sp in cycle_state.patches
+         {
+            if(sp.target_zone_idx == zoneIdx)
+            {
+               bFound = true;
+               break;
+            }
+            else if(CyclePatch.TARGET_ZONE_GLOBAL_PLUGIN == sp.target_zone_idx)
+               spIdxGlobalPlugin = spIdx;
+            else if(CyclePatch.TARGET_ZONE_PATCH_PLUGIN == sp.target_zone_idx)
+               spIdxPatchPlugin = spIdx;
+            spIdx++;
+         }
+
+         if(bFound)
+         {
+            cycle_state.last_selected_patch_idx = spIdx;
+            int numSourceBuffers = sp.getNumSourceBuffers();
+            Global.Print("Select synth patch for zone "+(zoneIdx+1)+"(\""+s.name+"\")"+((numSourceBuffers > 1) ? (" ("+numSourceBuffers+" patch-bufs)") : ""));
+         }
+         else
+         {
+            // Find all voice plugin ids used by the selected zone
+            local StringArray zonePluginIds;
+            StPluginShared *pluginShared;
+            StPluginInfo *pluginInfo;
+            int pluginIdx = 0;
+            loop(STSAMPLE_NUM_PLUGINS)
+            {
+               pluginShared <= s.getVoicePluginShared(pluginIdx);
+               if(null != pluginShared)
+               {
+                  pluginInfo <= pluginShared.info;
+                  zonePluginIds.add(pluginInfo.id);
+               }
+               pluginIdx++;
+            }
+            Global.Debug2("CycleSynthDialog::setLastSelectedPatchByZone: zonePluginIds="+zonePluginIds);
+
+            // Find plugin id of last selected patch (may be null)
+            String sLastSelectedPatchPluginId <= null;
+            CyclePatch lastPatch <= cycle_state.getPatchByIdx(cycle_state.last_selected_patch_idx);
+            if(null != lastPatch)
+               sLastSelectedPatchPluginId <= lastPatch.last_compiled_plugin_id;
+
+            if(null != sLastSelectedPatchPluginId)
+            {
+               if(-1 != zonePluginIds.indexOfObject(sLastSelectedPatchPluginId, 0))
+               {
+                  Global.Debug("CycleSynthDialog::setLastSelectedPatchByZone: continue editing pluginId=\""+sLastSelectedPatchPluginId+"\"");
+                  Global.Print("Continue edit pluginId=\""+sLastSelectedPatchPluginId+"\"");
+                  return; // last selected patch is one of the zone's plugins (keep on editing)
+               }
+            }
+
+            // Find first patch that targets one of the zone plugins
+            spIdx = 0;
+            foreach sp in cycle_state.patches
+            {
+               if(CyclePatch.TARGET_ZONE_GLOBAL_PLUGIN == sp.target_zone_idx ||
+                  CyclePatch.TARGET_ZONE_PATCH_PLUGIN  == sp.target_zone_idx
+                  )
+               {
+                  if(-1 != zonePluginIds.indexOfObject(sp.last_compiled_plugin_id, 0))
+                  {
+                     cycle_state.last_selected_patch_idx = spIdx;
+                     Global.Print("Edit pluginId=\""+sp.last_compiled_plugin_id+"\"");
+                     return;
+                  }
+               }
+               spIdx++;
+            }
+
+            if(-1 != spIdxGlobalPlugin)
+            {
+               cycle_state.last_selected_patch_idx = spIdxGlobalPlugin;
+               Global.Print("Select global plugin patch #"+(spIdxGlobalPlugin+1)+" ("+sp.last_compiled_plugin_id+")");
+            }
+            else if(-1 != spIdxPatchPlugin)
+            {
+               cycle_state.last_selected_patch_idx = spIdxPatchPlugin;
+               sp <= cycle_state.getPatchByIdx(spIdxPatchPlugin);
+               Global.Debug("CycleSynthDialog::setLastSelectedPatchByZone: select last_compiled_plugin_id=\""+sp.last_compiled_plugin_id+"\"");
+               Global.Print("Select patch plugin #"+(spIdxPatchPlugin+1)+" ("+sp.last_compiled_plugin_id+")");
+            }
+            else
+            {
+               Global.Warning("No synth patch found for zone \""+s.name+"\" (nr="+(zoneIdx+1)+")");
+            }
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchByZoneChanged() {
+      cycle_state.b_patch_by_zone = cb_patchbyzone.isSelected();
+      if(cycle_state.b_patch_by_zone)
+      {
+         setLastSelectedPatchByZone();
+         cm_patch.setSelectedOption(cycle_state.last_selected_patch_idx);
+         handlePatchChanged(true/*bFromUI*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleZoneChanged() {
+      int zoneIdx = cm_zone.getSelectedOption() - CyclePatch.TARGET_ZONE_UI_SHIFT;
+      patch.target_zone_idx = zoneIdx;
+      StSample s <= sample.getZoneByIdx(zoneIdx);
+      if(null != s)
+      {
+         Global.Print("Target Zone is #"+(zoneIdx+1)+" \""+s.name+"\"");
+      }
+      else
+      {
+         Global.Print("Target Zone is \'"+cm_zone.getSelectedOptionNameLong()+"\'");  // <global plugin>, <patch plugin>
+      }
+      current_project.markAsModified();
+   }
+
+   // <ui_show.png>
+   public method showMachineEditor() {
+      local String caption <= "Edit Machine";
+      local String message <= "Edit Machine\n (press lctrl-s or ESC to save)";
+      dlg_machine <= CycleMachineEditDialog.NewCycleMachineEditDialog(this,
+                                                                      caption,
+                                                                      message,
+                                                                      false/*bOkCancel*/,
+                                                                      "Save",
+                                                                      "Cancel",
+                                                                      patch,
+                                                                      this/*recipient*/
+                                                                      );
+      dlg_machine.restoreGeometryIfValid(UI.IsHiDPI()
+                                         ? STConfig.cycle_machine_geo_hidpi
+                                         : STConfig.cycle_machine_geo_lodpi
+                                         );
+      dlg_machine.setEnableAlwaysSave(true);
+      dlg_machine.setEnableModal(true);
+      dlg_machine.setEnableQuietHandleEsc(true);
+
+      // // Global.Debug("CycleSynthDialog::showMachineEditor: restore cursor=("+machine_cursor_x+";"+machine_cursor_y+")");
+
+      machine_edit_buffer = "";
+      dlg_machine.show();
+      dlg_machine.gotoXY(patch.getSavedBufferX("main"), patch.getSavedBufferY("main"));
+      dlg_machine.centerY();
+   }
+
+   // <method.png>
+   public method focusMachineEditorBezierEdit() {
+      UI.SetKeyboardFocus(dlg_machine.f_curve.be_env);
+   }
+
+   // <method.png>
+   protected method scanTemplateIncludes(StringArray _aRet) {
+
+      local StringArray filenames <= Utils.ReadDirectory(STConfig.cycle_machine_inc_path);
+      // // trace "xxx scanTemplateIncludes: filenames="+#(filenames);
+      if(null != filenames)
+      {
+         String *filenameEn;
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               local StringArray attr <= filenameEn.splitSpace(true);
+               local String fileName <= attr.get(1);
+               if(fileName >= ".cy")
+               {
+                  _aRet.add(fileName.replace(".cy",""));
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      _aRet.sortByValue(ia, false/*bCS*/);
+      _aRet.rearrange(ia);
+   }
+
+   // <method.png>
+   protected method showTemplateSelectionDialog() {
+      if(null == dlg_templateselection)
+      {
+         dlg_templateselection <= new CycleTemplateSelectionDialog;
+         dlg_templateselection.initCycleTemplateSelectionDialog();
+
+         dlg_templateselection.restoreGeometryIfValid(UI.IsHiDPI()
+                                                      ? STConfig.cycle_templateselection_geo_hidpi
+                                                      : STConfig.cycle_templateselection_geo_lodpi
+                                                      );
+      }
+
+      local StringArray aTemplates;
+      scanTemplateIncludes(aTemplates);
+
+      dlg_templateselection.showCycleTemplateSelectionDialog(deref aTemplates,
+                                                             "Select template includes",
+                                                             "Insert inc",
+                                                             this/*recipient*/
+                                                             );
+   }
+
+   // <method.png>
+   protected method handleInsertTemplateIncludes(StringArray _templates) {
+      Global.Debug("CycleSynthDialog::handleInsertTemplateIncludes: templates="+#(_templates));
+      dlg_machine.refocusDefault();  // refocus TextEdit
+      int num = _templates.numElements;
+      if(num > 0)
+      {
+         local String sBuf;
+         int idx = num;
+         TextEdit tx <= dlg_machine.textedit;
+         while(idx > 0)
+         {
+            String sTemplate <= _templates.get(--idx);
+            sBuf.append("inc "+sTemplate+"\n");
+         }
+         tx.insertTextAtCursor(sBuf);
+         tx.provideTextChanged();
+      }
+      Global.Print("Insert "+num+" template include"+Utils.GetPluralString(num)+((1 == num)?("\""+_templates[0]+"\""):""));
+   }
+
+   // <method.png>
+   protected method scanMachinePresets() {
+      preset_machines.empty();
+      local StringArray presetNames; presetNames.free();
+
+      local StringArray filenames <= Utils.ReadDirectory(STConfig.cycle_machine_preset_path);
+      if(null != filenames)
+      {
+         String *filenameEn;
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               local StringArray attr <= filenameEn.splitSpace(true);
+               local String fileName <= attr.get(1);
+               if(fileName >= ".cy")
+               {
+                  local String s;
+                  s.loadLocal(Utils.ToNativePathName(STConfig.cycle_machine_preset_path+"/"+fileName), true/*bRemoveCR*/);
+                  s.trim();
+                  preset_machines.add(s);
+
+                  fileName.replace(".cy", "");
+                  presetNames.add(String(fileName));
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      presetNames.sortByValue(ia, false/*bCS*/);
+      presetNames.rearrange(ia);
+      presetNames.insert(0, "<custom>");
+
+      cm_machine.setOptions(presetNames);
+      pn_machine.relayout();
+      cm_machine.setToolTipCaption("Machine Preset\n\n (note) dir=\""+STConfig.cycle_machine_preset_path+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method saveMachinePreset1() {
+      dlg_preset_save <= new CycleSaveMachinePresetDialog;
+      dlg_preset_save.run(this);
+   }
+
+   // <ui_handle.png>
+   public method saveMachinePreset2(String _name) {
+
+      _name.trim();
+      _name = Utils.ConvertToFileName(_name);
+
+      local String fileName <= Utils.ToNativePathName(STConfig.cycle_machine_preset_path+"/"+_name+".cy");
+      String s <= patch.getSourceBufferRefMain();
+      if(s.saveLocal(fileName))
+      {
+         scanMachinePresets();
+         cm_machine.setSelectedOptionByName(_name);
+         Global.Success("Save machine preset \""+_name+"\"");
+         resizeToMinimumArgs();
+      }
+      else
+      {
+         Global.Error("Save machine preset: failed to save file \""+fileName+"\"");
+      }
+   }
+
+   // <load.png>
+   protected method loadMachinePreset(boolean _bClipboard) : boolean {
+
+      local String fileName = cm_machine.getSelectedOptionName();
+      if("<custom>" != fileName)
+      {
+         local String nativePathName = Utils.ToNativePathName(STConfig.cycle_machine_preset_path+"/"+fileName+".cy");
+
+         Global.Debug("CycleSynthDialog::loadMachinePreset: nativePathName=\""+nativePathName+"\" bClipboard="+_bClipboard);
+
+         local String s;
+         if(s.loadLocal(nativePathName, true/*bRemoveCR*/))
+         {
+            if(_bClipboard)
+            {
+               UI.SetClipboard(s);
+               Global.Success("Copy machine preset \""+fileName+"\" to clipboard");
+            }
+            else
+            {
+               last_preset_name = cm_machine.getSelectedOptionName();
+
+               patch.setSourceBuffer("main", s);
+
+               Global.Success("Load machine preset from \""+fileName+"\"");
+               redraw();
+
+               if(b_auto_export)
+               {
+                  handleExportPlugin();
+               }
+               else
+               {
+                  reparse(false/*bMessage*/);
+                  recalc(false/*bMessage*/);
+               }
+            }
+
+            return true;
+         }
+         else
+         {
+            Global.Error("Failed to open machine file \""+nativePathName+"\"");
+         }
+      }
+      return false;
+   }
+
+   // <ui_show.png>
+   public method showCurveEditor() {
+      if(null == dlg_curve)
+      {
+         dlg_curve <= new CycleCurveDialog;
+         dlg_curve.initCycleCurveDialog();
+      }
+      dlg_curve.showCycleCurveDialog(this, patch);
+   }
+
+   // <method.png>
+   public method handleCurveChanged(int _curveIdx) {
+      // // trace "xxx CycleSynthDialog::handleCurveChanged: curveIdx="+_curveIdx;
+      current_project.markAsModified();
+      patch.setLastEditedCurveIdx(_curveIdx);
+
+      if(patch.isPlugin())
+      {
+         // // trace "xxx CycleSynthDialog::handleCurveChanged: curveIdx="+_curveIdx+" last_compiled_plugin_id=\""+patch.last_compiled_plugin_id+"\"";
+         local FloatArray fa;
+         IntArray ia <= patch.recalcAndGetCurveIntArray(_curveIdx);
+         fa.alloc(ia.numElements);
+         int i = 0;
+         loop(ia.numElements)
+            fa.add(ia[i++] * (1.0 / CyDefs.FX_ONE));
+         VoicePlugins.UpdateCurveLUTByVoicePluginId(patch.last_compiled_plugin_id, _curveIdx, fa);
+         // // queueRecalc();
+      }
+      else
+      {
+         queueRecalc();
+      }
+   }
+
+   // <method.png>
+   public method handleCurveResChanged(int _curveIdx, int _res) {
+      Global.Print("Curve "+(_curveIdx+1)+" res is "+_res+" ("+(1 << _res)+" elements)");
+      patch.setCurveRes(_curveIdx, _res);
+      queueRecalc();
+      current_project.markAsModified();
+      patch.setLastEditedCurveIdx(_curveIdx);
+   }
+
+   // <ui_handle.png>
+   public method handleRecalcModeChanged() {
+      recalc_mode = cm_recalc.getSelectedOption();
+      Global.Print("Recalc mode is \""+cm_recalc.getSelectedOptionName()+"\"");
+      if(recalc_mode)
+         queueRecalc();
+   }
+
+   // <ui_handle.png>
+   public method handleAddSineLane() {
+      String src <= patch.getSourceBufferRefMain();
+
+      local String srcBak = src;
+
+      int numLanes = src.numIndicesOf("\n<");
+
+      // Insert before last lane ("<out:")
+      int laneIdx = src.lastIndexOf("\n<");
+      if(-1 == laneIdx)
+         laneIdx = src.numChars; // first lane
+
+      // Envelope duration
+      //  (todo) calc from currently selected sample loop
+      float ms = "200";
+
+      local String s;
+      String id = "lane_"+(numLanes+1);
+      s = "\n<"+id+":\n";
+      s.append("  sin\n");
+      s.append("    freq:\n");
+      s.append("      rmp "+ms+" 0 0.95\n");
+      s.append("      lut "+id+"_freq lin=1\n");
+      s.append("      * $"+id+"_freq_scl\n");
+      s.append("      + $"+id+"_freq_off\n");
+      s.append("    * rmp "+ms+" 0 0.95\n");
+      s.append("      lut "+id+"_amp lin=1\n");
+      s.append("      * $"+id+"_amp_scl\n");
+      s.append("\n");
+      src.insert(laneIdx, s);
+
+      // Add args
+      int argIdx = src.lastIndexOf("\narg");
+      if(-1 != argIdx)
+         argIdx = src.indexOf("\n", argIdx+1);
+      argIdx++;
+      s = "arg "+id+"_freq_scl 0.0 min=-4 max=4\n";
+      s.append("arg "+id+"_freq_off 1.0 min=0 max=4\n");
+      s.append("arg "+id+"_amp_scl 1.0 min=0 max=4\n");
+      src.insert(argIdx, s);
+
+      // Add freq curve
+      int curveIdx = 0;
+      int lastCurveIdx = -1;
+      int idx;
+      loop(CyclePatch.NUM_USER_CURVES)
+      {
+         idx = src.indexOf("curve "+curveIdx, 0);
+         if(-1 != idx)
+            lastCurveIdx = src.indexOf("\n", idx+1);
+         else
+            break;
+         curveIdx++;
+      }
+      if(curveIdx < CyclePatch.NUM_USER_CURVES)
+      {
+         s = "curve "+curveIdx+" "+id+"_freq\n";
+         src.insert(lastCurveIdx+1, s);
+
+         // Add amp curve
+         curveIdx = 0;
+         lastCurveIdx = -1;
+         loop(CyclePatch.NUM_USER_CURVES)
+         {
+            idx = src.indexOf("curve "+curveIdx, 0);
+            if(-1 != idx)
+               lastCurveIdx = src.indexOf("\n", idx+1);
+            else
+               break;
+            curveIdx++;
+         }
+
+         if(curveIdx < CyclePatch.NUM_USER_CURVES)
+         {
+            s = "curve "+curveIdx+" "+id+"_amp\n";
+            src.insert(lastCurveIdx+1, s);
+
+            Global.Print("Add lane \""+id+"\"");
+            handlePatchChanged(false/*bFromUI*/);
+         }
+         else
+         {
+            Global.Warning("maximum number of curves exceeded");
+            src = srcBak;
+         }
+      }
+      else
+      {
+         Global.Warning("maximum number of curves exceeded");
+         src = srcBak;
+      }
+   }
+
+   // <method.png>
+   public method handleRandomizeLastTouchedArgGroup() {
+      Global.Debug("CycleSynthDialog::handleRandomizeLastTouchedArgGroup: last_touched_arg_idx="+last_touched_arg_idx);
+      int num = 0;
+      local String *groupName;
+      if(null != patch)
+      {
+         CyArg arg <= patch.getArgByIndex(last_touched_arg_idx);
+         if(null != arg)
+         {
+            groupName <= Object(arg.group_name);  // safe a copy since String becomes invalid after recompile
+            if(null != groupName)
+            {
+               foreach arg in patch.cycle.args
+               {
+                  if(arg.group_name == groupName)
+                  {
+                     patch.setArgValue(arg.id, arg.getRandomValue());
+                     patch.setSharedArgFlag(arg.id, false);
+                     num++;
+                  }
+               }
+            }
+         }
+      }
+
+      if(num > 0)
+      {
+         current_project.markAsModified();
+         handlePatchChanged(false/*bFromUI*/);
+         updateArgs();
+         queueRecalc();
+
+         Global.Print("Randomize "+num+" arg"+Utils.GetPluralString(num)+" in group \""+groupName+"\"");
+      }
+
+   }
+
+   // <method.png>
+   public method handleRandomizeAllArgGroups() {
+      Global.Debug("CycleSynthDialog::handleRandomizeAllArgGroups");
+      int numArgs = 0;
+      local StringArray aGroupNames;
+      if(null != patch)
+      {
+         CyArg *arg;
+         foreach arg in patch.cycle.args
+         {
+            if(null != arg.group_name)
+            {
+               if(-1 == aGroupNames.indexOfObject(arg.group_name, 0))
+                  aGroupNames.add(arg.group_name);
+
+               patch.setArgValue(arg.id, arg.getRandomValue());
+               patch.setSharedArgFlag(arg.id, false);
+               numArgs++;
+            }
+         }
+      }
+
+      if(numArgs > 0)
+      {
+         current_project.markAsModified();
+         handlePatchChanged(false/*bFromUI*/);
+         updateArgs();
+         queueRecalc();
+
+         Global.Print("Randomize "+numArgs+" arg"+Utils.GetPluralString(numArgs)+" in "+aGroupNames.numElements+" group"+Utils.GetPluralString(aGroupNames.numElements));
+      }
+   }
+
+   // <ui_update.png>
+   protected method highlightAndGoToErrorLine() {
+      if(null != dlg_machine)
+      {
+         int c32Err = app_lnf.getColor(AppLookAndFeel.COLOR_CYCLE_ERR_HL);////#20dd4444;
+         if(machine_edit_buffer.isBlank())
+         {
+            // Currently editing "main" source buffer
+
+            if(patch.last_error_buffer == "" ||
+               patch.last_error_buffer == "main" &&
+               patch.last_error_line_idx_inc >= 0
+               )
+            {
+               // template error in main file
+               dlg_machine.setHighlightLineIdx(patch.last_error_line_idx_inc, c32Err);
+               dlg_machine.gotoXY(0, patch.last_error_line_idx_inc);
+            }
+            else
+            {
+               dlg_machine.setHighlightLineIdx(patch.last_error_line_idx, c32Err);
+               if(patch.last_error_line_idx >= 0)
+                  dlg_machine.gotoXY(0, patch.last_error_line_idx);
+            }
+         }
+         else
+         {
+            // Currently editing include buffer
+            if(patch.last_error_buffer == machine_edit_buffer)
+            {
+               // Error occured in current buffer
+               dlg_machine.setHighlightLineIdx(patch.last_error_line_idx_inc, c32Err);
+               if(patch.last_error_line_idx_inc >= 0)
+                  dlg_machine.gotoXY(0, patch.last_error_line_idx_inc);
+            }
+            else
+            {
+               // Error occured in other buffer
+               dlg_machine.setHighlightLineIdx(-2/*reset*/, c32Err);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleExportPlugin() {
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      if(null != dlg_machine && dlg_machine.isFloatingLayerVisible())
+      {
+         // Save changes
+         handleMachineEditEvent(false/*bAllowReparse*/);
+      }
+
+      if(patch.recalcExportPlugin(sample, true/*bMessage*/, true/*bReloadSingle*/, null/*idMap*/))
+      {
+         Global.PrintShort("Export STFX plugin \""+patch.last_compiled_plugin_id+"\"");
+      }
+
+      highlightAndGoToErrorLine();
+
+      updateMachineEditDialogCurveAndArg();  // e.g. after renaming curve or arg
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   // <method.png>
+   public method handleToggleAutoExportPlugin() {
+      b_auto_export = !b_auto_export;
+      Global.Print("Auto-export plugin is "+Utils.GetEnableString(b_auto_export));
+   }
+
+   // <ui_show.png>
+   public method showToolsMenu(boolean _bFocusFirst) {
+      pm_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      pmb <= pm.addDefaultButton("Add Sine Osc Lane", "lane_sine");
+      pmb.setAccelerators("", "lctrl-n");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Export STFX plugin", "export_stfx");
+      pmb.setAccelerators("ralt", "lctrl-w");
+
+      pmb <= pm.addCheckButton("Auto-export", b_auto_export, "export_auto");
+      pmb.setToolTipCaption("Auto-export when script is saved (lctrl-s)");
+      pmb.setAccelerators("lshift-ralt", "lctrl-lshift-p");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show tools menu.");
+   }
+
+   // <method.png>
+   protected method selectBuffer(String _sFile) {
+      String sBuf <= patch.getSourceBufferRef(_sFile);
+      if(null != sBuf)
+      {
+         int prefLineX = patch.getSavedBufferX(_sFile);
+         int prefLineY = patch.getSavedBufferY(_sFile);
+
+         dlg_machine.hide();  // Save current edit state
+         dlg_machine.setText((null != sBuf) ? sBuf : "");
+         dlg_machine.setWindowTitle("Edit Machine ("+((null != sBuf)?"":"new ")+"inc buffer \""+_sFile+"\")");
+         Global.Print("Edit "+((null != sBuf)?"":"new ")+" inc buffer \""+_sFile+"\"");
+         dlg_machine.show();
+         dlg_machine.gotoXY(prefLineX, prefLineY);
+         machine_edit_buffer = _sFile;
+         highlightAndGoToErrorLine();
+         Global.Print("Edit buffer \""+_sFile+"\"");
+      }
+   }
+
+   // <method.png>
+   protected method selectPrevNextBuffer(int _delta) {
+      // // trace "xxx CycleSynthDialog:.selectPrevNextBuffer: delta="+_delta;
+      local String sCurBufName = machine_edit_buffer;
+      if(sCurBufName.isBlank())
+         sCurBufName = "main";
+      local StringArray aBufNames <= patch.getSourceBufferNames();
+      int idx = mathWrapi(aBufNames.indexOfObject(sCurBufName, 0) + _delta, 0, aBufNames.numElements);
+      Global.Debug2("CycleSynthDialog:.selectPrevNextBuffer: newIdx="+idx+" sCurBufName=\""+sCurBufName+"\" aBufNames="+#(aBufNames));
+      selectBuffer(aBufNames.get(idx));
+   }
+
+   // <method.png>
+   protected method tryEditIncludeFileUnderCursor(boolean _bEdit) {
+
+      local StringArray lines <= dlg_machine.getTextLines();
+      int cursorX = dlg_machine.getCursorX();
+      int cursorY = dlg_machine.getCursorY();
+
+      Global.Debug2("CycleSynthDialog::tryEditIncludeFileUnderCursor: cursor("+cursorX+";"+cursorY+")");
+      String sLine <= lines.get(cursorY);
+      Global.Debug2("CycleSynthDialog::tryEditIncludeFileUnderCursor: curLine=\""+sLine+"\"");
+      local StringArray words <= sLine.splitSpace(true);
+      if(words.numElements >= 1)
+      {
+         local String *sFile;
+         int prefLineX = 0;
+         int prefLineY = 0;
+         local CyTemplate *templ;
+
+         // ~osc  OR  + ~osc
+         boolean bTemplInst = false;
+         String *sTemplInst;
+         foreach sTemplInst in words
+         {
+            if(sTemplInst <= "~")
+            {
+               bTemplInst = true;
+               break;
+            }
+         }
+
+         // // trace "xxx CycleSynthDialog::tryEditIncludeFileUnderCursor: words[0]=\""+words[0];
+         if(bTemplInst)
+         {
+            Global.Debug2("CycleSynthDialog::tryEditIncludeFileUnderCursor: templ inst w=\""+sTemplInst+"\"");
+            local String sTemplName <= sTemplInst.substring(1,999);
+            templ <= patch.findTemplateByName(sTemplName);
+            if(null != templ)
+            {
+               String sTemplBufferName <= templ.parent_buffer;
+               Global.Debug2("CycleSynthDialog::tryEditIncludeFileUnderCursor: sTemplBufferName=\""+sTemplBufferName+"\"");
+               sFile <= Object(sTemplBufferName);
+               sFile.replace(".cy","");
+               prefLineY = templ.parent_line_idx;
+            }
+            else
+            {
+               Global.Warning("buffer not found for template \""+sTemplName+"\"");
+            }
+         }
+         else if(words[0] == "inc")
+         {
+            if(words.numElements >= 2)
+            {
+               Global.Debug2("CycleSynthDialog::tryEditIncludeFileUnderCursor: inc buffer/file=\""+words.get(1)+"\"");
+               sFile <= words.get(1).trim();
+               sFile.replace(".cy","");
+            }
+         }
+
+         if(null != sFile)
+         {
+            if(0 == prefLineX)
+               prefLineX = patch.getSavedBufferX(sFile);
+            if(0 == prefLineY)
+               prefLineY = patch.getSavedBufferY(sFile);
+
+            local String sBuf;
+            if("main" != sFile)
+            {
+               if(sFile <= ".")
+               {
+                  // virtual buffer name (embedded in CyclePatch)
+                  if(_bEdit)
+                  {
+                     sBuf <= patch.getSourceBufferRef(sFile);
+                     // // trace "xxx patch.getSourceBufferRef(sFile=\""+sFile+"\") => "+#(sBuf);
+                     dlg_machine.hide();  // Save current edit state
+                     // edit include buffer
+                     dlg_machine.setText((null != sBuf) ? sBuf : "");
+                     dlg_machine.setWindowTitle("Edit Machine ("+((null != sBuf)?"":"new ")+"inc buffer \""+sFile+"\")");
+                     Global.Print("Edit "+((null != sBuf)?"":"new ")+" inc buffer \""+sFile+"\"");
+                     dlg_machine.show();
+                     dlg_machine.gotoXY(prefLineX, prefLineY);
+                     if(null != templ)
+                        dlg_machine.centerY();
+                     machine_edit_buffer = sFile;
+                     highlightAndGoToErrorLine();
+                  }
+                  // else: no path to copy
+               }
+               else
+               {
+                  local String sPathName = Utils.ToNativePathName(STConfig.cycle_machine_inc_path+"/"+sFile.replace(".cy","")+".cy");
+                  Global.Debug2("CycleSynthDialog::tryEditIncludeFileUnderCursor: sPathName=\""+sPathName+"\"");
+                  if(_bEdit)
+                  {
+                     dlg_machine.hide();  // Save current edit state
+                     if(sBuf.loadLocal(sPathName, true/*bRemoveCR*/))
+                     {
+                        // edit include buffer
+                        dlg_machine.setText(sBuf);
+                        dlg_machine.setWindowTitle("Edit Machine (inc file \""+sFile+"\")");
+                        Global.Print("Edit inc file \""+sFile+"\"");
+                     }
+                     else
+                     {
+                        // new file
+                        dlg_machine.setText("");
+                        dlg_machine.setWindowTitle("Edit Machine (new inc file \""+sFile+"\")");
+                        Global.Print("Edit new inc file \""+sFile+"\"");
+                     }
+                     dlg_machine.show();
+                     dlg_machine.gotoXY(prefLineX, prefLineY);
+                     if(null != templ)
+                        dlg_machine.centerY();
+                     machine_edit_buffer = sFile;
+                     highlightAndGoToErrorLine();
+                  }
+                  else
+                  {
+                     UI.SetClipboard(sPathName);
+                     Global.Print("Copy inc path \""+sPathName+"\"");
+                  }
+               }
+            } // if main != sFile
+            else
+            {
+               // Back to "main" source
+               if(_bEdit)
+               {
+                  // // trace "xxx lctrl-g: back to main prefLineY="+prefLineY;
+                  dlg_machine.hide();  // Save current edit state
+                  sBuf <= patch.getSourceBufferRefMain();
+                  dlg_machine.setText(sBuf);
+                  dlg_machine.setWindowTitle("Edit Machine");
+                  machine_edit_buffer.empty();
+                  showMachineEditor();
+                  dlg_machine.gotoXY(prefLineX, prefLineY);
+                  dlg_machine.centerY();
+                  highlightAndGoToErrorLine();
+                  Global.Print("Edit \"main\" buffer");
+               }
+               // else: no path to copy
+            }
+            return true;
+         }
+      }
+      Global.Warning("Failed to edit inc file under cursor");
+   }
+
+   // <method.png>
+   protected method tryExpandInputUnderCursor() {
+      // lctrl-i pressed in source editor (while dlg_machine is visible)
+      //   convert  "myinput=someval" to
+      //            myinput:
+      //              someval
+      local StringArray lines <= dlg_machine.getTextLines();
+      int cursorX = dlg_machine.getCursorX();
+      int cursorY = dlg_machine.getCursorY();
+      Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: cursor("+cursorX+";"+cursorY+")");
+      String sLine <= lines.get(cursorY);
+      Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: curLine=\""+sLine+"\"");
+      int indent = 0;
+      loop(sLine.numChars)
+      {
+         if(' ' != sLine[indent])
+            break;
+         indent++;
+      }
+      if(indent >= 0)
+      {
+         Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: base indent="+indent);
+         // (note) line format is
+         //         "sin .. vsync=4 .."
+         //         "+ sin .. vsync=4 .."
+         //         "*sr sin .. vsync=4 .."
+         // Find indentation for new lines (+2, +4, +6)
+         local StringArray aWords <= sLine.trim().splitChar(' ');
+         Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: aWords="+#(aWords));
+         if(aWords.numElements >= 2)
+         {
+            local String sWord <= aWords.get(0);
+
+            if(-1 != CyScript.ParseOp(sWord))
+            {
+               // first word is operator (+, *sr, ..)
+               Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: op=\""+sWord+"\"");
+               indent += sWord.numChars+1/*space*/;
+
+               if(aWords.numElements >= 3)
+               {
+                  // second word must be module name
+                  sWord <= aWords.get(1);
+                  Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor<op>: mod=\""+sWord+"\"");
+               }
+               else
+               {
+                  // e.g. "+ 2" => nothing to do
+                  return;
+               }
+            }
+            else
+            {
+               // first word is module (sin, pow, ..)
+               Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: mod=\""+sWord+"\"");
+            }
+
+            indent += 2;
+            Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: indent="+indent);
+
+            int idxStart = sLine.revIndexOfChar(' ', cursorX);  //sLine.indexOfWordStart(cursorX);
+            int idxEnd   = sLine.indexOfChar(' ', cursorX); //indexOfWordEnd(cursorX);
+            if(idxEnd < 0)
+               idxEnd = sLine.numChars;
+            Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: idxStart="+idxStart+" idxEnd="+idxEnd);
+            if(idxStart >= 0 && idxEnd > idxStart)
+            {
+               idxStart++;  // (note) input cannot commence on first column (always preceeded by module name)
+               local String sAssign;
+               sLine.substring(idxStart, idxEnd-idxStart) => sAssign;
+               Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: => substring=\""+sAssign+"\"");
+               int idxAssign = sAssign.indexOfChar('=', 0);
+               if(idxAssign > 0)
+               {
+                  dlg_machine.undoAdd();
+                  Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: => idxAssign="+idxAssign);
+                  local String sInput <= sAssign.substring(0, idxAssign);
+                  local String sValue <= sAssign.substring(idxAssign+1, 99);
+                  Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor: => input=\""+sInput+"\"");
+                  Global.Debug2("CycleSynthDialog::tryExpandInputUnderCursor:    value=\""+sValue+"\"");
+                  sLine.deleteRegion(idxStart-1, idxEnd-idxStart+1);
+                  local String sNew;
+                  sNew.appendRepeat(" ", indent);
+                  sNew.append(sInput+":");
+                  lines.insert(cursorY+1, sNew);
+                  sNew.empty();
+                  sNew.appendRepeat(" ", indent+2);
+                  sNew.append(sValue);
+                  lines.insert(cursorY+2, sNew);
+                  sNew.empty();
+                  TextView.AppendLines(lines, sNew);
+                  dlg_machine.setText(sNew);
+                  dlg_machine.gotoXY(indent+2, cursorY+2);
+                  Global.Print("Expand input \""+sInput+"\" value \""+sValue+"\"");
+               }
+            }
+         } // if #words >= 2
+      } // if indent >= 0
+   }
+
+   // <method.png>
+   protected method resizeToMinimumArgs() {
+      resizeToMinimum();
+      if(null != patch)
+      {
+         int numY = patch.getNumArgs();
+         if(numY >= 16)
+            numY = 16;
+         CycleArgForm f <= f_args[0];
+         float argSizeY = f.getSizePadY();
+         float minSizeY = argSizeY * numY;
+         minSizeY += pn_header.getSizePadY();
+         minSizeY += (10+10+8+1)*UI.font_scaling/*padTop*/;
+         minSizeY += WindowTitleBar.GetHeight();
+         resizeAtLeastTo(getSizeX(), minSizeY);
+         Global.Debug("CycleSynthDialog::resizeAtLeastTo: numY="+numY+" hdrSizeY="+pn_header.getSizePadY()+" argSizeY="+argSizeY+" argMinSizeY="+minSizeY+" => newSy="+getSizeY());
+      }
+   }
+
+   // <method.png>
+   public method saveBufferXY(int _cursorX, int _cursorY) {
+      patch.saveBufferXY(machine_edit_buffer, _cursorX, _cursorY);
+   }
+
+   // <ui_handle.png>
+   static int dbg_machine_count;
+   protected method handleMachineEditEvent(boolean _bAllowReparse) {
+      // // if(TextEditDialog.ACTION_SAVE == acName)
+      // // local String sText <= sac.getStringValue();
+      local String sText <= dlg_machine.getText();
+      boolean bSourceChanged;
+
+      if(machine_edit_buffer == "")
+      {
+         // Save "main" buffer
+         bSourceChanged = (sText.trim()) != (patch.getSourceBufferRefMain().trim());
+         // // Global.Debug2("CycleSynthDialog::handleMachineEditEvent: bSourceChanged="+bSourceChanged);
+         if(bSourceChanged)
+            sample.markParamsAsModified();
+         patch.setSourceBufferMain(sText);
+      }
+      else
+      {
+         Global.Debug("CycleSynthDialog::handleMachineEditEvent: saving to machine_edit_buffer=\""+machine_edit_buffer+"\"");
+         if(machine_edit_buffer <= ".")
+         {
+            String *sBuf;
+            if(sText.isBlank())
+            {
+               sBuf <= patch.getSourceBufferRef(machine_edit_buffer);
+               bSourceChanged = (null != sBuf);
+               if(bSourceChanged)
+               {
+                  patch.deleteSourceBuffer(machine_edit_buffer);
+                  sample.markParamsAsModified();
+                  Global.Print("delete buffer \""+machine_edit_buffer+"\"");
+                  // // trace "xxx   patch.getSourceBufferRef("+machine_edit_buffer+")=>"+#(patch.getSourceBufferRef(machine_edit_buffer));
+               }
+            }
+            else
+            {
+               sBuf <= patch.getOrCreateSourceBufferRef(machine_edit_buffer);
+               bSourceChanged = (sText.trim()) != (sBuf.trim());
+               if(bSourceChanged)
+               {
+                  sBuf = sText;
+                  sample.markParamsAsModified();
+               }
+            }
+         }
+         else
+         {
+            local String sPathName = Utils.ToNativePathName(STConfig.cycle_machine_inc_path+"/"+machine_edit_buffer.replace(".cy","")+".cy");
+            sText.saveLocal(sPathName);
+         }
+         bSourceChanged = true;
+      }
+
+      if(_bAllowReparse)
+      {
+         if(b_auto_export && bSourceChanged)
+         {
+            handleExportPlugin();
+         }
+         else
+         {
+            reparse(true/*bMessage*/);
+            recalc(true/*bMessage*/);
+         }
+
+         Global.Debug2("CycleSynthDialog::handleTextEditEvent: dbg_count="+(dbg_machine_count++));
+
+         highlightAndGoToErrorLine();
+
+         selectMachineBySource();
+
+         // Save geometry and cursor position
+         if(UI.IsHiDPI())
+            Utils.SaveGeometry(dlg_machine, STConfig.cycle_machine_geo_hidpi);
+         else
+            Utils.SaveGeometry(dlg_machine, STConfig.cycle_machine_geo_lodpi);
+
+         patch.saveBufferXY(machine_edit_buffer,
+                            dlg_machine.getCursorX(),
+                            dlg_machine.getCursorY()
+                            );
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      if(b_debug2)
+         trace "[trc] CycleSynthDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN+" name="+_k.name;
+      PageSample pgSample <= root_form.pg_sample;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case 96: // '^' (ger) / '`' (us)
+         case VKEY_F11:
+            if(0 == _k.mod)
+            {
+               hide();
+               return true;
+            }
+            break;
+
+         case 'a':
+            showToolsMenu(true/*bFocusFirst*/);
+            return true;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               copyToClipboard();
+            }
+            else
+            {
+               showCurveEditor();
+            }
+            break;
+
+         case 'd':
+            if(_k.modCtrl())
+            {
+               // Cycle through recalc mode
+               cm_recalc.selectNextOptionCycle();
+               handleRecalcModeChanged();
+            }
+            else
+            {
+               // Force recalc
+               ta_recalc.schedule();
+            }
+            return true;
+
+         case 'e':
+            showMachineEditor();
+            return true;
+
+         case 'f':
+            resizeToMinimumArgs();
+            Global.Print("Resize dialog to used args");
+            return true;
+
+         case 'n':
+            if(_k.modCtrl())
+            {
+               handleAddSineLane();
+               return true;
+            }
+            break;
+
+         case 'p':
+         case 'w':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleToggleAutoExportPlugin();
+               else
+                  handleExportPlugin();
+               UI.RedrawAll();
+               return true;
+            }
+            else if('w' == _k.pressed)
+            {
+               // when opened via PageSample 'w' key
+               hide();
+            }
+            break;
+
+         case VKEY_RALT:
+            if(_k.modShift())
+               handleToggleAutoExportPlugin();
+            else
+               handleExportPlugin();
+            UI.RedrawAll();
+            return true;
+
+         case 'r':
+            if(_k.modShift())
+               handleRandomizeAllArgGroups();
+            else
+               handleRandomizeLastTouchedArgGroup();
+            return true;
+
+         case 's':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  saveMachinePreset1();
+               }
+               else
+               {
+                  // Force recalc
+                  ta_recalc.schedule();
+               }
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               pasteFromClipboard(false/*bShared*/);
+            }
+            else if(_k.modShift())
+            {
+               pasteFromClipboard(true/*bShared*/);
+            }
+            break;
+
+         case VKEY_SPACE:
+            if(_k.modCtrl())
+            {
+               showMachineEditor();
+               return true;
+            }
+            break;
+
+         case VKEY_TAB:
+            if(_k.modCtrl())
+            {
+               showCurveEditor();
+               return true;
+            }
+            break;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction sac <= _action;
+      IntAction iac <= _action;
+
+      if(b_debug2)
+         trace "[trc] CycleSynthDialog::consumeAction: acName="+acName;
+
+      if(TA_RECALC == acName)
+      {
+         if(b_auto_export)
+         {
+            handleExportPlugin();
+         }
+         else
+         {
+            recalc(false/*bMessage*/);
+         }
+         return true;
+      }
+
+      // Shortcut (lctrl-?) from CycleMachineEditDialog
+      // // trace "xxx CycleSynthDialog: acName="+acName;
+      if(TextEdit.ACTION_SHORTCUT == acName)
+      {
+         Global.Debug2("CycleSynthDialog::consumeAction: ACTION_SHORTCUT key="+iac.getIntValue());
+
+         // lctrl-<any_unhandled>
+         switch(iac.getIntValue())
+         {
+            case 'g':
+               tryEditIncludeFileUnderCursor(true/*bEdit*/);
+               break;
+
+            case 'h':
+               tryEditIncludeFileUnderCursor(false/*copyNameToClipboard*/);
+               break;
+
+            case 'i':
+               tryExpandInputUnderCursor();
+               break;
+
+            case 't':
+               if(0 == dlg_machine.textedit.getCursorX())
+                  showTemplateSelectionDialog();
+               else
+                  Global.Warning("Insert template inc: cursor not at start of line");
+               break;
+
+            case 'p':
+            case 'w':
+            case VKEY_RALT:
+            case VKEY_RCTRL:
+               handleExportPlugin();
+               break;
+
+            case VKEY_TAB:
+               // // // handleTextEditEvent();  // (note) always_save = true => hide() sends event
+               dlg_machine.hide();
+               showCurveEditor();
+               break;
+
+            case VKEY_LEFT:
+               selectPrevNextBuffer(-1/*delta*/);
+               break;
+
+            case VKEY_RIGHT:
+               selectPrevNextBuffer(1/*delta*/);
+               break;
+         }
+
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_tools):
+            Global.Debug2("CycleSynthDialog: pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "lane_sine":
+                  handleAddSineLane();
+                  return true;
+
+               case "export_stfx":
+                  handleExportPlugin();
+                  return true;
+
+               case "export_auto":
+                  handleToggleAutoExportPlugin();
+                  return true;
+            }
+            return true;
+
+         case @(cm_patch):
+            handlePatchChanged(true/*bFromUI*/);
+            return true;
+
+         case @(cm_shared_patch):
+            handleSharedPatchChanged();
+            return true;
+
+         case @(cm_zone):
+            handleZoneChanged();
+            return true;
+
+         case @(cb_patchbyzone):
+            handlePatchByZoneChanged();
+            return true;
+
+         case @(bt_copy):
+            copyToClipboard();
+            return true;
+
+         case @(bt_paste):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               pasteFromClipboard(true/*bShared*/);
+            }
+            else
+            {
+               pasteFromClipboard(false/*bShared*/);
+            }
+            return true;
+
+         case @(cm_machine):
+            if(cb_machine_autoload.isSelected())
+            {
+               loadMachinePreset(false/*bClipboard*/);
+            }
+            return true;
+
+         case @(bt_machine_load):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               loadMachinePreset(true/*bClipboard*/);
+            }
+            else
+            {
+               loadMachinePreset(false/*bClipboard*/);
+            }
+            return true;
+
+         case @(cb_machine_autoload):
+            Global.Print("Auto-load machine preset is "+Utils.GetEnableString(cb_machine_autoload.isSelected()));
+            return true;
+
+         case @(bt_machine_save):
+            saveMachinePreset1();
+            return true;
+
+         case @(bt_machine_edit):
+            showMachineEditor();
+            return true;
+
+         case @(bt_curve_edit):
+            showCurveEditor();
+            return true;
+
+         case @(cb_lofi):
+            handleLoFiChanged();
+            return true;
+
+         case @(cm_recalc):
+            handleRecalcModeChanged();
+            return true;
+
+         case @(bt_tools):
+            showToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(bt_fit):
+            resizeToMinimumArgs();
+            Global.Print("Resize dialog to used args");
+            return true;
+
+         case @(dlg_machine):
+            // // trace "xxx dlg_machine: acName=\""+acName+"\"";
+            if(CycleMachineEditDialog.ACTION_TEXTEDITDIALOGCANCELED == acName) // escape
+            {
+               if(machine_edit_buffer != "")
+               {
+                  // // trace "xxx handle ACTION_TEXTEDITDIALOGCANCELED: dlg_machine.isFloatingLayerVisible()="+dlg_machine.isFloatingLayerVisible();
+                  // Re-show machine source after editing include file
+                  machine_edit_buffer.empty();
+                  showMachineEditor();
+                  // // dlg_machine.textedit.gotoXY(machine_preinc_cursor_x, machine_preinc_cursor_y);
+                  dlg_machine.gotoXY(patch.getSavedBufferX("main"),
+                                     patch.getSavedBufferY("main")
+                                     );
+                  dlg_machine.centerY();
+                  highlightAndGoToErrorLine();
+               }
+            }
+            else
+            {
+               handleMachineEditEvent(true/*bAllowReparse*/);
+            }
+            return true;
+
+         case @(dlg_templateselection):
+            if(CycleTemplateSelectionDialog.ACTION_OK == acName)
+            {
+               handleInsertTemplateIncludes(dlg_templateselection.getSelectedTemplates());
+            }
+            else
+            {
+               Global.Print("Cancel CycleTemplateSelectionDialog");
+            }
+            dlg_templateselection <= null;
+            return true;
+
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

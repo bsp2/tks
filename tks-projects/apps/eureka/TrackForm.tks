@@ -1,0 +1,797 @@
+// ----
+// ---- file   : TrackForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 10Feb2018
+// ---- changed: 16Feb2018, 17Feb2018, 21Feb2018, 22Feb2018, 23Feb2018, 24Feb2018, 02Mar2018
+// ----          07Mar2018, 09Apr2018, 20May2018, 23Jun2018, 11Jul2019, 20Jul2019, 10Jan2022
+// ----          05Feb2022, 06Feb2022, 11Feb2022, 19Feb2023, 21Sep2023, 02Oct2023, 30Oct2023
+// ----          31Oct2023, 04Nov2023, 16Nov2023, 18Nov2023, 24Nov2023, 02Dec2023, 22Mar2024
+// ----          07Jul2024, 19Sep2024, 22Sep2024, 03Jan2025, 07Mar2025
+// ----
+// ----
+// ----
+
+module MTrackForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class TrackForm : XMLForm, ActionProvider {
+
+   define int ESTIMATED_SIZE_X = 208;
+
+   define String ACTION_TRACK_DELETED;
+   define String ACTION_TRACK_MOVED;
+   define String ACTION_TRACK_RENAMED;
+   define String ACTION_TRACK_RELAYOUT;
+   define String ACTION_TRACK_UPDATE_LAYOUT_ALL;
+   define String ACTION_TRACK_MUTESOLO;
+   define String ACTION_TRACK_FOCUS;
+   define String ACTION_TRACK_EDITFIRSTMOD;
+
+   public    Track *track;
+   protected int    track_idx;
+
+   protected LayerSwitch *ls_midi;
+   protected LayerSwitch *ls_name;
+   protected LayerSwitch *ls_input;
+   protected LayerSwitch *ls_outputs;
+   protected LayerSwitch *ls_edit;
+   protected LayerSwitch *ls_volume;
+
+   protected Panel           *pn_focus1;
+   protected Panel           *pn_focus2;
+   protected Panel           *pn_left;
+   protected DragHandleLabel *dh_track;
+   protected MidiIndicator   *midi_indicator;
+   protected LoadIndicator   *load_indicator;
+   protected Button          *bt_mute;
+   protected Button          *bt_solo;
+   protected LevelIndicator  *level_indicator;
+   protected ComboBox        *cm_dev;
+   protected ComboBox        *cm_ch;
+   protected ComboBox        *cm_input;
+   protected CheckBox        *cb_stereo_input;
+   protected CheckBox        *cb_inputtosc;
+   protected TextField       *tf_name;
+   protected ComboBox        *cm_cpucore;
+   protected OutputsControl  *c_outputs;
+   protected Button          *bt_edit;
+
+   protected LayerSwitch *ls_add_track_h;  // or null
+   protected Button *bt_add_track_h;  // or null
+
+   protected PopupMenu *pm_context;
+
+
+   // <init.png>
+   public method init(Track _track, int _trackIdx) : boolean {
+
+      track <= _track;
+      track_idx = _trackIdx;
+
+      if(!initPakFile(current_project.b_track_overview ? "TrackForm_overview.xfm" : "TrackForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      dh_track.setCaption(String(_trackIdx+1));
+      dh_track.setUserData(_track);
+      cm_dev.setOptions(MIDI.midi_input_device_short_names);
+      // // cm_dev.setOptionsLong(MIDI.midi_input_device_long_names);
+      cm_dev.setSelectedOption(track.dev_idx);
+      cm_ch.setSelectedOption(track.midi_ch + 1);
+      tf_name.setText(track.name);
+
+      // (note) allow CPU core to be selected even when thread affinities are ignored
+      //         => CPU core selection becomes CPU core group (used for track-process grouping)
+      if( !STConfig.b_allow_cpu_core_selection || (0 == g_track_cpu_core_map.numElements) )
+      {
+         cm_cpucore.setOptions("*");
+         cm_cpucore.setSelectedOption(0);
+         cm_cpucore.setEditable(false);
+      }
+      else
+      {
+         local StringArray cpuOpt;
+         local StringArray cpuOptLong;
+         cpuOpt = g_track_cpu_core_names;
+         cpuOpt.insert(0, "*");
+         cm_cpucore.setOptions(cpuOpt);
+         cm_cpucore.setSelectedOption(track.cpu_core + 1);
+      }
+
+      updateInputChannelOptions();
+      cm_input.setSelectedOption(track.input_channel_idx + 1);
+      cb_stereo_input.setSelected(track.b_stereo_input);
+      cb_inputtosc.setSelected(track.b_input_to_sc);
+
+      if(!c_outputs.init(track, -1/*laneIdx*/))
+         return false;
+
+      c_outputs.showOutputs(track.outputs, 0/*maxLanes*/);
+
+      if(STConfig.b_colorize_tracks)
+         updateTint();
+
+      updateLayout();
+      updateMuteSolo();
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_TRACK_DELETED,
+              ACTION_TRACK_MOVED,
+              ACTION_TRACK_RENAMED,
+              ACTION_TRACK_RELAYOUT,
+              ACTION_TRACK_UPDATE_LAYOUT_ALL,
+              ACTION_TRACK_MUTESOLO,
+              ACTION_TRACK_FOCUS,
+              ACTION_TRACK_EDITFIRSTMOD,
+              ];
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      // (todo) dynamic tab cycles (skip hidden widgets)
+      _retLayers = [cm_dev,
+                    cm_ch,
+                    cm_cpucore,
+                    tf_name,
+                    c_outputs,
+                    bt_edit
+                    ];
+   }
+
+   // <ui_update.png>
+   public method setEnableFocus(boolean _bEnabled) {
+      if(_bEnabled)
+      {
+         pn_focus1.setPanelAlphaAndTint(255, #ff8fcf00);
+         pn_focus2.setPanelAlphaAndTint(255, #ff5f8f00);
+      }
+      else
+      {
+         pn_focus1.setPanelAlphaAndTint(255, #ff000000);
+         pn_focus2.setPanelAlphaAndTint(255, #ff000000);
+      }
+      pn_focus1.redraw();
+      pn_focus2.redraw();
+   }
+
+   // <ui_update.png>
+   public method updateTint() {
+      // // c_outputs.setBackgroundTint(track.ui_tint_32);
+      // // pn_left.setPanelAlphaAndTint(255, track.ui_tint_32);
+      dh_track.setHandleTint(track.ui_tint_32);
+      bt_edit.setBackgroundTint(track.ui_tint_32);
+   }
+
+   // <method_get.png>
+   public static GetInputChannelOptions(Track       track,
+                                        StringArray retOptions,
+                                        StringArray retOptionsLong,
+                                        IntArray    retColors
+                                        ) {
+      retColors.add(0); // "-"
+      int inChIdx = 0;
+      int numAvailInCh = b_metahost ? Replay.METAHOST_NUM_INPUTS : STConfig.audio_num_in/*updated when ASIO device is initialized*/;
+      retOptions.add("-");
+      retOptionsLong.add("-");
+      String *sInAlias;
+      local String sNr;
+      loop(Audio.STREAM_MAX_INPUT_CHANNELS/*32*/)
+      {
+         sNr =
+            track.b_stereo_input
+            ? ((inChIdx + 1)+(((inChIdx+1) < Audio.STREAM_MAX_INPUT_CHANNELS)?(" & "+(inChIdx + 2)):""))
+            : String(inChIdx+1)
+            ;
+
+         // Short options
+         sInAlias <= track.getInputChannelAlias(inChIdx, false/*bLong*/);
+         if(null != sInAlias && !sInAlias.isBlank())
+            retOptions.add(sInAlias);
+         else
+            retOptions.add(sNr);
+
+         // Long options
+         sInAlias <= track.getInputChannelAlias(inChIdx, true/*bLong*/);
+         if(null != sInAlias)
+            retOptionsLong.add(sNr+": "+sInAlias);
+         else
+            retOptionsLong.add(sNr);
+
+         retColors.add((inChIdx < numAvailInCh) ? #1800c000 : #38900000);
+
+         inChIdx++;
+      }
+   }
+
+   // <ui_update.png>
+   public method updateInputChannelOptions() {
+      local StringArray options;
+      local StringArray optionsLong;
+      local IntArray    inputColors;
+      GetInputChannelOptions(track,
+                             options,
+                             optionsLong,
+                             inputColors
+                             );
+      cm_input.setOptions(options);
+      cm_input.setOptionsLong(optionsLong);
+      cm_input.setOptionBGColors(inputColors);
+   }
+
+   // <ui_update.png>
+   public method updateOutputTrackNames() {
+      c_outputs.updateOutputTrackNames();
+   }
+
+   // <ui_update.png>
+   public method updateLayout() {
+      switch(track.layout)
+      {
+         default:
+         case Track.LAYOUT_ALL:
+            ls_midi   .switchToLayerNr(1);
+            ls_name   .switchToLayerNr(1);
+            ls_input  .switchToLayerNr(1);
+            ls_outputs.switchToLayerNr(1);
+            ls_edit   .switchToLayerNr(1);
+            ls_volume .switchToLayerNr(1);
+            dh_track.setCaption(String(track_idx+1));
+            break;
+
+         case Track.LAYOUT_ALL_EXCEPT_EDIT:
+            ls_midi   .switchToLayerNr(1);
+            ls_name   .switchToLayerNr(1);
+            ls_input  .switchToLayerNr(1);
+            ls_outputs.switchToLayerNr(1);
+            ls_edit   .switchToLayerNr(0);
+            ls_volume .switchToLayerNr(1);
+            dh_track.setCaption(String(track_idx+1));
+            break;
+
+         case Track.LAYOUT_MIDI_TRACKNAME_CORE:
+            ls_midi   .switchToLayerNr(1);
+            ls_name   .switchToLayerNr(1);
+            ls_input  .switchToLayerNr(1);
+            ls_outputs.switchToLayerNr(0);
+            ls_edit   .switchToLayerNr(0);
+            ls_volume .switchToLayerNr(1);
+            dh_track.setCaption(String(track_idx+1));
+            break;
+
+         case Track.LAYOUT_TRACKNAME:
+            ls_midi   .switchToLayerNr(0);
+            ls_name   .switchToLayerNr(1);
+            ls_input  .switchToLayerNr(0);
+            ls_outputs.switchToLayerNr(0);
+            ls_edit   .switchToLayerNr(0);
+            ls_volume .switchToLayerNr(1);
+            dh_track.setCaption(String(track_idx+1));
+            break;
+
+         case Track.LAYOUT_TRACKNAME_SMALL_VOL:
+            ls_midi   .switchToLayerNr(0);
+            ls_name   .switchToLayerNr(0);
+            ls_input  .switchToLayerNr(0);
+            ls_outputs.switchToLayerNr(0);
+            ls_edit   .switchToLayerNr(0);
+            ls_volume .switchToLayerNr(1);
+            dh_track.setCaption(String(track_idx+1)+":"+(track.name.abbrev(8)));
+            break;
+
+         case Track.LAYOUT_TRACKNAME_SMALL:
+            ls_midi   .switchToLayerNr(0);
+            ls_name   .switchToLayerNr(0);
+            ls_input  .switchToLayerNr(0);
+            ls_outputs.switchToLayerNr(0);
+            ls_edit   .switchToLayerNr(0);
+            ls_volume .switchToLayerNr(0);
+            dh_track.setCaption(String(track_idx+1)+":"+(track.name.abbrev(8)));
+            break;
+      }
+   }
+
+   // <ui_update.png>
+   public method updateMuteSolo() {
+      // trace "xxx TrackForm::updateMuteSolo: play_state="+track.play_state+" b_force_mute="+track.b_force_mute;
+      if((Track.STATE_MUTE == track.play_state) || track.b_force_mute)
+      {
+         bt_mute.setBackgroundTint(#60ff0000);
+         bt_mute.setEditable(!track.b_force_mute);
+         bt_solo.setBackgroundTint(0);
+      }
+      else if(Track.STATE_SOLO == track.play_state)
+      {
+         bt_mute.setBackgroundTint(#4000ff00);
+         bt_solo.setBackgroundTint(#a0ffff00);
+         bt_mute.setEditable(false);
+      }
+      else
+      {
+         bt_mute.setBackgroundTint(#4000a000);
+         bt_mute.setEditable(true);
+         bt_solo.setBackgroundTint(0);
+      }
+      bt_mute.redraw();
+      bt_solo.redraw();
+   }
+
+   // <ui_kbd.png>
+   public method focusNameWidget() {
+      if(1 == ls_name.getCurrentChildNr())  // widget visible ?
+      {
+         UI.SetKeyboardFocus(tf_name);
+         tf_name.onTabFocus();  // select all
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleToggleMute() {
+      if(Track.STATE_MUTE == track.play_state)
+      {
+         Global.PrintShort("Unmute track \""+track.name+"\"");
+         track.setPlayState(Track.STATE_PLAY);
+      }
+      else
+      {
+         Global.PrintShort("Mute track \""+track.name+"\"");
+         track.setPlayState(Track.STATE_MUTE);
+      }
+
+      current_project.markAsModified();
+
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_MUTESOLO), this));
+   }
+
+   // <ui_handle.png>
+   public method handleToggleSolo() {
+      if(Track.STATE_SOLO == track.play_state)
+      {
+         Global.PrintShort("Unsolo track \""+track.name+"\"");
+         track.setPlayState(Track.STATE_PLAY);
+      }
+      else
+      {
+         Global.PrintShort("Solo track \""+track.name+"\"");
+         track.setPlayState(Track.STATE_SOLO);
+      }
+
+      current_project.markAsModified();
+
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_MUTESOLO), this));
+   }
+
+   // <ui_handle.png>
+   protected method handleDragHandleClicked() {
+   }
+
+   // <ui_handle.png>
+   public method handleNextLayout(int _dir) {
+
+      track.selectNextLayout(_dir);
+      updateLayout();
+
+      if(VMOD_LCTRL == UI.GetKeyMod())
+      {
+         current_project.setLayoutForAllTracks(track.layout);
+         provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_UPDATE_LAYOUT_ALL), this));
+      }
+      else
+      {
+         provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_RELAYOUT), this));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      track.setName(tf_name.getText());
+      Global.Print("Track name is \""+track.name+"\"");
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_RENAMED), this));
+   }
+
+   // <ui_handle.png>
+   protected method handleCPUCoreChanged() {
+      track.setCPUCore(cm_cpucore.getSelectedOption() - 1);
+      if(STConfig.b_ignore_thread_affinity)
+         Global.Print("CPU-core is group "+cm_cpucore.getSelectedOptionName()+" (numShared="+(current_project.getNumTracksPerCPUCore(track.cpu_core) - 1)+", ignore affinity)");
+      else
+         Global.Print("CPU-core is "+cm_cpucore.getSelectedOptionName()+" (HW "+track.getActualCPUCore()+", numShared="+(current_project.getNumTracksPerCPUCore(track.cpu_core) - 1));
+   }
+
+   // <ui_handle.png>
+   protected method handleInputChanged() {
+      track.setInputChannelIdx(cm_input.getSelectedOption() - 1);
+      current_project.updateUsesInputs();
+
+      Global.Print("Input channel is \""+cm_input.getSelectedOptionName()+"\" ("+track.getInputChannelAlias(track.input_channel_idx, true/*bLong*/)+")  ("+(current_project.b_uses_inputs?"project uses inputs":"no inputs in use")+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleStereoInputChanged() {
+      track.setEnableStereoInput(cb_stereo_input.isSelected());
+      updateInputChannelOptions();
+      redraw();
+      Global.Print("Input mode is "+(track.b_stereo_input ? "Stereo" : "Mono"));
+   }
+
+   // <ui_handle.png>
+   protected method handleInputToSCChanged() {
+      track.setEnableInputToSideChain(cb_inputtosc.isSelected());
+      Global.Print("Route input to "+(track.b_input_to_sc ? "Side-Chain (3 & 4)" : "Main (1 & 2)"));
+   }
+
+   // <ui_handle.png>
+   protected method handleDevChanged() {
+      track.setDevIdx(cm_dev.getSelectedOption());
+      PageProject.RedirectRemoteEventsToCurrentTrack();
+      Global.Print("MIDI device is \""+(MIDI.midi_input_device_long_names.get(track.dev_idx))+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleChChanged() {
+      track.setMidiCh(cm_ch.getSelectedOption() - 1);
+      PageProject.RedirectRemoteEventsToCurrentTrack();
+      Global.Print("MIDI channel is "+((-1 == track.midi_ch) ? "omni / MPE" : (track.midi_ch+1)));
+   }
+
+   // <method.png>
+   protected method provideTrackFocus() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_FOCUS), this));
+   }
+
+   // <ui_handle.png>
+   public method handleEditTrack() {
+
+      provideTrackFocus();
+
+      Global.Print("Edit track #"+((current_project.getTrackIdx(track))+1));
+
+      root_form.showPage(RootForm.PAGE_TRACK, true/*bAllowHistory*/);
+      root_form.pg_track.showTrack(track);
+   }
+
+   // <ui_handle.png>
+   public method handleEditTrackFirstMod() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_EDITFIRSTMOD), this));
+   }
+
+   // <ui_handle.png>
+   protected method handleDeleteTrack() {
+      Global.Print("Delete track #"+((current_project.getTrackIdx(track))+1));
+
+      UI.LoseKeyboardFocusIfWithin(this, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(this);
+      UI.SetKeyboardFocus(null);
+
+      current_project.deleteTrack(track);
+      track <= null;
+      pm_context <= null;
+
+      // track ref is now invalid
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_DELETED), this));
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+      PopupMenu *spm;
+
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Color", deref spm);
+      HashTable colors <= STConfig.default_track_colors;
+      StringArray colorNames <= Global.default_track_color_names;
+      String *sName;
+      int colorIdx = 0;
+      foreach sName in colorNames
+      {
+         int c32 = colors.get(sName);
+         pmb <= spm.addDefaultButton(sName, "track_color_"+colorIdx);
+         pmb.setBackgroundTint(c32);
+         colorIdx++;
+      }
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Create audio track (mono)", "track_newaudio_mono");
+      pmb.setToolTipCaption("Create mono sampler track + sample namespace + empty sample");
+      pmb.setAccelerators("", "lshift-n");
+
+      pmb <= pm.addDefaultButton("Create audio track (stereo)", "track_newaudio_stereo");
+      pmb.setToolTipCaption("Create stereo sampler track + sample namespace + empty sample");
+      pmb.setAccelerators("", "lctrl-lshift-n");
+
+      pm.addSeparator();
+      pmb <= pm.addIconButton("Delete track", "trashcan_sm", "track_delete");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show track context menu.");
+   }
+
+   // <ui_handle.png>
+   public method setTrackColorByIndex(int _colorIdx) {
+      HashTable colors <= STConfig.default_track_colors;
+      StringArray colorNames <= Global.default_track_color_names;
+      String sName <= colorNames.get(_colorIdx);
+      if(null != sName)
+      {
+         track.ui_tint_32 = colors.get(sName);
+
+         // // provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_RELAYOUT), this));
+         updateTint();
+         redraw();
+         current_project.markAsModified();
+      }
+   }
+
+   // <method_set.png>
+   public method setEnableShowAddTrackH(boolean _bShow) {
+      if(null != ls_add_track_h)
+         ls_add_track_h.switchToLayerNr(_bShow);
+   }
+
+   // <ui_handle.png>
+   public method handleIdleTimer() {
+
+      FloatArray midiActivity <= replay.ui_midi_activity.get(track.dev_idx % MIDI.MAX_MIDI_INPUTS);
+      if(track.midi_ch < 0)
+         midi_indicator.setActivity(midiActivity.max);
+      else
+         midi_indicator.setActivity(midiActivity.get(track.midi_ch));
+
+      load_indicator.setLoadPercentage(track.getAverageLoadPercentage());
+      level_indicator.setSmpLR(track.getSmpPeakL(), track.getSmpPeakR(),
+                               track.getSmpAvgL(),  track.getSmpAvgR()
+                               );
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            showContextMenu();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual canDropObject(Object _o, MouseEvent _ev) : boolean {
+      // trace "xxx TrackForm::canDropObject: o="+#(_o)+" user_data="+#(user_data);
+      return (_o instanceof Track) && (@(_o) != @(track));
+   }
+
+   // <ui_mouse.png>
+   public virtual onDropObject(Object _o, MouseEvent _ev) : boolean {
+      // trace "xxx TrackForm::onDropObject: o="+#(_o)+" mouse_rel_y="+_ev.mouse_rel_y;
+      if(_o instanceof Track)
+      {
+         Track trackSrc <= _o;
+         int trackSrcIdx = current_project.getTrackIdx(trackSrc);
+         int trackDstIdx = current_project.getTrackIdx(track);
+
+         // trace "xxx TrackForm::onDropObject: srcIdx="+trackSrcIdx+" dstIdx="+trackDstIdx;
+
+         if(trackSrcIdx != trackDstIdx)
+         {
+            if(_ev.mouse_rel_y >= getSizeY()*0.5)
+            {
+               // Move below this track
+               trackDstIdx++;
+               if(trackSrcIdx != trackDstIdx)
+               {
+                  current_project.moveTrack(trackSrcIdx,
+                                            (trackSrcIdx < trackDstIdx) ? (trackDstIdx-1) : trackDstIdx
+                                            );
+
+                  Global.Print("Move track \""+trackSrc.name+"\" below \""+track.name+"\"");
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_MOVED), this));
+                  root_form.pg_project.makeTrackVisible(trackDstIdx);
+               }
+               else
+               {
+                  Global.Warning("Cannot drop track on itself");
+               }
+            }
+            else
+            {
+               // Move above this track
+               if(trackSrcIdx != trackDstIdx)
+               {
+                  current_project.moveTrack(trackSrcIdx,
+                                            (trackSrcIdx < trackDstIdx) ? (trackDstIdx-1) : trackDstIdx
+                                            );
+
+                  Global.Print("Move track \""+trackSrc.name+"\" above \""+track.name+"\"");
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_MOVED), this));
+                  root_form.pg_project.makeTrackVisible(trackDstIdx);
+               }
+               else
+               {
+                  Global.Warning("Cannot drop track on itself");
+               }
+            }
+         }
+         else
+         {
+            Global.Warning("Cannot drop track on itself");
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      else if(_ev.isLeftButton())
+      {
+         provideTrackFocus();
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         provideTrackFocus();
+         PageProject pgProject <= root_form.pg_project;
+         pgProject.handleEditFocusTrack();
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // // if(_ev.leftButtonUp())
+      // // {
+      // //    // (note) must be placed in onMouse() or buttons stop working
+      // //    //         to fix this, the button must implement onMouseClick()
+      // //    provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_FOCUS), this));
+      // //    return true;
+      // // }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      // trace "xxx TrackForm::consumeAction: acName=\""+acName+"\".";
+      // trace "xxx reqSz="+getRequiredSizeString();
+      PageProject pgProject <= root_form.pg_project;
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("TrackForm: pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_ac))
+               return true;
+            if(acName <= "track_color_")
+            {
+               setTrackColorByIndex(acName.replace("track_color_", ""));
+               return true;
+            }
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "track_delete":
+                  handleDeleteTrack();
+                  return true;
+
+               case "track_newaudio_mono":
+                  pgProject.handleAddAudioTrack(track/*parentTrack*/, false/*bStereo*/);
+                  return true;
+
+               case "track_newaudio_stereo":
+                  pgProject.handleAddAudioTrack(track/*parentTrack*/, true/*bStereo*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_mute):
+            handleToggleMute();
+            return true;
+
+         case @(bt_solo):
+            handleToggleSolo();
+            return true;
+
+         case @(dh_track):
+            if(DragHandleLabel.ACTION_DRAG_HANDLE_RMB_CLICK == acName)
+            {
+               handleEditTrack();
+            }
+            else if(DragHandleLabel.ACTION_DRAG_HANDLE_LMB_CLICK == acName)
+            {
+               handleNextLayout(1);
+            }
+            else if(DragHandleLabel.ACTION_DRAG_HANDLE_MMB_CLICK == acName)
+            {
+               handleEditTrackFirstMod();
+            }
+            return true;
+
+         case @(tf_name):
+            handleNameChanged();
+            return true;
+
+         case @(cm_cpucore):
+            handleCPUCoreChanged();
+            return true;
+
+         case @(cm_input):
+            handleInputChanged();
+            return true;
+
+         case @(cb_stereo_input):
+            handleStereoInputChanged();
+            return true;
+
+         case @(cb_inputtosc):
+            handleInputToSCChanged();
+            return true;
+
+         case @(cm_dev):
+            handleDevChanged();
+            return true;
+
+         case @(cm_ch):
+            handleChChanged();
+            return true;
+
+         case @(bt_edit):
+            if(Button.ACTION_HOLD_CLICK == acName || Button.ACTION_RIGHT_CLICK == acName)
+               handleEditTrackFirstMod();
+            else
+               handleEditTrack();
+            return true;
+
+         case @(bt_add_track_h):
+            pgProject.handleAddTrackAutoOrder(true/*bAtEnd*/, (Button.ACTION_HOLD_CLICK == acName)/*bClone*/);
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

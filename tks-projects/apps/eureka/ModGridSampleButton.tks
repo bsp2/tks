@@ -1,0 +1,403 @@
+// ----
+// ---- file   : ModGridSampleButton.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 05Jan2019
+// ---- changed: 06Jan2019, 17Nov2019, 25Apr2021, 13Feb2022, 03Jul2022, 04Oct2023, 01Nov2023
+// ----          11Nov2023, 07Jul2024, 23Sep2024, 24Sep2024, 30Dec2024, 01Jan2025, 07Jan2025
+// ----
+// ----
+// ----
+
+module MModGridSampleButton;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModGridSampleButton : ModGridButton, ActionConsumer {
+   protected ModSample *mod;
+
+   protected ComboBox   *cm_sample;
+   protected Button     *bt_samplename;
+   protected FloatParam *fp_poly;
+
+   protected int ui_last_seen_sample_idx;
+
+   protected SampleCacheEntry *[] *preset_entries;
+
+
+   // <ui_init.png>
+   public method initSampleButton(ModSample _mod) {
+
+      initModGridButton();
+
+      setLayout(SuperBorderLayout);
+      setEnableKbdFocusOnMouse(false);
+      setLookAndFeel(LookAndFeel.LIGHT);
+      setEnableLabelButton(true);
+      setAlignment(Layout.EXPANDY);
+
+      mod <= _mod;
+
+      cm_sample <= ComboBox.New();
+      cm_sample.setAlignment(Layout.BASELINE);
+      cm_sample.setEnableBaselineContentShift(true);
+      cm_sample.setRequiredSizeY(ModGrid.GetModButtonSizeY());
+      cm_sample.setLookAndFeel(LookAndFeel.LIGHT);
+      cm_sample.setEnablePreview(true);
+      cm_sample.setPadLeftUnscaled(2);
+      addLayer(deref cm_sample, Layout.LEFT);
+
+      bt_samplename <= Button.New();
+      bt_samplename.setEnableLabelButton(true);
+      bt_samplename.setAlignment(Layout.EXPANDX | Layout.BASELINE);
+      bt_samplename.setEnableBaselineContentShift(true);
+      bt_samplename.setEnableAbbreviation(true);
+      bt_samplename.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      bt_samplename.setEnableFillBackground(true);
+      bt_samplename.setLookAndFeel(LookAndFeel.LIGHT);
+      bt_samplename.setEnableProvideRightClick(true);
+      addLayer(deref bt_samplename, Layout.CENTER);
+
+      updateSampleOptions();
+
+      fp_poly <= FloatParam.New();
+      fp_poly.setMinMaxValues(1, 256);
+      fp_poly.setValue(mod.sample_player.numVoices);
+      fp_poly.setResetValues([32.0f, 1.0f]);
+      fp_poly.setPrecision(0);
+      fp_poly.setStep(1);
+      fp_poly.setVisibleTextLength(3);
+      fp_poly.setLookAndFeel(LookAndFeel.LIGHT);
+      fp_poly.setToolTipCaption("Polyphony (maximum number of voices)\n\n (note) samples with layered zones need a higher polyphony");
+      if(UI.IsHiDPI())
+      {
+         fp_poly.setAlignment(Layout.BASELINEY|Layout.EXPANDY);
+         fp_poly.setPadBottom(1);
+      }
+      else
+      {
+         fp_poly.setAlignment(Layout.EXPANDY);
+         fp_poly.setPadBottom(2);
+      }
+      fp_poly.setEnableBaselineContentShift(true);
+      addLayer(deref fp_poly, Layout.RIGHT);
+   }
+
+   // <ui_update.png>
+   protected method updateSampleOptions() {
+      local StringArray sampleNames <= current_project.getUniqueSampleNames();
+      local StringArray sampleIdxOptions;
+      local StringArray sampleIdxOptionsLong;  // for ComboBoxPopup
+      int sampleIdx = 1;
+      loop(sampleNames.numElements)
+      {
+         sampleIdxOptions.add(String(sampleIdx));
+         sampleIdxOptionsLong.add(sampleIdx+":"+sampleNames.get(sampleIdx-1));
+         sampleIdx++;
+      }
+      cm_sample.setOptions(sampleIdxOptions);
+      cm_sample.setOptionsLong(sampleIdxOptionsLong);
+      cm_sample.setToolTipCaptions(sampleNames);
+      cm_sample.setSelectedOption(mod.sample_idx);
+      ui_last_seen_sample_idx = mod.sample_idx;
+
+      bt_samplename.setCaption(cm_sample.getSelectedToolTipCaption());
+   }
+
+   // <method_set.png>
+   public virtual setEnableHold(boolean _bHold) {
+      // prevent Button HOLD_CLICK action (=> edit modmatrix)
+   }
+
+   // <method.png>
+   protected method syncOtherModsFromThis() {
+      // Generic implementation, sync entire patch
+      Track track <= root_form.pg_track.track;
+      if(track.isMirrorMode())
+      {
+         ModGrid modgrid <= root_form.pg_track.modgrid;
+         modgrid.syncOtherLaneModsFromMod(mod, true/*bSyncModMatrix*/);
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleEditMod() : boolean {
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.autoselect_sample_idx = mod.sample_idx;
+      pgSample.b_allow_pgtrack_autoselect = true;
+      pgSample.ui_parent_track_nr = current_project.getTrackIdx(root_form.pg_track.track) + 1;
+      Global.Debug2("ModGridSampleButton::handleEditMod: mod.preferred_namespace_idx="+mod.preferred_namespace_idx);
+      pgSample.mod_sample <= mod;
+      pgSample.sample_pad_common <= null;
+      pgSample.sample_pad        <= null;
+      pgSample.sample_pad_kit    <= null;
+      root_form.showPage(RootForm.PAGE_SAMPLE, false/*bAllowHistory*/);
+      return true;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method loadPreset(int _idx) {
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      SampleCacheEntry en <= preset_entries[_idx];
+      
+      int numRefs = current_project.findNumSampleRefsBySampleIdx(mod.sample_idx);
+      trace "[trc] ModGridSampleButton::loadPreset: cur mod.sample_idx="+mod.sample_idx+" numRefs="+numRefs;
+
+      Sample *sampleNew;
+      local String *pathName;
+
+      if(1 == numRefs)
+      {
+         // Replace sample (only referenced by this ModSample)
+         Sample sampleOld <= current_project.getSampleByIdx(mod.sample_idx);
+         trace "[trc] ModGridSampleButton::loadPreset<replace>: sampleOld.unique_name=\""+sampleOld.unique_name+"\"";
+         sampleNew <= current_project.newSample(null/*default*/, mod.sample_idx/*prefIdx*/);
+
+         pathName <= STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name+Global.SAMPLE_FILE_SUFFIX;
+         trace "[trc] ModGridSampleButton::loadPreset<replace>: pathName=\""+pathName+"\"";
+         
+         if(sampleNew.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bRecalcPatches*/))
+         {
+            sampleNew.b_autoload = false;
+            sampleNew.setNamespaceIdx(mod.preferred_namespace_idx);
+            mod.sample_idx = current_project.getSampleIdx(sampleNew);
+            current_project.deleteSample(sampleOld);
+            updateSampleOptions();
+            Global.Success("Load preset sample \""+en.unique_name+"\" (replace smpIdx="+mod.sample_idx+")");
+         }
+         else
+         {
+            current_project.deleteSample(sampleNew);
+            Global.Error("Failed to load preset sample \""+en.unique_name+"\"");
+         }
+      }
+      else
+      {
+         // Add new sample
+         trace "[trc] ModGridSampleButton::loadPreset<new>: add sample";
+         sampleNew <= current_project.newSample(null/*default*/, (mod.sample_idx >= 0) ? (mod.sample_idx + 1) : -1);
+
+         pathName <= STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name+Global.SAMPLE_FILE_SUFFIX;
+         trace "[trc] ModGridSampleButton::loadPreset<new>: pathName=\""+pathName+"\"";
+         
+         if(sampleNew.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bRecalcPatches*/))
+         {
+            sampleNew.b_autoload = false;
+            sampleNew.setNamespaceIdx(mod.preferred_namespace_idx);
+            mod.sample_idx = current_project.getSampleIdx(sampleNew);
+            updateSampleOptions();
+            Global.Success("Load preset sample \""+en.unique_name+"\" (add smpIdx="+mod.sample_idx+")");
+         }
+         else
+         {
+            current_project.deleteSample(sampleNew);
+            Global.Error("Failed to load preset sample \""+en.unique_name+"\"");
+         }
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   // <method.png>
+   protected method addPresetMenuEntries(PopupMenu pm, boolean _bShowAll) {
+      int numAvail = preset_entries.numElements;
+      if(numAvail > 0)
+      {
+         pm.addSeparator();
+         int presetIdx = 0;
+         int pmPresetIdx = 0;
+         SampleCacheEntry *en;
+         int maxPresets = STConfig.num_sample_preset_menu_entries;
+         boolean bFew = _bShowAll || (preset_entries.numElements < maxPresets);
+         local PointerArray aFiltered;
+         PopupMenuButton *pmb;
+         foreach en in preset_entries
+         {
+            if(bFew || en.rating > 0)
+            {
+               aFiltered.add(en);
+
+               if(pmPresetIdx >= maxPresets)
+               {
+                  // Create new submenu
+                  PopupMenu spm <= PopupMenu.New(pm);
+                  pmb <= pm.addMenu("more..", deref spm);
+                  pm <= spm;
+                  pmPresetIdx = 0;
+               }
+
+               pmb <= pm.addDefaultButton(en.unique_name+"\t     "+en.rel_path, "preset_"+presetIdx);
+
+               byte ratingIdx = mathClampi((en.rating + 10) / 20, 0, 5);  // 0..100 => 0..5
+               if(ratingIdx > 0)
+               {
+                  pmb.setIcon(UI.GetIcon("star_rating_lvl_"+ratingIdx));
+                  pmb.setIconScale(0.375 * UI.font_scaling);
+                  pmb.setIconPadRight(2);
+                  pmb.setIconPadTop(2);
+               }
+
+               presetIdx++;
+               pmPresetIdx++;
+            }
+         }
+         preset_entries <= deref aFiltered;
+      }
+   }
+
+   // <ui_show.png>
+   protected virtual contextMenuAddExtraConfigItems(PopupMenu pm) {
+      PopupMenuButton *pmb;
+      pmb <= pm.addCheckButton("FX auto note-on", mod.getEnableFXAutoNoteOn(), "fx_auto_noteon");
+      pmb.setToolTipCaption("FX Auto Note-On\n\n (note) auto-start single voice and ignore note ons / note offs\n\n (note) meant for FX patches that process audio input");
+   }
+
+   // <ui_show.png>
+   protected virtual contextMenuAddPresetSubMenu(PopupMenu pm) {
+      PopupMenuButton *pmb;
+
+      PageTrack pgTrack <= root_form.pg_track;
+      Track track <= pgTrack.track;
+      preset_entries <= new PointerArray;
+
+      local StringArray aTrackNameWords <= track.name.splitSpace(false);
+      String *sWord;
+      local String *sWordLC;
+      foreach sWord in aTrackNameWords
+      {
+         sWordLC <= sWord.toLower();
+         if(sWordLC >= "2")
+            sWordLC.replace("2", "");  // e.g. 'bd2' => 'bd'
+         // trace "xxx sWordLC=\""+sWordLC+"\"";
+         Samples.FindCacheEntriesByCategoryNameOrFilterKeyword(preset_entries, sWordLC);
+      }
+
+      // Add 'similar' samples by finding categories from the current sample's tags
+      Sample sample <= current_project.getSampleByIdx(mod.sample_idx);
+      if(null != sample && null != sample.tags)
+      {
+         String *sTag;
+         foreach sTag in sample.tags
+         {
+            Samples.FindCacheEntriesByCategoryNameOrFilterKeyword(preset_entries, sTag);
+         }
+      }
+
+      if(preset_entries.numElements > 0)
+      {
+         pm.addSeparator();
+         PopupMenu spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Presets", deref spm);
+
+         addPresetMenuEntries(spm, (0 != UI.GetKeyMod())/*bShowAll*/ );
+
+         Global.Print("Show ModSample context menu ("+preset_entries.numElements+" preset"+Utils.GetPluralString(preset_entries.numElements)+")");
+      }
+      else
+      {
+         Global.Warning("Preset menu: no entries found");
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleToggleFXAutoNoteOn() {
+      mod.setEnableFXAutoNoteOn(!mod.getEnableFXAutoNoteOn());
+      Global.Print("FX auto note-on is "+Utils.GetEnableString(mod.getEnableFXAutoNoteOn()));
+   }
+
+   // <ui_timer.png>
+   public virtual handleIdleTimer() {
+      // overwrites ModGridButtonBase::handleIdleTimer()
+      if(mod.sample_idx != ui_last_seen_sample_idx)
+      {
+         ui_last_seen_sample_idx = mod.sample_idx;
+         cm_sample.setSelectedOption(mod.sample_idx);
+         bt_samplename.setCaption(cm_sample.getSelectedToolTipCaption());
+         bt_samplename.redraw();
+      }
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      UIRenderer.DrawDefaultControlBackground(0, 0, getSizeX(), getSizeY());
+      drawGridBorder();
+      UIRenderer.DrawDefaultRaisedBorderRight(0, 0, getSizeX(), getSizeY());
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      return ModGridButton::onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      return Button::onMouseClick(_ev);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(acName <= "preset_")
+      {
+         loadPreset(acName.replace("preset_",""));
+         return true;
+      }
+
+      if(acName <= "fx_auto_noteon")
+      {
+         handleToggleFXAutoNoteOn();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(cm_sample):
+            mod.setSampleIdx(cm_sample.getSelectedOption());
+            bt_samplename.setCaption(cm_sample.getSelectedToolTipCaption());
+            bt_samplename.redraw();
+            mod.clearSampleAutoload();
+            Global.Print("Sample is "+cm_sample.getSelectedOptionName()+" ("+cm_sample.getSelectedToolTipCaption()+")");
+            syncOtherModsFromThis();
+            return true;
+
+         case @(bt_samplename):
+            if(Button.ACTION_RIGHT_CLICK == acName)
+            {
+               showContextMenu();
+            }
+            else
+            {
+               if(VMOD_LALT == UI.GetKeyMod())
+                  return handleEditModParamSet();
+               handleEditMod();
+            }
+            return true;
+
+         case @(fp_poly):
+            mod.setPoly(fp_poly.getFloatValue());
+            Global.Print("Poly is "+(mod.sample_player.numVoices));
+            syncOtherModsFromThis();
+            return true;
+      }
+
+      return ModGridButton::consumeAction(_ac);
+   }
+}

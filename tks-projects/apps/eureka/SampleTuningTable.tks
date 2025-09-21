@@ -1,0 +1,643 @@
+// ----
+// ---- file   : SampleTuningTable.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : based on Synergy's MTSDialog
+// ----           - UI edit state (sample(bank) replay uses plain FloatArray)
+// ----
+// ---- created: 09Feb2019
+// ---- changed: 07May2022, 08Jul2023, 29Jul2023, 04Oct2023, 20Oct2023, 30Oct2023, 28Sep2024
+// ----          29Sep2024, 30Sep2024
+// ----
+// ----
+// ----
+
+module MSampleTuningEntry;
+
+use namespace ui;
+
+
+// <class.png>
+class SampleTuningEntry {
+   SampleTuningTable *parent_tbl;
+
+   int   note;     // equal-tempered base note
+   float detune1;  // -1..1
+   float detune2;  // -1..1 (e.g. for randomization)
+
+
+   // <init.png>
+   public method init(SampleTuningTable _parentTbl, int _noteIdx) {
+      parent_tbl <= _parentTbl;
+      note    = _noteIdx;
+      detune1 = 0.0f;
+      detune2 = 0.0f;
+   }
+
+   // <method.png>
+   public method copyFrom(SampleTuningEntry _o) {
+      if(null != _o)
+      {
+         note    = _o.note;
+         detune1 = _o.detune1;
+         detune2 = _o.detune2;
+      }
+   }
+
+   // <method_get.png>
+   public method calcFreq() : float {
+      return Audio.NoteToFreq(note + detune1 + detune2);
+   }
+
+   // <method_set.png>
+   public method setFreq(float _freq) {
+      float n = Audio.FreqToFracNote(_freq);
+      n = Audio.NoteToFreq(n);     // convert back to freq
+      n = Audio.FreqToFracNote(n); // ..and back to note (for CompareFreqTables())
+      detune1 = frac(n);
+      note = int(n);
+      if(detune1 > 0.5f && note < 127)
+      {
+         note++;
+         detune1 = -(1.0f - detune1);
+      }
+      detune2 = 0.0f;
+      parent_tbl.b_default = false;
+   }
+
+   // <method_set.png>
+   public method setBaseNote(int _note) {
+      note = _note;
+      parent_tbl.b_default = false;
+   }
+
+   // <method_set.png>
+   public method setFracNote(float _note) {
+      detune1 = frac(_note);
+      note = int(_note);
+      if(note < 0)
+         note = 0;
+      detune2 = 0;
+      parent_tbl.b_default = false;
+   }
+
+   // <method_set.png>
+   public method setDetune1(float _detune) {
+      detune1 = _detune;
+      parent_tbl.b_default = false;
+   }
+
+   // <method_set.png>
+   public method setDetune2(float _detune) {
+      detune2 = _detune;
+      parent_tbl.b_default = false;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      ofs.i8  = note;
+      ofs.f32 = detune1;
+      ofs.f32 = detune2;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, short ver) : boolean {
+      note    = ifs.u8 & 127;
+      detune1 = ifs.f32;
+      detune2 = ifs.f32;
+      return true;
+   }
+}
+
+
+// <class.png>
+class SampleTuningTable {
+   String name;
+
+   SampleTuningEntry *[] entries;  // 128 SampleTuningEntry instances
+
+   // 0=table differs from default (usually equal temperament) tuning
+   // 1=default table (just save a default flag instead of the entire table)
+   boolean b_default;
+
+   // .scl import
+   public String *scl_basename;   // for preselecting entry in cm_preset ComboBox (w/o .scl suffix)
+   public String *scl_buffer;     // last imported .scl file content
+   public int     scl_num_notes;  // last imported .scl number of notes
+   public int     scl_rootkey;    // def=C-5
+   public boolean b_scl_keytohz;
+   public float   scl_roothz;     // def=261.625
+
+
+   // <init.png>
+   public method init() {
+      entries.alloc(128);
+      int noteIdx = 0;
+      loop(128)
+      {
+         SampleTuningEntry en <= new SampleTuningEntry;
+         en.init(this, noteIdx++);
+         entries.add(#(deref en));
+      }
+      b_default = false;
+
+      b_scl_keytohz = true;
+      resetSclRoot();
+   }
+
+   // <method.png>
+   public method resetSclRoot() {
+      scl_rootkey   = 5*12/*C-5*/;
+      scl_roothz    = 261.625f;
+   }
+
+   // <method.png>
+   public static CompareFreqTables(FloatArray _a, FloatArray _b) : boolean {
+      // threshold: 0.05% 1.0005
+      if(_a.numElements == _b.numElements)
+      {
+         int i = 0;
+         loop(128)
+         {
+            float a = _a.get(i);
+            float b = _b.get(i);
+            float thres = mathMinf(a, b) * 0.0005f;
+            if(abs(a - b) > thres)
+            {
+               trace "[trc] SampleTuningTable::CompareFreqTables: note "+i+" differs (a="+a+" b="+b+")";
+               return false;
+            }
+            i++;
+         }
+         return true;
+      }
+      else
+         trace "[!!!] SampleTuningTable::CompareFreqTable: numElements differ";
+      return false;
+   }
+
+   // <method_get.png>
+   public method getEntryByIdx(int _idx) : SampleTuningEntry {
+      return entries.get(_idx);
+   }
+
+   // <method.png>
+   public method copyFrom(SampleTuningTable _o) {
+      if(null != _o)
+      {
+         name = _o.name;
+         b_default = _o.b_default;
+         int enIdx = 0;
+         loop(128)
+         {
+            SampleTuningEntry enDst <=    getEntryByIdx(enIdx);
+            SampleTuningEntry enSrc <= _o.getEntryByIdx(enIdx);
+            enDst.copyFrom(enSrc);
+            enIdx++;
+         }
+
+         if(null != _o.scl_basename)
+            scl_basename <= Object(_o.scl_basename);
+         else
+            scl_basename <= null;
+
+         if(null != _o.scl_buffer)
+            scl_buffer <= Object(_o.scl_buffer);
+         else
+            scl_buffer <= null;
+
+         scl_num_notes = _o.scl_num_notes;
+         scl_rootkey   = _o.scl_rootkey;
+         b_scl_keytohz = _o.b_scl_keytohz;
+         scl_roothz    = _o.scl_roothz;
+      }
+   }
+
+   // <method.png>
+   public method randomizeNote() {
+      SampleTuningEntry *en;
+      foreach en in entries
+         en.note = rand(127);
+   }
+
+   // <method.png>
+   public method loadDefault() {
+      SampleTuningEntry *en;
+      int noteIdx = 0;
+      FloatArray aFreq <= Audio.default_freq_table;
+      foreach en in entries
+         en.setFreq(aFreq[noteIdx++]);
+      b_default = true;
+      name = "";
+   }
+
+   // <method.png>
+   public method loadEqualTemperament() {
+      SampleTuningEntry *en;
+      int noteIdx = 0;
+      foreach en in entries
+      {
+         en.note    = noteIdx++;
+         en.detune1 = 0;
+         en.detune2 = 0;
+      }
+
+      b_default = CompareFreqTables(Audio.default_freq_table, Audio.eqtemp_freq_table);
+      if(b_default)
+         name.free();
+      else
+         name = "equal temperament";
+   }
+
+   // <method_get.png>
+   public method isDefault() : boolean {
+      return b_default;
+   }
+
+   // <method.png>
+   public method randomizeDetune1(float _max) {
+      SampleTuningEntry *en;
+      foreach en in entries
+         en.detune1 = rand(2.0 * _max) - _max;
+      b_default = false;
+   }
+
+   // <method.png>
+   public method randomizeDetune2(float _max) {
+      SampleTuningEntry *en;
+      foreach en in entries
+         en.detune2 = rand(2.0 * _max) - _max;
+      b_default = false;
+   }
+
+   // <method.png>
+   public method replicateOctave(int _srcOct, boolean _bNote, boolean _bDetune1, boolean _bDetune2) {
+      // 'srcOct' is in range 0..9 (notes 0..108)
+      int curOct = 0;
+      loop(11)
+      {
+         if(curOct != _srcOct)
+         {
+            int relIdx = 0;
+            loop(12)
+            {
+               SampleTuningEntry enSrc <= entries.get((_srcOct*12) + relIdx);
+               SampleTuningEntry enDst <= entries.get(( curOct*12) + relIdx);
+               if(null != enDst)  // (note) last octave is partial so this can be null
+               {
+                  if(_bNote)
+                     enDst.note    = enSrc.note + (curOct - _srcOct)*12;
+                  if(_bDetune1)
+                     enDst.detune1 = enSrc.detune1;
+                  if(_bDetune2)
+                     enDst.detune2 = enSrc.detune2;
+               }
+               relIdx++;
+            }
+         }
+         curOct++;
+      }
+      b_default = false;
+   }
+
+   // <load.png>
+   public method tryImportTun(String _buf) : boolean {
+      local StringArray lines <= _buf.splitChar('\n');
+      boolean bDone = false;
+
+      if(null != lines)
+      {
+         // trace "xxx tun file has "+lines.numElements+" lines";
+         b_default = false;
+
+         String *line;
+         boolean bTuning = false;
+         boolean bInfo = false;
+         int noteIdx = 0;
+         local String t;
+         int idx;
+         foreach line in lines
+         {
+            line.trim();
+            // trace "xxx line="+line;
+            if!((line <= ";") || line.isBlank())
+            {
+               if(line <= "[Tuning]")
+               {
+                  trace "[trc] SampleTuningTable::tryImportTun: found [Tuning] section";
+                  bTuning = true;
+                  bInfo = false;
+                  loadEqualTemperament();
+               }
+               else if(line <= "[Info]")
+               {
+                  bTuning = false;
+                  bInfo = true;
+               }
+               else if(bTuning)
+               {
+                  idx = line.indexOfChar('=', 0);
+                  // trace "xxx idx="+idx+" line=\""+line+"\"";
+                  if(-1 != idx)
+                  {
+                     line.substring(idx+1, 999) => t;
+                     if(noteIdx < 128)
+                     {
+                        float cents = t;
+                        float note = cents / 100.0;
+                        SampleTuningEntry en <= getEntryByIdx(noteIdx);
+                        en.setFracNote(note);
+                        trace "[trc] SampleTuningTable::tryImportTun:  note["+noteIdx+"] cents="+cents;
+                        if(128 == ++noteIdx)
+                        {
+                           bDone = true;
+                           bTuning = false;
+                        }
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] SampleTuningTable::tryImportTun: parse error in line \""+line+"\"";
+                     return false;
+                  }
+               }
+               else if(bInfo)
+               {
+                  if(line <= "Name")
+                  {
+                     idx = line.indexOfChar('=', 0);
+                     // trace "xxx idx="+idx+" line=\""+line+"\"";
+                     if(-1 != idx)
+                     {
+                        line.substring(idx+1, 999) => t;
+
+                        t.replace("\"", "");
+                        t.replace(".tun", "");
+                        name = t;
+                     }
+                  }
+               }
+            } // if ! blank or comment
+         }
+
+         scl_buffer   <= null;
+         scl_basename <= null;
+         scl_num_notes = 0;
+
+         resetSclRoot();
+      }
+      return bDone;
+   }
+
+   // <load.png>
+   public method tryImportScl(String _buf, String _fileName) : boolean {
+      local StringArray lines <= _buf.splitChar('\n');
+      boolean bDone = false;
+
+      if(null != lines)
+      {
+         // trace "xxx scl file has "+lines.numElements+" lines";
+         loadEqualTemperament();
+         b_default = false;
+         int numNotes = 0;
+         int st = 0;
+         local FloatArray faRatios;
+         faRatios.add(1.0f);
+         int noteIdx = 0;
+
+         String *line;
+         foreach line in lines
+         {
+            line.trim();
+            if!(line <= "!")  // comment ?
+            {
+               if(0 == st)
+               {
+                  // name / info
+                  name = line;
+                  st++;
+               }
+               else if(1 == st)
+               {
+                  // num notes
+                  numNotes = line;
+                  if(numNotes < 1)
+                  {
+                     trace "[---] SampleTuningTable::tryImportScl: invalid numNotes=\""+line+"\"";
+                     return false;
+                  }
+                  st++;
+               }
+               else
+               {
+                  if(line & "/")
+                  {
+                     // ratio
+                     local StringArray aRatio <= line.splitCharset(" \t/");
+                     if(aRatio.numElements >= 2)
+                     {
+                        int ratioL = aRatio.get(0);
+                        int ratioR = aRatio.get(1);
+                        if(ratioL <= 0 && ratioR <= 0)
+                        {
+                           trace "[---] SampleTuningTable::tryImportScl: invalid zero or negative ratio=\""+line+"\"";
+                           return false;
+                        }
+                        faRatios.add(float(ratioL) / ratioR);
+                        Global.Debug2("[trc] SampleTuningTable::tryImportScl: add ratio "+faRatios.last);
+                     }
+                     else
+                     {
+                        trace "[---] SampleTuningTable::tryImportScl: invalid ratio=\""+line+"\"";
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     // cents
+                     local StringArray aCents <= line.splitCharset(" \t");
+                     if(0 == aCents.numElements)
+                     {
+                        trace "[---] SampleTuningTable::tryImpotScl: invalid cents=\""+line+"\"";
+                        return false;
+                     }
+                     /* (note) "The ratio of frequencies one cent apart is precisely equal to 21/1200 = 1200sqr2,
+                        the 1200th root of 2, which is approximately 1.0005777895.
+                        Thus, raising a frequency by one cent corresponds to multiplying the original frequency by this constant value.
+                        [https://en.wikipedia.org/wiki/Cent_(music)]
+                     */
+                     // faRatios.add(pow(1.0005777895/*pow(2,1/1200)*/, aCents.first));
+                     faRatios.add(pow(2.0f,float(aCents.first)/1200.0f));
+                     Global.Debug2("[trc] SampleTuningTable::tryImpotScl: add cents "+aCents.first+" => ratio="+faRatios.last);
+                  }
+
+                  if(faRatios.numElements > numNotes)
+                  {
+                     trace "[dbg] SampleTuningTable::tryImportScl: ok, read "+(numNotes-1)+" note(s)";
+                     trace "[dbg] SampleTuningTable::tryImportScl:    ratios="+faRatios;
+                     break;
+                  }
+               }
+            }
+         }
+
+         if(faRatios.numElements > 0)
+         {
+            float faRatioNextLoop = faRatios.last;  // usually 2/1
+            trace "[trc] SampleTuningTable::tryImportScl: faRatioNextLoop="+faRatioNextLoop;
+            faRatios.numElements--;
+
+            if(faRatios.numElements > 0)
+            {
+               // MIDI note 96 equal temperament C-8=2093Hz
+               //           84                   C-7=1046.5
+               //           72                   C-6=523.25
+               //           60                   C-5=261.625
+               //           48                   C-4=130.8125
+               //           36                   C-3=65.40625
+               //           24                   C-2=32.703125
+               //           12                   C-1=16.3515625
+               //            0                   C-0=8.17578125
+
+               scl_num_notes = faRatios.numElements;
+
+               float baseHz = scl_roothz;
+               int enIdx = scl_rootkey;
+               SampleTuningEntry *en;
+               float ratio;
+               // Down
+               int ratioIdx = 0;
+               while(enIdx >= 0)
+               {
+                  en <= entries.get(enIdx);
+                  ratio = faRatios.get(ratioIdx);
+                  en.setFreq(baseHz * ratio);
+                  Global.Debug2("[trc] SampleTuningTable::tryImportScl:    note["+(enIdx-1)+"] freq="+en.calcFreq()+" ratio="+ratio+" note="+en.note+" detune="+en.detune1);
+                  if(--ratioIdx < 0)
+                  {
+                     ratioIdx += faRatios.numElements;
+                     baseHz /= faRatioNextLoop;
+                  }
+                  enIdx--;
+               }
+
+               // Up
+               baseHz = scl_roothz;
+               enIdx = scl_rootkey + 1;
+               ratioIdx = 1 % faRatios.numElements;
+               while(enIdx < 128)
+               {
+                  en <= entries.get(enIdx);
+                  ratio = faRatios.get(ratioIdx);
+                  en.setFreq(baseHz * ratio);
+                  Global.Debug2("[trc] SampleTuningTable::tryImportScl:    note["+(enIdx-1)+"] freq="+en.calcFreq()+" ratio="+ratio+" note="+en.note+" detune="+en.detune1);
+                  if(++ratioIdx >= faRatios.numElements)
+                  {
+                     ratioIdx = 0;
+                     baseHz *= faRatioNextLoop;
+                  }
+                  enIdx++;
+               }
+
+               scl_buffer   <= Object(_buf);
+               scl_basename <= Object(_fileName);
+
+               // Succeeded
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getFloatArray() : FloatArray {
+      // when updating sample(bank) tuning table
+      local FloatArray fa;
+      fa.alloc(128);
+      SampleTuningEntry *en;
+      foreach en in entries
+         fa.add(en.calcFreq());
+      return deref fa;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 2;
+
+      // Default flag (1 == use Audio.default_freq_table in replay by default)
+      ofs.i8 = b_default;
+
+      if(!b_default)
+      {
+         // Table name
+         Utils.WriteString(ofs, name);
+
+         int noteIdx = 0;
+         SampleTuningEntry *en;
+         foreach en in entries
+         {
+            en.saveState(ofs);
+         }
+
+         // .scl import info (v2+)
+         Utils.WriteString(ofs, scl_basename);
+         Utils.WriteString(ofs, scl_buffer);
+         ofs.i8  = scl_num_notes;
+         ofs.i8  = scl_rootkey;
+         ofs.i8  = b_scl_keytohz;
+         ofs.f32 = scl_roothz;
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Table default flag
+         boolean b_default = ifs.b8;
+         if(!b_default)
+         {
+            // Table name
+            Utils.ReadString(ifs, name);
+
+            SampleTuningEntry *en;
+            foreach en in entries
+            {
+               if(!en.loadState(ifs, ver))
+               {
+                  trace "[---] failed to load SampleTuningEntry";
+                  return false;
+               }
+            }
+
+            if(ver >= 2)
+            {
+               // .scl import info (v2+)
+               local String t;
+               Utils.ReadString(ifs, t);
+               scl_basename <= t.isBlank() ? null : Object(t);
+               Utils.ReadString(ifs, t);
+               scl_buffer <= t.isBlank() ? null : Object(t);
+               scl_num_notes = ifs.u8;
+               scl_rootkey   = ifs.u8;
+               b_scl_keytohz = ifs.b8;
+               scl_roothz    = ifs.f32;
+            }
+         }
+         else
+         {
+            loadDefault();
+         }
+         return true;
+      }
+      return false;
+   }
+
+}

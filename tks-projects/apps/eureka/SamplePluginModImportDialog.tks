@@ -1,0 +1,269 @@
+// ----
+// ---- file   : SamplePluginModImportDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 04Jan2025
+// ---- changed:
+// ----
+// ----
+// ----
+
+module MSamplePluginModImportDialog;
+
+use namespace ui;
+
+
+// <class.png>
+class SamplePluginModImportDialog extends Dialog, ActionProvider {
+
+   define String ACTION_OK;
+   define String ACTION_CANCEL;
+
+   protected XMLForm *xfm;
+
+   protected TableView               *tv_sel;
+   protected SamplePluginModImportTM *tm_sel;
+
+   protected Button *bt_ok;
+   protected Button *bt_cancel;
+
+   protected StSample *sample;
+   protected ActionConsumer *recipient;
+
+   protected SamplePluginModImportEntry *[] entries;
+
+
+   // <ui_init.png>
+   public method initSamplePluginModImportDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SamplePluginModImportDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      tm_sel <= new SamplePluginModImportTM;
+      tm_sel.entries <= entries;
+      tm_sel.initTableModel();
+      tv_sel.setTableModel(tm_sel);
+
+      initWindow(xfm,
+                 "Import modmatrix entries from sample plugins",
+                 100, 100,
+                 400*UI.font_scaling, 200*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OK, ACTION_CANCEL];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSamplePluginModImportDialog(Sample _sample, ActionConsumer _recipient) {
+
+      sample <= _sample;
+      recipient <= _recipient;
+
+      entries.free();
+
+      int pluginIdx = 0;
+      int numPlugins = 0;
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         if(sample.getEnableVoicePlugin(pluginIdx))
+         {
+            StPluginShared pluginShared <= sample.getVoicePluginShared(pluginIdx);
+            if(null != pluginShared)
+            {
+               numPlugins++;
+               StPluginInfo pluginInfo <= pluginShared.info;
+               int modIdx = 0;
+               loop(pluginInfo.numMods)
+               {
+                  SamplePluginModImportEntry en <= new SamplePluginModImportEntry;
+                  en.plugin_idx  = pluginIdx;
+                  en.plugin_name = pluginInfo.name;
+                  en.mod_idx     = modIdx;
+                  en.mod_name    = pluginShared.queryDynamicModName(modIdx);
+                  entries.add(#(deref en));
+
+                  // Next mod
+                  modIdx++;
+               }
+            }
+         }
+
+         // Next plugin slot
+         pluginIdx++;
+      }
+
+      tv_sel.tableModelChanged();
+      show();
+
+      if(0 == entries.numElements)
+      {
+         if(numPlugins > 0)
+            Global.Warning("Import mods: no mods found");
+         else
+            Global.Warning("Import mods: no active plugins found");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(tv_sel);
+      layers.add(bt_ok);
+      layers.add(bt_cancel);
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+      relayout();
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      resizeAtLeastToMinimum();
+      tv_sel.moveCursorToFirstRow();
+      // // tv_sel.selectAll();
+      UI.SetKeyboardFocus(tv_sel);
+   }
+
+   // <method_get.png>
+   public method getSelectedEntries() : PointerArray {
+      local PointerArray ret;
+      if(entries.numElements > 0)
+      {
+         local IntArray rows = tm_sel.getSelectedRows();
+         if(0 == rows.numElements)
+            rows.add(tm_sel.getCursorIndex());
+
+         int rowIdx;
+         foreach rowIdx in rows
+            ret.add(entries.get(rowIdx));
+      }
+      return deref ret;
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.pgsample_modimport_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.pgsample_modimport_geo_lodpi);
+
+      Dialog::hide();
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_CANCEL), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleOk() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_OK), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleOk();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      // trace "xxx ImportSynthProfileDialog: got action name="+name;
+
+      switch(acName)
+      {
+         case "ok":
+            handleOk();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(tv_sel):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               // // handleOk();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+            }
+            return true;
+
+         case @(bt_ok):
+            handleOk();
+            return true;
+
+         case @(bt_cancel):
+            handleCancel();
+            return true;
+      }
+
+      return true;
+   }
+
+}

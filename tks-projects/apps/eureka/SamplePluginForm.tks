@@ -1,0 +1,2164 @@
+// ----
+// ---- file   : SamplePluginForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 19May2020
+// ---- changed: 20May2020, 21May2020, 22May2020, 23May2020, 24May2020, 25May2020, 27May2020
+// ----          31May2020, 04Jun2020, 05Jun2020, 12Sep2020, 09Feb2021, 30Jul2021, 07May2023
+// ----          16Aug2023, 23Aug2023, 24Aug2023, 21Sep2023, 30Nov2023, 01Dec2023, 07Dec2023
+// ----          23Dec2023, 06Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 18Jan2024, 19Jan2024
+// ----          14Feb2024, 10Aug2024, 12Aug2024, 27Sep2024, 04Oct2024, 22Nov2024, 14Jan2025
+// ----
+// ----
+// ----
+
+module MSamplePluginForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePluginForm : XMLForm, ActionProvider {
+
+   define String ACTION_ENTRY_EDITED;
+
+   StSample *sample;
+   Sample   *sample_sci;
+
+   public    TableView      *tv_plugins;
+   protected VoicePluginsTM *tm_plugins;
+
+   protected ComboBox   *cm_alg;
+   protected ComboBox   *cm_alg_outer;
+   protected ComboBox   *cm_alg_fltpos;
+   protected FloatParam *fp_level;
+   protected Button     *bt_phase;
+   protected ComboBox   *cm_dst;
+
+   protected Button *bt_moveup;
+   protected Button *bt_movedown;
+   protected Button *bt_rand;
+
+   protected CheckBox *cb_enable;
+   protected CheckBox *cb_bypass;
+   protected ComboBox *cm_type;
+   protected ComboBox *cm_param;
+   protected Button   *bt_preset;
+
+   Label *lb_alg;
+
+   protected FloatParam  *[] fp_params;    // refs
+   protected FloatParam  *[] fp_params_a;  // refs
+   protected Button      *[] bt_params_a;  // refs
+   protected Button      *[] bt_params;    // refs
+   protected LayerSwitch *[] sw_params;    // refs
+   protected Button      *bt_p8_more;      // when plugin has more than 8 params
+
+   protected StringArray plugin_ids;
+   protected IntArray    index_to_type;  // maps voice plugin index (VoicePlugins.voice_plugin_ids) to cm_type option index
+   protected IntArray    type_to_index;  // maps cm_type option index to voice plugin index (VoicePlugins.voice_plugin_ids)
+
+   // array of hashtables (indexed by plugin idx).
+   // hashtables maps plugin id to FloatArray (updated when changing plugin type)
+   protected HashTable *[] last_plugin_params;
+
+   protected HashTable all_plugin_params;  // maps param name to FloatArray (param values)
+   protected HashTable all_plugin_array_params;  // maps param name to StashedVoicePluginArrayParam
+
+   protected static SamplePluginChainPatchBrowserDialog *dlg_chain_preset;
+   protected static SamplePluginFMStackDialog *dlg_fmstack;
+
+   protected static ModSTFX *modstfx_helper;  // temporarily used when browsing single patches via PatchBrowserDialogSTFX
+
+   protected PopupMenu *pm_context;
+
+   protected int last_touched_param_idx;
+
+   protected static SamplePluginArrayDialog *dlg_array;
+
+   static GenericParamDialogSTFX *dlg_genericparam;
+
+   protected static StashedVoicePluginParams *param_clipboard;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("SamplePluginForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      tm_plugins <= new VoicePluginsTM;
+      tm_plugins.initTableModel();
+      tv_plugins.setTableModel(tm_plugins);
+      tv_plugins.tableModelChanged();
+
+      int paramNr = 1;
+      loop(8)
+      {
+         sw_params  .add(findLayerById("sw_p"+paramNr));
+         fp_params  .add(findLayerById("fp_p"+paramNr));
+         fp_params_a.add(findLayerById("fp_p"+paramNr+"a"));
+         bt_params_a.add(findLayerById("bt_p"+paramNr+"a"));
+         bt_params  .add(findLayerById("bt_p"+paramNr));
+         // Next param
+         paramNr++;
+      }
+
+      Button *bt;
+      int c32 = lb_alg.getForegroundColor();
+      foreach bt in bt_params
+         bt.setForegroundColor(c32);
+
+      initLastPluginParams();
+      all_plugin_params.alloc(5000);
+      all_plugin_array_params.alloc(5000);
+
+      local StringArray opt;
+      int algIdx = 1;
+      opt.add("-");
+      loop((Sample.plugin_alg_names.numElements)-1)
+         opt.add(String(algIdx++));
+      cm_alg.setOptions(opt);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ENTRY_EDITED];
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyboardFocus() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+
+      _retLayers.joinRR(_retLayers,
+                        [
+                           tv_plugins,
+                           cm_alg,
+                           cm_alg_outer,
+                           cm_alg_fltpos,
+                           fp_level,
+                           bt_phase,
+                           cm_dst,
+                           bt_moveup,
+                           bt_movedown,
+                           bt_rand
+                         ]
+                        );
+
+      _retLayers.joinRR(_retLayers,
+                        [
+                           cb_enable,
+                           cb_bypass,
+                           cm_type,
+                           cm_param,
+                           bt_preset,
+                         ]
+                        );
+
+      int paramIdx = 0;
+      loop(8)
+      {
+         _retLayers.add(bt_params  [paramIdx]);
+         _retLayers.add(fp_params  [paramIdx]);
+         _retLayers.add(fp_params_a[paramIdx]);
+         _retLayers.add(bt_params_a[paramIdx]);
+         paramIdx++;
+      }
+
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      sample_sci.markParamsAsModified();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_ENTRY_EDITED), this));
+   }
+
+   // <method_init.png>
+   protected method initLastPluginParams() {
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         HashTable ht <= new HashTable;
+         ht.alloc(VoicePlugins.MAX_VOICE_PLUGINS/*4*/);
+         last_plugin_params.add(#(deref ht));
+      }
+   }
+
+   // <method_init.png>
+   protected method getLastPluginParams(int _pluginIdx, String _id, boolean _bMayCreate) : StashedVoicePluginParams {
+      HashTable ht <= last_plugin_params.get(_pluginIdx);
+      if(null != ht)
+      {
+         if(ht.exists(_id))
+            return ht[_id];
+
+         if(_bMayCreate)
+         {
+            StashedVoicePluginParams svp <= new StashedVoicePluginParams;
+            ht[_id] = deref svp;
+            return svp;
+         }
+      }
+      return null;
+   }
+
+   // <ui_show.png>
+   public reshowSample() {
+      boolean bEditable = (null != sample);
+
+      tm_plugins.rebuildEntries(sample);
+      tv_plugins.tableModelChanged();
+
+      tv_plugins .setEditable(bEditable);
+      bt_moveup  .setEditable(bEditable);
+      bt_movedown.setEditable(bEditable);
+      bt_rand    .setEditable(bEditable);
+
+      cm_alg       .setEditable(bEditable);
+      cm_alg_outer .setEditable(bEditable);
+      cm_alg_fltpos.setEditable(bEditable);
+
+      cb_bypass.setEditable(bEditable);
+
+      bt_preset.setEditable(bEditable);
+
+      if(bEditable)
+      {
+         updateAlgOptions();
+         updateAlgOuterOptions();
+         cm_alg       .setSelectedOption(sample.voicePluginAlg);
+         cm_alg_outer .setSelectedOption(sample.voicePluginAlgOuter);
+         cm_alg_fltpos.setSelectedOption(sample.voicePluginAlgFilterPos);
+
+         cb_bypass.setSelected(!sample.enableFX);
+
+         rebuildTypeOptions();
+
+         // // tv_plugins.moveCursorToFirstRowIfNoneSelected();
+         tv_plugins.moveCursorToRowNoAction(sample.uiGetLastPluginRowIdx());
+      }
+      else
+      {
+         cb_bypass.setSelected(false);
+      }
+
+      updateAlgLabel();
+
+      handleSelectPluginSlot(false/*bFromUI*/);
+   }
+
+   // <ui_show.png>
+   public method showSample(StSample _sample, Sample _sampleSCI) {
+      sample <= _sample;
+      sample_sci <= _sampleSCI;
+
+      reshowSample();
+   }
+
+   // <ui_show.png>
+   public method showGenericParamDialog() : boolean {
+      StPluginShared shared <= getSelectedPluginShared();
+      if(null != shared)
+      {
+         if(shared.info.numParams > 0)
+         {
+            if(null == dlg_genericparam)
+            {
+               dlg_genericparam <= new GenericParamDialogSTFX;
+               dlg_genericparam.initGenericParamDialogSTFX();
+            }
+            dlg_genericparam.showGenericParamDialogSTFX(shared.info, shared, null/*modSTFXOrNull*/, sample_sci/*sampleOrNull*/);
+            return true;
+         }
+         else
+            Global.Warning("Show dialog: voice plugin has no params");
+      }
+      else
+         Global.Warning("Show params dialog: no voice plugin");
+      return false;
+   }
+
+   // <method.png>
+   protected method rebuildTypeOptions() {
+      local StringArray pluginIdsAll;
+      local StringArray pluginIdsCached;  // (possibly) sample specific
+      VoicePlugins.GetVoicePluginIds(pluginIdsAll,    maybe/*all plugins*/);
+      VoicePlugins.GetVoicePluginIds(pluginIdsCached, true/*bPatch*/);
+
+      local StringArray pluginNamesAllShort;
+      VoicePlugins.GetVoicePluginNames(maybe/*bShort*/, pluginNamesAllShort);
+
+      local StringArray pluginNamesAllLong;
+      VoicePlugins.GetVoicePluginNames(false/*bShort*/, pluginNamesAllLong);
+
+      String *id;
+      int idx;
+      int i;
+      String *s;
+      local IntArray iaSort;
+
+      index_to_type.allocAndFill(pluginIdsAll.numElements,        -1);
+      type_to_index.allocAndFill(pluginIdsAll.numElements+1/*-*/, -1);
+
+      local StringArray optShort;
+      local StringArray optLong;
+      optShort.add("-");
+      optLong .add("-");
+      int type = 1;  // 0 is "-"
+
+      // Iterate synth patches and find all patch plugins specific to this sample (TARGET_ZONE_PATCH_PLUGIN)
+      local StringArray pluginIdsSample;
+      CycleState sst <= sample_sci.cycle_state;
+      sst.findPatchPluginIds(pluginIdsSample);
+      Global.Debug2("SamplePluginForm::rebuildTypeOptions: pluginIdsSample="+pluginIdsSample);
+      if(!pluginIdsSample.isEmpty())
+      {
+         local StringArray pluginNamesSampleShort;
+         local StringArray pluginNamesSampleLong;
+         local IntArray    pluginIndicesSample;
+         foreach id in pluginIdsSample
+         {
+            idx = pluginIdsAll.indexOfObject(id, 0);
+            if(idx >= 0)
+            {
+               pluginNamesSampleShort.add(pluginNamesAllShort.get(idx));
+               pluginNamesSampleLong .add(pluginNamesAllLong .get(idx));
+               pluginIndicesSample.add(idx);
+            }
+            else
+               trace "[!!!] SamplePluginForm::rebuildTypeOptions: id=\""+id+"\" idx==-1 !!!\n";  // should not be reachable
+         }
+
+         // Add sorted sample-specific patch plugins
+         pluginNamesSampleLong.sortByValue(iaSort, false/*bCS*/);
+         pluginNamesSampleLong .rearrange(iaSort);
+         pluginNamesSampleShort.rearrange(iaSort);
+         pluginIndicesSample   .rearrange(iaSort);
+         i = 0;
+         foreach idx in pluginIndicesSample
+         {
+            index_to_type[idx]  = type;
+            type_to_index[type] = idx;
+            optShort.add("smp: "+pluginNamesSampleShort[i]);
+            optLong .add("smp: "+pluginNamesSampleLong [i]);
+            i++;
+            type++;
+         }
+      }
+
+      // Add sorted global plugins
+      local StringArray pluginNamesGlobalShort;
+      local StringArray pluginNamesGlobalLong;
+      local IntArray    pluginIndicesGlobal;
+      local IntArray    pluginIdsGlobal;
+      idx = 0;
+      foreach id in pluginIdsAll
+      {
+         if(!(id & "_0x"))  // not patch-specific ? (this sample or any other)
+         {
+            pluginIdsGlobal       .add(id);
+            pluginIndicesGlobal   .add(idx);
+            pluginNamesGlobalShort.add(pluginNamesAllShort[idx]);
+            pluginNamesGlobalLong .add(pluginNamesAllLong[idx]);
+         }
+         idx++;
+      }
+      pluginNamesGlobalLong.sortByValue(iaSort, false/*bCS*/);
+      pluginNamesGlobalShort.rearrange(iaSort);
+      pluginNamesGlobalLong .rearrange(iaSort);
+      pluginIndicesGlobal   .rearrange(iaSort);
+      i = 0;
+      foreach idx in pluginIndicesGlobal
+      {
+         index_to_type[idx]  = type;
+         type_to_index[type] = idx;
+         optShort.add(pluginNamesGlobalShort[i]);  // xxxxxxxxxx
+         // optShort.add("plugin type="+type);
+         optLong .add(pluginNamesGlobalLong [i]);
+         i++;
+         type++;
+      }
+
+      cm_type.setOptions    (optShort);
+      cm_type.setOptionsLong(optLong);
+   }
+
+   // <method.png>
+   protected method calcAlgLabel(int alg, int outer, int pos) : String {
+      local String sAlg = "?";
+
+      StringArray algOpt <= Sample.plugin_alg_names.get(alg);
+      if(null != algOpt)
+      {
+         if(0 == outer)
+         {
+            sAlg = algOpt.get(0);  // e.g. "1+(2+3)+4"
+            if(pos&1) // post ?
+               sAlg.replace(String((pos>>1)+1), String((pos>>1)+1)+"*f");
+            else
+               sAlg.replace(String((pos>>1)+1), "f*"+String((pos>>1)+1));
+         }
+         else if(3 == outer)  // UI option 'a'
+         {
+            sAlg = algOpt.get(0);  // e.g. "1+(2+3)+4"
+            if(pos&1) // post ?
+               sAlg = "("+sAlg+")*f";
+            else
+               sAlg = "f*("+sAlg+")";
+         }
+         else  // 1 or 2
+         {
+            // e.g. "1+f*(2+3)+4"
+            sAlg = algOpt.get(1 + (pos>>1) + ((outer-1)*STSAMPLE_NUM_PLUGINS) + (STSAMPLE_NUM_PLUGINS*2*(pos&1)));
+         }
+      }
+      else
+      {
+         // else: should not be reachable
+         sAlg = "? invalid alg";
+      }
+      return deref sAlg;
+   }
+
+   // <ui_update.png>
+   protected method updateAlgOptions() {
+      int algIdx = 0;
+      int outer = sample.voicePluginAlgOuter;
+      int pos   = sample.voicePluginAlgFilterPos;
+      local StringArray opt;
+      loop(Sample.plugin_alg_names.numElements)
+      {
+         Integer io = algIdx;
+         opt.add(io.printf("%2d: ")+calcAlgLabel(algIdx, outer, pos));
+         algIdx++;
+      }
+      cm_alg.setOptionsLong(opt);
+   }
+
+   // <ui_update.png>
+   protected method updateAlgOuterOptions() {
+      int alg = sample.voicePluginAlg;
+      int pos = sample.voicePluginAlgFilterPos;
+      int outer = 0;
+      local StringArray opt;
+      loop(4)
+      {
+         Integer io = outer;
+         opt.add(io.printf("%1d: ")+calcAlgLabel(alg, outer, pos));
+         outer++;
+      }
+      cm_alg_outer.setOptionsLong(opt);
+   }
+
+   // <ui_update.png>
+   protected method updateAlgLabel() {
+      if(null != sample)
+      {
+         int alg   = sample.voicePluginAlg;
+
+         if(alg > 0)
+         {
+            int outer = sample.voicePluginAlgOuter;
+            int pos   = sample.voicePluginAlgFilterPos;
+
+            tm_plugins.alg_label = "<  "+calcAlgLabel(alg, outer, pos)+"  >";
+         }
+         else
+         {
+            tm_plugins.alg_label = "<filter>";
+         }
+      }
+      else
+      {
+         tm_plugins.alg_label = "-";
+      }
+      tv_plugins.redraw();
+   }
+
+   // <method_get.png>
+   public method getSelectedPluginShared() : StPluginShared {
+      if(null != sample)
+      {
+         int idx = tm_plugins.getCursorIndex();
+         if(-1 != idx)
+         {
+            VoicePluginsTMEntry en <= tm_plugins.entries.get(idx);
+            if(-1 != en.id)
+            {
+               return sample.getVoicePluginShared(en.id);
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedPluginSharedMissing() : StPluginSharedMissing {
+      if(null != sample)
+      {
+         int idx = tm_plugins.getCursorIndex();
+         if(-1 != idx)
+         {
+            VoicePluginsTMEntry en <= tm_plugins.entries.get(idx);
+            if(-1 != en.id)
+            {
+               return sample.getVoicePluginSharedMissing(en.id);
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedPluginEntry() : VoicePluginsTMEntry {
+      if(null != sample)
+      {
+         int idx = tm_plugins.getCursorIndex();
+         if(-1 != idx)
+         {
+            VoicePluginsTMEntry en <= tm_plugins.entries.get(idx);
+            if(-1 != en.id)
+            {
+               return en;
+            }
+         }
+      }
+      return null;
+   }
+   // <ui_handle.png>
+   protected method handleTogglePluginSlot() {
+      if(null != sample)
+      {
+         cb_enable.toggleSelectionAction();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSelectPluginSlot(boolean _bFromUI) {
+      StPluginShared shared <= getSelectedPluginShared();
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+
+      // if(null != en)
+      //    trace "xxx SamplePluginForm::handleSelectPluginSlot: slotIdx="+en.id+" shared="+#(shared);
+      // else
+      //    trace "xxx SamplePluginForm::handleSelectPluginSlot: en is null";
+
+      boolean bEditable = (null != shared);
+
+      FloatParam  *fp;
+      Button      *bt;
+      Button      *btA;
+      FloatParam  *fpA;
+      LayerSwitch *sw;
+      int paramIdx;
+
+      paramIdx = 0;
+      loop(8)
+      {
+         fp  <= fp_params  .get(paramIdx);
+         fpA <= fp_params_a.get(paramIdx);
+         btA <= bt_params_a.get(paramIdx);
+         sw  <= sw_params  .get(paramIdx);
+         bt  <= bt_params  .get(paramIdx);
+         fp.setEditable(false);
+         fpA.setEditable(false);
+         btA.setEditable(false);
+         sw.switchToLayerNr(0);
+         bt.setEditable(false);
+         paramIdx++;
+      }
+
+      cm_type .setEditable(bEditable);
+
+      if((null != sample) && (null != en))
+      {
+         fp_level .setEditable(true);
+         cb_enable.setEditable(true);
+         bt_phase .setEditable(true);
+         cm_dst   .setEditable(true);
+         // // fp_drive .setValue(Audio.LevelToDecibel(sample.getVoicePluginLevel(en.id)));
+         fp_level .setValue(sample.getVoicePluginLevel(en.id) * 100);
+         cb_enable.setSelected(sample.getEnableVoicePlugin(en.id));
+         bt_phase .setToggleState(sample.getEnableVoicePluginInvertPhase(en.id));
+         cm_dst   .setSelectedOption(sample.getVoicePluginDst(en.id));
+      }
+      else
+      {
+         fp_level .setEditable(false);
+         cb_enable.setEditable(false);
+         bt_phase .setEditable(false);
+         cm_dst   .setEditable(false);
+         fp_level .setValue(0);
+         cb_enable.setSelected(false);
+         bt_phase .setToggleState(false);
+         cm_dst   .setSelectedOption(-1);
+      }
+
+      paramIdx = 0;
+      int numParams;
+      float paramVal;
+      boolean bArray;
+
+      if(bEditable)
+      {
+         StPluginInfo info <= shared.info;
+
+         local FloatArray  *presetValues;
+         local StringArray  presetNames;
+
+         local StringArray  paramGroupNames;
+         local String *groupName;
+         int groupIdx = 0;
+         for(;;)
+         {
+            groupName <= info.getParamGroupName(groupIdx++);
+            // trace "xxx groupIdx="+(groupIdx-1)+" groupName=\""+groupName+"\"";
+            if(null != groupName)
+               paramGroupNames.add(groupName);
+            else
+               break;
+         }
+
+         if(paramGroupNames.numElements > 0)
+            trace "[trc] SamplePluginForm::handleSelectPluginSlot: paramGroupNames="+paramGroupNames;
+
+         bt_p8_more.setEditable(false);
+         numParams = info.numParams;
+         loop(mathMini(8, numParams))
+         {
+            fp  <= fp_params  .get(paramIdx);
+            fpA <= fp_params_a.get(paramIdx);
+            btA <= bt_params_a.get(paramIdx);
+            sw  <= sw_params  .get(paramIdx);
+            bt  <= bt_params  .get(paramIdx);
+
+            if(7 == paramIdx && numParams > 8)
+            {
+               // More than 8 params, show "More.." button (GenericParamDialogSTFX)
+               bt.setEditable(false);
+               bt.setCaption("");
+               fp.setEditable(false);
+               fpA.setEditable(false);
+               btA.setEditable(false);
+               bt_p8_more.setEditable(true);
+               sw.switchToLayerNr(2);
+            }
+            else
+            {
+               bt.setEditable(true);
+               bArray = (info.getArrayParamSize(paramIdx) > 0);
+               if(bArray)
+               {
+                  // Array param
+                  // fp.setEditable(false);
+                  fpA.setEditable(true);
+                  btA.setEditable(true);
+                  sw.switchToLayerNr(1);
+                  fp <= fpA;
+               }
+               else
+               {
+                  // Scalar param
+                  fp.setEditable(true);
+                  fpA.setEditable(false);
+                  btA.setEditable(false);
+                  sw.switchToLayerNr(0);
+               }
+
+               paramVal = shared.getParamValue(paramIdx);
+               if(frac(paramVal*100) >= 0.0001)
+                  fp.setEnableMousePrecision(false);
+               fp.setValue(paramVal);
+               fp.setResetValue(info.getParamReset(paramIdx));
+               groupIdx = info.getParamGroupIdx(paramIdx);
+               groupName <= info.getParamGroupName(groupIdx);
+               fp.setToolTipCaption("Plugin parameter "+(paramIdx+1)+((null != groupName)?(". Group: \""+groupName+"\"\n\n (note) press 'r' to randomize last touched param group\n\n (note) press 'lshift-r' to randomize all param groups"):""));
+
+               presetValues <= shared.queryDynamicParamPresetValues(paramIdx);
+               // trace "xxx paramIdx="+paramIdx+" presetValues="+presetValues;
+               if(null != presetValues && presetValues.numElements > 0)
+               {
+                  presetNames.empty();
+                  int presetIdx = 0;
+                  loop(presetValues.numElements)
+                     presetNames.add(shared.queryDynamicParamPresetName(paramIdx, presetIdx++));
+                  // Global.Debug2("SamplePluginForm::handleSelectPluginSlot: paramIdx="+paramIdx+" presetNames="+presetNames);
+                  fp.setPresetOptions(presetValues, presetNames);
+               }
+               else
+               {
+                  fp.setPresetOptions(null, null);
+               }
+
+               bt.setCaption(shared.queryDynamicParamName(paramIdx));
+            }
+
+            paramIdx++;
+         }
+
+         cm_type.setInvalidOptionName("");
+         // trace "xxx SamplePluginForm: update cm_type info.id=\""+info.id+"\" idx="+info.index+" => type="+index_to_type[info.index];
+         cm_type.setSelectedOption(index_to_type[info.index]);
+      }
+      else
+      {
+         StPluginSharedMissing sharedMissing <= getSelectedPluginSharedMissing();
+         // trace "xxx SamplePluginForm: sharedMissing="+#(sharedMissing);
+         if(null != sharedMissing)
+         {
+            // Missing plugin place holder info
+            cm_type.setInvalidOptionName(sharedMissing.pluginId);
+            // trace "xxx setInvalidOptionName("+sharedMissing.pluginId+")";
+            cm_type.setSelectedOption(-1);
+            // trace "xxx SamplePluginForm: sharedMissing.pluginId=\""+sharedMissing.pluginId+"\" numParams="+sharedMissing.numParams;
+
+            numParams = sharedMissing.numParams;
+            loop(mathMini(8, numParams))
+            {
+               fp  <= fp_params  .get(paramIdx);
+               fpA <= fp_params_a.get(paramIdx);
+               btA <= bt_params_a.get(paramIdx);
+               sw  <= sw_params  .get(paramIdx);
+               bt  <= bt_params  .get(paramIdx);
+
+               if(7 == paramIdx && numParams > 8)
+               {
+                  // More than 8 params, show "More.." button (GenericParamDialogSTFX)
+                  fp.setEditable(false);
+                  fpA.setEditable(false);
+                  btA.setEditable(false);
+                  bt_p8_more.setEditable(false);
+                  sw.switchToLayerNr(2);
+               }
+               else
+               {
+                  bArray = (sharedMissing.getArrayParamSize(paramIdx) > 0);
+                  if(bArray)
+                  {
+                     // Array param
+                     sw.switchToLayerNr(1);
+                     fp <= fpA;
+                  }
+                  else
+                  {
+                     // Scalar param
+                     sw.switchToLayerNr(0);
+                  }
+
+                  // // bt .setEditable(false);
+                  // // fp .setEditable(false);
+                  // // fpA.setEditable(false);
+                  // // btA.setEditable(false);
+
+                  paramVal = sharedMissing.getParamValue(paramIdx);
+                  if(frac(paramVal*100) >= 0.0001)
+                     fp.setEnableMousePrecision(false);
+                  fp.setValue(paramVal);
+                  // fp.setResetValue(sharedMissing.getParamReset(paramIdx));
+
+                  bt.setCaption("?");///sharedMissing.getParamName(paramIdx));
+               }
+
+               paramIdx++;
+            }
+         }
+         else
+         {
+            cm_type.setInvalidOptionName("");
+            cm_type.setSelectedOption(0);  // "-"
+         }
+      }
+
+      // Disable unused params (already disabled)
+      while(paramIdx < 8)
+      {
+         fp  <= fp_params  .get(paramIdx);
+         fpA <= fp_params_a.get(paramIdx);
+         btA <= bt_params_a.get(paramIdx);
+         sw  <= sw_params  .get(paramIdx);
+         bt  <= bt_params  .get(paramIdx);
+
+         // // bt .setEditable(false);
+         // // fp .setEditable(false);
+         // // fpA.setEditable(false);
+         // // btA.setEditable(false);
+         // // sw.switchToLayerNr(0);
+
+         fp.setValue(0);
+         bt.setCaption("-");
+
+         paramIdx++;
+      }
+
+      boolean bTypeEditable = (null != en);
+      cm_type.setEditable(bTypeEditable);
+      if(!bTypeEditable)
+         cm_type.setSelectedOption(-1);
+
+      if(_bFromUI)
+      {
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         foreach s in zones
+         {
+            s.uiSetLastPluginRowIdx(tm_plugins.getCursorIndex());
+         }
+         provideEdited();
+      }
+
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMoveUp() {
+      PointerArray entries <= tm_plugins.entries;
+      int rowIdx = tm_plugins.getCursorIndex();
+      VoicePluginsTMEntry en <= entries.get(rowIdx);
+      if(null != en)
+      {
+         int rowPluginIdx = en.id;
+
+         boolean bCanDo = (rowIdx > 0);
+
+         if(bCanDo)
+         {
+            local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+            local StSample *s;
+
+            en <= entries[rowIdx-1];
+            if(-1 == en.id)
+            {
+               // Previous row is filter, move plugin pre-filter
+               foreach s in zones
+               {
+                  s.setEnableVoicePluginPreFilter(rowPluginIdx, true);
+                  s.voicePluginAlgFilterPos = (rowPluginIdx<<1) | 1;
+               }
+            }
+            else if(-1 == rowPluginIdx)
+            {
+               // Current row is filter, move previous plugin post-filter
+               foreach s in zones
+               {
+                  s.setEnableVoicePluginPreFilter(en.id, false);
+                  s.voicePluginAlgFilterPos = (en.id<<1);
+               }
+            }
+            else
+            {
+               // Swap rows
+               int bAllUsed = true;
+               foreach s in zones
+               {
+                  bAllUsed = bAllUsed && s.areAllPluginSlotsUsed();
+               }
+               if(!bAllUsed)
+               {
+                  Audio.ResetAllSampleVoices(sample_sci);
+               }
+               else
+               {
+                  local IntArray ia; ia.identity(STSAMPLE_NUM_PLUGINS);
+                  ia.swap(rowPluginIdx, en.id);
+                  Audio.HandleReorderVoicePlugins(sample_sci, ia);
+               }
+               foreach s in zones
+               {
+                  s.swapPluginSlots(rowPluginIdx, en.id);
+               }
+            }
+
+            current_project.handleFXAutoNoteOns();
+
+            Global.PrintShort("Move plugin row up");
+
+            tm_plugins.rebuildEntries(sample);
+            tv_plugins.tableModelChanged();
+            tv_plugins.moveCursorToPreviousRow();
+            provideEdited();
+
+            cm_alg_fltpos.setSelectedOption(sample.voicePluginAlgFilterPos);
+            updateAlgOptions();
+            updateAlgOuterOptions();
+            updateAlgLabel();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMoveDown() {
+      PointerArray entries <= tm_plugins.entries;
+      int rowIdx = tm_plugins.getCursorIndex();
+      VoicePluginsTMEntry en <= entries.get(rowIdx);
+      if(null != en)
+      {
+         int rowPluginIdx = en.id;
+
+         boolean bCanDo = (rowIdx != (entries.numElements-1));
+
+         if(bCanDo)
+         {
+            local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+            local StSample *s;
+
+            en <= entries[rowIdx+1];
+            if(-1 == en.id)
+            {
+               // Next row is filter, move plugin post-filter
+               foreach s in zones
+               {
+                  s.setEnableVoicePluginPreFilter(rowPluginIdx, false);
+                  s.voicePluginAlgFilterPos = (rowPluginIdx<<1);
+               }
+            }
+            else if(-1 == rowPluginIdx)
+            {
+               // Current row is filter, move next plugin pre-filter
+               foreach s in zones
+               {
+                  s.setEnableVoicePluginPreFilter(en.id, true);
+                  s.voicePluginAlgFilterPos = (en.id<<1) | 1;
+               }
+            }
+            else
+            {
+               // Swap rows
+               int bAllUsed = true;
+               foreach s in zones
+               {
+                  bAllUsed = bAllUsed && s.areAllPluginSlotsUsed();
+               }
+               if(!bAllUsed)
+               {
+                  Audio.ResetAllSampleVoices(sample_sci);
+               }
+               else
+               {
+                  local IntArray ia; ia.identity(STSAMPLE_NUM_PLUGINS);
+                  ia.swap(rowPluginIdx, en.id);
+                  Audio.HandleReorderVoicePlugins(sample_sci, ia);
+               }
+
+               foreach s in zones
+               {
+                  s.swapPluginSlots(rowPluginIdx, en.id);
+               }
+            }
+
+            current_project.handleFXAutoNoteOns();
+
+            Global.PrintShort("Move plugin row down");
+
+            tm_plugins.rebuildEntries(sample);
+            tv_plugins.tableModelChanged();
+            tv_plugins.moveCursorToNextRow();
+            provideEdited();
+
+            cm_alg_fltpos.setSelectedOption(sample.voicePluginAlgFilterPos);
+            updateAlgOptions();
+            updateAlgOuterOptions();
+            updateAlgLabel();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         boolean bEnable = cb_enable.isSelected();
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         foreach s in zones
+         {
+            s.setEnableVoicePlugin(en.id/*pluginIdx*/, bEnable);
+         }
+
+         Global.Print("Voice plugin #"+(en.id+1)+" is "+Utils.GetEnableString(bEnable));
+
+         tm_plugins.rebuildEntries(sample);
+         tv_plugins.tableModelChanged();
+         provideEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleToggleEnableAll() {
+      if(null != sample)
+      {
+         boolean bEnable = cb_enable.isSelected();
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         foreach s in zones
+         {
+            int pluginIdx = 0;
+            loop(STSAMPLE_NUM_PLUGINS)
+            {
+               s.setEnableVoicePlugin(pluginIdx++, bEnable);
+            }
+         }
+
+         Global.Print("Voice plugins are "+Utils.GetEnableString(bEnable));
+
+         tm_plugins.rebuildEntries(sample);
+         tv_plugins.tableModelChanged();
+         provideEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleBypassChanged() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         boolean bEnable = !cb_bypass.isSelected();
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         foreach s in zones
+         {
+            s.enableFX = bEnable;
+         }
+
+         Global.Print("FX and Filter are "+Utils.GetEnableString(bEnable));
+
+         provideEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTypeChanged() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         Audio.ResetAllSampleVoices(sample_sci);
+         current_project.freeSamplePlayerPluginCaches();
+
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         local StPluginShared *pluginShared;
+         local StashedVoicePluginParams *lastParams;
+         int paramIdx;
+         local String *paramName;
+
+         local StPluginInfo *[] oldParamInfos;    // indexed by zone
+         local FloatArray   *[] oldParams;        // indexed by zone and param
+         local PointerArray *[] oldArrayParams;   // indexed by zone and param
+
+         // Save params of current plugin (if any)
+         pluginShared <= null;
+         local StPluginShared *pluginSharedFound;
+         FloatArray *oldParamVals;     // indexed by param
+         StashedVoicePluginArrayParam *arrayParam;
+         StashedVoicePluginArrayParam *[] *paArrayParams; // indexed by param
+         foreach s in zones
+         {
+            pluginShared <= s.getVoicePluginShared(en.id/*pluginIdx*/);
+            if(null != pluginShared)
+            {
+               if(null == pluginSharedFound)
+                  pluginSharedFound <= pluginShared;
+
+               oldParamInfos.add(pluginShared.info);
+
+               oldParamVals <= new FloatArray;
+               oldParams.add(#(deref oldParamVals));
+               paArrayParams <= new PointerArray;
+               oldArrayParams.add(#(deref paArrayParams));
+               paramIdx = 0;
+               loop(pluginShared.info.numParams)
+               {
+                  oldParamVals.add(pluginShared.getParamValue(paramIdx));
+                  arrayParam <= new StashedVoicePluginArrayParam;
+                  arrayParam.initFrom(pluginShared, paramIdx);
+                  paArrayParams.add(#(deref arrayParam));
+                  // Next parameter
+                  paramIdx++;
+               }
+            }
+            else
+            {
+               oldParamInfos .add(null);
+               oldParams     .add(null);
+               oldArrayParams.add(null);
+            }
+         }
+
+         if(null != pluginSharedFound)
+         {
+            // Save params (including array data) for plugin class (per plugin slot) for 'R'estore mode
+            lastParams <= getLastPluginParams(en.id/*pluginIdx*/, pluginSharedFound.info.id, true/*bMayCreate*/);
+            lastParams.initFrom(pluginSharedFound);
+
+            // Save by (global) param for 'M'ap mode
+            paramIdx = 0;
+            loop(pluginSharedFound.info.numParams)
+            {
+               paramName <= pluginSharedFound.info.getParamName(paramIdx);
+               all_plugin_params[paramName] = pluginSharedFound.getParamValue(paramIdx);
+               arrayParam <= new StashedVoicePluginArrayParam;
+               arrayParam.initFrom(pluginSharedFound, paramIdx);
+               all_plugin_array_params[paramName] = deref arrayParam;
+               // Next parameter
+               paramIdx++;
+            }
+            Global.Debug("saved "+paramIdx+" plugin param"+Utils.GetPluralString(paramIdx)+" (id=\""+(pluginSharedFound.info.id)+"\" pluginIdx="+en.id+")");
+         }
+
+         int type = cm_type.getSelectedOption();
+
+         if(type > 0)
+         {
+            int idx = type_to_index[type];
+            String pluginId <= VoicePlugins.GetVoicePluginIdByIndex(idx);
+            StPluginInfo pluginInfo <= VoicePlugins.FindVoicePluginInfoById(pluginId);
+            if(null != pluginInfo)
+            {
+               Global.Debug("SamplePluginForm::handleTypeChanged: create new voice plugin id=\""+pluginInfo.id+"\" ("+zones.numElements+" zone(s))");
+
+               // Create new plugin instance
+               int zoneIdx = 0;
+               foreach s in zones
+               {
+                  pluginShared <= pluginInfo.createSharedInstance();
+                  s.setVoicePluginShared(en.id/*pluginIdx*/, #(deref pluginShared));
+
+                  switch(cm_param.getSelectedOption())
+                  {
+                     case 0: // "I"nitialize
+                        break;
+
+                     case 1:  // "K"eep
+                        // Try to restore params (and array param data) from last type
+                        oldParamVals <= oldParams.get(zoneIdx);
+                        if(null != oldParamVals)
+                        {
+                           paArrayParams <= oldArrayParams.get(zoneIdx);
+                           paramIdx = 0;
+                           loop(pluginInfo.numParams)
+                           {
+                              if(paramIdx < oldParamVals.numElements)
+                              {
+                                 // Have restore data
+                                 pluginShared.setParamValue(paramIdx, oldParamVals.get(paramIdx));
+                                 arrayParam <= paArrayParams.get(paramIdx);
+                                 if(null != arrayParam) // should not be null
+                                 {
+                                    // (note) restore may (silently) fail when new parameter is not an array
+                                    arrayParam.restoreTo(pluginShared, paramIdx);
+                                 }
+                              }
+                              // Next parameter
+                              paramIdx++;
+                           }
+                        }
+                        break;
+
+                     case 2: // "R"estore
+                        // Try to restore plugin params
+                        lastParams <= getLastPluginParams(en.id/*pluginIdx*/, pluginInfo.id, false/*bMayCreate*/);
+                        if(null != lastParams)
+                        {
+                           int numRestored = lastParams.restoreTo(pluginShared);
+                           Global.Debug("restored "+numRestored+" plugin param"+Utils.GetPluralString(numRestored)+" (id=\""+pluginInfo.id+"\" pluginIdx="+en.id+")");
+                        }
+                        break;
+
+                     case 3: // "M"ap
+                        StPluginInfo pluginInfoOld <= oldParamInfos.get(zoneIdx);
+                        if(null != pluginInfoOld)
+                        {
+                           // Restore by param name (same for all zones)
+                           paramIdx = 0;
+                           loop(pluginInfo.numParams)
+                           {
+                              paramName <= pluginInfo.getParamName(paramIdx);
+                              // Try to restore param value
+                              if(all_plugin_params.exists(paramName))
+                              {
+                                 pluginShared.setParamValue(paramIdx, all_plugin_params[paramName]);
+                              }
+
+                              // Try to restore array param data
+                              if(all_plugin_array_params.exists(paramName))
+                              {
+                                 arrayParam <= all_plugin_array_params.get(paramName);
+                                 arrayParam.restoreTo(pluginShared, paramIdx);
+                              }
+
+                              // Next parameter
+                              paramIdx++;
+                           }
+
+                           // Try to restore zone-specific param value
+                           oldParamVals <= oldParams.get(zoneIdx);
+                           paArrayParams <= oldArrayParams.get(zoneIdx);
+                           int numMapped = 0;
+
+                           paramIdx = 0;
+                           loop(pluginInfoOld.numParams)
+                           {
+                              String oldParamName <= pluginInfoOld.getParamName(paramIdx);
+                              int paramIdxNew = 0;
+                              loop(pluginInfo.numParams)
+                              {
+                                 if(pluginInfo.getParamName(paramIdxNew) == oldParamName)
+                                 {
+                                    pluginShared.setParamValue(paramIdxNew, oldParamVals.get(paramIdx));
+                                    arrayParam <= (null != paArrayParams) ? paArrayParams.get(paramIdx) : null;
+                                    if(null != arrayParam)
+                                       arrayParam.restoreTo(pluginShared, paramIdx);
+                                    numMapped++;
+                                    break;
+                                 }
+                                 paramIdxNew++;
+                              }
+                              paramIdx++;
+                           }
+                           Global.Debug("mapped "+numMapped+" parameter value(s) from old id=\""+pluginInfoOld.id+"\" to new id=\""+pluginInfo.id+"\"");
+                        }
+                        break;
+                  }
+
+                  // Next zone
+                  zoneIdx++;
+               }
+
+               Global.Print("Update plugin slot "+(en.id+1)+" to \""+pluginInfo.id+"\""+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+            }
+            else
+            {
+               trace "[!!!] SamplePluginForm::handleTypeChanged: pluginInfo==NULL (should not be reachable)";
+               foreach s in zones
+               {
+                  s.setVoicePluginShared(en.id/*pluginIdx*/, null);
+               }
+            }
+         }
+         else
+         {
+            // Remove plugin
+            foreach s in zones
+            {
+               s.setVoicePluginShared(en.id/*pluginIdx*/, null);
+            }
+
+            Global.Print("Clear plugin slot #"+(en.id+1)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+         }
+
+         s.setEnableVoicePluginPreFilter(en.id, en.b_pre_filter);
+
+         current_project.handleFXAutoNoteOns();
+
+         provideEdited();
+
+         tm_plugins.rebuildEntries(sample);
+         tv_plugins.tableModelChanged();
+         handleSelectPluginSlot(false/*bFromUI*/);
+
+      } // if en
+
+      trace "handleTypeChanged: LEAVE";
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleParamChanged(int _paramIdx, FloatParam _fp) {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         if(-1 != en.id)
+         {
+            local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+            StSample *s;
+            float f = _fp.getFloatValue();
+            float varIdx = -1;
+            local String *sValue;
+            foreach s in zones
+            {
+               StPluginShared shared <= s.getVoicePluginShared(en.id);
+               if(null != shared)
+               {
+                  StPluginInfo info <= shared.info;
+                  int numVar = info.getArrayParamNumVariations(_paramIdx);
+                  if(numVar > 0)
+                  {
+                     // Array param
+                     varIdx = f * numVar;
+                     if(varIdx >= numVar)
+                        varIdx -= numVar;
+                     shared.setParamValue(_paramIdx, f);
+                  }
+                  else
+                  {
+                     // Scalar param
+                     shared.setParamValue(_paramIdx, f);
+                     if(null == sValue)
+                        sValue <= shared.getParamValueString(_paramIdx);
+                  }
+               }
+            }
+
+            if(varIdx >= 0.0)
+            {
+               Global.Print("P"+(_paramIdx+1)+" array variation is "+(varIdx+1)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+            }
+            else
+            {
+               Global.Print("P"+(_paramIdx+1)+" value is "+_fp.getFloatName()+((null != sValue)?(" ("+sValue+")"):"")+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+            }
+
+            last_touched_param_idx = _paramIdx;
+
+            provideEdited();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRandomizeLastTouchedParamGroup() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         if(-1 != en.id)
+         {
+            local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+            StSample *s;
+            int groupIdx = -1;
+            local String *groupName;
+            foreach s in zones
+            {
+               StPluginShared shared <= s.getVoicePluginShared(en.id);
+               if(null != shared)
+               {
+                  StPluginInfo info <= shared.info;
+
+                  groupIdx = info.getParamGroupIdx(last_touched_param_idx);
+                  groupName <= info.getParamGroupName(groupIdx);
+                  if(null != groupName)
+                  {
+                     int paramIdx = 0;
+                     loop(info.numParams)
+                     {
+                        if(groupIdx == info.getParamGroupIdx(paramIdx))
+                        {
+                           shared.setParamValue(paramIdx, rand(1.0));
+                        }
+
+                        paramIdx++;
+                     }
+                  }
+               }
+            }
+
+            if(null != groupName)
+            {
+               // Update widgets
+               handleSelectPluginSlot(false/*bFromUI*/);
+
+               Global.Print("Randomize param group #"+(groupIdx+1)+" \""+groupName+"\" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+               provideEdited();
+            }
+            else
+            {
+               Global.Warning("Randomize: last touched param has no group assignment");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRandomizeAllParamGroups() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         if(-1 != en.id)
+         {
+            local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+            StSample *s;
+            local StringArray aParamGroups;
+            foreach s in zones
+            {
+               StPluginShared shared <= s.getVoicePluginShared(en.id);
+               if(null != shared)
+               {
+                  StPluginInfo info <= shared.info;
+                  int paramIdx = 0;
+                  loop(info.numParams)
+                  {
+                     int groupIdx = info.getParamGroupIdx(paramIdx);
+                     local String groupName <= info.getParamGroupName(groupIdx);
+                     if(null != groupName)
+                     {
+                        if(-1 == aParamGroups.indexOfObject(groupName, 0))
+                           aParamGroups.add(groupName);
+
+                        if(0 <= info.getParamGroupIdx(paramIdx) < 65536)
+                        {
+                           shared.setParamValue(paramIdx, rand(1.0));
+                        }
+                     }
+
+                     // Next parameter
+                     paramIdx++;
+                  }
+               }
+            }
+
+            if(aParamGroups.numElements > 0)
+            {
+               // Update widgets
+               handleSelectPluginSlot(false/*bFromUI*/);
+
+               Global.Print("Randomize "+aParamGroups.numElements+" param group"+Utils.GetPluralString(aParamGroups.numElements)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+               provideEdited();
+            }
+            else
+            {
+               Global.Warning("Randomize: plugin has no param groups");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLevelChanged() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         float driveLevel = fp_level.getFloatValue() / 100.0f;
+         float drivedB = Audio.LevelToDecibel(driveLevel);
+         foreach s in zones
+         {
+            s.setVoicePluginLevel(en.id/*pluginIdx*/, driveLevel);
+         }
+         Global.Print("Plugin "+(en.id+1)+" level "+(driveLevel*100)+" / "+drivedB+"dB");
+         tm_plugins.rebuildEntries(sample);
+         tv_plugins.tableModelChanged();
+      }
+   }
+
+   // (todo) handlePanChanged()
+
+   // <ui_handle.png>
+   protected =replay= method handlePhaseChanged() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         boolean bInvertPhase = bt_phase.getToggleState();
+         foreach s in zones
+         {
+            s.setEnableVoicePluginInvertPhase(en.id/*pluginIdx*/, bInvertPhase);
+         }
+         Global.Print("Invert Phase is "+Utils.GetEnableString(bInvertPhase));
+         tm_plugins.rebuildEntries(sample);
+         tv_plugins.tableModelChanged();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDstChanged() {
+      VoicePluginsTMEntry en <= getSelectedPluginEntry();
+      if(null != en)
+      {
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         local StSample *s;
+         int dst = cm_dst.getSelectedOption();
+         foreach s in zones
+         {
+            s.setVoicePluginDst(en.id/*pluginIdx*/, dst);
+         }
+         Global.Print("Plugin "+(en.id+1)+" dst is "+cm_dst.getSelectedOptionName()+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+         tm_plugins.rebuildEntries(sample);
+         tv_plugins.tableModelChanged();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAlgChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int alg = cm_alg.getSelectedOption();
+      foreach s in zones
+      {
+         s.voicePluginAlg = alg;
+      }
+      Global.Print("Alg is "+cm_alg.getSelectedOptionName());
+      updateAlgOuterOptions();
+      updateAlgLabel();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAlgOuterChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int outer = cm_alg_outer.getSelectedOption();
+      foreach s in zones
+      {
+         s.voicePluginAlgOuter = outer;
+      }
+      Global.Print("Alg Outer filter position is "+cm_alg_outer.getSelectedOptionName());
+      updateAlgOptions();
+      updateAlgLabel();
+   }
+
+   // <method.png>
+   protected method updateV1PreFilterFlags(StSample s, int pos) {
+      int posIdx = (pos >> 1);
+
+      // update v1 prefilter flags
+      int pluginIdx = 0;
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         if(pluginIdx == posIdx)
+         {
+            if(pos&1)  // post ?
+               s.setEnableVoicePluginPreFilter(pluginIdx, true);
+            else
+               s.setEnableVoicePluginPreFilter(pluginIdx, false);
+         }
+         else if(pluginIdx < posIdx)
+            s.setEnableVoicePluginPreFilter(pluginIdx, true);
+         else
+            s.setEnableVoicePluginPreFilter(pluginIdx, false);
+         pluginIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAlgFltPosChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int pos = cm_alg_fltpos.getSelectedOption();
+
+      VoicePluginsTMEntry en <= tm_plugins.entries.get(tm_plugins.getCursorIndex());
+      int enIdOld;
+      if(null != en)
+         enIdOld = en.id;
+      else
+         enIdOld = -1;
+
+      foreach s in zones
+      {
+         s.voicePluginAlgFilterPos = pos;
+
+         updateV1PreFilterFlags(s, pos);
+      }
+
+      tm_plugins.rebuildEntries(sample);
+      tv_plugins.tableModelChanged();
+
+      Global.Print("Alg Filter Position is "+cm_alg_fltpos.getSelectedOptionName());
+
+      updateAlgOptions();
+      updateAlgOuterOptions();
+      updateAlgLabel();
+
+      reselectRowByEnId(enIdOld);
+   }
+
+   // <method.png>
+   protected method reselectRowByEnId(int _enIdOld) {
+      int rowIdx = 0;
+      VoicePluginsTMEntry *en;
+      foreach en in tm_plugins.entries
+      {
+         if(en.id == _enIdOld)
+            break;
+         rowIdx++;
+      }
+      tv_plugins.moveCursorToRow(rowIdx);
+   }
+
+   // <method.png>
+   public =replay= method reorderPlugins(IntArray ia) {
+      VoicePluginsTMEntry en <= tm_plugins.entries.get(tm_plugins.getCursorIndex());
+      int enIdOld;
+      if(null != en)
+         enIdOld = en.id;
+      else
+         enIdOld = -1;
+
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      local StSample *s;
+
+      int bAllUsed = true;
+      foreach s in zones
+      {
+         bAllUsed = bAllUsed && s.areAllPluginSlotsUsed();
+      }
+      if(!bAllUsed)
+         Audio.ResetAllSampleVoices(sample_sci);
+      else
+         Audio.HandleReorderVoicePlugins(sample_sci, ia);
+
+      foreach s in zones
+      {
+         s.reorderPluginSlots(ia);
+         updateV1PreFilterFlags(s, s.voicePluginAlgFilterPos);
+      }
+
+      tm_plugins.rebuildEntries(sample);
+      tv_plugins.tableModelChanged();
+
+      if(-1 != enIdOld)
+         enIdOld = ia.indexOf(enIdOld, 0);
+      reselectRowByEnId(enIdOld);
+
+      current_project.handleFXAutoNoteOns();
+
+      provideEdited();
+   }
+
+   // <method.png>
+   public method randomizePluginOrder() {
+
+      local IntArray ia;
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         int r;
+         do r = rand(STSAMPLE_NUM_PLUGINS);
+         while(ia.contains(r));
+         ia.add(r);
+      }
+
+      reorderPlugins(ia);
+
+      local String msg = "Randomize plugin order => (";
+      int pluginIdx = 0;
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         if(pluginIdx > 0)
+            msg.append(",");
+         msg.append(String(ia[pluginIdx]+1));
+         pluginIdx++;
+      }
+      msg.append(")");
+      Global.Print(msg);
+   }
+
+   // <method.png>
+   protected =replay= method randomizeAlg(boolean _bKeepAlg) {
+      int alg = rand(Sample.plugin_alg_names.numElements);
+      int algFltPos = rand(8);
+      int algOuter = rand(100);
+      if(algOuter < 50)
+         algOuter = 0;
+      else if(algOuter < 80)
+         algOuter = 1;
+      else if(algOuter < 90)
+         algOuter = 2;
+      else
+         algOuter = 3;
+
+      VoicePluginsTMEntry en <= tm_plugins.entries.get(tm_plugins.getCursorIndex());
+      int enIdOld;
+      if(null != en)
+         enIdOld = en.id;
+      else
+         enIdOld = -1;
+
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      local StSample *s;
+      foreach s in zones
+      {
+         if(!_bKeepAlg)
+            s.voicePluginAlg = alg;
+         s.voicePluginAlgOuter = algOuter;
+         s.voicePluginAlgFilterPos = algFltPos;
+
+         updateV1PreFilterFlags(s, algFltPos);
+      }
+
+      updateAlgOptions();
+      updateAlgOuterOptions();
+
+      if(!_bKeepAlg)
+         cm_alg.setSelectedOption(sample.voicePluginAlg);
+      cm_alg_outer .setSelectedOption(sample.voicePluginAlgOuter);
+      cm_alg_fltpos.setSelectedOption(sample.voicePluginAlgFilterPos);
+
+      tm_plugins.rebuildEntries(sample);
+      tv_plugins.tableModelChanged();
+      tv_plugins.redraw();
+
+      reselectRowByEnId(enIdOld);
+
+      Global.Print("Randomize Alg");
+   }
+
+   // <ui_show.png>
+   protected method showSinglePresetBrowserDialog() {
+      StPluginShared shared <= getSelectedPluginShared();
+      if(null != shared)
+      {
+         if(null == modstfx_helper)
+            modstfx_helper <= new ModSTFX;
+
+         StPluginInfo info <= shared.info;
+         modstfx_helper.shared           <= shared;
+         modstfx_helper.info             <= info;
+         modstfx_helper.unique_id_string  = info.id;
+
+         PageTrack pgTrack <= root_form.pg_track;
+         ModGrid modgrid <= pgTrack.modgrid;
+         modgrid.showPatchBrowserDialogSTFX(modstfx_helper, true/*bVoicePlugin*/);
+         Global.Warning("Show single patch browser dialog");
+      }
+      else
+         Global.Warning("Show single patch dialog: no voice plugin");
+   }
+
+   // <ui_show.png>
+   protected method showChainPresetBrowserDialog() {
+      if(null == dlg_chain_preset)
+      {
+         dlg_chain_preset <= new SamplePluginChainPatchBrowserDialog();
+         dlg_chain_preset.initSamplePluginChainPatchBrowserDialog();
+      }
+
+      dlg_chain_preset.showSamplePluginChainPatchBrowserDialog(root_form.pg_sample);
+   }
+
+   // <ui_show.png>
+   protected method showFMStackDialog(int _pluginSlotIdx, short _ver) {
+      if(null == dlg_fmstack)
+      {
+         dlg_fmstack <= new SamplePluginFMStackDialog();
+         dlg_fmstack.initSamplePluginFMStackDialog();
+      }
+
+      dlg_fmstack.showSamplePluginFMStackDialog(root_form.pg_sample, _pluginSlotIdx, _ver);
+   }
+
+   // <method.png>
+   public method tryEditFMStackPlugin() : boolean {
+      StPluginShared shared <= getSelectedPluginShared();
+      if(null != shared)
+      {
+         StPluginInfo info <= shared.info;
+         short ver = ( (info.id <= "fm_stack_v1") || (info.id <= "lofi_fm_stack_v1") ) ? 1 : 0;
+         ver = (info.id <= "fm_stack_v2") ? 2 : ver;
+         if(ver > 0)
+         {
+            int pluginSlotIdx = tm_plugins.getCursorIndex();
+            if(pluginSlotIdx >= 0)
+            {
+               showFMStackDialog(pluginSlotIdx, ver);
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleCopyParams() {
+      Object sharedOrMissing <= getSelectedPluginShared();
+      if(null == sharedOrMissing)
+         sharedOrMissing <= getSelectedPluginSharedMissing();
+      if(null != sharedOrMissing)
+      {
+         if(null == param_clipboard)
+            param_clipboard <= new StashedVoicePluginParams;
+
+         param_clipboard.initFrom(sharedOrMissing);
+
+         int numParams = param_clipboard.getNumParams();
+         Global.Print("Copy "+numParams+" param"+Utils.GetPluralString(numParams)+" to clipboard");
+      }
+      else
+         Global.Warning("copy: no plugin params");
+   }
+
+   // <ui_handle.png>
+   public =replay= method handlePasteParams() {
+      if(null != param_clipboard)
+      {
+         Object sharedOrMissing <= getSelectedPluginShared();
+         if(null == sharedOrMissing)
+            sharedOrMissing <= getSelectedPluginSharedMissing();
+         if(null != sharedOrMissing)
+         {
+            int numRestored = param_clipboard.restoreTo(sharedOrMissing);
+            Global.Print("Paste "+numRestored+" param"+Utils.GetPluralString(numRestored)+" from clipboard");
+            handleSelectPluginSlot(false/*bFromUI*/);  // update widgets
+         }
+         else
+            Global.Warning("paste: no plugin params");
+      }
+      else
+      {
+         Global.Warning("paste: param clipboard is empty");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleCopyCycleSingle() {
+      StPluginShared shared <= getSelectedPluginShared();
+      if(null != shared)
+      {
+         StPluginInfo info <= shared.info;
+         local String s = "vpl \""+info.id+"\"";
+         int paramIdx = 0;
+         loop(info.numParams)
+         {
+            s.append(" \""+info.getParamName(paramIdx)+"\"="+shared.getParamValue(paramIdx));
+            paramIdx++;
+         }
+         UI.SetClipboard(s);
+         Global.Print("Copy Cycle FX \""+info.id+"\" to clipboard ("+info.numParams+" params)");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleCopyCycleMulti() {
+      StPluginShared shared <= getSelectedPluginShared();
+      if(null != shared)
+      {
+         StPluginInfo info <= shared.info;
+         local String s = "vpl \""+info.id+"\"\n";
+         int paramIdx = 0;
+         int maxParamLen = 0;
+         String *pname;
+         loop(info.numParams)
+         {
+            pname <= info.getParamName(paramIdx++);
+            maxParamLen = mathMaxi(maxParamLen, pname.numChars);
+         }
+         paramIdx = 0;
+         loop(info.numParams)
+         {
+            pname <= info.getParamName(paramIdx);
+            s.append("    \""+pname+"\"");
+            loop(maxParamLen - pname.numChars)
+               s.append(" ");
+            s.append(" = "+shared.getParamValue(paramIdx));
+            s.append("\n");
+            paramIdx++;
+         }
+         UI.SetClipboard(s);
+         Global.Print("Copy Cycle FX \""+info.id+"\" multi-line to clipboard ("+info.numParams+" params)");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showArrayDialog(int _paramIdx) {
+      // (todo) multi-edit arrays ? (or don't. sizes may differ)
+      StPluginShared shared <= getSelectedPluginShared();
+      if(null != shared)
+      {
+         dlg_array <= new SamplePluginArrayDialog;
+         if(dlg_array.initSamplePluginArrayDialog())
+         {
+            dlg_array.showSamplePluginArrayDialog(sample_sci/*sampleOrNull*/, shared, _paramIdx);
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != sample)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy params to clipboard", "copy");
+         pmb.setAccelerators("", "shift-c");
+
+         pmb <= pm.addDefaultButton("Paste params from clipboard", "paste");
+         pmb.setAccelerators("", "shift-v");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Copy Cycle FX setup to clipboard (single line)", "copy_cycle_single");
+         pmb.setAccelerators("", "lctrl-c");
+
+         pmb <= pm.addDefaultButton("Copy Cycle FX setup to clipboard (multi line)", "copy_cycle_multi");
+         pmb.setAccelerators("", "lctrl-lshift-c");
+
+         pm.resizeToMinimum();
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show FX context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "[>>>] PageSample: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod;
+
+      switch(_k.pressed)
+      {
+         case VKEY_DELETE:
+            if(tv_plugins.hierarchyHasKeyboardFocus())
+            {
+               cm_type.setSelectedOption(0); // "-"
+               handleTypeChanged();
+               return true;
+            }
+            break;
+
+         case VKEY_INSERT:
+            if(tv_plugins.hierarchyHasKeyboardFocus())
+            {
+               UI.SetKeyboardFocus(cm_type);
+               cm_type.showComboBoxPopup();
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleCopyCycleMulti();
+               else
+                  handleCopyCycleSingle();
+               return true;
+            }
+            else if(_k.modShiftOnly())
+            {
+               handleCopyParams();
+               return true;
+            }
+            return false;
+
+         case 'v':
+            if(_k.modShiftOnly())
+            {
+               handlePasteParams();
+               return true;
+            }
+            return false;
+
+         case 'g':
+            showGenericParamDialog();
+            return true;
+
+         case 'r':
+            if(_k.modShift())
+               handleRandomizeAllParamGroups();
+            else
+               handleRandomizeLastTouchedParamGroup();
+            return true;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      boolean bEnter = (FloatParam.ACTION_VALUEENTERED == acName);
+      int paramIdx;
+
+      // Try param label button (toggle precision)
+      paramIdx = bt_params.indexOfPointer(ap, 0);
+      if(-1 != paramIdx)
+      {
+         Button bt <= ap;
+         FloatParam fp  <= fp_params.get(paramIdx);
+         FloatParam fpA <= fp_params_a.get(paramIdx);
+         Global.Print("P"+(paramIdx+1)+" mouse precision is "+(fp.toggleMousePrecision()?"low":"high"));
+         fpA.setEnableMousePrecision(fp.getEnableMousePrecision());
+         last_touched_param_idx = paramIdx;
+         UI.SetKeyboardFocus(this);
+         return true;
+      }
+
+      // Try scalar param
+      paramIdx = fp_params.indexOfPointer(ap, 0);
+      if(-1 != paramIdx)
+      {
+         handleParamChanged(paramIdx, ap);
+         if(bEnter)
+            UI.SetKeyboardFocus(this);
+         return true;
+      }
+
+      // Try array param
+      paramIdx = fp_params_a.indexOfPointer(ap, 0);
+      if(-1 != paramIdx)
+      {
+         handleParamChanged(paramIdx, ap);
+         if(bEnter)
+            UI.SetKeyboardFocus(this);
+         return true;
+      }
+
+      // Try array param array edit button
+      paramIdx = bt_params_a.indexOfPointer(ap, 0);
+      if(-1 != paramIdx)
+      {
+         Global.Debug("Edit array param #"+(paramIdx+1));
+         showArrayDialog(paramIdx);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("SamplePluginForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopyParams();
+                  return true;
+
+               case "paste":
+                  handlePasteParams();
+                  return true;
+
+               case "copy_cycle_single":
+                  handleCopyCycleSingle();
+                  return true;
+
+               case "copy_cycle_multi":
+                  handleCopyCycleMulti();
+                  return true;
+            }
+            return true;
+
+
+         case @(tv_plugins):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               if(!tryEditFMStackPlugin())
+               {
+                  // // handleTogglePluginSlot();
+                  showGenericParamDialog();
+               }
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleSelectPluginSlot(true/*bFromUI*/);
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+            }
+            return true;
+
+         case @(bt_moveup):
+            handleMoveUp();
+            return true;
+
+         case @(bt_movedown):
+            handleMoveDown();
+            return true;
+
+         case @(bt_rand):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               randomizePluginOrder();
+            }
+            else
+            {
+               randomizeAlg((0 != UI.GetKeyMod())/*bKeepAlg*/);
+            }
+            return true;
+
+         case @(cm_alg):
+            handleAlgChanged();
+            return true;
+
+         case @(cm_alg_outer):
+            handleAlgOuterChanged();
+            return true;
+
+         case @(cm_alg_fltpos):
+            handleAlgFltPosChanged();
+            return true;
+
+         case @(cb_enable):
+            if(0 != UI.GetKeyMod())
+               handleToggleEnableAll();
+            else
+               handleEnableChanged();
+            return true;
+
+         case @(cb_bypass):
+            handleBypassChanged();
+            return true;
+
+         case @(fp_level):
+            handleLevelChanged();
+            if(bEnter)
+               UI.SetKeyboardFocus(this);
+            return true;
+
+         case @(bt_phase):
+            handlePhaseChanged();
+            return true;
+
+         case @(cm_dst):
+            handleDstChanged();
+            return true;
+
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+
+         case @(cm_param):
+            Global.Print("Param mode is \""+cm_param.getSelectedOptionNameLong()+"\"");
+            return true;
+
+         case @(bt_preset):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               showChainPresetBrowserDialog();
+            else
+               showSinglePresetBrowserDialog();
+            return true;
+
+         case @(bt_p8_more):
+            showGenericParamDialog();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

@@ -1,0 +1,349 @@
+// ----
+// ---- file   : GenericParamDialogVST2.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 07Jul2019
+// ---- changed: 12Jul2019, 26Aug2019, 15Feb2023, 08Mar2023, 29Jul2023, 04Oct2023, 30Oct2023
+// ----          04Nov2023, 11Nov2023, 04Jul2024, 17Sep2024
+// ----
+// ----
+// ----
+
+module MGenericParamDialogVST2;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class GenericParamDialogVST2 extends Dialog {
+
+   // max params simultaneously displayed in UI
+   define int MAX_DISPLAYED_PARAMS = 21;
+
+   define int MAX_VISIBLE_PARAMS = 500;
+
+   protected XMLForm *xfm;
+
+   protected ModVST2 *mod;
+
+   protected StringArray param_names;
+   protected IntArray widget_to_param_map;  // filtered to unfiltered mapping table
+
+   protected ScrollPane *sp_params;
+   protected SizeGroupX *sgx_lb_nr;
+   protected SizeGroupX *sgx_lb_name;
+   protected Panel      *pn_params;
+
+   protected Slider *[]     pa_sliders;
+   protected FloatParam *[] pa_floatparams;
+
+
+   // <ui_init.png>
+   public method initGenericParamDialogVST2() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("GenericParamDialogVST2.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Generic Param Editor (VST2)",
+                 140, 140,
+                 480*UI.font_scaling, 310*UI.font_scaling
+                 );
+
+      sgx_lb_nr   <= new SizeGroupX;
+      sgx_lb_name <= new SizeGroupX;
+      pn_params.addSizeGroup("sgx_lb_nr",   sgx_lb_nr);
+      pn_params.addSizeGroup("sgx_lb_name", sgx_lb_name);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showGenericParamDialogVST2(ModVST2 _modVST) {
+
+      mod <= _modVST;
+
+      createParamWidgets();
+
+      float sy = mathMini(MAX_DISPLAYED_PARAMS, widget_to_param_map.numElements) * (FloatParam.GetMinSizeY()+4+2*UI.pad_scaling);
+      Global.Debug("showGenericParamDialogVST2: sy="+sy);
+      setWindowContentSizeY(sy);
+      relayout();
+      handleResize();
+
+      setWindowTitle("Generic Param Editor: "+mod.getName()+" (VST2)");
+      recursiveBuildTabCycleLists();
+
+      showNearMouse(25*UI.font_scaling, -68*UI.font_scaling);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+      validateClippedPosition();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected method filterParamNames(StringArray _allParamNames, StringArray _retParamNames) : boolean {
+      String uid <= mod.getUniqueIDString();
+      HashTable filters <= STConfig.vst_genericparam_filters;
+      StringArray paramBlacklist <= null;
+      String *pluginKey;
+      foreach pluginKey in filters
+      {
+         if(uid & pluginKey)
+         {
+            paramBlacklist <= filters[pluginKey];
+            break;
+         }
+      }
+
+      widget_to_param_map.empty();
+
+      if( (null != paramBlacklist) && !paramBlacklist.isEmpty() )
+      {
+         String *paramName;
+         int paramIdx = 0;
+         foreach paramName in _allParamNames
+         {
+            boolean bAdd = true;
+            String *paramFlt;
+            foreach paramFlt in paramBlacklist
+            {
+               if(paramName.patternMatch(paramFlt))
+               {
+                  Global.Debug2("SKIP uid="+uid+" param idx="+paramIdx+" paramName=\""+paramName+"\" paramFlt=\""+paramFlt+"\"");
+                  bAdd = false;
+                  break;
+               }
+            }
+
+            if(bAdd)
+            {
+               Global.Debug2(" ADD uid="+uid+" param idx="+paramIdx+" paramName=\""+paramName+"\" paramFlt=\""+paramFlt+"\"");
+               _retParamNames.add(paramName);
+               widget_to_param_map.add(paramIdx);
+            }
+
+            // Next param
+            paramIdx++;
+         }
+
+         return true;
+      }
+      else
+      {
+         widget_to_param_map.identity(_allParamNames.numElements);
+         return false;
+      }
+   }
+
+   // <ui_init.png>
+   protected method createParamWidgets() {
+      local StringArray paramNames;
+      local StringArray allParamNames;
+      mod.getParameterNamesArray(allParamNames);
+
+      if(!filterParamNames(allParamNames, paramNames))
+         paramNames <= allParamNames;
+
+      pn_params.removeChildren();
+      pa_sliders.empty();
+      pa_floatparams.empty();
+
+      int numVisibleParams = paramNames.numElements;
+      Global.Debug("GenericParamDialogVST2::createParamWidgets: show "+numVisibleParams+" / "+allParamNames.numElements+" param(s)");
+
+      if(numVisibleParams <= MAX_VISIBLE_PARAMS)
+      {
+         String *paramName;
+         local int visibleParamIdx = 0;
+         foreach paramName in paramNames
+         {
+            local Integer paramIdx = widget_to_param_map[visibleParamIdx];
+            float paramVal = mod.getParameterValue(paramIdx);
+            // Global.Debug("createParamWidgets: param["+paramIdx+"] name=\""+paramName+"\" val="+paramVal);
+
+            Panel p <= Panel.New();
+            p.setAlignment(Layout.EXPANDX);
+
+            // FloatParam / Dial
+            FloatParam fp <= FloatParam.New();
+            fp.setDisplayType(FloatParam.DISPLAY_PERCENT);
+            fp.setStepCoarse(0.002);
+            fp.setStepFine(0.0001);
+            fp.setMinMaxValues(0, 1);
+            fp.setResetValue(paramVal);
+            fp.setValue(paramVal);
+            fp.setPrecision(5);
+            fp.setAlignment(Layout.CENTERY);
+
+            p.addLayer(deref fp, Layout.LEFT);
+            pa_floatparams.add(fp);
+
+            // Slider
+            Slider sl <= Slider.New(0/*min*/, 1/*max*/, paramVal, 0.002/*step*/);
+            // // sl.setEnableFlatHighContrast(true);
+            sl.setLookAndFeel(LookAndFeel.LIGHT);
+            sl.setLayerStyle(LookAndFeel.STYLE_BEVEL);
+            sl.setEnableAdaptiveKnobSize(false);
+            sl.setResetValue(paramVal);
+            sl.setLayoutWeightX(1.0);
+            sl.setAlignment(Layout.CENTERY | Layout.EXPANDX);
+
+            p.addLayer(deref sl, Layout.LEFT);
+            pa_sliders.add(sl);
+
+            // Label (caption)
+            Label lb <= Label.New();
+            lb.setCaption(paramName);
+            lb.setTextPlacement(Layout.LEFT);
+            lb.setAlignment(Layout.CENTERY);
+            lb.setSizeGroup(sgx_lb_name);
+            p.addLayer(deref lb, Layout.LEFT);
+
+            // Label (nr)
+            lb <= Label.New();
+            lb.setCaption(paramIdx.printf("%3d")+":");
+            lb.setTextPlacement(Layout.RIGHT);
+            lb.setAlignment(Layout.CENTERY);
+            lb.setSizeGroup(sgx_lb_nr);
+            p.addLayer(deref lb, Layout.LEFT);
+
+            pn_params.addLayer(deref p, Layout.BOTTOM);
+
+            // Next param
+            visibleParamIdx++;
+         }
+      }
+      else
+      {
+         Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+") uid=\""+mod.getUniqueIDString()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSliderChanged(int _idx) {
+      FloatParam fp <= pa_floatparams.get(_idx);
+      Slider     sl <= pa_sliders.get(_idx);
+      float paramVal = sl.getValue();
+      fp.setValue(paramVal);
+      fp.redraw();
+      int paramIdx = widget_to_param_map[_idx];
+      mod.setParameterValue(paramIdx, paramVal);
+      mod.addToUIParamHistory(paramIdx);
+      VST2.QueueAutomateEvent(mod.plugin, paramIdx, paramVal, -1/*bBegin*/);
+      Global.Print("Param "+paramIdx+" is "+paramVal);
+   }
+
+   // <ui_handle.png>
+   protected method handleFloatParamChanged(int _idx) {
+      FloatParam fp <= pa_floatparams.get(_idx);
+      Slider     sl <= pa_sliders.get(_idx);
+      float paramVal = fp.getValue();
+      sl.setValue(paramVal);
+      sl.redraw();
+      int paramIdx = widget_to_param_map[_idx];
+      mod.setParameterValue(paramIdx, paramVal);
+      mod.addToUIParamHistory(paramIdx);
+      VST2.QueueAutomateEvent(mod.plugin, paramIdx, paramVal, -1/*bBegin*/);
+      Global.Print("Param "+paramIdx+" is "+paramVal);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case VKEY_F12:
+            current_project.addModMatrixEntryForLastTouchedParamVST2(mod.plugin);
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      int idx;
+
+      // Try slider
+      idx = pa_sliders.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         handleSliderChanged(idx);
+         return true;
+      }
+
+      // Try floatparam / dial
+      idx = pa_floatparams.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         handleFloatParamChanged(idx);
+         return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

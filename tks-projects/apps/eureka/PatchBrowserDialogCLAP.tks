@@ -1,0 +1,288 @@
+// ----
+// ---- file   : PatchBrowserDialogCLAP.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 03Jul2024
+// ---- changed: 08Jan2025
+// ----
+// ----
+// ----
+
+module MPatchBrowserDialogCLAP;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class PatchBrowserDialogCLAP extends Dialog {
+
+   protected ModCLAP *mod;
+
+   protected XMLForm *xfm;
+
+   protected StringArray patch_names;
+
+   protected PatchBrowserTMCLAP *tm_patches;
+   protected TableView          *tv_patches;
+
+   protected Button *bt_revert;
+   protected Button *bt_load;
+   protected Button *bt_save;
+
+   protected Buffer revert_patch_data;
+
+
+   // <ui_init.png>
+   public method initPatchBrowserDialogCLAP() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("PatchBrowserDialogCLAP.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initPatchBrowserDialogCLAP() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_patches <= new PatchBrowserTMCLAP;
+      tm_patches.initTableModel();
+      tm_patches.patch_names <= patch_names;
+      tv_patches.setTableModel(tm_patches);
+      tv_patches.tableModelChanged();
+
+      initWindow(xfm,
+                 "--placeholder--",
+                 140, 140,
+                 400*UI.font_scaling, 310*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showPatchBrowserDialogCLAP(ModCLAP _modCLAP) {
+
+      mod <= _modCLAP;
+
+      // Save current patch
+      saveRevertPatch();
+
+      scanPatchDirectory();
+      tv_patches.tableModelChanged();
+      tryMoveCursorToLastIOPatch();
+
+      setWindowTitle("CLAP Patch Browser: "+mod.getName());
+      recursiveBuildTabCycleLists();
+
+      showNearMouse(25, -48);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(tv_patches);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected =replay= method saveRevertPatch() {
+      mod.queryPatchData();
+      revert_patch_data = mod.patch_data;
+   }
+
+   // <method.png>
+   protected =replay= method loadRevertPatch() {
+
+      mod.patch_data = revert_patch_data;
+      mod.restorePatchData();
+
+      if(root_form.pg_track.track.isMirrorMode())
+      {
+         root_form.pg_track.modgrid.syncOtherLaneModsFromMod(mod, true/*bSyncModMatrix*/);
+      }
+   }
+
+   // <method.png>
+   protected method tryMoveCursorToLastIOPatch() {
+      int lastIOIdx = patch_names.indexOfObject(mod.last_io_patch_name, 0);
+      tv_patches.moveCursorToRowNoAction(lastIOIdx);
+   }
+
+   // <ui_update.png>
+   protected method scanPatchDirectory() {
+      local String dirName <= mod.getCLAPPatchDir();
+      Global.Debug("PatchBrowserDialogCLAP::scanPatchDirectory: dirName=\""+dirName+"\"");
+      patch_names.empty();
+
+      local StringArray filenames <= Utils.ReadDirectory(dirName);
+      if(null != filenames)
+      {
+         String *filenameEn;
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               StringArray attr <= filenameEn.splitSpace(true);
+               String fileName <= attr.get(1);
+               if(fileName.endsWith(".clp"))
+               {
+                  patch_names.add(fileName);
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      patch_names.sortByValue(ia, false/*bCS*/);
+      patch_names.rearrange(ia);
+
+      Global.Debug("PatchBrowserDialogCLAP::scanPatchDirectory: found "+patch_names.numElements+" patch file(s)");
+   }
+
+   // <ui_handle.png>
+   protected method handleRevertPatch() {
+      if(revert_patch_data.size > 0)
+      {
+         loadRevertPatch();
+      }
+      else
+      {
+         Global.Warning("Unable to revert");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadPatch(String _filename) {
+      Global.Debug("PatchBrowserDialogCLAP::handleLoadPatch: filename=\""+_filename+"\"");
+      if(null != _filename)
+      {
+         local String dirName <= mod.getCLAPPatchDir();
+         if(mod.loadPatch(dirName+"/"+_filename))
+         {
+            if(root_form.pg_track.track.isMirrorMode())
+            {
+               root_form.pg_track.modgrid.syncOtherLaneModsFromMod(mod, true/*bSyncModMatrix*/);
+            }
+
+            Global.Print("Load patch \""+_filename+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to load patch \""+_filename+"\"");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method showLoadDialog() {
+      root_form.pg_track.modgrid.handleCLAPPatchLoad(mod);
+      tryMoveCursorToLastIOPatch();
+   }
+
+   // <ui_handle.png>
+   protected method showSaveDialog() {
+      if(root_form.pg_track.modgrid.handleCLAPPatchSave(mod))
+      {
+         // Rescan patches
+         scanPatchDirectory();
+         tv_patches.tableModelChanged();
+         tryMoveCursorToLastIOPatch();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(tv_patches):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               hide();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleLoadPatch(patch_names.get(tm_patches.getCursorIndex()));
+            }
+            return true;
+
+         case @(bt_revert):
+            handleRevertPatch();
+            return true;
+
+         case @(bt_load):
+            showLoadDialog();
+            return true;
+
+         case @(bt_save):
+            showSaveDialog();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

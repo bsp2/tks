@@ -1,0 +1,2093 @@
+// ----
+// ---- file   : replay.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 22Jan2018, 24Jan2018, 25Jan2018, 26Jan2018, 31Jan2018, 02Feb2018, 06Feb2018
+// ----          09Feb2018, 10Feb2018, 15Feb2018, 16Feb2018, 17Feb2018, 20Feb2018, 23Feb2018
+// ----          24Feb2018, 18Mar2018, 23Mar2018, 30Mar2018, 09Apr2018, 02Jun2018, 23Jun2018
+// ----          18Aug2018, 06Dec2018, 07Dec2018, 12Dec2018, 15Dec2018, 16Dec2018, 23Dec2018
+// ----          29Dec2018, 06Jan2019, 17Jan2019, 15Jun2019, 01Aug2019, 02Aug2019, 05Aug2019
+// ----          26Aug2019, 14Oct2019, 15Oct2019, 09Feb2020, 14Feb2020, 19Feb2020, 15May2020
+// ----          29Nov2020, 25Apr2021, 28Jul2021, 04Aug2021, 07Dec2021, 10Jan2022, 14Jan2022
+// ----          13May2022, 14May2022, 13Feb2023, 19Feb2023, 18Mar2023, 06May2023, 14Jun2023
+// ----          22Jul2023, 26Jul2023, 29Jul2023, 08Sep2023, 02Oct2023, 03Oct2023, 04Oct2023
+// ----          05Nov2023, 01Jul2024, 05Jul2024, 07Jul2024, 17Sep2024, 18Sep2024, 23Sep2024
+// ----          24Sep2024, 14Jan2025, 29May2025, 21Jun2025, 22Jun2025
+// ----
+// ----
+// ----
+
+module MReplay;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <callback.png>
+function replay_writer_thread_entry(local Thread _th) {
+
+   local Mutex out_mutex <= replay.out_mutex;
+   local Condition condWrite <= replay.cond_write;
+   local Condition condWriteDone <= replay.cond_write_done;
+
+   local Thread thread <= GetCurrentThread();
+   Global.Debug3("Replay thread.id="+thread.id);
+
+   // thread.priority = THREAD_PRIORITY_NORMAL;
+   // thread.priority = THREAD_PRIORITY_HIGHEST;
+   thread.priority = THREAD_PRIORITY_TIME_CRITICAL;
+
+   replay.updateWriterThreadAffinityMask(true/*bInit*/);
+
+   // (note) Thread must not be started until PaStream has been opened
+   local PaStreamMacOSWorkgroupJoinToken *macOSWorkgroupJoinToken;
+   if(STConfig.b_macos_audio_workgroup)
+   {
+      macOSWorkgroupJoinToken <= Audio.MacOSAudioWorkgroupJoin();
+      trace "[...] replay_writer_thread_entry: MacOSAudioWorkgroupJoinToken="+#(macOSWorkgroupJoinToken);
+   }
+
+   local Condition condStartup <= replay.cond_startup;
+   condStartup.raise();
+
+   // // int msStart;
+
+   // (note) tracks are always processed in <chunk_sz> frame chunks but the ASIO buffer may differ
+   Audio.buffer_size = chunk_sz;
+
+   boolean bRingOutput = (replay.ring_size > 0);
+   Global.Debug("replay: bRingOutput="+bRingOutput+" ring_size="+replay.ring_size+" Audio.buffer_size="+Audio.buffer_size);
+
+   while(replay.b_running)
+   {
+      // // trace "xxx process "+rand(1000);
+
+      // Update ring mode (processing mode may have changed via UI)
+      bRingOutput = (replay.ring_size > 0);
+
+      if((STConfig.b_enable_audio && !STConfig.b_databridge) && !STConfig.b_force_single_thread)
+      {
+         // Standalone mode
+         out_mutex.lock();
+
+         if(replay.b_write_pending)
+         {
+            replay.b_write_pending = false;
+            out_mutex.unlock();
+
+            boolean bProcessMore = !bRingOutput || (replay.ringGetFillLevel() < replay.ring_size);
+            if(bProcessMore)
+            {
+               for(;;)
+               {
+                  // msStart = milliSeconds();
+
+                  if(bRingOutput)
+                     replay.ringPrepNextMixBuffer();  // updates replay.mix_buffer ref
+
+                  // // trace "xxx replay: queue track process()";
+                  if(0)
+                  {
+                     // // Audio.RenderSine(replay.mix_buffer, 0, 64, replay.num_out_ch);
+                     Audio.RenderSaw(replay.mix_buffer, 0, chunk_sz, replay.num_out_ch);
+                     // // Audio.RenderIndex(replay.mix_buffer, 0, 64, replay.num_out_ch);
+                  }
+                  else
+                  {
+                     try
+                     {
+                        if(STConfig.b_midi_spread_events)
+                           replay.processSpreadEvents(Audio.buffer_size, maybe/*bTracksWithInput*/);
+                        else
+                           replay.processWithMIDI(Audio.buffer_size, maybe/*bTracksWithInput*/);
+                     }
+                     catch(Error e)
+                     {
+                        trace "[!!!] process*: caught exception "+e.name;
+                        trace e.stackTrace;
+                     }
+                  }
+
+                  // // trace "xxx replay_writer_thread: mix_buffer="+#(replay.mix_buffer)+" numElem="+(replay.mix_buffer.numElements);
+
+                  boolean bBreak = false;
+
+                  if(bRingOutput)
+                  {
+                     if(!replay.ringProcessMore())  // inc fill level / make buffer available
+                        bBreak = true;
+
+                     if(current_project.b_uses_inputs && replay.getNumAvailableInputFrames() < chunk_sz)
+                        bBreak = true;
+                  }
+                  else
+                  {
+                     bBreak = true;
+                  }
+
+                  if(replay.silence_countdown > 0)
+                     replay.silence_countdown--;
+
+                  // trace "xxx Replay::process: raise cond_write_done ms="+milliSeconds();
+                  condWriteDone.raise();
+
+                  if(bBreak)
+                     break;
+               }
+
+               // // trace "xxx render "+Audio.buffer_size+" samples took "+(milliSeconds()-msStart)+" milliseconds";
+               // // trace "xxx mix_buffer="+#(replay.mix_buffer);
+
+            } // if bProcessMore
+         }
+         else
+         {
+            out_mutex.unlock();
+         }
+
+         // // trace "xxx replay_writer_thread: begin cond.wait";
+         if(false == STConfig.b_replay_thread_poll)
+         {
+            if(0)
+               condWrite.wait(100/*millisec*/);
+            else
+               condWrite.wait(0/*millisec*/);
+         }
+         else if(maybe == STConfig.b_replay_thread_poll)
+         {
+            local Double t; milliSecondsDouble(t);
+            local Double t2;
+            boolean bWritePending = false;
+            for(;;)
+            {
+               milliSecondsDouble(t2);
+               // // out_mutex.lock();
+               bWritePending = replay.b_write_pending;
+               // // out_mutex.unlock();
+               if(bWritePending || (float(t2-t) >= STConfig.thread_spinlock_ms))
+                  break;
+            }
+            if(!bWritePending)
+               condWrite.wait(0/*millisec*/);
+         }
+         else
+         {
+            // Poll
+            // // Thread.SwitchToThread();
+            Thread.Delay();
+         }
+         // trace "xxx replay_writer_thread: after cond.wait: ms="+milliSeconds()+" b_running="+replay.b_running;
+      }
+      else if(STConfig.b_databridge)
+      {
+         // // trace "xxx db WaitForDatabridgeHostEvent";
+         if(VST2Plugin.WaitForDatabridgeHostEvent(1000/*timeout*/))
+         {
+            // // trace "xxx db END WaitForDatabridgeHostEvent";
+            int numAvail = (replay.mod_databridge.plugin.dataBridgeGetNumChunksAvail());
+
+            while(replay.b_running && (numAvail < STConfig.databridge_ring_size))
+            {
+               // // trace "xxx numAvail="+numAvail;
+
+               if(STConfig.b_midi_spread_events)
+               {
+                  int chunksToDo = STConfig.databridge_ring_size - numAvail;
+
+                  // // if(chunksToDo == (STConfig.databridge_ring_size/2))
+                  // // {
+                  // //    if(STConfig.b_midi_spread_events)
+                  // //    {
+                  // //       replay.processSpreadEvents(chunksToDo * 64);
+                  // //    }
+                  // // }
+                  // // else
+                  // // {
+                     replay.processWithMIDI(chunk_sz, maybe/*bTracksWithInput*/);
+                  // // }
+               }
+               else
+               {
+                  replay.processWithMIDI(chunk_sz, maybe/*bTracksWithInput*/);
+               }
+
+               // // trace "xxx END db process";
+
+               if(replay.b_running)
+               {
+                  numAvail = (replay.mod_databridge.plugin.dataBridgeGetNumChunksAvail());
+               }
+            }
+         }
+         else
+         {
+            trace "[~~~] Replay: idle (no consumers, WaitForDatabridgeHostEvent() timed out)";
+         }
+      }
+      else if(b_metahost)
+      {
+         // Running as VST plugin in another DAW
+         out_mutex.lock();
+
+         if(replay.b_write_pending)
+         {
+            replay.b_write_pending = false;
+            out_mutex.unlock();
+
+            if(replay.ringGetFillLevel() < replay.ring_size)
+            {
+               for(;;)
+               {
+                  // // msStart = milliSeconds();
+
+                  // // trace "xxx replay_writer_thread: begin process";
+
+                  replay.ringPrepNextMixBuffer();
+
+                  // // trace "xxx replay: queue track process()";
+                  if(STConfig.b_midi_spread_events)
+                  {
+                     replay.processSpreadEvents(Audio.buffer_size, false/*bTracksWithInput*/);
+                  }
+                  else
+                  {
+                     replay.processWithMIDI(Audio.buffer_size, false/*bTracksWithInput*/);
+                  }
+
+                  // // trace "xxx replay_writer_thread: end process";
+
+                  // // trace "xxx Replay::process: raise cond_write_done ms="+milliSeconds();
+                  condWriteDone.raise();
+
+                  if(!replay.ringProcessMore())
+                     break;
+               }
+
+               // // trace "xxx render "+Audio.buffer_size+" samples took "+(milliSeconds()-msStart)+" milliseconds";
+
+               // // trace "xxx mix_buffer="+#(replay.mix_buffer);
+            }
+         }
+         else
+         {
+            out_mutex.unlock();
+         }
+
+         // // trace "xxx replay_writer_thread: begin cond.wait";
+         if(0)
+            condWrite.wait(100/*millisec*/);
+         else
+            condWrite.wait(0/*millisec*/);
+         // // trace "xxx replay_writer_thread: after cond.wait: ms="+milliSeconds()+" b_running="+replay.b_running;
+      }
+      else
+      {
+         // trace "[~~~] Replay: idle (neither audio nor databridge are enabled)";
+         TKS.sleep(100);
+      }
+   }
+
+   if(STConfig.b_macos_audio_workgroup)
+   {
+      if(null != macOSWorkgroupJoinToken)
+      {
+         Audio.MacOSAudioWorkgroupLeave(deref macOSWorkgroupJoinToken);
+         macOSWorkgroupJoinToken <= null;
+      }
+   }
+
+   Global.Debug2("Replay: exiting replay thread.id="+thread.id);
+}
+
+
+// <class.png>
+class Replay {
+
+   define int MAX_RING_SIZE         = 8;  // max. number of ring buffers (chunks)
+   define int INPUT_RINGBUFFER_SIZE = Audio.STREAM_MAX_FRAMES * MAX_RING_SIZE;  // num frames
+
+   define int METAHOST_NUM_INPUTS  =  8;  // must be aligned with vst_eureka_plugin.cpp:NUM_INPUTS
+   define int METAHOST_NUM_OUTPUTS = 16;  // must be aligned with vst_eureka_plugin.cpp:NUM_OUTPUTS
+
+   boolean b_playing;
+
+   boolean b_seq_playing;   // maybe=unknown state, true=seq is playing, true=seq stopped
+   float   song_pos_beats;  // #quarter notes. increments while sequencer is running. resets when sequencer is started.
+
+   boolean b_process_audio;  // true=process audio modules, false=process MIDI only
+
+   public boolean b_running;
+   module Condition cond_startup;
+   module Condition cond_write;
+   module Condition cond_write_done;
+   module Mutex     out_mutex;
+   module boolean   b_write_pending;
+   module Thread    writer_thread;
+
+   FloatArray mix_buffer;  // interleaved channels. ref to current ring_mix_buffers in ringbuffer mode
+   FloatArray temp_mix_buffer;  // interleaved stereo channels (temp sample player)
+
+   // (note) the following fields are also used in standalone ring buffer mode
+   //         (todo) rename them (ring_size, ring_mix_buffers, ..)
+   int            ring_size;                      // number of ring buffers
+   FloatArray *[] ring_mix_buffers;               // ringbuffer of FloatArrays
+   int            ring_mix_buffer_next_calc_idx;  // producer
+   int            ring_mix_buffer_next_out_idx;   // consumer
+   int            ring_mix_buffer_fill_level;
+
+   FloatArray *[] input_buffers;   // ringbuffer of FloatArrays
+   int input_append_frame_idx;
+   int input_read_frame_idx;
+   int input_num_avail;  // number of currently available frames
+
+   // Interleaved samples, queued by Audio.StreamCallback()
+   //  split into input_buffers
+   FloatArray queued_input_buf;
+   int        queued_input_num_ch;
+   int        queued_input_num_frames;
+
+   int process_size;   // number of sample frames. outputbuffer size or <chunk_sz> in "spread events" mode
+   Double process_ms;  // for profiling purposes (tracks+lanes)
+   Double buffer_ms;   // for profiling purposes (entire mix_buffer)
+
+   ModVST2 *mod_databridge;
+   int databridge_millisec_last;
+
+   MIDIPipeFrame  midi_input_frame;   // current input events. must not be modified outside of Replay class.
+   boolean        b_have_events;      // valid for current tick(), 1=midi_input_frame has events
+   IntArray *[]   last_seen_midi_input_frame_event_types;  // MIDI.MAX_MIDI_INPUTS IntArrays instances. see MIDIMapDefs.TYPE_xxx
+   float current_midi_input_millisec_min;
+   float current_midi_input_millisec_max;
+   MIDIPipeFrame midi_input_frame_sysex;
+   int redirect_remote_to_dev_idx;  // -1=none, 0..25=vst_a..vst_z  (set by PageTrack via redirectRemoteEvents())
+   int redirect_remote_to_midi_ch;  // -1=none, 0..15
+
+   MIDIPipeFrame midi_output_frame;  // to STConfig.sysex_out_devicename ("remote_seq") (used by ModAudio2RPN)
+
+   protected Double profile_process_t_start;
+   protected Double profile_process_t_end;
+   protected Double profile_process_t_delta;
+   protected Double profile_process_load_cur;
+   protected Double profile_process_load_avg;
+
+   protected PeakAvgTracker ui_peakavg_l;  // (note) implemented in tksampleedit
+   protected PeakAvgTracker ui_peakavg_r;
+
+   public PointerArray ui_midi_activity;  // FloatArray instances (16 elements each). values decay in idle timer.
+   define float UI_MIDI_ACTIVITY_INC = 0.3f;
+   define float UI_MIDI_ACTIVITY_DEC = 0.15f;
+
+   public boolean b_reset_all_controllers;   // true for at most one tick
+
+   int num_in_ch;
+   int num_out_ch;
+
+   public boolean b_recording;
+   public boolean b_live_capture;
+
+   public int silence_countdown = 0;
+
+   int process_tick_nr;  // used to limit StSample liverec processing to one sampleplayer per samplebank
+
+   boolean b_calc_io_avg;
+   PeakAvgTracker *[] input_ch_peakavg;
+   PeakAvgTracker *[] output_ch_peakavg;
+
+   int atrk_rec_skip_frames_left;  // can be negative (== use samples from atrk history_ring_buffer)
+
+
+   // <method_init.png>
+   public method init() {
+      cond_startup.create(false/*bManualReset*/);
+      cond_write.create(false/*bManualReset*/);
+      cond_write_done.create(false/*bManualReset*/);
+      b_running = false;
+
+      current_midi_input_millisec_min = 0;
+      current_midi_input_millisec_max = ~0;
+
+      b_seq_playing = maybe;
+
+      b_process_audio = true;
+
+      // Alloc MIDI activity flag arrays (for UI)
+      loop(MIDI.MAX_MIDI_INPUTS)
+      {
+         FloatArray fa <= new FloatArray;
+         fa.allocAndFill(16, 0.0f);
+         ui_midi_activity.add(#(deref fa));
+      }
+
+      if(b_metahost)
+      {
+         num_in_ch  = Replay.METAHOST_NUM_INPUTS/*8*/;
+         num_out_ch = Replay.METAHOST_NUM_OUTPUTS/*16*/;
+      }
+      else if(STConfig.b_databridge)
+      {
+         num_in_ch  = 0;
+         num_out_ch = 2;
+      }
+      else if(true == STConfig.b_audio_sdl)
+      {
+         num_in_ch  = 0;
+         num_out_ch = 2;
+      }
+      else
+      {
+         // ASIO output
+         num_in_ch  = Audio.STREAM_MAX_INPUT_CHANNELS/*48*/;
+         num_out_ch = Audio.STREAM_MAX_OUTPUT_CHANNELS/*48*/;
+      }
+
+      mix_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * num_out_ch, 0.0f);
+      mix_buffer.useAll();
+
+      temp_mix_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+      temp_mix_buffer.useAll();
+
+      // Allocate input ringbuffers (mono)
+      loop(num_in_ch)
+      {
+         FloatArray inBuf <= new FloatArray;
+         inBuf.allocAndFill(INPUT_RINGBUFFER_SIZE, 0.0f);
+         inBuf.useAll();
+         input_buffers.add(#(deref inBuf));
+      }
+      input_append_frame_idx = 0;
+      input_read_frame_idx = 0;
+      input_num_avail = 0;
+
+      queued_input_buf.alloc(MAX_RING_SIZE * Audio.STREAM_MAX_FRAMES * Audio.STREAM_MAX_INPUT_CHANNELS);
+
+      input_ch_peakavg.alloc(num_in_ch);
+      loop(num_in_ch)
+         input_ch_peakavg.add(#(new PeakAvgTracker));
+
+      output_ch_peakavg.alloc(num_out_ch);
+      loop(num_out_ch)
+         output_ch_peakavg.add(#(new PeakAvgTracker));
+
+      // Allocate output ringbuffers
+      if(b_metahost)
+      {
+         // Running as a VST plugin in another DAW
+         ring_size = mathClampi(STConfig.metahost_ring_size, 1, MAX_RING_SIZE);
+      }
+      else if((STConfig.standalone_ring_size > 0) && !STConfig.b_force_single_thread)
+      {
+         // Running in standalone / ringbuffer output mode
+         ring_size = mathClampi(STConfig.standalone_ring_size, 1, MAX_RING_SIZE);
+      }
+      else
+      {
+         // Direct output w/o ringbuffer
+         ring_size = 0;
+      }
+
+      // (note) always allocate ring buffers since ring mode can be enabled in UI later on
+      ring_mix_buffers.alloc(MAX_RING_SIZE);
+      loop(MAX_RING_SIZE)
+      {
+         FloatArray ringMixBuf <= new FloatArray;
+         ringMixBuf.alloc(Audio.STREAM_MAX_FRAMES * num_out_ch);
+         ringMixBuf.useAll();
+         ring_mix_buffers.add(#(deref ringMixBuf));
+      }
+
+      ring_mix_buffer_next_calc_idx = 0;
+      ring_mix_buffer_next_out_idx = 0;
+      ring_mix_buffer_fill_level = 0;
+
+      // Init last seen event types
+      loop(MIDI.MAX_MIDI_INPUTS) // A,B,C,D,E,F,G,H,..Z
+      {
+         IntArray lastChEvTypes <= new IntArray;
+         // first 17 store MIDIMapDefs.TYPE_xxx, second 17 store ext type (cc/(n)rpn)
+         // idx 16 and 33 are used to store latest "any ch" type/ext_type
+         lastChEvTypes.allocAndFill(17 * 2, -1);
+         last_seen_midi_input_frame_event_types.add(#(deref lastChEvTypes));
+      }
+
+      redirect_remote_to_dev_idx = -1;
+      redirect_remote_to_midi_ch = -1;
+
+      Global.Debug("Replay::init: num_in_ch="+num_in_ch+" num_out_ch="+num_out_ch);
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      Global.Debug("Replay::exit");
+      stop();
+   }
+
+   // <method_set.png>
+   public =replay= method reconfigureRingMode(boolean _bEnable, int _ringSize) {
+      STConfig.b_force_single_thread = !_bEnable;
+      ring_size                      = _ringSize;
+      ring_mix_buffer_next_calc_idx  = 0;
+      ring_mix_buffer_next_out_idx   = 0;
+      ring_mix_buffer_fill_level     = 0;
+   }
+
+   // <replay.png>
+   public method tickAudio(float _millisec) {
+      // Called by audio thread every "n" frames
+   }
+
+   // <method_init.png>
+   public method initDatabridge() {
+      Audio.buffer_size = chunk_sz;  // databridge ringbuffer chunk size
+
+      mod_databridge <= new ModVST2;
+      mod_databridge.init();
+      mod_databridge.loadPluginByUniqueIDString("pongasoft and bsp`data_bridge`1970495854");
+      if(null != mod_databridge.plugin)
+         mod_databridge.plugin.setParameter(0, 0.0f/*b_input*/); // configure as output
+
+      databridge_millisec_last = 0;
+   }
+
+   // <replay.png>
+   public method start() {
+
+      if(!b_running)
+      {
+         Global.Debug("Replay::start: BEGIN");
+
+         Track *track;
+         foreach track in current_project.tracks
+            track.start();
+
+         b_running = true;
+
+         // // if(!STConfig.b_force_single_thread)
+         {
+            writer_thread.userdata = this;
+            writer_thread.priority = THREAD_PRIORITY_TIME_CRITICAL;
+            writer_thread.create(replay_writer_thread_entry);
+
+            cond_startup.wait(1000/*millisec*/);
+         }
+
+         if(b_metahost)
+            replay.queueProcess();
+
+         Audio.ResetUnderrunProtection();
+
+         Global.Debug("Replay::start: END");
+      }
+   }
+
+   // <method.png>
+   public method updateWriterThreadAffinityMask(boolean _bInit) {
+      if(STConfig.b_ignore_thread_affinity)
+      {
+         if(!_bInit)
+            writer_thread.setAffinityMaskByString(g_thread_affinity_all);
+      }
+      else
+      {
+         // // // thread.setAffinityMask32((1 << STConfig.replay_thread_affinity));
+         // // thread.setCPUCore(STConfig.replay_thread_core);
+         writer_thread.setAffinityMaskByString(STConfig.replay_thread_affinity_mask);
+      }
+   }
+
+   // <replay.png>
+   protected =audio= stopRunning() {
+      Audio.b_allow_process = false;
+      out_mutex.lock();
+      b_write_pending = false;
+      b_running = false;
+      out_mutex.unlock();
+      cond_write.raise();
+   }
+
+   // <replay.png>
+   public =audio= method stop() {
+      if(b_running)
+      {
+         Global.Debug2("Replay::stop: BEGIN");
+
+         stopRunning();
+
+         // // if(!STConfig.b_force_single_thread)
+         {
+            Global.Debug2("Replay::stop: wait for writer_thread: b_running="+b_running);
+            writer_thread.wait();
+            Global.Debug2("Replay::stop: writer_thread.wait() finished");
+         }
+
+         Track *track;
+         foreach track in current_project.tracks
+            track.stop();
+
+         input_append_frame_idx = 0;
+         input_read_frame_idx = 0;
+         input_num_avail = 0;
+
+         ring_mix_buffer_next_calc_idx = 0;
+         ring_mix_buffer_next_out_idx = 0;
+         ring_mix_buffer_fill_level = 0;
+
+         Global.Debug2("Replay::stop: END");
+      }
+
+   }
+
+   // <method.png>
+   public method resetAudio_Begin() {
+      stop();
+   }
+
+   // <method.png>
+   public method resetAudio_End() {
+      Audio.RestartStream();
+      start();
+      Audio.ResetUnderrunProtection();
+      Global.Debug2("Replay::resetAudio_End: stream restarted. Audio.b_allow_process="+Audio.b_allow_process);
+   }
+
+   // <method.png>
+   public method resetReplay() {
+      // called when hold-clicking "Reset" in status bar or when ring mode has changed
+      resetAudio_Begin();
+
+      current_project.stopAllVoices();
+      current_project.resetTracks();  // reset levelmeters
+      current_project.handleFXAutoNoteOns();
+
+      resetAudio_End();
+   }
+
+   // <method.png>
+   public =audio_in= method queueInterleavedInput(FloatArray _input, int _numCh, int _numFrames) {
+      // called by Audio.ProcessAudioRing() via Audio.StreamCallback()
+      int numSamples = _numCh * _numFrames;
+      if( (queued_input_buf.numElements + numSamples) <= queued_input_buf.maxElements )
+      {
+         tksampleedit_copy_mono_to_mono(queued_input_buf, queued_input_buf.numElements,
+                                        _input, 0,
+                                        numSamples
+                                        );
+         queued_input_buf.numElements = queued_input_buf.numElements + numSamples;
+
+         queued_input_num_ch      = _numCh;
+         queued_input_num_frames += _numFrames;
+      }
+      else
+         trace "[!!!] Replay::queueInterleavedInput: overflow (numSamples="+numSamples+", have="+queued_input_buf.numElements+")";
+   }
+
+   // <method.png>
+   public =audio_in= method appendInterleavedSamplesToInputBuffers(FloatArray _input, int _numCh, int _numFrames) {
+      // called from process() via handleQueuedInput() (Audio.ProcessAudioRing() calls queueInterleavedInput())
+      // OR called by Audio.ProcessAudioDirect() (when ring_size=0)
+
+      // trace "xxx appendInterleavedSamplesToInputBuffers: num_in_ch="+num_in_ch+" _numCh="+_numCh+" numFrames="+_numFrames;
+      if(b_running)
+      {
+         int numCh = mathMini(num_in_ch, _numCh);
+
+         // Split interleaved input and append to (mono/ring) input_buffers
+         int chIdx = 0;
+         loop(numCh)
+         {
+            FloatArray inBuf <= input_buffers.get(chIdx);
+
+            tksampleedit_copy_mono_adv_to_mono_adv_ring(inBuf, input_append_frame_idx, 1, INPUT_RINGBUFFER_SIZE,
+                                                        _input, chIdx, _numCh,
+                                                        _numFrames
+                                                        );
+
+            if(b_calc_io_avg)
+            {
+               PeakAvgTracker patrk <= input_ch_peakavg[chIdx];
+               patrk.process(tksampleedit_calc_peak_mono_adv_ring(inBuf, input_append_frame_idx, 1, INPUT_RINGBUFFER_SIZE,
+                                                                  _numFrames
+                                                                  )
+                             );
+            }
+
+            // Next input channel
+            chIdx++;
+         }
+
+         // if(0 == (process_tick_nr % 443))
+         //    trace "xxx input_append_frame_idx="+input_append_frame_idx+" read_idx="+input_read_frame_idx+" input_num_avail="+(input_num_avail + _numFrames);
+
+         input_append_frame_idx = (input_append_frame_idx + _numFrames) % INPUT_RINGBUFFER_SIZE;
+
+         input_num_avail += _numFrames;
+         if(input_num_avail > INPUT_RINGBUFFER_SIZE)
+            input_num_avail = INPUT_RINGBUFFER_SIZE;
+      }
+   }
+
+   // <method.png>
+   protected =audio_in= method handleQueuedInput() {
+      // trace "xxx handleQueuedInput: queued_input_num_frames="+queued_input_num_frames;
+      if(queued_input_num_frames > 0)
+      {
+         appendInterleavedSamplesToInputBuffers(queued_input_buf, queued_input_num_ch, queued_input_num_frames);
+         queued_input_num_frames = 0;
+         queued_input_buf.empty();
+      }
+   }
+
+   // <method.png>
+   public method queueProcess() {
+      // Called from audio thread
+      if(replay.b_running)
+      {
+         if(!STConfig.b_force_single_thread)
+         {
+            out_mutex.lock();
+            b_write_pending = true;
+            cond_write.raise();
+            out_mutex.unlock();
+            // trace "xxx Replay::queueProcess: raise cond_write ms="+milliSeconds();
+         }
+         else
+         {
+            // trace "xxx Replay::queueProcess<single>";
+            // (note) tracks are always processed in <chunk_sz> frame chunks but the ASIO buffer may differ
+            Audio.buffer_size = chunk_sz;
+
+            // Single-threaded rendering
+            if(STConfig.b_midi_spread_events)
+            {
+               processSpreadEvents(Audio.buffer_size, maybe/*bTracksWithInput*/);
+            }
+            else
+            {
+               processWithMIDI(Audio.buffer_size, maybe/*bTracksWithInput*/);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method toggleSeq(boolean _bRec) {
+      if(true == b_seq_playing)
+      {
+         Global.Print("Req seq stop");
+         SysEx.QueueSendSeqStop();
+         b_seq_playing = false;
+         if(_bRec)
+            root_form.stopAudioRecording();
+      }
+      else
+      {
+         Global.Print("Req seq start");
+         SysEx.QueueSendSeqStart();
+         Audio.ResetUnderrunProtection();
+
+         if(maybe == b_seq_playing)
+            b_seq_playing = true;
+
+         if(_bRec)
+            root_form.startAudioRecording();
+      }
+   }
+
+   // <replay.png>
+   protected method parseMIDIInputEventsForDev(MIDIInDevice inDev, int _redirectDevIdx, int _redirectMidiCh) {
+      if(null != inDev)
+      {
+         inDev.readLocalMIDIEvents();
+
+         IntArray noteOffPreFlags <= inDev.note_off_pre_flags;
+         noteOffPreFlags.fill(true);
+
+         MIDIIn midiIn <= inDev.midiin;
+
+         boolean bSysEx = (@(SysEx.in_dev) == @(inDev));
+
+         if(null != midiIn)
+         {
+            int numEv = midiIn.numEvents;
+            if(numEv > 0)
+            {
+               // trace "xxx midiin numEvents="+numEv+" redirect="+_redirectDevIdx+":"+_redirectMidiCh;
+
+               int devIdx;
+               if(-1 == _redirectDevIdx)
+                  devIdx = inDev.dev_idx;
+               else
+                  devIdx = _redirectDevIdx;
+
+               FloatArray uiMidiActivity <= ui_midi_activity.get(devIdx % MIDI.MAX_MIDI_INPUTS);
+
+               loop(numEv)
+               {
+                  RecordedMIDIEvent recEv <= midiIn.nextEvent;
+
+                  if(recEv.isLongMessage())
+                  {
+                     if(bSysEx)
+                     {
+                        // trace "xxx call SysEx.HandleRecordedMIDIEventSysEx";
+                        SysEx.HandleRecordedMIDIEventSysEx(recEv);
+                     }
+                  }
+                  else
+                  {
+                     int shortMsg = recEv.shortMessage;
+
+                     // // if(recEv.getMidiMapEventType() == MIDIMapDefs.TYPE_RPN)
+                     // //    trace "xxx recv RPN";
+
+                     byte midiCh;
+                     if(-1 == _redirectMidiCh)
+                        midiCh = shortMsg & 0x0F;
+                     else
+                        midiCh = _redirectMidiCh;
+
+                     uiMidiActivity[midiCh] = uiMidiActivity[midiCh] + UI_MIDI_ACTIVITY_INC;
+                     if(uiMidiActivity[midiCh] > 1.4f)
+                        uiMidiActivity[midiCh] = 1.4f;
+
+                     midi_input_frame.timeStamp = recEv.millisec;
+
+                     IntArray lastChEvTypes <= last_seen_midi_input_frame_event_types[devIdx];
+                     lastChEvTypes[midiCh] = recEv.midiMapEventType;
+                     lastChEvTypes[16] = recEv.midiMapEventType;  // any
+
+                     MIDI.AddRecordedMIDIEventToFrame(midi_input_frame,
+                                                      devIdx,
+                                                      midiCh,
+                                                      recEv,
+                                                      lastChEvTypes,
+                                                      noteOffPreFlags
+                                                      );
+                     // trace "xxx set lastSeenEventType: lastChEvTypes="+#(lastChEvTypes);
+
+                  } // long or short msg
+               } // loop numEv
+            } // if numEv > 0
+         } // if midiIn
+      } // if inDev
+   }
+
+   // <replay.png>
+   protected method parseMIDIInputEvents() {
+      MIDIInDevice *inDev;
+      midi_input_frame.empty();
+
+      foreach inDev in MIDI.in_devices
+         parseMIDIInputEventsForDev(inDev, -1/*redirectDevIdx*/, -1/*redirectMidiCh*/);
+
+      // trace "xxx midi_input_frame.numEventsRPN="+midi_input_frame.getNumEventsRPN();
+
+      if(-1 != redirect_remote_to_dev_idx)
+      {
+         // Redirect 'remote' device events to current track
+         // trace "xxx redirect_remote_to_dev_idx="+redirect_remote_to_dev_idx;
+         parseMIDIInputEventsForDev(SysEx.in_dev, redirect_remote_to_dev_idx, redirect_remote_to_midi_ch);
+      }
+
+      b_have_events = (midi_input_frame.numEvents > 0);
+
+      // if(midi_input_frame.numEvents > 0)
+      //    trace "xxx parseMIDIInputEvents: midi_input_frame.numEvents="+midi_input_frame.numEvents;
+   }
+
+   // <method_parse.png>
+   protected method parseMIDIInputEventsSysExAndTempSample() {
+      if(null != SysEx.in_dev)
+      {
+         midi_input_frame_sysex.empty();
+
+         MIDIInDevice inDev <= SysEx.in_dev;
+         inDev.readLocalMIDIEvents();
+         MIDIIn midiIn <= inDev.midiin;
+         int devIdx = 0;
+
+         if(null != midiIn)
+         {
+            int numEv = midiIn.numEvents;
+
+            // if(numEv > 0)
+            //    trace "xxx midiin numEvents="+numEv;
+            IntArray noteOffPreFlags <= SysEx.in_dev.note_off_pre_flags;
+            noteOffPreFlags.fill(true);
+
+            loop(numEv)
+            {
+               RecordedMIDIEvent recEv <= midiIn.nextEvent;
+
+               if(recEv.isLongMessage())
+               {
+                  // trace "xxx call SysEx.HandleRecordedMIDIEventSysEx";
+                  SysEx.HandleRecordedMIDIEventSysEx(recEv);
+               }
+               else
+               {
+                  midi_input_frame_sysex.timeStamp = recEv.millisec;
+                  // trace "xxx add remote event";
+
+                  MIDI.AddRecordedMIDIEventToFrame(midi_input_frame_sysex,
+                                                   devIdx,
+                                                   (recEv.shortMessage & 0x0F)/*midiCh*/,
+                                                   recEv,
+                                                   null/*lastChEvTypes*/,
+                                                   noteOffPreFlags
+                                                   );
+               }
+            }
+         }
+
+         // if(midi_input_frame_sysex.numEventsNoteOn > 0)
+         //    trace "xxx midi_input_frame_sysex.numEventsNoteOn="+midi_input_frame_sysex.numEventsNoteOn;
+
+         // Process regular MIDI events (temp sample play)
+         MIDIPipeEvent pev;
+         int evIdx = 0;
+         StSamplePlayer tempSP <= Audio.temp_sp;
+         MIDIPipeFrame fr <= midi_input_frame_sysex;
+
+         ModSample modSampleTemp <= Audio.temp_mod_sample;
+         if(replay.b_reset_all_controllers)
+         {
+            modSampleTemp.resetAllControllers();
+         }
+         modSampleTemp.processMIDICtls(fr, -1/*fltDev*/, -1/*fltCh*/);
+         modSampleTemp.processMIDINotes(fr, -1/*fltDev*/, -1/*fltCh*/);
+         modSampleTemp.startQueuedVoices();
+
+         // Handle note-ons
+         if(null == Audio.ref_sample)
+         {
+            int numNoteOn = fr.getNumEventsNoteOn();
+            evIdx = 0;
+            loop(numNoteOn)
+            {
+               if(fr.getEventByIdx(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON))
+               {
+                  Audio.PlayTempSamplePoly(pev.note, pev.velocity / 127.0);
+               }
+
+               // Next note-on event
+               evIdx++;
+            }
+         }
+
+         // Handle note-offs
+         int numNoteOff = fr.getNumEventsNoteOff();
+         evIdx = 0;
+         loop(numNoteOff)
+         {
+            if(fr.getEventByIdx(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF))
+            {
+               Audio.StopTempSamplePoly(pev.note, pev.velocity / 127.0);
+            }
+
+            // Next note-off event
+            evIdx++;
+         }
+
+         // Modwheel (MSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 1/*modwheel*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            // trace "xxx modwheel ccValue="+pev.ccValue;
+            Audio.temp_cc_modwheel_prev = Audio.temp_cc_modwheel;
+            Audio.temp_cc_modwheel = pev.ccValue;
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, pev.ccValue);
+         }
+
+         // Modwheel (LSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 33/*modwheel LSB*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            // trace "xxx modwheel ccValue="+pev.ccValue;
+            Audio.temp_cc_modwheel_prev = Audio.temp_cc_modwheel;
+            Audio.temp_cc_modwheel = int(Audio.temp_cc_modwheel) + (pev.ccValue / 128.0);
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, Audio.temp_cc_modwheel);
+         }
+
+         // BreathCtl (MSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 2/*breathctl*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            Audio.temp_cc_breath = pev.ccValue;  // sets LSB to 0
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, pev.ccValue);
+         }
+
+         // BreathCtl (LSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 2/*breathctl*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            Audio.temp_cc_breath = int(Audio.temp_cc_breath) + (pev.ccValue / 128.0);  // keep MSB
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, Audio.temp_cc_breath);
+         }
+
+         // FootCtl (MSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 4/*footctl*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            Audio.temp_cc_foot = pev.ccValue;  // sets LSB to 0
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, pev.ccValue);
+         }
+
+         // FootCtl (LSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 36/*footctl LSB*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            Audio.temp_cc_foot = int(Audio.temp_cc_foot) + (pev.ccValue / 128.0);  // keep MSB
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, Audio.temp_cc_foot);
+         }
+
+         // Expression (MSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 11/*expr*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            Audio.temp_cc_expr = pev.ccValue;  // sets LSB to 0
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, pev.ccValue);
+         }
+
+         // Expression (LSB)
+         if(fr.getCCEventByIdxAndFlt(0, pev, 43/*expr LSB*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            Audio.temp_cc_expr = int(Audio.temp_cc_expr) + (pev.ccValue / 128.0);  // keep MSB
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, Audio.temp_cc_expr);
+         }
+
+         // Volume
+         if(fr.getCCEventByIdxAndFlt(0, pev, 7/*volume*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC7_VOLUME, pev.ccValue);
+         }
+
+         // Balance
+         if(fr.getCCEventByIdxAndFlt(0, pev, 8/*balance*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC8_BALANCE, pev.ccValue);
+         }
+
+         // Pan
+         if(fr.getCCEventByIdxAndFlt(0, pev, 10/*pan*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC10_PAN, pev.ccValue);
+         }
+
+         // General Purpose 1
+         if(fr.getCCEventByIdxAndFlt(0, pev, 16/*gen1*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1, pev.ccValue);
+         }
+
+         // General Purpose 2
+         if(fr.getCCEventByIdxAndFlt(0, pev, 17/*gen2*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2, pev.ccValue);
+         }
+
+         // General Purpose 3
+         if(fr.getCCEventByIdxAndFlt(0, pev, 18/*gen3*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3, pev.ccValue);
+         }
+
+         // General Purpose 4
+         if(fr.getCCEventByIdxAndFlt(0, pev, 19/*gen4*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4, pev.ccValue);
+         }
+
+         // Brightness
+         if(fr.getCCEventByIdxAndFlt(0, pev, 74/*expr*/, 0/*fltDev*/, -1/*fltCh*/))
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC74_BRIGHTNESS, pev.ccValue);
+         }
+
+         // Channel Pressure
+         int chPressure = fr.getFilteredChPressure(0/*fltDev*/, -1/*fltCh*/);
+         if(-1 != chPressure)
+         {
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_PRESSURE, chPressure);
+         }
+
+         // Poly Pressure
+         int numPAT = fr.getNumEventsPolyPressureByFlt(0/*fltDev*/, -1/*fltCh*/);
+         evIdx = 0;
+         loop(numPAT)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, 0/*fltDev*/, -1/*fltCh*/))
+            {
+               Audio.HandlePolyPressureChanged(pev.polyPressureNote, pev.polyPressureValue);
+            }
+
+            // Next poly pressure event
+            evIdx++;
+         }
+
+         // Pitchbend
+         int pb = fr.getFilteredPitchbend(0/*fltDev*/, -1/*fltCh*/);
+         if(-1 != pb)
+         {
+            Audio.temp_pitchbend = pb;
+            Audio.temp_pitchbend_norm = ((pb - 8192) < 0) ? (pb - 8192) / 8192.0 : (pb - 8192) / 8191.0;
+            Audio.HandleTempPitchbendChanged();
+            // trace "xxx temp_pitchbend_norm="+Audio.temp_pitchbend_norm;
+            tempSP.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_PITCHBEND, pb);
+         }
+      } // if sysex dev
+   }
+
+   // <replay.png>
+   static int xxx_last_num_frames = 0;
+   public =replay= method process(int _off, int _numFrames, boolean _bTracksWithInput) {
+      // Called from replay_writer_thread
+
+      // trace "xxx replay.process: ENTER off="+_off+" numFrames="+_numFrames;
+
+      RingBuffer *ringBuf;
+      FloatArray *inBuf;
+
+      process_size = _numFrames;
+      process_ms = (process_size * 1000.0f) / Audio.mix_rate;
+
+      process_tick_nr++;
+
+      // Update clap_event_transport_t (see CLAPPlugin::process())
+      tkclap_set_song_pos_beats(song_pos_beats, b_seq_playing);
+
+      // Update VstTimeInfo ppq and kVstTransportPlaying flag
+      tkvst2_set_song_pos_ppq(song_pos_beats, b_seq_playing);
+
+      if(_numFrames != xxx_last_num_frames)
+      {
+         trace "[trc] Replay::process: numFrames changed from "+xxx_last_num_frames+" to "+_numFrames;
+         xxx_last_num_frames = _numFrames;
+      }
+
+      FloatArray *dbOutL;
+      FloatArray *dbOutR;
+
+      // Clear databridge input buffers
+      if(STConfig.b_databridge)
+      {
+         dbOutL <= mod_databridge.input_bufs.get(0);
+         dbOutR <= mod_databridge.input_bufs.get(1);
+         dbOutL.fill(0);
+         dbOutR.fill(0);
+      }
+
+      Track *track;
+      int curTrackIdx;
+
+      // Append queued input
+      handleQueuedInput();
+
+      // Clear track I/O buffers / copy audio input if enabled / find focus_send_track_idx
+      Track.focus_send_track_idx = -1;
+      curTrackIdx = 0;
+      foreach track in current_project.tracks
+      {
+         if(!track.b_proc)
+            track.prepareProcess(curTrackIdx++, _numFrames);
+      }
+
+      // Append to scope FFT ring buffer ?
+      ringBuf <= current_project.scope_fft_ringbuf;
+      if(ringBuf.isAudioIn(-1))
+      {
+         inBuf <= input_buffers.get(ringBuf.src_ch_off);
+         if((null != inBuf) && (input_num_avail >= _numFrames))
+            ringBuf.appendFrames(inBuf, 1/*srcNumCh*/, 0/*srcChOff*/, input_read_frame_idx/*srcFrameOff*/,
+                                 1/*numCh*/, _numFrames
+                                 );
+      }
+
+      // Append to scope history ring buffer ?
+      ringBuf <= current_project.scope_history_ringbuf;
+      if(ringBuf.isAudioIn(-1/*chIdx=any*/))
+      {
+         inBuf <= input_buffers.get(ringBuf.src_ch_off);
+         if((null != inBuf) && (input_num_avail >= _numFrames))
+            ringBuf.appendFrames(inBuf, 1/*srcNumCh*/, 0/*srcChOff*/, input_read_frame_idx/*srcFrameOff*/,
+                                 1/*numCh*/, _numFrames
+                                 );
+      }
+
+      // Append to scope trig ring buffer ?
+      ringBuf <= current_project.scope_trig_ringbuf;
+      if(ringBuf.isAudioIn(-1/*chIdx=any*/))
+      {
+         inBuf <= input_buffers.get(ringBuf.src_ch_off);
+         if((null != inBuf) && (input_num_avail >= _numFrames))
+            ringBuf.appendFrames(inBuf, 1/*srcNumCh*/, 0/*srcChOff*/, input_read_frame_idx/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+      }
+
+      // Render next track output buffers
+      //  (note) raise condition (multi-threaded rendering)
+      //  (note) render immediately (single-threaded rendering)
+      if(1)
+      {
+         curTrackIdx = 0;
+         foreach track in current_project.tracks
+         {
+            // (note) shared CPU core tracks are all processed in the same thread
+            // (note) first track on CPU core never has b_shared_cpu_core flag set
+            if(STConfig.b_force_single_thread || !track.sharesCPUCore())
+            {
+               // trace "xxx queueProcess(curTrackIdx="+curTrackIdx+")";
+               if(!track.b_proc)
+                  track.queueProcess(curTrackIdx);
+            }
+            curTrackIdx++;
+         }
+
+         // Wait for track rendering
+         if(!STConfig.b_force_single_thread)
+         {
+            foreach track in current_project.tracks
+            {
+               if(!track.sharesCPUCore())
+               {
+                  // trace "xxx track waitProcess";
+                  if(!track.b_proc)
+                     track.waitProcess();
+                  // trace "xxx END track waitProcess";
+               }
+            }
+         }
+      }
+
+      if(1)
+      {
+         // Handle track output
+         curTrackIdx = 0;
+         foreach track in current_project.tracks
+         {
+            if(track.isPlaying())
+            {
+               int srcSampleIdx;
+               FloatArray trackMixBuf <= track.mix_buffer;
+               int k;
+               int j;
+               FloatArray *trackInputBuf;
+               int outTrackIdx;
+
+               Output *output;
+               foreach output in track.outputs
+               {
+                  float lvlL = output.level_l;
+                  float lvlR = output.level_r;
+
+                  switch(output.type)
+                  {
+                     case Output.TYPE_DEFAULT:
+                        if(STConfig.b_databridge)
+                        {
+                           // Copy chunk to databridge output
+                           //  (note) numFrames must be <chunk_sz>
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_dualmono(dbOutL, dbOutR, k,
+                                                                   trackMixBuf, j,
+                                                                   lvlL, lvlR,
+                                                                   _numFrames
+                                                                   );
+                           // trace "xxx db process num="+_num;
+                        }
+                        else
+                        {
+                           // Add track output to mix buffer (first stereo channel pair)
+                           k = _off * num_out_ch;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_adv_to_stereo_adv(mix_buffer, k, num_out_ch,
+                                                                         trackMixBuf, j, 2,
+                                                                         lvlL, lvlR,
+                                                                         _numFrames
+                                                                         );
+                        }
+                        break;
+
+                     case Output.TYPE_AUDIO_STEREO:
+                        if(STConfig.b_databridge)
+                        {
+                           // Copy chunk to databridge output
+                           //  (note) numFrames must be <chunk_sz>
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                           // trace "xxx db process num="+_num;
+                        }
+                        else
+                        {
+                           // Add track output to mix buffer
+                           k = (output.channel_idx % num_out_ch);
+                           if(k == (num_out_ch-1))
+                              k--;
+                           k += _off * num_out_ch;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_adv_to_stereo_adv(mix_buffer, k, num_out_ch,
+                                                                         trackMixBuf, j, 2,
+                                                                         lvlL, lvlR,
+                                                                         _numFrames
+                                                                         );
+                        }
+                        break;
+
+                     case Output.TYPE_AUDIO_LEFT:
+                        if(STConfig.b_databridge)
+                        {
+                           // Copy chunk to databridge output (left channel to mono)
+                           //  (note) numFrames must be <chunk_sz>
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_mono_adv_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                           // trace "xxx db process num="+_num;
+                        }
+                        else
+                        {
+                           // Add track output to mix buffer
+                           k = _off * num_out_ch + (output.channel_idx % num_out_ch);
+                           j = 0;
+                           // // tksampleedit_add_pan_mono_adv_to_stereo(mix_buffer, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                           tksampleedit_add_amp_mono_adv_to_mono_adv(mix_buffer, k, num_out_ch,
+                                                                     trackMixBuf, j, 2,
+                                                                     output.level,
+                                                                     _numFrames
+                                                                     );
+                        }
+                        break;
+
+                     case Output.TYPE_AUDIO_RIGHT:
+                        if(STConfig.b_databridge)
+                        {
+                           // Copy chunk to databridge output (right channel to mono)
+                           //  (note) numFrames must be <chunk_sz>
+                           k = 0;
+                           j = 1;
+                           tksampleedit_add_pan_mono_adv_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                           // trace "xxx db process num="+_num;
+                        }
+                        else
+                        {
+                           // Add track output to mix buffer
+                           k = _off * num_out_ch + (output.channel_idx % num_out_ch);
+                           j = 1;
+                           // // tksampleedit_add_pan_mono_adv_to_stereo(mix_buffer, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                           tksampleedit_add_amp_mono_adv_to_mono_adv(mix_buffer, k, num_out_ch,
+                                                                     trackMixBuf, j, 2,
+                                                                     output.level,
+                                                                     _numFrames
+                                                                     );
+                        }
+                        break;
+
+                     case Output.TYPE_TRACK:
+                        // trace "xxx track output=track idx="+(track.output.track_idx);
+                        // Send track output to other track
+                        if(-1 == output.track_idx)
+                        {
+                           // Output to self (feedback)
+                           outTrackIdx = curTrackIdx;
+                        }
+                        else
+                        {
+                           outTrackIdx = output.track_idx;
+                        }
+                        if(!current_project.isTrackInputImmediate(curTrackIdx, outTrackIdx))
+                        {
+                           trackInputBuf <= current_project.getTrackInputBuffer(curTrackIdx, outTrackIdx);
+                           if(null != trackInputBuf)
+                           {
+                              k = 0;
+                              j = 0;
+                              tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                           }
+                        }
+                        // else: already handled in track thread
+                        break;
+
+                     case Output.TYPE_TRACK_SC:
+                        // trace "xxx track sc output=track idx="+(track.output.track_idx);
+                        // Send track output to other track sidechain
+                        if(-1 == output.track_idx)
+                        {
+                           // Output to self (feedback)
+                           outTrackIdx = curTrackIdx;
+                        }
+                        else
+                        {
+                           outTrackIdx = output.track_idx;
+                        }
+                        if(!current_project.isTrackInputImmediate(curTrackIdx, outTrackIdx))
+                        {
+                           trackInputBuf <= current_project.getTrackSCInputBuffer(curTrackIdx, outTrackIdx);
+                           if(null != trackInputBuf)
+                           {
+                              k = 0;
+                              j = 0;
+                              tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                           }
+                        }
+                        // else: already handled in track thread
+                        break;
+                  } // switch output.type
+               } // foreach output
+
+               // Send to "focus" track when this track is focused in editor (e.g. for analyzer plugins)
+               if( (Track.focus_send_track_idx >= 0) && (curTrackIdx == PageProject.focus_idx && curTrackIdx != Track.focus_send_track_idx) )
+               {
+                  if(!current_project.isTrackInputImmediate(curTrackIdx, Track.focus_send_track_idx))
+                  {
+                     trackInputBuf <= current_project.getTrackInputBuffer(curTrackIdx, Track.focus_send_track_idx);
+                     if(null != trackInputBuf)
+                     {
+                        k = 0;
+                        j = 0;
+                        tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                     }
+                  }
+               }
+               // else: already handled in track thread
+
+            } // if track.isPlaying()
+
+            // Next track
+            curTrackIdx++;
+         }
+      }
+
+      if(b_calc_io_avg/*true==on PageAudio (audiotracks, todo) / PageTrack (auto input select)*/)
+      {
+         // AudioTrack SW monitoring
+         AudioTrack *atrack;
+         foreach atrack in current_project.audio_tracks
+         {
+            if(atrack.b_sw_monitor)
+               atrack.handleSWMonitor(input_buffers, input_read_frame_idx, INPUT_RINGBUFFER_SIZE/*ringsz*/,
+                                      mix_buffer, _off * num_out_ch, num_out_ch,
+                                      _numFrames
+                                      );
+         }
+
+         // For PageAudio audio track level indicators
+         int outChIdx = 0;
+         loop(num_out_ch)
+         {
+            PeakAvgTracker patrk <= output_ch_peakavg[outChIdx];
+            patrk.process(tksampleedit_calc_peak_mono_adv(mix_buffer,
+                                                          _off * num_out_ch + outChIdx,
+                                                          num_out_ch,
+                                                          _numFrames
+                                                          )
+                          );
+
+            // Next output channel
+            outChIdx++;
+         }
+      }
+
+      // Render temp samples to first output channel pair
+      StSamplePlayer spTemp <= Audio.temp_sp;
+      temp_mix_buffer.numElements = _numFrames * 2;
+      temp_mix_buffer.fill(0);
+
+      if(Audio.temp_cc_modwheel != Audio.temp_cc_modwheel_prev)
+      {
+         Audio.temp_cc_modwheel_prev = Audio.temp_cc_modwheel;
+         if(null != Audio.ref_sample)
+         {
+            if!(Audio.ref_sample.b_mod_src_noteon)
+            {
+               spTemp.updateMod(Audio.temp_cc_modwheel / 127.0);
+            }
+            else
+            {
+               spTemp.updateMod(0.0);
+            }
+         }
+      }
+
+      if(spTemp.numPlayingVoices > 0)
+      {
+         spTemp.render(temp_mix_buffer);
+      }
+
+      if(null != Audio.ref_sample)
+      {
+         StSamplePlayer sp <= Audio.temp_mod_sample.sample_player;
+         sp.render(temp_mix_buffer);
+      }
+
+      tksampleedit_add_pan_stereo_adv_to_stereo_adv(mix_buffer, 0, num_out_ch,
+                                                    temp_mix_buffer, 0, 2,
+                                                    current_project.temp_level/*lvlL*/,
+                                                    current_project.temp_level/*lvlR*/,
+                                                    _numFrames
+                                                    );
+
+      // Copy to databridge ringbuffer
+      //  (note) numFrames must be <chunk_sz>
+      if(STConfig.b_databridge)
+      {
+         VST2Plugin db <= mod_databridge.plugin;
+         if(null != db)
+            db.processReplacing(_numFrames, 0/*off*/);
+      }
+
+      // Process audio track recording
+      int atrkReadFrameIdx = input_read_frame_idx;
+      int atrkNumFrames = _numFrames;
+      if(b_recording)
+      {
+         if(atrk_rec_skip_frames_left > 0)
+         {
+            // Skip "n" frames at start of recording (latency compensation)
+            atrk_rec_skip_frames_left -= _numFrames;
+
+            if(atrk_rec_skip_frames_left < 0)
+            {
+               atrkNumFrames = -atrk_rec_skip_frames_left;
+               atrkReadFrameIdx += (_numFrames - atrkNumFrames);
+               atrk_rec_skip_frames_left = 0;
+            }
+            else
+            {
+               // wait
+               atrkNumFrames = 0;
+            }
+         }
+         else if(atrk_rec_skip_frames_left < 0)
+         {
+            // Prepend previously recorded samples
+            int historyNumFrames = -atrk_rec_skip_frames_left;
+            // trace "xxx replay: copy "+historyNumFrames+" frames from atrack history_ring_buffer";
+            FloatArray atrackTmpHistory; atrackTmpHistory.allocAndFill(historyNumFrames*2, 0);
+            foreach atrack in current_project.audio_tracks
+            {
+               if(atrack.b_record)
+               {
+                  // (todo) copy directly from history ring buffer (and remove 'atrackTmpHistory')
+                  RingBuffer atrackHistoryRingBuffer <= atrack.history_ring_buffer;
+                  atrackHistoryRingBuffer.readRecentToBuffer(atrackTmpHistory, atrack.b_stereo ? 2 : 1, historyNumFrames);
+                  atrack.addSampleFrames(atrackTmpHistory,
+                                         0/*srcOff*/,
+                                         atrack.b_stereo ? 2 : 1/*numSrcChannels*/,
+                                         historyNumFrames
+                                         );
+               }
+            }
+            atrk_rec_skip_frames_left = 0;
+         }
+
+         foreach atrack in current_project.audio_tracks
+         {
+            if(atrack.b_record)
+            {
+               if(AudioTrack.SRC_AUDIO_IN == atrack.src_type)
+               {
+                  if(atrack.src_ch_off < num_in_ch)
+                  {
+                     if(atrkNumFrames > 0)
+                     {
+                        atrack.addSampleFramesInputRing(atrack.src_ch_off,
+                                                        atrkReadFrameIdx,
+                                                        atrkNumFrames
+                                                        );
+                     }
+                  }
+               }
+               else if(AudioTrack.SRC_AUDIO_OUT == atrack.src_type)
+               {
+                  if(atrack.src_ch_off < num_out_ch)
+                  {
+                     atrack.addSampleFrames(mix_buffer,
+                                            atrack.src_ch_off,
+                                            num_out_ch,
+                                            _numFrames
+                                            );
+                  }
+               }
+               else if(AudioTrack.SRC_TRACK == atrack.src_type)
+               {
+                  track <= current_project.getTrackByIdx(atrack.src_track_idx);
+                  if(null != track)
+                  {
+                     atrack.addSampleFrames(track.mix_buffer,
+                                            0/*srcOff*/,
+                                            2/*numSrcChannels*/,
+                                            _numFrames
+                                            );
+                  }
+               }
+            }
+         } // foreach atrack
+      } // if b_recording
+      else if(STConfig.atrk_rec_skip_num_frames < 0)
+      {
+         // update history ring buffer
+         foreach atrack in current_project.audio_tracks
+         {
+            if(atrack.b_record)
+            {
+               if(AudioTrack.SRC_AUDIO_IN == atrack.src_type)
+               {
+                  if(atrack.src_ch_off < num_in_ch)
+                  {
+                     if(atrkNumFrames > 0)
+                     {
+                        atrack.addHistorySampleFramesInputRing(atrack.src_ch_off,
+                                                               atrkReadFrameIdx,
+                                                               atrkNumFrames
+                                                               );
+                     }
+                  }
+               }
+               else if(AudioTrack.SRC_AUDIO_OUT == atrack.src_type)
+               {
+                  if(atrack.src_ch_off < num_out_ch)
+                  {
+                     atrack.addHistorySampleFrames(mix_buffer,
+                                                   atrack.src_ch_off,
+                                                   num_out_ch,
+                                                   _numFrames
+                                                   );
+                  }
+               }
+               else if(AudioTrack.SRC_TRACK == atrack.src_type)
+               {
+                  track <= current_project.getTrackByIdx(atrack.src_track_idx);
+                  if(null != track)
+                  {
+                     atrack.addHistorySampleFrames(track.mix_buffer,
+                                                   0/*srcOff*/,
+                                                   2/*numSrcChannels*/,
+                                                   _numFrames
+                                                   );
+                  }
+               }
+            }
+         } // foreach atrack
+      }
+
+      // Swap input buffers for next chunk and clear next chunk buffer
+      foreach track in current_project.tracks
+         track.swapInputBuffersAndClearNext();
+
+      // Append to scope FFT ring buffer ?
+      ringBuf <= current_project.scope_fft_ringbuf;
+      if(ringBuf.isAudioOut(-1))
+         ringBuf.appendFrames(mix_buffer, num_out_ch/*srcNumCh*/, ringBuf.src_ch_off/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+
+      // Append to scope history ring buffer ?
+      ringBuf <= current_project.scope_history_ringbuf;
+      if(ringBuf.isAudioOut(-1))
+         ringBuf.appendFrames(mix_buffer, num_out_ch/*srcNumCh*/, ringBuf.src_ch_off/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+
+      // Append to scope trig ring buffer ?
+      ringBuf <= current_project.scope_trig_ringbuf;
+      if(ringBuf.isAudioOut(-1))
+         ringBuf.appendFrames(mix_buffer, num_out_ch/*srcNumCh*/, ringBuf.src_ch_off/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+
+      // trace "xxx Replay::process: "+_num+" track sample frames have been rendered.";
+      b_reset_all_controllers = false;
+
+      // Advance input ringbuffer read offset
+      if(input_num_avail >= _numFrames)
+      {
+         input_read_frame_idx = (input_read_frame_idx + _numFrames) % INPUT_RINGBUFFER_SIZE;
+         input_num_avail -= _numFrames;
+      }
+
+      // Advance song pos while sequencer is playing
+      if(true == b_seq_playing)
+      {
+         float secondsPerQuarter = 60.0f / current_project.bpm;
+         float samplesPerQuarter = Audio.mix_rate * secondsPerQuarter;
+         song_pos_beats += _numFrames / samplesPerQuarter;
+      }
+   }
+
+   // <replay.png>
+   public =replay= method processWithMIDI(int _num, boolean _bTracksWithInput) {
+
+      // trace "xxx processWithMIDI: num="+_num+" bTracksWithInput="+_bTracksWithInput;
+
+      // Process all available MIDI events
+      mix_buffer.numElements = _num * num_out_ch;
+      mix_buffer.fill(0);
+
+      milliSecondsDouble(profile_process_t_start);
+
+      if(STConfig.b_enable_midi)
+      {
+         // Temporary sampleplayer
+         if(-1 == redirect_remote_to_dev_idx)
+            parseMIDIInputEventsSysExAndTempSample();
+         parseMIDIInputEvents();
+
+         midi_output_frame.empty();
+      }
+      else
+      {
+         b_have_events = false;
+      }
+
+      // trace "xxx call process: num="+_num;
+      process(0, _num, _bTracksWithInput);
+      // trace "xxx end process";
+
+      // if(midi_input_frame.numEvents > 0)
+      //    trace "xxx processWithMIDI: clear "+midi_input_frame.numEvents+" MIDI events";
+
+      if(STConfig.b_enable_midi)
+      {
+         midi_input_frame.empty();
+         SysEx.SendMIDIOutputEvents(midi_output_frame);
+      }
+
+      ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(mix_buffer, 0, 2, _num));
+      ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(mix_buffer, 1, 2, _num));
+
+      milliSecondsDouble(profile_process_t_end);
+      profile_process_t_delta = profile_process_t_end - profile_process_t_start;
+      // trace "profile_process_t_delta="+profile_process_t_delta;
+      profile_process_load_cur = (profile_process_t_delta*100.0) / buffer_ms;
+      profile_process_load_avg = profile_process_load_avg*0.95 + profile_process_load_cur*0.05;
+
+      // trace "xxx end processWIthMIDI";
+   }
+
+   // <replay.png>
+   int xxx_ms_last; // debug
+   public =replay= method processSpreadEvents(int _bufferSize, boolean _bTracksWithInput) {
+
+      // bTracksWithInput: maybe=process all (ASIO, databridge)
+      //                   false=process only tracks without input (VST)
+      //                    true=process only tracks with input (VST)
+
+      // (note) num should be
+      //         - STConfig.databridge_ring_size/2 (=> double buffering)
+      //         - OR Audio.buffer_size/<chunk_sz> when not using databridge
+      //         i.e. when first chunk is processed, last first_chunk starts playing
+      //
+
+      milliSecondsDouble(profile_process_t_start);
+
+      if(STConfig.b_enable_midi)
+      {
+         // Temporary sampleplayer
+         // // SysEx.ParseMIDIInputEvents();
+         if(-1 == redirect_remote_to_dev_idx)
+            parseMIDIInputEventsSysExAndTempSample();
+         parseMIDIInputEvents();
+
+         midi_output_frame.empty();
+      }
+
+      mix_buffer.numElements = _bufferSize * num_out_ch;
+      mix_buffer.fill(0);
+
+      int numChunks = _bufferSize / chunk_sz;
+      process_size = chunk_sz;
+      process_ms = (process_size * 1000.0f) / Audio.mix_rate;
+      int off = 0;
+
+      buffer_ms = (_bufferSize * 1000.0f) / Audio.mix_rate;
+
+      int msNow = milliSeconds();
+      // trace "xxx currMs="+msNow+" last="+xxx_ms_last+" delta="+(msNow -xxx_ms_last)+" delta_smp="+((Audio.mix_rate/1000)*(msNow -xxx_ms_last))+" bufSz="+Audio.buffer_size;
+      xxx_ms_last = msNow;
+
+      if(numChunks > 1)
+      {
+         float msPerChunk = (1000.0*chunk_sz) / Audio.mix_rate;
+         float ms = msNow - (msPerChunk * (numChunks - 1));
+
+         // // if(bDebugFirst)
+         // //    trace "xxx first chunk max ev ms="+ms;
+
+         // Process first chunk and use all MIDI events up to (and including) first chunk
+         current_midi_input_millisec_min = 0;
+         current_midi_input_millisec_max = ms + msPerChunk*0.5;
+
+         process(off, chunk_sz, _bTracksWithInput);
+
+         midi_input_frame.empty(); // [25Apr2021] fix liverec dbl swap??? (not quite)
+         off += chunk_sz;
+
+         if(numChunks > 2)
+         {
+            loop(numChunks - 2)
+            {
+               // Process 'nth' chunk and limit event window
+               current_midi_input_millisec_min = current_midi_input_millisec_max;
+               ms += msPerChunk;
+               current_midi_input_millisec_max = current_midi_input_millisec_min + msPerChunk*0.5;
+
+               process(off, chunk_sz, _bTracksWithInput);
+
+               midi_input_frame.empty();
+               off += chunk_sz;
+            }
+         }
+
+         // Process last chunk, use all remaining MIDI events
+         current_midi_input_millisec_min = current_midi_input_millisec_max;
+         current_midi_input_millisec_max = ~0;
+
+         process(off, chunk_sz, _bTracksWithInput);
+
+         midi_input_frame.empty();
+         off += chunk_sz;
+      }
+      else
+      {
+         // Process single chunk, use all available MIDI events
+         current_midi_input_millisec_min = 0;
+         current_midi_input_millisec_max = ~0;
+
+         process(off, chunk_sz, _bTracksWithInput);
+
+         midi_input_frame.empty();
+         off += chunk_sz;
+      }
+
+      if(STConfig.b_enable_midi)
+         SysEx.SendMIDIOutputEvents(midi_output_frame);
+
+      ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(mix_buffer, 0, 2, _bufferSize));
+      ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(mix_buffer, 1, 2, _bufferSize));
+
+      milliSecondsDouble(profile_process_t_end);
+      profile_process_t_delta = profile_process_t_end - profile_process_t_start;
+      // trace "profile_process_t_delta="+profile_process_t_delta;
+      profile_process_load_cur = (profile_process_t_delta*100.0) / buffer_ms;
+      profile_process_load_avg = profile_process_load_avg*0.95 + profile_process_load_cur*0.05;
+
+      // trace "xxx profile_process_t_delta="+profile_process_t_delta;
+
+      // trace "xxx mix_buffer="+#(mix_buffer);
+   }
+
+   // <replay.png>
+   public method hasProcessFinished() : boolean {
+      // Called from audio thread
+      if(!STConfig.b_force_single_thread)
+      {
+         // int ms = milliSeconds();
+         int r = cond_write_done.wait(1/*millisec*/);
+         // if(0 != r)
+         //    // trace "xxx Replay::hasProcessFinished: (error) r="+r+" ms="+(milliSeconds()-ms);
+         //    trace "xxx Replay::hasProcessFinished: (error) r="+r+" ms="+milliSeconds();
+         return (0 == r);
+      }
+      return true;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getAverageLoadPercentage() : float {
+      // in percent (0..100%)
+      return profile_process_load_avg;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpPeakL() : float {
+      return ui_peakavg_l.peak;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpPeakR() : float {
+      return ui_peakavg_r.peak;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpAvgL() : float {
+      return ui_peakavg_l.avg;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpAvgR() : float {
+      return ui_peakavg_r.avg;
+   }
+
+   // <ui_handle.png>
+   public method handleMidiActivityDecay() {
+      FloatArray *fa;
+      foreach fa in ui_midi_activity
+      {
+         byte midiCh = 0;
+         loop(16)
+         {
+            fa[midiCh] = fa[midiCh] - UI_MIDI_ACTIVITY_DEC;
+            if(fa[midiCh] < 0.0f)
+               fa[midiCh] = 0.0f;
+            midiCh++;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method queueResetAllControllers() {
+      b_reset_all_controllers = true;
+   }
+
+   // <method_get.png>
+   public =audio_ringbuf= method ringPrepNextMixBuffer() : boolean {
+      // // trace "xxx ringPrepNextMixBuffer: ring_mix_buffer_fill_level="+ring_mix_buffer_fill_level;
+      mix_buffer <= ring_mix_buffers.get(ring_mix_buffer_next_calc_idx);
+      ring_mix_buffer_next_calc_idx = (ring_mix_buffer_next_calc_idx + 1) % ring_size;
+   }
+
+   // <method_get.png>
+   public =audio_ringbuf= method ringProcessMore() : boolean {
+      ring_mix_buffer_fill_level++;
+      boolean r = (ring_mix_buffer_fill_level < ring_size);
+      return r;
+   }
+
+   // <method_get.png>
+   public =audio_ringbuf= ringGetFillLevel() : int {
+      return ring_mix_buffer_fill_level;
+   }
+
+   // <method_get.png>
+   public =audio_ringbuf= method ringHaveMixBuffer() : boolean {
+      return (ring_mix_buffer_fill_level >= 1);
+   }
+
+   // <method_get.png>
+   public =audio_ringbuf= method ringConsumeNextMixBuffer() : FloatArray {
+      // (note) copy entire buffer since as soon as the fill level decreases, it may be filled with new data
+      FloatArray r = ring_mix_buffers.get(ring_mix_buffer_next_out_idx);
+      ring_mix_buffer_next_out_idx = (ring_mix_buffer_next_out_idx + 1) % ring_size;
+      // // trace "xxx ring: out_idx="+ring_mix_buffer_next_out_idx+" fill_level="+ring_mix_buffer_fill_level;
+      ring_mix_buffer_fill_level--;
+      return r;
+   }
+
+   // <method_get.png>
+   public =audio_in= method getNumAvailableInputFrames() {
+      return input_num_avail;
+   }
+
+   // <method_get.png>
+   public method getLastSeenEventType(int _devIdx, int _midiCh, Integer _retExtNr) : int {
+      IntArray lastChEvTypes <= last_seen_midi_input_frame_event_types.get(_devIdx);
+      if(-1 == _midiCh)
+         _midiCh = 16;  // any
+      // // trace "xxx getLastSeenEventType: lastChEvTypes="+#(lastChEvTypes)+" midiCh="+_midiCh;
+      _retExtNr = lastChEvTypes.get(_midiCh + 17);
+      // // trace "xxx getLastSeenEventType: evType="+lastChEvTypes.get(_midiCh)+" extNr="+lastChEvTypes.get(_midiCh + 17);
+      return lastChEvTypes.get(_midiCh);  // MIDIMapDefs.TYPE_xxx
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRecording(boolean _bEnable) {
+      b_recording = _bEnable;
+   }
+
+   // <method.png>
+   public =replay= method redirectRemoteEvents(int _devIdx, int _midiCh) {
+      redirect_remote_to_dev_idx = _devIdx;
+      redirect_remote_to_midi_ch = _midiCh;
+   }
+
+   // <method_get.png>
+   public method getInputChPeak(int _chIdx) : float {
+      return input_ch_peakavg[_chIdx].getPeak();
+   }
+
+   // <method_get.png>
+   public method getInputChAvg(int _chIdx) : float {
+      return input_ch_peakavg[_chIdx].getAvg();
+   }
+
+   // <method_get.png>
+   public method getOutputChPeak(int _chIdx) : float {
+      return output_ch_peakavg[_chIdx].getPeak();
+   }
+
+   // <method_get.png>
+   public method getOutputChAvg(int _chIdx) : float {
+      return output_ch_peakavg[_chIdx].getAvg();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableProcessAudio(boolean _bAudio) {
+      b_process_audio = _bAudio;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableCalcIOAvg(boolean _bEnable) {
+      if(_bEnable && !b_calc_io_avg)
+      {
+         PeakAvgTracker *t;
+         foreach t in input_ch_peakavg
+            t.reset();
+         foreach t in output_ch_peakavg
+            t.reset();
+      }
+      b_calc_io_avg = _bEnable;
+   }
+
+   // <method_get.png>
+   public =replay= method findLoudestAvgMono(PointerArray _peakAvgTrackers) : int {
+      int bestIdx = -1;
+      float bestAvg = STConfig.io_activity_threshold;
+      PeakAvgTracker *t;
+      int idx = 0;
+      foreach t in _peakAvgTrackers
+      {
+         if(t.avg > bestAvg)
+         {
+            bestIdx = idx;
+            bestAvg = t.avg;
+         }
+         idx++;
+      }
+      return bestIdx;
+   }
+
+   // <method_get.png>
+   public =replay= method findLoudestAvgStereo(PointerArray _peakAvgTrackers) : int {
+      int bestIdx1 = -1;
+      int bestIdx2 = -1;
+      float bestAvg1 = STConfig.io_activity_threshold;
+      float bestAvg2 = STConfig.io_activity_threshold;
+      PeakAvgTracker *t;
+      int idx = 0;
+      foreach t in _peakAvgTrackers
+      {
+         if(t.avg > bestAvg1)
+         {
+            bestIdx2 = bestIdx1;
+            bestAvg2 = bestAvg1;
+
+            bestIdx1 = idx;
+            bestAvg1 = t.avg;
+         }
+         idx++;
+      }
+
+      if(bestIdx2 >= 0)
+      {
+         if(1 == abs(bestIdx2 - bestIdx1)) // consecutive?
+         {
+            // Return lower channel idx of consecutive L/R channel pair
+            if(bestIdx1 < bestIdx2)
+               return bestIdx1;
+            else
+               return bestIdx2;
+         }
+         else
+         {
+            // Return louder channel idx
+            if(bestAvg1 > bestAvg2)
+               return bestIdx1;
+            else
+               return bestIdx2;
+         }
+      }
+      return bestIdx1;
+   }
+
+}

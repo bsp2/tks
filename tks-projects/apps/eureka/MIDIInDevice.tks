@@ -1,0 +1,174 @@
+// ----
+// ---- file   : MIDIInDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2008-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 07Jan2008, 13Jan2008, 31Aug2008, 06Jan2013, 23Mar2013, 05Jun2013, 13Aug2014
+// ----          31Aug2014, 14Feb2015, 17Feb2015, 21Feb2015, 23Feb2015, 09Jan2016, 26Jan2016
+// ----          13Jan2017, 12Jun2017, 29Jan2018, 01Feb2018, 02Aug2019, 29Jul2023
+// ----
+// ----
+// ----
+
+module MMIDIInDevice;
+
+
+// <class.png>
+class MIDIInDevice : MIDIDevice {
+   public MIDIIn *midiin;
+
+   protected short learn_bank;
+   protected short learn_program;
+
+   public boolean b_echo;
+
+   public MIDIOutDevice *cached_out_dev;
+
+   public boolean b_disconnected;
+
+   public IntArray note_off_pre_flags;  // used while adding events to MIDIPipeFrame. one element per MIDI channel.
+
+
+   // <init.png>
+   public method init(MIDIIn _midiin) {
+      midiin <= deref _midiin;
+
+      note_off_pre_flags.alloc(16);
+      note_off_pre_flags.useAll();
+   }
+
+   // <method_get.png>
+   public virtual isOpen() : boolean {
+      return (null != midiin);
+   }
+
+   // <method_get.png>
+   public virtual getDeviceName() : String {
+      if(null != midiin)
+      {
+         return midiin.deviceName;
+      }
+      else
+      {
+         return "n/a";
+      }
+   }
+
+   // <method.png>
+   public method start() {
+      trace "[trc] MIDIInDevice<"+midiin.deviceName+">::start";
+      midiin.start();
+   }
+
+   // <method.png>
+   public method close() {
+      midiin.close();
+   }
+
+   // <method.png>
+   public method clearEvents() {
+      midiin.clearEvents();
+   }
+
+   // <method.png>
+   public method resetLearnProgram() {
+      learn_bank = 0xFFFF;
+      learn_program = 0xFFFF;
+   }
+
+   // <method.png>
+   public method parseLearnProgram(byte _midiCh) : int {
+      explain "Parse recorded MIDI events and look for bank select and/or program change. Return (bank<<8 | program). 0xFF bytes mean no change.";
+
+      int r = 0xFFFFFF;
+
+      //trace "xxx STX_MIDIInDevice::parseLearnProgram(midiCh="+_midiCh+"). numEvents="+midiin.numEvents;
+
+      while(midiin.numEvents > 0)
+      {
+         RecordedMIDIEvent ev <= midiin.nextEvent;
+         if(!ev.isLongMessage())
+         {
+            int msg = ev.shortMessage;
+            if( (msg&0xFF) == (0xB0|_midiCh) )
+            {
+               byte ctl = (msg&0xFF00)>>8;
+               if(0x00 == ctl) // bank MSB
+               {
+                  r = (r&0x00FFFF) | (msg&0xFF0000);
+               }
+               else if(0x20 == ctl) // bank LSB
+               {
+                  r = (r&0xFF00FF) | ((msg&0xFF0000)>>8);
+               }
+            }
+            else if( (msg&0xFF) == (0xC0|_midiCh) )
+            {
+               r = (r&0xFFFF00) | ((msg&0xFF00)>>8);
+            }
+         }
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getNextLongMessageBySize(int _size, Buffer _ret) : boolean {
+      explain "Return next long message that matches the given size. Return true if such a message was found, false otherwise.";
+
+      int i = 0;
+      while(midiin.numEvents > 0)
+      {
+         RecordedMIDIEvent ev <= midiin.nextEvent;
+         // trace "xxx MIDIInDevice::getNextLongMessageBySize: ev#"+i+" size="+ev.size;
+         i++;
+         if(ev.size == _size)
+         {
+            _ret.offset = 0;
+            ev.copyToStream(_ret);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   public method getNextLongMessage(Buffer _ret) : boolean {
+      explain "Return next long message. Return true if such a message was found, false otherwise.";
+
+      int i = 0;
+      while(midiin.numEvents > 0)
+      {
+         RecordedMIDIEvent ev <= midiin.nextEvent;
+         // trace "xxx MIDIInDevice::getNextLongMessageBySize: ev#"+i+" size="+ev.size;
+         i++;
+         if(ev.isLongMessage())
+         {
+            _ret.offset = 0;
+            ev.copyToStream(_ret);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_set.png>
+   public method setEnableParam(byte _ch, boolean _bEnabled) {
+      if(null != midiin)
+      {
+         midiin.setEnableParam(_ch, _bEnabled);
+      }
+   }
+
+   // <method.png>
+   public method readLocalMIDIEvents() {
+      // implemented by LocalMIDIInDevice
+   }
+
+}

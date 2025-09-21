@@ -1,0 +1,1017 @@
+// ----
+// ---- file   : SampleLiveRecForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 20Feb2020
+// ---- changed: 21Feb2020, 22Feb2020, 23Feb2020, 24Feb2020, 25Feb2020, 26Feb2020, 28Feb2020
+// ----          19May2020, 26Apr2021, 27Apr2021, 28Apr2021, 30Apr2021, 26Jun2021, 17Jul2021
+// ----          21Jul2021, 20Oct2021, 20Oct2021, 22Oct2021, 24Oct2021, 28Oct2021, 19Feb2023
+// ----          17Nov2023, 13Apr2024, 08Nov2024, 15Jan2025
+// ----
+// ----
+// ----
+
+module MSampleLiveRecForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleLiveRecForm : XMLForm, ActionProvider {
+
+   define String ACTION_LIVEREC_EDITED;
+
+   StSample *sample;
+   Sample *sample_sci;
+
+   static StringArray mono_input_options = [
+      "1: Input L",
+      "2: Input R",
+      "3: Sidechain L",
+      "4: Sidechain R"
+                                           ];
+
+   static StringArray stereo_input_options = [
+      "1+2: Input L+R",
+      "2+3: Input R + Sidechain L",
+      "3+4: Sidechain L+R",
+      "4: Sidechain R+R"
+                                           ];
+
+   static StringArray mode_options_short = [
+      "Wait for trigger",
+      "Wait for trig, Zero until signal",
+      "Wait for trig. Keep until signal.",
+      "Wait for trig and signal",
+      "Wait for signal, rec, repeat",
+      "Wait, rec, silence, repeat",
+      "Continuous",
+      "Continuous Ring",
+                                                ];
+
+   static StringArray mode_options_long = [
+      "Wait for trigger",
+      "Wait for trigger, Zero until signal",
+      "Wait for trigger. Keep until signal.",
+      "Wait for trigger and signal",
+      "Wait for signal, record, repeat",
+      "Wait, record, silence, repeat",
+      "Continuous",
+      "Continuous Ring",
+                                                ];
+
+   static StringArray doublebuffer_mode_options = [
+      "-",
+      "End",
+      "Voice (Queue)",
+      "Rec Start",
+      "Param"
+                                             ];
+
+   protected CheckBox    *cb_enable;
+   protected CheckBox    *cb_pause;
+   protected CheckBox    *cb_monitor;
+   protected FloatParam  *fp_latency;
+   protected Button      *bt_freeze;
+   protected Button      *bt_capture;
+   protected ComboBox    *cm_input;
+   protected CheckBox    *cb_stereo;
+   protected CheckBox    *cb_sum;
+   protected FloatParam  *fp_sum;
+   protected FloatParam  *fp_pan;
+   protected FloatParam  *fp_loop;
+   protected CheckBox    *cb_copy;
+   protected CheckBox    *cb_clear;
+   protected CheckBox    *cb_sustain;  // aka "Multi"
+   protected FloatParam  *fp_osc_fade;
+   protected FloatParam  *fp_osc_pre_filter;
+   protected ComboBox    *cm_doublebuffer_mode;
+   protected CheckBox    *cb_doublebuffer_xfade;
+   protected ComboBox    *cm_osc_mode;
+   protected CheckBox    *cb_osc_singlecycle;
+   protected FloatParam  *fp_osc_tune;
+   protected ComboBox    *cm_mode;
+   protected FloatParam  *fp_threshold;
+   protected CheckBox    *cb_resample;
+   protected Button      *bt_trig;
+
+   static SampleLiveRecCaptureDialog *dlg_capture;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("SampleLiveRecForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      cm_mode.setOptions(mode_options_short);
+      cm_mode.setOptionsLong(mode_options_long);
+      cm_doublebuffer_mode.setOptions(doublebuffer_mode_options);
+
+      local FloatArray skipPresetValues;
+      local StringArray skipPresetNames;
+      String *skipPreset;
+      foreach skipPreset in STConfig.smp_liverec_skip_presets
+      {
+         local StringArray skipT <= skipPreset.splitChar('=');
+         skipPresetNames .add(skipT.get(0));
+         skipPresetValues.add(skipT.get(1));
+      }
+      fp_latency.setPresetOptions(skipPresetValues,
+                                  skipPresetNames
+                                  );
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_LIVEREC_EDITED];
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           cb_enable,
+                           cb_pause,
+                           cb_monitor,
+                           fp_latency,
+                           bt_freeze,
+
+                           cm_input,
+                           cb_stereo,
+                           cb_sum,
+                           fp_sum,
+                           fp_pan,
+                           bt_capture,
+
+                           fp_loop,
+                           cb_copy,
+                           cb_clear,
+                           cb_sustain,
+                           fp_osc_fade,
+
+                           cm_doublebuffer_mode,
+                           cb_doublebuffer_xfade,
+                           cm_osc_mode,
+                           cb_osc_singlecycle,
+                           fp_osc_tune,
+
+                           cm_mode,
+                           fp_threshold,
+                           fp_osc_pre_filter,
+                           cb_resample,
+                           bt_trig,
+                         ]
+                        );
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      sample_sci.markParamsAsModified();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_LIVEREC_EDITED), this));
+   }
+
+   // <ui_show.png>
+   public method showSample(StSample _sample, Sample _sampleSCI) {
+      sample <= _sample;
+      sample_sci <= _sampleSCI;
+
+      boolean bEditable = (null != sample);
+
+      cb_enable            .setEditable(bEditable);
+      cb_pause             .setEditable(bEditable);
+      cb_monitor           .setEditable(bEditable);
+      fp_latency           .setEditable(bEditable);
+      bt_freeze            .setEditable(bEditable);
+      bt_capture           .setEditable(bEditable);
+      cm_input             .setEditable(bEditable);
+      cb_stereo            .setEditable(bEditable);
+      cb_sum               .setEditable(bEditable);
+      fp_sum               .setEditable(bEditable);
+      fp_pan               .setEditable(bEditable);
+      fp_loop              .setEditable(bEditable);
+      cb_copy              .setEditable(bEditable);
+      cb_clear             .setEditable(bEditable);
+      cb_sustain           .setEditable(bEditable);
+      fp_osc_fade          .setEditable(bEditable);
+      cm_doublebuffer_mode .setEditable(bEditable);
+      cb_doublebuffer_xfade.setSelected(bEditable);
+      cm_osc_mode          .setEditable(bEditable);
+      cb_osc_singlecycle   .setEditable(bEditable);
+      fp_osc_tune          .setEditable(bEditable);
+      cm_mode              .setEditable(bEditable);
+      fp_threshold         .setEditable(bEditable);
+      fp_osc_pre_filter    .setEditable(bEditable);
+      cb_resample          .setEditable(bEditable);
+      bt_trig              .setEditable(bEditable);
+
+      if(bEditable)
+      {
+         cb_enable .setSelected(sample.liveRecEnable);
+         cb_pause  .setSelected(sample.liveRecPause);
+         cb_monitor.setSelected(sample.liveRecMonitor);
+         fp_latency.setValue   (sample.liveRecSkipInputNumFrames);
+
+         if(sample.liveRecStereo)
+            cm_input.setOptions(stereo_input_options);
+         else
+            cm_input.setOptions(mono_input_options);
+
+         cm_input.setSelectedOption(sample.liveRecInput);
+         cb_stereo.setSelected(sample.liveRecStereo);
+
+         cb_sum.setSelected(sample.enableSumInput);
+         fp_sum.setValue(sample.sumInputXFade);
+         fp_pan.setValue(sample.liveRecInputPan);
+
+         fp_loop.setValue(sample.liveRecLoopIdx + 1);
+         cb_copy.setSelected(sample.liveRecCopy);
+         cb_clear.setSelected(sample.liveRecClear);
+         cb_sustain.setSelected(sample.liveRecOscSustain);
+         fp_osc_fade.setValue(1.0 - sample.liveRecOscFadeAmt);
+
+         cm_doublebuffer_mode.setSelectedOption(sample.liveRecDoubleBufferMode);
+         cb_doublebuffer_xfade.setSelected(sample.liveRecDoubleBufferXFade);
+         cm_osc_mode.setSelectedOption(sample.liveRecOscMode);
+         cb_osc_singlecycle.setSelected(sample.liveRecOscSingleCycle);
+         fp_osc_tune.setValue(sample.liveRecOscTune);
+
+         cm_mode.setSelectedOption(sample.liveRecMode);
+         fp_threshold.setValue(Utils.LevelToDB(sample.liveRecThresholdOn));
+         fp_osc_pre_filter.setValue(sample.liveRecOscPreFilter * 127.0);
+         cb_resample.setSelected(sample.liveRecOscResample);
+
+         updateAllowFreeze();
+      }
+      else
+      {
+         cb_enable .setSelected(false);
+         cb_pause  .setSelected(false);
+         cb_monitor.setSelected(false);
+         fp_latency.setValue   (0);
+
+         cm_input.setSelectedOption(-1);
+         cb_stereo.setSelected(false);
+
+         cb_sum.setSelected(false);
+         fp_sum.setValue(0);
+         fp_pan.setValue(0);
+
+         fp_loop.setValue(1);
+         cb_copy.setSelected(false);
+         cb_clear.setSelected(false);
+         cb_sustain.setSelected(false);
+         fp_osc_fade.setValue(0);
+
+         cm_doublebuffer_mode.setSelectedOption(-1);
+         cb_doublebuffer_xfade.setSelected(false);
+         cm_osc_mode.setSelectedOption(-1);
+         cb_osc_singlecycle.setSelected(false);
+         fp_osc_tune.setValue(0.0f);
+
+         cm_mode.setSelectedOption(-1);
+         fp_threshold.setValue(0);
+         fp_osc_pre_filter.setValue(0);
+         cb_resample.setSelected(false);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateAllowFreeze() {
+      if(null != sample)
+      {
+         bt_freeze.setEditable( sample.liveRecCopy ||
+                                (STSAMPLE_LIVEREC_OSC_MODE_OFF != sample.liveRecOscMode) ||
+                                (STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != sample.liveRecDoubleBufferMode)
+                                );
+
+         bt_capture.setEditable(sample.liveRecEnable && sample.liveRecCopy);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_enable.isSelected();
+      foreach s in zones
+      {
+         s.liveRecEnable = bEnable;
+      }
+
+      provideEdited();
+      Global.Print("LiveRec is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePauseChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_pause.isSelected();
+      foreach s in zones
+      {
+         s.liveRecPause = bEnable;
+      }
+
+      provideEdited();
+      Global.Print("LiveRec is "+(bEnable ? "active" : "paused")+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMonitorChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_monitor.isSelected();
+      foreach s in zones
+      {
+         s.liveRecMonitor = bEnable;
+      }
+
+      provideEdited();
+      if(maybe == bEnable)
+         Global.Print("LiveRec Monitoring is enabled (MIX) (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      else
+         Global.Print("LiveRec Monitoring is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLatencyChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int numFrames = fp_latency.getFloatValue();
+      foreach s in zones
+      {
+         s.liveRecSkipInputNumFrames = numFrames;
+      }
+
+      provideEdited();
+      Global.Print("LiveRec Latency Correction is "+numFrames+" frames  (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFreeze() {
+
+      if(null != (root_form.pg_sample.mod_sample))
+      {
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         StSample *s;
+         StSamplePlayer sp <= root_form.pg_sample.getCurrentSamplePlayer();
+         int numFreezed = 0;
+         int zoneNr = 1;
+         foreach s in zones
+         {
+            if(s.liveRecEnable)
+            {
+               IntArray loopDat <= s.sampleLoops;
+               if((null != loopDat) && (loopDat.numElements >= (1*3)))
+               {
+                  // StSampleVoice v <= sp.findFirstActiveVoiceBySample(s);
+                  StSampleVoice v <= sp.findLastStartedVoiceBySample(s);
+
+                  if(null != v)
+                  {
+                     int copyLoopOff;
+                     int copyLoopLen;
+                     int copyBufIdx = v.liveRecGetOverridePlayBufIdx();
+                     int loopIdx;
+                     int dblBufHalf = (s.waveform.numFrames) >> 1;
+                     int targetLoopIdx = s.liveRecLoopIdx;
+                     IntArray *loopDatOverride;
+
+                     if(STSAMPLE_LIVEREC_OSC_MODE_OFF != s.liveRecOscMode)
+                     {
+                        if(s.liveRecOscSustain)
+                        {
+                           loopDatOverride <= v.getOverrideSampleLoops();
+
+                           if(null != loopDatOverride)
+                           {
+                              if(s.liveRecCopy)
+                              {
+                                 if(v.copyOverrideBufferToWaveform())
+                                 {
+                                    loopDat = loopDatOverride;
+
+                                    numFreezed++;
+                                 }
+                                 else
+                                    trace "[~~~] freeze: skip zone "+zoneNr+": copyOverrideBufferToWaveform() failed";
+                              }
+                              else
+                              {
+                                 loopDat = loopDatOverride;
+
+                                 if((STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != s.liveRecDoubleBufferMode) && (copyBufIdx > 0))
+                                 {
+                                    for(loopIdx = 0; loopIdx < loopDat.numElements; loopIdx += 3)
+                                    {
+                                       loopDat[loopIdx] = loopDat[loopIdx] + dblBufHalf;
+                                    }
+                                 }
+                                 numFreezed++;
+                              }
+                           }
+                           else
+                              trace "[~~~] freeze: skip zone "+zoneNr+": loopDatOverride is null";
+                        }
+                        else
+                        {
+                           // sustain mode off, osc mode on
+                           if(targetLoopIdx < (loopDat.numElements/3))
+                           {
+                              copyLoopOff = v.liveRecGetOverrideLoopOffset();
+                              copyLoopLen = v.liveRecGetOverrideLoopLen();
+
+                              if(s.liveRecCopy)
+                              {
+                                 if(v.copyOverrideBufferToWaveform())
+                                 {
+                                    loopDat[targetLoopIdx*3 + 0] = copyLoopOff;
+                                    loopDat[targetLoopIdx*3 + 1] = copyLoopLen;
+
+                                    numFreezed++;
+                                 }
+                                 else
+                                    trace "[~~~] freeze: skip zone "+zoneNr+": copyOverrideBufferToWaveform() failed";
+                              }
+                              else
+                              {
+                                 numFreezed++;
+                              }
+                           }
+                           else
+                              trace "[~~~] freeze: skip zone "+zoneNr+": targetLoop="+(1+targetLoopIdx)+" out of bounds";
+                        }
+                     }
+                     else
+                     {
+                        // Regular, non-osc mode
+                        if(s.liveRecOscSustain)
+                        {
+                           // // loopDatOverride <= s.getOverrideSampleLoops();
+
+                           // // if(null != loopDatOverride)
+                           // // {
+                           // //    if(s.liveRecCopy)
+                           // //    {
+
+                           // invalid param combination
+                           trace "[~~~] freeze: skip zone "+zoneNr+": sustain mode enabled but osc mode is off";
+
+                           // // }
+                           // // else
+                           // // {
+                           // //    loopDat = loopDatOverride;
+                           // //    if((STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != s.liveRecDoubleBufferMode) && (copyBufIdx > 0))
+                           // //    {
+                           // //       for(loopIdx = 0; loopIdx < loopDat.numElements; loopIdx += 3)
+                           // //       {
+                           // //          loopDat[loopIdx] = loopDat[loopIdx] + dblBufHalf;
+                           // //       }
+                           // //    }
+                           // //    numFreezed++;
+                           // // }
+                           // // }
+                           // // else
+                           // //    trace "[~~~] freeze: skip zone "+zoneNr+": loopDatOverride is null";
+                        }
+                        else
+                        {
+                           // sustain off, osc off
+                           if(targetLoopIdx < (loopDat.numElements/3))
+                           {
+                              if(s.liveRecCopy)
+                              {
+                                 if(v.copyOverrideBufferToWaveform())
+                                 {
+                                    numFreezed++;
+                                 }
+                                 else
+                                    trace "[~~~] freeze: skip zone "+zoneNr+": copyOverrideBufferToWaveform() failed";
+                              }
+                              else
+                              {
+                                 if((STSAMPLE_LIVEREC_DBLBUF_MODE_OFF != s.liveRecDoubleBufferMode) && (copyBufIdx > 0))
+                                 {
+                                    loopDat[targetLoopIdx*3 + 0] = loopDat[targetLoopIdx*3 + 0] + dblBufHalf;
+                                 }
+                                 numFreezed++;
+                              }
+                           }
+                           else
+                              trace "[~~~] freeze: skip zone "+zoneNr+": targetLoop="+(1+targetLoopIdx)+" out of bounds";
+                        }
+                     }
+                  }
+                  else
+                     trace "[~~~] freeze: skip zone "+zoneNr+": no voice found  (please retry after opening the sample editor by clicking on a track\'s ModSample instance)";
+               }
+               else
+                  trace "[~~~] freeze: skip zone "+zoneNr+": no loops";
+
+               s.liveRecEnable = false;
+               s.verifySampleAreas();
+            }
+            else
+               trace "[~~~] freeze: skip zone "+zoneNr+": liverec not enabled";
+            zoneNr++;
+         }
+
+         if(numFreezed > 0)
+            Audio.ResetAllSampleVoices(sample_sci);
+
+         provideEdited();
+
+         if(numFreezed > 0)
+            Global.Print("Freeze "+numFreezed+" sample"+Utils.GetPluralString(numFreezed)+"  (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+         else
+         {
+            Global.Warning("Freeze failed (all zones skipped)");
+         }
+      }
+      else
+      {
+         Global.Warning("Freeze: TEMP player is selected. Please re-open the editor by clicking on a track\'s ModSample instance");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method showCaptureDialog() {
+      if(null == dlg_capture)
+      {
+         dlg_capture <= new SampleLiveRecCaptureDialog;
+         dlg_capture.initSampleLiveRecCaptureDialog();
+      }
+
+      dlg_capture.showSampleLiveRecCaptureDialog();
+      // Global.Print("Show capture dialog");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleInputChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int input = cm_input.getSelectedOption();
+      foreach s in zones
+      {
+         s.liveRecInput = input;
+      }
+
+      provideEdited();
+      Global.Print("LiveRec input is "+cm_input.getSelectedOptionName()+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleStereoChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_stereo.isSelected();
+      foreach s in zones
+      {
+         s.liveRecStereo = bEnable;
+      }
+
+      if(sample.liveRecStereo)
+         cm_input.setOptions(stereo_input_options);
+      else
+         cm_input.setOptions(mono_input_options);
+      cm_input.redraw();
+
+      provideEdited();
+      Global.Print("LiveRec stereo input is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableSumInputChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_sum.isSelected();
+      foreach s in zones
+      {
+         s.enableSumInput = bEnable;
+      }
+
+      provideEdited();
+      if(maybe == bEnable)
+         Global.Print("Sum Input while live-recording is active (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      else
+         Global.Print("Sum Input is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSumInputXFadeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float xfade = fp_sum.getFloatValue();
+      foreach s in zones
+      {
+         s.sumInputXFade = xfade;
+      }
+
+      // // provideEdited();  // reselects zone
+      sample_sci.markParamsAsModified();
+      Global.Print("Sum Input Sample<>Input crossfading is "+xfade+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleInputPanChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float pan = fp_pan.getFloatValue();
+      foreach s in zones
+      {
+         s.liveRecInputPan = pan;
+      }
+
+      // // provideEdited();  // reselects zone
+      sample_sci.markParamsAsModified();
+      Global.Print("Input Pan is "+pan+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLoopChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int loopIdx = fp_loop.getFloatValue() - 1;
+      foreach s in zones
+      {
+         s.liveRecLoopIdx = loopIdx;
+      }
+
+      provideEdited();
+      Global.Print("LiveRec target loop id is "+(loopIdx+1)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCopyChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_copy.isSelected();
+      boolean bStop = false;
+      foreach s in zones
+      {
+         s.liveRecCopy = bEnable;
+         bStop = s.liveRecEnable;
+      }
+
+      if(bStop)
+         Audio.ResetAllSampleVoices(sample_sci);
+
+      provideEdited();
+      if(true == bEnable)
+         Global.Print("LiveRec Copy mode is enabled (at voice start) (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      else if(maybe == bEnable)
+         Global.Print("LiveRec Copy mode is enabled (continously) (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      else
+         Global.Print("LiveRec Copy mode is disabled (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+      updateAllowFreeze();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClearChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_clear.isSelected();
+      foreach s in zones
+      {
+         s.liveRecClear = bEnable;
+      }
+
+      provideEdited();
+      if(maybe == bEnable)
+         Global.Print("LiveRec Clear mode is OVERDUB (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      else
+         Global.Print("LiveRec Clear mode is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+      updateAllowFreeze();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSustainChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_sustain.isSelected();
+      foreach s in zones
+      {
+         s.liveRecOscSustain = bEnable;
+      }
+
+      Audio.ResetAllSampleVoices(sample_sci);
+
+      provideEdited();
+      Global.Print("LiveRec Osc Sustain (multi-loop) Mode is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOscFadeAmtChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float amt = 1.0 - fp_osc_fade.getFloatValue();
+      foreach s in zones
+      {
+         s.liveRecOscFadeAmt = amt;
+      }
+
+      provideEdited();
+      local Float fo = amt * 100;
+      Global.Print("LiveRec Osc Fade Amount is "+fo.printf("%3.2f")+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOscPreFilterChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float cutoff = mathClampf(fp_osc_pre_filter.getFloatValue() / 127.0f, 0.0f, 1.0f);
+      foreach s in zones
+      {
+         s.liveRecOscPreFilter = cutoff;
+      }
+
+      provideEdited();
+      local Float fo = cutoff;
+      Global.Print("LiveRec Osc Pre Filter CutOff is "+fo.printf("%3.2f")+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDoubleBufferModeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int mode = cm_doublebuffer_mode.getSelectedOption();
+      foreach s in zones
+      {
+         s.liveRecDoubleBufferMode = mode;
+      }
+
+      provideEdited();
+      Global.Print("Double-Buffering Mode is "+cm_doublebuffer_mode.getSelectedOptionName()+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+      updateAllowFreeze();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDoubleBufferXFadeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_doublebuffer_xfade.isSelected();
+      foreach s in zones
+      {
+         s.liveRecDoubleBufferXFade = bEnable;
+      }
+
+      provideEdited();
+      Global.Print("Double-Buffer XFade is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOscModeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int mode = cm_osc_mode.getSelectedOption();
+      boolean bOnOffChanged = false;
+      foreach s in zones
+      {
+         bOnOffChanged |= s.liveRecEnable && ((STSAMPLE_LIVEREC_OSC_MODE_OFF == s.liveRecOscMode) ^ (STSAMPLE_LIVEREC_OSC_MODE_OFF == mode));
+         s.liveRecOscMode = mode;
+      }
+
+      if(bOnOffChanged)
+         Audio.ResetAllSampleVoices(sample_sci);
+
+      provideEdited();
+      Global.Print("Oscillator Mode is "+cm_osc_mode.getSelectedOptionName()+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+
+      updateAllowFreeze();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOscSingleCycleChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_osc_singlecycle.isSelected();
+      foreach s in zones
+      {
+         s.liveRecOscSingleCycle = bEnable;
+      }
+
+      provideEdited();
+      Global.Print("Osc Single-Cycle Mode is "+Utils.GetEnableString(s.liveRecOscSingleCycle)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOscTuneChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      local StSample *s;
+      float tune = fp_osc_tune.getFloatValue();
+      foreach s in zones
+      {
+         s.liveRecOscTune = tune;
+      }
+
+      provideEdited();
+      int note = int(tune);
+      Float cents = tune - int(tune);
+      if(cents > 0.5)
+      {
+         note++;
+         cents = cents - 1.0;
+      }
+
+      if(null != s)
+      {
+         StWaveform wf <= s.waveform;
+         float hz = Audio.NoteToFreq(tune);
+         float cyclelen = (wf.sampleRate * s.sampleRateRatio) / hz;
+
+         Global.Print("Osc Ref Note is "+(MIDI.midi_notes.get(note))+((cents >= 0) ? "+" : "")+cents+" (cyclelen="+int(cyclelen)+") (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleModeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int mode = cm_mode.getSelectedOption();
+      foreach s in zones
+      {
+         s.liveRecMode = mode;
+      }
+
+      Audio.ResetAllSampleVoices(sample_sci);
+
+      provideEdited();
+      Global.Print("LiveRec Mode is "+cm_mode.getSelectedOptionName()+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleThresholdChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      Float th = fp_threshold.getFloatValue();
+      Float lvl =  Utils.DBToLevel(th);
+      foreach s in zones
+      {
+         s.liveRecThresholdOn = lvl;
+      }
+
+      provideEdited();
+      Global.Print("Threshold level is "+th.printf("%3.2f")+" dB ("+lvl.printf("%1.3f")+") (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOscResampleChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_resample.isSelected();
+      foreach s in zones
+      {
+         s.liveRecOscResample = bEnable;
+      }
+
+      provideEdited();
+      Global.Print("Oscillator-mode resampling is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTrig() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      foreach s in zones
+      {
+         s.startLiveRecording();
+      }
+
+      provideEdited();
+      Global.Print("Trigger LiveRec ("+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(cb_enable):
+            handleEnableChanged();
+            return true;
+
+         case @(cb_pause):
+            handlePauseChanged();
+            return true;
+
+         case @(cb_monitor):
+            handleMonitorChanged();
+            return true;
+
+         case @(fp_latency):
+            handleLatencyChanged();
+            return true;
+
+         case @(bt_freeze):
+            handleFreeze();
+            return true;
+
+         case @(bt_capture):
+            showCaptureDialog();
+            return true;
+
+         case @(cm_input):
+            handleInputChanged();
+            return true;
+
+         case @(cb_stereo):
+            handleStereoChanged();
+            return true;
+
+         case @(cb_sum):
+            handleEnableSumInputChanged();
+            return true;
+
+         case @(fp_sum):
+            handleSumInputXFadeChanged();
+            return true;
+
+         case @(fp_pan):
+            handleInputPanChanged();
+            return true;
+
+         case @(fp_loop):
+            handleLoopChanged();
+            return true;
+
+         case @(cb_copy):
+            handleCopyChanged();
+            return true;
+
+         case @(cb_clear):
+            handleClearChanged();
+            return true;
+
+         case @(cb_sustain):
+            handleSustainChanged();
+            return true;
+
+         case @(fp_osc_fade):
+            handleOscFadeAmtChanged();
+            return true;
+
+         case @(cm_doublebuffer_mode):
+            handleDoubleBufferModeChanged();
+            return true;
+
+         case @(cb_doublebuffer_xfade):
+            handleDoubleBufferXFadeChanged();
+            return true;
+
+         case @(cm_osc_mode):
+            handleOscModeChanged();
+            return true;
+
+         case @(cb_osc_singlecycle):
+            handleOscSingleCycleChanged();
+            return true;
+
+         case @(fp_osc_tune):
+            handleOscTuneChanged();
+            return true;
+
+         case @(cm_mode):
+            handleModeChanged();
+            return true;
+
+         case @(fp_threshold):
+            handleThresholdChanged();
+            return true;
+
+         case @(fp_osc_pre_filter):
+            handleOscPreFilterChanged();
+            return true;
+
+         case @(cb_resample):
+            handleOscResampleChanged();
+            return true;
+
+         case @(bt_trig):
+            handleTrig();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

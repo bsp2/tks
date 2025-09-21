@@ -1,0 +1,652 @@
+// ----
+// ---- file   : ModMatrixEntry.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 17Mar2018
+// ---- changed  18Mar2018, 26Mar2018, 27Mar2018, 02Jun2018, 03Jun2018, 09Dec2018, 17Jan2019
+// ----          26Aug2019, 15Oct2019, 26Dec2021, 04Oct2023, 24Sep2024, 21Jun2025
+// ----
+// ----
+// ----
+
+module MModMatrixEntry;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ModMatrixEntry {
+
+   define float INVALID_VALUE = -999999.0f;
+
+   define int NUM_MACROCTLS = 32;
+
+   define int SRC_MACROCTL     =  0;    // arg1 specifies ctl nr (0..NUM_MACROCTL-1)  [24Sep2024] removed (not editable in UI anymore)
+   define int SRC_NOTE_ON      =  1;
+   define int SRC_NOTE_ON_VEL  =  2;
+   define int SRC_NOTE_OFF     =  3;
+   define int SRC_NOTE_OFF_VEL =  4;
+   define int SRC_PRGCHG       =  5;
+   define int SRC_PITCHBEND    =  6;
+   define int SRC_PRESSURE     =  7;    // channel or poly aftertouch
+   define int SRC_CC           =  8;    // arg1 specifies CC nr (0..127)
+   define int SRC_RPN          =  9;    // arg1 specifies RPN (0..127(MAX_NRPN))
+   define int SRC_NRPN         = 10;    // arg1 specifies NRPN (0..127(MAX_NRPN))
+
+   // for srcIdx calculation:
+   define int MAX_NRPN         = 16384;  // (note) when this is changed, MIDIPipeFrame::modMatrixCheckEventByFlt() must be updated, too
+   define int OFF_MACROCTL     =  0;
+   define int OFF_NOTE_ON      = 32;
+   define int OFF_NOTE_ON_VEL  = 32;
+   define int OFF_NOTE_OFF     = 33;
+   define int OFF_NOTE_OFF_VEL = 33;
+   define int OFF_PRGCHG       = 34;
+   define int OFF_PITCHBEND    = 35;
+   define int OFF_PRESSURE     = 36;
+   define int OFF_CC           = 37;
+   define int OFF_RPN          = OFF_CC + 128/*MAX_CC*/;
+   define int OFF_NRPN         = OFF_RPN + MAX_NRPN;
+
+   define int TOTAL_NUM_SOURCES = OFF_NRPN + MAX_NRPN;  // => 420 src indices
+
+   static StringArray src_names_short = [
+      // // "MacroCtl",  // [24Sep2024] removed
+      "Note On",
+      "Note OnV",
+      "Note Off",
+      "Note OffV",
+      "Prg.Chg",
+      "Pitchbend",
+      "Pressure",
+      "CC",
+      "RPN",
+      "NRPN"
+                                   ];
+
+   static StringArray src_names_long = [
+      // // "MacroCtl (todo)",  // [24Sep2024] removed
+      "Note On",
+      "Note On Velocity",
+      "Note Off",
+      "Note Off Velocity",
+      "Prg.Chg",
+      "Pitchbend (14 bit)",
+      "Pressure (7 bit)",
+      "CC (7 bit)",
+      "RPN (14 bit)",
+      "NRPN (14 bit)"
+                                   ];
+
+   static StringArray macroctl_names = [
+      "Macro 1",
+      "Macro 2",
+      "Macro 3",
+      "Macro 4",
+      "Macro 5",
+      "Macro 6",
+      "Macro 7",
+      "Macro 8",
+      "Macro 9",
+      "Macro 10",
+      "Macro 11",
+      "Macro 12",
+      "Macro 13",
+      "Macro 14",
+      "Macro 15",
+      "Macro 16",
+      "Macro 17",
+      "Macro 18",
+      "Macro 19",
+      "Macro 20",
+      "Macro 21",
+      "Macro 22",
+      "Macro 23",
+      "Macro 24",
+      "Macro 25",
+      "Macro 26",
+      "Macro 27",
+      "Macro 28",
+      "Macro 29",
+      "Macro 30",
+      "Macro 31",
+      "Macro 32"
+                                        ];
+
+   boolean b_enable;
+   int     src;         // modulation source
+   int     arg1;        // macroctl idx or CC nr
+   int     param_idx;   // destination (VST2 parameter idx for ModVST2 instances)
+   float   value_min;   // 0..1 (absolute modulation) or -1..1 (relative modulation)
+   float   value_max;
+   float   amount;
+   boolean b_asym;      // only in relative mode. input 0..0.5 is scaled to min..0, 0.5..1 is scaled to 0..max.
+   boolean b_relative;  // entry will be ignored if mod does not support relative param modulation
+
+   int src_idx;  // calc'd depending on src and arg1. updated when either one of them is changed.
+
+   float last_ctl_value;  // last seen normalized controller value in 0..1 range, or INVALID_VALUE when unknown
+
+   // (todo) curve/LUT
+   static ModMatrixEntry *clipboard;
+
+   // assigned when grouped entries (MPE/LPC mirror mode) are created.
+   //  the id is used when mirror-editing multiple modmatrices.
+   //  it must be unique within one Mod
+   int gid;
+
+   BezierEditState input_mapper_env_state;
+   Envelope        input_mapper_env;
+   boolean         b_enable_input_mapper_env;
+
+
+   // <method_init.png>
+   public method init(int _gid) {
+      b_enable   = true;
+      src        = SRC_CC;
+      arg1       = 1;  // modwheel
+      param_idx  = 0;
+      value_min  = 0.0;
+      value_max  = 1.0;
+      amount     = 1.0;
+      b_asym     = false;
+      b_relative = false;
+      updateSrcIdx();
+      gid        = _gid;
+
+      last_ctl_value = INVALID_VALUE;
+
+      input_mapper_env_state         = CurveDialog.default_env_state;
+      input_mapper_env_state.scale_tbl_off_y = 7;
+      input_mapper_env.interpolation = ENV_LINEAR;
+      b_enable_input_mapper_env      = false;
+   }
+
+   // <method.png>
+   public method copyFrom(ModMatrixEntry _o) {
+      b_enable   = _o.b_enable;
+      src        = _o.src;
+      arg1       = _o.arg1;
+      param_idx  = _o.param_idx;
+      value_min  = _o.value_min;
+      value_max  = _o.value_max;
+      amount     = _o.amount;
+      b_asym     = _o.b_asym;
+      b_relative = _o.b_relative;
+
+      input_mapper_env_state    = _o.input_mapper_env_state;
+      input_mapper_env          = _o.input_mapper_env;
+      b_enable_input_mapper_env = _o.b_enable_input_mapper_env;
+
+      last_ctl_value = INVALID_VALUE;
+
+      updateSrcIdx();
+      // (note) don't copy gid
+   }
+
+   // <method.png>
+   public method copyFromClipboard() : boolean {
+      if(null != clipboard)
+      {
+         copyFrom(clipboard);
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method copyToClipboard() {
+      if(null == clipboard)
+      {
+         clipboard <= new ModMatrixEntry;
+      }
+
+      clipboard.copyFrom(this);
+   }
+
+   // <method_set.png>
+   public =replay= method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setSrc(int _src) {
+      src = _src;
+      updateSrcIdx();
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setArg1(int _arg1) {
+      arg1 = _arg1;
+      updateSrcIdx();
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getArg1OptionsShort() : StringArray {
+      switch(src)
+      {
+         default:
+         case ModMatrixEntry.SRC_NOTE_ON:
+         case ModMatrixEntry.SRC_NOTE_ON_VEL:
+         case ModMatrixEntry.SRC_NOTE_OFF:
+         case ModMatrixEntry.SRC_NOTE_OFF_VEL:
+         case ModMatrixEntry.SRC_PRGCHG:
+         case ModMatrixEntry.SRC_PITCHBEND:
+         case ModMatrixEntry.SRC_PRESSURE:
+            break;
+
+         case ModMatrixEntry.SRC_MACROCTL:
+            return ModMatrixEntry.macroctl_names;
+
+         case ModMatrixEntry.SRC_CC:
+            return MIDI.cc_names_very_short;
+
+         case ModMatrixEntry.SRC_RPN:
+         case ModMatrixEntry.SRC_NRPN:
+            break;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getArg1OptionsLong() : StringArray {
+      switch(src)
+      {
+         default:
+         case ModMatrixEntry.SRC_NOTE_ON:
+         case ModMatrixEntry.SRC_NOTE_ON_VEL:
+         case ModMatrixEntry.SRC_NOTE_OFF:
+         case ModMatrixEntry.SRC_NOTE_OFF_VEL:
+         case ModMatrixEntry.SRC_PRGCHG:
+         case ModMatrixEntry.SRC_PITCHBEND:
+         case ModMatrixEntry.SRC_PRESSURE:
+            break;
+
+         case ModMatrixEntry.SRC_MACROCTL:
+            return ModMatrixEntry.macroctl_names;
+
+         case ModMatrixEntry.SRC_CC:
+            return MIDI.cc_names;
+
+         case ModMatrixEntry.SRC_RPN:
+         case ModMatrixEntry.SRC_NRPN:
+            break;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getArg1String() : String {
+      switch(src)
+      {
+         default:
+         case ModMatrixEntry.SRC_NOTE_ON:
+         case ModMatrixEntry.SRC_NOTE_ON_VEL:
+         case ModMatrixEntry.SRC_NOTE_OFF:
+         case ModMatrixEntry.SRC_NOTE_OFF_VEL:
+         case ModMatrixEntry.SRC_PRGCHG:
+         case ModMatrixEntry.SRC_PITCHBEND:
+         case ModMatrixEntry.SRC_PRESSURE:
+            break;
+
+         case ModMatrixEntry.SRC_MACROCTL:
+         case ModMatrixEntry.SRC_CC:
+            StringArray arg1Options <= getArg1OptionsShort();
+            if(null != arg1Options)
+            {
+               return arg1Options.get(arg1);
+            }
+            return String(arg1);
+
+         case ModMatrixEntry.SRC_RPN:
+            if(Mod.RPN_CTL_BASE <= arg1 < (Mod.RPN_CTL_BASE + Mod.RPN_CTL_NUM))
+               return "Ctl "+(arg1 - Mod.RPN_CTL_BASE + 1);
+            else
+            return String(arg1);
+
+         case ModMatrixEntry.SRC_NRPN:
+            return String(arg1);
+      }
+      return "-";
+   }
+
+   // <method_set.png>
+   public =replay= method setParamIdx(int _paramIdx) {
+      param_idx = _paramIdx;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setValueMin(float _v) {
+      value_min = _v;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setValueMax(float _v) {
+      value_max = _v;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setAmount(float _v) {
+      amount = _v;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableAsym(boolean _bEnable) {
+      b_asym = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRelative(boolean _bEnable) {
+      b_relative = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableInputMapperEnv(boolean _bEnable) {
+      b_enable_input_mapper_env = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_update.png>
+   protected method updateSrcIdx() {
+      switch(src)
+      {
+         case SRC_MACROCTL:
+         default:
+            src_idx = OFF_MACROCTL + (arg1 % NUM_MACROCTLS);
+            break;
+
+         case SRC_NOTE_ON:
+            src_idx = OFF_NOTE_ON;
+            break;
+
+         case SRC_NOTE_ON_VEL:
+            src_idx = OFF_NOTE_ON_VEL;
+            break;
+
+         case SRC_NOTE_OFF:
+            src_idx = OFF_NOTE_OFF;
+            break;
+
+         case SRC_NOTE_OFF_VEL:
+            src_idx = OFF_NOTE_OFF_VEL;
+            break;
+
+         case SRC_PRGCHG:
+            src_idx = OFF_PRGCHG;
+            break;
+
+         case SRC_PITCHBEND:
+            src_idx = OFF_PITCHBEND;
+            break;
+
+         case SRC_PRESSURE:
+            src_idx = OFF_PRESSURE;
+            break;
+
+         case SRC_CC:
+            src_idx = OFF_CC + (arg1 & 127);
+            break;
+
+         case SRC_RPN:
+            src_idx = OFF_RPN + (arg1 & 16383);
+            break;
+
+         case SRC_NRPN:
+            src_idx = OFF_NRPN + (arg1 & 16383);
+            break;
+      }
+   }
+
+   // <method.png>
+   public method pickValue(int _srcIdx, float _val, float _vel) : float {
+      switch(src_idx)
+      {
+         default:
+            return _val;
+
+         case OFF_NOTE_ON_VEL:
+         case OFF_NOTE_OFF_VEL:
+            // trace "xxx pickValue vel="+_vel;
+            return _vel;
+      }
+   }
+
+   // <method.png>
+   public =replay= method unmapParamValToCtl(float _paramVal, float _paramValRelBase) : float {
+      float r = 0.0f;
+
+      if(b_relative)
+      {
+         // -1..1
+         r = (_paramVal - _paramValRelBase);
+
+         if(b_asym)
+         {
+            if(r < 0.0)
+            {
+               r = -r / value_min;
+            }
+            else
+            {
+               r = r / value_max;
+            }
+         }
+         else
+         {
+            r = (r - value_min) / (value_max - value_min);
+         }
+
+         r = mathClampf(r, -1, 1);
+         r = r * 0.5 + 0.5;
+      }
+      else
+      {
+         // 0..1
+         r = (_paramVal - value_min) / (value_max - value_min);
+         r = mathClampf(r, 0, 1);
+      }
+
+      // trace "xxx ModMatrixEntry::unmapParamValToCtl: paramVal="+_paramVal+" r="+r;
+
+      if(b_enable_input_mapper_env)
+      {
+         // Find closest envelope value
+         //  (note) brute-force search
+         //  (todo)   use valueAtTime() instead ?!
+         float t = 0;
+         float bestT = 0;
+         float bestDist = 9999;
+         loop(256)
+         {
+            input_mapper_env.time = t;
+            float mv = input_mapper_env.get();
+            mv = mathPowerf(mv, input_mapper_env_state.out_exponent);
+            mv = abs(mv - r);
+            if(mv < bestDist)
+            {
+               bestT = t;
+               bestDist = mv;
+            }
+            t += (1.0 / 256);
+         }
+         // trace "xxx ModMatrixEntry::unmapParamValToCtl: r="+r+" bestT="+bestT;
+         r = bestT;
+      }
+
+      // Map to controller value range
+      switch(src)
+      {
+         default:
+            r = 0;
+            break;
+
+         case SRC_PRGCHG:
+         case SRC_NOTE_ON_VEL:
+         case SRC_NOTE_OFF_VEL:
+         case SRC_PRESSURE:
+         case SRC_CC:
+            r = r * 127;
+            break;
+
+         case SRC_PRGCHG:
+         case SRC_CC:
+            r = r * 127;
+            break;
+
+         case SRC_PITCHBEND:
+         case SRC_RPN:
+         case SRC_NRPN:
+            r = r * 16383;
+            break;
+      }
+
+      return r;
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) {
+      // Version
+      _ofs.i16 = 8;
+
+      // GID (v4+)
+      _ofs.i32 = gid;
+      // // trace "xxx mme: save gid="+gid;
+
+      // Enable
+      _ofs.i8 = b_enable;
+
+      // Source
+      _ofs.i8 = src;
+
+      // Arg1 (note or CC nr)
+      _ofs.i16 = arg1;  // 8bit in v5
+
+      // Destination param idx
+      _ofs.i32 = param_idx;
+
+      // Minimum value
+      _ofs.f32 = value_min;
+
+      // Maximum value
+      _ofs.f32 = value_max;
+
+      // Amount (v2+)
+      _ofs.f32 = amount;
+
+      // Asymmetric modulation (v3+)
+      _ofs.i8 = b_asym;
+
+      // Relative modulation flag
+      _ofs.i8 = b_relative;
+
+      // Input mapper (v5+)
+      _ofs.i8 = b_enable_input_mapper_env;
+      _ofs << input_mapper_env_state;
+      Utils.WriteEnvelope(_ofs, input_mapper_env);
+
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs) : boolean {
+      boolean r = false;
+
+      // Version
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         if(ver >= 4)
+         {
+            // GID (v4+)
+            gid = _ifs.i32;
+            // // trace "xxx mme: load gid="+gid;
+         }
+
+         // Enable
+         b_enable = _ifs.b8;
+
+         // Source
+         if(6 == ver)
+         {
+            src = _ifs.u16;
+         }
+         else
+         {
+            src = _ifs.u8;
+         }
+
+         // Arg1 (note or CC nr)
+         if(ver >= 7)
+         {
+            arg1 = _ifs.u16;
+         }
+         else
+         {
+            arg1 = _ifs.u8;
+         }
+
+         // Destination param idx
+         param_idx = _ifs.i32;
+
+         // Minimum value
+         value_min = _ifs.f32;
+
+         // Maximum value
+         value_max = _ifs.f32;
+
+         if(ver >= 2)
+         {
+            // Amount (v2+)
+            amount = _ifs.f32;
+         }
+
+         if(ver >= 3)
+         {
+            // Asymmetric modulation (v3+)
+            b_asym = _ifs.b8;
+         }
+
+         // Relative modulation flag
+         b_relative = _ifs.b8;
+
+         if(ver >= 5)
+         {
+            // Input mapper (v5+)
+            b_enable_input_mapper_env = _ifs.b8;
+            input_mapper_env_state << _ifs;
+            if(!Utils.ReadEnvelope(_ifs, input_mapper_env))
+            {
+               trace "[---] ModMatrixEntry::loadState: failed to read input_mapper_env";
+               return false;
+            }
+            if(ver <= 7)
+               input_mapper_env_state.scale_tbl_off_y = 7;
+         }
+
+         updateSrcIdx();
+
+         r = true;
+      }
+      else
+      {
+         trace "[---] ModMatrixEntry::loadState: invalid ver="+ver;
+      }
+
+      return r;
+   }
+
+}

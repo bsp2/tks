@@ -1,0 +1,281 @@
+// ----
+// ---- file   : LevelIndicator.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 23Feb2018
+// ---- changed: 24Feb2018, 21Jul2018, 05Dec2018, 10Jan2022, 08Apr2022, 29Jul2023, 16Nov2023
+// ----          24Mar2024, 19Sep2024, 23Dec2024
+// ----
+// ----
+// ----
+
+module MLevelIndicator;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class LevelIndicator : Panel, Control {  // (note) the order of inheritance matters (provideAction())
+
+   define String ACTION_DPYMODE;
+
+   define int REDZONE_TIMEOUT = 10;
+
+   protected float avg_l;
+   protected float avg_r;
+
+   protected float peak_l;
+   protected float peak_r;
+
+   protected int redzone_timeout_l;
+   protected int redzone_timeout_r;
+
+   protected Font *font;
+
+   define int DPY_LEVEL     = 0;
+   define int DPY_DB        = 1;
+   define int DPY_DB_TEXT   = 2;
+   define int NUM_DPY_MODES = 3;
+   namespace int dpy_mode;
+
+   static StringArray dpy_mode_names = [
+      "Level", "dBFS", "dB Text"
+                                        ];
+
+
+   // <ui_init.png>
+   public method initLevelIndicator() {
+      initPanel();
+      initControl();
+      setEnableCollapse(true);
+      dpy_mode = DPY_DB;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_DPYMODE];
+   }
+
+   // <method_set.png>
+   public method setDpyMode(int _mode) {
+      dpy_mode = _mode;
+
+      if(DPY_DB_TEXT == dpy_mode)
+      {
+         if(null == font)
+         {
+            font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         }
+      }
+   }
+
+   // <method_set.png>
+   public method setSmpLR(float _peakL, float _peakR, float _avgL, float _avgR) {
+
+      // Called periodically (~30 times per second)
+
+      redraw();
+
+      avg_l = _avgL;
+      avg_r = _avgL;
+
+      peak_l = _peakL;
+      peak_r = _peakL;
+   }
+
+   // <method.png>
+   protected method cycleDpyMode() {
+      setDpyMode((dpy_mode + 1) % NUM_DPY_MODES);
+      // (note) -23 LUFS in EBU R128 roughly equal -24dBFS
+      Global.Print("Display mode is \""+dpy_mode_names.get(dpy_mode)+"\"");
+
+      provideAction(Action.New(getProvidedActionAlias(ACTION_DPYMODE), this));
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      float w = getSizeX();
+      float h = getSizeY();
+
+      UIRenderer.DrawDefaultBackground(0, 0, w, h);
+
+      float iw = w - 4*2;
+      float ih = h - 4*2;
+
+      float bh = (ih-1)*0.5;
+      float yl = 4;
+      float yr = 4 + bh + 1;
+
+      int c32;
+
+      if(DPY_DB_TEXT == dpy_mode)
+      {
+         Float dbMax = Utils.LevelToDB(mathMaxf(peak_l, peak_r));
+         if(dbMax >= -95)
+         {
+            c32 = app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_DB_TEXT_FG);
+            // trace "xxx LevelIndicator: dbMax="+dbMax+" font.size="+font.getSize()+" height="+font.getHeight();
+            UIRenderer.DrawText(dbMax.printf("%3.2f"), font, c32, c32, 4, yl, 0/*availW*/, 0/*align*/);
+         }
+      }
+      else
+      {
+         if(peak_l >= 1.0f)
+            redzone_timeout_l = REDZONE_TIMEOUT;
+         else
+            redzone_timeout_l = mathMaxi(0, redzone_timeout_l - 1);
+
+         if(peak_r >= 1.0f)
+            redzone_timeout_r = REDZONE_TIMEOUT;
+         else
+            redzone_timeout_r = mathMaxi(0, redzone_timeout_r - 1);
+
+         int c32R = app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_RED);
+         int c32Y = app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_YELLOW);
+         // // int c32G = app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_GREEN);
+         int c32Gl = (redzone_timeout_l > 0) ? app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_GREEN_CLIP) : app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_GREEN);
+         int c32Gr = (redzone_timeout_r > 0) ? app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_GREEN_CLIP) : app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_GREEN);
+
+         float redAmt;
+
+         if(DPY_DB == dpy_mode)
+         {
+            float yellowAmt = Utils.DBToRel(-23/*dBFS, ~EBU R128*/);
+
+            redAmt = Utils.DBToRel(-9/*dBFS / QPPM*/);
+
+            // Draw bg (red area >= -23db)
+            UIRenderer.DrawFilledRectangle(4, yl, iw * yellowAmt, bh, c32Gl);
+            UIRenderer.DrawFilledRectangle(4 + iw*yellowAmt, yl, iw*(redAmt - yellowAmt), bh, c32Y);
+            UIRenderer.DrawFilledRectangle(4 + iw*redAmt, yl, (iw - iw*redAmt), bh, c32R);
+
+            UIRenderer.DrawFilledRectangle(4, yr, iw * yellowAmt, bh, c32Gr);
+            UIRenderer.DrawFilledRectangle(4 + iw*yellowAmt, yr, iw*(redAmt - yellowAmt), bh, c32Y);
+            UIRenderer.DrawFilledRectangle(4 + iw*redAmt, yr, (iw - iw*redAmt), bh, c32R);
+         }
+         else
+         {
+            redAmt = 0.707/*-3dB*/;
+
+            // Draw bg (red area >= -3db)
+            UIRenderer.DrawFilledRectangle(4, yl, iw * redAmt, bh, c32Gl);
+            UIRenderer.DrawFilledRectangle(4 + iw*redAmt, yl, (iw - iw*redAmt), bh, c32R);
+
+            UIRenderer.DrawFilledRectangle(4, yr, iw * redAmt, bh, c32Gr);
+            UIRenderer.DrawFilledRectangle(4 + iw*redAmt, yr, (iw - iw*redAmt), bh, c32R);
+         }
+
+         // Draw current level (inverse)
+         int c32dk = app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_NOT_CUR_BG);
+         UIRenderer.EnableBlending();
+
+         // L
+         float levelW = mathMinf(avg_l, 1.0);
+         if(DPY_DB == dpy_mode)
+            levelW = Utils.LevelToDBRel(levelW) * iw;
+         else
+            levelW = levelW * iw;
+         UIRenderer.DrawFilledRectangle(4 + levelW, yl, (iw - levelW), bh, c32dk);
+
+         // R
+         levelW = mathMinf(avg_r, 1.0);
+         if(DPY_DB == dpy_mode)
+            levelW = Utils.LevelToDBRel(levelW) * iw;
+         else
+            levelW = levelW * iw;
+         UIRenderer.DrawFilledRectangle(4 + levelW, yr, (iw - levelW), bh, c32dk);
+
+         // Draw peaks
+         int c32pk = app_lnf.getColor(AppLookAndFeel.COLOR_LEVELINDICATOR_PEAK_FG);
+         float pkx;
+
+         float peakL = mathMinf(peak_l, 1.0f);
+         float peakR = mathMinf(peak_r, 1.0f);
+
+         if(peak_l > 0.01)
+         {
+            if(DPY_DB == dpy_mode)
+               pkx = iw * Utils.LevelToDBRel(peakL);
+            else
+               pkx = iw * peak_l;
+            UIRenderer.DrawLine(4 + pkx, yl, 4+pkx, yl+bh, c32pk);
+         }
+         if(peak_r > 0.01)
+         {
+            if(DPY_DB == dpy_mode)
+               pkx = iw * Utils.LevelToDBRel(peakR);
+            else
+               pkx = iw * peak_r;
+            UIRenderer.DrawLine(4 + pkx, yr, 4+pkx, yr+bh, c32pk);
+         }
+
+         UIRenderer.DisableBlending();
+      }
+
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, w, h);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         Float dbL = Utils.LevelToDB(peak_l);
+         Float dbR = Utils.LevelToDB(peak_r);
+         Global.Print("Peak  L="+dbL.printf("%3.2f")+"dB  R="+dbR.printf("%3.2f")+"dB");
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      cycleDpyMode();
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _startEv) : boolean {
+      cycleDpyMode();
+      return true;
+   }
+
+   // <ui_xfm.png>
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initLevelIndicator();
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "smallfont":
+                  if( (0 != int(atval)) ||
+                      (UI.IsHiDPI() && ("hidpi"==atval)) ||
+                      (UI.IsLoDPI() && ("lodpi"==atval))
+                      )
+                     font <= UI.GetFontByName(UI.IsHiDPI()
+                                              ? UIConstants.DEFAULT_FONT_NAME_LABEL_SMALL_HIDPI
+                                              : UIConstants.DEFAULT_FONT_NAME_LABEL_SMALL_LODPI
+                                              );
+                  else
+                     font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+                  break;
+            }
+         }
+
+         return true;
+      }
+   }
+
+}

@@ -1,0 +1,2324 @@
+// ----
+// ---- file   : SamplePadForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 01Jul2022
+// ---- changed: 02Jul2022, 03Jul2022, 04Jul2022, 08Jul2022, 09Jul2022, 10Jul2022, 17Jul2022
+// ----          22Jul2022, 14Jun2023, 21Sep2023, 04Nov2023, 19Jan2024, 22Mar2024, 05Jul2024
+// ----          13Sep2024, 14Sep2024, 30Dec2024, 09Jan2025, 21Mar2025, 22Mar2025, 23Mar2025
+// ----          10Jun2025
+// ----
+// ----
+// ----
+
+module MSamplePadForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePadForm : XMLForm, ActionProvider {
+
+   define String TA_MIDI_FOLLOW;
+   protected TimerAction *ta_midi_follow;
+
+   Track *parent_track;
+   SamplePadKit *sample_pad_kit;
+
+   protected TextField *tf_kit_name;
+   protected String     tf_kit_name_tooltipcaption;
+   protected Button    *bt_load;
+   protected Button    *bt_save;
+
+   protected TextField *tf_kit_info;
+
+   protected ComboField *cf_kit_nsp;
+   protected String      bt_nsp_from_kit_tooltipcaption;
+   protected Button     *bt_nsp_from_kit;
+   protected Button     *bt_kit_nsp_to_pads;
+
+   protected ComboBox    *cm_layout;
+   protected LayerSwitch *ls_layout;
+   protected CheckBox    *cb_bank_b;
+   protected Button      *bt_tools;
+   protected PopupMenu   *pm_tools;
+   protected ComboField  *cf_variation;
+   protected CheckBox    *cb_perf_ctl_only;
+   protected ComboBox    *cm_var_base_note;
+   protected CheckBox    *cb_midi_follow;
+
+   protected ComboField *cf_nsp;
+   protected Button     *bt_nsp_from_smp;
+
+   protected ComboBox   *cm_sample;
+   protected Button     *bt_smp_edit;
+
+   protected ComboBox   *cm_root_key;
+   protected ComboBox   *cm_link_group;
+   protected ComboBox   *cm_mutex_group;
+
+   protected IntArray sample_options;  // sample indices
+
+   protected LayerSwitch *ls_bank_b0_a;
+   protected LayerSwitch *ls_bank_b0_pads;
+
+   protected LayerSwitch *ls_bank_b1_a;
+   protected LayerSwitch *ls_bank_b1_pads;
+
+   protected LayerSwitch *ls_bank_b2_a;
+   protected LayerSwitch *ls_bank_b2_pads;
+
+   protected LayerSwitch *ls_bank_b4_a;
+   protected LayerSwitch *ls_bank_b4_pads;
+
+   protected SamplePadButton*[] pad_buttons_8x2_a;   // 16 button refs
+   protected SamplePadButton*[] pad_buttons_8x2_b;   // 16 button refs
+   protected SamplePadButton*[] pad_buttons_4x4_a;   // 16 button refs
+   protected SamplePadButton*[] pad_buttons_4x4_b;   // 16 button refs
+   protected SamplePadButton*[] pad_buttons_3x4_a;   // 12 button refs
+   protected SamplePadButton*[] pad_buttons_3x4_b;   // 12 button refs
+   protected SamplePadButton*[] pad_buttons_4x3;     // 12 button refs
+   protected SamplePadButton*[] pad_buttons_4x2_a;   //  8 button refs
+   protected SamplePadButton*[] pad_buttons_4x2_b;   //  8 button refs
+
+   protected SamplePadButton*[] pad_buttons;   //  current buttons
+
+   protected Dial *[] lane_send_level_dials;
+   protected Dial *[] lane_send_pan_dials;
+
+   protected Button     *bt_var_perf_mw;
+   protected FloatParam *fp_var_perf_mw;
+   protected CheckBox   *cb_var_perf_bipolar_mw;
+   protected Button     *bt_var_perf_bc;
+   protected FloatParam *fp_var_perf_bc;
+   protected CheckBox   *cb_var_perf_bipolar_bc;
+   protected Button     *bt_var_perf_fc;
+   protected FloatParam *fp_var_perf_fc;
+   protected CheckBox   *cb_var_perf_bipolar_fc;
+   protected Button     *bt_var_perf_ex;
+   protected FloatParam *fp_var_perf_ex;
+   protected CheckBox   *cb_var_perf_bipolar_ex;
+   protected Button     *bt_var_perf_gp1;
+   protected FloatParam *fp_var_perf_gp1;
+   protected CheckBox   *cb_var_perf_bipolar_gp1;
+   protected Button     *bt_var_perf_gp2;
+   protected FloatParam *fp_var_perf_gp2;
+   protected CheckBox   *cb_var_perf_bipolar_gp2;
+   protected Button     *bt_var_perf_gp3;
+   protected FloatParam *fp_var_perf_gp3;
+   protected CheckBox   *cb_var_perf_bipolar_gp3;
+   protected Button     *bt_var_perf_gp4;
+   protected FloatParam *fp_var_perf_gp4;
+   protected CheckBox   *cb_var_perf_bipolar_gp4;
+   protected CheckBox   *cb_var_perfctl;
+
+   protected FloatParam *fp_var_pad_slew;
+
+   protected boolean b_consolidate_save;  // temporary during handleConsolidateSamples*(). 1=save samples + kit  0=project only
+
+   static SamplePad             *clipboard_pad;
+   static SamplePadCommon       *clipboard_pad_common;
+   static SamplePadKitVariation *clipboard_kit_variation;
+   static SamplePadKit          *clipboard_kit;
+
+   static Dialog_OverwriteSamplePadKit dialog_overwrite_samplepadkit;
+   static SamplePadPresetDialog *dlg_samplepad_preset;
+
+
+   // <init.png>
+   public method initSamplePadForm() : boolean {
+
+      if(!initPakFile("SamplePadForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      tf_kit_name_tooltipcaption = tf_kit_name.getToolTipCaption();
+      bt_nsp_from_kit_tooltipcaption = bt_nsp_from_kit.getToolTipCaption();
+
+      float btW = 48;
+      float btH = 37;
+
+      String sCaptionSizeReserve <= "NOISE";
+
+      // Resolve 8x2 and 4x4 buttons
+      int btIdx = 0;
+      SamplePadButton *bt;
+      loop(16)
+      {
+         bt <= findLayerById("bt_8x2_a_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_8x2_a.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_8x2_a.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_8x2_a.add(bt);
+
+         bt <= findLayerById("bt_8x2_b_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_8x2_b.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_8x2_b.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_8x2_b.add(bt);
+
+         bt <= findLayerById("bt_4x4_a_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_4x4_a.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_4x4_a.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_4x4_a.add(bt);
+
+         bt <= findLayerById("bt_4x4_b_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_4x4_b.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_4x4_b.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_4x4_b.add(bt);
+
+         btIdx++;
+      }
+
+      // Resolve 3x4 and 4x3 buttons
+      btIdx = 0;
+      loop(12)
+      {
+         bt <= findLayerById("bt_3x4_a_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_3x4_a.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_3x4_a.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_3x4_a.add(bt);
+
+         bt <= findLayerById("bt_3x4_b_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_3x4_b.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_3x4_b.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_3x4_b.add(bt);
+
+         bt <= findLayerById("bt_4x3_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_4x3.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_4x3.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_4x3.add(bt);
+
+         btIdx++;
+      }
+
+      // Resolve 4x2 buttons
+      btIdx = 0;
+      loop(8)
+      {
+         bt <= findLayerById("bt_4x2_a_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_4x2_a.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_4x2_a.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_4x2_a.add(bt);
+
+         bt <= findLayerById("bt_4x2_b_"+btIdx);
+         bt.parent_form <= this;
+         bt.setCaptionSizeReserve(sCaptionSizeReserve);
+         bt.pad_idx = STConfig.drum_pad_indices_4x2_b.get(btIdx);
+         bt.setCaption(STConfig.drum_pad_names.get(bt.pad_idx));
+         bt.note_nr = STConfig.drum_pad_notes_4x2_b.get(btIdx);
+         bt.setEnableKbdFocusOnMouse(false);
+         bt.setRequiredSize2fScaled(btW, btH);
+         pad_buttons_4x2_b.add(bt);
+
+         btIdx++;
+      }
+
+      // Resolve lane send dials
+      int sendIdx = 0;
+      loop(SamplePadCommon.NUM_LANE_SENDS)
+      {
+         Dial dl <= findLayerById("dl_send"+(sendIdx+1)+"_level");
+         // // dl.setEnableKbdFocusOnMouse(false);
+         lane_send_level_dials.add(dl);
+         dl <= findLayerById("dl_send"+(sendIdx+1)+"_pan");
+         // // dl.setEnableKbdFocusOnMouse(false);
+         lane_send_pan_dials.add(dl);
+
+         sendIdx++;
+      }
+
+      cm_var_base_note.setOptions(MIDI.midi_notes);
+
+      local StringArray optRootKey = MIDI.midi_notes;
+      optRootKey.insert(0, "chro");
+      cm_root_key.setOptions(optRootKey);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      fp_var_pad_slew.setPresetOptions([0.0, 0.9,             0.99,             0.999,          0.9999],
+                                       ["-", "Fast (~0.25s)", "Medium (~1.5s)", "Slow (~5sec)", "Very slow"]
+                                       );
+
+      updatePadEditMode();
+
+      ta_midi_follow <= TimerAction.New(TA_MIDI_FOLLOW, this, 150);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.add(tf_kit_name);
+      layers.add(bt_load);
+      layers.add(bt_save);
+
+      layers.add(tf_kit_info);
+
+      layers.add(cf_kit_nsp);
+      layers.add(bt_nsp_from_kit);
+      layers.add(bt_kit_nsp_to_pads);
+      layers.add(cb_midi_follow);
+
+      layers.add(cm_layout);
+      layers.add(cb_bank_b);
+      layers.add(bt_tools);
+      layers.add(cf_variation);
+      layers.add(cb_perf_ctl_only);
+      layers.add(cm_var_base_note);
+
+      switch(cm_layout.getSelectedOption())
+      {
+         case 0: // 8x2
+            layers.joinRR(layers, pad_buttons_8x2_a);
+            if(sample_pad_kit.b_show_bank_b)
+               layers.joinRR(layers, pad_buttons_8x2_b);
+            break;
+
+         case 1: // 4x4
+            layers.joinRR(layers, pad_buttons_4x4_a);
+            if(sample_pad_kit.b_show_bank_b)
+               layers.joinRR(layers, pad_buttons_4x4_b);
+            break;
+
+         case 2: // 3x4
+            layers.joinRR(layers, pad_buttons_3x4_a);
+            if(sample_pad_kit.b_show_bank_b)
+               layers.joinRR(layers, pad_buttons_3x4_b);
+            break;
+
+         case 3: // 4x3
+            layers.joinRR(layers, pad_buttons_4x3);
+            break;
+
+         case 4: // 4x2
+            layers.joinRR(layers, pad_buttons_4x2_a);
+            if(sample_pad_kit.b_show_bank_b)
+               layers.joinRR(layers, pad_buttons_4x2_b);
+            break;
+      }
+
+      layers.add(cf_nsp);
+      layers.add(bt_nsp_from_smp);
+
+      layers.add(cm_sample);
+      layers.add(bt_smp_edit);
+
+      layers.add(cm_root_key);
+      layers.add(cm_link_group);
+      layers.add(cm_mutex_group);
+
+      layers.joinRR(layers, lane_send_level_dials);
+      layers.joinRR(layers, lane_send_pan_dials);
+
+      layers.joinRR(layers, [cb_var_perfctl,
+                             bt_var_perf_mw,
+                             fp_var_perf_mw,
+                             cb_var_perf_bipolar_mw,
+                             bt_var_perf_bc,
+                             fp_var_perf_bc,
+                             cb_var_perf_bipolar_bc,
+                             bt_var_perf_fc,
+                             fp_var_perf_fc,
+                             cb_var_perf_bipolar_fc,
+                             bt_var_perf_ex,
+                             fp_var_perf_ex,
+                             cb_var_perf_bipolar_ex,
+                             bt_var_perf_gp1,
+                             fp_var_perf_gp1,
+                             cb_var_perf_bipolar_gp1,
+                             bt_var_perf_gp2,
+                             fp_var_perf_gp2,
+                             cb_var_perf_bipolar_gp2,
+                             bt_var_perf_gp3,
+                             fp_var_perf_gp3,
+                             cb_var_perf_bipolar_gp3,
+                             bt_var_perf_gp4,
+                             fp_var_perf_gp4,
+                             cb_var_perf_bipolar_gp4,
+                             ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_show.png>
+   public method showTrack(Track _track) {
+      parent_track <= _track;
+      sample_pad_kit <= parent_track.sample_pad_kit;
+
+      cm_layout.setSelectedOption(sample_pad_kit.layout);
+      highlightPads();
+      updatePadMuteSolo();
+
+      updateVariationOptions();
+      cf_variation.setSelectedOption(sample_pad_kit.edit_variation_idx);
+
+      cm_var_base_note.setSelectedOption(sample_pad_kit.var_base_note);
+
+      updateNamespaceOptions();
+      updateSampleOptions();
+
+      cf_kit_nsp.setSelectedOption(sample_pad_kit.default_namespace_idx);
+      updateKitLazyCreateNamespaceToolTip();
+
+      updatePadWidgets();
+      updateLaneSendWidgets();
+      updateInitialPerfCtl();       // per-variation
+      updatePerfCtlBipolarFlags();  // per-kit
+
+      cb_bank_b.setSelected(sample_pad_kit.b_show_bank_b);
+      handleBankBChanged(true/*bQuiet*/);
+
+      handleLayoutChanged(true/*bQuiet*/);
+
+      tf_kit_name.setText(sample_pad_kit.name);
+      updateKitToolTip();
+
+      tf_kit_info.setText(sample_pad_kit.info);
+
+      cb_midi_follow.setSelected(STConfig.b_sample_pad_midi_follow);
+      ta_midi_follow.reschedule();
+
+      updateConsolidateToolTip(bt_save, true/*bSave*/);
+   }
+
+   // <ui_hide.png>
+   public method leaveForm() {
+      ta_midi_follow.cancel();
+   }
+
+   // <method_get.png>
+   protected method getRepositoryPath() : String {
+      return Utils.ToNativePathName(STConfig.sample_rootpath+"/"+STConfig.sample_userpath+"/"+STConfig.sample_pad_drumkit_folder_name+"/"+sample_pad_kit.name+"/");
+   }
+
+   // <method_get.png>
+   protected method getRelativeRepositoryPath() : String {
+      return Utils.ToNativePathName("/"+STConfig.sample_userpath+"/"+STConfig.sample_pad_drumkit_folder_name+"/"+sample_pad_kit.name+"/");
+   }
+
+   // <ui_update.png>
+   protected method updateKitLazyCreateNamespaceToolTip() {
+      local String kitToolTip = bt_nsp_from_kit_tooltipcaption;
+      local String nspName = STConfig.sample_pad_default_namespace+":"+sample_pad_kit.name;  // e.g. dk:808
+      kitToolTip.replace("$NSP", nspName);
+      bt_nsp_from_kit.setToolTipCaption(kitToolTip);
+   }
+
+   // <ui_update.png>
+   protected method updateKitToolTip() {
+      local String kitToolTip = tf_kit_name_tooltipcaption;
+      kitToolTip.replace("$PATH", getRepositoryPath());
+      tf_kit_name.setToolTipCaption(kitToolTip);
+   }
+
+   // <ui_handle.png>
+   protected method handleLayoutChanged(boolean _bQuiet) {
+
+      boolean bLayoutChanged = (sample_pad_kit.layout != cm_layout.getSelectedOption());
+
+      sample_pad_kit.setLayout(cm_layout.getSelectedOption());
+
+      findPadButtons();
+
+      ls_layout.switchToLayerNr(sample_pad_kit.layout);
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(bLayoutChanged)
+      {
+         UI.LayoutRootLayer();
+         UI.RedrawAll();
+      }
+
+      if(!_bQuiet)
+      {
+         current_project.markAsModified();
+         Global.Print("Layout is \""+cm_layout.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleBankBChanged(boolean _bQuiet) {
+      sample_pad_kit.b_show_bank_b = cb_bank_b.isSelected();
+
+      LayerSwitch *ls;
+      foreach ls in [ls_bank_b0_a, ls_bank_b0_pads,
+                     ls_bank_b1_a, ls_bank_b1_pads,
+                     ls_bank_b2_a, ls_bank_b2_pads,
+                     ls_bank_b4_a, ls_bank_b4_pads
+                     ]
+      {
+         ls.switchToLayerNr(sample_pad_kit.b_show_bank_b);
+      }
+
+      findPadButtons();
+      updatePadMuteSolo();
+
+      if(!_bQuiet)
+      {
+         UI.LayoutRootLayer();
+         UI.RedrawAll();
+         current_project.markAsModified();
+      }
+
+      if(!_bQuiet)
+         Global.Print( (sample_pad_kit.b_show_bank_b ? "Show" : "Hide") + " bank B pads");
+   }
+
+   // <ui_update.png>
+   protected method updateConsolidateToolTip(Layer _l, boolean _bSave) {
+      local String sToolTip = "Consolidate "+(_bSave?"and save samples ":"samples (but do not save to global drum kit repository)")+"\n\n (note) - create unique samples (rename or duplicate)\n (note) - store original unique sample name in description\n (note) - assign default namespace (\"$NSP\")";
+      sToolTip.replace("$NSP", current_project.getSampleNamespaceNameByIdx(sample_pad_kit.default_namespace_idx));
+      if(_bSave)
+      {
+         sToolTip.append("\n (note) - save to sample repository (\"$PATH\")\n\n (note) samples will also be saved to project folder");
+         sToolTip.replace("$PATH", getRepositoryPath());
+      }
+      _l.setToolTipCaption(sToolTip);
+   }
+
+   // <ui_show.png>
+   public method showToolsMenu() {
+      pm_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      pmb <= pm.addDefaultButton("Group samples", "group_samples");
+      pmb.setToolTipCaption("Group drumkit samples in global sample list\n\n (note) starting with first / main variation and first pad (BD)");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Copy Pad", "copy_pad");
+      pmb <= pm.addDefaultButton("Copy Pad Common", "copy_pad_common");
+      pmb <= pm.addDefaultButton("Copy Kit Variation", "copy_kit_variation");
+      pmb <= pm.addDefaultButton("Copy Kit", "copy_kit");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Paste Pad", "paste_pad");
+      pmb.setActive(null != clipboard_pad);
+      pmb <= pm.addDefaultButton("Paste Pad (keep sends)", "paste_pad_keep_sends");
+      pmb.setActive(null != clipboard_pad);
+      pmb <= pm.addDefaultButton("Paste Pad Common", "paste_pad_common");
+      pmb.setActive(null != clipboard_pad_common);
+      pmb <= pm.addDefaultButton("Paste Kit Variation", "paste_kit_variation");
+      pmb.setActive(null != clipboard_kit_variation);
+      pmb <= pm.addDefaultButton("Paste Kit Variation (keep sends)", "paste_kit_variation_keep_sends");
+      pmb.setActive(null != clipboard_kit_variation);
+      pmb <= pm.addDefaultButton("Paste Kit", "paste_kit");
+      pmb.setActive(null != clipboard_kit);
+
+      pm.addSeparator();
+      pmb <= pm.addCheckButton("Keep original sample names", STConfig.b_sample_pad_consolidate_keep_names, "consolidate_keep_names");
+      pmb.setToolTipCaption("see STConfig.b_sample_pad_consolidate_keep_names");
+
+      pmb <= pm.addCheckButton("Auto-duplicate all sample refs", STConfig.b_sample_pad_consolidate_autoduplicate_all_refs, "consolidate_autoduplicate");
+      pmb.setToolTipCaption("see STConfig.b_sample_pad_consolidate_autoduplicate_all_refs");
+
+      pmb <= pm.addDefaultButton("Consolidate samples..", "consolidate_samples");
+      updateConsolidateToolTip(pmb, false/*bSave*/);
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show tools menu.");
+   }
+
+   // <ui_handle.png>
+   public method handleCopyPad() {
+      if(null == clipboard_pad)
+      {
+         clipboard_pad <= new SamplePad;
+         clipboard_pad.initSamplePad(-1/*padIdx,ignored*/);
+      }
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      clipboard_pad.copyFrom(pad, false/*bKeepSends*/);
+      Global.Print("Copy Pad to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyPadCommon() {
+      if(null == clipboard_pad_common)
+      {
+         clipboard_pad_common <= new SamplePadCommon;
+         clipboard_pad_common.initSamplePadCommon(null/*kit*/);
+      }
+      SamplePadCommon padCommon <= sample_pad_kit.getEditSamplePadCommon();
+      clipboard_pad_common.copyFrom(padCommon);
+      Global.Print("Copy Pad Common to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyKitVariation() {
+      if(null == clipboard_kit_variation)
+      {
+         clipboard_kit_variation <= new SamplePadKitVariation;
+         clipboard_kit_variation.initSamplePadKitVariation();
+      }
+      SamplePadKitVariation kitVariation <= sample_pad_kit.getEditKitVariation();
+      clipboard_kit_variation.copyFrom(kitVariation, false/*bKeepSends*/);
+      Global.Print("Copy Kit Variation to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyKit() {
+      if(null == clipboard_kit)
+      {
+         clipboard_kit <= new SamplePadKit;
+         clipboard_kit.initSamplePadKit(null/*track*/);
+      }
+      clipboard_kit.copyFrom(sample_pad_kit, false/*bCopyEditIdx*/);
+      Global.Print("Copy Kit to clipboard");
+   }
+
+   // <ui_handle.png>
+   public =replay= method handlePastePad(boolean _bKeepSends) {
+      if(null != clipboard_pad)
+      {
+         SamplePad pad <= sample_pad_kit.getEditSamplePad();
+         pad.copyFrom(clipboard_pad, _bKeepSends);
+         Global.Print("Paste clipboard to Pad");
+         showTrack(parent_track);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePastePadCommon() {
+      if(null != clipboard_pad_common)
+      {
+         SamplePadCommon padCommon <= sample_pad_kit.getEditSamplePadCommon();
+         padCommon.copyFrom(clipboard_pad_common);
+         Global.Print("Paste clipboard to Pad Common");
+         showTrack(parent_track);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteKitVariation(boolean _bKeepSends) {
+      if(null != clipboard_kit_variation)
+      {
+         SamplePadKitVariation variation <= sample_pad_kit.getEditKitVariation();
+         variation.copyFrom(clipboard_kit_variation, _bKeepSends);
+         Global.Print("Paste clipboard to Kit Variation");
+         showTrack(parent_track);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteKit() {
+      if(null != clipboard_kit)
+      {
+         sample_pad_kit.copyFrom(clipboard_kit, false/*bCopyEditIdx*/);
+         Global.Print("Paste clipboard to Kit");
+         showTrack(parent_track);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateVariationOptions() {
+      int variationIdx = 0;
+      SamplePadKitVariation *kv;
+      local StringArray opt;
+      foreach kv in sample_pad_kit.variations
+      {
+         if(kv.name.isBlank() && kv.isEmpty())
+            opt.add( (variationIdx+1)+":<empty>");
+         else
+            opt.add( (variationIdx+1)+":"+kv.name);
+         variationIdx++;
+      }
+      cf_variation.setOptions(opt);
+   }
+
+   // <ui_handle.png>
+   protected method handleVariationChanged(boolean _bSendPerfCtl, boolean _bPlay) {
+      if(!_bPlay)
+         sample_pad_kit.edit_variation_idx = cf_variation.getSelectedOption();  // select only
+      else
+         sample_pad_kit.setEditKitVariation(cf_variation.getSelectedOption());  // select+play
+      SamplePadKitVariation kv <= sample_pad_kit.getEditKitVariation();
+      kv.b_edited = true;
+      Global.Print("Edit variation \""+cf_variation.getSelectedOptionName()+"\"");
+      updatePadWidgets();
+      highlightPads();
+      updatePadMuteSolo();
+      updateInitialPerfCtl();
+      updateLaneSendWidgets();
+      current_project.markAsModified();
+
+      if(_bSendPerfCtl && kv.b_enable_perf_ctl)
+         sample_pad_kit.queueVariationPerfCtl_Sync(sample_pad_kit.edit_variation_idx);
+   }
+
+   // <ui_handle.png>
+   protected method handleVariationNameChanged(String _name) {
+      local String name = _name;
+      name.replace("<empty>","");
+      int idxDot = name.indexOf(":", 0);
+      if(-1 != idxDot)
+         name.substring(idxDot+1, 999);
+      name.trim();
+      SamplePadKitVariation kv <= sample_pad_kit.getEditKitVariation();
+      kv.name = name;
+      String sOptName <= name.isBlank() ? "<empty>" : name;
+      cf_variation.setOptionNameByIndex(cf_variation.getSelectedOption(), (sample_pad_kit.edit_variation_idx+1)+":"+sOptName);
+      Global.Print("Variation name is \""+name+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handlePerfCtlOnlyChanged() {
+      SamplePadKitVariation kitVariation <= sample_pad_kit.getEditKitVariation();
+      kitVariation.setEnablePerfCtlOnly(cb_perf_ctl_only.isSelected());
+      Global.Print("Variation "+(sample_pad_kit.edit_variation_idx+1)+" PerfCtl-only mode is "+Utils.GetEnableString(kitVariation.b_perf_ctl_only));
+   }
+
+   // <ui_handle.png>
+   protected method handleVarBaseNoteChanged() {
+      sample_pad_kit.setVarBaseNote(cm_var_base_note.getSelectedOption());
+      Global.Print("Variation-select base note is "+cm_var_base_note.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIFollowChanged() {
+      STConfig.b_sample_pad_midi_follow = !STConfig.b_sample_pad_midi_follow;
+      Global.Print("Variation/Pad MIDI follow is "+Utils.GetEnableString(STConfig.b_sample_pad_midi_follow));
+   }
+
+   // <ui_update.png>
+   protected method highlightSelectedButtonsBG(IntArray _btIndices, PointerArray _padButtons) {
+      int i = 0;
+      loop(_padButtons.numElements)
+      {
+         Button bt <= _padButtons.get(i);
+
+         if(_btIndices.contains(i))
+         {
+            bt.setBackgroundTint(#12ffffff);
+            bt.setFontByName("big8");
+         }
+         else
+         {
+            bt.setBackgroundTint(0);
+            bt.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         }
+
+         i++;
+      }
+   }
+
+   // <ui_update.png>
+   protected method highlightSelectedButtonsFG(IntArray _btIndices, PointerArray _padButtons) {
+      int i = 0;
+      loop(_padButtons.numElements)
+      {
+         Button bt <= _padButtons.get(i);
+
+         if(_btIndices.contains(i))
+         {
+            if(0 == bt.getBackgroundTint())
+               bt.setBackgroundTint(#07ffffff);
+            bt.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_BUTTON_CAPTION_FG));
+         }
+         else
+         {
+            bt.setForegroundColor(lnfGetTintedColor(LookAndFeel.COLOR_BUTTON_CAPTION_FG, #80000000));
+         }
+
+         i++;
+      }
+   }
+
+   // <method_find.png>
+   protected method findUsedButtonIndices(IntArray _retIndices, PointerArray _padButtons) {
+      _retIndices.empty();
+      SamplePadButton *bt;
+      SamplePadKitVariation kv <= sample_pad_kit.getEditKitVariation();
+      int btIdx = 0;
+      foreach bt in _padButtons
+      {
+         SamplePad pad <= kv.pads.get(bt.pad_idx);
+         if(-1 != pad.sample_idx)
+            _retIndices.add(btIdx);
+         btIdx++;
+      }
+   }
+
+   // <method_find.png>
+   protected method findButtonIndexForEditPadIdx(PointerArray _padButtons) : int {
+      SamplePadButton *bt;
+      int btIdx = 0;
+      foreach bt in _padButtons
+      {
+         if(bt.pad_idx == sample_pad_kit.edit_pad_idx)
+            return btIdx;
+         btIdx++;
+      }
+      return -1;
+   }
+
+   // <ui_update.png>
+   public method highlightPads() {
+      local IntArray selectedBtIndices;
+      switch(cm_layout.getSelectedOption())
+      {
+         case 0: // 8x2
+            // BG
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_8x2_a) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_8x2_a);
+
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_8x2_b) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_8x2_b);
+
+            // FG
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_8x2_a);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_8x2_a);
+
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_8x2_b);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_8x2_b);
+            break;
+
+         case 1: // 4x4
+            // BG
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_4x4_a) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_4x4_a);
+
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_4x4_b) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_4x4_b);
+
+            // FG
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_4x4_a);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_4x4_a);
+
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_4x4_b);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_4x4_b);
+            break;
+
+         case 2: // 3x4
+            // BG
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_3x4_a) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_3x4_a);
+
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_3x4_b) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_3x4_b);
+
+            // FG
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_3x4_a);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_3x4_a);
+
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_3x4_b);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_3x4_b);
+            break;
+
+         case 3: // 4x3
+            // BG
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_4x3) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_4x3);
+
+            // FG
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_4x3);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_4x3);
+            break;
+
+         case 4: // 4x2
+            // BG
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_4x2_a) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_4x2_a);
+
+            selectedBtIndices = [ findButtonIndexForEditPadIdx(pad_buttons_4x2_b) ];
+            highlightSelectedButtonsBG(selectedBtIndices, pad_buttons_4x2_b);
+
+            // FG
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_4x2_a);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_4x2_a);
+
+            findUsedButtonIndices(selectedBtIndices, pad_buttons_4x2_b);
+            highlightSelectedButtonsFG(selectedBtIndices, pad_buttons_4x2_b);
+            break;
+      }
+      ls_layout.redraw();
+   }
+
+   // <ui_handle.png>
+   public method updatePadMuteSolo() {
+      SamplePadButton *bt;
+      foreach bt in pad_buttons
+         bt.updateMuteSolo();
+   }
+
+   // <method_find.png>
+   protected method findPadButtons() {
+      pad_buttons.empty();
+      switch(sample_pad_kit.layout)
+      {
+         case 0: // 8x2
+            pad_buttons = pad_buttons_8x2_a;
+            if(sample_pad_kit.b_show_bank_b)
+               pad_buttons.joinRR(pad_buttons, pad_buttons_8x2_b);
+            break;
+
+         case 1: // 4x4
+            pad_buttons = pad_buttons_4x4_a;
+            if(sample_pad_kit.b_show_bank_b)
+               pad_buttons.joinRR(pad_buttons, pad_buttons_4x4_b);
+            break;
+
+         case 2: // 3x4
+            pad_buttons = pad_buttons_3x4_a;
+            if(sample_pad_kit.b_show_bank_b)
+               pad_buttons.joinRR(pad_buttons, pad_buttons_3x4_b);
+            break;
+
+         case 3: // 4x3
+            pad_buttons = pad_buttons_4x3;
+            break;
+
+         case 4: // 4x2
+            pad_buttons = pad_buttons_4x2_a;
+            if(sample_pad_kit.b_show_bank_b)
+               pad_buttons.joinRR(pad_buttons, pad_buttons_4x2_b);
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public method selectPad(int _newPadIdx) {
+      int oldEditPadIdx = sample_pad_kit.edit_pad_idx;
+      sample_pad_kit.setEditPadIdx(_newPadIdx);
+
+      highlightPads();
+      updateSampleOptions();
+      updatePadWidgets();
+      updateLaneSendWidgets();
+
+      if(oldEditPadIdx != _newPadIdx)
+         current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handlePadClick(int _btIdx, IntArray _padIndices, IntArray _padNotes) {
+      int newPadIdx = _padIndices.get(_btIdx);
+      // // trace "xxx SamplePadForm::handlePadClick: btIdx="+_btIdx+" newPadIdx="+newPadIdx+" sample_pad_kit.edit_pad_idx="+sample_pad_kit.edit_pad_idx;
+      if(STConfig.b_sample_pad_edit_mode)
+      {
+         if(newPadIdx == sample_pad_kit.edit_pad_idx)
+         {
+            handleEditSample();
+            return;
+         }
+      }
+
+      selectPad(newPadIdx);
+   }
+
+   // <ui_update.png>
+   protected method updateSampleOptions() {
+      Sample *sample;
+      SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+      int nspFlt = sc.namespace_idx;
+      int sampleNr = 1;
+      local StringArray opt;
+      opt.add("-");
+      sample_options.empty();
+      sample_options.add(-1);
+      foreach sample in current_project.samples
+      {
+         if( (0 == nspFlt) || (sample.getNamespaceIdx() == nspFlt) )
+         {
+            opt.add(sampleNr+":"+sample.unique_name);
+            sample_options.add(sampleNr-1);
+         }
+         sampleNr++;
+      }
+      cm_sample.setOptions(opt);
+   }
+
+   // <ui_update.png>
+   protected method updateNamespaceOptions() {
+      local StringArray optNamespaces <= current_project.getSampleNamespaceOptions();
+      cf_nsp.setOptions(optNamespaces);
+      cf_kit_nsp.setOptions(optNamespaces);
+   }
+
+   // <ui_handle.png>
+   protected method handleNamespaceFilterChanged() {
+      SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+      int nspIdx = cf_nsp.getSelectedOption();
+
+      if(0 != nspIdx)
+      {
+         SamplePad pad <= sample_pad_kit.getEditSamplePad();
+         Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+         if(null != sample)
+         {
+            if(sample.getNamespaceIdx() != nspIdx)
+            {
+               handleSetNamespaceFromSample();
+               Global.Warning("Forcing sample namespace \""+sample.getNamespaceName()+"\" ("+sample.getNamespaceIdx()+")");
+               updateConsolidateToolTip(bt_save, true/*bSave*/);
+               return;
+            }
+         }
+      }
+
+      sc.namespace_idx = nspIdx;
+      Global.Print("Pad "+(sample_pad_kit.edit_pad_idx+1)+" namespace is \""+cf_nsp.getSelectedOptionName()+"\"");
+      updateSampleOptions();
+      updatePadWidgets();
+      updateConsolidateToolTip(bt_save, true/*bSave*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleKitDefaultNamespaceChanged() {
+      int nspIdx = cf_kit_nsp.getSelectedOption();
+      sample_pad_kit.default_namespace_idx = nspIdx;
+      current_project.markAsModified();
+      Global.Print("Kit default namespace is \""+cf_kit_nsp.getSelectedOptionName()+"\" ("+nspIdx+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleSetNamespaceFromSample() {
+      SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+      if(null != sample)
+      {
+         sc.namespace_idx = sample.getNamespaceIdx();
+         updateSampleOptions();
+         updatePadWidgets();
+         cf_nsp.setSelectedOption(sample.getNamespaceIdx());
+         current_project.markAsModified();
+      }
+      else
+      {
+         Global.Warning("No sample selected");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleKitDefaultNamespaceNameChanged(String _optName) {
+      // e.g. "1: bass"
+      local String optName = _optName.trim();
+      int idxColon = optName.indexOf(":", 0);
+      if(-1 != idxColon)
+      {
+         int nspIdx = optName.substring(0, idxColon);
+         if(current_project.renameSampleNamespace(nspIdx, optName.substring(idxColon+1,99).trim()))
+         {
+            Global.Print("Namespace #"+(nspIdx)+" name is \""+optName+"\"");
+            current_project.markAsModified();
+         }
+         else
+         {
+            Global.Warning("Failed to rename namespace #"+(nspIdx));
+         }
+      }
+      updateNamespaceOptions();
+   }
+
+   // <ui_handle.png>
+   protected method handleSetKitNamespaceFromKitName() {
+      String kitName <= sample_pad_kit.name;
+      if(!kitName.isBlank())
+      {
+         local String nspName = STConfig.sample_pad_default_namespace+":"+kitName;  // e.g. dk:808
+         sample_pad_kit.default_namespace_idx = current_project.getOrCreateSampleNamespace(nspName);
+         Global.Print("Kit default namespace is \""+nspName+"\" ("+sample_pad_kit.default_namespace_idx+")");
+         updateNamespaceOptions();
+         cf_kit_nsp.setSelectedOption(sample_pad_kit.default_namespace_idx);
+         current_project.markAsModified();
+      }
+      else
+         Global.Warning("Kit name is blank");
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdatePadSampleNamespacesFromKit() {
+      SamplePadKitVariation *kv;
+      int numUpdated = 0;
+      int numTotal = 0;
+      boolean bOldDupRefs = STConfig.b_sample_pad_consolidate_autoduplicate_all_refs;
+      STConfig.b_sample_pad_consolidate_autoduplicate_all_refs = false;  // count only 1 ref per drumkit
+      foreach kv in sample_pad_kit.variations
+      {
+         int padIdx = 0;
+         SamplePad *pad;
+         foreach pad in kv.pads
+         {
+            Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+            if(null != sample)
+            {
+               int numRefs = current_project.findNumSampleRefsBySample(sample);
+               if(1 == numRefs)
+               {
+                  // Only referenced within this drumkit
+                  sample.setNamespaceIdx(sample_pad_kit.default_namespace_idx);
+                  SamplePadCommon sc <= sample_pad_kit.pads.get(padIdx);
+                  sc.namespace_idx = sample_pad_kit.default_namespace_idx;  // (todo) update only when ALL samples on this pad share the same namespace
+                  numUpdated++;
+               }
+               numTotal++;
+            }
+
+            // Next pad
+            padIdx++;
+         }
+      }
+
+      STConfig.b_sample_pad_consolidate_autoduplicate_all_refs = bOldDupRefs;
+
+      if(numUpdated > 0)
+      {
+         Global.Print("Update "+numUpdated+"/"+numTotal+" sample namespace"+Utils.GetPluralString(numUpdated)+" from kit default namespace");
+         showTrack(parent_track);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNamespaceNameChanged(String _optName) {
+      // e.g. "1: bass"
+      local String optName = _optName.trim();
+      int idxColon = optName.indexOf(":", 0);
+      if(-1 != idxColon)
+      {
+         int nspIdx = optName.substring(0, idxColon);
+         if(current_project.renameSampleNamespace(nspIdx, optName.substring(idxColon+1,99).trim()))
+         {
+            Global.Print("Namespace #"+(nspIdx)+" name is \""+optName+"\"");
+            // // // updateSampleTable(null/*reselectSample*/);
+            // // // handleSelectSample(false/*bStopAudio*/);
+         }
+         else
+         {
+            Global.Warning("Failed to rename namespace #"+(nspIdx));
+         }
+      }
+      updateNamespaceOptions();
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleChanged() {
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      int optIdx = cm_sample.getSelectedOption();
+      if(optIdx >= 0)
+      {
+         int sampleId = sample_options.get(optIdx);
+         if(sampleId >= 0)
+         {
+            Sample sample <= current_project.getSampleByIdx(sampleId);
+            if(null != sample)
+            {
+               pad.setSampleIdx(sampleId);
+               highlightPads();
+               updateVariationOptions();  // <empty>
+               current_project.markAsModified();
+               Global.Print("Select pad sample id="+sampleId+" name=\""+sample.unique_name+"\"");
+            }
+            else
+            {
+               Global.Warning("Sample id="+sampleId+" does not exist anymore");
+            }
+         }
+         else
+         {
+            pad.setSampleIdx(-1);
+            highlightPads();
+            updateVariationOptions();  // <empty>
+            current_project.markAsModified();
+            Global.Print("Unset pad sample");
+         }
+      }
+      else
+      {
+         trace "[!!!] handleSampleChanged: invalid optIdx="+optIdx;
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEditSample() {
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+      if(null != sample)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         pgSample.autoselect_sample_idx = pad.sample_idx;
+         pgSample.b_allow_pgtrack_autoselect = true;
+         pgSample.ui_parent_track_nr = current_project.getTrackIdx(root_form.pg_track.track) + 1;
+         pgSample.mod_sample <= null;
+         pgSample.sample_pad        <= sample_pad_kit.getEditSamplePad();
+         pgSample.sample_pad_common <= sample_pad_kit.getEditSamplePadCommon();
+         pgSample.sample_pad_kit    <= sample_pad_kit;
+         root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+      }
+      else
+      {
+         Global.Warning("No sample assigned to pad");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePadWidgets() {
+      SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+      cf_nsp.setSelectedOption(sc.namespace_idx);
+      fp_var_pad_slew.setValue(1.0f - sc.lane_sends_slew_amt);
+
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      if(null != pad)
+      {
+         int sampleOptIdx = sample_options.indexOf(pad.sample_idx, 0);
+         cm_sample.setSelectedOption(sampleOptIdx);
+
+         cm_root_key.setSelectedOption(pad.root_key + 1);
+         cm_link_group.setSelectedOption(pad.link_group_id + 1);
+         cm_mutex_group.setSelectedOption(pad.mutex_group_id + 1);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateLaneSendWidgets() {
+      int sendIdx = 0;
+      SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      SamplePadKitVariation kitVariation <= sample_pad_kit.getEditKitVariation();
+      loop(SamplePadCommon.NUM_LANE_SENDS)
+      {
+         Dial dl <= lane_send_level_dials[sendIdx];
+         dl.setValue(sc.lane_level.get(sendIdx));
+         dl.setModValue(pad.getLaneSendLevelMod(sendIdx));
+
+         dl <= lane_send_pan_dials[sendIdx];
+         dl.setValue(sc.lane_pan.get(sendIdx));
+         dl.setModValue(pad.getLaneSendPanMod(sendIdx));
+
+         sendIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleLaneSendLevelChanged(Dial _dl, boolean _bMod) : boolean {
+      int sendIdx = lane_send_level_dials.indexOfPointer(_dl, 0);
+      if(sendIdx >= 0)
+      {
+         Float f;
+         if(_bMod)
+         {
+            f = _dl.getModValue();
+            SamplePad pad <= sample_pad_kit.getEditSamplePad();
+            pad.setLaneSendLevelMod(sendIdx, f);
+            f *= 100;
+            Global.Print("Pad lane "+(sendIdx+1)+" send level mod is "+f.printf("%3.2f")+"%");
+         }
+         else
+         {
+            f = _dl.getValue();
+            SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+            sc.setLaneSendLevel(sendIdx, f);
+            f *= 100;
+            Global.Print("Kit lane "+(sendIdx+1)+" send level is "+f.printf("%3.2f")+"%");
+         }
+         sample_pad_kit.queueUpdateLaneSends();
+         current_project.markAsModified();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleLaneSendPanChanged(Dial _dl, boolean _bMod) : boolean {
+      int sendIdx = lane_send_pan_dials.indexOfPointer(_dl, 0);
+      if(sendIdx >= 0)
+      {
+         Float f;
+         if(_bMod)
+         {
+            f = _dl.getModValue();
+            SamplePad pad <= sample_pad_kit.getEditSamplePad();
+            pad.setLaneSendPanMod(sendIdx, f);
+            f *= 100;
+            Global.Print("Pad lane "+(sendIdx+1)+" send pan mod is "+f.printf("%3.2f")+"%");
+         }
+         else
+         {
+            f = _dl.getValue();
+            SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+            sc.setLaneSendPan(sendIdx, f);
+            Global.Print("Kit lane "+(sendIdx+1)+" send pan is "+f.printf("%3.2f"));
+         }
+         sample_pad_kit.queueUpdateLaneSends();
+         current_project.markAsModified();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleSlewAmtChanged() {
+      local Float f = fp_var_pad_slew.getFloatValue();
+      SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+      sc.setLaneSendSlewAmt(1.0f - f);
+      f *= 100;
+      Global.Print("Pad lane-send slew amount is "+f.printf("%3.3f"));
+   }
+
+   // <ui_handle.png>
+   protected method handleRootKeyChanged() {
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      pad.setRootKey(cm_root_key.getSelectedOption() - 1);
+      Global.Print("Pad "+(sample_pad_kit.edit_pad_idx+1)+" root key is "+cm_root_key.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleLinkGroupChanged() {
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      pad.setLinkGroup(cm_link_group.getSelectedOption() - 1);
+      Global.Print("Pad "+(sample_pad_kit.edit_pad_idx+1)+" link group is \'"+cm_link_group.getSelectedOptionName()+"\'");
+   }
+
+   // <ui_handle.png>
+   protected method handleMutexGroupChanged() {
+      SamplePad pad <= sample_pad_kit.getEditSamplePad();
+      pad.setMutexGroup(cm_mutex_group.getSelectedOption() - 1);
+      Global.Print("Pad "+(sample_pad_kit.edit_pad_idx+1)+" mutex group is \'"+cm_mutex_group.getSelectedOptionName()+"\'");
+   }
+
+   // <ui_update.png>
+   protected method updatePadEditMode() {
+      if(STConfig.b_sample_pad_edit_mode)
+      {
+         bt_smp_edit.setBackgroundTint(#ecdddd77);
+         bt_smp_edit.setForegroundColor(#ff000000);
+      }
+      else
+      {
+         bt_smp_edit.setBackgroundTint(0);
+         bt_smp_edit.setForegroundColor(#ffffffff);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method togglePadEditMode() {
+      STConfig.b_sample_pad_edit_mode = !STConfig.b_sample_pad_edit_mode;
+      updatePadEditMode();
+      Global.Print("Pad edit-mode is "+Utils.GetEnableString(STConfig.b_sample_pad_edit_mode));
+   }
+
+   // <ui_handle.png>
+   protected method handleConsolidateSamples1(boolean _bSave) {
+      String pathName = Utils.ToNativePathName(STConfig.sample_rootpath+"/"+getRelativeRepositoryPath()+"/"+sample_pad_kit.name+Global.SAMPLE_PAD_KIT_FILE_SUFFIX);
+      b_consolidate_save = _bSave;
+      if(Utils.CanFileBeRead(pathName))
+      {
+         dialog_overwrite_samplepadkit.run(this, pathName);
+      }
+      else
+      {
+         handleConsolidateSamples2();
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleConsolidateSamples2() {
+      // Create unique samples (rename or duplicate)
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+      int drumNamespaceIdx = sample_pad_kit.getKitNamespaceIdxForImport();
+      int numCreated = 0;
+      int numRenamed = 0;
+      if(drumNamespaceIdx >= 0)
+      {
+         String pathName;
+         local Sample *[] samplesDone;
+         int numSamples = 0;
+         SamplePadKitVariation *kv;
+         int variationIdx = 0;
+         foreach kv in sample_pad_kit.variations
+         {
+            SamplePad *pad;
+            int padIdx = 0;
+            foreach pad in kv.pads
+            {
+               if(-1 != pad.sample_idx)
+               {
+                  // (note) when STConfig.b_sample_pad_consolidate_autoduplicate_all_refs=true,
+                  //         numRefs>1 when multiple pads reference the same sample
+                  //          (see SamplePadKit::findNumSampleRefsBySampleIdx())
+                  int numRefs = current_project.findNumSampleRefsBySampleIdx(pad.sample_idx);
+
+                  SamplePadCommon padCommon <= sample_pad_kit.pads.get(padIdx);
+                  padCommon.namespace_idx = drumNamespaceIdx;
+
+                  Sample sampleOrig <= current_project.getSampleByIdx(pad.sample_idx);
+                  if(null != sampleOrig)
+                  {
+                     local String suggestedUniqueName = Utils.ConvertToFileName(sample_pad_kit.name);
+                     if(variationIdx > 0)
+                        suggestedUniqueName.append("_var"+(variationIdx+1));
+                     if(STConfig.b_sample_pad_consolidate_keep_names)
+                     {
+                        // 'mykit_fm kick 1'
+                        // 'mykit_var5_fm kick 1'
+                        suggestedUniqueName.append("_"+sampleOrig.unique_name);
+                     }
+                     else
+                     {
+                        // 'mykit_bd'
+                        // 'mykit_var5_bd'
+                        suggestedUniqueName.append("_"+(STConfig.drum_pad_names.get(padIdx).toLower()));
+                     }
+                     Global.Debug2("padIdx="+padIdx+" ("+(STConfig.drum_pad_names.get(padIdx))+") variationIdx="+variationIdx+" pad.sample_idx="+pad.sample_idx+" suggestedUniqueName=\""+suggestedUniqueName+"\" done="+samplesDone.containsPointer(sampleOrig));
+
+                     if(!samplesDone.containsPointer(sampleOrig))
+                     {
+                        int oldPadSampleId = pad.sample_idx;
+                        Sample *sampleSave;
+                        if(numRefs >= 2)
+                        {
+                           // Duplicate sample
+                           // e.g. "2600_bd2"
+                           // e.g. "2600_var2_sd"
+                           Global.Debug2("SamplePadForm::handleConsolidateSamples<dup>: duplicate sample \""+sampleOrig.unique_name+"\" to \""+suggestedUniqueName+"\" oldSampleId="+pad.sample_idx);
+                           Sample sample <= current_project.newSample(suggestedUniqueName,
+                                                                      pad.sample_idx + 1
+                                                                      );
+                           numCreated++;
+                           sample.copyFrom(sampleOrig);
+                           sample.analyzeAndUpdatePartials();
+
+                           if(!STConfig.b_sample_pad_consolidate_keep_names)
+                              sample.appendOriginalUniqueNameToDescription(sampleOrig.unique_name);
+
+                           sample.setNamespaceIdx(drumNamespaceIdx);
+                           sample.suggested_pathname = getRelativeRepositoryPath();
+                           pad.autoload_unique_name        = sample.unique_name;
+                           pad.autoload_suggested_pathname = sample.suggested_pathname;
+                           Global.Debug2("SamplePadForm::handleConsolidateSamples<dup>: sample.unique_name=\""+sample.unique_name+"\"");
+                           Global.Debug2("SamplePadForm::handleConsolidateSamples<dup>: sample.suggested_pathname=\""+sample.suggested_pathname+"\"");
+                           sample.markWaveformAsModified();
+
+                           pad.sample_idx = current_project.getSampleIdx(sample);
+                           Global.Debug2("SamplePadForm::handleConsolidateSamples<dup>: pad.sample_idx="+pad.sample_idx);
+
+                           // Replace all references to original sample within this kit
+                           if(!STConfig.b_sample_pad_consolidate_autoduplicate_all_refs)
+                              sample_pad_kit.replaceSampleIds(oldPadSampleId, pad.sample_idx);
+
+                           sampleSave <= sample;
+
+                           samplesDone.add(sample);
+                           numSamples++;
+                        }
+                        else
+                        {
+                           // Rename existing sample
+                           if!(sampleOrig.unique_name <= (sample_pad_kit.name+"_"))
+                           {
+                              numRenamed++;
+                              if(!STConfig.b_sample_pad_consolidate_keep_names)
+                                 sampleOrig.appendOriginalUniqueNameToDescription(sampleOrig.unique_name);
+                              sampleOrig.assignUniqueName(suggestedUniqueName);
+                              sampleOrig.setNamespaceIdx(drumNamespaceIdx);
+                              sampleOrig.suggested_pathname = getRelativeRepositoryPath();
+                              pad.autoload_unique_name        = sampleOrig.unique_name;
+                              pad.autoload_suggested_pathname = sampleOrig.suggested_pathname;
+                              sampleOrig.markWaveformAsModified();
+                              Global.Debug2("SamplePadForm::handleConsolidateSamples<ren>: pad.sample_idx="+pad.sample_idx+" actual idx="+current_project.getSampleIdx(sampleOrig));
+                              Global.Debug2("SamplePadForm::handleConsolidateSamples<ren>: sample.unique_name=\""+sampleOrig.unique_name+"\"");
+                              Global.Debug2("SamplePadForm::handleConsolidateSamples<ren>: sample.suggested_pathname=\""+sampleOrig.suggested_pathname+"\"");
+                           }
+                           else
+                           {
+                              Global.Debug2("SamplePadForm::handleConsolidateSamples<ren>: keep name=\""+sampleOrig.unique_name+"\"");
+                           }
+
+                           sampleSave <= sampleOrig;
+
+                           samplesDone.add(sampleOrig);
+                           numSamples++;
+                        }
+
+                        // Save sample
+                        if(b_consolidate_save)
+                        {
+                           tkfileutils_mkdir(getRepositoryPath());
+                           pathName = Utils.ToNativePathName(STConfig.sample_rootpath+"/"+getRelativeRepositoryPath()+"/"+sampleSave.unique_name+Global.SAMPLE_FILE_SUFFIX);
+                           if(sampleSave.saveFile(pathName, STConfig.sample_rootpath, false/*bProject*/, 0/*sampleIdxForYML*/))
+                              trace "[...] SamplePadForm::handleConsolidateSamples: wrote sample to \""+pathName+"\"";
+                           else
+                              trace "[---] SamplePadForm::handleConsolidateSamples: failed to save sample to \""+pathName+"\"";
+                        }
+                     }
+                     else
+                     {
+                        Global.Debug2("SamplePadForm::handleConsolidateSamples: sample idx="+pad.sample_idx+" unique_name=\""+sampleOrig.unique_name+"\" already done, skipping..");
+                     }
+                  }
+                  else
+                  {
+                     // Should not be reachable. Silently unset sample_id.
+                     trace "[!!!] SamplePadForm::handleConsolidateSamples: failed to resolve pad.sample_idx="+pad.sample_idx;
+                     pad.sample_idx = -1;
+                  }
+               }
+
+               // Next pad
+               padIdx++;
+            }
+
+            // Next kit variation
+            variationIdx++;
+         }
+
+         if(numSamples > 0)
+         {
+            if(b_consolidate_save)
+            {
+               // Save SamplePadKit to .edk file
+               pathName = Utils.ToNativePathName(STConfig.sample_rootpath+"/"+getRelativeRepositoryPath()+"/"+sample_pad_kit.name+Global.SAMPLE_PAD_KIT_FILE_SUFFIX);
+               if(sample_pad_kit.saveFile(pathName))
+                  trace "[...] SamplePadForm::handleConsolidateSamples: wrote drumkit to \""+pathName+"\"";
+               else
+                  trace "[---] SamplePadForm::handleConsolidateSamples: failed to save drumkit to \""+pathName+"\"";
+            }
+
+            current_project.markAsModified();
+            showTrack(parent_track);
+         }
+         Global.Print("Consolidate "+numSamples+" sample"+Utils.GetPluralString(numSamples)+" (create "+numCreated+", rename "+numRenamed+")");
+         if(numCreated > 0 || numRenamed > 0)
+            UI.LayoutRootLayer(); // e.g. adjust sample combobox width (after creating new samples)
+      }
+      else
+      {
+         Global.Warning("Failed to find/create sample_pad_default_namespace \""+STConfig.sample_pad_default_namespace+"\"");
+      }
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   protected method handleGroupSamples() {
+      SamplePadKitVariation *kv;
+      Sample lastSample <= null;
+      int numMoved = 0;
+      local PointerArray samplesDone;
+      foreach kv in sample_pad_kit.variations
+      {
+         SamplePad *pad;
+         foreach pad in kv.pads
+         {
+            if(-1 != pad.sample_idx)
+            {
+               Sample sample <= current_project.getSampleByIdx(pad.sample_idx);
+               if(null != sample)
+               {
+                  if(!samplesDone.containsPointer(sample))
+                  {
+                     int sampleIdx = current_project.getSampleIdx(sample);
+                     trace "[trc] SamplePadForm::handleGroupSamples: name=\""+sample.unique_name+"\" idx="+sampleIdx;
+                     int num;
+                     if(null != lastSample)
+                     {
+                        int lastSampleIdx = current_project.getSampleIdx(lastSample);
+                        if(sampleIdx < lastSampleIdx)
+                        {
+                           num = lastSampleIdx - sampleIdx;
+                           trace "[trc] SamplePadForm::handleGroupSamples:   move down "+num;
+                           numMoved++;
+                           loop(num)
+                           {
+                              // Move down
+                              current_project.swapSamples(sampleIdx, sampleIdx+1);
+                              sampleIdx++;
+                           }
+                           trace "xxx after movedown: sampleIdx="+current_project.getSampleIdx(sample)+" lastSampleIdx="+current_project.getSampleIdx(lastSample);
+                        }
+                        else if(sampleIdx > (lastSampleIdx + 1))
+                        {
+                           num = sampleIdx - lastSampleIdx - 1;
+                           trace "[trc] SamplePadForm::handleGroupSamples:   move up "+num;
+                           numMoved++;
+                           loop(num)
+                           {
+                              // Move up
+                              current_project.swapSamples(sampleIdx, sampleIdx-1);
+                              sampleIdx--;
+                           }
+                           trace "xxx after moveup: sampleIdx="+current_project.getSampleIdx(sample)+" lastSampleIdx="+current_project.getSampleIdx(lastSample);
+                        }
+                     }
+                     samplesDone.add(sample);
+                     lastSample <= sample;
+                  } // if !done
+               }
+               else
+               {
+                  // should not be reachable
+                  trace "[~~~] SamplePadForm::handleGroupSamples: failed to resolve pad.sample_idx="+pad.sample_idx;
+               }
+            } // if assigned
+         } // loop pads
+      } // loop variations
+      showTrack(parent_track);
+      Global.Print("handleGroupSamples: "+numMoved+" sample"+Utils.GetPluralString(numMoved)+" moved");
+   }
+
+
+   // <ui_show.png>
+   public method showSamplePadPresetDialog() {
+      if(null == dlg_samplepad_preset)
+      {
+         dlg_samplepad_preset <= new SamplePadPresetDialog;
+         dlg_samplepad_preset.initSamplePadPresetDialog();
+      }
+
+      dlg_samplepad_preset.showSamplePadPresetDialog(this);
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleLoadDrumKit(String _kitName) {
+      Global.Debug("SamplePadForm::handleLoadDrumKit: kitName=\""+_kitName+"\"");
+      if(dlg_samplepad_preset.doUnloadSamples())
+      {
+         int autoRemoveNamespaceIdx = sample_pad_kit.default_namespace_idx;
+         sample_pad_kit.unloadSamples();
+         sample_pad_kit.unsetSampleNamespaceRefs();
+         if(autoRemoveNamespaceIdx > 0)
+         {
+            int numRefs = current_project.findNumSampleNamespaceRefsByNamespaceIdx(autoRemoveNamespaceIdx);
+            Global.Debug("SamplePadForm::handleLoadDrumKit: autoRemoveNamespaceIdx="+autoRemoveNamespaceIdx+" numRefs="+numRefs);
+            if(0 == numRefs)
+            {
+               current_project.renameSampleNamespace(autoRemoveNamespaceIdx, "");
+            }
+         }
+      }
+      local String dirName = Utils.ToNativePathName(STConfig.sample_rootpath+"/"+STConfig.sample_userpath+"/"+STConfig.sample_pad_drumkit_folder_name+"/"+_kitName);
+      local String pathName = Utils.ToNativePathName(dirName+"/"+_kitName+Global.SAMPLE_PAD_KIT_FILE_SUFFIX);
+      if(sample_pad_kit.loadFile(pathName, dlg_samplepad_preset.doKeepLaneSends()))
+      {
+         sample_pad_kit.autoLoadSamples(dirName/*dirNameOverrideOrNull*/);
+         Global.Success("Drum kit \""+_kitName+"\" loaded from \""+pathName+"\"");
+      }
+      else
+      {
+         Global.Error("Failed to load drum kit \""+_kitName+"\" from \""+pathName+"\"");
+      }
+      showTrack(parent_track);
+   }
+
+   // <ui_handle.png>
+   public method findEditPadButtonIdx() : int {
+      int editPadIdx = sample_pad_kit.edit_pad_idx;
+      SamplePadButton *bt;
+      int btIdx = 0;
+      foreach bt in pad_buttons
+      {
+         if(bt.pad_idx == editPadIdx)
+            break;
+         btIdx++;
+      }
+      return (btIdx == pad_buttons.numElements) ? -1 : btIdx;
+   }
+
+   // <ui_handle.png>
+   public method editNextPad() {
+      int btIdx = findEditPadButtonIdx();
+      SamplePadButton *bt;
+      SamplePadKitVariation kv <= sample_pad_kit.getEditKitVariation();
+      int editPadIdx = sample_pad_kit.edit_pad_idx;
+
+      // Find next assigned pad
+      int newPadIdx = -1;
+      if(0 <= btIdx < (pad_buttons.numElements - 1))
+      {
+         btIdx++;
+         while(btIdx < pad_buttons.numElements)
+         {
+            bt <= pad_buttons[btIdx];
+            SamplePad pad <= kv.pads.get(bt.pad_idx);
+            if(pad.sample_idx >= 0)
+            {
+               newPadIdx = bt.pad_idx;
+               break;
+            }
+            btIdx++;
+         }
+      }
+
+      if(newPadIdx > editPadIdx)
+      {
+         sample_pad_kit.setEditPadIdx(newPadIdx);
+
+         highlightPads();
+         updateSampleOptions();
+         updatePadWidgets();
+         updateLaneSendWidgets();
+         current_project.markAsModified();
+
+         bt.printPadInfo("Edit next pad");
+      }
+   }
+
+   // <ui_handle.png>
+   public method editPreviousPad() {
+      int btIdx = findEditPadButtonIdx();
+      SamplePadButton *bt;
+      SamplePadKitVariation kv <= sample_pad_kit.getEditKitVariation();
+      int editPadIdx = sample_pad_kit.edit_pad_idx;
+
+      // Find previous assigned pad
+      int newPadIdx = 99999;
+      if(btIdx >= 1)
+      {
+         btIdx--;
+         while(btIdx >= 0)
+         {
+            bt <= pad_buttons[btIdx];
+            SamplePad pad <= kv.pads.get(bt.pad_idx);
+            if(pad.sample_idx >= 0)
+            {
+               newPadIdx = bt.pad_idx;
+               break;
+            }
+            btIdx--;
+         }
+      }
+
+      if(newPadIdx < editPadIdx)
+      {
+         sample_pad_kit.setEditPadIdx(newPadIdx);
+
+         highlightPads();
+         updateSampleOptions();
+         updatePadWidgets();
+         updateLaneSendWidgets();
+         current_project.markAsModified();
+
+         bt.printPadInfo("Edit previous pad");
+      }
+   }
+
+   // <method.png>
+   protected method togglePerfCtlDecHex(FloatParam _fp) {
+      _fp.toggleHex();
+      _fp.setMousePrecision((FloatParam.DISPLAY_HEX == _fp.getDisplayType()) ? 0 : 3);
+   }
+
+   // <ui_update.png>
+   public method updatePerfCtlBipolarFlags() {
+      IntArray bipFlags <= sample_pad_kit.perf_ctl_bipolar_flags;
+      cb_var_perf_bipolar_mw .setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL));
+      cb_var_perf_bipolar_bc .setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL));
+      cb_var_perf_bipolar_fc .setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL));
+      cb_var_perf_bipolar_ex .setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION));
+      cb_var_perf_bipolar_gp1.setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1));
+      cb_var_perf_bipolar_gp2.setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2));
+      cb_var_perf_bipolar_gp3.setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3));
+      cb_var_perf_bipolar_gp4.setSelected(bipFlags.get(STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4));
+   }
+
+   // <ui_update.png>
+   public method updateInitialPerfCtl() {
+      SamplePadKitVariation kitVariation <= sample_pad_kit.getEditKitVariation();
+      FloatArray initPerfCtl <= kitVariation.initial_perf_ctl;
+      fp_var_perf_mw .setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL));
+      fp_var_perf_bc .setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL));
+      fp_var_perf_fc .setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL));
+      fp_var_perf_ex .setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION));
+      fp_var_perf_gp1.setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1));
+      fp_var_perf_gp2.setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2));
+      fp_var_perf_gp3.setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3));
+      fp_var_perf_gp4.setValue(initPerfCtl.get(STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4));
+      cb_var_perfctl.setSelected(kitVariation.b_enable_perf_ctl);
+
+      cb_perf_ctl_only.setSelected(kitVariation.b_perf_ctl_only);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleInitialPerfCtlChanged(String _id, int _perfCtlIdx, float _value) {
+
+      SamplePadKitVariation kitVariation <= sample_pad_kit.getEditKitVariation();
+      FloatArray initPerfCtl <= kitVariation.initial_perf_ctl;
+      initPerfCtl[_perfCtlIdx] = _value;
+
+      if(kitVariation.b_enable_perf_ctl)
+         sample_pad_kit.queueVariationPerfCtl_Sync(sample_pad_kit.edit_variation_idx);
+
+      current_project.markAsModified();
+      Global.Print("Variation "+(sample_pad_kit.edit_variation_idx+1)+" PerfCtl \""+_id+"\" is "+((_value >= 0.0f) ? _value : "<unassigned>"));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePerfCtlBipolarChanged(String _id, int _perfCtlIdx, boolean _bBipolar) {
+
+      sample_pad_kit.setPerfCtlBipolarFlag(_perfCtlIdx, _bBipolar);  // queues perfctl update
+      // // sample_pad_kit.queueUpdatePerfCtl();
+
+      current_project.markAsModified();
+      Global.Print("Ext MIDI \""+_id+"\" bipolar mode is "+Utils.GetEnableString(_bBipolar));
+   }
+
+   // <ui_handle.png>
+   protected method handleEnablePerfCtlChanged() {
+      SamplePadKitVariation kitVariation <= sample_pad_kit.getEditKitVariation();
+      kitVariation.setEnablePerfCtl(cb_var_perfctl.isSelected());
+      if(kitVariation.b_enable_perf_ctl)
+         sample_pad_kit.queueVariationPerfCtl_Sync(sample_pad_kit.edit_variation_idx);
+
+      Global.Print("Variation "+(sample_pad_kit.edit_variation_idx+1)+" PerfCtls are "+Utils.GetEnableString(kitVariation.b_enable_perf_ctl));
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_MIDI_FOLLOW == acName)
+      {
+         int queuedVariationIdx = sample_pad_kit.checkResetQueuedEditVariationIdx();
+         int queuedPadIdx       = sample_pad_kit.checkResetQueuedEditPadIdx();
+
+         if(STConfig.b_sample_pad_midi_follow)
+         {
+            if(-1 != queuedVariationIdx)
+            {
+               cf_variation.setSelectedOption(queuedVariationIdx);
+               sample_pad_kit.edit_variation_idx = queuedVariationIdx;
+               handleVariationChanged(false/*bSendPerfCtl(already sent)*/, false/*bPlay*/);
+            }
+
+            if(-1 != queuedPadIdx)
+            {
+               sample_pad_kit.edit_pad_idx = queuedPadIdx;
+               highlightPads();
+               updateSampleOptions();
+               updatePadWidgets();
+               updateLaneSendWidgets();
+            }
+         }
+
+         if(sample_pad_kit.checkResetLaneSlewAmtChanged())
+         {
+            SamplePadCommon sc <= sample_pad_kit.getEditSamplePadCommon();
+            fp_var_pad_slew.setValue(1.0f - sc.lane_sends_slew_amt);
+         }
+
+         ta_midi_follow.reschedule();
+         return true;
+      }
+
+      if(ap instanceof SamplePadButton)
+      {
+         int btIdx;
+         switch(cm_layout.getSelectedOption())
+         {
+            case 0: // 8x2
+               btIdx = pad_buttons_8x2_a.indexOfPointer(ap, 0);
+               if(-1 != btIdx)
+               {
+                  handlePadClick(btIdx, STConfig.drum_pad_indices_8x2_a, STConfig.drum_pad_notes_8x2_a);
+                  return true;
+               }
+               else
+               {
+                  btIdx = pad_buttons_8x2_b.indexOfPointer(ap, 0);
+                  if(-1 != btIdx)
+                  {
+                     handlePadClick(btIdx, STConfig.drum_pad_indices_8x2_b, STConfig.drum_pad_notes_8x2_b);
+                     return true;
+                  }
+               }
+               break;
+
+            case 1: // 4x4
+               btIdx = pad_buttons_4x4_a.indexOfPointer(ap, 0);
+               if(-1 != btIdx)
+               {
+                  handlePadClick(btIdx, STConfig.drum_pad_indices_4x4_a, STConfig.drum_pad_notes_4x4_a);
+                  return true;
+               }
+               else
+               {
+                  btIdx = pad_buttons_4x4_b.indexOfPointer(ap, 0);
+                  if(-1 != btIdx)
+                  {
+                     handlePadClick(btIdx, STConfig.drum_pad_indices_4x4_b, STConfig.drum_pad_notes_4x4_b);
+                     return true;
+                  }
+               }
+               break;
+
+            case 2: // 3x4
+               btIdx = pad_buttons_3x4_a.indexOfPointer(ap, 0);
+               if(-1 != btIdx)
+               {
+                  handlePadClick(btIdx, STConfig.drum_pad_indices_3x4_a, STConfig.drum_pad_notes_3x4_a);
+                  return true;
+               }
+               else
+               {
+                  btIdx = pad_buttons_3x4_b.indexOfPointer(ap, 0);
+                  if(-1 != btIdx)
+                  {
+                     handlePadClick(btIdx, STConfig.drum_pad_indices_3x4_b, STConfig.drum_pad_notes_3x4_b);
+                     return true;
+                  }
+               }
+               break;
+
+            case 3: // 4x3
+               btIdx = pad_buttons_4x3.indexOfPointer(ap, 0);
+               if(-1 != btIdx)
+               {
+                  handlePadClick(btIdx, STConfig.drum_pad_indices_4x3, STConfig.drum_pad_notes_4x3);
+                  return true;
+               }
+               break;
+
+            case 4: // 4x2
+               btIdx = pad_buttons_4x2_a.indexOfPointer(ap, 0);
+               if(-1 != btIdx)
+               {
+                  handlePadClick(btIdx, STConfig.drum_pad_indices_4x2_a, STConfig.drum_pad_notes_4x2_a);
+                  return true;
+               }
+               else
+               {
+                  btIdx = pad_buttons_4x2_b.indexOfPointer(ap, 0);
+                  if(-1 != btIdx)
+                  {
+                     handlePadClick(btIdx, STConfig.drum_pad_indices_4x2_b, STConfig.drum_pad_notes_4x2_b);
+                     return true;
+                  }
+               }
+               break;
+         }
+      }
+
+      switch(@(ap))
+      {
+         default:
+            boolean bMod = ((Dial.ACTION_MODVALUECHANGING == acName) ||
+                            (Dial.ACTION_MODVALUECHANGED  == acName)
+                            );
+            if(tryHandleLaneSendLevelChanged(ap, bMod))
+               return true;
+            if(tryHandleLaneSendPanChanged(ap, bMod))
+               return true;
+            return false;
+
+         case @(tf_kit_name):
+            sample_pad_kit.name = tf_kit_name.getText().trim();
+            updateKitToolTip();
+            updateConsolidateToolTip(bt_save, true/*bSave*/);
+            current_project.markAsModified();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_load):
+            showSamplePadPresetDialog();
+            return true;
+
+         case @(bt_save):
+            handleConsolidateSamples1(true/*bSave*/);
+            return true;
+
+         case @(tf_kit_info):
+            sample_pad_kit.info = tf_kit_info.getText().trim();
+            current_project.markAsModified();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cf_kit_nsp):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleKitDefaultNamespaceChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else
+            {
+               // Rename namespace
+               if(ComboField.ACTION_OPTIONEDITED/*char typed*/ == acName)
+               {
+               }
+               else if(ComboField.ACTION_OPTIONRENAMED == acName)
+               {
+                  handleKitDefaultNamespaceNameChanged(cf_kit_nsp.getSelectedOptionName());
+                  refocusDefault();
+               }
+            }
+            return true;
+
+         case @(bt_nsp_from_kit):
+            handleSetKitNamespaceFromKitName();
+            return true;
+
+         case @(bt_kit_nsp_to_pads):
+            handleUpdatePadSampleNamespacesFromKit();
+            return true;
+
+         case @(cm_layout):
+            handleLayoutChanged(false/*bQuiet*/);
+            highlightPads();
+            updatePadMuteSolo();
+            return true;
+
+         case @(cb_bank_b):
+            handleBankBChanged(false/*bQuiet*/);
+            return true;
+
+         case @(bt_tools):
+            showToolsMenu();
+            return true;
+
+         case @(pm_tools):
+            Global.Debug2("SamplePadForm: pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy_pad":
+                  handleCopyPad();
+                  return true;
+
+               case "copy_pad_common":
+                  handleCopyPadCommon();
+                  return true;
+
+               case "copy_kit_variation":
+                  handleCopyKitVariation();
+                  return true;
+
+               case "copy_kit":
+                  handleCopyKit();
+                  return true;
+
+               case "paste_pad":
+                  handlePastePad(false/*bKeepSends*/);
+                  return true;
+
+               case "paste_pad_keep_sends":
+                  handlePastePad(true/*bKeepSends*/);
+                  return true;
+
+               case "paste_pad_common":
+                  handlePastePadCommon();
+                  return true;
+
+               case "paste_kit_variation":
+                  handlePasteKitVariation(false/*bKeepSends*/);
+                  return true;
+
+               case "paste_kit_variation_keep_sends":
+                  handlePasteKitVariation(true/*bKeepSends*/);
+                  return true;
+
+               case "paste_kit":
+                  handlePasteKit();
+                  return true;
+
+               case "consolidate_keep_names":
+                  STConfig.b_sample_pad_consolidate_keep_names = !STConfig.b_sample_pad_consolidate_keep_names;
+                  Global.Print("consolidate-keep-names is "+Utils.GetEnableString(STConfig.b_sample_pad_consolidate_keep_names));
+                  PrefsDialog.MarkAsEdited();
+                  return true;
+
+               case "consolidate_autoduplicate":
+                  STConfig.b_sample_pad_consolidate_autoduplicate_all_refs = !STConfig.b_sample_pad_consolidate_autoduplicate_all_refs;
+                  Global.Print("consolidate-autoduplicate is "+Utils.GetEnableString(STConfig.b_sample_pad_consolidate_autoduplicate_all_refs));
+                  PrefsDialog.MarkAsEdited();
+                  return true;
+
+               case "consolidate_samples":
+                  handleConsolidateSamples1(false/*bSave*/);
+                  return true;
+
+               case "group_samples":
+                  handleGroupSamples();
+                  return true;
+            }
+            return true;
+
+         case @(cf_variation):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleVariationChanged(true/*bSendPerfCtl*/, !UI.KeyModCtrl()/*bPlay*/);
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else
+            {
+               // Rename namespace
+               if(ComboField.ACTION_OPTIONEDITED/*char typed*/ == acName)
+               {
+               }
+               else if(ComboField.ACTION_OPTIONRENAMED == acName)
+               {
+                  handleVariationNameChanged(cf_variation.getSelectedOptionName());
+                  refocusDefault();
+               }
+            }
+            return true;
+
+         case @(cb_perf_ctl_only):
+            handlePerfCtlOnlyChanged();
+            return true;
+
+         case @(cm_var_base_note):
+            handleVarBaseNoteChanged();
+            return true;
+
+         case @(cb_midi_follow):
+            handleMIDIFollowChanged();
+            return true;
+
+         case @(cf_nsp):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleNamespaceFilterChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else
+            {
+               // Rename namespace
+               if(ComboField.ACTION_OPTIONEDITED/*char typed*/ == acName)
+               {
+               }
+               else if(ComboField.ACTION_OPTIONRENAMED == acName)
+               {
+                  handleNamespaceNameChanged(cf_nsp.getSelectedOptionName());
+                  handleNamespaceFilterChanged();
+                  refocusDefault();
+               }
+            }
+            return true;
+
+         case @(bt_nsp_from_smp):
+            handleSetNamespaceFromSample();
+            return true;
+
+         case @(cm_sample):
+            handleSampleChanged();
+            return true;
+
+         case @(bt_smp_edit):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               togglePadEditMode();
+            else
+               handleEditSample();
+            return true;
+
+         case @(cm_root_key):
+            handleRootKeyChanged();
+            return true;
+
+         case @(cm_link_group):
+            handleLinkGroupChanged();
+            return true;
+
+         case @(cm_mutex_group):
+            handleMutexGroupChanged();
+            return true;
+
+            // Initial variation performance controllers
+         case @(bt_var_perf_mw):
+            togglePerfCtlDecHex(fp_var_perf_mw);
+            return true;
+
+         case @(bt_var_perf_bc):
+            togglePerfCtlDecHex(fp_var_perf_bc);
+            return true;
+
+         case @(bt_var_perf_fc):
+            togglePerfCtlDecHex(fp_var_perf_fc);
+            return true;
+
+         case @(bt_var_perf_ex):
+            togglePerfCtlDecHex(fp_var_perf_ex);
+            return true;
+
+         case @(bt_var_perf_gp1):
+            togglePerfCtlDecHex(fp_var_perf_gp1);
+            return true;
+
+         case @(bt_var_perf_gp2):
+            togglePerfCtlDecHex(fp_var_perf_gp2);
+            return true;
+
+         case @(bt_var_perf_gp3):
+            togglePerfCtlDecHex(fp_var_perf_gp3);
+            return true;
+
+         case @(bt_var_perf_gp4):
+            togglePerfCtlDecHex(fp_var_perf_gp4);
+            return true;
+
+         case @(cb_var_perf_bipolar_mw):
+            handlePerfCtlBipolarChanged("CC#001 ModWheel", STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, cb_var_perf_bipolar_mw.isSelected());
+            return true;
+
+         case @(fp_var_perf_mw):
+            handleInitialPerfCtlChanged("CC#001 ModWheel", STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, fp_var_perf_mw.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_bc):
+            handlePerfCtlBipolarChanged("CC#002 BreathCtl", STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, cb_var_perf_bipolar_bc.isSelected());
+            return true;
+
+         case @(fp_var_perf_bc):
+            handleInitialPerfCtlChanged("CC#002 BreathCtl", STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, fp_var_perf_bc.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_fc):
+            handlePerfCtlBipolarChanged("CC#004 FootCtl", STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, cb_var_perf_bipolar_fc.isSelected());
+            return true;
+
+         case @(fp_var_perf_fc):
+            handleInitialPerfCtlChanged("CC#004 FootCtl", STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, fp_var_perf_fc.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_ex):
+            handlePerfCtlBipolarChanged("CC#011 Expr", STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, cb_var_perf_bipolar_ex.isSelected());
+            return true;
+
+         case @(fp_var_perf_ex):
+            handleInitialPerfCtlChanged("CC#011 Expr", STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, fp_var_perf_ex.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_gp1):
+            handlePerfCtlBipolarChanged("CC#016 GP1", STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1, cb_var_perf_bipolar_gp1.isSelected());
+            return true;
+
+         case @(fp_var_perf_gp1):
+            handleInitialPerfCtlChanged("CC#016 GP1", STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1, fp_var_perf_gp1.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_gp2):
+            handlePerfCtlBipolarChanged("CC#017 GP2", STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2, cb_var_perf_bipolar_gp2.isSelected());
+            return true;
+
+         case @(fp_var_perf_gp2):
+            handleInitialPerfCtlChanged("CC#017 GP2", STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2, fp_var_perf_gp2.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_gp3):
+            handlePerfCtlBipolarChanged("CC#018 GP3", STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3, cb_var_perf_bipolar_gp3.isSelected());
+            return true;
+
+         case @(fp_var_perf_gp3):
+            handleInitialPerfCtlChanged("CC#018 GP3", STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3, fp_var_perf_gp3.getFloatValue());
+            return true;
+
+         case @(cb_var_perf_bipolar_gp4):
+            handlePerfCtlBipolarChanged("CC#019 GP4", STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4, cb_var_perf_bipolar_gp4.isSelected());
+            return true;
+
+         case @(fp_var_perf_gp4):
+            handleInitialPerfCtlChanged("CC#019 GP4", STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4, fp_var_perf_gp4.getFloatValue());
+            return true;
+
+         case @(cb_var_perfctl):
+            handleEnablePerfCtlChanged();
+            return true;
+
+         case @(fp_var_pad_slew):
+            handleSlewAmtChanged();
+            return true;
+      }
+
+      return Form::consumeAction(_action);
+   }
+
+}

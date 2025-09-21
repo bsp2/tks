@@ -1,0 +1,326 @@
+// ----
+// ---- file   : ModDelay.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 03Feb2021
+// ---- changed: 06Feb2021, 27Dec2021, 09Jan2022, 06Jan2024, 21Jan2024, 18Sep2024, 19Sep2024
+// ----          07Jan2025
+// ----
+// ----
+// ----
+
+module MModDelay;
+
+use tksdl;
+use tksampler;
+
+namespace st2;
+
+
+// <class.png>
+class ModDelay : Mod {
+   // (note) uses tksampler voice plugin effect (fx_example voice plugin library)
+   define String FX_ID = "bsp dly 2";
+
+   define int PARAM_NONE    = 0;
+   define int PARAM_DELAY   = 1;  // 0..1 => 0..371ms
+   define int PARAM_PAN     = 2;  // 0..1 => -1..1
+   define int PARAM_SMOOTH  = 3;  // 0..1 ("hidden" parameter, controls delay time smoothing. def=0.5(medium))
+   define int NUM_PARAMS    = 4;
+
+   float delay; // L+R base delay. 0..1  (0..371ms)
+   float pan;   // -1..1   (negative=delay left, positive=delay right)
+
+   define float MAX_DELAY_MS = (1000.0 * 32768.0 / 88200.0);  // ~371ms
+
+   public    StPluginShared *shared;
+   protected StPluginVoice  *voice;
+   protected FloatArray      io_buf;  // interleaved stereo buffer for STFX plugin
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);      
+
+      delay = 0.0;
+      pan   = 0.0;
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      io_buf.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+      handleReloadVoicePlugin(true/*bReload*/);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+
+      voice <= null;
+      shared <= null;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "Delay";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModDelay cl <= new ModDelay;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModDelay);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModDelay)
+      {
+         ModDelay o <= _o;
+         delay = o.delay;
+         pan   = o.pan;
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method handleReloadVoicePlugin(boolean _bReload) {
+      // called when voice plugin DLL is unloaded or reloaded
+      voice <= null;
+      shared <= null;
+      if(_bReload)
+      {
+         StPluginInfo info <= VoicePlugins.FindVoicePluginInfoById(FX_ID);
+         if(null != info)
+         {
+            shared <= info.createSharedInstance();
+            if(null != shared)
+            {
+               voice <= shared.createVoiceInstance(Audio.mix_rate, 0/*voiceIdx*/);
+               trace "[trc] ModDelay::handleReloadVoicePlugin: voice="+#(voice);
+               shared.setParamValue(7/*PARAM_SMOOTH*/, 0.5f);
+            }
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      _retParamNames = [
+         "-",             //  0: PARAM_NONE
+         "Delay",         //  1: PARAM_DELAY
+         "Pan",           //  2: PARAM_PAN
+         "Smooth",        //  3: PARAM_SMOOTH
+                        ];
+
+      return true;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // trace "xxx ModDelay::setParameterValue: idx="+_idx+" value="+_value;
+
+      switch(_idx)
+      {
+         case PARAM_DELAY:
+            setDelay(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_PAN:
+            setPan((_value - 0.5f) * 2.0f);
+            queueUIUpdate();
+            break;
+
+         case PARAM_SMOOTH:
+            if(null != shared)
+            {
+               // trace "xxx update ModDelay PARAM_SMOOTH to "+_value;
+               mtx_param.lock();
+               shared.setParamValue(7/*PARAM_SMOOTH*/, _value);
+               mtx_param.unlock();
+            }
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public method setDelay(local float _delay) {
+      _delay = mathClampf(_delay, 0.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(delay != _delay)
+      {
+         delay = _delay;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setPan(local float _pan) {
+      _pan = mathClampf(_pan, -1.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(_pan != pan)
+      {
+         pan = _pan;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_get.png>
+   public method getInfoString() : String {
+      float delayL = mathClampf(delay+((pan < 0.0)?-pan:0), 0.0f, 1.0f);
+      float delayR = mathClampf(delay+((pan > 0.0)? pan:0), 0.0f, 1.0f);
+      float delayLMS = (1000.0f * delayL * (32768/*ST_DELAY_SIZE*/)) / 88200.0f;  // 0..371ms
+      float delayRMS = (1000.0f * delayR * (32768/*ST_DELAY_SIZE*/)) / 88200.0f;
+      int delayLF = ( (delayLMS / 1000.0) * Audio.mix_rate );
+      int delayRF = ( (delayRMS / 1000.0) * Audio.mix_rate );
+      return "L="+int(delayLMS)+"ms  R="+int(delayRMS)+"ms   #frames L="+delayLF+" R="+delayRF;
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 1;
+
+      // Delay
+      _ofs.f32 = delay;
+
+      // Pan
+      _ofs.f32 = pan;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Delay
+            delay = _ifs.f32;
+
+            // Pan
+            pan = _ifs.f32;
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModDelay::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying)/// || (true == STConfig.b_process_when_muted))
+      {
+         mtx_param.lock();
+
+         if(replay.b_have_events)
+         {
+            // Calc modmatrix, update params via setParameterValue()
+            processModMatrixEvents(_fltDev, _fltCh, _globalCh);
+         }
+
+         if(replay.b_process_audio)  // (todo) always true at this point ?!
+         {
+            local float delayL = mathClampf(delay+((pan < 0.0)?-pan:0), 0.0f, 1.0f);
+            local float delayR = mathClampf(delay+((pan > 0.0)? pan:0), 0.0f, 1.0f);
+
+            if(((delayL > 0.0f) || (delayR > 0.0f)) && (null != voice))
+            {
+               // Interleave
+               tksampleedit_copy_dualmono_to_stereo(io_buf, 0,
+                                                    inL, inR, 0,
+                                                    _numFrames
+                                                    );
+
+               // Process delay
+               shared.setParamValue(1/*PARAM_TIME_L*/, delayL);
+               shared.setParamValue(3/*PARAM_TIME_R*/, delayR);
+               voice.processReplace(io_buf, _numFrames);
+
+               // De-Interleave
+               tksampleedit_copy_stereo_to_dualmono(outL, outR, 0,
+                                                    io_buf, 0,
+                                                    _numFrames
+                                                    );
+            }
+            else
+            {
+               // Bypass (copy input to output)
+               tksampleedit_copy_dualmono_to_dualmono(outL, outR, 0,
+                                                      inL, inR, 0,
+                                                      _numFrames
+                                                      );
+            }
+         }
+
+         mtx_param.unlock();
+
+      } // if _bPlaying
+   }
+
+}

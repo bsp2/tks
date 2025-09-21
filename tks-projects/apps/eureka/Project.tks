@@ -1,0 +1,5462 @@
+// ----
+// ---- file   : Project.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 22Jan2018, 24Jan2018, 26Jan2018, 09Feb2018, 10Feb2018, 16Feb2018, 17Feb2018
+// ----          24Feb2018, 26Feb2018, 02Mar2018, 03Mar2018, 06Mar2018, 07Mar2018, 26Mar2018
+// ----          20May2018, 30May2018, 21Jul2018, 06Dec2018, 07Dec2018, 08Dec2018, 12Dec2018
+// ----          15Dec2018, 16Dec2018, 17Dec2018, 18Dec2018, 22Dec2018, 27Dec2018, 02Jan2019
+// ----          03Jan2019, 05Jan2019, 06Jan2019, 22Mar2019, 30Mar2019, 09May2019, 10May2019
+// ----          17May2019, 02Aug2019, 05Aug2019, 26Aug2019, 15Oct2019, 09Feb2020, 19Feb2020
+// ----          19May2020, 21Aug2020, 23Aug2020, 28Aug2020, 29Aug2020, 31Aug2020, 01Sep2020
+// ----          02Sep2020, 08Sep2020, 11Sep2020, 12Sep2020, 10Oct2020, 11Oct2020, 13Oct2020
+// ----          15Oct2020, 17Oct2020, 18Oct2020, 29Nov2020, 31Jan2021, 03Feb2021, 08Feb2021
+// ----          07Apr2021, 03May2021, 17Jul2021, 20Jul2021, 31Jul2021, 26Aug2021, 31Aug2021
+// ----          27Dec2021, 05Feb2022, 06Feb2022, 11Feb2022, 13Feb2022, 13May2022, 14May2022
+// ----          01Jul2022, 08Jul2022, 16Jul2022, 17Jul2022, 22Jul2022, 04Aug2022, 10Aug2022
+// ----          11Aug2022, 12Aug2022, 13Aug2022, 18Dec2022, 01Jan2023, 19Feb2023, 07Mar2023
+// ----          10Apr2023, 12Apr2023, 13Apr2023, 14Apr2023, 16Apr2023, 20Apr2023, 21Apr2023
+// ----          22Apr2023, 14Jun2023, 08Jul2023, 29Jul2023, 16Aug2023, 02Oct2023, 03Oct2023
+// ----          05Nov2023, 08Nov2023, 16Nov2023, 18Nov2023, 23Nov2023, 02Dec2023, 03Dec2023
+// ----          06Jan2024, 18Jan2024, 19Jan2024, 10Feb2024, 14Feb2024, 24Feb2024, 18Apr2024
+// ----          19Apr2024, 20Apr2024, 28Apr2024, 03Jul2024, 05Jul2024, 07Aug2024, 12Aug2024
+// ----          19Sep2024, 23Sep2024, 08Nov2024, 15Nov2024, 22Nov2024, 30Dec2024, 07Jan2025
+// ----          14Jan2025, 04Apr2025, 06Apr2025, 12Jun2025, 13Jun2025
+// ----
+// ----
+// ----
+
+module MProject;
+
+use tksdl;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ExportTSRModSeq {
+   byte     len;
+   byte     flags;
+   byte     slew;
+   byte     spd;
+   IntArray data;
+
+   public method compare(ExportTSRModSeq _o) : boolean {
+      return
+         (_o.len   == len)   &&
+         (_o.flags == flags) &&
+         (_o.slew  == slew)  &&
+         (_o.spd   == spd)   &&
+         (_o.data  == data)  ;
+   }
+}
+
+
+// <callback.png>
+function postload_mod_thread_entry(local Thread _th) {
+   local Mod mod <= _th.userdata;
+   Global.Debug("mod_postload_thread: started writer thread.id="+_th.id+", mod="+#(mod));
+
+   mod.loadStatePost(true/*bThreaded*/);
+
+   Global.Debug("mod_postload_thread: exiting writer thread.id="+_th.id+", mod="+#(mod));
+}
+
+
+// <class.png>
+class Project {
+
+   define float MAX_LIVEREC_SAMPLE_DURATION = (10 * 60 * 1000);  // ~100MB @44.1kHz stereo
+
+   public String  project_name;   //
+   public String  author_name;    // Who composed this song
+   public String  author_comment; //
+
+   public StWaveform *render_waveform;
+   public int         render_start;  // sample offset
+   public int         render_length; // num samples
+   public boolean     b_render_realtime;
+   public boolean     b_render_normalize;
+   public boolean     b_render_clear;
+   public int         render_num_takes;
+
+   public float temp_level;  // temporary samples (SampleView)
+
+   public float bpm;
+   public int   ppq;
+
+   public float master_level;
+   public float master_pan;
+
+   public float master_level_l;
+   public float master_level_r;
+
+   protected boolean b_master_dim;  // lower volume by STConfig.master_dim_db. not saved with project.
+
+   protected int blink_count; // used when replay is not active
+
+   Track *[] tracks;  // Track instances
+
+   RingBuffer resynth_ringbuf;  // used by ResynthDialog
+
+   RingBuffer scope_fft_ringbuf;      // used by ScopeDialog
+   RingBuffer scope_history_ringbuf;  // used by ScopeDialog
+   RingBuffer scope_trig_ringbuf;     // used by ScopeDialog
+
+   static HashTable trace_once_cache;
+
+   protected Thread *[] postload_mod_threads;  // Thread instances
+
+   protected boolean b_modified;
+
+   public boolean b_uses_inputs;  // updated after loading a project or when a track's input channel selection changes
+
+   public boolean b_track_overview;  // true=show tightly packed tracks, false=one track per row (+sample view)
+   public int track_layout_all_idx = Track.LAYOUT_ALL;  // 0..Track.NUM_LAYOUTS-1
+
+   AudioTrack *[] audio_tracks;  // AudioTrack instances
+   int audio_take_nr;          // used as file prefix ($(TAKE_NR)). editable on the AudioTracks page.
+
+   public boolean b_record_replace;
+
+   public float temp_vel_amt;  // volume velocity amount (0..1)
+   public int   temp_env_release_type;  // 0=gate,1=short,2=medium,3=long,4=inf
+   public int   temp_numvoices;
+   public float temp_sampleoff;       // start offset (0..1)
+   public float temp_sampleoff_rand;  // start offset randomization (0..1)
+   public float temp_pan_rand;  // panning randomization (0..1)
+
+   public byte    sampleview_dropfiles_mode;       // 0=replace, 1=insert, 2=append
+   public boolean b_sampleview_dropfiles_silence;  // true=append silence after each imported file
+   public byte    sampleview_dropfiles_offset;     // 0..3
+   public boolean sampleview_dropfiles_format;     // 0=s8 mono, 1=s8 stereo, 2=s16 mono, 3=s16 stereo, 4=f32 mono, 5=f32 stereo
+
+   public int last_used_sample_type;  // see Sample.TYPE_xxx
+   public int last_used_sample_grid_size;  // 1..128
+
+   public StringArray sample_namespace_names;
+   Sample *[] samples;  // Sample instances
+
+   public String export_all_c_buf_calc;
+   public String export_all_c_buf_call;
+   public String export_all_c_buf_static_init;
+   public int export_all_c_wf_off;
+   public int export_all_c_total_wf_sz_proc;
+   public int export_all_c_total_wf_sz_static;
+   public boolean b_export_all_c;
+   public boolean b_export_all_c_float;
+   public boolean b_export_all_c_calc_win_hse_done;
+   public boolean b_export_all_c_calc_win_hse_1_36_done;
+   public boolean b_export_all_c_calc_win_hse_2_done;
+   public boolean b_export_all_c_calc_win_hse_3_done;
+   public boolean b_export_all_c_calc_win_hse_5_done;
+   public boolean b_export_all_c_calc_win_hse_7_done;
+   public boolean b_force_static_samples;
+
+   public String new_sample_prefix;  // name prefix of next (atrk) recorded sample (set via SysEx). generate name when blank.
+   public int    new_sample_namespace_idx;  // sample namespace idx of next (atrk) recorded sample.
+
+   static IntArray tmp_track_reorder_map;  // see trackReorderBegin(), trackReorderEnd()
+
+   static boolean b_queued_update_trackforms;  // see PageProject (cache track form widgets)
+
+   int last_load_ms;
+   define int MODIFIED_GRACE_PERIOD_AFTER_LOAD = 500;
+
+
+   // <init.png>
+   public method init() {
+
+      project_name   = "n/a";
+      author_name    = "";
+      author_comment = "";
+
+      render_waveform   <= null;
+      render_start       = 0;
+      render_length      = 0;
+      b_render_realtime  = false;
+      b_render_normalize = true;
+      b_render_clear     = true;
+      render_num_takes   = 1;
+
+      temp_level   = 1.0f;
+      temp_vel_amt = 1.0f;
+
+      master_level   = 1.0f;
+      master_pan     = 0.0f;
+      master_level_l = 1.0f;
+      master_level_r = 1.0f;
+
+      setTempo(125.0f/*bpm*/, 192/*ppq*/);
+
+      b_modified = false;
+
+      Mod.next_instance_id = 1;
+
+      b_track_overview = true;
+
+      audio_take_nr = 1;
+
+      b_record_replace = true;
+
+      temp_numvoices = 16;
+
+      sampleview_dropfiles_mode      = 0/*replace*/;
+      b_sampleview_dropfiles_silence = true;
+      sampleview_dropfiles_offset    = 0;
+      sampleview_dropfiles_format    = 0/*s8*/;
+
+      last_used_sample_grid_size = 16;
+
+      resynth_ringbuf.init(1/*numCh*/, STConfig.resynth_ringbuf_num_frames);
+      resynth_ringbuf.setSource(RingBuffer.SRC_NONE, -1, -1);
+
+      scope_fft_ringbuf.init(1/*numCh*/, 32768);
+      scope_fft_ringbuf.setSource(RingBuffer.SRC_NONE, -1, -1);
+
+      scope_history_ringbuf.init(1/*numCh*/, STConfig.scope_ringbuf_num_frames);
+      scope_history_ringbuf.setSource(RingBuffer.SRC_NONE, -1, -1);
+
+      scope_trig_ringbuf.init(1/*numCh*/, 32768);
+      scope_trig_ringbuf.setSource(RingBuffer.SRC_NONE, -1, -1);
+
+      // Initialize sample namespace names
+      loadDefaultSampleNamespaceNames();
+
+      b_queued_update_trackforms = true;
+   }
+
+   // <exit.png>
+   public method exit() {
+
+      Audio.ResetAllTempSamples();
+      Audio.UnloadAllTempSampleVoicePlugins();
+
+      exitTracks();
+      exitSamples();
+   }
+
+   // <method.png>
+   protected method exitTracks() {
+      Track *track;
+      Global.Debug("Project::exitTracks: #tracks="+tracks.numElements);
+      foreach track in tracks
+         track.exit();
+   }
+
+   // <method.png>
+   protected method exitSamples() {
+      Global.Debug("Project::exitSamples: #samples="+samples.numElements);
+      Sample *sample;
+      int sampleIdx = 0;
+      foreach sample in samples
+      {
+         Global.Debug2("Project::exitSamples: sample["+sampleIdx+"].unique_name=\""+sample.unique_name+"\"");
+         sample.exit();
+         sampleIdx++;
+      }
+   }
+
+   // <method_set.png>
+   public method markAsModified() {
+      if( (milliSeconds() - last_load_ms) > MODIFIED_GRACE_PERIOD_AFTER_LOAD)
+         b_modified = true;
+   }
+
+   // <method_get.png>
+   public method isModified() : boolean {
+      return b_modified;
+   }
+
+   // <method.png>
+   public =replay= method resetTracks() {
+      Track *track;
+      foreach track in tracks
+         track.reset();
+   }
+
+   // <method_update.png>
+   public method updateForceMuteStates() {
+      boolean bAnySolo = false;
+      Track *track;
+      foreach track in tracks
+      {
+         if(Track.STATE_SOLO == track.play_state)
+         {
+            bAnySolo = true;
+            break;
+         }
+      }
+
+      foreach track in tracks
+      {
+         if(bAnySolo)
+         {
+            if(track.name != STConfig.track_autoroute_master_name)  // exclude "master" output track
+               track.b_force_mute = (Track.STATE_SOLO != track.play_state);
+         }
+         else
+         {
+            track.b_force_mute = false;
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =audio= method setTempLevel(float _level) {
+
+      _level = mathClampf(_level, 0, 300);
+
+      if(temp_level != _level)
+         markAsModified();
+
+      temp_level = _level;
+   }
+
+   // <method_get.png>
+   public method getTempLevel() : float {
+      return temp_level;
+   }
+
+   // <method_set.png>
+   public method setMasterLevel(float _level) {
+
+      _level = mathClampf(_level, 0, 300);
+
+      if(master_level != _level)
+         markAsModified();
+
+      master_level = _level;
+
+      updateMasterLevelLR();
+   }
+
+   // <method_get.png>
+   public method getMasterLevel() : float {
+      return master_level;
+   }
+
+   // <method_set.png>
+   public method setMasterPan(float _pan) {
+
+      _pan = mathClampf(_pan, -1.0f, 1.0f);
+
+      if(_pan != master_pan)
+         markAsModified();
+
+      master_pan = _pan;
+
+      updateMasterLevelLR();
+   }
+
+   // <method_get.png>
+   public method getMasterPan() : float {
+      return master_pan;
+   }
+
+   // <method_set.png>
+   public =replay= method setMasterDim(boolean _bEnable) {
+      b_master_dim = _bEnable;
+   }
+
+   // <method_set.png>
+   public method getMasterDim() : boolean {
+      return b_master_dim;
+   }
+
+   // <method_update.png>
+   protected method updateMasterLevelLR() {
+
+      if(0)
+      {
+         // Lerp (center max=0.5)
+         float ap = ((1.0f - master_pan) * 0.5f);
+         master_level_l = master_level * ap;
+         master_level_r = master_level * (1.0f - ap);
+      }
+      else
+      {
+         // Linear (center max=1.0)
+         float t = master_pan;
+         master_level_l = (t < 0.0f) ? 1.0 : (1.0f - t);
+         master_level_r = (t > 0.0f) ? 1.0 : (1.0f + t);
+         master_level_l *= master_level;
+         master_level_r *= master_level;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setTempo(float _bpm, int _ppq) {
+      Global.Debug3("Project::setTempo(bpm="+_bpm+" ppq="+_ppq+")");
+
+      if(1 <= _bpm <= 500)
+      {
+         // (note) don't count bpm changes as modification since BPM will always be updated by seq.
+         // // if(bpm != _bpm)
+         // //    markAsModified();
+
+         bpm = _bpm;
+         ppq = _ppq;
+
+         tkclap_set_bpm(bpm);
+         tkvst2_set_bpm(bpm);  // for audioMasterGetTime (see VST2Plugin.cpp)
+
+         // Update other (non-VST) mods (e.g. sampler instances)
+         Audio.SetTempo(bpm, ppq);  // temp_sp
+
+         Track *track;
+         foreach track in tracks
+            track.setTempo(bpm, ppq);
+
+         SampleView.SetBPM(_bpm);
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRecordReplace(boolean _bEnable) {
+      b_record_replace = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getNumTracks() : int {
+      return tracks.numElements;
+   }
+
+   // <method_get.png>
+   public method getTrackIdx(Track _track) : int {
+      return tracks.indexOfPointer(_track, 0);
+   }
+
+   // <method_get.png>
+   public method getTrackByIdx(local int _idx) : Track {
+      return tracks.get(_idx);
+   }
+
+   // <method_find.png>
+   public method findFirstUnusedTrackMIDIChannel(byte _devIdx) : byte {
+      local IntArray midiChMap; midiChMap.allocAndFill(16, false);
+      Track *track;
+      foreach track in tracks
+      {
+         if(track.dev_idx == _devIdx && track.midi_ch >= 0)
+            midiChMap[track.midi_ch] = true;
+      }
+      byte retMidiCh = midiChMap.indexOf(false, 0);
+      return retMidiCh;
+   }
+
+   // <method_find.png>
+   public method findMasterTrackIdx() : int {
+      local Track *masterTrack;
+      int masterTrackIdx = 0;
+      boolean bHaveMasterTrack = false;
+      foreach masterTrack in current_project.tracks
+      {
+         if(STConfig.track_autoroute_master_name/*"master"*/ == masterTrack.name)
+         {
+            bHaveMasterTrack = true;
+            break;
+         }
+         masterTrackIdx++;
+      }
+      return bHaveMasterTrack ? masterTrackIdx : -1;
+   }
+
+   // <method_find.png>
+   public method findAudioTrackForMIDITrack(local byte _devIdx, local byte _midiCh, local Track _excludeTrackOrNull) : Track {
+      // Find first audio track whose parent_midi_track_* match 'devIdx' / 'midiCh'
+      local Track *audioTrack;
+      local Track *trackO;
+      foreach trackO in tracks
+      {
+         if(@(trackO) != @(_excludeTrackOrNull))
+         {
+            if(trackO.parent_midi_track_dev_idx_hint == _devIdx)
+            {
+               if( (-1 == trackO.parent_midi_track_midi_ch_hint) || (trackO.parent_midi_track_midi_ch_hint == _midiCh) ||
+                   (-1 == _midiCh)
+                   )
+               {
+                  // Found
+                  audioTrack <= trackO;
+                  break;
+               }
+            }
+         }
+      }
+      return audioTrack;
+   }
+
+   // <method_find.png>
+   public method findMIDITrackForAudioTrack(local byte _parentDevIdxHint, local byte _parentMidiChHint, local Track _excludeTrackOrNull) : Track {
+      // Find first MIDI track that matches 'parentDevIdx' / 'parentMidiCh'
+      local Track *midiTrack;
+      local Track *trackO;
+      foreach trackO in current_project.tracks
+      {
+         if(@(trackO) != @(_excludeTrackOrNull))
+         {
+            if(_parentDevIdxHint == trackO.dev_idx)
+            {
+               if( (-1 == _parentMidiChHint) || (_parentMidiChHint == trackO.midi_ch) ||
+                   (-1 == trackO.midi_ch)
+                   )
+               {
+                  // Found
+                  midiTrack <= trackO;
+               }
+            }
+         }
+      }
+      return midiTrack;
+   }
+
+   // <method_find.png>
+   public method findTrackByMIDIPort(local byte _dev, local byte _ch) : Track {
+      // Find first track that matches 'dev' / 'ch'
+      local Track *track;
+      foreach track in tracks
+      {
+         if(track.listensToMIDIPort(_dev, _ch))
+            return track;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findTrackByName(String _name) : Track {
+      local Track *track;
+      foreach track in tracks
+      {
+         if(track.name == _name)
+            return track;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public static QueueTrackFormUpdate() {
+      // see PageProject
+      b_queued_update_trackforms = true;
+   }
+
+   // <method_get.png>
+   public static CheckResetQueuedTrackFormUpdate() : boolean {
+      Global.Debug2("Project::CheckResetQueuedTrackFormUpdate: b_queued_update_trackforms="+b_queued_update_trackforms);
+      return = b_queued_update_trackforms;
+      b_queued_update_trackforms = false;
+      return;
+   }
+
+   // <method_new.png>
+   public =replay= method newTrack(String _name, int _idx) : Track {
+      Track track <= new Track;
+      track.init();
+      track.name = _name;
+      if(-1 == _idx)
+         tracks.add(#(deref track));
+      else
+         tracks.insert(_idx, #(deref track));
+      track.newLane();
+
+      updateSharedCPUCoreFlags();
+
+      markAsModified();
+
+      QueueTrackFormUpdate();
+
+      return track;
+   }
+
+   // <method_new.png>
+   public =replay= method newTrackAppend(String _name) : Track {
+      // "master", "focus"
+      int trackIdx = tracks.numElements;
+      return newTrack(_name, trackIdx);
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteTrack(Track _track) {
+      int trackIdx = getTrackIdx(_track);
+      if(-1 != trackIdx)
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+         trackReorderBegin();
+
+         _track.exit();
+         tracks.delete(trackIdx);
+
+         trackReorderEnd();
+
+         updateSharedCPUCoreFlags();
+
+         QueueTrackFormUpdate();
+
+         markAsModified();
+
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      }
+   }
+
+   // <method.png>
+   public method trackReorderBegin() {
+      // Called before inserting/deleting/moving tracks
+      tmp_track_reorder_map.alloc(tracks.numElements);
+      tmp_track_reorder_map.useAll();
+
+      Track *t;
+      int trackIdx = 0;
+      foreach t in tracks
+         t.cur_track_idx = trackIdx++;
+   }
+
+   // <method.png>
+   public =replay= method trackReorderEnd() {
+      // Called after inserting/deleting/moving tracks (update Output/Lane track refs)
+
+      int trackIdx = 0;
+      Track *t;
+      foreach t in tracks
+      {
+         tmp_track_reorder_map[t.cur_track_idx] = trackIdx++;
+      }
+
+      foreach t in tracks
+      {
+         t.handleTrackReorder(tmp_track_reorder_map);
+      }
+
+      AudioTrack *atrack;
+      foreach atrack in audio_tracks
+      {
+         atrack.handleTrackReorder(tmp_track_reorder_map);
+      }
+
+      Sample *sample;
+      foreach sample in samples
+      {
+         sample.handleTrackReorder(tmp_track_reorder_map);
+      }
+
+      Dialogs.scope_dialog.handleTrackReorder(tmp_track_reorder_map);
+
+      tmp_track_reorder_map.free();
+
+      QueueTrackFormUpdate();
+   }
+
+   // <method.png>
+   public =replay= method moveTrack(int _unlinkIdx, int _insertIdx) {
+      Global.Debug("Project::moveTrack: unlinkIdx="+_unlinkIdx+" insertIdx="+_insertIdx);
+      Track track <= tracks.getDeref(_unlinkIdx);
+
+      trackReorderBegin();
+
+      tracks.delete(_unlinkIdx);
+      tracks.insert(_insertIdx, #(deref track));
+
+      trackReorderEnd();
+
+      markAsModified();
+   }
+
+   // <method_get.png>
+   public method getAudioTrackIdx(AudioTrack _atrack) : int {
+      return audio_tracks.indexOfPointer(_atrack, 0);
+   }
+
+   // <method_get.png>
+   public method getAudioTrackByIdx(local int _idx) : AudioTrack {
+      return audio_tracks.get(_idx);
+   }
+
+   // <method_new.png>
+   public =replay= method newAudioTrack(String _name) : AudioTrack {
+      AudioTrack atrack <= new AudioTrack;
+      atrack.init();
+      atrack.name = _name;
+      audio_tracks.add(#(deref atrack));
+
+      markAsModified();
+
+      return atrack;
+   }
+
+   // <method_find.png>
+   public method findAudioTrackByName(String _name) : AudioTrack {
+      AudioTrack *atrack;
+      foreach atrack in audio_tracks
+      {
+         if(atrack.name == _name)
+            return atrack;
+      }
+      return null;
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteAudioTrack(AudioTrack _atrack) {
+      int atrackIdx = getAudioTrackIdx(_atrack);
+
+      if(-1 != atrackIdx)
+      {
+         _atrack.exit();
+         audio_tracks.delete(atrackIdx);
+
+         markAsModified();
+      }
+   }
+
+   // <method.png>
+   public =replay= method swapAudioTracks(int _idxA, int idxB) {
+      audio_tracks.swap(_idxA, idxB);
+      markAsModified();
+   }
+
+   // <method.png>
+   public method allocUniqueSampleId() : int {
+      Sample *smp;
+      local IntArray ids; ids.allocAndFill(Sample.MAX_UNIQUE_ID, false);
+      foreach smp in samples
+      {
+         if(-1 != smp.unique_id)
+            ids[smp.unique_id] = true;
+      }
+      int newId = ids.indexOf(false, 0);
+      Global.Debug("Project::allocUniqueSampleId: newUniqueId="+newId);
+      return newId;
+   }
+
+   // <method_new.png>
+   public =replay= method newSample(String _name, int _idxHint) : Sample {
+
+      Sample sample <= new Sample;
+      sample.init();
+
+      if(null == _name)
+         sample.assignDefaultName();
+      else
+         sample.assignUniqueName(_name);
+
+      sample.unique_id = allocUniqueSampleId();
+
+      if(-1 == _idxHint)
+      {
+         samples.add(#(deref sample));
+      }
+      else
+      {
+         handleShiftSampleIds(_idxHint, 1);
+         samples.insert(_idxHint, #(deref sample));
+      }
+
+      sample.suggested_pathname = "/" + STConfig.sample_userpath + "/";
+      Global.Debug("Project::newSample: sample.suggested_pathname=\""+sample.suggested_pathname+"\"");
+
+      markAsModified();
+
+      return sample;
+   }
+
+   // <method_new.png>
+   public =replay= method cloneSampleByUniqueID(short _uid) : Sample {
+      Sample sampleOrig <= findSampleByUniqueID(_uid);
+      if(null != sampleOrig)
+      {
+         Sample sampleNew <= newSample(sampleOrig.unique_name, getSampleIdx(sampleOrig)+1);
+         sampleNew.copyFrom(sampleOrig);
+         return sampleNew;
+      }
+      return null;
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteSample(Sample _sample) {
+      int sampleIdx = getSampleIdx(_sample);
+      if(-1 != sampleIdx)
+      {
+         Audio.ResetAllSampleVoicesMods(_sample);
+
+         handleShiftSampleIds(sampleIdx, -1);
+
+         // unset last_started_samplebank hint
+         Track *track;
+         foreach track in tracks
+            track.unsetLastStartedSampleBankHint(_sample);
+
+         PageTrack pgTrack <= root_form.pg_track;
+         SampleTimelineForm timelineForm <= pgTrack.f_sampletimeline;
+         if(@(timelineForm.current_sample) == @(_sample))
+            timelineForm.unsetCurrentSample();
+
+         _sample.exit();
+         samples.delete(sampleIdx);
+
+         markAsModified();
+      }
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteSamplesByUIDs(IntArray _smpUIDs) : int {
+      int numDeleted = 0;
+      int smpUID;
+      foreach smpUID in _smpUIDs
+      {
+         Sample sample <= current_project.findSampleByUniqueID(smpUID);
+         if(null != sample)
+         {
+            Global.Debug("Project::deleteSamplesByUIDs: delete smpUID="+smpUID+" name=\""+sample.unique_name+"\"");
+            Audio.ResetAllSampleVoicesMods(sample);
+            deleteSample(sample);
+            numDeleted++;
+         }
+      }
+
+      Audio.ResetAllTempSamples();
+
+      PageSample pgSample <= root_form.pg_sample;
+      if(pgSample.pageIsCurrent())
+      {
+         pgSample.pageUpdate();
+      }
+
+      UI.RedrawAll();
+
+      return numDeleted;
+   }
+
+   // <method_new.png>
+   public =replay= method createLiveRecSample(float _millisec,
+                                              boolean _bStereo,
+                                              float _levelDB,
+                                              byte _namespaceIdx,
+                                              String _name
+                                              ) : Sample {
+      Global.Debug("Project::createLiveRecSample: milliSec="+_millisec+" bStereo="+_bStereo+" levelDB="+_levelDB+" namespaceIdx="+_namespaceIdx+" name=\""+_name+"\"");
+      if(0 < _millisec < MAX_LIVEREC_SAMPLE_DURATION)
+      {
+         Sample sample <= newSample(_name, -1/*idxHint*/);
+         sample.initLiveRecSample(_millisec, _bStereo);
+         sample.setNamespaceIdx(_namespaceIdx);
+         sample.setVolume(Audio.DecibelToLevel(_levelDB));
+
+         if(RootForm.PAGE_SAMPLE == root_form.getCurrentPageNr())
+         {
+            PageSample pgSample <= root_form.pg_sample;
+            pgSample.updateSampleTable(sample);
+            pgSample.moveCursorToSampleIdxNoAction(getSampleIdx(sample));
+            pgSample.handleSelectSample(false/*bStopAudio*/);
+         }
+
+         UI.RedrawAll();
+         return sample;
+      }
+      else
+      {
+         trace "[---] Project::createLiveRecSample: max sample duration exceeded ("+_millisec+" > "+MAX_LIVEREC_SAMPLE_DURATION+"ms)";
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNumSamples() : int {
+      return samples.numElements;
+   }
+
+   // <method_get.png>
+   public method getSampleIdx(local Sample _sample) : int {
+      return samples.indexOfPointer(_sample, 0);
+   }
+
+   // <method_get.png>
+   public method getSampleByIdx(local int _idx) : Sample {
+      return samples.get(_idx);
+   }
+
+   // <method_find.png>
+   public method findSampleLocalNamespaceIdx(local Sample _sample) : int {
+      // Returns index of sample in list of all samples assigned to the same namespace
+      if(null != _sample && _sample.namespace_idx > 0)
+      {
+         local int locIdx = -1;
+         local Sample *s;
+         foreach s in samples
+         {
+            if(s.namespace_idx == _sample.namespace_idx)
+            {
+               locIdx++;
+               if(@(s) == @(_sample))
+                  return locIdx;
+            }
+         }
+      }
+      // Not assigned to a namespace
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findSampleByLocalNamespaceIdx(local int _localIdx, local int _namespaceIdx) : Sample {
+      // Returns sample in list of all samples assigned to the same namespace
+      local int locIdx = -1;
+      local Sample *s;
+      foreach s in samples
+      {
+         if(s.namespace_idx == _namespaceIdx)
+         {
+            if(++locIdx == _localIdx)
+               return s;
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findSampleByPrg(local byte _prg) : Sample {
+      local Sample *sample;
+      foreach sample in samples
+      {
+         if(sample.prg_id == _prg)
+            return sample;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findNextUnusedSamplePrg(byte _prg) : byte {
+      byte prg = _prg;
+      if(-1 == prg)
+         prg = 0;
+      while(prg < 128)
+      {
+         // trace "xxx findSampleByPrg(prg="+prg+")="+#(findSampleByPrg(prg));
+         if(null == findSampleByPrg(prg))
+            return prg;
+         prg++;
+      }
+      prg = 0;
+      while(prg < _prg)
+      {
+         if(null == findSampleByPrg(prg))
+            return prg;
+         prg++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findNumSamplesByPrg(local byte _prg) : int {
+      int ret = 0;
+      if(_prg >= 0)
+      {
+         local Sample *sample;
+         foreach sample in samples
+         {
+            if(sample.prg_id == _prg)
+               ret++;
+         }
+      }
+      return ret;
+   }
+
+   // <method_find.png>
+   public method findSampleByUniqueName(String _name) : Sample {
+      Sample *sample;
+      foreach sample in samples
+      {
+         if(sample.unique_name == _name)
+            return sample;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method findSampleByUniqueID(local int _smpUID) : Sample {
+      local Sample *sample;
+      foreach sample in samples
+      {
+         if(sample.unique_id == _smpUID)
+            return sample;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method normalizeSampleByUID(int _smpUID) {
+      Sample sample <= findSampleByUniqueID(_smpUID);
+      if(null != sample)
+      {
+         StWaveform wf <= sample.waveform;
+         FloatArray smpdat <= wf.sampleData;
+         if(null != smpdat)
+         {
+            float fScale = 1.0 / smpdat.absMax;
+            smpdat.scale(smpdat, fScale);
+            sample.markWaveformAsModified();
+            markAsModified();
+            Events.SendRedrawAll();
+         }
+      }
+   }
+
+   // <method.png>
+   public method clearSampleByUID(int _smpUID) {
+      Sample sample <= findSampleByUniqueID(_smpUID);
+      if(null != sample)
+      {
+         StWaveform wf <= sample.waveform;
+         FloatArray smpdat <= wf.sampleData;
+         if(null != smpdat)
+         {
+            smpdat.fill(0);
+            sample.markWaveformAsModified();
+            markAsModified();
+            Events.SendRedrawAll();
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getUniqueSampleNames() : StringArray {
+      local StringArray ret;
+      Sample *sample;
+      foreach sample in samples
+         ret.add(sample.unique_name);
+      return deref ret;
+   }
+
+   // <method_find.png>
+   public method findSamplesByNamePattern(String _namePattern, PointerArray _ret) {
+      // _namePattern: e.g. "a_808_loop_*_120bpm"
+      Sample *sample;
+      foreach sample in samples
+      {
+         if(sample.unique_name.patternMatch(_namePattern))
+         {
+            _ret.add(sample);
+         }
+      }
+   }
+
+   // <method_find.png>
+   public method findSamplesNewerThan(int _utime, IntArray _ret) {
+      // Global.Debug("Project::findSamplesNewerThan: utime="+_utime);
+      _ret.empty();
+      Sample *sample;
+      foreach sample in samples
+      {
+         int utimeSmp = sample.last_modification_time.utime;
+         // Global.Debug("Project::findSamplesNewerThan: sample uid="+sample.unique_id+" name=\""+sample.unique_name+"\" last_utime="+utimeSmp);
+         if(utimeSmp >= _utime)
+            _ret.add(sample.unique_id);
+      }
+   }
+
+   // <method_find.png>
+   public method findNumSampleRefsBySampleIdx(int _sampleIdx) : int {
+      if(_sampleIdx < 0)
+         return 0;
+
+      int numRefs = 0;
+
+      Sample sample <= getSampleByIdx(_sampleIdx);
+      if(null != sample)
+      {
+         if(sample.b_persistent)
+            numRefs++;
+      }
+
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         // trace "xxx findNumSampleRefsBySampleIdx: track.patch_variations="+#(track.patch_variations);
+         foreach tpv in track.patch_variations
+         {
+            numRefs += tpv.findNumSampleRefsBySampleIdx(_sampleIdx, track.name/*debug*/);
+         }
+      }
+      return numRefs;
+   }
+
+   // <method_find.png>
+   public method findNumSampleRefsBySample(Sample _smp) : int {
+      int sampleIdx = getSampleIdx(_smp);
+      if(sampleIdx >= 0)
+         return findNumSampleRefsBySampleIdx(sampleIdx);
+      return 0;
+   }
+
+   // <method.png>
+   public =replay= method swapSamples(int _smpIdxA, int _smpIdxB) {
+      samples.swap(_smpIdxA, _smpIdxB);
+
+      Track *track;
+      foreach track in tracks
+         track.swapSamples(_smpIdxA, _smpIdxB);
+
+      markAsModified();
+   }
+
+   // <method.png>
+   public =replay= method handleShiftSampleIds(int _idxStart, int _shift) {
+      Track *track;
+      foreach track in tracks
+      {
+         track.handleShiftSampleIds(_idxStart, _shift);
+      }
+   }
+
+   // <method.png>
+   public method unsoloAllSamples() {
+      Sample *sample;
+      foreach sample in samples
+         sample.setSoloZoneIdx(-1);
+   }
+
+   // <method_init.png>
+   public method loadDefaultSampleNamespaceNames() {
+      sample_namespace_names.alloc(Sample.NUM_NAMESPACES);
+      int defNSPNum = mathMini(Sample.NUM_NAMESPACES - 1, STConfig.default_sample_namespace_names.numElements);
+      int defNSPIdx = 1;
+      sample_namespace_names[0] = "-";
+      loop(defNSPNum)
+      {
+         sample_namespace_names[defNSPIdx] = STConfig.default_sample_namespace_names.get(defNSPIdx - 1);
+         defNSPIdx++;
+      }
+      while(defNSPIdx < Sample.NUM_NAMESPACES)
+      {
+         sample_namespace_names[defNSPIdx++] = "";
+      }
+   }
+
+   // <method_init.png>
+   public method initUnusedSampleNamespaceNames() {
+      int numNSP = sample_namespace_names.numElements;
+      if(numNSP < Sample.NUM_NAMESPACES)
+      {
+         int nspIdx = numNSP;
+         while(nspIdx < Sample.NUM_NAMESPACES)
+         {
+            sample_namespace_names[nspIdx++] = "";
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getSampleNamespaceNameByIdx(int _namespaceIdx) : String {
+      return sample_namespace_names.get(_namespaceIdx);
+   }
+
+   // <method_get.png>
+   public method getSampleNamespaceIdx(String _nspName) : int {
+      return sample_namespace_names.indexOfObject(_nspName, 0);
+   }
+
+   // <method_get.png>
+   public method getOrCreateSampleNamespace(String _nspName) : int {
+      int idx = sample_namespace_names.indexOfObject(_nspName, 0);
+      if(-1 == idx)
+      {
+         String *s;
+         int i = 0;
+         foreach s in sample_namespace_names
+         {
+            if(s.isBlank())
+            {
+               s = _nspName;
+               idx = i;
+               break;
+            }
+            i++;
+         }
+      }
+      return idx;
+   }
+
+   // <method_set.png>
+   public method renameSampleNamespace(int _namespaceIdx, String _name) : boolean {
+      if(0 < _namespaceIdx < Sample.NUM_NAMESPACES)
+      {
+         sample_namespace_names[_namespaceIdx] = _name;
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getSampleNamespaceOptions() : StringArray {
+      local StringArray optNamespaces;
+      String *sNSP;
+      int nspNr = 0;
+      foreach sNSP in sample_namespace_names
+      {
+         if(nspNr > 0)
+            optNamespaces.add(nspNr+": "+sNSP);
+         else
+            optNamespaces.add("-");
+         nspNr++;
+      }
+      return deref optNamespaces;
+   }
+
+   // <method_find.png>
+   public method findNumSampleNamespaceRefsByNamespaceIdx(int _namespaceIdx) : int {
+      int numRefs = 0;
+
+      Sample *sample;
+      foreach sample in samples
+      {
+         if(sample.getNamespaceIdx() == _namespaceIdx)
+            numRefs++;
+      }
+
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            if(track.isDrumMode())
+            {
+               SamplePadKit kit <= track.sample_pad_kit;
+               numRefs += kit.findNumSampleNamespaceRefsByNamespaceIdx(_namespaceIdx);
+            }
+         }
+      }
+
+      return numRefs;
+   }
+
+   // <method.png>
+   public method removeUnreferencedSampleNamespaces() : int {
+      int numRemoved = 0;
+      String *nspName;
+      int nspIdx = 0;
+      foreach nspName in sample_namespace_names
+      {
+         if(!nspName.isBlank())
+         {
+            int numRefs = findNumSampleNamespaceRefsByNamespaceIdx(nspIdx);
+            if(0 == numRefs)
+            {
+               nspName = "";
+               numRemoved++;
+            }
+         }
+
+         // Next sample namespace
+         nspIdx++;
+      }
+
+      if(numRemoved > 0)
+         markAsModified();
+
+      return numRemoved;
+   }
+
+   // <method.png>
+   public method tightenSampleNamespaceList() {
+      local IntArray iaRemap;
+      iaRemap.identity(sample_namespace_names.numElements);
+      local IntArray iaRearrange;
+      iaRearrange.identity(iaRemap.numElements);
+      int nspIdx = 0;
+      int newIdx = 1;
+      String *nspName;
+      foreach nspName in sample_namespace_names
+      {
+         if(nspIdx > 0)
+         {
+            if(nspName.isBlank())
+               iaRemap[nspIdx] = 0;
+            else
+            {
+               iaRemap[nspIdx] = newIdx;
+               iaRearrange[newIdx++] = nspIdx;
+               iaRearrange[nspIdx] = 0;
+            }
+         }
+         nspIdx++;
+      }
+
+      // trace "xxx iaRemap="+#(iaRemap);
+
+      Sample *sample;
+      foreach sample in samples
+         sample.setNamespaceIdx(iaRemap.get(sample.getNamespaceIdx()));
+
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            SamplePadKit kit <= track.sample_pad_kit;
+            kit.remapSampleNamespaceIndices(iaRemap);
+         }
+      }
+
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.remapSampleNamespaceIndices(iaRemap);
+
+      sample_namespace_names.rearrange(iaRearrange);
+   }
+
+   // <method.png>
+   public =replay= method freeSamplePlayerPluginCaches() {
+      // free plugin voice instances (delete StSamplePlayer cache entries)
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            SamplePadKit spk <= tpv.sample_pad_kit;
+            spk.handleReloadVoicePlugins(false/*bReload*/);
+
+            Lane *lane;
+            foreach lane in tpv.lanes
+            {
+               Mod *mod;
+               foreach mod in lane.mods
+               {
+                  if(mod instanceof ModSample)
+                  {
+                     ModSample modSample <= mod;
+                     StSamplePlayer sp <= modSample.sample_player;
+                     sp.unloadVoicePlugins();
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method unloadCycleVoicePlugins() {
+      // (note) should already be unloaded (CyScript instance is always temporary)
+
+      // Free Cycle synth patch voice instances
+      Sample *smp;
+      CycleState *sst;
+      foreach smp in current_project.samples
+      {
+         sst <= smp.cycle_state;
+         sst.unloadVoicePlugins();
+      }
+   }
+
+   // <method.png>
+   public method reloadModDelayVoicePlugins(boolean _bReload) {
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            Lane *lane;
+            foreach lane in tpv.lanes
+            {
+               ModDelay *modDelay;
+               foreach modDelay in lane.mods
+               {
+                  if(modDelay instanceof ModDelay)
+                  {
+                     modDelay.handleReloadVoicePlugin(_bReload);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method reloadModEQ3VoicePlugins(boolean _bReload) {
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            Lane *lane;
+            foreach lane in tpv.lanes
+            {
+               ModEQ3 *modEQ3;
+               foreach modEQ3 in lane.mods
+               {
+                  if(modEQ3 instanceof ModEQ3)
+                     modEQ3.handleReloadVoicePlugin(_bReload);
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method reloadModSyncVoicePlugins(boolean _bReload) {
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            Lane *lane;
+            foreach lane in tpv.lanes
+            {
+               ModSync *modSync;
+               foreach modSync in lane.mods
+               {
+                  if(modSync instanceof ModSync)
+                     modSync.handleReloadVoicePlugin(_bReload);
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method reloadModSTFXVoicePlugins(boolean _bReload) {
+      Track *track;
+      foreach track in tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            Lane *lane;
+            foreach lane in tpv.lanes
+            {
+               ModSTFX *modSTFX;
+               foreach modSTFX in lane.mods
+               {
+                  if(modSTFX instanceof ModSTFX)
+                  {
+                     modSTFX.handleReloadVoicePlugin(_bReload);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method_set.png>
+   public method setRenderWaveform(StWaveform _wf) {
+      render_waveform <= _wf;
+   }
+
+   // <method_set.png>
+   public method setRenderArea(int _start, _length) {
+      render_start  = _start;
+      render_length = _length;
+   }
+
+   // <method_find.png>
+   public method findSamplerInstancesForSysExReply(Buffer ofs, boolean _bLiveRecOnly) : int {
+      // see SYX_MSGID_QUERY_SAMPLER_INSTANCES
+      int num = 0;
+      ofs.i16 = 0; // placeholder
+      Track *track;
+      foreach track in tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            ModSample *modSample;
+            foreach modSample in lane.mods
+            {
+               if(modSample instanceof ModSample)
+               {
+                  Sample sample <= getSampleByIdx(modSample.sample_idx);
+                  trace "[trc] Project::findSamplerInstancesForSysExReply: modSample.instance_id="+modSample.instance_id+" sample_idx="+modSample.sample_idx+" => sample="+#(sample);
+                  if(null != sample)
+                  {
+                     int firstLiveRecZoneIdx = sample.findFirstLiveRecZoneIdx();
+                     trace "[trc] Project::findSamplerInstancesForSysExReply: firstLiveRecZoneIdx="+firstLiveRecZoneIdx;
+                     if(!_bLiveRecOnly || (-1 != firstLiveRecZoneIdx))
+                     {
+                        trace "[>>>] Project::findSamplerInstancesForSysExReply: found track.name=\""+track.name+"\" instance_id="+modSample.instance_id+" unique_id="+sample.unique_id;
+                        ofs.i8  = track.dev_idx;  // 0..7 => vst_[a..h]
+                        ofs.i8  = track.midi_ch;  // -1=*, 0..15
+                        ofs.i32 = modSample.instance_id;
+                        ofs.i16 = sample.unique_id;
+                        ofs.i8  = firstLiveRecZoneIdx;
+                        ofs << track.name;
+                        num++;
+                     }
+                  }
+               }
+            }
+         }
+      }
+      int lastOff = ofs.offset;
+      ofs.offset = 0;
+      ofs.i16 = num;
+      ofs.offset = lastOff;
+      return num;
+   }
+
+   // <log.png>
+   static DP(String _txt) {
+      // trace _txt;
+   }
+
+   // <log.png>
+   static TraceOnceBegin() {
+      trace_once_cache.alloc(512);
+   }
+
+   // <log.png>
+   static TraceOnce(String msg) {
+      if(!trace_once_cache.exists(msg))
+      {
+         trace_once_cache[msg] = Object(true);
+
+         trace msg;
+      }
+   }
+
+   // <log.png>
+   static TraceOnceEnd() {
+      trace_once_cache.free();
+   }
+
+   // <method_update.png>
+   namespace method updateSharedCPUCoreFlags() {
+
+      Track *track;
+      foreach track in tracks
+         track.b_shared_cpu_core = false;
+
+      foreach track in tracks
+      {
+         if(!track.b_shared_cpu_core)
+         {
+            Track *otrack;
+            foreach otrack in tracks
+            {
+               if(@(track) != @(otrack))
+               {
+                  int trackCPUCore = track.getActualCPUCore();
+                  if(trackCPUCore >= 0)
+                  {
+                     if(otrack.getActualCPUCore() == trackCPUCore)
+                        otrack.b_shared_cpu_core = true;
+                  }
+               }
+            }
+         }
+      }
+
+   }
+
+   // <method_find.png>
+   public method findTrackByMod(Mod _mod) : Track {
+      Track *track;
+      foreach track in tracks
+      {
+         if(-1 != track.findLaneIdxByMod(_mod))
+            return track;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findLaneByMod(Mod _mod) : Lane {
+      Track track <= findTrackByMod(_mod);
+      if(null != track)
+         return track.findLaneByMod(_mod);
+      return null;
+   }
+
+   // <method_get.png>
+   public method isTrackInputImmediate(local int _trackIdxCur, local int _trackIdxDst) : boolean {
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getTrackInputBuffer(local int _trackIdxCur, local int _trackIdxDst) : FloatArray {
+
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            // Dest. track (on same CPU core) has not been processed, yet
+            // trace "xxx send to current input buf trackIdxCur="+_trackIdxCur+" trackIdxDst="+_trackIdxDst;
+            return trackDst.current_chunk_input_buffer;
+         }
+         else
+         {
+            // Delay send by one chunk
+            return trackDst.next_chunk_input_buffer;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method lockTrackInputBuffer(local int _trackIdxCur, local int _trackIdxDst) {
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            // Dest. track (on same CPU core) has not been processed, yet
+            //  => No need to lock.
+         }
+         else
+         {
+            trackDst.mtx_next_chunk_input_buffer.lock();
+         }
+      }
+   }
+
+   // <method.png>
+   public method unlockTrackInputBuffer(local int _trackIdxCur, local int _trackIdxDst) {
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            // Dest. track (on same CPU core) has not been processed, yet
+            //  => Hasn't been locked.
+         }
+         else
+         {
+            trackDst.mtx_next_chunk_input_buffer.unlock();
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getTrackSCInputBuffer(local int _trackIdxCur, local int _trackIdxDst) : FloatArray {
+
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            // Dest. track (on same CPU core) has not been processed, yet
+            // trace "xxx send to current input buf trackIdxCur="+_trackIdxCur+" trackIdxDst="+_trackIdxDst;
+            return trackDst.current_chunk_sc_input_buffer;
+         }
+         else
+         {
+            // Delay send by one chunk
+            return trackDst.next_chunk_sc_input_buffer;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method lockTrackSCInputBuffer(local int _trackIdxCur, local int _trackIdxDst) {
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            // Dest. track (on same CPU core) has not been processed, yet
+            //  => No need to lock.
+         }
+         else
+         {
+            trackDst.mtx_next_chunk_sc_input_buffer.lock();
+         }
+      }
+   }
+
+   // <method.png>
+   public method unlockTrackSCInputBuffer(local int _trackIdxCur, local int _trackIdxDst) {
+      local Track trackCur <= getTrackByIdx(_trackIdxCur);
+      local Track trackDst <= getTrackByIdx(_trackIdxDst);
+
+      if((null != trackCur) && (null != trackDst))
+      {
+         local int curCPUCore = trackCur.getActualCPUCore();
+         local int dstCPUCore = trackDst.getActualCPUCore();
+         if( (curCPUCore == dstCPUCore) && (-1 != curCPUCore) && (_trackIdxDst > _trackIdxCur) )
+         {
+            // Dest. track (on same CPU core) has not been processed, yet
+            //  => Hasn't been locked.
+         }
+         else
+         {
+            trackDst.mtx_next_chunk_sc_input_buffer.unlock();
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getNumTracksPerCPUCore(int _cpuCore) : int {
+      // (note) used for display "num shared tracks" in UI
+      if(-1 != _cpuCore)
+      {
+         Track *track;
+         int r = 0;
+         foreach track in tracks
+         {
+            if(track.cpu_core == _cpuCore)
+               r++;
+         }
+         return r;
+      }
+      else
+         return 1;
+   }
+
+   // <method_set.png>
+   public method setLayoutForAllTracks(byte _layout) {
+      // Called when lctrl-clicking on track drag handle
+      Global.Debug("Project::setLayoutForAllTracks: layout="+_layout);
+      Track *track;
+      foreach track in tracks
+         track.layout = _layout;
+      track_layout_all_idx = _layout;
+   }
+
+   // <method.png>
+   public method hideAllPluginEditors(Mod _except) {
+      Track *track;
+      foreach track in tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            Mod *mod;
+            foreach mod in lane.mods
+            {
+               if((null == _except) || (@(_except) != @(mod)))
+               {
+                  if(mod instanceof ModCLAP)
+                  {
+                     ModCLAP modCLAP <= mod;
+                     if(modCLAP.isEditorVisible())
+                     {
+                        modCLAP.hideEditor();
+
+                        if(STConfig.b_mod_close_editor_autosync)
+                           modCLAP.syncMainAndMirrorMods(track, lane);
+                     }
+                  }
+                  else if(mod instanceof ModVST2)
+                  {
+                     ModVST2 modVST2 <= mod;
+                     if(modVST2.isEditorVisible())
+                     {
+                        modVST2.hideEditor();
+
+                        if(STConfig.b_mod_close_editor_autosync)
+                           modVST2.syncMainAndMirrorMods(track, lane);
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method closeAllPluginEditorWindows() {
+      Track *track;
+      foreach track in tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            Mod *mod;
+            foreach mod in lane.mods
+            {
+               if(mod instanceof ModCLAP)
+               {
+                  ModCLAP modCLAP <= mod;
+                  modCLAP.closeEditor();
+               }
+               else if(mod instanceof ModVST2)
+               {
+                  ModVST2 modVST2 <= mod;
+                  modVST2.closeEditor();
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method syncPluginMainAndMirrorMods(VST2Plugin _plugin) {
+      ModVST2 modVST2 <= null;
+      Track *track;
+      foreach track in tracks
+      {
+         modVST2 <= track.findModVST2ByPlugin(_plugin);
+         if(null != modVST2)
+            break;
+      }
+
+      if(null != modVST2)
+      {
+         modVST2.syncMainAndMirrorMods(findTrackByMod(modVST2),
+                                       findLaneByMod(modVST2)
+                                       );
+      }
+   }
+
+   // <method.png>
+   public method hidePluginEditorByCLAPPlugin(CLAPPlugin _plugin) {
+      ModCLAP modCLAP <= null;
+      Track *track;
+      foreach track in tracks
+      {
+         modCLAP <= track.findModCLAPByPlugin(_plugin);
+         if(null != modCLAP)
+         {
+            modCLAP.hideEditor();
+            break;
+         }
+      }
+   }
+
+   // <method.png>
+   public method hidePluginEditorByVST2Plugin(VST2Plugin _plugin) {
+      ModVST2 modVST2 <= null;
+      Track *track;
+      foreach track in tracks
+      {
+         modVST2 <= track.findModVST2ByPlugin(_plugin);
+         if(null != modVST2)
+         {
+            modVST2.hideEditor();
+            break;
+         }
+      }
+   }
+
+   // <save.png>
+   public method exportAudioTracksToWAV() {
+      int numTracks = audio_tracks.numElements;
+
+      if(numTracks > 0)
+      {
+         AudioTrack *atrack;
+         Integer trackNr = 1;
+         Integer takeNr = String(audio_take_nr);
+         String nativeRootPath <= Global.GetAudioTrackWavRootPath();  // returns native pathname
+         Utils.MkDirHierarchy(nativeRootPath); // lazy-create output directories
+         trace "[...] Project::exportAudioTracksToWAV: writing "+numTracks+" track(s) to nativeRootpath=\""+nativeRootPath+"\"";
+
+         int numExported = 0;
+
+         foreach atrack in audio_tracks
+         {
+            String fileName = STConfig.audiotrack_wav_name;
+
+            fileName.replace("$(PROJECT_NAME)",
+                             Utils.ConvertToFileName(project_name)
+                             );
+            fileName.replace("$(TRACK_NAME)",
+                             Utils.ConvertToFileName(atrack.name)
+                             );
+            fileName.replace("$(TRACK_NR)",
+                             trackNr.printf("%02d")
+                             );
+            fileName.replace("$(TAKE_NR)",
+                             takeNr.printf("%03d")
+                             );
+
+            boolean bFileExists = Utils.CanFileBeRead(Utils.ToNativePathName(nativeRootPath + "/" + fileName));
+            AudioClip clip <= atrack.clip;
+
+            if(clip.b_modified || !bFileExists)
+            {
+               trace "[...] Project::exportAudioTracksToWAV:  writing track "+trackNr+"/"+numTracks+" (\""+atrack.name+"\")";
+
+               clip.exportWav(fileName); // prepends Global.GetAudioTrackWavRootPath()
+
+               trace "[...] Project::exportAudioTracksToWAV:   wrote \""+fileName+"\"";
+               numExported++;
+            }
+            else
+            {
+               trace "[...] Project::exportAudioTracksToWAV:  skipping (unmodified) track "+trackNr+"/"+numTracks+" (\""+atrack.name+"\")";
+            }
+
+            // Next audio track
+            trackNr++;
+         }
+
+         if(numExported > 0)
+         {
+            markAsModified();  // last saved WAV relpath changed
+            Global.Print("Exported "+numExported+" track"+Utils.GetPluralString(numExported)+" to \""+nativeRootPath+"/\"");
+         }
+      }
+   }
+
+   // <save.png>
+   public /*=replay=*/ method saveStream(Stream ofs) {
+
+      if(STConfig.b_audiotrack_autoexport)
+      {
+         // (note) also updates last_exported_wav_relpathname fields
+         exportAudioTracksToWAV();
+      }
+
+      // Version
+      ofs.i16 = 28;
+
+      // Project name
+      Utils.WriteString(ofs, project_name);
+
+      // Author name
+      Utils.WriteString(ofs, author_name);
+
+      // Author comment
+      Utils.WriteString(ofs, author_comment);
+
+      // Temp level (v7+)
+      ofs.f32 = temp_level;
+
+      // Master level
+      ofs.f32 = master_level;
+
+      // Master pan
+      ofs.f32 = master_pan;
+
+      // BPM (v2+)
+      ofs.f32 = bpm;
+
+      // PPQ (v17+)
+      ofs.i16 = ppq;
+
+      // Sample namespace names (moved up in v24+)
+      ofs << sample_namespace_names;
+
+      // Tracks
+      ofs.i16 = tracks.numElements;
+      Track *track;
+
+      foreach track in tracks
+         track.saveState(ofs);
+
+      // Last selected track (v21+)
+      ofs.i16 = PageProject.focus_idx;
+
+      // Track Overview (v3+)
+      ofs.i8 = b_track_overview;
+
+      // Audio Tracks (v4+)
+      ofs.i16 = audio_tracks.numElements;
+      AudioTrack *atrack;
+
+      foreach atrack in audio_tracks
+         atrack.saveState(ofs);
+
+      // Last selected audio track (v21+)
+      PageAudio pgAudio <= root_form.pg_audio;
+      AudioTracksForm atf <= pgAudio.f_audiotracks;
+      ofs.i16 = atf.getCurTrackIdx();
+      // // trace "\n\n\n save atf.getCurTrackIdx()="+atf.getCurTrackIdx();
+
+      // Audio take nr (v5+)
+      ofs.i16 = audio_take_nr;
+
+      // Record mode (replace/append) (v6+)
+      ofs.i8 = b_record_replace;
+
+      // Temp volume velocity amount (v19+)
+      ofs.f32 = temp_vel_amt;
+
+      // Temp env release type (v8+)
+      ofs.i8 = temp_env_release_type;
+
+      // Temp num voices (v9+)
+      ofs.i8 = temp_numvoices;
+
+      // Temp sample start offset (v20+)
+      ofs.f32 = temp_sampleoff;
+
+      // Temp sample start randomization (v11+)
+      ofs.f32 = temp_sampleoff_rand;
+
+      // Temp panning randomization (v11+)
+      ofs.f32 = temp_pan_rand;
+
+      // SampleView onDropFiles mode
+      ofs.i8 = sampleview_dropfiles_mode;
+
+      // SampleView onDropFiles append-silence (v28+)
+      ofs.i8 = b_sampleview_dropfiles_silence;
+
+      // SampleView onDropFiles offset (v27+)
+      ofs.i8 = sampleview_dropfiles_offset;
+
+      // SampleView onDropFiles format (v27+)
+      ofs.i8 = sampleview_dropfiles_format;
+
+      // // Sample namespace names (v23+, moved up in v24+)
+      // // ofs << sample_namespace_names;
+
+      // Samples (v13+)
+      //  (note) each sample is saved as a separate file
+      ofs.i16 = samples.numElements;
+      if(samples.numElements > 0)
+      {
+         Sample *sample;
+         local String sampleRootPath <= Global.GetProjectSamplesWavRootPath();
+         Utils.MkDirHierarchy(sampleRootPath);
+         int sampleIdx = 0;
+         foreach sample in samples
+         {
+            Global.Debug("Project::saveStream: save sample ref "+(sampleIdx+1)+"/"+samples.numElements+": \""+sample.unique_name+"\"");
+            // Unique sample name
+            Utils.WriteString(ofs, sample.unique_name);
+
+            // // // sample.saveState(ofs, sampleRootPath, true/*bProject*/);
+            sample.saveFile(sampleRootPath + "/" + sample.unique_name + Global.SAMPLE_FILE_SUFFIX,
+                            sampleRootPath,
+                            true/*bProject*/,
+                            sampleIdx
+                            );
+            sample.b_autoload = false;
+            sampleIdx++;
+         }
+
+      }
+
+      // Last used sample type (v14+)
+      ofs.i8 = last_used_sample_type;
+
+      // Last used sample grid size (v14+)
+      ofs.i8 = last_used_sample_grid_size;
+
+      // Last selected sample (v15+)
+      ofs.i16 = root_form.pg_sample.getLastSelectedSampleIdx();
+
+      // PrgChg display mode (v22+)
+      ofs.i8 = STConfig.pgsample_prg_dpy_mode;
+
+      // Resynth settings  (v16+)
+      Dialogs.resynth_dialog.saveResynthSettingsToStream(ofs);
+
+      // Name prefix for new samples (v18+)
+      Utils.WriteString(ofs, new_sample_prefix);
+
+      // Namespace for new samples (v26+)
+      ofs.i8 = new_sample_namespace_idx;
+
+      // Scope settings  (v24+)
+      Dialogs.scope_dialog.saveState(ofs);
+
+      b_modified = false;
+   }
+
+   // <save.png>
+   public /*=replay=*/ method saveStreamMetahostRefOnly(Stream ofs) {
+
+      // Version
+      ofs.i16 = 0x70000000 + 1;
+
+      // Project name
+      Utils.WriteString(ofs, project_name);
+   }
+
+   // <save.png>
+   public method saveFile(String _fileName) : boolean {
+      File f;
+
+      boolean r = false;
+
+      if(f.openLocal(_fileName, IOS_OUT))
+      {
+         f.byteOrder = LITTLE_ENDIAN;
+
+         saveStream(f);
+
+         f.close();
+
+         // (todo) check for write errors (disk full etc)
+         r = true;
+      }
+      else
+      {
+         trace "[---] Project::Save: failed to open file \""+_fileName+"\".";
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public =replay= method loadStream(Stream ifs) : boolean {
+
+      boolean r = false;
+
+      // Version
+      short ver = ifs.i16;
+
+      if(ver >= 0x70000000)
+         return loadStreamMetahostRefOnly(ifs, ver - 0x70000000);
+
+      if(ver >= 1)
+      {
+         // Project name
+         Utils.ReadString(ifs, project_name);
+
+         // Author name
+         Utils.ReadString(ifs, author_name);
+
+         // Author comment
+         Utils.ReadString(ifs, author_comment);
+
+         // Temp level (v7+)
+         if(ver >= 7)
+         {
+            temp_level = ifs.f32;
+         }
+
+         // Master level
+         master_level = ifs.f32;
+
+         // Master pan
+         master_pan = ifs.f32;
+
+         updateMasterLevelLR();
+
+         if(ver >= 2)
+         {
+            // BPM (v2+)
+            bpm = ifs.f32;
+
+            if(ver >= 17)
+            {
+               // PPQ (v17+)
+               ppq = ifs.i16;
+            }
+            else
+               ppq = 192;
+
+            setTempo(bpm, ppq);  // update global VST bpm
+         }
+
+         if(ver >= 25)
+         {
+            // Sample namespace names (moved up in v25+)
+            sample_namespace_names << ifs;
+         }
+         initUnusedSampleNamespaceNames();  // [17Jul2022] 32 => 64 namespaces
+
+         // Tracks
+         int numTracks = ifs.u16;
+         int trackIdx = 0;
+         tracks.free();
+
+         if(numTracks > 100)
+            trace "[~~~] Project::loadStream: suspicious numTracks="+numTracks;
+
+         r = true;
+
+         loop(numTracks)
+         {
+            Global.Debug("Project::loadStream: loading track "+(trackIdx+1)+"/"+numTracks);
+
+            Track track <= new Track;
+            track.init();
+
+            if(!track.loadState(ifs, true/*bRestoreInstanceIDs*/))
+            {
+               trace "[---] Project::loadStream: failed to read track "+(trackIdx+1)+"/"+numTracks;
+               r = false;
+               break;
+            }
+            else
+            {
+               tracks.add(#(deref track));
+
+               // Next track
+               trackIdx++;
+            }
+         }
+
+         if(ver >= 21)
+         {
+            // Last selected track (v21+)
+            PageProject.focus_idx = ifs.i16;
+         }
+
+         // Track Overview (v3+)
+         if(ver >= 3)
+         {
+            b_track_overview = ifs.b8;
+         }
+
+         // Audio Tracks (v4+)
+         if(ver >= 4)
+         {
+            int numAudioTracks = ifs.u16;
+            int atrackIdx = 0;
+            audio_tracks.free();
+
+            if(numAudioTracks > 100)
+               trace "[~~~] Project::loadStream: suspicious numAudioTracks="+numAudioTracks;
+
+            r = true;
+
+            loop(numAudioTracks)
+            {
+               Global.Debug("Project::loadStream: loading audio track "+(atrackIdx+1)+"/"+numAudioTracks);
+
+               AudioTrack atrack <= new AudioTrack;
+               atrack.init();
+
+               if(!atrack.loadState(ifs))
+               {
+                  trace "[---] Project::loadStream: failed to read audio track "+(atrackIdx+1)+"/"+numAudioTracks;
+                  r = false;
+                  break;
+               }
+               else
+               {
+                  audio_tracks.add(#(deref atrack));
+
+                  // Next audio track
+                  atrackIdx++;
+               }
+            }
+         }
+
+         int queuedAudioTrackIdx = -1;
+
+         if(ver >= 21)
+         {
+            // Last selected audio track (v21+)
+            queuedAudioTrackIdx = ifs.s16;
+            // trace "xxx read queuedAudioTrackIdx="+queuedAudioTrackIdx;
+         }
+
+         // Audio take nr (v5+)
+         if(ver >= 5)
+         {
+            audio_take_nr = ifs.i16;
+         }
+
+         // Record mode (replace/append) (v6+)
+         if(ver >= 6)
+         {
+            b_record_replace = ifs.b8;
+         }
+
+         if(ver >= 19)
+         {
+            // Temp volume velocity amount (v19+)
+            setTempVelAmt(ifs.f32);
+         }
+
+         if(ver >= 8)
+         {
+            // Temp env release type (v8+)
+            setTempEnvReleaseType(ifs.u8);
+         }
+
+         if(ver >= 9)
+         {
+            // Temp num voices (v9+)
+            setTempNumVoices(ifs.u8);
+         }
+
+         if(ver >= 11)
+         {
+            if(ver >= 20)
+            {
+               // Temp sample start offset (v20+)
+               temp_sampleoff = ifs.f32;
+            }
+
+            // Temp sample start randomization (v11+)
+            temp_sampleoff_rand = ifs.f32;
+
+            // Temp panning randomization (v11+)
+            temp_pan_rand = ifs.f32;
+         }
+
+         if(ver >= 10)
+         {
+            // SampleView onDropFiles mode (v10+)
+            sampleview_dropfiles_mode = ifs.u8;
+         }
+
+         if(ver >= 28)
+         {
+            // SampleView onDropFiles append-silence (v28+)
+            b_sampleview_dropfiles_silence = ifs.b8;
+         }
+
+         if(ver >= 27)
+         {
+            // SampleView onDropFiles offset (v27+)
+            sampleview_dropfiles_offset = ifs.u8;
+
+            // SampleView onDropFiles format (v27+)
+            sampleview_dropfiles_format = ifs.u8;
+         }
+
+         r = true;
+
+         if(ver <= 24)
+         {
+            // Sample namespace names (v23+, moved up in v25)
+            sample_namespace_names << ifs;
+            initUnusedSampleNamespaceNames();  // [17Jul2022] 32 => 64 namespaces
+         }
+
+         if(ver >= 13)
+         {
+            // Samples
+            int numSamples = ifs.u16;
+            Sample *sample;
+            local String sampleRootPath <= Global.GetProjectSamplesWavRootPath();
+            int sampleIdx = 0;
+            int numSamplesFailed = 0;
+            loop(numSamples)
+            {
+               Global.Debug("Project::loadStream: load sample "+(sampleIdx+1)+"/"+numSamples);
+
+               // Unique sample name
+               String uniqueSampleName = "";
+               Utils.ReadString(ifs, uniqueSampleName);
+
+               sample <= newSample(uniqueSampleName/*name*/, -1/*idxHint*/);
+               int autoUniqueID = sample.unique_id;
+               sample.unique_id = -1;  // allow UID to be restored from project file
+
+               if(!sample.loadFile(sampleRootPath + "/" + sample.unique_name + Global.SAMPLE_FILE_SUFFIX,
+                                   sampleRootPath,
+                                   true/*bProject*/,
+                                   false/*bRecalcPatches*/
+                                   )
+                  )
+               {
+                  trace "[---] Project::loadStream: failed to load sample "+(sampleIdx+1)+"/"+numSamples;
+                  numSamplesFailed++;
+               }
+               else
+               {
+                  sample.b_autoload = false;
+                  if(-1 == sample.unique_id)
+                  {
+                     // old project format, use auto-assigned ID
+                     sample.unique_id = autoUniqueID;
+                  }
+               }
+            }
+
+            if(numSamplesFailed)
+            {
+               Global.Error("Failed to load "+numSamplesFailed+" sample(s)");
+            }
+
+         }
+
+         if(ver >= 14)
+         {
+            // Last used sample type (v14+)
+            last_used_sample_type = ifs.u8;
+
+            // Last used sample grid size (v14+)
+            last_used_sample_grid_size = ifs.u8;
+         }
+
+         if(ver >= 15)
+         {
+            // Last selected sample (v15+)
+            root_form.pg_sample.setLastSelectedSampleIdx(ifs.s16);
+         }
+
+         if(ver >= 22)
+         {
+            // PrgChg display mode (v22+)
+            STConfig.pgsample_prg_dpy_mode = ifs.u8;
+         }
+
+         // Resynth settings
+         if(ver >= 16)
+         {
+            r = r && (Dialogs.resynth_dialog.loadResynthSettingsFromStream(ifs));
+         }
+
+         if(ver >= 18)
+         {
+            // Name prefix for new samples (v18+)
+            Utils.ReadString(ifs, new_sample_prefix);
+         }
+
+         if(ver >= 26)
+         {
+            // Namespace for new samples (v26+)
+            new_sample_namespace_idx = ifs.u8;
+         }
+
+         if(ver >= 24)
+         {
+            // Scope settings  (v24+)
+            Dialogs.scope_dialog.loadState(ifs);
+         }
+
+         updateSharedCPUCoreFlags();
+         updateForceMuteStates();
+         updateUsesInputs();
+         setTempo(bpm, ppq);
+
+         // Ok, now perform (multi-threaded) post-load initialization
+         if(r)
+         {
+            r = loadStatePost();
+
+            if(queuedAudioTrackIdx >= 0)
+            {
+               PageAudio pgAudio <= root_form.pg_audio;
+               AudioTracksForm atf <= pgAudio.f_audiotracks;
+               atf.updateTracks();
+               atf.handleSelectTrack(queuedAudioTrackIdx);
+            }
+
+            // ignore CLAP automation events for a short while so project does not immediately gets marked as modified
+            last_load_ms = milliSeconds();
+         }
+      }
+      else
+      {
+         trace "[---] Project::loadStream: invalid version "+ver;
+      }
+
+      b_modified = false;
+
+      Dialogs.scope_dialog.loadStatePost();
+
+      // // reloadAllVoicePlugins();  // already done by loadStatePost() (recalcAndReloadPatchPlugins())
+
+      return r;
+   }
+
+   // <load.png>
+   public =replay= method loadStreamMetahostRefOnly(Stream ifs, short ver) : boolean {
+
+      boolean r = false;
+
+      if(ver >= 1)
+      {
+         local String projectName;
+         Utils.ReadString(ifs, project_name);
+
+         Global.Debug("Project::loadStreamMetahostRefOnly: projectName=\""+projectName+"\"");
+
+         project_name = project_name;
+
+         r = true;
+      }
+
+      return r;
+   }
+
+   // <save.png>
+   public method exportSamplesToModFile(String _pathName) : boolean {
+      // Load existing mod file and rewrite with new samples
+      local File f;
+      local String pathNameLocal <= Utils.ToNativePathName(_pathName);
+      if(f.openLocal(pathNameLocal, IOS_IN))
+      {
+         f.byteOrder = YAC_BIG_ENDIAN;
+
+         // 0: song name
+         int i = 0;
+         local String songName;
+         songName.alloc(20);
+         loop(20)
+            songName[i++] = f.i8;
+
+         Global.Debug("Project::exportSamplesToModFile: mod songname is \""+songName+"\"");
+
+         // 20: sample infos
+         f.seek(31*30, SEEK_CUR);
+
+         // 950: song len
+         byte songLen = f.u8;
+
+         // 951: Max position
+         //  (note) usually reads 127 instead of the actual number of patterns
+         byte maxPat = f.u8;  //+1
+
+         // 952: orderlist
+         local Buffer orderList;
+         byte numPat = 0;
+         orderList.size = 128;
+         i = 0;
+         loop(128)
+         {
+            int patIdx = f.u8;
+            orderList.i8 = patIdx;
+            if(patIdx > numPat)
+               numPat = patIdx;
+         }
+         numPat++;
+
+         Global.Debug("Project::exportSamplesToModFile: mod has "+numPat+" pattern(s) and "+songLen+" orderlist entries");
+
+         // 1080: "M.K." (Michael Kleps, <64 pat) or "M!K!" (>=64 pat) marker (31 samples)
+         byte id0 = f.u8;
+         byte id1 = f.u8;
+         byte id2 = f.u8;
+         byte id3 = f.u8;
+
+         trace "[trc] Project::exportSamplesToModFile: pattern data offset is "+f.offset;
+
+         // 1084: pattern data
+         local Buffer patData;
+         patData.size = 64*4*4 * numPat;
+         f.readBuffer(patData, 0, patData.size, false/*bResize*/);
+
+         trace "[trc] Project::exportSamplesToModFile: read pattern data until offset="+f.offset;
+
+         f.close();
+
+         // Rewrite mod file
+         if(!f.openLocal(pathNameLocal, IOS_OUT))
+         {
+            trace "[---] Project::exportSamplesToModFile: failed to open mod file \""+_pathName+"\" for writing";
+            return false;
+         }
+
+         // 0: song name
+         i = 0;
+         loop(20)
+            f.i8 = songName.getc(i++);
+
+         // Write samples
+         Buffer *smpBuf8;
+         local IntArray smpUsedFlags; smpUsedFlags.allocAndFill(31, false);
+         local Buffer *[] smpDat8Bufs;
+         loop(31)
+         {
+            smpBuf8 <= new Buffer;
+            smpBuf8.size = 131070;
+            // // smpBuf8.fillZero();
+            smpDat8Bufs.add(#(deref smpBuf8));
+         }
+
+         local Buffer smpHdr;
+         smpHdr.byteOrder = YAC_BIG_ENDIAN;
+         smpHdr.size = 31*30;
+         smpHdr.fillZero();
+
+         local Integer totalNumSmp = 0;
+         int totalSmpSz = 0;
+
+         Sample *smp;
+         int smpIdx;
+         foreach smp in samples
+         {
+            if(0 <= smp.prg_id <= 30)  // MIDI program number $01..$1F assigned ?
+            {
+               smpIdx = smp.prg_id;
+               smpHdr.offset =  smpIdx * 30;
+               smpBuf8 <= smpDat8Bufs.get(smpIdx);
+
+               if(smpUsedFlags[smpIdx])
+                  trace "[~~~] Project::exportSamplesToModFile: duplicate mod sample prg_id="+(smpIdx+1);
+
+               StSampleBank sb <= smp.sample_bank;
+               StSample s <= sb.firstSample;
+               FloatArray smpDat32 <= smp.waveform.sampleData;
+               int zoneIdx = 0;
+               if(null != s)
+               {
+                  int loopOff = s.firstLoopOffset;  // start loop off (may actually be the last loop)
+                  int loopLen = s.firstLoopLen;
+                  int loopRep = s.firstLoopRep;
+                  Global.Debug("Project::exportSamplesToModFile:: export smp.name=\""+smp.unique_name+"\" zone["+zoneIdx+"] loopOff="+loopOff+" loopLen="+loopLen+" size="+(loopLen + loopOff));
+                  if(loopLen > 0)
+                  {
+                     smpUsedFlags[smpIdx] = true;
+                     totalNumSmp++;
+
+                     if(loopOff > 131071)
+                     {
+                        trace "[~~~] Project::exportSamplesToModFile: maximum sample size exceeded, truncating loopOff="+loopOff+" to 131070..";
+                        loopOff = 131070;
+                     }
+
+                     if(loopLen > 131070)
+                     {
+                        trace "[~~~] Project::exportSamplesToModFile: maximum sample size exceeded, truncating to 128k..";
+                        loopLen = 131070;
+                        loopOff = 0;
+                     }
+
+                     if( (loopOff + loopLen) > 131070 )
+                     {
+                        trace "[~~~] Project::exportSamplesToModFile: maximum sample size exceeded, truncating to 128k..";
+                        loopLen = 131070 - loopOff;
+                     }
+
+                     //   0: Name
+                     String smpName <= totalNumSmp.printf("%02d");
+                     smpHdr.i8 = smpName.getc(0);
+                     smpHdr.i8 = smpName.getc(1);
+                     loop(20)
+                        smpHdr.i8 = 0;
+
+                     //  22: Sample length in words
+                     smpHdr.i16 = (loopOff + loopLen) >> 1;
+                     totalSmpSz += (loopOff + loopLen);
+
+                     //  24: Finetune (LSB)
+                     smpHdr.i8 = 0;
+
+                     //  25: Volume
+                     smpHdr.i8 = mathClampi(int(smp.getVolume() * 64 + 0.5), 0, 64);
+
+                     if(0 == loopRep)
+                     {  // inf loop
+
+                        //  26: Repeat start in words
+                        smpHdr.i16 = loopOff >> 1;
+
+                        //  28: Repeat length in words (1= no loop / loop first two bytes)
+                        smpHdr.i16 = loopLen >> 1;
+                     }
+                     else
+                     {  // no loop
+
+                        //  26: Repeat start in words
+                        smpHdr.i16 = 0;
+
+                        //  28: Repeat length in words (1= no loop / loop first two bytes)
+                        smpHdr.i16 = 1;
+                     }
+
+                     // Convert sample frames
+                     //  (todo) propagate quantization error
+                     //  (todo) dither ? (optional?)
+                     i = 0;
+                     smpBuf8.offset = 0;
+                     loop(loopOff + loopLen)
+                     {
+                        float fSmp = smpDat32.get(i++);
+                        smpBuf8.i8 = mathClampi(fSmp * 128, -128, 127);
+                     }
+                     if((loopOff + loopLen) & 1)
+                     {
+                        smpBuf8.i8 = 0;  // align to 16bit DMA words
+                        totalSmpSz++;
+                     }
+                     trace "[trc] Project::exportSamplesToModFile: smpIdx="+smpIdx+": converted "+smpBuf8.offset+" frames. loopOff="+loopOff+" loopLen="+loopLen+" => sz="+(loopOff+loopLen);
+                  }
+
+                  zoneIdx++;
+                  s <= s.next;
+
+               } // loop sample zones (note: loop removed, simply export first zone)
+
+            } // if MIDI prg
+
+         } // loop samples
+
+         Global.Debug("Project::exportSamplesToModFile: new mod has "+totalNumSmp+" samples (totalSmpSz="+totalSmpSz+")");
+
+         smpIdx = 0;
+         loop(31)
+         {
+            // Write dummy sample headers for unused samples
+            if(false == smpUsedFlags[smpIdx])
+            {
+               smpHdr.offset = smpIdx * 30;
+               smpBuf8 <= smpDat8Bufs.get(smpIdx);
+
+               //   0: Name
+               loop(22)
+                  smpHdr.i8 = 0;
+
+               //  22: Sample length in words
+               smpHdr.i16 = 1;
+
+               //  24: Finetune (LSB)
+               smpHdr.i8 = 0;
+
+               //  25: Volume
+               smpHdr.i8 = 64;
+
+               //  26: Repeat start in words
+               smpHdr.i16 = 0;
+
+               //  28: Repeat length in words (1= no loop / loop first two bytes)
+               smpHdr.i16 = 1;
+
+               // Write zero sample
+               smpBuf8.offset = 0;
+               smpBuf8.i8 = 128;
+               smpBuf8.i8 = 128;
+            }
+
+            smpIdx++;
+         }
+
+         // Write sample headers (31*30 bytes)
+         f.writeBuffer(smpHdr, 0, 31*30);
+
+         Global.Debug("Project::exportSamplesToModFile: total sample size is "+totalSmpSz+" bytes ("+(int(100*totalSmpSz/1024.0)/100.0)+" kBytes)");
+
+         // 950: song len
+         f.i8 = songLen;
+
+         // 951: Max position (pass thru)
+         f.i8 = maxPat;
+
+         // 952: orderlist
+         f.writeBuffer(orderList, 0, 128);
+
+         // 1080: "M.K." (Michael Kleps) (<64 pat) or "M!K!" marker (>=64 pat) (31 samples)
+         f.i8 = id0;
+         f.i8 = id1;
+         f.i8 = id2;
+         f.i8 = id3;
+
+         trace "[trc] Project::exportSamplesToModFile: re-write pattern data @offset="+f.offset+" sz="+patData.size;
+
+         // 1084: pattern data
+         f.writeBuffer(patData, 0, patData.size);
+
+         trace "[trc] Project::exportSamplesToModFile: write sample data @offset="+f.offset+" sz="+totalSmpSz;
+
+         // Sample data
+         smpIdx = 0;
+         loop(31)
+         {
+            smpBuf8 <= smpDat8Bufs.get(smpIdx++);
+            trace "[trc] Project::exportSamplesToModFile: write smpIdx="+smpIdx+" @f.offset="+f.offset+" smpBuf8.offset="+smpBuf8.offset;
+            f.writeBuffer(smpBuf8, 0, smpBuf8.offset);
+         }
+
+         // Succeeded
+         Global.Debug("Project::exportSamplesToModFile: finished export to \""+pathNameLocal+"\". modSz="+f.offset+" bytes.");
+
+         f.close();
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Project::exportSamplesToModFile: failed to open mod file \""+pathNameLocal+"\" for reading";
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method exportAmigaPeriodTbl() {
+      // from C-2 to B-6  (extra low octave + C-1..B-3 in PT)
+      //   16 finetune steps between notes
+      // (note) min period = 124
+      // (note) sample_rate = noteFreq * cycle_len
+      // (note) period table is tuned for cycle_len=64
+      // float clock = 3578640.0 / 64.0;  // ntsc?
+      // (note) C-5 (60) = 261.626 Hz
+      //float clock = 3546895.0 / 63.0;  // PAL   smprate=56299.92063490000000000000 ==> one semitone too low !
+      // // float clock = 357954.647146 / 63.0; // from 1987 Amiga Intern (p.270)
+      float clock = 357954.647146 / (6.39); // from 1987 Amiga Intern (p.270) == 56017.9416504
+      float fStep = (1.0 / 16.0);
+      // (3546895.0 / 64.0) / 261.626 =
+      // (3546895.0 / 63.0) / 261.626 =
+      int noteNr = 0;///12*3;
+      local String buf;
+      // buf.append("const unsigned short tsr_period_tbl[576/*12*3*16*/] = {\n");
+      buf.append("const unsigned short tsr_period_tbl[1536/*12*8*16*/] = {\n");
+      loop(12*8)
+      {
+         float f = noteNr;
+         buf.append("   // "+(MIDI.midi_notes.get(noteNr))+" ("+noteNr+") ("+Audio.NoteToFreq(noteNr)+" Hz)\n   ");
+         loop(16)
+         {
+            float freq = Audio.NoteToFreq(f);
+            // trace "xxx freq="+freq;
+            float period = clock / freq;
+            if(period < 60)  // min=124, actually
+               period=60;
+            else if(period > 1722)
+               period=1722;  // c-0
+            buf.append(int(period + 0.5f));
+            buf.append(",");
+            f += fStep;
+         }
+         buf.append("\n");
+         noteNr++;
+      }
+      buf.append("};\n");
+      buf.saveLocal("tsr_period_tbl.c");
+   }
+
+   // <method.png>
+   protected method exportAmigaWTLFOTbl_Calc(String buf, int wtLen) {
+      float aStep = (0+(wtLen*2-2)) / 256.0;
+      float a = 0;
+      byte wtIdx;
+      buf.append("   // wtLen="+wtLen+"\n");
+      // 0 1 2 1 (4)
+      // 0 1 2 3 4 3 2 1 (8)
+      // 0 1 2 3 4 5 6 7 6 5 4 3 2 1 (14)
+      loop(256)
+      {
+         wtIdx = a;
+         if(wtIdx > (wtLen-1))
+            wtIdx = (wtLen*2-2) - wtIdx;
+         trace "a="+a+" wtIdx="+wtIdx;
+         wtIdx = mathClampi(wtIdx, 0, wtLen-1);
+         buf.append(wtIdx+",");
+         a += aStep;
+      }
+      buf.append("\n");
+   }
+
+   // <save.png>
+   public method exportAmigaWTLFOTbl() {
+      // Generate triangle LFO (don't repeat first element)
+      //  (note) table size: 23*256=5888 bytes
+      local String buf;
+      // (note) first index is wt width/height-1 (0..15), sub index is phase (0..255 => 0..359Â°)
+      buf.append("const unsigned char tsr_wt_lfo_tbl[23/*maxWtNum*/][256/*phase*/] = {\n");
+      // 1..16
+      int wtLen = 1;
+      loop(16/*maxWtNum*/)
+      {
+         exportAmigaWTLFOTbl_Calc(buf, wtLen);
+         wtLen++;
+      }
+      // (note) extended 1D wavetable sizes
+      exportAmigaWTLFOTbl_Calc(buf, 32);
+      exportAmigaWTLFOTbl_Calc(buf, 48);
+      exportAmigaWTLFOTbl_Calc(buf, 64);
+      exportAmigaWTLFOTbl_Calc(buf, 80);
+      exportAmigaWTLFOTbl_Calc(buf, 96);
+      exportAmigaWTLFOTbl_Calc(buf, 112);
+      exportAmigaWTLFOTbl_Calc(buf, 128);
+      buf.append("};\n");
+      buf.saveLocal("tsr_wt_lfo_tbl.c");
+   }
+
+   // <save.png>
+   public method exportAmiga16x16MulTbl() {
+      // for cycleidx y*w multiplication (0*1..15*16)
+      local String buf;
+      buf.append("const unsigned char tsr_wt_yw_tbl[16/*y*/ * 16/*maxW*/] = {\n");
+      int w = 1;
+      loop(16)
+      {
+         int y = 0;
+         buf.append("   ");
+         loop(16)
+         {
+            buf.append(String(y * w)+", ");
+            y++;
+         }
+         buf.append("\n");
+         w++;
+      }
+      buf.append("};\n");
+      buf.saveLocal("tsr_wt_yw_tbl.c");
+   }
+
+   // <save.png>
+   public method exportAmigaBPMTbl() {
+      // (note) octaspeed replay (bpm*8)
+      local String buf;
+
+      // PAL
+      float CIA_FREQ_TEMPO_BASE_PAL  = 3546895.0 / 2.0;  // => 1773447.5
+      buf.append("const unsigned short tsr_bpm_tbl_pal[256/*=>50..177.5*/] = {\n");
+      float bpm = 50.0;
+      loop(256)
+      {
+         buf.append(String(int(CIA_FREQ_TEMPO_BASE_PAL / (8.0 * bpm)))+", ");
+         bpm += 0.5;
+      }
+      buf.append("\n};\n");
+
+      // NTSC
+      float CIA_FREQ_TEMPO_BASE_NTSC = 3579545.0 / 2.0;  // => 1789772.5
+      buf.append("\nconst unsigned short tsr_bpm_tbl_ntsc[256/*=>50..177.5*/] = {\n");
+      bpm = 50.0;
+      loop(256)
+      {
+         buf.append(String(int(CIA_FREQ_TEMPO_BASE_NTSC / (8.0 * bpm)))+", ");
+         bpm += 0.5;
+      }
+      buf.append("\n};\n");
+      buf.saveLocal("tsr_bpm_tbl.c");
+   }
+
+   // <save.png>
+   public method exportCycleSampleSourceInt(String _pathName) : boolean {
+
+      // utility tables (compiled into replay)
+      if(0)
+         exportAmigaPeriodTbl();
+
+      if(0)
+         exportAmigaWTLFOTbl();
+
+      if(0)
+         exportAmiga16x16MulTbl();
+
+      if(0)
+         exportAmigaBPMTbl();
+
+      export_all_c_buf_calc.empty();
+      export_all_c_buf_call.empty();
+      export_all_c_buf_static_init.empty();
+      b_export_all_c = true;
+      b_export_all_c_float = false;
+      b_export_all_c_calc_win_hse_done      = false;
+      b_export_all_c_calc_win_hse_1_36_done = false;
+      b_export_all_c_calc_win_hse_2_done    = false;
+      b_export_all_c_calc_win_hse_3_done    = false;
+      b_export_all_c_calc_win_hse_5_done    = false;
+      b_export_all_c_calc_win_hse_7_done    = false;
+      Sample *smp;
+      int smpIdx = 0;
+      StWaveform *wf;
+      export_all_c_buf_call.append("void tsr_calc_waveform_"+Utils.ConvertToVarName(project_name)+"(char *_wfAddrProc, const char *_wfAddrStatic) {\n");
+      export_all_c_buf_call.append("$(STATIC_INIT)");
+      // Calc word-aligned waveform start offsets (for zone ref relocations)
+      export_all_c_wf_off = 0;
+      int wfOffStatic = 0;
+      foreach smp in samples
+      {
+         if(smp.prg_id >= 0)
+         {
+            wf <= smp.waveform;
+            if(smp.b_procedural && !b_force_static_samples)
+            {
+               smp.export_all_c_wf_off = export_all_c_wf_off;
+               export_all_c_wf_off += wf.numFrames;
+               if(export_all_c_wf_off & 1)
+                  export_all_c_wf_off++;
+               trace "\n\nxxx smp=\""+smp.unique_name+"\" wf.numFrames="+wf.numFrames+" new export_all_c_wf_off="+export_all_c_wf_off;
+            }
+            else
+            {
+               // Static (non-procedural) sample
+               smp.export_all_c_wf_off = wfOffStatic;
+               wfOffStatic += wf.numFrames;
+               if(wfOffStatic & 1)
+                  wfOffStatic++;
+               trace "\n\nxxx smp=\""+smp.unique_name+"\" wf.numFrames="+wf.numFrames+" new wfOffStatic="+wfOffStatic;
+            }
+         }
+      }
+
+      export_all_c_total_wf_sz_proc   = export_all_c_wf_off;
+      export_all_c_total_wf_sz_static = wfOffStatic;
+
+      foreach smp in samples
+      {
+         if(smp.prg_id >= 0)
+         {
+            export_all_c_wf_off = smp.export_all_c_wf_off;
+            wf <= smp.waveform;
+            export_all_c_buf_call.append("   // smp: \""+smp.unique_name+"\" sz="+wf.numFrames+" ("+(int(100*wf.numFrames/1024.0)/100.0)+"k) bProc="+(smp.b_procedural && !b_force_static_samples)+"\n");
+            if(smp.b_procedural && !b_force_static_samples)
+            {
+               // Append to export_all_c_buf_*
+               if(-1 == smp.recalcCyclePatches())
+                  return false;
+            }
+
+            // StSampleBank sb <= smp.sample_bank;
+            // StSample s <= sb.firstSample;
+            // FloatArray smpDat <= smp.waveform.sampleData;
+            // int zoneIdx = 0;
+            // while(null != s)
+            // {
+            // }
+            smpIdx++;
+         }
+      }
+      export_all_c_buf_call.replace("$(STATIC_INIT)", export_all_c_buf_static_init);
+      export_all_c_buf_call.append("   // procedural sample size: "+export_all_c_total_wf_sz_proc+" ("+(int(100*export_all_c_total_wf_sz_proc/1024.0)/100.0)+"k)\n");
+      export_all_c_buf_call.append("   // static     sample size: "+export_all_c_total_wf_sz_static+" ("+(int(100*export_all_c_total_wf_sz_static/1024.0)/100.0)+"k)\n");
+      export_all_c_buf_call.append("   // total      sample size: "+(export_all_c_total_wf_sz_proc+export_all_c_total_wf_sz_static)+" ("+(int(100*(export_all_c_total_wf_sz_proc+export_all_c_total_wf_sz_static)/1024.0)/100.0)+"k)\n");
+      export_all_c_buf_call.append("}\n");
+      export_all_c_buf_calc.append("\n\n");
+      export_all_c_buf_calc.append(export_all_c_buf_call);
+      if(_pathName >= ".gnu.c")
+      {
+         export_all_c_buf_calc.insert(0, "// auto-generated on "+Utils.GetCurrentDateTimeStringNumeric()+"\n\n");
+         export_all_c_buf_calc.saveLocal(_pathName);
+      }
+
+      b_export_all_c = false;
+      return true;
+   }
+
+   // <save.png>
+   public method exportCycleSampleSourceFloat(String _pathName) : boolean {
+
+      export_all_c_buf_calc.empty();
+      export_all_c_buf_call.empty();
+      b_export_all_c = true;
+      b_export_all_c_float = true;
+      Sample *smp;
+      int smpIdx = 0;
+      StWaveform *wf;
+      export_all_c_buf_call.append("void cycle_calc_waveform_"+Utils.ConvertToVarName(project_name)+"(float *_wfAddr) {\n");
+
+      // Calc waveform start offsets (for zone ref relocations)
+      export_all_c_wf_off = 0;
+      int wfSzProc = 0;
+      int wfSzStatic = 0;
+      foreach smp in samples
+      {
+         if(smp.prg_id >= 0)
+         {
+            wf <= smp.waveform;
+            smp.export_all_c_wf_off = export_all_c_wf_off;
+            int wfSz = wf.numFrames * wf.numChannels;
+            export_all_c_wf_off += wfSz;  // (note) procedural samples are always mono
+            trace "\n\nxxx smp=\""+smp.unique_name+"\" wf.numFrames="+wf.numFrames+" numCh="+wf.numChannels+" => new export_all_c_wf_off="+export_all_c_wf_off;
+
+            if(smp.b_procedural && !b_force_static_samples)
+            {
+               wfSzProc += wfSz;
+            }
+            else
+            {
+               // Static (non-procedural) sample
+               wfSzStatic += wfSz;
+            }
+         }
+      }
+
+      export_all_c_total_wf_sz_proc   = wfSzProc;
+      export_all_c_total_wf_sz_static = wfSzStatic;
+
+      foreach smp in samples
+      {
+         if(smp.prg_id >= 0)
+         {
+            export_all_c_wf_off = smp.export_all_c_wf_off;
+            wf <= smp.waveform;
+            export_all_c_buf_call.append("   // smp: \""+smp.unique_name+"\" sz="+wf.numFrames+" ("+(int(100*wf.numFrames/1024.0)/100.0)+"k) bProc="+(smp.b_procedural && !b_force_static_samples)+"\n");
+            if(smp.b_procedural && !b_force_static_samples)
+            {
+               // Append to export_all_c_buf_*
+               if(-1 == smp.recalcCyclePatches())
+                  return false;
+
+               FloatArray smpDat <= wf.sampleData;
+               smpDat.fill(0.0f);
+            }
+
+            smpIdx++;
+         }
+      }
+      export_all_c_buf_call.append("   // procedural sample size: "+(export_all_c_total_wf_sz_proc*4)+" ("+(int(100*export_all_c_total_wf_sz_proc*4/1024.0)/100.0)+"k)\n");
+      export_all_c_buf_call.append("   // static     sample size: "+(export_all_c_total_wf_sz_static*4)+" ("+(int(100*export_all_c_total_wf_sz_static*4/1024.0)/100.0)+"k)\n");
+      export_all_c_buf_call.append("   // total      sample size: "+(export_all_c_total_wf_sz_proc*4+export_all_c_total_wf_sz_static*4)+" ("+(int(100*(export_all_c_total_wf_sz_proc*4+export_all_c_total_wf_sz_static*4)/1024.0)/100.0)+"k)\n");
+      export_all_c_buf_call.append("}\n");
+      export_all_c_buf_calc.append("\n\n");
+      export_all_c_buf_calc.append(export_all_c_buf_call);
+      if(_pathName >= "_float.c")
+      {
+         export_all_c_buf_calc.insert(0, "// auto-generated on "+Utils.GetCurrentDateTimeStringNumeric()+"\n\n");
+         export_all_c_buf_calc.saveLocal(_pathName);
+      }
+
+      b_export_all_c = false;
+      return true;
+   }
+
+   // <save.png>
+   public method exportCycleStaticSamples8bit(String _pathName) : boolean {
+      // (note) exportCycleSampleSourceInt() must be called first
+      if(_pathName >= ".smp")
+      {
+         local File f;
+         local String pathNameLocal <= Utils.ToNativePathName(_pathName);
+         if(f.openLocal(pathNameLocal, IOS_OUT))
+         {
+            int wfOffStatic = 0;
+            Sample *smp;
+            foreach smp in samples
+            {
+               if(smp.prg_id >= 0)
+               {
+                  if(!smp.b_procedural || b_force_static_samples)
+                  {
+                     StWaveform wf <= smp.waveform;
+                     FloatArray smpDat <= wf.sampleData;
+                     int frIdx = 0;
+                     loop(wf.numFrames)
+                     {
+                        // 8bit signed
+                        f.i8 = mathClampi(smpDat.get(frIdx++) * 128, -128, 127);
+                     }
+                     wfOffStatic += wf.numFrames;
+                     if(wfOffStatic & 1)
+                     {
+                        // Amiga DMA-word alignment
+                        f.i8 = 0;
+                        wfOffStatic++;
+                     }
+                  }
+               }
+            }
+            f.close();
+
+            // Succeeded
+            return true;
+         }
+         else
+            trace "[~~~] exportCycleStaticSamples8bit: failed to open file \""+pathNameLocal+"\" for writing (skipping..)";
+      }
+
+      return false;
+   }
+
+   static FloatArray export_c_glide_speed_tbl = [  // "<" test
+      4,     //  <immediate>
+      10,    //    7.5ms
+      24,    //   15.0ms
+      44,    //   30.0ms
+      90     //   60.0ms
+      140,   //  120.0ms
+      200,   //  160.0ms
+      280,   //  240.0ms
+      340,   //  320.0ms
+      420,   //  360.0ms
+      720,   //  480.0ms
+      1440,  //  960.0ms
+      2240,  // 1920.0ms
+      3200,  // 2560.0ms
+      5760,  // 3840.0ms
+      10000, // 7680.0ms
+                                                   ];
+
+   // (note) tickSpd is calibrated to 125bpm ppq=192 (2.5ms / tick)
+   // (note) 1sec = 1000/2.5 = 400 ticks, scaled to 16384 in TSR
+   static FloatArray export_c_release_speed_tbl = [ // "<" test
+      /*  0 */ 50.0/10.0,  // 5sec infinite (speed=0)   ticks= <inf>  tickSpd = 0
+      /*  1 */ 50.0/20.0,  // 2.5sec                    ticks= 1000   tickSpd = 16384/1000 = 16.384
+      /*  2 */ 50.0/30.0,  // 1.66sec                   ticks=  666   tickSpd = 16384/666  = 24.6
+      /*  3 */ 50.0/40.0,  // 1.25sec                   ticks=  500   tickSpd = 16384/500  = 32.7
+      /*  4 */ 50.0/50.0,  // 1sec                      ticks=  400   tickSpd = 16384/400  = 40.96
+      /*  5 */ 50.0/75.0,  // 0.66sec                   ticks=  266   tickSpd = 16384/266  = 61.59
+      /*  6 */ 50.0/100.0, // 0.5sec                    ticks=  200   tickSpd = 16384/200  = 81.92
+      /*  7 */ 50.0/150.0, // 0.33sec                   ticks=  133   tickSpd = 16384/133  = 123.18
+      /*  8 */ 50.0/200.0, // 0.25sec                   ticks=  100   tickSpd = 16384/100  = 163.84
+      /*  9 */ 50.0/250.0, // 0.2sec                    ticks=   80   tickSpd = 16384/80   = 204.8
+      /* 10 */ 50.0/300.0, // 0.16sec                   ticks=   64   tickSpd = 16384/64   = 256
+      /* 11 */ 50.0/400.0, // 0.125sec                  ticks=   50   tickSpd = 16384/50   = 327.68
+      /* 12 */ 50.0/500.0, // 0.1sec                    ticks=   40   tickSpd = 16384/40   = 409.6
+      /* 13 */ 50.0/600.0, // 0.08sec                   ticks=   32   tickSpd = 16384/32   = 512
+      /* 14 */ 50.0/700.0, // 0.07sec                   ticks=   28   tickSpd = 16384/28   = 585
+      /* 15 */ 50.0/800.0, // 0.0625sec                 ticks=   16   tickSpd = 16384/16   = 1024
+      // ^^ immediate (speed=15)
+      50.0/1000.0,
+      0
+                                                    ];
+
+   // wavetable lfo speed (0..15)
+   // granularity: 10ms (four ticks)
+   // (exported speed 0..255 determines time until next wt cycle table idx {0..255})
+   // (note) 16 wavetable elements @50Hz = 1000/(16*20) = 3.125Hz
+   //      speed=0  => 0Hz
+   //   => speed=1  => 256*10ms = 2560ms for one LFO wave cycle (=0.39Hz)
+   //   => speed=2  => 128*10ms = 2560ms for one LFO wave cycle (=0.78125Hz)
+   //   => speed=3  =>  85*10ms =  850ms for one LFO wave cycle (=1.17647058824Hz)
+   //   => speed=4  =>  64*10ms =  320ms for one LFO wave cycle (=1.5625Hz)
+   //   => speed=5  =>  51*10ms =  512ms for one LFO wave cycle (=1.953125Hz)
+   //   => speed=6  =>  43*10ms =  425ms for one LFO wave cycle (=2.35294117647Hz)
+   //   => speed=7  =>  37*10ms =  365ms for one LFO wave cycle (=2.734375Hz)
+   //   => speed=8  =>  32*10ms =  320ms for one LFO wave cycle (=3.125Hz)
+   //   => speed=9  =>  28*10ms =  284ms for one LFO wave cycle (=3.515625Hz)
+   //   => speed=10 =>  26*10ms =  256ms for one LFO wave cycle (=3.90625Hz)
+   //   => speed=11 =>  23*10ms =  232ms for one LFO wave cycle (=4.296875Hz)
+   //   => speed=12 =>  21*10ms =  213ms for one LFO wave cycle (=4.6875Hz)
+   //   => speed=13 =>  20*10ms =  196ms for one LFO wave cycle (=5.078125Hz)
+   //   => speed=14 =>  18*10ms =  182ms for one LFO wave cycle (=5.46875Hz)
+   //   => speed=15 =>  17*10ms =  171ms for one LFO wave cycle (=5.85937499999Hz)
+   //   => speed=16 =>  16*10ms =  160ms for one LFO wave cycle (=6.25Hz)
+
+   // <method_find.png>
+   protected method findNumSamplesAssignedToAnyMIDIPrg() : int {
+      int r = 0;
+      Sample *s;
+      foreach s in samples
+         r += (s.prg_id >= 0);
+      return r;
+   }
+
+   // <method_find.png>
+   public method findNumSamplesAssignedToNamespace(local int _namespaceIdx) : int {
+      local int r = 0;
+      local Sample *s;
+      foreach s in samples
+         r += (s.namespace_idx == _namespaceIdx);
+      return r;
+   }
+
+   // <save.png>
+   public method exportTSRSampleInfo(String _pathNamePrefix) {
+
+      local File f;
+      local String pathName <= _pathNamePrefix+"_smp.dat";  // => "c:/temp/eureka_tsr_smp.dat"
+      local String pathNameLocal <= Utils.ToNativePathName(pathName);
+      if(f.openLocal(pathNameLocal, IOS_OUT))
+      {
+         // Total Procedural waveform size
+         f.i32 = export_all_c_total_wf_sz_proc;
+
+         // Total Static waveform size
+         f.i32 = export_all_c_total_wf_sz_static;
+
+         // Number of samples
+         f.i8 = findNumSamplesAssignedToAnyMIDIPrg();
+
+         int totalNumSamples = 0;  // debug/log
+
+         Sample *smp;
+         foreach smp in samples
+         {
+            if(smp.prg_id >= 0)
+            {
+               StSampleBank sb <= smp.sample_bank;
+
+               // Waveform offset (calc'd by exportCycleSampleSource())
+               f.i32 = smp.export_all_c_wf_off | ((smp.b_procedural && !b_force_static_samples) ? 0x80000000 : 0);
+
+               // MIDI Program Nr (as used in sequencer)
+               f.i8 = smp.prg_id;  // -1=unassigned
+               trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ write smp.prg_id="+smp.prg_id+" name=\""+smp.unique_name+"\"";
+               if(-1 == smp.prg_id)
+                  trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" MIDI PrgNr is unassigned !!";
+
+               // Number of zones
+               f.i8 = smp.getNumZonesWithValidKeyAndVelocityRanges();
+
+               float smpBaseTranspose = smp.transpose_oct*12.0 + smp.transpose_semi + smp.transpose_cents/100.0;
+
+               local ExportTSRMSeq *[] volModSeqs;
+               local ExportTSRMSeq *[] freqFineModSeqs;
+               local ExportTSRMSeq *[] freqCoarseModSeqs;
+               local ExportTSRMSeq *[] loopModSeqs;
+               StSample s <= sb.firstSample;
+               StRange *range;
+               IntArray *loops;
+               StModSeq *mseq;
+               StLFO *lfo;
+               int mseqStepIdx;
+               int exportModSeqIdx;
+               ExportTSRModSeq *exportModSeq;
+               ExportTSRModSeq *exportModSeqO;
+               IntArray *exportModSeqStepData;
+               float stepVal;
+               float slewAmt;
+               int zoneNr = 1;
+               float wtLFOSpeedScl = 1.0f;
+
+               boolean b192PPQ = true;  // must be true
+
+               float mseqSpeedScl;
+               if(b192PPQ)
+               {
+                  mseqSpeedScl = 0.5f;  // **seq=192ppq, env_replay=96ppq**   0.5 for tsr_tick_mod, 1.0 for full octaspeed
+               }
+               else
+               {
+                  mseqSpeedScl = 1.0f;  // **seq=24ppq, env_replay=24ppq**
+               }
+               while(null != s)
+               {
+                  trace "xxx .............................................  write smp.prg_id="+smp.prg_id+" name=\""+smp.unique_name+"\" zone="+zoneNr;
+                  int smpFlags = 0;
+
+                  // Note Range
+                  range <= s.getKeyRange();
+                  int krLo = range.lo;
+                  int krHi = range.hi;
+
+                  // Velocity Range (zone selection)
+                  range <= s.getVelRange();
+                  int vrLo = mathClampi(range.lo * 127, 0, 127);
+                  int vrHi = mathClampi(range.hi * 127, 0, 127);
+
+                  if( (krLo > 0 || krHi > 0) && (vrLo > 0 || vrHi > 0) )
+                  {
+                     // Write key/note range
+                     f.i8 = krLo;
+                     f.i8 = krHi;
+
+                     // Write velocity range
+                     f.i8 = vrLo;
+                     f.i8 = vrHi;
+
+                     // Mod Range (zone selection)
+                     range <= s.getModRange();
+                     f.i8 = mathClampi(range.lo * 127, 0, 127);
+                     f.i8 = mathClampi(range.hi * 127, 0, 127);
+
+                     // Transpose
+                     float transpose = smpBaseTranspose + s.transpose;
+                     int transposeFine = (transpose - int(transpose)) * 16.0;
+                     if(transposeFine < 0)
+                     {
+                        trace "xxx 1 smp.unique_name=\""+smp.unique_name+"\" transpose="+transpose+" transposeFine="+transposeFine;
+                        transpose -= 1.0;
+                        transposeFine += 16.0-1.0;
+                        // e.g. -0.37 => transpose=-1 transposeFine=10/16  => effTranspose= -1 + 0.625 = -0.375
+                     }
+                     trace "xxx 2 smp.unique_name=\""+smp.unique_name+"\" transpose="+transpose+" transposeFine="+transposeFine;
+                     f.i8 = int(transpose);  // note
+                     f.i8 = mathClampi(transposeFine, 0, 15);  // fine
+
+                     // Volume shift (0..6)
+                     //  (note) not used (anymore) by replay (sample volume reset was removed in favour of channel volume)
+                     int vol = mathClampi(64.0 * s.volume * sb.volume, 0, 64);
+                     vol = log(vol) / log(2);
+                     vol = 6-vol;
+                     f.i8 = vol;
+
+                     // Volume velocity amount (0..1)
+                     f.f32 = s.volumeVelocityAmount;
+
+                     // Sample offset velocity modulation
+                     int smpOffShift = 0;
+                     int maxVelOffset = 0;
+                     int maxRndOffset = 0;
+                     if(s.sampleOffsetVelocityAmount > 0.0)
+                     {
+                        maxVelOffset = s.sampleOffsetVelocityAmount * s.firstLoopLen;
+                     }
+                     if(s.sampleOffsetRandAmount > 0.0)
+                     {
+                        maxRndOffset = s.sampleOffsetRandAmount * s.firstLoopLen;
+                     }
+                     int maxOffset = mathMini(s.firstLoopLen, maxVelOffset + maxRndOffset);
+                     if(maxOffset > 0)
+                     {
+                        smpOffShift = 1 + 1/*dmaWords*/;
+                        for(;;)
+                        {
+                           if((maxOffset >> smpOffShift) <= 255)
+                              break;
+                           smpOffShift++;
+                        }
+                        f.i8  = smpOffShift - 1/*dmaWords*/;
+                        f.i16 = maxVelOffset;
+                        f.i16 = maxRndOffset;
+                     }
+                     else
+                     {
+                        f.i8  = 0; // smpOffShift
+                        f.i16 = 0; // maxVelOffset
+                        f.i16 = 0; // maxRndOffset
+                     }
+                     f.i32 = maxOffset;
+
+                     // Play-from-start flag (last loop offset)
+                     if(/*maybe == */s.enableFromStart)  // (note) should be set to 'false' or 'maybe'
+                     {
+                        smpFlags |= (1 << 6)/*TSR_SMP_FLAG_PLAY_FROM_START*/;
+                     }
+
+                     // Glide speed
+                     trace "xxx s.glideType="+s.glideType;
+                     if(STSAMPLE_GLIDE_NONE != s.glideType)
+                     {
+                        smpFlags |= (1 << 4)/*TSR_SMP_FLAG_EXPORT_ALLOW_GLIDE*/;
+
+                        int glideByte = export_c_glide_speed_tbl.findIdxBefore(s.glideSpeedTimeDown*mseqSpeedScl) + 1;
+                        glideByte |= (export_c_glide_speed_tbl.findIdxBefore(s.glideSpeedTimeUp*mseqSpeedScl) + 1) << 4;
+                        f.i8 = glideByte;
+                     }
+                     else
+                     {
+                        f.i8 = 0x00;  // glidespeed = immediate (not used)
+                     }
+
+                     // Release speed (lower 4 bits)
+                     StADSR adsrVol <= s.getVolADSR();
+                     StEnvelope envRel <= adsrVol.getEnvRelease();
+                     float secRel = (adsrVol.timescaleMillisec*mseqSpeedScl/1000.0f) / envRel.timescale;
+                     trace "xxx adsrVol.timescale="+(adsrVol.timescaleMillisec/1000.0f)+" envRel.timescale="+envRel.timescale+" secRel="+secRel;
+                     // float ticks = msRel / 2.5f;
+                     int relSpeedIdx = 0;
+                     for(;;)
+                     {
+                        if(export_c_release_speed_tbl[relSpeedIdx] <= secRel)
+                           break;
+                        relSpeedIdx++;
+                     }
+                     relSpeedIdx = mathClampi(relSpeedIdx, 0, 15);
+                     trace "xxx relSpeedIdx="+relSpeedIdx;
+                     // // float transpCents = s.uiTransposeCents + transpose_cents;
+                     f.i8 = relSpeedIdx;
+
+                     // Sample loops
+                     loops <= s.getSampleLoops();
+                     if((null != loops) && (loops.numElements > 0))
+                     {
+                        // #loops
+                        f.i8 = loops.numElements / 3;
+                        trace "xxx write #loops="+(loops.numElements/3)+" firstOff="+s.firstOffset+" firstLen="+s.firstLen;
+                        int loopOff = 0;
+                        loop(loops.numElements / 3)
+                        {
+                           f.i16 = loops[loopOff + 0] >> 1;   // start (DMA words)
+                           f.i16 = loops[loopOff + 1] >> 1;   // len (DMA words)
+                           f.i16 = loops[loopOff + 2];        // #millisec (0=inf)
+                           loopOff += 3;
+                        }
+                     }
+                     else
+                     {
+                        trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+" has no loops !!";
+                        // #loops
+                        f.i8 = 0;
+                     }
+
+                     // Wavetable info
+                     boolean bWTDone = false;
+                     if(s.enableTimestretch && s.enableStaticCyclelen)/// && s.enableAbsoluteTimestretch)
+                     {
+                        // WT Cyclelen (8..1024)
+                        int wtCycleLen = s.timestretchGranularity;
+                        if(8 <= wtCycleLen <= 1024)
+                        {
+                           int wtCycleLenBits = int((log(wtCycleLen) / log(2))+0.5);
+                           if( (1 << wtCycleLenBits) == wtCycleLen )
+                           {
+                              int wtW = s.timestretch2DWidth;
+                              if(1 <= wtW <= 128)
+                              {
+                                 int wtH = s.timestretch2DHeight;
+                                 if(1 <= wtH <= 16)
+                                 {
+                                    if(wtH > 1)
+                                    {
+                                       if(wtW > 16)
+                                       {
+                                          trace "[~~~] wtH>1 && wtW>16: clipping wtW to 16";
+                                          wtW = 16;
+                                       }
+                                       // // else
+                                       // // {
+                                       // //    // Quantize to a multiple of 16
+                                       // //    wtW = (wtW >> 4) << 4;
+                                       // // }
+                                    }
+
+                                    // (note) pan LFO: wt_x
+                                    // (note) aux LFO: wt_y
+                                    // (note) lfo base speed is 4 ticks (4*2.5ms @125BPM/ppq=192)
+                                    f.i8 = wtCycleLenBits;  // => 3..10 = 8..1024 frames
+                                    f.i8 = wtW;
+                                    f.i8 = wtH;
+
+                                    // wt_x start phase and speed
+                                    lfo <= s.getOrCreatePanLFO();
+                                    f.i8 = lfo.enableOneShot;
+                                    if(lfo.enableGlobal && !lfo.enableReset)
+                                       f.i8 = 15;  // no phase reset
+                                    else
+                                       f.i8 = mathClampi((lfo.phase * 16.0), 0, 14);
+                                    if(lfo.freq == 0 || !s.getMMEnable(15-1/*LFO pan to 2d wavetable xrel*/))
+                                       f.i8 = 0;
+                                    else
+                                    {
+                                       if(b192PPQ)
+                                          f.i8 = mathClampi( (256.0 / ((wtLFOSpeedScl*1000.0/lfo.freq)/(4*2.5)))+0.5, 1, 15); // 48 ppq
+                                       else
+                                          f.i8 = mathClampi( (256.0 / ((wtLFOSpeedScl*1000.0/lfo.freq)/(8*2.5)))+0.5, 1, 15); // 24 ppq
+                                    }
+
+                                    // wt_y start phase and speed
+                                    lfo <= s.getOrCreateAuxLFO();
+                                    f.i8 = lfo.enableOneShot;
+                                    if(lfo.enableGlobal && !lfo.enableReset)
+                                       f.i8 = 15;  // no phase reset
+                                    else
+                                       f.i8 = mathClampi((lfo.phase * 16.0), 0, 14);
+                                    if(lfo.freq == 0 || !s.getMMEnable(16-1/*LFO aux to 2d wavetable yrel*/))
+                                       f.i8 = 0;
+                                    else
+                                    {
+                                       if(b192PPQ)
+                                          f.i8 = mathClampi( (256.0 / ((wtLFOSpeedScl*1000.0/lfo.freq)/(4*2.5)))+0.5, 1, 15); // 48 ppq
+                                       else
+                                          f.i8 = mathClampi( (256.0 / ((wtLFOSpeedScl*1000.0/lfo.freq)/(8*2.5)))+0.5, 1, 15); // 24 ppq
+                                    }
+
+                                    bWTDone = true;
+                                 }
+                                 else
+                                    trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+" wtH="+wtH+" is out of range (1..16)";
+                              }
+                              else
+                                 trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+" wtW="+wtW+" is out of range (1..128)";
+                           }
+                           else
+                              trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+" wtCycleLen="+wtCycleLen+" is not a power of two !!";
+                        }
+                        else
+                        {
+                           trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+" wtCycleLen="+wtCycleLen+" is out of range (<8 or >1024) !!";
+                        }
+                     }
+
+                     if(!bWTDone)
+                        f.i8 = 0;  // cyclen=0 (no wt)
+
+                     int numModSeqPatches;
+                     int mseqPatchIdx;
+                     int mseqPatchIdxDef;
+                     int exportModSeqIdxDef;
+
+                     // Volume ModSeq (#1)
+                     // // if(s.getMMEnable(0))
+                     numModSeqPatches = s.findLastUsedModSeqPatch(0) + 1;
+                     f.i8 = numModSeqPatches;
+                     mseqPatchIdxDef = s.getDefaultModSeqPatch(0);
+                     mseqPatchIdx = 0;
+                     trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" vol numModSeqPatches="+numModSeqPatches+" def="+mseqPatchIdxDef;
+                     loop(numModSeqPatches)
+                     {
+                        mseq <= s.getModSeqByIndexAndPatch(0, mseqPatchIdx);
+                        if(null != mseq)
+                        {
+                           trace "xxx vol mseqPatchIdx="+mseqPatchIdx+" mseq="+#(mseq);
+                           if(mseqPatchIdxDef == mseqPatchIdx)
+                           {
+                              if((mseq.stepMode < STMODSEQ_STEPMODE_START_MOD_NZ) && s.getMMEnable(1))
+                                 smpFlags |= (1 << 0)/*TSR_SMP_FLAG_VOL_SEQ_RESTART*/;
+                           }
+                           exportModSeq <= new ExportTSRModSeq;
+                           exportModSeq.len   = mseq.numSteps;
+                           exportModSeq.flags  = mseq.enableOneShot ? 0 : (1 << 0);  // TSR_SEQ_FLAG_LOOP
+                           exportModSeq.flags |= (STMODSEQ_STEPMODE_NOTEON == mseq.stepMode) ? 2 : 0; // TSR_SEQ_FLAG_NOTE_STEP
+                           slewAmt = 1.0 - mseq.slewAmt;
+                           slewAmt = mathPowerf(slewAmt, 3.5);  // should be 4.0 but 3.5 sounds closer on A500
+                           // // slewAmt *= slewAmt;
+                           // // slewAmt *= slewAmt;
+                           exportModSeq.slew  = slewAmt * 255;
+                           exportModSeq.spd   = mathClampi(mseq.speed*mseqSpeedScl, 1, 255);
+                           exportModSeqStepData <= exportModSeq.data;
+                           mseqStepIdx = 0;
+                           loop(mseq.numSteps)
+                           {
+                              stepVal = mseq.getStepValue(mseqStepIdx++)*mseq.valueScl*s.volume*64.0;
+                              stepVal = mathLerpf(64.0, stepVal, s.getMMAmt(1));
+                              exportModSeqStepData.add(mathClampi(stepVal, 0, 64));
+                           }
+                           // trace "xxx volModSeqData="+#(exportModSeqStepData);
+                           // Find unique stepseq
+                           exportModSeqIdx = 0;
+                           foreach exportModSeqO in volModSeqs
+                           {
+                              if(exportModSeqO.compare(exportModSeq))
+                                 break;
+                              exportModSeqIdx++;
+                           }
+                           if(exportModSeqIdx == volModSeqs.numElements)
+                           {
+                              volModSeqs.add(#(deref exportModSeq));
+                           }
+                           if(exportModSeqIdx > 255)
+                              trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+": maximum number of volume envelopes exceeded (>255) !!";
+                        }
+                        else
+                        {
+                           // non-allocated mseq
+                           exportModSeqIdx = 0;
+                        }
+
+                        // Vol ModSeq Index
+                        trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" vol mseqPatch="+(mseqPatchIdx+1)+"/"+numModSeqPatches+" modSeqIdx="+exportModSeqIdx;
+                        f.i8 = exportModSeqIdx;
+
+                        if(mseqPatchIdxDef == mseqPatchIdx)
+                           exportModSeqIdxDef = exportModSeqIdx;
+
+                        // Next modseq patch
+                        mseqPatchIdx++;
+                     }
+                     trace "xxx write modseq_vol mseqPatchIdxDef="+mseqPatchIdxDef+" => exportModSeqIdxDef="+exportModSeqIdxDef;
+                     f.i8 = exportModSeqIdxDef;
+
+
+                     // Freq Fine ModSeq (#2)
+                     numModSeqPatches = s.findLastUsedModSeqPatch(1) + 1;
+                     f.i8 = numModSeqPatches;
+                     mseqPatchIdxDef = s.getDefaultModSeqPatch(1);
+                     mseqPatchIdx = 0;
+                     trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" freq_fine numModSeqPatches="+numModSeqPatches+" def="+mseqPatchIdxDef;
+                     loop(numModSeqPatches)
+                     {
+                        mseq <= s.getModSeqByIndexAndPatch(1, mseqPatchIdx);
+
+                        if(null != mseq)
+                        {
+                           if(mseqPatchIdxDef == mseqPatchIdx)
+                           {
+                              // // if(mseq.enableReset)
+                              if((mseq.stepMode < STMODSEQ_STEPMODE_START_MOD_NZ) && s.getMMEnable(5))
+                                 smpFlags |= (1 << 1)/*TSR_SMP_FLAG_FREQ_FINE_SEQ_RESTART*/;
+                           }
+
+                           exportModSeq <= new ExportTSRModSeq;
+                           exportModSeq.len   = mseq.numSteps;
+                           exportModSeq.flags = mseq.enableOneShot ? 0 : (1 << 0);  // TSR_SEQ_FLAG_LOOP
+                           exportModSeq.flags |= (STMODSEQ_STEPMODE_NOTEON == mseq.stepMode) ? 2 : 0; // TSR_SEQ_FLAG_NOTE_STEP
+                           slewAmt = 1.0 - mseq.slewAmt;
+                           slewAmt = mathPowerf(slewAmt, 3.5);  // should be 4.0 but 3.5 sounds closer on A500
+                           // slewAmt *= slewAmt;
+                           // slewAmt *= slewAmt;
+                           exportModSeq.slew  = slewAmt * 255;
+                           exportModSeq.spd   = mathClampi(mseq.speed*mseqSpeedScl, 1, 255);
+                           exportModSeqStepData <= exportModSeq.data;
+                           mseqStepIdx = 0;
+                           loop(mseq.numSteps)
+                           {
+                              // range -8..8 semitones (256/16=16 finetune steps between semitones)
+                              stepVal = mseq.getStepValue(mseqStepIdx++)*mseq.valueScl+mseq.valueOff;
+                              stepVal *= 16.0;
+                              stepVal *= s.getMMAmt(5);
+                              exportModSeqStepData.add(mathClampi(stepVal, -128, 127));
+                           }
+                           // Find unique stepseq
+                           exportModSeqIdx = 0;
+                           foreach exportModSeqO in freqFineModSeqs
+                           {
+                              if(exportModSeqO.compare(exportModSeq))
+                                 break;
+                              exportModSeqIdx++;
+                           }
+                           if(exportModSeqIdx == freqFineModSeqs.numElements)
+                           {
+                              freqFineModSeqs.add(#(deref exportModSeq));
+                           }
+                           if(exportModSeqIdx > 255)
+                              trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+": maximum number of freq_fine envelopes exceeded (>255) !!";
+                        }
+                        else
+                        {
+                           // non-allocated mseq
+                           exportModSeqIdx = 0;
+                        }
+
+                        // FreqFine ModSeq Index
+                        trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" freq_fine mseqPatch="+(mseqPatchIdx+1)+"/"+numModSeqPatches+" modSeqIdx="+exportModSeqIdx;
+                        f.i8 = exportModSeqIdx;
+
+                        if(mseqPatchIdxDef == mseqPatchIdx)
+                           exportModSeqIdxDef = exportModSeqIdx;
+
+                        // Next modseq patch
+                        mseqPatchIdx++;
+                     }
+                     trace "xxx write modseq_freq_fine mseqPatchIdxDef="+mseqPatchIdxDef+" => exportModSeqIdxDef="+exportModSeqIdxDef;
+                     f.i8 = exportModSeqIdxDef;
+
+
+                     // Freq Coarse ModSeq (#3)
+                     numModSeqPatches = s.findLastUsedModSeqPatch(2) + 1;
+                     f.i8 = numModSeqPatches;
+                     mseqPatchIdxDef = s.getDefaultModSeqPatch(2);
+                     mseqPatchIdx = 0;
+                     trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" freq_coarse numModSeqPatches="+numModSeqPatches+" def="+mseqPatchIdxDef;
+                     loop(numModSeqPatches)
+                     {
+                        mseq <= s.getModSeqByIndexAndPatch(2, mseqPatchIdx);
+
+                        if(null != mseq)
+                        {
+                           if(mseqPatchIdxDef == mseqPatchIdx)
+                           {
+                              if((mseq.stepMode < STMODSEQ_STEPMODE_START_MOD_NZ) && s.getMMEnable(9))
+                                 // // if(mseq.enableReset)
+                                 smpFlags |= (1 << 2)/*TSR_SMP_FLAG_FREQ_COARSE_SEQ_RESTART*/;
+                           }
+
+                           exportModSeq <= new ExportTSRModSeq;
+                           exportModSeq.len   = mseq.numSteps;
+                           exportModSeq.flags = mseq.enableOneShot ? 0 : (1 << 0);  // TSR_SEQ_FLAG_LOOP
+                           exportModSeq.flags |= (STMODSEQ_STEPMODE_NOTEON == mseq.stepMode) ? 2 : 0; // TSR_SEQ_FLAG_NOTE_STEP
+                           slewAmt = 1.0 - mseq.slewAmt;
+                           slewAmt = mathPowerf(slewAmt, 3.5);  // should be 4.0 but 3.5 sounds closer on A500
+                           // slewAmt *= slewAmt;
+                           // slewAmt *= slewAmt;
+                           exportModSeq.slew  = slewAmt * 255;
+                           exportModSeq.spd   = mathClampi(mseq.speed*mseqSpeedScl, 1, 255);
+                           exportModSeqStepData <= exportModSeq.data;
+                           mseqStepIdx = 0;
+                           loop(mseq.numSteps)
+                           {
+                              // range: -12..12 semitones (8 steps between semitones)
+                              stepVal = mseq.getStepValue(mseqStepIdx++)*mseq.valueScl+mseq.valueOff;
+                              stepVal *= s.getMMAmt(9) * 12.0;
+                              stepVal *= 8.0;
+                              exportModSeqStepData.add(mathClampi(stepVal, -96, 96));
+                           }
+                           // Find unique stepseq
+                           exportModSeqIdx = 0;
+                           foreach exportModSeqO in freqCoarseModSeqs
+                           {
+                              if(exportModSeqO.compare(exportModSeq))
+                                 break;
+                              exportModSeqIdx++;
+                           }
+                           if(exportModSeqIdx == freqCoarseModSeqs.numElements)
+                           {
+                              freqCoarseModSeqs.add(#(deref exportModSeq));
+                           }
+                           if(exportModSeqIdx > 255)
+                              trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+": maximum number of freq_coarse envelopes exceeded (>255) !!";
+                        }
+                        else
+                        {
+                           // non-allocated mseq
+                           exportModSeqIdx = 0;
+                        }
+
+                        // FreqCoarse ModSeq Index
+                        trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" freq_coarse mseqPatch="+(mseqPatchIdx+1)+"/"+numModSeqPatches+" modSeqIdx="+exportModSeqIdx;
+                        f.i8 = exportModSeqIdx;
+
+                        if(mseqPatchIdxDef == mseqPatchIdx)
+                           exportModSeqIdxDef = exportModSeqIdx;
+
+                        // Next modseq patch
+                        mseqPatchIdx++;
+                     }
+                     trace "xxx write modseq_freq_coarse mseqPatchIdxDef="+mseqPatchIdxDef+" => exportModSeqIdxDef="+exportModSeqIdxDef;
+                     f.i8 = exportModSeqIdxDef;
+
+
+                     // Loop ModSeq (#4)
+                     numModSeqPatches = s.findLastUsedModSeqPatch(3) + 1;
+                     f.i8 = numModSeqPatches;
+                     mseqPatchIdxDef = s.getDefaultModSeqPatch(3);
+                     mseqPatchIdx = 0;
+                     trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" loop numModSeqPatches="+numModSeqPatches+" def="+mseqPatchIdxDef;
+                     loop(numModSeqPatches)
+                     {
+                        mseq <= s.getModSeqByIndexAndPatch(3, mseqPatchIdx);
+
+                        if(null != mseq)
+                        {
+                           if(mseqPatchIdxDef == mseqPatchIdx)
+                           {
+                              // // if(mseq.enableReset)
+                              if((mseq.stepMode < STMODSEQ_STEPMODE_START_MOD_NZ) && s.getMMEnable(13))
+                                 smpFlags |= (1 << 3)/*TSR_SMP_FLAG_LOOP_SEQ_RESTART*/;
+                           }
+
+                           exportModSeq <= new ExportTSRModSeq;
+                           exportModSeq.len   = mseq.numSteps;
+                           exportModSeq.flags = mseq.enableOneShot ? 0 : (1 << 0);  // TSR_SEQ_FLAG_LOOP
+                           exportModSeq.flags |= (STMODSEQ_STEPMODE_NOTEON == mseq.stepMode) ? 2 : 0; // TSR_SEQ_FLAG_NOTE_STEP
+                           slewAmt = 1.0 - mseq.slewAmt;
+                           slewAmt = mathPowerf(slewAmt, 3.5);  // should be 4.0 but 3.5 sounds closer on A500
+                           // // slewAmt *= slewAmt;
+                           // // slewAmt *= slewAmt;
+                           exportModSeq.slew  = slewAmt * 255;
+                           exportModSeq.spd   = mathClampi(mseq.speed, 1, 255);
+                           exportModSeqStepData <= exportModSeq.data;
+                           mseqStepIdx = 0;
+                           loop(mseq.numSteps)
+                           {
+                              int loopStepVal = mathClampi((mseq.getStepValue(mseqStepIdx++)*mseq.valueScl+mseq.valueOff), 0, s.numSampleLoops - 1);
+                              exportModSeqStepData.add(loopStepVal);
+                           }
+                           // Find unique stepseq
+                           exportModSeqIdx = 0;
+                           foreach exportModSeqO in loopModSeqs
+                           {
+                              if(exportModSeqO.compare(exportModSeq))
+                                 break;
+                              exportModSeqIdx++;
+                           }
+                           if(exportModSeqIdx == loopModSeqs.numElements)
+                           {
+                              loopModSeqs.add(#(deref exportModSeq));
+                           }
+                           if(exportModSeqIdx > 255)
+                              trace "[~~~] exportTSRSampleInfo: smp \""+smp.unique_name+"\" zone "+zoneNr+": maximum number of loop envelopes exceeded (>255) !!";
+                        }
+                        else
+                        {
+                           // non-allocated mseq
+                           exportModSeqIdx = 0;
+                        }
+
+                        // Loop ModSeq Index
+                        trace "xxx smp \""+smp.unique_name+"\" zone "+zoneNr+" loop mseqPatch="+(mseqPatchIdx+1)+"/"+numModSeqPatches+" modSeqIdx="+exportModSeqIdx;
+                        f.i8 = exportModSeqIdx;
+
+                        if(mseqPatchIdxDef == mseqPatchIdx)
+                           exportModSeqIdxDef = exportModSeqIdx;
+
+                        // Next modseq patch
+                        mseqPatchIdx++;
+                     }
+                     trace "xxx write modseq_loop mseqPatchIdxDef="+mseqPatchIdxDef+" => exportModSeqIdxDef="+exportModSeqIdxDef;
+                     f.i8 = exportModSeqIdxDef;
+
+                     // JumpToLoop-immediately flag
+                     f.i8 = s.enableJumpToLoopImmediately;
+
+                     // Volume Ramp (soft attack)
+                     if(s.getVolumeRampStepsMillisecIn() >= 16.0)
+                        smpFlags |= (1 << 7);  // TSR_SMP_FLAG_VOL_RAMP
+
+                     // Sample flags
+                     f.i8 = smpFlags;
+
+                     totalNumSamples++;
+
+                  } // if valid key and velocity ranges
+
+                  // Next sample zone
+                  s <= s.next;
+                  zoneNr++;
+
+               } // while s
+            } // if smp.prg_id >= 0
+         } // foreach smp
+
+         f.close();
+         Global.Debug("exportTSRSampleInfo: wrote \""+pathNameLocal+"\"");
+
+         // Write mod sequencers
+         pathName <= _pathNamePrefix+"_mseq.dat";  // => "c:/temp/eureka_tsr_vol.dat"
+         local String pathNameLocalMSEQ <= Utils.ToNativePathName(pathName);
+         if(f.openLocal(pathNameLocalMSEQ, IOS_OUT))
+         {
+            int offSz = 0;
+            f.i16 = 0;  // sz_vol_seq
+            f.i16 = 0;  // sz_freq_fine_seq
+            f.i16 = 0;  // sz_freq_coarse_seq
+            f.i16 = 0;  // sz_loop_seq
+            int prevOff = f.offset;
+            int curOff;
+
+            // Volume
+            writeTSRModSeqs(f, volModSeqs);
+            curOff = f.offset;
+            f.seek(offSz, SEEK_SET);
+            f.i16 = curOff - prevOff;
+            trace "xxx sz_vol_seq="+(curOff - prevOff)+" bytes";
+            f.seek(curOff, SEEK_SET);
+            prevOff = curOff;
+            offSz += 2;
+
+            // Freq Fine
+            writeTSRModSeqs(f, freqFineModSeqs);
+            curOff = f.offset;
+            f.seek(offSz, SEEK_SET);
+            f.i16 = curOff - prevOff;
+            trace "xxx sz_freq_fine_seq="+(curOff - prevOff)+" bytes";
+            f.seek(curOff, SEEK_SET);
+            prevOff = curOff;
+            offSz += 2;
+
+            // Freq Coarse
+            writeTSRModSeqs(f, freqCoarseModSeqs);
+            curOff = f.offset;
+            f.seek(offSz, SEEK_SET);
+            f.i16 = curOff - prevOff;
+            trace "xxx sz_freq_coarse_seq="+(curOff - prevOff)+" bytes";
+            f.seek(curOff, SEEK_SET);
+            prevOff = curOff;
+            offSz += 2;
+
+            // Loop
+            writeTSRModSeqs(f, loopModSeqs);
+            curOff = f.offset;
+            f.seek(offSz, SEEK_SET);
+            f.i16 = curOff - prevOff;
+            trace "xxx sz_loop_seq="+(curOff - prevOff)+" bytes";
+            f.seek(curOff, SEEK_SET);
+            prevOff = curOff;
+            offSz += 2;
+
+            Global.Debug("exportTSRSampleInfo: wrote \""+pathName+"\"");
+            f.close();
+         }
+         else
+         {
+            trace "[---] failed to open \""+pathNameLocalMSEQ+"\" for writing";
+         }
+
+         Global.Debug("exportTSRSampleInfo: "+totalNumSamples+" samples, wfSizeProc="+(export_all_c_total_wf_sz_proc/1024)+"k wfSizeStatic="+(export_all_c_total_wf_sz_static/1024)+"k wfSizeTotal="+((export_all_c_total_wf_sz_proc + export_all_c_total_wf_sz_static)/1024)+"k");
+
+      }
+      else
+      {
+         trace "[---] failed to open \""+pathNameLocal+"\" for writing";
+      }
+   }
+
+   // <save.png>
+   protected method writeTSRModSeqs(Stream ofs, PointerArray _seqs) {
+
+      ExportTSRModSeq *exportModSeq;
+      IntArray *exportModSeqStepData;
+
+      foreach exportModSeq in _seqs
+      {
+         trace "xxx write modSeq len="+exportModSeq.len+" flags="+exportModSeq.flags+" slew="+exportModSeq.slew+" spd="+exportModSeq.spd;
+         ofs.i8 = exportModSeq.len;
+         ofs.i8 = exportModSeq.flags;
+         ofs.i8 = exportModSeq.slew;
+         ofs.i8 = exportModSeq.spd;
+         exportModSeqStepData <= exportModSeq.data;
+         int mseqStepIdx = 0;
+         loop(exportModSeqStepData.numElements)
+            ofs.i8 = exportModSeqStepData.get(mseqStepIdx++);
+      }
+
+      ofs.i8 = 0; // end marker (len=0)
+   }
+
+   // <method_set.png>
+   public method setProjectName(String _name) {
+      Global.Debug("set project name \""+_name+"\"");
+
+      if(project_name != _name)
+      {
+         project_name = _name;
+
+         // Mark all audio tracks dirty so they will be written to the new project directory
+         AudioTrack *atrack;
+         foreach atrack in audio_tracks
+            atrack.markAsModified();
+
+         // Mark all samples dirty so they will be written to the new project directory
+         Sample *sample;
+         foreach sample in samples
+            sample.markWaveformAsModified();
+      }
+   }
+
+   // <method.png>
+   public method exportVoicePluginSYN(Stream ofs, StPluginShared shared) {
+
+      StPluginInfo info <= shared.info;
+
+      // plugin id
+      Utils.WriteString(ofs, info.id);
+
+      // .b num parameters
+      int numParams = info.numParams;
+      ofs.i16 = numParams;
+
+      // .nf parameter values
+      int paramIdx = 0;
+      loop(numParams)
+         ofs.f32 = shared.getParamValue(paramIdx++);
+   }
+
+   // <save.png>
+   public method exportSYN(String _nativePathName) {
+
+      local File f;
+      if(f.openLocal(_nativePathName, IOS_OUT))
+      {
+         f.byteOrder = YAC_LITTLE_ENDIAN;
+
+         Track *track;
+         Lane *lane;
+         ModSample *modSample;
+         ModVST2 *modVST2;
+         VST2Plugin *vst2Plugin;
+         ModEQ3 *modEQ3;
+         ModDelay *modDelay;
+         ModSTFX *modSTFX;
+         Sample *smp;
+         StSample *s;
+         StPluginInfo   *info;
+         StPluginShared *shared;
+
+         // .4b File header
+         f.i8 = 'S';
+         f.i8 = 'Y';
+         f.i8 = 'N';
+         f.i8 = 'G';
+
+         // Version
+         f.i16 = 1;
+
+         // Total (uncompressed) waveform size (#samples, _not_ frames)
+         int totalUncompressedWaveformSize = 0;
+         foreach smp in samples
+         {
+            if(smp.prg_id >= 0)  // assigned to MIDI program ?
+            {
+               totalUncompressedWaveformSize += smp.getWaveformNumSamples();
+            }
+         }
+         f.i32 = totalUncompressedWaveformSize;
+
+         // .b Number of tracks
+         //  - skip "metronome" track
+         //  - only count tracks/lanes with ModSample instance
+         //  - export track lanes as SR_Track
+         int numTracks = 0;
+         foreach track in tracks
+         {
+            if(track.canExport() && (Track.STATE_PLAY == track.play_state))
+            {
+               foreach lane in track.lanes
+               {
+                  if(lane.b_enable)
+                  {
+                     if(lane.getNumExportableModsSYN() > 0)
+                     {
+                        lane.tmp_syn_export_track_idx = numTracks++;
+                     }
+                     else
+                     {
+                        lane.tmp_syn_export_track_idx = -1;
+                     }
+                  }
+               }
+            }
+         }
+         f.i8 = numTracks;
+
+         // Track infos
+         //  - midich
+         //  - polyphony
+         //  - default sample
+         //  - note range
+         //  - velocity range
+         int exportTrackIdx = 0;
+         foreach track in tracks
+         {
+            if(track.canExport() && (Track.STATE_PLAY == track.play_state))
+            {
+               Output outputT <= track.getOutputByIdx(0);
+               foreach lane in track.lanes
+               {
+                  if(lane.b_enable)
+                  {
+                     int numExportableMods = lane.getNumExportableModsSYN();
+                     int numParams;
+                     int paramIdx;
+
+                     if(numExportableMods > 0)
+                     {
+                        // .b midi port (vst_a..vst_h = 0..7)
+                        f.i8 = track.dev_idx;
+
+                        // .b midi channel (0..15 => 1..16, -1=*)
+                        f.i8 = track.midi_ch;
+
+                        // .b num mods
+                        f.i8 = numExportableMods;
+
+                        Mod *mod;
+                        foreach mod in lane.mods
+                        {
+                           if(mod.b_enabled)
+                           {
+                              modSample <= mod;
+                              modVST2   <= mod;
+                              modEQ3    <= mod;
+                              modDelay  <= mod;
+                              modSTFX   <= mod;
+
+                              if(modSample instanceof ModSample)
+                              {
+                                 // .b type (0=sample, 1=STFX plugin)
+                                 f.i8 = 0;
+
+                                 // .b Polyphony (minus 1)
+                                 f.i8 = (modSample.sample_player.numVoices) - 1;
+
+                                 // .b Default sample (MIDI program number)
+                                 smp <= getSampleByIdx(modSample.sample_idx);
+                                 if(null != smp)
+                                    f.i8 = smp.prg_id;
+                                 else
+                                    f.i8 = -1;
+
+                                 // .3b Note range + transpose
+                                 ModInputFilter inFlt <= modSample.input_filter;
+                                 if(inFlt.enableNoteOn)
+                                 {
+                                    f.i8 = inFlt.noteMin;
+                                    f.i8 = inFlt.noteMax;
+                                 }
+                                 else
+                                 {
+                                    f.i8 = 0;
+                                    f.i8 = 127;
+                                 }
+                                 f.i8 = inFlt.noteTranspose;
+
+                                 // .2b Velocity range
+                                 f.i8 = inFlt.velocityMin;
+                                 f.i8 = inFlt.velocityMax;
+                              }
+                              else if((modVST2 instanceof ModVST2) && (modVST2.plugin.effectName == "SchroederVerb v8"))
+                              {
+                                 // STFX Reverb plugin
+
+                                 // .b type (0=sample, 1=STFX plugin)
+                                 f.i8 = 1;
+
+                                 // plugin id
+                                 //  (todo) add generic STFX plugin support
+                                 Utils.WriteString(f, "bsp schroederverb");
+
+                                 vst2Plugin <= modVST2.plugin;
+
+                                 // .b num parameters
+                                 numParams = vst2Plugin.numParameters;
+                                 f.i16 = numParams;  // should be 55
+
+                                 // .nf parameter values
+                                 paramIdx = 0;
+                                 loop(numParams)
+                                    f.f32 = vst2Plugin.getParameter(paramIdx++);
+                              }
+                              else if(modEQ3 instanceof ModEQ3)
+                              {
+                                 // STFX EQ plugin ("bsp eq3")
+
+                                 // .b type (0=sample, 1=STFX plugin)
+                                 f.i8 = 1;
+
+                                 exportVoicePluginSYN(f, modEQ3.shared);
+                              }
+                              else if(modDelay instanceof ModDelay)
+                              {
+                                 // STFX Delay plugin ("bsp dly 2")
+
+                                 // .b type (0=sample, 1=STFX plugin)
+                                 f.i8 = 1;
+
+                                 exportVoicePluginSYN(f, modDelay.shared);
+                              }
+                              else if(modSTFX instanceof ModSTFX)
+                              {
+                                 // arbitrary STFX plugin
+
+                                 // .b type (0=sample, 1=STFX plugin)
+                                 f.i8 = 1;
+
+                                 exportVoicePluginSYN(f, modSTFX.shared);
+
+                                 // // // plugin id
+                                 // // trace "[dbg] Project::exportSYN: write modSTFX.unique_id_string=\""+modSTFX.unique_id_string+"\"";
+                                 // // Utils.WriteString(f, modSTFX.unique_id_string);
+
+                                 // // modSTFX.queryPatchData();
+                                 // // FloatArray stfxParams <= modSTFX.patch_data;
+
+                                 // // // .b num parameters
+                                 // // numParams = stfxParams.numElements;
+                                 // // f.i8 = numParams;
+
+                                 // // // .nf parameter values
+                                 // // paramIdx = 0;
+                                 // // loop(numParams)
+                                 // //    f.f32 = stfxParams.get(paramIdx++);
+                              }
+                           } // if mod.b_enabled
+                        } // foreach mod
+
+                        int numLaneOutputs = 0;
+                        Output *outputL;
+                        Track *outputTrack;
+                        Lane *laneTmp;
+
+                        // Count number of outputs
+                        foreach outputL in lane.outputs
+                        {
+                           if(Output.TYPE_DEFAULT == outputL.type)
+                           {
+                              if(Output.TYPE_DEFAULT == outputT.type)
+                                 numLaneOutputs++;
+                              else
+                              {
+                                 outputTrack <= getTrackByIdx(outputT.track_idx);
+                                 if(null != outputTrack)
+                                 {
+                                    if(outputTrack.getNumLanes() > 0)
+                                       numLaneOutputs++;
+                                 }
+                              }
+                           }
+                           else if(Output.TYPE_TRACK == outputL.type)
+                           {
+                              if(outputL.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                              {
+                                 outputTrack <= getTrackByIdx(outputL.track_idx);
+                                 if(null != outputTrack)
+                                 {
+                                    if(outputTrack.getNumLanes() > 0)
+                                       numLaneOutputs++;
+                                 }
+                              }
+                           }
+                        }
+
+                        if(numLaneOutputs > 4)
+                           numLaneOutputs = 4;  // see synergy_replay SR_MAX_TRACK_OUTPUTS
+
+                        // .b num outputs
+                        f.i8 = numLaneOutputs;
+
+                        // Emit outputs
+                        int outputEmitIdx = 0;
+                        foreach outputL in lane.outputs
+                        {
+                           int outputTrackIdx = -1;
+                           if(Output.TYPE_DEFAULT == outputL.type)
+                           {
+                              if(Output.TYPE_DEFAULT == outputT.type)
+                              {
+                                 // .b dest
+                                 f.i8 = 0;
+                                 // .2b Level + Pan
+                                 f.i8 = mathClampi(outputT.level * outputL.level * 255, 0, 255);
+                                 f.i8 = mathClampi((outputT.pan + outputL.pan) * 127, -127, 127);
+                                 outputEmitIdx++;
+                              }
+                              else
+                              {
+                                 // Send to track
+                                 outputTrack <= getTrackByIdx(outputT.track_idx);
+                                 if(null != outputTrack)
+                                 {
+                                    foreach laneTmp in outputTrack.lanes
+                                    {
+                                       // .b dest
+                                       f.i8 = laneTmp.tmp_syn_export_track_idx + 1;
+                                       // .2b Level + Pan
+                                       f.i8 = mathClampi((outputT.level * outputL.level) * 255, 0, 255);
+                                       f.i8 = mathClampi((outputT.pan + outputL.pan) * 127, -127, 127);
+                                       outputEmitIdx++;
+                                       break;
+                                    }
+                                 }
+                              }
+                           }
+                           else if(Output.TYPE_TRACK == outputL.type)
+                           {
+                              if(outputL.track_idx > exportTrackIdx)  // skip "self" and previous track destinations
+                              {
+                                 outputTrack <= getTrackByIdx(outputL.track_idx);
+                                 if(null != outputTrack)
+                                 {
+                                    foreach laneTmp in outputTrack.lanes
+                                    {
+                                       // .b dest
+                                       f.i8 = laneTmp.tmp_syn_export_track_idx + 1;
+                                       // .2b Level + Pan
+                                       f.i8 = mathClampi(outputL.level * 255, 0, 255);
+                                       f.i8 = mathClampi(outputL.pan * 127, -127, 127);
+                                       outputEmitIdx++;
+                                       break;
+                                    }
+                                 }
+                              }
+                           }
+
+                           if(4 == outputEmitIdx)  // see synergy_replay SR_MAX_TRACK_OUTPUTS
+                              break;
+                        } // foreach outputL
+
+                     } // if numExportableMods > 0
+                  } // if lane.b_enable
+               } // foreach lane
+            } // if track.canExport
+            exportTrackIdx++;
+         } // foreach track
+
+         // .b number of samples (0..128)
+         //     (note) maybe expand to 255 later (via bank select 0/1)
+         int numSamples = findNumSamplesAssignedToAnyMIDIPrg();
+         f.i8 = numSamples;
+
+         foreach smp in samples
+         {
+            if(smp.prg_id >= 0)  // assigned to MIDI program ?
+            {
+               smp.exportSYNSmpInfo(f);
+            }
+         }
+
+         // Waveforms (compressed 12bit signed integers)
+         int wfSz = f.offset;
+         foreach smp in samples
+         {
+            if(smp.prg_id >= 0)  // assigned to MIDI program ?
+            {
+               smp.exportSYNWaveform(f);
+            }
+         }
+         wfSz = f.offset - wfSz;
+         // (note) uncompressed data would be stored as signed 12bit integers
+         int totalUncompressedWaveformSize16 = (totalUncompressedWaveformSize*2);
+         int totalUncompressedWaveformSize32 = (totalUncompressedWaveformSize*4);
+         totalUncompressedWaveformSize = (totalUncompressedWaveformSize*3)/2;
+         Global.Debug("exportSYN: totalUncompressedWaveformSize="+(int(100*totalUncompressedWaveformSize/1024.0)/100.0)+"k");
+         Global.Debug("exportSYN:   totalCompressedWaveformSize="+(int(100*wfSz/1024.0)/100.0)+"k ("+(int((float(wfSz)/totalUncompressedWaveformSize)*10000)/100.0)+"%) ("+(int((float(wfSz)/totalUncompressedWaveformSize16)*10000)/100.0)+"% vs 16bit) ("+(int((float(wfSz)/totalUncompressedWaveformSize32)*10000)/100.0)+"% vs float)");
+
+         Global.Debug("wrote \""+_nativePathName+"\" sz="+f.offset);
+         f.close();
+      }
+      else
+      {
+         Global.Error("failed to open \""+_nativePathName+"\" for writing");
+      }
+   }
+
+   // <method.png>
+   protected method waitForPostLoadModThreads() : boolean {
+      Global.Debug("Project::waitForPostLoadModThreads: ENTER");
+      Thread *th;
+      boolean r = true;
+      foreach th in postload_mod_threads
+      {
+         th.wait();
+         Mod mod <= th.userdata;
+         r = r && (!mod.b_postload_done || mod.b_postload);
+      }
+      postload_mod_threads.free();
+      Global.Debug("Project::waitForPostLoadModThreads: LEAVE, r="+r);
+      return r;
+   }
+
+   // <method.png>
+   protected method createPostLoadModThread(Mod _mod) {
+      Global.Debug("Project::createPostLoadModThread: ENTER mod="+#(_mod));
+      if(postload_mod_threads.numElements == STConfig.threaded_post_load_mod_worker_threads)
+      {
+         waitForPostLoadModThreads();
+      }
+
+      local Thread th;
+      th.userdata = _mod;
+      th.create(postload_mod_thread_entry);
+      postload_mod_threads.add(#(deref th));
+      Global.Debug("Project::createPostLoadModThread: LEAVE mod="+#(_mod));
+   }
+
+   // <load.png>
+   public method loadStatePost() : boolean {
+
+      boolean r = true;
+      Track *track;
+
+      if(!STConfig.b_threaded_post_load)
+      {
+         Global.Debug("Project::loadStatePost: using single-threaded init");
+
+         foreach track in tracks
+         {
+            r = r && track.loadStatePost(false/*bThreaded*/);
+            if(!r)
+            {
+               trace "[!!!] track \""+track.name+"\" loadStatePost() failed";
+               break;
+            }
+         }
+      }
+      else
+      {
+         if(STConfig.threaded_post_load_mod_worker_threads <= 1)
+         {
+            Global.Debug("Project::loadStatePost: using per-track threaded init");
+
+            // Multi-threaded post-load initialization
+            foreach track in tracks
+            {
+               // Create thread
+               track.loadStatePostThreadedBegin();
+            }
+
+            foreach track in tracks
+            {
+               // Wait for thread
+               r = r && track.loadStatePostThreadedEnd();
+            }
+         }
+         else
+         {
+            // Per-mod Multi-threaded post-load initialization
+            Global.Debug("Project::loadStatePost: using per-mod threaded init");
+
+            foreach track in tracks
+            {
+               Lane *lane;
+               foreach lane in track.lanes
+               {
+                  Mod *mod;
+                  foreach mod in lane.mods
+                  {
+                     // (todo) check if mod supports threading
+                     if(!mod.b_postload_done)
+                     {
+                        // if(mod.isThreadedPostLoadSupported())
+                        {
+                           // Starts thread, which eventually updates mod.b_postload to indicate failure/success
+                           createPostLoadModThread(mod);
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Wait for thread(s) and check mod.b_postload
+            r = r && waitForPostLoadModThreads();
+         }
+
+         if(r)
+         {
+            // Post-load all mods that were blacklisted for multithreading
+            foreach track in tracks
+            {
+               r = r && track.loadStatePost(false/*_bThreaded*/);
+               if(!r)
+                  break;
+            }
+         }
+      }
+
+      if(r)
+      {
+         if(STConfig.b_cycle_recalc_on_load)
+            recalcProceduralWaveforms();
+
+         if(STConfig.b_patch_plugin_compile_on_load)
+            recalcAndReloadPatchPlugins();
+      }
+
+      Global.Debug("Project::loadStatePost: LEAVE, r="+r);
+      return r;
+   }
+
+   // <load.png>
+   public method loadFile(String _fileName) : boolean {
+
+      boolean r = false;
+
+      TraceOnceBegin();
+
+      File f;
+      if(f.openLocal(_fileName, IOS_IN))
+      {
+         f.byteOrder = LITTLE_ENDIAN;
+
+         int ms = milliSeconds();
+
+         r = loadStream(f);
+
+         if(r)
+         {
+            ms = milliSeconds() - ms;
+            trace "[...] Project::load: loaded from \""+_fileName+"\" in "+(ms/1000.0f)+" seconds";
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] Project::Load: failed to open file \""+_fileName+"\".";
+      }
+
+      TraceOnceEnd();
+
+      return r;
+   }
+
+   // <method.png>
+   public =replay= method handleRemoteParamUpdate(int _instanceId, int _paramIdx, float _paramValue) {
+      // Called from SysEx thread
+      //   (todo) speed up by building instanceId to track/lane/mod LUT ?
+      Track *track;
+      boolean bUpdated = false;
+
+      _paramValue = mathClampf(_paramValue, 0.0f, 1.0f);
+
+      foreach track in tracks
+      {
+         bUpdated = track.handleRemoteParamUpdate(_instanceId, _paramIdx, _paramValue);
+
+         if(bUpdated)
+            break;
+      }
+
+      b_modified |= bUpdated;  // markAsModified()
+   }
+
+   // <method.png>
+   public =replay= method handleRemoteParamUpdateRel(int _instanceId, int _paramIdx, float _paramValueRel) {
+      // Called from SysEx thread
+      //   (todo) speed up by building instanceId to track/lane/mod LUT ?
+      Track *track;
+      boolean bHandled = false;
+
+      foreach track in tracks
+      {
+         bHandled = track.handleRemoteParamUpdateRel(_instanceId, _paramIdx, _paramValueRel);
+
+         if(bHandled)
+            break;
+      }
+
+      // (note) do NOT mark project as modified
+   }
+
+   // <method.png>
+   public method handleRemoteQueryInstanceIds(byte _devIdxHint, byte _midiChHint, int _instanceIdHint, PointerArray _retInstances) {
+      Track *track;
+      Mod mod <= null;
+      SysExInstance *inst;
+      _retInstances.free();
+
+      if(_instanceIdHint > 0)
+      {
+         // Find single instance by id
+         foreach track in tracks
+         {
+            mod <= track.findModByInstanceId(_midiChHint, _instanceIdHint);
+            if(null != mod)
+            {
+               inst <= new SysExInstance;
+               inst.dev_idx       = track.dev_idx;
+               inst.midi_ch       = track.midi_ch;
+               inst.instance_id   = mod.instance_id;
+               inst.instance_name = mod.getNameForInstanceTable();
+               inst.b_effect      = mod.isEffect();
+               _retInstances.add(#(deref inst));
+               break;
+            }
+         }
+      }
+
+      if(null == mod)
+      {
+         // Find multiple instances by MIDI port
+         foreach track in tracks
+         {
+            if(track.listensToMIDIPort(_devIdxHint, _midiChHint))
+            {
+               Lane *lane;
+               int laneIdx = 0;
+               foreach lane in track.lanes
+               {
+                  if(lane.listensToMIDIChannel(track, laneIdx, _midiChHint))
+                  {
+                     foreach mod in lane.mods
+                     {
+                        inst <= new SysExInstance;
+                        inst.dev_idx       = track.dev_idx;
+                        inst.midi_ch       = track.midi_ch;
+                        inst.instance_id   = mod.instance_id;
+                        inst.instance_name = mod.getNameForInstanceTable();
+                        inst.b_effect      = mod.isEffect();
+                        _retInstances.add(#(deref inst));
+                     }
+                     // // mod <= track.findFirstModByDevIdxAndMidiCh(_devIdxHint, _midiChHint);
+                     // // Global.Debug2("handleRemoteQueryInstanceId: devIdxHint="+_devIdxHint+" midiChHint="+_midiChHint+" => mod="+#(mod));
+                     // // if(null != mod)
+                     // //    break;
+                  }
+                  laneIdx++;
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= handleRemoteQueryParams(int _instanceId) {
+      StringArray params;
+      params.empty();
+
+      Mod mod <= null;
+      Track *track;
+
+      foreach track in tracks
+      {
+         mod <= track.findModByInstanceId(-1, _instanceId);
+
+         if(null != mod)
+            break;
+      }
+
+      if(null != mod)
+      {
+         if(mod.getParameterNamesArray(params))
+         {
+            SysEx.QueueSendRemoteReplyParams(_instanceId, params);
+         }
+         else
+         {
+            // Failed
+            SysEx.QueueSendRemoteReplyParams(-1/*instanceId*/, params);
+         }
+      }
+      else
+      {
+         // Failed
+         SysEx.QueueSendRemoteReplyParams(-1/*instanceId*/, params);
+      }
+   }
+
+   // <method_update.png>
+   public method updateUsesInputs() {
+      Track *track;
+      boolean r = false;
+      foreach track in tracks
+      {
+         r |= (track.input_channel_idx >= 0);
+      }
+      if(!r)
+      {
+         AudioTrack *atrack;
+         foreach atrack in audio_tracks
+         {
+            r |= (AudioTrack.SRC_AUDIO_IN == atrack.src_type);
+         }
+      }
+      b_uses_inputs = r;
+      return r;
+   }
+
+   // <method.png>
+   public =replay= method prepareRecord() {
+
+      AudioTrack *atrack;
+      foreach atrack in audio_tracks
+         atrack.prepareRecord();
+
+      markAsModified();
+   }
+
+   // <method.png>
+   public =replay= method tryCopyToLiveCaptureBuffers(boolean _bForce) : boolean {
+
+      PageAudio pgAudio <= root_form.pg_audio;
+      AudioTracksForm atf <= pgAudio.f_audiotracks;
+      AudioTrack curTrack <= atf.getSelectedTrack();
+      AudioTrack *atrack;
+      boolean ret = false;
+
+      foreach atrack in audio_tracks
+      {
+         if(atrack.tryCopyToLiveCaptureBuffer(_bForce))
+         {
+            if(@(curTrack) == @(atrack))
+               atf.handleLiveCaptureBufferChanged();
+
+            ret = true;
+         }
+      }
+
+      return ret;
+   }
+
+   // <method_add.png>
+   public =replay= method addModMatrixEntryForLastTouchedParam(Track _track, Mod _mod) {
+      Global.Debug("Project::addModMatrixEntryForLastTouchedParamMod: track.name=\""+_track.name+"\" mod="+#(_mod));
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      // (todo) move ui_param_history to Mod base class
+      if((_mod.ui_param_history.numElements) > 0)
+      {
+         int lastParamIdx = _mod.ui_param_history.last;
+         // Global.Debug("Project::addModMatrixEntryForLastTouchedParam: mod="+#(modVST)+" lastParamIdx="+lastParamIdx);
+         int rpn;
+
+         if(STConfig.b_mod_rpnctl_iterate_all)
+         {
+            Lane *lane;
+            if(_track.isLPCMode())
+            {
+               lane <= _track.findLaneByMod(_mod);
+               int laneIdx = _track.getIdxByLane(lane);
+               if(_track.multi_lane_offset <= laneIdx < (_track.multi_lane_offset + _track.multi_num_channels))
+               {
+                  // Parent lane is addressed by unique MIDI channel
+                  rpn = lane.findUnusedModMatrixRPNCtl();
+               }
+               else
+               {
+                  // Iterate all lanes (all addressed by the same MIDI channel(s))
+                  rpn = _track.findUnusedModMatrixRPNCtl();
+               }
+            }
+            else
+            {
+               // Iterate all lanes (all addressed by the same MIDI channel(s))
+               rpn = _track.findUnusedModMatrixRPNCtl();
+            }
+         }
+         else
+         {
+            // Only search current module modmatrix
+            rpn = _mod.findUnusedModMatrixRPNCtl();
+         }
+
+         if(-1 != rpn)
+         {
+            ModMatrixEntry *mme;
+            mme <= _mod.addModMatrixEntry();
+            mme.setSrc(ModMatrixEntry.SRC_RPN);
+            mme.setArg1(rpn);
+            mme.setParamIdx(lastParamIdx);
+            _mod.handleModMatrixChanged();
+            _mod.allocNextModMatrixGID();
+
+            Global.Debug("Project::addModMatrixEntryForLastTouchedParam: mod="+#(_mod)+" lastParamIdx="+lastParamIdx+" rpn="+rpn);
+
+            if(RootForm.PAGE_TRACK == root_form.getCurrentPageNr())
+            {
+               if(@(root_form.pg_track.track) == @(_track))
+               {
+                  PageTrack.last_selected_mod <= _mod;
+                  root_form.pg_track.showModMatrix();
+               }
+            }
+         }
+         else
+         {
+            Global.Warning("Add ModMatrix entry: all CTL RPNs are already in use");
+         }
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   // <method_add.png>
+   public method addModMatrixEntryForLastTouchedParamMod(Mod _mod) {
+      Global.Debug("Project::addModMatrixEntryForLastTouchedParamMod: mod="+#(_mod));
+
+      if(null != _mod)
+      {
+         Track track <= findTrackByMod(_mod);
+         if(null != track)
+            addModMatrixEntryForLastTouchedParam(track, _mod);
+      }
+   }
+
+   // <method_add.png>
+   public method addModMatrixEntryForLastTouchedParamVST2(VST2Plugin _plugin) {
+      Global.Debug("Project::addModMatrixEntryForLastTouchedParamVST2: plugin="+#(_plugin));
+      ModVST2 modVST2 <= null;
+      Track *track;
+      foreach track in tracks
+      {
+         modVST2 <= track.findModVST2ByPlugin(_plugin);
+         if(null != modVST2)
+            break;
+      }
+
+      if(null != modVST2)
+         addModMatrixEntryForLastTouchedParam(track, modVST2);
+   }
+
+   // <method_add.png>
+   public method addModMatrixEntryForLastTouchedParamCLAP(CLAPPlugin _plugin) {
+      Global.Debug("Project::addModMatrixEntryForLastTouchedParamCLAP: plugin="+#(_plugin));
+      ModCLAP modCLAP <= null;
+      Track *track;
+      foreach track in tracks
+      {
+         modCLAP <= track.findModCLAPByPlugin(_plugin);
+         if(null != modCLAP)
+            break;
+      }
+
+      if(null != modCLAP)
+         addModMatrixEntryForLastTouchedParam(track, modCLAP);
+   }
+
+   // <method_find.png>
+   public method findRemoteCtlTargets(PointerArray _ctlTargets) {
+      _ctlTargets.free(); // SysExRemoteCtlTarget instances
+      StringArray paramNames;
+      Track *track;
+      foreach track in tracks
+      {
+         Lane *lane;
+         int laneIdx = 0;
+         foreach lane in track.lanes
+         {
+            Mod *mod;
+            foreach mod in lane.mods
+            {
+               ModMatrixEntry *mme;
+               foreach mme in mod.mod_matrix
+               {
+                  float paramVal;
+                  float paramValRelBase;
+                  SysExRemoteCtlTarget *ct;
+
+                  // (note) unmapping of parameter values which are being modulated by multiple entries
+                  //         won't (and can't) work (depends on all previous modulation states)
+
+                  switch(mme.src)
+                  {
+                     default:
+                        ct <= null;
+                        break;
+
+                     case ModMatrixEntry.SRC_CC:
+                        ct <= new SysExRemoteCtlTarget;
+                        ct.dev_idx    = track.dev_idx;
+                        ct.midi_ch    = track.midi_ch;
+                        ct.type       = SysExRemoteCtlTarget.TYPE_CC;
+                        ct.ext_type   = mme.arg1;
+                        ct.param_idx  = mme.param_idx;
+                        mod.getParameterNamesArray(paramNames);
+                        ct.param_name = paramNames.get(mme.param_idx);
+                        paramVal = mod.getParameterValue(mme.param_idx);
+                        paramValRelBase = mme.b_relative ? mod.getParameterValueRelBase(mme.param_idx) : 0;
+                        ct.unmap_ctlval = mme.unmapParamValToCtl(paramVal, paramValRelBase);
+                        _ctlTargets.add(#(deref ct));
+                        Global.Debug2("findRemoteCtlTargets: CC: paramIdx="+ct.param_idx+" paramName=\""+ct.param_name+"\"");
+                        break;
+
+                     case ModMatrixEntry.SRC_RPN:
+                        ct <= new SysExRemoteCtlTarget;
+                        ct.dev_idx    = track.dev_idx;
+                        ct.midi_ch    = track.midi_ch;
+                        ct.type       = SysExRemoteCtlTarget.TYPE_RPN;
+                        ct.ext_type   = mme.arg1;
+                        ct.param_idx  = mme.param_idx;
+                        mod.getParameterNamesArray(paramNames);
+                        ct.param_name = paramNames.get(mme.param_idx);
+                        paramVal = mod.getParameterValue(mme.param_idx);
+                        paramValRelBase = mme.b_relative ? mod.getParameterValueRelBase(mme.param_idx) : 0;
+                        ct.unmap_ctlval = mme.unmapParamValToCtl(paramVal, paramValRelBase);
+                        _ctlTargets.add(#(deref ct));
+                        Global.Debug2("findRemoteCtlTargets: RPN: paramIdx="+ct.param_idx+" paramName=\""+ct.param_name+"\"");
+                        break;
+
+                     case ModMatrixEntry.SRC_NRPN:
+                        ct <= new SysExRemoteCtlTarget;
+                        ct.dev_idx    = track.dev_idx;
+                        ct.midi_ch    = track.midi_ch;
+                        ct.type       = SysExRemoteCtlTarget.TYPE_NRPN;
+                        ct.ext_type   = mme.arg1;
+                        ct.param_idx  = mme.param_idx;
+                        mod.getParameterNamesArray(paramNames);
+                        ct.param_name = paramNames.get(mme.param_idx);
+                        paramVal = mod.getParameterValue(mme.param_idx);
+                        paramValRelBase = mme.b_relative ? mod.getParameterValueRelBase(mme.param_idx) : 0;
+                        ct.unmap_ctlval = mme.unmapParamValToCtl(paramVal, paramValRelBase);
+                        _ctlTargets.add(#(deref ct));
+                        Global.Debug2("findRemoteCtlTargets: NRPN: paramIdx="+ct.param_idx+" paramName=\""+ct.param_name+"\"");
+                        break;
+                  }
+
+                  if(null != ct)
+                  {
+                     if(-1 == ct.midi_ch)
+                        ct.midi_ch = 0;
+
+                     if(Track.TRACK_MODE_LPC <= track.track_mode <= Track.TRACK_MODE_MIRROR_LPC)
+                     {
+                        ct.midi_ch = (ct.midi_ch + laneIdx) & 15;
+                     }
+                     else if(Track.TRACK_MODE_MPE <= track.track_mode <= Track.TRACK_MODE_MIRROR_MPE)
+                     {
+                        // trace "xxx findRemoteCtlTargets: MPE track, laneIdx="+laneIdx+" ct.midi_ch="+ct.midi_ch;
+                        if(track.multi_lane_offset <= laneIdx < (track.multi_lane_offset + track.multi_num_channels))
+                        {
+                           ct.midi_ch = (ct.midi_ch + laneIdx - track.multi_lane_offset) & 15;
+                           if(ct.midi_ch >= track.multi_master_ch)
+                              ct.midi_ch++;  // see process()
+                           // trace "xxx findRemoteCtlTargets: => MPE ct.midi_ch="+ct.midi_ch;
+                        }
+                     }
+                  }
+               } // foreach mme
+            } // foreach mod
+            laneIdx++;
+         } // foreach lane
+      } // foreach track
+   }
+
+   // <method.png>
+   public method stopAllVoices() {
+      closeAllPluginEditorWindows();
+      stopAllVoices2();
+   }
+
+   // <method.png>
+   protected =replay= method stopAllVoices2() {
+      // Stop all voices and reverb/delay trails
+
+      if(!STConfig.b_force_single_thread)  // (note) decrement codepath not reached in single-thread mode
+         replay.silence_countdown = 10;  // force silence on all inputs for 10 replay chunks
+
+      Track *track;
+      foreach track in tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            Mod *mod;
+            foreach mod in lane.mods
+               mod.stopVoices();
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =audio= method setTempVelAmt(float _amt) {
+      temp_vel_amt = _amt;
+      Audio.SetTempSampleVelAmt(temp_vel_amt);
+   }
+
+   // <method_set.png>
+   public =audio= method setTempEnvReleaseType(int _type) {
+      if(temp_env_release_type >= 3)
+         Audio.ResetAllTempSamples();
+
+      if(temp_env_release_type != _type)
+         markAsModified();
+
+      temp_env_release_type = _type;
+
+      switch(_type)
+      {
+         default:
+         case 0:  // Cut
+            Audio.SetTempSampleReleaseTime(0.15);
+            break;
+
+         case 1:  // Short
+            Audio.SetTempSampleReleaseTime(2.5);
+            break;
+
+         case 2:  // Medium
+            Audio.SetTempSampleReleaseTime(7.0);
+            break;
+
+         case 3:  // Long
+            Audio.SetTempSampleReleaseTime(19.0);
+            break;
+
+         case 4:  // Infinite
+            Audio.SetTempSampleReleaseTime(999999.99);
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public =audio= method setTempNumVoices(int _num) {
+      temp_numvoices = _num;
+      Audio.SetTempSampleNumVoices(_num);
+   }
+
+   // <method_set.png>
+   public =audio= method setTempSampleOff(float _off) {
+      temp_sampleoff = _off;
+   }
+
+   // <method_set.png>
+   public =audio= method setTempSampleOffRand(float _amt) {
+      temp_sampleoff_rand = _amt;
+   }
+
+   // <method_set.png>
+   public =audio= method setTempPanRand(float _amt) {
+      temp_pan_rand = _amt;
+   }
+
+   // <method_update.png>
+   public method recalcProceduralWaveforms() {
+      Sample *sample;
+      int t = milliSeconds();
+      int sampleIdx = 0;
+      foreach sample in samples
+      {
+         if(sample.b_procedural)
+         {
+            Global.Debug2("Project::recalcProceduralWaveforms: sample["+sampleIdx+"] \""+sample.unique_name+"\" procedural len="+(sample.waveform.getNumFrames()));
+
+            sample.recalcCyclePatches();
+
+            if(sample.src_track_idx >= 0)
+               sample.renderSourceTrack();
+         }
+
+         // Next sample
+         sampleIdx++;
+      }
+      t = milliSeconds() - t;
+      Global.Profile("Project::recalcProceduralWaveforms() took "+t+"ms");
+   }
+
+   // <method_update.png>
+   public method recalcAndReloadPatchPlugins() {
+      // lazy-recompile plugins
+      //  (note) after loading project
+      Sample *sample;
+      int sampleIdx = 0;
+
+      local String sMsgAll;
+      local HashTable idMap; idMap.alloc(3000);  // for sample specific patch plugins
+      int numExported = 0;
+      local Integer numFailed = 0;
+
+      foreach sample in samples
+      {
+         numExported += sample.compileAllPatchPlugins(sMsgAll, numFailed, idMap, false/*bForce*/);
+
+         // Next sample
+         sampleIdx++;
+      }
+
+      local StringArray patchPluginIds;
+      current_project.findPatchPluginIds(patchPluginIds);  // find all referenced patch plugins (last_compiled_plugin_id)
+      if(patchPluginIds.numElements > 0)
+      {
+         current_project.reloadAllVoicePluginsRemap(idMap, patchPluginIds, true/*bRescanGlobal*/, true/*bRescanPatch*/);
+         trace "[...] Project::recalcAndReloadPatchPlugins: rebuilt "+numExported+" Cycle STFX patch plugin"+Utils.GetPluralString(numExported)+" ("+numFailed+" failed to compile):\n"+sMsgAll;
+      }
+      else
+      {
+         trace "[...] Project::recalcAndReloadPatchPlugins: project does not use patch plugins";
+      }
+   }
+
+   // <method.png>
+   public method tryEditModSampleBySmpUID(short _smpUID, short _instanceIdHint, float _selStartMS, float _selLenMS, int _noteIdxHint) : boolean {
+      Global.Debug("Project::tryEditModSampleBySmpUID: smpUID="+_smpUID);
+      Sample sample <= findSampleByUniqueID(_smpUID);
+      if(null != sample)
+      {
+         int sampleIdx = getSampleIdx(sample);
+
+         // Find first ModSample instance that plays the given sampleIdx
+         Track *track;
+         foreach track in tracks
+         {
+            Lane *lane;
+            foreach lane in track.lanes
+            {
+               ModSample *modSample;
+               foreach modSample in lane.mods
+               {
+                  if(modSample instanceof ModSample)
+                  {
+                     if( (-1 == _instanceIdHint) || (modSample.instance_id == _instanceIdHint) )
+                     {
+                        // trace "xxx tryEditModSampleBySmpUID: modSample.pref_nsp="+modSample.preferred_namespace_idx+" modSample.sample_idx="+modSample.sample_idx+" sampleIdx="+sampleIdx;
+                        if( (-1 != _instanceIdHint) || (modSample.sample_idx == sampleIdx) )
+                        {
+                           // see also: ModGridSampleButton::handleEditMod()
+                           PageSample pgSample <= root_form.pg_sample;
+                           pgSample.autoselect_sample_idx = getSampleIdx(sample); //////modSample.sample_idx;
+                           pgSample.autoselect_namespace_idx = modSample.preferred_namespace_idx;
+                           pgSample.ui_parent_track_nr = current_project.getTrackIdx(track) + 1;
+                           pgSample.mod_sample <= modSample;
+                           pgSample.b_return_to_projects_page = false;
+                           pgSample.autoselect_sampleview_start_ms = _selStartMS;
+                           pgSample.autoselect_sampleview_len_ms   = _selLenMS;
+                           pgSample.autoselect_note_idx_hint       = _noteIdxHint;
+                           if(!pgSample.pageIsCurrent())
+                              root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+                           else
+                              pgSample.pageUpdate();
+                           return true;
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+      else
+      {
+         // trace "[~~~] Project::tryEditModSampleBySmpUID: invalid smpUID="+_smpUID;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method tryEditTempSampleByUID(short _smpUID) : boolean {
+      Global.Debug("Project::tryEditTempSampleByUID: smpUID="+_smpUID);
+      Sample sample <= findSampleByUniqueID(_smpUID);
+      if(null != sample)
+      {
+         PageSample pgSample <= root_form.pg_sample;
+         pgSample.autoselect_sample_idx = getSampleIdx(sample);
+         pgSample.b_return_to_projects_page = false;
+         if(!pgSample.pageIsCurrent())
+            root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+         else
+            pgSample.pageUpdate();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_show.png>
+   public method tryEditTrackByMIDIPort(byte _dev, byte _ch,
+                                        boolean _bShowTrackPage,
+                                        boolean _bEditFirstMod,
+                                        byte    _noteIdxHint
+                                        ) : boolean {
+      Track track <= findTrackByMIDIPort(_dev, _ch);
+      trace "[dbg] Project::tryEditTrackByMIDIPort: dev="+_dev+" ch="+_ch+" => track="+#(track);
+      if(null != track)
+      {
+         PageProject pgProject <= root_form.pg_project;
+         pgProject.setFocusIdx(getTrackIdx(track));  // (note) when page has not been shown this does is no-op
+         if(_bShowTrackPage)
+         {
+            root_form.showPage(RootForm.PAGE_PROJECT, true/*bAllowHistory*/);  // updates TrackForm[]
+            pgProject.setFocusIdx(getTrackIdx(track));
+            if(_bEditFirstMod)
+            {
+               if(!pgProject.handleEditFocusTrackFirstMod(_noteIdxHint))
+                  pgProject.handleEditFocusTrack();
+            }
+            else
+            {
+               pgProject.handleEditFocusTrack();
+            }
+         }
+         else
+         {
+            // exiting PageSample should return to parent track
+            //  (note) (bShowTrackPage==false) is used when "edit-sample" action follows immediately (see Synergy AudioLiveRecForm)
+            root_form.pushPageToHistory(RootForm.PAGE_TRACK);
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method queryTrackPropertiesForSysEx(Stream ofs) {
+      // called from SysEx/replay thread when replying to SYX_MSGID_QUERY_TRACKS
+
+      // Number of tracks
+      ofs.i8 = tracks.numElements;
+
+      // Track infos
+      Track *track;
+      foreach track in tracks
+      {
+         // MIDI Port
+         ofs.i8 = track.dev_idx;
+         ofs.i8 = track.midi_ch;
+
+         // Name
+         Utils.WriteString(ofs, track.name);
+
+         // First ModSample instance_id
+         ModSample modSample <= track.findFirstModSample();
+         if(modSample instanceof ModSample)
+         {
+            ofs.i32 = modSample.instance_id;
+            ofs.i16 = modSample.preferred_namespace_idx;
+
+            Sample sample <= getSampleByIdx(modSample.sample_idx);
+            if(null != sample)
+            {
+               ofs.i16 = sample.unique_id;
+               ofs.i8  = sample.findFirstLiveRecZoneIdx();
+            }
+            else
+            {
+               ofs.i16 = -1;  // smp_uid == none
+               ofs.i8  = -1;  // first liverec zone idx == none
+            }
+         }
+         else
+         {
+            ofs.i32 = -1;  // no modsample instance
+            ofs.i16 =  0;  // no modsample namespace
+            ofs.i16 = -1;  // smp_uid == none
+            ofs.i8  = -1;  // first liverec zone idx == none
+         }
+
+         // Stereo input flag
+         ofs.i8 = track.b_stereo_input;
+
+         // Audio timeline mode flag
+         ofs.i8 = track.isTimelineMode();
+      }
+   }
+
+   // <method_find.png>
+   public method findPatchPluginIds(StringArray _ret) {
+      _ret.empty();
+      Sample *sample;
+      foreach sample in samples
+      {
+         CycleState sst <= sample.cycle_state;
+         sst.findPatchPluginIds(_ret);
+      }
+   }
+
+   // <method.png>
+   public method reloadAllVoicePlugins() : int {
+      local StringArray patchPluginIds;
+      findPatchPluginIds(patchPluginIds);
+      int numReloaded = VoicePlugins.ReloadVoicePlugins(null/*idMapOrNull*/,
+                                                        patchPluginIds,
+                                                        true/*bRescanGlobal*/,
+                                                        true/*bRescanPatch*/
+                                                        );
+      return numReloaded;
+   }
+
+   // <method.png>
+   public method reloadAllVoicePluginsRemap(HashTable   _idMap,
+                                            StringArray _patchPluginIds,
+                                            boolean     _bRescanGlobal,
+                                            boolean     _bRescanPatch
+                                            ) : int {
+      // called when one or more patch plugin ids have (possibly) changed (chksum)
+      trace "[trc] Project::reloadAllVoicePluginsRemap: idMap="+#(_idMap)+" #patchPluginIds="+_patchPluginIds.numElements;
+      int numReloaded = VoicePlugins.ReloadVoicePlugins(_idMap, _patchPluginIds, _bRescanGlobal, _bRescanPatch);
+      return numReloaded;
+   }
+
+   // <method.png>
+   public =replay= method handleFXAutoNoteOns() {
+      // Called
+      //  - after reloading voice plugins (via VoicePlugins.ReloadVoicePlugins())
+      //  - when replay is reset (hold-click "Reset") (via Replay::resetReplay())
+      Track *track;
+      foreach track in tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            ModSample *modSample;
+            foreach modSample in lane.mods
+            {
+               if(modSample instanceof ModSample)
+               {
+                  modSample.handleFXAutoNoteOn();
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method handleUploadProcSampleSeq(int _smpUID) : boolean {
+      // (note) see Synergy NodeTrackerEditor::cmd_pattern_capture_upload_to_eureka()
+      Sample sample <= findSampleByUniqueID(_smpUID);
+      Global.Debug("Project::handleUploadProcSampleSeq: smpUID="+_smpUID+" => sample="+#(sample));
+      if(null != sample)
+      {
+         local File f;
+         local String nativePathname = Utils.ToNativePathName(STConfig.temp_proc_track_seq_file);
+         if(f.openLocal(nativePathname, IOS_IN))
+         {
+            int smpUID = f.i32;
+            if(smpUID == _smpUID)
+            {
+               PointerArray frames <= sample.proc_seq_frames;
+               frames.free();
+               int numFrames = f.i32;
+               int totalNumEv = 0;
+               if(numFrames < 16384)
+               {
+                  MIDIPipeFrame frLast <= null;
+                  int tLast = 0;
+                  int frIdx = 0;
+                  loop(numFrames)
+                  {
+                     int frIdxFile = f.i32;
+
+                     if(frIdxFile == frIdx)
+                     {
+                        MIDIPipeFrame fr <= new MIDIPipeFrame;
+                        if(fr.timeStamp == tLast && null != frLast)
+                        {
+                           frLast.mergeFrame(fr);
+                        }
+                        else
+                        {
+                           frames.add(#(deref fr));
+                           tLast = fr.timeStamp;
+                        }
+
+                        if(!fr.loadState(f))
+                        {
+                           trace "[---] Project::handleUploadProcSampleSeq: loadState() failed (frame "+(frIdx+1)+"/"+numFrames+")";
+                           frames.free();
+                           f.close();
+                           return false;
+                        }
+
+                        int numEv = fr.numEvents;
+                        totalNumEv += numEv;
+                        trace "[trc] Project::handleUploadProcSampleSeq: read frame "+(frIdx+1)+"/"+numFrames+" timeStamp="+fr.timeStamp+" numEv="+numEv;
+                     }
+                     else
+                     {
+                        trace "[---] Project::handleUploadProcSampleSeq: frame idx mismatch. expect="+frIdx+" frIdxFile="+frIdxFile;
+                        frames.free();
+                        f.close();
+                        return false;
+                     }
+
+                     // Next frame
+                     frIdx++;
+                  }
+
+                  // Succeeded
+                  Global.Debug("Project::handleUploadProcSampleSeq: ok, read "+numFrames+" frame"+Utils.GetPluralString(numFrames)+", totalNumEv="+totalNumEv);
+                  f.close();
+
+                  SysEx.QueueSendSmpUploadSeqAck(smpUID);
+
+                  return true;
+               }
+               else
+               {
+                  trace "[---] Project::handleUploadProcSampleSeq: insane numFrames="+numFrames;
+               }
+            }
+            else
+            {
+               trace "[---] Project::handleUploadProcSampleSeq: smpUID mismatch. sysex="+_smpUID+" tmpFile="+smpUID;
+            }
+            f.close();
+         }
+         else
+         {
+            trace "[---] Project::handleUploadProcSampleSeq: failed to open \""+nativePathname+"\" for reading";
+         }
+      }
+      else
+      {
+         trace "[---] Project::handleUploadProcSampleSeq: smpUID="+_smpUID+" not found, skipping..";
+      }
+      return false;
+   }
+
+
+   // <method.png>
+   public =replay= method handleDownloadProcSampleSeq(int _smpUID) : boolean {
+      // (note) see Synergy NodeTrackerEditor::cmd_pattern_capture_download_from_eureka()
+      Sample sample <= findSampleByUniqueID(_smpUID);
+      Global.Debug("Project::handleDownloadProcSampleSeq: smpUID="+_smpUID+" => sample="+#(sample));
+      if(null != sample)
+      {
+         local File f;
+         local String nativePathname = Utils.ToNativePathName(STConfig.temp_proc_track_seq_file);
+         if(f.openLocal(nativePathname, IOS_OUT))
+         {
+            f.i32 = _smpUID;
+
+            int dstDevIdx = -1;
+            int dstMidiCh = -1;
+            Track track <= current_project.getTrackByIdx(sample.src_track_idx);
+            if(null != track)
+            {
+               dstDevIdx = track.dev_idx;
+               dstMidiCh = mathMaxi(0, track.midi_ch);
+            }
+
+            PointerArray frames <= sample.proc_seq_frames;
+            int numFrames = frames.numElements;
+            f.i32 = numFrames;
+            int totalNumEv = 0;
+            int frIdx = 0;
+            loop(numFrames)
+            {
+               f.i32 = frIdx;
+
+               local MIDIPipeFrame fr = frames.get(frIdx);
+               if(-1 != dstDevIdx)
+               {
+                  fr.replaceDevIdxAndMidiCh(-1/*fltDev*/, -1/*fltCh*/,
+                                            dstDevIdx, dstMidiCh
+                                            );
+               }
+               fr.saveState(f);
+
+               int numEv = fr.numEvents;
+               totalNumEv += numEv;
+               trace "[trc] Project::handleDownloadProcSampleSeq: wrote frame "+(frIdx+1)+"/"+numFrames+" timeStamp="+fr.timeStamp+" numEv="+numEv;
+
+               // Next frame
+               frIdx++;
+            }
+
+            // Succeeded
+            Global.Debug("Project::handleDownloadProcSampleSeq: ok, wrote "+numFrames+" frame"+Utils.GetPluralString(numFrames)+", totalNumEv="+totalNumEv);
+            f.close();
+
+            SysEx.QueueSendSmpDownloadSeqReply(_smpUID);
+
+            return true;
+         }
+         else
+         {
+            trace "[---] Project::handleDownloadProcSampleSeq: failed to open \""+nativePathname+"\" for writing";
+         }
+      }
+      else
+      {
+         trace "[---] Project::handleDownloadProcSampleSeq: smpUID="+_smpUID+" not found, skipping..";
+      }
+      return false;
+   }
+
+}

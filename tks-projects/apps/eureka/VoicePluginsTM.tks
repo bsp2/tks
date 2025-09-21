@@ -1,0 +1,251 @@
+// ----
+// ---- file   : VoicePluginsTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 19May2020
+// ---- changed: 20May2020, 21May2020, 22May2020, 25May2020, 19Sep2023, 13Jan2024
+// ----
+// ----
+// ----
+
+module MVoicePluginsTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class VoicePluginsTMEntry {
+   int     id;    // index into sample.voicePlugins (0..3), or -1 (== filter)
+   boolean b_enable;
+   String  level;///db;
+   String  dst;
+   String  cat;
+   String  name;  // Plugin name (or "-")
+   boolean b_pre_filter;
+
+   // // public method init(int _id, String _cat, String _name) {
+   // //    id   = _id;
+   // //    cat  = _cat;
+   // //    name = _name;
+   // // }
+}
+
+
+// <class.png>
+class VoicePluginsTM : TableModel {
+
+   define int COL_ID     = 0;
+   define int COL_ENABLE = 1;
+   define int COL_LEVEL  = 2;
+   define int COL_DST    = 3;
+   define int COL_CAT    = 4;
+   define int COL_NAME   = 5;
+
+   define int ST_PLUGIN_FLAG_OSC = (1 << 1);
+
+   VoicePluginsTMEntry *[] entries;  // VoicePluginsTMEntry instances
+
+   String alg_label;
+
+   static StringArray dst_names = [
+      "def",
+      "SR",
+      "AM",
+      "VB1",
+      "VB2",
+      "VB3",
+      "VB4",
+      "VB5",
+      "VB6",
+      "VB7",
+      "VB8",
+      "VM1",
+      "VM2",
+      "VM3",
+      "VM4",
+      "VM5",
+      "VM6",
+      "VM7",
+      "VM8",
+                                   ];
+
+
+   // <method_get.png>
+   public virtual getNumColumns() : int {
+      return 6;
+   }
+
+   // <method_get.png>
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id", "En", "dB", "Dst", "Cat", "Name"][_col];
+   }
+
+   // <method_get.png>
+   public virtual getNumRows() : int {
+      return entries.numElements;
+   }
+
+   // <method.png>
+   protected method addEntries(StSample _zone, boolean _bPreFilter) {
+      int pluginIdx = 0;
+      VoicePluginsTMEntry *en;
+
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         StPluginShared shared <= _zone.getVoicePluginShared(pluginIdx);
+         float level;
+         if(null != shared)
+         {
+            if(_zone.getEnableVoicePluginPreFilter(pluginIdx) == _bPreFilter)
+            {
+               StPluginInfo info <= shared.info;
+               en <= new VoicePluginsTMEntry;
+               en.id           = pluginIdx;
+               en.b_enable     = _zone.getEnableVoicePlugin(pluginIdx);
+               // // db = Audio.LevelToDecibel(_zone.getVoicePluginLevel(pluginIdx));
+               level = _zone.getVoicePluginLevel(pluginIdx) * 100.0;
+               en.level        = int(level + 0.5f);
+               en.dst          = dst_names.get(_zone.getVoicePluginDst(pluginIdx));
+               en.cat          = (info.flags & ST_PLUGIN_FLAG_OSC) ? "Osc" : (info.categoryShortName.toLower());
+               en.name         = info.shortName;
+               en.b_pre_filter = _bPreFilter;
+               entries.add(#(deref en));
+            }
+         }
+         else if(_zone.getEnableVoicePluginPreFilter(pluginIdx) == _bPreFilter)
+         {
+            en <= new VoicePluginsTMEntry;
+            en.id           = pluginIdx;
+            en.b_enable     = _zone.getEnableVoicePlugin(pluginIdx);
+            // // db = Audio.LevelToDecibel(_zone.getVoicePluginLevel(pluginIdx));
+            // // en.db           = int((db < 0.0f) ? (db-0.5f) : (db+0.5f));
+            level = _zone.getVoicePluginLevel(pluginIdx) * 100.0;
+            en.level        = int(level + 0.5f);
+            en.cat          = "-";
+            en.name         = "-";
+            en.b_pre_filter = _bPreFilter;
+            entries.add(#(deref en));
+         }
+         pluginIdx++;
+      }
+   }
+
+   // <method.png>
+   public method rebuildEntries(StSample _zone) {
+
+      entries.free();
+
+      if(null != _zone)
+      {
+         addEntries(_zone, true/*bPreFilter*/);
+
+         VoicePluginsTMEntry en <= new VoicePluginsTMEntry;
+         en.id   = -1;
+         entries.add(#(deref en));
+
+         addEntries(_zone, false/*bPreFilter*/);
+      }
+   }
+
+   // <method_get.png>
+   public virtual getCellCaption(int _col, _row) : String {
+      VoicePluginsTMEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         switch(_col)
+         {
+            case COL_ID:
+               if(-1 != en.id)
+                  return String(en.id + 1);
+               else
+                  return "";
+
+            case COL_ENABLE:
+               return null;
+
+            case COL_LEVEL:
+               return en.level;
+
+            case COL_DST:
+               return en.dst;
+
+            case COL_CAT:
+               return en.cat;
+
+            case COL_NAME:
+               return (-1 == en.id) ? alg_label : en.name;
+         }
+      }
+   }
+
+   // <method_get.png>
+   virtual getCellIcon(int _col, _row) : Icon {
+      VoicePluginsTMEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         Icon checkIcon <= UI.GetIcon("mgrctl_celvis");
+
+         switch(_col)
+         {
+            case COL_ENABLE:
+               return en.b_enable ? checkIcon : null;
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 12;
+
+         case COL_ENABLE:
+            return 16;
+
+         case COL_LEVEL:
+            return 20;
+
+         case COL_DST:
+            return 16;
+
+         case COL_CAT:
+            return 24;
+
+         case COL_NAME:
+            return 60;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 12;
+
+         case COL_ENABLE:
+            return 16;
+
+         case COL_LEVEL:
+            return 20;
+
+         case COL_DST:
+            return 16;
+
+         case COL_CAT:
+            return 24;
+
+         case COL_NAME:
+            return 240;
+      }
+   }
+
+}

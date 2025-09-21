@@ -1,0 +1,485 @@
+// ----
+// ---- file   : SamplePadButton.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 01Jul2022
+// ---- changed: 02Jul2022, 03Jul2022, 04Jul2022, 08Jul2022, 09Jul2022, 10Jul2022, 17Jul2022
+// ----          22Jul2022, 14Jun2023, 21Sep2023, 04Nov2023, 19Jan2024, 22Mar2024, 05Jul2024
+// ----          13Sep2024, 14Sep2024, 30Dec2024, 31Dec2024, 01Jan2025, 23Mar2025, 10Jun2025
+// ----
+// ----
+// ----
+
+module MSamplePadButton;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePadButton extends Button {
+
+   SamplePadForm *parent_form;
+   int note_nr;
+   int pad_idx;
+
+   Button *bt_mute;
+   Button *bt_solo;
+
+   protected PopupMenu *pm_context;
+
+   protected SampleCacheEntry *[] *preset_entries;
+
+
+   // <method_get.png>
+   public method getSamplePad() : SamplePad {
+      SamplePadKit samplePadKit <= parent_form.sample_pad_kit;
+      SamplePadKitVariation kv <= samplePadKit.getEditKitVariation();
+      return kv.pads.get(pad_idx);
+   }
+
+   // <method_get.png>
+   public method getSamplePadCommon() : SamplePadCommon {
+      SamplePadKit samplePadKit <= parent_form.sample_pad_kit;
+      SamplePadKitVariation kv <= samplePadKit.getEditKitVariation();
+      SamplePadCommon padCommon <= samplePadKit.pads.get(pad_idx);
+      return padCommon;
+   }
+
+   // <method.png>
+   public method printPadInfo(String _prefix) {
+      local Integer io = note_nr;
+      SamplePad pad <= getSamplePad();
+      Global.Print(_prefix+" \""+getCaption()+"\" "+(MIDI.midi_notes.get(note_nr))+" ("+note_nr+" / $"+io.printf("%02x")+")"+((-1 != pad.sample_idx) ? ("\""+pad.getSampleName()+"\" ("+(pad.sample_idx+1)+")") : ""));
+   }
+
+   // <method.png>
+   protected method addPresetMenuEntries(boolean _bShowAll, boolean _bRand) {
+      int numAvail = preset_entries.numElements;
+      if(numAvail > 0)
+      {
+         pm_context.addSeparator();
+         int presetIdx = 0;
+         int pmPresetIdx = 0;
+         SampleCacheEntry *en;
+         int maxPresets = STConfig.num_sample_preset_menu_entries;
+         boolean bAllVis = (preset_entries.numElements <= maxPresets);
+         _bRand = _bRand && !bAllVis;
+         boolean bFew = _bShowAll || bAllVis;
+
+         local PointerArray aFiltered;
+         foreach en in preset_entries
+         {
+            if(bFew || en.rating > 0)
+            {
+               // // trace "xxx add entry with rating="+en.rating;
+               if(_bRand)
+               {
+                  if(rand(2) & 1)
+                     aFiltered.add(en);
+                  else
+                     aFiltered.insert(0, en);
+               }
+               else
+               {
+                  aFiltered.add(en);
+               }
+            }
+         }
+         preset_entries <= deref aFiltered;
+
+         PopupMenu pm <= pm_context;
+         PopupMenuButton *pmb;
+         foreach en in aFiltered
+         {
+            if(pmPresetIdx >= maxPresets)
+            {
+               // Create new submenu
+               PopupMenu spm <= PopupMenu.New(pm);
+               pmb <= pm.addMenu("more..", deref spm);
+               pmPresetIdx = 0;
+               pm <= spm;
+            }
+
+            pmb <= pm.addDefaultButton(en.unique_name+"\t     "+en.rel_path, "preset_"+presetIdx);
+            pmb.setEnableProvideRightClick(true);
+
+            byte ratingIdx = mathClampi((en.rating + 10) / 20, 0, 5);  // 0..100 => 0..5
+            if(ratingIdx > 0)
+            {
+               pmb.setIcon(UI.GetIcon("star_rating_lvl_"+ratingIdx));
+               pmb.setIconScale(0.375 * UI.font_scaling);
+               pmb.setIconPadRight(2);
+               pmb.setIconPadTop(2);
+            }
+
+            presetIdx++;
+            pmPresetIdx++;
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bRand) {
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      SamplePad sp <= getSamplePad();
+
+      pmb <= pm.addDefaultButton("Copy", "copy");
+      pmb.setActive( (null != sp) );  // && (-1 != sp.sample_idx)
+      pmb.setEnableProvideRightClick(true);
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Paste", "paste");
+      pmb.setActive(null != SamplePadForm.clipboard_pad);
+      pmb.setEnableProvideRightClick(true);
+      pmb <= pm.addDefaultButton("Paste (keep sends)", "paste_keep_sends");
+      pmb.setActive(null != SamplePadForm.clipboard_pad);
+      pmb.setEnableProvideRightClick(true);
+
+      preset_entries <= new PointerArray;
+      local String padNameLC = sp.getName();
+      padNameLC.toLower();
+      if(padNameLC >= "2")
+         padNameLC.replace("2", "");  // e.g. 'bd2' => 'bd'
+      Samples.FindCacheEntriesByCategoryNameOrFilterKeyword(preset_entries, padNameLC);
+
+      // Add 'similar' samples by finding categories from the current sample's tags
+      Sample sample <= current_project.getSampleByIdx(sp.sample_idx);
+      if(null != sample && null != sample.tags)
+      {
+         String *sTag;
+         foreach sTag in sample.tags
+         {
+            Samples.FindCacheEntriesByCategoryNameOrFilterKeyword(preset_entries, sTag);
+         }
+      }
+
+      addPresetMenuEntries( (0 != UI.GetKeyMod())/*bShowAll*/, _bRand );
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      Global.Print("Show pad context menu ("+preset_entries.numElements+" preset"+Utils.GetPluralString(preset_entries.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method loadPreset(int _idx) {
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      SamplePadKit     samplePadKit <= parent_form.sample_pad_kit;
+      SamplePad        pad          <= samplePadKit.getEditSamplePad();
+      SamplePadCommon  padCommon    <= samplePadKit.getEditSamplePadCommon();
+      SampleCacheEntry en           <= preset_entries[_idx];
+
+      boolean bAutoDuplicateOrig = STConfig.b_sample_pad_consolidate_autoduplicate_all_refs;
+      STConfig.b_sample_pad_consolidate_autoduplicate_all_refs = true;  // count multiple refs within kit
+      int numRefs = current_project.findNumSampleRefsBySampleIdx(pad.sample_idx);
+      STConfig.b_sample_pad_consolidate_autoduplicate_all_refs = bAutoDuplicateOrig;
+      Global.Debug2("SamplePadButton::loadPreset: cur pad.sample_idx="+pad.sample_idx+" numRefs="+numRefs);
+
+      Sample *sampleNew;
+      local String *pathName;
+
+      if(1 == numRefs)
+      {
+         // Replace sample (only referenced by this pad)
+         Sample sampleOld <= current_project.getSampleByIdx(pad.sample_idx);
+         Global.Debug2("SamplePadButton::loadPreset<replace>: sampleOld.unique_name=\""+sampleOld.unique_name+"\"");
+         sampleNew <= current_project.newSample(null/*default*/, pad.sample_idx/*prefIdx*/);
+
+         pathName <= STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name+Global.SAMPLE_FILE_SUFFIX;
+         Global.Debug2("SamplePadButton::loadPreset<replace>: pathName=\""+pathName+"\"");
+
+         if(sampleNew.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bRecalcPatches*/))
+         {
+            sampleNew.b_autoload = false;
+            sampleNew.setNamespaceIdx(padCommon.namespace_idx);
+            pad.sample_idx = current_project.getSampleIdx(sampleNew);
+            current_project.deleteSample(sampleOld);
+
+            parent_form.showTrack(parent_form.parent_track);
+            UI.LayoutRootLayer();
+            Global.Success("Load preset sample \""+en.unique_name+"\" (replace smpIdx="+pad.sample_idx+")");
+         }
+         else
+         {
+            current_project.deleteSample(sampleNew);
+            Global.Error("Failed to load preset sample \""+en.unique_name+"\"");
+         }
+      }
+      else
+      {
+         // Add new sample
+         Global.Debug2("SamplePadButton::loadPreset<new>: add sample");
+         sampleNew <= current_project.newSample(null/*default*/, (pad.sample_idx >= 0) ? (pad.sample_idx + 1) : -1);
+
+         pathName <= STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name+Global.SAMPLE_FILE_SUFFIX;
+         Global.Debug2("SamplePadButton::loadPreset<new>: pathName=\""+pathName+"\"");
+
+         if(sampleNew.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bRecalcPatches*/))
+         {
+            sampleNew.b_autoload = false;
+            sampleNew.setNamespaceIdx(padCommon.namespace_idx);
+            pad.sample_idx = current_project.getSampleIdx(sampleNew);
+
+            parent_form.showTrack(parent_form.parent_track);
+            UI.LayoutRootLayer();
+            Global.Success("Load preset sample \""+en.unique_name+"\" (add smpIdx="+pad.sample_idx+")");
+         }
+         else
+         {
+            current_project.deleteSample(sampleNew);
+            Global.Error("Failed to load preset sample \""+en.unique_name+"\"");
+         }
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      SamplePad pad <= getSamplePad();
+      printPadInfo( (-1 != pad.sample_idx) ? "Pad" : "Unassigned pad");
+      return Button::onMouseEnter(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.selectPad(pad_idx);
+         showContextMenu(false/*bRand*/);
+         return true;
+      }
+      return Button::onMouseClick(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         parent_form.editPreviousPad();
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         parent_form.editNextPad();
+         return true;
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= virtual onDropFiles(StringArray _fileNames) : boolean {
+      Global.Debug("SamplePadButton::onDropFiles: filenames="+#(_fileNames));
+
+      // // // Audio.ResetAllTempSamples();
+      // // // Audio.ResetAllSampleVoices(sample);
+      // // // Audio.UpdateTemporarySampleFromWaveform(null);
+      // // // Audio.UpdateTempRefSample(null);
+
+      String pathName <= _fileNames[0];
+      local String baseName <= Utils.BaseName(pathName);
+      int drumNamespaceIdx = parent_form.sample_pad_kit.getKitNamespaceIdxForImport();
+
+      SamplePadKit samplePadKit <= parent_form.sample_pad_kit;
+      SamplePadKitVariation kv <= samplePadKit.getEditKitVariation();
+      SamplePadCommon padCommon <= samplePadKit.pads.get(pad_idx);
+      SamplePad pad <= kv.pads.get(pad_idx);
+      Sample *sample;
+      boolean bLoadOk = false;
+      local String msg;
+      if( (pathName.toLower()) >= ".wav")
+      {
+         sample <= current_project.newSample(baseName/*suggestedUniqueName*/, -1);
+         if(sample.initFromWavFile(pathName, false/*bForceLoop*/))
+         {
+            bLoadOk = true;
+            msg = "Load pad WAV sample from \""+pathName+"\"";
+         }
+         else
+         {
+            Global.Error("Failed to load WAV from \""+pathName+"\"");
+         }
+      }
+      else if( (pathName.toLower()) >= Global.SAMPLE_FILE_SUFFIX/*.esa*/)
+      {
+         sample <= current_project.newSample(baseName/*suggestedUniqueName*/, -1);
+         if(sample.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bReloadPatchPlugins*/))
+         {
+            bLoadOk = true;
+            msg = "Load pad sample patch from \""+pathName+"\"";
+         }
+         else
+         {
+            Global.Error("Failed to load sample patch from \""+pathName+"\"");
+         }
+      }
+
+      if(bLoadOk)
+      {
+         sample.b_autoload = false;
+         sample.analyzeAndUpdatePartials();
+         sample.setNamespaceIdx(drumNamespaceIdx);
+         padCommon.namespace_idx = drumNamespaceIdx;
+         pad.sample_idx = current_project.getSampleIdx(sample);
+         samplePadKit.edit_pad_idx = pad_idx;
+         parent_form.showTrack(parent_form.parent_track);
+         Global.Success(msg);
+      }
+
+      return true;
+   }
+
+   // <ui_update.png>
+   public method updateMuteSolo() {
+      SamplePadCommon padCommon <= getSamplePadCommon();
+
+      if( SamplePadCommon.STATE_MUTE == padCommon.play_state || padCommon.b_force_mute )
+      {
+         bt_mute.setAlpha(255);
+         bt_mute.setCaptionTint(#b0f03030);
+         bt_solo.setAlpha(#28);
+         bt_solo.setCaptionTint(0);
+         bt_solo.setFontByName("big12");
+      }
+      else switch(padCommon.play_state)
+      {
+         default:
+         case SamplePadCommon.STATE_PLAY:
+            bt_mute.setAlpha(#28);
+            bt_mute.setCaptionTint(0);
+            bt_solo.setAlpha(#28);
+            bt_solo.setCaptionTint(0);
+            bt_solo.setFontByName("big12");
+            break;
+
+         case SamplePadCommon.STATE_SOLO:
+            bt_mute.setAlpha(#28);
+            bt_mute.setCaptionTint(0);
+            bt_solo.setAlpha(255);
+            bt_solo.setCaptionTint(#e0ffff00);
+            bt_solo.setFontByName("big11");
+            break;
+      }
+      redraw();
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      SamplePadCommon padCommon <= getSamplePadCommon();
+
+      if(acName <= "preset_")
+      {
+         loadPreset(acName.replace("preset_",""));
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close pad context menu.");
+                  return true;
+
+               case Button.ACTION_RIGHT_CLICK:
+                  Global.Print("Show randomized preset menu");
+                  float curX = pm_context.getPositionX();
+                  float curY = pm_context.getPositionY();
+                  pm_context.hide();
+                  showContextMenu(true/*bRand*/);
+                  pm_context.moveToClippedPosition2f(curX, curY);
+                  return true;
+
+               case "copy":
+                  parent_form.handleCopyPad();
+                  return true;
+
+               case "paste":
+                  parent_form.handlePastePad(false/*bKeepSends*/);
+                  return true;
+
+               case "paste_keep_sends":
+                  parent_form.handlePastePad(true/*bKeepSends*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_mute):
+            if(SamplePadCommon.STATE_MUTE != padCommon.play_state)
+               padCommon.setPlayState(SamplePadCommon.STATE_MUTE);
+            else
+               padCommon.setPlayState(SamplePadCommon.STATE_PLAY);
+            parent_form.updatePadMuteSolo();
+            current_project.markAsModified();
+            return true;
+
+         case @(bt_solo):
+            if(SamplePadCommon.STATE_SOLO != padCommon.play_state)
+               padCommon.setPlayState(SamplePadCommon.STATE_SOLO);
+            else
+               padCommon.setPlayState(SamplePadCommon.STATE_PLAY);
+            parent_form.updatePadMuteSolo();
+            current_project.markAsModified();
+            return true;
+      }
+
+      return Button::consumeAction(_action);
+   }
+
+   // <ui_xfm.png>
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(Button::beginXFMTag(_form, _attributes))
+      {
+         setLayout(SuperBorderLayout);
+
+         bt_mute <= Button.New();
+         bt_mute.setEnableLabelButton(true);
+         bt_mute.setCaption("M");
+         bt_mute.setRequiredSize2fScaled(10, 8);
+         bt_mute.setAlignment(Layout.TOP);
+         bt_mute.setPadding4f(0,0,0,0);
+         bt_mute.setInnerPadding4f(0,0,0,0);
+         bt_mute.setFontByName("big12");
+         bt_mute.setEnableFillBackground(false);
+         bt_mute.setLinkedRedraw(this);
+         bt_mute.setEnableKbdFocusOnMouse(false);
+         bt_mute.setAlpha(#28);
+         addLayer(bt_mute, Layout.RIGHT);
+
+         bt_solo <= Button.New();
+         bt_solo.setEnableLabelButton(true);
+         bt_solo.setCaption("S");
+         bt_solo.setRequiredSize2fScaled(10, 8);
+         bt_solo.setAlignment(Layout.TOP);
+         bt_solo.setPadding4f(0,0,0,0);
+         bt_solo.setInnerPadding4f(0,0,0,0);
+         bt_solo.setFontByName("big12");
+         bt_solo.setEnableFillBackground(false);
+         bt_solo.setLinkedRedraw(this);
+         bt_solo.setEnableKbdFocusOnMouse(false);
+         bt_solo.setAlpha(#28);
+         addLayer(bt_solo, Layout.RIGHT);
+
+         return true;
+      }
+      return false;
+   }
+
+}

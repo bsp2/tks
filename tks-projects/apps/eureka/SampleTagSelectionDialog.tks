@@ -1,0 +1,698 @@
+// ----
+// ---- file   : SampleTagSelectionDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 02Aug2024
+// ---- changed: 03Aug2024, 05Aug2024, 06Aug2024, 21Mar2025
+// ----
+// ----
+// ----
+
+module MSampleTagSelectionDialog;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class SampleTagSelectionDialog extends Dialog {
+
+   define String ACTION_TAGS_CHANGED;    // when dialog is closed and tag selection has changed
+   define String ACTION_TAGS_UNCHANGED;  // when dialog is closed and tag selection has not changed
+   define String ACTION_TAGS_CHANGING;   // while dialog is open and tag selection has changed (and b_provide_changing=true)
+
+   protected XMLForm *xfm;
+
+   protected ComboBox *cm_cat;
+   protected CheckBox *cb_all;
+
+   protected SampleTagSelectionTM *tm_tags;
+   protected TableView            *tv_tags;
+
+   protected Panel  *pn_auto;
+   protected Button *bt_auto;
+
+   protected Panel *pn_tags;
+   protected Button *[] a_bt_tags;
+
+   protected Panel  *pn_cnp;
+   protected Button *bt_prev;
+   protected Button *bt_next;
+   protected Button *bt_copy;
+   protected Button *bt_paste;
+
+   protected Button *bt_hide;
+   protected Button *bt_revert;
+
+   protected StringArray tags;  // current (category filtered) tag list (displayed/referenced by table model)
+   protected StringArray selected_tags;  // currently selected tags
+   
+   protected StringArray selected_tags_revert;  // initial tag selection
+   protected ActionConsumer *listener;
+
+   protected IntArray last_cat_cursor_row;
+
+   protected boolean b_provide_changing;
+   protected boolean b_freq;
+
+
+   // <ui_init.png>
+   public method initSampleTagSelectionDialog(boolean _bEdit) : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleTagSelectionDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSampleTagSelectionDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      if(!_bEdit)
+      {
+         // sample-browser mode (remove copy'n'paste buttons)
+         pn_cnp.removeChildLayer(bt_copy);
+         pn_cnp.removeChildLayer(bt_paste);
+         pn_auto.removeChildLayer(bt_auto);
+         bt_copy  <= null;
+         bt_paste <= null;
+         bt_auto  <= null;
+         pn_cnp.removeChildLayer(bt_prev);
+         pn_cnp.removeChildLayer(bt_next);
+         bt_prev  <= null;
+         bt_next  <= null;
+      }
+
+      cm_cat.setOptions(STConfig.sample_tags_cat_names);
+      cb_all.setSelected(STConfig.b_sample_tags_show_all);
+
+      last_cat_cursor_row.allocAndFill(5, -1);
+
+      tm_tags <= new SampleTagSelectionTM;
+      tm_tags.b_freq = b_freq;
+      tm_tags.initTableModel();
+      tm_tags.tags <= tags;
+      tv_tags.setTableModel(tm_tags);
+      tv_tags.tableModelChanged();
+
+      initWindow(xfm,
+                 "--placeholder--",
+                 140, 140,
+                 300*UI.font_scaling, 300*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_update.png>
+   protected method updateDialogAfterSampleChange(StringArray _selectedTagsOrNull,
+                                                  boolean     _bUpdateRevert,
+                                                  boolean     _bAutoSelectCat
+                                                  ) {
+      if(_bUpdateRevert)
+         selected_tags_revert = _selectedTagsOrNull;
+      selected_tags = _selectedTagsOrNull;
+
+      int cursorIndex = tm_tags.getCursorIndex();
+      String oldCursorTag <= null;
+      if(cursorIndex >= 0)
+      {
+         oldCursorTag <= Object(tags.get(cursorIndex));
+      }
+
+      Utils.SortStringArray(selected_tags, false/*bCS*/);
+
+      last_cat_cursor_row.fill(-1);
+
+      updateTagList();
+      updateTagButtons();
+
+      if(_bAutoSelectCat)
+      {
+         if(0 == tm_tags.getSelectedRows().getNumElements())
+         {
+            keepOrSelectFirstCategoryThatHasSelectedTags();
+         }
+         tryMoveCursorToFirstSelectedCategoryTag();
+      }
+      else
+      {
+         if(null != oldCursorTag)
+         {
+            cursorIndex = tags.indexOfObject(oldCursorTag, 0);
+            if(cursorIndex >= 0)
+            {
+               tv_tags.moveCursorToRowNoAction(cursorIndex);
+               tv_tags.centerRow();
+            }
+         }
+      }
+
+      // Validate cursor row
+      cursorIndex = tm_tags.getCursorIndex();
+      if(-1 == cursorIndex || cursorIndex >= tm_tags.getNumRows())
+      {
+         tv_tags.moveCursorToFirstRowNoAction();
+      }
+      else
+      {
+         tv_tags.moveCursorToRowNoAction(cursorIndex);
+         tv_tags.centerRow();
+      }
+   }
+
+   // <ui_show.png>
+   public method showSampleTagSelectionDialog(StringArray _selectedTagsOrNull, ActionConsumer _listener) {
+
+      listener <= _listener;
+      updateDialogAfterSampleChange(_selectedTagsOrNull, true/*bUpdateRevert*/, true/*bAutoSelectCat*/);
+
+      // // bt_copy.setEditable(listener instanceof PageSample);
+      // // bt_paste.setEditable(listener instanceof PageSample);
+
+      setWindowTitle("Tags");
+      recursiveBuildTabCycleLists();
+
+      showNearMouse(25, -150);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      resizeToMinimum();
+
+      UI.SetKeyboardFocus(tv_tags);
+   }
+
+   // <method.png>
+   protected method provideChanging() {
+      if(b_provide_changing && null != listener)
+      {
+         // trace "xxx SampleTagSelectionDialog::provideChanging";
+         listener.consumeAction(Action.New(ACTION_TAGS_CHANGING, this));
+      }
+   }
+
+   // <method.png>
+   protected method apply() {
+      Global.Print(Utils.SortStringArrayAndMergeToString(selected_tags, " "));
+
+      if(null != listener)
+      {
+         if(!Utils.CompareStringArrayUnordered(selected_tags, selected_tags_revert))
+         {
+            // trace "xxx SampleTagSelectionDialog::apply: emit ACTION_TAGS_CHANGED";
+            listener.consumeAction(Action.New(ACTION_TAGS_CHANGED, this));
+         }
+         else
+         {
+            listener.consumeAction(Action.New(ACTION_TAGS_UNCHANGED, this));
+         }
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      apply();
+   }
+
+   // <ui_update.png>
+   protected method updateTagButtons() {
+      pn_tags.removeChildHierarchy();
+      a_bt_tags.empty();
+      String *sTag;
+      trace "[trc] SampleTagSelectionDialog::updateTagButtons";
+      foreach sTag in selected_tags
+      {
+         Button bt <= Button.New();
+         bt.setEnableLabelButton(true);
+         bt.setAlignment(Layout.BASELINE);
+         bt.setCaption(sTag);
+         bt.setEnableCaptionDim(!tags.containsObject(sTag));
+         bt.setFont(UI.GetFontByName("big10"));
+         bt.setEnableKbdFocusOnMouse(false);
+         pn_tags.addChildLayer(deref bt);
+         a_bt_tags.add(bt);
+      }
+      resizeAtLeastToMinimum();
+      // relayout();
+      redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateTagList() {
+      StringArray aCatNames <= STConfig.sample_tags_cat_names;
+      int catIdx = mathClampi(cm_cat.getSelectedOption(), 0, aCatNames.numElements);
+      PointerArray aCat <= STConfig.sample_tags;
+      StringArray aCatTags <= aCat.get(catIdx);
+      if(null != aCatTags)
+      {
+         tags = aCatTags;
+         if(!cb_all.isSelected())
+         {
+            local StringArray aAllUsedAndSelected = selected_tags;
+            // trace "xxx aAllUsedAndSelected="+aAllUsedAndSelected;
+            Utils.MergeStringArrays(aAllUsedAndSelected, Samples.all_used_tags);
+            // trace "xxx 2 aAllUsedAndSelected="+aAllUsedAndSelected;
+            Utils.StringArrayKeepIfExistsInOther(tags, aAllUsedAndSelected);
+         }
+      }
+      else
+      {
+         trace "[~~~] SampleTagSelectionDialog::updateTagList: catIdx="+catIdx+" out of bounds";
+         tags.empty();
+      }
+      local IntArray aSel;
+      String *sTag;
+      int tagIdx = 0;
+      foreach sTag in tags
+      {
+         if(selected_tags.containsObject(sTag))
+            aSel.add(tagIdx);
+         tagIdx++;
+      }
+      tv_tags.tableModelChanged();
+      tm_tags.setSelectedRows(aSel);
+      redraw();
+   }
+
+   // <method.png>
+   protected method keepOrSelectFirstCategoryThatHasSelectedTags() {
+      int oldCatIdx = cm_cat.getSelectedOption();
+
+      // Prefer currently selected category
+      updateTagList();
+      if(0 != tm_tags.getSelectedRows().getNumElements())
+         return;
+
+      // Find first category that has selected tags
+      int catIdx = 0;
+      loop(5)
+      {
+         cm_cat.setSelectedOption(catIdx);
+         updateTagList();
+
+         if(0 != tm_tags.getSelectedRows().getNumElements())
+            return;
+
+         catIdx++;
+      }
+
+      // No tags selected, revert to previously selected category
+      cm_cat.setSelectedOption(oldCatIdx);
+      updateTagList();
+   }
+
+   // <method.png>
+   protected method tryMoveCursorToFirstSelectedCategoryTag() {
+      String *sTag;
+
+      // Prefer currently selected row
+      int cursorIndex = tm_tags.getCursorIndex();
+      if(0 <= cursorIndex < tags.numElements)
+      {
+         sTag <= tags[cursorIndex];
+         if(selected_tags.containsObject(sTag))
+         {
+            last_cat_cursor_row[cm_cat.getSelectedOption()] = cursorIndex;
+            tv_tags.moveCursorToRowNoAction(cursorIndex);
+            tv_tags.centerRow();
+            return;
+         }
+      }
+
+      // Move cursor to first selected tag
+      foreach sTag in selected_tags
+      {
+         int rowIdx = tags.indexOfObject(sTag, 0);
+         if(rowIdx >= 0)
+         {
+            last_cat_cursor_row[cm_cat.getSelectedOption()] = rowIdx;
+            tv_tags.moveCursorToRowNoAction(rowIdx);
+            tv_tags.centerRow();
+            return;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTagButton(Button _bt) {
+      String sTag <= _bt.getCaption();
+      PointerArray aCat <= STConfig.sample_tags;
+      int catIdx = 0;
+      StringArray *aCatTags;
+      foreach aCatTags in aCat
+      {
+         if(aCatTags.containsObject(sTag))
+         {
+            // Found tag category. Select and update table
+            cm_cat.setSelectedOptionAction(catIdx);  // 
+            int rowIdx = tags.indexOfObject(sTag, 0);
+            last_cat_cursor_row[catIdx] = rowIdx;
+            tv_tags.moveCursorToRowNoAction(rowIdx);
+            tv_tags.centerRow();
+            return;
+         }
+         catIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCategoryChanged() {
+      Global.Print("Category is \""+cm_cat.getSelectedOptionName()+"\"");
+      updateTagList();
+      updateTagButtons();
+
+      int lastCursorRow = last_cat_cursor_row.get(cm_cat.getSelectedOption());
+      if(lastCursorRow >= 0)
+      {
+         // Restore last table cursor position
+         tv_tags.moveCursorToRowNoAction(lastCursorRow);
+         tv_tags.centerRow();
+      }
+      else
+      {
+         // Make first selected tag visible
+         IntArray aSel <= tm_tags.getSelectedRows();
+         if(aSel.numElements > 0)
+         {
+            tv_tags.moveCursorToRowNoAction(aSel[0]);
+         }
+         else
+         {
+            tv_tags.moveCursorToFirstRowNoAction();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAllChanged() {
+      STConfig.b_sample_tags_show_all = cb_all.isSelected();
+      PageSample pgSample <= root_form.pg_sample;
+      Sample sample <= pgSample.getSelectedSample();
+      if(null != sample)
+      {
+         updateDialogAfterSampleChange(selected_tags, false/*bUpdateRevert*/, false/*bAutoSelectCat*/);
+         UI.SetKeyboardFocus(tv_tags);
+      }
+      Global.Print("Show "+(cb_all.isSelected()?"all":"used")+" tags");
+   }
+
+   // <ui_handle.png>
+   protected method handleTagSelection() {
+      IntArray aSel <= tm_tags.getSelectedRows();
+      // trace "xxx handleTagSelection: selected_tags="+#(selected_tags)+" aSel="+#(aSel);
+      Utils.RemoveFromStringArray(selected_tags, tags);
+      Utils.AddToStringArrayIndexed(selected_tags, tags, aSel);
+      // trace "xxx new selected_tags="+#(selected_tags);
+      Utils.SortStringArray(selected_tags, false/*bCS*/);
+      // // updateTagList();
+      updateTagButtons();
+      provideChanging();
+   }
+
+   // <ui_handle.png>
+   protected method handleRevert() {
+      selected_tags = selected_tags_revert;
+      Utils.SortStringArray(selected_tags, false/*bCS*/);
+      updateTagList();
+      updateTagButtons();
+      Global.Print("Revert tags");
+   }
+
+   // <method_get.png>
+   public method getSelectedTags() : StringArray {
+      return selected_tags;
+   }
+
+   // <method_set.png>
+   public method setEnableProvideChanging(boolean _bEnable) {
+      // must be called before init
+      b_provide_changing = _bEnable;
+   }
+
+   // <method_set.png>
+   public method setEnableFrequency(boolean _bEnable) {
+      // must be called before init
+      b_freq = _bEnable;
+   }
+
+   // <method.png>
+   protected method selectSamplePrev() {
+      apply();
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.selectContextSamplePrev();
+      Sample sample <= pgSample.getSelectedSample();
+      if(null != sample)
+      {
+         updateDialogAfterSampleChange(sample.tags, true/*bUpdateRevert*/, true/*bAutoSelectCat*/);
+         UI.SetKeyboardFocus(tv_tags);
+      }
+      else
+         hide();
+   }
+
+   // <method.png>
+   protected method selectSampleNext() {
+      apply();
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.selectContextSampleNext();
+      Sample sample <= pgSample.getSelectedSample();
+      if(null != sample)
+      {
+         updateDialogAfterSampleChange(sample.tags, true/*bUpdateRevert*/, true/*bAutoSelectCat*/);
+         UI.SetKeyboardFocus(tv_tags);
+      }
+      else
+         hide();
+   }
+
+   // <ui_handle.png>
+   protected method handleTagsCopy() {
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.handleTagsCopy(selected_tags);
+   }
+
+   // <ui_handle.png>
+   protected method handleTagsPaste() {
+      PageSample pgSample <= root_form.pg_sample;
+      Sample sample <= pgSample.getSelectedSample();
+      if(null != sample)
+      {
+         pgSample.handleTagsPaste();
+         updateDialogAfterSampleChange(sample.tags, true/*bUpdateRevert*/, true/*bAutoSelectCat*/);
+         UI.SetKeyboardFocus(tv_tags);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTagsAutoAdd() {
+      PageSample pgSample <= root_form.pg_sample;
+      Sample sample <= pgSample.getSelectedSample();
+      if(null != sample)
+      {
+         apply();
+         pgSample.handleTagsAutoAdd();
+         updateDialogAfterSampleChange(sample.tags, false/*bUpdateRevert*/, true/*bAutoSelectCat*/);
+         UI.SetKeyboardFocus(tv_tags);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx SampleTagSelection::onKey: k.name="+_k.name;
+      PageSample pgSample <= root_form.pg_sample;
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case 'a':
+         case 't':
+         case '<':
+            if(_k.modShift())
+               handleTagsAutoAdd();
+            else
+               hide();
+            return true;
+
+         case '1':
+         case '2':
+         case '3':
+         case '4':
+         case '5':
+         case '6':
+         case '7':
+         case '8':
+         case '9':
+            int catIdx = _k.pressed - '1';
+            StringArray aCatNames <= STConfig.sample_tags_cat_names;
+            if(catIdx < aCatNames.numElements)
+               cm_cat.setSelectedOptionAction(catIdx);
+            return true;
+
+         case VKEY_LEFT:
+            cm_cat.selectPreviousOptionAction();
+            return true;
+
+         case VKEY_RIGHT:
+            cm_cat.selectNextOptionAction();
+            return true;
+
+         case 'c':
+            if(listener instanceof PageSample)
+            {
+               handleTagsCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(listener instanceof PageSample)
+            {
+               handleTagsPaste();
+               return true;
+            }
+            break;
+
+         case 'e':
+            if(listener instanceof PageSample)
+            {
+               selectSamplePrev();
+            }
+            return true;
+
+         case 'r':
+            if(listener instanceof PageSample)
+            {
+               selectSampleNext();
+            }
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      
+      int idxBtTag = a_bt_tags.indexOfPointer(ap, 0);
+      if(idxBtTag >= 0)
+      {
+         handleTagButton(ap);
+         return true;
+      }
+
+      PageSample pgSample <= root_form.pg_sample;
+
+      switch(@(ap))
+      {
+         case @(cm_cat):
+            handleCategoryChanged();
+            return true;
+
+         case @(cb_all):
+            handleAllChanged();
+            return true;
+
+         case @(tv_tags):
+            if(TableView.ACTION_MULTIPLESELECTION == acName)
+            {
+               handleTagSelection();
+            }
+            else
+            {
+               last_cat_cursor_row[cm_cat.getSelectedOption()] = tm_tags.getCursorIndex();
+            }
+            // if(TableView.ACTION_ROWCLICKED == acName)
+            // {
+            //    hide();
+            // }
+            // else if(TableView.ACTION_ROWSELECTED == acName)
+            // {
+            //    handleLoadPatch(patch_names.get(tm_patches.getCursorIndex()));
+            // }
+            return true;
+
+         case @(bt_prev):
+            selectSamplePrev();
+            return true;
+
+         case @(bt_next):
+            selectSampleNext();
+            return true;
+
+         case @(bt_copy):
+            handleTagsCopy();
+            return true;
+
+         case @(bt_paste):
+            handleTagsPaste();
+            return true;
+
+         case @(bt_auto):
+            handleTagsAutoAdd();
+            return true;
+
+         case @(bt_hide):
+            hide();
+            return true;
+
+         case @(bt_revert):
+            handleRevert();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

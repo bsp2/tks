@@ -1,0 +1,854 @@
+// ----
+// ---- file   : MIDIOutDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: ?????????, 23Jan2011, 07Apr2012, 20Dec2012, 23Mar2013, 09Apr2013, 05Jun2013
+// ----          02Feb2014, 04Feb2014, 09Feb2014, 11Feb2014, 15Jun2014, 13Aug2014, 19Aug2014
+// ----          31Aug2014, 15Sep2014, 14Feb2015, 17Feb2015, 21Feb2015, 23Feb2015, 08Mar2015
+// ----          10Apr2015, 18Apr2015, 21Apr2015, 14Sep2015, 11Jan2016, 19Jan2016, 01Feb2016
+// ----          28Feb2016, 29Feb2016, 04Mar2016, 10Mar2016, 09Sep2016, 16Feb2017, 03Mar2017
+// ----          09Jun2017, 12Jun2017, 15Aug2017, 17Aug2017, 02Nov2017, 04Jan2018, 29Jan2018
+// ----          07Dec2021, 29Jul2023, 04Jul2024
+// ----
+// ----
+// ----
+
+module MMIDIOutDevice;
+
+use tkmidi;
+use namespace st2;
+
+//
+// Note:
+//   MIDI commands are written into 'cmd_buffer'
+//   which will be appended to the 'out_buffer' once the
+//   send() method is called.
+//   The out_buffer is monitored by the midiout_writer_thread,
+//   whose task it is to simply write the data to the actual
+//   MIDI device.
+//   The purpose of this is to decouple the write-latency
+//   from the send() method so that the replay thread is not
+//   (directly) affected by the speed of a MIDI interface (e.g. USB MIDI
+//   vs. classic MIDI).
+//
+//
+
+// <class.png>
+class OutputMonitorEntry {
+   int    timestamp;
+   Buffer cmd_buffer;
+   Buffer note_buffer;
+
+   public method copyCmdBuffer(Buffer _o) {
+      // // cmd_buffer = _o;  // don't, this also copies the buffer size (e.g. 32k even though only 4 bytes may be used)
+      cmd_buffer.size = _o.offset;
+      cmd_buffer.offset = 0;
+      cmd_buffer.writeBuffer(_o, 0, _o.offset);
+   }
+
+   public method copyNoteBuffer(Buffer _o) {
+      // // note_buffer = _o;  // don't, this also copies the buffer size (e.g. 32k even though only 4 bytes may be used)
+      note_buffer.size = _o.offset;
+      note_buffer.offset = 0;
+      note_buffer.writeBuffer(_o, 0, _o.offset);
+   }
+}
+
+
+// <class.png>
+class MIDIOutBuffer {
+   float  time_ms;    // When to send this buffer (millisec timestamp, see milliSeconds() builtin function)
+   Buffer out_buffer; // Raw output MIDI cache (used by writer thread)
+}
+
+// <callback.png>
+function midioutdevice_writer_thread_entry(local Thread _th) {
+   ////Global.Debug2("MIDIOutDevice: started writer thread th="+#(_th)+"\n");
+   local MIDIOutDevice thiz <= _th.userdata;
+
+   local Mutex out_mutex <= thiz.out_mutex;
+   local MIDIOut midiout <= thiz.midiout;
+   local Condition cond <= thiz.cond_write;
+
+   local Thread thread <= GetCurrentThread();
+   Global.Debug2("MIDIOutDevice<"+thiz.getName()+">: threadId="+thread.id);
+
+   // thread.priority = THREAD_PRIORITY_TIME_CRITICAL; //THREAD_PRIORITY_HIGHEST;
+   thread.priority = THREAD_PRIORITY_HIGHEST;
+
+   while(thiz.b_running)
+   {
+      ///trace "xxx outdev writer thread running....";
+
+      out_mutex.lock();
+
+      if(thiz.num_buf_avail > 0)
+      {
+         // (todo) milliSeconds() should have 1ms precision on Linux resp. Win32 (w/ TKS_WIN32_USE_PERFCOUNTER)
+         local float now = milliSeconds();
+
+         // trace "xxx num_buf_avail="+thiz.num_buf_avail;
+
+         local MIDIOutBuffer mob <= thiz.out_buffers.get(thiz.read_buf_index);
+
+         if(mob.time_ms <= now) // (todo) handle int overflow
+         {
+            // Utils.HexDump(mob.out_buffer, 0, mob.out_buffer.offset);
+
+            // // if(!thiz.b_closed_temporarily)
+            {
+               midiout.sendBuffer(mob.out_buffer);
+
+               thiz.num_buf_avail--;
+               local PointerArray outBufs <= thiz.out_buffers;
+               thiz.read_buf_index = (thiz.read_buf_index + 1) % (outBufs.numElements);
+            }
+
+            out_mutex.unlock();
+         }
+         else
+         {
+            // Buffer is available, Wait until event time is reached
+            out_mutex.unlock();
+            TKS.yield();
+         }
+      }
+      else
+      {
+         // Wait until event becomes available
+         out_mutex.unlock();
+
+         ////TKS.yield();
+
+         //local int ts = milliSeconds();
+         cond.wait(100/*millisec*/);
+         //local int te = milliSeconds();
+         // if((te-ts) > 50)
+         // {
+         //    trace "xxx waited "+(te-ts)+" milliseconds";
+         // }
+      }
+
+   } // while b_running
+}
+
+
+// <class.png>
+class MIDIOutDevice : MIDIDevice {
+
+   define int NUM_OUT_BUFFERS =  512; //128
+   //define int OUT_BUFFER_SIZE = 2048;//8192;
+   //define int OUT_BUFFER_SIZE = 4096;//8192;  also see MIDIOut::MIDIOUT_BUFSIZE
+   // define int OUT_BUFFER_SIZE = 8192;
+   define int OUT_BUFFER_SIZE = 16384;
+
+   define int CMD_BUFFER_SIZE  = 16384;
+   //define int CMD_BUFFER_SIZE  = 4096;
+   define int NOTE_BUFFER_SIZE =  4096;
+
+   // // public MIDIInDevice *cached_in_dev;  // ref to matching input device (or null)
+
+   public    MIDIOut *midiout;         // Reference to native output device. null if device is not available.
+
+   public    Mutex   mtx_buffer;
+
+   public    Buffer  cmd_buffer;       // Stores ctl changes, .., immediates note on/off,
+   public    Buffer  note_buffer;      // Stores queued note on/off commands, always sent after cmd_buffer
+
+   public    PointerArray out_buffers;      // MIDIOutBuffer, written by replay, read by writer thread
+   public    int          write_buf_index;  // ring buffer index (0..out_buffers.numElements) (used by replay thread)
+   public    int          read_buf_index;   // ring buffer index (0..out_buffers.numElements) (used by MIDI out writer thread)
+   public    int          num_buf_avail;
+   public    Mutex        out_mutex;        // Protects access to out_buffers
+
+   public    boolean b_running;
+   protected boolean b_begun;
+   protected Thread  writer_thread;
+
+   public Condition cond_write;
+
+   boolean b_ui_only;  // only UI thread writes (false=only replay thread writes)
+
+   public boolean b_softpanic_pending; // true=send all notes off during next replay tick()
+
+   public boolean b_sysex_lock; // true=only send sysex data, collect everything else until lock is released
+   // public MIDIPipeFrame frame_sysex_collect_other;
+
+
+   define int NOTE_OFF_MODE_NONE          = 0;
+   define int NOTE_OFF_MODE_ALLNOTESOFF   = 1;
+   define int NOTE_OFF_MODE_INDIV         = 2;
+   define int NOTE_OFF_MODE_ALL_AND_INDIV = 3;
+   // also see STConfig.midi_device_noteoffmode
+
+   PointerArray output_monitor_history;  // OutputMonitorEntry instances
+
+
+   static boolean b_output_monitor;
+
+
+   // <init.png>
+   public method init(MIDIOut _midiout) {
+      midiout <= deref _midiout;
+
+      cmd_buffer.size = CMD_BUFFER_SIZE;
+      cmd_buffer.fillZero();
+
+      note_buffer.size = NOTE_BUFFER_SIZE;
+      note_buffer.fillZero();
+
+      cond_write.create(false/*bManualReset*/);
+
+      initOutBuffers();
+
+      if(null != midiout)
+      {
+         ////Global.Debug2("MIDIOutDevice::init: creating writer_thread.");
+
+         startWriterThread();
+
+         ////Global.Debug2("MIDIOutDevice::init: writer_thread created OK.");
+      }
+   }
+
+   // <method.png>
+   protected method startWriterThread() {
+      b_running = true;
+      writer_thread.userdata = this;
+      writer_thread.create(midioutdevice_writer_thread_entry);
+   }
+
+   // <init.png>
+   protected method initOutBuffers() {
+      out_buffers.alloc(NUM_OUT_BUFFERS);
+
+      int i = 0;
+
+      loop(NUM_OUT_BUFFERS)
+      {
+         MIDIOutBuffer mob <= new MIDIOutBuffer;
+         Buffer buf <= mob.out_buffer;
+         buf.size = OUT_BUFFER_SIZE;
+         buf.fillZero();
+         out_buffers[i++] = deref mob;
+      }
+
+      read_buf_index  = 0;
+      write_buf_index = 0;
+      num_buf_avail   = 0;
+   }
+
+   // <method_get.png>
+   public virtual isOpen() : boolean {
+      return (null != midiout);
+   }
+
+   // <method.png>
+   public method exit() {
+      if(b_running)
+      {
+         b_running = false;
+         Global.Debug2("midioutdevice<"+getName()+">: waiting for writer thread.");
+         cond_write.raise();
+         writer_thread.wait();
+         Global.Debug2("midioutdevice<"+getName()+">: writer thread terminated.");
+      }
+   }
+
+   // <method.png>
+   public method begin() {
+      mtx_buffer.lock();
+      if(!b_begun)
+      {
+         cmd_buffer.offset = 0;
+         note_buffer.offset = 0;
+         b_begun = true;
+      }
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method beginSysExLock() {
+      mtx_buffer.lock();
+      if(!b_sysex_lock)
+      {
+         b_sysex_lock = true;
+         // // frame_sysex_collect_other.empty();
+      }
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method endSysExLock() {
+      mtx_buffer.lock();
+      if(b_sysex_lock)
+      {
+         b_sysex_lock = false;
+      }
+      mtx_buffer.unlock();
+   }
+
+   // <method_get.png>
+   public virtual getDeviceName() : String {
+      if(null != midiout)
+      {
+         return midiout.deviceName;
+      }
+      else
+      {
+         return "n/a";
+      }
+   }
+
+   // <method.png>
+   public method allNotesOff(byte _midiCh) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      // // cmd_buffer.i8 = 0x78;  // all sound off
+      // // cmd_buffer.i8 = 0x79;  // reset all controllers
+      cmd_buffer.i8 = 0x7B; // all notes off
+      cmd_buffer.i8 = 0x00;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method allNotesOffIndiv(byte _midiCh) {
+      mtx_buffer.lock();
+      begin();
+      byte noteNr = 0;
+      loop(128)
+      {
+         cmd_buffer.i8 = 0x80 | (_midiCh&15);
+         cmd_buffer.i8 = noteNr;
+         cmd_buffer.i8 = 0;
+         noteNr++;
+      }
+      mtx_buffer.unlock();
+   }
+
+   // // <method.png>
+   // public =replay= method allNotesOffDef(byte _midiCh) {
+   //    switch(getNoteOffMode())
+   //    {
+   //       case NOTE_OFF_MODE_NONE:
+   //          break;
+
+   //       case NOTE_OFF_MODE_ALLNOTESOFF:
+   //       default:
+   //          allNotesOff(_midiCh);
+   //          break;
+
+   //       case NOTE_OFF_MODE_INDIV:
+   //          allNotesOffIndiv(_midiCh);
+   //          break;
+
+   //       case NOTE_OFF_MODE_ALL_AND_INDIV:
+   //          allNotesOff(_midiCh);
+   //          allNotesOffIndiv(_midiCh);
+   //          break;
+   //    }
+   // }
+
+   // <method.png>
+   public =replay= method queueSoftPanic() {
+      b_softpanic_pending = true;
+   }
+
+   // <method.png>
+   public method noteOn(byte _midiCh, byte _note, byte _vel) {
+      mtx_buffer.lock();
+      begin();
+      ////trace "xxx MIDIOutDevice::noteOn: this="+#(this)+" ch="+_midiCh+" note="+_note+" vel="+_vel;
+      cmd_buffer.i8 = 0x90 | (_midiCh&15);
+      cmd_buffer.i8 = _note & 127;
+      cmd_buffer.i8 = _vel & 127;
+      // TODO add midi opt.
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method queueNoteOn(byte _midiCh, byte _note, byte _vel) {
+      mtx_buffer.lock();
+      begin();
+      ////trace "xxx MIDIOutDevice::noteOn: this="+#(this)+" ch="+_midiCh+" note="+_note+" vel="+_vel;
+      note_buffer.i8 = 0x90 | (_midiCh&15);
+      note_buffer.i8 = _note & 127;
+      note_buffer.i8 = _vel & 127;
+      // TODO add midi opt.
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method noteOff(byte _midiCh, byte _note, byte _vel) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0x80 | (_midiCh&15);
+      cmd_buffer.i8 = _note & 127;
+      cmd_buffer.i8 = _vel & 127;
+      // TODO add midi opt.
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method queueNoteOff(byte _midiCh, byte _note, byte _vel) {
+      mtx_buffer.lock();
+      begin();
+      note_buffer.i8 = 0x80 | (_midiCh&15);
+      note_buffer.i8 = _note & 127;
+      note_buffer.i8 = _vel & 127;
+      // TODO add midi opt.
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method channelPressure(byte _midiCh, byte _val) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xD0 | (_midiCh&15);
+      cmd_buffer.i8 = _val&127;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method ctlChange(byte _midiCh, byte _ctl, byte _val) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = _ctl&127;
+      cmd_buffer.i8 = _val&127;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method bankSelect(byte _midiCh, short _msblsb) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = 0x00;
+      cmd_buffer.i8 = (_msblsb>>8) & 127;
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = 0x20;
+      cmd_buffer.i8 = _msblsb & 127;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method rpn(byte _midiCh, short _rpn, short _value) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = 101;
+      cmd_buffer.i8 = (_rpn >> 7) & 127;
+      cmd_buffer.i8 = 100;
+      cmd_buffer.i8 = (_rpn & 127);
+      cmd_buffer.i8 = 6;
+      cmd_buffer.i8 = (_value >> 7) & 127;
+      cmd_buffer.i8 = 38;
+      cmd_buffer.i8 = (_value & 127);
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method nrpn(byte _midiCh, short _nrpn, short _value) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = 99;
+      cmd_buffer.i8 = (_nrpn >> 7) & 127;
+      cmd_buffer.i8 = 98;
+      cmd_buffer.i8 = (_nrpn & 127);
+      cmd_buffer.i8 = 6;
+      cmd_buffer.i8 = (_value >> 7) & 127;
+      cmd_buffer.i8 = 38;
+      cmd_buffer.i8 = (_value & 127);
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method midiClock() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF8;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method midiStart() {
+      mtx_buffer.lock();
+      // (note) always starts from the beginning (i.e. offset 0)
+      Global.Debug3("MIDIOutDevice::midiStart: this="+getDeviceName());
+      begin();
+      cmd_buffer.i8 = 0xFA;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method midiContinue() {
+      mtx_buffer.lock();
+      Global.Debug3("MIDIOutDevice::midiContinue: this="+getDeviceName());
+      begin();
+      cmd_buffer.i8 = 0xFB;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method midiStop() {
+      mtx_buffer.lock();
+      Global.Debug3("MIDIOutDevice::midiStop: this="+getDeviceName());
+      begin();
+      cmd_buffer.i8 = 0xFC;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcStart() {
+      mtx_buffer.lock();
+      begin();
+
+      // testcode: (note: Unfortunately, Reason does not react to GOTO command.)
+      // // goto: 0xF0 0x7F <deviceID> 0x06 0x44 0x06 0x01 <hr> <mn> <sc> <fr> <ff> 0xF7
+      // cmd_buffer.i8 = 0xF0;
+      // cmd_buffer.i8 = 0x7F;
+      // cmd_buffer.i8 = 0x7F;
+      // cmd_buffer.i8 = 0x06;
+      // cmd_buffer.i8 = 0x44;
+      // cmd_buffer.i8 = 0x06;
+      // cmd_buffer.i8 = 0x01;
+      // cmd_buffer.i8 = 0x00; // hr
+      // cmd_buffer.i8 = 0x00; // mn
+      // cmd_buffer.i8 = 0x00; // sc
+      // cmd_buffer.i8 = 0x00; // fr
+      // cmd_buffer.i8 = 0x00; // ff
+      // cmd_buffer.i8 = 0xF7;
+
+      // Start:
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x02;
+      cmd_buffer.i8 = 0xF7;
+
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcStop() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x01;
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcPause() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x09;
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcRec() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x06; // Strobe
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcRecExit() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x07;
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcRecPause() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x08;
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcForward() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x04;
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method mmcRewind() {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xF0;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x7F;
+      cmd_buffer.i8 = 0x06;
+      cmd_buffer.i8 = 0x05;
+      cmd_buffer.i8 = 0xF7;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method pitchBendf(byte _midiCh, float _pitchbend) {
+      mtx_buffer.lock();
+      begin();
+      // // trace "xxx MIDIOutDevice::pitchBendf: midiCh="+_midiCh+" bend="+_pitchbend;
+
+      short val;
+
+      if(_pitchbend >= 0.0f)
+      {
+         if(_pitchbend > 1.0f)
+         {
+            val = 0x3fff;
+         }
+         else
+         {
+            val = 0x2000 + (_pitchbend * 8191);
+         }
+      }
+      else
+      {
+         if(_pitchbend < -1.0f)
+         {
+            val = 0x0000;
+         }
+         else
+         {
+            val = 0x2000 + (_pitchbend * 8192);
+         }
+      }
+
+      // // Integer io = val;
+      // // trace "xxx pitchbendf: val="+io.printf("0x%04x");
+
+      cmd_buffer.i8 = 0xE0 | (_midiCh&15);
+      cmd_buffer.i8 = (val & 127);    // LSB
+      cmd_buffer.i8 = (val>>7) & 127; // MSB
+
+      // // short val = (_bend*0x3f3f) + 0x4000;
+      // // cmd_buffer.i8 = 0xE0 | (_midiCh&15);
+      // // cmd_buffer.i8 = (val>>1)&127; // LSB  <--- wrong calculation of LSB
+      // // cmd_buffer.i8 = (val>>8)&127; // MSB
+
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method programChange(byte _midiCh, byte _program) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xC0 | (_midiCh&15);
+      cmd_buffer.i8 = _program & 127;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method bankLSB(byte _midiCh, byte _bankLSB) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = 32/*bank LSB*/;
+      cmd_buffer.i8 = _bankLSB & 127;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method bankMSB(byte _midiCh, byte _bankMSB) {
+      mtx_buffer.lock();
+      begin();
+      cmd_buffer.i8 = 0xB0 | (_midiCh&15);
+      cmd_buffer.i8 = 0/*bank LSB*/;
+      cmd_buffer.i8 = _bankMSB & 127;
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method addBuffer(Buffer _b) {
+      mtx_buffer.lock();
+      begin();
+
+      // trace "xxx MIDIOutDevice::addBuffer: _b.offset="+_b.offset;
+
+      if(_b.offset)
+      {
+         cmd_buffer.writeBuffer(_b, 0, _b.offset);
+      }
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   public method sysEx(Buffer _syx) {
+      mtx_buffer.lock();
+      begin();
+      // trace "xxx MIDIOutDevice::addBuffer: _b.offset="+_b.offset;
+      if(_syx.offset)
+      {
+         cmd_buffer.i8 = 0xF0;
+         cmd_buffer.writeBuffer(_syx, 0, _syx.offset);
+         cmd_buffer.i8 = 0xF7;
+      }
+      mtx_buffer.unlock();
+   }
+
+   // <method.png>
+   =replay= public method unlinkOutputMonitorHistory() : PointerArray {
+      // Called by UI thread
+      PointerArray ret <= deref output_monitor_history;
+      output_monitor_history <= null;
+      return deref ret;
+   }
+
+   // <method.png>
+   public method send(float _timeMillisec) {
+      // (note) usually called once per replay tick
+      if(!isOpen())
+         return;
+      // trace "xxx MIDIOutDevice::send: ENTER.  b_begun="+b_begun;
+
+      mtx_buffer.lock();
+      if(b_begun)
+      {
+         out_mutex.lock();
+
+         if(num_buf_avail == out_buffers.numElements)
+         {
+            trace "[~~~] MIDIOutDevice::send<"+getDeviceName()+">: buffer overflow";
+         }
+         else
+         {
+            MIDIOutBuffer mob <= out_buffers[write_buf_index];
+
+            Buffer buf <= mob.out_buffer;
+            buf.offset = 0;
+
+            boolean bAvail = false;
+
+            if(b_output_monitor && ((cmd_buffer.offset > 1) || (note_buffer.offset > 0)))
+            {
+               OutputMonitorEntry outMonEntry <= new OutputMonitorEntry;
+               outMonEntry.timestamp = _timeMillisec;
+               outMonEntry.copyCmdBuffer(cmd_buffer);
+               outMonEntry.copyNoteBuffer(note_buffer);
+               if(null == output_monitor_history)
+               {
+                  output_monitor_history <= new PointerArray;
+               }
+               output_monitor_history.add(#(deref outMonEntry));
+
+               if(output_monitor_history.numElements > STConfig.output_mon_max_log_entries)
+               {
+                  output_monitor_history.delete(0);
+               }
+            }
+
+            if(cmd_buffer.offset)
+            {
+               if(1 != cmd_buffer.offset) // filter 0xF8 clock
+               {
+                  if(STConfig.b_midi_debug_out_cmd)
+                  {
+                     Global.Debug2("MIDIOutDevice::send: dev="+getDeviceName()+" cmd_buffer.offset="+cmd_buffer.offset);
+                     Utils.HexDump(cmd_buffer, 0, cmd_buffer.offset);
+                  }
+               }
+
+               if((buf.offset + cmd_buffer.offset) <= buf.size)
+               {
+                  buf.writeBuffer(cmd_buffer, 0, cmd_buffer.offset);
+
+                  bAvail = true;
+               }
+               else
+               {
+                  trace "[---] MIDIOutDevice::send: buf overflow (bufOff="+buf.offset+" bufSz="+buf.size+" cmd_buffer.offset="+cmd_buffer.offset+")";
+               }
+            }
+
+            if(note_buffer.offset)
+            {
+               // trace "xxx MIDIOutDevice::send: note_buffer.offset="+note_buffer.offset+" midi_timing_ticks="+replay.midi_timing_ticks;
+               if(STConfig.b_midi_debug_out_note)
+               {
+                  Global.Debug2("MIDIOutDevice::send: dev="+getDeviceName()+" note_buffer.offset="+note_buffer.offset);
+                  Utils.HexDump(note_buffer, 0, note_buffer.offset);
+               }
+
+               if((buf.offset + note_buffer.offset) <= buf.size)
+               {
+                  buf.writeBuffer(note_buffer, 0, note_buffer.offset);
+
+                  bAvail = true;
+               }
+               else
+               {
+                  trace "[---] MIDIOutDevice::send: buf overflow (bufOff="+buf.offset+" bufSz="+buf.size+" note_buffer.offset="+note_buffer.offset+")";
+               }
+            }
+
+            if(bAvail)
+            {
+               mob.time_ms = _timeMillisec;
+
+               num_buf_avail++;
+               write_buf_index = (write_buf_index + 1) % (out_buffers.numElements);
+
+               // Wake-up writer thread
+               cond_write.raise();
+            }
+         }
+
+         b_begun = false;
+         out_mutex.unlock();
+      }
+
+      mtx_buffer.unlock();
+      ////trace "xxx MIDIOutDevice::send: LEAVE";
+   }
+
+   // <method.png>
+   public method localMIDICheckForNewConnection() {
+   }
+
+}

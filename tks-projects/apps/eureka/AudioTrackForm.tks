@@ -1,0 +1,586 @@
+// ----
+// ---- file   : AudioTrackForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 06Dec2018
+// ---- changed: 07Dec2018, 11Dec2018, 16Dec2018, 15Jan2019, 14Feb2020, 14May2020, 15May2020
+// ----          19May2020, 08Feb2021, 10Jan2022, 22Jul2022, 29Jul2023, 21Sep2023, 22Sep2024
+// ----          24Sep2024
+// ----
+// ----
+// ----
+
+module MAudioTrackForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class AudioTrackForm : XMLForm, ActionProvider {
+   protected AudioTracksForm *parent_form;
+
+   namespace AudioTrack *track;
+   namespace int         track_idx;
+
+   protected Panel          *panel;
+   protected Label          *lb_nr;
+   protected Button         *bt_rec;
+   public    TextField      *tf_name;
+   protected CheckBox       *cb_stereo;
+   protected ComboBox       *cm_src_type;
+   protected LayerSwitch    *ls_src_type;
+   protected Button         *bt_src_auto;
+   protected ComboBox       *cm_src_idx;
+   protected LayerSwitch    *ls_src_idx;
+   protected CheckBox       *cb_swmute;
+   protected Button         *bt_edit_track;
+   protected Label          *lb_info;
+   protected LevelIndicator *level_indicator;
+   protected LayerSwitch    *ls_level_indicator;
+
+   protected PopupMenu *pm_context;
+
+
+   // <init.png>
+   public method init(AudioTracksForm _parent, AudioTrack _track, int _trackIdx) : boolean {
+
+      parent_form <= _parent;
+
+      track <= _track;
+      track_idx = _trackIdx;
+
+      if(!initPakFile("AudioTrackForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      lb_nr.setCaption(String(track_idx + 1));
+
+      tf_name.setText(track.name);
+
+      cm_src_type.setSelectedOption(track.src_type);
+      updateSrcIdx();
+      ls_src_idx.setSizeGroup(parent_form.sgx_src_idx);
+      ls_level_indicator.setSizeGroup(parent_form.sgx_level_indicator);
+
+      cb_stereo.setSelected(track.b_stereo);
+
+      bt_rec.setToggleState(track.b_record);
+
+      cb_swmute.setSelected(!track.b_sw_monitor);
+
+      updateInfoLabel();
+
+      return true;
+   }
+
+   // <ui_update.png>
+   public method updateInfoLabel() {
+      if(null != lb_info)
+         lb_info.setCaption(track.getInfoString());
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.add(tf_name);
+      _retLayers.add(cm_src_type);
+
+      _retLayers.add(cm_src_idx);
+
+      if(AudioTrack.SRC_TRACK == track.src_type)
+         _retLayers.add(bt_edit_track);
+
+      _retLayers.add(cb_stereo);
+   }
+
+   // <ui_update.png>
+   public method updateSrcIdx() {
+      local StringArray options;
+      local IntArray colors;
+      local String opt;
+      local String *alias;
+
+      if(AudioTrack.SRC_AUDIO_IN == track.src_type)
+      {
+         int inChIdx = 0;
+         int numAvailInCh = b_metahost ? Replay.METAHOST_NUM_INPUTS : STConfig.audio_num_in/*updated when ASIO device is initialized*/;
+
+         loop(Audio.STREAM_MAX_INPUT_CHANNELS/*32*/)
+         {
+            opt = track.b_stereo ? ((inChIdx + 1)+" & "+(inChIdx + 2)) : String(inChIdx+1);
+            alias <= STConfig.audio_in_aliases.get(inChIdx*4 + track.b_stereo*2 + 1);  // get long caption
+            if(null != alias && !alias.isBlank())
+               opt.append(" ("+alias+")");
+            options.add(opt);
+            colors.add((inChIdx++ < numAvailInCh) ? #1800c000 : #38900000);
+         }
+
+         ls_src_type.switchToLayerNr(0); // hide edit track button
+      }
+      else if(AudioTrack.SRC_AUDIO_OUT == track.src_type)
+      {
+         int outChIdx = 0;
+         int numAvailOutCh = b_metahost ? Replay.METAHOST_NUM_OUTPUTS : STConfig.audio_num_out/*updated when ASIO device is initialized*/;
+
+         loop(Audio.STREAM_MAX_OUTPUT_CHANNELS/*32*/)
+         {
+            opt = track.b_stereo ? ((outChIdx + 1)+" & "+(outChIdx + 2)) : String(outChIdx+1);
+            alias <= STConfig.audio_out_aliases.get(outChIdx * 4 + track.b_stereo*2 + 1);  // get long caption
+            if(!alias.isBlank())
+               opt.append(" ("+alias+")");
+            options.add(opt);
+            colors.add((outChIdx++ < numAvailOutCh) ? #1800c000 : #38900000);
+         }
+
+         ls_src_type.switchToLayerNr(0); // hide edit track button
+      }
+      else if(AudioTrack.SRC_TRACK == track.src_type)
+      {
+         Track *srcTrack;
+         int srcTrackNr = 1;
+         foreach srcTrack in current_project.tracks
+         {
+            options.add(srcTrackNr+":"+srcTrack.name);
+            colors.add(0);
+            srcTrackNr++;
+         }
+
+         ls_src_type.switchToLayerNr(1); // show edit track button
+      }
+      else
+      {
+         ls_src_type.switchToLayerNr(0); // hide edit track button
+      }
+
+      cm_src_idx.setOptions(options);
+      cm_src_idx.setOptionBGColors(colors);
+
+      if((AudioTrack.SRC_AUDIO_IN == track.src_type) ||
+         (AudioTrack.SRC_AUDIO_OUT == track.src_type)
+         )
+      {
+         cm_src_idx.setSelectedOption(track.src_ch_off);
+         ls_src_idx.switchToLayerNr(1);
+         ls_level_indicator.switchToLayerNr(1);
+      }
+      else if(AudioTrack.SRC_TRACK == track.src_type)
+      {
+         cm_src_idx.setSelectedOption(track.src_track_idx);
+         ls_src_idx.switchToLayerNr(1);
+         ls_level_indicator.switchToLayerNr(1);
+      }
+      else
+      {
+         cm_src_idx.setSelectedOption(-1);
+         ls_src_idx.switchToLayerNr(0);
+         ls_level_indicator.switchToLayerNr(0);
+      }
+
+      parent_form.queueRelayout();
+      parent_form.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableRecordChanged() {
+      track.setEnableRecord(bt_rec.getToggleState());
+      Global.Print("Track \""+track.name+"\" record is "+Utils.GetEnableString(track.b_record));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleEnableRecordAllTracks() {
+      boolean bAllEnabled = true;
+      AudioTrack *atrack;
+      foreach atrack in current_project.audio_tracks
+      {
+         bAllEnabled = bAllEnabled && atrack.b_record;
+      }
+
+      bAllEnabled = !bAllEnabled;
+
+      foreach atrack in current_project.audio_tracks
+      {
+         atrack.setEnableRecord(bAllEnabled);
+      }
+
+      parent_form.updateTracks();
+
+      Global.Print((bAllEnabled ? "Arm" : "Disarm")+" all audio tracks");
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      track.setName(tf_name.getText());
+      Global.Print("Track name is \""+track.name+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcTypeChanged() {
+      track.setSrcType(cm_src_type.getSelectedOption());
+      updateSrcIdx();
+      current_project.updateUsesInputs();
+      Global.Print("Source type is \""+cm_src_type.getSelectedOptionName()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoSelectSrcIdx() {
+      int chIdx = -1;
+      local PointerArray peakAvgTrackers <= track.getPeakAvgTrackers();
+      // trace "xxx handleAutoSelectSrcIdx: peakAvgTrackers="+#(peakAvgTrackers);
+      if(null != peakAvgTrackers)
+      {
+         if(track.b_stereo)
+            chIdx = replay.findLoudestAvgStereo(peakAvgTrackers);
+         else
+            chIdx = replay.findLoudestAvgMono(peakAvgTrackers);
+         if(chIdx >= 0)
+         {
+            cm_src_idx.setSelectedOption(chIdx);
+            handleSrcIdxChanged();
+            Global.SuccessShort("Auto-select \""+cm_src_idx.getSelectedOptionName()+"\"");
+         }
+         else
+         {
+            // (note) no peak(s) found => leave channel selection unchanged
+            Global.Warning("Auto-select: no active channel detected");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcIdxChanged() {
+      if((AudioTrack.SRC_AUDIO_IN  == track.src_type) ||
+         (AudioTrack.SRC_AUDIO_OUT == track.src_type)
+         )
+      {
+         track.setSrcChOff(cm_src_idx.getSelectedOption());
+         Global.Print("Source channel is \""+cm_src_idx.getSelectedOptionName()+"\"");
+      }
+      else
+      {
+         track.setSrcTrackIdx(cm_src_idx.getSelectedOption());
+         Global.Print("Source track is \""+cm_src_idx.getSelectedOptionName()+"\"");
+      }
+
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleStereoChanged() {
+      Audio.ResetAllTempSamples();
+      track.setEnableStereo(cb_stereo.isSelected());
+      updateSrcIdx();
+      // // parent_form.updateSample(track.clip);
+      parent_form.handleSelectTrack(track_idx);
+      Global.Print("Stereo is "+Utils.GetEnableString(track.b_stereo));
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleSWMuteChanged() {
+      track.setEnableSWMonitor(!cb_swmute.isSelected());
+      Global.Print("SW Monitor is "+Utils.GetEnableString(track.b_sw_monitor));
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackMoveUp() {
+      int atrkIdx = current_project.getAudioTrackIdx(track);
+      if(atrkIdx > 0)
+      {
+         Global.Print("Move track #"+(atrkIdx+1)+" up");
+         current_project.swapAudioTracks(atrkIdx, atrkIdx -1);
+         parent_form.updateTracks();
+         parent_form.handleSelectPreviousTrack();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackMoveDown() {
+      int atrkIdx = current_project.getAudioTrackIdx(track);
+      if((atrkIdx+1) < current_project.audio_tracks.numElements)
+      {
+         Global.Print("Move track #"+(atrkIdx+1)+" down");
+         current_project.swapAudioTracks(atrkIdx, atrkIdx +1);
+         parent_form.updateTracks();
+         parent_form.handleSelectNextTrack();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackDelete() {
+      Global.Print("Delete track #"+((current_project.getAudioTrackIdx(track))+1));
+
+      Audio.ResetAllTempSamples();
+      Audio.UpdateTemporarySampleFromWaveform(null);
+      current_project.deleteAudioTrack(track);
+      track <= null;
+      pm_context <= null;
+      parent_form.updateTracks();
+      // "this" is now invalid
+   }
+
+   // <method.png>
+   public method setTrackSelected(boolean _bSelected) {
+      panel.setPanelTint(_bSelected ? #10ffffff : 0);
+      panel.redraw();
+   }
+
+   // <method.png>
+   public method handleEditTrack() {
+
+      int trackIdx = track.src_track_idx;
+
+      // edit "instrument" track (_not_ audio track)
+      root_form.showPage(RootForm.PAGE_PROJECT, true/*bAllowHistory*/);
+      root_form.pg_project.setFocusIdx(trackIdx);
+      root_form.pg_project.handleEditFocusTrack();
+      Global.Print("Edit track "+(trackIdx+1));
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Move track up", "track_moveup");
+      pmb.setAccelerators("", "lctrl-UP");
+      pmb.setFontByName("big8");
+
+      pmb <= pm.addDefaultButton("Move track down", "track_movedown");
+      pmb.setAccelerators("", "lctrl-DOWN");
+      pmb.setFontByName("big8");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Delete track", "track_delete");
+      pmb.setFontByName("big8");
+
+      pm.resizeToMinimum();
+
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show audio track context menu.");
+   }
+
+   // <ui_timer.png>
+   public method handleIdleTimer() {
+      float peakL = 0;
+      float peakR = 0;
+      float avgL = 0;
+      float avgR = 0;
+
+      if(AudioTrack.SRC_AUDIO_IN == track.src_type)
+      {
+         peakL = replay.getInputChPeak(track.src_ch_off);
+         avgL = replay.getInputChAvg(track.src_ch_off);
+
+         if(track.b_stereo)
+         {
+            peakR = replay.getInputChPeak(track.src_ch_off+1);
+            avgR = replay.getInputChAvg(track.src_ch_off+1);
+         }
+         else
+         {
+            peakR = peakL;
+            avgR = avgL;
+         }
+      }
+      else if(AudioTrack.SRC_AUDIO_OUT == track.src_type)
+      {
+         peakL = replay.getOutputChPeak(track.src_ch_off);
+         avgL = replay.getOutputChAvg(track.src_ch_off);
+
+         if(track.b_stereo)
+         {
+            peakR = replay.getOutputChPeak(track.src_ch_off+1);
+            avgR  = replay.getOutputChAvg(track.src_ch_off+1);
+         }
+         else
+         {
+            peakR = peakL;
+            avgR = avgL;
+         }
+      }
+      else if(AudioTrack.SRC_TRACK == track.src_type)
+      {
+         Track srcTrack <= current_project.getTrackByIdx(track.src_track_idx);
+         if(null != srcTrack)
+         {
+            peakL = srcTrack.getSmpPeakL();
+            peakR = srcTrack.getSmpPeakR();
+            avgL = srcTrack.getSmpAvgL();
+            avgR = srcTrack.getSmpAvgR();
+         }
+      }
+
+      level_indicator.setSmpLR(peakL, peakR, avgL, avgR);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      AudioTrackForm *af;
+      AudioTracksForm parentForm <= parent_form;
+
+      switch(_k.pressed)
+      {
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               handleTrackMoveUp();
+               af <= parentForm.getSelectedTrackForm();
+               af.tf_name.onTabFocus();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               handleTrackMoveDown();
+               af <= parentForm.getSelectedTrackForm();
+               af.tf_name.onTabFocus();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         parent_form.handleSelectTrack(track_idx);
+         return true;
+      }
+      else if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      AudioTrackForm *af;
+      AudioTracksForm parentForm <= parent_form;
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("AudioTrackForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "track_moveup":
+                  handleTrackMoveUp();
+                  return true;
+
+               case "track_movedown":
+                  handleTrackMoveDown();
+                  return true;
+
+               case "track_delete":
+                  handleTrackDelete();
+                  return true;
+            }
+            return true;
+
+         case @(bt_rec):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleToggleEnableRecordAllTracks();
+            }
+            else
+            {
+               handleEnableRecordChanged();
+            }
+            return true;
+
+         case @(tf_name):
+            if(TextField.ACTION_CURSORUP == acName)
+            {
+               tf_name.selectNone();
+               parent_form.handleSelectPreviousTrack();
+               af <= parentForm.getSelectedTrackForm();
+               af.tf_name.onTabFocus();
+            }
+            else if(TextField.ACTION_CURSORDOWN == acName)
+            {
+               tf_name.selectNone();
+               parent_form.handleSelectNextTrack();
+               af <= parentForm.getSelectedTrackForm();
+               af.tf_name.onTabFocus();
+            }
+            else if(TextField.ACTION_TEXTENTERED == acName)  // return ?
+            {
+               tf_name.selectNone();
+               parent_form.refocusDefault();
+            }
+            else if(TextField.ACTION_STARTEDITING == acName)
+            {
+               if(parentForm.cur_track_idx != track_idx)
+               {
+                  parentForm.handleSelectTrack(track_idx);
+                  af <= parentForm.getSelectedTrackForm();
+                  af.tf_name.onTabFocus();
+               }
+            }
+            else
+            {
+               handleNameChanged();
+            }
+            return true;
+
+         case @(cm_src_type):
+            handleSrcTypeChanged();
+            return true;
+
+         case @(bt_edit_track):
+            handleEditTrack();
+            return true;
+
+         case @(bt_src_auto):
+            handleAutoSelectSrcIdx();
+            return true;
+
+         case @(cm_src_idx):
+            handleSrcIdxChanged();
+            return true;
+
+         case @(cb_stereo):
+            handleStereoChanged();
+            return true;
+
+         case @(cb_swmute):
+            handleSWMuteChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

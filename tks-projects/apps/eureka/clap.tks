@@ -1,0 +1,1310 @@
+// ----
+// ---- file   : clap.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 03Jul2024
+// ---- changed: 04Jul2024, 05Jul2024, 06Jul2024, 15Sep2024, 22Sep2024, 24Sep2024, 27Sep2024
+// ----          16Mar2025
+// ----
+// ----
+// ----
+
+module MCLAP;
+
+use namespace ui;
+use namespace st2;
+
+=clapkeyevent=
+=clapautomate=
+=clappool=
+=clapjobactive=
+
+// Maps bundle path name to CLAPPluginBundle instance
+HashTable loaded_bundles;
+loaded_bundles.alloc(2000);
+
+
+// <class.png>
+class CLAPBundleEntry {
+   // Used temporarily during bundle/plugin rescan
+   String  path_name;   // absolute bundle path name
+   boolean b_bad;       // 1=deep scan failed for this CLAP bundle
+
+   // <method_init.png>
+   public method init(String _pathName) {
+      path_name = _pathName;
+   }
+}
+
+
+// <class.png>
+class CLAPPluginEntry {
+   tag String  path_name;     // absolute bundle path name
+   tag boolean b_bad;         // 1=deep scan failed for this CLAP bundle  (todo) remove
+   tag int     plugin_index;
+
+   tag String  s_id;
+   tag String  s_name;
+   tag String  s_vendor;
+   tag boolean b_instr;
+
+   CLAPPlugin *[] instance_pool;  // CLAPPlugin instances
+
+
+   // <method_init.png>
+   public method init(String _pathName) {
+      path_name = _pathName;
+   }
+
+   // // <method_get.png>
+   // public method getName() {
+   //    if(!s_name.isBlank())
+   //       return s_name+" \\ "+path_name;
+   //    return path_name;
+   // }
+
+   // <method_get.png>
+   public method getName() : String {
+      return s_name;
+   }
+
+   // <method_get.png>
+   public method getUniqueIDString() : String {
+      return s_vendor+"`"+s_name+"`"+s_id;
+   }
+
+   // <method.png>
+   public =clappool= method unlinkNextFromPool() : CLAPPlugin {
+      if(instance_pool.numElements > 0)
+      {
+         local CLAPPlugin plugin <= instance_pool.getDeref(0);
+         instance_pool.delete(0);
+         Global.Debug2("CLAPPluginEntry::unlinkNextFromPool: uid=\""+getUniqueIDString()+"\", num is now "+instance_pool.numElements);
+         return deref plugin;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public lazyLoadBundleAndCreatePluginInstance(int _blockSize, float _sampleRate) : CLAPPlugin {
+      CLAPPluginBundle *bundle;
+      if(loaded_bundles.exists(path_name))
+      {
+         // Use previously opened bundle
+         bundle <= loaded_bundles.get(path_name);
+         bundle.enableDebug = CLAP.b_clap_debug;
+      }
+      else
+      {
+         bundle <= new CLAPPluginBundle;
+         bundle.enableDebug = CLAP.b_clap_debug;
+         if(!bundle.openPluginBundle(path_name))
+         {
+            trace "[---] CLAPPluginEntry::lazyLoadBundleAndCreatePluginInstance: openPluginBundle(\""+path_name+"\") failed)";
+            bundle <= null;
+            return null;
+         }
+         // OK, bundle opened, add to HashTable
+         loaded_bundles[path_name] = deref bundle;
+      }
+
+      // Create plugin instance
+      CLAPPlugin plugin <= bundle.createPluginByIndex(plugin_index);
+      if(null != plugin)
+      {
+         plugin.setBlockSize(_blockSize);
+         plugin.setSampleRate(_sampleRate);
+
+         if(!plugin.createPluginInstance())
+         {
+            trace "[---] CLAPPluginEntry::lazyLoadBundleAndCreatePluginInstance: createPluginInstance() failed (\""+path_name+"\":"+plugin_index+")";
+            plugin <= null;
+         }
+      }
+      return deref plugin;
+   }
+
+   // <method.png>
+   public method freeInstancePool() {
+      String uid <= getUniqueIDString();
+      int pluginIdx = 0;
+
+      CLAPPlugin *plugin;
+      foreach plugin in instance_pool
+      {
+         Global.Debug2("CLAP::Exit: cleaning up pool instance uid=\""+uid+"\" "+(pluginIdx+1)+"/"+instance_pool.numElements);
+         plugin.destroyPluginInstance();
+         pluginIdx++;
+      }
+
+      instance_pool.free();
+   }
+
+}
+
+
+// <class.png>
+class CLAPDeepScanJob {
+   int                 job_idx;
+   boolean             b_active;
+   String              path_name;       // absolute DLL/SO or macOS CLAP bundle (.clap) path name
+   CLAPPluginEntry *[] plugin_entries;  // plugins found in CLAP bundle
+   boolean             b_bad;
+   Thread             *thread;
+
+   static PointerArray closelibrary_blacklist;  // CLAPPlugin instances
+
+
+   // <method.png>
+   protected method getLineAndTrim(local StringArray _a, local int _idx) : String {
+      local String r <= _a.get(_idx);
+      if(null != r)
+         r.trim();
+      return deref r;
+   }
+
+   // <method.png>
+   public method scan(local int _threadId) {
+      Global.Debug2("CLAP "+((0 != STConfig.clap_deepscan_num_threads)?"threaded":"")+" deepscan: scan job_idx="+job_idx+", path_name=\""+path_name+"\"" + ((-1 != _threadId) ? (" threadId="+_threadId) : ""));
+
+      // Run scan in separate process (clapscan.tks)
+      local String sRet; sRet.alloc(65536);
+
+      Utils.RunPSystemR("clapscan", Utils.GetTKSPathName(), ["clapscan.tks", path_name], sRet);
+
+      trace "[trc] CLAPDeepScanJob::scan: job_idx="+job_idx+" threadId="+_threadId+" psystem() returned";
+
+      local StringArray aLines <= sRet.splitChar('\n');
+      // trace "xxx scan: aLines="+#(aLines);
+
+      if(aLines.numElements > 0 && "[clap bundle]" == getLineAndTrim(aLines, 0))
+      {
+         local int pluginIndex = 0;
+         local int lineIdx = 1;
+         for(;;)
+         {
+            if("[clap plugin]" == getLineAndTrim(aLines, lineIdx))
+            {
+               local CLAPPluginEntry ne <= new CLAPPluginEntry;
+               ne.path_name    = path_name;
+               ne.b_bad        = false; // (todo) remove
+               ne.plugin_index = pluginIndex++;
+               ne.s_id         = getLineAndTrim(aLines, lineIdx + 1);
+               ne.s_name       = getLineAndTrim(aLines, lineIdx + 2);
+               ne.s_vendor     = getLineAndTrim(aLines, lineIdx + 3);
+               ne.b_instr      = getLineAndTrim(aLines, lineIdx + 4);
+               plugin_entries.add(#(deref ne));
+
+               // Next plugin
+               lineIdx += 5;
+            }
+            else
+            {
+               break;
+            }
+         }
+      }
+      else
+      {
+         // Invalid / empty output => scan failed
+         b_bad = true;
+         // // entry <= null;  // => bAddEntry=false
+      }
+
+      setInactive();
+   }
+
+   public =clapjobactive= setInactive() {
+      b_active = false;
+   }
+
+   public =clapjobactive= isActive() {
+      return b_active;
+   }
+
+}
+
+// <callback.png>
+function deepscan_thread_entry(local Thread _th) {
+   local CLAPDeepScanJob job <= _th.userdata;
+   try
+   {
+      job.scan(_th.id);
+      if(CLAP.b_clap_debug) trace "[dbg] deepscan_thread_entry: job.scan("+_th.id+") (path=\""+job.path_name+"\") returned";
+   }
+   catch(Error e)
+   {
+      trace "[---] CLAP threaded deepscan: caught exception while scanning job_idx="+job.job_idx+" thread.id="+_th.id+" path_name=\""+job.path_name+"\"";
+   }
+   Global.Debug2("CLAP threaded deepscan: leaving thread id="+_th.id+" job_idx="+job.job_idx);
+}
+
+
+
+// <class.png>
+class CLAPAutomateEvent {
+   CLAPPlugin *plugin;
+   int         param_idx;
+   float       value;
+   int         b_begin;  // -1=automate (value is valid), 1/==begin/end edit (only param_idx is valid)
+}
+
+
+// <class.png>
+class CLAPKeyEvent {
+   CLAPPlugin *plugin;
+   int lparam; // raw scan code
+}
+
+
+// <class.png>
+class CLAPVendor {
+   String name;
+   ClapPluginEntry *[] entries;  // CLAPPluginEntry references
+}
+
+
+// <class.png>
+class CLAP {
+
+   static boolean b_clap_debug;
+
+   static String EV_UPDATEDISPLAY = "processUpdateDisplayQueueCLAP";
+   static String EV_AUTOMATE      = "processAutomateQueueCLAP";
+   static String EV_KEY           = "processKeyEventQueueCLAP";
+
+   // Absolute path of each CLAP bundle found during Rescan()
+   static CLAPBundleEntry *[] clap_bundle_entries;  // raw bundle file entries, filled by RescanAllBundlePaths() (temporary)
+   static CLAPPluginEntry *[] clap_plugin_entries;  // from clapcache.dat / clapcache_wl.dat, or filled by DeepScanAll()
+   static String last_scanned_path_name;  // last completed bundle
+   static boolean b_scan_complete;  // false when scan was aborted due to crashes or max number of jobs exceeded (=> load partial cache and continue on next run)
+
+   // static PointerArray updatedisplay_queue; // list of plugins (references)
+   static ClassArray automate_queue;
+   static boolean b_automate_event_sent;
+
+   static ClassArray keyevent_queue;
+   static boolean b_key_event_sent;
+
+   static PointerArray sorted_effects;      // CLAPVendor instances
+   static PointerArray sorted_instruments;  // CLAPVendor instances
+   static PointerArray sorted_all;          // CLAPVendor instances
+
+   static boolean b_ignore_automation;
+
+
+   // <method_init.png>
+   static Init() {
+
+      automate_queue.template = CLAPAutomateEvent;
+      automate_queue.alloc(32);//256);
+
+      keyevent_queue.template = CLAPKeyEvent;
+      keyevent_queue.alloc(32);//256);
+
+      if(LoadCLAPCache())
+      {
+         SortPlugins();
+      }
+      else
+      {
+         trace "[~~~] CLAP::Init: failed to load CLAP cache file (=> please rescan)";
+      }
+   }
+
+   // <method_exit.png>
+   static Exit() {
+      FreeInstancePoolsAndBundles(true/*bForceUnloadBundles*/);
+   }
+
+   // <method.png>
+   protected static SortPlugins() {
+      sorted_effects.free();
+      sorted_instruments.free();
+      sorted_all.free();
+
+      SortByVendor(sorted_effects,     true/*bEffect*/);
+      SortByVendor(sorted_instruments, false/*bEffect*/);
+      SortByVendor(sorted_all,         maybe/*bEffect*/);
+   }
+
+   // <method_get.png>
+   static public GetCacheFileName() : String {
+      if(STConfig.b_clap_deepscan_whitelist)
+         return Utils.ToNativePathName("$(CACHE_DIR)/clapcache_wl.dat");
+      return Utils.ToNativePathName("$(CACHE_DIR)/clapcache.dat");
+   }
+
+   // <method_get.png>
+   static public GetNumValidPlugins() : int {
+      return clap_plugin_entries.numElements;
+   }
+
+   // <method_get.png>
+   static protected FindCLAPBundleEntryByPathName(String _pathName) : CLAPBundleEntry {
+      CLAPBundleEntry *e;
+      foreach e in clap_bundle_entries
+      {
+         if(e.path_name == _pathName)
+            return e;
+      }
+      return null;
+   }
+
+   // <method.png>
+   static public RescanAllPlugins() : int {
+      // called from main.tks ("rescan_clap" cmdline arg)
+
+      String cacheFileName <= GetCacheFileName();
+      trace "[...] CLAP::RescanAllPlugins: removing cache file \""+cacheFileName+"\".";
+      tkfileutils_rm(cacheFileName);
+      clap_plugin_entries.free();
+
+      trace "[...] CLAP::RescanAllPlugins: starting bundle path rescan";
+      RescanAllBundlePaths();
+      trace "[...] CLAP::RescanAllPlugins: bundle path rescan found "+clap_bundle_entries.numElements+" bundle(s)";
+
+      trace "[...] CLAP::RescanAllPlugins: starting deep scan (may take several minutes)";
+      tkfileutils_setcwd(st2::program_directory);
+
+      // // // launch separate processes
+      // // system(TKS.tksExePath+" claprescan.tks");
+
+      DeepScanAll();
+
+      trace "[...] CLAP::RescanAllPlugins: rescan complete, reloading cache file \""+cacheFileName+"\"";
+      LoadCLAPCache();
+      SortPlugins();
+      int numValid = GetNumValidPlugins();
+      trace "[...] CLAP::RescanAllPlugins: found "+numValid+" valid plugin"+Utils.GetPluralString(numValid);
+      return numValid;
+   }
+
+
+   // <method_exit.png>
+   static public FreeInstancePoolsAndBundles(boolean _bForceUnloadBundles) {
+
+      // Free plugin instances
+      CLAPPluginEntry *en;
+      foreach en in clap_plugin_entries
+         en.freeInstancePool();
+
+      // Free (unreferenced) plugin bundles
+      int numUnloaded = 0;
+      int numBundles = loaded_bundles.numElements;
+      String *pathName;
+      int bundleIdx = 0;
+      boolean bLoopBundles;
+      do
+      {
+         bLoopBundles = false;
+         foreach pathName in loaded_bundles
+         {
+            CLAPPluginBundle bundle <= loaded_bundles.get(pathName);
+            if(_bForceUnloadBundles || 0 == bundle.numOpenPlugins)
+            {
+               bundle.closePluginBundle();
+               loaded_bundles.delete(pathName);
+               numUnloaded++;
+               if(!_bForceUnloadBundles)
+               {
+                  bLoopBundles = true;
+                  break;
+               }
+            }
+         }
+      }
+      while(bLoopBundles);
+
+      trace "[dbg] CLAP::FreeInstancePoolsAndBundles: unloaded "+numUnloaded+"/"+numBundles+" bundle"+Utils.GetPluralString(numBundles);
+   }
+
+   // <method.png>
+   static ScanBundlePath(local String dirName) : int {
+
+      local int r = 0;
+      boolean bMacOS   = Utils.IsMacOS();
+      boolean bWindows = Utils.IsWindows();
+
+      if(!dirName.endsWith("/"))
+         dirName.append("/");
+
+      if(Configuration.debugLevel > 1)
+      {
+         Global.Debug("CLAP::ScanBundlePath: entering directory \""+dirName+"\".");
+      }
+
+      local StringArray a <= Utils.ReadDirectory(dirName);
+      if(null != a)
+      {
+         local String *fileEntry;
+         foreach fileEntry in a
+         {
+            local StringArray attribs  <= fileEntry.splitSpace(true);
+            local String      fileName <= attribs.get(1);
+            local CLAPBundleEntry *e;
+            local String *pathName;
+
+            if('d' == fileEntry.getc(0))
+            {
+               if!( (fileName == ".") || (fileName == "..") )
+               {
+                  if(bMacOS && (fileName >= ".clap"))
+                  {
+                     // macOS CLAP bundle directory, Add entry
+                     pathName <= Utils.FixFileName(dirName + fileName);
+                     if(null == FindCLAPBundleEntryByPathName(pathName))
+                     {
+                        e <= new CLAPBundleEntry;
+                        e.init(pathName);
+                        clap_bundle_entries.add(#(deref e));
+                        r++;
+                     }
+                     else
+                        Global.Debug("CLAP::ScanBundlePath: skipping duplicate entry \""+pathName+"\"..");
+                  }
+                  else
+                  {
+                     // Regular Directory
+                     r += ScanBundlePath(dirName + "/" + fileName);
+                  }
+               }
+            }
+            else if(bWindows && (fileName.toLower().endsWith(".clap")))
+            {
+               if(Configuration.debugLevel > 1)
+               {
+                  Global.Debug("CLAP::ScanBundlePath: found \""+fileName+"\".");
+               }
+
+               // Windows DLL, Add entry
+               pathName <= Utils.FixFileName(dirName + fileName);
+               if(null == FindCLAPBundleEntryByPathName(pathName))
+               {
+                  e <= new CLAPBundleEntry;
+                  e.init(pathName);
+                  clap_bundle_entries.add(#(deref e));
+                  r++;
+               }
+               else
+                  Global.Debug("CLAP::ScanBundlePath: skipping duplicate entry \""+pathName+"\"..");
+            }
+         }
+
+         return r;
+      }
+      else
+      {
+         trace "[~~~] CLAP::ScanBundlePath: failed to read directory \""+dirName+"\".";
+         return 0;
+      }
+   }
+
+   // <method.png>
+   static RescanAllBundlePaths() {
+
+      clap_bundle_entries.empty();
+
+      local StringArray *paths;
+      String envVar <= getenv("CLAP_PATH");
+      if(null != envVar)
+      {
+         paths <= envVar.splitChar(Utils.IsWindows() ? ';' : ':');
+         if(null != paths)
+         {
+            Global.Debug("CLAP::RescanAllBundlePaths: adding dirs from $CLAP_PATH: "+paths);
+            paths.join(paths, STConfig.clap_paths);
+         }
+         else
+            paths <= STConfig.clap_paths;
+      }
+      else
+         paths <= STConfig.clap_paths;
+
+      String *pathName;
+      foreach pathName in paths
+      {
+         if(Configuration.debugLevel > 1)
+         {
+            Global.Debug2("CLAP::RescanAllBundlePaths: BEGIN scan CLAP path \""+pathName+"\"");
+         }
+
+         // // int num = Scan(Utils.SubstitutePathVars(pathName));
+         int num = ScanBundlePath(Utils.ToNativePathName(pathName));
+
+         if(Configuration.debugLevel > 1)
+         {
+            Global.Debug2("CLAP::RescanAllBundlePaths: END scan CLAP path \""+pathName+"\". Found "+num+" CLAP bundles.");
+         }
+      }
+
+      Global.Debug("CLAP::RescanAllBundlePaths: found a total of "+clap_bundle_entries.numElements+" CLAP bundles.");
+
+   }
+
+   // <method.png>
+   static DeepScanAll() {
+
+      Configuration.threadTerminateOnException = true;
+
+      // Bundle counts
+      int numOK = 0;
+      int numWhiteListed = 0;
+      int numBlackListed = 0;
+      int numKilled = 0;
+
+      StringArray failNames;
+      failNames.empty();
+
+      local CLAPPluginEntry *[] newPluginEntries;
+      CLAPBundleEntry *bundleEntry;
+      CLAPPluginEntry *pluginEntry;
+
+      CLAPDeepScanJob *[] jobs;
+      int numActiveJobs;
+
+      int msStart = milliSeconds();
+
+      int numJobsProcessed = 0;
+      boolean bScanAborted = false;
+
+      foreach bundleEntry in clap_bundle_entries
+      {
+         String pathName <= bundleEntry.path_name;
+         String *filter;
+
+         boolean bFiltered = STConfig.b_clap_deepscan_whitelist;
+
+         // Check if the CLAP plugin is white-listed
+         if(bFiltered)
+         {
+            foreach filter in STConfig.clap_deepscan_whitelist
+            {
+               if(filter <= "!")
+               {
+                  if(pathName & filter.substring(1,99))
+                  {
+                     bFiltered = true;
+                     break;
+                  }
+               }
+               else if(pathName & filter)
+               {
+                  bFiltered = false;
+                  break;
+               }
+            }
+
+         }
+
+         // Check if the CLAP plugin is black-listed
+         if(!bFiltered)
+         {
+            foreach filter in STConfig.clap_deepscan_blacklist
+            {
+               if(pathName & filter)
+               {
+                  bFiltered = true;
+                  break;
+               }
+            }
+         }
+
+         CLAPDeepScanJob *tjob;
+
+         if(!bFiltered)
+         {
+            // (note) weird TLS-related crashes on macOS when loading (too) many bundles/DSOs
+            if( (0 == STConfig.clap_max_deepscan_jobs) || (numJobsProcessed++ < STConfig.clap_max_deepscan_jobs) )
+            {
+               CLAPDeepScanJob job <= new CLAPDeepScanJob;
+
+               job.job_idx   = jobs.numElements;
+               job.b_active  = true;
+               job.path_name = pathName;
+
+               boolean bThreading = true;
+
+               String *blackListEntry;
+               foreach blackListEntry in STConfig.clap_deepscan_threaded_blacklist
+               {
+                  if(pathName & blackListEntry)
+                  {
+                     bThreading = false;
+                     break;
+                  }
+               }
+
+               if(!bThreading)
+               {
+                  Global.Debug2("CLAP threaded deepscan: single-thread \""+pathName+"\" since it's black-listed");
+               }
+
+               if( !bThreading || 0 == STConfig.clap_deepscan_num_threads )
+               {
+                  // Single-Threaded scan
+                  job.scan(-1/*threadId*/);
+
+                  // Add result from synchronous plugin scan
+                  if(!job.b_bad)
+                  {
+                     numOK++;
+                     newPluginEntries.joinDD(newPluginEntries, job.plugin_entries);
+                     CLAP.last_scanned_path_name = job.path_name;
+                  }
+                  else
+                  {
+                     failNames.add(job.path_name);
+                     bundleEntry.b_bad = true;
+                  }
+               }
+               else
+               {
+                  // Multi-Threaded scan
+                  numActiveJobs = 0;
+                  foreach tjob in jobs
+                  {
+                     numActiveJobs += tjob.isActive();
+                  }
+
+                  Global.Debug2("CLAP threaded deepscan: numActiveJobs="+numActiveJobs+" pathName=\""+pathName+"\"");
+
+                  if(STConfig.clap_deepscan_num_threads == numActiveJobs)
+                  {
+                     // Wait for first active job
+                     foreach tjob in jobs
+                     {
+                        if(tjob.isActive())
+                        {
+                           Global.Debug2("CLAP threaded deepscan: max jobs ("+STConfig.clap_deepscan_num_threads+") exceeded, wait for job "+tjob.job_idx);
+                           int numIter = 0;
+                           loop(500)
+                           {
+                              TKS.sleep(20);
+                              if(!tjob.isActive())
+                                 break;
+                              // // tjob.thread.wait();
+                           }
+                           if(tjob.isActive())
+                           {
+                              // (note) all following jobs will fail(timeout) on macOS
+                              // (note) must restart entire scan process (i.e. save current clapcache*.dat, restart process and continue with next entry)
+                              Global.Debug2("CLAP threaded deepscan: job "+tjob.job_idx+" timed out, killing thread");
+                              tjob.thread.kill();
+                              Global.Debug2("CLAP threaded deepscan: job "+tjob.job_idx+" killed");
+                              tjob.b_bad = true;
+                              tjob.setInactive();
+                              numKilled++;
+                              numActiveJobs--;
+                              bScanAborted = true;
+                           }
+                           else
+                           {
+                              Global.Debug2("vst threaded deepscan: job "+tjob.job_idx+" finished OK");
+                              CLAP.last_scanned_path_name = tjob.path_name;
+                           }
+                           break;
+                        }
+                     }
+                  }
+
+                  if(0 == numKilled)
+                  {
+                     Thread th <= new Thread;
+                     job.thread <= deref th;
+                     th.userdata = job;
+                     // trace "xxx spawn job_idx="+job.job_idx+" path_name=\""+job.path_name+"\"";
+                     th.create(deepscan_thread_entry);
+
+                     jobs.add(#(deref job));
+                  }
+               }
+            }
+            else
+            {
+               Global.Debug2("CLAP::DeepScanAll: skipping entry \""+bundleEntry.path_name+"\" (max scan jobs exceeded, continue on next run)");
+               bScanAborted = true;
+            }
+         }
+         else
+         {
+            Global.Debug("CLAP::DeepScanAll: CLAP bundle \""+bundleEntry.path_name+"\" is black listed, skipping..");
+            bundleEntry.b_bad = true;
+            numBlackListed++;
+         }
+
+         if(numKilled > 0)
+            break;
+
+      } // foreach bundleEntry in clap_bundle_entries
+
+      b_scan_complete = !bScanAborted;
+
+      if(0 != STConfig.clap_deepscan_num_threads)
+      {
+         // Add results from asynchronous plugin scans
+         numActiveJobs = 0;
+         foreach job in jobs
+         {
+            if(job.isActive())
+            {
+               numActiveJobs++;
+               trace "[~~~] CLAP threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" is still active";
+            }
+         }
+
+         if(numActiveJobs > 0)
+         {
+            TKS.sleep(5000);
+            numActiveJobs = 0;
+            foreach job in jobs
+            {
+               if(job.isActive())
+               {
+                  numActiveJobs++;
+                  trace "[~~~] CLAP threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" is still active after 5sec";
+               }
+            }
+         }
+
+         if(numActiveJobs > 0)
+         {
+            TKS.sleep(5000);
+            numActiveJobs = 0;
+            foreach job in jobs
+            {
+               if(job.isActive())
+               {
+                  trace "[~~~] CLAP threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" is still active after 10sec, killing thread";
+                  job.thread.kill();
+                  trace "[~~~] CLAP threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" killed.";
+                  numKilled++;
+                  job.setInactive();
+                  job.b_bad = true;
+                  bScanAborted = true;
+               }
+               else
+               {
+                  // Job finished
+                  CLAP.last_scanned_path_name = job.path_name;
+               }
+            }
+         }
+
+         if(0 == numKilled)
+            trace "[+++] CLAP threaded deepscan: all "+jobs.numElements+" jobs have finished, "+numKilled+" were killed.";
+         else
+            trace "[~~~] CLAP threaded deepscan: "+(jobs.numElements-numKilled)+" / "+jobs.numElements+" jobs have finished, "+numKilled+" were killed.";
+
+         foreach job in jobs
+         {
+            if(job.isActive())
+            {
+               Global.Debug2("CLAP threaded deepscan: finally wait for job "+job.job_idx);
+               job.thread.wait();
+               Global.Debug2("CLAP threaded deepscan: job "+job.job_idx+" finally finished OK");
+            }
+
+            if(!job.b_bad)
+            {
+               numOK++;
+               newPluginEntries.joinDD(newPluginEntries, job.plugin_entries);
+               CLAP.last_scanned_path_name = job.path_name;
+            }
+            else
+            {
+               failNames.add(job.path_name);
+            }
+         }
+
+         jobs.free();
+      }
+
+      clap_plugin_entries <= deref newPluginEntries;
+
+      // Print report
+      trace "[+++] CLAP::DeepScanAll: finished in "+(float(milliSeconds()-msStart)/1000.0)+" seconds. "+(clap_bundle_entries.numElements - numOK)+" / "+clap_bundle_entries.numElements + " failed ("+numBlackListed+" blacklisted), "+numOK+" were OK.";
+
+      if(failNames.numElements)
+      {
+         trace "[~~~] CLAP::DeepScanAll: The following CLAP bundles failed to load:";
+         String *t;
+         foreach t in failNames
+         {
+            trace "\t\t\""+t+"\",";
+         }
+      }
+
+      int dbgIdx;
+      if(0)
+      {
+         dbgIdx = 0;
+         foreach pluginEntry in clap_plugin_entries
+         {
+            trace "xxx clap_plugin_entry["+dbgIdx+"] path_name=\""+pluginEntry.path_name+"\" pluginIndex="+pluginEntry.plugin_index+" unique_id="+pluginEntry.getUniqueIDString();
+            dbgIdx++;
+         }
+      }
+
+      Configuration.threadTerminateOnException = false;
+
+      // Save CLAP cache
+      String cacheFileName <= GetCacheFileName();
+      trace "[...] CLAP::DeepScanAll: writing cache file \""+cacheFileName+"\".";
+
+      tkfileutils_setcwd(program_directory);
+
+      local File f; f.openLocal(cacheFileName, IOS_OUT);
+      f << clap_plugin_entries;
+      f << last_scanned_path_name;
+      f.i8 = !bScanAborted;  // b_scan_complete flag
+      f.close();
+   }
+
+   // <method.png>
+   static LoadCLAPCache() : boolean {
+
+      tkfileutils_setcwd(program_directory);
+
+      String cacheFileName <= GetCacheFileName();
+      File f;
+      if(f.openLocal(cacheFileName, IOS_IN))
+      {
+         Global.Debug("CLAP::LoadCLAPCache: found \""+cacheFileName+"\".");
+
+         // (todo) handle de-serialization error
+         clap_plugin_entries.empty();
+         clap_plugin_entries << f;
+         last_scanned_path_name << f;
+         b_scan_complete = f.i8;
+         Global.Debug("CLAP::LoadCLAPCache: "+clap_plugin_entries.numElements+" plugin entries restored from cache");
+         f.close();
+
+         int enIdx;
+
+         if(1 || CLAP.b_clap_debug)
+         {
+            CLAPPluginEntry *en;
+            enIdx = 0;
+            foreach en in clap_plugin_entries
+            {
+               // trace "xxx en="+#(en)+" enIdx="+enIdx+" num="+vst_entries.numElements;
+               if(0) Global.Debug("CLAP::LoadCLAPCache: clap_cache["+enIdx+"] uniqueIDString=\""+en.getUniqueIDString()+"\"");
+               enIdx++;
+            }
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   static FindCLAPPluginEntryByUniqueIDString(local String _uid) : CLAPPluginEntry {
+
+      // Find by combination of "vendor`name`id"
+      local CLAPPluginEntry *e;
+      foreach e in clap_plugin_entries
+      {
+         local String str <= e.getUniqueIDString();
+         if(str == _uid)
+            return e;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   static SortByVendor(PointerArray _vendors, boolean _bEffect) {
+
+      CLAPVendor *vendor;
+      CLAPVendor *ovendor;
+      CLAPPluginEntry *en;
+      int vendorIdx;
+      int enIdx;
+
+      foreach en in clap_plugin_entries
+      {
+         if(!en.b_bad)
+         {
+            boolean bIsInstr = en.b_instr;
+
+            if((maybe == _bEffect) || (bIsInstr ^ _bEffect))
+            {
+               // Find vendor
+               boolean bFoundVendor = false;
+               foreach vendor in _vendors
+               {
+                  if(vendor.name == en.s_vendor)
+                  {
+                     bFoundVendor = true;
+                     break;
+                  }
+               }
+
+               if(!bFoundVendor)
+               {
+                  // Add sorted vendor
+                  vendor <= new CLAPVendor;
+                  vendor.name = en.s_vendor;
+                  boolean bAddedVendor = false;
+                  vendorIdx = 0;
+                  foreach ovendor in _vendors
+                  {
+                     if(vendor.name.isPredecessor(ovendor.name, false/*bCaseSensitive*/))
+                     {
+                        _vendors.insert(vendorIdx, #(deref vendor));
+                        bAddedVendor = true;
+                        break;
+                     }
+                     vendorIdx++;
+                  }
+                  if(!bAddedVendor)
+                  {
+                     _vendors.add(#(deref vendor));
+                  }
+               }
+
+               // Add sorted plugin
+               CLAPPluginEntry *oen;
+               boolean bAddedEntry = false;
+               enIdx = 0;
+               foreach oen in vendor.entries
+               {
+                  if(en.s_name.isPredecessor(oen.s_name, false/*bCaseSensitive*/))
+                  {
+                     vendor.entries.insert(enIdx, en);
+                     bAddedEntry = true;
+                     break;
+                  }
+                  enIdx++;
+               }
+               if(!bAddedEntry)
+               {
+                  vendor.entries.add(en);
+               }
+            } // instr or effect
+         } // !bad
+      } // loop entries
+
+      // Debug-print results
+      if(0)
+      {
+         vendorIdx = 0;
+         foreach vendor in _vendors
+         {
+            enIdx = 0;
+            foreach en in vendor.entries
+            {
+               trace "xxx vendor["+vendorIdx+"].name=\""+vendor.name+"\" en["+enIdx+"].name="+en.getName();
+               enIdx++;
+            }
+            vendorIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public =clappool= static AddPluginBackToPool(local String _uid, local CLAPPlugin _plugin) {
+      local CLAPPluginEntry en <= FindCLAPPluginEntryByUniqueIDString(_uid);
+      if(null != en)
+      {
+         en.instance_pool.add(#(deref _plugin));
+         Global.Debug2("CLAP::AddPluginToPool: added plugin uid=\""+_uid+"\" added back to pool (num="+(en.instance_pool.numElements)+")");
+      }
+      else
+      {
+         trace "[~~~] CLAP::AddPluginToPool: entry uid=\""+_uid+"\" not found !!!";
+      }
+   }
+
+   // <method.png>
+   static =clapautomate= QueueAutomateEvent(local CLAPPlugin _plugin, local int _paramIdx, local float _value, local int _bBegin) {
+      // Called from audio thread
+      if(!b_ignore_automation)
+      {
+         CLAPAutomateEvent ev <= automate_queue.nextFree;
+         if(null != ev)
+         {
+            ev.plugin    <= _plugin;
+            ev.param_idx  = _paramIdx;
+            ev.value      = _value;
+            ev.b_begin    = _bBegin;
+            if(!b_automate_event_sent)
+            {
+               b_automate_event_sent = true;
+               SDL.sendEvent(EV_AUTOMATE);
+            }
+         }
+         current_project.markAsModified();
+      }
+   }
+
+   // <method.png>
+   static =clapautomate= ProcessAutomateQueue() {
+      // Called from UI thread
+      ////trace "xxx ProcessAutomateQueue: #elements="+automate_queue.numElements;
+
+      if(!b_ignore_automation)  // during plugin instantation + patch loading
+      {
+         CLAPAutomateEvent *ev;
+         CLAPPlugin *plugin;
+         foreach ev in automate_queue
+         {
+            Global.Debug3("CLAP::ProcessAutomateQueue: plugin="+#(ev.plugin)+" paramIdx="+ev.param_idx+" value="+ev.value);
+
+            plugin <= ev.plugin;
+
+            Track *track;
+            foreach track in current_project.tracks
+            {
+               Lane *lane;
+               foreach lane in track.lanes
+               {
+                  ModCLAP *modCLAP;
+                  foreach modCLAP in lane.mods
+                  {
+                     if(modCLAP instanceof ModCLAP)
+                     {
+                        boolean bIsPlugin = @(modCLAP.plugin) == @(plugin);
+                        if(bIsPlugin)
+                        {
+                           modCLAP.handleAutomateEvent(ev, track, lane);
+
+                           if(-1 == ev.b_begin)
+                           {
+                              // Notify sequencer process
+                              String paramName = plugin.getParameterName(ev.param_idx);
+                              SysEx.SendRemoteParamNotify(track.dev_idx,
+                                                          track.midi_ch,
+                                                          modCLAP.instance_id,
+                                                          ev.param_idx,
+                                                          ev.value,
+                                                          paramName
+                                                          );
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      automate_queue.empty();
+      b_automate_event_sent = false;
+   }
+
+   // <method.png>
+   static =clapkeyevent= QueueKeyEvent(local CLAPPlugin _plugin, local int _lparam) {
+      local CLAPKeyEvent ev <= keyevent_queue.nextFree;
+      // trace "xxx CLAP::QueueKeyEvent: lparam="+_lparam;
+
+      if(null != ev)
+      {
+         ev.plugin    <= _plugin;
+         ev.lparam     = _lparam;
+
+         if(!b_key_event_sent)
+         {
+            b_key_event_sent = true;
+            SDL.sendEvent(EV_KEY);
+         }
+      }
+   }
+
+   // <method.png>
+   protected static ProcessWin32KeyEvent(CLAPKeyEvent ev) {
+      CLAPPlugin plugin <= ev.plugin;
+
+      boolean bPressed = ! (ev.lparam & 0x80000000);
+      short code = (ev.lparam >> 16) & (0xFFF);
+
+      if(bPressed)
+      {
+         Global.Debug3("CLAP::ProcessWin32KeyEvent: plugin="+#(ev.plugin)+" pressed, code="+code);
+         PageTrack pgTrack <= root_form.pg_track;
+
+         switch(code)
+         {
+            case 1: // ESCAPE
+               current_project.hidePluginEditorByCLAPPlugin(plugin);
+               Global.Print("Hide CLAP plugin editor (ESC)");
+               pgTrack.ignoreNextKeyEscape();
+               break;
+
+            case 0x0029:  // `  (de:^)
+               current_project.syncPluginMainAndMirrorMods(plugin);
+               Global.Print("Sync plugin shadow->main and LPC/MPE mirror mods");
+               break;
+
+            case 0x011c:  // NUMPAD enter
+               replay.toggleSeq(false/*bRec*/);
+               break;
+
+            case 88: // F12
+            case 15: // TAB
+               current_project.addModMatrixEntryForLastTouchedParamCLAP(plugin);
+               break;
+
+            case 285: // RCTRL
+            case 84:  // F8
+               root_form.toggleAudioRecording();
+               break;
+         }
+      }
+   }
+
+   // <method.png>
+   protected static ProcessMacOSKeyDown(CLAPKeyEvent ev) {
+      CLAPPlugin plugin <= ev.plugin;
+      int code = ev.lparam;
+      trace "[trc] CLAP::ProcessMacOSKeyDown: code="+code;
+      PageTrack pgTrack <= root_form.pg_track;
+
+      switch(code)
+      {
+         case 53: // ESCAPE
+            current_project.hidePluginEditorByCLAPPlugin(plugin);
+            Global.Print("Hide CLAP plugin editor (ESC)");
+            pgTrack.ignoreNextKeyEscape();
+            break;
+
+         case 50:  // `  (de:^)
+            current_project.syncPluginMainAndMirrorMods(plugin);
+            Global.Print("Sync plugin shadow->main and LPC/MPE mirror mods");
+            break;
+
+         case 76:  // numpad-ENTER
+         case 24:  // equals  (de:´)
+            replay.toggleSeq(false/*bRec*/);
+            break;
+
+         case 111:  // F12
+         case 48:   // TAB
+            // (note) handled in PageTrack::onKey()
+            current_project.addModMatrixEntryForLastTouchedParamCLAP(plugin);
+            break;
+
+         case 100: // F8
+         case 62:  // flagsChanged: RCTRL
+            // (note) handled in PageTrack::onKey()
+            root_form.toggleAudioRecording();
+            break;
+      }
+   }
+
+   // <method.png>
+   static =clapkeyevent= ProcessKeyEventQueue() {
+      // trace "xxx CLAP::ProcessKeyEventQueue: #elements="+keyevent_queue.numElements;
+      CLAPKeyEvent *ev;
+      CLAPPlugin *plugin;
+      boolean bMacOS = UI.IsMacOS();
+      try
+      {
+         foreach ev in keyevent_queue
+         {
+            // trace "[dbg] CLAP::ProcessKeyEventQueue: plugin="+#(ev.plugin)+" lparam="+ev.lparam;
+            if(bMacOS)
+               ProcessMacOSKeyDown(ev);
+            else
+               ProcessWin32KeyEvent(ev);
+         }
+      }
+      catch(Error e)
+      {
+         // Paranoia: shouldn't be reachable (of course) but this is called from the VST keyboard handler
+         //            w/o the usual try..catch safety net
+         trace "[---] CLAP::ProcessKeyEventQueue: caught exception "+e.msg;
+      }
+
+      keyevent_queue.empty();
+      b_key_event_sent = false;
+   }
+
+   // <method.png>
+   static =replay= RescanParams(local CLAPPlugin _plugin) {
+      int oldNumParams = _plugin.numParameters;
+      _plugin.rescanParamInfos();
+      trace "[dbg] CLAP.RescanParams: id=\""+_plugin.id+"\" #old="+oldNumParams+" #new="+_plugin.numParameters;
+   }
+
+   // <method.png>
+   public static PushIgnoreAutomation() : boolean {
+      boolean r = b_ignore_automation;
+      b_ignore_automation = true;
+      return r;
+   }
+
+   // <method.png>
+   public static PopIgnoreAutomation(boolean _bOrig) {
+      b_ignore_automation = _bOrig;
+   }
+
+   // <method.png>
+   public static CallOnMainThread() {
+      // (note) called in RootForm.tks via handleIdleTimer() / TA_IDLE
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            ModCLAP *modCLAP;
+            foreach modCLAP in lane.mods
+            {
+               if(modCLAP instanceof ModCLAP)
+               {
+                  CLAPPlugin plugin <= modCLAP.plugin;
+                  if(null != plugin)
+                     plugin.callOnMainThread();
+               }
+            }
+         }
+      }
+   }
+
+}
+
+
+// <callback.png>
+function onParamEdit(local CLAPPlugin _plugin, local int _bBegin, local int _paramIdx) {
+   // trace "[dbg] CLAP.onParamEdit: plugin="+#(_plugin)+" bBegin="+_bBegin+" paramIdx="+_paramIdx;
+   CLAP.QueueAutomateEvent(_plugin, _paramIdx, -1/*_value*/, _bBegin);
+}
+
+// <callback.png>
+function onAutomate(local CLAPPlugin _plugin, local int _paramIdx, local float _value) {
+   // trace "[dbg] CLAP.onAutomate: plugin="+#(_plugin)+" paramIdx="+_paramIdx+" value="+_value;
+   CLAP.QueueAutomateEvent(_plugin, _paramIdx, _value, -1/*bBegin*/);
+}
+
+// <callback.png>
+function onWin32KeyEvent(local CLAPPlugin _plugin, local int _lparam) {
+   trace "[>>>] CLAP.onWin32KeyEvent called.  lparam="+_lparam;
+   CLAP.QueueKeyEvent(_plugin, _lparam);
+}
+
+// <callback.png>
+function onMacOSKeyDown(local CLAPPlugin _plugin, local int _keyCode) {
+   trace "[>>>] CLAP.onMacOSKeyDown called. keyCode="+_keyCode;
+   CLAP.QueueKeyEvent(_plugin, _keyCode);
+}
+
+// <callback.png>
+function onRescanParams(local CLAPPlugin _plugin) {
+   trace "[>>>] CLAP.onRescanParams called. plugin="+#(_plugin);
+   CLAP.RescanParams(_plugin);
+}
+
+
+use onParamEdit     for CLAPPlugin.onParamEdit;
+use onAutomate      for CLAPPlugin.onAutomate;
+use onWin32KeyEvent for CLAPPlugin.onWin32KeyEvent;
+use onMacOSKeyDown  for CLAPPlugin.onMacOSKeyDown;
+use onRescanParams  for CLAPPlugin.onRescanParams;

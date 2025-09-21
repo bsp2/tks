@@ -1,0 +1,1856 @@
+// ----
+// ---- file   : RootForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 22Jan2018, 24Jan2018, 25Jan2018, 09Feb2018, 10Feb2018, 23Feb2018, 24Feb2018
+// ----          07Mar2018, 18Mar2018, 26Mar2018, 29Jun2018, 18Aug2018, 07Dec2018, 11Dec2018
+// ----          12Dec2018, 15Dec2018, 16Dec2018, 21Dec2018, 05Jan2019, 19Jul2019, 21Jul2019
+// ----          25Jul2019, 28Jul2019, 07Aug2019, 26Aug2019, 27Oct2019, 01Nov2019, 09Feb2020
+// ----          15May2020, 19May2020, 02Jun2020, 13Oct2020, 28Jul2021, 10Jan2022, 11Aug2022
+// ----          01Dec2022, 12Feb2023, 23Feb2023, 25Feb2023, 29Jul2023, 15Sep2023, 03Oct2023
+// ----          04Oct2023, 23Oct2023, 24Oct2023, 04Nov2023, 18Nov2023, 02Dec2023, 17Jan2024
+// ----          21Jan2024, 22Mar2024, 02Jul2024, 12Aug2024, 22Aug2024, 23Aug2024, 04Oct2024
+// ----          05Oct2024, 22Dec2024, 31Jan2025, 16Mar2025, 01May2025, 03May2025, 16Jun2025
+// ----
+// ----
+// ----
+
+module MRootForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class RootForm : XMLForm, ActionProvider, StatusBarListener {
+
+   define String EV_SYN_KEY;
+
+   // main pages:
+   define int PAGE_AUDIO   =  0;
+   define int PAGE_PROJECT =  1;
+   define int PAGE_TRACK   =  2;
+   define int PAGE_SAMPLE  =  3;
+   define int NUM_PAGES    =  4;
+
+   define String TA_EXIT;
+   define String TA_REDRAW_ALL;
+   define String TA_IDLE;
+
+   protected TimerAction *ta_exit;
+   protected TimerAction *ta_redraw_all;
+   protected TimerAction *ta_idle;
+
+   define int REDRAW_TIMEOUT_SHORT  = 33;
+   define int REDRAW_TIMEOUT_MEDIUM = 100;
+   define int REDRAW_TIMEOUT_LONG   = 500;
+
+   // View splits
+   protected LayerSwitch *sw_views; // view switch
+
+   // Status bar area
+   protected Button         *bt_back;
+   protected StatusBar      *sb_status;
+   protected CheckBox       *cb_process;
+   protected ComboBoxPopup  *cmdautocomplete_popup;
+   protected StringArray    *cmdautocomplete_options;
+   protected int             cmdautocomplete_word_idx;
+   protected ComboBoxPopup  *cmdhistory_popup;
+   protected ComboBoxPopup  *cmdactions_popup;
+   protected CheckBox       *cb_scope;
+   protected FloatParam     *fp_templevel;
+   protected Button         *bt_resetctl;
+   protected FloatParam     *fp_bpm;
+   protected FloatParam     *fp_masterlevel;
+   protected Button         *bt_master_dim;
+   protected LevelIndicator *level_indicator;
+   protected FloatParam     *fp_masterpan;
+   protected LoadIndicator  *load_indicator;
+   protected Button         *bt_save;
+   protected CheckBox       *cb_rec;
+   protected CheckBox       *cb_rec_replace;
+
+   protected OpaquePanel *pn_bg;
+
+   public    PageAudio          *pg_audio;
+   public    PageProject        *pg_project;
+   public    PageTrack          *pg_track;
+   public    PageSample         *pg_sample;
+
+   define int PAGE_HISTORY_SIZE = 8;
+   protected IntArray page_history;
+   protected int      current_page;
+   protected boolean  b_current_page_allow_history;
+   protected int      page_history_idx;
+
+   protected IntArray page_subhistory;
+
+   protected Key *[] syn_key_queue;
+
+   protected int force_kbdfocus_selmode_usecount;
+
+   public Texture tex_scanline_pattern;
+
+   protected int autosave_replay_timer_count;
+
+   protected boolean b_last_modified_state;
+
+   define int CMD_HISTORY_SIZE = 32;
+   protected StringArray cmd_history;
+   protected StringArray cmd_actions; // valid while default actions popup is shown
+
+   public VST2Plugin *vst2_queued_plugin_to_front;
+
+   AudioScriptHost *script_host;
+
+   int rec_start_ms;
+   int rec_count;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initTimers();
+
+      autoResolveIds(this);
+
+      sb_status.setStatusBarListener(this);
+
+      if(initPages())
+      {
+         // // lnf_colors[LookAndFeel.COLOR_TABFOCUS_TEXT_BORDER] = #ff00ffff;
+
+         ta_idle.schedule();
+
+         b_last_modified_state = maybe;
+
+         script_host <= new AudioScriptHost;
+         script_host.init();
+
+         return true;
+      }
+      else
+      {
+         return false;
+      }
+   }
+
+   // <ui_init.png>
+   public method initTimers() {
+      ta_redraw_all <= TimerAction.New(TA_REDRAW_ALL, this, REDRAW_TIMEOUT_MEDIUM); // dynamic timeout
+      ta_idle       <= TimerAction.New(TA_IDLE,       this, 30);
+   }
+
+   // <ui_init.png>
+   protected method initPages() : boolean {
+      boolean r = true;
+
+      page_history.alloc(PAGE_HISTORY_SIZE);
+      page_history_idx = 0;
+
+      r = r && pg_audio  .init();
+      r = r && pg_project.init();
+      r = r && pg_track  .init();
+      r = r && pg_sample .init();
+
+      if(r)
+         showPage(PAGE_AUDIO, true/*bAllowHistory*/);
+
+      return r;
+   }
+
+
+   // <ui.png>
+   public method showKbdFocusInfo() {
+      Layer cfocus <= UI.GetKeyboardFocus();
+      if(null != cfocus)
+      {
+         String idOrName = cfocus.layer_name;
+         String fm;
+
+         if(idOrName.isBlank())
+         {
+            // Dev fallback, each widget should have a name!
+            fm = "Focus: "+cfocus.layer_id;
+         }
+         else
+         {
+            // Prefix widget type (bt, cb, tv, cm, tf, ..)
+            fm = "Focus<"+(cfocus.layer_id.substring(0, cfocus.layer_id.indexOf("_", 0))) + ">: "+idOrName;
+         }
+
+
+         if(cfocus instanceof CheckBox)
+         {
+            CheckBox cb <= cfocus;
+            fm.append(cb.isSelected() ? " (checked)" : " (unchecked)");
+         }
+         else if(cfocus instanceof ComboBox)
+         {
+            ComboBox cm <= cfocus;
+            fm.append(" ("+cm.getSelectedOptionName()+")");
+         }
+         else if(cfocus instanceof TextField) // also FloatParam
+         {
+            TextField tf <= cfocus;
+            fm.append(" ("+tf.getText()+")");
+         }
+         else if(cfocus instanceof TableView)
+         {
+            TableView tv <= cfocus;
+            fm.append(" ("+(tv.getCursorRow()+1)+"/"+tv.getNumRows()+")");
+         }
+         else if(cfocus instanceof Label)  // or Button
+         {
+            Label lb <= cfocus;
+
+            if(cfocus.layer_name.isBlank())
+            {
+               String cap <= lb.getCaption();
+               if(cap.isBlank())
+               {
+                  cap <= lb.getToolTipCaption();
+               }
+               fm.append(" ("+cap+")");
+            }
+         }
+         else if(cfocus instanceof TabSwitch)
+         {
+            TabSwitch ts <= cfocus;
+            fm.append(" ("+ts.getActiveViewCaption()+")");
+         }
+
+         fm.append(".");
+
+         Global.Print(fm);
+      }
+   }
+
+   // <ui_kbd.png>
+   public method queueSynKey(int _code, int _mod, boolean _bPressed) {
+      local Key k;
+      k.mod = _mod;
+
+      if(_bPressed)
+         k.pressed = _code;
+      else
+         k.released = _code;
+
+      syn_key_queue.add(#(deref k));
+
+      Events.SendSynKey();
+   }
+
+   // <ui_kbd.png>
+   public method queueSynKeyForceKbdSelMode(int _code, int _mod, boolean _bPressed) {
+      Page pg <= getCurrentPage();
+      if(pg.pageForceKbdFocusSelMode())
+      {
+         if(_bPressed)
+         {
+            if(0 == force_kbdfocus_selmode_usecount++)
+            {
+               // // UI.SetKbdFocusSelectionModeBehaviour(true);
+               queueSynKey(319+1000/*temp hold*/, 0, true);
+            }
+
+            queueSynKey(_code, _mod, true);
+         }
+         else
+         {
+            queueSynKey(_code, _mod, false);
+
+            if(0 == --force_kbdfocus_selmode_usecount)
+            {
+               queueSynKey(319+1000, 0, false);
+               // // UI.SetKbdFocusSelectionModeBehaviour(STConfig.b_kbdfocusselectionmode_behaviour);
+            }
+         }
+      }
+      else
+      {
+         queueSynKey(_code, _mod, _bPressed);
+      }
+   }
+
+   // <ui_kbd.png>
+   public method queueSynKeyTyped(int _code, int _mod) {
+      queueSynKey(_code, _mod, true);
+      queueSynKey(_code, _mod, false);
+   }
+
+   // <ui_kbd.png>
+   public method processSynKeyQueue() {
+      Key *k;
+      foreach k in syn_key_queue
+         UI.OnKeyboard(k);
+      syn_key_queue.free();
+   }
+
+   // <ui.png>
+   public method isDialogActive() : boolean {
+      return (0 != UI.GetNumModalFloatingLayers());
+   }
+
+   // <ui_page.png>
+   public method getCurrentPage() : Page {
+      return sw_views.getChildByIdx(current_page);
+   }
+   // <ui_page.png>
+   public method getPageByIdx(int _idx) : Page {
+      return sw_views.getChildByIdx(_idx);
+   }
+
+   // <ui_page.png>
+   public method getCurrentPageNr() : int {
+      return current_page;
+   }
+
+   // <ui_page.png>
+   public method isAudioPage() : boolean {
+      return (@(pg_audio) == @(getCurrentPage()));
+   }
+
+   // <ui_page.png>
+   public method isCurrentPageModal() : boolean {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         Page pg <= getCurrentPage();
+
+         if(pg.pageIsModal())
+         {
+            Global.Print("Cannot change page, dialog sequence active.");
+            return true;
+         }
+         else
+         {
+            return false;
+         }
+      }
+      else
+      {
+         Global.Print("Cannot change page because of active dialog.");
+         return true;
+      }
+   }
+
+   // <ui_page.png>
+   protected method getHistoryPage(int _idx) : int {
+      if(_idx < 0)
+         _idx += PAGE_HISTORY_SIZE;
+      return page_history.get(_idx);
+   }
+
+   // <ui_page.png>
+   protected method deleteHistoryPage(int _idx) {
+      if(_idx < 0)
+         _idx += PAGE_HISTORY_SIZE;
+      else if(_idx >= PAGE_HISTORY_SIZE)
+         _idx -= PAGE_HISTORY_SIZE;
+      page_history.delete(_idx);
+
+      if(page_history_idx >= _idx)
+      {
+         page_history_idx--;
+         if(page_history_idx < 0)
+            page_history_idx += page_history.numElements;
+      }
+   }
+
+   // <method.png>
+   public method pushPageToHistory(int _pageIdx) {
+      if(PAGE_HISTORY_SIZE == page_history.numElements)
+         deleteHistoryPage(page_history_idx + PAGE_HISTORY_SIZE - 1);
+
+      // Push new page onto stack
+      page_history.insert(page_history_idx, _pageIdx);
+   }
+
+   // <method_get.png>
+   public method isCurrentPageLocked() : boolean {
+      Page pg <= getCurrentPage();
+      return pg.isPageLocked();
+   }
+
+   // <api.png>
+   public method showPage(int _idx, boolean _bAllowHistory) {
+
+      // // trace "xxx -----------------------------";
+      Global.Debug("RootForm::showPage: idx="+_idx+" bAllowHistory="+_bAllowHistory);
+      // // trace "xxx beg showPage: history="+page_history.string;
+      // // trace "xxx beg showPage: history_idx="+page_history_idx;
+
+      Page pg <= getCurrentPage();
+      Page newPg <= getPageByIdx(_idx);
+
+      if(null == newPg)
+         return; // should not be reachable
+
+      if(pg.pageIsSub())
+      {
+         // Returning from temporary page, don't return page to history, again.
+         _bAllowHistory = false;
+      }
+
+      if(_bAllowHistory)
+      {
+         if(_idx != page_history.get(page_history_idx))
+            pushPageToHistory(_idx);
+      }
+
+      if(newPg.pageIsSub())
+      {
+         // Leave temporarily, e.g. don't unset node ref. on PageNode so editing can continue
+         pg.pageLeaveSub();
+      }
+      else
+      {
+         pg.pageLeave();
+      }
+
+      UI.LoseKeyboardFocusIfWithin(pg, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(pg);
+
+      current_page = _idx;
+
+      b_current_page_allow_history = _bAllowHistory;
+
+      sw_views.switchToLayerNr(_idx);
+
+      pg <= getCurrentPage();
+
+      Global.PrintHead("Show page \""+pg.pageGetName()+"\".");
+
+      pg.pageEnter();
+      pg.pageFocusDefault();
+
+      UI.RedrawAll();
+
+      if(PAGE_AUDIO == current_page)
+      {
+         // trace "xxx clear page history";
+         page_history.empty();
+      }
+
+      // trace "xxx end showPage: history="+page_history.string;
+      // trace "xxx end showPage: history_idx="+page_history_idx;
+   }
+
+   // <ui_page.png>
+   public method showPageSub(int _pageNr, boolean _bQuiet) {
+      // must only be called for sub pages
+
+      page_subhistory.add(current_page);
+
+      Page pg <= getCurrentPage();
+      pg.pageLeaveSub();
+
+      current_page = _pageNr;
+
+      sw_views.switchToLayerNr(_pageNr);
+
+      pg <= getCurrentPage();
+
+      if(!_bQuiet)
+         Global.PrintHead("Show sub-page \""+pg.pageGetName()+"\".");
+
+      pg.pageEnter();
+      pg.pageFocusDefault();
+
+      UI.RedrawAll();
+   }
+
+   // <ui_page.png>
+   public method showPageSubPrev() {
+      // Leave sub-page and return to previous page
+
+      if(!isDialogActive())
+      {
+         if(page_subhistory.numElements > 0)
+         {
+            Page pg <= getCurrentPage();
+            pg.pageLeave();
+
+            current_page = page_subhistory.last;
+            page_subhistory.numElements = page_subhistory.numElements - 1;
+
+            sw_views.switchToLayerNr(current_page);
+
+            pg <= getCurrentPage();
+
+            Global.PrintHead("Return to page \""+pg.pageGetName()+"\".");
+
+            pg.pageEnter();
+            pg.pageFocusDefault();
+
+            UI.RedrawAll();
+         }
+         else
+         {
+            trace "[!!!] showPageSubPrev: internal error: sub history is empty";
+         }
+      }
+   }
+
+   // <ui_page.png>
+   public method showPageNav(int _pageNr) {
+      if(!isCurrentPageModal())
+         showPage(_pageNr, true/*bAllowHistory*/);
+   }
+
+   // <api.png>
+   public method showPagePrev() {
+
+      if(page_subhistory.numElements > 0)
+         return showPageSubPrev();
+
+      if(!isDialogActive())
+      {
+         // // trace "xxx -----------------------------";
+         // // trace "xxx beg showPagePrev: history="+page_history.string;
+         // // trace "xxx beg showPagePrev: history_idx="+page_history_idx;
+
+         Page pg <= getCurrentPage();
+
+         // Try to let current page show the previous page
+         if(pg.pageShowPrev())
+            return;
+
+         // Fallback to page history
+         if(b_current_page_allow_history)
+            page_history_idx = (page_history_idx + 1) % page_history.numElements;
+
+         int pgNr = page_history.get(page_history_idx);
+
+         Page ppg <= sw_views.getChildByIdx(pgNr);
+
+         // // trace "xxx showPagePrev: pgNr="+pgNr+" ppg="+#(ppg)+" curpg="+#(pg);
+
+         if(null != ppg)
+         {
+            if(@(pg) != @(ppg))
+            {
+               pg.pageLeave();
+
+               current_page = pgNr;
+               b_current_page_allow_history = true;
+
+               sw_views.switchToLayerNr(pgNr);
+
+               Global.PrintHead("Show previous page \""+ppg.pageGetName()+"\".");
+
+               ppg.pageEnter();
+               ppg.pageFocusDefault();
+
+               redraw();
+
+               // // trace "xxx end showPagePrev: history="+page_history.string;
+               // // trace "xxx end showPagePrev: history_idx="+page_history_idx;
+            }
+            else
+            {
+               trace "[~~~] RootForm::showPagePrev: page has not changed (pgNr="+pgNr+" curPg="+#(pg)+"), showing parent..";
+               showPageParent();
+            }
+         }
+      }
+   }
+
+   // <api.png>
+   public method showPageNext() {
+      if(!isCurrentPageModal())
+      {
+         // // trace "xxx -----------------------------";
+         // // trace "xxx beg showPageNext: history="+page_history.string;
+         // // trace "xxx beg showPageNext: history_idx="+page_history_idx;
+
+         page_history_idx--;
+         if(page_history_idx < 0)
+            page_history_idx += page_history.numElements;
+
+         if(1)
+         {
+            int pgNr = page_history.get(page_history_idx);
+            Page ppg <= sw_views.getChildByIdx(pgNr);
+            if(null != ppg)
+            {
+               Page pg <= getCurrentPage();
+
+               pg.pageLeave();
+
+               current_page = pgNr;
+               b_current_page_allow_history = true;
+
+               sw_views.switchToLayerNr(pgNr);
+
+               Global.PrintHead("Show next page \""+ppg.pageGetName()+"\".");
+
+               ppg.pageEnter();
+               ppg.pageFocusDefault();
+
+               redraw();
+
+               // // trace "xxx end showPageNext: history="+page_history.string;
+               // // trace "xxx end showPageNext: history_idx="+page_history_idx;
+            }
+         }
+      }
+   }
+
+   // <api.png>
+   public method showPageParent() {
+      Global.Debug("RootForm::showPageParent: page_subhistory="+#(page_subhistory));
+
+      if(page_subhistory.numElements > 0)
+         return showPageSubPrev();
+
+      if(!isDialogActive())
+      {
+         Page pg <= getCurrentPage();
+         int parIdx = pg.pageGetParent();
+
+         // // trace "xxx showPageParent: pg="+#(pg)+" parIdx="+parIdx;
+
+         if(-1 != parIdx)
+            showPage(parIdx, true/*bAllowHistory*/);
+      }
+   }
+
+   // <api.png>
+   public method showPageParentOrPrev() {
+      // // trace "xxx showPageParentOrPrev";
+
+      if(!isDialogActive())
+      {
+         Page pg <= getCurrentPage();
+         if(pg.pageIsSub())
+         {
+            root_form.showPageSubPrev();
+         }
+         else
+         {
+            int parIdx = pg.pageGetParent();
+
+            if(-1 != parIdx)
+               showPage(parIdx, true/*bAllowHistory*/);
+            else
+               showPagePrev();
+         }
+      }
+   }
+
+   // <ui_page.png>
+   public method handlePageFocusDefault() {
+      Page pg <= getCurrentPage();
+      pg.pageFocusDefault();
+   }
+
+   // <log.png>
+   public method pushStatusMessage(String _msg, int _millisec, int _fg, int _bg, boolean _bHead) {
+      sb_status.pushMessage(_msg, _millisec, _fg, _bg, _bHead);
+   }
+
+   // <log.png>
+   public method endStatusMessageLock() {
+      sb_status.endMessageLock();
+   }
+
+   // <log.png>
+   public method printLastHeadMessage() {
+      sb_status.repushLastHeadMessage();
+   }
+
+   // <ui_update.png>
+   public method updateSongWidgets() {
+      // trace "xxx updateSongWidgets: masterlevel="+current_project.getMasterLevel();
+      fp_templevel      .setValue(current_project.getTempLevel());
+      fp_bpm            .setValue(current_project.bpm);
+      fp_masterpan      .setValue(current_project.getMasterPan());
+      fp_masterlevel    .setValue(current_project.getMasterLevel());
+      cb_rec_replace    .setSelected(current_project.b_record_replace);
+   }
+
+   // <exit.png>
+   public method beginExit() {
+      if(false)
+      {
+         // (note) obsolete code
+
+         // Hack to fix some issue with certain VST plugins (e.g. TAL reverb) causing the UI to freeze
+         //  when actively waiting for the VST window to be closed
+         //  (it only does that when the tracker main window message loop is running)
+         // (todo) think about a cleaner solution (done?!!)
+         // (todo) this is probably obsolete by now
+         ta_exit <= TimerAction.New(TA_EXIT, this, 30);
+         ta_exit.schedule();
+      }
+      else
+      {
+         // Quit main message loop
+         UI.Stop();
+      }
+   }
+
+   // <ui_render.png>
+   public method queueRedrawAll() {
+      // Calls renderAndRedrawAll() when timer expires
+      ta_redraw_all.scheduleShort();
+   }
+
+   // <ui_handle.png>
+   public method handleTempLevelChanged(boolean _bRefocusDefault) {
+      float lvl = fp_templevel.getFloatValue();
+      current_project.setTempLevel(lvl);
+
+      if(_bRefocusDefault)
+      {
+         // Set to final clamped level
+         fp_templevel.setValue(current_project.getTempLevel());
+      }
+
+      Global.Print("Set temporary sample audio level to "+current_project.getTempLevel()+".");
+
+      if(_bRefocusDefault)
+         Global.RefocusDefault();
+   }
+
+   // <ui_handle.png>
+   public method handleMasterPanChanged(boolean _bRefocusDefault) {
+
+      float pan = fp_masterpan.getFloatValue();
+      current_project.setMasterPan(pan);
+
+      if(_bRefocusDefault)
+         fp_masterpan.setValue(current_project.getMasterPan());
+
+      Global.Print("Set audio master pan to "+pan+".");
+
+      if(_bRefocusDefault)
+         Global.RefocusDefault();
+   }
+
+   // <ui_handle.png>
+   public method handleMasterLevelChanged(boolean _bRefocusDefault) {
+      //  ui_fp_masterlevel_changed
+      float lvl = fp_masterlevel.getFloatValue();
+      current_project.setMasterLevel(lvl);
+
+      if(_bRefocusDefault)
+      {
+         // Set to final clamped level
+         fp_masterlevel.setValue(current_project.getMasterLevel());
+      }
+
+      Global.Print("Set audio master level to "+current_project.getMasterLevel()+".");
+
+      if(_bRefocusDefault)
+         Global.RefocusDefault();
+   }
+
+   // <ui_handle.png>
+   public method handleManualSave() {
+      String dirname = STConfig.project_rootpath;
+      dirname.replace("//", "/");
+      if(dirname.endsWith("/"))
+         dirname = dirname.substring(0, dirname.length-2);
+      Global.Debug("RootForm::handleManualSave: suggested dirname=\""+dirname+"\"");
+      Global.Debug("RootForm::handleManualSave: suggested filename=\""+Utils.ConvertToFileName(current_project.project_name)+"\"");
+      String selectedPathName <= UI.SaveFileDialog(dirname,
+                                                   Utils.ConvertToFileName(current_project.project_name),
+                                                   "Save project",
+                                                   ["Eureka Project (*.epr)"],
+                                                   ["*.epr"],
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(null != selectedPathName)
+      {
+         Global.SaveProjectManual(selectedPathName);
+      }
+      else
+      {
+         Global.Print("Save cancelled");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleManualLoad() {
+      String dirname = STConfig.project_rootpath;
+      dirname.replace("//", "/");
+      if(dirname.endsWith("/"))
+         dirname = dirname.substring(0, dirname.length-2);
+      Global.Debug("RootForm::handleManualLoad: suggested dirname=\""+dirname+"\"");
+      Global.Debug("RootForm::handleManualLoad: suggested filename=\""+Utils.ConvertToFileName(current_project.project_name)+"\"");
+      String selectedPathName <= UI.OpenFileDialog(dirname,
+                                                   "",//Utils.ConvertToFileName(current_project.project_name)
+                                                   "Load project",
+                                                   ["Eureka Project (*.epr)"],
+                                                   ["*.epr"],
+                                                   false/*bMultipleSelection*/,
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(null != selectedPathName)
+      {
+         Global.LoadProjectPathName(selectedPathName);
+      }
+      else
+      {
+         Global.Print("Load cancelled");
+      }
+   }
+
+   // <method_handle.png>
+   public method handleStartSeq() {
+      // called from UI thread when sequencer replay has started
+      Global.Print("Start seq");
+   }
+
+   // <method_handle.png>
+   public method handleStopSeq() {
+      // called from UI thread when sequencer replay has stopped
+      Global.Print("Stop seq");
+   }
+
+   // <method_handle.png>
+   public method handleStartRecord() {
+      // called from UI thread when recording starts
+      Global.Debug("RootForm::handleStartRecord");
+      cb_rec.setSelected(true);
+      pg_audio.handleStartRecord();
+      rec_start_ms = milliSeconds();
+      rec_count = 0;
+   }
+
+   // <method_handle.png>
+   public method handleStopRecord() {
+      // called from UI thread when recording stops
+      Global.Debug("RootForm::handleStopRecord");
+      cb_rec.setSelected(false);
+      pg_audio.handleStopRecord();
+   }
+
+   // <ui_handle.png>
+   public method handleToggleRecording() {
+      // trace "xxx RootForm::handleToggleRecording";
+      replay.setEnableRecording(cb_rec.isSelected());
+
+      if(replay.b_recording)
+      {
+         handleStartRecord();
+         Global.Print("Start audio track recording");
+      }
+      else
+      {
+         int tRec = milliSeconds() - rec_start_ms;
+         Global.Print("Stop audio track recording after "+Utils.MillisecondsToCompactHMSString(tRec));
+         handleStopRecord();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRecordReplaceChanged() {
+      current_project.setEnableRecordReplace(cb_rec_replace.isSelected());
+      Global.Print("Recording mode is "+(current_project.b_record_replace ? "REPLACE" : "APPEND"));
+   }
+
+   // <method_set.png>
+   public method setEnableRecordReplace(boolean _bEnable) {
+      cb_rec_replace.setSelected(_bEnable);
+      current_project.setEnableRecordReplace(_bEnable);
+   }
+
+   // <ui_handle.png>
+   public method toggleAudioRecording() {
+      cb_rec.toggleSelectionAction();
+   }
+
+   // <ui_handle.png>
+   public =replay= method stopAudioRecording() {
+      Global.Debug("RootForm::stopAudioRecording");
+      // called via SysEx remote cmd
+      if(cb_rec.isSelected())
+         toggleAudioRecording();
+   }
+
+   // <ui_handle.png>
+   public =replay= method startAudioRecording() {
+      Global.Debug("RootForm::startAudioRecording");
+      // called via SysEx remote cmd
+      if(!cb_rec.isSelected())
+         toggleAudioRecording();
+   }
+
+   // <ui_handle.png>
+   public method handleAudioErrorOccured() {
+      fp_masterlevel.setEditable(false);
+      fp_masterpan.setEditable(false);
+   }
+
+   // <ui_handle.png>
+   protected method handleCmdAutoComplete() {
+      int argIdx = sb_status.getWordIndexUnderCursor();
+      local String word;
+      local StringArray words <= sb_status.getWords();
+      local String cmd;
+      if(argIdx >= 0)
+      {
+         word = words.get(argIdx);
+         // trace "[trc] RootForm: autocomplete idx="+argIdx+" word=\""+word+"\"";
+      }
+      else
+      {
+         // Empty string
+         argIdx = 0;
+      }
+
+      cmdautocomplete_word_idx = argIdx;
+
+      cmd = words.get(0);
+
+      CmdProvider cp <= getCurrentPage().cmdGetRedirect();
+      local StringArray *options;
+
+      local StringArray cmdsAvail <= cp.cmdGetAvailableCommands();
+      // trace "[trc] RootForm: cmdsAvail="+#(cmdsAvail);
+      if(null != cmdsAvail)
+      {
+         if(0 == argIdx)
+         {
+            if(!cmd.isBlank())
+            {
+               local String *acmd;
+               options <= new StringArray;
+               foreach acmd in cmdsAvail
+               {
+                  if(acmd & word)  // match substring
+                     options.add(acmd);
+               }
+            }
+            else
+            {
+               options <= cmdsAvail;
+            }
+            // trace "[trc] RootForm: autocomplete cmds="+#(options);
+         }
+         else
+         {
+            options <= cp.cmdFindArgAutoCompletions(cmd, argIdx - 1, word);
+            if(null != options)
+            {
+               if(options.numElements > 0)
+               {
+                  // trace "[trc] RootForm: autocomplete: arg "+argIdx+" completions="+#(options);
+               }
+               else
+               {
+                  options <= null;
+               }
+            }
+            if(null == options)
+            {
+               local StringArray argsAvail <= cp.cmdGetAvailableArgs(cmd, argIdx - 1);
+               if(null != argsAvail)
+               {
+                  if(argsAvail.numElements > 0)
+                  {
+                     if(!word.isBlank())
+                     {
+                        options <= new StringArray;
+                        local String *aarg;
+                        foreach aarg in argsAvail
+                        {
+                           if(aarg <= word)
+                              options.add(aarg);
+                        }
+                     }
+                     else
+                     {
+                        options <= argsAvail;
+                     }
+                     // trace "[trc] RootForm: autocomplete: arg "+argIdx+" avail="+#(options);
+                  }
+                  else
+                  {
+                     options <= null;
+                  }
+               }
+            }
+         }
+      }
+
+      if(null != options)
+      {
+         if(options.numElements > 1)
+         {
+            cmdautocomplete_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                                    null/*fontOrNull*/,
+                                                                    options,
+                                                                    null/*options_long*/,
+                                                                    -1/*selected_option*/,
+                                                                    sb_status.getSizeX()/*prefSx*/,
+                                                                    null/*tooltip_captions*/,
+                                                                    null/*option_bgcolors*/,
+                                                                    null/*option_fgtints*/
+                                                                    );
+            cmdautocomplete_popup.showNearComboBox(sb_status);
+            // // cmdautocomplete_popup.table.centerRow();
+            cmdautocomplete_popup.focusFirstTabCycleMember();
+            cmdautocomplete_options <= deref options;
+         }
+         else if(1 == options.numElements)
+         {
+            handleCmdAutoCompleteSelection(options.get(0));
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleCmdHistoryComplete() {
+      if(cmd_history.numElements > 0)
+      {
+         cmdhistory_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                            null/*fontOrNull*/,
+                                                            cmd_history,
+                                                            null/*options_long*/,
+                                                            cmd_history.numElements-1/*selected_option*/,
+                                                            sb_status.getSizeX()/*prefSx*/,
+                                                            null/*tooltip_captions*/,
+                                                            null/*option_bgcolors*/,
+                                                            null/*option_fgtints*/
+                                                            );
+         cmdhistory_popup.showNearComboBox(sb_status);
+         cmdhistory_popup.focusFirstTabCycleMember();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCmdAutoCompleteSelection(String _option) {
+      local String word;
+      local StringArray words <= sb_status.getWords();
+      local String newText;
+      int newCursorX = 0;
+      local String option;
+
+      if(0 == cmdautocomplete_word_idx)
+      {
+         local StringArray ta <= _option.splitSpace(true);
+         option = ta.get(0);  // skip arg syntax
+      }
+      else
+         option <= _option;
+
+      if(cmdautocomplete_word_idx >= words.numElements)
+      {
+         // Append new word
+         newText = (sb_status.getText().trim()) + " " + option;
+         newText.trim();
+         newCursorX = newText.length - 1;
+      }
+      else
+      {
+         // Replace word
+         int wordIdx = 0;
+         int numAppended = 0;
+         loop(words.numElements)
+         {
+            if(numAppended++ > 0)
+               newText.append(" ");
+
+            if(wordIdx == cmdautocomplete_word_idx)
+            {
+               newText.append(option);
+               newCursorX = newText.length - 1;
+            }
+            else
+            {
+               newText.append(words.get(wordIdx));
+            }
+
+            // trace "xxx wordIdx="+wordIdx+" newText=\""+newText+"\"";
+            wordIdx++;
+         }
+      }
+
+      // trace "xxx newText=\""+newText+"\" newCursorX="+newCursorX+" option=\""+option+"\"";
+
+      sb_status.setText(newText);
+      sb_status.setTextEditedFlag(true);
+
+      UI.SetKeyboardFocus(sb_status);
+      sb_status.onTabFocus();
+      sb_status.selectNone();
+      sb_status.moveCursorTo(newCursorX);
+   }
+
+   // <ui_handle.png>
+   protected method handleCmdHistorySelection(String _cmd) {
+      sb_status.setText(_cmd);
+      sb_status.setTextEditedFlag(true);
+
+      UI.SetKeyboardFocus(sb_status);
+      sb_status.onTabFocus();
+      sb_status.selectNone();
+      sb_status.moveCursorEnd();
+   }
+
+   // <ui_show.png>
+   protected method handleCmdShowDefaultActions() {
+      CmdProvider cp <= getCurrentPage().cmdGetRedirect();
+      cmd_actions <= cp.cmdGetDefaultActions();
+      if(null != cmd_actions)
+      {
+         HashTable htToolTips <= cp.cmdGetActionToolTips();
+         local StringArray *toolTipCaptions;
+         if(null != htToolTips)
+         {
+            toolTipCaptions <= new StringArray;
+            String *defAction;
+            foreach defAction in cmd_actions
+            {
+               local StringArray ta <= defAction.splitSpace(false);
+               String defCmd <= ta.get(0);
+               if(htToolTips.exists(defCmd))
+                  toolTipCaptions.add(htToolTips[defCmd]);
+               else
+                  toolTipCaptions.add(defCmd);
+            }
+         }
+
+         cmdactions_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                            null/*fontOrNull*/,
+                                                            cmd_actions,
+                                                            null/*options_long*/,
+                                                            -1/*selected_option*/,
+                                                            sb_status.getSizeX()/*prefSx*/,
+                                                            deref toolTipCaptions/*tooltip_captions*/,
+                                                            null/*option_bgcolors*/,
+                                                            null/*option_fgtints*/
+                                                            );
+         cmdactions_popup.showNearComboBox(sb_status);
+         cmdactions_popup.focusFirstTabCycleMember();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCmdActionsSelection(String _cmd) {
+      sb_status.setText(_cmd);
+      sb_status.setTextEditedFlag(true);  // side-effect: resetTextColors()
+      sb_status.setEditable(true);
+      sb_status.setBackgroundTint(0);
+      UI.IgnoreNextMouseRelease();  // RMB release over SampleView removes keyboard focus
+
+      UI.SetKeyboardFocus(sb_status);
+      sb_status.onTabFocus();
+      sb_status.selectNone();
+      sb_status.moveCursorEnd();
+
+      if(0 != UI.GetKeyMod())
+         handleCmdExec();
+   }
+
+   // <ui_handle.png>
+   protected method handleCmdExec() {
+
+      // Add to history
+      local String cmdText = sb_status.getText();
+      boolean bAddHistory = true;
+
+      if(cmd_history.numElements > 0)
+         bAddHistory = (cmd_history.last != cmdText);
+
+      if(bAddHistory)
+      {
+         if(cmd_history.numElements >= CMD_HISTORY_SIZE)
+            cmd_history.delete(0);
+         cmd_history.add(cmdText);
+      }
+
+      // Eval command
+      local StringArray argv <= sb_status.getWords();
+      sb_status.stopEditing(false/*bProvideAction*/, false/*bReturnKey*/, true/*bQuiet*/);
+      // // sb_status.setTextEditedFlag(false); // re-enable status messages
+      sb_status.setText("");
+      CmdProvider cp <= getCurrentPage().cmdGetRedirect();
+
+      if(argv.numElements >= 1)
+      {
+         // // UI.SetKeyboardFocus(sb_status);
+         // // sb_status.onTabFocus();
+
+         boolean r = cp.cmdExec(argv);
+         Global.Debug2("RootForm::handleCmdExec: r="+r);
+      }
+
+      Page pg <= getCurrentPage();
+      pg.pageFocusDefault();
+   }
+
+   // <method.png>
+   public method toggleScope() {
+      cb_scope.setSelected( Dialogs.ToggleScopeDialog() );
+   }
+
+   // <method.png>
+   public method handleScopeChanged() {
+      if(cb_scope.isSelected())
+         Dialogs.ShowScopeDialog();
+      else
+         Dialogs.HideScopeDialog();
+   }
+
+   // <method.png>
+   public handleHideScope() {
+      cb_scope.setSelected(false);
+   }
+
+   // <method.png>
+   public method hideScope() {
+      Dialogs.HideScopeDialog();
+   }
+
+   // <ui_timer.png>
+   protected method handleExitTimerExpired() {
+      UI.Stop();
+   }
+
+   // <ui_timer.png>
+   protected method handleIdleTimer() {
+
+      CLAP.ProcessAutomateQueue();
+      CLAP.CallOnMainThread();
+
+      VST2Plugin.HandleQueuedWindowResize();
+      VST2.ProcessAutomateQueue();
+
+      if(!Utils.IsWindows())
+         VST2.CallEffEditIdle();
+
+      SysEx.HandleQueuedRecv();
+
+      if(b_last_modified_state ^ current_project.isModified())
+      {
+         b_last_modified_state = current_project.isModified();
+
+         if(b_last_modified_state)
+         {
+            bt_save.setForegroundColor(#ffffffff);
+            bt_save.setBackgroundTint(#c02f0000);
+         }
+         else
+         {
+            bt_save.setForegroundColor(#ffaaaaaa);
+            bt_save.setBackgroundTint(0);
+         }
+
+         bt_save.redraw();
+      }
+
+      if(MAudio.b_process)
+      {
+         load_indicator.setLoadPercentage(replay.getAverageLoadPercentage());
+         level_indicator.setSmpLR(replay.getSmpPeakL(), replay.getSmpPeakR(),
+                                  replay.getSmpAvgL(), replay.getSmpAvgR()
+                                  );
+      }
+      else
+      {
+         load_indicator.setLoadPercentage(0.0f);
+         level_indicator.setSmpLR(0.0f, 0.0f,
+                                  0.0f, 0.0f
+                                  );
+      }
+
+      Page pg <= getCurrentPage();
+      if(null != pg)
+         pg.pageHandleIdleTimer();
+
+      replay.handleMidiActivityDecay();
+
+      script_host.processNextRequest();
+
+      if(cb_rec.isSelected())
+      {
+         int tRec = milliSeconds() - rec_start_ms;
+         int recCount = (tRec / STConfig.rec_status_message_interval);
+         if(recCount != rec_count)
+         {
+            rec_count = recCount;
+            Global.Print("[rec] "+Utils.MillisecondsToCompactHMSString(tRec));
+         }
+      }
+
+      ta_idle.reschedule();
+   }
+
+   // <callback.png>
+   protected virtual onStatusBarMessageChanged(String _msg) {
+   }
+
+   // <ui_init.png>
+   public virtual onOpen() {
+      tex_scanline_pattern.flags = TEX_MODULATE | TEX_REPEAT_S | TEX_REPEAT_T | TEX_ALPHA;
+      tex_scanline_pattern.loadImage("scanline_pattern_1.png", 0, 0, 1);
+      tex_scanline_pattern.unload();
+      tex_scanline_pattern.upload();
+   }
+
+   // <ui.png>
+   public method moveToDefaultPosition() {
+   if( (-1 != STConfig.window_x) && (-1 != STConfig.window_y) )
+      Viewport.setGeometry(STConfig.window_x, STConfig.window_y, 0,0);
+   }
+
+   // <ui_show.png>
+   public method showSynergyWindow(boolean _bFocus) {
+      if(SysEx.IsSeqConnected())
+      {
+         // // if(0 != SysEx.seq_native_window_handle)
+         // //    SDL.showNativeWindow(SysEx.seq_native_window_handle);
+         Global.Debug("switch to Synergy window bFocus="+_bFocus);
+         if(Utils.IsWindows())
+         {
+            // Policy change in Windows 11: currently non-focused processes are not allowed to change the stacking order of their windows
+            SDL.showNativeWindow(SysEx.seq_native_window_handle, _bFocus);
+         }
+         else
+         {
+            SysEx.QueueSendUIWindowShow();
+         }
+      }
+   }
+
+   // <ui.png>
+   public virtual onRootLayerMoved(int _x, int _y) {
+      // called when desktop window is moved
+      Global.Debug("RootForm::onRootLayerMoved("+_x+";"+_y+") sz=("+Viewport.width+";"+Viewport.height+")");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         // (note) click left/top pixel (in fullscreen mode)
+         if(0 == _ev.mouse_rel_x && 0 == _ev.mouse_rel_y)
+         {
+            Global.cmd_file_quit();
+            return true;
+         }
+      }
+      return XMLForm::onMouseClick(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      Page pg <= getCurrentPage();
+      return pg.getTabCycleOverrides();
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "[trc] RootForm::onTriadKey: name="+_k.name;
+      switch(_k.pressed)
+      {
+         case 'x':
+            showSynergyWindow(true/*bFocus*/);
+            break;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      switch(_k.code)
+      {
+         case VKEY_BACKQUOTE:
+         case 'b':
+         case 'g':
+         case 'h':
+         case 'm':
+         case 'n':
+         case 'p':
+         case 'q':
+         case VKEY_ESCAPE:
+         case 96: // '^' (ger) / '`' (us)
+            return false;
+      }
+      return XMLForm::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[>>>] RootForm: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod+" keyboard_focus="+#(UI.GetKeyboardFocus());
+
+      switch(_k.pressed)
+      {
+         case VKEY_KP_ENTER:
+         case VKEY_EQUALS: // = on us kbd, Â´ on german kbd
+            replay.toggleSeq(_k.modShift()/*bRec*/);
+            return true;
+      }
+
+      if(!XMLForm::onKey(_k))
+      {
+         if(0 == _k.mod)
+         {
+            switch(_k.pressed)
+            {
+               case 302: // Scroll Lock (Windows only)
+               case VKEY_BACKQUOTE:
+               case 'h':
+                  Audio.b_audio_sine = true;
+                  Global.Print(STConfig.test_tone_freq+" Hz test tone is enabled");
+                  return true;
+
+               case VKEY_RCTRL:
+                  toggleAudioRecording();
+                  return true;
+
+               case VKEY_F11:
+                  return true;
+
+               case VKEY_F12:
+                  return true;
+
+               case VKEY_PAUSE:
+                  return true;
+
+               // // // case 'b':
+               // // //    showPagePrev();
+               // // //    return true;
+
+               // // // case 'n':
+               // // //    showPageNext();
+               // // //    return true;
+
+               case VKEY_ESCAPE:
+                  showPageParentOrPrev();
+                  return true;
+
+               case VKEY_BACKSPACE:
+                  current_project.stopAllVoices();
+                  Global.Print("Stop all voices");
+                  return true;
+            }
+
+            switch(_k.released)
+            {
+               case 302: // Scroll Lock (Windows only)
+               case VKEY_BACKQUOTE:
+               case 'h':
+                  Audio.b_audio_sine = false;
+                  Global.Print(STConfig.test_tone_freq+" Hz test tone is disabled");
+                  return true;
+
+               case VKEY_PAUSE:
+                  // // Audio.StopTempSample();
+                  return true;
+            }
+
+         } // 0==k.mod
+         else
+         {
+            switch(_k.pressed)
+            {
+               case 96: // '^' (ger) / '`' (us)
+                  if(_k.modCtrl())
+                  {
+                     UI.SetKeyboardFocus(sb_status);
+                     sb_status.onTabFocus();
+                     return true;
+                  }
+                  break;
+
+               case VKEY_PAUSE:
+                  b_redraw = false;
+                  trace "[!!!] TURNING OFF REDRAW (refocus window to re-enable)";
+                  return true;
+
+               case 'b':
+                  if(_k.modCtrl())
+                  {
+                     showPageParent();
+                     return true;
+                  }
+                  break;
+
+               case 'q':
+                  if(_k.modShift())
+                  {
+                     if(!b_metahost)
+                     {
+                        Global.HandleOnClose();
+                     }
+                     return true;
+                  }
+                  break;
+            }
+
+            switch(_k.released)
+            {
+               case VKEY_PAUSE:
+                  // Audio.StopTempSample();
+                  return true;
+            }
+         } // 0 == _k.mod
+
+         Page *pg;
+
+         if(null == UI.keyboard_layer)
+         {
+            pg <= getCurrentPage();
+            if(pg.onKey(_k))
+            {
+               return true;
+            }
+         }
+
+         // // trace "xxx unhandled k.code="+_k.code+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
+
+         // hack to automatically focus pluginlist filter widget
+         pg <= getCurrentPage();
+         if(_k.pressed >= ' ')
+            if(pg.pageHandleAutoFocusKey(_k))
+               return true;
+
+         switch(_k.pressed)
+         {
+            case 'q':
+            case '@':
+               // if(_k.modAlt())
+               {
+                  toggleScope();
+                  return true;
+               }
+               break;
+
+            case VKEY_BACKSPACE:
+            case VKEY_TAB:
+               if(_k.modCtrl())
+               {
+                  toggleScope();
+                  return true;
+               }
+               break;
+         }
+
+         return false;
+      }
+      else
+      {
+         // handled by form
+         return true;
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual onDropFiles(StringArray _fileNames) : boolean {
+      if(_fileNames.numElements > 0)
+      {
+         String pathName <= _fileNames[0];
+         Global.LoadProjectPathName(pathName);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSeqWindowMoved(int _x, int _y, int _w, String _seqHWND) {
+      trace "[trc] RootForm::handleSeqWindowMoved: p=("+_x+";"+_y+") w="+_w+" seqHWND="+_seqHWND;
+      if(STConfig.b_window_docked)
+      {
+         Viewport.setGeometry(_x + STConfig.dock_window_offset_x,
+                              _y + STConfig.dock_window_offset_y - Viewport.height,
+                              // // _y - Viewport.sizeY,
+                              _w,
+                              Viewport.sizeY
+                              );
+
+         // // //bringWindowToTop
+         // // //showNativeWindow
+         // // // SDL.showOtherWindow(SDL.nativeWindowHandle);
+         // // // SDL.showNativeWindow(SDL.nativeWindowHandle);
+         // // //  SDL.bringWindowToTop(SDL.nativeWindowHandle);
+         // // SDL.showOtherWindow(_seqHWND);
+         showSynergyWindow(false/*bFocus*/);
+      }
+   }
+
+   // <ui.png>
+   static int last_activated_px = -1;
+   static int last_activated_py;
+   static int last_activated_t;
+   public virtual onRootLayerActivated() {
+      // called when desktop window is activated (usually when clicked into)
+      //  (note) see UI.CallOnUIActivate(), SDL.onApplicationActive
+      Global.Debug("RootForm::onRootLayerActivated()");
+      if(SysEx.IsSeqConnected())
+      {
+         int x = Viewport.positionX;
+         int y = Viewport.positionY;
+
+         if(x != last_activated_px || y != last_activated_py || (milliSeconds() > (last_activated_t + 500)))
+         {
+            last_activated_px = x;
+            last_activated_py = y;
+            last_activated_t  = milliSeconds();
+
+            // Update audio process dock position (if docked)
+            // // SDL.showOtherWindow(SysEx.seq_native_window_handle);  // causes click-to-focus issues when both windows are already visible
+            SysEx.QueueSendUIWindowMoved(x, y, 0/*Viewport.sizeX*/, SDL.nativeWindowHandle);
+            // // // SysEx.QueueSendUIWindowShow();
+            // // // // SDL.bringWindowToTop(SysEx.audio_native_window_handle);
+            // showSynergyWindow(false/*bFocus*/);
+         }
+      }
+   }
+
+   // <ui.png>
+   public virtual onDrainEventQueue() {
+      Events.ResetQueuedEvents();
+   }
+
+   // <ui.png>
+   public virtual onResize() {
+      if(null != vst2_queued_plugin_to_front)
+      {
+         vst2_queued_plugin_to_front.windowToFront();
+         vst2_queued_plugin_to_front <= null;
+      }
+   }
+
+   // // // <ui_mouse.png>
+   // // public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+   // //    trace "xxx RootForm::onMouseDoubleClick";
+   // //    showPageParentOrPrev();
+   // //    return true;
+   // // }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      // trace "xxx RootForm: onMouseHold";
+      if(_ev.rightButtonDown())
+      {
+         Global.Debug("RootForm::onMouseHold: return to parent page");
+         showPageParentOrPrev();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      StringAction *sac;
+      IntAction *iac;
+
+      // Global.Debug("RootForm::consumeAction: acName=\""+acName+"\".");
+
+      switch(@(ap))
+      {
+         case @(this):
+            switch(acName)
+            {
+               case TA_EXIT:
+                  handleExitTimerExpired();
+                  return true;
+
+               case TA_REDRAW_ALL:
+                  UI.RedrawAll();
+                  return true;
+
+               case TA_IDLE:
+                  handleIdleTimer();
+                  return true;
+            }
+            return false;
+
+         case @(bt_back):
+            if(VMOD_LCTRL == UI.GetKeyMod())
+            {
+               moveToDefaultPosition();
+            }
+            else if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               showPageParent();
+            }
+            else
+            {
+               showPagePrev();
+            }
+            return true;
+
+         case @(bt_resetctl):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               replay.resetReplay();
+               Global.Print("Reset audio");
+            }
+            else
+            {
+               replay.queueResetAllControllers();
+               Global.Print("Reset all controllers");
+            }
+            Audio.ResetAllTempSamples();
+            return true;
+
+         case @(fp_templevel):
+            switch(acName)
+            {
+               case FloatParam.ACTION_VALUECHANGING:
+                  handleTempLevelChanged(false);
+                  break;
+
+               case FloatParam.ACTION_VALUECHANGED:
+                  handleTempLevelChanged(true);
+                  break;
+
+               case FloatParam.ACTION_VALUEUNCHANGED:
+                  Global.RefocusDefault();
+                  break;
+            }
+            return true;
+
+         case @(fp_masterpan):
+            switch(acName)
+            {
+               case FloatParam.ACTION_VALUECHANGING:
+                  handleMasterPanChanged(false);
+                  break;
+
+               case FloatParam.ACTION_VALUECHANGED:
+                  handleMasterPanChanged(true);
+                  break;
+
+               case FloatParam.ACTION_VALUEUNCHANGED:
+                  Global.RefocusDefault();
+                  break;
+            }
+            return true;
+
+         case @(fp_masterlevel):
+            switch(acName)
+            {
+               case FloatParam.ACTION_VALUECHANGING:
+                  handleMasterLevelChanged(false);
+                  break;
+
+               case FloatParam.ACTION_VALUECHANGED:
+                  handleMasterLevelChanged(true);
+                  break;
+
+               case FloatParam.ACTION_VALUEUNCHANGED:
+                  Global.RefocusDefault();
+                  break;
+            }
+            return true;
+
+         case @(bt_master_dim):
+            current_project.setMasterDim(bt_master_dim.getToggleState());
+            Global.Print("Master dim is "+Utils.GetEnableString(current_project.getMasterDim()));
+            return true;
+
+         case @(bt_save):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleManualSave();
+            }
+            else
+            {
+               Global.SaveProject(current_project.project_name);
+            }
+            return true;
+
+         case @(cb_process):
+            Audio.SetEnableProcess( (false != cb_process.isSelected()) );
+            replay.setEnableProcessAudio( (true == cb_process.isSelected()) );
+            switch(cb_process.isSelected())
+            {
+               case false:
+                  Global.Print("Audio+MIDI processing is DISABLED");
+                  break;
+
+               case true:
+                  Global.Print("Audio+MIDI processing is ENABLED");
+                  break;
+
+               case maybe:
+                  Global.Print("Audio processing is DISABLED, MIDI processing is ENABLED");
+                  break;
+            }
+            return true;
+
+         case @(cb_rec):
+            if(cb_rec.isSelected())
+            {
+               current_project.prepareRecord();
+            }
+            handleToggleRecording();
+            return true;
+
+         case @(cb_rec_replace):
+            handleRecordReplaceChanged();
+            return true;
+
+         case @(cb_scope):
+            handleScopeChanged();
+            return true;
+
+         case @(sb_status):
+            if((TextField.ACTION_TABAUTOCOMPLETE == acName) || (TextField.ACTION_CURSORDOWN == acName))
+            {
+               handleCmdAutoComplete();
+            }
+            if(TextField.ACTION_CURSORUP == acName)
+            {
+               handleCmdHistoryComplete();
+            }
+            else if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               handleCmdExec();
+            }
+            else if(TextField.ACTION_RIGHT_CLICK == acName)
+            {
+               handleCmdShowDefaultActions();
+            }
+            return true;
+
+         case @(cmdautocomplete_popup):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               iac <= _ac;
+               handleCmdAutoCompleteSelection(cmdautocomplete_options.get(iac.getIntValue()));
+            }
+            else
+            {
+               // ACTION_CANCEL_OPTION_SELECTION
+               UI.SetKeyboardFocus(sb_status);
+               sb_status.onTabFocus();
+               sb_status.selectNone();
+               sb_status.moveCursorEnd();
+            }
+            return true;
+
+         case @(cmdhistory_popup):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               iac <= _ac;
+               handleCmdHistorySelection(cmd_history.get(iac.getIntValue()));
+            }
+            return true;
+
+         case @(cmdactions_popup):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               iac <= _ac;
+               handleCmdActionsSelection(cmd_actions.get(iac.getIntValue()));
+            }
+            return true;
+      }
+
+      return false;
+   }
+
+}

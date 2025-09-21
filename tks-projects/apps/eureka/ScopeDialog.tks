@@ -1,0 +1,1665 @@
+// ----
+// ---- file   : ScopeDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 13May2022
+// ---- changed: 14May2022, 15Sep2023, 16Sep2023, 03Oct2023, 30Oct2023, 02Nov2023, 05Nov2023
+// ----          22Sep2024, 13Oct2024, 17Dec2024, 11Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MScopeDialog;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug_addpeak = 0;
+
+
+// <class.png>
+class ScopeFFTState {
+   define int   FFT_MAX_PEAKS = 16;
+   define int   FFT_PEAK_TTL = 100;
+   define int   FFT_PEAK_BIN_PX_THRESHOLD = 24;
+   define float FFT_PEAK_MIN = 0.00001;
+
+   // (note) sorted in ascending order
+   IntArray   fft_peak_ttl;
+   IntArray   fft_peak_bins;
+   FloatArray fft_peak_mags;
+
+   FloatArray *mag;
+   float fft_max_avg;
+
+   // <method_init.png>
+   public method init(FloatArray _mag) {
+
+      mag <= _mag;
+
+      fft_peak_ttl.allocAndFill (FFT_MAX_PEAKS, 0);
+      fft_peak_bins.allocAndFill(FFT_MAX_PEAKS, -1);
+      fft_peak_mags.allocAndFill(FFT_MAX_PEAKS, 0.0f);
+   }
+
+   // <method.png>
+   public method copyFrom(ScopeFFTState _o) {
+      fft_peak_ttl  = _o.fft_peak_ttl;
+      fft_peak_bins = _o.fft_peak_bins;
+      fft_peak_mags = _o.fft_peak_mags;
+
+      Global.Debug2("ScopeFFTState::copyFrom: fft_peak_bins="+#(fft_peak_bins));
+      Global.Debug2("ScopeFFTState::copyFrom: fft_peak_ttl ="+#(fft_peak_ttl));
+      Global.Debug2("ScopeFFTState::copyFrom: fft_peak_mags="+#(fft_peak_mags));
+
+      mag <= new FloatArray;
+      mag  = _o.mag;
+      fft_max_avg = _o.fft_max_avg;
+   }
+
+   // <method.png>
+   public static BinToPx(float _normBin, float _w, float _zoomX) : float {
+      float x = _normBin;
+      x  = mathPowerf(x, 1.0/6.0/*FFT_EXP, see "tksampleedit/render_sample.cpp"*/);
+      x *= (1.0 + 1.0*_zoomX);
+      x -= 1.0*_zoomX;
+      x *= _w;
+      return x;
+   }
+
+   // <method.png>
+   public static PxToBin(float _x, float _w, float _zoomX) : float {
+      float r = _x;
+      r /= _w;
+      r  += 1.0*_zoomX;
+      r  /= (1.0 + 1.0*_zoomX);
+      r  = mathPowerf(r, 6.0/*FFT_EXP, see "tksampleedit/render_sample.cpp"*/);
+      return r;
+   }
+
+   // <method_add.png>
+   public method addPeak(int maxIdx, float magMax, int numBins, float _w, float _zoomX) {
+      if(b_debug_addpeak)
+         trace "xxx maxIdx="+maxIdx+" magMax="+magMax;
+      int peakIdx;
+
+      float maxPx = BinToPx(float(maxIdx) / numBins, _w, _zoomX);
+
+      peakIdx = 0;
+      boolean bSortPeaks = false;
+
+      // Decay peaks
+      loop(FFT_MAX_PEAKS)
+      {
+         if(fft_peak_ttl[peakIdx] > 0)
+         {
+            fft_peak_ttl[peakIdx] = fft_peak_ttl[peakIdx] - 1;
+            if(0 == fft_peak_ttl[peakIdx])
+            {
+               fft_peak_bins[peakIdx] = -1;
+               fft_peak_mags[peakIdx] = 0.0f;
+               bSortPeaks = true;
+            }
+         }
+         peakIdx++;
+      }
+
+      if(bSortPeaks)
+         sortPeaks();
+
+      if(magMax > FFT_PEAK_MIN)
+      {
+         bSortPeaks = false;
+         boolean bPeakDone = false;
+         boolean bHavePeak = false;
+
+         // Replace existing peak
+         peakIdx = FFT_MAX_PEAKS - 1;
+         while(peakIdx >= 0)
+         {
+            if(fft_peak_ttl[peakIdx] > 0)
+            {
+               float peakBinX = BinToPx(float(fft_peak_bins[peakIdx]) / numBins, _w, _zoomX);
+               if( (peakBinX - FFT_PEAK_BIN_PX_THRESHOLD)
+                   <= maxPx <=
+                   (peakBinX + FFT_PEAK_BIN_PX_THRESHOLD)
+                   )
+               {
+                  bHavePeak = true;
+                  if(fft_peak_mags[peakIdx] <= magMax)
+                  {
+                     fft_peak_bins[peakIdx] = maxIdx;
+                     fft_peak_mags[peakIdx] = magMax;
+                     fft_peak_ttl [peakIdx] = FFT_PEAK_TTL;
+                     sortPeaks();
+                     bPeakDone = true;
+                     break;
+                  }
+                  else if( (fft_peak_mags[peakIdx] * 0.7) <= magMax )
+                  {
+                     fft_peak_bins[peakIdx] = maxIdx;
+                     fft_peak_ttl [peakIdx] = FFT_PEAK_TTL;
+                     bPeakDone = true;
+                     break;
+                  }
+               }
+            }
+            peakIdx--;
+         }
+
+         // if(!bPeakDone)
+         // {
+         //    // Replace lower peak
+         //    peakIdx = FFT_MAX_PEAKS - 1;
+         //    while(peakIdx >= 0)
+         //    {
+         //       if(fft_peak_ttl[peakIdx] > 0)
+         //       {
+         //          if(fft_peak_mags[peakIdx] <= magMax)
+         //          {
+         //             fft_peak_bins[peakIdx] = maxIdx;
+         //             fft_peak_mags[peakIdx] = magMax;
+         //             fft_peak_ttl [peakIdx] = FFT_PEAK_TTL;
+         //             break;
+         //          }
+         //       }
+         //       peakIdx--;
+         //    }
+         // }
+
+         // Find unused slot
+         if(!bPeakDone && !bHavePeak)
+         {
+            peakIdx = FFT_MAX_PEAKS - 1;
+            while(peakIdx >= 0)
+            {
+               if(0 == fft_peak_ttl[peakIdx])
+               {
+                  fft_peak_bins[peakIdx] = maxIdx;
+                  fft_peak_mags[peakIdx] = magMax;
+                  fft_peak_ttl [peakIdx] = FFT_PEAK_TTL;
+                  sortPeaks();
+                  bPeakDone = true;
+                  break;
+               }
+               peakIdx--;
+            }
+
+            // Replace lower peak
+            if(!bPeakDone)
+            {
+               peakIdx = FFT_MAX_PEAKS - 1;
+               while(peakIdx >= 0)
+               {
+                  if(fft_peak_ttl[peakIdx] > 0)
+                  {
+                     if(fft_peak_mags[peakIdx] <= magMax)
+                     {
+                        fft_peak_bins[peakIdx] = maxIdx;
+                        fft_peak_mags[peakIdx] = magMax;
+                        fft_peak_ttl [peakIdx] = FFT_PEAK_TTL;
+                        sortPeaks();
+                        break;
+                     }
+                  }
+                  peakIdx--;
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method sortPeaks() {
+      local IntArray iaPeakSort;
+      fft_peak_mags.sortByValue(iaPeakSort);
+      fft_peak_mags.rearrange(iaPeakSort);
+      fft_peak_bins.rearrange(iaPeakSort);
+      fft_peak_ttl .rearrange(iaPeakSort);
+   }
+
+   // <ui_render.png>
+   public method drawPeaks(int _c24, float _w, float _h, float _zoomX) {
+
+      // trace "xxx fft_peak_bins="+#(fft_peak_bins);
+      // trace "xxx fft_peak_ttl ="+#(fft_peak_ttl);
+      // trace "xxx fft_peak_mags="+#(fft_peak_mags);
+
+      int peakIdx = 0;
+      byte r = (_c24 >> 16) & 255;
+      byte g = (_c24 >>  8) & 255;
+      byte b = (_c24      ) & 255;
+
+      float maxPeak = 0;
+      loop(FFT_MAX_PEAKS)
+      {
+         if(fft_peak_ttl[peakIdx] > 0)
+            if(fft_peak_mags[peakIdx] > maxPeak)
+               maxPeak = fft_peak_mags[peakIdx];
+         peakIdx++;
+      }
+
+      float maxPeakSclA = (1.0 / maxPeak);
+      peakIdx = 0;
+      loop(FFT_MAX_PEAKS)
+      {
+         if(fft_peak_ttl[peakIdx] > 0)
+         {
+            float peakX = BinToPx(float(fft_peak_bins[peakIdx]) / mag.numElements, _w, _zoomX);
+            // trace "xxx peak["+peakIdx+"] x="+peakX+" mag.numElements="+mag.numElements;
+            float peakA = mathPowerf(fft_peak_ttl[peakIdx] / float(FFT_PEAK_TTL), 1.7);
+            float maxPeakA = fft_peak_mags[peakIdx] * maxPeakSclA;
+            maxPeakA = (0.5 + 0.5 * mathPowerf(maxPeakA, 1.5));
+            UIRenderer.DrawLine(peakX, 0, peakX, _h,
+                                argb(255*peakA,
+                                     mathMini(255, maxPeakA *( (r >> 1) + (peakIdx << 3))),
+                                     mathMini(255, maxPeakA *( g + (peakIdx << 3))),
+                                     mathMini(255, maxPeakA *( b + (peakIdx << 3)))
+                                     )
+                                );
+         }
+         peakIdx++;
+      }
+   }
+
+   // <method_update.png>
+   public method updateMaxAvg(float magMax) {
+      if(magMax < FFT_PEAK_MIN)
+         magMax = FFT_PEAK_MIN;
+      fft_max_avg = mathLerpf(fft_max_avg, magMax, 0.05f);
+   }
+
+   // <ui_render.png>
+   public method draw(float _w, float _h, int _c32, float _zoomX, float _zoomY) {
+      // (note) zoomY is in the range 1..64 (0dB..+36dB)
+      _zoomY = Audio.LevelToDecibel(_zoomY);
+      _zoomY /= 36.0;
+      _zoomY  = 1.0 - _zoomY;
+      if(_zoomY < 0.01)
+         _zoomY = 0.01;
+      _zoomY *= 256.0;
+      // trace "xxx mag.numElements="+mag.numElements;
+      // trace "xxx 4    => zoomY="+_zoomY;
+      UIRenderer.SetColorARGB(_c32);
+      tksampleedit_render_fft(mag,
+                              mag.numElements,
+                              _w, _h,
+                              _zoomX,
+                              fft_max_avg * _zoomY,
+                              _c32
+                              );
+   }
+
+}
+
+
+// <class.png>
+class ScopeSampleView extends Layer {
+   ScopeDialog *parent_dialog;
+   FloatArray fa_viewbuf;
+   float zoom_x;
+   float zoom_y;
+
+   ScopeFFTState  fft_state;
+   ScopeFFTState *fft_state_ref;
+
+   // <method_init.png>
+   public method initScopeSampleView(ScopeDialog _parentDialog) {
+      parent_dialog <= _parentDialog;
+      initLayer();
+
+      zoom_y = 1;
+
+      fft_state.init(parent_dialog.fft_magnitudes);
+
+      fa_viewbuf.allocAndFill(4096, 0);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         parent_dialog.incZoomY();
+         return true;
+      }
+      if(_ev.wheelDown())
+      {
+         parent_dialog.decZoomY();
+         return true;
+      }
+
+      if(0 == _ev.current_state && 0 == _ev.changed_state)
+      {
+         if(parent_dialog.isFFTMode())
+         {
+            float maxHz = Audio.mix_rate * 0.5;
+            float rx = ScopeFFTState.PxToBin(_ev.mouse_rel_x + 2.0, getSizeX(), zoom_x);
+            // rx = mathMinf(rx + 2.0f, getSizeX());
+            // rx /= getSizeX();
+            // // rx *= 2048.0f / (2048.0+16);
+            // rx = mathPowerf(rx, 6.0/*FFT_EXP, see "tksampleedit/render_sample.cpp"*/);
+            float hz = rx * maxHz;
+            Global.PrintFast("x="+_ev.mouse_rel_x+" => Hz="+hz+" => "+Audio.HzToNoteString(hz));
+         }
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleRefClear() {
+      fft_state_ref <= null;
+      Global.Print("Clear reference spectrum");
+   }
+
+   // <ui_handle.png>
+   public method handleRefCopy() {
+      if(parent_dialog.isFFTMode())
+      {
+         fft_state_ref <= new ScopeFFTState;
+         fft_state_ref.init(null/*mag*/);
+         fft_state_ref.copyFrom(fft_state);
+         Global.Print("Copy to reference spectrum");
+      }
+      else
+      {
+         Global.Warning("Copy Ref: please activate FFT mode first");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleRefToggle() {
+      if(parent_dialog.isFFTMode())
+      {
+         if(null != fft_state_ref)
+            handleRefClear();
+         else
+            handleRefCopy();
+      }
+      else
+      {
+         Global.Warning("Copy Ref: please activate FFT mode first");
+      }
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      Layer::onDraw();
+
+      UIRenderer.EnableBlending();
+      float w = getSizeX();
+      float h = getSizeY();
+      sdvg_AlphaWrite(false);
+      UIRenderer.DrawFilledRectangle(0, 0, w, h, #80222222);
+
+      boolean bFFT = parent_dialog.isFFTMode();
+
+      // Draw center line
+      if(!bFFT)
+         UIRenderer.DrawLine(0, h/2, w, h/2, #ff444444);
+
+      UIRenderer.SetColorARGB(#afffffff);
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+      sdvg_EnableScissor();
+
+      float minSample;
+      float maxSample;
+
+      if(bFFT)
+      {
+         FloatArray mag <= parent_dialog.fft_magnitudes;
+         if(mag.numElements >= 2)
+         {
+            minSample = 0;
+            maxSample = 1;
+            // maxSample /= zoom_y;
+
+            IntArray magSortIndices <= parent_dialog.fft_magnitudes_sort_indices;
+            int peakIdx = 0;
+            if(b_debug_addpeak)
+               trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
+            float lastPx = -1;
+            loop(ScopeFFTState.FFT_MAX_PEAKS)
+            {
+               int maxIdx = magSortIndices.get(magSortIndices.numElements -1 - peakIdx);
+               float maxPx = ScopeFFTState.BinToPx(float(maxIdx ) / mag.numElements, w, zoom_x);
+               if(b_debug_addpeak)
+                  trace "xxx tryAdd maxPx="+maxPx+" lastPx="+lastPx;
+               if(lastPx < 0.0 || !( (lastPx - ScopeFFTState.FFT_PEAK_BIN_PX_THRESHOLD) <= maxPx <= (lastPx + ScopeFFTState.FFT_PEAK_BIN_PX_THRESHOLD)))
+               {
+                  float magMax = mag.get(maxIdx);
+                  fft_state.addPeak(maxIdx, magMax, mag.numElements, w, zoom_x);
+                  lastPx = maxPx;
+               }
+               peakIdx++;
+            }
+
+            fft_state.drawPeaks(#ff0000, w, h, zoom_x);
+            fft_state.updateMaxAvg(magMax);
+            fft_state.draw(w, h, #4fffffff, zoom_x, zoom_y);
+         }
+
+         if(null != fft_state_ref)
+         {
+            fft_state_ref.drawPeaks(#0070af, w, h, zoom_x);
+            fft_state_ref.draw(w, h, #4f2367f0, zoom_x, zoom_y);
+         }
+      }
+      else
+      {
+         if(fa_viewbuf.numElements >= 2)
+         {
+            minSample = -1;
+            maxSample =  1;
+            minSample /= zoom_y;
+            maxSample /= zoom_y;
+            tksampleedit_render_sample(fa_viewbuf, 1/*num_channels*/, 0/*sampleOff*/, fa_viewbuf.numElements/*numVisSamples*/,
+                                       w, h,
+                                       minSample, maxSample,
+                                       SampleView.RS_LINES/*render_style*/, SampleView.IS_LINEAR/*interpol_style*/,
+                                       #afffffff/*skip*/,
+                                       #afffffff/*rep*/
+                                       );
+
+         }
+      }
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      UIRenderer.DisableBlending();
+      sdvg_AlphaWrite(true);
+   }
+
+}
+
+
+// <class.png>
+class ScopeDialog extends Dialog {
+
+   define int TRIG_RISE      = 0;
+   define int TRIG_FALL      = 1;
+   define int TRIG_EDGE      = 2;
+   define int TRIG_PEAK      = 3;
+   define int TRIG_PEAK_RISE = 4;
+   define int TRIG_PEAK_FALL = 5;
+
+   define String TA_UPDATE;
+   protected TimerAction *ta_update;
+
+   protected XMLForm *xfm;
+
+   protected Panel       *pn_src;
+   protected LayerSwitch *ls_src;
+   protected ComboBox    *cm_src_type;
+   protected ComboBox    *cm_src_audio_in;
+   protected ComboBox    *cm_src_audio_out;
+   protected ComboBox    *cm_src_track;
+   protected ComboBox    *cm_trig;
+
+   protected CheckBox    *cb_trig;
+   protected LayerSwitch *ls_trig;
+   protected LayerSwitch *ls_trig_src;
+   protected ComboBox    *cm_trig_src_type;
+   protected ComboBox    *cm_trig_src_audio_in;
+   protected ComboBox    *cm_trig_src_audio_out;
+   protected ComboBox    *cm_trig_src_track;
+
+   protected FloatParam  *fp_pre;
+
+   protected Button *bt_ref;
+
+   protected Button      *bt_setup;
+   protected LayerSwitch *ls_setup;
+
+   protected CheckBox *cb_edit;
+   protected CheckBox *cb_capture;
+   protected CheckBox *cb_scroll;
+   protected CheckBox *cb_fft;
+
+   protected Label *lb_freq;
+
+   protected FloatParam *fp_update_interval;
+   protected FloatParam *fp_zoom_x;
+   protected FloatParam *fp_zoom_y;
+
+   protected LayerSwitch *ls_view;
+   protected ScopeSampleView *scope_sample_view;
+   protected SampleView *sv_wave;
+   protected static FloatArray history_buf;   // copied from ring
+
+   FloatArray ringbuf_mono_freeze;
+   FloatArray fft_input_buffer;
+   FloatArray fft_input_buffer_pre;  // pre-filtered buffer
+   FloatArray trig_input_buffer;
+   FloatArray fft_magnitudes;  // (2048/2)+1 bins
+   IntArray   fft_magnitudes_sort_indices;  // (2048/2)+1 bins
+
+   protected int last_cycle_start;
+   protected float last_root_key;
+   // // protected boolean b_last_minaftermax;
+
+   protected int src_track_idx;
+   protected int trig_src_track_idx;
+
+   protected boolean b_was_shown;
+
+
+   // <ui_init.png>
+   public method initScopeDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ScopeDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Scope",
+                 140, 140,
+                 720, 310
+                 );
+
+      ta_update <= TimerAction.New(TA_UPDATE, this, 30);
+
+      scope_sample_view.initScopeSampleView(this);
+
+      ringbuf_mono_freeze.allocAndFill(STConfig.scope_ringbuf_num_frames, 0);
+      fft_input_buffer.allocAndFill(2048+16, 0);
+      fft_input_buffer_pre.allocAndFill(2048+16, 0);
+      trig_input_buffer.allocAndFill(2048+16, 0);
+
+      last_root_key = 60;
+
+      rebuildAudioInOptions();
+      rebuildAudioOutOptions();
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       cm_src_type,
+                     ]
+                    );
+
+      switch(cm_src_type.getSelectedOption())
+      {
+         case RingBuffer.SRC_AUDIO_IN:
+            layers.add(cm_src_audio_in);
+            break;
+
+         case RingBuffer.SRC_AUDIO_OUT:
+            layers.add(cm_src_audio_out);
+            break;
+
+         case RingBuffer.SRC_TRACK:
+            layers.add(cm_src_track);
+            break;
+      }
+
+      layers.joinRR(layers,
+                    [
+                       cm_trig,
+                       cb_edit,
+                       cb_capture,
+                       cb_scroll,
+
+                       fp_update_interval,
+                       fp_zoom_x,
+                       fp_zoom_y,
+                     ]
+                    );
+   }
+
+   // <method.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_show.png>
+   public method showScopeDialog() {
+
+      rebuildTrackOptions();
+      cm_src_track.setSelectedOption(src_track_idx);
+      cm_trig_src_track.setSelectedOption(trig_src_track_idx);
+
+      pn_src.relayout();
+
+      lb_freq.setCaption("-");
+
+      fp_update_interval.setValue(STConfig.scope_update_interval);
+
+      resizeAtLeastToMinimumForce(false/*bForceX*/, false/*bForceY*/);
+      onOpen();
+
+      boolean bShow = !isFloatingLayerVisible();
+
+      if(b_was_shown)
+      {
+         if(bShow)
+            show();
+      }
+      else
+      {
+         b_was_shown = true;
+         restoreGeometryIfValid(UI.IsHiDPI()
+                                ? STConfig.scope_geo_hidpi
+                                : STConfig.scope_geo_lodpi
+                                );
+         if(bShow)
+            show();
+      }
+
+      queueUpdate();
+
+      last_cycle_start = -1;
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+      restoreGeometryIfValid(UI.IsHiDPI()
+                             ? STConfig.scope_geo_hidpi
+                             : STConfig.scope_geo_lodpi
+                             );
+      resizeAtLeastToMinimum();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.scope_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.scope_geo_lodpi);
+
+      getRoot().removeOverlay(sv_wave);
+
+      Dialog::hide();
+
+      ta_update.cancel();
+
+      root_form.handleHideScope();
+   }
+
+   // <ui_update.png>
+   protected method rebuildAudioInOptions() {
+      StringArray aliases <= STConfig.audio_in_aliases;
+      int aliasIdx = 1;  // Mono(long)
+      local StringArray options;
+      Integer io = 1;
+      loop(aliases.numElements / 4)
+      {
+         options.add(io.printf("%2d: ")+aliases.get(aliasIdx));
+         io++;
+         aliasIdx += 4;
+      }
+      cm_src_audio_in.setOptions(options);
+      cm_trig_src_audio_in.setOptions(options);
+   }
+
+   // <ui_update.png>
+   protected method rebuildAudioOutOptions() {
+      StringArray aliases <= STConfig.audio_out_aliases;
+      int aliasIdx = 1; // Mono(long)
+      local StringArray options;
+      Integer io = 1;
+      loop(aliases.numElements / 4)
+      {
+         options.add(io.printf("%2d: ")+aliases.get(aliasIdx));
+         io++;
+         aliasIdx += 4;
+      }
+      cm_src_audio_out.setOptions(options);
+      cm_trig_src_audio_out.setOptions(options);
+   }
+
+   // <ui_update.png>
+   protected method rebuildTrackOptions() {
+      local StringArray options;
+      Integer io = 1;
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         options.add(io.printf("%2d: ")+track.name);
+         io++;
+      }
+      cm_src_track.setOptions(options);
+      cm_trig_src_track.setOptions(options);
+   }
+
+   // <ui_handle.png>
+   public method queueUpdate() {
+      ta_update.reschedule();
+   }
+
+   // <method.png>
+   protected =replay= method readBuffers(RingBuffer ringBufFFT, RingBuffer ringBufTrig, boolean bExtTrig) {
+      ringBufFFT.readRecentToBuffer(fft_input_buffer, 1/*dstNumCh*/, fft_input_buffer.numElements/*numFrames*/);
+
+      if(bExtTrig)
+         ringBufTrig.readRecentToBuffer(trig_input_buffer, 1/*dstNumCh*/, trig_input_buffer.numElements/*numFrames*/);
+   }
+
+   // <ui_handle.png>
+   public method handleUpdate() {
+      if(cb_capture.isSelected() && !cb_edit.isSelected())
+      {
+         Sample smp;
+         StWaveform wf <= smp.waveform;
+         FloatArray viewBuf <= scope_sample_view.fa_viewbuf;
+
+         RingBuffer ringBufFFT  <= current_project.scope_fft_ringbuf;
+         RingBuffer ringBufTrig <= current_project.scope_trig_ringbuf;
+         if(ringBufFFT.num_valid > 0)
+         {
+            int numAvail = ringBufFFT.num_valid;
+
+            if(cb_scroll.isSelected() && !cb_fft.isSelected())
+            {
+               float zoomX = fp_zoom_x.getFloatValue();
+               if(zoomX < 0.05)
+                  zoomX = 0.05;
+               int scrollSz = mathMini(viewBuf.maxElements, numAvail * zoomX);
+               viewBuf.numElements = scrollSz;
+               ringBufFFT.readRecentToBuffer(viewBuf, 1/*dstNumCh*/, viewBuf.numElements/*numFrames*/);
+               // trace "xxx scrollBuf.numElements="+scrollBuf.numElements;
+               // viewBuf.visit(scrollBuf, 0, scrollBuf.numElements);
+               lb_freq.setCaption("-");
+               lb_freq.redraw();
+               scope_sample_view.redraw();
+            }
+            else
+            {
+               boolean bExtTrig = cb_trig.isSelected();
+               FloatArray inBuf <= bExtTrig ? trig_input_buffer : fft_input_buffer;
+               readBuffers(ringBufFFT, ringBufTrig, bExtTrig);  // // update fft_input_buffer / trig_input_buffer
+
+               wf.numChannels   = 1;
+               wf.sampleRate    = Audio.mix_rate;
+               wf.baseFrequency = Sample.BASE_FREQ_MIDDLE_C;
+               wf.setSampleData(inBuf, 1/*numChannels*/);
+
+               float preFlt = fp_pre.getFloatValue();
+               if(preFlt < 0.99)
+               {
+                  float preFltCutOff = (mathPowerf(2.0f, preFlt * 7.0f) - 1.0f) / 127.0f;
+                  fft_input_buffer_pre.biquad(inBuf, 1/*LPF*/, 0.0f/*dbGain*/, preFltCutOff * 0.5f, 0.0f/*res*/);
+                  inBuf <= fft_input_buffer_pre;
+               }
+
+               // trace "xxx findRootKeyForArea inBuf.numElements="+inBuf.numElements;
+               Float rootHz;
+               Float rootKey = smp.findRootKeyForArea(0/*minOffset*/,
+                                                      inBuf.numElements,
+                                                      1.0/*prefilterCutOff*/,
+                                                      wf.sampleRate,
+                                                      true/*bQuiet*/,
+                                                      fft_magnitudes/*retMagnitudesOrNull*/,
+                                                      fft_magnitudes_sort_indices/*retMagnitudesSortedOrNull*/,
+                                                      rootHz/*retFreqHzOrNull*/
+                                                      );
+               // trace "xxx fft_magnitudes.max="+fft_magnitudes.absMax+" inBuf.max="+inBuf.absMax;
+               rootKey = last_root_key + (rootKey - last_root_key) * 0.2;
+               last_root_key = rootKey;
+               int midiNote = int(rootKey);
+               int cents = (rootKey - midiNote) * 100;
+               // trace "xxx rootKey="+rootKey+" midiNote="+midiNote+" cents="+cents;
+               if(cents > 50)
+               {
+                  midiNote++;
+                  cents = -100 + cents;
+               }
+               // trace "xxx  ===> midiNote="+midiNote+" cents="+cents;
+               if(rootKey > 0)
+                  lb_freq.setCaption((MIDI.midi_notes.get(midiNote))+" "+((cents >= 0) ? "+" : "") + cents);
+               else
+                  lb_freq.setCaption("-");
+               lb_freq.redraw();
+               // trace "xxx fft_input_buffer.rms="+fft_input_buffer.rms;
+
+               if(rootKey >= 12)
+               {
+                  // // float freq = Audio.NoteToFreq(rootKey);
+                  float freq = rootHz;
+                  float cycleLen = Audio.mix_rate / freq;
+                  // trace "xxx freq="+freq+" cycleLen="+cycleLen;
+                  int maxCycleLen = mathMini(viewBuf.maxElements, inBuf.numElements);
+                  if(cycleLen * 3 < maxCycleLen)
+                     cycleLen *= 3;
+                  else if(cycleLen * 2 < maxCycleLen)
+                     cycleLen *= 2;
+                  // // int intCycleLenOrig = int(cycleLen+0.5);
+
+                  // work-around for octave-too-high pitch detection issue with some osc waves (e.g. FM)
+                  if(rootKey >= (4*12))
+                  {
+                     if(rootKey >= (6*12))
+                     {
+                        // trace "xxx inc further rootKey="+rootKey+" cl="+cycleLen+" scl="+(1 << (int(rootKey/12)-5))+" maxCL="+maxCycleLen;
+                        if(cycleLen * (1 << (int(rootKey/12)-6)) < maxCycleLen)
+                           cycleLen *= (1 << (int(rootKey/12)-6));  // increase even further
+                     }
+                  }
+
+                  if(-1 != last_cycle_start)
+                  {
+                     if(0)
+                     {
+                        last_cycle_start = int(int((inBuf.numElements - last_cycle_start)+cycleLen-1) / cycleLen);  // orig [pre 23Feb2024]
+                        last_cycle_start = last_cycle_start % inBuf.numElements;
+                     }
+                     else if(0)
+                     {
+                        // test [23Feb2024]
+                        last_cycle_start = inBuf.numElements - cycleLen*2;
+                        if(last_cycle_start < 0)
+                           last_cycle_start = 0;
+                     }
+                     else
+                     {
+                        // test [23Feb2024]
+                        last_cycle_start = 0;
+                     }
+                  }
+                  else
+                  {
+                     last_cycle_start = 0;
+                  }
+
+                  int intCycleLen = int(cycleLen+0.5f);
+                  // trace "xxx intCycleLen="+intCycleLen+" viewBuf.max="+viewBuf.maxElements+" maxCL="+maxCycleLen;
+
+                  // float distThreshold = 0.0025f;  // pre 23Feb2024
+                  float distThreshold = 0.00025f;
+
+                  switch(cm_trig.getSelectedOption())
+                  {
+                     default:
+                     case TRIG_RISE:
+                        last_cycle_start = tksampleedit_find_edge_near(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, true, false, distThreshold);
+                        // trace "xxx TRIG_RISE: last_cycle_start="+last_cycle_start;
+                        break;
+
+                     case TRIG_FALL:
+                        last_cycle_start = tksampleedit_find_edge_near(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, false, true, distThreshold);
+                        break;
+
+                     case TRIG_EDGE:
+                        last_cycle_start = tksampleedit_find_edge_near(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, true, true, distThreshold);
+                        break;
+
+                     case TRIG_PEAK:
+                        last_cycle_start = tksampleedit_find_max_near(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, intCycleLen);
+                        // trace "xxx TRIG_PEAK last_cycle_start="+last_cycle_start+" val="+inBuf.get(last_cycle_start);
+                        break;
+
+                     case TRIG_PEAK_RISE:
+                        last_cycle_start = tksampleedit_find_max_near(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, intCycleLen);
+                        last_cycle_start = tksampleedit_find_edge_near_bwd(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, true, false, distThreshold);
+                        break;
+
+                     case TRIG_PEAK_FALL:
+                        last_cycle_start = tksampleedit_find_max_near(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, intCycleLen);
+                        last_cycle_start = tksampleedit_find_edge_near_bwd(inBuf, 0/*chOff*/, 1/*num_channels*/, last_cycle_start/*off*/, false, true, distThreshold);
+                        break;
+                  }
+
+                  if(preFlt < 0.99)
+                  {
+                     int preFltShift = Audio.mix_rate * 0.00145124716553 * 0.25;
+                     if(last_cycle_start > preFltShift)
+                        last_cycle_start -= (1.0 - preFlt) * preFltShift;
+                  }
+
+                  // // int minOff = tksampleedit_find_min_near_fwd(inBuf, 0/*choff*/, 1/*num_channels*/, last_cycle_start, intCycleLen);
+                  // // int maxOff = tksampleedit_find_max_near_fwd(inBuf, 0/*choff*/, 1/*num_channels*/, last_cycle_start, intCycleLen);
+                  // // boolean bMinAfterMax = (minOff > maxOff);
+                  // // if(b_last_minaftermax ^ bMinAfterMax)
+                  // // {
+                  // //    b_last_minaftermax = bMinAfterMax;
+                  // //    last_cycle_start += intCycleLen / 2;
+                  // // }
+
+                  // // intCycleLenOrig = intCycleLen;
+                  // // int pkOff1 = tksampleedit_find_max_near_fwd(inBuf, 0/*choff*/, 1/*num_channels*/, last_cycle_start, intCycleLenOrig/2) -  last_cycle_start;
+                  // // int pkOff2 = tksampleedit_find_min_near_fwd(inBuf, 0/*choff*/, 1/*num_channels*/, last_cycle_start + intCycleLenOrig/2, intCycleLenOrig/2) - last_cycle_start;
+                  // // float relDist1 = (pkOff2 - pkOff1) / float(intCycleLenOrig);
+                  // // float relDist2 = ((intCycleLenOrig - pkOff2 + pkOff1) % intCycleLenOrig) / float(intCycleLenOrig);
+                  // // trace "xxx lcs="+last_cycle_start+" avail="+inBuf.numElements+" pkOff12=("+pkOff1+";"+pkOff2+") clo="+intCycleLenOrig+" relDist1="+int(relDist1 * 100)+" relDist2="+int(relDist2 * 100)+" pk1="+inBuf.get(pkOff1)+" pk2="+inBuf.get(pkOff2);
+
+
+                  FloatArray dpySrcBuf <= fft_input_buffer;
+                  // // FloatArray dpySrcBuf <= inBuf;
+
+                  // // trace "xxx last_cycle_start="+last_cycle_start+" intCycleLen="+intCycleLen+" dpyBuf.numElements="+dpyBuf.numElements;
+
+                  // // if( (last_cycle_start + intCycleLen) <= dpyBuf.numElements)
+                  // //    fa.visit(dpySrcBuf, last_cycle_start, intCycleLen);
+                  // // else
+                  // //    fa.visit(dpySrcBuf, 0, dpyBuf.numElements);
+
+                  viewBuf.numElements = intCycleLen;
+                  if( (last_cycle_start + intCycleLen) <= dpySrcBuf.numElements)
+                  {
+                     // trace "xxx copy from lcs="+last_cycle_start+" num="+intCycleLen;
+                     viewBuf.copyFrom(dpySrcBuf, last_cycle_start, intCycleLen, 0/*dstOff*/);
+                  }
+                  else
+                  {
+                     // trace "xxx copy clipped from dpySrcBuf.numElements - intCycleLen="+mathMaxi(0, dpySrcBuf.numElements - intCycleLen)+" num="+intCycleLen;
+                     // viewBuf.numElements = mathMini(dpySrcBuf.numElements, mathMini(viewBuf.maxElements, intCycleLen));
+                     // trace "xxx      clipped num="+viewBuf.numElements+" src="+mathMaxi(0, dpySrcBuf.numElements - intCycleLen)+" intCycleLen="+intCycleLen+" dpySrcBuf.num="+dpySrcBuf.numElements;
+
+                     // viewBuf.copyFrom(dpySrcBuf, mathMaxi(0, dpySrcBuf.numElements - intCycleLen), viewBuf.numElements, 0/*dstOff*/);
+
+                     viewBuf.numElements = mathMini(viewBuf.maxElements, dpySrcBuf.numElements - last_cycle_start);
+                     viewBuf.copyFrom(dpySrcBuf, last_cycle_start, viewBuf.numElements, 0/*dstOff*/);
+                  }
+
+                  // trace "xxx draw fa.rms="+fa.rms;
+                  // fa.visit(fft_input_buffer, 0, fft_input_buffer.numElements/4);
+               }
+               else
+               {
+                  // Freq/note too low
+                  // trace "xxx freq too low  rootKey="+rootKey;
+                  viewBuf.numElements = mathMini(viewBuf.maxElements, fft_input_buffer.numElements);
+                  viewBuf.copyFrom(fft_input_buffer, fft_input_buffer.numElements - viewBuf.numElements, viewBuf.numElements, 0);
+               }
+
+               scope_sample_view.redraw();
+            } // if rootKey >= 12
+         }
+      }
+   }
+
+   // <method.png>
+   protected method updateRingBufSource() {
+      int srcType = cm_src_type.getSelectedOption();
+      RingBuffer ringBufFFT     <= current_project.scope_fft_ringbuf;
+      RingBuffer ringBufHistory <= current_project.scope_history_ringbuf;
+      int audioCh =
+         (RingBuffer.SRC_AUDIO_IN  == srcType) ? cm_src_audio_in .getSelectedOption() :
+         (RingBuffer.SRC_AUDIO_OUT == srcType) ? cm_src_audio_out.getSelectedOption() :
+         -1;
+      int trackIdx = (RingBuffer.SRC_TRACK == srcType) ? cm_src_track.getSelectedOption() : -1;
+      ringBufFFT    .setSource(srcType, audioCh, trackIdx);
+      ringBufHistory.setSource(srcType, audioCh, trackIdx);
+   }
+
+   // <method.png>
+   protected method updateTrigRingBufSource() {
+      int srcType = cm_trig_src_type.getSelectedOption();
+      if(!cb_trig.isSelected())
+         srcType = RingBuffer.SRC_NONE;
+      RingBuffer ringBuf <= current_project.scope_trig_ringbuf;
+      int audioCh =
+         (RingBuffer.SRC_AUDIO_IN  == srcType) ? cm_trig_src_audio_in .getSelectedOption() :
+         (RingBuffer.SRC_AUDIO_OUT == srcType) ? cm_trig_src_audio_out.getSelectedOption() :
+         -1;
+      int trackIdx = (RingBuffer.SRC_TRACK == srcType) ? cm_trig_src_track.getSelectedOption() : -1;
+      ringBuf.setSource(srcType, audioCh, trackIdx);
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcTypeChanged() {
+      int srcType = cm_src_type.getSelectedOption();
+      ls_src.switchToLayerNr(srcType);
+
+      updateRingBufSource();
+
+      resizeAtLeastToMinimumForce(false/*bForceX*/, false/*bForceY*/);
+      redraw();
+      Global.Print("Source type is "+cm_src_type.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcAudioInChanged() {
+      RingBuffer ringBufFFT     <= current_project.scope_fft_ringbuf;
+      RingBuffer ringBufHistory <= current_project.scope_history_ringbuf;
+      if(RingBuffer.SRC_AUDIO_IN == cm_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBufFFT    .setSource(RingBuffer.SRC_AUDIO_IN, cm_src_audio_in.getSelectedOption(), -1);
+         ringBufHistory.setSource(RingBuffer.SRC_AUDIO_IN, cm_src_audio_in.getSelectedOption(), -1);
+         Global.Print("Scope audio in source channel is \""+cm_src_audio_in.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcAudioOutChanged() {
+      RingBuffer ringBufFFT     <= current_project.scope_fft_ringbuf;
+      RingBuffer ringBufHistory <= current_project.scope_history_ringbuf;
+      if(RingBuffer.SRC_AUDIO_OUT == cm_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBufFFT    .setSource(RingBuffer.SRC_AUDIO_OUT, cm_src_audio_out.getSelectedOption(), -1);
+         ringBufHistory.setSource(RingBuffer.SRC_AUDIO_OUT, cm_src_audio_out.getSelectedOption(), -1);
+         Global.Print("Scope audio out source channel is \""+cm_src_audio_out.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcTrackChanged() {
+      RingBuffer ringBufFFT     <= current_project.scope_fft_ringbuf;
+      RingBuffer ringBufHistory <= current_project.scope_history_ringbuf;
+      src_track_idx = cm_src_track.getSelectedOption();
+      if(RingBuffer.SRC_TRACK == cm_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBufFFT.setSource(RingBuffer.SRC_TRACK, -1, src_track_idx);
+         ringBufHistory.setSource(RingBuffer.SRC_TRACK, -1, src_track_idx);
+         Global.Print("Scope source track is \""+cm_src_track.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrigChanged() {
+      boolean bEnable = cb_trig.isSelected();
+      ls_trig.switchToLayerNr(bEnable);
+
+      updateTrigRingBufSource();
+
+      resizeAtLeastToMinimumForce(false/*bForceX*/, false/*bForceY*/);
+      redraw();
+      Global.Print("External trig is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected method handleTrigSrcTypeChanged() {
+      int srcType = cm_trig_src_type.getSelectedOption();
+      ls_trig_src.switchToLayerNr(srcType);
+
+      updateTrigRingBufSource();
+
+      resizeAtLeastToMinimumForce(false/*bForceX*/, false/*bForceY*/);
+      redraw();
+      Global.Print("Trig source type is "+cm_trig_src_type.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleTrigSrcAudioInChanged() {
+      RingBuffer ringBuf <= current_project.scope_trig_ringbuf;
+      if(RingBuffer.SRC_AUDIO_IN == cm_trig_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBuf.setSource(RingBuffer.SRC_AUDIO_IN, cm_trig_src_audio_in.getSelectedOption(), -1);
+         Global.Print("Trig audio in source channel is \""+cm_trig_src_audio_in.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrigSrcAudioOutChanged() {
+      RingBuffer ringBuf <= current_project.scope_trig_ringbuf;
+      if(RingBuffer.SRC_AUDIO_OUT == cm_trig_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBuf.setSource(RingBuffer.SRC_AUDIO_OUT, cm_trig_src_audio_out.getSelectedOption(), -1);
+         Global.Print("Trig audio out source channel is \""+cm_trig_src_audio_out.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrigSrcTrackChanged() {
+      RingBuffer ringBuf <= current_project.scope_trig_ringbuf;
+      trig_src_track_idx = cm_trig_src_track.getSelectedOption();
+      if(RingBuffer.SRC_TRACK == cm_trig_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBuf.setSource(RingBuffer.SRC_TRACK, -1, trig_src_track_idx);
+         Global.Print("Trig source track is \""+cm_trig_src_track.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCopyToSampleViewClipboard() {
+      RingBuffer ringBuf <= current_project.scope_history_ringbuf;
+      FloatArray dst <= SampleView.clipboard_samples;
+      dst.realloc(ringBuf.num_valid);
+      SampleView.clipboard_num_channels = 1;
+      Global.Print("Copy "+ringBuf.num_valid+" frame"+Utils.GetPluralString(ringBuf.num_valid)+" to SampleView clipboard");
+      if(ringBuf.num_valid > 0)
+      {
+         ringBuf.readToBuffer(dst, 1/*dstNumCh*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method showSampleView() {
+      RingBuffer ringBuf <= current_project.scope_history_ringbuf;
+      FloatArray dst <= history_buf;
+      dst.realloc(ringBuf.num_valid);
+      Global.Print("Copy "+ringBuf.num_valid+" frame"+Utils.GetPluralString(ringBuf.num_valid)+" to SampleView");
+      // trace "xxx showSampleView: rb.readOff="+ringBuf.read_offset+" rb.avail="+ringBuf.num_valid+" rb.sz="+(ringBuf.ringbuf.numElements);
+      if(ringBuf.num_valid > 0)
+      {
+         ringBuf.readToBuffer(dst, 1/*dstNumCh*/);
+      }
+
+      getRoot().addOverlay(sv_wave);
+      sv_wave.setSample(null/*waveform*/, history_buf/*samples*/, 1/*numCh*/, Audio.mix_rate);
+      sv_wave.lazyAutoChopRegions();
+      int numRegions = sv_wave.getNumRegions();
+      if(numRegions >= 1)
+      {
+         // Trim to last autochopped region
+         sv_wave.selectRegionByIdx(numRegions - 1);
+         sv_wave.truncateSelection();
+      }
+      else
+      {
+         sv_wave.autotrim();
+      }
+      sv_wave.showAll();
+      ls_view.switchToLayerNr(1);
+   }
+
+   // <ui_handle.png>
+   protected method handleEditModeChanged() {
+      if(cb_edit.isSelected())
+         showSampleView();
+      else
+      {
+         getRoot().removeOverlay(sv_wave);
+         ls_view.switchToLayerNr(0);
+      }
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected handleCaptureChanged() {
+      RingBuffer ringBufFFT     <= current_project.scope_fft_ringbuf;
+      RingBuffer ringBufHistory <= current_project.scope_history_ringbuf;
+      if(cb_capture.isSelected())
+         updateRingBufSource();
+      else
+      {
+         ringBufFFT.setSource(RingBuffer.SRC_NONE, -1, -1);
+         ringBufHistory.setSource(RingBuffer.SRC_NONE, -1, -1);
+      }
+      Global.Print("Capture is "+Utils.GetEnableString(cb_capture.isSelected()));
+   }
+
+   // <ui_handle.png>
+   protected handleScrollChanged() {
+      Global.Print("Scroll-mode is "+Utils.GetEnableString(cb_scroll.isSelected()));
+   }
+
+   // <ui_handle.png>
+   protected handleFFTChanged() {
+      Global.Print("FFT-mode is "+Utils.GetEnableString(cb_fft.isSelected()));
+   }
+
+   // <method_get.png>
+   public isFFTMode() : boolean {
+      return cb_fft.isSelected();
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdateIntervalChanged() {
+      STConfig.scope_update_interval = fp_update_interval.getFloatValue();
+      Global.Print("Update interval is "+STConfig.scope_update_interval+" milliseconds");
+      ta_update.setDefaultTicks(STConfig.scope_update_interval,
+                                STConfig.scope_update_interval,
+                                STConfig.scope_update_interval,
+                                STConfig.scope_update_interval
+                                );
+   }
+
+   // <ui_handle.png>
+   protected method handleZoomXChanged() {
+      local Float fo = fp_zoom_x.getFloatValue() * 100;
+      scope_sample_view.zoom_x = fp_zoom_x.getFloatValue();
+      Global.Print("Zoom X is "+fo.printf("%3.2f")+"%");
+   }
+
+   // <ui_handle.png>
+   protected method handleZoomYChanged() {
+      local Float fo = fp_zoom_y.getFloatValue();
+      scope_sample_view.zoom_y = Utils.DBToLevel(fo);
+      redraw();
+      Global.Print("Zoom Y is +"+fo.printf("%3.2f")+"dB");
+   }
+
+   // <ui_handle.png>
+   public method incZoomY() {
+      fp_zoom_y.incCoarse();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   public method decZoomY() {
+      fp_zoom_y.decCoarse();
+      redraw();
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Ver
+      ofs.i16 = 3;
+
+      // Source type
+      ofs.i8 = cm_src_type.getSelectedOption();
+
+      // Source Audio In
+      ofs.i8 = cm_src_audio_in.getSelectedOption();
+
+      // Source Audio Out
+      ofs.i8 = cm_src_audio_out.getSelectedOption();
+
+      // Source Track
+      ofs.i8 = src_track_idx;
+
+      // Trig mode
+      ofs.i8 = cm_trig.getSelectedOption();
+
+      // External trig
+      ofs.i8 = cb_trig.isSelected();
+
+      // Trig type
+      ofs.i8 = cm_trig_src_type.getSelectedOption();
+
+      // Trig Audio In
+      ofs.i8 = cm_trig_src_audio_in.getSelectedOption();
+
+      // Trig Audio Out
+      ofs.i8 = cm_trig_src_audio_out.getSelectedOption();
+
+      // Trig Track
+      ofs.i8 = trig_src_track_idx;
+
+      // Pre Filter
+      ofs.f32 = fp_pre.getFloatValue();
+
+      // Capture enable
+      ofs.i8 = cb_capture.isSelected();
+
+      // Scroll mode
+      ofs.i8 = cb_scroll.isSelected();
+
+      // FFT mode (v3+)
+      ofs.i8 = cb_fft.isSelected();
+
+      // Update interval
+      ofs.i16 = fp_update_interval.getFloatValue();
+
+      // Zoom X
+      ofs.f32 = fp_zoom_x.getFloatValue();
+
+      // Zoom Y
+      ofs.f32 = fp_zoom_y.getFloatValue();
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      // Version
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Source type
+         cm_src_type.setSelectedOption(ifs.u8);
+
+         // Source Audio In
+         cm_src_audio_in.setSelectedOption(ifs.u8);
+
+         // Source Audio Out
+         cm_src_audio_out.setSelectedOption(ifs.u8);
+
+         // Source Track
+         src_track_idx = ifs.u8;
+
+         // Trig mode
+         cm_trig.setSelectedOption(ifs.u8);
+
+         // External trig
+         cb_trig.setSelected(ifs.b8);
+
+         // Trig type
+         cm_trig_src_type.setSelectedOption(ifs.u8);
+
+         // Trig Audio In
+         cm_trig_src_audio_in.setSelectedOption(ifs.u8);
+
+         // Trig Audio Out
+         cm_trig_src_audio_out.setSelectedOption(ifs.u8);
+
+         // Trig Track
+         trig_src_track_idx = ifs.u8;
+
+         // Pre Filter
+         fp_pre.setValue(ifs.f32);
+
+         // Capture enable
+         cb_capture.setSelected(ifs.b8);
+
+         // Scroll mode
+         cb_scroll.setSelected(ifs.b8);
+
+         if(ver >= 3)
+         {
+            // FFT mode (v3+)
+            cb_fft.setSelected(ifs.b8);
+         }
+
+         // Update interval
+         fp_update_interval.setValue(ifs.u16);
+
+         // Zoom X
+         fp_zoom_x.setValue(ifs.f32);
+
+         // Zoom Y
+         if(ver < 2)
+            fp_zoom_y.setValue(Utils.LevelToDB(ifs.f32));
+         else
+            fp_zoom_y.setValue(ifs.f32);
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method loadStatePost() {
+      rebuildTrackOptions();
+      cm_src_track.setSelectedOption(src_track_idx);
+      cm_trig_src_track.setSelectedOption(trig_src_track_idx);
+
+      handleSrcTypeChanged();
+      handleSrcAudioInChanged();
+      handleSrcAudioOutChanged();
+      handleSrcTrackChanged();
+      handleTrigSrcTypeChanged();
+      handleTrigSrcAudioInChanged();
+      handleTrigSrcAudioOutChanged();
+      handleTrigSrcTrackChanged();
+      handleTrigChanged();
+      handleScrollChanged();
+      handleFFTChanged();
+      handleZoomXChanged();
+      handleZoomYChanged();
+      handleUpdateIntervalChanged();
+      handleCaptureChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleShowHideSetup(boolean _bShow) {
+      ls_setup.switchToLayerNr(_bShow ? 1 : 0);
+      resizeAtLeastToMinimumForce(false/*bForceX*/, false/*bForceY*/);
+      redraw();
+   }
+
+   // <method.png>
+   public method handleTrackReorder(IntArray _reorderMap) {
+      if(src_track_idx >= 0)
+         src_track_idx = _reorderMap.get(src_track_idx);
+
+      if(trig_src_track_idx >= 0)
+         trig_src_track_idx = _reorderMap.get(trig_src_track_idx);
+
+      if(isFloatingLayerVisible())
+         showScopeDialog();  // update comboboxes
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         // case 96: // '^' (ger) / '`' (us)
+         case 'q':
+         case '@':
+            hide();
+            return true;
+
+         case 'b':
+            // scope_sample_view.handleRefToggle();
+            if(_k.modCtrl())
+               scope_sample_view.handleRefClear();
+            else
+               scope_sample_view.handleRefCopy();
+            return true;
+
+         case 'c':
+            if(_k.modCtrl())
+               handleCopyToSampleViewClipboard();
+            else
+               cb_capture.toggleSelectionAction();
+            return true;
+
+         case 'd':
+            if(0 == _k.mod)
+            {
+               b_debug_addpeak = !b_debug_addpeak;
+               trace "xxx b_debug_addpeak="+b_debug_addpeak;
+               return true;
+            }
+            break;
+
+         case 'e':
+            cb_edit.toggleSelectionAction();
+            return true;
+
+         case 'f':
+            if(0 == _k.mod)
+            {
+               cb_fft.toggleSelectionAction();
+               return true;
+            }
+            break;
+
+         case 'g':
+            if(0 == _k.mod)
+            {
+               bt_setup.toggleStateAction();
+               return true;
+            }
+            break;
+
+         case 'i':
+            UI.SetKeyboardFocus(cm_src_type);
+            return true;
+
+         case 'r':
+            UI.SetKeyboardFocus(fp_update_interval);
+            return true;
+
+         case 's':
+            cb_scroll.toggleSelectionAction();
+            return true;
+
+         case 't':
+            if(1 == ls_setup.getCurrentChildNr())
+            {
+               cm_trig.selectNextOptionCycleAction();
+               return true;
+            }
+            break;
+
+         case 'x':
+            if(1 == ls_setup.getCurrentChildNr())
+            {
+               cb_trig.toggleSelectionAction();
+               return true;
+            }
+            break;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_UPDATE == acName)
+      {
+         handleUpdate();
+         ta_update.reschedule();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_setup):
+            handleShowHideSetup(bt_setup.getToggleState());
+            return true;
+
+         case @(cm_src_type):
+            handleSrcTypeChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_src_audio_in):
+            handleSrcAudioInChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_src_audio_out):
+            handleSrcAudioOutChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_src_track):
+            handleSrcTrackChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cb_trig):
+            handleTrigChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_trig_src_type):
+            handleTrigSrcTypeChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_trig_src_audio_in):
+            handleTrigSrcAudioInChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_trig_src_audio_out):
+            handleTrigSrcAudioOutChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cm_trig_src_track):
+            handleTrigSrcTrackChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(bt_ref):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               scope_sample_view.handleRefClear();
+            else
+               scope_sample_view.handleRefCopy();
+            return true;
+
+         case @(cb_edit):
+            handleEditModeChanged();
+            return true;
+
+         case @(cb_capture):
+            handleCaptureChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cb_scroll):
+            handleScrollChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(cb_fft):
+            handleFFTChanged();
+            current_project.markAsModified();
+            return true;
+
+         case @(fp_update_interval):
+            handleUpdateIntervalChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            current_project.markAsModified();
+            return true;
+
+         case @(fp_zoom_x):
+            handleZoomXChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            current_project.markAsModified();
+            return true;
+
+         case @(fp_zoom_y):
+            handleZoomYChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            current_project.markAsModified();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}
+
+
+// // float xxxZoomX = 0.30;
+// // float xxxPx  = ScopeFFTState.BinToPx(0.25, 1000, xxxZoomX);
+// // float xxxBin = ScopeFFTState.PxToBin(xxxPx, 1000, xxxZoomX);
+// // trace "px="+xxxPx+" bin="+xxxBin;
+// // exit(0);

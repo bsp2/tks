@@ -1,0 +1,319 @@
+// ----
+// ---- file   : VoicePluginChainPatch.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 09Feb2021
+// ---- changed: 01Apr2023, 06Jan2024, 27Sep2024
+// ----
+// ----
+// ----
+
+module MVoicePluginChainPatch;
+
+use namespace ui;
+use namespace st2;
+
+use namespace st2;
+
+
+// <class.png>
+class VoicePluginChainPatch_Slot {
+   int        slot_idx;
+   boolean    b_used;
+   String     id;
+   boolean    b_enable;
+   boolean    b_phase;
+   float      level;
+   boolean    b_pre_filter;
+   FloatArray params;
+
+   // <method_init.png>
+   public method init(int _slotIdx) {
+      slot_idx = _slotIdx;
+      params.allocAndFill(8, 0);
+   }
+
+   // <method.png>
+   public method copyFrom(VoicePluginChainPatch_Slot _o) {
+      b_used       = _o.b_used;
+      id           = _o.id;
+      b_enable     = _o.b_enable;
+      b_phase      = _o.b_phase;
+      level        = _o.level;
+      b_pre_filter = _o.b_pre_filter;
+      params       = _o.params;
+   }
+
+   // <method.png>
+   public method copyFromZone(StSample _zone) {
+      StPluginShared shared <= _zone.getVoicePluginShared(slot_idx);
+      Global.Debug2("VoicePluginChainPatch_Slot::copyFromZone: slot_idx="+slot_idx+" shared="+#(shared));
+      b_used = false;
+      if(null != shared)
+      {
+         StPluginInfo info <= shared.info;
+         if(null != info)
+         {
+            id = info.id;
+            Global.Debug2("VoicePluginChainPatch_Slot::copyFromZone: slot_idx="+slot_idx+" id=\""+id+"\"");
+            b_used = true;
+         }
+      }
+
+      b_enable     = _zone.getEnableVoicePlugin(slot_idx);
+      b_phase      = _zone.getEnableVoicePluginInvertPhase(slot_idx);
+      level        = _zone.getVoicePluginLevel(slot_idx);
+      b_pre_filter = _zone.getEnableVoicePluginPreFilter(slot_idx);
+
+      int paramIdx = 0;
+      loop(8)
+      {
+         params[paramIdx] = (null != shared) ? shared.getParamValue(paramIdx) : 0.0f;
+         paramIdx++;
+      }
+   }
+
+   // <method.png>
+   public =replay= method copyToZone(StSample _zone) {
+
+      if(b_used)
+      {
+         StPluginInfo info <= VoicePlugins.FindVoicePluginInfoById(id);
+         Global.Debug2("VoicePluginChainPatch_Slot::copyToZone: slot_idx="+slot_idx+" zone="+#(_zone)+" id=\""+id+"\" => info="+#(info));
+         if(null != info)
+         {
+            Global.Debug("VoicePluginChainPatch_Slot::copyToZone: create new voice plugin id=\""+info.id+"\"");
+
+            StPluginShared shared <= info.createSharedInstance();
+            _zone.setVoicePluginShared(slot_idx, #(deref shared));
+
+            if(null != shared)
+            {
+               _zone.setEnableVoicePlugin(slot_idx, b_enable);
+               _zone.setEnableVoicePluginInvertPhase(slot_idx, b_phase);
+               _zone.setVoicePluginLevel(slot_idx, level);
+               _zone.setEnableVoicePluginPreFilter(slot_idx, b_pre_filter);
+
+               int paramIdx = 0;
+               loop(8)
+               {
+                  shared.setParamValue(paramIdx, params[paramIdx]);
+                  paramIdx++;
+               }
+            }
+            else
+            {
+               _zone.setEnableVoicePlugin(slot_idx, false);
+            }
+         }
+         else
+         {
+            trace "[---] VoicePluginChainPatch::copyToZone: failed to resolve id=\""+id+"\"";
+         }
+      }
+      else
+      {
+         // unused slot
+         _zone.setVoicePluginShared(slot_idx, null);
+         _zone.setEnableVoicePlugin(slot_idx, false);
+      }
+
+   }
+
+   // <save.png>
+   public method saveStream(Stream ofs) {
+      ofs.i16 = 1; // ver
+      ofs.i8 = b_used;
+      Utils.WriteString(ofs, id);
+      ofs.i8 = b_enable;
+      ofs.i8 = b_phase;
+      ofs.f32 = level;
+      ofs.i8 = b_pre_filter;
+      int paramIdx = 0;
+      loop(8)
+      {
+         ofs.f32 = params[paramIdx++];
+      }
+   }
+
+   // <load.png>
+   public method loadStream(Stream ifs) : boolean {
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         b_used       = ifs.b8;
+         Utils.ReadString(ifs, id);
+         b_enable     = ifs.b8;
+         b_phase      = ifs.b8;
+         level        = ifs.f32;
+         b_pre_filter = ifs.b8;
+         int paramIdx = 0;
+         loop(8)
+         {
+            params[paramIdx++] = ifs.f32;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         Global.Error("VoicePluginChainPatch_Slot::loadStream: invalid version="+ver);
+      }
+      return false;
+   }
+
+}
+
+// <class.png>
+class VoicePluginChainPatch {
+   // Voice plugin chain patch preset (for storage)
+   String name;
+   int    alg;
+   int    alg_outer;
+   int    alg_filter_pos;
+   VoicePluginChainPatch_Slot *[] slots;
+
+   public method init() {
+      slots.free();
+      VoicePluginChainPatch_Slot *ps;
+      int slotIdx = 0;
+      loop(STSAMPLE_NUM_PLUGINS/*4*/)
+      {
+         ps <= new VoicePluginChainPatch_Slot;
+         ps.init(slotIdx++);
+         slots.add(#(deref ps));
+      }
+   }
+
+   // <method.png>
+   public method copyFrom(VoicePluginChainPatch _o) {
+      name           = _o.name;
+      alg            = _o.alg;
+      alg_outer      = _o.alg_outer;
+      alg_filter_pos = _o.alg_filter_pos;
+
+      VoicePluginChainPatch_Slot *ps;
+      int slotIdx = 0;
+      foreach ps in slots
+      {
+         VoicePluginChainPatch_Slot psO <= _o.slots.get(slotIdx++);
+         ps.copyFrom(psO);
+      }
+   }
+
+   // <method.png>
+   public method copyFromZone(StSample _zone) {
+
+      alg            = _zone.voicePluginAlg;
+      alg_outer      = _zone.voicePluginAlgOuter;
+      alg_filter_pos = _zone.voicePluginAlgFilterPos;
+
+      VoicePluginChainPatch_Slot *ps;
+      foreach ps in slots
+      {
+         ps.copyFromZone(_zone);
+      }
+   }
+
+   // <method.png>
+   public =replay= method copyToSample(Sample _sample, PointerArray _zones) {
+
+      Audio.ResetAllSampleVoices(_sample);
+
+      StSample *zone;
+      foreach zone in _zones
+      {
+         zone.voicePluginAlg          = alg;
+         zone.voicePluginAlgOuter     = alg_outer;
+         zone.voicePluginAlgFilterPos = alg_filter_pos;
+
+         VoicePluginChainPatch_Slot *ps;
+         foreach ps in slots
+         {
+            ps.copyToZone(zone);
+         }
+      }
+   }
+
+   // <save.png>
+   public method saveStream(Stream ofs) {
+      ofs.i16 = 1; // ver
+      Utils.WriteString(ofs, name);
+      ofs.i8 = alg;
+      ofs.i8 = alg_outer;
+      ofs.i8 = alg_filter_pos;
+
+      VoicePluginChainPatch_Slot *ps;
+      foreach ps in slots
+      {
+         ps.saveStream(ofs);
+      }
+   }
+
+   // <save.png>
+   public method saveFile(String _pathName) : boolean {
+      Global.Debug("VoicePluginChainPatch::saveFile: pathName=\""+_pathName+"\"");
+      local File f;
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_OUT))
+      {
+         saveStream(f);
+         return true;
+      }
+      else
+      {
+         Global.Error("VoicePluginChainPatch::saveFile: failed to open \""+_pathName+"\" for writing");
+         return false;
+      }
+   }
+
+   // <load.png>
+   public method loadStream(Stream ifs) : boolean {
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         Utils.ReadString(ifs, name);
+         alg            = ifs.u8;
+         alg_outer      = ifs.u8;
+         alg_filter_pos = ifs.u8;
+
+         VoicePluginChainPatch_Slot *ps;
+         foreach ps in slots
+         {
+            if(!ps.loadStream(ifs))
+            {
+               Global.Error("VoicePluginChainPatch::loadStream: failed to load slot "+ps.slot_idx);
+               return false;
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         Global.Error("VoicePluginChainPatch::loadStream: invalid version="+ver);
+      }
+      return false;
+   }
+
+   // <load.png>
+   public method loadFile(String _pathName) : boolean {
+      Global.Debug("VoicePluginChainPatch::loadFile: pathName=\""+_pathName+"\"");
+      local File f;
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_IN))
+      {
+         return loadStream(f);
+      }
+      else
+      {
+         Global.Error("VoicePluginChainPatch::loadFile: failed to open \""+_pathName+"\" for reading");
+      }
+   }
+
+}

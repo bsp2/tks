@@ -1,0 +1,429 @@
+// ----
+// ---- file   : SampleVCalForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 20Dec2022
+// ---- changed: 21Dec2022, 23Oct2023, 09Aug2024, 31Jan2025
+// ----
+// ----
+// ----
+
+module MSampleVCalForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleVCalPreset {
+   static String PRESET_FILE = "$(ROOT)/vcal_presets.ini";
+
+   String     name;
+   int        num;
+   FloatArray fa;
+
+   static SampleVCalPreset *[] all_presets;
+
+   // <load.png>
+   static LoadPresets() {
+
+      all_presets.free();
+
+      local String pathName <= Utils.ToNativePathName(PRESET_FILE);
+      // trace "xxx PRESET_FILE="+PRESET_FILE+" pathName=\""+pathName+"\"";
+      local String buf;
+      local String nextPresetName;
+      if(buf.loadLocal(pathName, true/*bRemoveCR*/))
+      {
+         local StringArray lines <= buf.splitChar('\n');
+         local String *line;
+         int lineNr = 1;
+         foreach line in lines
+         {
+            line.trim();
+            if(!(line <= "#") && !line.isBlank())
+            {
+               if(line <= "[")
+               {
+                  // [my preset name]
+                  int idxNameEnd = line.indexOf("]", 0);
+                  if(-1 != idxNameEnd)
+                  {
+                     line.substring(1, idxNameEnd-1) => nextPresetName;
+                     // trace "xxx set nextPresetName=\""+nextPresetName+"\"";
+                  }
+               }
+               else if(!nextPresetName.isBlank())
+               {
+                  //  <num> <values>
+                  line.toLower();
+
+                  SampleVCalPreset p <= new SampleVCalPreset;
+                  p.name = nextPresetName;
+                  nextPresetName.empty();
+
+                  local StringArray words <= line.splitSpace(true);
+
+                  if(words.numElements > 1)
+                  {
+                     p.num = mathClampi(int(words[0]), 1, 8);
+                     FloatArray fa <= p.fa;
+                     fa.empty();
+                     int valIdx = 0;
+                     loop(words.numElements-1)
+                     {
+                        fa.add(words[++valIdx]);
+                     }
+                     while(fa.numElements < 8)
+                        fa.add(0);
+
+                     all_presets.add(#(deref p));
+                  }
+               } // if nextPresetName
+            } // if ! comment or blank
+         } // foreach line
+
+         Global.Debug("SampleVCalPreset::LoadPresets: parsed "+all_presets.numElements+" presets from ini file \""+pathName+"\"");
+      } // if buf load
+      else
+      {
+         Global.Debug("SampleVCalPreset::LoadPresets: failed to load preset file \""+pathName"\"");
+      }
+   }
+
+   // <method_get.png>
+   public static GetPresetByIdx(int _idx) {
+      return all_presets.get(_idx);
+   }
+
+   // <method.png>
+   public method dumpPresetToConsole() {
+      trace "["+name+"]";
+      stdout num;
+      float f;
+      foreach f in fa
+         stdout " "+f;
+      stdout "\n";
+   }
+}
+
+
+// <class.png>
+class SampleVCalForm : XMLForm, ActionProvider {
+
+   define String ACTION_ENTRY_EDITED;
+
+   StSample *sample;
+   Sample *sample_sci;
+
+   int lane_idx;
+
+   protected Label      *lb_nr;
+   protected Label      *lb_type;
+   protected FloatParam *fp_num;
+   protected FloatParam *[] a_fp_val;  // fp_v1..fp_v8
+   protected FloatParam *fp_amt;
+   protected CheckBox   *cb_enable;
+   protected Button     *bt_rand;
+   protected Button     *bt_preset;
+
+   protected ComboBoxPopup *cmp_preset;
+   int last_preset_scan_ms;  // (note) lazy-rescan if preset dialog has not been shown for more than 5 seconds
+
+   static StringArray labels = [
+      "t",
+      "p",
+      "v",
+      "f",
+      "p",
+      "a"
+                                      ];
+
+   static StringArray amt_tooltips = [
+      "Fine Tune",
+      "Pan Position\n\n (note) also used for Additive Wavetable Stereo Spread",
+      "Volume",
+      "Filter Cutoff",
+      "Pan Env Level",
+      "Aux Env Level"
+                                      ];
+
+
+   // <ui_init.png>
+   public method init(int _laneIdx) : boolean {
+
+      lane_idx = _laneIdx;
+
+      if(!initPakFile("SampleVCalForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      lb_nr  .setCaption(String(lane_idx+1));
+      lb_type.setCaption(labels[lane_idx]);
+      lb_type.setToolTipCaption(amt_tooltips[lane_idx]);
+
+      int nr = 1;
+      loop(8)
+         a_fp_val.add(findLayerById("fp_v"+(nr++)));
+
+      fp_amt.setToolTipCaption(amt_tooltips[lane_idx]);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ENTRY_EDITED];
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.add(fp_num);
+      _retLayers.joinRR(_retLayers, a_fp_val);
+      _retLayers.add(fp_amt);
+      _retLayers.add(cb_enable);
+      _retLayers.add(bt_rand);
+      _retLayers.add(bt_preset);
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      sample_sci.markParamsAsModified();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_ENTRY_EDITED), this));
+   }
+
+   // <ui_show.png>
+   public method showSample(StSample _sample, Sample _sampleSCI) {
+      sample <= _sample;
+      sample_sci <= _sampleSCI;
+
+      boolean bEditable = (null != sample);
+
+      fp_num.setEditable(bEditable);
+      FloatParam *fp;
+      foreach fp in a_fp_val
+         fp.setEditable(bEditable);
+
+      fp_amt.setEditable(bEditable);
+      cb_enable.setEditable(bEditable);
+
+      bt_rand.setEditable(bEditable);
+      bt_preset.setEditable(bEditable);
+
+      int voiceIdx = 0;
+
+      if(bEditable)
+      {
+         fp_num.setValue(sample.getVoiceCalibrationModulo(lane_idx));
+
+         foreach fp in a_fp_val
+            fp.setValue(sample.getVoiceCalibrationValue(lane_idx, voiceIdx++));
+
+         fp_amt.setValue(sample.getVoiceCalibrationAmount(lane_idx));
+
+         cb_enable.setSelected(sample.getVoiceCalibrationEnable(lane_idx));
+      }
+      else
+      {
+         fp_num.setValue(1);
+
+         foreach fp in a_fp_val
+            fp.setValue(0);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNumChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int num = fp_num.getFloatValue();
+      foreach s in zones
+      {
+         s.setVoiceCalibrationModulo(lane_idx, num);
+      }
+      provideEdited();
+      Global.Print("VCal Lane "+(lane_idx+1)+" modulo is "+num);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleValChanged(FloatParam _fp, int _idx) {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      float f = _fp.getFloatValue();
+      StSample *s;
+      foreach s in zones
+         s.setVoiceCalibrationValue(lane_idx, _idx, f);
+      provideEdited();
+      Global.Print("VCal Lane "+(lane_idx+1)+" voice "+(_idx+1)+" value is "+f);
+      sample_sci.last_edited_vcal_lane_idx = lane_idx;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmtChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float amt = fp_amt.getFloatValue();
+      foreach s in zones
+      {
+         s.setVoiceCalibrationAmount(lane_idx, amt);
+      }
+      provideEdited();
+      Global.Print("VCal Lane "+(lane_idx+1)+" amount ("+fp_amt.getToolTipCaption()+") is "+amt);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_enable.isSelected();
+      foreach s in zones
+         s.setVoiceCalibrationEnable(lane_idx, bEnable);
+      provideEdited();
+      Global.Print("VCal Lane "+(lane_idx+1)+" is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRand(boolean _bUni) {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      foreach s in zones
+      {
+         local FloatArray rv; rv.empty();
+         float fNorm = 0;
+         int idx = 0;
+         loop(8)
+         {
+            float f = rand(1.0);
+            if(abs(f) > fNorm)
+               fNorm = f;
+            if(!_bUni)
+               f = (idx & 1) ? -f : f;
+            rv.add(f);
+            idx++;
+         }
+         fNorm = 1.0 / fNorm;
+         idx = 0;
+         loop(8)
+         {
+            s.setVoiceCalibrationValue(lane_idx, idx, rv[idx] * fNorm);
+            idx++;
+         }
+      }
+      provideEdited();
+      showSample(sample, sample_sci);
+      Global.Print("Randomize VCal Lane "+(lane_idx+1));
+   }
+
+   // <ui_handle.png>
+   protected method showPresetDialog() {
+      if( (milliSeconds() - last_preset_scan_ms) > 5000 )
+      {
+         SampleVCalPreset.LoadPresets();
+         last_preset_scan_ms = milliSeconds();
+      }
+
+      local StringArray opt;
+      SampleVCalPreset *p;
+      foreach p in SampleVCalPreset.all_presets
+         opt.add(p.name+"\t"+p.num);
+
+      if(opt.numElements > 0)
+      {
+         cmp_preset <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                      null/*fontOrNull*/,
+                                                      deref opt,
+                                                      null/*optionsLongOrNull*/,
+                                                      0,
+                                                      150/*prefSx*/,
+                                                      null/*toolTipCaptions*/,
+                                                      null/*optionBGColors*/,
+                                                      null/*option_fgtints*/
+                                                      );
+
+         cmp_preset.showNearComboBox(bt_preset);
+         cmp_preset.focusFirstTabCycleMember();
+         cmp_preset.setEnableHideOnFirstEntryUp(false);
+         cmp_preset.setPageSize(4);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= handleSelectPreset(int _idx) {
+      SampleVCalPreset p <= SampleVCalPreset.GetPresetByIdx(_idx);
+      if(null != p)
+      {
+         FloatArray fa <= p.fa;
+         local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            s.setVoiceCalibrationModulo(lane_idx, p.num);
+            int idx = 0;
+            loop(8)
+            {
+               s.setVoiceCalibrationValue(lane_idx, idx, fa.get(idx));
+               idx++;
+            }
+         }
+         provideEdited();
+         showSample(sample, sample_sci);
+         Global.Print("Select VCal Preset \""+p.name+"\"");
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      int idx = a_fp_val.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         handleValChanged(ap, idx);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(fp_num):
+            handleNumChanged();
+            return true;
+
+         case @(fp_amt):
+            handleAmtChanged();
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            return true;
+
+         case @(bt_rand):
+            handleRand((Button.ACTION_HOLD_CLICK == acName)/*bUni*/);
+            return true;
+
+         case @(bt_preset):
+            showPresetDialog();
+            return true;
+
+         case @(cmp_preset):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               IntAction ia <= _ac;
+               handleSelectPreset(ia.getIntValue());
+            }
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

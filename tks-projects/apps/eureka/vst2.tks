@@ -1,0 +1,1603 @@
+// ----
+// ---- file   : vst2.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 04Oct2010, 08Oct2010, 10Oct2010, 11Oct2010, 13Oct2010, 15Oct2010, 16Oct2010
+// ----          19Jan2011, 02Jul2011, 26May2013, 05Jun2013, 08Mar2014, 22Jan2018, 24Jan2018
+// ----          01Feb2018, 09Feb2018, 12Feb2018, 17Feb2018, 28Feb2018, 01Mar2018, 03Mar2018
+// ----          06Mar2018, 21Jul2018, 07Dec2018, 08Dec2018, 30Jul2019, 05Aug2019, 26Aug2019
+// ----          18Aug2020, 06Feb2023, 14Feb2023, 19Feb2023, 25Feb2023, 29Jul2023, 03Nov2023
+// ----          09Nov2023, 12Jan2024, 13Jan2024, 03Jul2024, 05Jul2024, 15Sep2024, 22Sep2024
+// ----          16Mar2025
+// ----
+// ----
+// ----
+
+module MVST2;
+
+use namespace ui;
+use namespace st2;
+
+=vstupdatedisplay=
+=vstautomate=
+=vstkey=
+=vstpool=
+
+
+// <class.png>
+class VSTScanEntry {
+   tag String path_name;        // absolute path name
+
+   tag boolean b_bad;           // 1=deep scan failed for this VST2 plugin
+
+   tag String effect_name;
+   tag String vendor_string;
+   tag String product_string;  // usually the same as the effect name, sometimes contains version info
+
+   tag int    category;
+   tag int    unique_id;
+   tag int    version;
+   tag String shell_effect_name;  // sub-plugin name (Waves shell)
+   tag int    shell_effect_uid;   // 0=no sub-plugin
+
+   tag boolean b_synth;
+
+   PointerArray instance_pool;  // VST2Plugin instances
+
+
+   // <method_init.png>
+   public method init(String _pathName) {
+      path_name = _pathName;
+   }
+
+   // <method_get.png>
+   public method getName() {
+      if(!effect_name.isBlank())
+         return effect_name+" \\ "+path_name;
+      if(!product_string.isBlank())
+         return product_string+" \\ "+path_name;
+      return path_name;
+   }
+
+   // <method_get.png>
+   public method getUniqueIDString() : String {
+      local String r = vendor_string+"`"+effect_name+"`"+unique_id;
+      if(0 != shell_effect_uid)
+      {
+         local Integer uid = shell_effect_uid;
+         r.append("`"+shell_effect_name+"`"+uid.printf("0x%08x"));
+      }
+      return deref r;
+   }
+
+   // <method_get.png>
+   public method getEffectName() : String {
+      if(0 == shell_effect_uid)
+      {
+         return effect_name;
+      }
+      else
+      {
+         return shell_effect_name;
+      }
+   }
+
+   // <method.png>
+   public =vstpool= method unlinkNextFromPool() : VST2Plugin {
+      if(instance_pool.numElements > 0)
+      {
+         local VST2Plugin plugin <= instance_pool.getDeref(0);
+         instance_pool.delete(0);
+         Global.Debug2("VSTScanEntry::unlinkNextFromPool: uid=\""+getUniqueIDString()+"\", num is now "+instance_pool.numElements);
+         return deref plugin;
+      }
+      return null;
+   }
+}
+
+
+// <class.png>
+class VSTDeepScanJob {
+   int              job_idx;
+   boolean          b_active;
+   String           path_name;      // absolute DLL/SO or macOS VST2 bundle (.vst) path name
+   VSTScanEntry    *entry;          // ref to orig entry, zeroed after scan in case of shell plugins
+   VSTScanEntry *[] shell_entries;  // VSTScanEntry instances (more than 1 in case of shell plugins)
+   boolean          b_bad;
+   int              num_ok_inc;
+   Thread          *thread;
+
+   static PointerArray closelibrary_blacklist;  // VST2Plugin instances
+
+   // <method.png>
+   protected method getLineAndTrim(local StringArray _a, local int _idx) : String {
+      local String r <= _a.get(_idx);
+      if(null != r)
+         r.trim();
+      return deref r;
+   }
+
+   // <method.png>
+   public method scan(local int _threadId) {
+      Global.Debug2("vst "+((0 != STConfig.vst_deepscan_num_threads)?"threaded":"")+" deepscan: scan job_idx="+job_idx+", path_name=\""+path_name+"\"" + ((-1 != _threadId) ? (" threadId="+_threadId) : ""));
+
+      local VSTScanEntry *ne;
+      local int numShellPlugins;
+
+      if(STConfig.b_vst_deepscan_process)
+      {
+         // Workaround for weird SDL/macOS crashes: Run scan in separate process (vst2scan.tks)
+         local String sRet; sRet.alloc(65536);
+
+         // local String sPathName <= path_name.replace(" ", "\\ ").replace("(", "\\(").replace(")", "\\)");
+         // local String cmd <= "sh -c "+Utils.FixPathname_psystem_exe(Utils.ToNativePathName(TKS.tksExePath)+" vst2scan.tks "+sPathName);
+         // trace "[trc] VSTDeepScanJob::scan: job_idx="+job_idx+" threadId="+_threadId+" cmd=<<<"+cmd+">>>";
+         // psystem(cmd, 'r', sRet);
+         // // system(cmd);
+
+         Utils.RunPSystemR("vst2scan", Utils.GetTKSPathName(), ["vst2scan.tks", path_name], sRet);
+
+         trace "[trc] VSTDeepScanJob::scan: job_idx="+job_idx+" threadId="+_threadId+" psystem() returned";
+
+         // trace "xxx scan: sRet=\""+sRet+"\"";
+         local int idx = sRet.indexOf("[begin plugin]", 0);
+         if(idx >= 0)
+            idx = sRet.indexOf("\n", idx+1);
+         if(idx >= 0)
+         {
+            sRet.substring(idx+1, 65535);
+            local StringArray aLines <= sRet.splitChar('\n');
+            // trace "xxx aLines="+#(aLines);
+            entry.effect_name    = getLineAndTrim(aLines, 0);
+            entry.vendor_string  = getLineAndTrim(aLines, 1);
+            entry.product_string = getLineAndTrim(aLines, 2);
+            entry.category       = getLineAndTrim(aLines, 3);
+            entry.unique_id      = getLineAndTrim(aLines, 4);
+            entry.version        = getLineAndTrim(aLines, 5);
+            entry.b_synth        = getLineAndTrim(aLines, 6);
+            numShellPlugins      = getLineAndTrim(aLines, 7);
+
+            if(numShellPlugins > 0)
+            {
+               local int shellLineIdx = 8;
+               loop(numShellPlugins)
+               {
+                  ne <= new VSTScanEntry;
+                  ne = entry;
+                  ne.shell_effect_name = getLineAndTrim(aLines, shellLineIdx + 0);
+                  ne.shell_effect_uid  = getLineAndTrim(aLines, shellLineIdx + 1);
+
+                  if(ne.shell_effect_name & "CODEX")
+                  {
+                     // hack for Waves CODEX
+                     ne.category = VST2PLUGIN_CATEGORY_SYNTH;
+                  }
+
+                  shell_entries.add(#(deref ne));
+
+                  // Next shell plugin
+                  shellLineIdx += 2;
+                  num_ok_inc++;
+               }
+
+               entry <= null;  // => bAddEntry=false
+            }
+            else
+            {
+               // Regular, non-shell plugin
+               num_ok_inc++;
+            }
+         }
+         else
+         {
+            // Invalid / empty output => scan failed
+            entry.b_bad = true;
+            b_bad = true;
+            // // entry <= null;  // => bAddEntry=false
+         }
+      }
+      else
+      {
+         // Windows / Linux
+         local VST2Plugin plugin <= new VST2Plugin;
+         // plugin.enableDebug = true;
+
+         if(plugin.loadPlugin(path_name, 0/*shellPlugin=scan*/))
+         {
+            entry.effect_name    = plugin.effectName;
+            entry.vendor_string  = plugin.vendorString;
+            entry.product_string = plugin.productString;
+            entry.category       = plugin.category;
+
+            if(entry.effect_name & "Heartbeat")
+            {
+               // Fix Softube Heartbeat category (effect => synth)
+               entry.category = VST2PLUGIN_CATEGORY_SYNTH;
+            }
+
+            entry.unique_id      = plugin.uniqueID;
+            entry.version        = plugin.version;
+            entry.b_synth        = plugin.isSynth();
+
+            numShellPlugins = plugin.numShellPlugins;
+
+            if(numShellPlugins > 0)
+            {
+               local int shellIdx = 0;
+
+               loop(numShellPlugins)
+               {
+                  ne <= new VSTScanEntry;
+                  ne = entry;
+                  ne.shell_effect_name = plugin.getShellPluginNameByIndex(shellIdx);
+                  ne.shell_effect_uid  = plugin.getShellPluginUIDByIndex(shellIdx);
+
+                  if(ne.shell_effect_name & "CODEX")
+                  {
+                     // hack for Waves CODEX
+                     ne.category = VST2PLUGIN_CATEGORY_SYNTH;
+                  }
+
+                  // trace "xxx ne.shell_effect_name="+ne.shell_effect_name;
+                  Global.Debug("VST::DeepScanAll: adding shell plugin vendor=\""+entry.vendor_string+"\" name=\""+ne.shell_effect_name+"\" UID="+ne.shell_effect_uid);
+
+                  shell_entries.add(#(deref ne));
+                  shellIdx++;
+                  num_ok_inc++;
+               }
+
+               entry <= null;  // => bAddEntry=false
+            }
+            else
+            {
+               num_ok_inc++;
+            }
+
+            local String *sCloseName;
+            foreach sCloseName in STConfig.vst_closelibrary_blacklist
+            {
+               if(plugin.effectName & sCloseName)
+               {
+                  closelibrary_blacklist.add(#(deref plugin));
+               }
+            }
+
+            plugin <= null;
+         }
+         else
+         {
+            trace "[~~~] VST::VSTDeepScanJob::scan: failed to load VST2 plugin \""+path_name+"\".";
+            entry.b_bad = true;
+            b_bad = true;
+         }
+      }
+
+      b_active = false;
+   }
+}
+
+// <callback.png>
+function deepscan_thread_entry(local Thread _th) {
+   local VSTDeepScanJob job <= _th.userdata;
+   if(STConfig.b_vst_deepscan_process)
+   {
+      job.scan(_th.id);
+   }
+   else
+   {
+      try
+      {
+         job.scan(_th.id);
+      }
+      catch(Error e)
+      {
+         trace "[---] vst threaded deepscan: caught exception while scanning job_idx="+job.job_idx+" thread.id="+_th.id+" path_name=\""+job.path_name+"\"";
+      }
+   }
+   Global.Debug2("vst threaded deepscan: leaving thread id="+_th.id+" job_idx="+job.job_idx);
+}
+
+
+
+// <class.png>
+class VSTErrorNotification {
+
+   define int FILENOTFOUND = 1;
+   define int NOTINCACHE   = 2;
+   define int FAILEDTOLOAD = 3;
+   define int FXPATCHERROR = 4; // should not happen (corrupted songfile?)
+
+   String plugin_name;
+
+   VSTScanEntry *entry;
+
+   // (todo) add detailed info (file not found, failed to load, ..)
+   int error_code;
+}
+
+
+// <class.png>
+class VSTAutomateEvent {
+   VST2Plugin *plugin;
+   int        param_idx;
+   float      value;
+   int        b_begin;  // -1=automate (value is valid), 1/==begin/end edit (only param_idx is valid)
+}
+
+
+// <class.png>
+class VSTKeyEvent {
+   VST2Plugin *plugin;
+   int lparam; // raw scan code
+}
+
+
+// <class.png>
+class VSTVendor {
+   String name;
+   PointerArray entries;  // VSTScanEntry references
+}
+
+
+// <class.png>
+class VST2 {
+
+   static boolean b_vst2_debug;
+
+   static String EV_UPDATEDISPLAY = "processUpdateDisplayQueueVST2";
+   static String EV_AUTOMATE      = "processAutomateQueueVST2";
+   static String EV_KEY           = "processKeyEventQueueVST2";
+
+   static StringArray category_names = [ "Unknown",         // kPlugCategUnknown
+                                         "Effect",          // kPlugCategEffect
+                                         "Synth",           // kPlugCategSynth
+                                         "Analysis",        // kPlugCategAnalysis
+                                         "Mastering",       // kPlugCategMastering
+                                         "Spacializer",     // kPlugCategSpacializer
+                                         "RoomFX",          // kPlugCategRoomFx
+                                         "SurroundFX",      // kPlugSurroundFx
+                                         "Restoration",     // kPlugCategRestoration
+                                         "OfflineProcess",  // kPlugCategOfflineProcess
+                                         "Shell",           // kPlugCategShell
+                                         "Generator"        // kPlugCategGenerator
+                                         ];
+
+   // Absolute path of each VST instrument found during Rescan()
+   static VSTScanEntry *[] vst_scan_entries;  // raw file entries, filled by RescanAll()
+   static VSTScanEntry *[] vst_entries;  // from vstcache.dat / vstcache_wl.dat, or filled by DeepScanAll()
+   static boolean b_scan_complete;  // false when scan was aborted due to crashes or max number of jobs exceeded (=> load partial cache and continue on next run)
+   static Integer cache_checksum_all;
+   static Integer rescan_checksum_all;
+
+   // VSTErrorNotification, set in LazyLoadPlugins()
+   //  this is used when displaying an error dialog in case some of the plugins reference in a song
+   //  do not exist or failed to load
+   static PointerArray vst_errors;
+
+   static InfoDialog *dlg_error;
+
+   static VST2Plugin *[] updatedisplay_queue; // list of plugins (references)
+   static ClassArray automate_queue;
+   static boolean b_automate_event_sent;
+
+   static ClassArray keyevent_queue;
+   static boolean b_key_event_sent;
+
+   static PointerArray sorted_effects;      // VSTVendor instances
+   static PointerArray sorted_instruments;  // VSTVendor instances
+   static PointerArray sorted_all;          // VSTVendor instances
+
+   // some VSTs send automate events when they are instantiated which will override the loaded patch (the VSTs _should_ send another set of automate events when a patch is loaded but some don't, e.g. Acon Digital Verberate 2)
+   static boolean b_ignore_automation;
+
+
+   // <method_init.png>
+   static Init() {
+
+      VST2Plugin.StaticInit();  // mainly for shell plugins, also init/open databridge host event
+
+      automate_queue.template = VSTAutomateEvent;
+      automate_queue.alloc(32);//256);
+
+      keyevent_queue.template = VSTKeyEvent;
+      keyevent_queue.alloc(32);//256);
+
+      if(STConfig.b_vst_scan_or_load_cache)
+      {
+         RescanAll();
+
+         if(!LoadVSTCache())
+         {
+            if(STConfig.b_vst_auto_deepscan)
+            {
+               trace "[...] VST::Init: '"+GetCacheFileName()+"' not found, rescanning..";
+               DeepScanAll();
+            }
+            else
+            {
+               trace "[...] VST::Init: '"+GetCacheFileName()+"' not found, no plugins available";
+            }
+         }
+
+         if(cache_checksum_all != rescan_checksum_all)
+         {
+            trace "[~~~] VST::Init: checksum mismatch, deep scan required. (cache="+cache_checksum_all.printf("0x%08x")+" rescan="+rescan_checksum_all.printf("0x%08x");
+
+            if(STConfig.b_vst_auto_deepscan)
+            {
+               RescanAll();
+               DeepScanAll();
+            }
+         }
+
+         SortPlugins();
+      }
+   }
+
+   // <method_exit.png>
+   static Exit() {
+
+      FreeInstancePools();
+
+      VST2Plugin.StaticExit();
+   }
+
+   // <method.png>
+   protected static SortPlugins() {
+      sorted_effects.free();
+      sorted_instruments.free();
+      sorted_all.free();
+
+      SortByVendor(sorted_effects,     true/*bEffect*/);
+      SortByVendor(sorted_instruments, false/*bEffect*/);
+      SortByVendor(sorted_all,         maybe/*bEffect*/);
+   }
+
+   // <method.png>
+   static public GetCacheFileName() : String {
+      if(STConfig.b_vst_deepscan_whitelist)
+         return Utils.ToNativePathName("$(CACHE_DIR)/vstcache_wl.dat");
+      return Utils.ToNativePathName("$(CACHE_DIR)/vstcache.dat");
+   }
+
+   // <method.png>
+   static public GetNumValidPlugins() : int {
+      int r = 0;
+      VSTScanEntry *en;
+      foreach en in vst_entries
+      {
+         if(!en.b_bad)
+            r++;
+      }
+      return r;
+   }
+
+   // <method.png>
+   static public RescanAllPlugins() : int {
+      String cacheFileName <= GetCacheFileName();
+      trace "[...] VST2::RescanAllPlugins: removing cache file \""+cacheFileName+"\".";
+      tkfileutils_rm(cacheFileName);
+      vst_entries.free();
+
+      trace "[...] VST2::RescanAllPlugins: starting rescan";
+      RescanAll();
+      trace "[...] VST2::RescanAllPlugins: rescan found "+vst_scan_entries.numElements+" plugin(s)";
+
+      trace "[...] VST2::RescanAllPlugins: starting deep scan (may take several minutes)";
+      tkfileutils_setcwd(st2::program_directory);
+      if(STConfig.b_vst_deepscan_process)
+      {
+         // launch separate processes
+         system("\""+TKS.tksExePath+"\" vst2rescan.tks");
+      }
+      else
+      {
+         // potentially dangerous: scan within this process
+         DeepScanAll();
+      }
+      trace "[...] VST2::RescanAllPlugins: rescan complete, reloading cache file \""+cacheFileName+"\"";
+      LoadVSTCache();
+      SortPlugins();
+      int numValid = GetNumValidPlugins();
+      trace "[...] VST2::RescanAllPlugins: found "+numValid+" valid plugin"+Utils.GetPluralString(numValid);
+      return numValid;
+   }
+
+
+   // <method_exit.png>
+   static public FreeInstancePools() {
+      VSTScanEntry *en;
+      foreach en in vst_entries
+      {
+         String uid <= en.getUniqueIDString();
+         int pluginIdx = 0;
+
+         VST2Plugin *plugin;
+         foreach plugin in en.instance_pool
+         {
+            Global.Debug2("VST2::Exit: cleaning up pool instance uid=\""+uid+"\" "+(pluginIdx+1)+"/"+(en.instance_pool.numElements));
+            plugin.close();
+            pluginIdx++;
+         }
+
+         en.instance_pool.free();
+
+         // Next scan entry
+      }
+   }
+
+   // <method.png>
+   static RescanAll() {
+
+      rescan_checksum_all = 0x900df00d;
+
+      vst_scan_entries.empty();
+
+      String *pathName;
+      foreach pathName in STConfig.vst_paths
+      {
+         if(Configuration.debugLevel > 1)
+         {
+            Global.Debug2("VST2::RescanAll: BEGIN scan VST path \""+pathName+"\"");
+         }
+
+         // // int num = Scan(Utils.SubstitutePathVars(pathName));
+         int num = Scan(Utils.ToNativePathName(pathName));
+
+         if(Configuration.debugLevel > 1)
+         {
+            Global.Debug2("VST2::RescanAll: END scan VST path \""+pathName+"\". Found "+num+" VST2 plugins.");
+         }
+      }
+
+      Global.Debug("VST2::RescanAll: found a total of "+vst_scan_entries.numElements+" VST2 plugins.");
+
+   }
+
+   // <method.png>
+   static Scan(local String dirName) : int {
+
+      local int r = 0;
+      boolean bMacOS   = Utils.IsMacOS();
+      boolean bWindows = Utils.IsWindows();
+
+      if(!dirName.endsWith("/"))
+         dirName.append("/");
+
+      if(Configuration.debugLevel > 1)
+      {
+         Global.Debug("VST2::Scan: entering directory \""+dirName+"\".");
+      }
+
+      local StringArray a <= Utils.ReadDirectory(dirName);
+      if(null != a)
+      {
+         local String *fileEntry;
+         foreach fileEntry in a
+         {
+            local StringArray attribs <= fileEntry.splitSpace(true);
+
+            local String fileName <= attribs.get(1);
+
+            VSTScanEntry *e;
+
+            if('d' == fileEntry.getc(0))
+            {
+               if!( (fileName == ".") || (fileName == "..") )
+               {
+                  if(bMacOS && (fileName >= ".vst"))
+                  {
+                     // macOS VST bundle directory, Add entry
+                     e <= new VSTScanEntry;
+                     e.init(dirName + fileName);
+                     rescan_checksum_all ^= e.path_name.checksum;
+                     vst_scan_entries.add(#(deref e));
+                     r++;
+                  }
+                  else
+                  {
+                     // Regular Directory
+                     r += Scan(dirName + "/" + fileName);
+                  }
+               }
+            }
+            else if(bWindows && (fileName.toLower().endsWith(".dll")))
+            {
+               if(Configuration.debugLevel > 1)
+               {
+                  Global.Debug("VST2::Scan: found \""+fileName+"\".");
+               }
+
+               // Windows DLL, Add entry
+               e <= new VSTScanEntry;
+               e.init(dirName + fileName);
+               rescan_checksum_all ^= e.path_name.checksum;
+               vst_scan_entries.add(#(deref e));
+               r++;
+            }
+         }
+
+         return r;
+      }
+      else
+      {
+         trace "[~~~] VST2::Scan: failed to read directory \""+dirName+"\".";
+         return 0;
+      }
+   }
+
+   // <method.png>
+   static DeepScanAll() {
+
+      Configuration.threadTerminateOnException = true;
+
+      int numOK = 0;
+      int numWhiteListed = 0;
+      int numBlackListed = 0;
+
+      StringArray failNames;
+      failNames.empty();
+
+      local VSTScanEntry *[] newEntries;
+      VSTScanEntry *e;
+      VSTScanEntry *ne;
+      VSTScanEntry *ce;
+
+      VSTDeepScanJob *[] jobs;
+      int numActiveJobs;
+
+      int msStart = milliSeconds();
+
+      int numJobsProcessed = 0;
+      boolean bScanAborted = false;
+
+      int numKilled = 0;
+
+      foreach e in vst_scan_entries
+      {
+         String pathName <= e.path_name;
+         String *filter;
+
+         boolean bFiltered = STConfig.b_vst_deepscan_whitelist;
+
+         // Check if the VST2 plugin is white-listed
+         if(bFiltered)
+         {
+            foreach filter in STConfig.vst_deepscan_whitelist
+            {
+               if(filter <= "!")
+               {
+                  if(pathName & filter.substring(1,99))
+                  {
+                     bFiltered = true;
+                     break;
+                  }
+               }
+               else if(pathName & filter)
+               {
+                  bFiltered = false;
+                  break;
+               }
+            }
+
+         }
+
+         // Check if the VST2 plugin is black-listed
+         if(!bFiltered)
+         {
+            foreach filter in STConfig.vst_deepscan_blacklist
+            {
+               if(pathName & filter)
+               {
+                  bFiltered = true;
+                  break;
+               }
+            }
+         }
+
+         // if!(pathName & "WaveShell")
+         //    bFiltered = true;
+
+         boolean bAddEntry = true;
+         VSTDeepScanJob *tjob;
+
+         if(!bFiltered)
+         {
+            boolean bCached = false;
+
+            boolean bAllowIncremental = true;
+
+            bAllowIncremental = !(pathName & "WaveShell"); // hack
+
+            if(STConfig.b_vst_deepscan_incremental && bAllowIncremental)
+            {
+               // Find existing cache entry
+               foreach ce in vst_entries
+               {
+                  if(ce.path_name == pathName)
+                  {
+                     // Re-add cached entry
+                     e = ce;
+                     bCached = true;
+                     break;
+                  }
+               }
+            }
+
+            if(!bCached)
+            {
+               // (note) weird TLS-related crashes on macOS when loading (too) many bundles
+               if( (0 == STConfig.vst_max_deepscan_jobs) || (numJobsProcessed++ < STConfig.vst_max_deepscan_jobs) )
+               {
+                  VSTDeepScanJob job <= new VSTDeepScanJob;
+
+                  job.job_idx   = jobs.numElements;
+                  job.b_active  = true;
+                  job.path_name = pathName;
+                  job.entry    <= e;
+
+                  boolean bThreading = true;
+
+                  String *blackListEntry;
+                  foreach blackListEntry in STConfig.vst_deepscan_threaded_blacklist
+                  {
+                     if(pathName & blackListEntry)
+                     {
+                        bThreading = false;
+                        break;
+                     }
+                  }
+
+                  if(!bThreading)
+                  {
+                     Global.Debug2("vst threaded deepscan: single-thread \""+pathName+"\" since it's black-listed");
+                  }
+
+                  if(!bThreading || (0 == STConfig.vst_deepscan_num_threads))
+                  {
+                     // Single-Threaded scan
+                     job.scan(-1);
+
+                     // Add result from synchronous plugin scan
+                     bAddEntry = (null != job.entry);
+
+                     if(!job.b_bad)
+                     {
+                        numOK += job.num_ok_inc;
+
+                        if((job.shell_entries.numElements) > 0)
+                        {
+                           newEntries.joinDD(newEntries, job.shell_entries);
+                        }
+                     }
+                     else
+                     {
+                        failNames.add(job.path_name);
+                        e.b_bad = true;
+                     }
+                  }
+                  else
+                  {
+                     // Multi-Threaded scan
+                     bAddEntry = false;
+
+                     numActiveJobs = 0;
+                     foreach tjob in jobs
+                     {
+                        numActiveJobs += tjob.b_active;
+                     }
+
+                     Global.Debug2("vst threaded deepscan: numActiveJobs="+numActiveJobs+" pathName=\""+pathName+"\"");
+
+                     if(STConfig.vst_deepscan_num_threads == numActiveJobs)
+                     {
+                        // Wait for first active job
+                        foreach tjob in jobs
+                        {
+                           if(tjob.b_active)
+                           {
+                              Global.Debug2("vst threaded deepscan: max jobs ("+STConfig.vst_deepscan_num_threads+") exceeded, wait for job "+tjob.job_idx);
+                              int numIter = 0;
+                              loop(500)
+                              {
+                                 TKS.sleep(20);
+                                 if(!tjob.b_active)
+                                    break;
+                                 // // tjob.thread.wait();
+                              }
+                              if(tjob.b_active)
+                              {
+                                 // (note) all following jobs will fail(timeout) on macOS (e.g. after scanning SynthMaster2 VST)
+                                 // (note) must restart entire scan process (i.e. save current vstcache*.dat, restart process and continue with next entry)
+                                 Global.Debug2("vst threaded deepscan: job "+tjob.job_idx+" timed out, killing thread");
+                                 tjob.thread.kill();
+                                 Global.Debug2("vst threaded deepscan: job "+tjob.job_idx+" killed");
+                                 tjob.b_bad = true;
+                                 tjob.b_active = false;
+                                 numKilled++;
+                                 numActiveJobs--;
+                                 bScanAborted = true;
+                              }
+                              else
+                              {
+                                 Global.Debug2("vst threaded deepscan: job "+tjob.job_idx+" finished OK");
+                              }
+                              break;
+                           }
+                        }
+                     }
+
+                     if(0 == numKilled)
+                     {
+                        Thread th <= new Thread;
+                        job.thread <= deref th;
+                        th.userdata = job;
+                        // trace "xxx spawn job_idx="+job.job_idx+" path_name=\""+job.path_name+"\"";
+                        th.create(deepscan_thread_entry);
+
+                        jobs.add(#(deref job));
+                     }
+                  }
+               }
+               else
+               {
+                  Global.Debug2("VST2::DeepScanAll: skipping entry \""+e.path_name+"\" (max scan jobs exceeded, continue on next run)");
+                  bAddEntry = false;
+                  bScanAborted = true;
+               }
+            } // if bCached
+            else
+            {
+               Global.Debug2("VST2::DeepScanAll: re-adding cached entry \""+e.path_name+"\"");
+               numOK++;
+            }
+         }
+         else
+         {
+            Global.Debug("VST2::DeepScanAll: VST2 plugin \""+e.path_name+"\" is black listed, skipping..");
+            e.b_bad = true;
+            numBlackListed++;
+            bAddEntry = false;
+         }
+
+         if(bAddEntry)
+         {
+            ne <= new VSTScanEntry;
+            ne = e;
+            newEntries.add(#(deref ne));
+         }
+
+         if(numKilled > 0)
+            break;
+
+      } // foreach e in vst_scan_entries
+
+      b_scan_complete = !bScanAborted;
+
+      if(0 != STConfig.vst_deepscan_num_threads)
+      {
+
+         // Add results from asynchronous plugin scans
+         numActiveJobs = 0;
+         foreach job in jobs
+         {
+            if(job.b_active)
+            {
+               numActiveJobs++;
+               trace "[~~~] vst threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" is still active";
+            }
+         }
+
+         if(numActiveJobs > 0)
+         {
+            TKS.sleep(5000);
+            numActiveJobs = 0;
+            foreach job in jobs
+            {
+               if(job.b_active)
+               {
+                  numActiveJobs++;
+                  trace "[~~~] vst threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" is still active 5sec";
+               }
+            }
+         }
+
+         if(numActiveJobs > 0)
+         {
+            TKS.sleep(5000);
+            numActiveJobs = 0;
+            foreach job in jobs
+            {
+               if(job.b_active)
+               {
+                  // numActiveJobs++;
+                  trace "[~~~] vst threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" is still active after 10sec, killing thread";
+                  job.thread.kill();
+                  trace "[~~~] vst threaded deepscan: job_idx="+job.job_idx+" path_name=\""+job.path_name+"\" killed.";
+                  numKilled++;
+                  job.b_active = false;
+                  job.b_bad = true;
+                  bScanAborted = true;
+               }
+            }
+         }
+
+         // if(numActiveJobs > 0)
+         // {
+         //    trace "[~~~] vst threaded deepscan: "+numActiveJobs+"/"+jobs.numElements+" jobs are still active after 2sec";
+         // }
+         // else
+         // {
+         //    trace "[+++] vst threaded deepscan: all "+jobs.numElements+" jobs have finished.";
+         // }
+
+         if(0 == numKilled)
+            trace "[+++] vst threaded deepscan: all "+jobs.numElements+" jobs have finished, "+numKilled+" were killed.";
+         else
+            trace "[~~~] vst threaded deepscan: "+(jobs.numElements-numKilled)+" / "+jobs.numElements+" jobs have finished, "+numKilled+" were killed.";
+
+         foreach job in jobs
+         {
+            if(job.b_active)
+            {
+               Global.Debug2("vst threaded deepscan: finally wait for job "+job.job_idx);
+               job.thread.wait();
+               Global.Debug2("vst threaded deepscan: job "+job.job_idx+" finally finished OK");
+            }
+
+            e <= job.entry;
+            bAddEntry = (null != e);  // null in case of shell plugin
+
+            if(!job.b_bad)
+            {
+               numOK += job.num_ok_inc;
+
+               if((job.shell_entries.numElements) > 0)
+               {
+                  // trace "xxx prejoin: num="+newEntries.numElements+" newEntries="+#(newEntries);
+                  // trace "xxx job.shell_entries="+#(job.shell_entries);
+                  newEntries.joinDD(newEntries, job.shell_entries);
+                  // trace "xxx postjoin: num="+newEntries.numElements+" newEntries="+#(newEntries);
+               }
+            }
+            else
+            {
+               failNames.add(job.path_name);
+
+               if(null != e)  // not a shell plugin ?
+               {
+                  // Add scan entry (marked as bad) so it won't be retried on next run
+                  e.b_bad = true;
+               }
+
+            }
+
+            if(bAddEntry)
+            {
+               ne <= new VSTScanEntry;
+               ne = e;
+               newEntries.add(#(deref ne));
+            }
+         }
+
+         jobs.free();
+      }
+
+
+      vst_entries <= deref newEntries;
+
+      // Print report
+      trace "[+++] VST2::DeepScanAll: finished in "+(float(milliSeconds()-msStart)/1000.0)+" seconds. "+(vst_entries.numElements - numOK)+" / "+vst_entries.numElements + " failed ("+numBlackListed+" blacklisted), "+numOK+" were OK.";
+
+      if(failNames.numElements)
+      {
+         trace "[~~~] VST2::DeepScanAll: The following VST2 plugins failed to load:";
+         String *t;
+         foreach t in failNames
+         {
+            trace "\t\t\""+t+"\",";
+         }
+      }
+
+      int dbgIdx;
+      if(0)
+      {
+         dbgIdx = 0;
+         foreach e in vst_entries
+         {
+            trace "xxx vst_entry["+dbgIdx+"] b_bad="+e.b_bad+" path_name=\""+e.path_name+"\" unique_id="+e.unique_id+" shell_uid="+e.shell_effect_uid;
+            dbgIdx++;
+         }
+      }
+
+      Configuration.threadTerminateOnException = false;
+
+      // Save VST-cache
+      String cacheFileName <= GetCacheFileName();
+      trace "[...] VST2::DeepScanAll: writing cache file \""+cacheFileName+"\".";
+
+      tkfileutils_setcwd(program_directory);
+
+      cache_checksum_all = rescan_checksum_all;
+
+      File f; f.openLocal(cacheFileName, IOS_OUT);
+
+      f << cache_checksum_all;
+      f << vst_entries;
+      f.i8 = !bScanAborted;
+      f.close();
+   }
+
+   // <method.png>
+   static LoadVSTCache() : boolean {
+       // return false;//xxxxxxxxxxxxxxx
+
+      tkfileutils_setcwd(program_directory);
+
+      String cacheFileName <= GetCacheFileName();
+      File f;
+      if(f.openLocal(cacheFileName, IOS_IN))
+      {
+         Global.Debug("VST2::LoadVSTCache: found \""+cacheFileName+"\".");
+         cache_checksum_all << f;
+         vst_entries.empty();
+         vst_entries << f; // (todo) handle de-serialization error
+         b_scan_complete = f.i8;
+         if(!b_scan_complete)
+            cache_checksum_all = 0xbadbad11; // previous scan was only partial (macOS), continue deep scan
+         Global.Debug("VST2::LoadVSTCache: "+vst_entries.numElements+" entries restored from cache");
+         f.close();
+
+         int enIdx;
+
+         if(1 || b_vst2_debug)
+         {
+            VSTScanEntry *en;
+            enIdx = 0;
+            foreach en in vst_entries
+            {
+               // trace "xxx en="+#(en)+" enIdx="+enIdx+" num="+vst_entries.numElements;
+               if(0) Global.Debug("VST2::LoadVSTCache: vst_cache["+enIdx+"] uniqueIDString=\""+en.getUniqueIDString()+"\" cat="+en.category);
+               enIdx++;
+            }
+         }
+
+         if(0)
+         {
+            enIdx = 0;
+            foreach en in vst_entries
+            {
+               if(en.path_name & "Mixcraft")
+                  if(!en.b_bad)
+                     trace "xxx GOOD vst_entry["+enIdx+"] b_bad="+en.b_bad+" path_name=\""+en.path_name+"\" unique_id="+en.unique_id+" shell_uid="+en.shell_effect_uid;
+                  else
+                     trace "xxx  BAD vst_entry["+enIdx+"] b_bad="+en.b_bad+" path_name=\""+en.path_name+"\" unique_id="+en.unique_id+" shell_uid="+en.shell_effect_uid;
+               enIdx++;
+            }
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   static FindVSTEntryByUniqueIDString(local String _uid) : VSTScanEntry {
+
+      // // if(_uid & "SuperPlate")
+      // //    return null; // xxxxxxxxxxxxxxx debug
+
+      if(_uid & "vcvrack_plugin")
+         _uid = "bsp`VCV Rack 0.6.1`1735812985"; // was renamed
+
+      // Find by combination of effectname, productstring, uniqueId, and version
+      local VSTScanEntry *e;
+      foreach e in vst_entries
+      {
+         local String str <= e.getUniqueIDString();
+         if(str == _uid)
+         {
+            return e;
+         }
+      }
+
+      // Fall back to 4CC VST id
+      int lastIdx = _uid.lastIndexOf("`");
+      if(-1 != lastIdx)
+      {
+         int fourCC = _uid.substring(lastIdx+1, 16);
+         Global.Debug("VST2::FindVSTEntryByUniqueIDString: uid=\""+_uid+"\", fourCC="+fourCC);
+         foreach e in vst_entries
+         {
+            if(e.unique_id == fourCC)
+               return e;
+         }
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   static SortByVendor(PointerArray _vendors, boolean _bEffect) {
+
+      VSTVendor *vendor;
+      VSTVendor *ovendor;
+      VSTScanEntry *en;
+      int vendorIdx;
+      int enIdx;
+
+      foreach en in vst_entries
+      {
+         if(!en.b_bad)
+         {
+            boolean bIsInstr =
+               (VST2PLUGIN_CATEGORY_SYNTH     == en.category) ||
+               (VST2PLUGIN_CATEGORY_GENERATOR == en.category) ;
+
+            if((maybe == _bEffect) || (bIsInstr ^ _bEffect))
+            {
+               // Find vendor
+               boolean bFoundVendor = false;
+               foreach vendor in _vendors
+               {
+                  if(vendor.name == en.vendor_string)
+                  {
+                     bFoundVendor = true;
+                     break;
+                  }
+               }
+
+               if(!bFoundVendor)
+               {
+                  // Add sorted vendor
+                  vendor <= new VSTVendor;
+                  vendor.name = en.vendor_string;
+                  boolean bAddedVendor = false;
+                  vendorIdx = 0;
+                  foreach ovendor in _vendors
+                  {
+                     if(vendor.name.isPredecessor(ovendor.name, false/*bCaseSensitive*/))
+                     {
+                        _vendors.insert(vendorIdx, #(deref vendor));
+                        bAddedVendor = true;
+                        break;
+                     }
+                     vendorIdx++;
+                  }
+                  if(!bAddedVendor)
+                  {
+                     _vendors.add(#(deref vendor));
+                  }
+               }
+
+               // Add sorted plugin
+               VSTScanEntry *oen;
+               boolean bAddedEntry = false;
+               enIdx = 0;
+               foreach oen in vendor.entries
+               {
+                  if(en.getEffectName().isPredecessor(oen.getEffectName(), false/*bCaseSensitive*/))
+                  {
+                     vendor.entries.insert(enIdx, en);
+                     bAddedEntry = true;
+                     break;
+                  }
+                  enIdx++;
+               }
+               if(!bAddedEntry)
+               {
+                  vendor.entries.add(en);
+               }
+            } // instr or effect
+         } // !bad
+      } // loop entries
+
+      // Debug-print results
+      if(0)
+      {
+         vendorIdx = 0;
+         foreach vendor in _vendors
+         {
+            enIdx = 0;
+            foreach en in vendor.entries
+            {
+               trace "xxx vendor["+vendorIdx+"].name=\""+vendor.name+"\" en["+enIdx+"].name="+en.getEffectName();
+               enIdx++;
+            }
+            vendorIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public =vstpool= static AddPluginBackToPool(local String _uid, local VST2Plugin _plugin) {
+      local VSTScanEntry en <= FindVSTEntryByUniqueIDString(_uid);
+      if(null != en)
+      {
+         en.instance_pool.add(#(deref _plugin));
+         Global.Debug2("VST2::AddPluginToPool: added plugin uid=\""+_uid+"\" added back to pool (num="+(en.instance_pool.numElements)+")");
+      }
+      else
+      {
+         trace "[~~~] VST2::AddPluginToPool: entry uid=\""+_uid+"\" not found !!!";
+      }
+   }
+
+   // <method.png>
+   static ClearErrorList() {
+      vst_errors.free();
+   }
+
+   // <ui_show.png>
+   static ShowErrorDialog() : boolean {
+
+      if(vst_errors.numElements > 0)
+      {
+         VSTErrorNotification *error;
+
+         String errMsg = "The following plugins could not be loaded:\n\n";
+
+         foreach error in vst_errors
+         {
+            errMsg.append("ID: \"");
+            errMsg.append(error.plugin_name);
+            errMsg.append("\"\n");
+
+            errMsg.append("Error: ");
+            switch(error.error_code)
+            {
+               default:
+                  errMsg.append("unknown");
+                  break;
+
+               case VSTErrorNotification.FILENOTFOUND:
+                  errMsg.append("file not found");
+                  break;
+
+               case VSTErrorNotification.NOTINCACHE:
+                  errMsg.append("not in plugin cache");
+                  break;
+
+               case VSTErrorNotification.FAILEDTOLOAD:
+                  errMsg.append("failed to load");
+                  break;
+
+               case VSTErrorNotification.FXPATCHERROR:
+                  errMsg.append("fx patch error");
+                  break;
+            }
+
+            if(null != error.entry)
+            {
+               errMsg.append("\nFile: \"");
+               errMsg.append(error.entry.path_name);
+               errMsg.append("\"");
+            }
+
+            errMsg.append("\n\n");
+         }
+
+         dlg_error <= InfoDialog.NewError("VST plugin errors",
+                                          errMsg,
+                                          null
+                                          );
+         dlg_error.showCentered();
+      }
+   }
+
+   // <method.png>
+   static =vstupdatedisplay= QueueUpdateDisplayEvent(VST2Plugin _plugin) {
+      // Called by onAudioMasterUpdateDisplay (via VST2Plugin HostCallback)
+      updatedisplay_queue.add(_plugin);
+      SDL.sendEvent(EV_UPDATEDISPLAY);
+   }
+
+   // <method.png>
+   static =vstupdatedisplay= ProcessUpdateDisplayQueue() {
+      updatedisplay_queue.empty();
+   }
+
+   // <method.png>
+   static =vstautomate= QueueAutomateEvent(local VST2Plugin _plugin, local int _paramIdx, local float _value, local int _bBegin) {
+      // Called by onAudioMasterAutomate (via VST2Plugin HostCallback)
+      if(!b_ignore_automation)
+      {
+         VSTAutomateEvent ev <= automate_queue.nextFree;
+         if(null != ev)
+         {
+            ev.plugin    <= _plugin;
+            ev.param_idx  = _paramIdx;
+            ev.value      = _value;
+            ev.b_begin    = _bBegin;
+            if(!b_automate_event_sent)
+            {
+               b_automate_event_sent = true;
+               SDL.sendEvent(EV_AUTOMATE);
+            }
+         }
+         current_project.markAsModified();
+      }
+   }
+
+   // <method.png>
+   static =vstautomate= ProcessAutomateQueue() {
+      // Called from UI thread
+      ////trace "xxx ProcessAutomateQueue: #elements="+automate_queue.numElements;
+
+      if(!b_ignore_automation)  // during plugin instantation + patch loading
+      {
+         VSTAutomateEvent *ev;
+         VST2Plugin *plugin;
+         foreach ev in automate_queue
+         {
+            Global.Debug3("VST2::ProcessAutomateQueue: plugin="+#(ev.plugin)+" paramIdx="+ev.param_idx+" value="+ev.value);
+
+            plugin <= ev.plugin;
+
+            Track *track;
+            foreach track in current_project.tracks
+            {
+               Lane *lane;
+               foreach lane in track.lanes
+               {
+                  ModVST2 *modVST2;
+                  foreach modVST2 in lane.mods
+                  {
+                     if(modVST2 instanceof ModVST2)
+                     {
+                        boolean bIsPlugin;
+
+                        if(modVST2.b_relative_params)
+                           bIsPlugin = @(modVST2.shadow_plugin) == @(plugin);
+                        else
+                           bIsPlugin = @(modVST2.plugin) == @(plugin);
+
+                        if(bIsPlugin)
+                        {
+                           modVST2.handleAutomateEvent(ev, track, lane);
+
+                           if(-1 == ev.b_begin)
+                           {
+                              // Notify sequencer process
+                              String paramName = plugin.getParameterName(ev.param_idx);
+                              SysEx.SendRemoteParamNotify(track.dev_idx,
+                                                          track.midi_ch,
+                                                          modVST2.instance_id,
+                                                          ev.param_idx,
+                                                          ev.value,
+                                                          paramName
+                                                          );
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      automate_queue.empty();
+      b_automate_event_sent = false;
+   }
+
+   // <method.png>
+   static =vstkeyevent= QueueKeyEvent(local VST2Plugin _plugin, local int _lparam) {
+      // Called by onAudioMasterWin32KeyEvent (via VST2Plugin HostCallback)
+      local VSTKeyEvent ev <= keyevent_queue.nextFree;
+      // trace "xxx VST2::QueueKeyEvent: lparam="+_lparam;
+
+      if(null != ev)
+      {
+         ev.plugin    <= _plugin;
+         ev.lparam     = _lparam;
+
+         if(!b_key_event_sent)
+         {
+            b_key_event_sent = true;
+            SDL.sendEvent(EV_KEY);
+         }
+      }
+   }
+
+   // <method.png>
+   protected static ProcessWin32KeyEvent(VSTKeyEvent ev) {
+      VST2Plugin plugin <= ev.plugin;
+
+      boolean bPressed = ! (ev.lparam & 0x80000000);
+
+      short code = (ev.lparam >> 16) & (0xFFF);
+
+      if(bPressed)
+      {
+         Global.Debug3("VST2::ProcessWin32KeyEvent: plugin="+#(ev.plugin)+" pressed, code="+code);
+         PageTrack pgTrack <= root_form.pg_track;
+
+         switch(code)
+         {
+            case 1: // ESCAPE
+               current_project.hidePluginEditorByVST2Plugin(plugin);
+               Global.Print("Hide VST2 plugin editor (ESC)");
+               pgTrack.ignoreNextKeyEscape();
+               break;
+
+            case 0x0029:  // `  (de:^)
+               current_project.syncPluginMainAndMirrorMods(plugin);
+               Global.Print("Sync plugin shadow->main and LPC/MPE mirror mods");
+               break;
+
+            case 0x011c:  // NUMPAD enter
+               replay.toggleSeq(false/*bSeq*/);
+               break;
+
+            case 88: // F12
+            case 15: // TAB
+               current_project.addModMatrixEntryForLastTouchedParamVST2(plugin);
+               break;
+
+            case 285: // RCTRL
+            case 84:  // F8
+               root_form.toggleAudioRecording();
+               break;
+         }
+      }
+
+      // KeyJazz.HandleWin32Key(code, bPressed);
+   }
+
+   // <method.png>
+   protected static ProcessMacOSKeyDown(VSTKeyEvent ev) {
+      VST2Plugin plugin <= ev.plugin;
+      int code = ev.lparam;
+      // trace "[trc] VST2::ProcessMacOSKeyDown: code="+code;
+      PageTrack pgTrack <= root_form.pg_track;
+
+      switch(code)
+      {
+         case 53: // ESCAPE
+            current_project.hidePluginEditorByVST2Plugin(plugin);
+            Global.Print("Hide VST2 plugin editor (ESC)");
+            pgTrack.ignoreNextKeyEscape();
+
+         case 50:  // `  (de:^)
+            current_project.syncPluginMainAndMirrorMods(plugin);
+            Global.Print("Sync plugin shadow->main and LPC/MPE mirror mods");
+            break;
+
+         case 76:  // numpad-ENTER
+         case 24:  // equals  (de:´)
+            replay.toggleSeq(false/*bSeq*/);
+            break;
+
+         case 111:  // F12
+         case 48:   // TAB
+            // (note) handled in PageTrack::onKey()
+            current_project.addModMatrixEntryForLastTouchedParamVST2(plugin);
+            break;
+
+         case 100: // F8
+         case 62:  // flagsChanged: RCTRL
+            // (note) handled in PageTrack::onKey()
+            root_form.toggleAudioRecording();
+            break;
+      }
+   }
+
+   // <method.png>
+   static =vstkeyevent= ProcessKeyEventQueue() {
+      // trace "xxx ProcessKeyEventQueue: #elements="+keyevent_queue.numElements;
+      VSTKeyEvent *ev;
+      VST2Plugin *plugin;
+      boolean bMacOS = UI.IsMacOS();
+      try
+      {
+         foreach ev in keyevent_queue
+         {
+            // trace "[dbg] VST2::ProcessKeyEventQueue: plugin="+#(ev.plugin)+" lparam="+ev.lparam;
+            if(bMacOS)
+               ProcessMacOSKeyDown(ev);
+            else
+               ProcessWin32KeyEvent(ev);
+         }
+      }
+      catch(Error e)
+      {
+         // Paranoia: shouldn't be reachable (of course) but this is called from the VST keyboard handler
+         //            w/o the usual try..catch safety net
+         trace "[---] VST2::ProcessKeyEventQueue: caught exception "+e.msg;
+      }
+
+      keyevent_queue.empty();
+      b_key_event_sent = false;
+   }
+
+   // <method.png>
+   public static PushIgnoreAutomation() : boolean {
+      boolean r = b_ignore_automation;
+      b_ignore_automation = true;
+      return r;
+   }
+
+   // <method.png>
+   public static PopIgnoreAutomation(boolean _bOrig) {
+      b_ignore_automation = _bOrig;
+   }
+
+   // <method.png>
+   public static CallEffEditIdle() {
+      // (note) on Linux and macOS, effEditIdle() is called in RootForm.tks via handleIdleTimer() / TA_IDLE
+      // (note) on Windows, effEditIdle() is called in VST2Plugin.cpp via WM_TIMER
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            ModVST2 *modVST2;
+            foreach modVST2 in lane.mods
+            {
+               if(modVST2 instanceof ModVST2)
+               {
+                  VST2Plugin plugin <= modVST2.plugin;
+                  if(null != plugin)
+                     plugin.callEffEditIdle();
+               }
+            }
+         }
+      }
+   }
+
+}
+
+
+// <callback.png>
+function onAudioMasterUpdateDisplay(local VST2Plugin _plugin) {
+   // Called by VST2Plugin HostCallback (from a different thread)
+   Global.Debug("onAudioMasterUpdateDisplay: plugin="+#(_plugin));
+   VST2.QueueUpdateDisplayEvent(_plugin);
+}
+
+
+// <callback.png>
+function onAudioMasterAutomate(local VST2Plugin _plugin, local int _paramIdx, local float _value) {
+   ////trace "[dbg] onAudioMasterAutomate: plugin="+#(_plugin)+" paramIdx="+_paramIdx+" value="+_value;
+   VST2.QueueAutomateEvent(_plugin, _paramIdx, _value, -1/*bBegin*/);
+}
+
+
+// <callback.png>
+function onAudioMasterIOChanged(local VST2Plugin _plugin) {
+   trace "[~~~] onAudioMasterIOChanged: plugin="+#(_plugin)+" (TODO) implement me properly";
+}
+
+
+// <callback.png>
+function onAudioMasterWin32KeyEvent(local VST2Plugin _plugin, local int _lparam) {
+   // trace "xxx onAudioMasterWin32KeyEvent called";
+   VST2.QueueKeyEvent(_plugin, _lparam);
+}
+
+// <callback.png>
+function onAudioMasterMacOSKeyDown(local VST2Plugin _plugin, local int _lparam) {
+   // trace "xxx onAudioMasterMacOSKeyDown called";
+   VST2.QueueKeyEvent(_plugin, _lparam);
+}
+
+
+// <callback.png>
+function onAudioMasterParamEdit(local VST2Plugin _plugin, local int _bBegin, local int _paramIdx) {
+   // trace "[dbg] onAudioMasterParamEdit: plugin="+#(_plugin)+" bBegin="+_bBegin+" paramIdx="+_paramIdx;
+   VST2.QueueAutomateEvent(_plugin, _paramIdx, -1/*_value*/, _bBegin);
+}
+
+
+use onAudioMasterUpdateDisplay for VST2Plugin.onAudioMasterUpdateDisplay;
+use onAudioMasterAutomate      for VST2Plugin.onAudioMasterAutomate;
+use onAudioMasterIOChanged     for VST2Plugin.onAudioMasterIOChanged;
+use onAudioMasterWin32KeyEvent for VST2Plugin.onWin32KeyEvent;
+use onAudioMasterMacOSKeyDown  for VST2Plugin.onMacOSKeyDown;
+use onAudioMasterParamEdit     for VST2Plugin.onAudioMasterParamEdit;

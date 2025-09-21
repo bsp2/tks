@@ -1,0 +1,2328 @@
+// ----
+// ---- file   : Samples.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 01Mar2010
+// ---- changed: 02May2010, 07Mar2011, 28Mar2011, 07Jan2012, 08May2013, 09May2013, 22Dec2018
+// ----          28Dec2018, 31Dec2018, 04Jan2019, 06Jan2019, 07Jan2019, 08Jan2019, 09Jan2019
+// ----          30Mar2019, 31Mar2019, 23Apr2019, 11May2019, 15May2019, 17May2019, 18Jun2019
+// ----          18Jul2019, 19Jul2019, 16Feb2020, 17Feb2020, 18Feb2020, 21Feb2020, 23Feb2020
+// ----          24Feb2020, 26Feb2020, 14May2020, 17May2020, 19May2020, 20May2020, 21May2020
+// ----          22May2020, 23May2020, 31May2020, 04Jun2020, 08Jun2020, 10Jun2020, 19Aug2020
+// ----          20Aug2020, 23Aug2020, 06Sep2020, 23Sep2020, 06Oct2020, 03Feb2021, 23Feb2021
+// ----          26Apr2021, 30Apr2021, 20May2021, 26Jun2021, 10Aug2021, 30Aug2021, 05Oct2021
+// ----          20Oct2021, 28Oct2021, 16Jul2022, 23Nov2022, 24Nov2022, 10Dec2022, 18Dec2022
+// ----          20Dec2022, 21Dec2022, 22Dec2022, 23Dec2022, 27Dec2022, 28Dec2022, 30Dec2022
+// ----          06Feb2023, 19Feb2023, 26Feb2023, 09Mar2023, 10Mar2023, 21Apr2023, 29Jul2023
+// ----          11Aug2023, 16Aug2023, 13Sep2023, 19Sep2023, 22Sep2023, 11Nov2023, 16Nov2023
+// ----          17Nov2023, 18Nov2023, 23Dec2023, 05Jan2024, 06Jan2024, 12Jan2024, 13Jan2024
+// ----          02Aug2024, 03Aug2024, 04Aug2024, 06Aug2024, 07Aug2024, 15Sep2024, 28Sep2024
+// ----          03Oct2024, 13Oct2024, 12Nov2024, 22Nov2024, 31Dec2024, 01Jan2025, 03Jan2025
+// ----
+// ----
+// ----
+
+//
+// (note) when a file named ".noindex" exists in a directory, the directory will be excluded from indexing
+//
+
+module MSamples;
+
+use namespace ui;
+use namespace st2;
+
+int xxx_dbg;
+
+
+// <class.png>
+class SampleCacheEntry {
+   String       unique_name;        // baseName for .esa entries
+   String       rel_path;           // relative to sample_rootpath
+   int          folder_id;          // index into sample_cache array (0=root folder)
+   int          esa_entry_id;       // index into esa_entries or -1
+   int          wav_entry_id;       // index into esa_entries or -1
+   StringArray *tags;               // .esa tags
+   String      *sorted_tag_string;  // sorted tag string (for SampleBrowserTM) (calc'd / not saved in cache)
+   byte         rating;             // 0=unrated (0.0) .. 100=5 stars (1.0). saved/loaded to/from 'sample_ratings.ini'
+
+
+   // <init.png>
+   public method initFromDirAndFileNames(String dirName, String fileName) {
+      dirName.replace(STConfig.sample_rootpath+"/", "") => rel_path;
+      fileName.replace(Global.SAMPLE_FILE_SUFFIX, "") => unique_name;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // trace "xxx save entry xxx_dbg="+xxx_dbg+" ofs.offset="+ofs.offset;
+      // trace "xxx save unique_name=\""+unique_name+"\" rel_path=\""+rel_path+"\" folder_id="+folder_id+" esa_entry_id="+esa_entry_id+" wav_entry_id="+wav_entry_id;
+      // xxx_dbg++;
+
+      // Ver
+      ofs.i16 = 3;
+
+      Utils.WriteString(ofs, unique_name);
+      Utils.WriteString(ofs, rel_path);
+
+      // Ids (v2+)
+      ofs.i32 = folder_id;
+      ofs.i32 = esa_entry_id;
+      ofs.i32 = wav_entry_id;
+
+      // Tags (v3+)
+      if(null != tags && tags.numElements > 0)
+      {
+         WriteSampleTags(ofs, tags);
+      }
+      else
+      {
+         ofs.i8 = 0;
+      }
+
+   }
+
+   // <method.png>
+   public static WriteSampleTags(Stream ofs, StringArray tags) {
+      if(null != tags)
+      {
+         int numTags = mathMini(255, tags.numElements);
+         ofs.i8 = numTags;
+         int tagIdx = 0;
+         loop(numTags)
+            Utils.WriteString(ofs, tags[tagIdx++]);
+      }
+      else
+      {
+         ofs.i8 = 0;  // numTags
+      }
+   }
+
+   // <method.png>
+   public static ReadSampleTags(Stream ifs, int numTags, StringArray tags) {
+      tags.alloc(numTags);
+      StringArray aTagsAll <= Samples.all_tags;
+      loop(numTags)
+      {
+         String sTag <= tags.nextFree;
+         Utils.ReadString(ifs, sTag);
+         if(!aTagsAll.containsObject(sTag))
+            aTagsAll.add(sTag);
+         // // HashTable htFreq <= Samples.ht_tag_frequency;
+         // // htFreq[sTag] = int(1 + htFreq.get(sTag));
+         PointerArray aCatTags <= STConfig.sample_tags;
+         int catIdx = 0;
+         boolean bFound = false;
+         loop(aCatTags.numElements - 1)  // (note) last cat is 'other'
+         {
+            StringArray aTags <= aCatTags[catIdx];
+            if(aTags.containsObject(sTag))
+            {
+               bFound = true;
+               break;
+            }
+            catIdx++;
+         }
+         if(!bFound)
+         {
+            StringArray aTagsOther <= aCatTags.last;
+            if(!aTagsOther.containsObject(sTag))
+               aTagsOther.add(sTag);
+         }
+      }
+   }
+
+   // <method_update.png>
+   module method updateTags(StringArray _tags) {
+      Samples.IncDecTagFrequency(tags/*old*/, _tags/*new*/);
+      if(null == tags)
+      {
+         if(null != _tags && !_tags.isEmpty())
+         {
+            if!(null == tags || tags.isEmpty())
+            {
+               Samples.num_samples_esa_with_tags++;
+               // // Utils.MergeStringArrays(Samples.all_tags, Samples.all_tags);
+               // trace "xxx SampleCacheEntry::updateTags: 1 merge tags="+_tags; 
+               Utils.MergeStringArrays(Samples.all_tags, _tags);
+               Utils.MergeStringArrays(Samples.all_used_tags, Samples.all_tags);
+            }
+            tags <= Object(_tags);
+         }
+         else
+         {
+            tags <= null;
+         }
+      }
+      else
+      {
+         tags = _tags;
+         // trace "xxx SampleCacheEntry::updateTags: 2 merge tags="+_tags; 
+         Utils.MergeStringArrays(Samples.all_tags, _tags);
+         Utils.MergeStringArrays(Samples.all_used_tags, Samples.all_tags);
+      }
+      sorted_tag_string <= Utils.SortStringArrayAndMergeToString(tags, " ");
+   }
+
+   // <load.png>
+   public method loadTagsFromESAHeader() {
+      local String pathname <= Utils.ToNativePathName(STConfig.sample_rootpath)+"/"+rel_path+"/"+unique_name;
+      pathname.append(Global.SAMPLE_FILE_SUFFIX);
+      local StringArray aTags;
+      boolean bDebug = 0 && (pathname & "deleteme3");
+      if(Samples.LoadSampleTagsFromESAHeader(pathname, aTags))
+      {
+         Samples.IncDecTagFrequency(tags/*old*/, aTags/*new*/);
+         tags <= deref aTags;
+         sorted_tag_string <= Utils.SortStringArrayAndMergeToString(aTags, " ");
+         if(bDebug) trace "[trc] SampleCacheEntry::loadTagsFromESAHeader: ok, read tags from pathname=\""+pathname+"\"";
+      }
+      else
+      {
+         if(bDebug) trace "[~~~] SampleCacheEntry::loadTagsFromESAHeader: failed to read tags from pathname=\""+pathname+"\"";
+         tags <= null;
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      // Ver
+      short ver = ifs.u16;
+
+      // boolean bDebug = (xxx_dbg >= 9602);
+      // if(bDebug) trace "xxx load entry xxx_dbg="+xxx_dbg+" ver="+ver+" ifs.offset="+ifs.offset;
+      // xxx_dbg++;
+
+      if(1 <= ver <= 3)
+      {
+         Utils.ReadString(ifs, unique_name);
+         Utils.ReadString(ifs, rel_path);
+
+         // if(bDebug) trace "xxx load unique_name=\""+unique_name+"\" rel_path=\""+rel_path+"\"";
+
+         if(ver >= 2)
+         {
+            // Ids (v2+)
+            folder_id    = ifs.i32;
+            esa_entry_id = ifs.i32;
+            wav_entry_id = ifs.i32;
+
+            // if(bDebug) trace "xxx load folder_id="+folder_id+" esa_entry_id="+esa_entry_id+" wav_entry_id="+wav_entry_id;
+         }
+
+         if(ver >= 3)
+         {
+            // Tags (v3+)
+            byte numTags = ifs.u8;
+            if(numTags > 0)
+            {
+               tags <= new StringArray;
+               ReadSampleTags(ifs, numTags, tags);
+               sorted_tag_string <= Utils.SortStringArrayAndMergeToString(tags, " ");
+               Samples.IncDecTagFrequency(null/*old*/, tags/*new*/);
+               Samples.num_samples_esa_with_tags++;
+            }
+            else
+            {
+               tags <= null;
+            }
+         }
+
+         return true;
+      }
+      else
+         trace "[---] SampleCacheEntry::loadState: invalid ver="+ver+" at offset="+(ifs.offset-2);
+      return false;
+   }
+}
+
+
+// <class.png>
+class SampleCacheFolderEntry {
+   // (note) Windows updates the dir modification date only when a file inside that dir was changed, not
+   //         when a dir or file in a subdir changed
+
+   String rel_path;
+   String last_modified;
+
+   int folder_id;
+
+   SampleCacheEntry *[] esa_entries;  // SampleCacheEntry instances (.esa file entries)
+   SampleCacheEntry *[] wav_entries;  // SampleCacheEntry instances (.wav file entries)
+
+
+   // <init.png>
+   public method initFromFileEntryAttribs(String _dirName, StringArray _fileEntryAttribs) {
+      // e.g. "d "waveforms" 0 2018.09.16.07.58.25.219 "
+      // trace "xxx SampleCacheFolderEntry::initFromFileEntry: fileEntry=\""+_fileEntry+"\"";
+      _dirName.replace(STConfig.sample_rootpath+"/", "") => rel_path;
+      last_modified = _fileEntryAttribs.get(2);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Ver
+      ofs.i16 = 3;
+
+      Utils.WriteString(ofs, rel_path);
+      Utils.WriteString(ofs, last_modified);
+
+      // Folder Id (v3+)
+      ofs.i16 = folder_id;
+
+      int entryIdx;
+      SampleCacheEntry *en;
+
+      // .esa files
+      ofs.i32 = esa_entries.numElements;
+      for(entryIdx = 0; entryIdx < esa_entries.numElements; entryIdx++)
+      {
+         en <= esa_entries.get(entryIdx);
+         en.saveState(ofs);
+      }
+
+      // .wav files (v2+)
+      ofs.i32 = wav_entries.numElements;
+      for(entryIdx = 0; entryIdx < wav_entries.numElements; entryIdx++)
+      {
+         en <= wav_entries.get(entryIdx);
+         en.saveState(ofs);
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      // Ver
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 3)
+      {
+         Utils.ReadString(ifs, rel_path);
+         Utils.ReadString(ifs, last_modified);
+
+         // trace "xxx ver="+ver+" rel_path=\""+rel_path+"\" last_modified=\""+last_modified+"\"";
+
+         if(ver >= 3)
+         {
+            folder_id = ifs.u16;
+         }
+
+         int entryIdx;
+         int numEntries;
+         SampleCacheEntry *en;
+
+         // .esa files
+         numEntries = ifs.i32;
+         esa_entries.alloc(numEntries);
+         for(entryIdx = 0; entryIdx < numEntries; entryIdx++)
+         {
+            en <= new SampleCacheEntry;
+            if(!en.loadState(ifs))
+               return false;
+            esa_entries.add(#(deref en));
+         }
+
+         if(ver >= 2)
+         {
+            // .wav files (v2+)
+            numEntries = ifs.i32;
+            wav_entries.alloc(numEntries);
+            for(entryIdx = 0; entryIdx < numEntries; entryIdx++)
+            {
+               en <= new SampleCacheEntry;
+               // trace "xxx wavEntry "+(entryIdx+1)+"/"+numEntries+" ifs.offset="+ifs.offset;
+               if(!en.loadState(ifs))
+                  return false;
+               wav_entries.add(#(deref en));
+            }
+         }
+
+         return true;
+      }
+      else
+         trace "[---] SampleCacheFolderEntry::loadState: invalid ver="+ver+" at offset "+(ifs.offset-2);
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class SampleFilterCategory {
+   String  name;         // e.g. "sd"
+   String  long_name;    // e.g. "Snare Drum"
+   String  rel_path;     // e.g. "percussion/"
+   String  skip_path;    // pattern, e.g. "__ATTIC"
+   boolean b_generic;    // 1=skip category when finding 'similar' preset patches (sample pad / ModSample context menus)
+   StringArray filters;
+
+   SampleCacheEntry *[] esa_entries;  // SampleCacheEntry refs
+   SampleCacheEntry *[] wav_entries;  // SampleCacheEntry refs
+
+
+   protected method sortEntriesByName(PointerArray _entries) {
+      local StringArray all;
+      SampleCacheEntry *en;
+      foreach en in _entries
+      {
+         all.add(en.rel_path+"/"+en.unique_name);
+      }
+      local IntArray indices;
+      all.sortByValue(indices, false/*bCS*/);
+      _entries.rearrange(indices);
+   }
+
+   public method sortESAEntriesByName() {
+      sortEntriesByName(esa_entries);
+   }
+
+   public method sortWAVEntriesByName() {
+      sortEntriesByName(wav_entries);
+   }
+}
+
+
+// <class.png>
+class Samples {
+
+   //
+   // StSample utility routines
+   //
+
+   static SampleCacheFolderEntry *[] sample_cache;  // SampleCacheFolderEntry instances
+   static boolean b_allow_sample_rescan;  // true after program start, false after first auto rescan
+
+   static SampleFilterCategory *[] categories;  // SampleFilterCategory instances
+
+   static StringArray category_short_names;
+   static StringArray category_long_names;
+
+   static int num_samples_esa;
+   static int num_samples_esa_with_tags;
+
+   static StringArray all_used_tags;   // all tags found during sample scan
+   static StringArray all_tags;        // all_used_tags + preset tags from STConfig.sample_tags
+   static HashTable   ht_tag_frequency;
+
+   static StringArray preset_file_names;  // relative to STConfig.sample_rootpath+"/"+STConfig.pgsample_preset_relpath
+
+
+   static CopyWaveform(StWaveform _d, StWaveform _s) {
+      FloatArray smpD <= _d.sampleData;
+      FloatArray smpS <= _s.sampleData;
+      // trace "xxx Samples::CopyWaveform: d="+@(_d)+" s="+@(_s)+" s.numFrames="+_s.numFrames;
+      smpD = smpS;
+      _d.numChannels   = _s.numChannels;
+      _d.loopOffset    = _s.loopOffset;
+      _d.loopLen       = _s.loopLen;
+      _d.baseFrequency = _s.baseFrequency;
+      _d.sampleRate    = _s.sampleRate;
+   }
+
+   static CopySampleRange(StRange d, StRange s) {
+      d.lo                  = s.lo;
+      d.hi                  = s.hi;
+      d.fadeIn              = s.fadeIn;
+      d.fadeOut             = s.fadeOut;
+      d.enableNoteOnFilter  = s.enableNoteOnFilter;
+      d.enableHighInclusive = s.enableHighInclusive;
+   }
+
+   static CopySampleADSREnvelope(StEnvelope d, StEnvelope s) {
+      Envelope *es;
+      Envelope *ed;
+      BezierEditState *bes;
+      BezierEditState *bed;
+
+      // Envelope data
+      es <= s.data;
+      if(null != es)
+      {
+         ed <= d.getOrCreateData();
+         ed = es;
+      }
+
+      // Envelope metadata
+      bes <= s.metaData;
+      if(null != bes)
+      {
+         bed <= new BezierEditState;
+         bed = bes;
+         d.metaData = #(deref bed);
+      }
+
+      d.intensity         = s.intensity;
+      d.timescaleMillisec = s.timescaleMillisec;
+      d.exponent          = s.exponent;
+      d.uiPresetName      = s.uiPresetName;
+   }
+
+   static CopySampleADSR(StADSR d, StADSR s) {
+      StEnvelope *es;
+      StEnvelope *ed;
+
+      // Attack envelope
+      es <= s.envAttack;
+      if(null != es)
+      {
+         ed <= d.getOrCreateEnvAttack();
+         CopySampleADSREnvelope(ed, es);
+      }
+
+      // Sustain envelope
+      es <= s.envSustain;
+      if(null != es)
+      {
+         ed <= d.getOrCreateEnvSustain();
+         CopySampleADSREnvelope(ed, es);
+      }
+
+      // Release envelope
+      es <= s.envRelease;
+      if(null != es)
+      {
+         ed <= d.getOrCreateEnvRelease();
+         CopySampleADSREnvelope(ed, es);
+      }
+
+      d.intensity            = s.intensity;
+      d.level                = s.level;
+      d.timescaleMillisec    = s.timescaleMillisec;
+      d.stageOp              = s.stageOp;
+      d.enableSustainLoop    = s.enableSustainLoop;
+   }
+
+   static CopySampleLFO(StLFO d, StLFO s) {
+      d.timebase         = s.timebase;
+      d.type             = s.type;
+      d.phase            = s.phase;
+      d.freq             = s.freq;
+      d.pulseWidth       = s.pulseWidth;
+      d.delay            = s.delay;
+      d.fadeInTime       = s.fadeInTime;
+      d.startLevel       = s.startLevel;
+      d.fadedLevel       = s.fadedLevel;
+      d.fadedSpeedFactor = s.fadedSpeedFactor;
+      d.dcOffset         = s.dcOffset;
+      d.noiseMinAmp         = s.noiseMinAmp;
+      d.noiseMaxAmp         = s.noiseMaxAmp;
+      d.noiseMinSpeed       = s.noiseMinSpeed;
+      d.noiseMaxSpeed       = s.noiseMaxSpeed;
+      d.enableNoiseInterpol = s.enableNoiseInterpol;
+      d.enableModDelay      = s.enableModDelay;
+      d.enableOneShot       = s.enableOneShot;
+      d.enableGlobal        = s.enableGlobal;
+      d.enableReset         = s.enableReset;
+   }
+
+   static CopySampleModSeq(StModSeq d, StModSeq s) {
+      d.playMode = s.playMode;
+      d.stepMode = s.stepMode;
+      d.numSteps = s.numSteps;
+      d.repeatOffset = s.repeatOffset;
+      for(int i = 0; i < STMODSEQ_MAX_STEPS; i++)
+      {
+         d.setStepValue(i, s.getStepValue(i));
+         d.setStepDuration(i, s.getStepDuration(i));
+      }
+      d.speed           = s.speed;
+      d.enableTempoSync = s.enableTempoSync;
+      d.valueScl        = s.valueScl;
+      d.valueOff        = s.valueOff;
+      d.slewAmt         = s.slewAmt;
+      d.enableOneShot   = s.enableOneShot;
+      d.enableGlobal    = s.enableGlobal;
+      d.enableReset     = s.enableReset;
+      d.enablePulse     = s.enablePulse;
+   }
+
+   static CopySampleMM(StSample d, StSample s, int mmIdx) {
+      d.setMMEnable   (mmIdx, s.getMMEnable(mmIdx));
+      d.setMMOp       (mmIdx, s.getMMOp(mmIdx));
+      d.setMMSlewUp   (mmIdx, s.getMMSlewUp(mmIdx));
+      d.setMMSlewDown (mmIdx, s.getMMSlewDown(mmIdx));
+      d.setMMSlewReset(mmIdx, s.getMMSlewReset(mmIdx));
+      d.setMMSrc      (mmIdx, s.getMMSrc(mmIdx));
+      d.setMMCurve    (mmIdx, s.getMMCurve(mmIdx));
+      d.setMMAmt      (mmIdx, s.getMMAmt(mmIdx));
+      d.setMMDst      (mmIdx, s.getMMDst(mmIdx));
+      d.setMMSignalTap(mmIdx, s.getMMSignalTap(mmIdx));
+   }
+
+   static CopySampleAdditiveOscConfig(StSample d, int cfgIdxDst, StSample s, int cfgIdxSrc) {
+      d.setAdditiveCfgValid(cfgIdxDst, s.getAdditiveCfgValid(cfgIdxSrc));
+
+      d.setAdditiveNormalize(cfgIdxDst, s.getAdditiveNormalize(cfgIdxSrc));
+
+      d.setAdditiveRateReduction      (cfgIdxDst, s.getAdditiveRateReduction    (cfgIdxSrc));
+      d.setAdditiveRateReductionMask  (cfgIdxDst, s.getAdditiveRateReductionMask(cfgIdxSrc));
+
+      d.setAdditiveBitReductionPreAmp(cfgIdxDst, s.getAdditiveBitReductionPreAmp(cfgIdxSrc));
+      d.setAdditiveBitReduction      (cfgIdxDst, s.getAdditiveBitReduction      (cfgIdxSrc));
+      d.setAdditiveBitReductionMask  (cfgIdxDst, s.getAdditiveBitReductionMask  (cfgIdxSrc));
+
+      for(int oscIdx = 0; oscIdx < STSAMPLE_ADDITIVE_OSC_NUM; oscIdx++)
+      {
+         d.setAdditiveLevel (cfgIdxDst, oscIdx, s.getAdditiveLevel (cfgIdxSrc, oscIdx));
+         d.setAdditivePhase (cfgIdxDst, oscIdx, s.getAdditivePhase (cfgIdxSrc, oscIdx));
+         d.setAdditiveExpA  (cfgIdxDst, oscIdx, s.getAdditiveExpA  (cfgIdxSrc, oscIdx));
+         d.setAdditiveFilter(cfgIdxDst, oscIdx, s.getAdditiveFilter(cfgIdxSrc, oscIdx));
+         d.setAdditiveExpL  (cfgIdxDst, oscIdx, s.getAdditiveExpL  (cfgIdxSrc, oscIdx));
+      }
+   }
+
+   static CopySamplePlugins(StSample d, StSample s) {
+      int pluginIdx = 0;
+      loop(STSAMPLE_NUM_PLUGINS)
+      {
+         StPluginShared pluginSharedSrc <= s.getVoicePluginShared(pluginIdx);
+         StPluginShared pluginSharedDst <= null;
+         StPluginSharedMissing pluginSharedMissingDst <= null;
+         StashedVoicePluginArrayParam arrayParam;
+         int paramIdx = 0;
+         if(null != pluginSharedSrc)
+         {
+            pluginSharedDst <= pluginSharedSrc.info.createSharedInstance();
+            // Copy params
+            loop(pluginSharedSrc.info.numParams)
+            {
+               pluginSharedDst.setParamValue(paramIdx, pluginSharedSrc.getParamValue(paramIdx));
+               arrayParam.initFrom (pluginSharedSrc, paramIdx);
+               arrayParam.restoreTo(pluginSharedDst, paramIdx);
+               paramIdx++;
+            }
+         }
+         else
+         {
+            StPluginSharedMissing pluginSharedMissingSrc <= s.getVoicePluginSharedMissing(pluginIdx);
+            if(null != pluginSharedMissingSrc)
+            {
+               // Copy "missing plugin" place holder
+               pluginSharedMissingDst <= new StPluginSharedMissing;
+               pluginSharedMissingDst.pluginId  = pluginSharedMissingSrc.pluginId;
+               pluginSharedMissingDst.numParams = pluginSharedMissingSrc.numParams;
+               // Copy params
+               loop(pluginSharedMissingSrc.numParams)
+               {
+                  pluginSharedMissingDst.setParamValue(paramIdx, pluginSharedMissingSrc.getParamValue(paramIdx));
+                  arrayParam.initFrom (pluginSharedMissingSrc, paramIdx);
+                  arrayParam.restoreTo(pluginSharedMissingDst, paramIdx);
+                  paramIdx++;
+               }
+            }
+         }
+
+         // Install plugin (and / or place holder)
+         d.setVoicePluginShared            (pluginIdx, #(deref pluginSharedDst));
+         d.setVoicePluginSharedMissing     (pluginIdx, #(deref pluginSharedMissingDst));
+
+         d.setEnableVoicePluginPreFilter   (pluginIdx, s.getEnableVoicePluginPreFilter(pluginIdx));
+         d.setEnableVoicePlugin            (pluginIdx, s.getEnableVoicePlugin(pluginIdx));
+         d.setVoicePluginLevel             (pluginIdx, s.getVoicePluginLevel(pluginIdx));
+         d.setVoicePluginDst               (pluginIdx, s.getVoicePluginDst(pluginIdx));
+         d.setVoicePluginPan               (pluginIdx, s.getVoicePluginPan(pluginIdx));
+         d.setEnableVoicePluginInvertPhase (pluginIdx, s.getEnableVoicePluginInvertPhase(pluginIdx));
+
+         // Next plugin
+         pluginIdx++;
+      }
+      d.voicePluginAlg          = s.voicePluginAlg;
+      d.voicePluginAlgFilterPos = s.voicePluginAlgFilterPos;
+      d.voicePluginAlgOuter     = s.voicePluginAlgOuter;
+   }
+
+   static CopySampleTuningTables(StSample d, StSample s) {
+      int tuneTblIdx = 0;
+      loop(STSAMPLE_MAX_TUNING_TABLES)
+      {
+         // Copy frequency table
+         d.setTuningTable(tuneTblIdx, s.getTuningTable(tuneTblIdx));
+
+         // Copy editor meta data
+         SampleTuningTable tuneTblSrc <= s.getTuningTableMetaData(tuneTblIdx);
+         if(null != tuneTblSrc)
+         {
+            SampleTuningTable tuneTblDst <= d.getTuningTableMetaData(tuneTblIdx);
+            if(null == tuneTblDst)
+            {
+               tuneTblDst <= new SampleTuningTable;
+               tuneTblDst.init();
+               d.setTuningTableMetaData(tuneTblIdx, #(deref tuneTblDst));
+            }
+            tuneTblDst.copyFrom(tuneTblSrc);
+         }
+         else
+         {
+            d.setTuningTableMetaData(tuneTblIdx, null);
+         }
+
+         tuneTblIdx++;
+      }
+
+      d.defaultTuningTableIdx = s.defaultTuningTableIdx;
+   }
+
+   static =replay= CopySample(StSample d, StSample s, int _appendixNr, boolean _bCopyName, boolean _bCopyWaveform) {
+      // Note: assumes that "d" is a freshly created sample object
+      StRange *rs;
+      StRange *rd;
+      StADSR *as;
+      StADSR *ad;
+      StLFO *ls;
+      StLFO *ld;
+
+      if(_bCopyName)
+      {
+         if(-1 == _appendixNr)
+         {
+            d.name = s.name;
+         }
+         else
+         {
+            d.name = Utils.BuildCopiedName(s.name, _appendixNr);
+         }
+      }
+
+      if(_bCopyWaveform)
+      {
+         d.waveform   = s.waveform;    // Copy waveform reference
+      }
+
+      d.mutexGroup = null;
+
+      // Auto-select
+      d.uiSetEnableAutoSelect(s.uiGetEnableAutoSelect());
+
+      // Key range
+      rs <= s.keyRange;
+      if(null != rs)
+      {
+         rd <= d.getOrCreateKeyRange();
+         CopySampleRange(rd, rs);
+      }
+
+      // Velocity range
+      rs <= s.velRange;
+      if(null != rs)
+      {
+         rd <= d.getOrCreateVelRange();
+         CopySampleRange(rd, rs);
+      }
+
+      // Mod range
+      rs <= s.modRange;
+      if(null != rs)
+      {
+         rd <= d.getOrCreateModRange();
+         CopySampleRange(rd, rs);
+      }
+
+      // Freq ADSR
+      as <= s.freqADSR;
+      if(null != as)
+      {
+         ad <= d.getOrCreateFreqADSR();
+         CopySampleADSR(ad, as);
+      }
+
+      // Vol ADSR
+      as <= s.volADSR;
+      if(null != as)
+      {
+         ad <= d.getOrCreateVolADSR();
+         CopySampleADSR(ad, as);
+      }
+
+      // Pan ADSR
+      as <= s.panADSR;
+      if(null != as)
+      {
+         ad <= d.getOrCreatePanADSR();
+         CopySampleADSR(ad, as);
+      }
+
+      // Aux ADSR
+      as <= s.auxADSR;
+      if(null != as)
+      {
+         ad <= d.getOrCreateAuxADSR();
+         CopySampleADSR(ad, as);
+      }
+
+      // Freq LFO
+      ls <= s.freqLFO;
+      if(null != ls)
+      {
+         ld <= d.getOrCreateFreqLFO();
+         CopySampleLFO(ld, ls);
+      }
+
+      // Vol LFO
+      ls <= s.volLFO;
+      if(null != ls)
+      {
+         ld <= d.getOrCreateVolLFO();
+         CopySampleLFO(ld, ls);
+      }
+
+      // Pan LFO
+      ls <= s.panLFO;
+      if(null != ls)
+      {
+         ld <= d.getOrCreatePanLFO();
+         CopySampleLFO(ld, ls);
+      }
+
+      // Pan LFO
+      ls <= s.auxLFO;
+      if(null != ls)
+      {
+         ld <= d.getOrCreateAuxLFO();
+         CopySampleLFO(ld, ls);
+      }
+
+      // Mod Sequencers
+      for(int mseqIdx = 0; mseqIdx < STSAMPLE_NUM_MODSEQ; mseqIdx++)
+      {
+         int mseqPatchIdx = 0;
+         loop(STSAMPLE_MAX_MODSEQ_PATCHES)
+         {
+            StModSeq mseqSrc <= s.getModSeqByIndexAndPatch(mseqIdx, mseqPatchIdx);
+            if(null != mseqSrc)
+            {
+               StModSeq mseqDst <= d.getOrCreateModSeqByIndexAndPatch(mseqIdx, mseqPatchIdx);
+               CopySampleModSeq(mseqDst, mseqSrc);
+            }
+            mseqPatchIdx++;
+         }
+         d.setDefaultModSeqPatch(mseqIdx, s.getDefaultModSeqPatch(mseqIdx));
+         d.setEnableGlideRetrigModSeq(mseqIdx, s.getEnableGlideRetrigModSeq(mseqIdx));
+      }
+
+      // Sample loops
+      IntArray loops <= s.sampleLoops;
+      if(null != loops)
+      {
+         IntArray loopd <= d.getOrCreateSampleLoops();
+         loopd = loops;
+      }
+
+      // Mod Matrix
+      d.setMMKeyboardMin   (s.getMMKeyboardMin());
+      d.setMMKeyboardCenter(s.getMMKeyboardCenter());
+      d.setMMKeyboardMax   (s.getMMKeyboardMax());
+
+      d.mmVarSetEnable            (s.mmVarGetEnable());
+      d.mmVarSetNum               (s.mmVarGetNum());
+      d.mmVarSetEnableSmooth      (s.mmVarGetEnableSmooth());
+      d.mmVarSetEditIdx           (s.mmVarGetEditIdx());
+      d.mmVarSetEnableForceEditIdx(s.mmVarGetEnableForceEditIdx());
+      FloatArray mmVarDst <= d.mmVarGetData();
+      FloatArray mmVarSrc <= s.mmVarGetData();
+      mmVarDst.copyFrom(mmVarSrc, 0, mmVarSrc.numElements, 0);   // (16 variations, 16 mm entries in v81)
+
+      for(int mmIdx = 0; mmIdx < STSAMPLE_NUM_MODMATRIX_ENTRIES; mmIdx++)
+      {
+         CopySampleMM(d, s, mmIdx);
+      }
+
+      d.playMode                       = s.playMode;
+      d.startEndFadeNumFrames          = s.startEndFadeNumFrames;
+      d.firstLoopIndex                 = s.firstLoopIndex;
+      d.uiSetEnableSyncFirstLoopIndex(s.uiGetEnableSyncFirstLoopIndex());
+      d.noteOffLoopIndex               = s.noteOffLoopIndex;
+      d.enableNoteOffLoopImmediately   = s.enableNoteOffLoopImmediately;
+      d.enableJumpToLoopImmediately    = s.enableJumpToLoopImmediately;
+      d.maxVoices                      = s.maxVoices;
+      d.volume                         = s.volume;
+      d.volumeVelocityAmount           = s.volumeVelocityAmount;
+      d.volLFOAmt                      = s.volLFOAmt;
+      d.sampleOffsetVelocityAmount     = s.sampleOffsetVelocityAmount;
+      d.enableInvertSampleOffsetVelocityAmount = s.enableInvertSampleOffsetVelocityAmount;
+      d.sampleOffsetRandAmount         = s.sampleOffsetRandAmount;
+      d.sampleOffsetRel                = s.sampleOffsetRel;
+      d.pan                            = s.pan;
+      d.panEnvAmt                      = s.panEnvAmt;
+      d.panLFOAmt                      = s.panLFOAmt;
+      d.transpose                      = s.transpose;
+      d.uiTransposeOct                 = s.uiTransposeOct;
+      d.uiTransposeSemi                = s.uiTransposeSemi;
+      d.uiTransposeCents               = s.uiTransposeCents;
+      d.beatFrequency                  = s.beatFrequency;
+      d.enableLerpFreq                 = s.enableLerpFreq;
+      d.enableLerpVol                  = s.enableLerpVol;
+      d.sampleRateRatio                = s.sampleRateRatio;
+      d.freqEnvAmt                     = s.freqEnvAmt;
+      d.freqLFOAmt                     = s.freqLFOAmt;
+      d.delay                          = s.delay;
+      d.delayMultiplier                = s.delayMultiplier;
+      d.offset                         = s.offset;
+      d.len                            = s.len;
+      d.enableTimestretch              = s.enableTimestretch;
+      d.enableTimestretchAdditive      = s.enableTimestretchAdditive;
+      d.timestretchAdditiveXFade       = s.timestretchAdditiveXFade;
+      d.partialCycleLenReset           = s.partialCycleLenReset;
+      d.enablePartialPhase0            = s.enablePartialPhase0;
+      d.numPartials                    = s.numPartials;
+      d.additiveStereoSpread           = s.additiveStereoSpread;
+
+      d.additiveEditCfg                = s.additiveEditCfg;
+      d.enableForceAdditiveEditCfg     = s.enableForceAdditiveEditCfg;
+      for(int cfgIdx = 0; cfgIdx < STSAMPLE_ADDITIVE_CFG_NUM; cfgIdx++)
+         CopySampleAdditiveOscConfig(d, cfgIdx, s, cfgIdx);
+
+      d.enableTimestretchXFade         = s.enableTimestretchXFade;
+      d.timestretch                    = s.timestretch;
+      d.timestretchGranularity         = s.timestretchGranularity;
+      d.timestretchGranularityAmount   = s.timestretchGranularityAmount;
+      d.enableStaticCyclelen           = s.enableStaticCyclelen;
+      d.enableAbsoluteTimestretch      = s.enableAbsoluteTimestretch;
+      d.timestretchInterpolType        = s.timestretchInterpolType;
+      d.timestretchGrainWindowType     = s.timestretchGrainWindowType;
+      d.enableWavepath                 = s.enableWavepath;
+      d.timestretchStartPhaseRandAmount= s.timestretchStartPhaseRandAmount;
+      d.timestretchBend                = s.timestretchBend;
+      d.wavepathIndex                  = s.wavepathIndex;
+      d.timestretch2DWidth             = s.timestretch2DWidth;
+      d.timestretch2DHeight            = s.timestretch2DHeight;
+      d.enableTimedLoop                = s.enableTimedLoop;
+      d.enableTimedLoopFade            = s.enableTimedLoopFade;
+      d.timedLoopBase                  = s.timedLoopBase;
+      d.enableOneShotLoopStep          = s.enableOneShotLoopStep;
+      d.volumeRampStepsMillisecIn      = s.volumeRampStepsMillisecIn;
+      d.volumeRampStepsMillisecOut     = s.volumeRampStepsMillisecOut;
+      d.enableFreezeSampleOffWhenQuiet = s.enableFreezeSampleOffWhenQuiet;
+      d.enableModShiftOrig             = s.enableModShiftOrig;
+      d.enableSampleOffNoteOn          = s.enableSampleOffNoteOn;
+      d.enableAlt                      = s.enableAlt;
+      d.enabled                        = s.enabled;
+      d.interpolType                   = s.interpolType;
+      d.interpolOrder                  = s.interpolOrder;
+      d.aiNumPoles                     = s.aiNumPoles;
+      d.aiQ                            = s.aiQ;
+      d.aiExpUp                        = s.aiExpUp;
+      d.aiExpDown                      = s.aiExpDown;
+      d.aiLinOct                       = s.aiLinOct;
+      d.aiLinMax                       = s.aiLinMax;
+      d.bitReduction                   = s.bitReduction;
+      d.bitReductionMask               = s.bitReductionMask;
+      d.bitReductionPreAmp             = s.bitReductionPreAmp;
+      d.rateReduction                  = s.rateReduction;
+      d.rateReductionMask              = s.rateReductionMask;
+      d.enableFromStart                = s.enableFromStart;
+      d.enableFilter                   = s.enableFilter;
+      d.filterType                     = s.filterType;
+      d.filterCutOff                   = s.filterCutOff;
+      d.filterPan                      = s.filterPan;
+      d.filterOffset                   = s.filterOffset;
+      d.filterEQGain                   = s.filterEQGain;
+      d.filterResonance                = s.filterResonance;
+      d.filterAuxEnvAmount             = s.filterAuxEnvAmount;
+      d.filterAuxEnvVelocityAmount     = s.filterAuxEnvVelocityAmount;
+      d.filterAuxLFOAmount             = s.filterAuxLFOAmount;
+      d.filterKeyboardAmount           = s.filterKeyboardAmount;
+      d.glideType                      = s.glideType;
+      d.glideSpeedTimeUp               = s.glideSpeedTimeUp;
+      d.glideSpeedTimeDown             = s.glideSpeedTimeDown;
+      d.glideSpeedFreqUp               = s.glideSpeedFreqUp;
+      d.glideSpeedFreqDown             = s.glideSpeedFreqDown;
+      d.enableGlideRelease             = s.enableGlideRelease;
+      d.glideMaxNoteDist               = s.glideMaxNoteDist;
+      d.enableGlideGlissando           = s.enableGlideGlissando;
+      d.glideMinTime                   = s.glideMinTime;
+      d.glideMaxTime                   = s.glideMaxTime;
+      d.enableGlideRetrigSample        = s.enableGlideRetrigSample;
+      d.enableGlideRetrigEnvFreq       = s.enableGlideRetrigEnvFreq;
+      d.enableGlideRetrigEnvVol        = s.enableGlideRetrigEnvVol;
+      d.enableGlideRetrigEnvPan        = s.enableGlideRetrigEnvPan;
+      d.enableGlideRetrigEnvAux        = s.enableGlideRetrigEnvAux;
+      d.enableGlideRetrigLFOFreq       = s.enableGlideRetrigLFOFreq;
+      d.enableGlideRetrigLFOVol        = s.enableGlideRetrigLFOVol;
+      d.enableGlideRetrigLFOPan        = s.enableGlideRetrigLFOPan;
+      d.enableGlideRetrigLFOAux        = s.enableGlideRetrigLFOAux;
+      d.liveRecEnable                  = s.liveRecEnable;
+      d.liveRecMonitor                 = s.liveRecMonitor;
+      d.liveRecInput                   = s.liveRecInput;
+      d.liveRecStereo                  = s.liveRecStereo;
+      d.liveRecInputPan                = s.liveRecInputPan;
+      d.liveRecLoopIdx                 = s.liveRecLoopIdx;
+      d.liveRecCopy                    = s.liveRecCopy;
+      d.liveRecClear                   = s.liveRecClear;
+      d.liveRecDoubleBufferMode        = s.liveRecDoubleBufferMode;
+      d.liveRecDoubleBufferXFade       = s.liveRecDoubleBufferXFade;
+      d.liveRecOscMode                 = s.liveRecOscMode;
+      d.liveRecOscSingleCycle          = s.liveRecOscSingleCycle;
+      d.liveRecOscTune                 = s.liveRecOscTune;
+      d.liveRecOscFadeAmt              = s.liveRecOscFadeAmt;
+      d.liveRecSkipInputNumFrames      = s.liveRecSkipInputNumFrames;
+      d.liveRecOscPreFilter            = s.liveRecOscPreFilter;
+      d.liveRecOscResample             = s.liveRecOscResample;
+      d.liveRecOscSustain              = s.liveRecOscSustain;
+      d.liveRecMode                    = s.liveRecMode;
+      d.liveRecThresholdOn             = s.liveRecThresholdOn;
+      d.liveRecThresholdOff            = s.liveRecThresholdOff;
+      d.enableSumInput                 = s.enableSumInput;
+      d.sumInputXFade                  = s.sumInputXFade;
+      d.enableFX                       = s.enableFX;
+      d.voiceBus                       = s.voiceBus;
+      d.uiSVZoom                       = s.uiSVZoom;
+      d.uiSVOffset                     = s.uiSVOffset;
+      d.uiSVZoomYIdx                   = s.uiSVZoomYIdx;
+      d.uiEnableAuxToWav               = s.uiEnableAuxToWav;
+
+      int vcalLaneIdx = 0;
+      loop(6)
+      {
+         d.setVoiceCalibrationModulo(vcalLaneIdx, s.getVoiceCalibrationModulo(vcalLaneIdx));
+         d.setVoiceCalibrationAmount(vcalLaneIdx, s.getVoiceCalibrationAmount(vcalLaneIdx));
+         d.setVoiceCalibrationEnable(vcalLaneIdx, s.getVoiceCalibrationEnable(vcalLaneIdx));
+         int vcalVoiceIdx = 0;
+         loop(8)
+         {
+            d.setVoiceCalibrationValue(vcalLaneIdx, vcalVoiceIdx,
+                                       s.getVoiceCalibrationValue(vcalLaneIdx, vcalVoiceIdx)
+                                       );
+            vcalVoiceIdx++;
+         }
+         vcalLaneIdx++;
+      }
+
+      // Tuning tables and editor meta data
+      CopySampleTuningTables(d, s);
+
+      if(d.enableTimestretchAdditive)
+         d.recalcAdditiveTbl(-1/*all cfgs*/);
+
+      CopySamplePlugins(d, s);
+   }
+
+   // <method.png>
+   protected static int num_symlinks_followed;
+   protected static ScanSampleDir(local String dirName,
+                                  local String _symLinkTargetOrNull,
+                                  local PointerArray _folders,
+                                  local SampleCacheFolderEntry _curFolder
+                                  ) {
+      stdout ".";
+
+      // Global.Debug("ScanSampleDir \""+dirName+"\"");
+      local int r = 0;
+      local StringArray a <= Utils.ReadDirectory( (null != _symLinkTargetOrNull) ? _symLinkTargetOrNull : dirName );
+      if(null != a)
+      {
+         local String *fileEntry;
+
+         foreach fileEntry in a
+         {
+            if(fileEntry & "\".noindex\"")
+            {
+               Global.Debug("ScanSampleDir: skip \""+dirName+"\"");
+               return 0;
+            }
+         }
+
+         foreach fileEntry in a
+         {
+            local StringArray attribs <= fileEntry.splitSpace(true);
+            local String fileName <= attribs.get(1);
+            local SampleCacheFolderEntry *enFolder;
+
+            if('d' == fileEntry.getc(0))
+            {
+               if!( (fileName == ".") || (fileName == "..") )
+               {
+                  // Directory
+                  enFolder <= new SampleCacheFolderEntry;
+                  enFolder.initFromFileEntryAttribs(dirName + "/" + fileName, attribs);
+                  enFolder.folder_id = _folders.numElements;
+                  _folders.add(#(deref enFolder));
+                  r += ScanSampleDir(dirName + "/" + fileName, null/*symLinkTarget*/, _folders, enFolder);
+                  r++;
+               }
+            }
+            else if('l' == fileEntry.getc(0))
+            {
+               // SymLink (=> assume it's a directory link)
+               if(++num_symlinks_followed < 100)  // simple infinite recursion protection
+               {
+                  enFolder <= new SampleCacheFolderEntry;
+                  enFolder.initFromFileEntryAttribs(dirName + "/" + fileName, attribs);
+                  enFolder.folder_id = _folders.numElements;
+                  _folders.add(#(deref enFolder));
+                  r += ScanSampleDir(dirName + "/" + fileName, attribs.get(2)/*symLinkTarget*/, _folders, enFolder);
+                  r++;
+               }
+               else
+                  trace "[~~~] Samples.ScanSampleDir: max symlinks exceeded, skipping \""+fileName+"\"";
+            }
+            else
+            {
+               r++;
+               SampleCacheEntry en <= new SampleCacheEntry;
+               en.initFromDirAndFileNames(dirName, fileName);
+               en.folder_id = _curFolder.folder_id;
+               if(fileName.endsWith(Global.SAMPLE_FILE_SUFFIX)/*.esa*/)
+               {
+                  en.esa_entry_id = _curFolder.esa_entries.numElements;
+                  en.wav_entry_id = -1;
+                  // trace "xxx ESA rel_path=\""+en.rel_path+"\" unique_name=\""+en.unique_name+"\"";
+                  en.loadTagsFromESAHeader();
+                  _curFolder.esa_entries.add(#(deref en));
+                  num_samples_esa++;
+                  if(null != en.tags && !(en.tags.isEmpty()))
+                     num_samples_esa_with_tags++;
+               }
+               else if(fileName.toLower().endsWith(".wav"))
+               {
+                  en.esa_entry_id = -1;
+                  en.wav_entry_id = _curFolder.wav_entries.numElements;
+                  _curFolder.wav_entries.add(#(deref en));
+               }
+            }
+         }
+      }
+      return r;
+   }
+
+   // <method_find.png>
+   public static FindFilterCategoryByName(String _name) : SampleFilterCategory {
+      SampleFilterCategory *cat;
+      foreach cat in categories
+      {
+         if(cat.name == _name)
+            return cat;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public static FindFilterCategoryByFilterWord(String _word) : SampleFilterCategory {
+      SampleFilterCategory *cat;
+      foreach cat in categories
+      {
+         String *sWord;
+         foreach sWord in cat.filters
+         {
+            // trace "xxx FindFilterCategoryByFilterWord: sWord=\""+sWord+"\" _word=\""+_word+"\"";
+            if(sWord == _word)
+               return cat;
+            if(sWord.replace("<","") == _word)  // e.g. '<lt'
+               return cat;
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public static FindFolderEntryByRelPath(String _relPath) : SampleCacheFolderEntry {
+      SampleCacheFolderEntry *fen;
+      foreach fen in sample_cache
+      {
+         if(fen.rel_path == _relPath)
+         {
+            return fen;
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public static FindCacheEntryByFileName(SampleCacheFolderEntry _folder, String _fileName) : SampleCacheEntry {
+      local String baseName;
+      _fileName.replace(Global.SAMPLE_FILE_SUFFIX, "") => baseName;
+      SampleCacheEntry *en;
+      foreach en in _folder.esa_entries
+      {
+         if(en.unique_name == baseName)
+            return en;
+      }
+      foreach en in _folder.wav_entries
+      {
+         if(en.unique_name == baseName)
+            return en;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public static FindCacheEntryByPathName(String _pathName) : SampleCacheEntry {
+      local String dirName;
+      local String fileName;
+      Utils.SplitPathname(_pathName, dirName, fileName);
+      local String dirNameRel; dirName.replace(STConfig.sample_rootpath+"/", "") => dirNameRel;
+      if(dirNameRel >= "/")
+         dirNameRel.substring(0, dirNameRel.numChars-1);
+      if(dirNameRel <= "/")
+         dirNameRel.substring(1, dirNameRel.numChars);
+      dirNameRel.replace("//", "/");
+      SampleCacheFolderEntry fen <= FindFolderEntryByRelPath(dirNameRel);
+      Global.Debug("Samples::FindCacheEntryByPathName: pathName=\""+_pathName+"\" dirName=\""+dirName+"\" dirNameRel=\""+dirNameRel+"\" => fen="+#(fen));
+      if(null != fen)
+         return FindCacheEntryByFileName(fen, fileName);
+      return null;
+   }
+
+   // <method_find.png>
+   public static FindCacheEntriesByCategoryNameOrFilterKeyword(PointerArray _retEntries, String _sWord) {
+      // (note) 'sWord' (category name or filter keyword) must be lower-case
+      // (note) used by SamplePadButton and ModSample context menu preset lists
+      SampleFilterCategory cat <= FindFilterCategoryByName(_sWord);
+      trace "[trc] Samples::FindCacheEntriesByCategoryNameOrFilterKeyword: sWord=\""+_sWord+"\" => cat="+#(cat);
+      if(null == cat)
+      {
+         cat <= FindFilterCategoryByFilterWord(_sWord);
+         trace "[trc] Samples::FindCacheEntriesByCategoryNameOrFilterKeyword: FindFilterCategoryByFilterWord: sWord=\""+_sWord+"\" => cat="+#(cat);
+      }
+      if(null != cat && !cat.b_generic)
+      {
+         // trace "xxx add from cat.name=\""+cat.name+"\"";
+         SampleCacheEntry *en;
+         foreach en in cat.esa_entries
+         {
+            if(!_retEntries.containsPointer(en))
+               _retEntries.add(en);
+         }
+      }
+   }
+
+   // <method_add.png>
+   public static AddSingleFileToCache(String _pathName, StringArray _tags, boolean _bVerbose) : boolean {
+      // called when saving sample
+      //  - lazy create cache entry
+      //  - update existing cache entry
+      local String dirName;
+      local String fileName;
+      Utils.SplitPathname(_pathName, dirName, fileName);
+      SampleCacheFolderEntry *fen;
+      local String dirNameRel; dirName.replace(STConfig.sample_rootpath+"/", "") => dirNameRel;
+      if(dirNameRel >= "/")
+         dirNameRel.substring(0, dirNameRel.numChars-1);
+      dirNameRel.replace("//", "/");
+      fen <= FindFolderEntryByRelPath(dirNameRel);
+      Global.Debug("Samples::AddSingleFileToCache: pathName=\""+_pathName+"\" dirName=\""+dirName+"\" dirNameRel=\""+dirNameRel+"\" => fen="+#(fen)+" bVerbose="+_bVerbose);
+      // (todo) lazy-create folder ?
+      if(null != fen)
+      {
+         local SampleCacheEntry *en;
+         en <= FindCacheEntryByFileName(fen, fileName);
+         if(null == en)
+         {
+            // Create new entry
+            en <= new SampleCacheEntry;
+            en.initFromDirAndFileNames(dirName, fileName);
+            if(fileName.endsWith(Global.SAMPLE_FILE_SUFFIX/*.esa*/))
+            {
+               en.folder_id = fen.folder_id;
+               en.esa_entry_id = fen.esa_entries.numElements;
+               en.wav_entry_id = -1;
+               fen.esa_entries.add(#(deref en));
+               en.updateTags(_tags);
+               AddEntryToCategoryCache(en, true/*bESA*/, true/*bSortCat*/, _bVerbose);
+               // // SaveSampleCache(null);  // must be done by caller
+               Global.Debug2("Samples::AddSingleFileToCache: added esa pathName=\""+_pathName+"\"");
+               return true;
+            }
+            else if(fileName.toLower().endsWith(".wav"))
+            {
+               en.folder_id = fen.folder_id;
+               en.esa_entry_id = -1;
+               en.wav_entry_id = fen.wav_entries.numElements;
+               fen.wav_entries.add(#(deref en));
+               AddEntryToCategoryCache(en, false/*bESA*/, true/*bSortCat*/, _bVerbose);
+               // // SaveSampleCache(null);  // must be done by caller
+               Global.Debug2("Samples::AddSingleFileToCache: added wav pathName=\""+_pathName+"\"");
+               return true;
+            }
+         }
+         else
+         {
+            // SampleCacheEntry already exists
+            Global.Debug2("Samples::AddSingleFileToCache: cache entry already exists, updating tags to "+_tags);
+            en.updateTags(_tags);
+            return true;
+         }
+      }
+      else
+      {
+         trace "[~~~] Samples::AddSingleFileToCache: folder entry is null";
+      }
+      return false;
+   }
+
+   // <save.png>
+   public static SaveSampleCategories(Stream ofs) {
+
+      // Ver
+      ofs.i16 = 2;
+
+      // Num categories
+      ofs.i16 = categories.numElements;
+
+      SampleFilterCategory *cat;
+      foreach cat in categories
+      {
+         Utils.WriteString(ofs, cat.name);
+         Utils.WriteString(ofs, cat.long_name);
+         Utils.WriteString(ofs, cat.rel_path);
+         Utils.WriteString(ofs, cat.skip_path);
+         ofs.i8 = cat.b_generic;  // v2+
+         ofs << cat.filters;
+      }
+   }
+
+   // <load.png>
+   public static LoadSampleCategories(Stream ifs) : boolean {
+      // Ver
+      short ver = ifs.u16;
+
+      categories.free();
+
+      if(ver >= 1)
+      {
+         int numCat = ifs.u16;
+
+         for(int catIdx = 0; catIdx < numCat; catIdx++)
+         {
+            SampleFilterCategory cat <= new SampleFilterCategory;
+            Utils.ReadString(ifs, cat.name);
+            Utils.ReadString(ifs, cat.long_name);
+            Utils.ReadString(ifs, cat.rel_path);
+            // trace "xxx LoadSampleCategories: name="+cat.name+" rel_path="+cat.rel_path;
+            Utils.ReadString(ifs, cat.skip_path);
+            if(ver >= 2)
+            {
+               cat.b_generic = ifs.b8;  // v2+
+            }
+            StringArray filters <= cat.filters;
+            filters << ifs;
+            categories.add(#(deref cat));
+         }
+
+         BuildCategoryStrings();
+
+         return true;
+      }
+      return false;
+   }
+
+   // <save.png>
+   public static SaveSampleCategoryMapping(Stream ofs) {
+
+      // Ver
+      ofs.i16 = 1;
+
+      SampleFilterCategory *cat;
+      SampleCacheEntry *en;
+
+      foreach cat in categories
+      {
+         // ESA entries
+         ofs.i32 = cat.esa_entries.numElements;
+
+         foreach en in cat.esa_entries
+         {
+            ofs.i32 = en.folder_id;
+            ofs.i32 = en.esa_entry_id;
+         }
+
+         // WAV entries
+         ofs.i32 = cat.wav_entries.numElements;
+
+         foreach en in cat.wav_entries
+         {
+            ofs.i32 = en.folder_id;
+            ofs.i32 = en.wav_entry_id;
+         }
+      }
+   }
+
+   // <load.png>
+   public static LoadSampleCategoryMapping(Stream ifs) : boolean {
+      // Ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         SampleCacheFolderEntry *folder;
+         SampleFilterCategory *cat;
+         SampleCacheEntry *en;
+         int numEntries;
+         int folderId;
+         int entryId;
+
+         foreach cat in categories
+         {
+            // ESA entries
+            numEntries = ifs.i32;
+            // trace "xxx SampleCategoryMapping: #esaEntries="+numEntries;
+            loop(numEntries)
+            {
+               folderId = ifs.i32;
+               entryId = ifs.i32;
+               folder <= sample_cache.get(folderId);
+               if(null != folder)
+               {
+                  en <= folder.esa_entries.get(entryId);
+                  if(null != en)
+                     cat.esa_entries.add(en);
+                  else
+                  {
+                     trace "[---] LoadSampleCategoryMapping: invalid esa entryId="+entryId+" (folderId="+folderId+")";
+                     return false;
+                  }
+               }
+               else
+               {
+                  trace "[---] LoadSampleCategoryMapping: invalid esa folderId="+folderId+" => folder="+#(folder);
+                  return false;
+               }
+            }
+
+            // WAV entries
+            numEntries = ifs.i32;
+            // trace "xxx SampleCategoryMapping: #wavEntries="+numEntries;
+            loop(numEntries)
+            {
+               folderId = ifs.i32;
+               entryId = ifs.i32;
+               folder <= sample_cache.get(folderId);
+               if(null != folder)
+               {
+                  en <= folder.wav_entries.get(entryId);
+                  cat.wav_entries.add(en);
+               }
+               else
+                  trace "[---] LoadSampleCategoryMapping: invalid wav folderId="+folderId+" => folder="+#(folder);
+            }
+         }
+
+         DebugPrintCategories();
+
+         return true;
+      }
+      return false;
+   }
+
+   // <save.png>
+   public static SaveSampleCache(String _pathNameOrNull) {
+      xxx_dbg = 0;
+
+      boolean r = false;
+      local File f;
+      local String pathName = (null != _pathNameOrNull) ? _pathNameOrNull : "$(CACHE_DIR)/samplecache.dat";
+      local String nativePathName <= Utils.ToNativePathName(pathName);
+      if(f.openLocal(nativePathName, IOS_OUT))
+      {
+         // Ver
+         f.i16 = 2;
+
+         // Sample Categories (v2+)
+         SaveSampleCategories(f);
+
+         // Num folders
+         f.i32 = sample_cache.numElements;
+
+         for(int folderIdx = 0; folderIdx < sample_cache.numElements; folderIdx++)
+         {
+            SampleCacheFolderEntry enFolder <= sample_cache.get(folderIdx);
+            enFolder.saveState(f);
+         }
+
+         // Folder+Entry to Category Mapping (v2+)
+         SaveSampleCategoryMapping(f);
+
+         f.close();
+         Global.Debug("Wrote samplecache to \""+nativePathName+"\"");
+      }
+   }
+
+   // <load.png>
+   public static LoadSampleCache(String _pathNameOrNull) : boolean {
+
+      xxx_dbg = 0;
+
+      int ms = milliSeconds();
+
+      num_samples_esa_with_tags = 0;
+
+      boolean r = false;
+      local File f;
+      sample_cache.free();
+      local String pathName = (null != _pathNameOrNull) ? _pathNameOrNull : "$(CACHE_DIR)/samplecache.dat";
+      local String nativePathName <= Utils.ToNativePathName(pathName);
+      if(f.openLocal(nativePathName, IOS_IN))
+      {
+         // Ver
+         short ver = f.u16;
+
+         if(ver >= 1)
+         {
+            // Sample Categories (v2+)
+            if(ver >= 2)
+            {
+               LoadSampleCategories(f);
+            }
+
+            int numFolders = f.i32;
+            sample_cache.alloc(numFolders);
+
+            int numSamplesESA = 0;
+            int numSamplesWAV = 0;
+
+            for(int folderIdx = 0; folderIdx < numFolders; folderIdx++)
+            {
+               SampleCacheFolderEntry enFolder <= new SampleCacheFolderEntry;
+               if(!enFolder.loadState(f))
+                  return false;
+               sample_cache.add(#(deref enFolder));
+               numSamplesESA += enFolder.esa_entries.numElements;
+               numSamplesWAV += enFolder.wav_entries.numElements;
+            }
+
+            if(ver >= 2)
+            {
+               // Folder+Entry to Category Mapping (v2+)
+               LoadSampleCategoryMapping(f);
+            }
+
+            ms = milliSeconds() - ms;
+            Global.Info("Samples: Restored sample cache from \""+nativePathName+"\"");
+            Global.Info("Samples:   => "+numSamplesESA+" ESA ("+num_samples_esa_with_tags+" tagged) and "+numSamplesWAV+" WAV samples in "+numFolders+" folders and "+categories.numElements+" categories in "+(ms/1000.0f)+" seconds");
+
+            num_samples_esa = numSamplesESA;
+
+            LoadSampleRatings();
+
+            r = true;
+         }
+         f.close();
+      }
+      return r;
+   }
+
+   // <method.png>
+   public static RescanSamples() {
+
+      local String dirName = STConfig.sample_rootpath;
+      Global.Debug("RescanSamples: dirName=\""+dirName+"\"");
+
+      num_samples_esa = 0;
+
+      LoadSampleFilters();
+
+      int ms = milliSeconds();
+
+      PointerArray newFolders <= new PointerArray;
+      SampleCacheFolderEntry rootFolder <= new SampleCacheFolderEntry;
+      newFolders.add(#(deref rootFolder));
+      num_symlinks_followed = 0;
+      int r = ScanSampleDir(dirName, null/*symLinkTarget*/, newFolders, rootFolder);
+
+      ms = milliSeconds() - ms;
+
+      int numSamplesESA = 0;
+      int numSamplesWAV = 0;
+      SampleCacheFolderEntry *enFolder;
+      foreach enFolder in newFolders
+      {
+         numSamplesESA += enFolder.esa_entries.numElements;
+         numSamplesWAV += enFolder.wav_entries.numElements;
+      }
+
+      trace "";
+      Global.PrintAndDebug("RescanSamples: scanned "+r+" file entries, found "+numSamplesESA+" ESA and "+numSamplesWAV+" WAV sample(s) in "+newFolders.numElements+" directories in "+(ms/1000.0f)+" seconds");
+
+      sample_cache <= deref newFolders;
+
+      BuildFilteredCache();
+
+      LoadSampleRatings();  // merge into sample cache
+
+      SaveSampleCache(null);
+   }
+
+   // <method_find.png>
+   public static FindSamplePathnameByUniqueName(String _uniqueName) : String {
+
+      for(;;)
+      {
+         SampleCacheFolderEntry *enFolder;
+         foreach enFolder in sample_cache
+         {
+            SampleCacheEntry *en;
+            foreach en in enFolder.esa_entries
+            {
+               if(en.unique_name == _uniqueName)
+               {
+                  return STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name+Global.SAMPLE_FILE_SUFFIX;
+               }
+            }
+         }
+
+         if(b_allow_sample_rescan)
+         {
+            b_allow_sample_rescan = false;
+            RescanSamples();
+            // Try again
+         }
+         else
+         {
+            break;
+         }
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public static LoadSampleFilters() : boolean {
+
+      categories.free();
+
+      boolean ret = false;
+      local String ini;
+      local String iniPathName = Utils.ToNativePathName(STConfig.sample_filters_path);
+      local String defRelPath;
+      local String defSkipPath;
+      local String t;
+      local SampleFilterCategory *curCat;
+      local StringArray filters;
+
+      if(ini.loadLocal(iniPathName, true/*bRemoveCR*/))
+      {
+         local StringArray lines <= ini.splitChar('\n');
+         if(null != lines)
+         {
+            if(lines.numElements > 0)
+            {
+               local String *line;
+               foreach line in lines
+               {
+                  line.trim();
+                  if(!line.isBlank())
+                  {
+                     if(line <= "#")
+                     {
+                     }
+                     else if(line <= "[")
+                     {
+                        if(line >= "]")
+                        {
+                           line.substring(1, line.length-2-1) => t;
+                           if(!t.isBlank())
+                           {
+                              // trace "xxx curCat=\""+t+"\"";
+                              curCat <= new SampleFilterCategory;
+                              curCat.name = t;
+                              curCat.rel_path = defRelPath;
+                              curCat.skip_path = defSkipPath;
+                              categories.add(#(deref curCat));
+                           }
+                        }
+                     }
+                     else if(line <= "subdir=")
+                     {
+                        line.replace("subdir=", "");
+                        if(null != curCat)
+                           line.trim() => curCat.rel_path;
+                        else
+                           line.trim() => defRelPath;
+                     }
+                     else if(line <= "name=")
+                     {
+                        line.replace("name=", "");
+                        if(null != curCat)
+                           line.trim() => curCat.long_name;
+                     }
+                     else if(line <= "skipdir=")
+                     {
+                        line.replace("skipdir=", "");
+                        if(null != curCat)
+                           line.trim() => curCat.skip_path;
+                        else
+                           line.trim() => defSkipPath;
+                     }
+                     else if(line <= "generic=")
+                     {
+                        if(null != curCat)
+                           curCat.b_generic = (0 != int(line.replace("generic=","").trim()));
+                     }
+                     else
+                     {
+                        // Filters ("one two three four")
+                        if(null != curCat)
+                        {
+                           line.splitSpace(true) => filters;
+                           curCat.filters.join(curCat.filters, filters);
+                        }
+                        else
+                        {
+                           trace "[~~~] LoadSampleFilters: invalid ini line \""+line+"\"";
+                        }
+                     }
+                  } // isBlank
+               } // loop lines
+
+               BuildCategoryStrings();
+
+               ret = true;
+
+            } // if #lines
+         } // if lines
+      }
+      else
+      {
+         trace "[~~~] failed to load \""+iniPathName+"\"";
+      }
+      return ret;
+   }
+
+   // <method.png>
+   protected static BuildCategoryStrings() {
+      category_short_names.free();
+      category_long_names.free();
+
+      SampleFilterCategory *cat;
+      foreach cat in categories
+      {
+         category_short_names.add(cat.name);
+         category_long_names.add(cat.long_name);
+      }
+   }
+
+   // <method_find.png>
+   public static FindSampleFilterCategoriesByUniqueNameAndRelPath(String _uniqueName, String _relPathOrNull, PointerArray _retCat) {
+      _retCat.empty();
+      local String enNameLC <= _uniqueName.toLower();
+      String *flt;
+      local String fltTmp;
+      local StringArray words;
+      String *word;
+      local String wordEnd;
+      boolean bMatch;
+      boolean bAnyCatMatched;
+      SampleFilterCategory *cat;
+
+      bAnyCatMatched = false;
+
+      foreach cat in categories
+      {
+         // trace "xxx FindSampleFilterCategoriesByUniqueNameAndRelPath: uniqueName="+_uniqueName+" _relPathOrNull="+_relPathOrNull+" cat.name="+cat.name+" cat.rel_path="+cat.rel_path;
+         if( (cat.skip_path.isBlank()) ||
+             ((null == _relPathOrNull) || !(_relPathOrNull & cat.skip_path))
+             )
+         {
+            if( (cat.rel_path.isBlank()) ||
+                ((null == _relPathOrNull) || (_relPathOrNull <= cat.rel_path))
+                )
+            {
+               boolean bCatMatched = false;
+               // trace "xxx cat.name="+cat.name+" cat.rel_path="+cat.rel_path+" _relPath="+_relPathOrNull+" cat.filters="+cat.filters;
+
+               foreach flt in cat.filters
+               {
+                  char fltc0 = flt.getc(0);
+
+                  if('<' == fltc0)
+                  {
+                     // Match word start
+                     flt.substring(1, 99) => fltTmp;
+                     words <= enNameLC.splitCharset(" ,._-~=+[]()");
+                     bMatch = false;
+                     foreach word in words
+                     {
+                        if(word <= fltTmp)
+                        {
+                           // match "bd", "bd09"
+                           word.substring(fltTmp.length-1, 99) => wordEnd;
+                           if(wordEnd.isBlank() ||
+                              (0 == wordEnd.charsetIndexOf("0123456789", 0))
+                              )
+                           {
+                              bMatch = true;
+                              bCatMatched = true;
+                              bAnyCatMatched = true;
+                              break;
+                           }
+                        }
+                     }
+                     if(bMatch)
+                        break;
+                  }
+                  else if('=' == fltc0)
+                  {
+                     // Match word exactly
+                     flt.substring(1, 99) => fltTmp;
+                     words <= enNameLC.splitCharset(" ,._-~=+[]()");
+                     bMatch = false;
+                     foreach word in words
+                     {
+                        if(word == fltTmp)
+                        {
+                           // match "rs" but not "rs95n"
+                           bMatch = true;
+                           bCatMatched = true;
+                           bAnyCatMatched = true;
+                           break;
+                        }
+                     }
+                     // trace "xxx = fltTmp=\""+fltTmp+"\" bMatch="+bMatch+" words="+#(words);
+                     if(bMatch)
+                        break;
+                  }
+                  else if("!*" == flt)
+                  {
+                     if(!bAnyCatMatched)
+                     {
+                        bCatMatched = true;
+                        break;
+                     }
+                  }
+                  else if('!' == fltc0)
+                  {
+                     flt.substring(1, 99) => fltTmp;
+                     if(enNameLC & fltTmp)
+                        break;
+                  }
+                  else if('*' == fltc0)
+                  {
+                     bCatMatched = true;
+                     break;
+                  }
+                  // // else if('~' == fltc0)
+                  // // {
+                  // //    // skip when substring is the only one that matches
+                  // //    //  (note) "~" should occur after other filters
+                  // //    if(!bCatMatched)
+                  // //    {
+                  // //       flt.substring(1, 99) => fltTmp;
+                  // //       if(enNameLC & fltTmp)
+                  // //          break;
+                  // //    }
+                  // // }
+                  else if(enNameLC & flt)
+                  {
+                     // Match any substring
+                     // if("cb" == cat.name)
+                     //    trace "xxx enNameLC=\""+enNameLC+"\" flt=\""+flt+"\"";
+                     bCatMatched = true;
+                     bAnyCatMatched = true;
+                     break;
+                  }
+               } // foreach flt
+
+               if(bCatMatched)
+                  _retCat.add(cat);
+            }
+         }
+      } // foreach cat
+   }
+
+   // <method_find.png>
+   protected static FindSampleFilterCategoriesByTags(StringArray _tags, PointerArray _aCat) {
+      SampleFilterCategory *cat;
+      foreach cat in categories
+      {
+         if(!_aCat.containsPointer(cat))
+         {
+            String *sFilter;
+            foreach sFilter in cat.filters
+            {
+               if(sFilter <= "<")
+                  sFilter <= sFilter.replace("<","");  // '<lt' => 'lt'
+            
+               if(_tags.containsObject(sFilter))
+               {
+                  _aCat.add(cat);
+                  break;
+               }
+            }
+         }
+      }
+   }
+
+   // <method_add.png>
+   protected static AddEntryToCategoryCache(SampleCacheEntry _en, boolean _bESA, boolean _bSortCat, boolean _bVerbose) {
+      PointerArray aCat; aCat.empty();
+      FindSampleFilterCategoriesByUniqueNameAndRelPath(_en.unique_name, _en.rel_path, aCat);
+      if(null != _en.tags)
+         FindSampleFilterCategoriesByTags(_en.tags, aCat);
+      SampleFilterCategory *cat;
+      foreach cat in aCat
+      {
+         // // if(_bESA) trace "xxx _en.unique_name=\""+_en.unique_name+"\" => cat="+((null != cat)?cat.name:"-");
+         if(_bVerbose)
+            trace "[trc] AddEntryToCategoryCache: en.unique_name=\""+_en.unique_name+"\" cat=\""+cat.name+"\"";// flt=\""+flt+"\"";
+
+         if(_bESA)
+         {
+            cat.esa_entries.add(_en);
+
+            if(_bSortCat)
+               cat.sortESAEntriesByName();
+         }
+         else
+         {
+            cat.wav_entries.add(_en);
+
+            if(_bSortCat)
+               cat.sortWAVEntriesByName();
+         }
+      }
+   }
+
+   // <method.png>
+   public static BuildFilteredCache() {
+
+      Global.Debug("Samples::BuildFilteredCache: ");
+
+      int ms = milliSeconds();
+
+      SampleCacheFolderEntry *folder;
+      int totalNumEntries = 0;
+
+      foreach folder in sample_cache
+      {
+         stdout ".";
+
+         SampleCacheEntry *en;
+
+         // ESA
+         totalNumEntries += folder.esa_entries.numElements;
+         foreach en in folder.esa_entries
+         {
+            AddEntryToCategoryCache(en, true/*bESA*/, false/*bSortCat*/, false/*bVerbose*/);
+         }
+
+         // WAV
+         totalNumEntries += folder.wav_entries.numElements;
+         foreach en in folder.wav_entries
+         {
+            AddEntryToCategoryCache(en, false/*bESA*/, false/*bSortCat*/, false/*bVerbose*/);
+         }
+      }
+
+      ms = milliSeconds() - ms;
+
+      trace "";
+      Global.Debug("BuildFilteredCache: filtered "+totalNumEntries+" samples in "+sample_cache.numElements+" folders in "+(ms/1000.0f)+" seconds");
+
+      DebugPrintCategories();
+   }
+
+   // <method.png>
+   public static DebugPrintCategories() {
+      SampleFilterCategory *cat;
+      foreach cat in categories
+      {
+         Global.Debug2("Samples: cat=\""+cat.name+"\" relPath=\""+cat.rel_path+"\" #filters="+(cat.filters.numElements)+" #ESA="+(cat.esa_entries.numElements)+" #WAV="+(cat.wav_entries.numElements));
+      }
+   }
+
+   // <method_get.png>
+   public static GetCategoryEntriesByIdx(boolean _bESA, int _catIdx, PointerArray _retEntries) {
+      _retEntries.empty();
+      SampleFilterCategory cat <= categories.get(_catIdx);
+      if(null != cat)
+         _retEntries = _bESA ? cat.esa_entries : cat.wav_entries;
+   }
+
+   // <method_get.png>
+   public static GetCategoryEntriesByIdxAndFilter(boolean      _bESA,
+                                                  int          _catIdx,
+                                                  String       _filterOrNull,
+                                                  String       _pathFilterUserOrNull,
+                                                  StringArray  _tagsFilterOrNull,
+                                                  boolean      _bRated,
+                                                  PointerArray _retEntries
+                                                  ) {
+      _retEntries.empty();
+      SampleFilterCategory cat <= categories.get(_catIdx);
+      // trace "xxx GetCategoryEntriesByIdxAndFilter: catIdx="+_catIdx+" => cat="+#(cat)+" _pathFilterUserOrNull=\""+_pathFilterUserOrNull+"\"";
+      if(null != cat)
+      {
+         boolean bHaveTagsFilter = (null != _tagsFilterOrNull) && !_tagsFilterOrNull.isEmpty();
+         SampleCacheEntry *[] entries <= _bESA ? cat.esa_entries : cat.wav_entries;
+         SampleCacheEntry *en;
+         Global.Debug2("unfiltered "+(_bESA?"ESA":"WAV")+" #entries="+(entries.numElements));
+         foreach en in entries
+         {
+            local String nameLC <= en.unique_name.toLower();
+            local String relPathLC <= en.rel_path.toLower();
+            // trace "xxx relPathLC=\""+relPathLC+"\" pathFilterUserOrNull=\""+_pathFilterUserOrNull+"\"";
+            boolean bAdd = false;
+            if(null != _filterOrNull)
+            {
+               if(nameLC & _filterOrNull)
+               {
+                  bAdd = (null == _pathFilterUserOrNull || (relPathLC <= _pathFilterUserOrNull));
+               }
+               else if(relPathLC & _filterOrNull)
+               {
+                  bAdd = (null == _pathFilterUserOrNull || (relPathLC <= _pathFilterUserOrNull));
+               }
+            }
+            else
+            {
+               bAdd = (null == _pathFilterUserOrNull) || (relPathLC <= _pathFilterUserOrNull);
+               // trace "xxx _pathFilterUserOrNull="+#(_pathFilterUserOrNull)+" relPathLC=\""+relPathLC+"\" _pathFilterUserOrNull=\""+_pathFilterUserOrNull+"\" => _tagsFilterOrNull="+#(_tagsFilterOrNull)+" bAdd="+bAdd;
+            }
+
+            if(bAdd)
+            {
+               if(bHaveTagsFilter)
+               {
+                  if(null != en.tags)
+                     bAdd = Utils.StringArrayContainsAllSubStringsWithExclusions(en.tags, _tagsFilterOrNull);
+                  else
+                     bAdd = false;
+               }
+
+               if(bAdd)
+               {
+                  bAdd = !_bRated || (en.rating > 0);
+
+                  if(bAdd)
+                     _retEntries.add(en);
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected static AddDefaultSampleTags() {
+      PointerArray aCat <= STConfig.sample_tags;
+      StringArray *aTags;
+      foreach aTags in aCat
+         Utils.MergeStringArrays(all_tags, aTags);
+   }
+
+   // <method.png>
+   protected static SortSampleTags() {
+      Utils.SortStringArray(all_tags, false/*bCS*/);
+      PointerArray aCat <= STConfig.sample_tags;
+      StringArray *aTags;
+      foreach aTags in aCat
+         Utils.SortStringArray(aTags, false/*bCS*/);
+   }
+
+   // <method.png>
+   public static InitSampleCache() {
+
+      Global.Debug("Samples::InitSampleCache: b_scan_samples_or_load_cache="+STConfig.b_scan_samples_or_load_cache);
+
+      if(STConfig.b_scan_samples_or_load_cache)
+      {
+         b_allow_sample_rescan = true;
+
+         all_tags.empty();
+
+         ht_tag_frequency.alloc(5000);
+
+         // if(!LoadSampleCache(st2::program_directory + "/samplecache.dat__TEST2"))
+         if(!LoadSampleCache(null))
+         {
+            // die "xxxxx failed to load sample cache"; // xxxxxxxxxxxxxxxxxxxxx
+            RescanSamples();
+         }
+
+         all_used_tags = all_tags;
+         AddDefaultSampleTags(); // add to all_tags
+
+         SortSampleTags();
+
+         // // if(0)
+         // // {
+         // //    // Test code xxxxxxxxxxxxxxxxxxxxxx
+         // //    local String pathNameTest = st2::program_directory + "/samplecache.dat__TEST";
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry1.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry2.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry3.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry4.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry1.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry2.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry3.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testentry4.esa");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testwave.wav");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testwave3.wav");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testwave9.wav");
+         // //    AddSingleFileToCache("~/mProjects/samples/bsp/testwave.wav");
+         // //    SaveSampleCache(pathNameTest);
+         // //    trace "xxx LoadSampleCache(pathNameTest) ret="+LoadSampleCache(pathNameTest);
+         // //    exit(0);
+         // // }
+
+      }
+   }
+
+   // <method.png>
+   public static ShiftSampleStartOffsets(StSample zone, int numFrames) {
+      IntArray loops <= zone.getOrCreateSampleLoops();
+      int loopOff = 0;
+      loop(loops.numElements / 3)
+      {
+         loops[loopOff] += numFrames;  // shift loop
+         loopOff += 3;
+      }
+      zone.verifySampleAreas();
+   }
+
+   // <method.png>
+   public static TryConvertFromStartFlagToSampleLoop(StSample _zone, int _frameOff, int _numFrames) {
+      // when merging samples
+      if(_zone.enableFromStart)
+      {
+         _zone.setEnableFromStart(false);
+         IntArray loops <= _zone.getOrCreateSampleLoops();
+         loops.insert(0, 1);  // #repeats=1
+         loops.insert(0, _numFrames);
+         loops.insert(0, _frameOff);
+         _zone.verifySampleAreas();
+      }
+   }
+
+   // <load.png>
+   public static LoadSampleTagsFromESAHeader(String _pathname, StringArray _tags) : boolean {
+      local File f;
+      if(f.openLocal(_pathname, IOS_IN))
+      {
+         char hdr1 = f.u8;
+         char hdr2 = f.u8;
+         char hdr3 = f.u8;
+         char hdr4 = f.u8;
+
+         if(('E' == hdr1) &&
+            ('S' == hdr2) &&
+            ('A' == hdr3) &&
+            ('.' == hdr4)
+            )
+         {
+            short ver = f.u16;
+
+            // Tags (v9+)
+            if(ver >= 9)
+            {
+               byte numTags = f.u8;
+               SampleCacheEntry.ReadSampleTags(f, numTags, _tags);
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   static IncDecTagFrequency(StringArray _oldTags, StringArray _newTags) {
+      // (note) inc frequency of newly added tags, dec removed tags, don't inc/dec unchanged tags
+      if(null != _newTags)
+      {
+         String *sTag;
+         // inc added tags
+         foreach sTag in _newTags
+         {
+            if(null == _oldTags || !_oldTags.containsObject(sTag))
+               ht_tag_frequency[sTag] = int(1 + ht_tag_frequency.get(sTag));
+         }
+         // dec removed tags
+         if(null != _oldTags)
+         {
+            foreach sTag in _oldTags
+            {
+               if(!_newTags.containsObject(sTag))
+                  ht_tag_frequency[sTag] = int(-1 + ht_tag_frequency.get(sTag));
+            }
+         }
+      }
+      else if(null != _oldTags)
+      {
+         foreach sTag in _oldTags
+            ht_tag_frequency[sTag] = int(-1 + ht_tag_frequency.get(sTag));
+      }
+   }
+
+   // <method_get.png>
+   static GetTagFrequencyPercent(String _sTag) : float {
+      float tagFreq = (100.0 * int(ht_tag_frequency.get(_sTag))) / num_samples_esa_with_tags;
+      return tagFreq;
+   }
+
+   // <method_get.png>
+   static GetTagFrequencyTint(String _sTag) : int {
+      float freq = GetTagFrequencyPercent(_sTag);
+      FloatArray aPct <= STConfig.sample_tags_frequency_percentages;
+      IntArray aTint <= STConfig.sample_tags_frequency_tints;
+      int idx = aPct.numElements- 1;
+      while(idx >= 0)
+      {
+         if(freq >= aPct[idx])
+            return aTint[idx];
+         idx--;
+      }
+      return 0;
+   }
+
+   // <method.png>
+   static AutoTagDir(String _relPath, StringArray _aAdditionalTags) {
+
+      // 0=skip entries that already have tags
+      // 1=overwrite tags
+      // maybe=merge tags
+      boolean bForce = maybe;
+
+      if(_relPath >= "/")
+         _relPath.substring(0, _relPath.numChars - 1);
+      if(_relPath <= "/")
+         _relPath.substring(1, _relPath.numChars);
+
+      SampleCacheFolderEntry *fen;
+      foreach fen in sample_cache
+      {
+         if(_relPath == fen.rel_path)
+         {
+            SampleCacheEntry *en;
+            int enIdx = 0;
+            int numSkipped = 0;
+            int numUpdated = 0;
+            foreach en in fen.esa_entries
+            {
+               trace "[trc] Samples::AutoTagDir: ["+enIdx+"] en.unique_name="+en.unique_name+" en.tags="+en.tags;
+               if(bForce || null == en.tags || en.tags.isEmpty())
+               {
+                  local String pathName <= STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name;
+                  pathName.append(Global.SAMPLE_FILE_SUFFIX);
+                  local Sample sample <= new Sample;
+                  sample.init();
+                  if(sample.loadFile(pathName,
+                                     STConfig.sample_rootpath,
+                                     false/*bProject*/,
+                                     false/*bRecalcPatches*/
+                                     )
+                     )
+                  {
+                     trace "[trc] Samples::AutoTagDir: loaded \""+pathName+"\"";
+                     if(bForce || sample.tags.isEmpty())
+                     {
+                        if(maybe == bForce)
+                           Utils.MergeStringArrays(sample.tags, sample.findAutoAddTags());
+                        else
+                           sample.tags = sample.findAutoAddTags();
+                        Utils.MergeStringArrays(sample.tags, _aAdditionalTags);
+                        trace "[trc] Samples::AutoTagDir:    new tags="+sample.tags+" (additional="+_aAdditionalTags+")";
+                        sample.saveFile(pathName,
+                                        STConfig.sample_rootpath,
+                                        false/*bProject*/,
+                                        0/*sampleIdx(ignored)*/
+                                        );
+                        numUpdated++;
+                        // break;
+                     }
+                  }
+               }
+               else
+                  numSkipped++;
+               enIdx++;
+            }
+            Global.PrintShort("autotag_dir: "+numSkipped+" skipped, "+numUpdated+" updated ("+enIdx+" processed)");
+            trace "[trc] Samples::AutoTagDir: processed "+enIdx+" "+Utils.GetPluralStringEx(enIdx, "entry", "entries")+" ("+numSkipped+" skipped, "+numUpdated+" updated)";
+         }
+      }
+   }
+
+   // <method.png>
+   public static ScanPresets() {
+      local StringArray a <= Utils.ReadDirectory(STConfig.sample_rootpath+"/"+STConfig.pgsample_preset_relpath);
+      preset_file_names.empty();
+      if(null != a)
+      {
+         local String *fileEntry;
+         foreach fileEntry in a
+         {
+            local StringArray attribs <= fileEntry.splitSpace(true);
+            local String fileName <= attribs.get(1);
+            if(fileName >= Global.SAMPLE_FILE_SUFFIX/*.esa*/)
+            {
+               preset_file_names.add(fileName);
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   public static SaveSampleRatings() {
+      local String nativePathName <= Utils.ToNativePathName(STConfig.sample_ratings_path);
+      if(nativePathName >= ".ini")
+      {
+         local String buf; buf.alloc(64*1024);
+         SampleCacheFolderEntry *fen;
+         foreach fen in sample_cache
+         {
+            SampleCacheEntry *en;
+            foreach en in fen.esa_entries
+            {
+               if(en.rating > 0)
+               {
+                  buf.append("\"");
+                  buf.append(en.rel_path);
+                  buf.append("\" \"");
+                  buf.append(en.unique_name);
+                  buf.append("\" ");
+                  buf.append(en.rating);
+                  buf.append("\n");
+               }
+            }
+         }
+         buf.saveLocal(nativePathName);
+         trace "[...] Samples::SaveSampleRatings: ratings saved to \""+nativePathName+"\"";
+         Global.SuccessShort("wrote \"sample_ratings.ini\"");
+      }
+   }
+
+   // <load.png>
+   public static LoadSampleRatings() {
+      local String nativePathName <= Utils.ToNativePathName(STConfig.sample_ratings_path);
+      if(nativePathName >= ".ini")
+      {
+         local String buf;
+         if(buf.loadLocal(nativePathName, true/*bRemoveCR*/))
+         {
+            local StringArray aLines <= buf.splitChar('\n');
+            String *sLine;
+            foreach sLine in aLines
+            {
+               // '"bsp/osc" "aon_fm_oscwaves" 100'
+               local StringArray aWords <= sLine.splitSpace(true);
+               // // trace "xxx LoadSampleRatings: sLine=\""+sLine+"\" => aWords="+aWords;
+               if(aWords.numElements >= 2)
+               {
+                  SampleCacheFolderEntry fen <= FindFolderEntryByRelPath(aWords.get(0));
+                  // // trace "xxx LoadSampleRatings: find rel_path=\""+aWords.get(0)+"\" => fen="+#(fen);
+                  if(null != fen)
+                  {
+                     SampleCacheEntry en <= FindCacheEntryByFileName(fen, aWords.get(1));
+                     // // trace "xxx LoadSampleRatings: find unique_name=\""+aWords.get(1)+"\" => en="+#(en);
+                     if(null != en)
+                     {
+                        en.rating = aWords.get(2);
+                        if(Configuration.debugLevel >= 2)
+                           trace "[>>>] LoadSampleRatings: load rating="+en.rating+" fen.rel_path=\""+fen.rel_path+"\" en.unique_name=\""+en.unique_name+"\"";
+                     }
+                  }
+               }
+            }
+
+            trace "[...] Samples::LoadSampleRatings: ratings loaded from \""+nativePathName+"\"";
+         }
+      }
+   }
+
+}

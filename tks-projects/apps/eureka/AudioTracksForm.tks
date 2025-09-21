@@ -1,0 +1,1666 @@
+// ----
+// ---- file   : AudioTracksForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 06Dec2018
+// ---- changed: 07Dec2018, 11Dec2018, 15Dec2018, 16Dec2018, 17Dec2018, 18Dec2018, 21Dec2018
+// ----          23Dec2018, 31Dec2018, 04Jan2019, 04May2019, 06May2019, 25Jul2019, 27Oct2019
+// ----          09Feb2020, 13Feb2020, 19May2020, 29Nov2020, 01Feb2021, 07Feb2021, 07Apr2021
+// ----          26Jun2021, 22Dec2021, 13May2022, 22Jul2022, 01Jan2023, 04Jan2023, 13Feb2023
+// ----          14Feb2023, 24Mar2023, 25Mar2023, 14Apr2023, 29Jul2023, 10Aug2023, 13Aug2023
+// ----          18Aug2023, 21Sep2023, 22Nov2023, 23Nov2023, 05Jul2024, 12Aug2024, 03Apr2025
+// ----          20May2025
+// ----
+// ----
+// ----
+
+module MAudioTracksForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class AudioTracksForm : XMLForm, ActionProvider, SampleViewPlugin {
+
+   protected FloatParam *fp_take_nr;
+   protected Button     *bt_exportstems;
+   protected CheckBox   *cb_autoexportstems;
+   protected FloatParam *fp_latency;
+
+   protected Button     *bt_import;
+   protected Button     *bt_tools;
+   protected PopupMenu  *pm_tools;
+
+   protected Button     *bt_sens;
+   protected FloatParam *fp_sens;
+   protected CheckBox   *cb_rms;
+
+   namespace SizeGroupX *sgx_src_idx;
+   namespace SizeGroupX *sgx_level_indicator;
+   public AudioTrackForm *[] track_forms;
+   protected Panel *pn_tracks;
+   protected Button *bt_add_track;
+   protected ScrollPane *sp_tracks;
+   public    SampleView *sv_wave;
+   protected SplitPane *spl_tracks;
+
+   protected FloatParam *fp_vel;
+   protected ComboBox   *cm_release_type;
+   public    CheckBox   *cb_ramp;
+   public    CheckBox   *cb_loop;
+   protected FloatParam *fp_numvoices;
+   protected FloatParam *fp_sampleoff;
+   protected FloatParam *fp_sampleoff_rand;
+   protected FloatParam *fp_pan_rand;
+   protected ComboBox   *cm_dropfiles_mode;
+   protected CheckBox   *cb_dropfiles_silence;
+   protected FloatParam *fp_dropfiles_offset;
+   protected ComboBox   *cm_dropfiles_format;
+   protected CheckBox   *cb_live_capture;
+
+   protected TextField  *tf_smpprefix;
+   protected ComboField *cf_nsp;
+
+   protected PopupMenu *pm_context;
+
+   namespace int cur_track_idx;
+
+   static FileNameDialog dialog_export_filename;
+   static FileNameDialog dialog_multiexport_filenameprefix;
+
+   static SampleImportDialog *dlg_import;
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("AudioTracksForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      sgx_src_idx <= findSizeGroupById("sgx_src_idx");
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      b_editable = true;  // wantkeyboardfocus
+
+      sv_wave.setEnableAllowChannelConversion(false);
+      sv_wave.installPlugin(this);
+      sv_wave.setEnableAutoRecalcRegions(true);
+
+      spl_tracks.setSplit(STConfig.audiotrack_sampleview_split);
+
+      cb_autoexportstems.setSelected(STConfig.b_audiotrack_autoexport);
+
+      fp_latency.setValue(STConfig.atrk_rec_skip_num_frames);
+
+      local FloatArray skipPresetValues;
+      local StringArray skipPresetNames;
+      String *skipPreset;
+      foreach skipPreset in STConfig.atrk_rec_skip_presets
+      {
+         local StringArray skipT <= skipPreset.splitChar('=');
+         skipPresetNames .add(skipT.get(0));
+         skipPresetValues.add(skipT.get(1));
+      }
+      fp_latency.setPresetOptions(skipPresetValues,
+                                  skipPresetNames
+                                  );
+
+      dialog_export_filename.init("big5");
+      dialog_multiexport_filenameprefix.init("big5");
+
+      String tt <= bt_import.getToolTipCaption();
+      local String sPaths;
+      StringArray aPaths <= STConfig.sample_import_paths;
+      int pathIdx = 0;
+      loop(aPaths.numElements / 2)
+      {
+         String sLoc <= aPaths.get(pathIdx + 0);
+         String sDir <= aPaths.get(pathIdx + 1);
+         sPaths.append("   "+(pathIdx/2)+".: \""+sDir+"\"  ("+sLoc+")\n");
+         pathIdx += 2;
+      }
+      tt.replace("$(PATHS)", sPaths);
+
+      return true;
+   }
+
+   // <ui_update.png>
+   public method updateWidgets() {
+      // Called when page is shown via handleEnterForm()
+      fp_take_nr.setValue(current_project.audio_take_nr);
+      fp_vel.setValue(current_project.temp_vel_amt);
+      cm_release_type.setSelectedOption(current_project.temp_env_release_type);
+      fp_numvoices.setValue(current_project.temp_numvoices);
+      fp_sampleoff.setValue(current_project.temp_sampleoff);
+      fp_sampleoff_rand.setValue(current_project.temp_sampleoff_rand);
+      fp_pan_rand.setValue(current_project.temp_pan_rand);
+      cm_dropfiles_mode.setSelectedOption(current_project.sampleview_dropfiles_mode);
+      cb_dropfiles_silence.setSelected(current_project.b_sampleview_dropfiles_silence);
+      fp_dropfiles_offset.setValue(current_project.sampleview_dropfiles_offset);
+      cm_dropfiles_format.setSelectedOption(current_project.sampleview_dropfiles_format);
+      cb_rms.setSelected(sv_wave.b_autochop_rms);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+
+      _retLayers.add(fp_take_nr);
+      _retLayers.add(bt_exportstems);
+      _retLayers.add(cb_autoexportstems);
+
+      AudioTrackForm *f;
+      foreach f in track_forms
+         f.addTabCycleOverrides(_retLayers);
+
+      _retLayers.add(bt_add_track);
+      _retLayers.add(sv_wave);
+
+      _retLayers.add(bt_tools);
+      _retLayers.add(fp_sens);
+      _retLayers.add(cb_rms);
+      _retLayers.add(fp_vel);
+      _retLayers.add(cm_release_type);
+      _retLayers.add(fp_numvoices);
+      _retLayers.add(fp_sampleoff);
+      _retLayers.add(fp_sampleoff_rand);
+      _retLayers.add(fp_pan_rand);
+      _retLayers.add(tf_smpprefix);
+      _retLayers.add(cf_nsp);
+      _retLayers.add(cm_dropfiles_mode);
+      _retLayers.add(cb_dropfiles_silence);
+      _retLayers.add(fp_dropfiles_offset);
+      _retLayers.add(cm_dropfiles_format);
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(sv_wave);
+   }
+
+   // <ui_handle.png>
+   public method handleEnterForm() {
+      getRoot().addOverlay(sv_wave);
+      reselectCurrentTrack();
+      updateWidgets();
+   }
+
+   // <ui_handle.png>
+   public method handleLeaveForm() {
+      if( (null != dlg_import) && (dlg_import.isFloatingLayerVisible()) )
+         dlg_import.hide();
+      getRoot().removeOverlay(sv_wave);
+      UI.CancelScheduleFor(sv_wave);
+      sv_wave.lazyCloseAutochopDialog();
+      Audio.ResetAllTempSamples();
+      Audio.UpdateTemporarySampleFromWaveform(null);
+   }
+
+   // <ui_handle.png>
+   public method handleStartRecord() {
+      // called via PageAudio.handleStartRecord() / RootForm.handleStartRecord()
+      Global.Debug("AudioTracksForm::handleStartRecord");
+      updateTracks();
+
+      if(root_form.isAudioPage())
+      {
+         reselectCurrentTrack();
+
+         if(!replay.b_live_capture)
+         {
+            sv_wave.setSample(null, null, 0, 0);
+            Audio.ResetAllTempSamples();
+            Audio.UpdateTemporarySampleFromWaveform(null);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleStopRecord() {
+      Global.Debug("AudioTracksForm::handleStopRecord");
+      updateTracks();
+      reselectCurrentTrack();
+   }
+
+   // <ui_update.png>
+   public method updateTracks() {
+      UI.LoseKeyboardFocusIfWithin(pn_tracks, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(pn_tracks);
+      pn_tracks.removeChildren();
+      track_forms.free();
+
+      AudioTrack *track;
+      int trackIdx = 0;
+      foreach track in current_project.audio_tracks
+      {
+         AudioTrackForm f <= new AudioTrackForm;
+         f.init(this, track, trackIdx);
+         f.setRequiredSizeX(UI.viewport_width - 8);
+
+         track_forms.add(#(deref f));
+         pn_tracks.addLayer(f, Layout.BOTTOM);
+
+         // Next audio track
+         trackIdx++;
+      }
+      relayout();
+
+      updateTrackSelection();
+
+      boolean bHaveSmp = (!replay.b_recording && ((current_project.audio_tracks.numElements) > 0)) || replay.b_live_capture;
+
+      bt_exportstems.setEditable(bHaveSmp);
+      bt_exportstems.setToolTipCaption("Export WAV stems to \""+Global.GetAudioTrackWavRootPath()+"\"");
+
+      updateSampleNamePrefix();
+   }
+
+   // <ui_update.png>
+   public method updateSampleNamePrefix() {
+      tf_smpprefix.setText(current_project.new_sample_prefix);
+
+      updateNextSampleNamespaceOptions();
+      cf_nsp.setSelectedOption(current_project.new_sample_namespace_idx);
+   }
+
+   // <ui_update.png>
+   public method updateTrackSelection() {
+      AudioTrackForm *f;
+      foreach f in track_forms
+      {
+         f.setTrackSelected(cur_track_idx == f.track_idx);
+         f.updateInfoLabel();
+      }
+   }
+
+   // <method_update.png>
+   public /*=replay=*/ method updateSample(AudioClip clip) {
+      FloatArray fa <= clip.getCurrentSampleData();
+      if(null != fa)
+      {
+         if(!replay.b_recording || replay.b_live_capture)
+         {
+            if(root_form.isAudioPage())
+            {
+               StWaveform wf <= clip.getCurrentWaveform();
+               Audio.UpdateTemporarySampleFromWaveform(wf);
+               Audio.SetEnableTemporarySampleLoop(cb_loop.isSelected());
+               Audio.SetEnableTemporarySampleRamp(cb_ramp.isSelected());
+               sv_wave.setSample(wf, fa, clip.num_channels, clip.sample_rate);  // calls autochop (can take dozens of ms)
+            }
+            return;
+         }
+      }
+      sv_wave.setSample(null, null, 0, 0);
+
+      if(root_form.isAudioPage())
+         Audio.ResetAllTempSamples();
+   }
+
+   // <method_get.png>
+   public method getSelectedTrack() : AudioTrack {
+      return current_project.audio_tracks.get(cur_track_idx);
+   }
+
+   // <method_get.png>
+   public method getSelectedTrackForm() : AudioTrackForm {
+      return track_forms.get(cur_track_idx);
+   }
+
+   // <method_update.png>
+   protected =replay= method updateSelectedSampleArea() {
+      if(!replay.b_recording || replay.b_live_capture)
+      {
+         AudioTrack atrack <= getSelectedTrack();
+         if(null != atrack)
+         {
+            AudioClip clip <= atrack.clip;
+            FloatArray fa <= clip.getCurrentSampleData();
+            if(null != fa)
+            {
+               // trace "xxx playtempsample";
+               int startOff = sv_wave.sel_startoff;
+               int numClipFrames = (fa.numElements / clip.num_channels);
+               if(0 <= startOff < numClipFrames)
+               {
+                  int numFrames;
+                  // trace "xxx playClip: startOff="+startOff+" endOff="+sv_wave.sel_endoff;
+                  if(startOff < sv_wave.sel_endoff)
+                  {
+                     numFrames = sv_wave.sel_endoff - startOff;
+                     numFrames = mathMini(numFrames, numClipFrames - startOff);
+                  }
+                  else
+                  {
+                     numFrames = numClipFrames - startOff;
+                  }
+                  Audio.UpdateTemporarySampleFromWaveformArea(clip.getCurrentWaveform(),
+                                                              startOff, numFrames,
+                                                              cb_loop.isSelected(),
+                                                              cb_ramp.isSelected()
+                                                              );
+                  return;
+               }
+            }
+         }
+      }
+      Audio.UpdateTemporarySampleFromWaveform(null);
+   }
+
+   // <ui_handle.png>
+   public /*=replay=*/ method handleSelectTrack(int _trackIdx) {
+      Global.Debug2("AudioTracksForm::handleSelectTrack("+_trackIdx+")");
+      cur_track_idx = _trackIdx;
+      updateTrackSelection();
+
+      sv_wave.setSample(null, null, 0, 0);
+
+      AudioTrack atrack <= getSelectedTrack();
+      if(null != atrack)
+      {
+         Global.Print("Select track "+(cur_track_idx+1)+"/"+(current_project.audio_tracks.numElements)+" (\""+atrack.name+"\")");
+
+         AudioClip clip <= atrack.clip;
+         clip.lazyMergeSegments();
+         updateSample(clip);
+
+         // // sv_wave.lazyAutoChopRegions();  // must doubleclick to enter region mode anyway (autoslices when mode starts)
+         sv_wave.selectNone();
+
+         sp_tracks.makeWidgetVisible(track_forms.get(cur_track_idx));
+      }
+      else
+      {
+         sv_wave.setSample(null, null, 0, 0);
+         if(root_form.isAudioPage())
+            Audio.ResetAllTempSamples();
+      }
+      sv_wave.redraw();
+
+      getRoot().removeOverlay(sv_wave);
+      getRoot().addOverlay(sv_wave);
+   }
+
+   // <method.png>
+   public method verifySelectedTrack() {
+      if(cur_track_idx >= current_project.audio_tracks.numElements)
+         handleSelectTrack(0);
+   }
+
+   // <method.png>
+   public method getCurTrackIdx() : int {
+      // while saving project
+      return cur_track_idx;
+   }
+
+   // <method.png>
+   public method reselectCurrentTrack() {
+      handleSelectTrack(cur_track_idx);
+   }
+
+   // <method.png>
+   protected method markCurrentTrackClipAsModified() {
+      AudioTrack atrack <= getSelectedTrack();
+      if(null != atrack)
+      {
+         AudioClip clip <= atrack.clip;
+         clip.b_modified = true;
+      }
+   }
+
+   // <ui_handle.png>
+   public method invalidateSampleView() {
+      sv_wave.setSample(null, null, 0, 0);
+      if(root_form.isAudioPage())
+         Audio.ResetAllTempSamples();
+   }
+
+   // <ui_handle.png>
+   public method handleSelectPreviousTrack() {
+      if( (cur_track_idx - 1) >= 0 )
+      {
+         handleSelectTrack(cur_track_idx - 1);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSelectNextTrack() {
+      if( (cur_track_idx + 1) < (current_project.audio_tracks.numElements) )
+      {
+         handleSelectTrack(cur_track_idx + 1);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleAddTrack() {
+      AudioTrack track <= current_project.newAudioTrack("new track");
+
+      updateTracks();
+
+      // select last track
+      handleSelectTrack(current_project.audio_tracks.numElements - 1);
+
+      Global.Print("Add audio track");
+   }
+
+   // <ui_handle.png>
+   protected method handleCreateDefaultTracks() {
+      Track *track;
+      int numCreated = 0;
+      foreach track in current_project.tracks
+      {
+         AudioTrack *atrack;
+         atrack <= current_project.findAudioTrackByName(track.name);
+         if(null == atrack)
+         {
+            atrack <= current_project.newAudioTrack(track.name);
+            atrack.setSrcType(AudioTrack.SRC_TRACK);
+            atrack.setSrcTrackIdx(current_project.getTrackIdx(track));
+            numCreated++;
+         }
+      }
+
+      if(numCreated > 0)
+         updateTracks();
+   }
+
+   // <ui_handle.png>
+   protected method handleTakeNrChanged() {
+      current_project.audio_take_nr = fp_take_nr.getFloatValue();
+      Global.Print("Take nr is "+current_project.audio_take_nr);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLatencyChanged() {
+      STConfig.atrk_rec_skip_num_frames = fp_latency.getFloatValue();
+      Global.Print("Recording Latency Compensation is "+STConfig.atrk_rec_skip_num_frames+" frames");
+   }
+
+   // <method_get.png>
+   public method getNumSelectedSampleFrames() : int {
+      return sv_wave.getNumSelectedSamples();
+   }
+
+   // <ui_handle.png>
+   protected method handleExportSelection1() {
+      Global.Debug("AudioTracksForm::handleExportSelection1: numFloatingLayers="+UI.GetNumFloatingLayers());
+      if(0 == UI.GetNumFloatingLayers())
+      {
+         FloatArray smp <= sv_wave.getSelectedSamples();
+         if(null != smp)
+         {
+            String rootPath <= Global.GetExportedSamplesWavRootPath();
+            String suggestedFileName = rootPath + "/" + "mysample";
+            Utils.MkDirHierarchy(rootPath); // lazy-create output directories
+
+            dialog_export_filename.configure("Export Selection"/*title*/,
+                                             suggestedFileName/*filename*/,
+                                             false/*bDir*/,
+                                             this/*recipient*/,
+                                             true/*bSave*/,
+                                             ".wav"/*suffix*/,
+                                             rootPath/*basedir*/
+                                             );
+            dialog_export_filename.showCentered();
+
+            Global.Print("Export selection (enter filename)");
+         }
+         else
+         {
+            Global.Warning("Export: no selection");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleExportSelection2(String _fileName) {
+      Global.Debug("AudioTracksForm::handleExportSelection2: fileName=\""+_fileName+"\"");
+      FloatArray smp <= sv_wave.getSelectedSamples();
+      if(null != smp)
+      {
+         WavIO.SaveLocal(_fileName, smp, sv_wave.getSampleRate(), sv_wave.getNumChannels(),
+                         Sample.KEY_MIDDLE_C/*C-5*/, 0/*loopStart*/, 0/*loopEnd*/,
+                         null/*bwfHint*/
+                         );
+         Global.Print("Selection exported to \""+_fileName+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiExportRegions1() {
+      Global.Debug("AudioTracksForm::handleMultiExportRegions1: numFloatingLayers="+UI.GetNumFloatingLayers());
+      if(0 == UI.GetNumFloatingLayers())
+      {
+         sv_wave.lazyAutoChopRegions();
+         int numRegions = sv_wave.getNumRegions();
+         if(numRegions > 0)
+         {
+            String rootPath <= Global.GetExportedSamplesWavRootPath();
+            String suggestedFileNamePrefix = rootPath + "/" + "mymultisample";
+            Utils.MkDirHierarchy(rootPath); // lazy-create output directories
+
+            String title = "Multi-Export "+numRegions+" region"+Utils.GetPluralString(numRegions);
+
+            dialog_multiexport_filenameprefix.configure(
+               title/*title*/,
+               suggestedFileNamePrefix/*filename*/,
+               false/*bDir*/,
+               this/*recipient*/,
+               true/*bSave*/,
+               ".wav"/*suffix*/,
+               rootPath/*basedir*/
+                                                        );
+            dialog_multiexport_filenameprefix.showCentered();
+
+            Global.Print(title + " (enter filename prefix)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiExportRegions2(String _fileNamePrefix) {
+      Global.Debug("AudioTracksForm::handleMultiExportRegions2: fileNamePrefix=\""+_fileNamePrefix+"\"");
+      int numRegions = sv_wave.getNumRegions();
+      if(numRegions > 0)
+      {
+         local Integer regionIdx = 0;
+         loop(numRegions)
+         {
+            local FloatArray smp <= sv_wave.getRegionSamplesByIdx(regionIdx);
+            if(null != smp)
+            {
+               local String pathname = _fileNamePrefix+"_"+((regionIdx+1).printf("%03d"))+".wav";
+               WavIO.SaveLocal(pathname, smp, sv_wave.getSampleRate(), sv_wave.getNumChannels(),
+                               Sample.KEY_MIDDLE_C/*C-5*/, 0/*loopStart*/, 0/*loopEnd*/,
+                               null/*bwfHint*/
+                               );
+               Global.Print("Region "+(regionIdx+1)+"/"+numRegions+" exported to \""+pathname+"\"");
+            }
+            // Next autochop region
+            regionIdx++;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCompactRegions() {
+      sv_wave.lazyAutoChopRegions();
+      int numRegions = sv_wave.getNumRegions();
+      if(numRegions > 0)
+      {
+         Audio.ResetAllTempSamples();
+         Audio.UpdateTemporarySampleFromWaveform(null);
+
+         StWaveform wf <= sv_wave.getWaveform();
+         int numCh = wf.numChannels;
+         int totalNumFrames = 0;
+         int origNumFrames = wf.numFrames;
+
+         // Calc new waveform size
+         int regionIdx = 0;
+         FloatArray *smpReg;
+         loop(numRegions)
+         {
+            smpReg <= sv_wave.getRegionSamplesByIdx(regionIdx);
+            totalNumFrames += smpReg.numElements / numCh;
+            if(regionIdx > 0)
+            {
+               totalNumFrames += SampleView.NUM_BORDER_SILENCE_FRAMES;
+            }
+            // Next region
+            regionIdx++;
+         }
+
+         if(totalNumFrames > 0)
+         {
+            if(totalNumFrames != sv_wave.getNumFrames())
+            {
+               local FloatArray smpNew;
+               if(smpNew.alloc(totalNumFrames * numCh))
+               {
+                  local FloatArray smpSilence;
+                  smpSilence.alloc(SampleView.NUM_BORDER_SILENCE_FRAMES * numCh);
+                  smpSilence.useAll();
+                  smpSilence.fill(0);
+
+                  regionIdx = 0;
+                  loop(numRegions)
+                  {
+                     smpReg <= sv_wave.getRegionSamplesByIdx(regionIdx);
+
+                     if(regionIdx > 0)
+                        smpNew.addArray(smpSilence, 0, smpSilence.numElements);
+
+                     smpNew.addArray(smpReg, 0, smpReg.numElements);
+
+                     // Next region
+                     regionIdx++;
+                  }
+
+                  int oldRegionIdx = sv_wave.getSelectedRegionIdx();
+
+                  sv_wave.undoBegin("compactregions");
+
+                  FloatArray smp <= wf.sampleData;
+                  int chMask = (1==numCh) ? SampleView.CHANNEL_MASK_L : SampleView.CHANNEL_MASK_LR;
+                  sv_wave.undoActionRemove(0, smp.numElements / numCh, chMask);
+
+                  sv_wave.undoActionAdd(0, totalNumFrames, chMask);
+
+                  smp.unlinkFrom(smpNew);
+
+                  sv_wave.undoEnd();
+
+                  markCurrentTrackClipAsModified();
+                  current_project.markAsModified();
+                  reselectCurrentTrack();
+
+                  if(sv_wave.selectRegionByIdx(oldRegionIdx))
+                     updateSelectedSampleArea();
+
+                  UI.SetKeyboardFocus(sv_wave);
+                  UI.SetMouseFocus(sv_wave);
+
+                  int deltaNumFrames = totalNumFrames - origNumFrames;
+                  Global.Print("Compact regions: "+numRegions+" region"+Utils.GetPluralString(numRegions)+", "+totalNumFrames+" frames ("+((deltaNumFrames < 0) ? ("remove "+(-deltaNumFrames)) : ("add "+deltaNumFrames))+")");
+               }
+               else
+               {
+                  Global.Error("Failed to allocate sample ("+totalNumFrames+" frames)");
+               }
+            }
+            else
+            {
+               Global.Warning("Already compacted ("+numRegions+" region"+Utils.GetPluralString(numRegions)+", "+totalNumFrames+" frames)");
+            }
+         }
+         else
+         {
+            Global.Warning("Nothing to compact");
+         }
+      }
+      else
+      {
+         Global.Warning("No regions to compact");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleResynth() {
+      Dialogs.ShowResynthDialog();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDropFiles(StringArray _fileNames, int _dropFrameOff, boolean _bSeparateSilence) {
+      Global.Debug("AudioTracksForm::handleDropFiles: fileNames="+_fileNames+" dropFrameOff="+_dropFrameOff+" bSeparateSilence="+_bSeparateSilence);
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      sv_wave.undoBegin("dropfiles");
+
+      String *fileName;
+      int idx = 0;
+      int fileIdx = _fileNames.numElements -1;  // last to first b/c of insert
+      int numLoaded = 0;
+      Audio.ResetAllTempSamples();
+      Audio.UpdateTemporarySampleFromWaveform(null);
+      boolean bAllowSilenceFirstFile = true;
+
+      int chMask = (1==sv_wave.getNumChannels()) ? SampleView.CHANNEL_MASK_L : SampleView.CHANNEL_MASK_LR;
+
+      if(0/*replace*/ == current_project.sampleview_dropfiles_mode)
+      {
+         sv_wave.selectAll(false/*bAction*/);
+         sv_wave.deleteSelection(false/*bUndoBegin*/);
+         _dropFrameOff = 0;
+         bAllowSilenceFirstFile = false; // don't insert silence before first file
+         // // _bSeparateSilence = maybe;
+      }
+      else if(2/*append*/ == current_project.sampleview_dropfiles_mode)
+      {
+         _dropFrameOff = sv_wave.getNumFrames();
+      }
+
+      int origNumFrames = sv_wave.getNumFrames();
+      Integer retSampleRate;
+      Integer retNumCh;
+      local FloatArray smp;
+      byte i8;
+      short i16;
+      float f32;
+      local StWaveform wf;  // for cue points
+      int cueOffset = _dropFrameOff;
+
+      loop(_fileNames.numElements)
+      {
+         fileName <= _fileNames.get(fileIdx);
+         try
+         {
+            if(fileName >= ".mp3")
+               fileName <= Utils.DecodeMP3(fileName);
+            else if(Utils.IsSoXSupportedFileFormat(fileName))
+               fileName <= Utils.ConvertWithSoX(fileName);
+            else
+               fileName <= fileName;
+
+            if!((fileName >= ".wav") || (fileName >= ".WAV"))
+            {
+               //  Raw import
+               local File f;
+               if(f.openLocal(fileName, IOS_IN))
+               {
+                  int rawNum = f.size - current_project.sampleview_dropfiles_offset;
+                  f.offset = current_project.sampleview_dropfiles_offset;
+                  switch(current_project.sampleview_dropfiles_format)
+                  {
+                     default:
+                     case 0:  // signed 8bit mono
+                        if(smp.realloc(rawNum))
+                        {
+                           loop(rawNum)
+                           {
+                              i8 = f.s8;
+                              if(i8 < 0)
+                                 smp.add(i8 / 128.0f);
+                              else
+                                 smp.add(i8 / 127.0f);
+                           }
+                        }
+                        retSampleRate = Audio.mix_rate;//11025;
+                        retNumCh = 1;
+                        break;
+
+                     case 1:  // signed 8bit stereo
+                        if(smp.realloc(rawNum))
+                        {
+                           loop(rawNum)
+                           {
+                              i8 = f.s8;
+                              if(i8 < 0)
+                                 smp.add(i8 / 128.0f);
+                              else
+                                 smp.add(i8 / 127.0f);
+                           }
+                        }
+                        retSampleRate = Audio.mix_rate;//11025;
+                        retNumCh = 2;
+                        break;
+
+                     case 2:  // signed 16bit mono
+                        rawNum /= 2;
+                        if(smp.realloc(rawNum))
+                        {
+                           loop(rawNum)
+                           {
+                              i16 = f.s16;
+                              if(i16 < 0)
+                                 smp.add(i16 / 32768.0f);
+                              else
+                                 smp.add(i16 / 32767.0f);
+                           }
+                        }
+                        retSampleRate = Audio.mix_rate;//44100;
+                        retNumCh = 1;
+                        break;
+
+                     case 3:  // signed 16bit stereo
+                        rawNum /= 4;
+                        if(smp.realloc(rawNum * 2))
+                        {
+                           loop(rawNum * 2)
+                           {
+                              i16 = f.s16;
+                              if(i16 < 0)
+                                 smp.add(i16 / 32768.0f);
+                              else
+                                 smp.add(i16 / 32767.0f);
+                           }
+                        }
+                        retSampleRate = Audio.mix_rate;
+                        retNumCh = 2;
+                        break;
+
+                     case 4:  // 32bit float mono
+                        rawNum /= 4;
+                        if(smp.realloc(rawNum))
+                        {
+                           loop(rawNum)
+                           {
+                              f32 = f.f32;
+                              smp.add(f32);
+                           }
+                        }
+                        retSampleRate = Audio.mix_rate;//44100;
+                        retNumCh = 1;
+                        break;
+
+                     case 5:  // 32bit float stereo
+                        // trace "xxx import 32bit float interleaved stereo";
+                        rawNum /= 8;
+                        if(smp.realloc(rawNum * 2))
+                        {
+                           loop(rawNum * 2)
+                           {
+                              f32 = f.f32;
+                              smp.add(f32);
+                           }
+                        }
+                        retSampleRate = Audio.mix_rate;
+                        retNumCh = 2;
+                        break;
+                  }
+               }
+            }
+            else
+            {
+               // Wav import
+               WavIO.LoadLocal(fileName,
+                               smp,
+                               retSampleRate,
+                               retNumCh,
+                               null/*retFileInfo*/,
+                               null/*sampleHint*/,
+                               wf/*bwfHint*/
+                               );
+            }
+
+            Global.Debug("AudioTracksForm::handleDropFiles: insert file \""+fileName+"\" #smp="+smp.numElements+" #ch="+retNumCh+" rate="+retSampleRate);
+
+            if(true == _bSeparateSilence)
+            {
+               if(bAllowSilenceFirstFile || (numLoaded > 0))
+               {
+                  sv_wave.insertSilenceAt_NoUndo(_dropFrameOff, SampleView.NUM_BORDER_SILENCE_FRAMES);
+                  // // cueOffset += SampleView.NUM_BORDER_SILENCE_FRAMES;
+               }
+            }
+
+            sv_wave.insertSamplesAt_NoUndo(_dropFrameOff, smp, retNumCh, retSampleRate);
+
+            numLoaded++;
+         }
+         catch(Error e)
+         {
+            trace "[---] AudioTracksForm::handleDropFiles: caught error e.message="+e.message;
+         }
+
+         // Next file
+         idx++;
+         fileIdx--;
+      }
+
+      int numFramesAdded = sv_wave.getNumFrames() - origNumFrames;
+
+      if(numFramesAdded > 0)
+      {
+         // // // sv_wave.undoActionAdd(_dropFrameOff, numFramesAdded, chMask);
+         sv_wave.setSelection(_dropFrameOff, _dropFrameOff + numFramesAdded);
+         sv_wave.makeSelectionVisible();
+         markCurrentTrackClipAsModified();
+         current_project.markAsModified();
+         reselectCurrentTrack();
+         updateSelectedSampleArea();
+
+         Global.Print("Insert "+numLoaded+" file"+Utils.GetPluralString(numLoaded)+" at "+_dropFrameOff+" ("+numFramesAdded+" frames)");
+      }
+
+      sv_wave.undoEnd();
+      refocusDefault();
+
+      IntArray cuePoints <= wf.cuePoints;
+      sv_wave.setAutoChopRegionsFromCuePoints(cuePoints, cueOffset);
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   // <ui_handle.png>
+   protected method handleVelChanged() {
+      current_project.setTempVelAmt(fp_vel.getFloatValue());
+      Float fo = (100*current_project.temp_vel_amt);
+      Global.Print("Velocity amount is "+fo.printf("%3.2f"));
+   }
+
+   // <ui_handle.png>
+   protected method handleReleaseTypeChanged() {
+      current_project.setTempEnvReleaseType(cm_release_type.getSelectedOption());
+      Global.Print("Release type is "+cm_release_type.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleNumVoicesChanged() {
+      current_project.setTempNumVoices(fp_numvoices.getFloatValue());
+      Global.Print("Polyphony is "+current_project.temp_numvoices);
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleOffChanged() {
+      current_project.setTempSampleOff(fp_sampleoff.getFloatValue());
+      Float fo = (100*current_project.temp_sampleoff);
+      Global.Print("Sample start offset is "+fo.printf("%3.2f"));
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleOffRandChanged() {
+      current_project.setTempSampleOffRand(fp_sampleoff_rand.getFloatValue());
+      Float fo = (100*current_project.temp_sampleoff_rand);
+      Global.Print("Sample start randomization amount is "+fo.printf("%3.2f"));
+   }
+
+   // <ui_handle.png>
+   protected method handlePanRandChanged() {
+      current_project.setTempPanRand(fp_pan_rand.getFloatValue());
+      Float fo = (100*current_project.temp_pan_rand);
+      Global.Print("Panning randomization amount is "+fo.printf("%3.2f"));
+   }
+
+   // <method.png>
+   public =replay= method playClip() {
+      if(!replay.b_recording || replay.b_live_capture)
+      {
+         AudioTrack atrack <= getSelectedTrack();
+         if(null != atrack)
+         {
+            AudioClip clip <= atrack.clip;
+            FloatArray fa <= clip.getCurrentSampleData();
+            if(null != fa)
+            {
+               updateSelectedSampleArea();
+
+               Audio.PlayTempSample(60/*261.63Hz*/, 1.0/*vel*/);
+               return true;
+            }
+         }
+      }
+      Audio.UpdateTemporarySampleFromWaveformArea(null, 0, 0, false/*bLoop*/, true/*bRamp*/);  // resets temp voices
+   }
+
+   // <method.png>
+   public =replay= method stopClip() {
+      // // Audio.StopTempSample(false/*bReset*/);
+      Audio.ResetAllTempSamples();
+   }
+
+   // <method.png>
+   public method handleLiveCaptureBufferChanged() {
+      // called from UI thread while =replay= mutex is locked
+      sv_wave.selectAll(false/*bAction*/);
+      sv_wave.autotrim();
+      reselectCurrentTrack();  // update SampleView and temporary sample
+   }
+
+   // <method.png>
+   public =replay= method handleToggleLiveCapture() {
+      replay.b_live_capture = cb_live_capture.isSelected();
+
+      Global.Debug("AudioTracksForm: live capture is "+Utils.GetEnableString(replay.b_live_capture));
+
+      if(replay.b_live_capture)
+      {
+         // Show live_capture buffer
+         reselectCurrentTrack();
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Create default tracks", "create_default_tracks");
+      pmb.setFontByName("big8");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show audio tracks context menu.");
+   }
+
+   // <ui_show.png>
+   protected method showToolsMenu() {
+
+      pm_tools <= PopupMenu.New(this);
+
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      boolean bHaveSmp = (!replay.b_recording && ((current_project.audio_tracks.numElements) > 0)) || replay.b_live_capture;
+
+      pmb <= pm.addDefaultButton("Export Selection..", "export_selection");
+      pmb.setActive(bHaveSmp);
+      pmb.setToolTipCaption("Export selection to \""+Global.GetExportedSamplesWavRootPath()+"\"\n\n (note) lctrl-e");
+      pmb.setAccelerators("", "lctrl-e");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Multi-Export Regions..", "multiexport_regions");
+      pmb.setActive(bHaveSmp);
+      pmb.setToolTipCaption("Split into regions and export WAV files to \""+Global.GetExportedSamplesWavRootPath()+"\"\n\n (note) lctrl-lshift-e when SampleView has keyboard focus");
+      pmb.setAccelerators("", "lctrl-lshift-e");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Compact Regions..", "compact_regions");
+      pmb.setActive(bHaveSmp);
+      pmb.setToolTipCaption("Split into regions and remove leading and trailing silence");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Resynth..", "resynth");
+      pmb.setToolTipCaption("Spectral Resynthesis (**EXPERIMENTAL**)");
+      pmb.setActive( bHaveSmp || ((current_project.samples.numElements) > 0) );
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Scope..", "scope");
+      pmb.setToolTipCaption("Scope");
+      pmb.setAccelerators("lctrl-lshift-BACKSPACE", Utils.IsMacOS()?"q":"lalt-q");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Import..", "import");
+      pmb.setToolTipCaption("Import audio files\n\n (note) see STConfig.sample_import_paths");
+      pmb.setAccelerators("lctrl-x i", "lalt-i");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_tools);
+
+      Global.Print("Show audio tracks tools menu.");
+   }
+
+   // <ui_handle.png>
+   protected method handleAutochopSensitivityChanged() {
+      // lerp between 5 configs
+      float f = fp_sens.getFloatValue();
+      SampleViewAutochopConfig cfg <= sv_wave.autochop_config;
+      cfg.initFromSensitivity(f);
+      sv_wave.recalcAutoChopRegions();
+      sv_wave.redraw();
+      Global.Print("Autochop Sensitivity is "+fp_sens.getFloatValue());
+   }
+
+   // <ui_handle.png>
+   protected method handleAutochopModeChanged() {
+      sv_wave.setEnableAutochopRMS(cb_rms.isSelected(), false/*bAction*/);
+      Global.Print("Autochop RMS mode is "+Utils.GetEnableString(sv_wave.b_autochop_rms));
+   }
+
+   // <ui_update.png>
+   protected method updateNextSampleNamespaceOptions() {
+      local StringArray optNamespaces <= current_project.getSampleNamespaceOptions();
+      cf_nsp.setOptions(optNamespaces);
+   }
+
+   // <ui_handle.png>
+   protected method handleNextSampleNamespaceChanged() {
+      current_project.new_sample_namespace_idx = cf_nsp.getSelectedOption();
+      Global.Print("New sample namespace is \""+cf_nsp.getSelectedOptionName()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNextSampleNamespaceNameChanged(String _optName) {
+      // e.g. "1: bass"
+      local String optName = _optName.trim();
+      int idxColon = optName.indexOf(":", 0);
+      if(-1 != idxColon)
+      {
+         int nspIdx = optName.substring(0, idxColon);
+         if(current_project.renameSampleNamespace(nspIdx, optName.substring(idxColon+1,99).trim()))
+         {
+            Global.Print("Namespace #"+(nspIdx)+" name is \""+optName+"\"");
+            current_project.markAsModified();
+         }
+         else
+         {
+            Global.Warning("Failed to rename namespace #"+(nspIdx));
+         }
+      }
+      updateNextSampleNamespaceOptions();
+   }
+
+   // <method.png>
+   public virtual svBeginReallocSamples() {
+      // SampleViewPlugin
+      trace "[trc] AudioTracksForm::svBeginReallocSamples";
+      Audio.ResetAllTempSamples();
+      Audio.UpdateTemporarySampleFromWaveform(null);
+   }
+
+   // <method.png>
+   public virtual svHandleDeleteRegion(int offset, len) {
+      // SampleViewPlugin
+   }
+
+   // <method.png>
+   public virtual svHandleInsertRegion(int offset, len) {
+      // SampleViewPlugin
+   }
+
+   // <method.png>
+   public virtual svHandleMoveRegion(int oldOffset, int len, int newOffset) {
+   }
+
+   // <method.png>
+   public virtual svEndReallocSamples() {
+      // SampleViewPlugin
+      updateSelectedSampleArea();
+   }
+
+   // <method.png>
+   public method svHandleRenderHighlightChanged(boolean _bEnabled) {
+      // SampleViewPlugin
+      // (todo) set sample off+len or loop
+   }
+
+   // <midi.png>
+   public method handleAtrkMsg(int _msgId) {
+      AudioTrack track <= getSelectedTrack();
+      if(null != track)
+      {
+         PageAudio pgAudio <= root_form.pg_audio;
+
+         switch(_msgId)
+         {
+            case SysEx.SYX_MSGID_ATRK_REC_STOP_ADDSMP:
+               Global.Debug2("AudioTracksForm: handle SYX_MSGID_ATRK_REC_STOP_ADDSMP");
+               if(replay.b_live_capture)
+                  pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+               root_form.stopAudioRecording();
+               sv_wave.selectAll(false/*bAction*/);
+               pgAudio.handleSamplesCreateNewFromSelection(false/*bSwitchToSamples*/,
+                                                           false/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                           );
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM:
+               Global.Debug2("AudioTracksForm: handle SYX_MSGID_ATRK_REC_STOP_TRIM");
+               if(replay.b_live_capture)
+                  pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+               root_form.stopAudioRecording();
+               sv_wave.autotrim();
+               sv_wave.selectAll(false/*bAction*/);
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP:
+               Global.Debug2("AudioTracksForm: handle SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP");
+               if(replay.b_live_capture)
+                  pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+               root_form.stopAudioRecording();
+               sv_wave.autotrim();
+               sv_wave.selectAll(false/*bAction*/);
+               pgAudio.handleSamplesCreateNewFromSelection(false/*bSwitchToSamples*/,
+                                                           false/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                           );
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP_RESTART:
+               Global.Debug2("AudioTracksForm: handle SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP_RESTART");
+               if(replay.b_recording)
+               {
+                  if(replay.b_live_capture)
+                     pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+
+                  root_form.stopAudioRecording();
+                  sv_wave.autotrim();
+                  sv_wave.selectAll(false/*bAction*/);
+                  pgAudio.handleSamplesCreateNewFromSelection(false/*bSwitchToSamples*/,
+                                                              false/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                              );
+               }
+               root_form.setEnableRecordReplace(true);
+               root_form.startAudioRecording();
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP:
+               Global.Debug2("AudioTracksForm: handle SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP");
+               if(replay.b_live_capture)
+                  pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+               root_form.stopAudioRecording();
+               handleCompactRegions();
+               pgAudio.handleSamplesCreateNewFromZones(false/*bSwitchToSamples*/);
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP_RESTART:
+               Global.Debug2("AudioTracksForm: handle SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP_RESTART");
+               if(replay.b_live_capture)
+                  pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+               if(replay.b_recording)
+               {
+                  root_form.stopAudioRecording();
+                  handleCompactRegions();
+                  pgAudio.handleSamplesCreateNewFromZones(false/*bSwitchToSamples*/);
+               }
+               root_form.setEnableRecordReplace(true);
+               root_form.startAudioRecording();
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_LIVEREC_CAPTURE:
+               pgAudio.tryCopyToLiveCaptureBuffers(true/*bForce*/);
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_START:
+               if(!pgAudio.pageIsCurrent())
+               {
+                  root_form.showPage(RootForm.PAGE_AUDIO, true/*bAllowHistory*/);
+               }
+               root_form.startAudioRecording();
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_REC_STOP:
+               if(!pgAudio.pageIsCurrent())
+               {
+                  root_form.showPage(RootForm.PAGE_AUDIO, true/*bAllowHistory*/);
+               }
+               root_form.stopAudioRecording();
+               break;
+
+            case SysEx.SYX_MSGID_ATRK_PAGE_SELECT:
+               if(!pgAudio.pageIsCurrent())
+               {
+                  root_form.showPage(RootForm.PAGE_AUDIO, true/*bAllowHistory*/);
+               }
+               break;
+         }
+      }
+   }
+
+   // <ui_show.png>
+   public method showSampleImportDialog() : boolean {
+      if(null == dlg_import)
+      {
+         dlg_import <= new SampleImportDialog;
+         if(!dlg_import.initSampleImportDialog())
+         {
+            trace "[---] SampleImportDialog::initSampleImportDialog() failed";
+            dlg_import <= null;
+            return false;
+         }
+      }
+
+      if(null != dlg_import)
+      {
+         dlg_import.hide();
+         dlg_import.showSampleImportDialog(this/*listener*/, sv_wave);
+         Global.Print("Show SampleImportDialog");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyboardFocus() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[>>>] AudioTracksForm::onKey: k.pressed="+_k.pressed;
+
+      switch(_k.pressed)
+      {
+         case VKEY_UP:  // (note) never reached, handled in PageAudio instead
+         case VKEY_PAGEUP:
+            handleSelectPreviousTrack();
+            return true;
+
+         case VKEY_DOWN:  // (note) never reached, handled in PageAudio instead
+         case VKEY_PAGEDOWN:
+            handleSelectNextTrack();
+            return true;
+
+         // // case VKEY_SPACE:
+         // //    // never reached (see PageAudio instead)
+         // //    playClip();
+         // //    return true;
+
+         case 'i':
+            if(_k.modAlt())
+            {
+               showSampleImportDialog();
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         handleSelectPreviousTrack();
+         return true;
+      }
+
+      if(_ev.wheelDown())
+      {
+         handleSelectNextTrack();
+         return true;
+      }
+
+      return Layer::onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      StringAction *sa;
+      ObjectAction *oa;
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("AudioTracksForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "create_default_tracks":
+                  handleCreateDefaultTracks();
+                  return true;
+            }
+            return true;
+
+         case @(pm_tools):
+            Global.Debug2("AudioTracksForm: pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "export_selection":
+                  handleExportSelection1();  // show dialog (enter filename)
+                  return true;
+
+               case "multiexport_regions":
+                  handleMultiExportRegions1();  // show dialog (enter filename prefix)
+                  return true;
+
+               case "compact_regions":
+                  handleCompactRegions();
+                  return true;
+
+               case "resynth":
+                  handleResynth();
+                  return true;
+
+               case "scope":
+                  root_form.toggleScope();
+                  return true;
+
+               case "import":
+                  showSampleImportDialog();
+                  return true;
+            }
+            return true;
+
+         case @(fp_take_nr):
+            handleTakeNrChanged();
+            return true;
+
+         case @(bt_exportstems):
+            current_project.exportAudioTracksToWAV();
+            return true;
+
+         case @(cb_autoexportstems):
+            STConfig.b_audiotrack_autoexport = cb_autoexportstems.isSelected();
+            Global.Print("Auto-export is "+Utils.GetEnableString(STConfig.b_audiotrack_autoexport));
+            return true;
+
+         case @(fp_latency):
+            handleLatencyChanged();
+            return true;
+
+         case @(bt_import):
+            showSampleImportDialog();
+            return true;
+
+         case @(bt_tools):
+            showToolsMenu();
+            return true;
+
+         case @(bt_sens):
+            sv_wave.showAutochopDialog();
+            return true;
+
+         case @(fp_sens):
+            handleAutochopSensitivityChanged();
+            return true;
+
+         case @(cb_rms):
+            handleAutochopModeChanged();
+            return true;
+
+         case @(bt_add_track):
+            handleAddTrack();
+            return true;
+
+         case @(sv_wave):
+            // trace "xxx sv_wave: acName=\""+acName+"\"";
+            if(SampleView.ACTION_EXPORT_SELECTION == acName)
+            {
+               handleExportSelection1();  // show dialog (enter filename)
+            }
+            else if(SampleView.ACTION_MULTI_EXPORT_REGIONS == acName)
+            {
+               handleMultiExportRegions1();  // show dialog (enter filename prefix)
+            }
+            else if(SampleView.ACTION_DROP_FILES == acName)
+            {
+               oa <= _ac;
+               StringArray dropFileNames <= oa.getObjectValue();
+               // // int dropFrameOff = sv_wave.getDropFilesFrameOff();
+               int dropFrameOff = sv_wave.getSelectionStartOffset();
+               handleDropFiles(dropFileNames,
+                               dropFrameOff,
+                               current_project.b_sampleview_dropfiles_silence || (VMOD_LSHIFT == UI.GetKeyMod())/*bSeparateSilence*/
+                               );
+            }
+            else if(SampleView.ACTION_AUTOCHOP_MODE == acName)
+            {
+               // trace "xxx sv_wave: handle ACTION_AUTOCHOP_MODE";
+               cb_rms.setSelected(sv_wave.b_autochop_rms);
+               handleAutochopModeChanged();
+            }
+            else
+            {
+               if(SampleView.ACTION_WAVEFORM_CHANGED == acName)
+               {
+                  markCurrentTrackClipAsModified();
+                  current_project.markAsModified();
+               }
+
+               if((SampleView.ACTION_SELECTION_CHANGED == acName) ||
+                  (SampleView.ACTION_WAVEFORM_CHANGED == acName)
+                  )
+               {
+                  updateSelectedSampleArea();
+               }
+            }
+            return true;
+
+         case @(dlg_import):
+            if(SampleImportDialog.ACTION_SELECT == acName)
+            {
+               reselectCurrentTrack();
+               local StringArray aImportFiles <= dlg_import.getSelectedPathNames();
+               handleDropFiles(aImportFiles, 0/*dropFrameOff*/, true/*bSeparateSilence*/);
+            }
+            else if(SampleImportDialog.ACTION_CLOSE == acName)
+            {
+               reselectCurrentTrack();
+            }
+            return true;
+
+         case @(dialog_export_filename):
+            Global.Debug("AudioTracksForm: dialog_export_filename acName="+acName);
+            String fileName;
+
+            if(FileNameDialog.ACTION_RETURN == acName)
+            {
+               sa <= _ac;
+               fileName = Utils.LazyAppendSuffix(sa.getStringValue(), ".wav");
+               trace "xxx save selection as \""+fileName+"\"";
+               handleExportSelection2(fileName);
+               refocusDefault();
+            }
+            else if(FileNameDialog.ACTION_CANCEL == acName)
+            {
+               Global.Debug("AudioTracksForm: file dialog was canceled");
+               refocusDefault();
+            }
+            return true;
+
+         case @(dialog_multiexport_filenameprefix):
+            Global.Debug("AudioTracksForm: dialog_multiexport_filenameprefix acName="+acName);
+            String fileNamePrefix;
+
+            if(FileNameDialog.ACTION_RETURN == acName)
+            {
+               sa <= _ac;
+               fileNamePrefix = Utils.LazyRemoveSuffix(sa.getStringValue(), ".wav");
+               Global.Debug("multi-export regions with filename prefix \""+fileNamePrefix+"\"");
+               handleMultiExportRegions2(fileNamePrefix);
+               refocusDefault();
+            }
+            else if(FileNameDialog.ACTION_CANCEL == acName)
+            {
+               Global.Debug("AudioTracksForm: file dialog was canceled");
+               refocusDefault();
+            }
+            return true;
+
+         case @(fp_vel)
+            handleVelChanged();
+            return true;
+
+         case @(cm_release_type):
+            handleReleaseTypeChanged();
+            return true;
+
+         case @(cb_loop):
+            Audio.SetEnableTemporarySampleLoop(cb_loop.isSelected());
+            Global.Print("Loop is "+Utils.GetEnableString(cb_loop.isSelected()));
+            return true;
+
+         case @(cb_ramp):
+            Audio.SetEnableTemporarySampleRamp(cb_ramp.isSelected());
+            Global.Print("Ramp is "+Utils.GetEnableString(cb_ramp.isSelected()));
+            return true;
+
+         case @(fp_numvoices):
+            handleNumVoicesChanged();
+            return true;
+
+         case @(fp_sampleoff)
+            handleSampleOffChanged();
+            return true;
+
+         case @(fp_sampleoff_rand)
+            handleSampleOffRandChanged();
+            return true;
+
+         case @(fp_pan_rand)
+            handlePanRandChanged();
+            return true;
+
+         case @(cm_dropfiles_mode):
+            current_project.sampleview_dropfiles_mode = cm_dropfiles_mode.getSelectedOption();
+            current_project.markAsModified();
+            Global.Print("Drop files raw binary mode is "+cm_dropfiles_mode.getSelectedOptionName());
+            return true;
+
+         case @(cb_dropfiles_silence):
+            current_project.b_sampleview_dropfiles_silence = cb_dropfiles_silence.isSelected();
+            current_project.markAsModified();
+            Global.Print("Drop files append-silence is "+Utils.GetEnableString(current_project.b_sampleview_dropfiles_silence));
+            return true;
+
+         case @(fp_dropfiles_offset):
+            current_project.sampleview_dropfiles_offset = fp_dropfiles_offset.getFloatValue();
+            current_project.markAsModified();
+            Global.Print("Drop files raw binary offset is "+current_project.sampleview_dropfiles_offset);
+            return true;
+
+         case @(cm_dropfiles_format):
+            current_project.sampleview_dropfiles_format = cm_dropfiles_format.getSelectedOption();
+            current_project.markAsModified();
+            Global.Print("Drop files raw binary format is "+cm_dropfiles_format.getSelectedOptionName());
+            return true;
+
+         case @(cb_live_capture):
+            handleToggleLiveCapture();
+            return true;
+
+         case @(tf_smpprefix):
+            current_project.new_sample_prefix = tf_smpprefix.getText();
+            Global.Print("Sample name prefix is \""+current_project.new_sample_prefix+"\"");
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cf_nsp):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleNextSampleNamespaceChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else
+            {
+               // Rename namespace
+               if(ComboField.ACTION_OPTIONEDITED/*char typed*/ == acName)
+               {
+               }
+               else if(ComboField.ACTION_OPTIONRENAMED == acName)
+               {
+                  handleNextSampleNamespaceNameChanged(cf_nsp.getSelectedOptionName());
+                  refocusDefault();
+               }
+            }
+            return true;
+
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

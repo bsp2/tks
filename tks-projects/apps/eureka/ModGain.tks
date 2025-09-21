@@ -1,0 +1,431 @@
+// ----
+// ---- file   : ModGain.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 24Feb2018, 27Feb2018, 02Mar2018, 17Mar2018, 26Mar2018, 21Jul2018, 29Mar2019
+// ----          30Jul2019, 06Feb2021, 27Dec2021, 10Jan2022, 06Mar2023, 19Sep2024, 23Sep2024
+// ----          07Jan2025
+// ----
+// ----
+// ----
+
+module MModGain;
+
+use tksdl;
+
+namespace st2;
+
+
+// <class.png>
+class ModGain : Mod {
+
+   define int PARAM_NONE         = 0;
+   define int PARAM_LEVEL        = 1;  // 0..1
+   define int PARAM_PAN          = 2;  // 0..1 => -1..1
+   define int PARAM_STEREO_WIDTH = 3;  // 0..1 => 0..2
+   define int NUM_PARAMS         = 4;
+
+   float level; // 0..1
+   float pan;   // -1..1
+   float stereo_width; // 0..2
+
+   boolean b_flip_phase;
+   boolean b_flip_channels;
+
+   protected float level_l;
+   protected float level_r;
+
+   protected PeakAvgTracker ui_peakavg_l;
+   protected PeakAvgTracker ui_peakavg_r;
+
+   int ui_dpy_mode; // see LevelIndicator
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      level = 1.0f;
+      pan   = 0.0f;
+      updateLevelLR();
+
+      stereo_width = 1.0f;
+
+      b_flip_phase = false;
+      b_flip_channels = false;
+
+      ui_dpy_mode = LevelIndicator.DPY_DB;
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "Gain";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModGain cl <= new ModGain;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModGain);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModGain)
+      {
+         ModGain o <= _o;
+         level           = o.level;
+         pan             = o.pan;
+         b_flip_phase    = o.b_flip_phase;
+         b_flip_channels = o.b_flip_channels;
+         stereo_width    = o.stereo_width;
+         updateLevelLR();
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      _retParamNames = [
+         "-",             //  0: PARAM_NONE
+         "Level",         //  1: PARAM_LEVEL
+         "Pan",           //  2: PARAM_PAN
+         "Stereo Width",  //  3: PARAM_STEREO_WIDTH
+                        ];
+
+      return true;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // trace "xxx ModGain::setParameterValue: idx="+_idx+" value="+_value;
+
+      switch(_idx)
+      {
+         case PARAM_LEVEL:
+            setLevel(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_PAN:
+            setPan((_value - 0.5f) * 2.0f);
+            queueUIUpdate();
+            break;
+
+         case PARAM_STEREO_WIDTH:
+            setStereoWidth(_value * 2.0f);
+            queueUIUpdate();
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public virtual getParameterValue(local int _idx) {
+
+      switch(_idx)
+      {
+         case PARAM_LEVEL:
+            return level;
+
+         case PARAM_PAN:
+            return pan;
+
+         case PARAM_STEREO_WIDTH:
+            return stereo_width;
+      }
+
+      return 0.0f;
+   }
+
+   // <method_set.png>
+   public method setLevel(local float _level) {
+
+      mtx_param.lock();
+
+      _level = mathClampf(_level, 0.0f, 300.0f);
+
+      if(level != _level)
+      {
+         level = _level;
+
+         current_project.markAsModified();
+      }
+
+      updateLevelLR();
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setPan(local float _pan) {
+
+      mtx_param.lock();
+
+      _pan = mathClampf(_pan, -1.0f, 1.0f);
+
+      if(_pan != pan)
+      {
+         pan = _pan;
+
+         current_project.markAsModified();
+      }
+
+      updateLevelLR();
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setStereoWidth(local float _stereoWidth) {
+
+      mtx_param.lock();
+
+      _stereoWidth = mathClampf(_stereoWidth, 0.0f, 2.0f);
+
+      if(stereo_width != _stereoWidth)
+      {
+         stereo_width = _stereoWidth;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setEnableFlipPhase(local boolean _bEnable) {
+
+      mtx_param.lock();
+
+      if(b_flip_phase != _bEnable)
+      {
+         b_flip_phase = _bEnable;
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setEnableFlipChannels(local boolean _bEnable) {
+
+      mtx_param.lock();
+
+      if(b_flip_channels != _bEnable)
+      {
+         b_flip_channels = _bEnable;
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_update.png>
+   protected method updateLevelLR() {
+      // Linear (center max=1.0)
+      float t = pan;
+      level_l = (t < 0.0f) ? 1.0 : (1.0f - t);
+      level_r = (t > 0.0f) ? 1.0 : (1.0f + t);
+
+      level_l *= level;
+      level_r *= level;
+   }
+
+   // <method_get.png>
+   public method getLevelString() {
+      Float dbL = Utils.LevelToDB(level_l);
+      Float dbR = Utils.LevelToDB(level_r);
+      return "L="+dbL.printf("%3.2f")+"dB  R="+dbR.printf("%3.2f")+"dB";
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 6;
+
+      // Level
+      _ofs.f32 = level;
+
+      // Pan
+      _ofs.f32 = pan;
+
+      // Flip phase (v3+)
+      _ofs.i8 = b_flip_phase;
+
+      // Flip channels (v6+)
+      _ofs.i8 = b_flip_channels;
+
+      // Stereo width (v4+)
+      _ofs.f32 = stereo_width;
+
+      // Dpy mode (v5+)
+      _ofs.i8 = ui_dpy_mode;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Level
+            level = _ifs.f32;
+
+            // Pan
+            pan = _ifs.f32;
+
+            if(ver >= 3)
+            {
+               // Flip phase (v3+)
+               b_flip_phase = _ifs.b8;
+            }
+
+            if(ver >= 6)
+            {
+               // Flip channels (v6+)
+               b_flip_channels = _ifs.b8;
+            }
+
+            if(ver >= 4)
+            {
+               // Stereo width (v4+)
+               stereo_width = _ifs.f32;
+            }
+
+            if(ver >= 5)
+            {
+               // Dpy mode (v5+)
+               ui_dpy_mode = _ifs.u8;
+            }
+
+            updateLevelLR();
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModGain::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(b_flip_channels ? 1 : 0);
+      local FloatArray inR <= input_bufs.get(b_flip_channels ? 0 : 1);
+
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying)
+      {
+         mtx_param.lock();
+
+         if(replay.b_have_events)
+         {
+            processParamSetChange(_fltDev, _fltCh);
+
+            // Calc modmatrix, update params via setParameterValue()
+            processModMatrixEvents(_fltDev, _fltCh, _globalCh);
+         }
+
+         if(1.0 == stereo_width)
+         {
+            tksampleedit_copy_pan_dualmono_to_dualmono(outL, outR, 0, inL, inR, 0,
+                                                       b_flip_phase ? -level_l : level_l,
+                                                       b_flip_phase ? -level_r : level_r,
+                                                       _numFrames
+                                                       );
+         }
+         else
+         {
+            tksampleedit_copy_pan_stereowidth_dualmono_to_dualmono(outL, outR, 0, inL, inR, 0,
+                                                                   b_flip_phase ? -level_l : level_l,
+                                                                   b_flip_phase ? -level_r : level_r,
+                                                                   stereo_width,
+                                                                   _numFrames
+                                                                   );
+         }
+
+         mtx_param.unlock();
+
+         // (todo) find peaks only when UI is visible ?
+         ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(outL, 0, 1, _numFrames));
+         ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(outR, 0, 1, _numFrames));
+      }
+   }
+
+   // <method_get.png>
+   public method getSmpPeakL() : float {
+      return ui_peakavg_l.peak;
+   }
+
+   // <method_get.png>
+   public method getSmpPeakR() : float {
+      return ui_peakavg_r.peak;
+   }
+
+   // <method_get.png>
+   public method getSmpAvgL() : float {
+      return ui_peakavg_l.avg;
+   }
+
+   // <method_get.png>
+   public method getSmpAvgR() : float {
+      return ui_peakavg_r.avg;
+   }
+}

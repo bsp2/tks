@@ -1,0 +1,912 @@
+// ----
+// ---- file   : SampleBrowserDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 19Jul2019
+// ---- changed: 20Jul2019, 21Jul2019, 27Jul2019, 09Jun2020, 06Feb2023, 04Oct2023, 30Oct2023
+// ----          02Nov2023, 05Jan2024, 17Jan2024, 05Jul2024, 02Aug2024, 03Aug2024, 05Aug2024
+// ----          06Aug2024, 07Aug2024, 08Aug2024, 27Nov2024, 17Dec2024, 31Dec2024, 16Jun2025
+// ----
+// ----
+// ----
+
+module MSampleBrowserDialog;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class SampleBrowserDialog extends Dialog, ActionProvider {
+
+   //  true=browse ESA samples
+   // false=browse WAV samples
+   boolean b_esa;
+   boolean b_may_cancel;  // in ESA mode, call PgSample.handleSampleDialogLoadCancel()
+
+   define String ACTION_CLOSE;
+
+   define String TA_FILTER;
+   protected TimerAction *ta_filter;
+
+   protected XMLForm *xfm;
+
+   protected SampleCacheEntry *[] entries;  // SampleCacheEntry refs (table model)
+
+   protected SampleBrowserTM *tm_samples;
+   protected TableView       *tv_samples;
+
+   protected TextField   *tf_filter;
+   protected TextField   *tf_filter_tags;
+   protected Button      *bt_filter_mode;
+   protected LayerSwitch *ls_filter_mode;
+   protected Button      *bt_tags;
+   protected CheckBox    *cb_user;
+   protected CheckBox    *cb_rated;
+   protected ComboBox    *cm_cat;
+   protected Button      *bt_rand;
+   protected LayerSwitch *ls_target;
+   protected ComboBox    *cm_target;
+   protected Button      *bt_ok;
+   protected CheckBox    *cb_preview;
+   protected Button      *bt_revert;
+   protected CheckBox    *cb_loop;
+
+   protected int pre_filter_entry_idx;  // last selected entry before filter textfield was focused
+
+   protected Sample *sample_undo;
+
+   static SampleTagSelectionDialog *dlg_sample_tag_selection;
+   static StringArray sample_tag_filter;  // substring match (e.g. "air" matches "airy")
+
+   protected PopupMenu *pm_context;
+
+
+   // <ui_init.png>
+   public method initSampleBrowserDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleBrowserDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSampleBrowserDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_samples <= new SampleBrowserTM;
+      tm_samples.initTableModel();
+      tm_samples.entries <= entries;
+      tv_samples.setTableModel(tm_samples);
+      tv_samples.tableModelChanged();
+      // tv_samples.setDebug(true);//xxxxxxxxxxxxxxxxx
+
+      initWindow(xfm,
+                 "Sample Browser (root=\""+STConfig.sample_rootpath+"\")",
+                 0,   0,
+                 770, 364
+                 );
+
+      ta_filter <= TimerAction.New(TA_FILTER, this, 350);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_CLOSE];
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return b_esa;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSampleBrowserDialog(boolean _bESA) {
+
+      b_esa = _bESA;
+      b_may_cancel = _bESA;
+
+      // // cm_cat.setOptions(Samples.category_short_names);
+      cm_cat.setOptions(Samples.category_long_names);
+      cm_cat.setOptionsLong(Samples.category_long_names);
+
+      entries.empty();
+      handleCategoryChanged(true/*bQuiet*/);
+
+      tv_samples.tableModelChanged();
+
+      recursiveBuildTabCycleLists();
+
+      trace "[trc] showSampleBrowserDialog: unset sample_undo 1  sample_undo="+#(sample_undo);
+      sample_undo <= null;
+      trace "[trc] showSampleBrowserDialog: unset sample_undo 2";
+      bt_revert.setEditable(false);
+
+      bt_tags.setEditable(b_esa);
+      bt_filter_mode.setEditable(b_esa);
+      if(!b_esa)
+      {
+         ls_filter_mode.switchToLayerNr(0);
+         bt_filter_mode.setToggleState(0);
+      }
+
+      tm_samples.b_ratings_changed = false;
+
+      show();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      restoreGeometryIfValid(UI.IsHiDPI()
+                             ? STConfig.sample_browser_geo_hidpi
+                             : STConfig.sample_browser_geo_lodpi
+                             );
+
+      ls_target.switchToLayerNr(b_esa);
+
+      resizeAtLeastToMinimum();
+      relayout();
+
+      UI.SetKeyboardFocus(tv_samples);
+
+      if(!cb_preview.isSelected())
+         showPreviewWarning();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      Audio.StopTempSample(true/*bReset*/);
+
+      if(null != pm_context)
+      {
+         // should not be reachable
+         pm_context.hide();
+         pm_context <= null;
+      }
+
+      // free StPluginShared instance(s) (if any)
+      trace "[trc] SampleBrowserDialog::hide: unset sample_undo 1  sample_undo="+#(sample_undo);
+      sample_undo <= null;
+      trace "[trc] SampleBrowserDialog::hide: unset sample_undo 2";
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.sample_browser_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.sample_browser_geo_lodpi);
+
+      Dialog::hide();
+
+      ta_filter.cancel();
+
+      if(tm_samples.b_ratings_changed)
+      {
+         Samples.SaveSampleRatings();
+      }
+
+      root_form.pg_sample.consumeAction(Action.New(ACTION_CLOSE, this));
+
+      if(b_esa && b_may_cancel)
+         root_form.pg_sample.handleSampleDialogLoadCancel();
+   }
+
+   // <method_get.png>
+   protected method getSelectedEntry() : SampleCacheEntry {
+      return entries.get(tm_samples.getCursorIndex());
+   }
+
+   // <method.png>
+   protected method showPreviewWarning() {
+      if(b_esa)
+      {
+         Global.Warning("Preview mode is disabled => Clicks will replace the current SAMPLE");
+      }
+      else
+      {
+         switch(cm_target.getSelectedOption())
+         {
+            case 0:  // "-"
+               break;
+
+            case 1:  // "Replace Sample"
+               Global.Warning("Preview mode is disabled => Clicks will replace the current SAMPLE");
+               break;
+
+               // // case 2:  // "Zone"
+               // //    Global.Warning("Preview mode is disabled => Clicks will replace the current ZONE");
+               // //    break;
+
+            case 2:  // "Replace Selection"
+               Global.Warning("Preview mode is disabled => Clicks will replace the current SELECTION");
+               break;
+
+            case 3:  // "Insert"
+               Global.Warning("Preview mode is disabled => Clicks will insert at the current SELECTION start");
+               break;
+
+            case 4:  // "Append"
+               Global.Warning("Preview mode is disabled => Clicks will append to the end of waveform");
+               break;
+
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePreviewSample(SampleCacheEntry _en) {
+      if(null != _en)
+      {
+         local String pathname <= Utils.ToNativePathName(STConfig.sample_rootpath)+"/"+_en.rel_path+"/"+_en.unique_name;
+
+         Global.Print("Preview \""+_en.unique_name+"\"");
+
+         if(!b_esa)
+         {
+            // Preview WAV sample
+            Audio.UpdateTemporarySampleFromFile(pathname, null/*retInfo*/);
+            if(cb_loop.isSelected())
+               Audio.SetEnableTemporarySampleLoop(true);
+            // else: keep loaded loop (if any)
+         }
+         else
+         {
+            // Preview ESA
+            pathname.append(Global.SAMPLE_FILE_SUFFIX);
+            root_form.pg_sample.handleSampleDialogLoad(pathname, true/*bPreview*/, false/*bRefocus*/);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method lazyCreateUndoState() {
+      if(null == sample_undo)
+      {
+         // Create undo state
+         PageSample pgSample <= root_form.pg_sample;
+         Sample smp <= pgSample.getSelectedSample();
+         if(null != smp)
+         {
+            sample_undo <= new Sample;
+            sample_undo.init();
+            sample_undo.copyFromForUndo(smp);
+         }
+         bt_revert.setEditable(null != smp);
+      }
+   }
+
+   // <method.png>
+   public method tryMoveCursorToSample(Sample _sample) {
+      if(null != _sample)
+      {
+         SampleCacheEntry en <= Samples.FindCacheEntryByPathName(STConfig.sample_rootpath+"/"+_sample.suggested_pathname+"/"+Utils.ToNativePathName(_sample.unique_name)+Global.SAMPLE_FILE_SUFFIX);
+         if(null != en)
+         {
+            int rowIdx = entries.indexOfPointer(en, 0);
+            if(rowIdx >= 0)
+            {
+               tv_samples.moveCursorToRowNoAction(rowIdx);
+               tv_samples.centerRow();
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadSample(SampleCacheEntry _en, boolean _bRefocus, boolean _bLazyCreateUndoState) {
+      if(null != _en)
+      {
+         local String pathname <= Utils.ToNativePathName(STConfig.sample_rootpath)+"/"+_en.rel_path+"/"+_en.unique_name;
+
+         PageSample pgSample <= root_form.pg_sample;
+
+         if(!b_esa)
+         {
+            switch(cm_target.getSelectedOption())
+            {
+               case 0:  // "-"
+                  break;
+
+               case 1:  // "Replace Sample"
+                  if(_bLazyCreateUndoState)
+                     lazyCreateUndoState();
+                  pgSample.replaceSampleWav(pathname, cb_loop.isSelected());
+                  break;
+
+               case 2:  // "Replace Selection"
+                  if(_bLazyCreateUndoState)
+                     lazyCreateUndoState();
+                  pgSample.handleReplaceSampleSelectionByFile(pathname);
+                  break;
+
+               case 3:  // "Insert"
+                  if(_bLazyCreateUndoState)
+                     lazyCreateUndoState();
+                  pgSample.handleInsertFile(-1/*selStart*/, pathname);
+                  break;
+
+               case 4:  // "Append"
+                  if(_bLazyCreateUndoState)
+                     lazyCreateUndoState();
+                  pgSample.handleInsertFile(-2/*end*/, pathname);
+                  break;
+            }
+         }
+         else
+         {
+            // Load ESA
+            if(_bLazyCreateUndoState)
+               lazyCreateUndoState();
+            pathname.append(Global.SAMPLE_FILE_SUFFIX);
+            pgSample.handleSampleDialogLoad(pathname, false/*bPreview*/, _bRefocus);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRevert() {
+      if(null != sample_undo)
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+         PageSample pgSample <= root_form.pg_sample;
+         Sample smp <= pgSample.getSelectedSample();
+         if(null != smp)
+         {
+            smp.copyFrom(sample_undo);
+            pgSample.handleSelectSample(true/*bStopAudio*/);
+            Global.Print("Revert sample");
+         }
+
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      }
+   }
+
+   // <method.png>
+   protected getCurrentFilterWidget() : TextField {
+      if(0 == ls_filter_mode.getCurrentChildNr())
+         return tf_filter;  // pathname
+      return tf_filter_tags;
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterModeChanged() {
+      int fltMode = bt_filter_mode.getToggleState();
+      ls_filter_mode.switchToLayerNr(fltMode);
+      redraw();
+      tm_samples.b_show_tags = fltMode;
+      handleCategoryChanged(true/*bQuiet*/);
+      Global.Print("Filter mode is "+(fltMode ? "tags" : "pathname"));
+   }
+
+   // <ui_handle.png>
+   protected method handleCategoryChanged(boolean _bQuiet) {
+
+      int oldRow = tm_samples.getCursorIndex();
+
+      int catIdx = cm_cat.getSelectedOption();
+      local String flt <= tf_filter.getText();//.trim();
+      if(flt.isBlank())
+         flt <= null;
+      local String fltTags <= tf_filter_tags.getText();
+      local StringArray aTags <= fltTags.splitSpace(false);
+      Utils.MergeStringArrays(aTags, sample_tag_filter);
+      if(!tm_samples.b_show_tags)
+         aTags.free();  // [14Jan2025] don't apply tag filter when tags are not visible
+      boolean bUser = cb_user.isSelected();
+      boolean bRated = cb_rated.isSelected();
+      if(null == flt && aTags.isEmpty() && !bUser && !bRated)
+      {
+         Samples.GetCategoryEntriesByIdx(b_esa, catIdx, entries);
+      }
+      else
+      {
+         local String fltUserPath <= bUser ? STConfig.sample_userpath : null;  // e.g. "bsp"
+         Samples.GetCategoryEntriesByIdxAndFilter(b_esa, catIdx, flt, fltUserPath, aTags, bRated, entries);
+         Global.Debug2("SampleBrowserDialog::handleCategoryChanged: flt=\""+flt+"\" fltUserPath=\""+fltUserPath+"\" bRated="+bRated+" => "+entries.numElements+" entries");
+      }
+
+      tv_samples.tableModelChanged();
+
+      if(oldRow >= entries.numElements)
+      {
+         tv_samples.moveCursorToLastRowNoAction();
+      }
+      else if(-1 != oldRow)
+      {
+         tv_samples.moveCursorToRowNoAction(oldRow);
+         tv_samples.centerRow();
+      }
+      else
+      {
+         tv_samples.moveCursorToFirstRowNoAction();
+      }
+
+      if(!_bQuiet)
+         Global.Print("Category is \""+cm_cat.getSelectedOptionNameLong()+"\" ("+entries.numElements+" entries)");
+   }
+
+   // <method.png>
+   protected method handleSelectRandomSample() {
+      int numRows = tv_samples.getNumRows();
+      if(numRows > 0)
+      {
+         int rowIdx = rand(numRows);
+         tv_samples.moveCursorToRow(rowIdx);
+      }
+   }
+
+   // <ui_show.png>
+   public method showSampleTagSelectionDialog() {
+      if(null == dlg_sample_tag_selection)
+      {
+         dlg_sample_tag_selection <= new SampleTagSelectionDialog;
+         dlg_sample_tag_selection.setEnableProvideChanging(true);
+         dlg_sample_tag_selection.setEnableFrequency(true);
+         dlg_sample_tag_selection.initSampleTagSelectionDialog(false/*bEdit*/);
+      }
+
+      dlg_sample_tag_selection.showSampleTagSelectionDialog(sample_tag_filter, this/*listener*/);
+      Global.Print("Show sample tag filter dialog");
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleTagsChanged() {
+      local StringArray aNewTags <= dlg_sample_tag_selection.getSelectedTags();
+      sample_tag_filter = aNewTags;
+      trace "[trc] SampleBrowserDialog::handleSampleTagsChanged: new tags="+#(aNewTags);
+      handleCategoryChanged(true/*bQuiet*/);
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      StWaveform wf <= Audio.temp_waveform;
+      int numTempFrames = wf.getNumFrames();
+      String sCh <= (2 == wf.getNumChannels()) ? "stereo" : "mono";
+
+      pmb <= pm.addDefaultButton("Copy temporary waveform to clipboard ("+numTempFrames+" "+sCh+" frame"+Utils.GetPluralString(numTempFrames)+")",
+                                 "copy_temp_to_clipboard"
+                                 );
+      pmb.setAccelerators("", "lctrl-c");
+
+      pmb <= pm.addDefaultButton("Append temporary waveform to clipboard ("+numTempFrames+" "+sCh+" frame"+Utils.GetPluralString(numTempFrames)+") (separate by silence)",
+                                 "append_temp_to_clipboard_silence"
+                                 );
+      pmb.setAccelerators("", "lctrl-lshift-c");
+
+      pmb <= pm.addDefaultButton("Append temporary waveform to clipboard ("+numTempFrames+" "+sCh+" frame"+Utils.GetPluralString(numTempFrames)+")",
+                                 "append_temp_to_clipboard"
+                                 );
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show SampleBrowser context menu.");
+   }
+
+   // <method.png>
+   protected method cancelEntryFilter() {
+      TextField tfFilter <= getCurrentFilterWidget();
+      tfFilter.stopEditing(false/*bProvideAction*/, true/*bReturnKey*/, true/*bQuiet*/);
+      tfFilter.setText("");
+      handleCategoryChanged(true/*bQuiet*/);
+      tv_samples.moveCursorToRow(pre_filter_entry_idx);
+      tv_samples.centerRow();
+      UI.SetKeyboardFocus(tv_samples);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+
+            if(b_esa)
+            {
+               root_form.pg_sample.handleSampleDialogLoadCancel();
+            }
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   protected method handleAutoFocusKey(Key _k) : boolean {
+      if(0 != _k.unicode)
+      {
+         if(0 == _k.mod)
+         {
+            TextField tfFilter <= getCurrentFilterWidget();
+            if(@(UI.GetKeyboardFocus()) != @(tfFilter))
+            {
+               if(UI.IsAutoFocusKey(_k))
+               {
+                  pre_filter_entry_idx = tm_samples.getCursorIndex();
+                  UI.SetKeyboardFocus(tfFilter);
+                  tfFilter.selectAll();
+               }
+               else
+               {
+                  return false;
+               }
+            }
+            tfFilter.onKey(_k);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      // // trace "xxx SampleBrowserDialog::wantKeyRepeat: k.name="+_k.name+" k.pressed="+_k.pressed+" k.released="+_k.released+" k.mod="+_k.mod;
+      return root_form.wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx SampleBrowserDialog::onKey: k.name="+_k.name+" k.pressed="+_k.pressed+" k.released="+_k.released+" k.mod="+_k.mod;
+      TextField tfFilter <= getCurrentFilterWidget();
+
+      switch(_k.released)
+      {
+         case 96: // '^' (ger) / '`' (us)
+            if(_k.modNone())
+            {
+               // ref tone, processed by RootForm
+               return root_form.onKey(_k);
+            }
+            return true;
+      }
+
+      switch(_k.pressed)
+      {
+         case 96: // '^' (ger) / '`' (us)
+            if(_k.modNone())
+            {
+               // ref tone, processed by RootForm
+               return root_form.onKey(_k);
+            }
+            return true;
+
+         case VKEY_ESCAPE:
+            if(tfFilter.hasKeyboardFocus())
+            {
+               cancelEntryFilter();
+            }
+            else
+            {
+               hide();
+
+               if(b_esa)
+                  root_form.pg_sample.handleSampleDialogLoadCancel();
+            }
+            return true;
+
+         case VKEY_F9:
+            root_form.pg_sample.toggleSampleBrowser();
+            return true;
+
+         case '9':
+            if(_k.modCtrl())
+            {
+               root_form.pg_sample.toggleSampleBrowser();
+               return true;
+            }
+            break;
+
+         case 'a':
+            if(_k.modShift())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  Audio.AppendTemporaryWaveformToSampleViewClipboard(true/*bSilence*/);
+               else
+                  Audio.CopyTemporaryWaveformToSampleViewClipboard();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               boolean bTFHadFocus = tf_filter.hasKeyboardFocus();
+               boolean bTFTagsHadFocus = tf_filter_tags.hasKeyboardFocus();
+               bt_filter_mode.toggleSelectionAction();
+               if(bTFHadFocus)
+                  UI.SetKeyboardFocus(tf_filter_tags);
+               else if(bTFTagsHadFocus)
+                  UI.SetKeyboardFocus(tf_filter);
+               else
+                  UI.SetKeyboardFocus(tv_samples);
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               handleSelectRandomSample();
+               return true;
+            }
+            break;
+
+         case 't':
+            if(_k.modCtrl())
+            {
+               bt_tags.toggleStateAction();
+               return true;
+            }
+            break;
+
+         case '<':
+            bt_tags.toggleStateAction();
+            return true;
+      }
+
+      if(_k.pressed >= ' ')
+         if(handleAutoFocusKey(_k))
+            return true;
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return Dialog::onMouseClick(_ev);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_FILTER == acName)
+      {
+         handleCategoryChanged(true/*bQuiet*/);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close samples context menu.");
+                  UI.SetKeyboardFocus(tv_samples);
+                  return true;
+
+               case "copy_temp_to_clipboard":
+                  Audio.CopyTemporaryWaveformToSampleViewClipboard();
+                  UI.SetKeyboardFocus(tv_samples);
+                  return true;
+
+               case "append_temp_to_clipboard_silence":
+                  Audio.AppendTemporaryWaveformToSampleViewClipboard(true/*bSilence*/);
+                  UI.SetKeyboardFocus(tv_samples);
+                  return true;
+
+               case "append_temp_to_clipboard":
+                  Audio.AppendTemporaryWaveformToSampleViewClipboard(false/*bSilence*/);
+                  UI.SetKeyboardFocus(tv_samples);
+                  return true;
+            }
+            return true;
+
+         case @(tv_samples):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               b_may_cancel = false;
+               hide();
+
+               PageSample pgSample <= root_form.pg_sample;
+               IntArray aSel <= tv_samples.getSelectedRows();
+               if(null == pgSample.replace_sample && (aSel.numElements > 1))
+               {
+                  pgSample.freePreviewSample();
+                  int rowIdx;
+                  foreach rowIdx in aSel
+                  {
+                     SampleCacheEntry en <= entries[rowIdx];
+                     handleLoadSample(en, true/*bRefocus*/, false/*bLazyCreateUndoState*/);
+                  }
+               }
+               else
+               {
+                  handleLoadSample(getSelectedEntry(), true/*bRefocus*/, false/*bLazyCreateUndoState*/);
+               }
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               if(cb_preview.isSelected())
+               {
+                  handlePreviewSample(getSelectedEntry());
+               }
+               else
+               {
+                  b_may_cancel = false;
+                  handleLoadSample(getSelectedEntry(), false/*bRefocus*/, true/*bLazyCreateUndoState*/);
+                  // (note) keep dialog open
+               }
+            }
+            return true;
+
+         case @(bt_filter_mode):
+            handleFilterModeChanged();
+            return true;
+
+         case @(tf_filter):
+            if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               UI.SetKeyboardFocus(tv_samples);
+               tv_samples.moveCursorToFirstRowIfNoneSelected();
+               tv_samples.redraw();
+            }
+            else if(TextField.ACTION_RIGHT_CLICK == acName)
+            {
+               tf_filter.setText("");
+               tf_filter_tags.setText("");
+               handleCategoryChanged(true/*bQuiet*/);
+               UI.SetKeyboardFocus(tv_samples);
+               tv_samples.redraw();
+            }
+            else
+            {
+               ta_filter.schedule();
+            }
+            return true;
+
+         case @(tf_filter_tags):
+            if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               UI.SetKeyboardFocus(tv_samples);
+               tv_samples.moveCursorToFirstRowIfNoneSelected();
+               tv_samples.redraw();
+            }
+            else if(TextField.ACTION_RIGHT_CLICK == acName)
+            {
+               tf_filter.setText("");
+               tf_filter_tags.setText("");
+               handleCategoryChanged(true/*bQuiet*/);
+               UI.SetKeyboardFocus(tv_samples);
+               tv_samples.redraw();
+            }
+            else
+            {
+               ta_filter.schedule();
+            }
+            return true;
+
+         case @(bt_tags):
+            tm_samples.b_show_tags = bt_tags.getToggleState();
+            Global.Print("Show-Tags is "+Utils.GetEnableString(tm_samples.b_show_tags));
+            handleCategoryChanged(true/*bQuiet*/);
+            if(tm_samples.b_show_tags)
+               showSampleTagSelectionDialog();
+            return true;
+
+         case @(dlg_sample_tag_selection):
+            // trace "xxx dlg_sample_tag_selection acName=\""+acName+"\"";
+            if(SampleTagSelectionDialog.ACTION_TAGS_CHANGING == acName)
+            {
+               handleSampleTagsChanged();
+            }
+            else
+            {
+               // Dialog closed
+               // // if(SampleTagSelectionDialog.ACTION_TAGS_CHANGED == acName)
+               // // {
+               // //    handleSampleTagsChanged();
+               // // }
+               UI.SetKeyboardFocus(tv_samples);
+            }
+            return true;
+
+         case @(cb_user):
+            Global.Print("User-library filter is "+Utils.GetEnableString(cb_user.isSelected()));
+            handleCategoryChanged(true/*bQuiet*/);
+            return true;
+
+         case @(cb_rated):
+            Global.Print("Show "+(cb_rated.isSelected() ? "rated entries only":"all entries"));
+            handleCategoryChanged(true/*bQuiet*/);
+            return true;
+
+         case @(bt_rand):
+            handleSelectRandomSample();
+            return true;
+
+         case @(cm_cat):
+            handleCategoryChanged(false/*bQuiet*/);
+            UI.SetKeyboardFocus(tv_samples);
+            return true;
+
+         case @(cm_target):
+            Global.Print("Target is "+cm_target.getSelectedOptionName());
+            return true;
+
+         case @(bt_ok):
+            b_may_cancel = false;
+            hide();
+            handleLoadSample(getSelectedEntry(), true/*bRefocus*/, false/*bLazyCreateUndoState*/);
+            // // showLoadDialog();
+            return true;
+
+         case @(cb_preview):
+            bt_ok.setEditable(cb_preview.isSelected());
+            bt_ok.redraw();
+            if(!cb_preview.isSelected())
+               showPreviewWarning();
+            else
+               Global.Print("Preview mode is enabled (click ok to replace target)");
+            return true;
+
+         case @(bt_revert):
+            handleRevert();
+            return true;
+
+         case @(cb_loop):
+            Global.Print("Loop is "+Utils.GetEnableString(cb_loop.isSelected()));
+            Audio.SetEnableTemporarySampleLoop(cb_loop.isSelected());
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

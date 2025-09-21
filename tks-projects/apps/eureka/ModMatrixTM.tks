@@ -1,0 +1,579 @@
+// ----
+// ---- file   : ModMatrixTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 13Dec2018
+// ---- changed: 17Jan2019, 10Sep2019, 29Jul2023, 04Oct2023, 21Jun2025
+// ----
+// ----
+// ----
+
+module MModMatrixTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModMatrixTM_FloatParamDialog : FloatingLayer {
+
+   ModMatrixTM *tm;
+   FloatParam *fp;
+
+   public method showFP(FloatParam _fp, int _posX, int _posY, int _sx, int _sy) {
+      removeChildHierarchy();
+      fp <= _fp;
+      addLayer(_fp, Layout.CENTER);
+      _fp.setRequiredSize2f(_sx, _sy);
+      setRequiredSize2f(_sx, _sy);
+      showAtXY(_posX, _posY);
+      UI.SetMouseFocus(_fp);
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public method handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer):boolean {
+      if(0 == _ev.current_state)
+      {
+         hide();
+         UI.SetKeyboardFocus(tm.table_view);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(@(ap) == @(fp))
+      {
+         tm.handleFloatParamEdited(fp);
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class ModMatrixTM : TableModel {
+
+   define int COL_ID       =  0;
+   define int COL_ENABLE   =  1;
+   define int COL_SRC      =  2;
+   define int COL_ARG1     =  3;
+   define int COL_CURVE    =  4;
+   define int COL_AMOUNT   =  5;
+   define int COL_PARAM    =  6;
+   define int COL_MIN      =  7;
+   define int COL_MAX      =  8;
+   define int COL_ASYM     =  9;
+   define int COL_RELATIVE = 10;
+
+   Mod *mod;
+   StringArray dst_options;
+   ModMatrixEntryForm *f_entry;
+
+   protected CheckBox cb_enable_edit;
+   protected CheckBox cb_asym_edit;
+   protected CheckBox cb_relative_edit;
+
+   protected FloatParam fp_amount_edit;
+   protected FloatParam fp_min_edit;
+   protected FloatParam fp_max_edit;
+
+   protected ModMatrixTM_FloatParamDialog fp_dialog;
+   protected int fp_dialog_row;
+
+
+   // <method_init.png>
+   protected method initFloatParam(FloatParam _fp) {
+      _fp.initFloatParam();
+      _fp.setStepFine(0.01);
+      _fp.setStepCoarse(0.01);
+      _fp.setMinMaxValues(0, 1); // entry dependent
+      _fp.setPrecision(5);
+      _fp.setInnerPadTop(-1.0f);
+      _fp.setInnerPadLeft(1.0f);
+      _fp.setPositionX(0.0f);
+      _fp.setEnableBorders(false);
+      _fp.setEnableTableMode(true);
+      _fp.b_skip_kbdfocus = true; // (todo) not working, need setkeyboardfocus hack
+      _fp.setDisplayType(FloatParam.DISPLAY_PERCENT);
+   }
+
+   // <method_init.png>
+   public virtual initTableModel() {
+
+      initCheckBox(cb_enable_edit);
+      cb_enable_edit.setIconNamePrefix("chb");
+
+      initCheckBox(cb_asym_edit);
+      cb_asym_edit.setIconNamePrefix("chb");
+
+      initCheckBox(cb_relative_edit);
+      cb_relative_edit.setIconNamePrefix("chb");
+
+      initFloatParam(fp_amount_edit);
+      initFloatParam(fp_min_edit);
+      initFloatParam(fp_max_edit);
+
+      fp_dialog <= new ModMatrixTM_FloatParamDialog;
+      fp_dialog.initFloatingLayer();
+      fp_dialog.tm <= this;
+      fp_dialog_row = -1;
+
+      TableModel::initTableModel();
+   }
+
+   // <method_get.png>
+   public virtual getNumColumns() : int {
+      return 11;
+   }
+
+   // <method_get.png>
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id","En", "Source", "Source Arg", "Curve", "Amount", "Dst Param", "Min", "Max", "Asym", "Rel"][_col];
+   }
+
+   // <method_get.png>
+   public virtual getNumRows() : int {
+      if(null != mod)
+      {
+         return mod.mod_matrix.numElements;
+      }
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getCellCaption(int _col, _row) : String {
+      if(null != mod)
+      {
+         ModMatrixEntry mme <= mod.mod_matrix.get(_row);
+         Float fo;
+         if(null != mme)
+         {
+            switch(_col)
+            {
+               case COL_ID:
+                  return String(_row + 1);
+
+               case COL_ENABLE:
+                  return mme.b_enable ? "" : "-";
+
+               case COL_SRC:
+                  return ModMatrixEntry.src_names_short.get(mme.src);
+
+               case COL_ARG1:
+                  return mme.getArg1String();
+
+               case COL_CURVE:
+                  return mme.b_enable_input_mapper_env ? "" : "-";
+
+               case COL_AMOUNT:
+                  fo = mme.amount * 100;
+                  return fo.printf("%3.2f")+"%";
+
+               case COL_PARAM:
+                  return dst_options.get(mme.param_idx);
+
+               case COL_MIN:
+                  if(mod instanceof ModCLAP)
+                  {
+                     return mme.value_min;
+                  }
+                  else
+                  {
+                     fo = mme.value_min * 100;
+                     return fo.printf("%3.2f")+"%";
+                  }
+
+               case COL_MAX:
+                  if(mod instanceof ModCLAP)
+                  {
+                     return mme.value_max;
+                  }
+                  else
+                  {
+                     fo = mme.value_max * 100;
+                     return fo.printf("%3.2f")+"%";
+                  }
+
+               case COL_ASYM:
+                  return mme.b_asym ? "" : "-";
+
+               case COL_RELATIVE:
+                  return mme.b_relative ? "" : "-";
+            }
+         }
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   virtual getCellIcon(int _col, _row) : Icon {
+      if(null != mod)
+      {
+         ModMatrixEntry mme <= mod.mod_matrix.get(_row);
+         Icon checkIcon <= UI.GetIcon("mgrctl_celvis");
+
+         switch(_col)
+         {
+            case COL_ENABLE:
+               return mme.b_enable ? checkIcon : null;
+
+            case COL_CURVE:
+               return mme.b_enable_input_mapper_env ? checkIcon : null;
+
+            case COL_ASYM:
+               return mme.b_asym ? checkIcon : null;
+
+            case COL_RELATIVE:
+               return mme.b_relative ? checkIcon : null;
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+      Layer ret <= lb;
+
+      if(null != mod)
+      {
+         ModMatrixEntry mme <= mod.mod_matrix.get(_row);
+         if(null != mme)
+         {
+            CheckBox *cb;
+
+            if(COL_ENABLE == _col)
+            {
+               if(_row == cursor_index)
+               {
+                  // Row is possibly being edited (at least it is selected..)
+                  cb <= cb_enable_edit;
+
+                  cb.setSelected(mme.b_enable);
+                  cb.setInnerPadTop(1.0f);
+                  cb.setPositionX(4.0f);
+                  ret <= cb;
+               }
+            }
+
+            if(COL_ASYM == _col)
+            {
+               if(_row == cursor_index)
+               {
+                  if(mod.b_relative_params)
+                  {
+                     // Row is possibly being edited (at least it is selected..)
+                     cb <= cb_asym_edit;
+
+                     cb.setSelected(mme.b_asym);
+                     cb.setInnerPadTop(1.0f);
+                     cb.setPositionX(4.0f);
+                     ret <= cb;
+                  }
+               }
+            }
+
+            if(COL_RELATIVE == _col)
+            {
+               if(_row == cursor_index)
+               {
+                  if(mod.b_relative_params)
+                  {
+                     // Row is possibly being edited (at least it is selected..)
+                     cb <= cb_relative_edit;
+
+                     cb.setSelected(mme.b_relative);
+                     cb.setInnerPadTop(1.0f);
+                     cb.setPositionX(4.0f);
+                     ret <= cb;
+                  }
+               }
+            }
+
+            if(_row == cursor_index)
+            {
+               if(COL_AMOUNT == _col)
+               {
+                  fp_amount_edit.setValue(mme.amount);
+               }
+
+               if(COL_MIN == _col)
+               {
+                  fp_min_edit.setMinMaxValues(mme.b_relative ? -1 : 0, 1);
+                  fp_min_edit.setValue(mme.value_min);
+               }
+
+               if(COL_MAX == _col)
+               {
+                  fp_max_edit.setMinMaxValues(mme.b_relative ? -1 : 0, 1);
+                  fp_max_edit.setValue(mme.value_max);
+               }
+            } // if cursor_index
+         } // if mme
+      } // if mod
+
+      // ret.setRequiredSizeY(15);
+
+      return ret;
+   }
+
+   // <method_get.png>
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 20;
+
+         case COL_ENABLE:
+            return 20;
+
+         case COL_SRC:
+            return 70;
+
+         case COL_ARG1:
+            return 100;
+
+         case COL_CURVE:
+            return 40;
+
+         case COL_AMOUNT:
+            return 60;
+
+         case COL_PARAM:
+            return 100;
+
+         case COL_MIN:
+            return 56;
+
+         case COL_MAX:
+            return 56;
+
+         case COL_ASYM:
+            return 40;
+
+         case COL_RELATIVE:
+            return 24;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 24;
+
+         case COL_ENABLE:
+            return 24;
+
+         case COL_SRC:
+            return 70;
+
+         case COL_ARG1:
+            return 120;
+
+         case COL_CURVE:
+            return 40;
+
+         case COL_AMOUNT:
+            return 60;
+
+         case COL_PARAM:
+            return 260;
+
+         case COL_MIN:
+            return 60;
+
+         case COL_MAX:
+            return 60;
+
+         case COL_ASYM:
+            return 40;
+
+         case COL_RELATIVE:
+            return 24;
+      }
+   }
+
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+      boolean bChanged;
+      boolean bOldState;
+
+      if(null != mod)
+      {
+         ModMatrixEntry mme <= mod.mod_matrix.get(_row);
+         if(null != mme)
+         {
+            if(COL_ENABLE == _col)
+            {
+               // trace "xxx handleCellOnMouse: 1"+" _ev.current_state="+_ev.current_state+" _ev.changed_state="+_ev.changed_state;
+               bOldState = cb_enable_edit.isSelected();
+
+               if(cb_enable_edit.onMouse(_ev))
+               {
+                  bChanged = cb_enable_edit.isSelected();
+
+                  if(bOldState ^ bChanged)
+                  {
+                     f_entry.cb_enable.setSelected(cb_enable_edit.isSelected());
+                     f_entry.handleEnableChanged();
+
+                     Global.Print("Entry "+_row+" is "+Utils.GetEnableString(mme.b_enable));
+                  }
+
+                  return true;
+               }
+               // ...
+            }
+
+            if(COL_ASYM == _col)
+            {
+               if(mme.b_relative)
+               {
+                  // trace "xxx handleCellOnMouse: 1"+" _ev.current_state="+_ev.current_state+" _ev.changed_state="+_ev.changed_state;
+                  bOldState = cb_asym_edit.isSelected();
+
+                  if(cb_asym_edit.onMouse(_ev))
+                  {
+                     // trace "xxx handleCellOnMouse: 2";
+                     bChanged = cb_asym_edit.isSelected();
+
+                     if(bOldState ^ bChanged)
+                     {
+                        f_entry.cb_asym.setSelected(cb_asym_edit.isSelected());
+                        f_entry.handleAsymChanged();
+
+                        Global.Print("Entry "+_row+" asymetric mode is "+Utils.GetEnableString(mme.b_asym));
+                     }
+
+                     return true;
+                  }
+               }
+            }
+
+            if(COL_RELATIVE == _col)
+            {
+               if(mod.b_relative_params)
+               {
+                  // trace "xxx handleCellOnMouse: 1"+" _ev.current_state="+_ev.current_state+" _ev.changed_state="+_ev.changed_state;
+                  bOldState = cb_relative_edit.isSelected();
+
+                  if(cb_relative_edit.onMouse(_ev))
+                  {
+                     bChanged = cb_relative_edit.isSelected();
+
+                     if(bOldState ^ bChanged)
+                     {
+                        f_entry.cb_relative.setSelected(cb_relative_edit.isSelected());
+                        f_entry.handleRelativeChanged();
+
+                        Global.Print("Entry "+_row+" relative mode is "+Utils.GetEnableString(mme.b_relative));
+                     }
+
+                     return true;
+                  }
+               }
+            }
+
+            if(COL_AMOUNT == _col)
+            {
+               if(_ev.isAnyButtonDown())
+               {
+                  showFPDialog(fp_amount_edit, _ev, _col, _row);
+                  return true;
+               }
+            }
+            else if(COL_MIN == _col)
+            {
+               if(_ev.isAnyButtonDown())
+               {
+                  showFPDialog(fp_min_edit, _ev, _col, _row);
+                  return true;
+               }
+            }
+            else if(COL_MAX == _col)
+            {
+               if(_ev.isAnyButtonDown())
+               {
+                  showFPDialog(fp_max_edit, _ev, _col, _row);
+                  return true;
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   protected method showFPDialog(FloatParam _fp, MouseEvent _ev, int _col, int _row) {
+
+      // trace "xxx showFPDialog: dialog_row="+fp_dialog_row+" new row="+_row;
+
+      if(_row != fp_dialog_row) {
+         fp_dialog.hide();
+         fp_dialog_row = _row;
+      }
+
+      if(!fp_dialog.isFloatingLayerVisible())
+      {
+         Point2f p;
+         calcAbsCellPosition(_col, _row, p);
+
+         Point2f s;
+         getCellSize(_col, _row, s);
+
+         fp_dialog.showFP(_fp, p.x, p.y, s.x, s.y);
+
+         _fp.onMouse(_ev);
+
+         UI.b_try_drag = true; // xxx hack
+         UI.drag_layer_candidate <= _fp;
+      }
+   }
+
+   public method handleFloatParamEdited(FloatParam _fp) {
+      // trace "xxx handleFloatParamEdited: fp.getFloatValue()="+_fp.getFloatValue();
+
+      switch(@(_fp))
+      {
+         case @(fp_amount_edit):
+            f_entry.fp_amount.setValue(_fp.getFloatValue());
+            f_entry.handleAmountChanged();
+            break;
+
+         case @(fp_min_edit):
+            f_entry.fp_min.setValue(_fp.getFloatValue());
+            f_entry.handleMinChanged();
+            break;
+
+         case @(fp_max_edit):
+            f_entry.fp_max.setValue(_fp.getFloatValue());
+            f_entry.handleMaxChanged();
+            break;
+      }
+   }
+
+}

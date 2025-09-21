@@ -1,0 +1,315 @@
+// ----
+// ---- file   : PatchBrowserDialogSTFX.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 21Apr2023
+// ---- changed: 29Jul2023, 04Oct2023, 30Oct2023, 05Nov2023, 27Sep2024, 15Oct2024
+// ----
+// ----
+// ----
+
+module MPatchBrowserDialogSTFX;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class PatchBrowserDialogSTFX extends Dialog {
+
+   protected ModSTFX *mod;
+   protected boolean  b_voiceplugin;  // true=dialog was shown from SamplePluginForm. false=ModSTFX/ModGrid
+
+   protected XMLForm *xfm;
+
+   protected StringArray patch_names;
+
+   protected PatchBrowserTMSTFX *tm_patches;
+   protected TableView          *tv_patches;
+
+   protected Button *bt_revert;
+   protected Button *bt_load;
+   protected Button *bt_save;
+
+   protected FloatArray revert_patch_data;
+
+
+   // <ui_init.png>
+   public method initPatchBrowserDialogSTFX() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("PatchBrowserDialogSTFX.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initPatchBrowserDialogSTFX() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_patches <= new PatchBrowserTMSTFX;
+      tm_patches.initTableModel();
+      tm_patches.patch_names <= patch_names;
+      tv_patches.setTableModel(tm_patches);
+      tv_patches.tableModelChanged();
+
+      initWindow(xfm,
+                 "--placeholder--",
+                 140, 140,
+                 400*UI.font_scaling, 310*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showPatchBrowserDialogSTFX(ModSTFX _modSTFX, boolean _bVoicePlugin) {
+
+      mod <= _modSTFX;
+      b_voiceplugin = _bVoicePlugin;
+
+      // Save current patch
+      saveRevertPatch();
+
+      scanPatchDirectory();
+      tv_patches.tableModelChanged();
+
+      tryMoveCursorToLastIOPatch();
+
+      // (todo) save "revert" program/bank chunk
+
+      setWindowTitle("STFX Patch Browser: "+mod.getName());
+      recursiveBuildTabCycleLists();
+
+      showNearMouse(25*UI.font_scaling, -48*UI.font_scaling);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(tv_patches);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      updateSamplePluginForm();
+   }
+
+   // <method.png>
+   protected method updateSamplePluginForm() {
+      if(b_voiceplugin)
+      {
+         // called from SamplePluginForm, update it
+         PageSample pgSample <= root_form.pg_sample;
+         pgSample.handlePluginEditorWindowClosed();
+      }
+   }
+
+   // <method.png>
+   protected =replay= method saveRevertPatch() {
+      mod.queryPatchData();
+      revert_patch_data = mod.patch_data;
+   }
+
+   // <method.png>
+   protected =replay= method loadRevertPatch() {
+
+      if(revert_patch_data.numElements)
+      {
+         mod.patch_data = revert_patch_data;
+         mod.restorePatchData();
+      }
+
+      // // if(root_form.pg_track.track.isMirrorMode())
+      // // {
+      // //    root_form.pg_track.modgrid.syncOtherLaneModsFromMod(mod, true/*bSyncModMatrix*/);
+      // // }
+   }
+
+   // <method.png>
+   protected method tryMoveCursorToLastIOPatch() {
+      int lastIOIdx = patch_names.indexOfObject(mod.last_io_patch_name, 0);
+      tv_patches.moveCursorToRowNoAction(lastIOIdx);
+   }
+
+   // <ui_update.png>
+   protected method scanPatchDirectory() {
+      local String dirName <= mod.getSTFXPatchDir();
+      Global.Debug("PatchBrowserDialogSTFX::scanPatchDirectory: dirName=\""+dirName+"\"");
+      patch_names.empty();
+
+      local StringArray filenames <= Utils.ReadDirectory(dirName);
+
+      if(null != filenames)
+      {
+         String *filenameEn;
+
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               StringArray attr <= filenameEn.splitSpace(true);
+               String fileName <= attr.get(1);
+
+               if(fileName.endsWith(Global.STFX_PRESET_FILE_SUFFIX/*.stfx*/))
+               {
+                  patch_names.add(fileName);
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      patch_names.sortByValue(ia, false/*bCS*/);
+      patch_names.rearrange(ia);
+
+      Global.Debug("PatchBrowserDialogSTFX::scanPatchDirectory: found "+patch_names.numElements+" patch file(s)");
+   }
+
+   // <ui_handle.png>
+   protected method handleRevertPatch() {
+      if(revert_patch_data.numElements)
+      {
+         loadRevertPatch();
+
+         updateSamplePluginForm();
+      }
+      else
+      {
+         Global.Warning("Unable to revert");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadPatch(String _filename) {
+      Global.Debug("PatchBrowserDialogSTFX::handleLoadPatch: filename=\""+_filename+"\"");
+      if(null != _filename)
+      {
+         local String dirName <= mod.getSTFXPatchDir();
+         if(mod.loadSTFXPatchFromFile(dirName+"/"+_filename))
+         {
+            // // if(root_form.pg_track.track.isMirrorMode())
+            // // {
+            // //    root_form.pg_track.modgrid.syncOtherLaneModsFromMod(mod, true/*bSyncModMatrix*/);
+            // // }
+            updateSamplePluginForm();
+
+            Global.Print("Load patch \""+_filename+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to load patch \""+_filename+"\"");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method showLoadDialog() {
+      root_form.pg_track.modgrid.handleSTFXPatchLoad(mod);
+      updateSamplePluginForm();
+      tryMoveCursorToLastIOPatch();
+   }
+
+   // <ui_handle.png>
+   protected method showSaveDialog() {
+      if(root_form.pg_track.modgrid.handleSTFXPatchSave(mod))
+      {
+         // Rescan patches
+         scanPatchDirectory();
+         tv_patches.tableModelChanged();
+         tryMoveCursorToLastIOPatch();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(tv_patches):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               hide();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleLoadPatch(patch_names.get(tm_patches.getCursorIndex()));
+            }
+            return true;
+
+         case @(bt_revert):
+            handleRevertPatch();
+            return true;
+
+         case @(bt_load):
+            showLoadDialog();
+            return true;
+
+         case @(bt_save):
+            showSaveDialog();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,1094 @@
+// ----
+// ---- file   : SamplePluginArrayDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 23Dec2023
+// ---- changed: 07Jan2024, 08Feb2024, 14Feb2024, 10Aug2024, 14Dec2024, 17Dec2024
+// ----
+// ----
+// ----
+
+module MSamplePluginArrayDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePluginArrayDialog extends Dialog {
+
+   protected XMLForm *xfm;
+
+   protected ComboBox   *cm_var;
+   protected CheckBox   *cb_force;
+   protected Button     *bt_copy;
+   protected Button     *bt_paste;
+   protected Button     *bt_revert;
+   protected FloatParam *fp_zoom;
+   protected CheckBox   *cb_autozoom;
+
+   protected SamplePluginArrayBarEditor *editor;
+
+   // Utilities 1
+   protected Button *bt_clear_min;
+   protected Button *bt_clear_max;
+   protected Button *bt_clear_ctr;
+
+   protected Button *bt_rand_1;
+   protected Button *bt_rand_5;
+   protected Button *bt_rand_10;
+
+   protected Button *bt_smooth_1;
+   protected Button *bt_smooth_5;
+   protected Button *bt_smooth_10;
+
+   protected Button *bt_shift_down1;
+   protected Button *bt_shift_up1;
+   protected Button *bt_shift_down5;
+   protected Button *bt_shift_up5;
+
+   protected Button *bt_scale_down1;
+   protected Button *bt_scale_up1;
+   protected Button *bt_scale_down5;
+   protected Button *bt_scale_up5;
+
+   // Utilities 2
+   protected Button *bt_rot_left;
+   protected Button *bt_rot_right;
+
+   protected Button *bt_flip_x;
+   protected Button *bt_flip_y;
+
+   protected Button *bt_normalize;
+
+   protected Sample         *sample_or_null;
+   protected StPluginInfo   *info;
+   protected StPluginShared *shared;
+   protected int             param_idx;
+   protected FloatArray     *fa_data;  // valid while dialog is visible
+
+   // Last result of queryElementValueRange()
+   float element_storage_min;
+   float element_storage_max;
+   float element_display_min;
+   float element_display_max;
+   int   element_display_precision;
+
+   static FloatArray data_revert;
+   static FloatArray data_clipboard;
+
+
+   // <ui_init.png>
+   public method initSamplePluginArrayDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SamplePluginArrayDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSamplePluginArrayDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      editor.initSamplePluginArrayBarEditor(this);
+
+      initWindow(xfm,
+                 "Array Param Editor",
+                 163,   0,
+                 400 * UI.font_scaling, 300 * UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      if(_ev.isRightButton())
+      {
+         // showToolsMenu();
+         return true;
+      }
+      return Dialog::onMouseClick(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(cm_var);
+      layers.add(cb_force);
+      layers.add(editor);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public /*=replay=*/ method showSamplePluginArrayDialog(Sample _sampleOrNull, StPluginShared _shared, int _paramIdx) {
+      sample_or_null <= _sampleOrNull;
+      shared         <= _shared;
+      info           <= _shared.info;
+      param_idx       = _paramIdx;
+
+      int numVar = info.getArrayParamNumVariations(param_idx);
+      
+      local StringArray opt;
+      int varNr = 1;
+      loop(numVar)
+         opt.add(String(varNr++));
+      cm_var.setOptions(opt);
+
+      int varIdx = int(numVar * shared.getParamValue(param_idx) + 0.5);
+      if(varIdx >= numVar)
+         varIdx = 0;
+
+      Global.Debug("SamplePluginArrayDialog::showSamplePluginArrayDialog: var="+(varIdx+1)+"/"+numVar);
+      cm_var.setSelectedOption(varIdx);
+      editSelectedArray();
+
+      saveRevertData();
+
+      show();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      // // updateOverlays();
+      // // // resizeAtLeastToMinimum();
+
+      relayout();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+
+      restoreGeometryIfValid(UI.IsHiDPI()
+                             ? STConfig.pgsample_voiceplugin_array_geo_hidpi
+                             : STConfig.pgsample_voiceplugin_array_geo_lodpi
+                             );
+      relayout();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(editor);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.pgsample_voiceplugin_array_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.pgsample_voiceplugin_array_geo_lodpi);
+
+      // // removeOverlays();
+
+      shared.setArrayParamEditVariationIdx(param_idx, -1);
+
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected method handleZoomChanged() {
+      Global.Print("Zoom is "+fp_zoom.getDisplayedText());
+      redraw();
+   }
+
+   // <method.png>
+   protected method fitZoomToArray() {
+      queryElementValueRange(0/*elementIdx*/);
+
+      float fMin = fa_data.min;
+      float fMax = fa_data.max;
+      fMin = mapStorageToDisplay(fMin);
+      fMax = mapStorageToDisplay(fMax);
+
+      float fSclMin = (element_display_min >= 0.0f) ? 0.0f : (fMin / element_display_min);
+      float fSclMax = fMax / element_display_max;
+
+      // Global.Debug2("SamplePluginArrayDialog::fitZoomToArray: fMin="+fMin+" fMax="+fMax+" fSclMin="+fSclMin+" fSclMax="+fSclMax);
+
+      float fScl = mathMaxf(fSclMin, fSclMax);
+      if(fScl < 0.0001)
+         fScl = 1.0;  // array is basically empty
+
+      float fHeadroom = 0.75;
+      if(fScl >= 0.75*fHeadroom)
+         fScl = 1.0f;
+      else if(fScl >= 0.5*fHeadroom)
+         fScl = 0.75f;
+      else if(fScl >= 0.25*fHeadroom)
+         fScl = 0.5f;
+      else if(fScl >= 0.1*fHeadroom)
+         fScl = 0.25f;
+      else if(fScl >= 0.05*fHeadroom)
+         fScl = 0.1f;
+      else if(fScl >= 0.02*fHeadroom)
+         fScl = 0.05f;
+      else if(fScl >= 0.01*fHeadroom)
+         fScl = 0.02f;
+      else
+         fScl = 0.01f;
+
+      fp_zoom.setValue(fScl);
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleAutoZoomChanged() {
+      Global.Print("Auto-Zoom is "+Utils.GetEnableString(cb_autozoom.isSelected()));
+      if(cb_autozoom.isSelected())
+      {
+         fitZoomToArray();
+         redraw();
+      }
+   }
+
+   // <method.png>
+   protected method fitZoomToArrayWhenSelected() {
+      if(cb_autozoom.isSelected())
+         fitZoomToArray();
+   }
+
+   // <method.png>
+   protected method saveRevertData() {
+      data_revert = fa_data;
+   }
+
+   // <method.png>
+   protected method markAsModified() {
+      if(null != sample_or_null)
+         sample_or_null.markParamsAsModified();
+      else
+         current_project.markAsModified();
+   }
+
+   // <method.png>
+   protected /*=replay=*/ method swapWithRevertData() {
+      if(data_revert.numElements == fa_data.numElements)
+      {
+         int num = fa_data.numElements;
+         int i = 0;
+         loop(num)
+         {
+            float t = fa_data.get(i);
+            fa_data[i] = data_revert[i];
+            data_revert[i] = t;
+            i++;
+         }
+
+         Global.Print("Swap with revert buffer");
+         fitZoomToArrayWhenSelected();
+         markAsModified();
+         redraw();
+      }
+   }
+
+   // <method.png>
+   protected method copyToClipboard() {
+      data_clipboard = fa_data;
+
+      Global.Print("Copy array to clipboard");
+   }
+
+   // <method.png>
+   protected method pasteFromClipboard() {
+      int num = mathMini(data_clipboard.numElements, fa_data.numElements);
+      int i = 0;
+      loop(num)
+      {
+         fa_data[i] = data_clipboard[i];
+         i++;
+      }
+      Global.Print("Copy array to clipboard ("+num+" elements)");
+      fitZoomToArrayWhenSelected();
+      markAsModified();
+      redraw();
+   }
+
+   // <ui_update.png>
+   protected =replay= updateForcedEditVariation() {
+      int varIdx = cb_force.isSelected() ? cm_var.getSelectedOption() : -1;
+      shared.setArrayParamEditVariationIdx(param_idx, varIdx);
+   }
+
+   // <ui_update.png>
+   protected /*=replay=*/ method editSelectedArray() {
+      int varIdx = cm_var.getSelectedOption();
+      fa_data <= shared.getArrayParamVariationPtr(param_idx, varIdx);
+      if(null != fa_data)  // should not be null
+      {
+         fp_zoom.setValue(1.0);
+         updateForcedEditVariation();
+         // Global.Debug2("SamplePluginArrayDialog::editSelectedArray: call editor.showArray(fa_data="+#(fa_data)+")");
+         editor.showArray(sample_or_null, shared, param_idx, fa_data);
+         fitZoomToArrayWhenSelected();
+      }
+      else
+         trace "[---] SamplePluginArrayDialog::editSelectedArray: fa_data is null !!";
+   }
+
+   // <ui_handle.png>
+   protected /*=replay=*/ method handleVariationChanged() {
+      int varIdx = cm_var.getSelectedOption();
+      editSelectedArray();
+      redraw();
+      Global.Print("Variation is "+(varIdx+1));
+   }
+
+   // <method.png>
+   public method queryElementValueRange(int _elementIdx) : float {
+      Float retStorageMin;
+      Float retStorageMax;
+      Float retDisplayMin;
+      Float retDisplayMax;
+      Float retDisplayPrecision;
+      if(info.getArrayParamElementValueRange(param_idx, _elementIdx,
+                                             retStorageMin,
+                                             retStorageMax,
+                                             retDisplayMin,
+                                             retDisplayMax,
+                                             retDisplayPrecision
+                                             ))
+      {
+         element_storage_min = retStorageMin;
+         element_storage_max = retStorageMax;
+         element_display_min = retDisplayMin;
+         element_display_max = retDisplayMax;
+         element_display_precision = retDisplayPrecision;
+      }
+      else
+      {
+         // Not implement by plugin => Load defaults
+         element_storage_min = 0;
+         element_storage_max = 1;
+         element_display_min = 0;
+         element_display_max = 1;
+         element_display_precision = 5;
+      }
+   }
+
+   // <method_get.png>
+   public method getStorageMin(int _elementIdx) : float {
+      queryElementValueRange(_elementIdx);
+      return element_storage_min;
+   }
+
+   // <method_get.png>
+   public method getStorageMax(int _elementIdx) : float {
+      queryElementValueRange(_elementIdx);
+      return element_storage_max;
+   }
+
+   // <method_get.png>
+   public method getStorageCtr(int _elementIdx) : float {
+      queryElementValueRange(_elementIdx);
+      return (element_storage_min + element_storage_max) / 2.0f;
+   }
+
+   // <ui_handle.png>
+   protected method handleForceChanged() {
+      updateForcedEditVariation();
+      Global.Print("Force-edit-variation is "+Utils.GetEnableString(cb_force.isSelected()));
+   }
+
+   // <method.png>
+   public method mapStorageToDisplay(float _f) : float {
+
+      // Clamp to storage range ("paranoia")
+      float f = mathClampf(_f, element_storage_min, element_storage_max);
+      
+      // Normalize
+      f = (f - element_storage_min) / (element_storage_max - element_storage_min);
+
+      // Remap to display range
+      f = element_display_min + (element_display_max - element_display_min) * f;
+
+      return f;
+   }
+
+   // // // <method.png>
+   // // public static MapDisplayToStorage(float _f, float _storageMin, float _storageMax, float _dpyMin, float _dpyMax) : float {
+
+   // //    // Clamp to display range ("paranoia")
+   // //    float f = mathClampf(_f, _dpyMin, _dpyMax);
+      
+   // //    // Normalize
+   // //    f = (f - element_display_min) / (_dpyMax - _dpyMin);
+
+   // //    // Remap to storage range
+   // //    f = element_storage_min + (_storageMax - _storageMin) * f;
+
+   // //    return f;
+   // // }
+
+   // <method.png>
+   public method mapDisplayToStorage(float _f) : float {
+
+      // Clamp to display range ("paranoia")
+      float f = mathClampf(_f, element_display_min, element_display_max);
+      
+      // Normalize
+      f = (f - element_display_min) / (element_display_max - element_display_min);
+
+      // Remap to storage range
+      f = element_storage_min + (element_storage_max - element_storage_min) * f;
+
+      return f;
+   }
+
+   // <method.png>
+   public method mapStorageToPixel(float _f, float _yMin, float _yMax) : float {
+
+      // Map storage to display range and zoom around 0
+      float f = mapStorageToDisplay(_f);
+
+      float zoom = 1.0 / fp_zoom.getFloatValue();
+      if(element_display_min <= 0.0f)
+      {
+         f *= zoom;
+      }
+      else
+      {
+         // e.g. vsync (1..16)
+         f -= element_display_min;
+         f *= zoom;
+         f += element_display_min;
+      }
+
+      // Normalize
+      f = (f - element_display_min) / (element_display_max - element_display_min);
+
+      // Map to pixel range
+      f = _yMin + (_yMax - _yMin) * f;
+
+      // Clamp
+      f = mathClampf(f, _yMin, _yMax);
+
+      return f;
+   }
+
+   // <method.png>
+   public method mapPixelToStorage(float _f, float _yMin, float _yMax) : float {
+
+      // Clamp to pixel range
+      float f = mathClampf(_f, _yMin, _yMax);
+      
+      // Normalize
+      f = (f - _yMin) / (_yMax - _yMin);
+
+      // Map to display range and "un-zoom"
+      float zoom = fp_zoom.getFloatValue();
+      f = element_display_min + (element_display_max - element_display_min) * f;
+      if(element_display_min <= 0.0f)
+      {
+         f *= zoom;
+      }
+      else
+      {
+         // e.g. vsync (1..16)
+         f -= element_display_min;
+         f *= zoom;
+         f += element_display_min;
+      }
+
+      // Map to storage range
+      f = mapDisplayToStorage(f);
+
+      return f;
+   }
+
+   // <method.png>
+   public method mapDisplayToPixel(float _f, float _yMin, float _yMax) : float {
+      float fStorage = mapDisplayToStorage(_f);
+      // trace "xxx mapDisplayToPixel: DisplayToStorage("+_f+") = "+fStorage;
+      float fPixel = mapStorageToPixel(fStorage, _yMin, _yMax);
+      // trace "xxx mapDisplayToPixel: StorageToPixel("+fStorage+") = "+fPixel;
+      return fPixel;
+   }
+
+   // <ui_handle.png>
+   protected method handleClear(float _f) {
+      fa_data.fill(_f);
+      Global.Print("Clear (value="+_f+")");
+      markAsModified();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleRand(float _amt) {
+      queryElementValueRange(0/*elementIdx*/);
+      float range = (element_storage_max - element_storage_min) * _amt;
+      int num = fa_data.numElements;
+      int i = 0;
+      loop(num)
+      {
+         fa_data[i] = fa_data[i] + rand(range) - range*0.5;
+         i++;
+      }
+
+      local Float fo = _amt * 100.0;
+      Global.Print("Randomize (amt="+fo.printf("%3.2f")+"% => range="+range+")");
+      fitZoomToArrayWhenSelected();
+      markAsModified();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleSmooth1(float _amt) {
+      float amt = 1.0 - _amt;
+
+      int num = fa_data.numElements;
+      int i = 0;
+      float l = fa_data.last;
+      loop(num)
+      {
+         float f = l + (fa_data[i] - l) * amt;
+         fa_data[i] = f;
+         l = f;
+         i++;
+      }
+
+      local Float fo = _amt * 100.0;
+      Global.Print("Smoothen (amt="+fo.printf("%3.2f")+"%)");
+      fitZoomToArrayWhenSelected();
+      markAsModified();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleSmooth(float _amt) {
+      float amt = _amt;
+      int num = fa_data.numElements;
+      int i = 0;
+      local FloatArray fa; fa.alloc(num); fa.useAll();
+      loop(num)
+      {
+         float f1;
+         if(i > 0)
+            f1 = fa_data[i - 1];
+         else
+            f1 = fa_data.last;
+         float f2;
+         if(i < (num - 1))
+            f2 = fa_data[i + 1];
+         else
+            f2 = fa_data.first;
+         float f = fa_data[i];
+         fa[i] = f + ((f1 + f + f2) * 0.33333 - f) * amt;
+         i++;
+      }
+      fa_data = fa;
+
+      local Float fo = _amt * 100.0;
+      Global.Print("Smoothen (amt="+fo.printf("%3.2f")+"%)");
+      fitZoomToArrayWhenSelected();
+      markAsModified();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleShift(float _amt) {
+      queryElementValueRange(0/*elementIdx*/);
+      float add = (element_storage_max - element_storage_min) * _amt;
+
+      int num = fa_data.numElements;
+      int i = 0;
+      loop(num)
+      {
+         float f = fa_data[i] + add;
+         f = mathClampf(f, element_storage_min, element_storage_max);
+         fa_data[i] = f;
+         i++;
+      }
+
+      local Float fo = _amt * 100.0;
+      Global.Print("Shift (amt="+fo.printf("%3.2f")+"% => add="+add+")");
+      fitZoomToArrayWhenSelected();
+      markAsModified();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleScale(float _amt) {
+      float scl = (_amt < 0.0f) ? (1.0f + _amt) : (1.0f + _amt);
+
+      queryElementValueRange(0/*elementIdx*/);
+
+      int num = fa_data.numElements;
+      int i = 0;
+      loop(num)
+      {
+         float f = mapStorageToDisplay(fa_data[i]) * scl;
+         f = mapDisplayToStorage(f);
+         fa_data[i] = f;
+         i++;
+      }
+
+      Global.Print("Scale (amt="+int(_amt*100)+" => scl="+scl+")");
+      fitZoomToArrayWhenSelected();
+      markAsModified();
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleRotateLeft() {
+      float fFirst = fa_data.first;
+      int i = 0;
+      loop(fa_data.numElements - 1)
+      {
+         fa_data[i] = fa_data[i + 1];
+         i++;
+      }
+      fa_data[i] = fFirst;
+
+      Global.Print("Rotate left");
+      markAsModified();
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleRotateRight() {
+      float fLast = fa_data.last;
+      int i = fa_data.numElements - 1;
+      loop(fa_data.numElements - 1)
+      {
+         fa_data[i] = fa_data[i - 1];
+         i--;
+      }
+      fa_data[i] = fLast;
+
+      Global.Print("Rotate right");
+      markAsModified();
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleFlipX() {
+      int i = 0;
+      int j = fa_data.numElements - 1;
+      loop(fa_data.numElements - 1)
+      {
+         if(i < j)
+         {
+            float f = fa_data[i];
+            fa_data[i++] = fa_data[j];
+            fa_data[j--] = f;
+         }
+         else
+            break;
+      }
+
+      Global.Print("Flip X");
+      markAsModified();
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleFlipY() {
+      int i = 0;
+      loop(fa_data.numElements)
+      {
+         queryElementValueRange(i);
+         // 5..10
+         //   9
+         float f = fa_data[i];
+         f -= element_storage_min;
+         f  = element_storage_max - f;
+         fa_data[i++] = f;
+      }
+
+      Global.Print("Flip Y");
+      markAsModified();
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleNormalize() {
+      queryElementValueRange(0/*elementIdx*/);
+      int num = fa_data.numElements;
+      int i = 0;
+      float fMax = -999999.0f;
+      float f;
+      loop(num)
+      {
+         f = abs(mapStorageToDisplay(fa_data[i++]));
+         if(f > fMax)
+            fMax = f;
+      }
+
+      float fScl = mapStorageToDisplay(1.0f) / fMax;
+      i = 0;
+      loop(num)
+      {
+         f = mapStorageToDisplay(fa_data[i]);
+         f *= fScl;
+         fa_data[i++] = mapDisplayToStorage(f);
+      }
+
+      Global.Print("Normalize (max="+fMax+" => scl="+fScl+")");
+      fitZoomToArrayWhenSelected();
+      redraw();
+   }
+
+   // // <method_parse.png>
+   // protected static ParseXYValuesFromASCII(String _buf) : FloatArray {
+   //    // either y per line (autox = 0..1)
+   //    // or "x y" per line
+   //    local FloatArray ret;
+   //    local StringArray a <= _buf.splitChar('\n');
+   //    boolean bAutoX = true;
+   //    if(null != a)
+   //    {
+   //       String *s;
+   //       foreach s in a
+   //       {
+   //          s.trim();
+   //          if!((s <= "#") || (s <= ";") || (s <= "//"))
+   //          {
+   //             local StringArray av <= s.splitSpace(true);
+   //             if(av.numElements >= 2)
+   //             {
+   //                ret.add(float(av.get(0)));  // x
+   //                ret.add(float(av.get(1)));  // y
+   //                bAutoX = false;
+   //             }
+   //             else if(bAutoX && (av.numElements >= 1))
+   //             {
+   //                ret.add(0);  // place holder x
+   //                ret.add(float(av.get(0)));  // y
+   //             }
+   //          }
+   //          // else: skip comment line
+   //       }
+   //       if(bAutoX)
+   //       {
+   //          // Create "x" values (0..1)
+   //          int numKeyFrames = ret.numElements / 2;
+   //          if(numKeyFrames > 1)
+   //          {
+   //             float t = 0;
+   //             float tStep = 1.0 / (numKeyFrames-1);
+   //             int idx = 0;
+   //             loop(numKeyFrames)
+   //             {
+   //                ret[idx] = t;
+   //                t += tStep;
+   //                idx += 2;
+   //             }
+   //          }
+   //       }
+   //       else if(ret.numElements >= 2)
+   //       {
+   //          // Fix first/last point x to 0;1
+   //          ret[0] = 0;
+   //          ret[ret.numElements-2] = 1;
+   //       }
+   //    }
+   //    return deref ret;
+   // }
+
+   // // <ui_handle.png>
+   // protected method handleImportFromClipboard(int _curveIdx) {
+   //    // x/y pairs per line
+   //    PageAudio pgAudio <= root_form.pg_audio;
+   //    local String sClipboard <= UI.GetClipboard();
+   //    if((null != sClipboard) && !sClipboard.isBlank())
+   //    {
+   //       Global.Debug("CycleCurveDialog::handleImportClipboard: sClipboard.numChars="+sClipboard.numChars);
+   //       local FloatArray values <= ParseXYValuesFromASCII(sClipboard);
+   //       if(values.numElements >= 4)
+   //       {
+   //          int numKeyFrames = values.numElements / 2;
+   //          if(numKeyFrames > 1)
+   //          {
+   //             BezierEdit beVal <= f_curves.get(_curveIdx).be_env;
+   //             beVal.clearCtlPoints();
+
+   //             float scl = 1.0;//env.getFloatParamById("scl");
+   //             float off = 0.0;//env.getFloatParamById("off");
+
+   //             float tc = values.get(0);
+   //             float fc = values.get(1);
+   //             fc = (fc - off) / scl;
+
+   //             float fn;
+   //             float tn;
+
+   //             int idx = 2;
+   //             loop(numKeyFrames - 1)
+   //             {
+   //                tn = values.get(idx+0);
+   //                fn = values.get(idx+1);
+   //                fn = (fn - off) / scl;
+
+   //                float ctlX = (tc+tn)*0.5;
+   //                float ctlY = (fc+fn)*0.5;
+
+   //                // trace "xxx import: tc="+tc+" fc="+fc+"   tn="+tn+" fn="+fn+"   ctl=("+ctlX+";"+ctlY+")";
+
+   //                beVal.addCtlPoint(tc, fc,
+   //                                  ctlX, ctlY,
+   //                                  ctlX, ctlY
+   //                                  );
+
+   //                // Next key frame
+   //                tc = tn;
+   //                fc = fn;
+   //                idx += 2;
+   //             }
+
+   //             // Last key frame
+   //             beVal.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+   //             beVal.recalc(false/*bAction*/);
+   //             beVal.resetZoom();
+   //             beVal.redraw();
+
+   //             // if(GConfig.b_curve1_autosmooth)
+   //             // {
+   //             //    beVal.makeSymmetrical();
+   //             //    beVal.alignLastToFirst();
+   //             // }
+
+   //             Global.Success("Import "+numKeyFrames+" key frame"+Utils.GetPluralString(numKeyFrames));
+
+   //             parent_dlg.handleCurveChanged(_curveIdx);
+   //          }
+   //          else
+   //             Global.Warning("Import: no keyframes (ASCII x/y pairs from clipboard)");
+   //       }
+   //       else
+   //          Global.Warning("Import: not enough values (<4)");
+   //    }
+   //    else
+   //       Global.Warning("Import: clipboard is empty");
+   // }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx SamplePluginArrayDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case '1':
+            cm_var.selectPreviousOptionAction();
+            return true;
+
+         case '2':
+            cm_var.selectNextOptionAction();
+            return true;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               copyToClipboard();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               pasteFromClipboard();
+               return true;
+            }
+            break;
+
+         case 't':
+            if(_k.modCtrl())
+            {
+               swapWithRevertData();
+               return true;
+            }
+            break;
+
+         case 'y':
+         case 'z':
+            fp_zoom.loadResetValue();
+            return true;
+
+         case 'f':
+            if(_k.modShift())
+               cb_autozoom.toggleSelectionAction();
+            else
+               fitZoomToArray();
+            return true;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      // trace "xxx SamplePluginArrayDialog::consumeAction: acName=\""+acName+"\"";
+      float scl = (UI.KeyModShift() || (Button.ACTION_RIGHT_CLICK == acName)) ? 0.01f : 1.0f;
+
+      switch(@(ap))
+      {
+         case @(cm_var):
+            handleVariationChanged();
+            return true;
+
+         case @(cb_force):
+            handleForceChanged();
+            return true;
+
+         case @(bt_copy):
+            copyToClipboard();
+            return true;
+
+         case @(bt_paste):
+            pasteFromClipboard();
+            return true;
+
+         case @(bt_revert):
+            swapWithRevertData();
+            return true;
+
+         case @(fp_zoom):
+            handleZoomChanged();
+            return true;
+
+         case @(cb_autozoom):
+            handleAutoZoomChanged();
+            return true;
+
+            // Utilities
+         case @(bt_clear_min):
+            handleClear(getStorageMin(0/*elementIdx*/));
+            return true;
+
+         case @(bt_clear_max):
+            handleClear(getStorageMax(0/*elementIdx*/));
+            return true;
+
+         case @(bt_clear_ctr):
+            handleClear(getStorageCtr(0/*elementIdx*/));
+            return true;
+
+         case @(bt_rand_1):
+            handleRand(0.01 * scl);
+            return true;
+
+         case @(bt_rand_5):
+            handleRand(0.05 * scl);
+            return true;
+
+         case @(bt_rand_10):
+            handleRand(0.1 * scl);
+            return true;
+
+         case @(bt_smooth_1):
+            handleSmooth(0.01 * scl);
+            return true;
+
+         case @(bt_smooth_5):
+            handleSmooth(0.05 * scl);
+            return true;
+
+         case @(bt_smooth_10):
+            handleSmooth(0.1 * scl);
+            return true;
+
+         case @(bt_shift_down1):
+            handleShift(-0.01 * scl);
+            return true;
+
+         case @(bt_shift_up1):
+            handleShift(0.01 * scl);
+            return true;
+
+         case @(bt_shift_down5):
+            handleShift(-0.05 * scl);
+            return true;
+
+         case @(bt_shift_up5):
+            handleShift(0.05 * scl);
+            return true;
+
+         case @(bt_scale_down1):
+            handleScale(-0.01 * scl);
+            return true;
+
+         case @(bt_scale_up1):
+            handleScale(0.01 * scl);
+            return true;
+
+         case @(bt_scale_down5):
+            handleScale(-0.05 * scl);
+            return true;
+
+         case @(bt_scale_up5):
+            handleScale(0.05 * scl);
+            return true;
+
+            // Utilities 2
+         case @(bt_rot_left):
+            handleRotateLeft();
+            return true;
+
+         case @(bt_rot_right):
+            handleRotateRight();
+            return true;
+
+         case @(bt_flip_x):
+            handleFlipX();
+            return true;
+
+         case @(bt_flip_y):
+            handleFlipY();
+            return true;
+
+         case @(bt_normalize):
+            handleNormalize();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

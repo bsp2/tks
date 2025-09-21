@@ -1,0 +1,3577 @@
+// ----
+// ---- file   : Track.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 24Jan2018, 25Jan2018, 26Jan2018, 31Jan2018, 10Feb2018, 12Feb2018, 13Feb2018
+// ----          16Feb2018, 17Feb2018, 21Feb2018, 23Feb2018, 24Feb2018, 25Feb2018, 26Feb2018
+// ----          27Feb2018, 28Feb2018, 02Mar2018, 03Mar2018, 05Mar2018, 06Mar2018, 07Mar2018
+// ----          09Apr2018, 28Apr2018, 11May2018, 21May2018, 30May2018, 22Jun2018, 07Dec2018
+// ----          09Dec2018, 22Mar2019, 17May2019, 15Jun2019, 12Jul2019, 30Jul2019, 26Aug2019
+// ----          14Oct2019, 16Feb2020, 19Feb2020, 02Jun2020, 12Sep2020, 04Feb2021, 28Jul2021
+// ----          04Dec2021, 12Dec2021, 26Dec2021, 10Jan2022, 14Jan2022, 05Feb2022, 06Feb2022
+// ----          13Feb2022, 01Jul2022, 02Jul2022, 08Jul2022, 09Jul2022, 22Jul2022, 10Aug2022
+// ----          20Feb2023, 20Apr2023, 16Jul2023, 29Jul2023, 16Aug2023, 02Oct2023, 03Oct2023
+// ----          04Oct2023, 06Oct2023, 05Nov2023, 09Nov2023, 18Nov2023, 03Jul2024, 05Jul2024
+// ----          12Aug2024, 11Sep2024, 12Sep2024, 13Sep2024, 18Sep2024, 21Sep2024, 22Sep2024
+// ----          23Sep2024, 04Oct2024, 03Jan2025, 07Jan2025, 04Apr2025, 05Apr2025, 03May2025
+// ----          22May2025, 29May2025, 30May2025, 10Jun2025, 13Jun2025, 21Jun2025
+// ----
+// ----
+// ----
+
+module MTrack;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <callback.png>
+function track_writer_thread_entry(local Thread _th) {
+   // Global.Debug3("Track: started writer thread th="+#(_th)+"\n");
+   local Track thiz <= _th.userdata;
+
+   local Mutex out_mutex <= thiz.out_mutex;
+   local Condition cond <= thiz.cond_write;
+   local Condition condWriteDone <= thiz.cond_write_done;
+
+   local Thread thread <= GetCurrentThread();
+   Global.Debug3("Track<"+thiz.name+">: replay threadId="+thread.id);
+
+   // thread.priority = THREAD_PRIORITY_NORMAL;
+   // thread.priority = THREAD_PRIORITY_HIGHEST;
+   thread.priority = THREAD_PRIORITY_TIME_CRITICAL;
+
+   local Condition condStartup <= thiz.cond_startup;
+   condStartup.raise();
+
+   local PaStreamMacOSWorkgroupJoinToken *macOSWorkgroupJoinToken;
+   if(STConfig.b_macos_audio_workgroup)
+   {
+      macOSWorkgroupJoinToken <= Audio.MacOSAudioWorkgroupJoin();
+      trace "[...] Track<"+thiz.name+">: thizMacOSAudioWorkgroupJoinToken="+#(macOSWorkgroupJoinToken);
+   }
+
+   while(thiz.b_running)
+   {
+      out_mutex.lock();
+
+      if(thiz.b_write_pending)
+      {
+         if(!thiz.sharesCPUCore())
+         {
+            if(true != STConfig.b_track_thread_poll)
+            {
+               thiz.b_write_pending = false;
+               out_mutex.unlock();
+            }
+
+            // Process all tracks that have been assigned to thiz.cpu_core
+            try
+            {
+               local Track *ctrack;
+               local int curTrackIdx = 0;
+               foreach ctrack in current_project.tracks
+               {
+                  local int thizActualCPUCore = thiz.getActualCPUCore();
+                  if( @(thiz) == @(ctrack) ||
+                      ( (-1 != thizActualCPUCore) && (ctrack.getActualCPUCore() == thizActualCPUCore) )
+                      )
+                  {
+                     if(ctrack.doProcessAny())  // not muted or process while muted ?
+                     {
+                        // // if(@(thiz) != @(ctrack))
+                        // //    trace "xxx process shared track";
+                        ctrack.process(curTrackIdx, replay.process_size);
+                     }
+                     else
+                     {
+                        ctrack.ui_peakavg_l.reset();
+                        ctrack.ui_peakavg_r.reset();
+                     }
+                  }
+                  curTrackIdx++;
+               }
+
+               // // if(curTrackIdx > 1)
+               // // {
+               // //    trace "xxx processed "+curTrackIdx+" tracks on core idx="+thiz.cpu_core;
+               // // }
+            }
+            catch(Error e)
+            {
+               trace "[---] Track: caught process exception e="+#(e);
+               trace e.stackTrace;
+            }
+
+            if(true == STConfig.b_track_thread_poll)
+            {
+               thiz.b_write_pending = false;
+               out_mutex.unlock();
+            }
+            else
+            {
+               condWriteDone.raise();
+            }
+         }
+         else
+         {
+            // Processed in other thread
+            thiz.b_write_pending = false;
+            out_mutex.unlock();
+            condWriteDone.raise();
+         }
+      }
+      else
+      {
+         out_mutex.unlock();
+      }
+
+      if(maybe == STConfig.b_track_thread_poll)
+      {
+         local Double t; milliSecondsDouble(t);
+         local Double t2;
+         local boolean bWritePending = false;
+         for(;;)
+         {
+            milliSecondsDouble(t2);
+            // // // out_mutex.lock();
+            bWritePending = thiz.b_write_pending;
+            // // // out_mutex.unlock();
+            if(bWritePending || (float(t2 - t) >= STConfig.thread_spinlock_ms) )
+               break;
+         }
+         // // if(!bWritePending)
+         // //    trace "xxx bWritePending="+bWritePending+" tDelta="+float(t2-t)+" tMax="+STConfig.thread_spinlock_ms;
+         if(!bWritePending)
+            cond.wait(0/*millisec*/);
+      }
+      else if(false == STConfig.b_track_thread_poll)
+      {
+         // // // cond.wait(100/*millisec*/);
+         cond.wait(0/*millisec=inf*/);
+      }
+      else
+      {
+         // don't occupy core in case another track is assigned to the same one
+         Thread.SwitchToThread();
+      }
+   } // while thiz.b_running
+
+   if(STConfig.b_macos_audio_workgroup)
+   {
+      if(null != macOSWorkgroupJoinToken)
+      {
+         Audio.MacOSAudioWorkgroupLeave(deref macOSWorkgroupJoinToken);
+         macOSWorkgroupJoinToken <= null;
+      }
+   }
+
+   Global.Debug("Track: exiting writer thread (thread.id="+thread.id+")");
+}
+
+// <callback.png>
+function track_postload_thread_entry(local Thread _th) {
+   local Track thiz <= _th.userdata;
+   Global.Debug2("track_postload_thread: started thread.id="+_th.id+", track_name=\""+thiz.name+"\"");
+   local Condition cond <= thiz.cond_postload;
+
+   thiz.loadStatePost(true/*bThreaded*/);
+
+   cond.raise();
+
+   Global.Debug2("track_postload_thread: exiting thread.id="+_th.id+", track_name=\""+thiz.name+"\"");
+}
+
+
+// <class.png>
+class TrackPatchVariation {
+   String   name;
+   Lane *[] lanes;
+
+   public SamplePadKit   sample_pad_kit;
+   public SampleTimeline sample_timeline;
+
+   // (note) synced with Track fields (project track state v16+, track patch state v7+)
+   int track_mode;
+   int multi_num_channels;   // for LPC/MPE modes
+   int multi_lane_offset;    // first lane mapped to first channel in LPC/MPE mode
+   int multi_master_ch;      // MPE master channel (0=ch1, 15=ch16)
+
+   boolean b_lane_fade;          // 1=multiply lane output volume by lane.fade_vol
+   byte    lane_fade_cc;         // CC# used for switching/fading lanes  (previous named multi_cc) (def=CC#70)
+   boolean b_lane_fade_ctl_rel;  // 1=scale 0..CC:128/RPN:16384 => 0..multi_num_channels.  0=absolute lane nr (1..n, 0=reset)
+   float   lane_fade_slew_up;    // 0=no slew.. 0.9999 = max slew
+   float   lane_fade_slew_down;  //
+
+
+   // <method_init.png>
+   public method init(Track _track, int _idx, String _nameOrNull) {
+      name = (null == _nameOrNull) ? ("variation "+_idx) : _nameOrNull;
+
+      sample_pad_kit.initSamplePadKit(_track);
+      sample_timeline.initSampleTimeline(_track);
+
+      track_mode         = Track.TRACK_MODE_DEFAULT;
+      multi_num_channels = 4;
+      multi_lane_offset  = 0;
+      multi_master_ch    = 0;
+
+      b_lane_fade          = false;
+      lane_fade_cc         = 70;  // CC#070 (Sound Ctl 1: Variation)
+      b_lane_fade_ctl_rel  = false;
+      lane_fade_slew_up    = 0.1f;
+      lane_fade_slew_down  = 0.8f;
+   }
+
+   // <method_init.png>
+   public method initForLoad(Track _track) {
+      sample_pad_kit.initSamplePadKit(_track);
+      sample_timeline.initSampleTimeline(_track);
+
+      track_mode         = Track.TRACK_MODE_DEFAULT;
+      multi_num_channels = 4;
+      multi_lane_offset  = 0;
+      multi_master_ch    = 0;
+
+      b_lane_fade          = false;
+      lane_fade_cc         = 70;  // CC#070 (Sound Ctl 1: Variation)
+      b_lane_fade_ctl_rel  = false;
+      lane_fade_slew_up    = 0.1f;
+      lane_fade_slew_down  = 0.8f;
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      sample_pad_kit.exit();
+      sample_timeline.exit();
+
+      Lane *lane;
+      foreach lane in lanes
+         lane.exit();
+      lanes.free();
+   }
+
+   // <method_get.png>
+   public method isDrumMode() : boolean {
+      return (Track.TRACK_MODE_DRUM == track_mode);
+   }
+
+   // <method_get.png>
+   public method isTimelineMode() : boolean {
+      return (Track.TRACK_MODE_TIMELINE == track_mode);
+   }
+
+   // <method_new.png>
+   public method newLane() : Lane {
+      Lane lane <= new Lane;
+      lane.init();
+      lanes.add(#(deref lane));
+      current_project.markAsModified();
+      return lane;
+   }
+
+   // <replay.png>
+   public method resetAllSampleVoices(Sample _sampleOrNull) {
+      // (note) caller must lock =replay=
+      sample_pad_kit .resetAllSampleVoices(_sampleOrNull);
+      sample_timeline.resetAllSampleVoices(_sampleOrNull);
+
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+            {
+               StSamplePlayer sp <= modSample.sample_player;
+               if(null != _sampleOrNull)
+               {
+                  StSample smp <= _sampleOrNull.sample_bank.firstSample;
+                  while(null != smp)
+                  {
+                     sp.resetVoicesBySample(smp);
+                     smp <= smp.next;
+                  }
+               }
+               else
+               {
+                  sp.resetVoices();
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method findNumSampleRefsBySampleIdx(int _sampleIdx, String _parentTrackName) : int {
+      int numRefs = 0;
+
+      if(isDrumMode())
+      {
+         int kitNumRefs = sample_pad_kit.findNumSampleRefsBySampleIdx(_sampleIdx);
+         // // if(kitNumRefs > 0)
+         // //    trace "xxx tpv::findNumSampleRefsBySampleIdx: sampleIdx="+_sampleIdx+" track \""+_parentTrackName+"\" tpv.name=\""+name+"\" kitNumRefs="+kitNumRefs;
+         numRefs += kitNumRefs;
+      }
+      else if(isTimelineMode())
+      {
+         int timelineNumRefs = sample_timeline.findNumSampleRefsBySampleIdx(_sampleIdx);
+         // // if(timelineNumRefs > 0)
+         // //    trace "xxx tpv::findNumSampleRefsBySampleIdx: sampleIdx="+_sampleIdx+" track \""+_parentTrackName+"\" tpv.name=\""+name+"\" timelineNumRefs="+timelineNumRefs;
+         numRefs += timelineNumRefs;
+      }
+
+      Lane *lane;
+      // // trace "xxx findNumSampleRefsBySampleIdx: tpv="+#(tpv);
+      // // trace "xxx findNumSampleRefsBySampleIdx: tpv.lanes="+#(tpv.lanes);
+      foreach lane in lanes
+      {
+         ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+            {
+               if(modSample.sample_idx == _sampleIdx)
+                  numRefs++;
+            }
+         }
+      }
+      return numRefs;
+   }
+
+   // <method.png>
+   public method handleShiftSampleIds(int _idxStart, int _shift) {
+
+      sample_pad_kit.handleShiftSampleIds(_idxStart, _shift);
+      sample_timeline.handleShiftSampleIds(_idxStart, _shift);
+
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+               modSample.handleShiftSampleIds(_idxStart, _shift);
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleSwapSamples(int _smpIdxA, int _smpIdxB) {
+      // called while =replay= mutex is locked
+
+      sample_pad_kit.handleSwapSamples(_smpIdxA, _smpIdxB);
+      sample_timeline.handleSwapSamples(_smpIdxA, _smpIdxB);
+
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+               modSample.handleSwapSamples(_smpIdxA, _smpIdxB);
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method copyPatchVariationFrom(TrackPatchVariation _o, boolean _bCopyName) {
+
+      boolean bIgnoreAutoVST2Orig = VST2.PushIgnoreAutomation();
+      boolean bIgnoreAutoCLAPOrig = CLAP.PushIgnoreAutomation();
+
+      sample_pad_kit.copyFrom(_o.sample_pad_kit, true/*bCopyEditIdx*/);
+      sample_timeline.copyFrom(_o.sample_timeline, true/*bCopyEditIdx*/);
+
+      Lane *olane;
+      foreach olane in _o.lanes
+      {
+         Lane newLane <= newLane();
+         newLane.copyLaneFrom(olane, true/*bFullInit*/);
+      }
+
+      track_mode         = _o.track_mode;
+      multi_num_channels = _o.multi_num_channels;
+      multi_lane_offset  = _o.multi_lane_offset;
+      multi_master_ch    = _o.multi_master_ch;
+
+      b_lane_fade         = _o.b_lane_fade;
+      lane_fade_cc        = _o.lane_fade_cc;
+      b_lane_fade_ctl_rel = _o.b_lane_fade_ctl_rel;
+      lane_fade_slew_up   = _o.lane_fade_slew_up;
+      lane_fade_slew_down = _o.lane_fade_slew_down;
+
+      if(_bCopyName)
+         name = _o.name;
+
+      CLAP.PopIgnoreAutomation(bIgnoreAutoCLAPOrig);
+      VST2.PopIgnoreAutomation(bIgnoreAutoVST2Orig);
+   }
+
+   // <method.png>
+   public method autoLoadSamples() {
+
+      sample_pad_kit.autoLoadSamples(null/*dirNameOverrideOrNull*/);
+      sample_timeline.autoLoadSamples(null/*dirNameOverrideOrNull*/);
+
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModSample *mod;
+         foreach mod in lane.mods
+         {
+            if(mod instanceof ModSample)
+               mod.handleAutoLoadSample();
+         }
+      }
+   }
+
+   // <method.png>
+   public method autoUnloadSamples() {
+
+      sample_pad_kit.autoUnloadSamples();
+      sample_timeline.autoUnloadSamples();
+
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModSample *mod;
+         foreach mod in lane.mods
+         {
+            if(mod instanceof ModSample)
+               mod.handleAutoUnloadSample();
+         }
+      }
+   }
+
+   // <save.png>
+   public method saveLanes(Stream ofs) {
+      ofs.i16 = lanes.numElements;
+      Lane *lane;
+
+      foreach lane in lanes
+         lane.saveState(ofs);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 7;
+
+      // Name
+      Utils.WriteString(ofs, name);
+
+      // Track mode (v3+)
+      ofs.i8 = track_mode;
+
+      // Multi num channels (v3+)
+      ofs.i8 = multi_num_channels;
+
+      // Multi lane offset (v3+)
+      ofs.i8 = multi_lane_offset;
+
+      // Lane Fade CC (v3+)  (previously named multi_cc until v3)
+      ofs.i8 = lane_fade_cc;
+
+      // Lane Fade CC/RPN Relative Mode (v6+)
+      ofs.i8 = b_lane_fade_ctl_rel;
+
+      // Multi master channel (v3+)
+      ofs.i8 = multi_master_ch;
+
+      // Lane Fade Enable (v4+)
+      ofs.i8 = b_lane_fade;
+
+      // Lane Fade Slew Up (v4+)
+      ofs.f32 = lane_fade_slew_up;
+
+      // Lane Fade Slew Down (v4+)
+      ofs.f32 = lane_fade_slew_down;
+
+      // SamplePadKit
+      sample_pad_kit.saveState(ofs);
+
+      // Timeline (v7+)
+      sample_timeline.saveState(ofs);
+
+      // Lanes
+      saveLanes(ofs);
+   }
+
+   // <load.png>
+   public method loadLanes(Stream ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      int numLanes = ifs.u16;
+      int laneIdx = 0;
+      lanes.free();
+
+      if(numLanes > 32)
+         trace "[~~~] TrackPatchVariation::loadLanes: suspicious numLanes="+numLanes;
+
+      boolean r = true;
+
+      loop(numLanes)
+      {
+         Global.Debug2("TrackPatchVariation::loadLanes: loading lane "+(laneIdx+1)+"/"+numLanes);
+
+         Lane lane <= new Lane;
+         lane.init();
+
+         if(!lane.loadState(ifs, _bRestoreInstanceIDs))
+         {
+            trace "[---] TrackPatchVariation::loadLanes: failed to read lane "+(laneIdx+1)+"/"+numLanes;
+            r = false;
+            break;
+         }
+         else
+         {
+            lanes.add(#(deref lane));
+
+            // Next lane
+            laneIdx++;
+         }
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bRestoreInstanceIDs) : boolean {
+      short ver;
+
+      // Read version
+      ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Name
+         Utils.ReadString(ifs, name);
+
+         if(ver >= 3)
+         {
+            // Track mode (v3+)
+            track_mode = ifs.u8;
+            if(ver <= 4)
+            {
+               if(1/*CC_SWITCH*/ == track_mode ||
+                  2/*CC_FADE*/   == track_mode)
+                  track_mode = Track.TRACK_MODE_DEFAULT;
+               else if(track_mode >= 3)
+                  track_mode -= 2;  // CC_SWITCH/CC_FADE removed in v5
+            }
+
+            // Multi num channels (v3+)
+            multi_num_channels = ifs.u8;
+
+            // Multi lane offset (v3+)
+            multi_lane_offset = ifs.u8;
+
+            // Lane Fade CC (v3+)  (previously named multi_cc)
+            lane_fade_cc = ifs.u8;
+
+            if(ver >= 6)
+            {
+               // Lane Fade CC/RPN Relative Mode (v6+)
+               b_lane_fade_ctl_rel = ifs.b8;
+            }
+
+            // Multi master channel (v3+)
+            multi_master_ch = ifs.u8 & 15;
+         }
+         // else: pre v3: load from track state and mirror to variations
+
+         if(ver >= 4)
+         {
+            // Lane Fade Enable (v4+)
+            b_lane_fade = ifs.b8;
+
+            // Lane Fade Slew Up (v4+)
+            lane_fade_slew_up = ifs.f32;
+
+            // Lane Fade Slew Down (v4+)
+            lane_fade_slew_down = ifs.f32;
+         }
+
+         // SamplePadKit (v2+)
+         if(ver >= 2)
+         {
+            if(!sample_pad_kit.loadState(ifs, false/*bKeepLaneSends*/))
+            {
+               trace "[---] TrackPatchVariation::loadState: failed to load SamplePadKit";
+               return false;
+            }
+         }
+
+         if(ver >= 7)
+         {
+            // Timeline (v7+)
+            if(!sample_timeline.loadState(ifs, false/*bKeepLaneSends*/))
+            {
+               trace "[---] TrackPatchVariation::loadState: failed to load sample timeline";
+               return false;
+            }
+         }
+
+         // Lanes
+         boolean r = loadLanes(ifs, _bRestoreInstanceIDs);
+
+         return r;
+      }
+      else
+      {
+         trace "[---] TrackPatchVariation::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class Track {
+
+   define int MAX_LANES = 16;
+   define int MAX_CPU_CORES = 64;
+
+   define int STATE_PLAY = 0;
+   define int STATE_MUTE = 1;
+   define int STATE_SOLO = 2;
+   int play_state;
+
+   // (note) [21Sep2024] TPV v5: removed TRACK_MODE_CC_SWITCH=1 and TRACK_MODE_CC_FADE=2 (and shifted mode ids)
+   define int TRACK_MODE_DEFAULT        = 0;
+   define int TRACK_MODE_LPC            = 1;  // Lane 1=ch1, Lane 2=ch2, ..
+   define int TRACK_MODE_MIRROR_LPC     = 2;  // Lane 1=ch1, Lane 2=ch2, ... Lane <lane_offset> is master lane.
+   define int TRACK_MODE_MPE            = 3;  // ch1=master channel, Lane 1=ch2, Lane 2=ch3, ..
+   define int TRACK_MODE_MIRROR_MPE     = 4;  // ch1=master channel, Lane 1=ch2, Lane 2=ch3, .. Lane <lane_offset> is master lane.
+   define int TRACK_MODE_VRR            = 5;  // Voice Round Robin
+   define int TRACK_MODE_MIRROR_VRR     = 6;  // Voice Round Robin
+   define int TRACK_MODE_DRUM           = 7;  // Drum Pad Sampler
+   define int TRACK_MODE_TIMELINE       = 8;  // Multi-track timeline
+   int track_mode; // (note) synced with TrackPatchVariation.track_mode (project state v16+, patch state v7+)
+
+   static StringArray track_mode_names_short = [
+      /* 0 */ "Default",
+      /* 1 */ "LPC",
+      /* 2 */ "Mirror LPC",
+      /* 3 */ "MPE",
+      /* 4 */ "Mirror MPE",
+      /* 5 */ "VRR",
+      /* 6 */ "Mirror VRR",
+      /* 7 */ "Drum",
+      /* 8 */ "Timeline",
+                                                ];
+
+   static StringArray track_mode_names_long = [
+      /* 0 */ "Default",
+      /* 1 */ "Lane Per Channel (LPC)",
+      /* 2 */ "Mirror Lane Per Channel (LPC)",
+      /* 3 */ "MIDI Polyphonic Expression (MPE)",
+      /* 4 */ "Mirror MIDI Polyphonic Expression (MPE)",
+      /* 5 */ "Voice Round Robin (VRR)",
+      /* 6 */ "Mirror Voice Round Robin (VRR)",
+      /* 7 */ "Drum Pad Sampler",
+      /* 8 */ "Timeline",
+                                                ];
+
+   // (note) multi_* fields are synced with TrackPatchVariation (project state v16+, patch state v7+)
+   int multi_num_channels;   // for LPC/MPE modes
+   int multi_lane_offset;    // first lane mapped to first channel in LPC/MPE mode
+   int multi_master_ch;      // MPE master channel (0=ch1, 15=ch16)
+
+   // (note) lane fade fields are synced with TrackPatchVariation
+   define int RPN_LANE_FADE_MASK = 85;  // see Synergy internal.msp (lane_fade_mask)
+   define int RPN_LANE_FADE_NR   = 86;  // see Synergy internal.msp (lane_fade_nr)
+   boolean b_lane_fade;          // 1=multiply lane output volume by lane.fade_vol
+   byte    lane_fade_cc;         // CC# used for switching/fading lanes  (previous named multi_cc)
+   boolean b_lane_fade_ctl_rel;
+   float   lane_fade_slew_up;    // 0=no slew.. 0.9999 = max slew
+   float   lane_fade_slew_down;  //
+   short   cur_lane_fade_mask;       // tmp state: bit set: fade lane level towards 1.0 (slew_up), bit cleared: fade towards 0.0 (slew_down)
+   int     cur_lane_fade_framecount; // tmp state: update lane.fade_vol_next every sample_rate/1000 frames (1kHz update rate)
+
+   String patch_name;  // usually longer than track name, e.g. "synthmaster_keys_1_a"
+   String patch_suggested_pathname;
+
+   boolean b_force_mute;  // calculated.
+
+   String name;      // e.g. "keys"
+   int    cpu_core;  // -1=any, 0..63 = specific CPU core
+   byte   dev_idx;   // 0..25 => A..Z
+   byte   midi_ch;   // 0..15, -1=all channels (omni / mpe)
+
+   byte   parent_midi_track_dev_idx_hint;  // Hint, filled after "Create audio track"
+   byte   parent_midi_track_midi_ch_hint;
+
+   define int LAYOUT_ALL                 = 0;
+   define int LAYOUT_ALL_EXCEPT_EDIT     = 1;
+   define int LAYOUT_MIDI_TRACKNAME_CORE = 2;
+   define int LAYOUT_TRACKNAME           = 3;
+   define int LAYOUT_TRACKNAME_SMALL_VOL = 4;
+   define int LAYOUT_TRACKNAME_SMALL     = 5;
+   define int NUM_LAYOUTS                = 6;
+   byte   layout;
+
+   boolean b_ui_browser_visible;
+
+   namespace boolean b_shared_cpu_core;        // true=not the first track on the CPU core
+
+   Output *[] outputs;
+
+   int     input_channel_idx;      // -1=no input, 0..31
+   boolean b_stereo_input;
+   boolean b_input_to_sc;          // 1=route input to sidechain input (3&4)
+   int     num_multi_input_lanes;  // >0: lane <idx> reads input_channel_idx+<idx> (<idx*2+0/1> when b_stereo_input=true)
+
+   TrackPatchVariation *[] patch_variations;  // TrackPatchVariation instances. at least one entry ("main").
+   int current_patch_variation_idx;  // must always point to valid entry
+   Lane *[] *lanes;  // Lane instances. Array references patch_variations entry. never null.
+
+   module boolean   b_running;
+   module Thread    writer_thread;
+   module Condition cond_startup;
+   module Condition cond_write;
+   module Condition cond_write_done;
+   module Mutex     out_mutex;
+   module boolean   b_write_pending;
+
+   module Thread postload_thread;
+   module Condition cond_postload;
+   int postload_thread_millisec;
+   boolean b_postload;
+
+   FloatArray mix_buffer;  // current chunk mix_buffer, interleaved stereo
+
+   public int ui_tint_32;  // see STConfig.default_track_colors. Edited via Track context menu ("Color" submenu)
+
+   FloatArray current_chunk_input_buffer;  // interleaved stereo
+   FloatArray next_chunk_input_buffer;  // interleaved stereo
+   Mutex mtx_next_chunk_input_buffer;
+
+   FloatArray current_chunk_sc_input_buffer;  // interleaved stereo (side chain)
+   FloatArray next_chunk_sc_input_buffer;  // interleaved stereo (side chain)
+   Mutex mtx_next_chunk_sc_input_buffer;
+
+   namespace int cur_track_idx;  // only valid during process() and trackReorder*()
+
+   protected Double profile_process_t_start;
+   protected Double profile_process_t_end;
+   protected Double profile_process_t_delta;
+   protected Double profile_process_load_cur;
+   protected Double profile_process_load_avg;
+
+   namespace PeakAvgTracker ui_peakavg_l;
+   namespace PeakAvgTracker ui_peakavg_r;
+
+   protected int vrr_next_voice_idx;  // for next note on
+   protected int vrr_note_on_idx;     // used for chords (simultaneous note-ons)
+
+   public boolean b_bypass_fx;
+   public boolean b_proc;        // 1=only process during procedural sample rendering
+
+   public SamplePadKit *sample_pad_kit;     // reference to current TrackPatchVariation.sample_pad_kit
+   public SampleTimeline *sample_timeline;  // reference to current TrackPatchVariation.sample_timeline
+
+   static int focus_send_track_idx;  // updated in prepareProcess()
+
+
+   // <method_init.png>
+   public method init() {
+      cond_startup   .create(false/*bManualReset*/);
+      cond_write     .create(false/*bManualReset*/);
+      cond_write_done.create(false/*bManualReset*/);
+      cond_postload  .create(false/*bManualReset*/);
+      b_running = false;
+
+      mix_buffer.alloc(Audio.STREAM_MAX_FRAMES * 2);
+      mix_buffer.useAll();
+
+      current_chunk_input_buffer   .allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0);
+      next_chunk_input_buffer      .allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0);
+      current_chunk_sc_input_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0);
+      next_chunk_sc_input_buffer   .allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0);
+
+      outputs.free();
+      Output output <= new Output;
+      output.init();
+      outputs.add(#(deref output));
+
+      midi_ch  = -1;
+      cpu_core = -1;
+
+      parent_midi_track_dev_idx_hint = -1;
+      parent_midi_track_midi_ch_hint = -1;
+
+      input_channel_idx     = -1;
+      b_stereo_input        = STConfig.b_stereo_input;
+      b_input_to_sc         = false;
+      num_multi_input_lanes = 0;
+
+      ui_tint_32 = 0;
+
+      layout = current_project.track_layout_all_idx;
+
+      b_ui_browser_visible = true;
+
+      play_state = STATE_PLAY;
+      b_force_mute = false;
+
+      cur_lane_fade_mask       = 16383;
+      cur_lane_fade_framecount = 0;
+
+      vrr_next_voice_idx = 0;
+
+      initMainPatchVariation();
+
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_get.png>
+   public method getCurrentPatchVariation() : TrackPatchVariation {
+      return patch_variations.get(current_patch_variation_idx);
+   }
+
+   // <method.png>
+   public =replay= method updateRefsFromCurrentPatchVariation() {
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      lanes           <= tpv.lanes;
+      sample_pad_kit  <= tpv.sample_pad_kit;
+      sample_timeline <= tpv.sample_timeline;
+
+      track_mode         = tpv.track_mode;
+      multi_num_channels = tpv.multi_num_channels;
+      multi_lane_offset  = tpv.multi_lane_offset;
+      multi_master_ch    = tpv.multi_master_ch;
+
+      b_lane_fade         = tpv.b_lane_fade;
+      lane_fade_cc        = tpv.lane_fade_cc;
+      b_lane_fade_ctl_rel = tpv.b_lane_fade_ctl_rel;
+      lane_fade_slew_up   = tpv.lane_fade_slew_up;
+      lane_fade_slew_down = tpv.lane_fade_slew_down;
+   }
+
+   // <method_init.png>
+   protected method initMainPatchVariation() {
+      freePatchVariations();
+
+      TrackPatchVariation tpv <= new TrackPatchVariation;
+      tpv.init(this, 0/*idx*/, "main");
+      patch_variations.add(#(deref tpv));
+
+      // Select main variation
+      current_patch_variation_idx = 0;
+      updateRefsFromCurrentPatchVariation();
+   }
+
+   // <method.png>
+   public method reset() {
+      ui_peakavg_l.reset();
+      ui_peakavg_r.reset();
+   }
+
+   // <method.png>
+   protected method freePatchVariations() {
+      // // trace "xxx Track::freePatchVariations: patch_variations="+#(patch_variations);
+      TrackPatchVariation *tpv;
+      loop(patch_variations.numElements)
+      {
+         tpv <= patch_variations.getDeref(0);
+         patch_variations.delete(0);  // prevent invalid object access by findNumSampleRefsBySampleIdx()
+         tpv.exit();
+         tpv <= null;
+      }
+      // // trace "xxx Track::freePatchVariations: 1 exit patch_variations returned";
+      lanes <= null;
+      sample_pad_kit <= null;
+      sample_timeline <= null;
+      patch_variations.free();
+      // // trace "xxx Track::freePatchVariations: 2 patch_variations.free() returned";
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      stop();
+
+      freePatchVariations();
+
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_exit.png>
+   protected method unloadLanes() {
+      if(null != lanes)
+      {
+         Lane *lane;
+         foreach lane in lanes
+            lane.unload();
+      }
+   }
+
+   // <method_get.png>
+   public method canExport() : boolean {
+      return ("metronome" != name);
+   }
+
+   // <method_set.png>
+   public method setTempo(float _bpm, int _ppq) {
+      if(null != lanes)
+      {
+         Lane *lane;
+         foreach lane in lanes
+            lane.setTempo(_bpm, _ppq);
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setPlayState(int _state) {
+      play_state = _state;
+
+      current_project.updateForceMuteStates();
+   }
+
+   // <method_get.png>
+   public method isPlaying() : boolean {
+      return !b_force_mute && (STATE_MUTE != play_state);
+   }
+
+   // <method_get.png>
+   public method doProcessAny() : boolean {
+      return isPlaying() || (false != STConfig.b_process_when_muted);
+   }
+
+   // <method_set.png>
+   public =replay= method setTrackMode(int _mode) {
+      track_mode = _mode;
+
+      if(TRACK_MODE_DRUM == track_mode)
+         sample_pad_kit.b_edited = true;
+      else if(TRACK_MODE_TIMELINE == track_mode)
+         sample_timeline.b_edited = true;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.track_mode = track_mode;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getTrackMode() : int {
+      return track_mode;
+   }
+
+   // <method_get.png>
+   public method isMultiMode() : boolean {
+      return (TRACK_MODE_LPC <= track_mode <= TRACK_MODE_MIRROR_MPE);
+   }
+
+   // <method_get.png>
+   public method isMPEMode() : boolean {
+      return (TRACK_MODE_MPE <= track_mode <= TRACK_MODE_MIRROR_MPE);
+   }
+
+   // <method_get.png>
+   public method isLPCMode() : boolean {
+      return (TRACK_MODE_LPC <= track_mode <= TRACK_MODE_MIRROR_LPC);
+   }
+
+   // <method_get.png>
+   public method isVRRMode() : boolean {
+      return (TRACK_MODE_VRR <= track_mode <= TRACK_MODE_MIRROR_VRR);
+   }
+
+   // <method_get.png>
+   public method isDrumMode() : boolean {
+      return (TRACK_MODE_DRUM == track_mode);
+   }
+
+   // <method_get.png>
+   public method isTimelineMode() : boolean {
+      return (TRACK_MODE_TIMELINE == track_mode);
+   }
+
+   // // // // <method_get.png>
+   // // // public method isDefaultOrDrumMode() : boolean {
+   // // //    return (TRACK_MODE_DEFAULT == track_mode) || (TRACK_MODE_DRUM == track_mode);
+   // // // }
+
+   // <method_get.png>
+   public method isMirrorMode() : boolean {
+      return
+         (TRACK_MODE_MIRROR_LPC == track_mode) ||
+         (TRACK_MODE_MIRROR_MPE == track_mode) ||
+         (TRACK_MODE_MIRROR_VRR == track_mode) ;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiNumChannels(int _numCh) {
+      multi_num_channels = _numCh;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.multi_num_channels = multi_num_channels;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getMultiNumChannels() : int {
+      return multi_num_channels;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiLaneOffset(int _offset) {
+      multi_lane_offset = _offset;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.multi_lane_offset = multi_lane_offset;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getMultiLaneOffset() : int {
+      return multi_lane_offset;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMasterCh(int _ch) {
+      multi_master_ch = _ch;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.multi_master_ch = multi_master_ch;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getMultiMasterCh() : int {
+      return multi_master_ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableLaneFade(boolean _bEnable) {
+      b_lane_fade = _bEnable;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.b_lane_fade = b_lane_fade;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getEnableLaneFade() : boolean {
+      return b_lane_fade;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneFadeSlewUp(float _f) {
+      lane_fade_slew_up = _f;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.lane_fade_slew_up = lane_fade_slew_up;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getLaneFadeSlewUp() : float {
+      return lane_fade_slew_up;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneFadeSlewDown(float _f) {
+      lane_fade_slew_down = _f;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.lane_fade_slew_down = lane_fade_slew_down;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getLaneFadeSlewDown() : float {
+      return lane_fade_slew_down;
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneFadeCC(byte _cc) {
+      // (note) previously named setMultiCC
+      lane_fade_cc = _cc;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.lane_fade_cc = lane_fade_cc;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getLaneFadeCC() : byte {
+      // (note) previously named getMultiCC()
+      return lane_fade_cc;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableLaneFadeCtlRel(boolean _bEnable) {
+      b_lane_fade_ctl_rel = _bEnable;
+
+      TrackPatchVariation tpv <= getCurrentPatchVariation();
+      tpv.b_lane_fade_ctl_rel = b_lane_fade_ctl_rel;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getEnableLaneFadeCtlRel() : boolean {
+      return b_lane_fade_ctl_rel;
+   }
+
+   // <method_get.png>
+   public method listensToMIDIPort(local byte _dev, local byte _ch) : boolean {
+      local boolean bMatch = false;
+      switch(track_mode)
+      {
+         case TRACK_MODE_DEFAULT:
+         case TRACK_MODE_VRR:
+         case TRACK_MODE_MIRROR_VRR:
+         case TRACK_MODE_DRUM:
+         case TRACK_MODE_TIMELINE:
+            bMatch =
+               (dev_idx == _dev) &&
+               ( (-1 == _ch) || (_ch == midi_ch) || (-1 == midi_ch) )
+               ;
+            break;
+
+         case TRACK_MODE_LPC:
+         case TRACK_MODE_MIRROR_LPC:
+         case TRACK_MODE_MPE:
+         case TRACK_MODE_MIRROR_MPE:
+            bMatch = (dev_idx == _dev);
+            break;
+      }
+      return bMatch;
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      name = _name;
+
+      current_project.markAsModified();
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_set.png>
+   public method setPatchName(String _name) {
+      patch_name = _name;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method sharesCPUCore() : boolean {
+      return b_shared_cpu_core;
+   }
+
+   // <method_set.png>
+   public method selectNextLayout(int _dir) {
+      layout = mathWrapi(layout + _dir, 0, NUM_LAYOUTS);
+
+      current_project.markAsModified();
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_set.png>
+   public =replay= method setCPUCore(int _idx) {
+
+      if(-1 <= _idx < MAX_CPU_CORES)
+      {
+         cpu_core = _idx;
+
+         current_project.updateSharedCPUCoreFlags();
+
+         if(b_running)
+            updateWriterThreadAffinityMask(false/*bInit*/);
+
+         current_project.markAsModified();
+         Project.QueueTrackFormUpdate();
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setInputChannelIdx(int _idx) {
+      input_channel_idx = _idx;
+      current_project.markAsModified();
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_set.png>
+   public =replay= method setNumMultiInputLanes(int _num) {
+      num_multi_input_lanes = _num;
+      current_project.markAsModified();
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableStereoInput(boolean _bEnable) {
+      b_stereo_input = _bEnable;
+      current_project.markAsModified();
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_get.png>
+   public method getInputChannelAlias(int _idx, boolean _bLong) : String {
+      local String *chName;
+      if(-1 != _idx)
+      {
+         if(b_stereo_input)
+            chName <= STConfig.audio_in_aliases.get(4*_idx + 2 + _bLong);  // Stereo(long)
+         else
+            chName <= STConfig.audio_in_aliases.get(4*_idx + _bLong);  // Mono(long)
+      }
+      else
+      {
+         chName <= "-";
+      }
+      return deref chName;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableInputToSideChain(boolean _bEnable) {
+      b_input_to_sc = _bEnable;
+
+      Project.QueueTrackFormUpdate();
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setDevIdx(byte _idx) {
+      dev_idx = _idx;
+
+      Project.QueueTrackFormUpdate();
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setMidiCh(byte _ch) {
+      midi_ch = _ch;
+
+      Project.QueueTrackFormUpdate();
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getOutputByIdx(int _idx) : Output {
+      return outputs.get(_idx);
+   }
+
+   // <method_find.png>
+   public method findLaneIdxByMod(Mod _mod) : int {
+      Lane *lane;
+      int r = 0;
+      foreach lane in lanes
+      {
+         if(-1 != (lane.mods.indexOfPointer(_mod, 0)))
+            return r;
+         r++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findLaneByMod(Mod _mod) : Lane {
+      Lane *lane;
+      int r = 0;
+      foreach lane in lanes
+      {
+         if(-1 != (lane.mods.indexOfPointer(_mod, 0)))
+            return lane;
+         r++;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method newOutput() : Output {
+      Output output <= new Output;
+      output.init();
+      outputs.add(#(deref output));
+      Project.QueueTrackFormUpdate();
+      return output;
+   }
+
+   // <method_find.png>
+   public method findDefaultOutput() : Output {
+      Output *out;
+      foreach out in outputs
+      {
+         if(Output.TYPE_DEFAULT == out.type)
+            return out;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method handleTrackReorder(IntArray _reorderMap) {
+      Output *output;
+      foreach output in outputs
+         output.handleTrackReorder(_reorderMap);
+
+      Lane *lane;
+      foreach lane in lanes
+         lane.handleTrackReorder(_reorderMap);
+   }
+
+   // <method.png>
+   public method handleLaneReorder(IntArray _reorderMap) {
+      Output *output;
+      foreach output in outputs
+         output.handleLaneReorder(_reorderMap);
+
+      Lane *lane;
+      foreach lane in lanes
+         lane.handleLaneReorder(_reorderMap);
+   }
+
+   // <method_get.png>
+   public method findFirstFXModOrNull() : Mod {
+      Mod mod <= findFirstMod();
+      if(null != mod)
+      {
+         if(mod instanceof ModVST2)
+         {
+            ModVST2 modVST2 <= mod;
+            if(mod.isEffect())
+               return mod;
+         }
+         else if(mod instanceof ModSTFX)
+         {
+            ModSTFX modSTFX <= mod;
+            if(mod.isEffect())
+               return mod;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public /*=replay=*/ method start() {  // (todo) [12Dec2021] use mutex ?!!
+      if(!b_running)
+      {
+         Global.Debug("Track::start: name=\""+name+"\"");
+         b_running = true;
+
+         if(!STConfig.b_force_single_thread)
+         {
+            writer_thread.userdata = this;
+            writer_thread.priority = THREAD_PRIORITY_TIME_CRITICAL;
+            writer_thread.create(track_writer_thread_entry);
+            Global.Debug3("Track::start: created thread");
+            updateWriterThreadAffinityMask(true/*bInit*/);
+            Global.Debug3("Track::start: updated affinity mask");
+            cond_startup.wait(20000/*millisec*/);
+            Global.Debug3("Track::start: cond_startup raised");
+         }
+      }
+   }
+
+   // <method.png>
+   public method getActualCPUCore() : int {
+      if(!STConfig.b_allow_cpu_core_selection)
+         return -1; // any (=> each worker thread will process just one track)
+
+      if(cpu_core >= 0 && g_track_cpu_core_map.numElements > 0)
+         return g_track_cpu_core_map[cpu_core % g_track_cpu_core_map.numElements];
+
+      return -1; // any
+   }
+
+   // <method.png>
+   public method updateWriterThreadAffinityMask(boolean _bInit) {
+      if(STConfig.b_allow_cpu_core_selection && !STConfig.b_ignore_thread_affinity)
+      {
+         int core = getActualCPUCore();
+         writer_thread.setCPUCore(core);
+      }
+      else if(!_bInit)
+      {
+         writer_thread.setAffinityMaskByString(g_thread_affinity_all);
+         writer_thread.setCPUCore(-1);
+      }
+   }
+
+   // <method.png>
+   public method stop() {
+      if(b_running)
+      {
+         Global.Debug("Track::stop: BEGIN name=\""+name+"\"");
+         b_running = false;
+
+         if(!STConfig.b_force_single_thread)
+         {
+            if(true != STConfig.b_track_thread_poll)
+               cond_write.raise();
+            writer_thread.wait();
+         }
+         Global.Debug("Track::stop: END name=\""+name+"\"");
+      }
+   }
+
+   // <method.png>
+   public method queueProcess(local int _curTrackIdx) {
+      if(!STConfig.b_force_single_thread)
+      {
+         out_mutex.lock();
+         b_write_pending = true;
+         if(true != STConfig.b_track_thread_poll)
+            cond_write.raise();
+         out_mutex.unlock();
+      }
+      else
+      {
+         // Single-thread rendering (process immediately)
+         if(doProcessAny())  // not muted or process while muted ?
+         {
+            process(_curTrackIdx, replay.process_size);
+         }
+         else
+         {
+            ui_peakavg_l.reset();
+            ui_peakavg_r.reset();
+         }
+      }
+   }
+
+   // <method.png>
+   public method waitProcess() {
+      if(!STConfig.b_force_single_thread)
+      {
+         if(true == STConfig.b_track_thread_poll)
+         {
+            local int msTO = milliSeconds() + 100;
+            for(;;)
+            {
+               out_mutex.lock();
+               local boolean bWritePending = b_write_pending;
+               out_mutex.unlock();
+
+               if(!bWritePending)
+                  return;
+
+               if(milliSeconds() >= msTO)
+                  break;
+            }
+         }
+         else
+         {
+            local int r = cond_write_done.wait(100/*millisec*/);
+            if(0 != r)
+               trace "xxx Track::waitProcess: r="+r;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getNumLanes() : int {
+      return lanes.numElements;
+   }
+
+   // <method_get.png>
+   public method getLaneByIdx(local int _idx) : Lane {
+      return lanes.get(_idx);
+   }
+
+   // <method_get.png>
+   public method getIdxByLane(Lane _lane) : int {
+      return lanes.indexOfPointer(_lane, 0);
+   }
+
+   // <method_get.png>
+   public method getOrCreateLaneByIdx(int _idx) : Lane {
+      if(_idx < MAX_LANES)
+      {
+         if(lanes.numElements <= _idx)
+         {
+            int laneIdx = 0;
+            loop(_idx+1)
+            {
+               if(null == lanes.get(laneIdx))
+               {
+                  Lane lane <= new Lane;
+                  lane.init();
+                  if(laneIdx != _idx)
+                     lane.selectNoOutput();
+                  lanes[laneIdx] = deref lane;
+               }
+               laneIdx++;
+            }
+         }
+      }
+      return lanes.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateLaneByIdx_Sync(int _idx) : Lane {
+      return getOrCreateLaneByIdx(_idx);
+   }
+
+   // <method_new.png>
+   public method newLane() : Lane {
+      Lane lane <= new Lane;
+      lane.init();
+      lanes.add(#(deref lane));
+
+      current_project.markAsModified();
+
+      return lane;
+   }
+
+   // <method_find.png>
+   public method findMaxY() : int {
+      Lane *lane;
+      int maxY = 0;
+      foreach lane in lanes
+      {
+         int t = lane.findMaxY();
+         if(t > maxY)
+            maxY = t;
+      }
+      return maxY;
+   }
+
+   // <method_get.png>
+   public method areAllOtherLanesEnabled(int _laneIdx) : boolean {
+      Lane *lane;
+      int laneIdx = 0;
+      boolean bAllEnabled = true;
+      foreach lane in lanes
+      {
+         if(laneIdx != _laneIdx)
+            bAllEnabled = bAllEnabled && lane.isEnabled();
+         laneIdx++;
+      }
+      return bAllEnabled;
+   }
+
+   // <method_get.png>
+   public method areAllOtherLanesDisabled(int _laneIdx) : boolean {
+      Lane *lane;
+      int laneIdx = 0;
+      boolean bAllDisabled = true;
+      foreach lane in lanes
+      {
+         if(laneIdx != _laneIdx)
+            bAllDisabled = bAllDisabled && !lane.isEnabled();
+         laneIdx++;
+      }
+      return bAllDisabled;
+   }
+
+   // <method.png>
+   public =replay= method moveLaneLeft(int _laneIdx) : boolean {
+      if(0 < _laneIdx < lanes.numElements)
+      {
+         lanes.swap(_laneIdx - 1, _laneIdx);
+         current_project.markAsModified();
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method moveLaneRight(int _laneIdx) : boolean {
+      if(0 <= _laneIdx < (lanes.numElements - 1))
+      {
+         lanes.swap(_laneIdx + 1, _laneIdx);
+         current_project.markAsModified();
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method newLaneAfter(int _laneIdx) : boolean {
+      if(lanes.numElements < Track.MAX_LANES)
+      {
+         if(0 <= _laneIdx < lanes.numElements)
+         {
+            Lane lane <= new Lane;
+            lane.init();
+            lanes.insert(_laneIdx + 1, #(deref lane));
+            current_project.markAsModified();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method deleteLane(int _laneIdx) : boolean {
+      if(lanes.numElements >= 2)
+      {
+         if(0 <= _laneIdx < lanes.numElements)
+         {
+            Lane lane <= lanes.getDeref(_laneIdx);
+            lanes.delete(_laneIdx);
+            lane.exit();
+            current_project.markAsModified();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method isLaneReferencedByAnyOutputs(int _laneIdx) {
+      int laneIdx = 0;
+      Lane *lane;
+      foreach lane in lanes
+      {
+         if(laneIdx != _laneIdx)
+         {
+            if(lane.isLaneReferencedByAnyOutputs(_laneIdx))
+               return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method deleteUnusedLanes() : int {
+      int r = 0;
+      if(lanes.numElements >= 2)
+      {
+         int laneIdx = 0;
+         while(laneIdx < lanes.numElements)
+         {
+            Lane lane <= lanes.get(laneIdx);
+            if(0 == (lane.mods.numElements))
+            {
+               if(!isLaneReferencedByAnyOutputs(laneIdx))
+               {
+                  deleteLane(laneIdx--);
+                  r++;
+
+                  if(1 == lanes.numElements)
+                     return r;
+               }
+            }
+
+            laneIdx++;
+         }
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   public method getLaneInputBuffer(local int _laneIdx, local boolean _bOverride) : FloatArray {
+      local Lane lane <= lanes.get(_laneIdx);
+      if(null != lane)
+      {
+         local FloatArray *r;
+
+         if(_bOverride || lane.b_override_input)
+         {
+            r <= lane.override_input_buffer;
+
+            if(_bOverride && !lane.b_override_input)
+            {
+               // trace "xxx getLaneInputBuffer<override> laneIdx="+_laneIdx;
+               lane.b_override_input = true;
+               r.fill(0);
+            }
+
+             // if(!_bOverride)
+             //    trace "xxx getLaneInputBuffer<read> laneIdx="+_laneIdx;
+
+            return r;
+         }
+      }
+      return _bOverride ? null : current_chunk_input_buffer;  // use track input
+   }
+
+   // <method_get.png>
+   public method getLaneOverrideInputBufferOrNull(local int _laneIdx) : FloatArray {
+      // Use for mod multi-out
+      local Lane lane <= lanes.get(_laneIdx);
+      if(null != lane)
+      {
+         local FloatArray r <= lane.override_input_buffer;
+         if(!lane.b_override_input)
+         {
+            lane.b_override_input = true;
+            r.fill(0);
+         }
+         return r;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getLaneSCInputBuffer(local int _laneIdx, local boolean _bOverride) : FloatArray {
+      local Lane lane <= lanes.get(_laneIdx);
+      if(null != lane)
+      {
+         local FloatArray *r;
+
+         if(_bOverride || lane.b_override_sc_input)
+         {
+            r <= lane.override_sc_input_buffer;
+
+            if(_bOverride && !lane.b_override_sc_input)
+            {
+               lane.b_override_sc_input = true;
+               r.fill(0);
+            }
+
+            return r;
+         }
+      }
+      return _bOverride ? null : current_chunk_sc_input_buffer;  // use track input
+   }
+
+   // <method_find.png>
+   public method findModAtXY(int _gridX, int _gridY) : Mod {
+      if(_gridX < lanes.numElements)
+      {
+         Lane lane <= lanes.get(_gridX);
+         Mod *mod;
+
+         foreach mod in lane.mods
+         {
+            if(mod.ui_grid_y == _gridY)
+               return mod;
+         }
+      }
+      return null;
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteMod(Mod _mod) : boolean {
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+      Lane *lane;
+      boolean ret = false;
+      foreach lane in lanes
+      {
+         if(lane.deleteMod(_mod))
+         {
+            ret = true;
+            break;
+         }
+      }
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      return ret;
+   }
+
+   // <method.png>
+   public method clearMutexGroups(byte _grpNr) {
+      Lane *lane;
+      foreach lane in lanes
+         lane.clearMutexGroups(_grpNr);
+   }
+
+   // <method.png>
+   public method updateModEnableByMutexGroupId(byte _mutexGroupId, boolean _bEnable) {
+      Lane *lane;
+      foreach lane in lanes
+         lane.updateModEnableByMutexGroupId(_mutexGroupId, _bEnable);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 18;
+
+      // Play state (v8+)
+      ofs.i8 = play_state;
+
+      // Layout (v6+)
+      ofs.i8 = layout;
+
+      // Track name
+      Utils.WriteString(ofs, name);
+
+      // Patch name (v9+)
+      Utils.WriteString(ofs, patch_name);
+
+      // Suggested pathname (v11+)
+      Utils.WriteString(ofs, patch_suggested_pathname);
+
+      // Track level
+      ////ofs.f32 = level;  // pre v4
+
+      // Track pan
+      ////ofs.f32 = pan; // pre v4
+
+      // Outputs (level/pan/..)
+      ofs.i8 = outputs.numElements; // v5+
+      Output *output;
+      foreach output in outputs
+         output.saveState(ofs);
+
+      // CPU core
+      ofs.i16 = cpu_core;
+
+      // Audio input idx (v13+)
+      ofs.i8 = input_channel_idx;
+
+      // Audio num multi input lanes (v17+)
+      ofs.i8 = num_multi_input_lanes;
+
+      // Audio input stereo mode (v13+)
+      ofs.i8 = b_stereo_input;
+
+      // Audio input-to-sidechain mode (v13+)
+      ofs.i8 = b_input_to_sc;
+
+      // MIDI device index (v2+)
+      ofs.i8 = dev_idx;
+
+      // MIDI channel (v2+)
+      ofs.i8 = midi_ch;
+
+      // Parent MIDI track MIDI device index hint (v15+)
+      ofs.i8 = parent_midi_track_dev_idx_hint;
+
+      // Parent MIDI track MIDI channel hint (v15+)
+      ofs.i8 = parent_midi_track_midi_ch_hint;
+
+      // pre v16:
+      // // // Track mode (v10+)
+      // // ofs.i8 = track_mode;
+
+      // // // Multi num channels (v10+)
+      // // ofs.i8 = multi_num_channels;
+
+      // // // Multi lane offset (v10+)
+      // // ofs.i8 = multi_lane_offset;
+
+      // // // Multi CC (v10+)
+      // // ofs.i8 = multi_cc;
+
+      // // // Multi master channel (v14+)
+      // // ofs.i8 = multi_master_ch;
+
+      // Procedural-sample-render-mode (v18+)
+      ofs.i8 = b_proc;
+
+      // Patch variations (v12+)
+      savePatchVariations(ofs);
+
+      // UI: color (tint) (v3+)
+      ofs.i32 = ui_tint_32;
+
+      // UI: browser visible (v7+)
+      ofs.i8 = b_ui_browser_visible;
+   }
+
+   // <method.png>
+   public =replay= method copyFrom(Track _o) {
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      local String trackName = name;
+
+      local DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      _o.saveState(ds);
+
+      local Buffer b;
+      b.size = ds.offset;
+      b.offset = 0;
+      _o.saveState(b);
+
+      b.offset = 0;
+      loadState(b, false/*bRestoreInstanceIDs*/);
+      loadStatePost(false/*bThreaded*/);
+
+      name = trackName;
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+   }
+
+   // <method_find.png>
+   public method findFirstUnsavedSampleName(String _retName) {
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+      {
+         Lane *lane;
+         foreach lane in tpv.lanes
+         {
+            ModSample *mod;
+            foreach mod in lane.mods
+            {
+               if(mod instanceof ModSample)
+               {
+                  mod.getUnsavedSampleName(_retName);
+                  if(!_retName.isBlank())
+                  {
+                     // Allow another rescan (e.g. after user copied missing sample to repo and presses save again)
+                     Samples.b_allow_sample_rescan = true;
+                     return;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method autoLoadSamples() {
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+         tpv.autoLoadSamples();
+   }
+
+   // <method.png>
+   public method autoUnloadSamples() {
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+         tpv.autoUnloadSamples();
+   }
+
+   // <method.png>
+   public =replay= method swapSamples(int _smpIdA, int _smpIdB) {
+      // called from UI thread
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+         tpv.handleSwapSamples(_smpIdA, _smpIdB);
+   }
+
+   // <method.png>
+   public =replay= method handleShiftSampleIds(int _idxStart, int _shift) {
+      // called from UI thread
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+         tpv.handleShiftSampleIds(_idxStart, _shift);
+   }
+
+   // <load.png>
+   public method loadPatchVariations(Stream ifs, boolean _bRestoreInstanceIDs, boolean _bCurrent) : boolean {
+
+      boolean r = false;
+
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         int numPatchVariations = ifs.u16;
+         int patchVariationIdx = 0;
+         TrackPatchVariation *tpv;
+         TrackPatchVariation *tpvCur;
+         local PointerArray patchVariations;
+
+         if(_bCurrent)
+         {
+            // (note) already re-initialized in loadPatchState()
+            tpvCur <= getCurrentPatchVariation();
+         }
+         else
+         {
+            // trace "xxx Track::loadPatchVariations: old patch_variations="+#(patch_variations);
+            // trace "xxx Track::loadPatchVariations: call freePatchVariations()";
+            freePatchVariations();
+         }
+         // else: current patch variation already re-initialized in loadPatchState()
+
+         r = true;
+
+         if(numPatchVariations > 64)
+            trace "[~~~] Track::loadPatchVariations: suspicious numPatchVariations="+numPatchVariations;
+
+         if(numPatchVariations <= 0)
+         {
+            trace "[---] Track::loadPatchVariations: invalid numPatchVariations="+numPatchVariations;
+            r = false;
+         }
+
+         loop(numPatchVariations)
+         {
+            Global.Debug2("Track::loadPatchVariations: loading patch variation "+(patchVariationIdx+1)+"/"+numPatchVariations);
+
+            tpv <= new TrackPatchVariation;
+            tpv.initForLoad(this);
+
+            if(!tpv.loadState(ifs, _bRestoreInstanceIDs))
+            {
+               trace "[---] Track::loadPatchVariations: failed to read patch variation "+(patchVariationIdx+1)+"/"+numPatchVariations;
+               r = false;
+               break;
+            }
+            else
+            {
+               if(_bCurrent)
+                  patchVariations.add(#(deref tpv));
+               else
+                  patch_variations.add(#(deref tpv));
+
+               // Next patch variation
+               patchVariationIdx++;
+            }
+         }
+
+         if(r)
+         {
+            // Current patch variation
+            int curTPVIdx = ifs.u16;
+
+            if(0 <= curTPVIdx < numPatchVariations)
+            {
+               if(_bCurrent)
+               {
+                  // Replace current patch variation with current variation from patch file
+                  tpvCur.copyPatchVariationFrom(patchVariations.get(curTPVIdx), true/*bCopyName*/);
+                  foreach tpv in patchVariations
+                     tpv.exit();
+               }
+               else
+               {
+                  current_patch_variation_idx = curTPVIdx;
+                  updateRefsFromCurrentPatchVariation();
+               }
+               r = true;
+            }
+            else
+            {
+               // Should not be reached, unless patch state is corrupted
+               trace "[---] Track::loadPatchVariations: invalid current patch variation idx ("+curTPVIdx+", num="+numPatchVariations+")";
+               r = false;
+            }
+         }
+
+         if(!r)
+         {
+            // Failed to load lanes, Re-Create mandatory "main" variation
+            trace "[---] Track::loadPatchVariations: failed to load lanes.";
+            initMainPatchVariation();
+         }
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = false;
+
+      // Version
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(ver >= 8)
+         {
+            // Play state (v8+)
+            play_state = ifs.u8;
+         }
+
+         if(ver >= 6)
+         {
+            // Layout (v6+)
+            layout = ifs.u8 % NUM_LAYOUTS;
+         }
+
+         // Track name
+         Utils.ReadString(ifs, name);
+
+         if(ver >= 9)
+         {
+            // Patch name
+            Utils.ReadString(ifs, patch_name);
+         }
+
+         if(ver >= 11)
+         {
+            // Suggested pathname (v11+)
+            Utils.ReadString(ifs, patch_suggested_pathname);
+         }
+
+         Output *output;
+
+         // Track level
+         if(ver <= 3)
+         {
+            output <= outputs.get(0);
+
+            output.level = ifs.f32;
+
+            // Track pan
+            output.setPan(ifs.f32);
+         }
+         else
+         {
+            if(ver <= 4)
+            {
+               // V4+
+               output <= outputs.get(0);
+               if(!output.loadState(ifs))
+               {
+                  trace "[---] Track::loadState: failed to load output state.";
+                  return false;
+               }
+            }
+            else
+            {
+               // v5+
+               int numOutputs = ifs.u8;
+               outputs.free();
+               int outputIdx = 0;
+               loop(numOutputs)
+               {
+                  output <= new Output;
+                  outputs.add(#(deref output));
+                  if(!output.loadState(ifs))
+                  {
+                     trace "[---] Track::loadState: failed to load output state "+(outputIdx+1)+"/"+numOutputs;
+                     return false;
+                  }
+                  // Next output
+                  outputIdx++;
+               }
+            }
+         }
+
+         // CPU core
+         cpu_core = ifs.i16;
+
+         if(ver >= 13)
+         {
+            // Audio input idx (v13+)
+            input_channel_idx = ifs.i8;
+
+            if(ver >= 17)
+            {
+               // Audio num multi input lanes (v17+)
+               num_multi_input_lanes = ifs.s8;
+            }
+
+            // Audio input stereo mode (v13+)
+            b_stereo_input = ifs.b8;
+
+            // Audio input-to-sidechain mode (v13+)
+            b_input_to_sc = ifs.b8;
+         }
+
+         if(ver >= 2)
+         {
+            // MIDI device index (v2+)
+            dev_idx = ifs.u8;
+
+            // MIDI channel (v2+)
+            midi_ch = ifs.s8;
+         }
+
+         if(ver >= 15)
+         {
+            // Parent MIDI track MIDI device index hint (v15+)
+            parent_midi_track_dev_idx_hint = ifs.s8;
+
+            // Parent MIDI track MIDI channel hint (v15+)
+            parent_midi_track_midi_ch_hint = ifs.s8;
+         }
+
+         if(ver >= 18)
+         {
+            // Procedural-sample-render-mode (v18+)
+            b_proc = ifs.b8;
+         }
+
+         boolean bMirrorTrackAndMultiModesToVariations = false;
+         int mirrorTrackMode;
+         int mirrorMultiNumChannels;
+         int mirrorMultiLaneOffset;
+         int mirrorMultiCC;
+         int mirrorMultiMasterCh = 0;
+         if(10 <= ver <= 15)
+         {
+            bMirrorTrackAndMultiModesToVariations = true;
+
+            // Track mode (v10+)
+            mirrorTrackMode = ifs.u8;
+            if(1/*CC_SWITCH*/ == mirrorTrackMode ||
+               2/*CC_FADE*/   == mirrorTrackMode)
+               mirrorTrackMode = TRACK_MODE_DEFAULT;
+            else if(mirrorTrackMode >= 3)
+               mirrorTrackMode -= 2;  // CC_SWITCH/CC_FADE removed in TPV v5
+
+            // Multi num channels (v10+)
+            mirrorMultiNumChannels = ifs.u8;
+
+            // Multi lane offset (v10+)
+            mirrorMultiLaneOffset = ifs.u8;
+
+            // Multi CC (v10+)
+            //  (note) removed in TPV v5 (renamed to lane_fade_cc)
+            mirrorMultiCC = ifs.u8;
+
+            if(ver >= 14)
+            {
+               // Multi master channel (v14+)
+               mirrorMultiMasterCh = ifs.u8 & 15;
+            }
+         }
+
+         // Lanes / patch variations
+         TrackPatchVariation *tpv;
+         if(ver >= 12)
+         {
+            r = loadPatchVariations(ifs, _bRestoreInstanceIDs, false/*bCurrent*/);
+
+            if(!r)
+            {
+               trace "[---] Track::loadState: failed to load patch variations";
+               return false;
+            }
+
+            if(bMirrorTrackAndMultiModesToVariations)
+            {
+               // (note) pre v16 (saved per variation in later versions)
+               foreach tpv in patch_variations
+               {
+                  tpv.track_mode         = mirrorTrackMode;
+                  tpv.multi_num_channels = mirrorMultiNumChannels;
+                  tpv.multi_lane_offset  = mirrorMultiLaneOffset;
+                  // // tpv.multi_cc           = mirrorMultiCC;
+                  tpv.multi_master_ch    = mirrorMultiMasterCh;
+               }
+            }
+         }
+         else
+         {
+            // Single patch Lanes (pre v12)
+            initMainPatchVariation();
+            tpv <= patch_variations.get(0);
+
+            if(bMirrorTrackAndMultiModesToVariations)
+            {
+               // (note) pre v16 (saved per variation in later versions)
+               tpv.track_mode         = mirrorTrackMode;
+               tpv.multi_num_channels = mirrorMultiNumChannels;
+               tpv.multi_lane_offset  = mirrorMultiLaneOffset;
+               // // tpv.multi_cc           = mirrorMultiCC;
+               tpv.multi_master_ch    = mirrorMultiMasterCh;
+            }
+
+            r = tpv.loadLanes(ifs, _bRestoreInstanceIDs);
+         }
+
+         if(ver >= 3)
+         {
+            ui_tint_32 = ifs.i32;
+         }
+
+         if(ver >= 7)
+         {
+            // UI: browser visible (v7+)
+            b_ui_browser_visible = ifs.b8;
+         }
+
+         if(r)
+            updateRefsFromCurrentPatchVariation();
+      }
+      else
+      {
+         trace "[---] Track::loadState: invalid version "+ver;
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public method loadStatePost(local boolean _bThreaded) : boolean {
+      // (possibly) multi-threaded
+      local boolean r = true;
+
+      local Lane *lane;
+      foreach lane in lanes
+      {
+         r = r && lane.loadStatePost(_bThreaded);
+         if(!r)
+            break;
+      }
+
+      resetVRRState();
+
+      b_postload = r;
+      return r;
+   }
+
+   // <load.png>
+   public method loadStatePostThreadedBegin() {
+      Global.Debug2("Track::loadStatePostThreadedBegin: track_name=\""+name+"\", starting thread..");
+      postload_thread_millisec = milliSeconds();
+      postload_thread.userdata = this;
+      postload_thread.create(track_postload_thread_entry);
+   }
+
+   // <load.png>
+   public method loadStatePostThreadedEnd() : boolean {
+      boolean r = false;
+
+      if(0 == cond_postload.wait(10000/*millisec*/))
+      {
+         postload_thread.wait();
+         postload_thread_millisec = milliSeconds() - postload_thread_millisec;
+         Global.Debug2("Track::loadStatePostThreadedEnd: track_name=\""+name+"\" millisec="+postload_thread_millisec);
+         if(!b_postload)
+         {
+            trace "[---] Track::loadStatePostThreadedEnd: post load failed!! track_name=\""+name+"\"";
+         }
+         else
+         {
+            r = true;
+         }
+      }
+      else
+      {
+         trace "[---] Track::loadStatePostThreadedEnd: thread timeout!!! track_name=\""+name+"\"";
+      }
+
+      return r;
+   }
+
+   // <save.png>
+   protected method savePatchVariations(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      // Patch variations array
+      ofs.i16 = patch_variations.numElements;
+      TrackPatchVariation *tpv;
+
+      foreach tpv in patch_variations
+         tpv.saveState(ofs);
+
+      // Current patch variation
+      ofs.i16 = current_patch_variation_idx;
+   }
+
+   // <save.png>
+   public method savePatchState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 7;
+
+      // Suggested pathname (v3+)
+      Utils.WriteString(ofs, patch_suggested_pathname);
+
+      // Patch name (v6+)
+      Utils.WriteString(ofs, patch_name);
+
+      // pre v7:
+      // // // Track mode (v2+)
+      // // ofs.i8 = track_mode;
+
+      // // // Multi num channels (v2+)
+      // // ofs.i8 = multi_num_channels;
+
+      // // // Multi lane offset (v2+)
+      // // ofs.i8 = multi_lane_offset;
+
+      // // // Multi CC (v2+)
+      // // ofs.i8 = multi_cc;
+
+      // // // Multi master channel (v5+)
+      // // ofs.i8 = multi_master_ch;
+
+      // Patch variations (v4+)
+      savePatchVariations(ofs);
+   }
+
+   // <save.png>
+   public method savePatchToBuffer(Buffer _b) : boolean {
+      DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      savePatchState(ds);
+
+      _b.size = ds.offset;
+      _b.offset = 0;
+      savePatchState(_b);
+
+      _b.offset = 0;
+   }
+
+   // <save.png>
+   public method savePatchFile(String _pathName) : boolean {
+      File f;
+      boolean r = false;
+
+      Global.Debug("Track::savePatchFile: pathName=\""+_pathName+"\"");
+
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_OUT))
+      {
+         f.byteOrder = LITTLE_ENDIAN;
+
+         savePatchState(f);
+
+         f.close();
+
+         // (todo) check for write errors (disk full etc)
+         r = true;
+      }
+      else
+      {
+         trace "[---] Track::savePatchFile: failed to open file \""+_pathName+"\".";
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public =replay= method loadPatchState(Stream ifs, boolean _bCurrent) : boolean {
+      // // trace "xxx Track::loadPatchState: ENTER. bCurrent="+_bCurrent;
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      Audio.ResetAllSampleVoicesMods(null/*sample=all*/);
+
+      TrackPatchVariation *tpv;
+      TrackPatchVariation *tpvCur;
+
+      if(_bCurrent)
+      {
+         // Unload samples of current patch variation and free it
+         tpv <= patch_variations.getDeref(current_patch_variation_idx);
+         tpv.autoUnloadSamples();
+         tpv.exit();
+         tpv <= null;
+
+         // Create new (current) patch variation
+         tpvCur <= new TrackPatchVariation;
+         tpvCur.initForLoad(this/*track*/);
+         patch_variations[current_patch_variation_idx] = deref tpvCur;
+         updateRefsFromCurrentPatchVariation();
+         // trace "xxx Track::loadPatchState: patch_variations="+#(patch_variations);
+      }
+      else
+      {
+         // Unload samples (all patch variations)
+         //  (note) old patch variations are freed in loadPatchVariations()
+         // trace "xxx Track::loadPatchFile: call autoUnloadSamples";
+         autoUnloadSamples();
+      }
+
+      boolean r = false;
+
+      // Version
+      short ver = ifs.i16;
+
+      track_mode          = TRACK_MODE_DEFAULT;
+      multi_num_channels  = 4;
+      multi_lane_offset   = 0;
+      lane_fade_cc        = 70;  // previously named multi_cc
+      b_lane_fade_ctl_rel = false;
+      multi_master_ch     = 0;
+
+      if(ver >= 1)
+      {
+         if(ver >= 3)
+         {
+            // Suggested pathname (v3+)
+            Utils.ReadString(ifs, patch_suggested_pathname);
+         }
+
+         if(ver >= 6)
+         {
+            // Patch name
+            Utils.ReadString(ifs, patch_name);
+         }
+
+         boolean bMirrorTrackAndMultiModesToVariations = false;
+         int mirrorTrackMode;
+         int mirrorMultiNumChannels;
+         int mirrorMultiLaneOffset;
+         int mirrorMultiCC;
+         int mirrorMultiMasterCh = 0;
+         if(2 <= ver < 7)
+         {
+            bMirrorTrackAndMultiModesToVariations = true;
+
+            // Track mode
+            mirrorTrackMode = ifs.u8;
+
+            // Multi num channels
+            mirrorMultiNumChannels = ifs.u8;
+
+            // Multi lane offset
+            mirrorMultiLaneOffset = ifs.u8;
+
+            // Multi CC
+            mirrorMultiCC = ifs.u8;
+
+            if(ver >= 5)
+            {
+               // Multi master channel (v5+)
+               mirrorMultiMasterCh = ifs.u8 & 15;
+            }
+         }
+
+         // Lanes / patch variations
+         if(ver >= 4)
+         {
+            // trace "xxx Track::loadPatchState: call loadPatchVariations";
+            r = loadPatchVariations(ifs, false/*bRestoreInstanceIDs*/, _bCurrent);
+            // trace "xxx Track::loadPatchState: END call loadPatchVariations";
+
+            if(bMirrorTrackAndMultiModesToVariations)
+            {
+               // (note) pre v7 (saved per variation in later versions)
+               if(_bCurrent)
+               {
+                  tpvCur.track_mode         = mirrorTrackMode;
+                  tpvCur.multi_num_channels = mirrorMultiNumChannels;
+                  tpvCur.multi_lane_offset  = mirrorMultiLaneOffset;
+                  // // tpvCur.multi_cc           = mirrorMultiCC;
+                  tpvCur.multi_master_ch    = mirrorMultiMasterCh;
+               }
+               else
+               {
+                  foreach tpv in patch_variations
+                  {
+                     tpv.track_mode         = mirrorTrackMode;
+                     tpv.multi_num_channels = mirrorMultiNumChannels;
+                     tpv.multi_lane_offset  = mirrorMultiLaneOffset;
+                     // // tpv.multi_cc           = mirrorMultiCC;
+                     tpv.multi_master_ch    = mirrorMultiMasterCh;
+                  }
+               }
+            }
+         }
+         else
+         {
+            if(!_bCurrent)
+            {
+               initMainPatchVariation();
+               tpvCur <= patch_variations.get(0);
+            }
+
+            if(bMirrorTrackAndMultiModesToVariations)
+            {
+               // (note) pre v7 (saved per variation in later versions)
+               tpvCur.track_mode         = mirrorTrackMode;
+               tpvCur.multi_num_channels = mirrorMultiNumChannels;
+               tpvCur.multi_lane_offset  = mirrorMultiLaneOffset;
+               // // tpvCur.multi_cc           = mirrorMultiCC;
+               tpvCur.multi_master_ch    = mirrorMultiMasterCh;
+            }
+
+            r = tpvCur.loadLanes(ifs, false/*bRestoreInstanceIDs*/);
+         }
+
+         // [04Oct2024] moved below (after autoLoadSamples())
+         // // // Create plugin instances and load patch data (current patch variation)
+         // // loadStatePost(false/*bThreaded*/);
+      }
+      else
+      {
+         trace "[---] Track::loadPatchState: invalid version "+ver;
+      }
+
+      if(r)
+      {
+         updateRefsFromCurrentPatchVariation();
+
+         // // trace "xxx Track::loadPatchFile: call autoLoadSamples";
+         if(_bCurrent)
+            tpvCur.autoLoadSamples();  // current variation only
+         else
+            autoLoadSamples();  // all variations
+         // // trace "xxx Track::loadPatchFile: END call autoLoadSamples";
+
+         // Create plugin instances and load patch data (current patch variation)
+         //  (note) must be done after autoLoadSamples()
+         //          (updates ModSample::preferred_namespace_idx from selected sample)
+         loadStatePost(false/*bThreaded*/);
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+      // // trace "xxx Track::loadPatchState: LEAVE. patch_variations="+#(patch_variations);
+
+      return r;
+   }
+
+   // <load.png>
+   public method loadPatchFile(String _pathName, boolean _bCurrent) : boolean {
+      // 'bCurrent': true=load main patch variation to current variation, keep the remaining ones
+      //             false=free all patch variations and load all patch variations from patch file
+
+      boolean r = false;
+
+      Global.Debug("Track::loadPatchFile: pathName=\""+_pathName+"\"");
+
+      local File f;
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_IN))
+      {
+         f.byteOrder = LITTLE_ENDIAN;
+
+         int ms = milliSeconds();
+
+         // // trace "xxx Track::loadPatchFile: call loadPatchState";
+         r = loadPatchState(f, _bCurrent);
+         // // trace "xxx Track::loadPatchFile: END call loadPatchState";
+
+         if(r)
+         {
+            ms = milliSeconds() - ms;
+            trace "[...] Track::loadPatchFile: loaded from \""+_pathName+"\" in "+(ms/100.0f)+" seconds";
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] Track::loadPatchFile: failed to open file \""+_pathName+"\".";
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public method resetAllSampleVoices(Sample _sampleOrNull) {
+      // (note) caller must lock =replay=
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+         tpv.resetAllSampleVoices(_sampleOrNull);
+   }
+
+   // <replay.png>
+   public =audio_in= method prepareProcess(local int _trackIdx, local int _numFrames) {
+      cur_track_idx = _trackIdx;
+      mix_buffer.numElements = _numFrames * 2;
+      mix_buffer.fill(0);
+
+      if(STConfig.track_autoroute_focus_name == name)
+         Track.focus_send_track_idx = _trackIdx;
+
+      if(replay.num_in_ch > 0 && input_channel_idx >= 0)
+      {
+         // (note) check availability: when audio processing begins, prevent the read_idx from overtaking the append_idx
+         if(replay.input_num_avail >= _numFrames)
+         {
+            local int inChIdx = input_channel_idx;
+
+            if(b_stereo_input)
+            {
+               if((inChIdx+1) >= replay.num_in_ch)
+                  inChIdx = replay.num_in_ch - 1;  // last channel cannot be a stereo channel
+            }
+
+            local FloatArray inBuf  <= replay.input_buffers.get(input_channel_idx);
+            local FloatArray dstBuf <= b_input_to_sc ? current_chunk_sc_input_buffer : current_chunk_input_buffer;
+
+            if(null != inBuf)
+            {
+               // Copy left channel
+               tksampleedit_copy_mono_adv_ring_to_mono_adv(dstBuf, 0, 2,
+                                                           inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                           _numFrames
+                                                           );
+               if(b_stereo_input)
+               {
+                  // Copy right channel to right channel
+                  inBuf <= replay.input_buffers.get(input_channel_idx + 1);
+
+                  if(null != inBuf)
+                  {
+                     tksampleedit_copy_mono_adv_ring_to_mono_adv(dstBuf, 1, 2,
+                                                                 inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                                 _numFrames
+                                                                 );
+                  }
+               }
+               else
+               {
+                  // Copy left channel to right channel (duplicate mono input)
+                  tksampleedit_copy_mono_adv_ring_to_mono_adv(dstBuf, 1, 2,
+                                                              inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                              _numFrames
+                                                              );
+               }
+            }
+         }
+         else
+         {
+            trace "[!!!] Track::prepareProcess: input underrun. avail="+replay.input_num_avail+", need="+_numFrames;
+         }
+      }
+   }
+
+   // <replay.png>
+   public method swapInputBuffersAndClearNext() {
+
+      // Main input
+      local FloatArray fa <= deref current_chunk_input_buffer;
+      current_chunk_input_buffer <= deref next_chunk_input_buffer;
+      next_chunk_input_buffer <= deref fa;
+      fa.fill(0);
+
+      // Side chain input
+      fa <= deref current_chunk_sc_input_buffer;
+      current_chunk_sc_input_buffer <= deref next_chunk_sc_input_buffer;
+      next_chunk_sc_input_buffer <= deref fa;
+      fa.fill(0);
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getAverageLoadPercentage() : float {
+      // in percent (0..100%)
+      return profile_process_load_avg;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpPeakL() : float {
+      return ui_peakavg_l.peak;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpPeakR() : float {
+      return ui_peakavg_r.peak;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpAvgL() : float {
+      return ui_peakavg_l.avg;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpAvgR() : float {
+      return ui_peakavg_r.avg;
+   }
+
+   // <method.png>
+   public method handleRemoteParamUpdate(int _instanceId, int _paramIdx, float _paramValue) : boolean {
+      Lane *lane;
+      int laneIdx = 0;
+      boolean bUpdated = false;
+
+      foreach lane in lanes
+      {
+         Mod *mod;
+         foreach mod in lane.mods
+         {
+            if(mod.instance_id == _instanceId)
+            {
+               if(mod instanceof ModVST2)
+               {
+                  ModVST2 modVST2 <= mod;
+                  // // trace "xxx check modVST2.instance_id="+modVST2.instance_id+" == _instanceId="+_instanceId;
+                  VST2Plugin plugin <= modVST2.plugin;
+                  if(null != plugin)
+                  {
+                     plugin.setParameter(_paramIdx, _paramValue);
+                     bUpdated = true;
+                  }
+
+                  if(isMirrorMode())
+                  {
+                     if(multi_lane_offset <= laneIdx < (multi_lane_offset + multi_num_channels))
+                     {
+                        // Mirror param changes to all LPC/MPE lanes
+                        Lane *multiLane;
+                        int multiLaneIdx = 0;
+                        foreach multiLane in lanes
+                        {
+                           if(laneIdx != multiLaneIdx)
+                           {
+                              if(multi_lane_offset <= multiLaneIdx < (multi_lane_offset + multi_num_channels))
+                              {
+                                 ModVST2 multiModVST2 <= multiLane.findModAtY(modVST2.ui_grid_y);
+
+                                 if(multiModVST2 instanceof ModVST2)
+                                 {
+                                    if(multiModVST2.modIsPatchCompatibleWith(modVST2))
+                                    {
+                                       VST2Plugin multiPlugin <= multiModVST2.plugin;
+
+                                       if(null != multiPlugin)
+                                       {
+                                          multiPlugin.setParameter(_paramIdx, _paramValue);
+                                          bUpdated = true;
+                                       }
+                                    }
+                                 }
+                              }
+                           }
+                           multiLaneIdx++;
+                        } // loop mirror lanes
+                     } // if mirror lane
+                  } // if mirror mode
+               } // if modVST2
+               else
+               {
+                  // Sampler / Gain / ..
+                  mod.setParameterValue(_paramIdx, _paramValue);
+               }
+            } // if instance_id
+         } // foreach modVST2
+         laneIdx++;
+      } // loop lanes
+      return bUpdated;
+   }
+
+   // <method.png>
+   public method handleRemoteParamUpdateRel(int _instanceId, int _paramIdx, float _paramValueRel) : boolean {
+      // (note) replay mutex was locked by caller (Project::handleRemoteParamUpdateRel)
+      Lane *lane;
+      int laneIdx = 0;
+      boolean r = false;
+
+      foreach lane in lanes
+      {
+         ModVST2 *modVST2;
+         foreach modVST2 in lane.mods
+         {
+            if(modVST2 instanceof ModVST2)
+            {
+               // // trace "xxx check modVST2.instance_id="+modVST2.instance_id+" == _instanceId="+_instanceId;
+               if(modVST2.instance_id == _instanceId)
+               {
+                  if((null != modVST2.shadow_plugin) && (null != modVST2.plugin))
+                  {
+                     FloatArray relativeParamValues <= modVST2.relative_param_values;
+
+                     if(0 <= _paramIdx < relativeParamValues.numElements)
+                     {
+                        relativeParamValues[_paramIdx] = _paramValueRel;
+
+                        VST2Plugin shadowPlugin <= modVST2.shadow_plugin;
+                        VST2Plugin replayPlugin <= modVST2.plugin;
+
+                        replayPlugin.setParameter(_paramIdx,
+                                                  mathClampf(shadowPlugin.getParameter(_paramIdx) + _paramValueRel,
+                                                             0.0f, 1.0f
+                                                             )
+                                                  );
+
+                        // (note) do NOT update mirror/MPE patches since that would defeat the purpose of
+                        //         per voice modulation
+                     }
+
+                  } // if shadow_plugin && plugin
+
+                  r = true;
+               } // if instance_id
+            } // if modVST2
+         } // foreach modVST2
+         laneIdx++;
+      } // loop lanes
+      return r;
+   }
+
+   // <method.png>
+   public =replay= method selectPatchVariation(int _idx, boolean _bUnloadPrev) {
+      Global.Debug("Track::selectPatchVariation: idx="+_idx);
+
+      boolean bIgnoreAutoVST2Orig = VST2.PushIgnoreAutomation();
+      boolean bIgnoreAutoCLAPOrig = CLAP.PushIgnoreAutomation();
+
+      _idx = mathClampi(_idx, 0, patch_variations.numElements - 1);
+
+      TrackPatchVariation tpv <= patch_variations.get(_idx);
+      Global.Debug("Track::selectPatchVariation: idx="+_idx+" name=\""+tpv.name+"\"");
+
+      if(_bUnloadPrev)
+         unloadLanes();  // close editor windows, query patch data, free plugin instances
+
+      current_patch_variation_idx = _idx;
+      updateRefsFromCurrentPatchVariation();
+
+      // Instantiate VST/CLAP/STFX plugins, restore patch/bank chunks
+      loadStatePost(false/*bThreaded*/);
+
+      CLAP.PopIgnoreAutomation(bIgnoreAutoCLAPOrig);
+      VST2.PopIgnoreAutomation(bIgnoreAutoVST2Orig);
+   }
+
+   // <method.png>
+   public method newPatchVariationAndSelect() : TrackPatchVariation {
+      TrackPatchVariation tpv <= new TrackPatchVariation;
+      int tpvIdx = patch_variations.numElements;
+      tpv.init(this, tpvIdx, null/*nameOrNull*/);
+      patch_variations.add(#(deref tpv));
+      selectPatchVariation(tpvIdx, true/*bUnloadPrev*/);
+      current_project.markAsModified();
+      return tpv;
+   }
+
+   // <method.png>
+   public =replay= method deletePatchVariationAndSelectNextOrPrev(int _idx) {
+      Global.Debug("Track::deletePatchVariation: idx="+_idx+" current_patch_variation_idx="+current_patch_variation_idx);
+
+      if(patch_variations.numElements > 1)
+      {
+         TrackPatchVariation tpv <= patch_variations.get(_idx);
+         tpv.autoUnloadSamples();
+         tpv.exit();
+
+         if(_idx == current_patch_variation_idx)
+         {
+            int selNextIdx = _idx;
+            if(selNextIdx >= (patch_variations.numElements - 1))
+               selNextIdx = _idx - 1;
+
+            // // unloadLanes();
+            patch_variations.delete(_idx);
+
+            Global.Debug("Track::deletePatchVariation: selNextIdx="+selNextIdx);
+            selectPatchVariation(selNextIdx, false/*bUnloadPrev*/);
+         }
+         else
+         {
+            patch_variations.delete(_idx);
+         }
+
+         current_project.markAsModified();
+      }
+   }
+
+   // <method.png>
+   public =replay= method swapPatchVariationWithNext(int _idx) {
+      // (note) caller must validate 'idx'
+      // (note) called by moveup / movedown utility fxns
+      patch_variations.swap(_idx, _idx + 1);
+
+      if(current_patch_variation_idx == _idx)
+         current_patch_variation_idx = _idx + 1;
+      else if(current_patch_variation_idx == (_idx + 1))
+         current_patch_variation_idx = _idx;
+   }
+
+   // <method_find.png>
+   public method findModByInstanceId(int _midiChHint, int _instanceId) : Mod {
+      int matchLaneIdx = -1;
+
+      if(-1 != _midiChHint)
+      {
+         if(isMultiMode())
+         {
+            if(isMPEMode())
+            {
+               matchLaneIdx =  _midiChHint - 1;
+            }
+            else
+            {
+               // LPC
+               matchLaneIdx = _midiChHint;
+            }
+         }
+      }
+
+      Lane *lane;
+      int laneIdx = 0;
+      foreach lane in lanes
+      {
+         Mod *mod;
+         foreach mod in lane.mods
+         {
+            if(mod.instance_id == _instanceId)
+            {
+               if(-1 != matchLaneIdx)
+               {
+                  lane <= lanes.get(matchLaneIdx);
+
+                  if(null != lane)
+                  {
+                     Mod multiMod <= lane.findModAtY(mod.ui_grid_y);
+
+                     if(multiMod instanceof Mod)
+                        return multiMod;
+                  }
+               }
+
+               return mod;
+            }
+         }
+
+         // Next lane
+         laneIdx++;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstModByDevIdxAndMidiCh(byte _devIdxHint, byte _midiChHint) : Mod {
+      if(dev_idx == _devIdxHint)
+      {
+         if(midi_ch == _midiChHint || -1 == midi_ch)
+         {
+            int matchLaneIdx = -1;
+
+            if(-1 != _midiChHint)
+            {
+               if(isMultiMode())
+               {
+                  if(isMPEMode())
+                  {
+                     matchLaneIdx = _midiChHint - 1 + multi_lane_offset;
+
+                     if(matchLaneIdx < 0)
+                     {
+                        // Out of bounds (mpe ctl channel)
+                        return null;
+                     }
+                  }
+                  else
+                  {
+                     // LPC
+                     matchLaneIdx = _midiChHint + multi_lane_offset;
+                  }
+               }
+
+            }
+
+            Lane *lane;
+            int laneIdx = 0;
+            foreach lane in lanes
+            {
+               if((-1 == matchLaneIdx) || (matchLaneIdx == laneIdx))
+               {
+                  Mod *mod;
+                  foreach mod in lane.mods
+                     return mod;
+               }
+
+               // Next lane
+               laneIdx++;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstMod() : Mod {
+      local Lane *lane;
+      foreach lane in lanes
+      {
+         local Mod mod <= lane.getModByIdx(0);
+         if(null != mod)
+            return mod;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstModSample() : ModSample {
+      local Lane *lane;
+      foreach lane in lanes
+      {
+         local ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+               return modSample;
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstModCLAP() : ModCLAP {
+      local Lane *lane;
+      foreach lane in lanes
+      {
+         local ModCLAP *modCLAP;
+         foreach modCLAP in lane.mods
+         {
+            if(modCLAP instanceof ModCLAP)
+               return modCLAP;
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstModVST2() : ModVST2 {
+      local Lane *lane;
+      foreach lane in lanes
+      {
+         local ModVST2 *modVST2;
+         foreach modVST2 in lane.mods
+         {
+            if(modVST2 instanceof ModVST2)
+               return modVST2;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method findModVST2ByPlugin(VST2Plugin _plugin) : ModVST2 {
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModVST2 *modVST2;
+         foreach modVST2 in lane.mods
+         {
+            if(modVST2 instanceof ModVST2)
+            {
+               if(@(modVST2.plugin) == @(_plugin))
+                  return modVST2;
+
+               if(@(modVST2.shadow_plugin) == @(_plugin))
+                  return modVST2;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method findModCLAPByPlugin(CLAPPlugin _plugin) : ModCLAP {
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModCLAP *modCLAP;
+         foreach modCLAP in lane.mods
+         {
+            if(modCLAP instanceof ModCLAP)
+            {
+               if(@(modCLAP.plugin) == @(_plugin))
+                  return modCLAP;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public =replay= resetVRRState() {
+      vrr_next_voice_idx = 0;
+   }
+
+   // <method.png>
+   public method flagUsedModMatrixRPNCtl(IntArray _usedFlags) {
+      Lane *lane;
+      foreach lane in lanes
+         lane.flagUsedModMatrixRPNCtl(_usedFlags);
+   }
+
+   // <method_find.png>
+   public method findUnusedModMatrixRPNCtl() : short {
+      // Return RPN_CTL_n or -1 (all in use)
+      local IntArray usedFlags <= Mod.NewModMatrixRPNCtlUsedFlags();
+      flagUsedModMatrixRPNCtl(usedFlags);
+      return Mod.FindFirstUnusedModMatrixRPNCtl(usedFlags);
+   }
+
+   // <replay.png>
+   protected method process_int(local int _curTrackIdx, local int _numFrames) {
+      local Lane *lane;
+      local boolean bFirstLane = true;
+      local int j;
+      local int k;
+
+      milliSecondsDouble(profile_process_t_start);
+
+      if(replay.b_reset_all_controllers)
+      {
+         vrr_next_voice_idx = 0;
+
+         cur_lane_fade_mask = 16383; // reset (enable 14 lanes)
+         foreach lane in lanes
+         {
+            lane.lane_fade_vol_cur  = 1.0f;
+            lane.lane_fade_vol_next = 1.0f;
+         }
+      }
+
+      if(b_lane_fade && replay.b_have_events)
+      {
+         local MIDIPipeFrame fr <= replay.midi_input_frame;
+
+         local short laneFadeMask = fr.getFilteredRPN(dev_idx, midi_ch, RPN_LANE_FADE_MASK);
+         if(laneFadeMask >= 0)
+            cur_lane_fade_mask = laneFadeMask;
+
+         local short laneFadeNr = fr.getFilteredRPN(dev_idx, midi_ch, RPN_LANE_FADE_NR);
+         if(laneFadeNr >= 0)
+         {
+            if(b_lane_fade_ctl_rel)
+               laneFadeNr = 1 + ( (laneFadeNr*multi_num_channels) / 16384 );
+            if(0 == laneFadeNr)
+               cur_lane_fade_mask = 16383;  // reset (enable 14 lanes)
+            else
+               cur_lane_fade_mask = (1 << (laneFadeNr-1));
+         }
+
+         local byte laneFadeNrCC = fr.getFilteredCC(dev_idx, midi_ch, lane_fade_cc);
+         if(laneFadeNrCC >= 0)
+         {
+            if(b_lane_fade_ctl_rel)
+               laneFadeNrCC = 1 + ( (laneFadeNrCC*multi_num_channels) / 128 );
+            if(0 == laneFadeNrCC)
+               cur_lane_fade_mask = 16383; // reset (enable 14 lanes)
+            else
+               cur_lane_fade_mask = (1 << (laneFadeNrCC-1));
+            // // trace "xxx track CC laneFadeNrCC="+laneFadeNrCC;
+         }
+      }
+
+      foreach lane in lanes
+      {
+         // Clear lane I/O buffers
+         lane.prepareProcess(_numFrames);
+      }
+
+      if(sample_pad_kit.b_edited && isDrumMode())
+      {
+         sample_pad_kit.process(_curTrackIdx, _numFrames);
+      }
+      else if(sample_timeline.b_edited && isTimelineMode())
+      {
+         sample_timeline.process(this, _curTrackIdx, _numFrames);
+      }
+
+      // // trace "xxx Track::process: numLanes="+lanes.numElements;
+
+      local boolean bPlaying = isPlaying();
+      local boolean bAlwaysProcess = doProcessAny();
+
+      local boolean bVRR = isVRRMode();
+      vrr_note_on_idx = 0;
+      local int vrrNumEvNoteOn;
+      local int vrrNoteOnIdx = 0;
+      if(bVRR)
+      {
+         local MIDIPipeFrame inputFrame <= replay.midi_input_frame;
+         vrrNumEvNoteOn = inputFrame.getNumEventsNoteOnByFlt(dev_idx, midi_ch);
+      }
+
+      // Process and accumulate lane outputs
+      local int laneIdx = 0;
+      foreach lane in lanes
+      {
+         // // if(2 == cur_track_idx)
+         // //    trace "xxx track 2 current_chunk_input_buffer.max="+current_chunk_input_buffer.max;
+         if(lane.b_enable || bAlwaysProcess)
+         {
+            local int midiCh;
+            local int forceCh;
+            local int globalCh = -1;
+
+            if(isMultiMode())
+            {
+               forceCh = 0;
+
+               if(laneIdx < multi_lane_offset)
+               {
+                  midiCh = 99;
+               }
+               else
+               {
+                  midiCh = ((-1 == midi_ch)?0:midi_ch) + laneIdx - multi_lane_offset;
+
+                  if(midiCh >= multi_num_channels)
+                     midiCh = 99;
+
+                  if(isMPEMode())
+                  {
+                     globalCh = multi_master_ch;
+                     if(midiCh >= globalCh)
+                        midiCh++;
+                  }
+               }
+            }
+            else if(bVRR)
+            {
+               midiCh = midi_ch;
+               forceCh = -1;
+
+               vrrNoteOnIdx = 9999;
+
+               if(laneIdx >= multi_lane_offset)
+               {
+                  if(laneIdx < (multi_lane_offset + multi_num_channels))
+                  {
+                     vrr_next_voice_idx = (vrr_next_voice_idx % multi_num_channels);
+                     vrrNoteOnIdx = (laneIdx - multi_lane_offset) - vrr_next_voice_idx;
+                     if(vrrNoteOnIdx < 0)
+                        vrrNoteOnIdx += multi_num_channels;
+                  }
+               }
+            }
+            else
+            {
+               // Default (or drum) mode
+               midiCh = midi_ch;
+               forceCh = -1;
+            }
+
+            lane.process(cur_track_idx,
+                         _numFrames,
+                         dev_idx, midiCh, forceCh, globalCh,
+                         this,
+                         laneIdx,
+                         lane.b_enable && bPlaying,
+                         bVRR && (vrrNoteOnIdx < 9999),
+                         vrrNoteOnIdx
+                         );
+
+            local FloatArray laneOut <= lane.mix_buffer;
+
+            k = 0;
+            j = 0;
+
+            if(lane.b_enable && bPlaying)
+            {
+               // Add lane output to track mixbuffer
+               // (todo) native loop
+               // (todo) add "default" lane output directly to track mix_buffer ?!
+               if(bFirstLane)
+               {
+                  tksampleedit_copy_stereo_to_stereo(mix_buffer, k, laneOut, j, _numFrames);
+               }
+               else
+               {
+                  tksampleedit_add_stereo_to_stereo(mix_buffer, k, laneOut, j, _numFrames);
+               }
+
+               bFirstLane = false;
+            }
+         }
+
+         // Next lane
+         laneIdx++;
+
+      } // foreach lane
+
+      if(b_lane_fade)
+      {
+         // Update slewed lane volume levels
+         cur_lane_fade_framecount += _numFrames;
+         local int numFrames1k = Audio.mix_rate * (1.0f / 1000.0f);
+         if(cur_lane_fade_framecount >= numFrames1k)
+         {
+            local float laneFadeSlewUp   = mathPowerf(1.0f - lane_fade_slew_up,   2.6f);
+            local float laneFadeSlewDown = mathPowerf(1.0f - lane_fade_slew_down, 2.6f);
+            while(cur_lane_fade_framecount >= numFrames1k)
+            {
+               laneIdx = 0;
+               foreach lane in lanes
+               {
+                  if(multi_lane_offset <= laneIdx < (multi_lane_offset + multi_num_channels))
+                  {
+                     if(cur_lane_fade_mask & (1 << laneIdx))
+                     {
+                        // Fade in
+                        lane.lane_fade_vol_next += (1.0f - lane.lane_fade_vol_next) * laneFadeSlewUp;
+                     }
+                     else
+                     {
+                        // Fade out
+                        lane.lane_fade_vol_next += (0.0f - lane.lane_fade_vol_next) * laneFadeSlewDown;
+                     }
+                  }
+                  else
+                     lane.lane_fade_vol_next = 1.0f;
+                  laneIdx++;
+               }
+               cur_lane_fade_framecount -= numFrames1k;
+            }
+         }
+      }
+
+      if(0)
+      {
+         Audio.RenderSineStereo(mix_buffer, 0, _numFrames, 2);
+         return;
+      }
+
+      if(bPlaying)
+      {
+         local float lvlL;
+         local float lvlR;
+         local FloatArray *trackInputBuf;
+
+         local Output *output;
+         local int outTrackIdx;
+
+         ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(mix_buffer, 0, 2, _numFrames));
+         ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(mix_buffer, 1, 2, _numFrames));
+
+         // Append to Resynth ring buffer ?
+         local RingBuffer ringBuf <= current_project.resynth_ringbuf;
+         if(ringBuf.isTrack(cur_track_idx))
+         {
+            ringBuf.appendFrames(mix_buffer, 2/*srcNumCh*/, 0/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+         }
+
+         // Append to scope FFT ring buffer ?
+         ringBuf <= current_project.scope_fft_ringbuf;
+         if(ringBuf.isTrack(cur_track_idx))
+            ringBuf.appendFrames(mix_buffer, 2/*srcNumCh*/, 0/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+
+         // Append to scope history ring buffer ?
+         ringBuf <= current_project.scope_history_ringbuf;
+         if(ringBuf.isTrack(cur_track_idx))
+            ringBuf.appendFrames(mix_buffer, 2/*srcNumCh*/, 0/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+
+         // Append to scope trig ring buffer ?
+         ringBuf <= current_project.scope_trig_ringbuf;
+         if(ringBuf.isTrack(cur_track_idx))
+            ringBuf.appendFrames(mix_buffer, 2/*srcNumCh*/, 0/*srcChOff*/, 0/*srcFrameOff*/, 1/*numCh*/, _numFrames);
+
+         // (note) AUDIO type outputs are handled in Replay::process()
+         foreach output in outputs
+         {
+            switch(output.type)
+            {
+               case Output.TYPE_TRACK:
+                  if(-1 == output.track_idx)
+                  {
+                     // Output to self (feedback)
+                     outTrackIdx = _curTrackIdx;
+                  }
+                  else
+                  {
+                     outTrackIdx = output.track_idx;
+                  }
+                  if(current_project.isTrackInputImmediate(_curTrackIdx, outTrackIdx))
+                  {
+                     // Both tracks are processed on same core and output track has not been processed, yet
+                     //  => send to current_track_input_buffer (i.e. don't delay by one chunk)
+                     trackInputBuf <= current_project.getTrackInputBuffer(_curTrackIdx, outTrackIdx);
+
+                     if(null != trackInputBuf)
+                     {
+                        lvlL = output.level_l;
+                        lvlR = output.level_r;
+                        k = 0;
+                        j = 0;
+                        tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, mix_buffer, j, lvlL, lvlR, _numFrames);
+                     }
+                  }
+                  // else: track send is handled in Replay::process()
+                  break;
+
+               case Output.TYPE_TRACK_SC:
+                  if(-1 == output.track_idx)
+                  {
+                     // Output to self (feedback)
+                     outTrackIdx = _curTrackIdx;
+                  }
+                  else
+                  {
+                     outTrackIdx = output.track_idx;
+                  }
+                  if(current_project.isTrackInputImmediate(_curTrackIdx, outTrackIdx))
+                  {
+                     // Both tracks are processed on same core and output track has not been processed, yet
+                     //  => send to current_track_input_buffer (i.e. don't delay by one chunk)
+                     trackInputBuf <= current_project.getTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+
+                     if(null != trackInputBuf)
+                     {
+                        lvlL = output.level_l;
+                        lvlR = output.level_r;
+                        k = 0;
+                        j = 0;
+                        tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, mix_buffer, j, lvlL, lvlR, _numFrames);
+                     }
+                  }
+                  // else: track send is handled in Replay::process()
+                  break;
+            }
+         } // foreach output
+
+         // Send to "focus" track when this track is focused in editor (e.g. for analyzer plugins)
+         if( (focus_send_track_idx >= 0) && (_curTrackIdx == PageProject.focus_idx && _curTrackIdx != focus_send_track_idx) )
+         {
+            if(current_project.isTrackInputImmediate(_curTrackIdx, focus_send_track_idx))
+            {
+               // Both tracks are processed on same core and output track has not been processed, yet
+               //  => send to current_track_input_buffer (i.e. don't delay by one chunk)
+               trackInputBuf <= current_project.getTrackInputBuffer(_curTrackIdx, focus_send_track_idx);
+
+               if(null != trackInputBuf)
+               {
+                  lvlL = output.level_l;
+                  lvlR = output.level_r;
+                  k = 0;
+                  j = 0;
+                  tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, mix_buffer, j, lvlL, lvlR, _numFrames);
+               }
+            }
+            // else: track send is handled in Replay::process()
+
+         }
+      }
+
+      if(bVRR)
+      {
+         vrr_next_voice_idx += vrrNumEvNoteOn;
+         // // if(vrrNumEvNoteOn > 0)
+         // //    trace "xxx vrr: next_voice_idx="+vrr_next_voice_idx+" numEvNoteOn="+vrrNumEvNoteOn;
+      }
+
+      milliSecondsDouble(profile_process_t_end);
+      profile_process_t_delta = profile_process_t_end - profile_process_t_start;
+      profile_process_load_cur = (profile_process_t_delta*100.0) / replay.process_ms;
+      profile_process_load_avg = profile_process_load_avg*0.95 + profile_process_load_cur*0.05;
+
+      // // trace "xxx msProfile="+profile_process_t_delta+", processMS="+replay.process_ms+" => "+((profile_process_t_delta_avg*100.0)/replay.process_ms)+"%";
+
+      // // trace "xxx Track::process: END";
+   }
+
+   // <replay.png>
+   public method process(local int _curTrackIdx, local int _numFrames) {
+      try
+      {
+         if(STConfig.b_process_tracks)
+            process_int(_curTrackIdx, _numFrames);
+      }
+      catch(Error e)
+      {
+         trace "[!!!] Track::process<"+name+">: caught exception "+e.name;
+         trace e.stackTrace;
+      }
+   }
+
+   // <method_get.png>
+   public method isAudioClipTrack() : boolean {
+      // called by PageAudio::addAudioClipTracksToSamplesMenu()
+      return
+         (dev_idx == STConfig.preferred_audio_track_dev_idx/*7=vst_h*/) ||
+         (name <= "a_")
+         ;
+   }
+
+   // <method.png>
+   public method unsetLastStartedSampleBankHint(Sample _sample) {
+      // called by Project.deleteSample()
+      TrackPatchVariation *tpv;
+      foreach tpv in patch_variations
+      {
+         Lane *lane;
+         foreach lane in tpv.lanes
+            lane.unsetLastStartedSampleBankHint(_sample);
+      }
+   }
+
+   // <method_find.png>
+   public method findModSampleInstances(PointerArray _ret) {
+      // called by PageTrack::updatePageSampleAutoSelectSampleAndNamespace()
+      Lane *lane;
+      foreach lane in lanes
+      {
+         ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+               _ret.add(modSample);
+         }
+      }
+   }
+
+}

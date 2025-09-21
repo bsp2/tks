@@ -1,0 +1,489 @@
+// ----
+// ---- file   : OutputForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 12Feb2018
+// ---- changed: 15Feb2018, 16Feb2018, 17Feb2018, 20Feb2018, 04Mar2018, 30Mar2018, 21Jul2018
+// ----          29Nov2018, 06Dec2018, 14Feb2020, 15Nov2020, 31May2021, 18Dec2022, 29Jul2023
+// ----          21Sep2023, 04Oct2023, 30Oct2023, 09Nov2023, 11Nov2023, 24Nov2023, 22Mar2024
+// ----          19Sep2024, 21Sep2024, 22Sep2024
+// ----
+// ----
+// ----
+
+module MOutputForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class OutputForm : XMLForm, ActionProvider {
+
+   define String ACTION_DELETE_OUTPUT;
+   define String ACTION_MOVE_OUTPUT_UP;
+   define String ACTION_MOVE_OUTPUT_DOWN;
+
+   protected OutputsControl *parent_control;
+
+   protected Output *output;
+   public int output_idx;
+   public int num_outputs;
+   protected int max_lanes;
+
+   protected ComboBox   *cm_type;
+   protected ComboBox   *cm_idx;
+   protected int         cm_idx_off;
+   protected Slider     *sl_pan;
+   protected Slider     *sl_level;
+
+   protected boolean b_log_level;  // true=use logarithmic level slider, false=linear
+
+   public static StringArray track_output_options = [
+      "Default",
+      "-",
+      "Track",
+      "Track SC",
+      "Audio St",
+      "Audio L / M",
+      "Audio R / S"
+                                                     ];
+
+   public static StringArray lane_output_options = [
+      "Default",
+      "-",
+      "Track",
+      "Track SC",
+      "Audio St",
+      "Audio L/M",
+      "Audio R/S",
+      "Lane",
+      "Lane SC",
+      "Lane L/M",
+      "Lane R/S",
+      "Lane L>St",
+      "Lane R>St",
+      "Lane M>L",
+      "Lane M>R"
+                                                    ];
+
+   protected PopupMenu *pm_context;
+
+   protected int lane_idx;
+
+
+   // <ui_init.png>
+   public method init(OutputsControl _parentControl, int _laneIdx, int _idx, int _numOutputs) : boolean {
+
+      parent_control <= _parentControl;
+
+      lane_idx    = _laneIdx;
+      output_idx  = _idx;
+      num_outputs = _numOutputs;
+
+      if(!initPakFile("OutputForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      configureAsControlPanel();  // flat+fully opaque
+
+      if((-1 == _laneIdx) || (_laneIdx == (Track.MAX_LANES-1)))
+      {
+         cm_type.setOptions(track_output_options);
+      }
+      else
+      {
+         cm_type.setOptions(lane_output_options);
+      }
+
+      b_log_level = STConfig.b_log_output_level_sliders;
+      // // if(b_log_level)
+      // //    sl_level.setRange(-70, 0);
+      // // else
+      // //    sl_level.setRange(0, 1);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_DELETE_OUTPUT, ACTION_MOVE_OUTPUT_UP, ACTION_MOVE_OUTPUT_DOWN];
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [cm_type,
+                    cm_idx,
+                    sl_pan,
+                    sl_level
+                    ];
+   }
+
+   // <ui_show.png>
+   public method showOutput(Output _output, int _maxLanes) {
+      output    <= _output;
+      max_lanes  = _maxLanes;
+
+      cm_type.setSelectedOption(output.type);
+
+      updateIdxOptions();
+      cm_idx.setSelectedOption(output.getIdx() - cm_idx_off);
+
+      sl_pan.setValue(output.pan);
+      sl_pan.setRelativeKnobSize(0.1);
+      sl_level.setValue(b_log_level ? levelToSliderVal(output.level) : output.level);
+      sl_level.setRelativeKnobSize(0.1);
+      updateLevelToolTipCaption();
+   }
+
+   // <method.png>
+   public method levelToSliderVal(float _level) : float {
+      // (note) apply mapping to increase precision in upper range
+      float r = _level;
+      r = Utils.LevelToDB(r);
+      r = mathClampf(r, -70, 0);
+      r = (r + 70)/70.0;  // => 0..1
+      r = acos(r);
+      r = r / (PI*0.5);
+      r = 1.0 - r;
+      return r;
+   }
+
+   // <method.png>
+   public method sliderValToLevel(float _slider) : float {
+      // (note) apply mapping to increase precision in upper range
+      float r = 1.0 - _slider;
+      r = r*PI*0.5;
+      r = cos(r);
+      r = -70 + 70.0 * r;
+      r = Utils.DBToLevel(r);
+      return r;
+   }
+
+   // <ui_update.png>
+   public method updateOutputTrackName() {
+      updateIdxOptions();
+   }
+
+   // <ui_update.png>
+   protected method updateIdxOptions() {
+      boolean bIdxEditable;
+      local StringArray opt;
+      local StringArray optLong;
+      cm_idx.setInvalidOptionName("-");
+      cm_idx_off = 0;
+      Integer nr = 1;
+
+      switch(output.type)
+      {
+         default:
+         case Output.TYPE_DEFAULT:
+         case Output.TYPE_NONE
+            bIdxEditable = false;
+            break;
+
+         case Output.TYPE_TRACK:
+         case Output.TYPE_TRACK_SC:
+            cm_idx.setInvalidOptionName("FB");
+            loop(current_project.tracks.numElements)
+            {
+               Track track <= current_project.getTrackByIdx(nr-1);
+               if(null != track)
+               {
+                  opt.add(nr.printf("%02d")+":"+(track.name.substring(0,7)));
+                  optLong.add(nr.printf("%02d")+": "+track.name);
+               }
+               else
+               {
+                  opt.add(nr+" err");
+                  optLong.add(nr+" err");
+               }
+               nr++;
+            }
+            bIdxEditable = true;
+            break;
+
+         case Output.TYPE_AUDIO_STEREO:
+         case Output.TYPE_AUDIO_LEFT:
+         case Output.TYPE_AUDIO_RIGHT:
+            int numOut;
+            if(b_metahost)
+            {
+               loop(Replay.METAHOST_NUM_OUTPUTS)
+               {
+                  opt.add(nr.printf("%02d"));
+                  optLong.add(nr.printf("%02d"));
+                  nr++;
+               }
+            }
+            else
+            {
+               int outOff = output.isStereo() ? 2 : 0;
+               StringArray outAliases <= STConfig.audio_out_aliases;
+               String *sOutAlias;
+               loop(Audio.STREAM_MAX_OUTPUT_CHANNELS)
+               {
+                  sOutAlias <= outAliases.get(outOff+0);
+                  if(null != sOutAlias)
+                     opt.add(nr.printf("%02d:"+sOutAlias.substring(0,5)));
+                  else
+                     opt.add(nr.printf("%02d:"));
+
+                  sOutAlias <= outAliases.get(outOff+1);
+                  if(null != sOutAlias)
+                     optLong.add(nr.printf("%02d:")+" "+sOutAlias);
+                  else
+                     optLong.add(nr.printf("%02d:"));
+
+                  outOff += 4;
+                  nr++;
+               }
+            }
+            bIdxEditable = true;
+            break;
+
+         case Output.TYPE_LANE:
+         case Output.TYPE_LANE_SC:
+         case Output.TYPE_LANE_L:
+         case Output.TYPE_LANE_R:
+         case Output.TYPE_LANE_L_ST:
+         case Output.TYPE_LANE_R_ST:
+         case Output.TYPE_LANE_M_L:
+         case Output.TYPE_LANE_M_R:
+            bIdxEditable = (lane_idx < (Track.MAX_LANES-1));
+            if(bIdxEditable)
+            {
+               cm_idx_off = lane_idx+1;
+               nr = cm_idx_off+1;
+               // // loop(Track.MAX_LANES - nr)
+               loop(max_lanes - cm_idx_off)
+               {
+                  opt.add(nr.printf("%02d:")+" lane "+nr);
+                  optLong.add(nr.printf("%02d:")+"lane "+nr);
+                  nr++;
+               }
+            }
+            break;
+      }
+      cm_idx.setOptions(opt);
+      cm_idx.setOptionsLong(optLong);
+      cm_idx.setEditable(bIdxEditable);
+   }
+
+   // <ui_update.png>
+   public method setBackgroundTint(int _c32) {
+      panel_alpha = 255;
+      panel_tint  = _c32;
+   }
+
+   // <method_get.png>
+   protected method getLevelString() : String {
+      float db = Utils.LevelToDB(output.level);
+      return Utils.GetSnapToZeroFloatString(output.level * 100)+"%  /  "+db+" dB";
+   }
+
+   // <ui_update.png>
+   protected method updateLevelToolTipCaption() {
+      sl_level.setToolTipCaption("Level: "+getLevelString());
+   }
+
+   // <ui_handle.png>
+   protected method handleTypeChanged() {
+      output.setType(cm_type.getSelectedOption());
+      updateIdxOptions();
+      cm_idx.setSelectedOption(output.getIdx() - cm_idx_off);
+      Global.Print("Output type is "+cm_type.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleIdxChanged() {
+      output.setIdx(cm_idx.getSelectedOption() + cm_idx_off);
+
+      if(output.isTrack())
+      {
+         if(-1 == output.track_idx)
+         {
+            Global.Print("Output to same track (feedback)");
+            return;
+         }
+      }
+
+      Global.Print("Output channel is "+(output.getIdx() + 1)+" ("+cm_idx.getSelectedOptionName()+")");
+   }
+
+   // <ui_handle.png>
+   protected method handlePanChanged() {
+      output.setPan(sl_pan.getValue());
+      Global.Print("Pan is "+Utils.GetSnapToZeroFloatString(output.pan * 100)+"%"+" (L="+Utils.GetSnapToZeroFloatString(output.level_l)+" r="+Utils.GetSnapToZeroFloatString(output.level_r)+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleLevelChanged() {
+      if(b_log_level)
+      {
+         float lvlDB = sl_level.getValue();
+
+         if(lvlDB == sl_level.getMinValue())
+         {
+            output.setLevel(0.0f);
+         }
+         else
+         {
+            output.setLevel(sliderValToLevel(lvlDB));
+         }
+      }
+      else
+      {
+         output.setLevel(sl_level.getValue());
+      }
+      updateLevelToolTipCaption();
+      sl_level.updateToolTipIfVisible();
+      Global.Print("Level is "+getLevelString()+" (L="+Utils.GetSnapToZeroFloatString(output.level_l)+" r="+Utils.GetSnapToZeroFloatString(output.level_r)+")");
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenu pm <= pm_context;
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+
+      pmb <= pm.addDefaultButton("Move output up", "move_up");
+      pmb.setActive(output_idx > 0);
+
+      pmb <= pm.addDefaultButton("Move output down", "move_down");
+      pmb.setActive(output_idx != (num_outputs-1));
+
+      Track parentTrack <= parent_control.parent_track;
+      int parentLaneIdx  = parent_control.lane_idx;
+      if(parentLaneIdx >= 0)
+      {
+         // (note) only allow sends to subsequent lanes
+         int parentTrackNumLanes = parentTrack.getNumLanes();
+         if((parentLaneIdx+1) < parentTrackNumLanes)
+         {
+            pm.addSeparator();
+            spm <= PopupMenu.New(pm);
+            pmb <= pm.addIconMenu("Create send to lane", "add", deref spm);
+            pmb.setIconScale(0.5);
+            int sendLaneIdx = parentLaneIdx + 1;
+            while(sendLaneIdx < parentTrackNumLanes)
+            {
+               Lane lane <= parentTrack.getLaneByIdx(sendLaneIdx);
+               pmb <= spm.addDefaultButton(lane.getLaneCaption(sendLaneIdx), "createlanesend_"+sendLaneIdx);
+               sendLaneIdx++;
+            }
+         }
+      }
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addIconMenu("Create FX-send to track", "add", deref spm);
+      pmb.setIconScale(0.5);
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         Mod modFX <= track.findFirstFXModOrNull();
+         if(null != modFX)
+         {
+            pmb <= spm.addDefaultButton(track.name, "createfx_"+current_project.getTrackIdx(track));
+            pmb.setAccelerators(null, modFX.getName());
+         }
+      }
+
+      pm.addSeparator();
+      pmb <= pm.addIconButton("Delete output", "trashcan_sm", "delete");
+      pmb.setActive(num_outputs > 1);
+
+      pm.resizeToMinimum();
+
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show output context menu.");
+   }
+
+   // <ui_handle.png>
+   protected virtual onMouseClick(MouseEvent _ev/*or null*/) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      return XMLForm::onMouseClick(_ev);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      String acName <= _action.getActionName();
+      ActionProvider ap <= _action.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("OutputForm: pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+            if(acName <= "createfx_")
+            {
+               parent_control.handleAddOutputToFXTrack(int(acName.replace("createfx_", "")));
+               return true;
+            }
+            if(acName <= "createlanesend_")
+            {
+               parent_control.handleAddOutputToLane(int(acName.replace("createlanesend_", "")));
+               return true;
+            }
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "delete":
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_DELETE_OUTPUT), this));
+                  return true;
+
+               case "move_up":
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_MOVE_OUTPUT_UP), this));
+                  return true;
+
+               case "move_down":
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_MOVE_OUTPUT_DOWN), this));
+                  return true;
+            }
+            return true;
+
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+
+         case @(cm_idx):
+            handleIdxChanged();
+            return true;
+
+         case @(sl_pan):
+            handlePanChanged();
+            return true;
+
+         case @(sl_level):
+            handleLevelChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+}

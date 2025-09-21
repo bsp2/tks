@@ -1,0 +1,952 @@
+// ----
+// ---- file   : CycleMachineEditDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 18Aug2020
+// ---- changed: 19Aug2020, 20Aug2020, 12Oct2020, 13Oct2020, 30Jul2021, 31Jul2021, 01Aug2021
+// ----          31Aug2021, 19Feb2023, 01Apr2023, 07Apr2023, 19Apr2023, 20Apr2023, 04May2023
+// ----          05May2023, 06May2023, 17Sep2023, 21Sep2023, 04Oct2023, 30Oct2023, 02Nov2023
+// ----          11Nov2023, 23Nov2023, 02Dec2023, 07Dec2023, 17Jan2024, 18Jan2024, 10Feb2024
+// ----          14Feb2024, 23Feb2024, 25Feb2024, 19Apr2024, 25Apr2024, 05Jul2024, 11Aug2024
+// ----          12Aug2024, 13Aug2024, 15Sep2024, 03Oct2024, 08Oct2024, 07Nov2024, 12Dec2024
+// ----          13Dec2024, 14Dec2024, 26Dec2024, 27Dec2024, 28Dec2024, 10Jan2025, 11Jan2025
+// ----          11Jun2025
+// ----
+// ----
+// ----
+
+module MCycleMachineEditDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class CycleMachineEditDialog extends TextEditDialog, TextEditPlugin {
+   define String TA_NUMBEREDIT;
+   TimerAction ta_numberedit;
+
+   protected CycleSynthDialog *parent_dlg;
+   protected CyclePatch       *patch;
+
+   protected SplitPane            *sp_split;
+   public    BezierCurveArrayForm *f_curve;
+   protected ComboBox             *cm_curves;
+   protected Button               *bt_arg;
+   protected ComboBox             *cm_arg;
+   protected CycleArgForm         *f_arg;
+
+   static CycleSyntaxHighlighter syntax_hl;
+
+   protected ComboBoxPopup  *lcurves_popup;
+   protected StringArray    *lcurves_popup_names;
+   protected IntArray       *lcurves_popup_indices;
+   protected String         *lcurved_popup_sid;   // template instance id
+
+
+   // <method_new.png>
+   public static NewCycleMachineEditDialog(CycleSynthDialog _parentDlg,
+                                           String           _caption,
+                                           String           _message,
+                                           boolean          _bOkCancel,
+                                           String           _btOkCaption,
+                                           String           _btCancelCaption,
+                                           CyclePatch       _patch,
+                                           ActionConsumer   _recipient
+                                           ) : CycleMachineEditDialog {
+      local CycleMachineEditDialog d;
+      d.initCycleMachineEditDialog(_parentDlg,
+                                   deref _caption,
+                                   deref _message,
+                                   _bOkCancel,
+                                   _btOkCaption,
+                                   _btCancelCaption,
+                                   _patch,
+                                   _recipient
+                                   );
+      return deref d;
+   }
+
+   // <ui_init.png>
+   protected initCycleMachineEditDialog(CycleSynthDialog _parentDlg,
+                                        String           _caption,
+                                        String           _message,
+                                        boolean          _bOkCancel,
+                                        String           _btOkCaption,
+                                        String           _btCancelCaption,
+                                        CyclePatch       _patch,
+                                        ActionConsumer _recipient
+                                        ) {
+      // (note) based on ui::TextEditDialog::initTextEditDialog()
+      initDialog();
+
+      parent_dlg <= _parentDlg;
+      recipient  <= deref _recipient;
+      patch      <= _patch;
+
+      local Panel l <= Panel.New();
+
+      sp_split <= SplitPane.New();
+      sp_split.setEnableVertical(true);
+      sp_split.setSplit(STConfig.cycle_machine_split);
+      sp_split.setAlignment(Layout.EXPAND);
+
+      local Panel pTop <= Panel.New();
+      pTop.setAlignment(Layout.EXPANDX);
+
+      local String sToolTip =
+         "ESC / lctrl-s : save buffer and (re-)parse script\n"
+         "lalt - LEFT : select previous buffer\n"
+         "lalt - RIGHT : select next buffer\n"
+         "lctrl - g  OR  lctrl - x SPACE : edit include file / buffer under cursor\n"
+         "lctrl - h : copy include pathname under cursor to clipboard\n"
+         "lctrl - i : expand input under cursor\n"
+         "lctrl - t : select and insert template include\n"
+         "TAB / RMB-click : edit curve or number under cursor\n"
+         "RALT\n"
+         "RCTRL\n"
+         "lctrl - w\n"
+         "lctrl - p : (re-)export plugin\n"
+         "lctrl - TAB : switch to curve editor\n"
+         ;
+
+      local Label lbMessage;
+      lbMessage.initLabel();
+      lbMessage.setCaption(_message);
+      Icon icon <= UI.GetIcon("textinput");
+      if(icon != null)
+      {
+         lbMessage.setIcon(icon);
+         lbMessage.setIconPlacement(Layout.LEFT);
+         lbMessage.setIconPadRight(10);
+      }
+      lbMessage.setToolTipCaption(deref sToolTip);
+      lbMessage.setAlignment(Layout.CENTERY);
+      pTop.addLayer(deref lbMessage, Layout.LEFT);
+
+      local Panel pCurve <= Panel.New();
+      pCurve.setPadding4f(2,4,2,4);
+      pCurve.setEnableCollapse(true);
+
+      f_curve <= new BezierCurveArrayForm;
+      f_curve.initBezierCurveArrayForm(100.0f*UI.font_scaling/*reqLabelW*/);
+      BezierEdit be <= f_curve.be_env;
+      be.min_size_y = 64;  // def=96
+      pCurve.addLayer(deref f_curve, Layout.TOP);
+
+      local Panel pCombo <= Panel.New();
+      pCombo.setEnableCollapse(true);
+      pCombo.setAlignment(Layout.EXPANDX);
+
+      f_arg <= new CycleArgForm;
+      f_arg.initArgForm();
+      f_arg.setAlignment(Layout.EXPANDX|Layout.BASELINE);
+      f_arg.setLayoutWeight2f(1,0.1);
+      pCombo.addLayer(deref f_arg, Layout.CENTER);
+
+      cm_arg <= ComboBox.New();
+      cm_arg.setAlignment(Layout.BASELINE);
+      cm_arg.setOptionSizeReserve("MMMMMMMMMMMM");
+      pCombo.addLayer(deref cm_arg, Layout.LEFT);
+
+      bt_arg <= Button.New();
+      bt_arg.setEnableLabelButton(true);
+      bt_arg.setEnableProvideWheelAction(true);
+      bt_arg.setEnableCaptionDim(true);
+      bt_arg.setCaption("Arg:");
+      bt_arg.setPadLeft(8);
+      bt_arg.setAlignment(Layout.BASELINE);
+      bt_arg.setForegroundColorLabelMix(1.0f);
+      pCombo.addLayer(deref bt_arg, Layout.LEFT);
+
+      cm_curves <= ComboBox.New();
+      cm_curves.setAlignment(Layout.BASELINE);
+      cm_curves.setOptionSizeReserve("MMMMMMMMMMMMMM");
+      cm_curves.setInvalidOptionName("<lcurve>");
+      pCombo.addLayer(deref cm_curves, Layout.LEFT);
+
+      local Label lbCurves <= Label.New();
+      lbCurves.setCaption("Curve:");
+      lbCurves.setAlignment(Layout.BASELINE);
+      pCombo.addLayer(deref lbCurves, Layout.LEFT);
+
+      pCurve.addLayer(deref pCombo, Layout.BOTTOM);
+
+      updateCurve();
+      updateArg();
+
+      pTop.addLayer(deref pCurve, Layout.CENTER);
+
+      sp_split.addXFMChild(deref pTop);
+
+      // Add TextEdit
+      local TextEdit te;
+      p_textedit <= Panel.New();
+      te.initTextEdit();
+      te.setText(_patch.getSourceBufferRefMain()/*defaultText*/);
+      te.setSyntaxHighlighter(syntax_hl);
+      te.setEnableEditNumber(true);
+      te.setAlignment(Layout.CENTER);
+      te.setTextEditPlugin(this);
+      te.setMinNumCols(80);
+      te.setMinNumRows(12);
+      te.setMaxNumCols(200);
+      te.setMaxNumRows(200);
+      te.setTabSize(2);
+      te.setLayoutWeight2f(1,1);
+      te.setEnableProvideCursorMovement(true);
+      p_textedit.addLayer(deref te, Layout.CENTER);
+      textedit <= te;
+
+      scroller_y <= Scroller.NewVertical(0/*min*/, 1000/*max*/, 0/*value*/, 1/*step*/);
+      scroller_y.setLayerStyle(LookAndFeel.STYLE_FLAT);
+      scroller_y.setEnableFlatHighContrast(false);
+      scroller_y.setEnableAdaptiveKnobSize(true);
+      scroller_y.setAlignment(Layout.EXPANDY);
+      p_textedit.addLayer(scroller_y, Layout.RIGHT);
+
+      sp_split.addXFMChild(deref p_textedit);
+
+      l.addLayer(deref sp_split, Layout.CENTER);
+
+      if(_bOkCancel)
+      {
+         // OK and cancel buttons
+         local Panel pnOkCancel <= Panel.New();
+         pnOkCancel.setLayout(SuperBorderLayout);
+         pnOkCancel.setAlignment(Layout.CENTER);
+         // Add OK button
+         local Button btOk;
+         btOk.initButton();
+         btOk.setCaption(_btOkCaption);
+         btOk.setAlignment(Layout.CENTER);
+         btOk.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT,
+                           UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+         btOk.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT,
+                                UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+         btOk.setProvidedActionAlias(Button.ACTION_CLICK, "ok");
+         pnOkCancel.addLayer(deref btOk, Layout.LEFT);
+         bt_ok <= btOk;
+
+         // Add Cancel button
+         local Button btCancel;
+         btCancel.initButton();
+         btCancel.setCaption(_btCancelCaption);
+         btCancel.setAlignment(Layout.CENTER);
+         btCancel.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT,
+                               UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+         btCancel.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT,
+                                    UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+         btCancel.setProvidedActionAlias(Button.ACTION_CLICK, "cancel");
+         pnOkCancel.addLayer(deref btCancel, Layout.RIGHT);
+         // Add ok/cancel panel
+         l.addLayer(deref pnOkCancel, Layout.BOTTOM);
+
+         // Determine accelerator keys
+         accel_ok = UI.GetAcceleratorChar(_btOkCaption);
+         accel_cancel = UI.GetAcceleratorChar(_btCancelCaption);
+      }
+
+
+      // Initialize window
+      initWindow(deref l,
+                 _caption,
+                 0, 0, // update position in show()
+                 0, 0
+                 );
+
+      resizeToMinimum();
+
+      ta_numberedit <= TimerAction.New(TA_NUMBEREDIT, this, STConfig.cycle_recalc_interval_delayed);
+      ta_numberedit.setDefaultTicks(STConfig.cycle_recalc_interval_delayed/*def*/,
+                                    STConfig.cycle_recalc_interval_smooth/*short*/,
+                                    STConfig.cycle_recalc_interval_delayed/*medium*/,
+                                    STConfig.cycle_recalc_interval_delayed/*long*/
+                                    );
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      textedit.onTabFocus();
+   }
+
+   // <method_set.png>
+   public virtual setText(String _text) {
+      textedit.setText(_text);
+   }
+
+   // <ui_update.png>
+   public method updateCurve() {
+
+      BezierEditState *beState;
+      Envelope *beEnv;
+
+      CyScript cycle <= patch.cycle;
+
+      local String *curveCaption;
+      local String *tblId;
+
+      local StringArray aOpt;
+      int curveIdx = 0;
+      loop(CyclePatch.NUM_USER_CURVES)
+      {
+         curveCaption <= null;
+         if(null != cycle)
+         {
+            tblId <= cycle.findCurveAliasByIndex(curveIdx);
+            if(null != tblId && !tblId.isBlank())
+            {
+               curveCaption <= tblId;
+            }
+         }
+         if(null == curveCaption)
+            curveCaption <= "-";
+
+         aOpt.add(curveIdx+": "+curveCaption);
+
+         curveIdx++;
+      }
+      cm_curves.setOptions(aOpt);
+      if(patch.last_edited_curve_idx < CyclePatch.NUM_USER_CURVES)
+         cm_curves.setSelectedOption(patch.last_edited_curve_idx);
+      else
+         cm_curves.setSelectedOption(-1);
+
+      curveIdx = patch.last_edited_curve_idx;  // 0..CyclePatch.NUM_USER_CURVES-1
+
+      beState <= patch.curve_states.get(curveIdx);
+      beEnv <= patch.curve_envs.get(curveIdx);
+
+      curveCaption <= null;
+      if(null != cycle)
+      {
+         tblId <= cycle.findCurveAliasByIndex(curveIdx);
+         if(null != tblId && !tblId.isBlank())
+         {
+            curveCaption <= tblId;
+         }
+      }
+      if(null == curveCaption)
+         curveCaption <= "Curve "+curveIdx;
+
+      Global.Debug2("CycleMachineEditDialog::updateCurve: showCurve(curveIdx="+curveIdx+")");
+
+      f_curve.showCurve(curveCaption+":", beState, beEnv, null/*mtxNamedRecalc*/,
+                        patch, curveIdx
+                        );
+      f_curve.setRes(patch.curve_res.get(curveIdx));
+
+      redraw();
+   }
+
+   // <method.png>
+   public method selectCurve(int _idx) {
+      if(_idx >= 0)
+      {
+         patch.setLastEditedCurveIdx(_idx);
+
+         if(_idx >= CyclePatch.NUM_USER_CURVES)
+            Global.Print("Select lcurve "+(patch.last_edited_curve_idx - CyclePatch.NUM_USER_CURVES));
+         else
+            Global.Print("Select curve "+patch.last_edited_curve_idx);
+
+         updateCurve();
+      }
+   }
+
+   // <method.png>
+   protected method editCurve(int _curveIdx) {
+      if(_curveIdx == patch.last_edited_curve_idx)
+      {
+         // already selected, set kbdfocus to curve editor
+         f_curve.focusBezierEdit();
+      }
+      else
+      {
+         selectCurve(_curveIdx);
+      }
+   }
+
+   // <ui_update.png>
+   public method updateArg() {
+      local StringArray aOpt;
+      local IntArray aOptFg;
+      int argIdx = 0;
+      loop(CyclePatch.NUM_ARGS)
+      {
+         CyArg arg <= patch.getArgByIndex(argIdx);
+         if(null != arg)
+         {
+            if(arg.b_local)
+            {
+               aOpt.add((argIdx+1)+": <"+arg.id+">");
+               aOptFg.add(#80000000);
+            }
+            else
+            {
+               aOpt.add((argIdx+1)+": "+arg.id);
+               aOptFg.add(0);
+            }
+         }
+         else
+         {
+            aOpt.add((argIdx+1)+": -");
+            aOptFg.add(#80000000);
+         }
+         argIdx++;
+      }
+      cm_arg.setOptions(deref aOpt);
+      cm_arg.setOptionFGTints(deref aOptFg);
+      cm_arg.setSelectedOption(patch.last_edited_arg_idx);
+
+      argIdx = patch.last_edited_arg_idx;
+      f_arg.showArg(parent_dlg, argIdx, parent_dlg.cycle_state);
+      f_arg.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleImportFromClipboard() {
+      // x/y pairs per line
+      local String sClipboard <= UI.GetClipboard();
+      if(null != sClipboard && !sClipboard.isBlank())
+      {
+         Global.Debug("CycleCurveDialog::handleImportClipboard: sClipboard.numChars="+sClipboard.numChars);
+         BezierEdit beVal <= f_curve.be_env;
+         if(beVal.importFromString(sClipboard))
+         {
+            updateCurve();
+            // // parent_dlg.handleCurveChanged(_curveIdx);
+         }
+      }
+      else
+         Global.Warning("Import: clipboard is empty");
+   }
+
+   // <method.png>
+   public virtual textEditForceEditHandleTab(String _s, int _idx) : boolean {
+      // TextEditPlugin
+      return
+         _s <= "c "  || _s <= "curve "  ||
+         _s <= "lc " || _s <= "lcurve " ||
+         _s <= "inc " ||
+         _s <= "xinc " ||
+         _s <= "~"
+         ;
+   }
+
+   // <method.png>
+   public virtual textEditHandleTabOrRMBClick(String _s, int _idx, boolean _bRMB) : boolean {
+      // TextEditPlugin
+      Global.Debug2("CycleMachineEditDialog::textEditHandleTabOrRMBClick: s=\""+_s+"\" idx="+_idx+" bRMB="+_bRMB);
+      local StringArray a <= _s.splitSpace(true);
+      local String *sId;
+      int lutIdx;
+      int i;
+      int curveIdx;
+      String *s;
+
+      if("curve"  == a.get(0) || "c"  == a.get(0) ||
+         "lcurve" == a.get(0) || "lc" == a.get(0)
+         )
+      {
+         if(a.numElements >= 2)
+         {
+            sId <= a.get(1);
+         }
+      }
+      else if("inc" == a.get(0))
+      {
+         textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, 'g'));
+         return true;
+      }
+      else
+      {
+         lutIdx = a.indexOfObject("lut", 0);
+         if(-1 == lutIdx)
+         {
+            i = 0;
+            loop(a.numElements)
+            {
+               if(a[i] <= "~lut")  // ~lut2xy mylut (template call)
+               {
+                  lutIdx = i;
+                  break;
+               }
+            }
+         }
+         if(lutIdx >= 0)
+         {
+            // 'lut mycurve'
+            sId <= a.get(lutIdx+1);
+         }
+      }
+
+      // // trace "xxx textEditHandleTabOrRMBClick: sId=\""+sId+"\" s=\""+_s+"\"";
+
+      if(null != sId)
+      {
+         curveIdx = -1;
+
+         if(sId.checkIntConversion())
+         {
+            // 'curve 0 mycurve'
+            curveIdx = sId;
+         }
+         else
+         {
+            // 'curve mycurve'
+            curveIdx = patch.findCurveIndex(sId);
+         }
+
+         if(0 <= curveIdx < CyclePatch.TOTAL_NUM_CURVES)
+         {
+            editCurve(curveIdx);
+            return true;
+         }
+      }
+      else
+      {
+         // ~mytempl id=xyz
+         //   with "lcurve mycurve%%" in template decl
+
+         // find template instance id
+         i = 0;
+         sId <= null;
+         loop(a.numElements)
+         {
+            s <= a.get(i++);
+            if(s <= "id=")
+            {
+               sId <= s.substring(3,99);
+               break;
+            }
+         }
+         if(null != sId)
+         {
+            Global.Debug2("CycleMachineEditDialog::textEditHandleTabOrRMBClick: template instance id=\""+sId+"\"");
+
+            // // trace "xxx textEditHandleTabOrRMBClick: sId=\""+sId+"\" s=\""+_s+"\"";
+            // // trace "xxx patch.new_lcurve_alias_order="+patch.new_lcurve_alias_order;
+            // // trace "xxx patch.last_curve_aliases="+patch.last_curve_aliases;
+
+            // Find lcurves for template instance
+            //  (note) assumes that lcurves were declared via "lcurve mycurve%%"
+            lcurves_popup_names   <= new StringArray;
+            lcurves_popup_indices <= new IntArray;
+            lcurved_popup_sid     <= Object(sId);
+            i = 0;
+            foreach s in patch.last_curve_aliases
+            {
+               if(s >= sId)  // <curveid><templateinstanceid>, e.g. "wavmyosc1"
+               {
+                  lcurves_popup_names.add(s);
+                  lcurves_popup_indices.add(i);
+               }
+               i++;
+            }
+
+            Global.Debug2("CycleMachineEditDialog::textEditHandleTabOrRMBClick: template instance lcurves lcurves_popup_names="+lcurves_popup_names+" lcurves_popup_indices="+lcurves_popup_indices);
+
+            if(1 == lcurves_popup_names.numElements)
+            {
+               curveIdx = lcurves_popup_indices[0];
+               editCurve(curveIdx);
+            }
+            else if(lcurves_popup_names.numElements > 1)
+            {
+               // multiple lcurves, show ComboBoxPopup
+               int prefOptIdx = lcurves_popup_indices.indexOf(patch.getLastEditedLCurveIdxByTemplateInstanceId(sId), 0);
+
+               lcurves_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                               null/*fontOrNull*/,
+                                                               lcurves_popup_names,
+                                                               null/*options_long*/,
+                                                               prefOptIdx/*selected_option*/,
+                                                               0/*prefSx*/,
+                                                               null/*tooltip_captions*/,
+                                                               null/*option_bgcolors*/,
+                                                               null/*option_fgtints*/
+                                                               );
+               if(_bRMB)
+                  lcurves_popup.showNearMouse(0,0);
+               else
+                  lcurves_popup.showNearLayerOffset(textedit, textedit.getCursorPx(), textedit.getCursorPy());
+
+               lcurves_popup.focusFirstTabCycleMember();
+            }
+            // else: no curves found
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method handleEditPopupLCurve(int _optIdx) {
+      Global.Debug2("CycleMachineEditDialog::handleEditPopupLCurve: optIdx="+_optIdx+" (\""+lcurves_popup_names.get(_optIdx)+"\")");
+      int curveIdx = lcurves_popup_indices.get(_optIdx);
+      if(curveIdx >= 0)  // should always be >=0
+      {
+         patch.setLastEditedLCurveIdxByTemplateInstanceId(lcurved_popup_sid, curveIdx);
+         editCurve(curveIdx);
+         // // f_curve.focusBezierEdit();  // (note) edit again to set keyboardfocus (or press lctrl-x TAB)
+      }
+   }
+
+   // <method.png>
+   public virtual textEditParseFloatParamHint(FloatParam _fp, String _s, int _startX, int _endX) {
+      // TextEditPlugin
+      //  (note) "# <min> <max> [<prec> [<stepCoarse> [<stepFine>]]]
+      int idxRem = _s.indexOf("#", _endX+1);
+      if(idxRem >= 0)
+      {
+         local StringArray a <= _s.substring(idxRem+1, -1).splitSpace(true);
+         String *s;
+
+         // min
+         s <= a.get(0);
+         if(null != s)
+         {
+            if(s.checkFloatConversion())
+            {
+               Global.Debug2("CycleTextEditPlugin: min=\""+s+"\"");
+               _fp.setEnableMinEditable(false);
+               _fp.setMinValue(s);
+
+               // max
+               s <= a.get(1);
+               if(null != s)
+               {
+                  if(s.checkFloatConversion())
+                  {
+                     Global.Debug2("CycleTextEditPlugin: max=\""+s+"\"");
+                     _fp.setEnableMaxEditable(false);
+                     _fp.setMaxValue(s);
+
+                     boolean bStepDef = true;
+
+                     // precision
+                     s <= a.get(2);
+                     if(null != s)
+                     {
+                        if(s.checkIntConversion())
+                        {
+                           Global.Debug2("CycleTextEditPlugin: prec=\""+s+"\"");
+                           _fp.setPrecision(mathClampi(s, 0, 5));
+
+                           // stepCoarse
+                           s <= a.get(3);
+                           if(null != s)
+                           {
+                              if(s.checkFloatConversion())
+                              {
+                                 _fp.setStepCoarse(s);
+                                 bStepDef = false;
+
+                                 // stepFine
+                                 s <= a.get(4);
+                                 if(null != s)
+                                 {
+                                    if(s.checkFloatConversion())
+                                    {
+                                       _fp.setStepFine(s);
+                                    }
+                                 }
+
+                              }
+                           }
+                        }
+                     }
+
+                     if(bStepDef)
+                     {
+                        float fStep = (_fp.getMaxValue() - _fp.getMinValue()) / 200.0;
+                        _fp.setStepCoarse(fStep);
+                        _fp.setStepFine(fStep / 100.0);
+                        _fp.clipStepToPrecision();
+                     }
+
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      ta_numberedit.cancel();
+      parent_dlg.saveBufferXY(getCursorX(), getCursorY());
+      STConfig.cycle_machine_split = sp_split.getSplit();
+      TextEditDialog::hide();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      hide();
+      parent_dlg.showCurveEditor();
+      return true;
+   }
+
+   // // public virtual wantTriadKeyMode() : boolean {
+   // //    // // trace "xxx CycleMachineEditDialog::wantTriadKeyMode:";
+   // //    return true;
+   // // }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "xxx CycleMachineEditDialog::onTriadKey: k.pressed="+_k.pressed;
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+
+         case VKEY_SPACE:
+            textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, 'g'));
+            return true;
+
+         case VKEY_TAB:
+            f_curve.focusBezierEdit();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+      SPACE  :  Edit include file / buffer under cursor
+        TAB  :  Set keyboard focus to bezier editor
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx CycleMachineEditDialog: k.name="+_k.name;
+
+      // Filter numpad transport controls
+      if(1)
+      {
+         if([VKEY_KP0, VKEY_KP1, VKEY_KP2, VKEY_KP3, VKEY_KP4, VKEY_KP5, VKEY_KP6, VKEY_KP7, VKEY_KP8, VKEY_KP9, VKEY_KP_PLUS, VKEY_KP_MINUS, VKEY_KP_DIVIDE, VKEY_KP_MULTIPLY, VKEY_KP_PERIOD].contains(_k.code))
+            return false;
+      }
+
+      boolean ret = false;
+
+      boolean bShift = _k.modShift();
+      boolean bCtrl = (_k.modCtrl() && !_k.modAlt()) || (_k.modCmd() && UI.b_key_cmd_copy_paste); // workaround since SDL reports ctrl flag for alt-} keypress
+
+      // trace "xxx TextEdit::onKey: k.pressed="+_k.pressed+" bShift="+bShift+" bCtrl="+bCtrl;
+      ///trace "_k.code="+_k.code +" _k.pressed="+_k.pressed+ " mod="+_k.mod+"  _k.unicode="+_k.unicode;
+
+      // // if(VKEY_TAB == _k.pressed && !isEditing())
+      // //    return Layer::onKey(_k);
+
+      if(VKEY_ESCAPE == _k.pressed)
+      {
+         if(isEditing())
+         {
+            textedit.stopEditing(false/*bQuiet*/);
+            // // if(textedit.b_quiet_handle_esc)
+            return false;  // let parent dialog (also) handle VKEY_ESCAPE (e.g. close dialog)
+            // // return true;
+         }
+         else if(f_curve.hierarchyHasKeyboardFocus())
+         {
+            // Refocus textedit first
+            refocusDefault();
+            return true;
+         }
+      }
+
+      if(bCtrl && (VKEY_SPACE == _k.pressed))
+      {
+         // lctrl-SPACE
+         //   (note) close multi-line textedit dialog opened with same shortcut
+         handleSelection(true/*bOk*/);
+         return true;
+      }
+
+      switch(_k.pressed)
+      {
+         default:
+            if(bCtrl)
+            {
+               // (note) SDL reports unicode==1 for ctrl-a
+               switch(_k.pressed)
+               {
+                  default:  // not a TextEdit shortcut but may be processed by consumer (e.g. lctrl-p=CycleSynthDialog plugin export)
+                     if(_k.pressed)
+                     {
+                        // trace "xxx provide ACTION_SHORTCUT key="+_k.pressed+" ("+_k.name+")";
+                        textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, _k.pressed));
+                        ret = true;
+                     }
+                     break;
+               }
+            }
+            else if(VKEY_RCTRL == _k.pressed)  // used by CycleSynthDialog alternatively to lctrl-p
+            {
+               // trace "xxx provide ACTION_SHORTCUT key="+_k.pressed+" ("+_k.name+")";
+               textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, VKEY_RALT));  // remap RCTRL to RALT
+               ret = true;
+            }
+            break;
+
+         case VKEY_LEFT:
+            if(_k.modAlt())
+            {
+               textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, _k.pressed));
+               ret = true;
+            }
+            break;
+
+         case VKEY_RIGHT:
+            if(_k.modAlt())
+            {
+               textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, _k.pressed));
+               ret = true;
+            }
+            break;
+
+         case VKEY_TAB:
+            if(bCtrl)
+            {
+               textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, _k.pressed));
+               ret = true;
+            }
+            break;
+
+         case 'x':
+            // (note) reserved for triad key mode
+            break;
+      }
+      if(!ret)
+      {
+         // // trace "xxx TextEdit: unhandled key name="+_k.name;
+         return TextEditDialog::onKey(_k);
+      }
+      return true;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      IntAction iac <= _ac;
+      int curveIdx;
+
+      if(BezierCurveArrayForm.ACTION_CURVE_EDITED == acName)
+      {
+         curveIdx = patch.last_edited_curve_idx;  ////cm_curves.getSelectedOption();
+         parent_dlg.handleCurveChanged(curveIdx);
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_SAVED == acName)
+      {
+         f_curve.updateCurvePresetOptions(false/*bForceRescan*/);  // (note) already rescanned in saveCurvePreset2()
+         return true;
+      }
+      else if((BezierCurveArrayForm.ACTION_CURVE_MAXIMIZE == acName) || (BezierCurveArrayForm.ACTION_CURVE_MINIMIZE == acName))
+      {
+         curveIdx = patch.last_edited_curve_idx;
+         Global.Debug2("CycleMachineEditDialog::consumeAction: ACTION_CURVE_MAXIMIZE: curveIdx="+curveIdx);
+         hide();
+         parent_dlg.showCurveEditor();
+         CycleCurveDialog dlgCurve <= CycleSynthDialog.dlg_curve;
+         if(curveIdx < CyclePatch.NUM_USER_CURVES)
+         {
+            dlgCurve.showCurveGroup(curveIdx >> 2);
+            dlgCurve.handleCurveZoom(curveIdx, true/*bMaximize*/, false/*bAllowHide*/);
+         }
+         else
+         {
+            // (note) temporarily uses curveIdx=0 for lcurve editing
+            dlgCurve.showZoomedLCurve(curveIdx);
+         }
+         dlgCurve.b_return_to_machine = true;
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_RES == acName)
+      {
+         curveIdx = patch.last_edited_curve_idx;
+         parent_dlg.handleCurveResChanged(curveIdx, f_curve.getRes());
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_IMPORT == acName)
+      {
+         handleImportFromClipboard();
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_TAB == acName)
+      {
+         textedit.onTabFocus();
+         return true;
+      }
+      else if(TA_NUMBEREDIT == acName)
+      {
+         // send lctrl-s (save) to CycleSynthDialog
+         textedit.provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), textedit, 's'));
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(f_arg):
+            if(CycleArgForm.ACTION_ARG_PREVIOUS == acName)
+               cm_arg.selectPreviousOptionAction();
+            else if(CycleArgForm.ACTION_ARG_NEXT == acName)
+               cm_arg.selectNextOptionAction();
+            return true;
+
+         case @(cm_curves):
+            selectCurve(cm_curves.getSelectedOption());
+            return true;
+
+         case @(bt_arg):
+            if(Button.ACTION_WHEEL_UP == acName)
+               cm_arg.selectPreviousOptionAction();
+            else if(Button.ACTION_WHEEL_DOWN == acName)
+               cm_arg.selectNextOptionAction();
+            return true;
+
+         case @(cm_arg):
+            patch.last_edited_arg_idx = cm_arg.getSelectedOption();
+            Global.Print("Select arg #"+(patch.last_edited_arg_idx+1));
+            updateArg();
+            return true;
+
+         case @(textedit):
+            if(TextEdit.ACTION_NUMBER_EDIT == acName)
+            {
+               parent_dlg.queueRecalcEx(ta_numberedit);
+               return true;
+            }
+            break;
+
+         case @(lcurves_popup):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               handleEditPopupLCurve(iac.getIntValue());
+            }
+            else
+            {
+               refocusDefault();
+            }
+            return true;
+      }
+
+      return TextEditDialog::consumeAction(_ac);
+   }
+
+}

@@ -1,0 +1,203 @@
+// ----
+// ---- file   : ModGate2Audio.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 05Jan2025
+// ---- changed: 07Jan2025
+// ----
+// ----
+// ----
+
+module MModGate2Audio;
+
+namespace st2;
+
+
+// <class.png>
+class ModGate2Audio : Mod {
+
+   public    int channel_mask;   // 0=off, 1=left, 2=right, 3=stereo
+   protected int num_active_notes;
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      channel_mask     = 3;
+      num_active_notes = 0;
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "Gate2Audio";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModGate2Audio cl <= new ModGate2Audio;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModGate2Audio);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModGate2Audio)
+      {
+         ModGate2Audio o <= _o;
+         channel_mask = o.channel_mask;
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return 0;//NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      // // _retParamNames = [
+      // //                   ];
+
+      return true;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // trace "xxx ModGain::setParameterValue: idx="+_idx+" value="+_value;
+
+      // // switch(_idx)
+      // // {
+      // // }
+   }
+
+   // <method_set.png>
+   public =replay= method setChannelMask(int _mask) {
+      channel_mask = _mask;
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 2;
+
+      // Channel mask (v2+)
+      _ofs.i8 = channel_mask;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            if(ver >= 2)
+            {
+               // Channel mask (v2+)
+               channel_mask = _ifs.u8;
+            }
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModGate2Audio::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(replay.b_reset_all_controllers)
+         num_active_notes = 0;
+
+      if(replay.b_have_events)
+      {
+         local MIDIPipeFrame frame <= replay.midi_input_frame;
+
+         local int numNoteOn = frame.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
+         local int numNoteOff = frame.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+
+         num_active_notes -= numNoteOff;
+         if(num_active_notes < 0)
+            num_active_notes = 0;
+
+         num_active_notes += numNoteOn;
+      }
+
+      if(_bPlaying)
+      {
+         // // mtx_param.lock();
+
+         local float f = (num_active_notes > 0) ? 1.0f : 0.0f;
+
+         if(channel_mask & 1)
+            outL.fillRegion(0, _numFrames, f);
+         else
+            outL.copyFrom(inL, 0, _numFrames, 0);
+
+         if(channel_mask & 2)
+            outR.fillRegion(0, _numFrames, f);
+         else
+            outR.copyFrom(inR, 0, _numFrames, 0);
+
+         // // mtx_param.unlock();
+      }
+   }
+
+}

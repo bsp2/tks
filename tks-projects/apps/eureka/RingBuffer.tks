@@ -1,0 +1,203 @@
+// ----
+// ---- file   : RingBuffer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 13May2022
+// ---- changed: 13Feb2023
+// ----
+// ----
+// ----
+
+module MRingBuffer;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class RingBuffer {
+
+   // same source settings as AudioTrack class
+   define int SRC_NONE      = 0;
+   define int SRC_AUDIO_IN  = 1;
+   define int SRC_AUDIO_OUT = 2;
+   define int SRC_TRACK     = 3;
+   int src_type;       // recording source
+   int src_ch_off;     // recording source channel offset (SRC_AUDIO_* only)
+   int src_track_idx;  // recording source track idx (SRC_AUDIO_* only)
+
+   int        num_ch;
+   int        max_frames;
+   FloatArray ringbuf;
+   int        write_offset;
+   int        read_offset;
+   int        num_valid;  // number of readable sample frames
+
+   // <method_init.png>
+   public method init(int _numCh, int _maxFrames) {
+      num_ch        = _numCh;
+      max_frames    = _maxFrames;
+      src_type      = SRC_NONE;
+      src_ch_off    = 0;
+      src_track_idx = 0;
+      write_offset  = 0;
+      read_offset   = 0;
+      num_valid     = 0;
+      ringbuf.allocAndFill(num_ch * max_frames, 0);
+   }
+
+   // <method_set.png>
+   public =replay= method setSource(int _srcType, int _srcChOff, int _srcTrackIdx) {
+      src_type      = _srcType;
+      src_ch_off    = _srcChOff;
+      src_track_idx = _srcTrackIdx;
+   }
+
+   // <method.png>
+   public method isAudioIn(local int _chIdx) : boolean {
+      return (SRC_AUDIO_IN == src_type) && ((-1 == _chIdx) || (_chIdx == src_ch_off));
+   }
+
+   // <method.png>
+   public method isAudioOut(local int _chIdx) : boolean {
+      return (SRC_AUDIO_OUT == src_type) && ((-1 == _chIdx) || (_chIdx == src_ch_off));
+   }
+
+   // <method.png>
+   public method isTrack(local int _trackIdx) : boolean {
+      return (SRC_TRACK == src_type) && (_trackIdx == src_track_idx);
+   }
+
+   // <method_add.png>
+   public method appendFrames(local FloatArray _srcBuffer,
+                              local int _srcNumCh,
+                              local int _srcChOff,
+                              local int _srcFrameOff,
+                              local int _numCh,
+                              local int _numFrames
+                              ) {
+      // called by replay thread
+      //  (note) srcBuffer ringSz = srcBuffer.numElements
+      local int numCh = mathMini(_numCh, num_ch);
+      tksampleedit_ringbuf_copy_samples(ringbuf,
+                                        num_ch/*dstNumCh*/,
+                                        0/*dstChOff*/,
+                                        write_offset,
+                                        _numFrames,
+                                        numCh/*numCh*/,
+                                        _srcBuffer,
+                                        _srcNumCh/*srcNumCh*/,
+                                        _srcChOff/*srcChOff*/,
+                                        _srcFrameOff/*srcFrameOff*/
+                                        );
+      num_valid = mathClampi(num_valid + _numFrames, 0, max_frames);
+      write_offset = (write_offset + _numFrames) % max_frames;
+      if(max_frames == num_valid)
+      {
+         // Write head crossed read head (reader thread did not collect samples fast enough)
+         read_offset = write_offset;
+      }
+   }
+
+   // <method_add.png>
+   public method appendFramesDualMonoRing(local FloatArray _srcBufferL,
+                                          local FloatArray _srcBufferR,
+                                          local int _srcRingSz,
+                                          local int _srcNumCh,
+                                          local int _srcChOff,
+                                          local int _srcFrameOff,
+                                          local int _numFrames
+                                          ) {
+      // called by replay thread (AudioTrack history ring buffer)
+      //  (note) srcBufferL/R ringSz = srcBuffer.numElements
+
+      tksampleedit_ringbuf_copy_samples(ringbuf,
+                                        num_ch/*dstNumCh*/,
+                                        0/*dstChOff*/,
+                                        write_offset,
+                                        _numFrames,
+                                        1/*numCh*/,
+                                        _srcBufferL,
+                                        _srcNumCh/*srcNumCh*/,
+                                        _srcChOff+0/*srcChOff*/,
+                                        _srcFrameOff/*srcFrameOff*/
+                                        );
+
+      if( ((_srcChOff+1) < _srcNumCh) && (num_ch > 1) )
+      {
+         tksampleedit_ringbuf_copy_samples(ringbuf,
+                                           num_ch/*dstNumCh*/,
+                                           1/*dstChOff*/,
+                                           write_offset,
+                                           _numFrames,
+                                           1/*numCh*/,
+                                           _srcBufferR,
+                                           _srcNumCh/*srcNumCh*/,
+                                           _srcChOff+1/*srcChOff*/,
+                                           _srcFrameOff/*srcFrameOff*/
+                                           );
+      }
+
+      num_valid = mathClampi(num_valid + _numFrames, 0, max_frames);
+      write_offset = (write_offset + _numFrames) % max_frames;
+      if(max_frames == num_valid)
+      {
+         // Write head crossed read head (reader thread did not collect samples fast enough)
+         read_offset = write_offset;
+      }
+   }
+
+   // <method.png>
+   public =replay= method readToBuffer(FloatArray _dstBuf, int _dstNumCh) {
+      _dstBuf.numElements = num_valid * _dstNumCh;
+      int numCh = mathMini(_dstNumCh, num_ch);
+      tksampleedit_ringbuf_copy_samples(_dstBuf,
+                                        _dstNumCh/*dstNumCh*/,
+                                        0/*dstChOff*/,
+                                        0/*dstFrameOff*/,
+                                        num_valid,
+                                        numCh/*numCh*/,
+                                        ringbuf,
+                                        num_ch/*srcNumCh*/,
+                                        0/*srcChOff*/,
+                                        read_offset/*srcFrameOff*/
+                                        );
+      read_offset = (read_offset + num_valid) % max_frames;
+      num_valid = 0;
+   }
+
+   // <method.png>
+   public =replay= method readRecentToBuffer(FloatArray _dstBuf, int _dstNumCh, int _numFrames) : boolean {
+      if(num_valid >= _numFrames)
+      {
+         _dstBuf.numElements = _numFrames * _dstNumCh;
+         int numCh = mathMini(_dstNumCh, num_ch);
+         int readOff = (read_offset + num_valid - _numFrames);
+         if(readOff < 0)
+            readOff += max_frames;
+         else
+            readOff = readOff % max_frames;
+         tksampleedit_ringbuf_copy_samples(_dstBuf,
+                                           _dstNumCh/*dstNumCh*/,
+                                           0/*dstChOff*/,
+                                           0/*dstFrameOff*/,
+                                           _numFrames,
+                                           numCh/*numCh*/,
+                                           ringbuf,
+                                           num_ch/*srcNumCh*/,
+                                           0/*srcChOff*/,
+                                           readOff/*srcFrameOff*/
+                                           );
+         read_offset = (read_offset + num_valid) % max_frames;
+         num_valid = 0;
+         return true;
+      }
+      return false;
+   }
+
+}

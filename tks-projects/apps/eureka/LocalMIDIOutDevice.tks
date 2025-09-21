@@ -1,0 +1,136 @@
+// ----
+// ---- file   : LocalMIDIOutDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 22Jul2023
+// ---- changed:
+// ----
+// ----
+// ----
+
+module MLocalMIDIOutDevice;
+
+use tkmidi;
+use namespace st2;
+
+
+// <callback.png>
+function localmidioutdevice_writer_thread(local Thread _th) {
+   ////Global.Debug2("LocalMIDIOutDevice: started writer thread th="+#(_th)+"\n");
+   local LocalMIDIOutDevice thiz <= _th.userdata;
+
+   local Mutex out_mutex <= thiz.out_mutex;
+   local LocalMIDI localmidi <= thiz.localmidi;
+   local Condition cond <= thiz.cond_write;
+
+   local Thread thread <= GetCurrentThread();
+   Global.Debug2("LocalMIDIOutDevice<"+thiz.getName()+">: threadId="+thread.id);
+
+   // thread.priority = THREAD_PRIORITY_TIME_CRITICAL;
+   thread.priority = THREAD_PRIORITY_HIGHEST;
+
+   while(thiz.b_running)
+   {
+      out_mutex.lock();
+
+      if(thiz.num_buf_avail > 0)
+      {
+         // (todo) milliSeconds() should have 1ms precision on Linux resp. Win32 (w/ TKS_WIN32_USE_PERFCOUNTER)
+         local float now = milliSeconds();
+
+         local MIDIOutBuffer mob <= thiz.out_buffers.get(thiz.read_buf_index);
+
+         // if(mob.time_ms <= now) // (todo) handle int overflow
+         if(1)
+         {
+            // Utils.HexDump(mob.out_buffer, 0, mob.out_buffer.offset);
+
+            localmidi.send(mob.out_buffer);
+
+            thiz.num_buf_avail--;
+            local PointerArray outBufs <= thiz.out_buffers;
+            thiz.read_buf_index = (thiz.read_buf_index + 1) % (outBufs.numElements);
+
+            out_mutex.unlock();
+         }
+         else
+         {
+            // Buffer is available, Wait until event time is reached
+            out_mutex.unlock();
+            TKS.yield();
+         }
+      }
+      else
+      {
+         // Wait until event becomes available
+         out_mutex.unlock();
+
+         cond.wait(100/*millisec*/);
+      }
+
+   } // while b_running
+}
+
+
+// <class.png>
+class LocalMIDIOutDevice : MIDIOutDevice {
+   LocalMIDI localmidi;
+   String    localmidi_port_name;
+
+
+    // <method.png>
+   public method createLocalMIDI(local String _portName) : boolean {
+      if(localmidi.create("localmidi_"+_portName, 0/*use DEF_DATA_SIZE*/))
+      {
+         localmidi_port_name = _portName;
+         return true;
+      }
+      else
+      {
+         trace "[---] LocalMIDIOutDevice::createLocalMIDI: failed to init portName=\""+_portName+"\"";
+         return false;
+      }
+   }
+
+   // <method.png>
+   public method openLocalMIDI(local String _portName) : boolean {
+      if(localmidi.connect("localmidi_"+_portName, 0/*use DEF_DATA_SIZE*/))
+      {
+         localmidi_port_name = _portName;
+         return true;
+      }
+      else
+      {
+         trace "[---] LocalMIDIOutDevice::openLocalMIDI: failed to open portName=\""+_portName+"\"";
+         return false;
+      }
+   }
+
+   // <method_get.png>
+   public virtual isOpen() : boolean {
+      return localmidi.isOpen();
+   }
+
+   // <method_get.png>
+   public virtual getDeviceName() : String {
+      return localmidi_port_name;
+   }
+
+   // <method.png>
+   protected virtual startWriterThread() {
+      b_running = true;
+      writer_thread.userdata = this;
+      writer_thread.create(localmidioutdevice_writer_thread);
+   }
+
+   // <method.png>
+   public virtual localMIDICheckForNewConnection() {
+      localmidi.checkForNewConnection();
+   }
+
+}

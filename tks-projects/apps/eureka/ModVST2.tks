@@ -1,0 +1,2683 @@
+// ----
+// ---- file   : ModVST2.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 22Jan2018
+// ---- changed: 24Jan2018, 25Jan2018, 26Jan2018, 31Jan2018, 17Feb2018, 22Feb2018, 23Feb2018
+// ----          24Feb2018, 27Feb2018, 01Mar2018, 02Mar2018, 03Mar2018, 05Mar2018, 06Mar2018
+// ----          07Mar2018, 16Mar2018, 17Mar2018, 27Mar2018, 29Mar2018, 03Apr2018, 22May2018
+// ----          30May2018, 02Jun2018, 22Jun2018, 29Jun2018, 09Jul2018, 09Dec2018, 05Jan2019
+// ----          17Jan2019, 22Mar2019, 10May2019, 07Jul2019, 12Jul2019, 01Aug2019, 26Aug2019
+// ----          14Oct2019, 15Oct2019, 31Oct2020, 07Feb2021, 27Dec2021, 31Dec2021, 11Jan2022
+// ----          27Feb2022, 18Feb2023, 25Feb2023, 04Mar2023, 18Mar2023, 29Jul2023, 09Nov2023
+// ----          01Jul2024, 03Jul2024, 05Jul2024, 06Jul2024, 17Sep2024, 19Sep2024, 20Sep2024
+// ----          22Sep2024, 07Jan2025, 08Jan2025, 21Jun2025
+// ----
+// ----
+// ----
+
+module MModVST2;
+
+use tksdl;
+use tkspeexdsp;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ModVST2 : Mod {
+
+   // (note) inputs 3+4 are the sidechain inputs
+   // (note) additional input/output buffers are created on demand
+   define int VST2_DEF_NUM_IN_BUFFERS  = 4;
+   define int VST2_DEF_NUM_OUT_BUFFERS = 4;
+
+   String unique_id_string;
+   VST2Plugin *plugin;  // null when plugin is not available
+   VST2Plugin *shadow_plugin;  // for relative param changes (Mod::b_relative_params)
+
+   define int PATCH_DATATYPE_NONE         = 0;
+   define int PATCH_DATATYPE_BANKCHUNK    = 1;
+   define int PATCH_DATATYPE_PROGRAMCHUNK = 2;
+   define int PATCH_DATATYPE_PARAMETERS   = 3;
+
+   int plugin_version;
+
+   Buffer patch_data;
+   int patch_datatype;
+
+   Buffer shadow_patch_data;
+   int shadow_patch_datatype;
+
+   String last_io_patch_name;  // base filename
+
+   protected boolean b_buffered;   // true when plugin is in STConfig.vst_buffered_mode_whitelist (work-around for some Zynaptic plugins)
+
+   // protected int debug_frame_count;
+   // protected int debug_last_note;
+
+   protected String clipboard_name;  // used for clipboard instances where no actual plugin instance is available
+
+   // numParams elements, allocated in loadShadowPluginByUniqueIDString()
+   //  - added to final ctl value resulting from modmatrix
+   //  - values are updated via sequencer events (SysEx port)
+   //  - filled with 0 when controllers are reset
+   FloatArray relative_param_values;
+   protected IntArray forced_recalc_param_indices;  // after global relative_param modulation changed
+
+   protected HostMIDIEvents vel_events;  // when using velocity curve (temporary)
+   protected HostMIDIEvents events_from_frame;
+
+   protected Integer tmp_io;
+
+   protected boolean b_editor_shown_at_least_once;  // hack for tracking other windows created/focused by VST editor
+   protected IntArray other_window_hwnds;
+
+   static GenericParamDialogVST2 *dlg_genericparam;  // for VSTs without a custom editor
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(VST2_DEF_NUM_IN_BUFFERS, VST2_DEF_NUM_OUT_BUFFERS);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      unload();
+      Mod::exit();
+   }
+
+   // <method_exit.png>
+   public virtual unload() {
+      // When changing patch variations
+
+      closeEditor();
+
+      // patch data may be needed after switching patch variations (for cloning / restoring)
+      queryPatchData();
+      queryShadowPatchData();
+
+      unloadPluginBackToPool();
+      unloadShadowPluginBackToPool();
+
+      b_postload_done = false;
+   }
+
+   // <method_get.png>
+   public method isBlacklistedFromPool() : boolean {
+      String *filter;
+      foreach filter in STConfig.vst_pool_blacklist
+      {
+         if(unique_id_string & filter)
+            return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method isBlacklistedFromRelativeParams() : boolean {
+      String *filter;
+      foreach filter in STConfig.vst_relativeparams_blacklist
+      {
+         if(unique_id_string & filter)
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method unloadPluginBackToPool() {
+      if(null != plugin)
+      {
+         // (todo) add blacklist
+         if(STConfig.b_plugin_pooling && !isBlacklistedFromPool())
+         {
+            plugin.stopProcess();
+            plugin.suspend();
+
+            VST2.AddPluginBackToPool(unique_id_string, deref plugin);
+            plugin <= null;
+         }
+         else
+         {
+            freePlugin();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method unloadShadowPluginBackToPool() {
+      if(null != shadow_plugin)
+      {
+         if(STConfig.b_plugin_pooling)
+         {
+            shadow_plugin.stopProcess();
+            shadow_plugin.suspend();
+
+            VST2.AddPluginBackToPool(unique_id_string, deref shadow_plugin);
+            shadow_plugin <= null;
+         }
+         else
+         {
+            freeShadowPlugin();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method freePlugin() {
+      if(null != plugin)
+      {
+         plugin.stopProcess();
+         plugin.suspend();
+         plugin.close();
+         plugin <= null;
+         other_window_hwnds.free();
+      }
+   }
+
+   // <method.png>
+   protected method freeShadowPlugin() {
+      if(null != shadow_plugin)
+      {
+         shadow_plugin.stopProcess();
+         shadow_plugin.suspend();
+         shadow_plugin.close();
+         shadow_plugin <= null;
+         other_window_hwnds.free();
+      }
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      if(null != plugin)
+         return plugin.isEffect();
+      return false;
+   }
+
+   // <method.png>
+   protected =replay= method syncShadowToMainPatch() {
+      // Copy shadow patch to main instance
+      queryShadowPatchData();
+      patch_data = shadow_patch_data;
+      patch_datatype = shadow_patch_datatype;
+      restorePatchData();
+   }
+
+   // <method_get.png>
+   public virtual canDoRelativeParams() : boolean {
+      return true;
+   }
+
+   // <method_set.png>
+   public =replay= virtual setEnableRelativeParams(boolean _bEnabled) {
+      boolean bAllow = true;
+
+      if(null != plugin)
+         bAllow = !isBlacklistedFromRelativeParams();
+
+      if(bAllow)
+      {
+         // Must be called from UI thread
+         Mod::setEnableRelativeParams(_bEnabled);
+
+         if(_bEnabled)
+         {
+            lazyInitShadowPlugin(true/*bCopyPatchToShadow*/);
+         }
+         else
+         {
+            syncShadowToMainPatch();
+            unloadShadowPluginBackToPool();
+         }
+      }
+      else
+      {
+         trace "[~~~] ModVST2::setEnableRelativeParams: not allowed for plugin \""+plugin.getEffectName()+"\"";
+      }
+   }
+
+   // <method_set.png>
+   protected method addForcedRecalcParamIdx(local int _paramIdx) {
+      // trace "xxx addForcedRecalcParamIdx("+_paramIdx+")";
+      mtx_param.lock();
+      if(!forced_recalc_param_indices.contains(_paramIdx))
+         forced_recalc_param_indices.add(_paramIdx);
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   protected method lazyInitShadowPlugin(boolean _bCopyPatchToShadow) {
+      if(null == shadow_plugin)
+      {
+         loadShadowPluginByUniqueIDString(unique_id_string);
+
+         if(_bCopyPatchToShadow)
+         {
+            queryPatchData();
+            shadow_patch_data = patch_data;
+            shadow_patch_datatype = patch_datatype;
+            restoreShadowPatchData();
+         }
+      }
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModVST2 cl <= new ModVST2;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+
+      if(_bFullInit)
+      {
+         cl.unique_id_string = unique_id_string;
+
+         if(!cl.loadStatePost(false/*bThreaded*/))
+            trace "[---] ModVST2::modClone: loadStatePost() failed";
+
+         return deref cl;
+      }
+      else
+      {
+         cl.unique_id_string = unique_id_string;
+         cl.plugin_version   = plugin_version;
+         return deref cl;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      if(_o instanceof ModVST2)
+      {
+         ModVST2 o <= _o;
+         return (unique_id_string == o.unique_id_string);
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModVST2)
+      {
+         ModVST2 o <= _o;
+
+         // // Seems to cause crashes when running as VST in Reason
+         // // hideEditor();
+         // // o.hideEditor();
+
+         if(null != o.plugin)
+         {
+            o.queryPatchData();
+
+            if(null != o.shadow_plugin)
+               o.queryShadowPatchData();
+         }
+         // else: no actual instance (just the clipboard)
+
+         Global.Debug("ModVST2::modCopyPatchFrom: o="+#(o)+" o.patch_data="+#(o.patch_data)+" type="+o.patch_datatype);
+
+         if(null != o.patch_data)
+         {
+            if(null == patch_data)
+               patch_data <= new Buffer;
+
+            patch_data     = o.patch_data;
+            patch_datatype = o.patch_datatype;
+
+            if(b_relative_params && _o.b_relative_params) /////null != shadow_plugin)
+            {
+               if(null != o.shadow_patch_data)
+               {
+                  if(null == shadow_patch_data)
+                     shadow_patch_data <= new Buffer;
+
+                  trace "[trc] modCopyPatchFrom: copy o.shadow_patch_data (sz="+(o.shadow_patch_data.size)+")";
+                  shadow_patch_data = o.shadow_patch_data;
+               }
+               else
+               {
+                  trace "[!!!] modCopyPatchFrom: b_relative_params but other shadow_patch_data is null";
+                  shadow_patch_data <= null;
+               }
+            }
+            else
+            {
+               shadow_patch_data <= null;
+            }
+            shadow_patch_datatype = o.shadow_patch_datatype;
+
+            if(null != plugin)
+            {
+               if(null != shadow_plugin)
+                  restoreShadowPatchData();
+
+               restorePatchData();
+            }
+            else
+            {
+               // else: no actual instance (just the clipboard)
+               // (todo) OR: copying patch data while cloning patch variation (plugins are already unloaded)
+               clipboard_name = o.getName();
+            }
+         }
+         else
+         {
+            patch_data    <= null;
+            patch_datatype = PATCH_DATATYPE_NONE;
+
+            shadow_patch_data    <= null;
+            shadow_patch_datatype = PATCH_DATATYPE_NONE;
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method loadInitPatch(_filterHintOrNull) : boolean {
+      String dirName = getVSTPatchDir();
+      String fileName = "init";
+      boolean bLoaded = false;
+      String pathName;
+
+      if(null != _filterHintOrNull)
+      {
+         if(!_filterHintOrNull.isBlank())
+         {
+            fileName = Utils.ConvertToFileName("init_"+_filterHintOrNull.toLower());
+
+            Global.Debug("ModVST2::loadInitPatch: try read \""+fileName+"\"");
+
+            pathName = dirName+"/"+fileName+".fxb";
+            Global.Debug("ModVST2::loadInitPatch: check exists \""+pathName+"\"");
+
+            if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+            {
+               Global.Debug("ModVST2::loadInitPatch: try load \""+pathName+"\"");
+               bLoaded = loadFXStorePatch(pathName);
+            }
+
+            if(!bLoaded)
+            {
+               pathName = dirName+"/"+fileName+".fxp";
+               Global.Debug("ModVST2::loadInitPatch: check exists \""+pathName+"\"");
+
+               if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+               {
+                  Global.Debug("ModVST2::loadInitPatch: try load \""+pathName+"\"");
+                  bLoaded = loadFXStorePatch(pathName);
+               }
+            }
+         }
+      }
+
+      if(!bLoaded)
+      {
+         pathName = dirName+"/init.fxb";
+         Global.Debug("ModVST2::loadInitPatch: check exists \""+pathName+"\"");
+
+         if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+         {
+            Global.Debug("ModVST2::loadInitPatch: try load \""+pathName+"\"");
+            bLoaded = loadFXStorePatch(pathName);
+         }
+      }
+
+      if(!bLoaded)
+      {
+         pathName = dirName+"/init.fxp";
+         Global.Debug("ModVST2::loadInitPatch: check exists \""+pathName+"\"");
+
+         if(!bLoaded && Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+         {
+            Global.Debug("ModVST2::loadInitPatch: try load \""+pathName+"\"");
+            bLoaded = loadFXStorePatch(pathName);
+         }
+      }
+
+      return bLoaded;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      if(!display_name.isBlank())
+         return display_name;
+
+      if(null != plugin)
+      {
+         return plugin.getEffectName();
+      }
+      else
+      {
+         // Plugin not available, extract effect name from UID
+         local StringArray a <= unique_id_string.splitChar('`');  // [0]=vendor [1]=name [2]=fourcc
+         return Object(a.get(1));
+      }
+
+      return clipboard_name;
+   }
+
+   // <method_get.png>
+   public method getUniqueIDString() : String {
+      if(null != plugin)
+         return unique_id_string;
+      return "n/a";
+   }
+
+   // <method.png>
+   public method loadShadowPluginByUniqueIDString(local String _uniqueIDString) : boolean {
+
+      local boolean r = false;
+
+      local VSTScanEntry en <= VST2.FindVSTEntryByUniqueIDString(_uniqueIDString);
+
+      if(null != en)
+      {
+         boolean bLoaded = false;
+
+         if(STConfig.b_plugin_pooling)
+            shadow_plugin <= en.unlinkNextFromPool();
+
+         if(null == shadow_plugin)
+         {
+            shadow_plugin <= new VST2Plugin;
+
+            bLoaded = shadow_plugin.loadPlugin(en.path_name, en.shell_effect_uid);
+
+            if(bLoaded)
+            {
+               shadow_plugin.enableDebug = VST2.b_vst2_debug;
+               updatePluginTransportPlaying(shadow_plugin);
+
+               shadow_plugin.open();
+            }
+         }
+         else
+         {
+            bLoaded = true;
+         }
+
+         if(bLoaded)
+         {
+            // Auto-Enable buffered mode for plugins that will only work with very large buffer sizes
+            local String *bufferedFilter;
+            b_buffered = false;
+            foreach bufferedFilter in STConfig.vst_buffered_mode_whitelist
+            {
+               if(unique_id_string & bufferedFilter)
+               {
+                  // (note) also calls effSetBlockSize()
+                  shadow_plugin.setBlockSizeCollect(chunk_sz, mathMaxi(2, STConfig.vst_buffered_mode_num_chunks));
+                  b_buffered = true;
+                  break;
+               }
+            }
+
+            if(!b_buffered)
+               shadow_plugin.setBlockSize(chunk_sz);
+
+            shadow_plugin.setSampleRate(Audio.mix_rate);
+
+            // Programs
+            shadow_plugin.setProgram(0);
+
+            // Activate
+            shadow_plugin.resume();
+
+            // Start processing
+            shadow_plugin.startProcess();
+
+            relative_param_values.alloc(shadow_plugin.numParameters);
+            relative_param_values.useAll();
+            relative_param_values.fill(0.0f);
+
+            forced_recalc_param_indices.empty();
+
+            r = true;
+         }
+         else
+         {
+            trace "[---] failed to open plugin";
+            shadow_plugin <= null;
+         }
+      }
+      else
+      {
+         Global.Warning("ModVST2::loadShadowPluginByUniqueIDString: id \""+_uniqueIDString+"\" not found in plugin cache !!");
+         shadow_plugin <= null;
+      }
+
+      // Some plugins change the current working directory
+      tkfileutils_setcwd(program_directory);
+
+      return r;
+   }
+
+   // <method.png>
+   public method loadPluginByUniqueIDString(local String _uniqueIDString) : boolean {
+
+      local boolean r = false;
+
+      local VSTScanEntry en <= VST2.FindVSTEntryByUniqueIDString(_uniqueIDString);
+
+      inputs.free();
+      outputs.free();
+
+      if(null != en)
+      {
+         boolean bLoaded = false;
+
+         local int msInit = milliSeconds();
+
+         if(STConfig.b_plugin_pooling)
+            plugin <= en.unlinkNextFromPool();
+
+         if(null == plugin)
+         {
+            plugin <= new VST2Plugin;
+
+            bLoaded = plugin.loadPlugin(en.path_name, en.shell_effect_uid);
+
+            if(bLoaded)
+            {
+               plugin.enableDebug = VST2.b_vst2_debug;
+               plugin.open();
+            }
+         }
+         else
+         {
+            bLoaded = true;
+         }
+
+         if(bLoaded)
+         {
+            unique_id_string = _uniqueIDString;
+
+            // // plugin.enableUIThread = true;
+
+            // Auto-Enable buffered mode for plugins that will only work with very large buffer sizes
+            b_buffered = false;
+            local String *bufferedFilter;
+            foreach bufferedFilter in STConfig.vst_buffered_mode_whitelist
+            {
+               if(unique_id_string & bufferedFilter)
+               {
+                  Global.Debug("ModVST2::loadPluginByUniqueIDString: auto-enabling buffered mode for uid="+unique_id_string);
+                  // (note) also calls effSetBlockSize()
+                  plugin.setBlockSizeCollect(chunk_sz, mathMaxi(2, STConfig.vst_buffered_mode_num_chunks));
+                  b_buffered = true;
+                  break;
+               }
+            }
+
+            if(!b_buffered)
+            {
+               plugin.setBlockSize(chunk_sz * resample_factor);
+               if(b_resample_init)
+               {
+                  // (note) may sound different than changing sample rate immediately before process()
+                  //         (plugin-dependent)
+                  plugin.setSampleRate(Audio.mix_rate * resample_factor);
+                  trace "[trc] set plugin init resampleRate="+(Audio.mix_rate * resample_factor)+" resample_factor="+resample_factor;
+               }
+               else
+               {
+                  plugin.setSampleRate(Audio.mix_rate);
+               }
+               setResample(resample_factor); // lazy alloc buffers and queue resampler state initialization
+            }
+            else
+            {
+               plugin.setSampleRate(Audio.mix_rate);
+            }
+
+            if(VST2.b_vst2_debug)
+            {
+               trace "[...]          vendorString=\"" +plugin.vendorString+"\".";
+               trace "[...]         vendorVersion="   +plugin.vendorVersion;
+            }
+            trace "[...]         productString=\"" +plugin.productString+"\".";
+            if(VST2.b_vst2_debug)
+            {
+               trace "[...]            effectName=\"" +plugin.effectName+"\".";
+               trace "[...]               version="   +plugin.version;
+            }
+            local Integer io; io=plugin.uniqueID;
+            if(VST2.b_vst2_debug)
+            {
+               trace "[...]              uniqueID="   +io.printf("0x%08x");
+               trace "[...]                 flags="   +plugin.flags;
+               trace "[...]               isSynth="   +plugin.isSynth();
+               trace "[...]             hasEditor="   +plugin.hasEditor();
+               trace "[...]          canReplacing="   +plugin.canReplacing();
+               trace "[...]     programsAreChunks="   +plugin.programsAreChunks();
+               trace "[...]         noSoundInStop="   +plugin.noSoundInStop();
+               trace "[...]  numMidiInputChannels="   +plugin.numMidiInputChannels;
+               trace "[...] numMidiOutputChannels="   +plugin.numMidiOutputChannels;
+               trace "[...]          initialDelay="   +plugin.initialDelay;
+            }
+
+            plugin_version = plugin.version;
+
+            // Show input properties / add inputs
+            trace "[...]           numInputs="+plugin.numInputs;
+            local int inIdx = 0;
+
+            if(plugin.numInputs != inputs.numElements)
+            {
+               Global.Debug("ModVST2::loadPluginByUniqueIDString: plugin #inputs changed: old="+inputs.numElements+" new="+plugin.numInputs);
+            }
+
+            // Inputs
+            local int numReqInputBufs = 0;
+            inputs.free();
+            loop(plugin.numInputs)
+            {
+               numReqInputBufs++;
+               local VST2PinProperties inProps <= plugin.getInputProperties(inIdx);
+
+               if(null != inProps)
+               {
+                  addInput(inProps.label);
+
+                  numReqInputBufs += inProps.isStereo();
+
+                  if(VST2.b_vst2_debug)
+                  {
+                     trace "[...]             ["+inIdx+"]:           label=\""+inProps.label+"\".";
+                     trace "[...]             ["+inIdx+"]:      shortLabel=\""+inProps.shortLabel+"\".";
+                     trace "[...]             ["+inIdx+"]: arrangementType="  +inProps.arrangementType;
+                     trace "[...]             ["+inIdx+"]:           flags="  +inProps.flags;
+                     trace "[...]             ["+inIdx+"]:        isActive="  +inProps.isActive();
+                     trace "[...]             ["+inIdx+"]:        isStereo="  +inProps.isStereo();
+                     trace "[...]             ["+inIdx+"]:      useSpeaker="  +inProps.useSpeaker();
+                     trace " ";
+                  }
+               }
+               else
+               {
+                  //trace "[...]             ["+inIdx+"]: <plugin error>";
+                  addInput("Input #"+(inIdx+1));
+               }
+
+               // Next input
+               inIdx++;
+            }
+
+            // Show output properties
+            trace "[...]          numOutputs="+plugin.numOutputs;
+            local int outIdx = 0;
+
+            if(plugin.numOutputs != outputs.numElements)
+            {
+               Global.Debug("ModVST2::loadPluginByUniqueIDString: plugin #outputs changed: old="+outputs.numElements+" new="+plugin.numOutputs);
+            }
+
+            // Outputs
+            local int numReqOutputBufs = 0;
+            outputs.free();
+            loop(plugin.numOutputs)
+            {
+               numReqOutputBufs++;
+               local VST2PinProperties outProps <= plugin.getOutputProperties(outIdx);
+
+               if(null != outProps)
+               {
+                  addOutput(outProps.label);
+                  numReqOutputBufs += outProps.isStereo();
+
+                  if(VST2.b_vst2_debug)
+                  {
+                     trace "[...]             ["+outIdx+"]:           label=\""+outProps.label+"\".";
+                     trace "[...]             ["+outIdx+"]:      shortLabel=\""+outProps.shortLabel+"\".";
+                     trace "[...]             ["+outIdx+"]: arrangementType="  +outProps.arrangementType;
+                     trace "[...]             ["+outIdx+"]:           flags="  +outProps.flags;
+                     trace "[...]             ["+outIdx+"]:        isActive="  +outProps.isActive();
+                     trace "[...]             ["+outIdx+"]:        isStereo="  +outProps.isStereo();
+                     trace "[...]             ["+outIdx+"]:      useSpeaker="  +outProps.useSpeaker();
+                     trace " ";
+                  }
+               }
+               else
+               {
+                  //trace "[...]             ["+outIdx+"]: <plugin error>";
+                  addOutput("Output #"+(outIdx+1));
+               }
+
+               // Next output
+               outIdx++;
+            }
+
+            if(!b_mono_in && (inputs.numElements < 2))
+            {
+               b_mono_in = true;
+            }
+
+            if(!b_mono_out && (outputs.numElements < 2))
+            {
+               b_mono_out = true;
+            }
+
+            // Lazy-add input buffers
+            loop(numReqInputBufs - input_bufs.numElements)
+               addInputBuf();
+
+            // Set input buffer refs
+            local int ioIdx = 0;
+            loop(input_bufs.numElements)
+            {
+               plugin.setExtInputBuffer(ioIdx, input_bufs.get(ioIdx));
+               ioIdx++;
+            }
+
+            // Lazy-add output buffers
+            loop(numReqOutputBufs - output_bufs.numElements)
+               addOutputBuf();
+
+            // Set output buffer refs
+            ioIdx = 0;
+            loop(output_bufs.numElements)
+            {
+               plugin.setExtOutputBuffer(ioIdx, output_bufs.get(ioIdx));
+               ioIdx++;
+            }
+
+            // Programs
+            trace "[...]         numPrograms="+plugin.numPrograms;
+            plugin.setProgram(0);
+            trace "[...]     program[0].name="+plugin.getProgramName();
+
+            // Show parameter names and values
+            trace "[...]       numParameters="+plugin.numParameters;
+
+            if(VST2.b_vst2_debug)
+            {
+               local PointerArray pa;
+               pa.empty();
+               local int paramIdx = 0;
+
+               loop(plugin.numParameters)
+               {
+                  local String paramName <= plugin.getParameterName(paramIdx);
+                  local float paramVal = plugin.getParameter(paramIdx);
+                  pa.add(#((deref paramName) + " ("+paramVal+")"));
+
+                  local VST2ParameterProperties paramProps <= plugin.getParameterProperties(paramIdx);
+
+                  if(null != paramProps)
+                  {
+                     trace "[...]             ["+paramIdx+"]:                   label=\""+paramProps.label+"\".";
+                     trace "[...]             ["+paramIdx+"]:              shortLabel=\""+paramProps.shortLabel+"\".";
+                     trace "[...]             ["+paramIdx+"]:                   flags="  +paramProps.flags;
+                     trace "[...]             ["+paramIdx+"]:                 canRamp="  +paramProps.canRamp();
+                     trace "[...]             ["+paramIdx+"]:                isSwitch="  +paramProps.isSwitch();
+                     if(!paramProps.isSwitch())
+                     {
+                        trace "[...]             ["+paramIdx+"]:       usesIntegerMinMax="  +paramProps.usesIntegerMinMax();
+                        if(paramProps.usesIntegerMinMax())
+                        {
+                           trace "[...]             ["+paramIdx+"]:              minInteger="  +paramProps.getMinInteger();
+                           trace "[...]             ["+paramIdx+"]:              maxInteger="  +paramProps.getMaxInteger();
+                        }
+                        trace "[...]             ["+paramIdx+"]:           usesFloatStep="  +paramProps.usesFloatStep();
+                        if(paramProps.usesFloatStep())
+                        {
+                           trace "[...]             ["+paramIdx+"]:               stepFloat="  +paramProps.getStepFloat();
+                           trace "[...]             ["+paramIdx+"]:          smallStepFloat="  +paramProps.getSmallStepFloat();
+                           trace "[...]             ["+paramIdx+"]:          largeStepFloat="  +paramProps.getLargeStepFloat();
+                        }
+                        trace "[...]             ["+paramIdx+"]:             usesIntStep="  +paramProps.usesIntStep();
+                        if(paramProps.usesIntStep())
+                        {
+                           trace "[...]             ["+paramIdx+"]:             stepInteger="  +paramProps.getStepInteger();
+                           trace "[...]             ["+paramIdx+"]:        largeStepInteger="  +paramProps.getLargeStepInteger();
+                        }
+                     }
+                     trace "[...]             ["+paramIdx+"]:    supportsDisplayIndex="  +paramProps.supportsDisplayIndex();
+                     if(paramProps.supportsDisplayIndex())
+                     {
+                        trace "[...]             ["+paramIdx+"]:            displayIndex="  +paramProps.getDisplayIndex();
+                     }
+                     trace "[...]             ["+paramIdx+"]: supportsDisplayCategory="  +paramProps.supportsDisplayCategory();
+                     if(paramProps.supportsDisplayCategory())
+                     {
+                        trace "[...]             ["+paramIdx+"]:                category="  +paramProps.getCategory();
+                        trace "[...]             ["+paramIdx+"]: numParametersIncategory="  +paramProps.getNumParametersInCategory();
+                        trace "[...]             ["+paramIdx+"]:           categoryLabel="  +paramProps.getCategoryLabel();
+                     }
+                     trace " ";
+                  }
+
+                  // Next param
+                  paramIdx++;
+               }
+
+               trace "[...]          paramNames="+pa;
+            }
+
+            // Show can-dos
+            if(VST2.b_vst2_debug)
+            {
+               trace "[...]               canDo="+
+                  ("\n\t\t         acceptIOChanges:"+plugin.canDo("acceptIOChanges"))     +
+                  ("\n\t\t         asyncProcessing:"+plugin.canDo("asyncProcessing"))     +
+                  ("\n\t\t                  bypass:"+plugin.canDo("bypass"))              +
+                  ("\n\t\t       closeFileSelector:"+plugin.canDo("closeFileSelector"))   +
+                  ("\n\t\t                editFile:"+plugin.canDo("editFile"))            +
+                  ("\n\t\t            getChunkFile:"+plugin.canDo("getChunkFile"))        +
+                  ("\n\t\t        midiProgramNames:"+plugin.canDo("midiProgramNames"))    +
+                  ("\n\t\t                 offline:"+plugin.canDo("offline"))             +
+                  ("\n\t\t        openFileSelector:"+plugin.canDo("openFileSelector"))    +
+                  ("\n\t\t        receiveVstEvents:"+plugin.canDo("receiveVstEvents"))    +
+                  ("\n\t\t     receiveVstMidiEvent:"+plugin.canDo("receiveVstMidiEvent")) +
+                  ("\n\t\t      receiveVstTimeInfo:"+plugin.canDo("receiveVstTimeInfo"))  +
+                  ("\n\t\t reportConnectionChanges:"+plugin.canDo("reportConnectionChanges")) +
+                  ("\n\t\t           sendVstEvents:"+plugin.canDo("sendVstEvents"))       +
+                  ("\n\t\t        sendVstMidiEvent:"+plugin.canDo("sendVstMidiEvent"))    +
+                  ("\n\t\t              sizeWindow:"+plugin.canDo("sizeWindow"))          +
+                  ("\n\t\t              supplyIdle:"+plugin.canDo("supplyIdle"))          +
+                  ("\n\t\t            supportShell:"+plugin.canDo("supportShell"))        +
+                  "\n"
+                  ;
+            }
+
+            // Dump program
+            // patch_data <= new Buffer;
+            // patch_data.size = 0;
+            // plugin.getChunk(patch_data, true/*program*/);
+            // trace "[...]       program chunk: size="+buf.size;
+
+            // // Send program
+            // // plugin.setChunk(buf, true/*program*/);
+
+            // // Dump bank
+            // buf.size = 0;
+            // plugin.getChunk(buf, false/*bank*/);
+            // trace "[...]          bank chunk: size="+buf.size;
+
+            // // Send bank
+            // plugin.setChunk(buf, false/*bank*/);
+
+            updatePluginTransportPlaying(plugin);
+
+            // Activate
+            plugin.resume();
+
+            // Start processing
+            plugin.startProcess();
+
+            // // Change program
+            // plugin.queueProgramChange(0, 0);
+
+            // Trigger note
+            // plugin.queueNoteOn(0, 48, 127);
+
+            // Pitchbend
+            // plugin.queuePitchbendf(0, 0.7f);
+
+            ////plugin.eventTest();
+
+            // Process queued events
+            // plugin.processEvents();
+
+            // Process some samples
+            // trace "[...] processing "+chunk_sz+" frames..";
+            // loop(PROCESS_ITERATIONS)
+            // {
+            //    plugin.processReplacing(chunk_sz);
+            // }
+            // trace "[...] ..done.";
+
+            msInit = milliSeconds() - msInit;
+
+            // int msEditor = milliSeconds();
+
+            // // Show editor window
+            // plugin.openEditor();
+
+            // // TKS.sleep(1000);
+
+            // msEditor = milliSeconds() - msEditor;
+
+            // while(VST2Plugin.GetNumOpenWindows())
+            // {
+            //    VST2Plugin.PumpEvents();
+            //    VST2Plugin.HandleQueuedWindowResize();
+            //    TKS.sleep(30);
+            // }
+
+            // int msExit = milliSeconds();
+
+            // // TKS.sleep(2000);
+            // plugin.closeEditor();
+            // //TKS.sleep(2000);
+
+            // // Stop processing
+            // plugin.stopProcess();
+
+            // // Suspend
+            // plugin.suspend();
+
+            // // Close
+            // plugin.close();
+
+            // plugin <= null;
+
+            // msExit = milliSeconds() - msExit;
+
+            Global.Debug("msInit: "+msInit);
+            // Global.Debug("msEditor: "+msEditor);
+            // Global.Debug("  msExit: "+msExit);
+
+            r = true;
+         }
+         else
+         {
+            trace "[---] failed to open plugin";
+            plugin <= null;
+         }
+      }
+      else
+      {
+         Global.Warning("ModVST2::loadPluginByUniqueIDString: id \""+_uniqueIDString+"\" not found in plugin cache !!");
+         plugin <= null;
+      }
+
+      // Some plugins change the current working directory
+      tkfileutils_setcwd(program_directory);
+
+      return r;
+   }
+
+   // <method_update.png>
+   protected method updatePluginTransportPlaying(local VST2Plugin _plugin) {
+      local String sUID <= getUniqueIDString();
+      _plugin.setEnableReportTransportPlaying(true);
+      local String *blackListEntry;
+      foreach blackListEntry in STConfig.vst_transport_blacklist
+      {
+         if(sUID & blackListEntry)
+            _plugin.setEnableReportTransportPlaying(false);
+      }
+   }
+
+   // <method_get.png>
+   public virtual getLatencyNumFrames() : int {
+      if(null != plugin)
+         return plugin.initialDelay;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      if(null != plugin)
+         return plugin.numParameters;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      boolean r = false;
+
+      _retParamNames.empty();
+
+      if(null != plugin)
+      {
+         int numParams = plugin.numParameters;
+         if(numParams > 0)
+         {
+            int paramIdx = 0;
+
+            loop(numParams)
+               _retParamNames.add(plugin.getParameterName(paramIdx++));
+
+            r = true;
+         }
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public virtual getParameterValue(local int _idx) : float {
+      if(null != plugin)
+         return plugin.getParameter(_idx);
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public virtual getParameterValueRelBase(local int _idx) : float {
+      if(null != shadow_plugin)
+      {
+         return shadow_plugin.getParameter(_idx);
+      }
+      if(null != plugin)
+      {
+         // Should not be reached (RelBase param values are only useful in relative param mode)
+         return plugin.getParameter(_idx);
+      }
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      mtx_param.lock();
+
+      if(null != plugin)
+         plugin.setParameter(_idx, _value);
+
+      if(null != shadow_plugin)
+         shadow_plugin.setParameter(_idx, _value);
+
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public method queryPatchData() : boolean {
+
+      if(null != plugin)
+      {
+         patch_data.free();
+         boolean bDone = false;
+
+         if(plugin.getChunk(patch_data, false/*bank*/))
+         {
+            patch_datatype = PATCH_DATATYPE_BANKCHUNK;
+
+            Global.Debug("ModVST2::queryPatchData: type=BANKCHUNK, size="+patch_data.size);
+
+            bDone = true;
+         }
+         else if(plugin.getChunk(patch_data, true/*program*/))
+         {
+            patch_datatype = PATCH_DATATYPE_PROGRAMCHUNK;
+
+            Global.Debug("ModVST2::queryPatchData: type=PROGRAMCHUNK, size="+patch_data.size);
+
+            bDone = true;
+         }
+
+         if(!bDone)
+         {
+            // Plugin does not support chunks, save parameter array
+
+            patch_datatype = PATCH_DATATYPE_PARAMETERS;
+
+            int numParams = plugin.getNumParameters();
+
+            patch_data.size = numParams * 4/*sizeof(float)*/;
+            patch_data.offset = 0;
+
+            int i = 0;
+            loop(numParams)
+               patch_data.f32 = plugin.getParameter(i++);
+
+            Global.Debug("ModVST2::queryPatchData: type=PARAMETERS, size="+patch_data.size);
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method queryShadowPatchData() : boolean {
+
+      if(null != shadow_plugin)
+      {
+         shadow_patch_data.free();
+         boolean bDone = false;
+
+         if(shadow_plugin.getChunk(shadow_patch_data, false/*bank*/))
+         {
+            shadow_patch_datatype = PATCH_DATATYPE_BANKCHUNK;
+
+            Global.Debug("ModVST2::queryShadowPatchData: type=BANKCHUNK, size="+shadow_patch_data.size);
+
+            bDone = true;
+         }
+         else if(shadow_plugin.getChunk(shadow_patch_data, true/*program*/))
+         {
+            shadow_patch_datatype = PATCH_DATATYPE_PROGRAMCHUNK;
+
+            Global.Debug("ModVST2::queryShadowPatchData: type=PROGRAMCHUNK, size="+shadow_patch_data.size);
+
+            bDone = true;
+         }
+
+         if(!bDone)
+         {
+            // Plugin does not support chunks, save parameter array
+
+            shadow_patch_datatype = PATCH_DATATYPE_PARAMETERS;
+
+            int numParams = shadow_plugin.getNumParameters();
+
+            shadow_patch_data.size = numParams * 4/*sizeof(float)*/;
+            shadow_patch_data.offset = 0;
+
+            for(int i=0; i < numParams; i++)
+               shadow_patch_data.f32 = shadow_plugin.getParameter(i);
+
+            Global.Debug("ModVST2::queryShadowPatchData: type=PARAMETERS, size="+shadow_patch_data.size);
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method restorePatchDataEx(local VST2Plugin _plugin,
+                                    local Buffer     _patchData,
+                                    local int        _patchDatatype) : boolean {
+      // (note) caller must call VST2.PushIgnoreAutomation() prior to this method
+      local boolean r = false;
+
+      local boolean bIgnoreAutoOrig = VST2.PushIgnoreAutomation();
+
+      if(null != _plugin)
+      {
+         if(null != _patchData)
+         {
+            // // _plugin.suspend();
+            // // _plugin.stopProcess();
+            // // TKS.sleep(3000);
+            switch(_patchDatatype)
+            {
+               default:
+               {
+                  Global.Error("ModVST2::restorePatchDataEx: unknown patchDatatype("+_patchDatatype+"). unable to restore patch data. uid="+unique_id_string);
+               }
+               break;
+
+               case PATCH_DATATYPE_NONE:
+                  Global.Debug("ModVST2:restorePatchDataEx: type=NONE");
+                  break;
+
+               case PATCH_DATATYPE_BANKCHUNK:
+                  Global.Debug("ModVST2::restorePatchDataEx: type=BANKCHUNK, size="+_patchData.size);
+                  _plugin.setChunk(_patchData, false/*bank*/);
+                  r = true;
+                  break;
+
+               case PATCH_DATATYPE_PROGRAMCHUNK:
+                  Global.Debug("ModVST2::restorePatchData: type=PROGRAMCHUNK, size="+_patchData.size);
+                  _plugin.setChunk(_patchData, true/*program*/);
+                  r = true;
+                  break;
+
+               case PATCH_DATATYPE_PARAMETERS:
+               {
+                  Global.Debug("ModVST2::restorePatchData: type=PARAMETERS, size="+_patchData.size);
+
+                  local int numParams = _plugin.getNumParameters();
+                  local int numRestoreParams = _patchData.size / 4/*sizeof(sF32)*/;
+                  if(numParams != numRestoreParams)
+                     Global.Warning("ModVST2::restorePatchDataEx: numParams != numRestoreParams ("+numParams+" != "+numRestoreParams+")");
+                  local int i;
+                  for(i=0; i < numRestoreParams; i++)
+                  {
+                     local float paramVal = _patchData.peekF32(i*4);
+                     // trace "xxx ModVST2::restorePatchDataEx: param["+i+"]="+paramVal;
+                     _plugin.setParameter(i, paramVal);
+                  }
+                  r = true;
+               }
+               break;
+            }
+            // // _plugin.startProcess();
+            // // _plugin.resume();
+         }
+         else
+         {
+            Global.Error("ModVST2::restorePatchDataEx: patchData is null.");
+         }
+      }
+      else
+      {
+         Global.Error("ModVST2::restorePatchData: plugin is null.");
+      }
+
+      VST2.PopIgnoreAutomation(bIgnoreAutoOrig);
+
+      trace "[trc] LEAVE restorePatchDataEx: mod="+#(this);
+
+      return r;
+   }
+
+   // <method.png>
+   protected method restorePatchData() : boolean {
+      return restorePatchDataEx(plugin, patch_data, patch_datatype);
+   }
+
+   // <method.png>
+   protected method restoreShadowPatchData() : boolean {
+      return restorePatchDataEx(shadow_plugin, shadow_patch_data, shadow_patch_datatype);
+   }
+
+   // <method.png>
+   public =replay= virtual stopVoices() {
+      // Stop all voices and reverb/delay trails
+      queryPatchData();
+      if(null != shadow_plugin)
+         queryShadowPatchData();
+      restorePatchData();
+      if(null != shadow_plugin)
+         restoreShadowPatchData();
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 7;
+
+      // Unique ID string
+      Utils.WriteString(_ofs, unique_id_string);
+
+      // Plugin version
+      _ofs.i32 = plugin_version;
+
+      // Instance ID (v3+, <v5)
+      // // _ofs.i32 = instance_id;
+
+      // Write #input ports (placeholder until VST has actually been loaded)
+      _ofs.i16 = inputs.numElements;
+
+      ModIO *io;
+      int i;
+
+      // Write basic input port information (placeholder until VST has actually been loaded)
+      for(i = 0; i < inputs.numElements; i++)
+      {
+         io <= inputs.get(i);
+
+         // Input name
+         Utils.WriteString(_ofs, io.name);
+
+         // Next input port
+      }
+
+      // Write #output ports (placeholder until VST has actually been loaded)
+      _ofs.i16 = outputs.numElements;
+
+      // Write basic output port information (placeholder until VST has actually been loaded)
+      for(i = 0; i < outputs.numElements; i++)
+      {
+         io <= outputs.get(i);
+
+         // Output name
+         Utils.WriteString(_ofs, io.name);
+
+         // Next output port
+      }
+
+      // Last I/O patch name (v7+)
+      Utils.WriteString(_ofs, last_io_patch_name);
+
+      // Write patch data
+      if(null != shadow_plugin)
+      {
+         queryShadowPatchData();
+         _ofs.i8  = shadow_patch_datatype;
+         _ofs.i32 = shadow_patch_data.size;
+         _ofs.yacStreamWriteBuffer(shadow_patch_data, 0, shadow_patch_data.size);
+      }
+      else
+      {
+         queryPatchData();
+         _ofs.i8  = patch_datatype;
+         _ofs.i32 = patch_data.size;
+         _ofs.yacStreamWriteBuffer(patch_data, 0, patch_data.size);
+
+         // if(unique_id_string & "OPS7")
+         // {
+         //    trace "xxx save OPS7 patch data: patch_datatype="+patch_datatype+" patch_data.size="+patch_data.size;
+         //    Utils.SaveBufferToFile("f:/tmp/ops_patchdata_debug.dat", patch_data, 0, patch_data.size);
+         //    saveFXStorePatchEx("f:/tmp/ops_patchdata_saveproject.fxb", patch_data, patch_datatype);
+         // }
+      }
+
+      // moved to Mod base class in v6+
+      // // // Param history (v4+)
+      // // Utils.WriteIntArray(_ofs, ui_param_history);
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         b_postload_done = false;
+
+         if(ver >= 1)
+         {
+            ModIO *io;
+            int i;
+            String ioName;
+
+            // Unique ID string
+            Utils.ReadString(_ifs, unique_id_string);
+
+            // Version
+            plugin_version = _ifs.i32;
+
+            // (note) moved to base class in v5
+            if((ver >= 3) && (ver < 5))
+            {
+               int instanceId = _ifs.i32;
+
+               if(_bRestoreInstanceIDs)
+               {
+                  instance_id = instanceId;
+
+                  // When loading project files
+                  //  (note) track last used instance_id
+                  if(instance_id >= next_instance_id)
+                     next_instance_id = instance_id + 1;
+               }
+               else
+               {
+                  // When loading track patches, use auto-assigned instance id (see ModVST2::init())
+               }
+            }
+            else
+            {
+               // Use auto-assigned instance id (see Mod::init())
+            }
+
+            Global.Debug("ModVST2::loadState: unique_id_string=\""+unique_id_string+"\" ver="+ver+" plugin_version="+plugin_version+" instance_id="+instance_id);
+
+            // Read #input ports (placeholder until plugin has actually been loaded)
+            int numInputs = _ifs.u16;
+
+            // Read basic input port information (placeholder until plugin has actually been loaded)
+            inputs.free();
+
+            loop(numInputs)
+            {
+               // Read input name
+               Utils.ReadString(_ifs, ioName);
+
+               addInput(ioName);
+
+               // Next input port
+            }
+
+            // Read #output ports (placeholder until plugin has actually been loaded)
+            int numOutputs = _ifs.u16;
+            outputs.free();
+
+            loop(numOutputs)
+            {
+               // Read output name
+               Utils.ReadString(_ifs, ioName);
+
+               addOutput(ioName);
+
+               // Next output port
+            }
+
+            if(ver >= 7)
+            {
+               // Last I/O patch name (v7+)
+               Utils.ReadString(_ifs, last_io_patch_name);
+            }
+
+            // Read patch data
+            patch_data.free();
+            patch_datatype = _ifs.u8;
+            int patchDataSize = _ifs.i32;
+            _ifs.yacStreamReadBuffer(patch_data, 0, patchDataSize, true/*resize*/);
+
+            // Param history (v4+)
+            //  (note) moved to Mod base class in v6+
+            if(4 <= ver < 6)
+            {
+               Utils.ReadIntArray(_ifs, ui_param_history);
+            }
+
+            // Succeeded
+            r = true;
+
+         } // if version check
+         else
+         {
+            Global.Error("ModVST2::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public virtual isThreadedPostLoadSupported() : boolean {
+      local String *s;
+
+      foreach s in STConfig.threaded_post_load_vst_whitelist
+      {
+         if(unique_id_string & s)
+            return true;
+      }
+
+      foreach s in STConfig.threaded_post_load_vst_blacklist
+      {
+         if(unique_id_string & s)
+            return false;
+      }
+
+      // Unknown plugin
+      return STConfig.b_threaded_post_load_unknown;
+   }
+
+   // <load.png>
+   public virtual loadStatePost(local boolean _bThreaded) : boolean {
+
+      Global.Debug("ModVST2::loadStatePost: bThreaded="+_bThreaded+" b_postload_done="+b_postload_done);
+
+      // (possibly) multi-threaded
+      local boolean r = b_postload_done;
+
+      if(!r)
+      {
+         if(_bThreaded)
+         {
+            if(!isThreadedPostLoadSupported())
+            {
+               // Will be initialized later (in single thread)
+               return true;
+            }
+         }
+
+         Global.Debug2("ModVST2::loadStatePost: unique_id_string="+unique_id_string+" bThreaded="+_bThreaded);
+
+         // Load plugin and instantiate effect
+         //  - alloc/query inputs and outputs
+         //  - update plugin_version
+         if(loadPluginByUniqueIDString(unique_id_string))
+         {
+            Global.Debug2("ModVST2::loadStatePost: plugin \""+unique_id_string+"\" loaded and initialized.");
+
+            restorePatchData();
+
+            if(0)
+            {
+               // [11Jan2022]
+               // (note) - host calls effSetChunk
+               //        - plugin calls audioMasterAutomate during effSetChunk (should not do that ?!)
+               //           - audioMasterAutomate parameter value is stale (previous patch before effSetChunk)
+               //           - host echos parameter change back to plugin (setParameter() during audioMasterAutomate) (redundant but in this case causes the plugin to revert to the init state)
+               //
+               // => solution for now: don't echo back parameter. plugin should be fixed, though.
+
+               if(unique_id_string & "Plogue")
+               {
+                  // Plogue OPS7 patch-restore-after-project-load workaround
+                  //  (note) it's the only plugin that seems to require this (effSetChunk must be called twice)
+                  restorePatchData();
+               }
+            }
+
+            // Global.Trace("ModVST2::loadStatePost: b_relative_params="+b_relative_params);
+
+            if(b_relative_params)
+            {
+               lazyInitShadowPlugin(false/*bCopyPatchToShadow*/);
+               shadow_patch_data     = patch_data;
+               shadow_patch_datatype = patch_datatype;
+               restoreShadowPatchData();
+            }
+
+            Global.Debug("ModVST2::loadStatePost: restored patch data (unique_id_string=\""+unique_id_string+"\")");
+            r = true;
+         }
+         else
+         {
+            trace "[---] ModVST2::loadStatePost: FAILED, unique_id_string=\""+unique_id_string+"\"";
+         }
+
+         b_postload_done = true;
+         b_postload = r;
+      }
+      else
+      {
+         // Already initialized
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getVSTPatchDir() : String {
+      return Utils.FixFileName(STConfig.vstpatch_rootpath+"/"+Utils.ConvertToFileName(unique_id_string));
+   }
+
+   // <load.png>
+   public =replay= method loadFXStorePatch(String _pathName) : boolean {
+      local File f;
+      boolean r = false;
+
+      if(null == plugin)
+         return false;
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_IN))
+      {
+         UpdateLastIOPatchNameFromPathName(last_io_patch_name, _pathName);
+
+         f.byteOrder = BIG_ENDIAN;
+
+         int fsize = f.size;
+
+         Integer chunkMagic = f.i32;
+         if(0x43636e4b == chunkMagic) // 'CcnK'
+         {
+            int byteSize = f.i32;
+            Global.Debug("ModVST2::loadFXStorePatch: byteSize="+byteSize);
+
+            if(fsize != (byteSize + 8))
+               trace "[~~~] ModVST2::loadFXStorePatch: fsize("+fsize+") != byteSize+8("+(byteSize+8)+")";
+
+            Integer fxMagic = f.i32;
+            Buffer b <= new Buffer;
+
+            int patchDataType = PATCH_DATATYPE_NONE;
+
+            if(0x4678436B == fxMagic) // 'FxCk'
+            {
+               patchDataType = PATCH_DATATYPE_PARAMETERS;
+            }
+            else if(0x46504368 == fxMagic) // 'FPCh'
+            {
+               patchDataType = PATCH_DATATYPE_PROGRAMCHUNK;
+            }
+            else if(0x46424368 == fxMagic) // 'FBCh'
+            {
+               patchDataType = PATCH_DATATYPE_BANKCHUNK;
+            }
+
+            if(PATCH_DATATYPE_NONE != patchDataType)
+            {
+               int version = f.i32;
+               Integer fxID = f.i32;
+               Global.Debug("ModVST2::loadFXStorePatch: type="+patchDataType+" version="+version+" fxID="+fxID.printf("0x%08x"));
+               int fxVersion = f.i32;
+               Global.Debug("ModVST2::loadFXStorePatch: fxVersion="+fxVersion);
+
+               int numParams = 0;
+
+               if(PATCH_DATATYPE_BANKCHUNK == patchDataType)
+               {
+                  int numPrograms = f.i32;
+                  Global.Debug("ModVST2::loadFXStorePatch: numPrograms="+numPrograms);
+
+                  f.seek(128, SEEK_CUR);  // skip currentProgram and future[124]
+               }
+               else
+               {
+                  numParams  = f.i32;
+                  Global.Debug("ModVST2::loadFXStorePatch: numParams="+numParams);
+                  String prgName;
+                  prgName.alloc(28+1);
+                  int prgNameIdx = 0;
+                  loop(28)
+                     prgName[prgNameIdx++] = f.i8;
+                  prgName.fixLength();
+                  Global.Debug("ModVST2::loadFXStorePatch: prgName=\""+prgName+"\"");
+               }
+
+               if(fxID == plugin.uniqueID)
+               {
+                  if(PATCH_DATATYPE_PARAMETERS == patchDataType)
+                  {
+                     // Float parameter array
+                     if(numParams < 1000000)
+                     {
+                        b.size = 4 * numParams;
+                        int paramIdx = 0;
+
+                        loop(numParams)
+                           b.pokeF32(paramIdx++*4, f.f32);
+
+                        r = true;
+                     }
+                     else
+                     {
+                        trace "[---] ModVST2::loadFXStorePatch: suspicious numParams="+numParams+", aborting.";
+                     }
+                  }
+                  else
+                  {
+                     // Opaque chunk
+                     int opaqueSize = f.i32;
+
+                     if(0 == opaqueSize)
+                     {
+                        // (note) Reason sets this to 0 => calculate it
+                        if(PATCH_DATATYPE_BANKCHUNK == patchDataType)
+                           opaqueSize = f.size - 160;
+                        else
+                           opaqueSize = f.size - 60;
+
+                        Global.Debug("ModVST2::loadFXStorePatch: calc opaqueSize="+opaqueSize+" ("+(opaqueSize/1024.0f)+"k)");
+                     }
+                     else
+                     {
+                        Global.Debug("ModVST2::loadFXStorePatch: opaqueSize="+opaqueSize+" ("+(opaqueSize/1024.0f)+"k)");
+                     }
+
+                     if(opaqueSize < 100*1024*1024)
+                     {
+                        f.readBuffer(b, 0, opaqueSize, true/*bResize*/);
+                        r = true;
+                     }
+                     else
+                     {
+                        trace "[---] ModVST2::loadFXStorePatch: suspicious opaqueSize="+opaqueSize+", aborting.";
+                     }
+                  }
+
+                  if(r)
+                  {
+                     trace "[...] ModVST2::loadFXStorePatch: patch loaded from \""+_pathName+"\"";
+
+                     patch_data <= deref b;
+                     patch_datatype = patchDataType;
+
+                     plugin.setProgramName(prgName);
+
+                     restorePatchData();
+
+                     if(null != shadow_plugin)
+                     {
+                        shadow_patch_data = patch_data;
+                        shadow_patch_datatype = patch_datatype;
+                        shadow_plugin.setProgramName(prgName);
+                        restoreShadowPatchData();
+                     }
+
+                     current_project.markAsModified();
+                  }
+               }
+               else
+               {
+                  Integer pluginUID = plugin.uniqueID;
+                  trace "[---] ModVST2::loadFXStorePatch: plugin id mismatch (have="+fxID.printf("0x%08x")+" expect="+pluginUID.printf("0x%08x")+")";
+               }
+            }
+            else
+            {
+               trace "[---] ModVST2::loadFXStorePatch: fxMagic ("+fxMagic.printf("0x%08x")+") is neither FxCk, FPCh nor FBCh.";
+            }
+         }
+         else
+         {
+            trace "[---] ModVST2::loadFXStorePatch: wrong chunkMagic (have="+chunkMagic.printf("0x%08x")+", expect=0x434b6e63)";
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] ModVST2::loadFXStorePatch: failed to open \""+_pathName+"\" for reading.";
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      return r;
+   }
+
+   // <save.png>
+   protected method saveFXStorePatchEx(String _pathName, Buffer _patchData, int _patchDatatype) : boolean {
+      File f;
+      boolean r = false;
+
+      if(PATCH_DATATYPE_NONE == _patchDatatype)
+      {
+         // should not be reachable
+         trace "[---] ModVST2::saveFXStorePatchEx: no patch data.";
+         return false;
+      }
+
+      _pathName.replace(".fxp", "");
+      _pathName.replace(".fxb", "");
+
+      switch(_patchDatatype)
+      {
+         case PATCH_DATATYPE_BANKCHUNK:
+            _pathName.append(".fxb");
+            break;
+
+         case PATCH_DATATYPE_PROGRAMCHUNK:
+         case PATCH_DATATYPE_PARAMETERS:
+            _pathName.append(".fxp");
+            break;
+      }
+
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_OUT))
+      {
+         f.byteOrder = BIG_ENDIAN;
+
+         f.i32 = 0x43636e4b;  // 'CcnK' chunkMagic
+         f.i32 = 0;           // file size (minus chunkMagic and byteSize), filled out later
+
+         switch(_patchDatatype)
+         {
+            case PATCH_DATATYPE_BANKCHUNK:
+               f.i32 = 0x46424368;  // 'FBCh' fxMagic
+               f.i32 = 1; // version
+               f.i32 = plugin.uniqueID;
+               f.i32 = 1; // fxVersion
+               f.i32 = plugin.numPrograms; // numPrograms
+               break;
+
+            case PATCH_DATATYPE_PROGRAMCHUNK:
+               f.i32 = 0x46504368;  // 'FPCh' fxMagic
+               f.i32 = 1; // version
+               f.i32 = plugin.uniqueID;
+               f.i32 = 1; // fxVersion
+               f.i32 = 1; // numParams
+               break;
+
+            case PATCH_DATATYPE_PARAMETERS:
+               f.i32 = 0x4678436B;  // 'FxCk' fxMagic
+               f.i32 = 1; // version
+               f.i32 = plugin.uniqueID;
+               f.i32 = 1; // fxVersion
+               f.i32 = _patchData.size / 4;  // numParams
+               break;
+         }
+
+         if(PATCH_DATATYPE_BANKCHUNK == _patchDatatype)
+         {
+            f.i32 = 0;  // currentProgram
+            loop(124)
+               f.i8 = 0;  // future
+         }
+         else
+         {
+            // Write prgName
+            String prgName = plugin.getProgramName();
+            int prgNameIdx = 0;
+            loop(28)
+               f.i8 = prgName.getc(prgNameIdx++);
+         }
+
+         switch(_patchDatatype)
+         {
+            case PATCH_DATATYPE_BANKCHUNK:
+            case PATCH_DATATYPE_PROGRAMCHUNK:
+               f.i32 = _patchData.size;  // opaqueSize (note: Reason sets this to 0)
+               f.writeBuffer(_patchData, 0, _patchData.size);
+               Integer opaqueSize = _patchData.size;
+               Global.Debug("ModVST2::saveFXStorePatchEx: type="+_patchDatatype+" opaqueSize="+opaqueSize+" ("+(opaqueSize/1024.0f)+"k)");
+               r = true;
+               break;
+
+            case PATCH_DATATYPE_PARAMETERS:
+               int paramIdx = 0;
+               loop(_patchData.size / 4)
+               {
+                  float paramVal = _patchData.peekF32(paramIdx++*4);
+                  // trace "xxx ModVST2::saveFXStorePatchEx: param["+(paramIdx-1)+"] = "+paramVal;
+                  f.f32 = paramVal;
+               }
+               Global.Debug("ModVST2::saveFXStorePatch: numParams="+(_patchData.size/4));
+               r = true;
+               break;
+         }
+
+         if(r)
+         {
+            // Fix byteSize
+            int fsize = f.size;
+            f.offset = 4;
+            f.i32 = fsize - 8;
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] ModVST2::saveFXStorePatchEx: failed to open \""+_pathName+"\" for writing.";
+      }
+      return r;
+   }
+
+   // <save.png>
+   public method saveFXStorePatch(String _pathName) : boolean {
+
+      if(null == plugin)
+         return false;
+
+      UpdateLastIOPatchNameFromPathName(last_io_patch_name, _pathName);
+
+      if(null != shadow_plugin)
+      {
+         if(!queryShadowPatchData())
+         {
+            trace "[---] ModVST2::saveFXStorePatch: queryShadowPatchData() failed.";
+            return false;
+         }
+
+         return saveFXStorePatchEx(_pathName, shadow_patch_data, shadow_patch_datatype);
+      }
+      else
+      {
+         if(!queryPatchData())
+         {
+            trace "[---] ModVST2::saveFXStorePatch: queryPatchData() failed.";
+            return false;
+         }
+
+         // Utils.SaveBufferToFile("f:/tmp/ops_patchdata_debug_fxstore.dat", patch_data, 0, patch_data.size);
+
+         return saveFXStorePatchEx(_pathName, patch_data, patch_datatype);
+      }
+   }
+
+   // <replay.png>
+   public method processVelocityCurvesHostEvents(local int _fltDev, local int _fltCh, local int _forceCh, local int _globalCh,
+                                                 local int _minMillisec, local int _maxMillisec
+                                                 ) {
+      local int numEv = vel_events.numMIDIEvents;
+
+      if(numEv > 0)
+      {
+         local int evIdx = 0;
+
+         loop(numEv)
+         {
+            local float vel;
+            if(b_enable_noteon_velocity_env)
+            {
+               vel  = vel_events.getNormalizedNoteOnVelocityByEventIdx(evIdx,
+                                                                       _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                       _minMillisec, _maxMillisec
+                                                                       );
+            }
+            else
+            {
+               vel = -1.0f;
+            }
+
+            if(vel > 0.0f)
+            {
+               CurveDialog.LockRecalcMutex();
+               noteon_velocity_env.time = vel;
+               vel = noteon_velocity_env.get();
+               CurveDialog.UnlockRecalcMutex();
+               vel_events.setNormalizedNoteOnVelocityByEventIdx(evIdx,
+                                                                _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                _minMillisec, _maxMillisec,
+                                                                vel
+                                                                );
+            }
+            else if(b_enable_noteoff_velocity_env)
+            {
+               vel = vel_events.getNormalizedNoteOffVelocityByEventIdx(evIdx,
+                                                                       _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                       _minMillisec, _maxMillisec
+                                                                       );
+
+               if(vel >= 0.0f)
+               {
+                  CurveDialog.LockRecalcMutex();
+                  noteoff_velocity_env.time = vel;
+                  vel = noteoff_velocity_env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  vel_events.setNormalizedNoteOffVelocityByEventIdx(evIdx,
+                                                                    _fltDev, _fltCh, _forceCh, _globalCh,
+                                                                    _minMillisec, _maxMillisec,
+                                                                    vel
+                                                                    );
+               }
+            }
+
+            evIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method convertModMatrixEntriesToRelative() : int {
+      int num = 0;
+      if(null != shadow_plugin) //b_relative_params)
+      {
+         ModMatrixEntry *mme;
+         foreach mme in mod_matrix
+         {
+            if(!mme.b_relative)
+            {
+               mme.b_relative = true;
+               mme.b_asym = false;
+               float minVal = mme.value_min;
+               float maxVal = mme.value_max;
+               float ctrVal = (minVal + maxVal) * 0.5;
+               mme.value_min = minVal - ctrVal;
+               mme.value_max = maxVal - ctrVal;
+               shadow_plugin.setParameter(mme.param_idx, mathClampf(ctrVal, 0.0f, 1.0f));
+               num++;
+            }
+         }
+      }
+      return num;
+   }
+
+   // <replay.png>
+   protected method recalcModMatrixForParamVST2(local int _paramIdx, local boolean _bForce) {
+
+      if(!_bForce)
+         forced_recalc_param_indices.remove(_paramIdx);
+
+      local float curVal = !_bForce ? ModMatrixEntry.INVALID_VALUE : shadow_plugin.getParameter(_paramIdx);
+
+      local PointerArray paramRefs <= mod_matrix_param_refs.get(_paramIdx);
+
+      if(null != paramRefs)
+      {
+         local ModMatrixEntry *mme;
+         foreach mme in paramRefs
+         {
+            if(ModMatrixEntry.INVALID_VALUE != mme.last_ctl_value)
+            {
+               local float modVal = mme.last_ctl_value;
+
+               // Apply curve to modVal
+               if(mme.b_enable_input_mapper_env)
+               {
+                  // (todo) use per-track mutex
+                  CurveDialog.LockRecalcMutex();
+                  local Envelope env <= mme.input_mapper_env;
+                  env.time = modVal;
+                  modVal = env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  modVal = mathPowerf(modVal, mme.input_mapper_env_state.out_exponent);
+               }
+
+               // Rescale normalized ctl value (0..1) to value range
+               local float minVal = mme.value_min;
+               local float maxVal = mme.value_max;
+
+               if(mme.b_asym && mme.b_relative)
+               {
+                  if(modVal < 0.5)
+                     modVal = minVal * ((0.5 - modVal) * 2.0);
+                  else
+                     modVal = maxVal * ((modVal - 0.5) * 2.0);
+               }
+               else
+               {
+                  modVal = minVal + ((maxVal - minVal) * modVal);
+               }
+
+               if(null != shadow_plugin)
+               {
+                  // Hidden parameter modulation
+                  if(ModMatrixEntry.INVALID_VALUE == curVal)
+                     curVal = shadow_plugin.getParameter(_paramIdx);
+
+                  if(mme.b_relative)
+                     curVal = mathLerpf(curVal, curVal + modVal, mme.amount);
+                  else
+                     curVal = mathLerpf(curVal, modVal, mme.amount);
+               }
+               else
+               {
+                  // Direct parameter modulation
+                  if(ModMatrixEntry.INVALID_VALUE == curVal)
+                     curVal = plugin.getParameter(_paramIdx);
+
+                  if(mme.b_relative)
+                  {
+                     // (note) first entry should not be relative
+                     curVal = mathLerpf(curVal, curVal + modVal, mme.amount);
+                  }
+                  else
+                  {
+                     // (note) first entry should use amount=100%
+                     curVal = mathLerpf(curVal, modVal, mme.amount);
+                  }
+               }
+
+            } // if !INVALID_VALUE
+
+            // Next entry
+         } // foreach mme in paramRefs
+
+      } // if paramRefs
+
+      if(ModMatrixEntry.INVALID_VALUE != curVal)
+      {
+         // Add global (relative) modulation
+         if(null != shadow_plugin)
+            curVal += relative_param_values.get(_paramIdx);
+
+         // Clamp to VST2 parameter range
+         curVal = mathClampf(curVal, 0.0f, 1.0f);
+
+         // Update parameter
+         plugin.setParameter(_paramIdx, curVal);
+      }
+   }
+
+   // <replay.png>
+   public method processModMatrixEventsVST2(local int _fltDev, local int _fltCh, local int _globalCh) {
+
+      local MIDIPipeFrame fr <= replay.midi_input_frame;
+      local int numEv = fr.numEvents;
+
+      local IntArray tmpParams <= mod_matrix_temp_param_indices;
+      tmpParams.empty();
+
+      if(numEv > 0)
+      {
+         local int evIdx = 0;
+         loop(numEv)
+         {
+            // in 0..TOTAL_NUM_SOURCE-1 range
+            local int srcIdx =
+               fr.modMatrixCheckEventByFlt(evIdx,
+                                           _fltDev,
+                                           _fltCh,
+                                           _globalCh,
+                                           tmp_modmatrix_val,   // returns normalized 0..1 value
+                                           tmp_modmatrix_vel    // returns normalized velocity value
+                                           );
+
+            if(-1 != srcIdx)
+            {
+               local PointerArray *srcRefs;
+               local ModMatrixEntry *mme;
+
+               // Iterate all entries that reference the given srcidx and update their current ctl value
+               srcRefs <= mod_matrix_src_refs.get(srcIdx);
+               if(null != srcRefs)
+               {
+                  foreach mme in srcRefs
+                  {
+                     mme.last_ctl_value = mme.pickValue(srcIdx, tmp_modmatrix_val, tmp_modmatrix_vel);
+
+                     if(!tmpParams.contains(mme.param_idx))
+                        tmpParams.add(mme.param_idx);
+                  }
+               }
+
+               // Iterate all affected parameters and recalculate the modmatrix output(s)
+               local int paramIdx;
+               foreach paramIdx in tmpParams
+               {
+                  recalcModMatrixForParamVST2(paramIdx, false/*bForce*/);
+               } // foreach paramIdx
+            } // if -1 != srcIdx
+
+            // Next event
+            evIdx++;
+
+         } // loop events
+      } // if have events
+   }
+
+   // <replay.png>
+   protected method resetAllControllers() {
+
+      local ModMatrixEntry *mme;
+      foreach mme in mod_matrix
+         mme.last_ctl_value = ModMatrixEntry.INVALID_VALUE;
+
+      relative_param_values.fill(0.0f);
+      forced_recalc_param_indices.empty();
+
+      if(b_relative_params)
+      {
+         // Reload original patch parameters
+         if(null != shadow_plugin)
+         {
+            if(null != plugin)
+            {
+               local int paramIdx = 0;
+               loop(plugin.numParameters)
+               {
+                  plugin.setParameter(paramIdx, shadow_plugin.getParameter(paramIdx));
+                  paramIdx++;
+               }
+               Global.Debug2("ModVST2::resetAllControllers: reset "+plugin.numParameters+" parameters");
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleAutomateEvent(VSTAutomateEvent _ev, Track _track, Lane _lane) {
+      // Called from UI thread
+      Global.Debug3("ModVST2::handleAutomateEvent: paramIdx="+_ev.param_idx+" value="+_ev.value+" begin="+_ev.b_begin);
+
+      // Remember parameter index in history (for UI, e.g. when selecting destination param in modmatrix)
+      addToUIParamHistory(_ev.param_idx);
+
+      if(-1 == _ev.b_begin)
+      {
+         // if(b_relative_params)
+         if(null != shadow_plugin)
+         {
+            // Shadow patch has been modified => Update replay plugin
+            addForcedRecalcParamIdx(_ev.param_idx);
+            // // plugin.setParameter(_ev.param_idx, _ev.value);
+         }
+
+         if(_track.isMirrorMode())
+         {
+            // Update other lanes
+            int laneIdx = 0;
+            Lane *lane;
+            foreach lane in _track.lanes
+            {
+               if(_track.multi_lane_offset <= laneIdx < (_track.multi_lane_offset + _track.multi_num_channels))
+               {
+                  if(@(lane) != @(_lane))
+                  {
+                     ModVST2 modOther <= lane.findModAtY(ui_grid_y);
+                     if(modOther instanceof ModVST2)
+                     {
+                        if(modOther.modIsPatchCompatibleWith(this))
+                        {
+                           VST2Plugin *pluginOther;
+                           if(null != modOther.shadow_plugin)
+                           {
+                              pluginOther <= modOther.shadow_plugin;
+                              modOther.addForcedRecalcParamIdx(_ev.param_idx);
+                           }
+                           else
+                           {
+                              pluginOther <= modOther.plugin;
+                           }
+                           pluginOther.setParameter(_ev.param_idx, _ev.value);
+                        } // if patch compatible
+                     } // if vst
+                  } // if not self
+               } // if >= lane_offset
+               laneIdx++;
+            } // loo lanes
+         } // if mirror
+      } // if param update
+   }
+
+   // <method.png>
+   protected =replay= method syncMirrorLaneModsToThis(Track _track, Lane _lane) {
+
+      // Update parameter
+      if(_track.isMirrorMode())
+      {
+         // Update other lanes
+         int laneIdx = 0;
+         Lane *lane;
+         foreach lane in _track.lanes
+         {
+            if(_track.multi_lane_offset <= laneIdx < (_track.multi_lane_offset + _track.multi_num_channels))
+            {
+               if(@(lane) != @(_lane))
+               {
+                  ModVST2 modOther <= lane.findModAtY(ui_grid_y);
+                  if(modOther instanceof ModVST2)
+                  {
+                     if(modOther.modIsPatchCompatibleWith(this))
+                     {
+                        modOther.modCopyPatchFrom(this);
+                     } // if patch compatible
+                  } // if vst
+               } // if not self
+            } // if >= lane_offset
+            laneIdx++;
+         } // loo lanes
+      } // if mirror
+
+   }
+
+   // <method_get.png>
+   protected method forceGenericEditor() : boolean {
+      StringArray a <= STConfig.vst_genericparam_forced;
+      String *s;
+      foreach s in a
+      {
+         if(unique_id_string & s)
+            return true;
+      }
+
+      if(UI.IsMacOS())
+      {
+         a <= STConfig.vst_genericparam_forced_macos;
+         foreach s in a
+         {
+            if(unique_id_string & s)
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   protected method needMacOSHostUIRedrawWorkaround() : boolean {
+      StringArray a <= STConfig.vst_macos_host_ui_redraw_workaround;
+      String *s;
+      foreach s in a
+      {
+         if(unique_id_string & s)
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual showEditor() {
+      if(null != plugin)
+      {
+         boolean bUseEditor = plugin.hasEditor();
+
+         if(bUseEditor)
+            bUseEditor = !forceGenericEditor() ^ (VMOD_LSHIFT == UI.GetKeyMod());
+
+         if(bUseEditor)
+         {
+            if(!b_editor_shown_at_least_once)
+            {
+               // Find other windows that the editor creates (yeah, this is quite a dirty hack!)
+               b_editor_shown_at_least_once = true;
+               other_windows_create.empty();
+               other_windows_focus.empty();
+               other_window_listener <= this;  // let's pray that we are not deleted before the timeout expires :D
+               other_window_start_ms = milliSeconds();
+               b_track_other_windows = true;  // namespace var (see eureka.tks)
+               // (note) the monitoring result is handled after a timeout in PageTrack
+            }
+
+            local VST2Plugin *pluginToFront;
+
+            if(null != shadow_plugin)
+            {
+               shadow_plugin.showEditor();
+               pluginToFront <= shadow_plugin;
+            }
+            else if(null != plugin)
+            {
+               plugin.showEditor();
+               pluginToFront <= plugin;
+            }
+
+            int hwnd;
+            foreach hwnd in other_window_hwnds
+            {
+               Global.Debug("ModVST2::showEditor: show other window hWnd="+hwnd);
+               SDL.showOtherWindow(hwnd);
+            }
+
+            if(UI.IsMacOS() && needMacOSHostUIRedrawWorkaround())
+            {
+               // Workaround for host redraw issue with Arturia plugins on macOS
+               root_form.vst2_queued_plugin_to_front <= pluginToFront;
+               UI.QueueResize(Viewport.width, Viewport.height);
+            }
+         }
+         else
+         {
+            showGenericParamDialog();
+         }
+
+         // (note) There's no way of knowing whether the patch was modified since not all controls
+         //         send parameter notifications.
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_show.png>
+   public method showGenericParamDialog() {
+      if(null == dlg_genericparam)
+      {
+         dlg_genericparam <= new GenericParamDialogVST2;
+         dlg_genericparam.initGenericParamDialogVST2();
+      }
+      dlg_genericparam.showGenericParamDialogVST2(this);
+   }
+
+   // <method.png>
+   public virtual hideEditor() {
+
+      String sUID <= getUniqueIDString();
+      Global.Debug("ModVST2::hideEditor: sUID=\""+sUID+"\"");
+      String *blackListEntry;
+      foreach blackListEntry in STConfig.vst_hide_blacklist
+      {
+         if(sUID & blackListEntry)
+            return closeEditor();
+      }
+
+      if(null != shadow_plugin)
+         shadow_plugin.hideEditor();
+      else if(null != plugin)
+         plugin.hideEditor();
+
+      int hwnd;
+      foreach hwnd in other_window_hwnds
+      {
+         Global.Debug("ModVST2::showEditor: hide other window hWnd="+hwnd);
+         SDL.hideOtherWindow(hwnd);
+      }
+   }
+
+   // <method.png>
+   public virtual closeEditor() {
+      if(null != shadow_plugin)
+         shadow_plugin.closeEditor();
+      else if(null != plugin)
+         plugin.closeEditor();
+   }
+
+   // <method.png>
+   public virtual isEditorVisible() : boolean {
+      if(null != shadow_plugin)
+         return shadow_plugin.isEditorVisible();
+      else if(null != plugin)
+         return plugin.isEditorVisible();
+      return false;
+   }
+
+   // <method.png>
+   public method setOtherWindows(IntArray _hwnds) {
+      other_window_hwnds = _hwnds;
+   }
+
+   // <method.png>
+   public =replay= method syncMainAndMirrorMods(Track _track, Lane _lane) {
+      if(null != shadow_plugin)
+      {
+         // Necessary after editing non-automatable parameter (e.g. mseg envelope)
+         syncShadowToMainPatch();
+      }
+      else
+      {
+         queryPatchData();
+      }
+
+      if((null != _track) && (null != _lane))
+      {
+         syncMirrorLaneModsToThis(_track, _lane);
+      }
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+
+      // trace "xxx process vst numFrames="+_numFrames+" debug_frame_count="+debug_frame_count;
+      // trace "xxx process vst bPlaying="+_bPlaying;
+
+      if(null != plugin)
+      {
+         mtx_param.lock();
+
+         // if(0)
+         // {
+         //    if(0 == (debug_frame_count & 8191))
+         //    {
+         //       if(2/*kPlugCategSynth*/ == plugin.category)
+         //       {
+         //          local Thread thread <= GetCurrentThread();
+         //          if(debug_last_note > 0)
+         //             plugin.queueNoteOff(0/*midi_channel*/, debug_last_note/*_note*/, 0/*_vel*/);
+         //          local int note = 5*12+(thread.rand() % 12);
+         //          // trace "xxx modvst: note on this="+#(this)+" note="+note;
+         //          plugin.queueNoteOn(0/*midi_channel*/, note/*_note*/, 127/*_vel*/);
+         //          debug_last_note = note;
+         //       }
+         //    }
+         // }
+
+         if(replay.b_reset_all_controllers)
+            resetAllControllers();
+
+         if(replay.b_have_events || !forced_recalc_param_indices.isEmpty())
+         {
+            processParamSetChange(_fltDev, _fltCh);
+
+            processModMatrixEventsVST2(_fltDev, _fltCh, _globalCh);
+
+            if(null != shadow_plugin)
+            {
+               // Forced param recalcuation (after global relative_param update(s))
+               local int paramIdx;
+               foreach paramIdx in forced_recalc_param_indices
+               {
+                  // trace "xxx force recalc paramIdx="+paramIdx;
+                  recalcModMatrixForParamVST2(paramIdx, true/*bForce*/);
+               } // foreach paramIdx
+            }
+            forced_recalc_param_indices.empty();
+
+            //
+            // (note) always process note on/off velocity curves _after_ modmatrix since
+            //         each modmatrix entry can have its own curve (and an on/off velocity src type)
+            //
+            local HostMIDIEvents *events;
+            local MIDIPipeFrame frame <= replay.midi_input_frame;
+
+            if(b_enable_noteon_velocity_env || b_enable_noteoff_velocity_env)
+            {
+               vel_frame = frame;
+               frame <= vel_frame;
+               processVelocityCurvesFrame(_fltDev, _fltCh);  // note on and off velocities
+            }
+
+            // Convert MIDIPipeFrame to HostMIDIEvents
+            events <= events_from_frame;
+            events.empty();
+            MIDI.AddMIDIPipeFrameToHostMIDIEvents(frame, events, tmp_io, input_filter/*VRR*/);
+
+            if(_bPlaying || (false != STConfig.b_process_when_muted))
+            {
+               // Queue all MIDI input events that match the track's/mod's input filter (devidx+ch)
+               // trace "xxx ModVST2::process: numFrames="+_numFrames+" plugin="+#(plugin);
+               plugin.queueHostMIDIEventsByFlt(events,
+                                               _fltDev,
+                                               _fltCh,
+                                               _forceCh,
+                                               _globalCh,
+                                               input_filter,
+                                               replay.current_midi_input_millisec_min,
+                                               replay.current_midi_input_millisec_max
+                                               );
+
+               // Process queued events (note on, ..)
+               plugin.processEvents();
+            }
+
+         } // if replay.b_have_events
+
+         if(!replay.b_process_audio)  // (todo) always true at this point ?!
+         {
+            // Audio.RenderSineStereo(output_bufs.get(0), 0, _numFrames, 1);
+         }
+         else
+         {
+            //  (todo) use just two SpeexResampler instances (in+out) for all channels ?
+            local int ioIdx;
+            local int resampleBlkSz = int((chunk_sz * resample_factor) + 0.5f);
+            local SpeexResampler *srs;
+            if(b_resample_changed && !b_buffered)
+            {
+               b_resample_changed = false;
+               if(b_resample)
+               {
+                  // ***experimental** Lazy-init resampler states
+
+                  local int sampleRateHost = Audio.mix_rate;
+                  local int sampleRateTmp = Audio.mix_rate * resample_factor;
+
+                  // (note) most VSTs seems to ignore the samplerate change
+                  // (note) works with
+                  //         Synthmaster One
+                  //         VSVR
+                  //         SonicCharge Microtonic/Synplant
+                  //         Synapse DUNE2, DUNE3, The Legend, Obsession (if upsampled)
+                  //         U-He Diva/Repro/Zebra/Bazille
+                  //         XILS Oxium, MiniSyn'x, PolyKB III, PolyM
+                  // (note) crashes: Spire, XILS Stix
+                  // (note) PianoTeq sounds like an old rompler with resample factor 2.0 :-)
+                  plugin.setBlockSize(resampleBlkSz);
+                  plugin.setSampleRate(sampleRateTmp);
+
+                  // trace "xxx modvst2: enable resample  blkSz="+resampleBlkSz+" factor="+resample_factor+" sr="+sampleRateTmp;
+
+                  // Lazy-alloc input resampler states
+                  if(null == input_srs)
+                  {
+                     input_srs <= new PointerArray;
+                     input_srs.alloc(plugin.numInputs);
+                     loop(plugin.numInputs)
+                     {
+                        srs <= new SpeexResampler;
+                        input_srs.add(#(deref srs));
+                     }
+                  }
+
+                  ioIdx = 0;
+                  loop(plugin.numInputs)
+                  {
+                     plugin.setExtInputBuffer(ioIdx, resample_input_bufs.get(ioIdx));
+                     srs <= input_srs.get(ioIdx);
+                     srs.init(1/*numCh*/, sampleRateHost/*in*/, sampleRateTmp/*out*/, resample_quality);
+                     ioIdx++;
+                  }
+
+                  // Lazy-alloc output resampler states
+                  if(null == output_srs)
+                  {
+                     output_srs <= new PointerArray;
+                     output_srs.alloc(plugin.numOutputs);
+                     loop(plugin.numOutputs)
+                     {
+                        srs <= new SpeexResampler;
+                        output_srs.add(#(deref srs));
+                     }
+                  }
+
+                  ioIdx = 0;
+                  loop(plugin.numOutputs)
+                  {
+                     plugin.setExtOutputBuffer(ioIdx, resample_output_bufs.get(ioIdx));
+                     srs <= output_srs.get(ioIdx);
+                     srs.init(1/*numCh*/, sampleRateTmp/*in*/, sampleRateHost/*out*/, resample_quality);
+                     ioIdx++;
+                  }
+               }
+               else
+               {
+                  // No resampling
+                  plugin.setBlockSize(chunk_sz);
+                  // trace "xxx call plugin.setSampleRate("+Audio.mix_rate+")";
+                  plugin.setSampleRate(Audio.mix_rate);
+
+                  // Revert to default I/O buffers
+                  ioIdx = 0;
+                  loop(plugin.numInputs)
+                  {
+                     plugin.setExtInputBuffer(ioIdx, input_bufs.get(ioIdx));
+                     ioIdx++;
+                  }
+
+                  ioIdx = 0;
+                  loop(plugin.numOutputs)
+                  {
+                     plugin.setExtOutputBuffer(ioIdx, output_bufs.get(ioIdx));
+                     ioIdx++;
+                  }
+               }
+            }
+
+            local int numFramesProcess;
+            if(b_resample && !b_buffered)
+            {
+               // Resample inputs to temporary samplerate
+               ioIdx = 0;
+               loop(plugin.numInputs)
+               {
+                  srs <= input_srs.get(ioIdx);
+                  srs.process(0/*chIdx*/,
+                              input_bufs.get(ioIdx), chunk_sz,
+                              resample_input_bufs.get(ioIdx), resampleBlkSz
+                              );
+                  ioIdx++;
+               }
+               numFramesProcess = resampleBlkSz;
+            }
+            else
+               numFramesProcess = _numFrames;
+
+            if(_bPlaying)
+            {
+               plugin.processReplacing(numFramesProcess, 0/*off*/);
+            }
+            else
+            {
+               local boolean bEffect = isEffect();
+               if( (!bEffect && (true == STConfig.b_process_when_muted)) ||
+                   (bEffect && (true == STConfig.b_process_when_muted) && (true == STConfig.b_process_effect_when_muted))
+                   )
+               {
+                  plugin.processReplacing(numFramesProcess, 0/*off*/);
+               }
+               else
+               {
+                  plugin.processReplacingSilence(numFramesProcess, 0/*off*/);
+               }
+            }
+
+            if(b_resample && !b_buffered)
+            {
+               if(_numFrames != chunk_sz)
+                  trace "[~~~] ModVST2::process: _numFrames="+_numFrames+" BLK_SIZE="+chunk_sz;
+               // trace "xxx resample "+resampleBlkSz+" back to "+BLK_SIZE;
+               // Resample outputs back to host samplerate
+               ioIdx = 0;
+               loop(plugin.numOutputs)
+               {
+                  srs <= output_srs.get(ioIdx);
+                  srs.process(0/*chIdx*/,
+                              resample_output_bufs.get(ioIdx), resampleBlkSz,
+                              output_bufs.get(ioIdx), chunk_sz
+                              );
+                  ioIdx++;
+               }
+            }
+         }
+
+         // debug_frame_count += _numFrames;
+
+         mtx_param.unlock();
+
+      } // if null != plugin
+   }
+
+}

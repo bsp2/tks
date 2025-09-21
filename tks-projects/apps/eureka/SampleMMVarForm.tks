@@ -1,0 +1,374 @@
+// ----
+// ---- file   : SampleMMVarForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 03Jan2025
+// ---- changed: 04Jan2025
+// ----
+// ----
+// ----
+
+module MSampleMMVarForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleMMVarForm : XMLForm, ActionProvider {
+
+   StSample *sample;
+   Sample   *sample_sci;
+
+   protected CheckBox    *cb_enable;
+   protected LayerSwitch *sw_enable;
+   protected Button      *bt_from_replay;
+   protected ComboBox    *cm_var;
+   protected CheckBox    *cb_lock;
+   protected FloatParam  *fp_num;
+   protected CheckBox    *cb_smooth;
+   protected Button      *bt_copy;
+   protected Button      *bt_paste;
+   protected Button      *bt_clear;
+
+   static FloatArray *clipboard_var;
+
+
+   // <ui_init.png>
+   public method initSampleMMVarForm() : boolean {
+
+      if(!initPakFile("SampleMMVarForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.add(cb_enable);
+
+      if(null != sample && sample.mmVarGetEnable())
+      {
+         _retLayers.joinRR(_retLayers,
+                           [
+                              cm_var,
+                              bt_from_replay,
+                              cb_lock,
+                              fp_num,
+                              cb_smooth,
+                              bt_copy,
+                              bt_paste,
+                              bt_clear,
+                            ]
+                           );
+      }
+   }
+
+   // <ui_show.png>
+   public method showSample(StSample _sample, Sample _sampleSCI) {
+      sample <= _sample;
+      sample_sci <= _sampleSCI;
+
+      boolean bEditable = (null != sample);
+
+      recursiveSetEditable(bEditable);
+
+      if(bEditable)
+      {
+         cb_enable.setSelected(sample.mmVarGetEnable());
+         sw_enable.switchToLayerNr(sample.mmVarGetEnable());
+         cm_var.setSelectedOption(sample.mmVarGetEditIdx());
+         cb_lock  .setSelected(sample.mmVarGetEnableForceEditIdx());
+         fp_num   .setValue(sample.mmVarGetNum());
+         cb_smooth.setSelected(sample.mmVarGetEnableSmooth());
+      }
+      else
+      {
+         sw_enable.switchToLayerNr(0);
+         cb_enable.setSelected(false);
+         cb_lock  .setSelected(false);
+         cb_smooth.setSelected(false);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      boolean bEnable = cb_enable.isSelected();
+      StSample *s;
+      foreach s in zones
+      {
+         s.mmVarSetEnable(bEnable);
+      }
+      sample_sci.markParamsAsModified();
+      pgSample.updateMM(false/*bUpdateVarForm*/);
+      sw_enable.switchToLayerNr(bEnable);
+      Global.Print("Variations are "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <method.png>
+   protected =replay= method configureVariationEntry(int _mmIdx) {
+      int numZones = 0;
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      foreach s in zones
+      {
+         s.setMMEnable    (_mmIdx, true);
+         s.setMMOp        (_mmIdx, STSAMPLE_MM_OP_AUTO);
+         s.setMMSlewUp    (_mmIdx, 0.0f);
+         s.setMMSlewDown  (_mmIdx, 0.0f);
+         s.setMMSlewReset (_mmIdx, STSAMPLE_MM_SLEW_RESET_OFF);
+         s.setMMCurve     (_mmIdx, 0.0f);
+         s.setMMSrc       (_mmIdx, STSAMPLE_MM_SRC_CC1_MODWHEEL_ON);
+         s.setMMDst       (_mmIdx, STSAMPLE_MM_DST_VARIATION);
+         s.setMMAmt       (_mmIdx, 1.0f);
+         s.setMMSignalTap (_mmIdx, false);
+         s.mmVarSetEnable(true);
+      }
+      sample_sci.markParamsAsModified();
+      pgSample.updateMM(true/*bUpdateVarForm*/);
+      Global.SuccessShort("Add variation-entry (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected method autoAddVariationEntry() {
+
+      int mmIdx = 0;
+      loop(STSAMPLE_NUM_MODMATRIX_ENTRIES/*16*/)
+      {
+         if(STSAMPLE_MM_DST_VARIATION == sample.getMMDst(mmIdx++))
+         {
+            Global.Warning("'Variation' entry #"+mmIdx+" already exists");
+            return;
+         }
+      }
+
+      if(!sample.getMMEnable(0) && STSAMPLE_MM_DST_NONE == sample.getMMDst(0))
+      {
+         configureVariationEntry(0);
+         return;
+      }
+
+      PageSample pgSample <= root_form.pg_sample;
+      SampleMMForm f <= pgSample.getSampleMMFormByIdx(0);
+      mmIdx = f.handleInsert(false/*bModulate*/, true/*bQuiet*/);
+      if(mmIdx >= 0)
+      {
+         configureVariationEntry(mmIdx);
+         return;
+      }
+
+      Global.Error("Add 'Variation' entry failed");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectVarFromReplay() {
+      PageSample pgSample <= root_form.pg_sample;
+      StSamplePlayer sp <= pgSample.getCurrentSamplePlayer();
+      // StSampleVoice voice <= sp.findFirstActiveVoiceBySample(sample);
+      StSampleVoice voice <= sp.findLastStartedVoiceBySample(sample);
+      if(null != voice)
+      {
+         sample.mmVarSetEditIdx(voice.mmVarGetLastSeenIdx());
+         pgSample.updateMM(true/*bUpdateVarForm*/);
+         Global.Print("Select var #"+(sample.mmVarGetEditIdx()+1)+" from replay");
+      }
+      else
+      {
+         Global.Warning("Select var from replay: active voice not found");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEditVarChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      int editVarIdx = cm_var.getSelectedOption();
+      StSample *s;
+      foreach s in zones
+      {
+         s.mmVarSetEditIdx(editVarIdx);
+      }
+      sample_sci.markParamsAsModified();
+      pgSample.updateMM(false/*bUpdateVarForm*/);
+      Global.Print("Edit variation #"+(editVarIdx+1)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLockChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      boolean bEnable = cb_lock.isSelected();
+      StSample *s;
+      foreach s in zones
+      {
+         s.mmVarSetEnableForceEditIdx(bEnable);
+      }
+      sample_sci.markParamsAsModified();
+      Global.Print("Force-edit-variation is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNumChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      int num = fp_num.getFloatValue();
+      StSample *s;
+      foreach s in zones
+      {
+         s.mmVarSetNum(num);
+      }
+      sample_sci.markParamsAsModified();
+      Global.Print("Num variations is "+num+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSmoothChanged() {
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      boolean bEnable = cb_smooth.isSelected();
+      StSample *s;
+      foreach s in zones
+      {
+         s.mmVarSetEnableSmooth(bEnable);
+      }
+      sample_sci.markParamsAsModified();
+      Global.Print("Variation smoothing is "+Utils.GetEnableStringMixed(bEnable, "disabled", "enabled (clamp-to-last)", "enabled (wrap-around)")+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCopy() {
+      if(null == clipboard_var)
+      {
+         clipboard_var <= new FloatArray;
+         clipboard_var.allocAndFill(STSAMPLE_NUM_MODMATRIX_ENTRIES/*16*/, 0.0f);
+      }
+      local FloatArray data <= sample.mmVarGetData();
+      int off = sample.mmVarGetEditIdx() * STSAMPLE_NUM_MODMATRIX_ENTRIES;
+      clipboard_var.copyFrom(data, off, STSAMPLE_NUM_MODMATRIX_ENTRIES, 0);
+      Global.Print("Copy variation to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste(FloatArray _clipboardVar) : int {
+      int numZones = 0;
+      if(null != _clipboardVar)
+      {
+         int off = sample.mmVarGetEditIdx() * STSAMPLE_NUM_MODMATRIX_ENTRIES;
+
+         PageSample pgSample <= root_form.pg_sample;
+         PointerArray zones <= pgSample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            local FloatArray data <= sample.mmVarGetData();
+            data.copyFrom(_clipboardVar, 0, STSAMPLE_NUM_MODMATRIX_ENTRIES, off);
+            numZones++;
+         }
+         sample_sci.markParamsAsModified();
+         pgSample.updateMM(false/*bUpdateVarForm*/);
+
+         Global.Print("Paste clipboard to variation (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+      else
+         Global.Warning("Variation clipboard is empty");
+      return numZones;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSwap() {
+      if(null == clipboard_var)
+      {
+         clipboard_var <= new FloatArray;
+         clipboard_var.allocAndFill(STSAMPLE_NUM_MODMATRIX_ENTRIES/*16*/, 0.0f);
+      }
+      local FloatArray clipboardOrig = clipboard_var;
+      handleCopy();  // replace clipboard_var
+      int numZones = handlePaste(clipboardOrig);
+      Global.Print("Swap clipboard with variation (update "+numZones+" zone"+Utils.GetPluralString(numZones)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClear() {
+
+      int off = sample.mmVarGetEditIdx() * STSAMPLE_NUM_MODMATRIX_ENTRIES;
+
+      PageSample pgSample <= root_form.pg_sample;
+      PointerArray zones <= pgSample.getSelectedZones();
+      StSample *s;
+      foreach s in zones
+      {
+         local FloatArray data <= sample.mmVarGetData();
+         data.fillRegion(off, STSAMPLE_NUM_MODMATRIX_ENTRIES, 0.0f);
+      }
+      sample_sci.markParamsAsModified();
+      pgSample.updateMM(false/*bUpdateVarForm*/);
+
+      Global.Print("Clear variation (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(cb_enable):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               autoAddVariationEntry();
+            else
+               handleEnableChanged();
+            return true;
+
+         case @(bt_from_replay):
+            handleSelectVarFromReplay();
+            return true;
+
+         case @(cm_var):
+            handleEditVarChanged();
+            return true;
+
+         case @(cb_lock):
+            handleLockChanged();
+            return true;
+
+         case @(fp_num):
+            handleNumChanged();
+            return true;
+
+         case @(cb_smooth):
+            handleSmoothChanged();
+            return true;
+
+         case @(bt_copy):
+            handleCopy();
+            return true;
+
+         case @(bt_paste):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleSwap();
+            else
+               handlePaste(clipboard_var);
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

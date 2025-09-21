@@ -1,0 +1,1866 @@
+// ----
+// ---- file   : SampleTimelineForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 04Apr2025
+// ---- changed: 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 10Apr2025, 01May2025, 03May2025
+// ----          04May2025, 20May2025, 31May2025, 14Jun2025, 15Jun2025, 22Jun2025, 26Jun2025
+// ----
+// ----
+// ----
+
+//         SPACE : start replay from loop start
+// lctrl - SPACE : start replay from edit cursor
+
+
+module MSampleTimelineForm;
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
+
+   define String TA_REDRAW;
+   protected TimerAction *ta_redraw;
+
+   Track *parent_track;
+   SampleTimeline *sample_timeline;
+   SampleTimelineModel *sample_timeline_edit_model;
+
+   SampleTimelineEditor *sample_timeline_editor;
+
+   protected SplitPane *spl_sample;
+
+   protected SampleView *sv_wave;
+   public Sample *current_sample;
+
+   protected Dial *[] lane_send_level_dials;
+   protected Dial *[] lane_send_pan_dials;
+
+   protected ComboField *cf_model;
+   protected FloatParam *fp_canvas_size;
+   protected FloatParam *fp_bpm;
+   protected CheckBox   *cb_use_project_bpm;
+   protected FloatParam *fp_sig_beats;
+   protected ComboBox   *cm_sig_notelen;
+
+   protected TextField *tf_track_name;
+   protected Button    *bt_track_new;
+   protected Button    *bt_track_delete;
+
+   protected TextField  *tf_clip_name;
+   protected Button     *bt_clip_name_from_sample;
+   protected Label      *lb_clip_info;
+   protected FloatParam *fp_clip_offset;
+   protected CheckBox   *cb_clip_release;
+   protected FloatParam *fp_clip_vel_on;
+   protected FloatParam *fp_clip_vel_off;
+   protected FloatParam *fp_clip_cc_mw;
+   protected FloatParam *fp_clip_cc_bc;
+   protected FloatParam *fp_clip_cc_fc;
+   protected FloatParam *fp_clip_cc_ex;
+
+   protected Button     *bt_clip_sample;
+
+   static boolean b_debug = 0;
+
+   public static StringArray patnr_options;        // xxA/0xff
+
+   protected static Buffer *timeline_clipboard;
+
+   protected PopupMenu *pm_context;
+
+
+   // <init.png>
+   public method initSampleTimelineForm() : boolean {
+
+      if(!initPakFile("SampleTimelineForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+      sample_timeline_editor.initTimeline();
+      sample_timeline_editor.timelineSetTrackLabelWidth(1.0);  // def=100
+
+      sv_wave.installPlugin(this);
+      sv_wave.setEnableAllowChannelConversion(true);
+      sv_wave.setEnableAutoAddStereoChannel(true);  // convert to stereo when pasting stereo clipboard
+      sv_wave.setEnableZeroCrossingMode(true);
+      sv_wave.setEnableRegionAutoCycleMode(STConfig.b_pgsample_wave_region_auto_cycle_mode);
+      sv_wave.setEnableAutoRecalcRegions(false);
+      sv_wave.setEnableAutochop(false);
+      sv_wave.setEnableMarkerCreate(false);
+      sv_wave.setEnableMarkerDelete(false);
+      sv_wave.setEnableExport(false);
+      sv_wave.setEnableBPMSnap(true, true/*bQuiet*/);
+      sv_wave.setBPMSnapGrid(16);
+
+      // Resolve lane send dials
+      int sendIdx = 0;
+      loop(SampleTimelineReplayTrack.NUM_LANE_SENDS)
+      {
+         Dial dl <= findLayerById("dl_send"+(sendIdx+1)+"_level");
+         // // dl.setEnableKbdFocusOnMouse(false);
+         lane_send_level_dials.add(dl);
+         dl <= findLayerById("dl_send"+(sendIdx+1)+"_pan");
+         // // dl.setEnableKbdFocusOnMouse(false);
+         lane_send_pan_dials.add(dl);
+
+         sendIdx++;
+      }
+
+      InitPatNrOptions();
+
+      ta_redraw <= TimerAction.New(TA_REDRAW, this, 100);
+
+      return true;
+   }
+
+   // <ui_init.png>
+   static InitPatNrOptions() {
+      patnr_options.empty();
+      Integer io = 1;
+      Integer ioz = 0;
+      loop(32)
+      {
+         patnr_options.add(io.printf("%02dA")+ioz.printf("/0x%02x"));
+         ioz++;
+
+         if(125/*SCRATCH_PAT_NR*/ == ioz)
+         {
+            patnr_options.add(io.printf("scr")+ioz.printf("/0x%02x"));
+         }
+         else
+         {
+            patnr_options.add(io.printf("%02dB")+ioz.printf("/0x%02x"));
+         }
+         ioz++;
+
+         if(126/*TMP_PAT_NR*/ == ioz)
+         {
+            patnr_options.add(io.printf("tmp")+ioz.printf("/0x%02x"));
+         }
+         else
+         {
+            patnr_options.add(io.printf("%02dC")+ioz.printf("/0x%02x"));
+         }
+         ioz++;
+
+         if(127 == ioz)
+         {
+            patnr_options.add(io.printf("--/")+ioz.printf("/0x%02x"));
+         }
+         else
+         {
+            patnr_options.add(io.printf("%02dD")+ioz.printf("/0x%02x"));
+         }
+         ioz++;
+         io++;
+      }
+
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(sample_timeline_editor.data);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(cf_model);
+      layers.add(fp_canvas_size);
+      layers.add(fp_bpm);
+      layers.add(cb_use_project_bpm);
+      layers.add(fp_sig_beats);
+      layers.add(cm_sig_notelen);
+
+      layers.add(sample_timeline_editor);
+
+      layers.add(tf_clip_name);
+      layers.add(fp_clip_offset);
+      layers.add(cb_clip_release);
+      layers.add(fp_clip_vel_on);
+      layers.add(fp_clip_vel_off);
+      layers.add(fp_clip_cc_mw);
+      layers.add(fp_clip_cc_bc);
+      layers.add(fp_clip_cc_fc);
+      layers.add(fp_clip_cc_ex);
+
+      layers.add(bt_clip_sample);
+   }
+
+   // <method.png>
+   public method resetView() {
+      sample_timeline_editor.timelineResetView();
+   }
+
+   // <method.png>
+   public method storeEditorState() {
+      if(null != sample_timeline_edit_model)
+      {
+         if(b_debug) trace "xxx SampleTimelineForm::storeEditorState: editor_state="+#(sample_timeline_edit_model.editor_state);
+         sample_timeline_editor.timelineStoreEditorState(sample_timeline_edit_model.editor_state);
+      }
+   }
+
+   // <ui_show.png>
+   public method showTrack(Track _track) {
+      parent_track <= _track;
+      if(null != _track)
+      {
+         sample_timeline <= parent_track.sample_timeline;
+         sample_timeline_edit_model <= sample_timeline.edit_model;
+         sample_timeline_editor.sample_timeline <= sample_timeline;
+         sample_timeline_editor.edit_model <= sample_timeline_edit_model;
+         sample_timeline_editor.initializeOrRestoreEditorState();
+         sample_timeline_editor.timelineUpdate();
+
+         cf_model.setSelectedOption(sample_timeline.getEditModelIndex());
+
+         int numUnits = sample_timeline_editor.timelineGetCanvasSize();
+         // // trace "xxx showTrack: numUnits="+numUnits;
+         // // trace "xxx             sample_timeline_edit_model.num_units_per_beat="+sample_timeline_edit_model.num_units_per_beat;
+         // // trace "xxx             sample_timeline_edit_model.num_beats_per_bar ="+sample_timeline_edit_model.num_beats_per_bar;
+         int numBars = numUnits / (sample_timeline_edit_model.num_units_per_beat * sample_timeline_edit_model.num_beats_per_bar);
+         fp_canvas_size.setValueAndEnable(numBars);
+
+         cb_use_project_bpm.setSelectedAndEnable(sample_timeline.b_use_project_bpm);
+         updateBPM();
+
+         if(null != sample_timeline_edit_model)
+         {
+            fp_sig_beats.setValueAndEnable(sample_timeline_edit_model.num_beats_per_bar);
+            int notelenOpt = (log(mathClampi(4096/sample_timeline_edit_model.num_units_per_beat, 1, 32+1))+0.5) / log(2);
+            cm_sig_notelen.setSelectedOptionAndEnable(notelenOpt);
+         }
+         else
+         {
+            fp_sig_beats.setValueAndDisable(0);
+            cm_sig_notelen.setSelectedOptionAndDisable(-1);
+         }
+
+         updateTrackWidgets();
+
+         updateLaneSendWidgets();
+
+         sv_wave.setEditable(true);
+      }
+      else
+      {
+         // Unreachable ?
+         sample_timeline <= null;
+         sample_timeline_edit_model <= null;
+         removeOverlays();
+
+         fp_canvas_size.setValueAndDisable(0);
+         fp_bpm.setValueAndDisable(0);
+         cb_use_project_bpm.setSelectedAndDisable(false);
+         fp_sig_beats.setValueAndDisable(0);
+         cm_sig_notelen.setSelectedOptionAndDisable(-1);
+
+         tf_clip_name.setTextAndDisable("");
+         fp_clip_offset .setValueAndDisable(0);
+         cb_clip_release.setSelectedAndDisable(false);
+         fp_clip_vel_on .setValueAndDisable(0);
+         fp_clip_vel_off.setValueAndDisable(0);
+         fp_clip_cc_mw  .setValueAndDisable(-1);
+         fp_clip_cc_bc  .setValueAndDisable(-1);
+         fp_clip_cc_fc  .setValueAndDisable(-1);
+         fp_clip_cc_ex  .setValueAndDisable(-1);
+
+         bt_clip_sample.setEditable(false);
+
+         sv_wave.setEditable(false);
+      }
+
+      updateModelOptions();
+   }
+
+   // <ui_update.png>
+   protected method updateBPM() {
+      switch(sample_timeline.b_use_project_bpm)
+      {
+         default:
+         case true:
+            fp_bpm.setValueAndEnable(current_project.bpm);
+            break;
+
+         case false:
+            fp_bpm.setValueAndEnable(sample_timeline.beats_per_minute);
+            break;
+
+         case maybe:
+            if(null != sample_timeline_edit_model)
+               fp_bpm.setValueAndEnable(sample_timeline_edit_model.beats_per_minute);
+            else
+               fp_bpm.setValueAndEnable(sample_timeline.beats_per_minute);  // should not be reachable
+            break;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateModelOptions() {
+      local StringArray aOpt;
+      if(null != sample_timeline)
+      {
+         local Integer ioNr = 1;
+         SampleTimelineModel *model;
+         foreach model in sample_timeline.all_models
+         {
+            if(null != model && (model.haveAnyClips() || (!model.name.isBlank())))
+               aOpt.add(ioNr.printf("%03d")+":"+model.name);
+            else
+               aOpt.add(ioNr.printf("%03d")+":<unused>");
+
+            // Next model
+            ioNr++;
+         }
+
+         cf_model.setEditable(true);
+      }
+      else
+      {
+         // Unreachable ?
+         cf_model.setEditable(false);
+      }
+      cf_model.setOptions(aOpt);
+   }
+
+   // <method.png>
+   public method makeCursorVisible() {
+      sample_timeline_editor.timelineCursorMakeVisible();
+   }
+
+   // <method.png>
+   public method addOverlays() {
+      // Layer lRoot <= getRoot();
+      // trace "xxx SampleTimelineForm::addOverlays: root="+#(lRoot)+" data="+#(sample_timeline_editor.data);
+      root_form.addOverlay(sample_timeline_editor.data);
+      root_form.addOverlay(sv_wave);
+   }
+
+   // <method.png>
+   public method removeOverlays() {
+      // Layer lRoot <= getRoot();
+      // trace "xxx SampleTimelineForm::removeOverlays: root="+#(lRoot)+" data="+#(sample_timeline_editor.data);
+      root_form.removeOverlay(sv_wave);
+      root_form.removeOverlay(sample_timeline_editor.data);
+   }
+
+   // <ui_hide.png>
+   public method leaveForm() {
+      removeOverlays();
+      ta_redraw.cancel();
+   }
+
+   // <method.png>
+   public virtual recursiveOnResize() {
+      XMLForm::recursiveOnResize();
+
+      if(null != sample_timeline_editor)
+      {
+         sample_timeline_editor.timelineUpdate();
+
+         UI.SetKeyboardFocus(sample_timeline_editor.data);
+      }
+
+      if(b_debug) trace "xxx SampleTimelineForm::recursiveOnResize: size="+getSizeString();
+   }
+
+   // <method.png>
+   public method unsetCurrentSample() {
+      current_sample <= null;
+      sv_wave.setSample(null/*waveform*/, null/*samples*/, 0/*numCh*/, 0/*sampleRate*/);
+   }
+
+   // <method_get.png>
+   public method getSelectedSample() : Sample {
+      return current_sample;
+   }
+
+   // <method_get.png>
+   public method getFirstSelectedZone() : StSample {
+      if(null != current_sample)
+         return current_sample.sample_bank.firstSample;
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedModelTrack() : SampleTimelineModelTrack {
+      if(null != sample_timeline_edit_model)
+      {
+         return sample_timeline_edit_model.tracks.get(sample_timeline_editor.cursor_track);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedReplayTrack() : SampleTimelineReplayTrack {
+      // (todo) remove ? (currently unused)
+      // trace "xxx getSelectedReplayTrack: sample_timeline="+#(sample_timeline);
+      if(null != sample_timeline)
+      {
+         // trace "xxx getSelectedReplayTrack: sample_timeline_editor.cursor_track="+sample_timeline_editor.cursor_track;
+         return sample_timeline.replay_tracks.get(sample_timeline_editor.cursor_track);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedEditorClip() : SampleTimelineEditorClip {
+      if(null != sample_timeline)
+         return sample_timeline_editor.timelineFindClipAtUnits(sample_timeline_editor.cursor_units,
+                                                               sample_timeline_editor.cursor_track
+                                                               );
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedModelClip() : SampleTimelineModelClip {
+      SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+      if(null != editorClip)
+         return editorClip.model_clip;
+      return null;
+   }
+
+   // <ui_show.png>
+   public method showClipDetails(SampleTimelineEditorClip _clipOrNull, boolean _bWidgets, boolean _bSampleView) {
+      // called from SampleTimelineEditor::timelineShowClipDetails()
+      if(b_debug) trace "xxx SampleTimelineForm::showClipDetails: ENTER clip="+#(_clipOrNull);
+      if(null != _clipOrNull)
+      {
+         SampleTimelineModelClip modelClip <= _clipOrNull.model_clip;
+         if(b_debug) trace "xxx SampleTimelineForm::showClipDetails: clip="+#(_clipOrNull)+" sample_idx="+modelClip.sample_idx;
+         current_sample <= current_project.getSampleByIdx(modelClip.sample_idx);
+         if(b_debug) trace "xxx SampleTimelineForm::showClipDetails:   => current_sample="+#(current_sample);
+         if(null != current_sample)
+         {
+            StWaveform wf <= current_sample.waveform;
+
+            if(_bSampleView)
+            {
+               sv_wave.setSample(wf,
+                                 wf.sampleData,
+                                 wf.numChannels,
+                                 wf.sampleRate
+                                 );
+
+               float numFramesPerUnit = sample_timeline.getNumFramesPerUnit(wf.sampleRate);
+               int sta = mathClampi(numFramesPerUnit * modelClip.offset, 0, wf.numFrames);
+               int end = mathClampi(sta + numFramesPerUnit * (modelClip.end - modelClip.start), 0, wf.numFrames);
+
+               sv_wave.setSelection(sta, end);
+               sv_wave.setHighlight(sta, end);
+               sv_wave.makeSelectionVisible();
+               sv_wave.selectNone();
+            }
+
+            if(_bWidgets)
+            {
+               int numRefs = current_project.findNumSampleRefsBySampleIdx(modelClip.sample_idx);
+               local Float numSec = wf.numFrames / wf.sampleRate;
+               lb_clip_info.setCaption(wf.numFrames+" frames ("+numSec.printf("%3.2f")+"s, "+wf.numChannels+" ch, "+numRefs+" ref"+Utils.GetPluralString(numRefs)+")");  // +", clipUID="+modelClip.uid+" smpUID="+current_sample.unique_id
+               bt_clip_sample.setCaption(current_sample.unique_name);
+               bt_clip_sample.setEditable(true);
+            }
+         }
+         else
+         {
+            // Invalid sample
+            sv_wave.setSample(null/*waveform*/, null/*samples*/, 0/*numCh*/, 0/*sampleRate*/);
+
+            if(_bWidgets)
+            {
+               lb_clip_info.setCaption("<invalid sample>");
+               bt_clip_sample.setCaption("-");
+               bt_clip_sample.setEditable(true);
+            }
+         }
+
+         if(_bWidgets)
+         {
+            tf_clip_name.setTextAndEnable(modelClip.name);
+
+            float numOffsetBeats = float(modelClip.offset) / sample_timeline_edit_model.num_units_per_beat;
+            fp_clip_offset.setValueAndEnable(numOffsetBeats);
+            cb_clip_release.setSelectedAndEnable(modelClip.b_release);
+            fp_clip_vel_on .setValueAndEnable(modelClip.vel_on);
+            fp_clip_vel_off.setValueAndEnable(modelClip.vel_off);
+            fp_clip_cc_mw  .setValueAndEnable(modelClip.cc_mw);
+            fp_clip_cc_bc  .setValueAndEnable(modelClip.cc_bc);
+            fp_clip_cc_fc  .setValueAndEnable(modelClip.cc_fc);
+            fp_clip_cc_ex  .setValueAndEnable(modelClip.cc_ex);
+         }
+      }
+      else
+      {
+         // No clip
+         current_sample <= null;
+         sv_wave.setSample(null/*waveform*/, null/*samples*/, 0/*numCh*/, 0/*sampleRate*/);
+
+         if(_bWidgets)
+         {
+            tf_clip_name.setTextAndDisable("");
+            lb_clip_info.setCaption("-");
+            fp_clip_offset.setValueAndDisable(0);
+            cb_clip_release.setSelectedAndDisable(false);
+            fp_clip_vel_on .setValueAndDisable(0);
+            fp_clip_vel_off.setValueAndDisable(0);
+            fp_clip_cc_mw  .setValueAndDisable(-1);
+            fp_clip_cc_bc  .setValueAndDisable(-1);
+            fp_clip_cc_fc  .setValueAndDisable(-1);
+            fp_clip_cc_ex  .setValueAndDisable(-1);
+
+            bt_clip_sample.setCaption("-");
+            bt_clip_sample.setEditable(false);
+         }
+      }
+      sv_wave.redraw();
+
+      if(_bWidgets)
+      {
+         lb_clip_info.redraw();
+         bt_clip_sample.redraw();
+
+         updateLaneSendWidgets();
+      }
+
+      if(b_debug) trace "xxx SampleTimelineForm::showClipDetails: LEAVE";
+   }
+
+   // <method.png>
+   public virtual svBeginReallocSamples() {
+      // SampleViewPlugin
+      Global.Debug2("SampleTimelineForm::svBeginReallocSamples");
+      Audio.ResetAllSampleVoices(getSelectedSample());
+      TKS.lockNamedMutex("replay");
+   }
+
+   // <method.png>
+   public virtual svHandleDeleteRegion(int offset, len) {
+      // SampleViewPlugin
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         int newWfNumFrames = sample.waveform.numFrames;
+         StSample s <= sample.sample_bank.firstSample;
+         while(null != s)
+         {
+            s.handleShiftSampleArea(offset, -len);
+            s.verifySampleAreas();
+
+            // Update visible sample zone area (SampleView)
+            local Double oldZoom   <= s.uiSVZoom;
+            float        oldOffset  = s.uiSVOffset;
+            local Double newZoom;
+            local Float  newOffset;
+            SampleView.UpdateOffsetAndZoomAfterInsertDelete(offset, -len,
+                                                            newWfNumFrames,
+                                                            oldZoom, oldOffset,
+                                                            newZoom, newOffset
+                                                            );
+            s.uiSVZoom   = newZoom;
+            s.uiSVOffset = newOffset;
+
+            // Next zone
+            s <= s.next;
+         }
+         sample.analyzeAndUpdatePartials();
+      }
+   }
+
+   // <method.png>
+   public virtual svHandleInsertRegion(int offset, len) {
+      // SampleViewPlugin
+      Global.Debug2("SampleTimelineForm::svHandleInsertRegion: offset="+offset+" len="+len);
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         int newWfNumFrames = sample.waveform.numFrames;
+         StSample s <= sample.sample_bank.firstSample;
+         while(null != s)
+         {
+            // // trace "xxx    call s.handleShiftSampleArea(offset="+offset+", len="+len+")  s.firstLoopOffset="+s.firstLoopOffset;
+            s.handleShiftSampleArea(offset, len);
+            // // trace "xxx      2 s.firstLoopOffset="+s.firstLoopOffset;
+            s.verifySampleAreas();
+
+            // Update visible sample zone area (SampleView)
+            local Double oldZoom   <= s.uiSVZoom;
+            float        oldOffset  = s.uiSVOffset;
+            local Double newZoom;
+            local Float  newOffset;
+            SampleView.UpdateOffsetAndZoomAfterInsertDelete(offset, len,
+                                                            newWfNumFrames,
+                                                            oldZoom, oldOffset,
+                                                            newZoom, newOffset
+                                                            );
+            s.uiSVZoom   = newZoom;
+            s.uiSVOffset = newOffset;
+
+            // Next zone
+            s <= s.next;
+         }
+         sample.analyzeAndUpdatePartials();
+      }
+   }
+
+   // <method.png>
+   public virtual svHandleMoveRegion(int oldOffset, int len, int newOffset) {
+      // SampleViewPlugin
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         StSample s <= sample.sample_bank.firstSample;
+         while(null != s)
+         {
+            s.handleMoveSampleArea(oldOffset, len, newOffset);
+            s.verifySampleAreas();
+            s <= s.next;
+         }
+         sample.analyzeAndUpdatePartials();
+      }
+   }
+
+   // <method.png>
+   public virtual svEndReallocSamples() {
+      // SampleViewPlugin
+      TKS.unlockNamedMutex("replay");
+   }
+
+   // <method.png>
+   public virtual svHandleRenderHighlightChanged(boolean _bEnabled) {
+      // SampleViewPlugin
+      // (todo) set sample off+len or loop
+   }
+
+   // <method.png>
+   public virtual svHandleViewChanged() {
+      // SampleViewPlugin
+      StSample s <= getFirstSelectedZone();
+      if(null != s)
+      {
+         s.uiSVZoom     = sv_wave.getZoom();
+         s.uiSVOffset   = sv_wave.getOffset();
+         s.uiSVZoomYIdx = sv_wave.getZoomYIdx();
+         // // trace "xxx handleViewChanged: off="+s.uiSVOffset+" zoom="+s.uiSVZoom;
+      }
+   }
+
+   // <method.png>
+   public =replay= method svHandleMarkerChanged(int _markerIdx, int _start, int _end) {
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         StSample selZone <= getFirstSelectedZone();
+         int markerIdx = 0;
+         StSample s <= sample.sample_bank.firstSample;
+         while(null != s)
+         {
+            if(markerIdx == _markerIdx)
+            {
+               if(_start < (s.firstLoopOffset+s.firstLoopLen))
+                  s.firstLoopLen = (s.firstLoopOffset+s.firstLoopLen) - _start;
+               s.firstLoopOffset = _start;
+               s.verifySampleAreas();
+               if(@(s) == @(selZone))
+               {
+                  // // fp_zone_offset.setValue(s.firstLoopOffset);
+                  // // fp_zone_len.setValue(s.firstLoopLen);
+                  // // tv_loops.tableModelChanged();
+                  sv_wave.setHighlight(s.firstLoopOffset, s.firstLoopOffset+s.firstLoopLen);
+               }
+               sample.markParamsAsModified();
+               return;
+            }
+            s <= s.next;
+            markerIdx++;
+         }
+      }
+   }
+
+   // <ui_update.png>
+   public method updateTrackWidgets() {
+      SampleTimelineModelTrack track <= getSelectedModelTrack();
+      if(null != track)
+      {
+         tf_track_name.setText(track.name);
+         tf_track_name.setEditable(true);
+
+         bt_track_new.setEditable(true);
+         bt_track_delete.setEditable(true);
+      }
+      else
+      {
+         tf_track_name.setText("");
+         tf_track_name.setEditable(false);
+
+         bt_track_new.setEditable(true);
+         bt_track_delete.setEditable(false);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateLaneSendWidgets() {
+      Dial *dl;
+      int sendIdx;
+      SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+      // // trace "xxx updateLaneSendWidgets: modelTrack="+#(modelTrack);
+      if(null != modelTrack)
+      {
+         FloatArray aLevelMod <= null;
+         FloatArray aPanMod   <= null;
+         SampleTimelineModelClip modelClip <= getSelectedModelClip();
+         if(null != modelClip)
+         {
+            aLevelMod <= modelClip.lane_level_mod;
+            aPanMod   <= modelClip.lane_pan_mod;
+         }
+
+         sendIdx = 0;
+         loop(SampleTimelineReplayTrack.NUM_LANE_SENDS)
+         {
+            dl <= lane_send_level_dials[sendIdx];
+            dl.setValue(modelTrack.lane_level.get(sendIdx));
+            dl.setModValue( (null != aLevelMod) ? aLevelMod.get(sendIdx) : 0.0f );
+            dl.setEditable(true);
+
+            dl <= lane_send_pan_dials[sendIdx];
+            dl.setValue(modelTrack.lane_pan.get(sendIdx));
+            dl.setModValue( (null != aPanMod) ? aPanMod.get(sendIdx) : 0.0f );
+            dl.setEditable(true);
+
+            sendIdx++;
+         }
+      }
+      else
+      {
+         // No valid track selected
+         sendIdx = 0;
+         loop(SampleTimelineReplayTrack.NUM_LANE_SENDS)
+         {
+            dl <= lane_send_level_dials[sendIdx];
+            dl.setValue(0.0f);
+            dl.setModValue(0.0f);
+            dl.setEditable(false);
+
+            dl <= lane_send_pan_dials[sendIdx];
+            dl.setValue(0.0f);
+            dl.setModValue(0.0f);
+            dl.setEditable(false);
+
+            sendIdx++;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleLaneSendLevelChanged(Dial _dl, boolean _bMod) : boolean {
+      if(null != sample_timeline)
+      {
+         int sendIdx = lane_send_level_dials.indexOfPointer(_dl, 0);
+         if(sendIdx >= 0)
+         {
+            Float f;
+            if(_bMod)
+            {
+               // Per-clip level modulation
+               f = _dl.getModValue();
+
+               FloatArray aLevelMod <= null;
+               SampleTimelineModelClip modelClip <= getSelectedModelClip();
+               if(null != modelClip)
+               {
+                  modelClip.setLaneSendLevelMod(sendIdx, f);
+
+                  f *= 100;
+                  Global.Print("Clip lane "+(sendIdx+1)+" send level mod is "+f.printf("%3.2f")+"%");
+               }
+            }
+            else
+            {
+               f = _dl.getValue();
+               SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+               if(null != modelTrack)
+               {
+                  modelTrack.setLaneSendLevel(sendIdx, f);
+                  f *= 100;
+                  Global.Print("Lane "+(sendIdx+1)+" send level is "+f.printf("%3.2f")+"%");
+               }
+            }
+            sample_timeline.queueUpdateLaneSends();
+            current_project.markAsModified();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleLaneSendPanChanged(Dial _dl, boolean _bMod) : boolean {
+      if(null != sample_timeline)
+      {
+         int sendIdx = lane_send_pan_dials.indexOfPointer(_dl, 0);
+         if(sendIdx >= 0)
+         {
+            Float f;
+            if(_bMod)
+            {
+               // Per-clip pan modulation
+               f = _dl.getModValue();
+               SampleTimelineModelClip modelClip <= getSelectedModelClip();
+               if(null != modelClip)
+               {
+                  modelClip.setLaneSendPanMod(sendIdx, f);
+                  f *= 100;
+                  Global.Print("Clip lane "+(sendIdx+1)+" send pan mod is "+f.printf("%3.2f")+"%");
+               }
+            }
+            else
+            {
+               SampleTimelineModelTrack modelTrack <= getSelectedModelTrack();
+               if(null != modelTrack)
+               {
+                  f = _dl.getValue();
+                  modelTrack.setLaneSendPan(sendIdx, f);
+                  Global.Print("Lane "+(sendIdx+1)+" send pan is "+f.printf("%3.2f"));
+               }
+            }
+            sample_timeline.queueUpdateLaneSends();
+            current_project.markAsModified();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleModelChanged() {
+      if(null != sample_timeline)
+      {
+         local Integer editIdx = cf_model.getSelectedOption();
+         if(editIdx >= 0)
+         {
+            storeEditorState();
+
+            SampleTimelineModel model <= sample_timeline.getModelByIndex(editIdx);
+            if(null == model)
+            {
+               model <= sample_timeline.newModelAt(editIdx, false/*bLoad*/);
+               updateModelOptions();
+            }
+            sample_timeline.edit_model   <= model;
+            sample_timeline.replay_model <= model;
+
+            showTrack(parent_track);
+
+            Global.Print("Select model "+(editIdx+1)+"/"+patnr_options.get(editIdx)+" \""+model.name+"\"");
+         }
+         // else: should not be reachable
+      }
+      else
+      {
+         // Should not be reachable
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleModelNameChanged(String _name) {
+      local String name = _name;
+      name.replace("<unused>","");
+      int idxDot = name.indexOf(":", 0);
+      if(-1 != idxDot)
+         name.substring(idxDot+1, 999);
+      name.trim();
+      if(null != sample_timeline_edit_model)
+      {
+         sample_timeline_edit_model.name = name;
+         String sOptName <= name.isBlank() ? "<unused>" : name;
+         local Integer editIdx = (sample_timeline.getModelIndex(sample_timeline_edit_model)) + 1;
+         cf_model.setOptionNameByIndex(editIdx-1, editIdx.printf("%03d")+":"+sOptName);
+         Global.Print("Timeline name is \""+name+"\"");
+         current_project.markAsModified();
+      }
+      // else: should not be reachable
+   }
+
+   // <ui_handle.png>
+   protected method handleCanvasSizeChanged() {
+
+      if(null != sample_timeline_edit_model)
+      {
+         int numBars = fp_canvas_size.getFloatValue();
+
+         int numUnitsPerBar = sample_timeline_edit_model.num_units_per_beat * sample_timeline_edit_model.num_beats_per_bar;
+         int numUnits = numUnitsPerBar * numBars;
+         sample_timeline_editor.timelineSetCanvasSize(numUnits);
+         sample_timeline_editor.timelineUpdate();
+
+         float secPerBar = (60.0 / current_project.bpm) * sample_timeline_edit_model.num_beats_per_bar;
+         local Float tCanvas = secPerBar * numBars;
+         local Integer tCanvasM = tCanvas / 60.0;
+         local Integer tCanvasS = int(tCanvas - (tCanvasM * 60.0));
+
+         current_project.markAsModified();
+         Global.Print("Canvas Size is "+numBars+" bar"+Utils.GetPluralString(numBars)+" ("+numUnits+" units, "+tCanvasM.printf("%02d")+"m:"+tCanvasS.printf("%02d")+"s)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleBeatsPerMinuteChanged() {
+      if(null != sample_timeline)
+      {
+         sample_timeline.beats_per_minute = fp_bpm.getFloatValue();
+
+         if(null != sample_timeline_edit_model)
+         {
+            sample_timeline_edit_model.beats_per_minute = sample_timeline.beats_per_minute;
+         }
+
+         local String *sMsgPrefix;
+         switch(sample_timeline.b_use_project_bpm)
+         {
+            default:
+            case true:
+               sMsgPrefix <= "Project";
+               current_project.setTempo(sample_timeline.beats_per_minute, current_project.ppq);
+               root_form.updateSongWidgets();
+               break;
+
+            case false:
+               sMsgPrefix <= "Track-global";
+               break;
+
+            case maybe:
+               if(null != sample_timeline_edit_model)
+                  sMsgPrefix <= "Timeline-model";
+               else
+                  sMsgPrefix <= "Track-global";
+               break;
+         }
+
+         Global.Print(sMsgPrefix+" BPM is "+(int(sample_timeline.beats_per_minute*1000)/1000.0));
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleUseProjectBPMChanged() {
+      if(null != sample_timeline)
+      {
+         sample_timeline.b_use_project_bpm = cb_use_project_bpm.isSelected();
+         Global.Print("Timeline BPM-mode is \""+Utils.GetEnableStringMixed(sample_timeline.b_use_project_bpm, "Track-global", "Project", "per-Timeline")+"\"");
+         updateBPM();
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSigBeatsChanged() {
+      if(null != sample_timeline_edit_model)
+      {
+         sample_timeline_edit_model.num_beats_per_bar = fp_sig_beats.getFloatValue();
+         sample_timeline_editor.num_beats_per_bar = sample_timeline_edit_model.num_beats_per_bar; // mirror
+
+         Global.Print("Num beats per bar is "+sample_timeline_editor.num_beats_per_bar);
+         sample_timeline_editor.timelineUpdate();
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSigNotelenChanged() {
+      if(null != sample_timeline_edit_model)
+      {
+         sample_timeline_edit_model.num_units_per_beat = 4096 / int(mathPowerf(2, cm_sig_notelen.getSelectedOption()));
+         sample_timeline_editor.num_units_per_beat = sample_timeline_edit_model.num_units_per_beat; // mirror
+
+         Global.Print("Num units per beat is "+sample_timeline_editor.num_units_per_beat+" (1/"+(4096/sample_timeline_edit_model.num_units_per_beat)+")");
+         sample_timeline_editor.timelineUpdate();
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackNameChanged() {
+      SampleTimelineModelTrack track <= getSelectedModelTrack();
+      if(null != track)
+      {
+         track.name = tf_track_name.getText().trim();
+
+         Global.Print("Track name is \""+track.name+"\"");
+         current_project.markAsModified();
+      }
+      else
+      {
+         Global.Warning("No cursor track");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTrackNew() {
+      if(null != sample_timeline && null != sample_timeline_edit_model)
+      {
+         sample_timeline_editor.cursor_track = sample_timeline_editor.cursor_track + 1;
+         int trackIdx = sample_timeline_editor.cursor_track;
+         SampleTimelineModelTrack track <= sample_timeline_edit_model.newTrackAt(trackIdx);
+         track.name = "track "+((sample_timeline_edit_model.tracks.numElements)+1);
+         storeEditorState();
+         showTrack(parent_track);
+         Global.Print("Create track \""+track.name+"\"");
+         current_project.markAsModified();
+         sample_timeline_editor.timelineCursorMakeVisible();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTrackDelete() {
+      if(null != sample_timeline && null != sample_timeline_edit_model)
+      {
+         int trackIdx = sample_timeline_editor.cursor_track;
+         if(0 <= trackIdx < (sample_timeline_edit_model.tracks.numElements))
+         {
+            sample_timeline_edit_model.deleteTrack(trackIdx);
+            Global.Print("Delete track "+(trackIdx+1));
+            if(trackIdx > 0 && (trackIdx == (sample_timeline_edit_model.tracks.numElements)))
+            {
+               sample_timeline_editor.cursor_track = trackIdx - 1;
+            }
+            storeEditorState();
+            showTrack(parent_track);
+            current_project.markAsModified();
+            sample_timeline_editor.timelineCursorMakeVisible();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipNameChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.name = tf_clip_name.getText();
+         sample_timeline_editor.timelineUpdate();
+         current_project.markAsModified();
+         Global.Print("Clip name is \""+modelClip.name+"\" (uid="+modelClip.uid+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyClipNameFromSample() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         Sample sample <= getSelectedSample();
+         if(null != sample)
+         {
+            modelClip.name = sample.unique_name;
+            tf_clip_name.setText(modelClip.name);
+            sample_timeline_editor.timelineUpdate();
+            current_project.markAsModified();
+            Global.Print("Clip name is \""+modelClip.name+"\" (uid="+modelClip.uid+")");
+         }
+         else
+         {
+            Global.Warning("Copy clip name: invalid sample");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipOffsetChanged() {
+      SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+      if(null != editorClip)
+      {
+         local Float numBeats = fp_clip_offset.getFloatValue();
+         int numUnits = (sample_timeline_edit_model.num_units_per_beat * numBeats + 0.5);
+         editorClip.timelineClipSetOffset(numUnits);
+         showClipDetails(editorClip, false/*bWidgets*/, true/*bSampleView*/); // update SampleView highlight
+         current_project.markAsModified();
+         Global.Print("Clip start offset is "+numBeats.printf("%3.3f")+" beat"+Utils.GetPluralStringFloat(numBeats)+" ("+numUnits+" unit"+Utils.GetPluralString(numUnits)+")");
+         ta_redraw.schedule();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableClipReleaseChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setEnableRelease(cb_clip_release.isSelected());
+         current_project.markAsModified();
+         Global.Print("Clip release is "+Utils.GetEnableString(modelClip.b_release));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipVelOnChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setVelOn(fp_clip_vel_on.getFloatValue());
+         current_project.markAsModified();
+         Global.Print("Clip start velocity is "+(int(modelClip.vel_on*100)/100.0));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipVelOffChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setVelOff(fp_clip_vel_off.getFloatValue());
+         current_project.markAsModified();
+         Global.Print("Clip stop velocity is "+(int(modelClip.vel_off*100)/100.0));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipCCMWChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setCCMW(fp_clip_cc_mw.getFloatValue());
+         current_project.markAsModified();
+         Global.Print("Clip modwheel CC#1 is "+(int(modelClip.cc_mw*100)/100.0));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipCCBCChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setCCBC(fp_clip_cc_bc.getFloatValue());
+         current_project.markAsModified();
+         Global.Print("Clip breath control CC#2 is "+(int(modelClip.cc_bc*100)/100.0));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipCCFCChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setCCFC(fp_clip_cc_fc.getFloatValue());
+         current_project.markAsModified();
+         Global.Print("Clip foot control CC#4 is "+(int(modelClip.cc_fc*100)/100.0));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipCCEXChanged() {
+      SampleTimelineModelClip modelClip <= getSelectedModelClip();
+      if(null != modelClip)
+      {
+         modelClip.setCCEX(fp_clip_cc_ex.getFloatValue());
+         current_project.markAsModified();
+         Global.Print("Clip expression pedal CC#11 is "+(int(modelClip.cc_ex*100)/100.0));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEditClipSample() {
+      SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+      if(null != editorClip)
+      {
+         SampleTimelineModelClip   modelClip   <= editorClip.model_clip;
+         SampleTimelineEditorTrack editorTrack <= editorClip.parent_track;
+         SampleTimelineModelTrack  modelTrack  <= editorTrack.model_track;
+         Sample sampleOrNull <= current_project.getSampleByIdx(modelClip.sample_idx);
+         PageSample.ShowSampleFromTimelineAndSwitchToPage(sampleOrNull,
+                                                          editorClip,
+                                                          modelTrack,
+                                                          true/*bFromTrack*/
+                                                          );
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleHLChanged(int _start, int _len) {
+      // // trace "xxx SampleTimelineForm::handleHLChanged: start="+_start+" len="+_len;
+      if(_start >= 0 && _len >= 4096)
+      {
+         if(null != current_sample)
+         {
+            SampleTimelineModelClip modelClip <= getSelectedModelClip();
+            if(null != modelClip)  // should not be null
+            {
+               StWaveform wf <= current_sample.waveform;
+
+               float numFramesPerUnit = sample_timeline.getNumFramesPerUnit(wf.sampleRate);
+
+               modelClip.offset = round(_start / numFramesPerUnit);
+               modelClip.end = modelClip.start + round(_len / numFramesPerUnit);
+
+               sample_timeline_editor.timelineUpdate();
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleTimelineKbdSelectionChanged() {
+      // copy timeline selection rectangle to SampleView selection
+      int selStart = sample_timeline_editor.kbd_selection_units_start;
+      int selEnd   = sample_timeline_editor.kbd_selection_units_end;
+
+      if(selEnd > selStart)
+      {
+         if(null != current_sample)
+         {
+            SampleTimelineModelClip modelClip <= getSelectedModelClip();
+            if(null != modelClip)  // should not be null
+            {
+               StWaveform wf <= current_sample.waveform;
+
+               selStart -= modelClip.start;
+               selEnd   -= modelClip.start;
+
+               if(selStart >= 0)
+               {
+                  float numFramesPerUnit = sample_timeline.getNumFramesPerUnit(wf.sampleRate);
+                  int offStart = selStart * numFramesPerUnit;
+                  int offEnd   = selEnd   * numFramesPerUnit;
+
+                  sv_wave.setSelection(offStart, offEnd);
+                  sv_wave.redraw();
+                  return true;
+               }
+            }
+         }
+      }
+      sv_wave.selectNone();
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyTimelineToClipboard() {
+      if(null != sample_timeline_edit_model)
+      {
+         if(null == timeline_clipboard)
+            timeline_clipboard <= new Buffer;
+
+         sample_timeline_edit_model.saveStateToBuffer(timeline_clipboard);
+
+         Global.Print("Copy timeline to clipboard ("+timeline_clipboard.size+" bytes)");
+      }
+      else
+      {
+         Global.Warning("Timeline model is unused");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePasteTimelineFromClipboard() {
+      if(null != sample_timeline_edit_model)
+      {
+         if(null != timeline_clipboard)
+         {
+            if(sample_timeline_edit_model.loadStateFromBuffer(timeline_clipboard))
+            {
+               showTrack(parent_track);
+               Global.Print("Paste timeline from clipboard ("+timeline_clipboard.size+" bytes)");
+            }
+            else
+            {
+               Global.Error("Failed to paste timeline state from clipboard");
+            }
+         }
+         else
+         {
+            Global.Warning("Timeline clipboard is empty");
+         }
+      }
+      else
+      {
+         Global.Error("Failed to paste timeline state: model is null");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleReplay(boolean _bCursor) {
+      if(null != sample_timeline)
+      {
+         sample_timeline.toggleReplay(_bCursor
+                                      ? sample_timeline_editor.cursor_units/*playPos*/
+                                      : sample_timeline.loop_start
+                                      );
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+      PopupMenu *spm;
+
+      // Replay
+      pmb <= pm.addDefaultButton("Toggle replay (loop)",
+                                 "replay_toggle_loop"
+                                 );
+      pmb.setAccelerators("SPACE", "");
+
+      pmb <= pm.addDefaultButton("Toggle replay (cursor)",
+                                 "replay_toggle_cursor"
+                                 );
+      pmb.setAccelerators("lctrl-SPACE", "");
+
+      // Loop
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Set loop (prefer clips)",
+                                 "loop_set_clips"
+                                 );
+      pmb.setAccelerators("c", "");
+
+      pmb <= pm.addDefaultButton("Set loop (prefer region)",
+                                 "loop_set_region"
+                                 );
+      pmb.setAccelerators("lshift-c", "");
+
+      // Select
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Select until end",
+                                 "select_until_end"
+                                 );
+      pmb.setAccelerators("lalt-z", "");
+      pmb.setToolTipCaption("Select until end\n\n (note) lalt-y on german kbd\n\n (note) press repeatedly to toggle cursor / all tracks");
+      
+      pmb <= pm.addDefaultButton("Select all track clips, all clips, or none",
+                                 "select_cycle"
+                                 );
+      pmb.setAccelerators("lctrl-a", "");
+
+      pmb <= pm.addDefaultButton("Select none",
+                                 "select_none"
+                                 );
+      pmb.setAccelerators("lctrl-lshift-a", "");
+
+      // Copy submenu
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Copy", deref spm);
+
+      pmb <= spm.addDefaultButton("Copy clips to clipboard",
+                                  "clip_copy"
+                                  );
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= spm.addDefaultButton("Cut clips to clipboard",
+                                  "clip_cut"
+                                  );
+      pmb.setAccelerators("lctrl-w", "");
+
+      pmb <= spm.addDefaultButton("Copy timeline to clipboard",
+                                  "timeline_copy"
+                                  );
+      pmb.setAccelerators("lalt-c", "");
+
+      // Paste submenu
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Paste", deref spm);
+
+      pmb <= spm.addDefaultButton("Paste clips from clipboard",
+                                  "clip_paste"
+                                  );
+      pmb.setAccelerators("lctrl-v", "");
+
+      pmb <= spm.addDefaultButton("Paste-Shift clips from clipboard",
+                                  "clip_paste_shift"
+                                  );
+      pmb.setAccelerators("lctrl-lshift-v", "");
+
+      pmb <= spm.addDefaultButton("Paste timeline from clipboard",
+                                  "timeline_paste"
+                                  );
+      pmb.setAccelerators("lalt-v", "");
+
+      // Insert Space
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Insert space",
+                                 "insert_space"
+                                 );
+      pmb.setAccelerators("INSERT", "");
+      pmb.setToolTipCaption("Insert space\n\n (note) snap-grid-units when there\'s no selection");
+
+      pmb <= pm.addDefaultButton("Insert space (all tracks)",
+                                 "insert_space_all_tracks"
+                                 );
+      pmb.setAccelerators("lshift-INSERT", "");
+
+      // Delete space
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Delete selection or space",
+                                 "delete"
+                                 );
+      pmb.setAccelerators("DELETE", "");
+
+      pmb <= pm.addDefaultButton("Delete space (all tracks)",
+                                 "delete_all_tracks"
+                                 );
+      pmb.setAccelerators("lshift-DELETE", "");
+
+      // Undo / redo
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Undo",
+                                 "undo"
+                                 );
+      pmb.setAccelerators("lctrl-y", "");
+      pmb.setToolTipCaption("Undo\n\n (note) lctrl-z on german kbd");
+
+      pmb <= pm.addDefaultButton("Redo",
+                                 "redo"
+                                 );
+      pmb.setAccelerators("lctrl-lshift-y", "");
+      pmb.setToolTipCaption("Redo\n\n (note) lctrl-lshift-z on german kbd");
+
+       // Misc submenu
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Miscellaneous", deref spm);
+
+      pmb <= spm.addCheckButton("Snap to grid", sample_timeline_editor.b_snap, "misc_snap_toggle");
+      pmb.setAccelerators("s", "");
+      pmb.setToolTipCaption("Toggle snap-to-grid\n\n (note) cycle grid units with lshift-s");
+
+      pmb <= spm.addCheckButton("Normalize waveform display", STConfig.b_sample_timeline_normalize_waveform_display, "misc_normalize_waveform_display");
+      pmb.setAccelerators("n", "");
+
+      pmb <= spm.addCheckButton("Draw clip labels", sample_timeline_editor.b_draw_clip_labels, "misc_draw_clip_labels");
+      pmb.setAccelerators("l", "");
+
+      // // pmb <= spm.addDefaultButton("Edit clip sample",
+      // //                             "misc_edit_clip_sample"
+      // //                             );
+      // // pmb.setAccelerators("RMB-click", "");
+
+
+      // Mode submenu
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Mode", deref spm);
+
+      pmb <= spm.addDefaultButton("Select",
+                                  "mode_select"
+                                  );
+      pmb.setAccelerators("q", "");
+
+      pmb <= spm.addDefaultButton("Move or Draw",
+                                  "mode_draw"
+                                  );
+      pmb.setAccelerators("w", "");
+      pmb.setToolTipCaption("Move cursor to top / left of selection OR create clip from selection OR select \'draw\' mode");
+
+      pmb <= spm.addDefaultButton("Erase",
+                                  "mode_erase"
+                                  );
+      pmb.setAccelerators("e", "");
+      pmb.setToolTipCaption("Erase(clear) selection or select \'erase\' mode\n\n (note) split clip(s) if required (do not modify samples)");
+
+      pmb <= spm.addDefaultButton("Split or Razor",
+                                  "mode_razor"
+                                  );
+      pmb.setAccelerators("r", "");
+      pmb.setToolTipCaption("Split selected clips at cursor position OR select \'razor\' mode\n\n (note) LMB-hold-click: split current track clip at mouse position\n (note) RMB-hold-click: split all track clips at mouse position");
+
+      pmb <= spm.addDefaultButton("Expand or split on all tracks",
+                                  "mode_expand_or_split"
+                                  );
+      pmb.setAccelerators("lshift-r", "");
+      pmb.setToolTipCaption("Expand selection to all tracks and split at cursor position\n\n (note) RMB-hold-click: split all track clips at mouse position");
+
+      pmb <= spm.addDefaultButton("Mute",
+                                  "mode_mute"
+                                  );
+      pmb.setAccelerators("t", "");
+      pmb.setToolTipCaption("Toggle mute selected clips or select \'mute\' mode");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show timeline menu");
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // // trace "[>>>] SampleTimelineForm::onKey: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod;
+
+      switch(_k.pressed)
+      {
+         case 'a':
+            if(_k.modNone())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modAltOnly())
+            {
+               handleCopyTimelineToClipboard();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modAltOnly())
+            {
+               handlePasteTimelineFromClipboard();
+               return true;
+            }
+            break;
+
+         case VKEY_SPACE:
+            handleToggleReplay(!_k.modNone());
+            return true;
+      }
+
+      return XMLForm::onKey(_k);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return XMLForm::onMouseHold(_ev);
+   }
+
+  // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_REDRAW == acName)
+      {
+         sample_timeline_editor.redraw();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            boolean bMod = ((Dial.ACTION_MODVALUECHANGING == acName) ||
+                            (Dial.ACTION_MODVALUECHANGED  == acName)
+                            );
+            if(tryHandleLaneSendLevelChanged(ap, bMod))
+               return true;
+            if(tryHandleLaneSendPanChanged(ap, bMod))
+               return true;
+            return false;
+
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            PageProject pgProject <= root_form.pg_project;
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  refocusDefault();
+                  return true;
+
+               case "replay_toggle_loop":
+                  handleToggleReplay(false/*bCursor*/);
+                  refocusDefault();
+                  return true;
+
+               case "replay_toggle_cursor":
+                  handleToggleReplay(true/*bCursor*/);
+                  refocusDefault();
+                  return true;
+
+               case "loop_set_clips":
+                  sample_timeline_editor.handleSetLoop(false/*bPreferRegion*/);
+                  refocusDefault();
+                  return true;
+
+               case "loop_set_region":
+                  sample_timeline_editor.handleSetLoop(true/*bPreferRegion*/);
+                  refocusDefault();
+                  return true;
+
+               case "select_until_end":
+                  sample_timeline_editor.timelineSelectUntilEnd();
+                  redraw();
+                  refocusDefault();
+                  return true;
+
+               case "select_cycle":
+                  sample_timeline_editor.timelineToggleSelectTrackClipsOrAllClips();
+                  redraw();
+                  refocusDefault();
+                  return true;
+
+               case "select_none":
+                  sample_timeline_editor.timelineSelectNone();
+                  redraw();
+                  refocusDefault();
+                  return true;
+
+               case "clip_copy":
+                  sample_timeline_editor.handleClipCopy();
+                  refocusDefault();
+                  return true;
+
+               case "clip_cut":
+                  sample_timeline_editor.handleClipCut();
+                  refocusDefault();
+                  return true;
+
+               case "timeline_copy":
+                  handleCopyTimelineToClipboard();
+                  refocusDefault();
+                  return true;
+
+               case "clip_paste":
+                  sample_timeline_editor.handleClipPaste(false/*bShift*/);
+                  refocusDefault();
+                  return true;
+
+               case "clip_paste_shift":
+                  sample_timeline_editor.handleClipPaste(true/*bShift*/);
+                  refocusDefault();
+                  return true;
+
+               case "timeline_paste":
+                  handlePasteTimelineFromClipboard();
+                  refocusDefault();
+                  return true;
+
+               case "insert_space":
+                  sample_timeline_editor.timelineShiftClipsBySelection(false/*bAllTracks*/, false/*bDelete*/);
+                  refocusDefault();
+                  redraw();
+                  return true;
+
+               case "insert_space_all_tracks":
+                  sample_timeline_editor.timelineShiftClipsBySelection(true/*bAllTracks*/, false/*bDelete*/);
+                  refocusDefault();
+                  redraw();
+                  return true;
+
+               case "delete":
+                  sample_timeline_editor.handleDelete(false/*bAllTracks*/);
+                  refocusDefault();
+                  return true;
+
+               case "delete_all_tracks":
+                  sample_timeline_editor.handleDelete(true/*bAllTracks*/);
+                  refocusDefault();
+                  return true;
+
+               case "undo":
+                  sample_timeline_editor.timelineUndo();
+                  refocusDefault();
+                  return true;
+
+               case "redo":
+                  sample_timeline_editor.timelineRedo();
+                  refocusDefault();
+                  return true;
+
+                  // Misc submenu
+               case "misc_snap_toggle":
+                  sample_timeline_editor.timelineToggleSnap();
+                  refocusDefault();
+                  return true;
+
+               case "misc_normalize_waveform_display":
+                  sample_timeline_editor.toggleNormalizeClipWaveformDisplay();
+                  refocusDefault();
+                  return true;
+
+               case "misc_draw_clip_labels":
+                  sample_timeline_editor.timelineToggleDrawClipLabels();
+                  refocusDefault();
+                  return true;
+
+                  // Mode submenu
+               case "mode_select":
+                  sample_timeline_editor.handleKeyQ();
+                  refocusDefault();
+                  return true;
+
+               case "mode_draw":
+                  sample_timeline_editor.handleKeyW();
+                  refocusDefault();
+                  return true;
+
+               case "mode_erase":
+                  sample_timeline_editor.handleKeyE();
+                  refocusDefault();
+                  return true;
+
+               case "mode_razor":
+                  sample_timeline_editor.handleKeyR();
+                  refocusDefault();
+                  return true;
+
+               case "mode_expand_or_split":
+                  sample_timeline_editor.handleKeyRShift();
+                  refocusDefault();
+                  return true;
+
+               case "mode_mute":
+                  sample_timeline_editor.handleKeyT();
+                  refocusDefault();
+                  return true;
+
+            }
+            return true;
+
+         case @(cf_model):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleModelChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               // should not be reachable
+               refocusDefault();
+            }
+            else
+            {
+               // Rename model
+               if(ComboField.ACTION_OPTIONEDITED/*char typed*/ == acName)
+               {
+               }
+               else if(ComboField.ACTION_OPTIONRENAMED == acName)
+               {
+                  handleModelNameChanged(cf_model.getSelectedOptionName());
+                  refocusDefault();
+               }
+            }
+            return true;
+
+         case @(fp_canvas_size):
+            handleCanvasSizeChanged();
+            return true;
+
+         case @(fp_bpm):
+            handleBeatsPerMinuteChanged();
+            return true;
+
+         case @(cb_use_project_bpm):
+            handleUseProjectBPMChanged();
+            return true;
+
+         case @(fp_sig_beats):
+            handleSigBeatsChanged();
+            return true;
+
+         case @(cm_sig_notelen):
+            handleSigNotelenChanged();
+            return true;
+
+         case @(tf_track_name):
+            handleTrackNameChanged();
+            return true;
+
+         case @(bt_track_new):
+            handleTrackNew();
+            return true;
+
+         case @(bt_track_delete):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleTrackDelete();
+            }
+            else
+            {
+               Global.Warning("hold-click to delete track");
+            }
+            return true;
+
+         case @(tf_clip_name):
+            handleClipNameChanged();
+            return true;
+
+         case @(bt_clip_name_from_sample):
+            handleCopyClipNameFromSample();
+            return true;
+
+         case @(fp_clip_offset):
+            handleClipOffsetChanged();
+            return true;
+
+         case @(cb_clip_release):
+            handleEnableClipReleaseChanged();
+            return true;
+
+         case @(fp_clip_vel_on):
+            handleClipVelOnChanged();
+            return true;
+
+         case @(fp_clip_vel_off):
+            handleClipVelOffChanged();
+            return true;
+
+         case @(fp_clip_cc_mw):
+            handleClipCCMWChanged();
+            return true;
+
+         case @(fp_clip_cc_bc):
+            handleClipCCBCChanged();
+            return true;
+
+         case @(fp_clip_cc_fc):
+            handleClipCCFCChanged();
+            return true;
+
+         case @(fp_clip_cc_ex):
+            handleClipCCEXChanged();
+            return true;
+
+         case @(bt_clip_sample):
+            handleEditClipSample();
+            return true;
+
+         case @(sv_wave):
+            if(SampleView.ACTION_WAVEFORM_CHANGED == acName)
+            {
+               Sample sample <= getSelectedSample();
+               if(null != sample)
+               {
+                  sample.markWaveformAsModified();
+                  sample.analyzeAndUpdatePartials();
+                  showClipDetails(getSelectedEditorClip(), true/*bWidgets*/, false/*bSampleView*/);
+                  current_project.markAsModified();
+                  redraw();
+               }
+            }
+            else if(SampleView.ACTION_HIGHLIGHT_CHANGED == acName)
+            {
+               handleHLChanged(sv_wave.getSortedHighlightStart(),
+                               sv_wave.getSortedHighlightLength()
+                               );
+            }
+            return true;
+      }
+
+      return Form::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,1920 @@
+// ----
+// ---- file   : Lane.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 24Jan2018, 25Jan2018, 26Jan2018, 31Jan2018, 12Feb2018, 15Feb2018, 16Feb2018
+// ----          17Feb2018, 20Feb2018, 21Feb2018, 22Feb2018, 23Feb2018, 24Feb2018, 27Feb2018
+// ----          28Feb2018, 02Mar2018, 03Mar2018, 07Mar2018, 30Mar2018, 22Jun2018, 21Jul2018
+// ----          30Jul2019, 17Nov2019, 16Feb2020, 19Feb2020, 12Sep2020, 04Feb2021, 26Dec2021
+// ----          10Jan2022, 20Apr2023, 21Apr2023, 22Apr2023, 07Jul2023, 08Jul2023, 29Jul2023
+// ----          16Aug2023, 17Sep2023, 05Nov2023, 03Dec2023, 20Dec2023, 03Jul2024, 18Sep2024
+// ----          19Sep2024, 20Sep2024, 21Sep2024, 22Sep2024, 23Sep2024, 29Dec2024, 07Jan2025
+// ----
+// ----
+// ----
+
+module MLane;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <class.png>
+class Lane {
+   define int MAX_MODS_PER_LANE = 16;
+
+   Output *[] outputs;  // Output instances
+   Mod    *[] mods;
+
+   String  lane_name;
+   boolean b_enable;
+
+   // (note) ModVST2.plugin has separate buffers for each output pin
+   FloatArray mix_buffer;  // interleaved stereo
+
+   boolean b_track_input;  // true=receive input from track (default=true)
+
+   namespace boolean b_override_input;
+   namespace boolean b_override_sc_input;
+
+   namespace FloatArray override_input_buffer;  // stereo
+   namespace FloatArray override_sc_input_buffer;  // stereo
+
+   public int ui_tmp_lane_idx;  // temporary valid during UI lane ops
+
+   protected Double profile_process_t_start;
+   protected Double profile_process_t_end;
+   protected Double profile_process_t_delta;
+   protected Double profile_process_load_cur;
+   protected Double profile_process_load_avg;
+
+   protected PeakAvgTracker ui_peakavg_l;
+   protected PeakAvgTracker ui_peakavg_r;
+
+   int tmp_syn_export_track_idx;  // -1=not exported, 0..n otherwise (see Project.exportSYN())
+
+   namespace float      lane_fade_vol_cur;   // when track.b_lane_fade=true
+   namespace float      lane_fade_vol_next;
+
+   protected FloatArray tmp_input_buffer;  // stereo. used when there are no (active) mods (=> fade input) or in multi-input mode
+
+
+   // <method_init.png>
+   public method init() {
+      mix_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+      override_input_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+      override_sc_input_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+
+      b_track_input = true;
+
+      outputs.free();
+      Output output <= new Output;
+      output.init();
+      outputs.add(#(deref output));
+
+      b_enable = true;
+
+      lane_fade_vol_cur  = 1.0f;
+      lane_fade_vol_next = 1.0f;
+
+      tmp_input_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      exitMods();
+   }
+
+   // <method_exit.png>
+   public method exitMods() {
+      Mod *mod;
+      foreach mod in mods
+         mod.exit();
+   }
+
+   // <method_exit.png>
+   public method unload() {
+      unloadMods();
+   }
+
+   // <method_exit.png>
+   public method unloadMods() {
+      Mod *mod;
+      foreach mod in mods
+         mod.unload();
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      lane_name = _name;
+   }
+
+   // <method_get.png>
+   public method getLaneCaption(int _laneIdx) : String {
+      if(lane_name.isBlank())
+         return "Lane "+(_laneIdx+1);
+      else
+         return (_laneIdx+1)+": "+lane_name;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+   }
+
+   // <method_set.png>
+   public method isEnabled() : boolean {
+      return b_enable;
+   }
+
+   // <method_get.png>
+   public method listensToMIDIChannel(local Track _track, local int _laneIdx, local byte _ch) : boolean {
+      local boolean bMatch = false;
+      switch(_track.track_mode)
+      {
+         case Track.TRACK_MODE_DEFAULT:
+         case Track.TRACK_MODE_VRR:
+         case Track.TRACK_MODE_MIRROR_VRR:
+         case Track.TRACK_MODE_DRUM:
+            bMatch =
+               ( (-1 == _ch) || (_ch == _track.midi_ch) || (-1 == _track.midi_ch) )
+               ;
+            break;
+
+         case Track.TRACK_MODE_LPC:
+         case Track.TRACK_MODE_MIRROR_LPC:
+            if(-1 == _ch)
+            {
+               // Match all lanes in range offset..num_channels
+               bMatch = (_track.multi_lane_offset <= _laneIdx < (_track.multi_lane_offset + _track.multi_num_channels));
+            }
+            else if((_laneIdx - _track.multi_lane_offset) <= _ch < (_laneIdx - _track.multi_lane_offset + _track.multi_num_channels))
+            {
+               // Match when channels maps to lane in range offset..num_channels
+               bMatch = true;
+            }
+            break;
+
+         case Track.TRACK_MODE_MPE:
+         case Track.TRACK_MODE_MIRROR_MPE:
+            if(_ch == _track.multi_master_ch)
+            {
+               // Match when channels maps to MPE master ch lane (0)
+               bMatch = (0 == _laneIdx);
+            }
+            if(-1 == _ch)
+            {
+               // Match all lanes in range offset..num_channels
+               bMatch = (_track.multi_lane_offset <= _laneIdx < (_track.multi_lane_offset + _track.multi_num_channels));
+            }
+            else if((_laneIdx - _track.multi_lane_offset) <= _ch < (_laneIdx - _track.multi_lane_offset + _track.multi_num_channels))
+            {
+               // Match when channels maps to lane in range offset..num_channels
+               bMatch = true;
+            }
+            break;
+      }
+      return bMatch;
+   }
+
+   // <method_get.png>
+   public method getModByIdx(int _idx) : Mod {
+      return mods.get(_idx);
+   }
+
+   // <method_find.png>
+   public method findModAtY(int _y) : Mod {
+      Mod *mod;
+      foreach mod in mods
+      {
+         if(mod.ui_grid_y == _y)
+            return mod;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findMaxY() : int {
+      Mod *mod;
+      int maxY = 0;
+      foreach mod in mods
+      {
+         if(mod.ui_grid_y > maxY)
+            maxY = mod.ui_grid_y;
+      }
+      return maxY;
+   }
+
+   // <method_new.png>
+   public method newMod(String _classname) : Mod {
+
+      Mod mod <= TKS.newObjectByName("st2", "Mod"+_classname);
+
+      if(null != mod)
+      {
+         mod.init();
+         mods.add(#(deref mod));
+      }
+      else
+      {
+         Global.Error("Lane::newMod: failed to instantiate mod class \""+_classname+"\"");
+      }
+
+      current_project.markAsModified();
+
+      return mod;
+   }
+
+   // <method_insert.png>
+   public method insertModAtY(Mod _mod, int _gridY) {
+      Mod *omod;
+      int modIdx = 0;
+      boolean bAdded = false;
+
+      _mod.ui_grid_y = _gridY;
+
+      foreach omod in mods
+      {
+         if(omod.ui_grid_y == _gridY)
+         {
+            // Replace
+            mods[modIdx] = deref _mod;
+            bAdded = true;
+            break;
+         }
+         else if(omod.ui_grid_y > _gridY)
+         {
+            // Insert before
+            mods.insert(modIdx, #(deref _mod));
+            bAdded = true;
+            break;
+         }
+         modIdx++;
+      }
+
+      if(!bAdded)
+      {
+         mods.add(#(deref _mod));
+      }
+
+      current_project.markAsModified();
+   }
+
+   // <method_insert.png>
+   public =replay= method insertModAtY_Sync(Mod _mod, int _gridY) {
+      insertModAtY(deref _mod, _gridY);
+   }
+
+   // <method_new.png>
+   public method newModCLAP(String _uid) : ModCLAP {
+      ModCLAP modCLAP <= new ModCLAP;
+      modCLAP.init();
+      modCLAP.unique_id_string = _uid;
+
+      if(modCLAP.loadStatePost(false/*bThreaded*/))
+      {
+         if(modCLAP.plugin.isEffect())
+         {
+            modCLAP.input_filter.loadDefaultsForEffect();
+         }
+         else
+         {
+            modCLAP.input_filter.loadDefaultsForInstrument();
+         }
+
+         return deref modCLAP;
+      }
+      else
+      {
+         modCLAP <= null;
+      }
+      return null;
+   }
+
+   // <method_new.png>
+   public method newModCLAPAtY(int _gridY, String _uid) : ModCLAP {
+      if(0 <= _gridY < MAX_MODS_PER_LANE)
+      {
+         ModCLAP modCLAP <= newModCLAP(_uid);
+         if(null != modCLAP)
+         {
+            insertModAtY_Sync(deref modCLAP, _gridY);
+            return modCLAP;
+         }
+      }
+      return null;
+   }
+
+   // <method_new.png>
+   public method newModVST2(String _uid) : ModVST2 {
+      ModVST2 modVST2 <= new ModVST2;
+      modVST2.init();
+      modVST2.unique_id_string = _uid;
+
+      if(modVST2.loadStatePost(false/*bThreaded*/))
+      {
+         if((modVST2.plugin.isEffect()) && !(_uid & "Heartbeat")) // Softube Heartbeat uses wrong category
+         {
+            modVST2.input_filter.loadDefaultsForEffect();
+         }
+         else
+         {
+            modVST2.input_filter.loadDefaultsForInstrument();
+         }
+
+         return deref modVST2;
+      }
+      else
+      {
+         modVST2 <= null;
+      }
+      return null;
+   }
+
+   // <method_new.png>
+   public method newModVST2AtY(int _gridY, String _uid) : ModVST2 {
+      if(0 <= _gridY < MAX_MODS_PER_LANE)
+      {
+         ModVST2 modVST2 <= newModVST2(_uid);
+         if(null != modVST2)
+         {
+            insertModAtY_Sync(deref modVST2, _gridY);
+            return modVST2;
+         }
+      }
+      return null;
+   }
+
+   // <method_new.png>
+   public method newModSTFX(String _uid) : ModSTFX {
+      ModSTFX modSTFX <= new ModSTFX;
+      modSTFX.unique_id_string = _uid;
+      modSTFX.init();
+      return deref modSTFX;
+   }
+
+   // <method_new.png>
+   public method newModSTFXAtY(int _gridY, String _uid) : ModSTFX {
+      if(0 <= _gridY < MAX_MODS_PER_LANE)
+      {
+         ModSTFX modSTFX <= newModSTFX(_uid);
+
+         if(null != modSTFX)
+         {
+            insertModAtY_Sync(deref modSTFX, _gridY);
+
+            return modSTFX;
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public =replay= method unlinkMod(Mod _mod) : Mod {
+      int idx = mods.indexOfPointer(_mod, 0);
+      if(-1 != idx)
+      {
+         Mod mod <= mods.getDeref(idx);
+         mods.delete(idx);
+         return deref mod;
+      }
+      return null;
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteMod(Mod _mod) : boolean {
+      if(-1 != mods.indexOfPointer(_mod, 0))
+      {
+         _mod.exit();
+         mods.remove(_mod);
+         current_project.markAsModified();
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getOutputByIdx(int _idx) : Output {
+      return outputs.get(_idx);
+   }
+
+   // <method.png>
+   public method newOutput() : Output {
+      Output output <= new Output;
+      output.init();
+      outputs.add(#(deref output));
+      return output;
+   }
+
+   // <method.png>
+   public method selectNoOutput() {
+      // When auto-creating lanes
+      Output output <= outputs.get(0);
+      if(null != output)
+      {
+         output.type = Output.TYPE_NONE;
+      }
+   }
+
+   // <method_get.png>
+   public method outputsToAudioChannelIdx(int _idx) : boolean {
+      Output *output;
+      foreach output in outputs
+      {
+         if(output.outputsToAudioChannelIdx(_idx))
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method outputsToLaneIdx(int _idx) : boolean {
+      Output *output;
+      foreach output in outputs
+      {
+         if(output.outputsToLaneIdx(_idx))
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method isLaneReferencedByAnyOutputs(int _laneIdx) : boolean {
+      Output *output;
+      foreach output in outputs
+      {
+         if(output.referencesLane(_laneIdx))
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method handleTrackReorder(IntArray _reorderMap) {
+      Output *output;
+      foreach output in outputs
+      {
+         output.handleTrackReorder(_reorderMap);
+      }
+   }
+
+   // <method.png>
+   public method handleLaneReorder(IntArray _reorderMap) {
+      Output *output;
+      foreach output in outputs
+      {
+         output.handleLaneReorder(_reorderMap);
+      }
+   }
+
+   // <method.png>
+   public method copyModsFrom(Lane _o, boolean _bFullInit, boolean _bCopyModMatrix) {
+      exitMods();
+      mods.free();
+
+      if((_o.mods.numElements) > 0)
+      {
+         Mod *modSrc;
+         foreach modSrc in _o.mods
+         {
+            Mod modNew <= modSrc.modClone(_bFullInit);
+            modNew.modCopyPatchFrom(modSrc);
+            if(_bCopyModMatrix)
+               modNew.modCopyMatrixFrom(modSrc);
+            insertModAtY(deref modNew, modSrc.ui_grid_y);
+         }
+      }
+   }
+
+   // <method.png>
+   public method copyModPatchesFrom(Lane _o, boolean _bCopyModMatrix) : int {
+
+      int maxY = mathMini(_o.findMaxY()+1, findMaxY()+1);
+      int cy = 0;
+      int numUpdated = 0;
+
+      loop(maxY)
+      {
+         Mod modThis <= findModAtY(cy);
+
+         if(null != modThis)
+         {
+            Mod modOther <= _o.findModAtY(cy);
+
+            if(null != modOther)
+            {
+               if(modThis.modIsPatchCompatibleWith(modOther))
+               {
+                  modThis.modCopyBaseFrom(modOther);
+                  modThis.modCopyPatchFrom(modOther);
+                  if(_bCopyModMatrix)
+                     modThis.modCopyMatrixFrom(modOther);
+                  numUpdated++;
+               }
+            }
+         }
+
+         cy++;
+      }
+
+      return numUpdated;
+   }
+
+   // <method.png>
+   public method copyOutputsFrom(Lane _o) {
+      outputs.free();
+
+      if((_o.outputs.numElements) > 0)
+      {
+         Output *outputSrc;
+         foreach outputSrc in _o.outputs
+         {
+            Output outputNew <= newOutput();
+            outputNew.copyOutputFrom(outputSrc);
+         }
+      }
+   }
+
+   // <method.png>
+   public method copyLaneFrom(Lane _o, boolean _bFullInit) {
+
+      copyModsFrom(_o, _bFullInit, true/*bCopyModMatrix*/);
+      copyOutputsFrom(_o);
+
+      lane_name = _o.lane_name;
+      b_enable  = _o.b_enable;
+      b_track_input = _o.b_track_input;
+   }
+
+   // <method_set.png>
+   public method setTempo(float _bpm, int _ppq) {
+      Mod *mod;
+      foreach mod in mods
+      {
+         mod.setTempo(_bpm, _ppq);
+      }
+   }
+
+   // <method.png>
+   public method clearMutexGroups(byte _grpNr) {
+      Mod *mod;
+      _grpNr *= 2;
+      foreach mod in mods
+      {
+         if( (_grpNr-2) <= mod.ui_mutex_group_id < _grpNr )
+            mod.setUIMutexGroupId(-1);
+      }
+   }
+
+   // <method.png>
+   public method updateModEnableByMutexGroupId(byte _mutexGroupId, boolean _bEnable) {
+      Mod *mod;
+      foreach mod in mods
+      {
+         if(mod.ui_mutex_group_id >= 0)
+         {
+            if( (mod.ui_mutex_group_id & ~1) == (_mutexGroupId & ~1) )
+            {
+               if(maybe == _bEnable)
+                  mod.setEnable(false);
+               else
+                  mod.setEnable( ((mod.ui_mutex_group_id & 1) == (_mutexGroupId & 1)) ^ !_bEnable );
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 6;
+
+      // // Lane level
+      // ////ofs.f32 = level;  // pre v2
+
+      // // Lane pan
+      // ////ofs.f32 = pan;  // prev2
+
+      // Name (v6+)
+      Utils.WriteString(ofs, lane_name);
+
+      // Enable
+      ofs.i8 = b_enable; // v4+
+
+      // Track Input Enable (v5+)
+      ofs.i8 = b_track_input;  // v5+
+
+      // Output array (level/pan, ..) (v3+)
+      ofs.i8 = outputs.numElements;
+      Output *output;
+      foreach output in outputs
+      {
+         output.saveState(ofs);
+      }
+
+      // Mods
+      ofs.i16 = mods.numElements;
+      Mod *mod;
+      foreach mod in mods
+      {
+         Utils.WriteString(ofs, mod.yacMetaClassName().replace("Mod",""));
+         mod.saveState(ofs);
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = false;
+
+      // Version
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         Output *output;
+
+         if(ver >= 6)
+         {
+            // Name (v6+)
+            Utils.ReadString(ifs, lane_name);
+         }
+
+         if(ver >= 4)
+         {
+            // Enable
+            b_enable = ifs.b8;
+         }
+
+         if(ver >= 5)
+         {
+            // Track Input Enable (v5+)
+            b_track_input = ifs.b8;  // v5+
+         }
+
+         if(1 == ver)
+         {
+            output <= outputs.get(0);
+
+            // Lane level
+            output.level = ifs.f32;
+
+            // Lane pan
+            output.setPan(ifs.f32);
+         }
+         else
+         {
+            // V2+
+            if(ver <= 2)
+            {
+               output <= outputs.get(0);
+
+               if(!output.loadState(ifs))
+               {
+                  trace "[---] Lane::loadState: failed to load output state.";
+                  return false;
+               }
+            }
+            else
+            {
+               // v3+
+               int numOutputs = ifs.u8;
+               outputs.free();
+               int outputIdx = 0;
+               loop(numOutputs)
+               {
+                  output <= new Output;
+                  outputs.add(#(deref output));
+                  if(!output.loadState(ifs))
+                  {
+                     trace "[---] Lane::loadState: failed to load output state "+(outputIdx+1)+"/"+numOutputs;
+                     return false;
+                  }
+                  // Next output
+                  outputIdx++;
+               }
+            }
+         }
+
+         // Mods
+         int numMods = ifs.u16;
+         int modIdx = 0;
+         mods.free();
+
+         if(numMods > 128)
+            trace "[~~~] Lane::loadState: suspicious numMods="+numMods;
+
+         r = true;
+
+         loop(numMods)
+         {
+            Global.Debug("Lane::loadState: loading mod "+(modIdx+1)+"/"+numMods);
+
+            // Read Mod class name
+            String modClassName = "";
+            Utils.ReadString(ifs, modClassName);
+            if("VST" == modClassName) // [26Aug2019] rename ModVST to ModVST2
+               modClassName = "VST2";
+            Mod mod <= newMod(modClassName);
+
+            if(null != mod)
+            {
+               if(!mod.loadState(ifs, _bRestoreInstanceIDs))
+               {
+                  trace "[---] Lane::loadState: failed to read mod "+(modIdx+1)+"/"+numMods+" class="+modClassName;
+                  r = false;
+                  break;
+               }
+               else
+               {
+                  // Next lane
+                  modIdx++;
+               }
+            }
+            else
+            {
+               trace "[---] Lane::loadState: failed to instantiate mod clas \""+modClassName+"\"";
+               r = false;
+               break;
+            }
+         } // loop numMods
+
+      }
+      else
+      {
+         trace "[---] Lane::loadState: invalid version "+ver;
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public method loadStatePost(local boolean _bThreaded) : boolean {
+      // (possibly) multi-threaded
+      local boolean r = true;
+      local Mod *mod;
+      foreach mod in mods
+      {
+         // (note) [07Jul2023] do not abort when plugin could not be loaded (continue with remaining plugins)
+         // // r = r && mod.loadStatePost(_bThreaded);
+         // // if(!r)
+         // //    break;
+
+         mod.loadStatePost(_bThreaded);
+      }
+      return r;
+   }
+
+   // <replay.png>
+   public method prepareProcess(local int _numFrames) {
+      mix_buffer.numElements = _numFrames * 2;
+      mix_buffer.fill(0);
+
+      // (note) override buffers are cleared when they are first written to
+      b_override_input = false;
+      b_override_sc_input = false;
+   }
+
+   // <method.png>
+   protected =audio_in= copyStereoToCurrentMultiInputBuffer(local int        _channelIdx,
+                                                            local FloatArray _currentInputBuffer,
+                                                            local int        _numFrames
+                                                            ) {
+      // L
+      local FloatArray inBuf <= replay.input_buffers.get(_channelIdx);
+      tksampleedit_copy_mono_adv_ring_to_mono_adv(_currentInputBuffer, 0, 2,
+                                                  inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                  _numFrames
+                                                  );
+
+      // R
+      inBuf <= replay.input_buffers.get(_channelIdx+1);
+      tksampleedit_copy_mono_adv_ring_to_mono_adv(_currentInputBuffer, 1, 2,
+                                                  inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                  _numFrames
+                                                  );
+   }
+
+   // <method.png>
+   protected =audio_in= copyMonoToCurrentMultiInputBuffer(local int        _channelIdx,
+                                                          local FloatArray _currentInputBuffer,
+                                                          local int        _numFrames
+                                                          ) {
+      local FloatArray inBuf <= replay.input_buffers.get(_channelIdx);
+      tksampleedit_copy_mono_adv_ring_to_mono_adv(_currentInputBuffer, 0, 2,
+                                                  inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                  _numFrames
+                                                  );
+      tksampleedit_copy_mono_adv_ring_to_mono_adv(_currentInputBuffer, 1, 2,
+                                                  inBuf, replay.input_read_frame_idx, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                  _numFrames
+                                                  );
+   }
+
+   // <replay.png>
+   public method process(local int     _curTrackIdx,
+                         local int     _numFrames,
+                         local int     _fltDev,
+                         local int     _fltCh,
+                         local int     _forceCh,
+                         local int     _globalCh,
+                         local Track   _track,
+                         local int     _laneIdx,
+                         local boolean _bPlaying,
+                         local boolean _bVRR,
+                         local int     _vrrNoteOnIdx
+                         ) {
+      // Process all mods and fill mix_buffer
+
+      milliSecondsDouble(profile_process_t_start);
+
+      local Mod mod <= null;
+      local Mod pmod <= null;
+      local int modIdx = 0;
+      local int inIdx;
+      local int k;
+      local int j;
+      local FloatArray *currentInputBuffer;
+      local FloatArray *laneInputBuf;  // send to lane
+      local FloatArray *modOutL;
+      local FloatArray *modOutR;
+      local ModIdleDetect *modIdleDetect;
+      local boolean bForceBypassFX = b_bypass_all_fx;
+
+      // trace "xxx Lane::process";
+
+      // Lane stereo input (inputs 1+2)
+      if(!b_override_input &&
+         (_track.input_channel_idx >= 0) &&
+         (0 <= _laneIdx < _track.num_multi_input_lanes)
+         )
+      {
+         local boolean bNullMultiInput = true;
+         tmp_input_buffer.numElements = _numFrames * 2;
+         currentInputBuffer <= tmp_input_buffer;
+         if(_track.b_stereo_input)
+         {
+            if( (_track.input_channel_idx + (_laneIdx * 2 + 2)) <= replay.num_in_ch )
+            {
+               copyStereoToCurrentMultiInputBuffer(_track.input_channel_idx + (_laneIdx*2),
+                                                   currentInputBuffer,
+                                                   _numFrames
+                                                   );
+               bNullMultiInput = false;
+            }
+         }
+         else
+         {
+            if( (_track.input_channel_idx + _laneIdx) < replay.num_in_ch )
+            {
+               // Mono -> L+R
+               copyMonoToCurrentMultiInputBuffer(_track.input_channel_idx + _laneIdx,
+                                                 currentInputBuffer,
+                                                 _numFrames
+                                                 );
+               bNullMultiInput = false;
+            }
+         }
+         if(bNullMultiInput)
+            currentInputBuffer.fill(0.0f);
+      }
+      else
+      {
+         // Get default track input or lane override
+         currentInputBuffer <= _track.getLaneInputBuffer(_laneIdx, false/*bOverride*/);
+      }
+
+      // Process mods
+      foreach mod in mods
+      {
+         // if(2 == _laneIdx)
+         //    trace "xxx process mod.name="+mod.getName();
+
+         local boolean bModPlaying = mod.isEnabled() && _bPlaying;
+
+         if(bModPlaying && (_track.b_bypass_fx || bForceBypassFX))
+         {
+            bModPlaying = !mod.isEffect();
+         }
+         // trace "xxx bModplaying="+bModPlaying;
+
+         if(bModPlaying || (false != STConfig.b_process_when_muted))
+         {
+            if(bModPlaying || (true == STConfig.b_process_when_muted))
+            {
+               local FloatArray cInL <= mod.input_bufs.get(0);
+               local FloatArray cInR <= mod.input_bufs.get(1);
+               k = 0;
+               local int numIn = mod.getNumInputs();
+
+               if(null == pmod)
+               {
+                  // first mod input = track/lane input
+                  j = 0;
+
+                  // trace "xxx currentInputBuffer="+currentInputBuffer;
+
+                  if(replay.silence_countdown > 0)
+                     currentInputBuffer.fill(0);
+
+                  if(b_track_input)
+                  {
+                     if(1 == numIn)  // [21Jul2018] b_mono_in removed
+                     {
+                        // Left/mono/mid channel only
+                        tksampleedit_copy_mono_adv_to_mono(cInL, k, currentInputBuffer, j, 2, _numFrames);
+                     }
+                     else
+                     {
+                        // Stereo input
+                        tksampleedit_copy_stereo_to_dualmono(cInL, cInR, k, currentInputBuffer, j, _numFrames);
+                     }
+                  }
+                  else
+                  {
+                     // Track input off (only receive input from other lanes)
+                     cInL.fill(0);
+                     cInR.fill(0);
+                  }
+               }
+               else
+               {
+                  // mod input = previous mod output
+                  //  (todo) optimize: use output buf by reference
+                  local FloatArray pOutL <= pmod.output_bufs.get(0);
+                  local FloatArray pOutR <= pmod.output_bufs.get(1);
+
+                  if(1 == numIn) // [21Jul2018] mod.b_mono_in removed
+                  {
+                     // Left/mono/mid channel only
+                     tksampleedit_copy_mono_to_mono(cInL, k, pOutL, k, _numFrames);
+                  }
+                  else
+                  {
+                     // Stereo input
+                     if(1 == pmod.getNumOutputs()) /// [21Jul2018] pmod.b_mono_out removed
+                     {
+                        // Mono output from previous mod
+                        tksampleedit_copy_mono_to_dualmono(cInL, cInR, k, pOutL, k, _numFrames);
+                     }
+                     else
+                     {
+                        // Stereo output from previous mod
+                        tksampleedit_copy_dualmono_to_dualmono(cInL, cInR, k, pOutL, pOutR, k, _numFrames);
+                     }
+                  }
+               }
+
+               // Sidechain input (stereo only)
+               if(mod.b_sidechain_in && numIn >= 4)
+               {
+                  // mod inputs 3&4 = track or lane override sidechain input
+                  local FloatArray currentSCInputBuffer <= _track.getLaneSCInputBuffer(_laneIdx, false/*bOverride*/);
+                  cInL <= mod.input_bufs.get(2);
+                  cInR <= mod.input_bufs.get(3);
+                  j = 0;
+                  tksampleedit_copy_stereo_to_dualmono(cInL, cInR, k, currentSCInputBuffer, j, _numFrames);
+               }
+            }  // process audio
+
+            // (todo) optimize L,R processing modes (avoid copies)
+            if(Mod.PROCESS_L == mod.process_mode)
+            {
+               // Left to mono (replicate)
+               tksampleedit_copy_mono_to_mono(mod.parallel_tmp_buf_r, 0, cInR, 0, _numFrames);
+               tksampleedit_copy_mono_to_mono(cInR, 0, cInL, 0, _numFrames);
+            }
+            else if(Mod.PROCESS_R == mod.process_mode)
+            {
+               // Right to mono (replicate)
+               tksampleedit_copy_mono_to_mono(mod.parallel_tmp_buf_l, 0, cInL, 0, _numFrames);
+               tksampleedit_copy_mono_to_mono(cInL, 0, cInR, 0, _numFrames);
+            }
+            else if(Mod.PROCESS_PARALLEL == mod.process_mode)
+            {
+               // Backup l/r
+               tksampleedit_copy_mono_to_mono(mod.parallel_tmp_buf_l, 0, cInL, 0, _numFrames);
+               tksampleedit_copy_mono_to_mono(mod.parallel_tmp_buf_r, 0, cInR, 0, _numFrames);
+            }
+
+            // Voice Round Robin track mode
+            local ModInputFilter inputFlt <= mod.input_filter;
+            inputFlt.enableVRR = _bVRR;
+            inputFlt.vrrNoteOnIdx = _vrrNoteOnIdx;   // only look at "n"th note (chords / lane filter)
+
+            mod.process(_numFrames, _fltDev, _fltCh, _forceCh, _globalCh, bModPlaying);
+
+            if(mod instanceof ModIdleDetect)
+            {
+               modIdleDetect <= mod;
+               bForceBypassFX |= modIdleDetect.b_idle;
+            }
+            else
+            {
+               local int numOut = mod.getNumOutputs();
+               local int outIdx;
+
+               if(replay.silence_countdown > 0)
+               {
+                  outIdx = 0;
+                  loop(numOut)
+                  {
+                     modOutL <= mod.output_bufs.get(outIdx);
+                     modOutL.fill(0);
+                     outIdx++;
+                  }
+               }
+
+               if(numOut >= 2)
+               {
+                  // (todo) optimize L,R processing modes (avoid copies)
+                  if(Mod.PROCESS_L == mod.process_mode)
+                  {
+                     // MonoMix to left and restore right from input
+                     modOutL <= mod.output_bufs.get(0);
+                     modOutR <= mod.output_bufs.get(1);
+                     tksampleedit_monomix_restore_dualmono(modOutL/*faMonoMixOut*/,
+                                                           modOutR/*faRestoreOut*/,
+                                                           modOutL/*faInL*/, modOutR/*faInR*/,
+                                                           mod.parallel_tmp_buf_r/*faRestoreIn*/,
+                                                           _numFrames
+                                                           );
+                  }
+                  else if(Mod.PROCESS_R == mod.process_mode)
+                  {
+                     // MonoMix to right and restore left from input
+                     modOutL <= mod.output_bufs.get(0);
+                     modOutR <= mod.output_bufs.get(1);
+                     tksampleedit_monomix_restore_dualmono(modOutR/*faMonoMixOut*/,
+                                                           modOutL/*faRestoreOut*/,
+                                                           modOutL/*faInL*/, modOutR/*faInR*/,
+                                                           mod.parallel_tmp_buf_l/*faRestoreIn*/,
+                                                           _numFrames
+                                                           );
+                  }
+                  else if(Mod.PROCESS_PARALLEL == mod.process_mode)
+                  {
+                     // Add (backup-ed) output of previous mod
+                     modOutL <= mod.output_bufs.get(0);
+                     modOutR <= mod.output_bufs.get(1);
+                     tksampleedit_add_mono_to_mono(modOutL/*faOut*/,
+                                                   0/*outOff*/,
+                                                   mod.parallel_tmp_buf_l/*faIn*/,
+                                                   0/*inOff*/,
+                                                   _numFrames
+                                                   );
+                     tksampleedit_add_mono_to_mono(modOutR/*faOut*/,
+                                                   0/*outOff*/,
+                                                   mod.parallel_tmp_buf_r/*faIn*/,
+                                                   0/*inOff*/,
+                                                   _numFrames
+                                                   );
+                  }
+               }
+
+               if(bModPlaying)//// || (true == STConfig.b_process_when_muted))
+               {
+                  if(mod.b_multi_out)
+                  {
+                     if(1 == numOut) // mod.b_mono_out)
+                     {
+                        // Mono multi output to following lanes
+                        outIdx = 1;
+                        while(outIdx < numOut)
+                        {
+                           laneInputBuf <= _track.getLaneOverrideInputBufferOrNull(outIdx + _laneIdx);
+                           if(null != laneInputBuf)
+                           {
+                              modOutL <= mod.output_bufs.get(outIdx);
+                              if(null != modOutL)
+                              {
+                                 j = 0;
+                                 k = 0;
+                                 tksampleedit_copy_mono_to_stereo(laneInputBuf, k, modOutL, j, _numFrames);
+                              }
+                           }
+                           outIdx++;
+                        }
+                     }
+                     else
+                     {
+                        // Stereo multi output to following lanes
+                        local int outLaneIdx = _laneIdx + 1;
+                        outIdx = 2;
+                        while((outIdx + 1) < numOut)
+                        {
+                           laneInputBuf <= _track.getLaneOverrideInputBufferOrNull(outLaneIdx);
+                           if(null != laneInputBuf)
+                           {
+                              modOutL <= mod.output_bufs.get(outIdx);
+                              modOutR <= mod.output_bufs.get(outIdx + 1);
+                              if(null != modOutL && null != modOutR)
+                              {
+                                 j = 0;
+                                 k = 0;
+                                 tksampleedit_copy_dualmono_to_stereo(laneInputBuf, k, modOutL, modOutR, j, _numFrames);
+                              }
+                           }
+                           outIdx += 2;
+                           outLaneIdx++;
+                        }
+                     }
+                  } // if b_multi_out
+
+                  pmod <= mod;
+               } // if bModPlaying
+            } // if is ModIdleDetect
+         } // if enabled || process MIDI or audio when muted
+      } // foreach mod
+
+      // Level meter
+      if(null != pmod)
+      {
+         modOutL <= pmod.output_bufs.get(0);
+         modOutR <= pmod.output_bufs.get(1);
+
+         if(null != modIdleDetect)
+            modIdleDetect.processLaneOutput(modOutL, modOutR, _numFrames);
+
+         if(_track.b_lane_fade)
+         {
+            // if(1 == _laneIdx)
+            //    trace "xxx lane2 fade cur="+lane_fade_vol_cur+" next="+lane_fade_vol_next;
+            tksampleedit_amp_ramp_mono_adv_to_mono_adv(modOutL/*out*/, 0/*outOff*/, 1/*outAdv*/,
+                                                       modOutL/*in*/, 0/*inOff*/, 1/*inAdv*/,
+                                                       lane_fade_vol_cur/*lvlStart*/,
+                                                       lane_fade_vol_next/*lvlEnd*/,
+                                                       _numFrames
+                                                       );
+
+            tksampleedit_amp_ramp_mono_adv_to_mono_adv(modOutR/*out*/, 0/*outOff*/, 1/*outAdv*/,
+                                                       modOutR/*in*/, 0/*inOff*/, 1/*inAdv*/,
+                                                       lane_fade_vol_cur/*lvlStart*/,
+                                                       lane_fade_vol_next/*lvlEnd*/,
+                                                       _numFrames
+                                                       );
+
+            lane_fade_vol_cur = lane_fade_vol_next;
+         }
+
+         ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(modOutL, 0, 1, _numFrames));
+         ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(modOutR, 0, 1, _numFrames));
+      }
+      else
+      {
+         // No output (no active mods)
+      }
+
+      if(_bPlaying && replay.b_process_audio)
+      {
+         local FloatArray *trackInputBuf;  // send to track
+         local Output *output;
+         foreach output in outputs
+         {
+            local float lvlL = output.level_l;
+            local float lvlR = output.level_r;
+
+            if(null != pmod)
+            {
+               // lane output = last mod output
+               modOutL <= pmod.output_bufs.get(0);
+               modOutR <= pmod.output_bufs.get(1);
+               local int outTrackIdx;
+               local int pmodNumOut = pmod.getNumOutputs();
+
+               switch(output.type)
+               {
+                  case Output.TYPE_DEFAULT:
+                     // Send lane output to lane mix buffer
+                     // (todo) native loop
+                     // trace "xxx modOutL="+#(modOutL);
+                     k = 0;
+                     j = 0;
+                     if(1 == pmodNumOut)///pmod.b_mono_out)
+                     {
+                        // Mono output from previous mod
+                        lvlL = output.level;
+                        tksampleedit_copy_pan_mono_to_stereo(mix_buffer, k, modOutL, j, lvlL, lvlL, _numFrames);
+                     }
+                     else
+                     {
+                        // Stereo output from previous mod
+                        tksampleedit_copy_pan_dualmono_to_stereo(mix_buffer, k, modOutL, modOutR, j, lvlL, lvlR, _numFrames);
+                     }
+                     break;
+
+                  case Output.TYPE_AUDIO_STEREO:
+                     k = (output.channel_idx % replay.num_out_ch);
+                     if(k == (replay.num_out_ch - 1))
+                        k--;
+                     j = 0;
+                     if(1 == pmodNumOut)////pmod.b_mono_out)
+                     {
+                        // Mono output from previous mod
+                        tksampleedit_add_pan_mono_to_stereo_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                                modOutL, j,
+                                                                lvlL, lvlR,
+                                                                _numFrames
+                                                                );
+                     }
+                     else
+                     {
+                        // Stereo output from previous mod
+                        tksampleedit_add_pan_dualmono_to_stereo_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                                    modOutL, modOutR, j,
+                                                                    lvlL, lvlR,
+                                                                    _numFrames
+                                                                    );
+                     }
+                     break;
+
+                  case Output.TYPE_AUDIO_LEFT:
+                     k = (output.channel_idx % replay.num_out_ch);
+                     j = 0;
+                     tksampleedit_add_amp_mono_adv_to_mono_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                               modOutL, j, 1,
+                                                               output.level,
+                                                               _numFrames
+                                                               );
+                     break;
+
+                  case Output.TYPE_AUDIO_RIGHT:
+                     k = (output.channel_idx % replay.num_out_ch);
+                     j = 0;
+                     tksampleedit_add_amp_mono_adv_to_mono_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                               modOutR, j, 1,
+                                                               output.level,
+                                                               _numFrames
+                                                               );
+                     break;
+
+                  case Output.TYPE_TRACK:
+                     // Send lane output to other track
+                     if(-1 == output.track_idx)
+                     {
+                        // Output to self (feedback)
+                        outTrackIdx = _curTrackIdx;
+                     }
+                     else
+                     {
+                        outTrackIdx = output.track_idx;
+                     }
+                     trackInputBuf <= current_project.getTrackInputBuffer(_curTrackIdx, outTrackIdx);
+                     if(null != trackInputBuf)
+                     {
+                        current_project.lockTrackInputBuffer(_curTrackIdx, outTrackIdx);
+                        k = 0;
+                        j = 0;
+                        if(1 == pmodNumOut)////pmod.b_mono_out)
+                        {
+                           // Mono output from previous mod
+                           lvlL = output.level;
+                           tksampleedit_add_pan_mono_to_stereo(trackInputBuf, k, modOutL, j, lvlL, lvlL, _numFrames);
+                        }
+                        else
+                        {
+                           // Stereo output from previous mod
+                           tksampleedit_add_pan_dualmono_to_stereo(trackInputBuf, k, modOutL, modOutR, j, lvlL, lvlR, _numFrames);
+                        }
+                        current_project.unlockTrackInputBuffer(_curTrackIdx, outTrackIdx);
+                     }
+                     break;
+
+                  case Output.TYPE_TRACK_SC:
+                     // Send lane output to other track sidechain
+                     if(-1 == output.track_idx)
+                     {
+                        // Output to self (feedback)
+                        outTrackIdx = _curTrackIdx;
+                     }
+                     else
+                     {
+                        outTrackIdx = output.track_idx;
+                     }
+                     trackInputBuf <= current_project.getTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+                     if(null != trackInputBuf)
+                     {
+                        current_project.lockTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+                        k = 0;
+                        j = 0;
+                        if(1 == pmodNumOut)////pmod.b_mono_out)
+                        {
+                           // Mono output from previous mod
+                           lvlL = output.level;
+                           tksampleedit_add_pan_mono_to_stereo(trackInputBuf, k, modOutL, j, lvlL, lvlL, _numFrames);
+                        }
+                        else
+                        {
+                           // Stereo output from previous mod
+                           tksampleedit_add_pan_dualmono_to_stereo(trackInputBuf, k, modOutL, modOutR, j, lvlL, lvlR, _numFrames);
+                        }
+                        current_project.unlockTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+                     }
+                     break;
+
+                  case Output.TYPE_LANE:
+                     // Send lane output to other lane
+                     laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                     if(null != laneInputBuf)
+                     {
+                        k = 0;
+                        j = 0;
+                        if(1 == pmodNumOut)////pmod.b_mono_out)
+                        {
+                           // Mono output from previous mod
+                           lvlL = output.level;
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, k, modOutL, j, lvlL, lvlL, _numFrames);
+                        }
+                        else
+                        {
+                           // Stereo output from previous mod
+                           tksampleedit_add_pan_dualmono_to_stereo(laneInputBuf, k, modOutL, modOutR, j, lvlL, lvlR, _numFrames);
+                        }
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_SC:
+                     // Send lane output to other lane sidechain
+                     laneInputBuf <= _track.getLaneSCInputBuffer(output.lane_idx, true/*bOverride*/);
+                     if(null != laneInputBuf)
+                     {
+                        k = 0;
+                        j = 0;
+                        if(1 == pmodNumOut)////pmod.b_mono_out)
+                        {
+                           // Mono output from previous mod
+                           lvlL = output.level;
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, k, modOutL, j, lvlL, lvlL, _numFrames);
+                        }
+                        else
+                        {
+                           // Stereo output from previous mod
+                           tksampleedit_add_pan_dualmono_to_stereo(laneInputBuf, k, modOutL, modOutR, j, lvlL, lvlR, _numFrames);
+                        }
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_L:
+                     // Send left/mono/mid lane output to other lane left channel
+                     laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                     if(null != laneInputBuf)
+                     {
+                        tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutL, 0, output.level, 0.0f, _numFrames);
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_R:
+                     // Send right/side lane output to other lane right channel
+                     if(pmodNumOut >= 2)
+                     {
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutR, 0, 0.0f, output.level, _numFrames);
+                        }
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_L_ST:
+                     // Send left/mono/mid lane output to other lane left+right channels
+                     laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                     if(null != laneInputBuf)
+                     {
+                        tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutL, 0, output.level, output.level, _numFrames);
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_R_ST:
+                     // Send right/side lane output to other lane left+right channels
+                     if(pmodNumOut >= 2)
+                     {
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutR, 0, output.level, output.level, _numFrames);
+                        }
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_M_L:
+                     // Send monomix to other lane left channel
+                     laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                     if(null != laneInputBuf)
+                     {
+                        if(pmodNumOut >= 2)
+                        {
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutL, 0, output.level*0.5, 0, _numFrames);
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutR, 0, output.level*0.5, 0, _numFrames);
+                        }
+                        else
+                        {
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutL, 0, output.level, 0.0, _numFrames);
+                        }
+                     }
+                     break;
+
+                  case Output.TYPE_LANE_M_R:
+                     // Send monomix to other lane right channel
+                     laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                     if(null != laneInputBuf)
+                     {
+                        if(pmodNumOut >= 2)
+                        {
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutL, 0, 0, output.level*0.5, _numFrames);
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutR, 0, 0, output.level*0.5, _numFrames);
+                        }
+                        else
+                        {
+                           tksampleedit_add_pan_mono_to_stereo(laneInputBuf, 0, modOutL, 0, 0, output.level, _numFrames);
+                        }
+                     }
+                     break;
+               } // switch output.type (have pmod)
+            }
+            else
+            {
+               // No mods active, output=lane input (currentInputBuffer)
+
+               if(b_track_input || b_override_input)
+               {
+                  // // currentInputBuffer <= _track.getLaneInputBuffer(_laneIdx, false/*bOverride*/);
+                  local float outLvl = output.level;
+
+                  if(_track.b_lane_fade)
+                  {
+                     tmp_input_buffer.numElements = currentInputBuffer.numElements;
+                     // if(1 == _laneIdx)
+                     //    trace "xxx lane2 fade cur="+lane_fade_vol_cur+" next="+lane_fade_vol_next;
+                     tksampleedit_amp_ramp_mono_adv_to_mono_adv(tmp_input_buffer/*out*/, 0/*outOff*/, 2/*outAdv*/,
+                                                                currentInputBuffer/*in*/, 0/*inOff*/, 2/*inAdv*/,
+                                                                lane_fade_vol_cur/*lvlStart*/,
+                                                                lane_fade_vol_next/*lvlEnd*/,
+                                                                _numFrames
+                                                                );
+
+                     tksampleedit_amp_ramp_mono_adv_to_mono_adv(tmp_input_buffer/*out*/, 1/*outOff*/, 2/*outAdv*/,
+                                                                currentInputBuffer/*in*/, 1/*inOff*/, 2/*inAdv*/,
+                                                                lane_fade_vol_cur/*lvlStart*/,
+                                                                lane_fade_vol_next/*lvlEnd*/,
+                                                                _numFrames
+                                                                );
+
+                     currentInputBuffer <= tmp_input_buffer;
+                     lane_fade_vol_cur = lane_fade_vol_next;
+                  }
+
+                  ui_peakavg_l.process(tksampleedit_calc_peak_mono_adv(currentInputBuffer, 0, 2, _numFrames));
+                  ui_peakavg_r.process(tksampleedit_calc_peak_mono_adv(currentInputBuffer, 1, 2, _numFrames));
+
+                  switch(output.type)
+                  {
+                     case Output.TYPE_DEFAULT:
+                        // Send lane input to lane mix buffer
+                        // (todo) native loop
+                        // trace "xxx modOutL="+#(modOutL);
+                        k = 0;
+                        j = 0;
+                        tksampleedit_copy_pan_stereo_to_stereo(mix_buffer, k,
+                                                               currentInputBuffer, j,
+                                                               lvlL, lvlR,
+                                                               _numFrames
+                                                               );
+                        break;
+
+                     case Output.TYPE_AUDIO_STEREO:
+                        k = (output.channel_idx % replay.num_out_ch);
+                        if(k == (replay.num_out_ch - 1))
+                           k--;
+                        j = 0;
+                        tksampleedit_add_pan_stereo_adv_to_stereo_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                                      currentInputBuffer, j, 2,
+                                                                      lvlL, lvlR,
+                                                                      _numFrames
+                                                                      );
+                        break;
+
+                     case Output.TYPE_AUDIO_LEFT:
+                        k = (output.channel_idx % replay.num_out_ch);
+                        j = 0;
+                        tksampleedit_add_amp_mono_adv_to_mono_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                                  currentInputBuffer, j, 2,
+                                                                  outLvl,
+                                                                  _numFrames
+                                                                  );
+                        break;
+
+                     case Output.TYPE_AUDIO_RIGHT:
+                        k = (output.channel_idx % replay.num_out_ch);
+                        j = 1;
+                        tksampleedit_add_amp_mono_adv_to_mono_adv(replay.mix_buffer, k, replay.num_out_ch,
+                                                                  currentInputBuffer, j, 2,
+                                                                  outLvl,
+                                                                  _numFrames
+                                                                  );
+                        break;
+
+                     case Output.TYPE_TRACK:
+                        // Send lane input to other track
+                        if(-1 == output.track_idx)
+                        {
+                           // Output to self (feedback)
+                           outTrackIdx = _curTrackIdx;
+                        }
+                        else
+                        {
+                           outTrackIdx = output.track_idx;
+                        }
+                        trackInputBuf <= current_project.getTrackInputBuffer(_curTrackIdx, outTrackIdx);
+                        if(null != trackInputBuf)
+                        {
+                           current_project.lockTrackInputBuffer(_curTrackIdx, outTrackIdx);
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k,
+                                                                 currentInputBuffer, j,
+                                                                 lvlL, lvlR,
+                                                                 _numFrames
+                                                                 );
+                           current_project.unlockTrackInputBuffer(_curTrackIdx, outTrackIdx);
+                        }
+                        break;
+
+                     case Output.TYPE_TRACK_SC:
+                        // Send lane input to other track sidechain
+                        if(-1 == output.track_idx)
+                        {
+                           // Output to self (feedback)
+                           outTrackIdx = _curTrackIdx;
+                        }
+                        else
+                        {
+                           outTrackIdx = output.track_idx;
+                        }
+                        trackInputBuf <= current_project.getTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+                        if(null != trackInputBuf)
+                        {
+                           current_project.lockTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k,
+                                                                 currentInputBuffer, j,
+                                                                 lvlL, lvlR,
+                                                                 _numFrames
+                                                                 );
+                           current_project.unlockTrackSCInputBuffer(_curTrackIdx, outTrackIdx);
+                        }
+                        break;
+
+                     case Output.TYPE_LANE:
+                        // Send lane input to other lane
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_stereo(laneInputBuf, k,
+                                                                 currentInputBuffer, j,
+                                                                 lvlL, lvlR,
+                                                                 _numFrames
+                                                                 );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_SC:
+                        // Send lane input to other lane sidechain
+                        laneInputBuf <= _track.getLaneSCInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_stereo(laneInputBuf, k,
+                                                                 currentInputBuffer, j,
+                                                                 lvlL, lvlR,
+                                                                 _numFrames
+                                                                 );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_L:
+                        // Send left/mono/mid lane output to other lane left channel
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 0,
+                                                                   2,
+                                                                   outLvl, 0.0f,
+                                                                   _numFrames
+                                                                   );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_R:
+                        // Send right/side lane output to other lane right channel
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 1,
+                                                                   2,
+                                                                   0.0f, outLvl,
+                                                                   _numFrames
+                                                                   );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_L_ST:
+                        // Send left/mono/mid lane output to other lane left+right channels
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 0,
+                                                                   2,
+                                                                   outLvl, outLvl,
+                                                                   _numFrames
+                                                                   );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_R_ST:
+                        // Send right/side lane output to other lane left+right channels
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 1,
+                                                                   2,
+                                                                   outLvl, outLvl,
+                                                                   _numFrames
+                                                                   );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_M_L:
+                        // Send monomix to other lane left channel
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 0,
+                                                                   2,
+                                                                   outLvl*0.5f, 0.0f,
+                                                                   _numFrames
+                                                                   );
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 1,
+                                                                   2,
+                                                                   outLvl*0.5f, 0.0f,
+                                                                   _numFrames
+                                                                   );
+                        }
+                        break;
+
+                     case Output.TYPE_LANE_M_R:
+                        // Send monomix to other lane right channel
+                        laneInputBuf <= _track.getLaneInputBuffer(output.lane_idx, true/*bOverride*/);
+                        if(null != laneInputBuf)
+                        {
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 0,
+                                                                   2,
+                                                                   0.0f, outLvl*0.5f,
+                                                                   _numFrames
+                                                                   );
+                           tksampleedit_add_pan_mono_adv_to_stereo(laneInputBuf, 0,
+                                                                   currentInputBuffer, 1,
+                                                                   2,
+                                                                   0.0f, outLvl*0.5f,
+                                                                   _numFrames
+                                                                   );
+                        }
+                        break;
+                  } // switch output.type
+               } // if b_track_input || b_override_input
+               else
+               {
+                  // No mods, no input
+                  ui_peakavg_l.reset();
+                  ui_peakavg_r.reset();
+               }
+            }
+         }
+      } // if bPlaying
+
+      milliSecondsDouble(profile_process_t_end);
+      profile_process_t_delta = profile_process_t_end - profile_process_t_start;
+      profile_process_load_cur = (profile_process_t_delta*100.0) / replay.process_ms;
+      profile_process_load_avg = profile_process_load_avg*0.95 + profile_process_load_cur*0.05;
+
+      // trace "xxx Lane::process: END";
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getAverageLoadPercentage() : float {
+      // in percent (0..100%)
+      return profile_process_load_avg;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpPeakL() : float {
+      return b_enable ? ui_peakavg_l.peak : 0.0f;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpPeakR() : float {
+      return b_enable ? ui_peakavg_r.peak : 0.0f;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpAvgL() : float {
+      return b_enable ? ui_peakavg_l.avg : 0.0f;
+   }
+
+   // <method_get.png>
+   public /*=replay=*/ method getSmpAvgR() : float {
+      return b_enable ? ui_peakavg_r.avg : 0.0f;
+   }
+
+   // <method.png>
+   public method flagUsedModMatrixRPNCtl(IntArray _usedFlags) {
+      Mod *mod;
+      foreach mod in mods
+      {
+         mod.flagUsedModMatrixRPNCtl(_usedFlags);
+      }
+   }
+
+   // <method_find.png>
+   public method findUnusedModMatrixRPNCtl() : short {
+      // Return RPN_CTL_n or -1 (all in use)
+      local IntArray usedFlags <= Mod.NewModMatrixRPNCtlUsedFlags();
+      flagUsedModMatrixRPNCtl(usedFlags);
+      return Mod.FindFirstUnusedModMatrixRPNCtl(usedFlags);
+   }
+
+   // <method_get.png>
+   public method getNumExportableModsSYN() : int {
+      int r = 0;
+      Mod *mod;
+      foreach mod in mods
+      {
+         if(mod.b_enabled)
+         {
+            if(mod instanceof ModSample)
+            {
+               r++;
+            }
+            else if(mod instanceof ModVST2)
+            {
+               ModVST2 modVST2 <= mod;
+               VST2Plugin vst2Plugin <= modVST2.plugin;
+               if(vst2Plugin.effectName == "SchroederVerb v8")
+               {
+                  r++;
+               }
+            }
+            else if(mod instanceof ModEQ3)  // "bsp eq3" STFX plugin
+            {
+               r++;
+            }
+            else if(mod instanceof ModDelay)  // "bsp dly 2" STFX plugin
+            {
+               r++;
+            }
+            else if(mod instanceof ModSTFX)  // any STFX plugin
+            {
+               r++;
+            }
+         }
+      }
+
+      return r;
+   }
+
+   // <method.png>
+   public method unsetLastStartedSampleBankHint(Sample _sample) {
+      // called by Track.unsetLastStartedSampleBankHint() via Project.deleteSample()
+      ModSample *modSample;
+      foreach modSample in mods
+      {
+         if(modSample instanceof ModSample)
+         {
+            StSamplePlayer sp <= modSample.sample_player;
+            if(@(sp.lastStartedSampleBankHint) == @(_sample.sample_bank))
+            {
+               sp.setLastStartedSampleBankHint(null);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method estimateDefaultVolumeAfterMod(Mod _mod) : float {
+      // called by PageTrack::handleMergeSamples2()
+      float r = 1.0f;
+      Mod *mod;
+      boolean bFound = false;
+      foreach mod in mods
+      {
+         if(bFound)
+         {
+            if(mod.b_enabled)
+            {
+               if(mod instanceof ModGain)
+               {
+                  ModGain modGain <= mod;
+                  r *= modGain.level;
+               }
+            }
+         }
+         else
+         {
+            bFound = (@(mod) == @(_mod));
+         }
+      }
+
+      Output *output;
+      foreach output in outputs
+      {
+         if(output.isTypeDefault())
+         {
+            r *= output.level;
+            break;
+         }
+      }
+
+      trace "[dbg] Lane::estimateDefaultVolumeAfterMod: r="+r;
+      return r;
+   }
+
+   // <method.png>
+   public method estimateDefaultPanAfterMod(Mod _mod) : float {
+      // called by PageTrack::handleMergeSamples2()
+      float r = 0.0f;
+      Mod *mod;
+      boolean bFound = false;
+      foreach mod in mods
+      {
+         if(bFound)
+         {
+            if(mod.b_enabled)
+            {
+               if(mod instanceof ModGain)
+               {
+                  ModGain modGain <= mod;
+                  r += modGain.pan;
+               }
+            }
+         }
+         else
+         {
+            bFound = (@(mod) == @(_mod));
+         }
+      }
+
+      Output *output;
+      foreach output in outputs
+      {
+         if(output.isTypeDefault())
+         {
+            r += output.pan;
+            break;
+         }
+      }
+
+      trace "[dbg] Lane::estimateDefaultPanAfterMod: r="+r;
+      return r;
+   }
+
+   // <method_find.png>
+   public method findModEQ3AfterMod(Mod _mod) : ModEQ3 {
+      // called by PageTrack::handleMergeSamples2()
+      Mod *mod;
+      boolean bFound = false;
+      foreach mod in mods
+      {
+         if(bFound)
+         {
+            if(mod.b_enabled)
+            {
+               if(mod instanceof ModEQ3)
+                  return mod;
+            }
+         }
+         else
+         {
+            bFound = (@(mod) == @(_mod));
+         }
+      }
+      return null;
+   }
+
+}

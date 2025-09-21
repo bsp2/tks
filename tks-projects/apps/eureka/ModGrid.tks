@@ -1,0 +1,2073 @@
+// ----
+// ---- file   : ModGrid.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 12Feb2018
+// ---- changed: 13Feb2018, 15Feb2018, 17Feb2018, 21Feb2018, 22Feb2018, 23Feb2018, 24Feb2018
+// ----          28Feb2018, 01Mar2018, 02Mar2018, 06Mar2018, 07Mar2018, 16Mar2018, 26Mar2018
+// ----          30Mar2018, 30Apr2018, 21May2018, 21Jul2018, 05Jan2019, 12Jul2019, 20Jul2019
+// ----          30Jul2019, 31Jul2019, 26Aug2019, 11Nov2019, 17Nov2019, 14Feb2020, 03Feb2021
+// ----          06Feb2021, 13Apr2021, 07Dec2021, 13Feb2022, 18Dec2022, 19Feb2023, 04Mar2023
+// ----          16Mar2023, 21Apr2023, 12May2023, 08Jul2023, 29Jul2023, 16Aug2023, 17Sep2023
+// ----          04Oct2023, 01Nov2023, 05Nov2023, 24Nov2023, 22Mar2024, 03Jul2024, 05Jul2024
+// ----          10Aug2024, 23Sep2024, 27Sep2024, 27Dec2024, 05Jan2025, 08Jan2025
+// ----
+// ----
+// ----
+
+module MModGrid;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModGridEnableButton : Button {
+}
+
+
+// <class.png>
+class ModGrid : Panel, Control {
+
+   define String ACTION_MODGRID_RELAYOUT;  // Action
+   define String ACTION_MODGRID_CHANGED;   // IntAction
+
+   define int LANE_ENABLE_W = 14;
+   define int LANE_ENABLE_H = 14;
+
+   define int MOD_W = 121+7+4;  // pixels (excluding padding)   see GetModButtonSizeX()
+   define int MOD_H = 22;       // see GetModButtonSizeY()
+
+   define int MOD_ENABLE_W = 16;  // toggle button
+
+   define int LANE_C32_ENABLE  = #20006000;
+   define int LANE_C32_DISABLE = #40600000;
+
+   define int MOD_C32_ENABLE_LR  = #20006000;
+   define int MOD_C32_ENABLE_L   = #4000B0FF;
+   define int MOD_C32_ENABLE_R   = #40006080;
+   define int MOD_C32_DISABLE    = #40600000;
+
+   protected Track *track;
+
+   public Lane              *[] lane_panels;
+   public Button            *[] lane_name_buttons;
+   public Button            *[] lane_enable_buttons;
+   public LevelIndicator    *[] lane_level_indicators;
+   public LoadIndicator     *[] lane_load_indicators;
+   public ModGridCLAPButton *[] mod_clap_buttons;
+   public ModGridVST2Button *[] mod_vst2_buttons;
+   public ModGridSTFXButton *[] mod_stfx_buttons;
+   public ModGridButton     *[] all_mod_buttons;  // refs
+
+   protected ModGridButtonBase *[] idletimer_mod_buttons;  // ModGridButtonBase refs (gain+sample)
+
+   protected Button *bt_new_lane;
+
+   namespace static Mod *mod_clipboard;
+   namespace static Lane *lane_clipboard;
+
+   protected static PatchBrowserDialogCLAP *dlg_patchbrowser_clap;
+   protected static PatchBrowserDialogVST2 *dlg_patchbrowser_vst2;
+   protected static PatchBrowserDialogSTFX *dlg_patchbrowser_stfx;
+   protected static ModParamSetDialog      *dlg_modparamset;
+   protected static StringDialog           *dlg_lanename;
+   protected static int                     dlg_lanename_laneidx;
+
+
+   // <ui_init.png>
+   public method initModGrid() : boolean {
+      initPanel();
+      return true;
+   }
+
+   // <method_exit.png>
+   public static StaticExitModGrid() {
+      if(null != mod_clipboard)
+      {
+         mod_clipboard.exit();
+         mod_clipboard <= null;
+      }
+
+      if(null != lane_clipboard)
+      {
+         lane_clipboard.exit();
+         lane_clipboard <= null;
+      }
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_MODGRID_RELAYOUT, ACTION_MODGRID_CHANGED];
+   }
+
+   // <method_get.png>
+   public static HaveModClipboard() : boolean {
+      return (null != mod_clipboard);
+   }
+
+   // <method_get.png>
+   public static IsModClipboardCompatibleWith(Mod _mod) : boolean {
+      if(null != mod_clipboard)
+         return _mod.modIsPatchCompatibleWith(mod_clipboard);
+      return false;
+   }
+
+   // <method.png>
+   public static CopyModToClipboard(Mod _mod) {
+      boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+      boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+      Global.Debug("CopyModToClipboard: mod="+#(_mod));
+      if(null != mod_clipboard)
+         mod_clipboard.exit();  // e.g. unload STFX plugin
+      mod_clipboard <= _mod.modClone(false/*bFullInit*/);
+      if(null != mod_clipboard)
+      {
+         mod_clipboard.modCopyPatchFrom(_mod);
+         mod_clipboard.modCopyMatrixFrom(_mod);
+      }
+      else
+      {
+         trace "[---] ModGrid::CopyModToClipboard: modClone failed.";
+      }
+
+      VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+      CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+   }
+
+   // <method_get.png>
+   public method getLaneByIdx(int _gridX) : Lane {
+      return track.getLaneByIdx(_gridX);
+   }
+
+   // <method.png>
+   public =replay= method toggleLaneTrackInput(int _gridX) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+      if(null != lane)
+      {
+         lane.b_track_input = !lane.b_track_input;
+         Global.Print("Lane "+(_gridX+1)+" track input is "+Utils.GetEnableString(lane.b_track_input));
+      }
+   }
+
+   // <method.png>
+   public static GetModButtonSizeX() : float {
+      if(UI.font_scaling == 2)
+         return int(MOD_W * 1.8);
+      else if(UI.font_scaling == 1)
+         return MOD_W;
+      else
+         return int(MOD_W * UI.font_scaling);
+   }
+
+   // <method.png>
+   public static GetModButtonSizeY() : float {
+      if(UI.font_scaling == 2)
+         return int(MOD_H * 1.8) - 1;
+      else if(UI.font_scaling == 1)
+         return MOD_H - 1;
+      else
+         return int(MOD_H * UI.font_scaling) - 1;
+   }
+
+   // <method_get.png>
+   public static GetDialSizeX() : float {
+      return int(20 * UI.GetFontScaling());
+   }
+
+   // <method_get.png>
+   public static GetDialSizeY() : float {
+      return int(GetModButtonSizeY() - 1);
+   }
+
+   // <ui_show.png>
+   public method showTrack(Track _track) {
+      track <= _track;
+
+      UI.LoseKeyboardFocusIfWithin(this, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(this);
+
+      removeChildHierarchy();
+      lane_panels.free();
+      lane_name_buttons.free();
+      lane_enable_buttons.free();
+      lane_level_indicators.free();
+      lane_load_indicators.free();
+      idletimer_mod_buttons.free();
+      mod_clap_buttons.free();
+      mod_vst2_buttons.free();
+      mod_stfx_buttons.free();
+      all_mod_buttons.free();
+
+      int gridX = 0;
+
+      setPanelAlphaAndTint(255, 0);
+      Panel *p;
+
+      int gridH = mathMaxi(STConfig.modgrid_default_grid_h, track.findMaxY()+1);
+
+      loop(track.lanes.numElements)
+      {
+         int gridY = 0;
+
+         p <= Panel.New();
+         addLayer(deref p, Layout.RIGHT);
+         lane_panels.add(p);
+
+         Lane lane <= track.getLaneByIdx(gridX);
+
+         Panel pHdr <= Panel.New();
+         pHdr.setAlignment(Layout.EXPANDX);
+         pHdr.setPanelAlphaAndTint(255, 0);
+         p.addLayer(deref pHdr, Layout.BOTTOM);
+
+         // Lane enable button
+         Button btLaneEnable <= Button.New();
+         btLaneEnable.setLookAndFeelLight();
+         btLaneEnable.setEnableToggle(true);
+         btLaneEnable.setEnableHold(true);
+         btLaneEnable.setRequiredSize2fScaled(LANE_ENABLE_W, LANE_ENABLE_H);
+         btLaneEnable.setEnableKbdFocusOnMouse(false);
+         btLaneEnable.setAlignment(Layout.CENTERY);
+         btLaneEnable.setPadding4f(0, 0, 0, 2);
+         pHdr.addLayer(deref btLaneEnable, Layout.RIGHT);
+         lane_enable_buttons.add(btLaneEnable);
+
+         if(lane.isEnabled())
+         {
+            btLaneEnable.setBackgroundTint(LANE_C32_ENABLE);
+            btLaneEnable.setToggleState(false);
+         }
+         else
+         {
+            btLaneEnable.setBackgroundTint(LANE_C32_DISABLE);
+            btLaneEnable.setToggleState(true);
+         }
+
+         // Lane caption
+         Button btHdr <= Button.New();
+         btHdr.setEnableLabelButton(true);
+         btHdr.setCaption(lane.getLaneCaption(gridX));
+         btHdr.setForegroundColor(#ffadaca8);
+         btHdr.setToolTipCaption("Click to rename lane");
+         btHdr.setRequiredSizeXScaled(MOD_W);
+         pHdr.addLayer(deref btHdr, Layout.CENTER);
+         lane_name_buttons.add(btHdr);
+
+         loop(gridH)
+         {
+            Mod mod <= track.findModAtXY(gridX, gridY);
+            // trace "xxx grid=("+gridX+";"+gridY+") mod="+#(mod);
+
+            Panel mp <= Panel.New();
+            mp.setPadding4f(0, 0, 0, 1);
+            mp.setAlignment(Layout.EXPANDX);
+
+            if(null != mod)
+            {
+               ModGridButton *btMod;
+
+               if(mod instanceof ModCLAP)
+               {
+                  ModGridCLAPButton btModCLAP <= new ModGridCLAPButton;
+                  btModCLAP.initCLAPButton();
+                  btModCLAP.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModCLAP.setEnableKbdFocusOnMouse(false);
+                  ModCLAP modCLAP <= mod;
+                  if(@(mod) == @(PageTrack.last_selected_mod))
+                     btModCLAP.setBackgroundTint(PageTrack.C32_LAST_SELECTED_MOD);
+                  btModCLAP.setEditable(null != modCLAP.plugin);
+                  btModCLAP.setCaption(mod.getName());
+                  btModCLAP.setEnableAbbreviation(true);
+                  btModCLAP.setEnableHold(true);
+                  mod_clap_buttons.add(btModCLAP);
+                  btMod <= deref btModCLAP;
+               }
+               else if(mod instanceof ModVST2)
+               {
+                  ModGridVST2Button btModVST2 <= new ModGridVST2Button;
+                  btModVST2.initVST2Button();
+                  btModVST2.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModVST2.setEnableKbdFocusOnMouse(false);
+                  ModVST2 modVST2 <= mod;
+                  if(@(mod) == @(PageTrack.last_selected_mod))
+                     btModVST2.setBackgroundTint(PageTrack.C32_LAST_SELECTED_MOD);
+                  btModVST2.setEditable(null != modVST2.plugin);
+                  btModVST2.setCaption(mod.getName());
+                  btModVST2.setEnableAbbreviation(true);
+                  btModVST2.setEnableHold(true);
+                  mod_vst2_buttons.add(btModVST2);
+                  btMod <= deref btModVST2;
+               }
+               else if(mod instanceof ModSTFX)
+               {
+                  ModGridSTFXButton btModSTFX <= new ModGridSTFXButton;
+                  btModSTFX.initSTFXButton();
+                  btModSTFX.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModSTFX.setEnableKbdFocusOnMouse(false);
+                  ModSTFX modSTFX <= mod;
+                  if(@(mod) == @(PageTrack.last_selected_mod))
+                     btModSTFX.setBackgroundTint(PageTrack.C32_LAST_SELECTED_MOD);
+                  btModSTFX.setCaption(modSTFX.getName());
+                  btModSTFX.setEnableAbbreviation(true);
+                  btModSTFX.setEnableHold(true);
+                  mod_stfx_buttons.add(btMod);
+                  btMod <= deref btModSTFX;
+               }
+               else if(mod instanceof ModGain)
+               {
+                  ModGridGainButton btModGain <= new ModGridGainButton;
+                  btModGain.initGainButton(mod);
+                  btModGain.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModGain.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModGain;
+                  idletimer_mod_buttons.add(btModGain);
+               }
+               else if(mod instanceof ModSample)
+               {
+                  ModGridSampleButton btModSample <= new ModGridSampleButton;
+                  btModSample.initSampleButton(mod);
+                  btModSample.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModSample.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModSample;
+                  idletimer_mod_buttons.add(btModSample);
+               }
+               else if(mod instanceof ModIdleDetect)
+               {
+                  ModGridIdleDetectButton btModIdleDetect <= new ModGridIdleDetectButton;
+                  btModIdleDetect.initIdleDetectButton(mod);
+                  btModIdleDetect.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModIdleDetect.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModIdleDetect;
+                  idletimer_mod_buttons.add(btModIdleDetect);
+               }
+               else if(mod instanceof ModEQ3)
+               {
+                  ModGridEQ3Button btModEQ3 <= new ModGridEQ3Button;
+                  btModEQ3.initEQ3Button(mod);
+                  btModEQ3.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModEQ3.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModEQ3;
+                  idletimer_mod_buttons.add(btModEQ3);
+               }
+               else if(mod instanceof ModDelay)
+               {
+                  ModGridDelayButton btModDelay <= new ModGridDelayButton;
+                  btModDelay.initDelayButton(mod);
+                  btModDelay.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModDelay.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModDelay;
+                  idletimer_mod_buttons.add(btModDelay);
+               }
+               else if(mod instanceof ModSync)
+               {
+                  ModGridSyncButton btModSync <= new ModGridSyncButton;
+                  btModSync.initSyncButton(mod);
+                  btModSync.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModSync.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModSync;
+                  idletimer_mod_buttons.add(btModSync);
+               }
+               else if(mod instanceof ModGate2Audio)
+               {
+                  ModGridGate2AudioButton btModGate2Audio <= new ModGridGate2AudioButton;
+                  btModGate2Audio.initGate2AudioButton(mod);
+                  btModGate2Audio.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModGate2Audio.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModGate2Audio;
+                  // // idletimer_mod_buttons.add(btModGate2Audio);
+               }
+               else if(mod instanceof ModRPN2Audio)
+               {
+                  ModGridRPN2AudioButton btModRPN2Audio <= new ModGridRPN2AudioButton;
+                  btModRPN2Audio.initRPN2AudioButton(mod);
+                  btModRPN2Audio.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModRPN2Audio.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModRPN2Audio;
+                  // // idletimer_mod_buttons.add(btModRPN2Audio);
+               }
+               else if(mod instanceof ModAudio2RPN)
+               {
+                  ModGridAudio2RPNButton btModAudio2RPN <= new ModGridAudio2RPNButton;
+                  btModAudio2RPN.initAudio2RPNButton(mod);
+                  btModAudio2RPN.setLookAndFeel(LookAndFeel.LIGHT);
+                  btModAudio2RPN.setEnableKbdFocusOnMouse(false);
+                  btMod <= deref btModAudio2RPN;
+                  // // idletimer_mod_buttons.add(btModRPN2Audio);
+               }
+               else/// if(mod instanceof ModMidSideSplit)
+               {
+                  btMod <= new ModGridButton;
+                  btMod.initModGridButton();
+                  btMod.setLookAndFeel(LookAndFeel.LIGHT);
+                  btMod.setEnableKbdFocusOnMouse(false);
+                  btMod.setCaption(mod.getName());
+                  btMod.setEnableAbbreviation(true);
+                  btMod.setEnableHold(true);
+               }
+               // else
+               // {
+               //    trace "[---] ModGrid: internal error, unhandled mod="+#(mod);
+               //    btMod <= new ModGridButton;
+               //    btMod.initButton();
+               //    btMod.setCaption("n/a");
+               // }
+
+               // trace "xxx ModGrid: mod="+#(mod)+" btMod="+#(btMod);
+
+               btMod.parent_modgrid <= this;
+               btMod.grid_x = gridX;
+               btMod.grid_y = gridY;
+               btMod.num_lanes = track.lanes.numElements;
+               btMod.setEnableHold(true);
+               btMod.setUserData(mod);
+               btMod.setPadding4f(0, 0, 0, 0);
+               btMod.setInnerPadding4f(0, 0, 0, 0);
+
+               btMod.setAlignment(Layout.EXPANDX);
+               btMod.setRequiredSize2fScaled(MOD_W, MOD_H);
+               mp.addLayer(deref btMod, Layout.CENTER);
+
+               all_mod_buttons.add(btMod);
+
+               Button btModEnable <= new ModGridEnableButton;
+               btModEnable.initButton();
+               btModEnable.setLookAndFeel(LookAndFeel.LIGHT);
+               btModEnable.setEnableToggle(true);
+               btModEnable.setEnableHold(true);
+               btModEnable.setRequiredSize2fScaled(MOD_ENABLE_W, MOD_H);
+               btModEnable.setEnableKbdFocusOnMouse(false);
+               btModEnable.setUserData(mod);
+
+               if(mod.isEnabled())
+               {
+                  if(Mod.PROCESS_L == mod.process_mode)
+                     btModEnable.setBackgroundTint(MOD_C32_ENABLE_L);
+                  else if(Mod.PROCESS_R == mod.process_mode)
+                     btModEnable.setBackgroundTint(MOD_C32_ENABLE_R);
+                  else
+                     btModEnable.setBackgroundTint(MOD_C32_ENABLE_LR);
+                  btModEnable.setToggleState(false);
+               }
+               else
+               {
+                  btModEnable.setBackgroundTint(MOD_C32_DISABLE);
+                  btModEnable.setToggleState(true);
+               }
+
+               mp.addLayer(deref btModEnable, Layout.RIGHT);
+            }
+            else
+            {
+               ModGridEmptyButton btEmpty <= new ModGridEmptyButton;
+               btEmpty.parent_modgrid <= this;
+               btEmpty.initEmptyButton();
+               btEmpty.setEnableLabelButton(true);
+               btEmpty.setEnableKbdFocusOnMouse(false);
+               btEmpty.setAlignment(Layout.EXPANDX);
+               btEmpty.setRequiredSizeYScaled(MOD_H);
+               btEmpty.setBackgroundTint(#18ffffff);
+               btEmpty.grid_x = gridX;
+               btEmpty.grid_y = gridY;
+               btEmpty.num_lanes = track.lanes.numElements;
+               btEmpty.setUserData(UnsignedInteger.New((gridX << 16) | gridY));
+               mp.addLayer(deref btEmpty, Layout.CENTER);
+
+               Button bt <= Button.New();
+               bt.setEnableToggle(true);
+               bt.setRequiredSize2fScaled(MOD_ENABLE_W, MOD_H);
+               bt.setEditable(false);
+               bt.setBackgroundTint(#40000000);
+
+               mp.addLayer(deref bt, Layout.RIGHT);
+            }
+
+            p.addLayer(deref mp, Layout.BOTTOM);
+
+            gridY++;
+         }
+
+         if(null != lane)
+         {
+            Panel pLevel <= Panel.New();
+            pLevel.setAlignment(Layout.EXPANDX);
+            p.addLayer(deref pLevel, Layout.BOTTOM);
+
+            LevelIndicator levelIndicator <= new LevelIndicator;
+            levelIndicator.initLevelIndicator();
+            levelIndicator.setAlignment(Layout.EXPANDX);
+            levelIndicator.setRequiredSizeYScaled(23);
+            pLevel.addLayer(deref levelIndicator, Layout.CENTER);
+            lane_level_indicators.add(levelIndicator);
+
+            LoadIndicator loadIndicator <= new LoadIndicator;
+            loadIndicator.initLoadIndicator();
+            loadIndicator.setAlignment(Layout.CENTERY);
+            loadIndicator.setRequiredSizeXScaled(20);
+            loadIndicator.setRequiredSizeYScaled(23);
+            pLevel.addLayer(deref loadIndicator, Layout.RIGHT);
+            lane_load_indicators.add(loadIndicator);
+
+            OutputsControl outputsControl <= new OutputsControl;
+            outputsControl.init(track, gridX/*laneIdx*/);
+            outputsControl.showOutputs(lane.outputs, track.lanes.numElements);
+            outputsControl.setAlignment(Layout.EXPANDX);
+            p.addLayer(deref outputsControl, Layout.BOTTOM);
+         }
+
+         gridX++;
+      }
+
+      if((track.lanes.numElements) < Track.MAX_LANES)
+      {
+         p <= Panel.New();
+         addLayer(deref p, Layout.RIGHT);
+
+         bt_new_lane <= Button.New();
+         bt_new_lane.setEnableLabelButton(true);
+         bt_new_lane.setForegroundColor(#ffadaca8);
+         bt_new_lane.setAlignment(Layout.EXPANDX);
+         bt_new_lane.setBackgroundTint(#40000000);
+         bt_new_lane.setEnableKbdFocusOnMouse(false);
+         bt_new_lane.setCaption("+");
+         bt_new_lane.setEnableHold(true);
+
+         p.addLayer(deref bt_new_lane, Layout.TOP);
+      }
+      else
+      {
+         bt_new_lane <= null;
+      }
+
+      hideModParamSetDialog();
+   }
+
+   // <ui_show.png>
+   public method reshowTrack() {
+      showTrack(track);
+      relayout();
+   }
+
+   // <method.png>
+   public method hideModParamSetDialog() : boolean {
+      Global.Debug3("ModGrid::hideModParamSetDialog(): dlg_modparamset="+#(dlg_modparamset));
+      if( (null != dlg_modparamset) && dlg_modparamset.isFloatingLayerVisible())
+      {
+         Global.Debug3("ModGrid::hideModParamSetDialog(): hide");
+         dlg_modparamset.hide();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_hide.png>
+   public method leaveTrack() {
+      hideModParamSetDialog();
+   }
+
+   // <ui_update.png>
+   public method updateGrid(boolean _bRelayout) {
+      Global.Debug("ModGrid::updateGrid: bRelayout="+_bRelayout);
+
+      showTrack(track);
+
+      if(_bRelayout)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_MODGRID_RELAYOUT), this));
+   }
+
+   // <ui_update.png>
+   public method unsetTintOfLastSelectedMod() {
+      if(null != PageTrack.last_selected_mod)
+      {
+         ModGridButton *bt;
+         foreach bt in all_mod_buttons
+         {
+            if(@(bt.user_data) == @(PageTrack.last_selected_mod))
+            {
+               bt.setBackgroundTint(0);
+               bt.redraw();
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method editFirstModCLAP() {
+      ModGridButton bt <= mod_clap_buttons.first;
+      if(null != bt)
+         bt.handleEditMod();
+   }
+
+   // <method.png>
+   public method editFirstModVST2() {
+      ModGridVST2Button bt <= mod_vst2_buttons.first;
+      if(null != bt)
+         bt.handleEditMod();
+   }
+
+   // <ui_timer.png>
+   public method handleIdleTimer() {
+      int laneIdx = 0;
+      Lane *lane;
+      foreach lane in track.lanes
+      {
+         LevelIndicator levelIndicator <= lane_level_indicators.get(laneIdx);
+         if(null != levelIndicator)
+         {
+            levelIndicator.setSmpLR(lane.getSmpPeakL(), lane.getSmpPeakR(),
+                                    lane.getSmpAvgL(), lane.getSmpAvgR()
+                                    );
+         }
+
+         LoadIndicator loadIndicator <= lane_load_indicators.get(laneIdx);
+         if(null != loadIndicator)
+         {
+            loadIndicator.setLoadPercentage(lane.getAverageLoadPercentage());
+         }
+
+         // Next lane
+         laneIdx++;
+      }
+
+      ModGridButtonBase *btMod;
+      foreach btMod in idletimer_mod_buttons
+         btMod.handleIdleTimer();
+   }
+
+   // <method_find.png>
+   public method findAnyLaneOutputFormByIdx(local Layer _c, local int _idx) : OutputForm {
+      local Layer c <= _c;
+      while(null != c)
+      {
+         OutputForm *of;
+         if(c instanceof OutputForm)
+         {
+            of <= c;
+            if(of.output_idx == _idx)
+               return of;
+         }
+         if(null != c.first_child)
+         {
+            of <= findAnyLaneOutputFormByIdx(c.first_child, _idx);
+            if(null != of)
+               return of;
+         }
+         c <= c.next;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findAnyLaneOutputAddButtonByMaxIdx(local Layer _c, local int _idx) : Button {
+      local Layer c <= _c;
+      while(null != c)
+      {
+         if(c instanceof OutputsControl)
+         {
+            OutputsControl oc <= c;
+            Button bt <= oc.findAddButtonByMaxIdx(_idx);
+            if(null != bt)
+               return bt;
+         }
+
+         if(null != c.first_child)
+         {
+            bt <= findAnyLaneOutputAddButtonByMaxIdx(c.first_child, _idx);
+            if(null != bt)
+               return bt;
+         }
+
+         c <= c.next;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findButtonByMod(Mod _mod) : ModGridButton {
+      ModGridButton *btMod;
+      foreach btMod in all_mod_buttons
+      {
+         if(@(btMod.getUserData()) == @(_mod))
+            return btMod;
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   public method handleDeleteMod(Mod _mod) {
+      hideModParamSetDialog();
+
+      int modLaneIdx = track.findLaneIdxByMod(_mod);
+      int numDeleted = 0;
+      if(-1 != modLaneIdx)
+      {
+         int gridY = _mod.ui_grid_y;
+         track.deleteMod(_mod);
+         numDeleted++;
+
+         // Delete mirror CLAP/VST2 plugins on other lanes
+         if(track.isMirrorMode())
+         {
+            int laneIdxLast = mathMini((track.multi_lane_offset + track.multi_num_channels), track.lanes.numElements);
+            if(track.multi_lane_offset <= modLaneIdx < laneIdxLast)
+            {
+               int laneIdx = track.multi_lane_offset;
+               while(laneIdx < laneIdxLast)
+               {
+                  if(laneIdx != modLaneIdx)
+                  {
+                     Lane lane <= track.getLaneByIdx(laneIdx);
+                     if(null != lane)  // should never be null
+                     {
+                        Mod mod <= lane.findModAtY(gridY);
+                        if(null != mod)
+                        {
+                           track.deleteMod(mod);
+                           numDeleted++;
+                        }
+                     }
+                  }
+
+                  laneIdx++;
+               }
+            }
+         }
+      }
+
+      updateGrid(true/*bRelayout*/);
+      Global.Print("Delete "+numDeleted+" instance"+Utils.GetPluralString(numDeleted));
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleSendNewLaneRight(Mod _mod) {
+      Track track <= current_project.findTrackByMod(_mod);
+      int laneIdx = track.findLaneIdxByMod(_mod);
+
+      if(handleInsertLaneRight(laneIdx, true/*bQuiet*/))
+      {
+         // Move mod to new lane
+         Lane lane <= track.getLaneByIdx(laneIdx);
+         _mod <= lane.unlinkMod(_mod);
+
+         Lane newLane <= track.getLaneByIdx(laneIdx + 1);
+         newLane.insertModAtY(deref _mod, _mod.ui_grid_y);
+
+         Global.Debug2("ModGrid::handleSendNewLaneRight: lane="+#(lane)+" newLane="+#(newLane));
+
+         // Create new output
+         Output output <= lane.newOutput();
+         output.setType(Output.TYPE_LANE);
+         output.setIdx(laneIdx+1);
+
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, laneIdx+1));
+
+         Global.Print("Move mod to new lane and create send");
+      }
+   }
+
+   static IntArray lane_reorder_map;
+
+   // <method.png>
+   protected method prepareLaneReorderMap() {
+      lane_reorder_map.alloc(track.lanes.numElements);
+      lane_reorder_map.useAll();
+
+      Lane *lane;
+      int laneIdx = 0;
+      foreach lane in track.lanes
+      {
+         lane.ui_tmp_lane_idx = laneIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method updateLaneReorderMap() {
+      Lane *lane;
+      int laneIdx = 0;
+      foreach lane in track.lanes
+         lane_reorder_map[lane.ui_tmp_lane_idx] = laneIdx++;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleDuplicateLane(int _laneIdx) {
+
+      if(handleInsertLaneRight(_laneIdx, true/*bQuiet*/))
+      {
+         // Duplicate lane
+         Lane srcLane <= track.getLaneByIdx(_laneIdx);
+         Lane newLane <= track.getLaneByIdx(_laneIdx + 1);
+
+         boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+         boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+         newLane.copyLaneFrom(srcLane, true/*bFullInit*/);
+
+         VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+         CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+
+         Global.Print("Duplicate lane");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleCopyLaneToClipboard(int _laneIdx) {
+
+      Lane srcLane <= track.getLaneByIdx(_laneIdx);
+
+      if(null == lane_clipboard)
+      {
+         lane_clipboard <= new Lane;
+         lane_clipboard.init();
+      }
+
+      boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+      boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+      lane_clipboard.copyLaneFrom(srcLane, false/*bFullInit*/);
+
+      VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+      CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+      Global.Print("Copy lane to clipboard");
+   }
+
+   // <ui_handle.png>
+   public =replay= method handlePasteNewLaneFromClipboard(int _laneIdx) {
+      if(null != lane_clipboard)
+      {
+         // Paste lane clipboard as new lane
+         if(handleInsertLaneRight(_laneIdx, true/*bQuiet*/))
+         {
+            Lane newLane <= track.getLaneByIdx(_laneIdx + 1);
+
+            boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+            boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+            newLane.copyLaneFrom(lane_clipboard, true/*bFullInit*/);
+
+            VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+            CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+
+            Global.Print("Paste lane from clipboard");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleSyncLaneModsFromClipboard(int _laneIdx, boolean _bSyncModMatrix) {
+      if(null != lane_clipboard)
+      {
+         Lane lane <= track.getLaneByIdx(_laneIdx);
+         if(null != lane)
+         {
+            boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+            boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+            int numUpdated = lane.copyModPatchesFrom(lane_clipboard, _bSyncModMatrix);
+
+            VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+            CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+            if(numUpdated > 0)
+            {
+               provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+            }
+
+            Global.Print("Sync "+numUpdated+" lane mod"+Utils.GetPluralString(numUpdated)+" from clipboard");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleSyncOtherLanesFromThis(int _laneIdx, boolean _bSyncModMatrix) {
+      handleCopyLaneToClipboard(_laneIdx);
+
+      if(null != lane_clipboard)
+      {
+         if(track.isMultiMode() || track.isVRRMode())
+         {
+            int laneIdx = track.multi_lane_offset;
+
+            int numModsUpdated = 0;
+            int numLanesUpdated = 0;
+
+            boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+            boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+            loop(track.multi_num_channels)
+            {
+               if(laneIdx != _laneIdx)  // skip self
+               {
+                  Lane lane <= track.getLaneByIdx(laneIdx);
+                  if(null != lane)
+                  {
+                     numModsUpdated += lane.copyModPatchesFrom(lane_clipboard, _bSyncModMatrix);
+                     numLanesUpdated++;
+                  }
+               }
+
+               laneIdx++;
+            }
+
+            VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+            CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+            if(numModsUpdated > 0)
+               provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+
+            Global.Print("Sync lanes: "+numLanesUpdated+" LPC/MPE/VRR lane"+Utils.GetPluralString(numLanesUpdated)+" updated ("+numModsUpdated+" mod"+Utils.GetPluralString(numModsUpdated)+")");
+         }
+         else
+         {
+            Global.Warning("Sync lanes: LPC/MPE/VRR mode not active (skipping sync)");
+         }
+      }
+      else
+      {
+         Global.Warning("Sync lanes: Lane is empty");
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method syncOtherLaneModsFromMod(Mod _mod, boolean _bSyncModMatrix) {
+
+      int modLaneIdx = track.findLaneIdxByMod(_mod);
+      // trace "xxx modLaneIdx="+modLaneIdx;
+      if(-1 != modLaneIdx)
+      {
+         boolean bRedraw = false;
+
+         boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+         boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+         // Update other lanes
+         int laneIdx = 0;
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            if(track.multi_lane_offset <= laneIdx < (track.multi_lane_offset + track.multi_num_channels))
+            {
+               if(laneIdx != modLaneIdx)
+               {
+                  Mod modOther <= lane.findModAtY(_mod.ui_grid_y);
+                  if(modOther instanceof _mod)
+                  {
+                     if(modOther.modIsPatchCompatibleWith(_mod))
+                     {
+                        modOther.modCopyBaseFrom(_mod);
+                        modOther.modCopyPatchFrom(_mod);
+                        if(_bSyncModMatrix)
+                           modOther.modCopyMatrixFrom(_mod);
+                        bRedraw = true;
+                     } // if patch compatible
+                  } // if modOther
+               } // if not self
+            } // if >= lane_offset
+            laneIdx++;
+         } // loop lanes
+
+         VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+         CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+
+         if(bRedraw)
+            redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleMoveLaneLeft(int _laneIdx) {
+      Global.Print("Move lane "+(_laneIdx+1)+"/"+(track.lanes.numElements)+" left");
+      prepareLaneReorderMap();
+      track.moveLaneLeft(_laneIdx);
+      updateLaneReorderMap();
+      track.handleLaneReorder(lane_reorder_map);
+      provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx-1));
+   }
+
+   // <ui_handle.png>
+   public method handleMoveLaneRight(int _laneIdx) {
+      Global.Print("Move lane "+(_laneIdx+1)+"/"+(track.lanes.numElements)+" right");
+      prepareLaneReorderMap();
+      track.moveLaneRight(_laneIdx);
+      updateLaneReorderMap();
+      track.handleLaneReorder(lane_reorder_map);
+      provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+   }
+
+   // <ui_handle.png>
+   public method handleInsertLaneRight(int _laneIdx, boolean _bQuiet) : boolean {
+      Global.Print("Insert lane after lane "+(_laneIdx+1)+"/"+(track.lanes.numElements));
+      prepareLaneReorderMap();
+      boolean bRet = track.newLaneAfter(_laneIdx);
+      updateLaneReorderMap();
+      track.handleLaneReorder(lane_reorder_map);
+      if(!_bQuiet)
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+      return bRet;
+   }
+
+   // <ui_handle.png>
+   public method handleDeleteLane(int _laneIdx) {
+      Global.Print("Delete lane "+(_laneIdx+1)+"/"+(track.lanes.numElements));
+      prepareLaneReorderMap();
+      track.deleteLane(_laneIdx);
+      updateLaneReorderMap();
+      track.handleLaneReorder(lane_reorder_map);
+      provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx-1));
+   }
+
+   // <ui_handle.png>
+   public method handleDeleteUnusedLanes() {
+      prepareLaneReorderMap();
+      int numDeleted = track.deleteUnusedLanes();
+      if(numDeleted > 0)
+      {
+         Global.Print("Delete "+numDeleted+" unused lane"+Utils.GetPluralString(numDeleted));
+         updateLaneReorderMap();
+         track.handleLaneReorder(lane_reorder_map);
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, 0));
+      }
+      else
+      {
+         Global.Print("No lanes deleted");
+      }
+   }
+
+   // <method.png>
+   protected method handleEditLaneName(int _laneIdx) {
+      Global.Debug2("ModGrid::handleEditLaneName("+_laneIdx+")");
+
+      Lane lane <= getLaneByIdx(_laneIdx);
+      Button btLaneName <= lane_name_buttons.get(_laneIdx);
+
+      if(null == dlg_lanename)
+      {
+         dlg_lanename <= new StringDialog;
+         dlg_lanename.init(null/*fontName*/);
+      }
+
+      dlg_lanename.configure(lane.lane_name, 16/*maxCols*/, 12/*visCols*/, this/*recipient*/);
+      dlg_lanename.showNearLayerOffset(btLaneName, 0, 0);
+      dlg_lanename_laneidx = _laneIdx;
+
+      current_project.markAsModified();
+   }
+
+   // <method.png>
+   public method handleCreateNewGainAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModGain modNew <= new ModGain;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handleEditLaneName2(String _newName) {
+      Global.Debug2("ModGrid::handleEditLaneName2: laneIdx="+dlg_lanename_laneidx+" newName=\""+_newName+"\"");
+
+      Lane lane <= getLaneByIdx(dlg_lanename_laneidx);
+      Button btLaneName <= lane_name_buttons.get(dlg_lanename_laneidx);
+      lane.setName(_newName);
+      btLaneName.setCaption(lane.getLaneCaption(dlg_lanename_laneidx));
+
+      Global.Print("Lane "+(dlg_lanename_laneidx+1)+" name is \""+_newName+"\"");
+   }
+
+   // <method.png>
+   public method handleCreateNewEQ3At(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModEQ3 modNew <= new ModEQ3;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewMidSideSplitAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModMidSideSplit modNew <= new ModMidSideSplit;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewMidSideMergeAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModMidSideMerge modNew <= new ModMidSideMerge;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewIdleDetectAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModIdleDetect modNew <= new ModIdleDetect;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewDelayAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModDelay modNew <= new ModDelay;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewSyncAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModSync modNew <= new ModSync;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewGate2AudioAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModGate2Audio modNew <= new ModGate2Audio;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewRPN2AudioAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModRPN2Audio modNew <= new ModRPN2Audio;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewAudio2RPNAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModAudio2RPN modNew <= new ModAudio2RPN;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleCreateNewSampleAt(int _gridX, int _gridY) {
+      Lane lane <= track.getLaneByIdx(_gridX);
+
+      if(null != lane)
+      {
+         if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+         {
+            if(null == lane.findModAtY(_gridY))
+            {
+               ModSample modNew <= new ModSample;
+               modNew.init();
+               lane.insertModAtY(deref modNew, _gridY);
+               updateGrid(true/*bRelayout*/);
+               Global.Print("Create mod "+modNew.getName());
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method handlePasteModClipboardAsNew(int _gridX, int _gridY) {
+      if(HaveModClipboard())
+      {
+         Lane lane <= track.getLaneByIdx(_gridX);
+
+         if(null != lane)
+         {
+            if(0 <= _gridY < Lane.MAX_MODS_PER_LANE)
+            {
+               if(null == lane.findModAtY(_gridY))
+               {
+                  boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+                  boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+                  Mod modNew <= mod_clipboard.modClone(true/*bFullInit*/);
+                  if(null != modNew)
+                  {
+                     modNew.modCopyPatchFrom(mod_clipboard);
+                     modNew.modCopyMatrixFrom(mod_clipboard);
+                     lane.insertModAtY_Sync(deref modNew, _gridY);
+                     updateGrid(true/*bRelayout*/);
+                     Global.Print("Create mod "+modNew.getName()+" from clipboard");
+                  }
+
+                  VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+                  CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+               }
+            }
+         }
+      }
+   }
+
+   // <load.png>
+   public method handleCLAPPatchLoad(ModCLAP _modCLAP) {
+      String dirName <= _modCLAP.getCLAPPatchDir();
+      Global.Debug("ModGrid::handleCLAPPatchLoad: dirName=\""+dirName+"\"");
+      String selectedPathName <= UI.OpenFileDialog(Utils.ToNativePathName(dirName),
+                                                   "",
+                                                   "Load CLAP Patch",
+                                                   ["CLAP Patch (*.clp)"],
+                                                   ["*.clp"],
+                                                   false/*bMultipleSelection*/,
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(selectedPathName instanceof String)
+      {
+         boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+
+         if(_modCLAP.loadPatch(selectedPathName))
+         {
+            Global.Print("Load CLAP patch from \""+selectedPathName+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to load CLAP patch from \""+selectedPathName+"\"");
+         }
+
+         CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+      }
+   }
+
+   // <save.png>
+   public method handleCLAPPatchSave(ModCLAP _modCLAP) : boolean {
+      String dirName <= _modCLAP.getCLAPPatchDir();
+      Global.Debug("ModGrid::handleCLAPPatchSave: dirName=\""+dirName+"\"");
+      local String nativeDirName <= Utils.ToNativePathName(dirName);
+      Global.Debug("ModGrid::handleCLAPPatchSave: nativeDirName=\""+nativeDirName+"\"");
+      Global.Debug("ModGrid::handleCLAPPatchSave: _modCLAP.last_io_patch_name=\""+_modCLAP.last_io_patch_name+"\"");
+      // nativeDirName.replace("//", "/");
+      tkfileutils_mkdir(nativeDirName);
+      String selectedPathName <= UI.SaveFileDialog(nativeDirName,
+                                                   _modCLAP.last_io_patch_name,
+                                                   "Save CLAP Patch",
+                                                   ["CLAP Patch (*.clp)"],
+                                                   ["*.clp"],
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(selectedPathName instanceof String)
+      {
+         if(_modCLAP.savePatch(selectedPathName))
+         {
+            Global.Print("Save CLAP patch to \""+selectedPathName+"\"");
+            return true;
+         }
+         else
+         {
+            Global.Error("Failed to save CLAP patch to \""+selectedPathName+"\"");
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method showPatchBrowserDialogCLAP(ModCLAP _modCLAP) {
+      if(null == dlg_patchbrowser_clap)
+      {
+         dlg_patchbrowser_clap <= new PatchBrowserDialogCLAP;
+         dlg_patchbrowser_clap.initPatchBrowserDialogCLAP();
+      }
+      dlg_patchbrowser_clap.showPatchBrowserDialogCLAP(_modCLAP);
+   }
+
+   // <load.png>
+   public method handleFXStoreLoad(ModVST2 _modVST2) {
+      String dirName <= _modVST2.getVSTPatchDir();
+      Global.Debug("ModGrid::handleFXStoreLoad: dirName=\""+dirName+"\"");
+      String selectedPathName <= UI.OpenFileDialog(Utils.ToNativePathName(dirName),
+                                                   "",
+                                                   "Load FXP/FXB",
+                                                   ["VST2 Program Chunk (*.fxp)", "VST2 Bank Chunk (*.fxb)"],
+                                                   ["*.fxp", "*.fxb"],
+                                                   false/*bMultipleSelection*/,
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(selectedPathName instanceof String)
+      {
+         boolean bIgnoreAutoOrig = VST2.PushIgnoreAutomation();
+
+         if(_modVST2.loadFXStorePatch(selectedPathName))
+         {
+            Global.Print("Load VST2 patch from \""+selectedPathName+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to load VST2 patch from \""+selectedPathName+"\"");
+         }
+
+         VST2.PopIgnoreAutomation(bIgnoreAutoOrig);
+      }
+   }
+
+   // <save.png>
+   public method handleFXStoreSave(ModVST2 _modVST2) : boolean {
+      String dirName <= _modVST2.getVSTPatchDir();
+      Global.Debug("ModGrid::handleFXStoreSave: dirName=\""+dirName+"\"");
+      local String nativeDirName <= Utils.ToNativePathName(dirName);
+      Global.Debug("ModGrid::handleFXStoreSave: nativeDirName=\""+nativeDirName+"\"");
+      tkfileutils_mkdir(nativeDirName);
+      String selectedPathName <= UI.SaveFileDialog(nativeDirName,
+                                                   _modVST2.last_io_patch_name,
+                                                   "Save FXP/FXB",
+                                                   ["VST2 Program Chunk (*.fxp)", "VST2 Bank Chunk (*.fxb)"],
+                                                   ["*.fxp", "*.fxb"],
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(selectedPathName instanceof String)
+      {
+         if(_modVST2.saveFXStorePatch(selectedPathName))
+         {
+            Global.Print("Save VST2 patch to \""+selectedPathName+"\"");
+            return true;
+         }
+         else
+         {
+            Global.Error("Failed to save VST2 patch to \""+selectedPathName+"\"");
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method showPatchBrowserDialogVST2(ModVST2 _modVST2) {
+      if(null == dlg_patchbrowser_vst2)
+      {
+         dlg_patchbrowser_vst2 <= new PatchBrowserDialogVST2;
+         dlg_patchbrowser_vst2.initPatchBrowserDialogVST2();
+      }
+      dlg_patchbrowser_vst2.showPatchBrowserDialogVST2(_modVST2);
+   }
+
+   // <load.png>
+   public method handleSTFXPatchLoad(ModSTFX _modSTFX) {
+      String dirName <= _modSTFX.getSTFXPatchDir();
+      Global.Debug("ModGrid::handleSTFXPatchLoad: dirName=\""+dirName+"\"");
+      String selectedPathName <= UI.OpenFileDialog(Utils.ToNativePathName(dirName),
+                                                   "",
+                                                   "Load STFX Patch",
+                                                   ["STFX Patch (*.stfx)"],
+                                                   ["*"+Global.STFX_PRESET_FILE_SUFFIX/*.stfx*/],
+                                                   false/*bMultipleSelection*/,
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(selectedPathName instanceof String)
+      {
+         if(_modSTFX.loadSTFXPatchFromFile(selectedPathName))
+         {
+            Global.Print("Load STFX patch from \""+selectedPathName+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to load STFX patch from \""+selectedPathName+"\"");
+         }
+      }
+   }
+
+   // <save.png>
+   public method handleSTFXPatchSave(ModSTFX _modSTFX) : boolean {
+      String dirName <= _modSTFX.getSTFXPatchDir();
+      Global.Debug("ModGrid::handleSTFXPatchSave: dirName=\""+dirName+"\"");
+      local String nativeDirName <= Utils.ToNativePathName(dirName);
+      Global.Debug("ModGrid::handleSTFXPatchSave: nativeDirName=\""+nativeDirName+"\"");
+      tkfileutils_mkdir(nativeDirName);
+      String selectedPathName <= UI.SaveFileDialog(nativeDirName,
+                                                   _modSTFX.last_io_patch_name,
+                                                   "Save STFX Patch",
+                                                   ["STFX Patch (*.stfx)"],
+                                                   ["*"+Global.STFX_PRESET_FILE_SUFFIX/*.stfx*/],
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(selectedPathName instanceof String)
+      {
+         if(_modSTFX.saveSTFXPatchToFile(selectedPathName))
+         {
+            Global.Print("Save STFX patch to \""+selectedPathName+"\"");
+            return true;
+         }
+         else
+         {
+            Global.Error("Failed to save STFX patch to \""+selectedPathName+"\"");
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method showPatchBrowserDialogSTFX(ModSTFX _modSTFX, boolean _bVoicePlugin) {
+      if(null == dlg_patchbrowser_stfx)
+      {
+         dlg_patchbrowser_stfx <= new PatchBrowserDialogSTFX;
+         dlg_patchbrowser_stfx.initPatchBrowserDialogSTFX();
+      }
+      dlg_patchbrowser_stfx.showPatchBrowserDialogSTFX(_modSTFX, _bVoicePlugin);
+   }
+
+   // <ui_handle.png>
+   public method showModParamSetDialog(Mod _mod) {
+      if(null == dlg_modparamset)
+      {
+         dlg_modparamset <= new ModParamSetDialog;
+         dlg_modparamset.initModParamSetDialog();
+      }
+      dlg_modparamset.showModParamSetDialog(_mod);
+   }
+
+   // <method.png>
+   protected method createModCLAPAt(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
+      Lane lane <= track.getOrCreateLaneByIdx_Sync(_gridX);
+      int numCreated = 0;
+      if(null != lane)
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+         boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+
+         ModCLAP modCLAP <= lane.newModCLAPAtY(_gridY, _uid);
+         if(null != modCLAP)
+         {
+            numCreated++;
+            modCLAP.loadInitPatch(_filterHintOrNull);
+         }
+
+         // Create mirror plugins on other lanes
+         if(track.isMirrorMode())
+         {
+            int laneIdxLast = mathMini((track.multi_lane_offset + track.multi_num_channels), track.lanes.numElements);
+            if(track.multi_lane_offset <= _gridX < laneIdxLast)
+            {
+               int laneIdx = track.multi_lane_offset;
+               while(laneIdx < laneIdxLast)
+               {
+                  if(laneIdx != _gridX)
+                  {
+                     lane <= track.getOrCreateLaneByIdx_Sync(laneIdx);
+                     modCLAP <= lane.newModCLAPAtY(_gridY, _uid);
+                     if(null != modCLAP)
+                     {
+                        numCreated++;
+                        modCLAP.loadInitPatch(_filterHintOrNull);
+                     }
+                  }
+
+                  laneIdx++;
+               }
+            }
+         }
+
+         CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+         Global.Print("Create "+numCreated+" CLAP instance"+Utils.GetPluralString(numCreated)+" (uid="+_uid+")");
+      }
+   }
+
+   // <method.png>
+   protected method createModVST2At(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
+      Lane lane <= track.getOrCreateLaneByIdx_Sync(_gridX);
+      int numCreated = 0;
+      if(null != lane)
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+         boolean bIgnoreAutoOrig = VST2.PushIgnoreAutomation();
+
+         ModVST2 modVST2 <= lane.newModVST2AtY(_gridY, _uid);
+         if(null != modVST2)
+         {
+            numCreated++;
+            modVST2.loadInitPatch(_filterHintOrNull);
+         }
+
+         // Create mirror VSTs on other lanes
+         if(track.isMirrorMode())
+         {
+            int laneIdxLast = mathMini((track.multi_lane_offset + track.multi_num_channels), track.lanes.numElements);
+            if(track.multi_lane_offset <= _gridX < laneIdxLast)
+            {
+               int laneIdx = track.multi_lane_offset;
+               while(laneIdx < laneIdxLast)
+               {
+                  if(laneIdx != _gridX)
+                  {
+                     lane <= track.getOrCreateLaneByIdx_Sync(laneIdx);
+                     modVST2 <= lane.newModVST2AtY(_gridY, _uid);
+                     if(null != modVST2)
+                     {
+                        numCreated++;
+                        modVST2.loadInitPatch(_filterHintOrNull);
+                     }
+                  }
+
+                  laneIdx++;
+               }
+            }
+         }
+
+         VST2.PopIgnoreAutomation(bIgnoreAutoOrig);
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+         Global.Print("Create "+numCreated+" VST2 instance"+Utils.GetPluralString(numCreated)+" (uid="+_uid+")");
+      }
+   }
+
+   // <method.png>
+   protected method createModSTFXAt(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
+      Lane lane <= track.getOrCreateLaneByIdx_Sync(_gridX);
+      int numCreated = 0;
+      if(null != lane)
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+         ModSTFX modSTFX <= lane.newModSTFXAtY(_gridY, _uid);
+         if(null != modSTFX)
+         {
+            numCreated++;
+            modSTFX.loadInitPatch(_filterHintOrNull);
+         }
+
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+         Global.Print("Create "+numCreated+" instance"+Utils.GetPluralString(numCreated)+" (uid="+_uid+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleEnableMod(ModGridEnableButton _bt, boolean _bForceDisable) {
+      Mod mod <= _bt.getUserData();
+      boolean bEnable;
+
+      if(!_bt.getToggleState())
+      {
+         bEnable = true;
+         mod.setEnable(true);
+
+         if(Mod.PROCESS_L == mod.process_mode)
+            _bt.setBackgroundTint(MOD_C32_ENABLE_L);
+         else if(Mod.PROCESS_R == mod.process_mode)
+            _bt.setBackgroundTint(MOD_C32_ENABLE_R);
+         else
+            _bt.setBackgroundTint(MOD_C32_ENABLE_LR);
+      }
+      else
+      {
+         bEnable = false;
+         mod.setEnable(false);
+         _bt.setBackgroundTint(MOD_C32_DISABLE);
+      }
+
+      if(mod.ui_mutex_group_id >= 0)
+      {
+         track.updateModEnableByMutexGroupId(mod.ui_mutex_group_id, _bForceDisable ? maybe : bEnable);
+         updateGrid(true/*bRelayout*/);
+      }
+      else
+         _bt.redraw();
+
+      // Copy over to other lane mods
+      if(track.isMirrorMode())
+      {
+         int modLaneIdx = track.findLaneIdxByMod(mod);
+         int laneIdxLast = mathMini((track.multi_lane_offset + track.multi_num_channels), track.lanes.numElements);
+         if(track.multi_lane_offset <= modLaneIdx < laneIdxLast)
+         {
+            int laneIdx = track.multi_lane_offset;
+            while(laneIdx < laneIdxLast)
+            {
+               if(laneIdx != modLaneIdx)
+               {
+                  Lane lane <= track.getLaneByIdx(laneIdx);
+                  if(null != lane)  // should never be null
+                  {
+                     Mod modOther <= lane.findModAtY(mod.ui_grid_y);
+                     if(null != modOther)
+                     {
+                        modOther.setEnable(bEnable);
+                     }
+                  }
+               }
+
+               laneIdx++;
+            }
+         }
+
+         updateGrid(true/*bRelayout*/);
+      }
+
+      Global.Print("Mod "+mod.getName()+" is "+Utils.GetEnableString(mod.isEnabled()));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleEnableLane(Button _bt, int _laneIdx, boolean _bHold) {
+
+      // trace "xxx handleToggleEnableLane: laneIdx="+_laneIdx+" bHold="+_bHold+" bt.toggleState="+_bt.getToggleState();
+
+      Lane lane <= track.lanes.get(_laneIdx);
+
+      int laneIdx;
+
+      if(_bHold)
+      {
+         // Toggle solo lane
+         _bt.setToggleState(false);
+         _bt.setBackgroundTint(LANE_C32_ENABLE);
+         lane.setEnable(true);
+
+         boolean bEnableOther = track.areAllOtherLanesDisabled(_laneIdx);
+         // trace "xxx allOthersLanesDisabled="+bEnableOther;
+         Lane *olane;
+         laneIdx = 0;
+         Button *bt;
+         foreach olane in track.lanes
+         {
+            if(laneIdx != _laneIdx)
+            {
+               olane.setEnable(bEnableOther);
+               bt <= lane_enable_buttons.get(laneIdx);
+               bt.setToggleState(!bEnableOther);
+               bt.redraw();
+               if(bEnableOther)
+               {
+                  bt.setBackgroundTint(LANE_C32_ENABLE);
+               }
+               else
+               {
+                  bt.setBackgroundTint(LANE_C32_DISABLE);
+               }
+            }
+            laneIdx++;
+         } // foreach olane
+
+         Global.Print(bEnableOther ? "Enable all lanes" : ("Solo lane "+(_laneIdx+1)));
+      }
+      else
+      {
+         if(!_bt.getToggleState())
+         {
+            lane.setEnable(true);
+            _bt.setBackgroundTint(LANE_C32_ENABLE);
+         }
+         else
+         {
+            lane.setEnable(false);
+            _bt.setBackgroundTint(LANE_C32_DISABLE);
+         }
+         _bt.redraw();
+
+         Global.Print("Lane "+(_laneIdx+1)+" is "+Utils.GetEnableString(lane.isEnabled()));
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleClearMutexGroups(byte _grpNr) {
+      track.clearMutexGroups(_grpNr);
+   }
+
+   // <ui_mouse.png>
+   public virtual onDropObject(Object _o, MouseEvent _ev) : boolean {
+      Global.Debug("ModGrid::onDropObject: o="+#(_o)+" ev.mouse_rel=("+_ev.mouse_rel_x+";"+_ev.mouse_rel_y+")");
+      if(null != first_child)
+      {
+         Layer bt <= first_child.layerAt2f(_ev.mouse_rel_x, _ev.mouse_rel_y);
+         Global.Debug("ModGrid::onDropObject: bt="+#(bt)+" rel="+_ev.getRelString());
+
+         int gridX;
+         int gridY;
+         Mod *mod;
+         UnsignedInteger *ui;
+
+         if(_o instanceof CLAPPluginEntry)
+         {
+            CLAPPluginEntry enCLAP <= _o;
+
+            if(bt instanceof ModGridButton)
+            {
+               // Replace existing mod
+               mod <= bt.getUserData();
+               gridX = track.findLaneIdxByMod(mod);
+               gridY = mod.ui_grid_y;
+               Global.Debug("ModGrid::onDropObject: replace CLAP cell=("+gridX+";"+gridY+")");
+               createModCLAPAt(gridX, gridY, enCLAP.getUniqueIDString(), root_form.pg_track.getFilterPreset());
+            }
+            else if(bt instanceof ModGridEmptyButton)
+            {
+               ui <= bt.getUserData();
+               gridX = (ui >> 16);
+               gridY = (ui & 65535);
+               // Create new instance at empty cell
+               Global.Debug("ModGrid::onDropObject: create new CLAP instance at cell=("+gridX+";"+gridY+")");
+               createModCLAPAt(gridX, gridY, enCLAP.getUniqueIDString(), root_form.pg_track.getFilterPreset());
+            }
+         }
+         else if(_o instanceof VSTScanEntry)
+         {
+            VSTScanEntry enVST2 <= _o;
+
+            if(bt instanceof ModGridButton)
+            {
+               // Replace existing mod
+               mod <= bt.getUserData();
+               gridX = track.findLaneIdxByMod(mod);
+               gridY = mod.ui_grid_y;
+               Global.Debug("ModGrid::onDropObject: replace VST2 cell=("+gridX+";"+gridY+")");
+               createModVST2At(gridX, gridY, enVST2.getUniqueIDString(), root_form.pg_track.getFilterPreset());
+            }
+            else if(bt instanceof ModGridEmptyButton)
+            {
+               ui <= bt.getUserData();
+               gridX = (ui >> 16);
+               gridY = (ui & 65535);
+               // Create new instance at empty cell
+               Global.Debug("ModGrid::onDropObject: create new VST2 instance at cell=("+gridX+";"+gridY+")");
+               createModVST2At(gridX, gridY, enVST2.getUniqueIDString(), root_form.pg_track.getFilterPreset());
+            }
+         }
+         else if(_o instanceof StPluginInfo)
+         {
+            StPluginInfo enSTFX <= _o;
+            if(bt instanceof ModGridSTFXButton)
+            {
+               // Replace existing mod
+               mod <= bt.getUserData();
+               gridX = track.findLaneIdxByMod(mod);
+               gridY = mod.ui_grid_y;
+               Global.Debug("ModGrid::onDropObject: replace cell=("+gridX+";"+gridY+")");
+               createModSTFXAt(gridX, gridY, enSTFX.getId(), root_form.pg_track.getFilterPreset());
+            }
+            else if(bt instanceof ModGridEmptyButton)
+            {
+               ui <= bt.getUserData();
+               gridX = (ui >> 16);
+               gridY = (ui & 65535);
+               // Create new instance at empty cell
+               Global.Debug("ModGrid::onDropObject: create new instance at cell=("+gridX+";"+gridY+")");
+               createModSTFXAt(gridX, gridY, enSTFX.getId(), root_form.pg_track.getFilterPreset());
+            }
+         }
+
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, gridX));
+      }
+
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual canDropObject(Object _o, MouseEvent _ev) : boolean {
+      return
+         (_o instanceof CLAPPluginEntry) ||
+         (_o instanceof VSTScanEntry)    ||
+         (_o instanceof StPluginInfo)    ;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      Mod *mod;
+      StringAction *sac;
+      int laneIdx;
+
+      laneIdx = lane_name_buttons.indexOfPointer(ap, 0);
+      if(laneIdx >= 0)
+      {
+         handleEditLaneName(laneIdx);
+         return true;
+      }
+
+      if(ap instanceof ModGridButton)
+      {
+         ModGridButton btMod <= ap;
+         mod <= btMod.getUserData();
+
+         if(Button.ACTION_HOLD_CLICK == acName)
+         {
+            Global.Debug("ModGrid: HOLD_CLICK mod cell");
+            UI.SetKeyboardFocus(btMod);  // causes mod to be selected in instances list
+            if(VMOD_LCTRL == UI.GetKeyMod())
+            {
+               root_form.pg_track.showModMatrix();
+            }
+            else if(mod instanceof ModCLAP)
+            {
+               showPatchBrowserDialogCLAP(mod);
+            }
+            else if(mod instanceof ModVST2)
+            {
+               showPatchBrowserDialogVST2(mod);
+            }
+            else if(mod instanceof ModSTFX)
+            {
+               showPatchBrowserDialogSTFX(mod, false/*bVoicePlugin*/);
+            }
+         }
+         else if(ModGridButton.ACTION_EDIT_PARAMSET == acName)
+         {
+            if(!hideModParamSetDialog())
+               showModParamSetDialog(mod);
+         }
+         else if(ModGridButton.ACTION_TOGGLE_EDITOR == acName)
+         {
+            // trace "xxx ACTION_TOGGLE_EDITOR UI.GetKeyMod()="+UI.GetKeyMod();
+            if( (VMOD_LALT == UI.GetKeyMod()) || (VMOD_LMETA == UI.GetKeyMod()) )
+            {
+               showModParamSetDialog(mod);
+            }
+            else
+            {
+               if(mod instanceof ModCLAP)
+               {
+                  ModCLAP modCLAP <= mod;
+                  Global.Debug("ModGrid: modCLAP.isEditorVisible()="+modCLAP.isEditorVisible());
+
+                  if(modCLAP.isEditorVisible())
+                  {
+                     // Hide editor
+                     modCLAP.hideEditor();
+
+                     if(STConfig.b_mod_close_editor_autosync)
+                     {
+                        modCLAP.syncMainAndMirrorMods(current_project.findTrackByMod(modCLAP),
+                                                      current_project.findLaneByMod(modCLAP)
+                                                      );
+                     }
+                  }
+                  else
+                  {
+                     // Show editor
+                     if(STConfig.b_auto_hide_plugin_editors)
+                     {
+                        current_project.hideAllPluginEditors(modCLAP/*except*/);
+                     }
+
+                     Global.Print("Show CLAP editor (id="+modCLAP.instance_id+" uid="+modCLAP.unique_id_string+")");
+
+                     // Show editor window or bring into foreground if it's already visible
+                     modCLAP.showEditor();
+                  }
+               }
+               else if(mod instanceof ModVST2)
+               {
+                  ModVST2 modVST2 <= mod;
+                  Global.Debug("ModGrid: modVST2.isEditorVisible()="+modVST2.isEditorVisible());
+
+                  if(modVST2.isEditorVisible())
+                  {
+                     // Hide editor
+                     modVST2.hideEditor();
+
+                     if(STConfig.b_mod_close_editor_autosync)
+                     {
+                        modVST2.syncMainAndMirrorMods(current_project.findTrackByMod(modVST2),
+                                                      current_project.findLaneByMod(modVST2)
+                                                      );
+                     }
+                  }
+                  else
+                  {
+                     // Show editor
+                     if(STConfig.b_auto_hide_plugin_editors)
+                     {
+                        current_project.hideAllPluginEditors(modVST2/*except*/);
+                     }
+
+                     Global.Print("Show VST2 editor (id="+modVST2.instance_id+" uid="+modVST2.unique_id_string+")");
+
+                     // Show editor window or bring into foreground if it's already visible
+                     // plugin.parentNativeWindowHandle = SDL.nativeWindowHandle;  // makes WM_KEYUP/DOWN work in Diva VST window
+
+                     modVST2.showEditor();
+                  }
+               }
+               else if(mod instanceof ModSTFX)
+               {
+                  ModSTFX modSTFX <= mod;
+
+                  Global.Debug("ModGrid: modSTFX.isEditorVisible()="+modSTFX.isEditorVisible());
+
+                  if(modSTFX.isEditorVisible())
+                  {
+                     // Hide editor
+                     modSTFX.hideEditor();
+                  }
+                  else
+                  {
+                     Global.Print("Show STFX editor (id="+modSTFX.instance_id+" uid="+modSTFX.unique_id_string+")");
+                     modSTFX.showEditor();
+                  }
+               }
+            }
+         }
+
+         return true;
+      }
+      else if(ap instanceof ModGridEnableButton)
+      {
+         handleToggleEnableMod(ap, (Button.ACTION_HOLD_CLICK == acName)/*bForceDisable*/);
+         return true;
+      }
+
+      laneIdx = lane_enable_buttons.indexOfPointer(ap, 0);
+      if(-1 != laneIdx)
+      {
+         if(Button.ACTION_HOLD_CLICK == acName)
+         {
+            handleToggleEnableLane(ap, laneIdx, true/*bHold*/);
+         }
+         else
+         {
+            handleToggleEnableLane(ap, laneIdx, false/*bHold*/);
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_new_lane):
+            if(null  != bt_new_lane)
+            {
+               if(Button.ACTION_HOLD_CLICK == acName)
+               {
+                  handleDuplicateLane(track.lanes.numElements-1);
+               }
+               else
+               {
+                  handleInsertLaneRight(track.lanes.numElements-1, false/*bQuiet*/);
+               }
+               return true;
+            }
+            break;
+
+         case @(dlg_lanename):
+            if(StringDialog.ACTION_RETURN == acName)
+            {
+               sac <= _ac;
+               handleEditLaneName2(sac.getStringValue());
+            }
+            return true;
+      }
+
+      return Control::consumeAction(_ac);
+   }
+}

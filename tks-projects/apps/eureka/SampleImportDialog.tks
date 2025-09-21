@@ -1,0 +1,916 @@
+// ----
+// ---- file   : SampleImportDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 25Mar2023
+// ---- changed: 27Mar2023, 04Oct2023, 30Oct2023, 01Nov2023, 02Nov2023, 17Dec2024
+// ----
+// ----
+// ----
+
+module MSampleImportDialog;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <callback.png>
+function transfer_thread_entry(local Thread _th) {
+   SampleImportDialog thiz <= _th.userdata;
+   int transferIdx = 0;
+   StringArray pathNamesSrc = thiz.transfer_src_path_names;
+   StringArray pathNamesDst = thiz.transfer_dst_path_names;
+
+   Global.Debug("transfer_thread: ENTER");
+
+   local File fSrc;
+   local File fDst;
+   local Buffer b;
+   b.size = 4096;
+
+   while(thiz.isTransferActive())
+   {
+      Global.Debug("transfer_thread: copying file "+(transferIdx+1)+"/"+pathNamesSrc.numElements);
+      Global.Debug("transfer_thread: copying file "+(transferIdx+1)+"/"+pathNamesSrc.numElements);
+      local String sSrc <= Utils.FixFileName(pathNamesSrc.get(transferIdx));
+      local String sDst <= Utils.FixFileName(pathNamesDst.get(transferIdx));
+      Global.Debug("transfer_thread:   src=\""+sSrc+"\"");
+      Global.Debug("transfer_thread:   dst=\""+sDst+"\"");
+
+      if(fSrc.openLocal(sSrc, IOS_IN))
+      {
+         if(fDst.openLocal(sDst, IOS_OUT))
+         {
+            int fSize = fSrc.size;
+            int numBlocks = fSize / 4096;
+            int remainder = fSize - (numBlocks * 4096);
+            int blockIdx = 0;
+            int lastProgressBlockIdx = 0;
+            loop(numBlocks)
+            {
+               b.offset = 0;
+               fSrc.readBuffer(b, 0, 4096, false/*bResize*/);
+               b.offset = 0;
+               fDst.writeBuffer(b, 0, 4096);
+               if(!thiz.isTransferActive())
+                  break;
+               if( (blockIdx&15) != lastProgressBlockIdx )
+               {
+                  lastProgressBlockIdx = blockIdx & 15;
+                  String sDot; sDot.empty();
+                  sDot.appendRepeat(".", blockIdx&15);
+                  Global.PrintFast("copying file "+transferIdx+"/"+pathNamesSrc.numElements+sDot);
+               }
+               blockIdx++;
+            }
+            if(thiz.isTransferActive())
+            {
+               loop(remainder)
+               {
+                  fDst.i8 = fSrc.u8;
+               }
+               Global.Debug("transfer_thread:    copied "+fSize+" bytes ("+(fSize/1024)+"k)");
+               Global.Print("copied file "+transferIdx+"/"+pathNamesSrc.numElements);
+            }
+            else
+            {
+               Global.Debug("transfer_thread:    **aborted, removing dst file");
+               tkfileutils_rm(sDst);
+            }
+
+            fDst.close();
+         }
+         fSrc.close();
+      }
+
+      if(++transferIdx >= pathNamesSrc.numElements)
+         break;
+   }
+
+   thiz.b_transfer_done = true;
+}
+
+
+// <class.png>
+class SampleImportDialog extends Dialog, ActionProvider {
+
+   define String ACTION_SELECT;
+   define String ACTION_CLOSE;
+
+   define String TA_SCAN;  // scan or transfer
+   protected TimerAction *ta_scan;
+   protected int scan_idx;
+
+   protected XMLForm *xfm;
+
+   protected SampleImportEntry *[] entries;
+
+   protected SampleImportTM *tm_samples;
+   protected TableView      *tv_samples;
+
+   protected Button *bt_rename;
+   protected Button *bt_transfer;
+   protected Button *bt_delete;
+
+   protected Button *bt_play;
+   protected Button *bt_stop;
+
+   protected CheckBox    *cb_preview;
+   protected CheckBox    *cb_cue;
+   protected CheckBox    *cb_rand;
+   protected CheckBox    *cb_loop;
+
+   protected int pre_filter_entry_idx;
+
+   protected String     last_previewed_pathname;
+   protected FloatArray last_previewed_sampledata;
+   protected float      last_previewed_rate;
+   protected int        last_previewed_ch;
+   protected int        last_start_off;
+
+   protected IntArray rand_start_offsets;
+
+   protected SplitPane *spl_wave;
+   protected SampleView *sv_wave;
+   protected ActionConsumer *listener;
+
+   static Dialog_TransferImportSamples dlg_transfer;
+   static Dialog_DeleteImportSamples   dlg_delete;
+
+   StringArray transfer_src_path_names;
+   StringArray transfer_dst_path_names;
+   boolean b_transfer;
+   Mutex mtx_transfer;
+   boolean b_transfer_done;
+   Thread transfer_thread;
+
+
+   // <ui_init.png>
+   public method initSampleImportDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleImportDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSampleImportDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_samples <= new SampleImportTM;
+      tm_samples.initTableModel();
+      tm_samples.entries <= entries;
+      tv_samples.setTableModel(tm_samples);
+      tv_samples.tableModelChanged();
+
+      initWindow(xfm,
+                 "Sample Import",
+                 UI.IsHiDPI() ? STConfig.sample_import_geo_hidpi.px : STConfig.sample_import_geo_lodpi.px,
+                 UI.IsHiDPI() ? STConfig.sample_import_geo_hidpi.py : STConfig.sample_import_geo_lodpi.py,
+                 UI.IsHiDPI() ? STConfig.sample_import_geo_hidpi.sx : STConfig.sample_import_geo_lodpi.sx,
+                 UI.IsHiDPI() ? STConfig.sample_import_geo_hidpi.sy : STConfig.sample_import_geo_lodpi.sy
+                 );
+
+      ta_scan <= TimerAction.New(TA_SCAN, this, 1);
+
+      String tt <= bt_transfer.getToolTipCaption();
+      tt.replace("$(TARGET)", STConfig.sample_import_target_path);
+
+      b_transfer = false;
+      b_transfer_done = true;
+
+      sv_wave.setEnableAllowChannelConversion(true);
+      sv_wave.setEnableAutoAddStereoChannel(true);  // convert to stereo when pasting stereo clipboard
+      sv_wave.setEnableZeroCrossingMode(true);
+      sv_wave.setEnableRegionAutoCycleMode(STConfig.b_pgsample_wave_region_auto_cycle_mode);
+      sv_wave.setEnableAutoRecalcRegions(true);
+      // // sv_wave.setEnableAutochop(false);
+      sv_wave.setEnableMarkerCreate(false);
+      sv_wave.setEnableMarkerDelete(false);
+      sv_wave.b_no_export = true;
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_SELECT, ACTION_CLOSE];
+   }
+
+   // <method_get.png>
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSampleImportDialog(ActionConsumer _listener, SampleView _svWave) {
+
+      listener <= _listener;
+      // // sv_wave  <= _svWave;
+
+      sv_wave.autochop_config = _svWave.autochop_config;
+
+      recursiveBuildTabCycleLists();
+
+      scanFiles();  // find files and start scan timer
+
+      show();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      restoreGeometryIfValid(UI.IsHiDPI()
+                             ? STConfig.sample_import_geo_hidpi
+                             : STConfig.sample_import_geo_lodpi
+                             );
+
+      resizeAtLeastToMinimum();
+      relayout();
+
+      UI.SetKeyboardFocus(this);
+      UI.SetKeyboardFocus(tv_samples);
+
+      getRoot().addOverlay(sv_wave);
+
+      // trace "xxx sv_wave.size="+sv_wave.getSizeString();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.sample_import_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.sample_import_geo_lodpi);
+
+      Dialog::hide();
+
+      Audio.ResetAllTempSamples();
+
+      ta_scan.cancel();
+      stopTransfer();
+
+      getRoot().removeOverlay(sv_wave);
+      UI.CancelScheduleFor(sv_wave);
+
+      // // root_form.pg_sample.consumeAction(Action.New(ACTION_CLOSE, this));
+   }
+
+   // <method_get.png>
+   protected method getSelectedEntry() : SampleImportEntry {
+      return entries.get(tm_samples.getCursorIndex());
+   }
+
+   // <ui_handle.png>
+   protected method handlePreviewSample(SampleImportEntry _en, boolean _bRandOff) {
+      if(null != _en)
+      {
+         Audio.ResetAllTempSamples();
+         int numFrames = 0;
+         if(last_previewed_pathname != _en.path_name)
+         {
+            rand_start_offsets.empty();
+
+            // lazy-load sample
+            last_previewed_pathname = _en.path_name;
+            local Integer retSampleRate;
+            local Integer retNumCh;
+            local StWaveform wf;
+            try
+            {
+               if(WavIO.LoadLocal(Utils.ToNativePathName(_en.path_name),
+                                  last_previewed_sampledata/*smp*/,
+                                  retSampleRate,
+                                  retNumCh,
+                                  null/*retFileInfoStr*/,
+                                  null/*sampleHint*/,
+                                  wf/*bwfHint*/
+                                  ))
+               {
+                  last_previewed_rate = retSampleRate;
+                  last_previewed_ch   = retNumCh;
+                  numFrames = last_previewed_sampledata.numElements / retNumCh;
+                  trace "[trc] SampleImportDialog::handlePreviewSample: rate="+retSampleRate+" #ch="+retNumCh+" #frames="+numFrames;
+                  Utils.FramesAndRateToDurationString(_en.dur, retSampleRate, numFrames);
+                  _en.rate = retSampleRate;
+                  _en.bits = WavIO.GetFmtSampleBits();
+                  _en.ch   = retNumCh;
+                  _en.date = ""+wf.bwfDate+" "+wf.bwfTime;
+                  _en.info = ""+wf.bwfOriginator+" "+wf.bwfDescription;
+
+                  sv_wave.setSample(Audio.temp_waveform, last_previewed_sampledata, retNumCh, retSampleRate);
+                  sv_wave.showAll();
+
+                  if(cb_cue.isSelected())
+                  {
+                     IntArray cuePoints <= wf.cuePoints;
+                     sv_wave.setAutoChopRegionsFromCuePoints(cuePoints, 0/*cueOffset*/);
+                     rand_start_offsets = cuePoints;
+                  }
+
+                  if(!cb_cue.isSelected() || rand_start_offsets.isEmpty())
+                  {
+                     local FloatArray faNorm;
+                     faNorm.scale(last_previewed_sampledata, 1.0/last_previewed_sampledata.absMax);
+                     sv_wave.setSample(Audio.temp_waveform, faNorm, retNumCh, retSampleRate);
+                     sv_wave.recalcAutoChopRegions();
+                     rand_start_offsets = sv_wave.autochop_start_offsets;
+
+                     sv_wave.setSample(Audio.temp_waveform, last_previewed_sampledata, retNumCh, retSampleRate);
+                     sv_wave.showAll();
+
+                  }
+               }
+            }
+            catch(Error e)
+            {
+               trace "[---] SampleImportDialog::scanNextFile: caught error e.message="+e.message;
+            }
+         }
+
+         numFrames = last_previewed_sampledata.numElements / last_previewed_ch;
+         if(numFrames > 0)
+         {
+            int startOff;
+            int playNum;
+            if( _bRandOff && (numFrames > 16000) )
+            {
+               // trace "xxx rand_start_offsets="+#(rand_start_offsets);
+               if(cb_rand.isSelected() || rand_start_offsets.numElements < 2)
+               {
+                  startOff = int(numFrames*rand(0.9));
+               }
+               else
+               {
+                  startOff = rand_start_offsets.get(rand(rand_start_offsets.numElements));
+                  if(last_start_off == startOff)
+                  {
+                     if(rand_start_offsets.numElements > 1)
+                     {
+                        while(last_start_off == startOff)
+                        {
+                           startOff = rand_start_offsets.get(rand(rand_start_offsets.numElements));
+                        }
+                     }
+                  }
+               }
+               playNum  = numFrames - startOff;
+            }
+            else
+            {
+               startOff = 0;
+               playNum  = numFrames;
+            }
+            last_start_off = startOff;
+            float pctOff  = int(startOff*100.0/numFrames);
+            float pctPlay = int(playNum*100.0/numFrames);
+            Global.PrintFast("Play start="+startOff+" ("+pctOff+"%) #frames="+playNum+" ("+pctPlay+"%)");
+            Audio.UpdateTemporarySampleFromArrayLoop(last_previewed_sampledata,
+                                                     startOff,
+                                                     playNum,
+                                                     last_previewed_ch,
+                                                     last_previewed_rate,
+                                                     cb_loop.isSelected(),
+                                                     true/*ramp*/
+                                                     );
+            UI.RedrawAll();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadSample(SampleImportEntry _en) {
+      if(null != _en)
+      {
+         trace "[trc] SampleImportDialog: provideAction en.path_name=\""+_en.path_name+"\"";
+         hide();
+         if(null != listener)
+         {
+            listener.consumeAction(Action.New(getProvidedActionAlias(ACTION_SELECT), this));
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedPathNames() : StringArray {
+      local StringArray a;
+      local IntArray selRows = tm_samples.getSelectedRowsIncludingCursor();
+      int rowIdx;
+      foreach rowIdx in selRows
+      {
+         SampleImportEntry en <= entries.get(rowIdx);
+         a.add(en.path_name);
+      }
+      return deref a;
+   }
+
+   // <method_get.png>
+   public method getSelectedTransferPathNames() {
+      transfer_src_path_names.empty();
+      transfer_dst_path_names.empty();
+      local IntArray selRows = tm_samples.getSelectedRowsIncludingCursor();
+      int rowIdx;
+      foreach rowIdx in selRows
+      {
+         SampleImportEntry en <= entries.get(rowIdx);
+         transfer_src_path_names.add(en.path_name);
+         transfer_dst_path_names.add(Utils.ToNativePathName(STConfig.sample_import_target_path)+"/"+en.name);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method scanFiles() {
+      entries.empty();
+      last_previewed_pathname.empty();
+
+      StringArray importPaths <= STConfig.sample_import_paths;
+      int locIdx = 0;
+      loop(importPaths.numElements / 2)
+      {
+         String locName <= importPaths[locIdx + 0];
+         String locPath <= importPaths[locIdx + 1];
+
+         local StringArray a <= Utils.ReadDirectory(locPath);
+         if(null != a)
+         {
+            String *sEntry;
+            foreach sEntry in a
+            {
+               local StringArray attribs <= sEntry.splitSpace(true);
+               if(null != attribs)
+               {
+                  String fileName <= attribs.get(1);
+                  if(fileName.toLower() >= ".wav")
+                  {
+                     SampleImportEntry en <= new SampleImportEntry;
+                     en.loc  = locName;
+                     en.name = fileName;
+                     en.name_orig = fileName;
+                     en.dur  = "-";
+                     en.rate = "-";
+                     en.ch   = "-";
+                     en.bits = "-";
+                     en.date = "-";
+                     en.info = "-";
+                     en.path_name = locPath+"/"+fileName;
+                     entries.add(#(deref en));
+                  }
+               }
+            }
+         }
+
+         // Next import location
+         locIdx += 2;
+      }
+
+      Global.Debug("SampleImportDialog::scanFiles: found "+entries.numElements+" "+Utils.GetPluralStringEx(entries.numElements, "entry", "entries"));
+
+      scan_idx = 0;
+      ta_scan.reschedule();
+      bt_stop.setEditable(true);
+   }
+
+   // <method.png>
+   protected method scanNextFile() : boolean {
+      SampleImportEntry en <= entries.get(scan_idx);
+      if(null != en)
+      {
+         Global.Debug2("SampleImportDialog::scanNextFile: scan_idx="+scan_idx+" loc=\""+en.loc+"\" pathName=\""+en.path_name+"\"");
+         scan_idx++;
+
+         local Integer retSampleRate;
+         local Integer retNumCh;
+         local Integer retNumFrames;
+         local StWaveform wf;
+         try
+         {
+            if(WavIO.LoadLocal(Utils.ToNativePathName(en.path_name),
+                               retNumFrames/*smp*/,
+                               retSampleRate,
+                               retNumCh,
+                               null/*retFileInfoStr*/,
+                               null/*sampleHint*/,
+                               wf/*bwfHint*/
+                               ))
+            {
+               Global.Debug2("SampleImportDialog::scanNextFile: rate="+retSampleRate+" #ch="+retNumCh+" #frames="+retNumFrames);
+               Utils.FramesAndRateToDurationString(en.dur, retSampleRate, retNumFrames);
+               en.rate = retSampleRate;
+               en.ch   = retNumCh;
+               en.bits = WavIO.GetFmtSampleBits();
+               en.date = wf.bwfDate+" "+wf.bwfTime;
+               en.info = wf.bwfOriginator+" "+wf.bwfDescription;
+            }
+         }
+         catch(Error e)
+         {
+            trace "[---] SampleImportDialog::scanNextFile: caught error e.message="+e.message;
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method stopTransfer() {
+      Global.Debug("SampleImportDialog::stopTransfer: b_transfer="+b_transfer+" b_transfer_done="+b_transfer_done);
+      if(b_transfer)
+      {
+         b_transfer = false;
+         transfer_thread.wait();
+         Global.Warning("** abort transfer");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleStop() {
+      Global.Debug("SampleImportDialog::handleStop");
+      ta_scan.cancel();
+      stopTransfer();
+      bt_stop.setEditable(false);
+   }
+
+   // <ui_handle.png>
+   protected method handleEditTargetName() {
+      int rowIdx = tm_samples.getCursorIndex();
+      if(-1 != rowIdx)
+      {
+         // Show TableCellEditorString
+         tm_samples.editColumn(SampleImportTM.COL_NAME, rowIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyFiles1() {
+      StringArray a <= getSelectedPathNames();
+      if(a.numElements > 0)
+      {
+         dlg_transfer <= new Dialog_TransferImportSamples;
+         dlg_transfer.run(a.numElements, this);
+      }
+   }
+
+   // <method_get.png>
+   public method isTransferActive() : boolean {
+      mtx_transfer.lock();
+      return = b_transfer;
+      mtx_transfer.unlock();
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyFiles2() {
+      stopTransfer();
+      getSelectedTransferPathNames();  // update transfer_src_path_names + transfer_dst_path_names
+      Global.Debug("SampleImportDialog::handleCopyFiles: #files="+transfer_src_path_names.numElements);
+      if( (transfer_src_path_names.numElements > 0) &&
+          (transfer_src_path_names.numElements == transfer_dst_path_names.numElements)
+          )
+      {
+         b_transfer = true;
+         b_transfer_done = false;
+         transfer_thread.userdata = this;
+         transfer_thread.create(transfer_thread_entry);
+         ta_scan.reschedule();
+         bt_stop.setEditable(true);
+         Global.PrintFast("Start transfer..");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDeleteSelectedFiles1() {
+      StringArray a <= getSelectedPathNames();
+      if(a.numElements > 0)
+      {
+         dlg_delete <= new Dialog_DeleteImportSamples;
+         dlg_delete.run(a.numElements, this);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDeleteSelectedFiles2() {
+      StringArray a <= getSelectedPathNames();
+      if(a.numElements > 0)
+      {
+         String *pathName;
+         foreach pathName in a
+         {
+            Global.Debug("SampleImportDialog::handleDeleteSelectedFiles2: delete source wav \""+pathName+"\"");
+            if(pathName.toLower() >= ".wav") // paranoia
+            {
+               tkfileutils_rm(pathName);
+            }
+         }
+
+         scanFiles();
+         if(cb_preview.isSelected())
+            handlePreviewSample(getSelectedEntry(), false/*bRandOff*/);
+      }
+   }
+
+   // <method.png>
+   protected method playFromStart() {
+      if(cb_preview.isSelected())
+      {
+         handlePreviewSample(getSelectedEntry(), false/*bRandOff*/);
+         Audio.PlayTempSample(60/*c-5*/, 1.0/*vel*/);
+      }
+   }
+
+   // <method.png>
+   protected method playFromRandomOffset() {
+      if(cb_preview.isSelected())
+      {
+         handlePreviewSample(getSelectedEntry(), true/*bRandOff*/);
+         Audio.PlayTempSample(60/*c-5*/, 1.0/*vel*/);
+      }
+   }
+
+   // <method.png>
+   protected method playFromLastOffset() {
+      if(cb_preview.isSelected())
+      {
+         // // handlePreviewSample(getSelectedEntry(), maybe/*bRandOff*/);
+         Audio.PlayTempSample(60/*c-5*/, 1.0/*vel*/);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            if(null != listener)
+            {
+               listener.consumeAction(Action.New(getProvidedActionAlias(ACTION_CLOSE), this));
+            }
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+         case 's':
+         case 'd':
+            return false;
+      }
+      return Dialog::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx SampleImportDialog::onKey: _k.name="+_k.name+" _k.mod="+_k.mod;
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(bt_stop.isEditable())
+            {
+               handleStop();
+               return true;
+            }
+            else
+            {
+               hide();
+               if(null != listener)
+               {
+                  listener.consumeAction(Action.New(getProvidedActionAlias(ACTION_CLOSE), this));
+               }
+            }
+            return true;
+
+         case 'i':
+            if(_k.modAlt())
+            {
+               hide();
+               return true;
+            }
+            break;
+
+         case 'a':
+            playFromStart();
+            return true;
+
+         case 's':
+            playFromRandomOffset();
+            return true;
+
+         case 'd':
+            playFromLastOffset();
+            return true;
+
+         case 'l':
+            cb_loop.toggleSelectionAction();
+            return true;
+
+         case 'p':
+         case 'f':
+         case 'v':
+            cb_preview.toggleSelectionAction();
+            return true;
+
+         case 'u':
+         case 'c':
+            cb_cue.toggleSelectionAction();
+            return true;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               scanFiles();
+            }
+            else
+            {
+               cb_rand.toggleSelection();
+               Global.Print(cb_rand.isSelected()?"Full start offset randomization":"Cue point start offset randomization");
+               // (note) widget not visible
+               last_previewed_pathname.empty();  // force reload
+               handlePreviewSample(getSelectedEntry(), true/*bRandOff*/);
+            }
+            return true;
+
+         case VKEY_F2:
+         case 'n':
+            handleEditTargetName();
+            return true;
+
+         case VKEY_F5:
+         case 't':
+            handleCopyFiles1();
+            return true;
+
+         case VKEY_DELETE:
+            handleDeleteSelectedFiles1();
+            return true;
+      }
+
+      switch(_k.released)
+      {
+         case 'a':
+         case 's':
+         case 'd':
+            Audio.StopTempSample(false/*bReset*/);
+            return true;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_SCAN == acName)
+      {
+         if(b_transfer)
+         {
+            if(b_transfer_done)
+            {
+               Global.Success("Transfer finished ("+transfer_src_path_names.numElements+" file"+Utils.GetPluralString(transfer_src_path_names.numElements)+")");
+               bt_stop.setEditable(false);
+               b_transfer = false;
+            }
+            else
+               ta_scan.reschedule();
+         }
+         else
+         {
+            if(scanNextFile())
+            {
+               tv_samples.tableModelChanged();
+               ta_scan.reschedule();
+            }
+            else
+            {
+               bt_stop.setEditable(false);
+            }
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(tv_samples):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               hide();
+               handleLoadSample(getSelectedEntry());
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               if(cb_preview.isSelected())
+                  handlePreviewSample(getSelectedEntry(), false/*bRandOff*/);
+            }
+            return true;
+
+         case @(bt_rename):
+            handleEditTargetName();
+            return true;
+
+         case @(bt_transfer):
+            handleCopyFiles1();
+            return true;
+
+         case @(dlg_transfer):
+            if(Dialog_TransferImportSamples.ACTION_COPY == acName)
+            {
+               handleCopyFiles2();
+            }
+            return true;
+
+         case @(bt_delete):
+            handleDeleteSelectedFiles1();
+            return true;
+
+         case @(dlg_delete):
+            if(Dialog_DeleteImportSamples.ACTION_DELETE == acName)
+            {
+               handleDeleteSelectedFiles2();
+            }
+            return true;
+
+         case @(bt_play):
+            if(Button.ACTION_PRESS == acName)
+            {
+               playFromRandomOffset();
+            }
+            else
+            {
+               Audio.StopTempSample(false/*bReset*/);
+            }
+            return true;
+
+         case @(bt_stop):
+            handleStop();
+            return true;
+
+         case @(cb_preview):
+            Global.Print("Preview mode is "+Utils.GetEnableString(cb_preview.isSelected()));
+            if(cb_preview.isSelected())
+            {
+               handlePreviewSample(getSelectedEntry(), false/*bRandOff*/);
+            }
+            else
+            {
+               Global.Print("Sample preview is OFF");
+            }
+            return true;
+
+         case @(cb_cue):
+            Global.Print(cb_cue.isSelected()?"Use cue points from WAV file":"Auto-detect cue points");
+            last_previewed_pathname.empty();  // force reload
+            handlePreviewSample(getSelectedEntry(), false/*bRandOff*/);
+            return true;
+
+         case @(cb_rand):
+            Global.Print(cb_rand.isSelected()?"Full start offset randomization":"Cue point start offset randomization");
+            last_previewed_pathname.empty();  // force reload
+            handlePreviewSample(getSelectedEntry(), true/*bRandOff*/);
+            return true;
+
+         case @(cb_loop):
+            Global.Print("Loop is "+Utils.GetEnableString(cb_loop.isSelected()));
+            Audio.SetEnableTemporarySampleLoop(cb_loop.isSelected());
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

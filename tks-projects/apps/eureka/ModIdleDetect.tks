@@ -1,0 +1,199 @@
+// ----
+// ---- file   : ModIdleDetect.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 31Jul2019
+// ---- changed: 29Jul2023, 19Sep2024, 07Jan2025
+// ----
+// ----
+
+module MModIdleDetect;
+
+use tksdl;
+
+namespace st2;
+
+
+// <class.png>
+class ModIdleDetect : Mod {
+
+   FloatArray tmp_l;
+   FloatArray tmp_r;
+
+   float threshold_db; // dB ///0.00018f;//0.00007f;
+   float threshold_level;/// = 0.00018f;
+
+   int hold_num_millisec;  // grace period before going back to idle
+   int hold_count;
+
+   boolean b_idle;  // 1=skip subsequent effect mods (see Lane::process())
+   boolean b_output_idle;
+
+   float out_avg;
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      addInput("In L");
+      addInput("In R");
+
+      hold_num_millisec = 1000;
+      setThreshold(-70.0f);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "IdleDetect";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModIdleDetect cl <= new ModIdleDetect;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModIdleDetect);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModIdleDetect)
+      {
+         ModIdleDetect o <= _o;
+         hold_num_millisec = o.hold_num_millisec;
+         setThreshold(o.threshold_db);
+         return true;
+      }
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= method setHoldTime(int _ms) {
+      hold_num_millisec = _ms;
+   }
+
+   // <method_set.png>
+   public =replay= method setThreshold(float _db) {
+      threshold_db = _db;
+      threshold_level = Utils.DBToLevel(threshold_db);
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 1;
+
+      // Threshold
+      _ofs.f32 = threshold_db;
+
+      // Hold time / Grace period
+      _ofs.i32 = hold_num_millisec;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Threshold
+            setThreshold(_ifs.f32);
+
+            // Hold time / Grace period
+            hold_num_millisec = _ifs.i32;
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModIdleDetect::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+
+      if(_bPlaying)
+      {
+         tmp_l.visit(inL, 0, _numFrames);
+         tmp_r.visit(inR, 0, _numFrames);
+         local float avg = mathMaxf(tmp_l.absMax, tmp_r.absMax);
+
+         if(avg >= threshold_level)
+         {
+            b_idle = false;
+            hold_count = hold_num_millisec * (Audio.mix_rate / 1000.0f);
+         }
+         else
+         {
+            hold_count -= _numFrames;
+            if(hold_count <= 0)
+            {
+               if(b_output_idle)
+               {
+                  b_idle = true;
+               }
+               else
+               {
+                  hold_count = hold_num_millisec * (Audio.mix_rate / 1000.0f);
+               }
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public method processLaneOutput(local FloatArray _laneOutL, local FloatArray _laneOutR, int _numFrames) {
+      if(!b_idle)
+      {
+         tmp_l.visit(_laneOutL, 0, _numFrames);
+         tmp_r.visit(_laneOutR, 0, _numFrames);
+         out_avg = out_avg + (mathMaxf(tmp_l.absMax, tmp_r.absMax) - out_avg) * 0.1;
+         b_output_idle = (out_avg < threshold_level);
+      }
+   }
+
+}

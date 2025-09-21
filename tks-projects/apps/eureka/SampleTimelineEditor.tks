@@ -1,0 +1,556 @@
+// ----
+// ---- file   : SampleTimelineEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 27Jun2021,
+// ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
+// ----          04Apr2025, 05Apr2025, 09Apr2025, 10Apr2025, 01May2025, 04May2025, 06May2025
+// ----          20May2025, 31May2025, 12Jun2025, 14Jun2025, 15Jun2025, 22Jun2025, 13Sep2025
+// ----          14Sep2025
+// ----
+// ----
+// ----
+
+module MSampleTimelineEditor;
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleTimelineEditorClip : TimelineClip {
+   define int TKMINNIE_MAX_POINTS = 4096;
+
+   SampleTimelineModelClip *model_clip;
+
+   public method initTimelineClip(TimelineTrack _track) {
+      TimelineClip::initTimelineClip(_track);
+
+      setRequiredSizeY(parent_timeline.track_size_y);
+   }
+
+   public method timelineClipGetUID() : int {
+      return model_clip.uid;
+   }
+
+   public method setSampleIdx(int _sampleIdx) {
+      model_clip.setSampleIdx(_sampleIdx);
+   }
+
+   public =replay= virtual timelineClipSetStart(int _start) : int {
+      model_clip.start = _start;
+   }
+
+   public virtual timelineClipGetStart() : int {
+      return model_clip.start;
+   }
+
+   public =replay= virtual timelineClipSetEnd(int _end) : int {
+      model_clip.end = _end;
+   }
+
+   public virtual timelineClipGetEnd() : int {
+      return model_clip.end;
+   }
+
+   public method timelineClipGetMinLen() : int {
+      return 64;
+   }
+
+   public virtual timelineClipGetName() : String {
+      return model_clip.name;
+   }
+
+   public =replay= virtual timelineClipSetEnableMute(boolean _bMute) {
+      model_clip.b_mute = _bMute;
+   }
+
+   public virtual timelineClipGetEnableMute() : boolean {
+      return model_clip.b_mute;
+   }
+
+   public =replay= virtual timelineClipSetOffset(int _offset) {
+      model_clip.offset = _offset;
+   }
+
+   public virtual timelineClipGetOffset() : int {
+      return model_clip.offset;
+   }
+
+   public =replay= method timelineClipCopyExtDataFrom(SampleTimelineEditorClip _o) {
+      SampleTimelineModelClip modelClipO <= _o.model_clip;
+      model_clip.sample_idx     = modelClipO.sample_idx;
+      model_clip.lane_level_mod = modelClipO.lane_level_mod;
+      model_clip.lane_pan_mod   = modelClipO.lane_pan_mod;
+   }
+
+   public virtual timelineClipMerge(SampleTimelineEditorClip _clipR) : boolean {
+      // (note) an actual model would also merge the clip events/sample frames here
+      timelineClipSetEnd(_clipR.timelineClipGetEnd());
+      return true;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         // Select clip
+         PageTrack pgTrack <= root_form.pg_track;
+         SampleTimelineForm f <= pgTrack.f_sampletimeline;
+         SampleTimelineEditor parentEditor <= f.sample_timeline_editor;
+         TimelineData parentData <= parentEditor.data;
+         int dataX = _ev.mouse_rel_x + parent_track.position_x + position_x;
+         int dataY = _ev.mouse_rel_y + parent_track.position_y + position_y;
+         parentData.selectClipFromMouseEvent(dataX, dataY);
+         f.updateTrackWidgets();
+         f.storeEditorState();
+
+         // Edit clip sample
+         Sample sampleOrNull <= current_project.getSampleByIdx(model_clip.sample_idx);
+         SampleTimelineEditorTrack editorTrack <= parent_track;
+         SampleTimelineModelTrack  modelTrack  <= editorTrack.model_track;
+         PageSample.ShowSampleFromTimelineAndSwitchToPage(sampleOrNull,
+                                                          this/*clip*/,
+                                                          modelTrack,
+                                                          true/*bFromTrack*/
+                                                          );
+         return true;
+      }
+      return TimelineClip::onMouseClick(_ev);
+   }
+
+   protected virtual timelineClipRenderWaveform(float _offX, float _offY, float _sizeX, float _sizeY) {
+      // called by TimelineClip::onDraw()
+      Sample sample <= current_project.getSampleByIdx(model_clip.sample_idx);
+      if(null != sample)
+      {
+         FloatArray faPeaks <= sample.getOrCreateCachedSamplePeaks();
+         if(null != faPeaks)
+         {
+            StWaveform wf <= sample.waveform;
+            // // float numFramesPerUnit = parent_sample_timeline.getNumFramesPerUnit(wf.sampleRate);
+            SampleTimelineEditor sampleTimelineEditor <= parent_timeline;
+            SampleTimeline parentSampleTimeline <= sampleTimelineEditor.sample_timeline;
+            float numMsPerUnit = parentSampleTimeline.getNumFramesPerUnit(1000.0f);
+            int clipNumUnits = model_clip.end - model_clip.start;
+            float clipOffsetMs = model_clip.offset * numMsPerUnit;
+            float clipNumMs = (clipNumUnits * numMsPerUnit);
+            float numPixPerMs = _sizeX / clipNumMs;
+            // // trace "xxx clipNumUnits="+clipNumUnits+" clipNumMs="+clipNumMs+" sizeX="+_sizeX+" numMsPerUnit="+numMsPerUnit+" numPixPerMs="+numPixPerMs+" clipOffsetMs="+clipOffsetMs;
+
+            UIRenderer.EnableBlendingKeepAlpha();
+            UIRenderer.SetColorARGB(#60ffffff);
+            float curPeakIdx = clipOffsetMs;
+            float lx = _offX;
+            float syh = (_sizeY *  0.5);
+            float pkScl = STConfig.b_sample_timeline_normalize_waveform_display ? 1.0f : sample.cached_sample_peaks_denorm_factor;
+            float lpk = mathClampf(faPeaks.winLinear(curPeakIdx) * pkScl, -1.0f, 1.0f);
+            int vtxIdx = 0;
+            if(UIRenderer.BeginLinesAA(TKMINNIE_MAX_POINTS * 4))
+            {
+               curPeakIdx += 1.0f;
+               float cx = lx + numPixPerMs;
+               float lyt = lpk * -syh + syh;
+               float lyb = lpk *  syh + syh;
+               // (todo) move to native code
+               loop(int(clipNumMs))
+               {
+                  float cpk = mathClampf(faPeaks.winLinear(curPeakIdx) * pkScl, -1.0f, 1.0f);
+                  float cyt = cpk * -syh + syh;
+                  float cyb = cpk *  syh + syh;
+                  if(TKMINNIE_MAX_POINTS == vtxIdx)
+                  {
+                     UIRenderer.End();
+                     UIRenderer.BeginLinesAA(TKMINNIE_MAX_POINTS * 4);
+                     vtxIdx = 0;
+                  }
+                  UIRenderer.Vertex2f(lx, lyt);
+                  UIRenderer.Vertex2f(lx, cyt);
+                  UIRenderer.Vertex2f(lx, lyb);
+                  UIRenderer.Vertex2f(lx, cyb);
+                  vtxIdx++;
+                  // Next peak sample
+                  lyt = cyt;
+                  lyb = cyb;
+                  lx = cx;
+                  cx += numPixPerMs;
+                  curPeakIdx += 1.0f;
+               }
+               UIRenderer.End();
+            }
+            UIRenderer.DisableBlending();
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class SampleTimelineEditorTrack : TimelineTrack {
+   SampleTimelineModelTrack *model_track;
+
+   public virtual initTimelineTrack(Timeline _timeline) {
+      TimelineTrack::initTimelineTrack(_timeline);
+
+      setRequiredSizeY(parent_timeline.track_size_y);
+   }
+
+   public virtual timelineTrackInitClips() {
+      // create display objects from data model
+      SampleTimelineEditorClip *clipDO;
+      SampleTimelineModelClip *clip;
+      foreach clip in model_track.clips
+      {
+         clipDO <= timelineTrackCreateClip();
+         clipDO.model_clip <= clip;
+      }
+   }
+
+   public virtual timelineTrackHandleClipOrderChanged() {
+      // after moving / adding clips
+      model_track.sortClipsByStartPosition();
+   }
+
+   protected virtual timelineTrackNewClip() : TimelineClip {
+      return new SampleTimelineEditorClip;
+   }
+
+   public virtual timelineTrackDeleteClip(SampleTimelineEditorClip _clip) {
+      model_track.deleteClip(_clip.model_clip);
+   }
+
+   public virtual timelineTrackModelCreateClip(int _start, int _end) : int {
+      // returns uid
+      SampleTimelineModelClip clip <= model_track.newClipInitAutoId(_start, _end);
+      clip.autoGenName();
+      return clip.uid;
+   }
+
+   // // public virtual timelineTrackModelMergeClips(int _uidL, int _uidR) : boolean {
+   // //    return model_track.mergeClips(_uidL, _uidR);
+   // // }
+
+}
+
+
+// <class.png>
+class SampleTimelineEditor : Timeline {
+   SampleTimeline *sample_timeline;
+   SampleTimelineModel *edit_model;
+
+   public virtual initTimeline() {
+      Global.Debug2("SampleTimelineEditor::initTimeline");
+
+      timelineSetDefaultTrackSizeY(32);// * UI.font_scaling);
+      timelineSetZoomTrackSizeY(48);
+      timelineSetEnableCrossTrackClipDrag(true);
+      timelineSetEnableClipOverlap(false);
+
+      Timeline::initTimeline();
+
+      timelineSetNumUnitsPerBeat(SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT);  // ppq = 1024
+      timelineSetNumBeatsPerBar(4);
+      timelineSetNumVisible(16 * SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BAR);
+      timelineSetMinVisible( 1 * SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BAR);
+      timelineSetZoomMinVisible(10 * SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BAR);
+      // // timelineSetMaxVisible(64 * SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BAR);
+      timelineSetCanvasSize(SampleTimelineModel.DEFAULT_CANVAS_SIZE);
+      timelineSetSnapTable([SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT/4/*1/16*/,
+                            SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT/2/*1/8 */,
+                            SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT  /*1/4 */,
+                            SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT*2/*1/2 */,
+                            SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT*4/*1/1 */
+                            ],
+                           ["16th", "8th", "Quarter", "Half", "1/1"]
+                           );
+      timelineSetSnapTableIndex(2);
+
+      // // // if(null != model)
+      // // //    timelineStoreEditorState(model.editor_state);
+   }
+
+   public virtual timelineMarkAsModified() {
+      current_project.markAsModified();
+   }
+
+   public method initializeOrRestoreEditorState() {
+      if(null != edit_model)
+      {
+         TimelineEditorState editorState <= edit_model.editor_state;
+         if(editorState.b_initialized)
+         {
+            Global.Debug2("SampleTimelineEditor::initializeOrRestoreEditorState: RESTORE");
+            timelineRestoreEditorState(editorState);
+         }
+         else
+         {
+            Global.Debug2("SampleTimelineEditor::initializeOrRestoreEditorState: INITIALIZE");
+            editorState.b_initialized = true;
+            timelineStoreEditorState(editorState);
+         }
+      }
+      else
+      {
+         trace "[---] SampleTimelineEditor::initializeOrRestoreEditorState: edit_mode is null";
+      }
+   }
+
+   public virtual timelineGetDefaultNumUnitsPerBeat() : int {
+      return SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT;
+   }
+
+   public =replay= virtual timelineSetNumUnitsPerBeat(int _num) {
+      if(null != edit_model)
+         edit_model.num_units_per_beat = _num;
+      num_units_per_beat = _num;
+   }
+
+   public virtual timelineGetDefaultNumBeatsPerBar() : int {
+      return SampleTimelineModel.DEFAULT_NUM_BEATS_PER_BAR;
+   }
+
+   public =replay= virtual timelineSetNumBeatsPerBar(int _num) {
+      if(null != edit_model)
+         edit_model.num_beats_per_bar = _num;
+      num_beats_per_bar = _num;
+   }
+
+   public virtual timelineSetCanvasSize(int _sz) {
+      if(null != edit_model)
+         edit_model.canvas_size = _sz;
+      canvas_size = _sz;
+   }
+
+   public virtual timelineGetCanvasSize() : int {
+      // // if(null != edit_model)
+      // //    return edit_model.canvas_size;
+      return canvas_size;
+   }
+
+   public virtual timelineGetDefaultCanvasSize() : int {
+      return SampleTimelineModel.DEFAULT_CANVAS_SIZE;
+   }
+
+   protected virtual timelineNewTrack() : TimelineTrack {
+      return new SampleTimelineEditorTrack;
+   }
+
+   public virtual timelineInitTracks() {
+      // create TimelineTrack display objects from data model
+      if(null != edit_model)
+      {
+         num_units_per_beat = edit_model.num_units_per_beat;
+         num_beats_per_bar  = edit_model.num_beats_per_bar;
+         canvas_size        = edit_model.canvas_size;
+
+         SampleTimelineEditorTrack *trackDO;
+         SampleTimelineModelTrack *track;
+         foreach track in edit_model.tracks
+         {
+            // // trace "xxx timelineInitTracks: track="+#(track);
+            trackDO <= timelineCreateTrack();
+            trackDO.model_track <= track;
+         }
+      }
+      else
+      {
+         trace "[~~~] SampleTimelineEditor::timelineInitTracks: edit_model is null";
+         num_units_per_beat = SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT;
+         num_beats_per_bar  = SampleTimelineModel.DEFAULT_NUM_BEATS_PER_BAR;
+         canvas_size        = SampleTimelineModel.DEFAULT_CANVAS_SIZE;
+      }
+   }
+
+   public method timelineMoveClipToTrack(SampleTimelineEditorClip _clip, int _newTrackIdx) : boolean {
+      SampleTimelineEditorTrack newTrackDO <= tracks.get(_newTrackIdx);
+      if(null != newTrackDO)
+      {
+         SampleTimelineModelTrack newTrack <= newTrackDO.model_track;
+         SampleTimelineModelTrack oldTrack <= _clip.parent_track.model_track;
+         SampleTimelineModelClip clip <= oldTrack.unlinkClip(_clip.model_clip);
+         oldTrack.sortClipsByStartPosition();
+         newTrack.addClip(deref clip);
+         newTrack.sortClipsByStartPosition();
+      }
+      return false;
+   }
+
+   public method timelineModelGetEditorState() : TimelineEditorState {
+      return (null != edit_model) ? edit_model.editor_state : null;
+   }
+
+   public virtual timelineModelSaveState(Stream ofs) {
+      if(null != edit_model)
+         edit_model.saveState(ofs);
+   }
+
+   public virtual timelineModelLoadState(Stream ifs) : boolean {
+      if(null != edit_model)
+         return edit_model.loadState(ifs);
+      return false;
+   }
+
+   public virtual timelineModelCopyClipSelectionToClipboard(IntArray _clipUIDs) {
+      if(null != edit_model)
+         edit_model.copyClipSelectionToClipboard(_clipUIDs);
+   }
+
+   public virtual timelineModelGetClipboardWidth() : int {
+      if(null != edit_model)
+         return edit_model.clipboard_w;
+      return 0;
+   }
+
+   public virtual timelineModelGetClipboardHeight() : int {
+      if(null != edit_model)
+         return edit_model.clipboard_h;
+      return 0;
+   }
+
+   public virtual timelineModelHaveClipsInRect(int _units, int _trackIdx, int _numUnits, int _numTracks) : boolean {
+      if(null != edit_model)
+         return edit_model.haveClipsInRect(_units, _trackIdx, _numUnits, _numTracks);
+      return false;
+   }
+
+   public virtual timelineModelCanPasteClipClipboard(int _units, int _trackIdx) : boolean {
+      if(null != edit_model)
+         return edit_model.canPasteClipboard(_units, _trackIdx);
+      return false;
+   }
+
+   public virtual timelineModelPasteClipClipboard(int _units, int _trackIdx) : boolean {
+      if(null != edit_model)
+         return edit_model.pasteClipboard(_units, _trackIdx);
+      return false;
+   }
+
+   public virtual timelineGetPlayPos() : int {
+      if(null != edit_model)
+         return sample_timeline.getPlayPos();
+      return 0;
+   }
+
+   public virtual timelineGetLoopStart() : int {
+      if(null != edit_model)
+         return sample_timeline.loop_start;
+      return 0;
+   }
+
+   public virtual timelineGetLoopEnd() : int {
+      if(null != edit_model)
+         return sample_timeline.loop_start + sample_timeline.loop_len;
+      return 0;
+   }
+
+   public =replay= method timelineSetLoop(int _start, int _len) : int {
+      sample_timeline.loop_start = _start;
+      sample_timeline.loop_len   = _len;
+   }
+
+   public virtual timelineHandleCursorTrackChanged() {
+      // // trace "xxx SampleTimelineEditor::timelineHandleCursorTrackChanged";
+      timelineShowCursorClipDetails();
+
+      PageTrack pgTrack <= root_form.pg_track;
+      if(pgTrack.pageIsCurrent())
+      {
+         SampleTimelineForm f <= pgTrack.f_sampletimeline;
+         f.updateTrackWidgets();
+      }
+   }
+
+   public virtual timelineHandleKbdSelectionChanged() {
+      PageTrack pgTrack <= root_form.pg_track;
+      if(pgTrack.pageIsCurrent())
+      {
+         SampleTimelineForm f <= pgTrack.f_sampletimeline;
+         f.handleTimelineKbdSelectionChanged();
+      }
+   }
+
+   public virtual timelineShowClipDetails(TimelineClip _clipOrNull) {
+      // // trace "xxx timelineShowClipDetails: clip="+#(_clipOrNull);
+      PageTrack pgTrack <= root_form.pg_track;
+      if(pgTrack.pageIsCurrent())
+      {
+         SampleTimelineForm f <= pgTrack.f_sampletimeline;
+         f.showClipDetails(_clipOrNull, true/*bWidgets*/, true/*bSampleView*/);
+      }
+   }
+
+   public virtual timelineGetClipboardNumUnits() : int {
+      return (null != edit_model) ? edit_model.getClipboardNumUnits() : 0;
+   }
+
+   public =replay= method timelinePaste(boolean _bShift) {
+      Timeline::timelinePaste(_bShift);
+   }
+
+   public =replay= virtual timelinePasteOther() : boolean {
+      if(null != edit_model)
+      {
+         if(SampleView.clipboard_modification_time > clipboard_modification_time &&
+            SampleView.HaveClipboard()
+            )
+         {
+            boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+            // paste SampleView clipboard as new clip
+            FloatArray fa <= SampleView.clipboard_samples;
+            int numCh = SampleView.clipboard_num_channels;
+            int numFrames = (fa.numElements / numCh);
+            Global.Debug("SampleTimelineEditor::timelinePasteOther: paste SampleView clipboard ("+numFrames+" frames, "+numCh+" ch)");
+            PageAudio pgAudio <= root_form.pg_audio;
+            float sampleRate = Audio.mix_rate;  // (todo) add SampleView.clipboard_sample_rate ?
+            Sample sample <= pgAudio.handleSamplesCreateNewFromArray(fa, numCh, 0/*chOff*/, numCh/*dstNumCh*/,
+                                                                     sampleRate,
+                                                                     false/*bLoop*/,
+                                                                     false/*bSwitchToSamples*/,
+                                                                     true/*bAudioClip*/,
+                                                                     current_project.bpm/*audioClipBPMOr0*/
+                                                                     );
+            if(null != sample)
+            {
+               Global.Debug2("SampleTimelineEditor::timelinePasteOther: create clip sample: b_audio_clip="+sample.b_audio_clip);
+               // Construct new clip in clipboard
+               float bpm = sample_timeline.getCurrentEditBPM();
+               float numFramesPerBeat = Audio.mix_rate * (60.0f / bpm);
+               float numFramesPerUnit = numFramesPerBeat / edit_model.num_units_per_beat;
+               int numUnits = timelineSnapUnits((numFrames / numFramesPerUnit)+0.5, true/*bAlignRight*/);
+               edit_model.setClipboardToNewSampleClip(current_project.getSampleIdx(sample), numUnits);
+            }
+
+            Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+            return false;  // let timelinePaste() insert the newly created sample clip
+         }
+      }
+      // else: fallback to Timeline::timelinePaste() (paste by ref)
+      return false;
+   }
+
+   public method toggleNormalizeClipWaveformDisplay() {
+      STConfig.b_sample_timeline_normalize_waveform_display = !STConfig.b_sample_timeline_normalize_waveform_display;
+      Global.Print("normalize-waveform-display is "+Utils.GetEnableString(STConfig.b_sample_timeline_normalize_waveform_display));
+      redraw();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx _k.pressed="+_k.name;
+      switch(_k.pressed)
+      {
+         case 'n':
+            toggleNormalizeClipWaveformDisplay();
+            return true;
+      }
+
+      return Timeline::onKey(_k);
+   }
+
+}

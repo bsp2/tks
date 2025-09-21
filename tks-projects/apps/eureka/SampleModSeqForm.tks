@@ -1,0 +1,1573 @@
+// ----
+// ---- file   : SampleModSeqForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 15Feb2020
+// ---- changed: 16Feb2020, 20Feb2020, 02Sep2020, 12Sep2020, 23Sep2020, 28Aug2021, 29Aug2021
+// ----          30Aug2021, 04Sep2021, 21Sep2023
+// ----
+// ----
+// ----
+
+module MSampleModSeqForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleModSeqEnv : Layer {
+
+   define float MIN_SIZE_Y = 100;
+
+   PageSample *pg_sample;
+   SampleModSeqForm *parent_form;
+   StModSeq *modseq;
+   int mseq_idx;  // 0..3
+   int mseq_patch_idx; // 0..15
+
+   protected boolean b_lmb;
+   protected boolean b_rmb;
+
+   protected int   drag_step_idx;
+   protected float drag_step_val;
+   protected float drag_step_y;
+
+   protected int last_played_idx;
+
+
+   // <ui_init.png>
+   public method init(SampleModSeqForm _parentForm) {
+      initLayer();
+      parent_form <= _parentForm;
+      drag_step_idx = -1;
+      last_played_idx = -1;
+   }
+
+   // <ui_show.png>
+   public method showModSeq(StModSeq _modseq, int _mseqIdx, int _mseqPatchIdx) {
+      pg_sample <= root_form.pg_sample;
+      modseq <= _modseq;
+      mseq_idx = _mseqIdx;
+      mseq_patch_idx = _mseqPatchIdx;
+   }
+
+   protected virtual calcSizeY() : float {
+      return MIN_SIZE_Y;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      float w = getSizeX();
+      float h = getSizeY();
+
+      UIRenderer.DrawDefaultBackground(0, 0, w, h);
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, w, h);
+
+      if(null != modseq)
+      {
+         float stepX = (w-4) / STMODSEQ_MAX_STEPS;
+
+         float cx = 2;
+         int stepIdx = 0;
+
+         int c32T = #ffaaaaaa;
+         int c32TP = #ffeeeecc;
+         int c32C = #ff777777;
+         int c32CP = #ff888877;
+         int c32Ctr = #ff444444;
+
+         UIRenderer.DrawLine(2, h*0.5, w-2, h*0.5, c32Ctr);
+
+         last_played_idx = modseq.uiGetLastPlayedIdx();
+
+         loop(STMODSEQ_MAX_STEPS)
+         {
+            float v = modseq.getStepValue(stepIdx);
+            v = mathClampf(v, 0.0f, 1.0f);
+            v *= h-4;
+            if(v < 1)
+               v = 1;
+
+            if(last_played_idx == stepIdx)
+            {
+               UIRenderer.DrawFilledRectangle(cx, h-2 - v - 2, stepX, 2, c32TP);
+               UIRenderer.DrawFilledRectangle(cx, h-2 - v, stepX, v - 1, c32CP);
+            }
+            else
+            {
+               UIRenderer.DrawFilledRectangle(cx, h-2 - v - 1, stepX, 1, c32T);
+               UIRenderer.DrawFilledRectangle(cx, h-2 - v, stepX, v - 1, c32C);
+            }
+
+            // Next step
+            stepIdx++;
+            cx += stepX;
+
+            if(stepIdx >= modseq.numSteps)
+            {
+               c32T = #ff777777;
+               c32C = #ff555555;
+            }
+         }
+      }
+
+   }
+
+   // <method_set.png>
+   protected =replay= method setStepValue(int _idx, float _val) {
+      boolean bSnap = VMOD_LCTRL == UI.GetKeyMod();
+      if(bSnap)
+      {
+         if(abs(modseq.valueScl) <= 1.0f)
+         {
+            // Snap to 1/8 (after scaling)
+            _val = int(8.0 * _val * modseq.valueScl + 0.5f) / (8.0 * modseq.valueScl);
+         }
+         else
+         {
+            // Snap to integer (after scaling)
+            _val = int(_val * modseq.valueScl + 0.5f) / modseq.valueScl;
+         }
+      }
+
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.setStepValue(_idx, _val);
+      }
+
+      parent_form.sample_sci.markParamsAsModified();
+
+      if(bSnap)
+         Global.Print("Snap Step "+(_idx+1)+" to scaled value "+modseq.getEffectiveStepValue(_idx)+"  (seq val = "+_val+")");
+      else
+         Global.Print("Step "+(_idx+1)+" value is "+_val+"  ("+modseq.getEffectiveStepValue(_idx)+" after scl+off)");
+      redraw();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(null != modseq)
+      {
+         if((-1 != drag_step_idx) || (VMOD_LSHIFT == UI.GetKeyMod()))
+            return false;
+
+         b_lmb = _ev.isLeftButtonDown();
+         b_rmb = _ev.isRightButtonDown();
+
+         if(b_lmb || b_rmb)
+         {
+            float w = getSizeX();
+            float h = getSizeY();
+            float stepX = (w-4) / STMODSEQ_MAX_STEPS;
+            int stepIdx = (_ev.mouse_rel_x - 2) / stepX;
+            float y;
+            if(b_rmb)
+               y = 0;
+            else
+               y = mathClampf((h - 2 - _ev.mouse_rel_y) / (h - 4), 0.0f, 1.0f);
+            float stepValOld = modseq.getStepValue(stepIdx);
+            if(y != stepValOld)
+            {
+               setStepValue(stepIdx, y);
+            }
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual isMouseFocusLocked() : boolean {
+      return b_lmb || b_rmb;
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return (VMOD_LSHIFT != UI.GetKeyMod());
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if((null != modseq) && (VMOD_LSHIFT == UI.GetKeyMod()))
+      {
+         float w = getSizeX();
+         float h = getSizeY();
+         float stepX = (w-4) / STMODSEQ_MAX_STEPS;
+         int stepIdx = (_ev.mouse_rel_x - 2) / stepX;
+         drag_step_idx = stepIdx;
+         drag_step_val = modseq.getStepValue(stepIdx);
+         drag_step_y = _ev.mouse_rel_y;
+         // UI.GrabMouse();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      float h = getSizeY();
+      float dy = (drag_step_y - _currentEv.mouse_rel_y) * 0.001f;
+      trace "xxx dy="+dy;
+      setStepValue(drag_step_idx, drag_step_val + dy);
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      drag_step_idx = -1;
+      // UI.UngrabMouse();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      setStepValue(drag_step_idx, drag_step_val);
+      drag_step_idx = -1;
+      // UI.UngrabMouse();
+   }
+
+   // <ui_timer.png>
+   public method onTimer() {
+      if(null != modseq)
+      {
+         int lastPlayedIdx = modseq.uiGetLastPlayedIdx();
+         if(last_played_idx != lastPlayedIdx)
+            redraw();
+      }
+   }
+}
+
+
+// <class.png>
+class SampleModSeqForm : XMLForm, ActionProvider {
+
+   define String ACTION_ENTRY_EDITED;
+
+   define String TA_ENV_PLAY;
+   protected TimerAction *ta_env_play;
+
+   PageSample *pg_sample;
+   StModSeq *modseq;
+   Sample *sample_sci;
+   int mseq_idx;  // 0..3
+   int mseq_patch_idx;  // 0..15
+
+   protected ComboBox    *cm_patch;
+   protected ComboBox    *cm_play;
+   protected ComboBox    *cm_step;
+   protected FloatParam  *fp_num;
+   protected FloatParam  *fp_rep;
+   protected FloatParam  *fp_speed;
+   protected CheckBox    *cb_tempo;
+   protected FloatParam  *fp_scale;
+   protected FloatParam  *fp_offset;
+   protected FloatParam  *fp_slew;
+   protected CheckBox    *cb_global;
+   protected CheckBox    *cb_reset;
+   protected CheckBox    *cb_oneshot;
+   protected CheckBox    *cb_pulse;
+
+   SampleModSeqEnv *env;
+
+   protected PopupMenu *pm_context;
+
+   static StModSeq *modseq_clipboard;
+
+   static IntArray *[] *chord_notes;
+   static StringArray chord_names;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("SampleModSeqForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      env.init(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      ta_env_play <= TimerAction.New(TA_ENV_PLAY, this, 50);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus() == true
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ENTRY_EDITED];
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      sample_sci.markParamsAsModified();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_ENTRY_EDITED), this));
+   }
+
+   // <ui_show.png>
+   public method showModSeq(StModSeq _modseq, int _mseqIdx, int _mseqPatchIdx, Sample _sampleSCI) {
+
+      pg_sample <= root_form.pg_sample;
+
+      // (note) modseq is DefaultModSeqPatch[mseqIdx]
+      modseq <= _modseq;
+      mseq_idx = _mseqIdx;
+      mseq_patch_idx = _mseqPatchIdx;
+      sample_sci <= _sampleSCI;
+
+      StSample s <= pg_sample.getFirstSelectedZone();
+      boolean bHaveZone = (null != s);
+
+      boolean bEditable = (null != modseq);
+
+      cm_patch  .setEditable(bHaveZone);
+      cm_play   .setEditable(bEditable);
+      cm_step   .setEditable(bEditable);
+      fp_num    .setEditable(bEditable);
+      fp_rep    .setEditable(bEditable);
+      fp_speed  .setEditable(bEditable);
+      cb_tempo  .setEditable(bEditable);
+      fp_scale  .setEditable(bEditable);
+      fp_offset .setEditable(bEditable);
+      fp_slew   .setEditable(bEditable);
+      cb_global .setEditable(bEditable);
+      cb_reset  .setEditable(bEditable);
+      cb_oneshot.setEditable(bEditable);
+      cb_pulse  .setEditable(bEditable);
+
+      if(bHaveZone)
+         cm_patch.setSelectedOption(mseq_patch_idx);
+      else
+         cm_patch.setSelectedOption(-1);
+
+      if(bEditable)
+      {
+         cm_play   .setSelectedOption(modseq.playMode);
+         cm_step   .setSelectedOption(modseq.stepMode);
+         fp_num    .setValue(modseq.numSteps);
+         fp_rep    .setValue(modseq.repeatOffset);
+         fp_speed  .setValue(modseq.speed);
+         cb_tempo  .setSelected(modseq.enableTempoSync);
+         fp_scale  .setValue(modseq.valueScl);
+         fp_offset .setValue(modseq.valueOff);
+         fp_slew   .setValue(modseq.slewAmt);
+         cb_global .setSelected(modseq.enableGlobal);
+         cb_reset  .setSelected(modseq.enableReset);
+         cb_oneshot.setSelected(modseq.enableOneShot);
+         cb_pulse  .setSelected(modseq.enablePulse);
+      }
+      else
+      {
+         cm_play.setSelectedOption(-1);
+         cm_step.setSelectedOption(-1);
+         fp_num    .setValue(0);
+         fp_rep    .setValue(0);
+         fp_speed  .setValue(0);
+         cb_tempo  .setSelected(false);
+         fp_scale  .setValue(0);
+         fp_offset .setValue(0);
+         fp_slew   .setValue(0);
+         cb_global .setSelected(false);
+         cb_reset  .setSelected(false);
+         cb_oneshot.setSelected(false);
+         cb_pulse  .setSelected(false);
+      }
+
+      env.showModSeq(modseq, mseq_idx, mseq_patch_idx);
+
+      redraw();
+   }
+
+   // <method.png>
+   protected method updateWidgets() {
+      showModSeq(modseq, mseq_idx, mseq_patch_idx, sample_sci);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           cm_patch,
+                           cm_play,
+                           cm_step,
+                           fp_num,
+                           fp_rep,
+                           fp_speed,
+                           cb_tempo,
+                           fp_scale,
+                           fp_offset,
+                           fp_slew,
+                           cb_global,
+                           cb_reset,
+                           cb_oneshot,
+                           cb_pulse,
+
+                           env,
+                         ]
+                        );
+   }
+
+   // <ui.png>
+   public method onEnterForm() {
+      ta_env_play.schedule();
+   }
+
+   // <ui.png>
+   public method onLeaveForm() {
+      ta_env_play.cancel();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatchChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      local StSample *firstZone;
+      local StModSeq *firstModSeq;
+      mseq_patch_idx = cm_patch.getSelectedOption();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         s.setDefaultModSeqPatch(mseq_idx, mseq_patch_idx);
+         if(null == firstModSeq)
+         {
+            firstZone   <= s;
+            firstModSeq <= mseq;
+         }
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Patch is "+cm_patch.getSelectedOptionName());
+
+      if(null != firstZone)
+      {
+         showModSeq(firstModSeq, mseq_idx, mseq_patch_idx, sample_sci);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePlayModeChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      int m = cm_play.getSelectedOption();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.playMode = m;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Play Mode is "+cm_play.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleStepModeChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      int m = cm_step.getSelectedOption();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.stepMode = m;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Step Mode is "+cm_step.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNumStepsChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      int num = fp_num.getFloatValue();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.numSteps = num;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Length is "+num);
+      env.redraw();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRepeatOffsetChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      int off = fp_rep.getFloatValue();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.repeatOffset = off;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq RepeatOffset is "+off);
+      env.redraw();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSpeedChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      float spd = fp_speed.getFloatValue();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.speed = spd;
+      }
+
+      provideEdited();
+
+      Float ms = spd;
+      if(cb_tempo.isSelected())
+      {
+         // see StSamplePlayer::setTempo()
+         float audioTickScl = ((1000.0f * 60.0f) / (current_project.bpm * current_project.ppq));
+         ms = mathClampf(spd * audioTickScl, 1.0f, 1000.0f);
+      }
+      ms = 1000.0 / ms;
+      Global.Print("ModSeq Speed is "+spd+" ("+ms.printf("%4.2f")+" Hz)");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTempoSyncChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_tempo.isSelected();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.enableTempoSync = bEnable;
+      }
+      provideEdited();
+      Global.Print("ModSeq Tempo Sync is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleScaleChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      float scl = fp_scale.getFloatValue();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.valueScl = scl;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Value Scale is "+scl);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOffsetChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      float off = fp_offset.getFloatValue();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.valueOff = off;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Value Offset is "+off);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSlewChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      Float amt = fp_slew.getFloatValue();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.slewAmt = amt;
+      }
+
+      provideEdited();
+      Global.Print("ModSeq Slew Amount is "+((amt * 100).printf("%3.2f"))+"%");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleGlobalChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_global.isSelected();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.enableGlobal = bEnable;
+      }
+      provideEdited();
+      Global.Print("ModSeq Global Mode is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleResetChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_reset.isSelected();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.enableReset = bEnable;
+      }
+      provideEdited();
+      Global.Print("ModSeq Reset is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOneshotChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_oneshot.isSelected();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.enableOneShot = bEnable;
+      }
+      provideEdited();
+      Global.Print("ModSeq One-Shot Mode is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePulseChanged() {
+      local PointerArray zones <= pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_pulse.isSelected();
+      foreach s in zones
+      {
+         StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+         mseq.enablePulse = bEnable;
+      }
+      provideEdited();
+      Global.Print("ModSeq Pulse Mode is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <method.png>
+   protected method copyToClipboard() {
+      if(null == modseq_clipboard)
+         modseq_clipboard <= new StModSeq;
+      Samples.CopySampleModSeq(modseq_clipboard, modseq);
+   }
+
+   // <ui_handle.png>
+   protected method handleCut() {
+      if(null != modseq)
+      {
+         copyToClipboard();
+
+         handleReset(true/*bQuiet*/);
+
+         local PointerArray zones <= pg_sample.getSelectedZones();
+           Global.Print("Cut Mod Sequencer "+(mseq_idx+1)+" to clipboard (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      copyToClipboard();
+
+      Global.Print("Copy Mod Sequencer "+(mseq_idx+1)+" to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            Samples.CopySampleModSeq(mseq, modseq_clipboard);
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+         Global.Print("Paste Mod Sequencer "+(mseq_idx+1)+" from clipboard (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleReset(boolean _bQuiet) {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            mseq.reset();
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         if(!_bQuiet)
+            Global.Print("Reset Mod Sequencer "+(mseq_idx+1)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFlipX() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         local FloatArray fa;
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            if(mseq.numSteps > 1)
+            {
+               fa.empty();
+               int stepIdx = 0;
+               loop(mseq.numSteps)
+                  fa.add(mseq.getStepValue(stepIdx++));
+               int stepIdxD = 0;
+               loop(mseq.numSteps)
+                  mseq.setStepValue(stepIdxD++, fa.get(--stepIdx));
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("X-Flip Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFlipY() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            loop(mseq.numSteps)
+            {
+               mseq.setStepValue(stepIdx, 1.0 - mseq.getStepValue(stepIdx));
+               stepIdx++;
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Y-Flip Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRandVal() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            loop(mseq.numSteps)
+            {
+               mseq.setStepValue(stepIdx++, rand(1.0));
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Randomize Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRandOrder() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         local IntArray ia;
+         local FloatArray fa;
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            if(mseq.numSteps > 1)
+            {
+               ia.identity(mseq.numSteps);
+
+               int stepIdx = 0;
+               fa.empty();
+               loop(mseq.numSteps)
+                  fa.add(mseq.getStepValue(stepIdx++));
+
+               stepIdx = 0;
+               loop(mseq.numSteps)
+               {
+                  int r = rand(ia.numElements);
+                  mseq.setStepValue(stepIdx++, fa.get(ia.get(r)));
+                  ia.delete(r);
+               }
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Randomize Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRotateSteps(int _dir) {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx;
+            float t;
+
+            if(mseq.numSteps > 1)
+            {
+               if(_dir < 0)
+               {
+                  // Rotate left
+                  t = mseq.getStepValue(0);
+                  stepIdx = 1;
+                  loop(mseq.numSteps - 1)
+                  {
+                     mseq.setStepValue(stepIdx-1, mseq.getStepValue(stepIdx));
+                     stepIdx++;
+                  }
+                  mseq.setStepValue(mseq.numSteps - 1, t);
+               }
+               else
+               {
+                  // Rotate right
+                  t = mseq.getStepValue(mseq.numSteps - 1);
+                  stepIdx = mseq.numSteps - 1;
+                  loop(mseq.numSteps)
+                  {
+                     mseq.setStepValue(stepIdx, mseq.getStepValue(stepIdx - 1));
+                     stepIdx--;
+                  }
+                  mseq.setStepValue(0, t);
+               }
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Rotate Mod Sequencer "+(mseq_idx+1)+" Pattern "+((_dir>0)?"Right":"Left")+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLFOSin() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            float a = 0.0f;
+            float w = 2PI / mseq.numSteps;
+            loop(mseq.numSteps)
+            {
+               mseq.setStepValue(stepIdx++, sin(a)*0.5f+0.5f);
+               a += w;
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Load LFO Sine preset into Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLFOTri() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            float a = 0.0f;
+            float w = 1.0 / mseq.numSteps;
+            loop(mseq.numSteps)
+            {
+               float f = (a < 0.5f) ? (-1.0 + a * 4.0f) : (1.0 - (a - 0.5f)*4);
+               mseq.setStepValue(stepIdx++, f*0.5f+0.5f);
+               a += w;
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Load LFO Triangle preset into Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLFOSaw() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            float a = 1.0f;
+            float w = 2.0 / mseq.numSteps;
+            loop(mseq.numSteps)
+            {
+               mseq.setStepValue(stepIdx++, a*0.5f+0.5f);
+               a -= w;
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Load LFO Sawtooth preset into Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLFOPul() {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            float a = 0.0f;
+            float w = 1.0 / mseq.numSteps;
+            loop(mseq.numSteps)
+            {
+               float f = (a < 0.5f) ? 1.0f : 0.0f;
+               mseq.setStepValue(stepIdx++, f);
+               a += w;
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Load LFO Pulse preset into Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLoadChordPreset(int _chordIdx) {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         IntArray chordNotes <= chord_notes.get(_chordIdx);
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            mseq.valueScl = 24;
+            mseq.valueOff = -12;
+            mseq.numSteps = chordNotes.numElements - 1;
+            int stepIdx = 0;
+            int tblIdx = 1;  // skip first element (base note idx)
+            loop(mseq.numSteps)
+            {
+               Global.Debug("SampleModSeqForm::handleLoadChordPreset: note["+stepIdx+"] = "+chordNotes.get(tblIdx));
+               float f = chordNotes.get(tblIdx++) * (1.0 / 24) + 0.5f;
+               mseq.setStepValue(stepIdx++, f);
+            }
+            loop(16 - stepIdx)
+               mseq.setStepValue(stepIdx++, 0.0f);
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Load Chord preset \""+chord_names.get(_chordIdx)+"\" into Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFilterValues(float _amt) {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            if(mseq.numSteps > 1)
+            {
+               float lastVal = mseq.getStepValue(mseq.numSteps - 1);
+               int stepIdx = 0;
+               loop(mseq.numSteps)
+               {
+                  float t = mathLerpf(lastVal, mseq.getStepValue(stepIdx), _amt);
+                  mseq.setStepValue(stepIdx++, mathClampf(t, 0.0f, 1.0f));
+                  lastVal = t;
+               }
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Filter Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLogExpValues(float _c) {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            loop(mseq.numSteps)
+            {
+               float t = mathLogLinExpf(mseq.getStepValue(stepIdx), _c);
+               mseq.setStepValue(stepIdx++, t);
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print(((_c<0)?"Log":"Exp")+"-ify Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLogExpValuesBipolar(float _c) {
+      if(null != modseq)
+      {
+         local PointerArray zones <= pg_sample.getSelectedZones();
+         StSample *s;
+         foreach s in zones
+         {
+            StModSeq mseq <= s.getOrCreateModSeqByIndexAndPatch(mseq_idx, mseq_patch_idx);
+            int stepIdx = 0;
+            loop(mseq.numSteps)
+            {
+               float t = mseq.getStepValue(stepIdx);
+               if(t >= 0.5f)
+                  t = 0.5f + 0.5f * mathLogLinExpf((t-0.5f)*2.0f, _c);
+               else
+                  t = 0.5f + -0.5f * mathLogLinExpf((t-0.5f)*-2.0f, _c);
+               mseq.setStepValue(stepIdx++, t);
+            }
+         }
+
+         updateWidgets();
+         redraw();
+         provideEdited();
+
+         Global.Print("Bipolar "+((_c<0)?"Log":"Exp")+"-ify Mod Sequencer "+(mseq_idx+1)+" Pattern (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != modseq)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+         PopupMenu *spm;
+
+         pm.addSeparator();
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Preset (LFO)", deref spm);
+         pmb <= spm.addDefaultButton("Sine",     "lfo_sin");
+         pmb <= spm.addDefaultButton("Triangle", "lfo_tri");
+         pmb <= spm.addDefaultButton("Saw",      "lfo_saw");
+         pmb <= spm.addDefaultButton("Pulse",    "lfo_pul");
+
+         spm <= PopupMenu.New(pm);
+         spm.setNumItemsPerColumn(20);
+         pmb <= pm.addMenu("Preset (Chord)", deref spm);
+
+         String *chordName;
+         int chordIdx;
+         if(null == chord_notes)
+         {
+            chord_notes <= new PointerArray;
+            IntArray *chordNotes;
+            chordIdx = 0;
+            foreach chordNotes in Chord.chord_tbl
+            {
+               chordName <= Chord.chord_names_short.get(chordIdx);
+               if(0 == chordNotes.get(0))  // skip inverted chords
+               {
+                  boolean bAdd = true;
+                  int chordNoteIdx = 1;
+                  loop(chordNotes.numElements - 1)
+                  {
+                     if(chordNotes.get(chordNoteIdx++) > 12)
+                     {
+                        bAdd = false;
+                        break;
+                     }
+                  }
+                  if(bAdd)
+                  {
+                     chord_notes.add(chordNotes);
+                     chord_names.add(chordName);
+                  }
+               }
+
+               // Next chord
+               chordIdx++;
+            }
+         }
+
+         chordIdx = 0;
+         foreach chordName in chord_names
+         {
+            pmb <= spm.addDefaultButton(chordName, "chord_"+chordIdx);
+
+            // Next chord
+            chordIdx++;
+         }
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Reset", "reset");
+         pmb.setActive(null != modseq);
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Rotate Left", "rot_left");
+         pmb.setAccelerators(null, "i");
+         pmb <= pm.addDefaultButton("Rotate Right", "rot_right");
+         pmb.setAccelerators(null, "o");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Flip X", "flip_x");
+         pmb.setAccelerators(null, "f");
+         pmb <= pm.addDefaultButton("Flip Y", "flip_y");
+         pmb.setAccelerators(null, "lshift-f");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Cut", "cut");
+         pmb.setAccelerators(null, "x");
+         pmb.setActive(null != modseq);
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setAccelerators(null, "c");
+         pmb.setActive(null != modseq);
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setAccelerators(null, "v");
+         pmb.setActive((null != modseq_clipboard) && (null != modseq));
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Randomize Value Order", "rand_order");
+         pmb.setAccelerators(null, "r");
+         pmb <= pm.addDefaultButton("Randomize Values", "rand_val");
+         pmb.setAccelerators(null, "lshift-r");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Smoothen Values", "filter_val");
+         pmb.setAccelerators(null, "s");
+         pmb <= pm.addDefaultButton("Boost Values", "boost_val");
+         pmb.setAccelerators(null, "lshift-s");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Exp-ify Values", "exp_val");
+         pmb.setAccelerators(null, "e");
+         pmb <= pm.addDefaultButton("Log-ify Values", "log_val");
+         pmb.setAccelerators(null, "lshift-e");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Exp-ify Values (Bipolar)", "exp_val_bipolar");
+         pmb.setAccelerators(null, "d");
+         pmb <= pm.addDefaultButton("Log-ify Values (Bipolar)", "log_val_bipolar");
+         pmb.setAccelerators(null, "lshift-d");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, -100);
+
+         Global.Print("Show ModSeq context menu.");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case 'x':
+            if(0 == _k.mod)
+            {
+               handleCut();
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(0 == _k.mod)
+            {
+               handleCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(0 == _k.mod)
+            {
+               handlePaste();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modShift())
+            {
+               handleFlipY();
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               handleFlipX();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modShift())
+            {
+               handleRandVal();
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               handleRandOrder();
+               return true;
+            }
+            break;
+
+         case 'i':
+            if(0 == _k.mod)
+            {
+               handleRotateSteps(-1);
+               return true;
+            }
+            break;
+
+         case 'o':
+            if(0 == _k.mod)
+            {
+               handleRotateSteps(1);
+               return true;
+            }
+            break;
+
+         case 's':
+            if(_k.modShift())
+            {
+               handleFilterValues(1.1);
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               handleFilterValues(0.9);
+               return true;
+            }
+            break;
+
+         case 'e':
+            if(_k.modShift())
+            {
+               // Log
+               handleLogExpValues(-0.1);
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               // Exp
+               handleLogExpValues(0.1);
+               return true;
+            }
+            break;
+
+         case 'd':
+            if(_k.modShift())
+            {
+               // Log
+               handleLogExpValuesBipolar(-0.1);
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               // Exp
+               handleLogExpValuesBipolar(0.1);
+               return true;
+            }
+            break;
+      }
+
+      return XMLForm::onKey(_k);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      grabKeyboardFocus();
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(TA_ENV_PLAY == acName)
+      {
+         env.onTimer();
+         ta_env_play.schedule();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("SampleModSeqForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               default:
+                  if(acName <= "chord_")
+                  {
+                     handleLoadChordPreset(acName.replace("chord_", ""));
+                     UI.SetKeyboardFocus(this);
+                     return true;
+                  }
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "cut":
+                  handleCut();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "reset":
+                  handleReset(false/*bQuiet*/);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "flip_x":
+                  handleFlipX();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "flip_y":
+                  handleFlipY();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "rand_val":
+                  handleRandVal();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "rand_order":
+                  handleRandOrder();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "filter_val":
+                  handleFilterValues(0.9f);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "boost_val":
+                  handleFilterValues(1.1f);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "log_val":
+                  handleLogExpValues(-0.1f);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "exp_val":
+                  handleLogExpValues(0.1f);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "log_val_bipolar":
+                  handleLogExpValuesBipolar(-0.1f);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "exp_val_bipolar":
+                  handleLogExpValuesBipolar(0.1f);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "rot_left":
+                  handleRotateSteps(-1);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "rot_right":
+                  handleRotateSteps(1);
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "lfo_sin":
+                  handleLFOSin();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "lfo_tri":
+                  handleLFOTri();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "lfo_saw":
+                  handleLFOSaw();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "lfo_pul":
+                  handleLFOPul();
+                  UI.SetKeyboardFocus(this);
+                  return true;
+            }
+            return true;
+
+         case @(cm_patch):
+            handlePatchChanged();
+            return true;
+
+         case @(cm_play):
+            handlePlayModeChanged();
+            return true;
+
+         case @(cm_step):
+            handleStepModeChanged();
+            return true;
+
+         case @(fp_num):
+            handleNumStepsChanged();
+            return true;
+
+         case @(fp_rep):
+            handleRepeatOffsetChanged();
+            return true;
+
+         case @(fp_speed):
+            handleSpeedChanged();
+            return true;
+
+         case @(cb_tempo):
+            handleTempoSyncChanged();
+            return true;
+
+         case @(fp_scale):
+            handleScaleChanged();
+            return true;
+
+         case @(fp_offset):
+            handleOffsetChanged();
+            return true;
+
+         case @(fp_slew):
+            handleSlewChanged();
+            return true;
+
+         case @(cb_global):
+            handleGlobalChanged();
+            return true;
+
+         case @(cb_reset):
+            handleResetChanged();
+            return true;
+
+         case @(cb_oneshot):
+            handleOneshotChanged();
+            return true;
+
+         case @(cb_pulse):
+            handlePulseChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

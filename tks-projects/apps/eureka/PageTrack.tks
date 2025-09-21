@@ -1,0 +1,2659 @@
+// ----
+// ---- file   : PageTrack.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 10Feb2018
+// ---- changed: 12Feb2018, 13Feb2018, 17Feb2018, 25Feb2018, 26Feb2018, 27Feb2018, 28Feb2018
+// ----          01Mar2018, 02Mar2018, 05Mar2018, 07Mar2018, 16Mar2018, 17Mar2018, 18Mar2018
+// ----          30Mar2018, 20May2018, 21May2018, 30May2018, 23Jun2018, 29Jun2018, 21Jul2018
+// ----          08Dec2018, 09Dec2018, 13Dec2018, 21Dec2018, 05Jan2019, 17Jan2019, 31Mar2019
+// ----          17May2019, 13Jul2019, 30Jul2019, 05Aug2019, 26Aug2019, 26Aug2019, 17Nov2019
+// ----          21May2020, 29Oct2020, 31Oct2020, 04Feb2021, 06Feb2021, 25Jul2021, 30Oct2021
+// ----          27Dec2021, 05Feb2022, 13Feb2022, 01Jul2022, 10Jul2022, 20Nov2022, 04Mar2023
+// ----          21Apr2023, 14Jun2023, 29Jul2023, 16Aug2023, 17Sep2023, 21Sep2023, 02Oct2023
+// ----          04Nov2023, 09Nov2023, 11Nov2023, 02Dec2023, 04Jan2024, 22Mar2024, 03Jul2024
+// ----          05Jul2024, 06Jul2024, 07Jul2024, 12Aug2024, 13Sep2024, 15Sep2024, 20Sep2024
+// ----          21Sep2024, 22Sep2024, 24Sep2024, 04Oct2024, 05Oct2024, 22Dec2024, 29Dec2024
+// ----          30Dec2024, 01Jan2025, 04Apr2025, 06Apr2025, 10Apr2025, 01May2025, 10Jun2025
+// ----          13Jun2025, 14Jun2025, 09Sep2025
+// ----
+// ----
+// ----
+
+module MPageTrack;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageTrack : Page {
+
+   define int LIST_TYPE_VSTI            = 0;
+   define int LIST_TYPE_VSTFX           = 1;
+   define int LIST_TYPE_PATCHVARIATIONS = 2;
+   define int LIST_TYPE_MODMATRIX       = 3;
+   define int LIST_TYPE_STFX            = 4;
+   define int LIST_TYPE_CLAP            = 5;
+
+   define int C32_LAST_SELECTED_MOD = #34efff00;
+
+   namespace Track *track;
+
+   protected ComboBox *cm_dev;
+   protected ComboBox *cm_ch;
+
+   protected TextField *tf_track_name;
+   protected TextField *tf_patch_name;
+
+   protected LoadIndicator *load_indicator;
+   protected Button        *bt_load;
+   protected CheckBox      *cb_preview;
+   protected CheckBox      *cb_currentvar;
+   protected Buffer        *preview_undo_buffer;
+   protected Button        *bt_saveas;
+
+   protected ComboBox   *cm_mode;
+   protected FloatParam *fp_multi_num;
+   protected FloatParam *fp_multi_off;
+   protected FloatParam *fp_multi_master_ch;
+   protected CheckBox   *cb_lane_fade;
+   protected FloatParam *fp_lane_fade_cc;       // (todo) replace by ComboBox
+   protected CheckBox   *cb_lane_fade_ctl_rel;
+   protected FloatParam *fp_lane_fade_slew_up;
+   protected FloatParam *fp_lane_fade_slew_down;
+
+   define String TA_INPUT_AUTO;
+   protected TimerAction *ta_input_auto;
+   protected ComboBox    *cm_input;
+   protected Button      *bt_input_auto;
+   protected FloatParam  *fp_multi_input;
+   protected CheckBox    *cb_stereo_input;
+   protected CheckBox    *cb_inputtosc;
+
+   protected CheckBox   *cb_close_autosync;
+   protected CheckBox   *cb_fx;
+   protected CheckBox   *cb_proc;
+   protected Button     *bt_parent_midi;
+   protected ComboBox   *cm_parent_dev;
+   protected ComboBox   *cm_parent_ch;
+   protected Button     *bt_mute;
+   protected Button     *bt_solo;
+
+   protected LayerSwitch        *ls_samplepad;
+   public    SamplePadForm      *f_samplepad;
+   public    SampleTimelineForm *f_sampletimeline;
+
+   protected LayerSwitch    *ls_mod;
+   protected ScrollPane     *sp_modgrid;
+   public    ModGrid        *modgrid;
+   protected ModMatrix      *modmatrix;
+   protected Button         *bt_toggle_browser;
+   protected LayerSwitch    *ls_browser;
+   protected ComboBox       *cm_list_type;
+   protected LayerSwitch    *ls_list;
+   public    PluginListVST2 *pluginlist_vst2;
+   public    PluginListSTFX *pluginlist_stfx;
+   public    PluginListCLAP *pluginlist_clap;
+
+   protected Button            *bt_patch_variation_add;
+   protected Button            *bt_patch_variation_remove;
+   protected Button            *bt_patch_variation_moveup;
+   protected Button            *bt_patch_variation_movedown;
+   public    PatchVariationsTM *tm_patch_variations;
+   public    TableView         *tv_patch_variations;
+
+   public    InstancesTM *tm_instances;
+   public    TableView   *tv_instances;
+
+   protected Button *bt_audio_tracks;
+   protected Button *bt_modmatrix_or_plugins;
+   protected Button *bt_instr_tracks;
+   protected Button *bt_samples;
+
+   protected PopupMenu *pm_context;
+
+   static FileNameDialog dlg_patch_filename;
+
+   define int DLG_FILENAME_MODE_LOAD = 1;
+   define int DLG_FILENAME_MODE_SAVE = 2;
+   int dlg_filename_mode;
+
+   protected static Dialog_OverwritePatch *dlg_overwrite_patch;
+   protected static TextInputDialog       *dlg_clone_samples;
+   protected static TextInputDialog       *dlg_merge_samples;
+
+   static boolean b_preview_revert;
+
+   static Mod *last_selected_mod;  // ref only, for preselecting instance in modmatrix instance list (set via mouseover on grid button)
+   static int last_selected_lane_idx;  // -1 if unknown
+
+   static boolean b_experimental_keys;  // true=allow lshift-1..9 (resampler)
+
+   boolean b_ignore_next_key_escape;
+
+   boolean b_select_default_pluginlist;
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageTrack.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(!f_samplepad.initSamplePadForm())
+         return false;
+
+      if(!f_sampletimeline.initSampleTimelineForm())
+         return false;
+
+      if(!modgrid.initModGrid())
+         return false;
+
+      if(!pluginlist_vst2.init())
+         return false;
+
+      if(!pluginlist_stfx.init())
+         return false;
+
+      if(!pluginlist_clap.init())
+         return false;
+
+      if(!modmatrix.init())
+         return false;
+
+      tm_patch_variations <= new PatchVariationsTM;
+      tm_patch_variations.initTableModel();
+      tv_patch_variations.setTableModel(tm_patch_variations);
+      tv_patch_variations.tableModelChanged();
+
+      tm_instances <= new InstancesTM;
+      tm_instances.initTableModel();
+      tv_instances.setTableModel(tm_instances);
+      tv_instances.tableModelChanged();
+
+      dlg_patch_filename.init("big5");
+
+      cb_preview.setSelected(STConfig.b_patch_preview);
+
+      cm_dev.setOptions(MIDI.midi_input_device_short_names);
+      // // cm_dev.setOptionsLong(MIDI.midi_input_device_long_names);
+
+      local StringArray optParentDev = MIDI.midi_input_device_short_names;
+      optParentDev.insert(0, "-");
+      cm_parent_dev.setOptions(optParentDev);
+
+      b_select_default_pluginlist = true;
+
+      ta_input_auto <= TimerAction.New(TA_INPUT_AUTO, this, 500);
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public method pageGetParent() : int {
+      return RootForm.PAGE_PROJECT;
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      Global.Debug2("PageTrack::pageFocusDefault: track="+#(track));
+
+      if(null != track && track.isTimelineMode())
+      {
+         UI.SetKeyboardFocus(null);
+         f_sampletimeline.refocusDefault();
+         return true;
+      }
+
+      if(null != track && !track.b_ui_browser_visible)
+      {
+         UI.SetKeyboardFocus(null);
+         UI.SetKeyboardFocus(modgrid);
+         return;
+      }
+
+      switch(cm_list_type.getSelectedOption())
+      {
+         default:
+         case LIST_TYPE_VSTI:
+         case LIST_TYPE_VSTFX:
+            UI.SetKeyboardFocus(null);
+            UI.SetKeyboardFocus(pluginlist_vst2.tv_plugins);
+            break;
+
+         case LIST_TYPE_PATCHVARIATIONS:
+            UI.SetKeyboardFocus(null);
+            UI.SetKeyboardFocus(tv_patch_variations);
+            break;
+
+         case LIST_TYPE_MODMATRIX:
+            UI.SetKeyboardFocus(null);
+            UI.SetKeyboardFocus(tv_instances);
+            break;
+
+         case LIST_TYPE_STFX:
+            UI.SetKeyboardFocus(null);
+            UI.SetKeyboardFocus(pluginlist_stfx.tv_plugins);
+            break;
+
+         case LIST_TYPE_CLAP:
+            UI.SetKeyboardFocus(null);
+            UI.SetKeyboardFocus(pluginlist_clap.tv_plugins);
+            break;
+      }
+
+   }
+
+   // <ui_kbd.png>
+   public virtual pageForceKbdFocusSelMode() {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      if(0 == ls_mod.getCurrentChildNr())
+      {
+         if(track.isDrumMode())
+            f_samplepad.addTabCycleOverrides(_retLayers);
+         else if(track.isTimelineMode())
+            f_sampletimeline.addTabCycleOverrides(_retLayers);
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      pluginlist_vst2.resetFilter(true/*bAllowDefault*/);
+      pluginlist_stfx.resetFilter(true/*bAllowDefault*/);
+      pluginlist_clap.resetFilter(true/*bAllowDefault*/);
+
+      last_selected_mod <= null;
+      last_selected_lane_idx = -1;
+
+      if(b_select_default_pluginlist)
+      {
+         b_select_default_pluginlist = false;
+         pluginlist_vst2.updateTable();
+         pluginlist_stfx.updateTable();
+         pluginlist_clap.updateTable();
+         selectDefaultPluginListType(false/*bAction*/);
+      }
+
+   }
+
+   // <method.png>
+   protected method lazyStoreTimelineEditorState() {
+      if(null != track)
+      {
+         if(track.isTimelineMode())
+         {
+            f_sampletimeline.storeEditorState();
+         }
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      lazyStoreTimelineEditorState();
+
+      Page::pageLeave();
+
+      ta_input_auto.cancel();
+
+      f_samplepad.leaveForm();
+      f_sampletimeline.leaveForm();
+
+      modmatrix.leaveInstance();
+
+      modgrid.leaveTrack();
+
+      if(null != pm_context)
+         pm_context.hide();
+
+      if(STConfig.b_auto_hide_plugin_editors)
+         current_project.hideAllPluginEditors(null/*except*/);
+
+      tm_patch_variations.track <= null;
+      tm_instances.track <= null;
+
+      last_selected_mod <= null;
+      last_selected_lane_idx = -1;
+
+      replay.redirectRemoteEvents(-1/*devIdx*/, -1/*midiCh*/);
+
+      // Unset track so pageFocusDefault() does not try to access stale reference next time the page is shown
+      track <= null;
+   }
+
+   // // public virtual relayout() {
+   // //    trace "xxx PageTrack::relayout";
+   // //    Utils.Backtrace();
+   // //    Page::relayout();
+   // // }
+
+   // <ui_show.png>
+   public method showTrack(Track _track) {
+
+      lazyStoreTimelineEditorState();
+
+      track <= _track;
+
+      PageProject.focus_idx = current_project.getTrackIdx(track);
+
+      modgrid.showTrack(track);
+
+      tm_instances.rebuildEntries(track);
+      tv_instances.tableModelChanged();
+      tv_instances.moveCursorToFirstRowIfNoneSelected();
+      handleModMatrixInstanceSelected(false/*bRelayout*/);
+
+      tm_patch_variations.track <= track;
+      tm_patch_variations.tableModelChanged();
+      tv_patch_variations.moveCursorToRowNoAction(track.current_patch_variation_idx);
+      tv_patch_variations.setLeadSelection(track.current_patch_variation_idx);
+
+      handleListTypeChanged(true/*bQuiet*/); // refresh list
+      ls_browser.switchToLayerNr(track.b_ui_browser_visible);
+
+      cm_dev.setSelectedOption(track.dev_idx);
+      cm_ch.setSelectedOption(track.midi_ch + 1);
+
+      int trackIdx = current_project.getTrackIdx(track);
+      Global.Debug("PageTrack::showTrack: "+(trackIdx+1)+"/"+(current_project.tracks.numElements)+" track.name=\""+track.name+"\" patch_name=\""+track.patch_name+"\"");
+
+      tf_track_name.setText(track.name);
+      tf_patch_name.setText(track.patch_name);
+      tf_patch_name.setToolTipCaption(track.patch_suggested_pathname);
+
+      if(STConfig.b_colorize_tracks)
+      {
+         tf_track_name.setBackgroundTint(track.ui_tint_32);
+         tf_patch_name.setBackgroundTint(track.ui_tint_32);
+      }
+
+      cm_mode.setOptions(Track.track_mode_names_short);
+      cm_mode.setOptionsLong(Track.track_mode_names_long);
+      cm_mode.setSelectedOption(track.getTrackMode());
+      fp_multi_num.setValue(track.getMultiNumChannels());
+      fp_multi_off.setValue(track.getMultiLaneOffset());
+      fp_multi_master_ch.setValue(track.getMultiMasterCh() + 1);
+      updateMultiEditable();
+
+      cb_lane_fade          .setSelected(track.getEnableLaneFade());
+      fp_lane_fade_cc       .setValue(track.getLaneFadeCC());
+      cb_lane_fade_ctl_rel  .setSelected(track.getEnableLaneFadeCtlRel());
+      fp_lane_fade_slew_up  .setValue(track.getLaneFadeSlewUp());
+      fp_lane_fade_slew_down.setValue(track.getLaneFadeSlewDown());
+
+      updateInputChannelOptions();
+      cm_input.setSelectedOption(track.input_channel_idx + 1);
+      fp_multi_input.setValue(track.num_multi_input_lanes);
+      cb_stereo_input.setSelected(track.b_stereo_input);
+      cb_inputtosc.setSelected(track.b_input_to_sc);
+
+      cb_close_autosync.setSelected(STConfig.b_mod_close_editor_autosync);
+      cb_fx.setSelected(!track.b_bypass_fx);
+      cb_proc.setSelected(track.b_proc);
+
+      cm_parent_dev.setSelectedOption(track.parent_midi_track_dev_idx_hint + 1);
+      cm_parent_ch.setSelectedOption(track.parent_midi_track_midi_ch_hint + 1);
+
+      updateMuteSolo();
+
+      if(track.isDrumMode())
+         f_samplepad.showTrack(track);  // relayouts page
+      else if(track.isTimelineMode())
+         f_sampletimeline.showTrack(track);  // relayouts page
+
+      boolean bRelayoutRoot = lazySwitchEditorMode();
+
+      // // // // if(Track.TRACK_MODE_DRUM != track.getTrackMode())  // breaks autoscrolling after lane/output add
+      // //    // bRelayout = true;
+
+      if(bRelayoutRoot)
+      {
+         UI.LayoutRootLayer();
+      }
+      else
+      {
+         relayout();
+      }
+
+      if(track.isTimelineMode())
+      {
+         f_sampletimeline.makeCursorVisible();
+      }
+
+      pageFocusDefault();
+
+      // Redirect remote events to current track
+      replay.redirectRemoteEvents(track.dev_idx, track.midi_ch);
+
+      // Auto-select PageSample sample+nsp from first ModSample
+      PageSample pgSample <= root_form.pg_sample;
+      if(true == STConfig.b_pgtrack_autoselect_sample_and_nsp ||
+         (maybe == STConfig.b_pgtrack_autoselect_sample_and_nsp && pgSample.b_allow_pgtrack_autoselect)
+         )
+      {
+         pgSample.b_allow_pgtrack_autoselect = false;
+         updatePageSampleAutoSelectSampleAndNamespace();
+      }
+
+      // // modgrid.debugPrintChildLayers();
+   }
+
+   // <method.png>
+   protected method lazySwitchEditorMode() : boolean {
+      if(1) trace "[trc] PageTrack::lazySwitchEditorMode: ENTER";
+      boolean bRelayout = false;
+
+      f_sampletimeline.removeOverlays();
+
+      if(track.isDrumMode())
+      {
+         if(1 != ls_samplepad.getCurrentChildNr())
+         {
+            ls_samplepad.switchToLayerNr(1);
+            bRelayout = true;
+         }
+      }
+      else if(track.isTimelineMode())
+      {
+         if(2 != ls_samplepad.getCurrentChildNr())
+         {
+            ls_samplepad.switchToLayerNr(2);
+            f_sampletimeline.showTrack(track);
+            bRelayout = true;
+         }
+         else
+         {
+            f_sampletimeline.showTrack(track);
+         }
+         f_sampletimeline.addOverlays();
+      }
+      else if(0 != ls_samplepad.getCurrentChildNr())
+      {
+         ls_samplepad.switchToLayerNr(0);
+         bRelayout = true;
+      }
+      if(1) Global.Debug2("PageTrack::lazySwitchEditorMode: LEAVE (bRelayout="+bRelayout+")");
+      return bRelayout;
+   }
+
+   // <ui_handle.png>
+   public method handleListTypeChanged(boolean _bQuiet) {
+
+      switch(cm_list_type.getSelectedOption())
+      {
+         default:
+         case LIST_TYPE_VSTI:
+         case LIST_TYPE_VSTFX:
+            ls_list.switchToLayerNr(0);
+            ls_mod.switchToLayerNr(0);
+            pluginlist_vst2.handleTypeChanged(cm_list_type.getSelectedOption(), _bQuiet);
+            bt_toggle_browser.setEditable(true);
+            UI.SetKeyboardFocus(pluginlist_vst2.tv_plugins);
+            break;
+
+         case LIST_TYPE_PATCHVARIATIONS:
+            ls_list.switchToLayerNr(1);
+            ls_mod.switchToLayerNr(0);
+            bt_toggle_browser.setEditable(true);
+            UI.SetKeyboardFocus(tv_patch_variations);
+            break;
+
+         case LIST_TYPE_MODMATRIX:
+            tm_instances.rebuildEntries(track);
+            tv_instances.tableModelChanged();
+            ls_list.switchToLayerNr(2);
+            ls_mod.switchToLayerNr(1);
+            bt_toggle_browser.setEditable(false);
+            tv_instances.moveCursorToFirstRowIfNoneSelected();
+
+            // Preselect last clicked mod
+            int rowIdx = tm_instances.findRowIdxByMod(last_selected_mod);
+            Global.Debug2("PageTrack::handleListTypeChanged: preselect last_selected_mod="+#(last_selected_mod)+" rowIdx="+rowIdx);
+            if(-1 != rowIdx)
+               tv_instances.moveCursorToRowNoAction(rowIdx);
+
+            handleModMatrixInstanceSelected(true/*bRelayout*/);
+
+            UI.SetKeyboardFocus(tv_instances);
+            break;
+
+         case LIST_TYPE_STFX:
+            ls_list.switchToLayerNr(3);
+            ls_mod.switchToLayerNr(0);
+            pluginlist_stfx.handleTypeChanged(/*cm_list_type.getSelectedOption(), */_bQuiet);
+            bt_toggle_browser.setEditable(true);
+            UI.SetKeyboardFocus(pluginlist_stfx.tv_plugins);
+            break;
+
+         case LIST_TYPE_CLAP:
+            ls_list.switchToLayerNr(4);
+            ls_mod.switchToLayerNr(0);
+            pluginlist_clap.handleTypeChanged(cm_list_type.getSelectedOption(), _bQuiet);
+            bt_toggle_browser.setEditable(true);
+            UI.SetKeyboardFocus(pluginlist_clap.tv_plugins);
+            break;
+      }
+
+      updatePluginsModMatrixButtonCaption();
+
+      if(!_bQuiet)
+      {
+         Global.Print("Show "+cm_list_type.getSelectedOptionName());
+      }
+   }
+
+   // <ui_show.png>
+   static ShowPatchFileNameDialog(String         _title,
+                                  String         _fileName,
+                                  boolean        _bDir,
+                                  ActionConsumer _recipient,
+                                  boolean        _bSave,
+                                  String         _suffix,
+                                  String         _baseDir
+                                  ) {
+      dlg_patch_filename.configure(_title, _fileName, _bDir, _recipient, _bSave, _suffix, _baseDir);
+      dlg_patch_filename.showCentered();
+   }
+
+   // <ui_handle.png>
+   protected method handleEditFirstOrLastSelectedMod() {
+      local Mod *mod;
+      if(last_selected_mod instanceof Mod)
+      {
+         mod <= last_selected_mod;
+      }
+      else
+      {
+         mod <= track.findFirstMod();
+      }
+      Global.Debug("PageTrack::handleEditFirstOrLastSelectedMod: mod="+#(mod));
+      if(mod instanceof Mod)
+      {
+         ModGridButton btMod <= modgrid.findButtonByMod(mod);
+         if(null != btMod)
+         {
+            Global.Debug("PageTrack::handleEditFirstOrLastSelectedMod: btMod="+#(btMod));
+            if(btMod.handleEditMod())
+            {
+               // ok
+            }
+            else
+            {
+               UI.SetKeyboardFocus(btMod);
+            }
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePageSampleAutoSelectSampleAndNamespace() {
+      local ModSample *[] instances;
+      track.findModSampleInstances(instances);
+      int autoNspIdx = -1;
+      int autoSampleIdx = -1;
+      ModSample *modSample;
+      foreach modSample in instances
+      {
+         if(0 != autoNspIdx)
+         {
+            int prefNspIdx = modSample.preferred_namespace_idx;
+            if(prefNspIdx >= 0)
+            {
+               if(-1 == autoNspIdx)
+                  autoNspIdx = prefNspIdx;
+               else if(autoNspIdx != prefNspIdx)
+                  autoNspIdx = 0;
+            }
+         }
+
+         if(-1 == autoSampleIdx)
+            autoSampleIdx = modSample.sample_idx;
+      }
+
+      PageSample pgSample <= root_form.pg_sample;
+      if(-1 != autoSampleIdx)
+      {
+         pgSample.setLastSelectedSampleIdx(autoSampleIdx);
+         if(-1 != autoNspIdx)
+            pgSample.setAutoSelectNamespaceIdx(autoNspIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDevChanged() {
+      track.setDevIdx(cm_dev.getSelectedOption());
+      replay.redirectRemoteEvents(track.dev_idx, track.midi_ch);
+      Global.Print("MIDI device is \""+(MIDI.midi_input_device_long_names.get(track.dev_idx))+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleChChanged() {
+      track.setMidiCh(cm_ch.getSelectedOption() - 1);
+      replay.redirectRemoteEvents(track.dev_idx, track.midi_ch);
+      Global.Print("MIDI channel is "+((-1 == track.midi_ch) ? "omni / MPE" : (track.midi_ch+1)));
+   }
+
+   // <ui_handle.png>
+   protected method handleModeChanged() {
+      track.setTrackMode(cm_mode.getSelectedOption());
+      updateMultiEditable();
+
+      if(LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption())
+      {
+         handleModMatrixInstanceSelected(true/*bRelayout*/);  // mainly for ModMatrix.current_mods update (modmatrix mirror-editing)
+      }
+
+      if(track.isDrumMode())
+         f_samplepad.showTrack(track);
+
+      if(lazySwitchEditorMode())
+      {
+         UI.LayoutRootLayer();
+
+         if(track.isTimelineMode())
+         {
+            f_sampletimeline.resetView();
+         }
+      }
+      else
+      {
+         relayout();
+      }
+
+      redraw();
+
+      track.resetVRRState();
+
+      Global.Print("Track mode is "+cm_mode.getSelectedOptionNameLong());
+   }
+
+   // <ui_handle.png>
+   protected method toggleMirrorMode() {
+      if(track.isMirrorMode())
+      {
+         cm_mode.selectPreviousOptionAction();
+      }
+      else
+      {
+         cm_mode.selectNextOptionAction();
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateMultiEditable() {
+      boolean bEditable = track.isMultiMode() || track.isVRRMode() || track.getEnableLaneFade();
+      fp_multi_num.setEditable(bEditable);
+      fp_multi_num.redraw();
+      fp_multi_off.setEditable(bEditable);
+      fp_multi_off.redraw();
+
+      bEditable = track.getEnableLaneFade();
+      fp_lane_fade_cc       .setEditable(bEditable);
+      cb_lane_fade_ctl_rel  .setEditable(bEditable);
+      fp_lane_fade_slew_up  .setEditable(bEditable);
+      fp_lane_fade_slew_down.setEditable(bEditable);
+      fp_lane_fade_cc.redraw();
+
+      fp_multi_master_ch.setEditable(track.isMPEMode());
+      fp_multi_master_ch.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiNumChanged() {
+      track.setMultiNumChannels(fp_multi_num.getFloatValue());
+      Global.Print("LPC/MPE/VRR mode num channels/lanes is "+track.getMultiNumChannels());
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiOffChanged() {
+      track.setMultiLaneOffset(fp_multi_off.getFloatValue());
+      Global.Print("LPC/MPE/VRR mode lane offset is "+track.getMultiLaneOffset());
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiMasterChChanged() {
+      track.setMultiMasterCh((fp_multi_master_ch.getFloatValue()) - 1);
+      Global.Print("MPE master channel is "+(track.getMultiMasterCh() + 1));
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableLaneFadeChanged() {
+      track.setEnableLaneFade(cb_lane_fade.isSelected());
+      updateMultiEditable();
+      Global.Print("Lane fading is "+Utils.GetEnableString(track.getEnableLaneFade()));
+   }
+
+   // <ui_handle.png>
+   protected method handleLaneFadeCCChanged() {
+      track.setLaneFadeCC(fp_lane_fade_cc.getFloatValue());
+      Global.Print("Lane fade CC is "+track.getLaneFadeCC());
+   }
+
+   // <ui_handle.png>
+   protected method handleLaneFadeCtlRelChanged() {
+      track.setEnableLaneFadeCtlRel(cb_lane_fade_ctl_rel.isSelected());
+      Global.Print("Lane fade CC/RPN relative mode is "+Utils.GetEnableString(track.getEnableLaneFadeCtlRel()));
+   }
+
+   // <ui_handle.png>
+   protected method handleLaneFadeSlewUpChanged() {
+      track.setLaneFadeSlewUp(fp_lane_fade_slew_up.getFloatValue());
+      Global.Print("Lane fade-in slew amount is "+(int(10000 * track.getLaneFadeSlewUp())/10000.0f));
+   }
+
+   // <ui_handle.png>
+   protected method handleLaneFadeSlewDownChanged() {
+      track.setLaneFadeSlewDown(fp_lane_fade_slew_down.getFloatValue());
+      Global.Print("Lane fade-out slew amount is "+(int(10000 * track.getLaneFadeSlewDown())/10000.0f));
+   }
+
+   // <ui_handle.png>
+   protected method handleCloseAutosyncChanged() {
+      STConfig.b_mod_close_editor_autosync = cb_close_autosync.isSelected();
+      Global.Print("Close-editor-autosync is "+Utils.GetEnableString(STConfig.b_mod_close_editor_autosync));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleBypassFXChanged() {
+      track.b_bypass_fx = !cb_fx.isSelected();
+      Global.Print("FX are "+Utils.GetEnableString(!track.b_bypass_fx));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleProcChanged() {
+      track.b_proc = cb_proc.isSelected();
+      Global.Print("procedural-sample-render-process-mode is "+Utils.GetEnableString(track.b_proc));
+   }
+
+   // <ui_handle.png>
+   protected method gotoParentMIDIOrAudioTrack() {
+      Track *trackO;
+      local Track *gotoTrack;
+      boolean bAudio;
+      if(-1 == track.parent_midi_track_dev_idx_hint)
+      {
+         // Find first audio track whose parent_midi_track_* match this track.dev_idx/midi_ch
+         bAudio = true;
+         gotoTrack <= current_project.findAudioTrackForMIDITrack(track.dev_idx,
+                                                                 track.midi_ch,
+                                                                 track/*excludeTrackOrNull*/
+                                                                 );
+      }
+      else
+      {
+         // Find first MIDI track that matches this track.parent_midi_track_dev_idx_hint/midi_ch_hint
+         bAudio = false;
+         gotoTrack <= current_project.findMIDITrackForAudioTrack(track.parent_midi_track_dev_idx_hint,
+                                                                 track.parent_midi_track_midi_ch_hint,
+                                                                 track/*excludeTrackOrNull*/
+                                                                 );
+      }
+
+      if(null != gotoTrack)
+      {
+         showTrack(gotoTrack);
+         Global.Print("Go to "+(bAudio ? "Audio" : "parent MIDI")+" track");
+      }
+      else
+      {
+         Global.Warning((bAudio ? "Audio" : "Parent MIDI")+" track not found");
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleParentDevChanged() {
+      track.parent_midi_track_dev_idx_hint = cm_parent_dev.getSelectedOption() - 1;
+      Global.Print("Parent MIDI track device hint is "+cm_parent_dev.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleParentChChanged() {
+      track.parent_midi_track_midi_ch_hint = cm_parent_ch.getSelectedOption() - 1;
+      Global.Print("Parent MIDI track channel hint is "+cm_parent_ch.getSelectedOptionName());
+   }
+
+   // <ui_update.png>
+   public method updateInputChannelOptions() {
+      local StringArray options;
+      local StringArray optionsLong;
+      local IntArray    inputColors;
+      TrackForm.GetInputChannelOptions(track,
+                                       options,
+                                       optionsLong,
+                                       inputColors
+                                       );
+      cm_input.setOptions(optionsLong);
+      cm_input.setOptionsLong(optionsLong);
+      cm_input.setOptionBGColors(inputColors);
+   }
+
+   // <ui_handle.png>
+   protected method handleInputChanged() {
+      track.setInputChannelIdx(cm_input.getSelectedOption() - 1);
+      current_project.updateUsesInputs();
+
+      Global.Print("Input channel is \""+cm_input.getSelectedOptionName()+"\" ("+track.getInputChannelAlias(track.input_channel_idx, true/*bLong*/)+")  ("+(current_project.b_uses_inputs?"project uses inputs":"no inputs in use")+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoSelectInput1() {
+      ta_input_auto.reschedule();
+      replay.setEnableCalcIOAvg(true);
+      Global.Print("Auto-select input: Start input monitoring");
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoSelectInput2() {
+      int chIdx = -1;
+      if(track.b_stereo_input)
+         chIdx = replay.findLoudestAvgStereo(replay.input_ch_peakavg/*peakAvgTrackers*/);
+      else
+         chIdx = replay.findLoudestAvgMono(replay.input_ch_peakavg/*peakAvgTrackers*/);
+      if(chIdx >= 0)
+      {
+         cm_input.setSelectedOption(chIdx + 1);
+         track.setInputChannelIdx(chIdx);
+         current_project.updateUsesInputs();
+         Global.SuccessShort("Auto-select input \""+cm_input.getSelectedOptionName()+"\"");
+      }
+      else
+      {
+         // (note) leave input selection unchanged
+         Global.Warning("Auto-select input: no active input detected");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNumMultiInputLanesChanged() {
+      track.setNumMultiInputLanes(fp_multi_input.getFloatValue());
+      current_project.updateUsesInputs();
+
+      Global.Print("Num Multi-Input Lanes is "+track.num_multi_input_lanes);
+   }
+
+   // <ui_handle.png>
+   protected method handleStereoInputChanged() {
+      track.setEnableStereoInput(cb_stereo_input.isSelected());
+      updateInputChannelOptions();
+      redraw();
+      Global.Print("Input mode is "+(track.b_stereo_input ? "Stereo" : "Mono"));
+   }
+
+   // <ui_handle.png>
+   protected method handleInputToSCChanged() {
+      track.setEnableInputToSideChain(cb_inputtosc.isSelected());
+      Global.Print("Route input to "+(track.b_input_to_sc ? "Side-Chain (3 & 4)" : "Main (1 & 2)"));
+   }
+
+   // <ui_update.png>
+   public method updateMuteSolo() {
+      // see TrackForm.updateMuteSolo()
+      if((Track.STATE_MUTE == track.play_state) || track.b_force_mute)
+      {
+         bt_mute.setBackgroundTint(#60ff0000);
+         bt_mute.setEditable(!track.b_force_mute);
+         bt_solo.setBackgroundTint(0);
+      }
+      else if(Track.STATE_SOLO == track.play_state)
+      {
+         bt_mute.setBackgroundTint(#4000ff00);
+         bt_solo.setBackgroundTint(#a0ffff00);
+         bt_mute.setEditable(false);
+      }
+      else
+      {
+         bt_mute.setBackgroundTint(#4000a000);
+         bt_mute.setEditable(true);
+         bt_solo.setBackgroundTint(0);
+      }
+      bt_mute.redraw();
+      bt_solo.redraw();
+   }
+
+   // <ui_handle.png>
+   public method handleToggleMute() {
+      if(Track.STATE_MUTE == track.play_state)
+      {
+         track.setPlayState(Track.STATE_PLAY);
+      }
+      else
+      {
+         track.setPlayState(Track.STATE_MUTE);
+      }
+      updateMuteSolo();
+      Global.Print("Toggle mute");
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleSolo() {
+      if(Track.STATE_SOLO == track.play_state)
+         track.setPlayState(Track.STATE_PLAY);
+      else
+         track.setPlayState(Track.STATE_SOLO);
+      updateMuteSolo();
+      Global.Print("Toggle solo");
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadPatch() {
+      if(0 == UI.GetNumFloatingLayers())
+      {
+         if(cb_preview.isSelected())
+         {
+            preview_undo_buffer <= new Buffer;
+            track.savePatchToBuffer(preview_undo_buffer);
+            b_preview_revert = false;
+         }
+
+         ShowPatchFileNameDialog("Load Patch",
+                                 ////Utils.PrependDirPrefix(track.patch_suggested_pathname,
+                                 Utils.PrependDirPrefix("/",
+                                                        STConfig.patch_rootpath
+                                                        ),
+                                 false/*bDir*/,
+                                 this,
+                                 false/*bSave*/,
+                                 Global.PATCH_FILE_SUFFIX,
+                                 STConfig.patch_rootpath
+                                 );
+         dlg_filename_mode = DLG_FILENAME_MODE_LOAD;
+
+         Global.Print("Load patch (enter filename)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSavePatchAs1() {
+      if(0 == UI.GetNumFloatingLayers())
+      {
+         local String unsavedSampleName = "";
+         track.findFirstUnsavedSampleName(unsavedSampleName);
+         if(unsavedSampleName.isBlank())
+         {
+            ShowPatchFileNameDialog("Save Patch",
+                                    Utils.BuildPathnameFromSuggestedNameAndEditorName(
+                                       Utils.PrependDirPrefix(track.patch_suggested_pathname,
+                                                              STConfig.patch_rootpath
+                                                              ),
+                                       track.patch_name)+Global.PATCH_FILE_SUFFIX,
+                                    false/*bDir*/,
+                                    this,
+                                    true/*bSave*/,
+                                    Global.PATCH_FILE_SUFFIX,
+                                    STConfig.patch_rootpath
+                                    );
+            dlg_filename_mode = DLG_FILENAME_MODE_SAVE;
+
+            Global.Print("Save patch (enter filename)");
+         }
+         else
+         {
+            Global.Warning("Sample \""+unsavedSampleName+"\" not present in sample repository. Please save (or copy) it, first !");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSavePatchAs3(String _pathName) {
+      // trace "xxx save patch as \""+pathName+"\"";
+      if(STConfig.b_replace_patch_name_after_save || (track.patch_name.isBlank()))
+      {
+         track.setPatchName((Utils.ExtractFileNameFromPathName(_pathName)).replace(Global.PATCH_FILE_SUFFIX, ""));
+         tf_patch_name.setText(track.patch_name);
+      }
+
+      track.patch_suggested_pathname = Utils.RemoveDirPrefix(_pathName, STConfig.patch_rootpath);
+      tf_patch_name.setToolTipCaption(track.patch_suggested_pathname);
+
+      boolean bIgnoreAutoOrig = VST2.PushIgnoreAutomation();
+
+      if(track.savePatchFile(_pathName))
+      {
+         UI.SetKeyboardFocus(bt_saveas);
+
+         if(STConfig.b_autocreate_patch_variation_after_manual_patch_save)
+         {
+            TrackPatchVariation tpvCur <= track.getCurrentPatchVariation();
+            String tpvOldName = tpvCur.name;
+            TrackPatchVariation tpvNew <= handleAddPatchVariation(true/*bClone*/);
+            tpvCur.name = "save "+Utils.GetCurrentDateTimeStringNumeric();
+            Global.Debug("auto-create patch variation \""+tpvCur.name+"\" after manual save");
+            tpvNew.name = tpvOldName;
+            tv_patch_variations.tableModelChanged();
+         }
+
+         Global.Print("Patch saved to \""+_pathName+"\"");
+      }
+      else
+      {
+         Global.Error("Failed to save patch to \""+_pathName+"\"");
+      }
+
+      VST2.PopIgnoreAutomation(bIgnoreAutoOrig);
+   }
+
+   // <ui_handle.png>
+   protected method handleOutputsChanged(int _nextVisIdx) {
+      Global.Debug("PageTrack::handleOutputsChanged: handle ACTION_OUTPUTS_CHANGED, nextVisIdx="+_nextVisIdx);
+
+      showTrack(track);
+
+      if(_nextVisIdx < 0)
+      {
+         // Make prev outputform visible (after delete)
+         OutputForm of <= modgrid.findAnyLaneOutputFormByIdx(modgrid.first_child, -_nextVisIdx);
+
+         if(null != of)
+         {
+            float ofAbsY = of.getParentPositionY() + of.getSizeY();
+            sp_modgrid.setViewOffsetY(ofAbsY - sp_modgrid.getSizeY());
+         }
+      }
+      else
+      {
+         // Make output "+" button visible
+         Button bt <= modgrid.findAnyLaneOutputAddButtonByMaxIdx(modgrid.first_child, _nextVisIdx);
+
+         if(null != bt)
+         {
+            float btAbsY = bt.getParentPositionY() + bt.getSizeY();
+            sp_modgrid.setViewOffsetY(btAbsY - sp_modgrid.getSizeY());
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getFilterPreset() : String {
+      if(LIST_TYPE_CLAP == cm_list_type.getSelectedOption())
+         return pluginlist_clap.getFilterPreset();
+      else if(LIST_TYPE_STFX == cm_list_type.getSelectedOption())
+         return pluginlist_stfx.getFilterPreset();
+      return pluginlist_vst2.getFilterPreset();
+   }
+
+   // <ui_handle.png>
+   protected method handleAddPatchVariation(boolean _bClone) : TrackPatchVariation {
+
+      boolean bIgnoreAutoOrig = VST2.PushIgnoreAutomation();
+
+      TrackPatchVariation tpvCur <= track.getCurrentPatchVariation();
+      TrackPatchVariation tpv <= track.newPatchVariationAndSelect();  // unloads old lanes/mods
+
+      if(null != tpv)
+      {
+         if(_bClone)
+         {
+            tpv.copyPatchVariationFrom(tpvCur, false/*bCopyName*/);
+            track.updateRefsFromCurrentPatchVariation();  // update track_mode, multi_*
+         }
+         else
+         {
+            tpv.newLane();
+         }
+
+         tv_patch_variations.tableModelChanged();
+         redraw();
+
+         showTrack(track);
+
+         Global.Print((_bClone ? "Clone" : "Create")+" patch variation");
+      }
+      else
+      {
+         Global.Error("Failed to create patch variation");
+      }
+
+      VST2.PopIgnoreAutomation(bIgnoreAutoOrig);
+
+      return tpv;
+   }
+
+   // <ui_handle.png>
+   protected method handleRemovePatchVariation() {
+      int cursorIdx = tm_patch_variations.getCursorIndex();
+      if(-1 != cursorIdx)
+      {
+         if((track.patch_variations.numElements) > 1)
+         {
+            track.deletePatchVariationAndSelectNextOrPrev(cursorIdx);
+            tv_patch_variations.tableModelChanged();
+            showTrack(track);
+            redraw();
+            Global.Print("Delete patch variation");
+         }
+         else
+         {
+            Global.Warning("Can't delete last remaining patch variation");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchVariationMoveUp() {
+      int cursorIdx = tm_patch_variations.getCursorIndex();
+      if(-1 != cursorIdx)
+      {
+         if(cursorIdx > 0)
+         {
+            track.swapPatchVariationWithNext(cursorIdx - 1);  // also swaps current_patch_variation_idx
+            tv_patch_variations.tableModelChanged();
+            tv_patch_variations.moveCursorToPreviousRow();
+            // // showTrack(track);
+            redraw();
+            Global.Print("Move patch variation up");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchVariationMoveDown() {
+      int cursorIdx = tm_patch_variations.getCursorIndex();
+      if(-1 != cursorIdx)
+      {
+         if(cursorIdx < ((track.patch_variations.numElements) -1))
+         {
+            track.swapPatchVariationWithNext(cursorIdx);  // also swaps current_patch_variation_idx
+            tv_patch_variations.tableModelChanged();
+            tv_patch_variations.moveCursorToNextRow();
+            // // showTrack(track);
+            redraw();
+            Global.Print("Move patch variation down");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPatchVariation() {
+      track.selectPatchVariation(tm_patch_variations.getCursorIndex(), true/*bUnloadPrev*/);
+      showTrack(track);
+      TrackPatchVariation tpv <= track.getCurrentPatchVariation();
+      Global.Print("Selected patch variation \""+tpv.name+"\" (idx="+track.current_patch_variation_idx+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleBrowser() {
+      track.b_ui_browser_visible = !track.b_ui_browser_visible;
+
+      ls_browser.switchToLayerNr(track.b_ui_browser_visible);
+      // // // ls_browser.invalidateSizeCaches();
+      relayout();
+      redraw();
+
+      bt_toggle_browser.setCaption(track.b_ui_browser_visible ? "<" : ">");
+
+      UI.SetKeyboardFocus(this);
+
+      Global.Print((track.b_ui_browser_visible ? "Show" : "Hide")+" browser");
+   }
+
+   // <ui_handle.png>
+   protected method lazyShowBrowser() {
+      if(!track.b_ui_browser_visible)
+         handleToggleBrowser();
+   }
+
+   // <ui_show.png>
+   public method showModMatrix() {
+      if(last_selected_mod instanceof Mod)
+      {
+         modmatrix.showInstance(last_selected_mod, track);
+         relayout();
+      }
+
+      lazyShowBrowser();
+      cm_list_type.setSelectedOption(LIST_TYPE_MODMATRIX);
+      handleListTypeChanged(false/*bQuiet*/);
+      UI.SetKeyboardFocus(tv_instances);
+   }
+
+   // <ui_handle.png>
+   protected method handleShowPreviousTrack() {
+      int trackIdx = current_project.getTrackIdx(track) - 1;
+      if(trackIdx >= 0)
+      {
+         Project.QueueTrackFormUpdate();
+         showTrack(current_project.getTrackByIdx(trackIdx));
+         Global.Print("Show previous track "+(trackIdx+1)+"/"+(current_project.tracks.numElements));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleShowNextTrack() {
+      int trackIdx = current_project.getTrackIdx(track) + 1;
+      if(trackIdx < (current_project.tracks.numElements))
+      {
+         Project.QueueTrackFormUpdate();
+         showTrack(current_project.getTrackByIdx(trackIdx));
+         Global.Print("Show next track "+(trackIdx+1)+"/"+(current_project.tracks.numElements));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleModMatrixInstanceSelected(boolean _bRelayout) {
+      InstancesTMEntry en <= tm_instances.getSelectedEntry();
+      if(null != en)
+      {
+         Mod mod <= en.mod;
+         modmatrix.showInstance(mod, track);
+         PageTrack.last_selected_mod <= mod;
+         // // trace "xxx handleModMatrixInstanceSelected: en.mod="+#(en.mod);
+         Global.Print("Select instance id="+mod.instance_id+" lane="+en.lane_nr+" mod=\""+mod.getNameForInstanceTable()+"\"");
+      }
+      else
+      {
+         modmatrix.showInstance(null, null);
+         PageTrack.last_selected_mod <= null;
+      }
+
+      if(_bRelayout)
+         relayout();
+   }
+
+   // <method_get.png>
+   public static IsLastSelectedModEditorVisible() : boolean {
+      if(null != last_selected_mod)
+         return last_selected_mod.isEditorVisible();
+      return false;
+   }
+
+   // <ui_update.png>
+   public method updateModGrid() {
+      // e.g. after instance name changed
+      modgrid.showTrack(track);
+   }
+
+   // <ui_handle.png>
+   public method showAudioTracks() {
+      root_form.showPage(RootForm.PAGE_AUDIO, true/*bAllowHistory*/);
+   }
+
+   // <ui_handle.png>
+   public method showInstrumentTracks() {
+      root_form.showPage(RootForm.PAGE_PROJECT, true/*bAllowHistory*/);
+   }
+
+   // <ui_handle.png>
+   public method showSamples() {
+      root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+   }
+
+   // <method.png>
+   protected method selectDefaultPluginListType(boolean _bAction) {
+
+      int listType;
+
+      switch(STConfig.pgtrack_default_list_type)
+      {
+         default:
+         case LIST_TYPE_VSTFX:
+            // No VST2 plugins available ?
+            listType = pluginlist_vst2.isEmpty() ? pluginlist_clap.isEmpty() ? LIST_TYPE_STFX : LIST_TYPE_CLAP : LIST_TYPE_VSTFX;
+            break;
+
+         case LIST_TYPE_VSTI:
+            // No VST2 plugins available ?
+            listType = pluginlist_vst2.isEmpty() ? pluginlist_clap.isEmpty() ? LIST_TYPE_STFX : LIST_TYPE_CLAP : LIST_TYPE_VSTI;
+            break;
+
+         case LIST_TYPE_CLAP:
+            // No CLAP plugins available ?
+            listType = pluginlist_clap.isEmpty() ? pluginlist_vst2.isEmpty() ? LIST_TYPE_STFX : LIST_TYPE_VSTFX : LIST_TYPE_CLAP;
+            break;
+
+         case LIST_TYPE_STFX:
+            listType = LIST_TYPE_STFX;
+            break;
+      }
+
+      // trace "xxx PageTrack::selectDefaultPluginListType: listType="+listType+" pluginlist_clap.isEmpty()="+pluginlist_clap.isEmpty();
+
+      if(_bAction)
+         cm_list_type.setSelectedOptionAction(listType);
+      else
+         cm_list_type.setSelectedOption(listType);
+   }
+
+   // <method_get.png>
+   protected method isDefaultPluginListTypeSelected() : boolean {
+      int listType = pluginlist_clap.isEmpty() ? LIST_TYPE_VSTI : LIST_TYPE_CLAP;
+      return (listType == cm_list_type.getSelectedOption());
+   }
+
+   // <ui_handle.png>
+   public method toggleModMatrixAndPlugins() {
+      if(cm_list_type.getSelectedOption() != LIST_TYPE_MODMATRIX)
+         showModMatrix();
+      else
+         selectDefaultPluginListType(true/*bAction*/);
+
+      updatePluginsModMatrixButtonCaption();
+   }
+
+   // <ui_update.png>
+   protected method updatePluginsModMatrixButtonCaption() {
+      if(LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption())
+         bt_modmatrix_or_plugins.setCaption("F4: PLUGINS");
+      else
+         bt_modmatrix_or_plugins.setCaption("F4: MODMATRIX");
+   }
+
+   // <method.png>
+   protected method toggleResample(float _factor) {
+      // experimental test code
+      //  (note) does not work with many plugins (some even crash) but some sound great (e.g. XILS Oxium or Valhalla VintageVerb)
+      if(last_selected_mod instanceof Mod)
+      {
+         last_selected_mod.toggleResample(_factor);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCloneSamples1() {
+      dlg_clone_samples <= TextInputDialog.New("Clone samples name prefix",
+                                               "Name prefix",
+                                               "Clone",
+                                               "Cancel",
+                                               "dk",
+                                               23/*maxCols*/, 23/*visCols*/,
+                                               this/*recipient*/
+                                               );
+      dlg_clone_samples.showCentered();
+   }
+
+   // <ui_handle.png>
+   protected method handleCloneSamples2(String _prefix) {
+      _prefix.trim();
+      Global.Debug("PageTrack::handleCloneSamples2: prefix=\""+_prefix+"\"");
+      if(!_prefix.isBlank())
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+         int sampleNr = 1;
+         Lane *lane;
+         foreach lane in track.lanes
+         {
+            ModSample *modSample;
+            foreach modSample in lane.mods
+            {
+               if(modSample instanceof ModSample)
+               {
+                  Sample sampleSrc <= current_project.getSampleByIdx(modSample.sample_idx);
+                  if(null != sampleSrc)
+                  {
+                     local String suggestedUniqueName <= _prefix+" "+sampleNr+" "+sampleSrc.unique_name;
+                     Sample sampleNew <= current_project.newSample(suggestedUniqueName,
+                                                                   -1/*idxHint*/
+                                                                   );
+                     sampleNew.copyFrom(sampleSrc);
+                     sampleNew.analyzeAndUpdatePartials();
+                     sampleNew.markWaveformAsModified();
+                     sampleNr++;
+                  }
+               }
+            }
+         }
+
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+         sampleNr--;
+         Global.Print("Clone "+sampleNr+" sample"+Utils.GetPluralString(sampleNr)+" with prefix \""+_prefix+"\"");
+      }
+      else
+         Global.Warning("clone samples: prefix is blank");
+   }
+
+   // <ui_handle.png>
+   protected method handleMergeSamples1() {
+      TrackPatchVariation tpvCur <= track.getCurrentPatchVariation();
+      dlg_merge_samples <= TextInputDialog.New("Merge samples",
+                                               "New Sample Name",
+                                               "Merge",
+                                               "Cancel",
+                                               track.name+"."+tpvCur.name,
+                                               32/*maxCols*/, 32/*visCols*/,
+                                               this/*recipient*/
+                                               );
+      dlg_merge_samples.showCentered();
+   }
+
+   // <ui_handle.png>
+   protected method handleMergeSamples2(String _suggestedName) {
+      _suggestedName.trim();
+      Global.Debug("PageTrack::handleMergeSamples2: suggestedName=\""+_suggestedName+"\"");
+
+      if(!_suggestedName.isBlank())
+      {
+         Sample newSample <= current_project.newSample(_suggestedName, -1/*prefIdx*/);
+         if(null != newSample)
+         {
+            boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+            local IntArray samplesDone;
+            Lane *lane;
+            int numMerged = 0;
+            foreach lane in track.lanes
+            {
+               if(lane.b_enable)
+               {
+                  ModSample *modSample;
+                  foreach modSample in lane.mods
+                  {
+                     if(modSample instanceof ModSample)
+                     {
+                        if(modSample.b_enabled)
+                        {
+                           Sample sampleSrc <= current_project.getSampleByIdx(modSample.sample_idx);
+                           if(null != sampleSrc)
+                           {
+                              if(!samplesDone.contains(modSample.sample_idx))
+                              {
+                                 samplesDone.add(modSample.sample_idx);
+                                 float laneDefVolume = lane.estimateDefaultVolumeAfterMod(modSample);
+                                 float laneDefPan    = lane.estimateDefaultPanAfterMod(modSample);
+                                 ModEQ3 modEQ3 <= lane.findModEQ3AfterMod(modSample);
+                                 if(0 == numMerged++)
+                                 {
+                                    newSample.copyFrom(sampleSrc);
+                                    newSample.multiplyZoneVolumesBySampleVolumeAndReplaceByOne(laneDefVolume);
+                                    newSample.addSamplePanToZonesAndReplaceByZero(laneDefPan);
+
+                                    // StSample firstZone <= newSample.getZoneByIdx(0);
+                                    // trace "xxx merge first, newSample.volume="+newSample.getVolume()+" firstZone.volume="+firstZone.getVolume();
+                                 }
+                                 else
+                                 {
+                                    newSample.mergeSample(sampleSrc, laneDefVolume, laneDefPan);
+                                 }
+
+                                 // Copy lane ModEQ3 to merged sample zones (if exists)
+                                 if(null != modEQ3)
+                                 {
+                                    if(sampleSrc.getNumZones() >= 1)  // any zone merged ?
+                                    {
+                                       StPluginShared pluginSharedEQ3Src <= modEQ3.shared;
+                                       if(null != pluginSharedEQ3Src)  // (note) should not be null
+                                       {
+                                          int mergedZoneIdx = newSample.getNumZones()-1;
+                                          loop(sampleSrc.getNumZones())
+                                          {
+                                             StSample mergedZone <= newSample.getZoneByIdx(mergedZoneIdx);
+                                             StPluginShared pluginSharedEQ3Dst <=
+                                                newSample.getZoneSamplePluginById(mergedZone, ModEQ3.FX_ID);
+                                             if(null == pluginSharedEQ3Dst)
+                                             {
+                                                trace "[trc] PageTrack::handleMergeSamples2: merge lane ModEQ3 to mergedZoneIdx="+mergedZoneIdx+"(\""+mergedZone.name+"\")";
+                                                // Create new EQ3 voice plugin instance and copy params from lane ModEQ3
+                                                pluginSharedEQ3Dst <=
+                                                   newSample.getOrCreateZoneSamplePluginById(mergedZone, ModEQ3.FX_ID);
+                                                int paramIdx = 1;  // skip dry/wet
+                                                loop( (pluginSharedEQ3Src.info.numParams) - 1 )
+                                                {
+                                                   pluginSharedEQ3Dst.setParamValue(paramIdx, pluginSharedEQ3Src.getParamValue(paramIdx));
+
+                                                   paramIdx++;
+                                                }
+                                             }
+                                             else
+                                             {
+                                                trace "[~~~] PageTrack::handleMergeSamples2: merged zone idx="+mergedZoneIdx+" already has a EQ3 instance, skipping lane ModEQ3..";
+                                             }
+                                             mergedZoneIdx--;
+                                          } // loop last merged zones
+                                       }
+                                    }
+                                 }
+                              }
+                              // Lane done
+                              break;
+                           } // if sampleSrc
+                        } // if modSample.b_enabled
+                     } // if is ModSample
+                  } // foreach modSample
+               } // if lane.b_enable
+            }
+
+            Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+            if(0 == numMerged)
+            {
+               // no samples found, delete newSample
+               current_project.deleteSample(newSample);
+               newSample <= null;
+               Global.Warning("Merge Samples: no samples found");
+            }
+            else
+            {
+               newSample.analyzeAndUpdatePartials();
+               newSample.markWaveformAsModified();
+
+               // Edit new sample
+               PageSample pgSample <= root_form.pg_sample;
+               pgSample.autoselect_sample_idx = current_project.getSampleIdx(newSample);
+               pgSample.ui_parent_track_nr = current_project.getTrackIdx(track) + 1;
+               pgSample.mod_sample <= null;
+               pgSample.sample_pad_common <= null;
+               pgSample.sample_pad        <= null;
+               pgSample.sample_pad_kit    <= null;
+               root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+
+               Global.Print("Merged "+numMerged+" sample"+Utils.GetPluralString(numMerged)+" to \""+newSample.unique_name+"\"");
+            }
+
+         }
+         else
+            Global.Warning("Merge Samples: failed to create sample");
+      }
+      else
+         Global.Warning("Merge Samples: name is blank");
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      if(STConfig.b_show_autoroute_menu_tems)
+      {
+         String *audioChName;
+
+         audioChName <= PageProject.FindAutoRouteAudioChannelNameByTrackName(STConfig.track_autoroute_map_replace, track.name);
+         pmb <= pm.addDefaultButton("Auto-Route individual output send to audio channel \""+audioChName+"\" (REPLACE)",
+                                    "autoroute_replace"
+                                    );
+         pmb.setToolTipCaption("Replace track output according to STConfig.track_autoroute_map_replace\n\n (note) for sending track to mixing disk");
+
+         pm.addSeparator();
+
+         audioChName <= PageProject.FindAutoRouteAudioChannelNameByTrackName(STConfig.track_autoroute_map_parallel, track.name);
+         pmb <= pm.addDefaultButton("Auto-Route individual output send to audio channel \""+audioChName+"\" (PARALLEL)",
+                                    "autoroute_parallel"
+                                    );
+         pmb.setToolTipCaption("Add track output according to STConfig.track_autoroute_map_parallel\n\n (note) e.g. for external FX sends");
+
+         pm.addSeparator();
+
+         audioChName <= PageProject.FindAutoRouteAudioChannelNameByTrackName(STConfig.track_autoroute_map_lane, track.name);
+         pmb <= pm.addDefaultButton("Auto-Route parallel lane and individual output send to audio channel \""+audioChName+"\" (PARALLEL LANE)",
+                                    "autoroute_lane"
+                                    );
+         pmb.setToolTipCaption("Add lane and individual output send to last lane according to STConfig.track_autoroute_map_lane");
+      }
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Clone selected samples with prefix..",
+                                 "clone_samples"
+                                 );
+      pmb.setToolTipCaption("Prompt for sample name prefix and clone selected samples (ModSample instances)\n\n (note) e.g. when preparing drumkit samples");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Merge selected samples to new sample..",
+                                 "merge_samples"
+                                 );
+      pmb.setToolTipCaption("Prompt for new sample name and merge selected samples (ModSample instances)\n\n (note) e.g. when merging layered samples\n\n (note) applies lane ModGain + ModEQ3 + Default output volume + pan");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      Global.Print("Show context menu. STConfig.b_show_autoroute_menu_tems="+STConfig.b_show_autoroute_menu_tems);
+   }
+
+   // <ui_cmd.png>
+   protected method cmdToggleDebugCLAP() {
+      CLAP.b_clap_debug = !CLAP.b_clap_debug;
+      Global.Print("b_clap_debug is "+Utils.GetEnableString(CLAP.b_clap_debug));
+   }
+
+   // <ui_cmd.png>
+   protected method cmdToggleDebugVST2() {
+      VST2.b_vst2_debug = !VST2.b_vst2_debug;
+      Global.Print("b_vst2_debug is "+Utils.GetEnableString(VST2.b_vst2_debug));
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return [
+         "clap_debug",
+         "vst2_debug",
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetActionToolTips() : HashTable {
+      return #[
+         "clap_debug"
+         = "Toggle CLAP debug output",
+
+         "vst2_debug"
+         = "Toggle VST2 debug output",
+               ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      switch(_argv.get(0))
+      {
+         case "clap_debug":
+            cmdToggleDebugCLAP();
+            return true;
+
+         case "vst2_debug":
+            cmdToggleDebugVST2();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      Global.Debug("PageTrack::cmdGetAvailableArgs: cmd=\""+_cmd+"\" argIdx="+_argIdx);
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetDefaultActions() : StringArray {
+      return null;
+   }
+
+   // <ui_handle.png>
+   protected method handleWindowTracking() {
+      if(b_track_other_windows)
+      {
+         if( (milliSeconds() - other_window_start_ms) > 500)
+         {
+            b_track_other_windows = false;  // namespace var (see eureka.tks)
+
+            if(other_window_listener instanceof ModVST2)
+            {
+               // Remove own window from monitor lists
+               int hwnd;
+               int idx;
+               if(null != (other_window_listener.plugin))
+               {
+                  hwnd = (other_window_listener.plugin.nativeWindowHandle);
+                  for(;;)
+                  {
+                     idx = other_windows_create.indexOf(hwnd, 0);
+                     if(-1 != idx)
+                        other_windows_create.delete(idx);
+                     else
+                        break;
+                  }
+                  for(;;)
+                  {
+                     idx = other_windows_focus.indexOf(hwnd, 0);
+                     if(-1 != idx)
+                        other_windows_focus.delete(idx);
+                     else
+                        break;
+                  }
+               }
+               if(null != (other_window_listener.shadow_plugin))
+               {
+                  hwnd = (other_window_listener.shadow_plugin.nativeWindowHandle);
+                  for(;;)
+                  {
+                     idx = other_windows_create.indexOf(hwnd, 0);
+                     if(-1 != idx)
+                        other_windows_create.delete(idx);
+                     else
+                        break;
+                  }
+                  for(;;)
+                  {
+                     idx = other_windows_focus.indexOf(hwnd, 0);
+                     if(-1 != idx)
+                        other_windows_focus.delete(idx);
+                     else
+                        break;
+                  }
+               }
+               Global.Debug2("PageTrack::handleWindowTracking: windows created while opening editor: "+#(other_windows_create));
+               Global.Debug2("PageTrack::handleWindowTracking: windows focused while opening editor: "+#(other_windows_focus));
+               if(other_windows_focus.numElements > 0)
+               {
+                  other_window_listener.setOtherWindows(other_windows_focus);
+               }
+            }
+            other_window_listener <= null;
+         }
+      }
+   }
+
+   // <ui_timer.png>
+   public method pageHandleIdleTimer() {
+      modgrid.handleIdleTimer();
+      load_indicator.setLoadPercentage(track.getAverageLoadPercentage());
+
+      handleWindowTracking();
+   }
+
+   // <method_set.png>
+   public method ignoreNextKeyEscape() {
+      // After pressing ESCAPE in plugin editor
+      b_ignore_next_key_escape = true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[trc] PageTrack::onKey: name="+_k.name+" pressed="+_k.pressed+" released="+_k.released+" mod="+_k.mod;
+
+      if(0 == _k.mod)
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_ESCAPE:
+               // // trace "xxx PageTrack::onKey: b_ignore_next_key_escape="+b_ignore_next_key_escape;
+               if(b_ignore_next_key_escape)
+               {
+                  b_ignore_next_key_escape = false;
+                  return true;
+               }
+               if(LIST_TYPE_VSTFX < cm_list_type.getSelectedOption() <= LIST_TYPE_MODMATRIX)
+               {
+                  lazyShowBrowser();
+                  selectDefaultPluginListType(false/*bAction*/);
+                  handleListTypeChanged(false/*bQuiet*/);
+                  relayout();
+                  return true;
+               }
+               else if(pluginlist_clap.tf_filter.isEditing())
+               {
+                  pluginlist_clap.tf_filter.stopEditing(false/*bProvideAction*/, true/*bReturnKey*/, true/*bQuiet*/);
+                  pluginlist_clap.resetFilter(true/*bAllowDefault*/);
+                  handleListTypeChanged(false/*bQuiet*/);
+                  relayout();
+                  return true;
+               }
+               else if(pluginlist_vst2.tf_filter.isEditing())
+               {
+                  pluginlist_vst2.tf_filter.stopEditing(false/*bProvideAction*/, true/*bReturnKey*/, true/*bQuiet*/);
+                  pluginlist_vst2.resetFilter(true/*bAllowDefault*/);
+                  handleListTypeChanged(false/*bQuiet*/);
+                  return true;
+               }
+               else if(pluginlist_stfx.tf_filter.isEditing())
+               {
+                  pluginlist_stfx.tf_filter.stopEditing(false/*bProvideAction*/, true/*bReturnKey*/, true/*bQuiet*/);
+                  pluginlist_stfx.resetFilter(true/*bAllowDefault*/);
+                  handleListTypeChanged(false/*bQuiet*/);
+                  return true;
+               }
+               // else: run into next case
+               root_form.showPage(RootForm.PAGE_PROJECT, true/*bAllowHistory*/);
+               return true;
+
+            case VKEY_LEFT:
+               handleShowPreviousTrack();
+               return true;
+
+            case VKEY_RIGHT:
+               handleShowNextTrack();
+               return true;
+
+            case VKEY_F3:
+               handleToggleBrowser();
+               return true;
+
+            case VKEY_F12:
+               // see also: VST2.ProcessWin32KeyEventQueue()
+               if(!PageTrack.IsLastSelectedModEditorVisible())
+               {
+                  current_project.addModMatrixEntryForLastTouchedParamMod(PageTrack.last_selected_mod);
+               }
+               // else: handled in vst2.tks plugin keyevent handler
+               return true;
+
+            case VKEY_UP:
+               handleShowPreviousTrack();
+               return true;
+
+            case VKEY_DOWN:
+               handleShowNextTrack();
+               return true;
+
+            case VKEY_RETURN:
+               handleEditFirstOrLastSelectedMod();
+               return true;
+         }
+      }
+      else if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_TAB:
+               toggleModMatrixAndPlugins();
+               return true;
+
+            case 'a':
+               toggleMirrorMode();
+               return true;
+
+            case 'w':
+               if(_k.modShift())
+               {
+                  // // trace "xxx last_selected_mod="+#(last_selected_mod);
+                  if(null != last_selected_mod)
+                  {
+                     modgrid.syncOtherLaneModsFromMod(last_selected_mod, _k.modShift()/*bSyncModMatrix*/);
+                     modgrid.updateGrid(true/*bRelayout*/);
+                  }
+                  else
+                  {
+                     Global.Warning("Sync MPE/LPC/VRR lane mod(s): no mod selected");
+                  }
+               }
+               else
+               {
+                  // Lazy-show browser and select default list type
+                  if(LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption() ||
+                     !(track.b_ui_browser_visible && isDefaultPluginListTypeSelected())
+                     )
+                  {
+                     lazyShowBrowser();
+                     selectDefaultPluginListType(false/*bAction*/);
+                     handleListTypeChanged(false/*bQuiet*/);
+                  }
+               }
+               return true;
+
+            case 'h':
+               // // trace "xxx last_selected_mod="+#(last_selected_mod);
+               if(null != last_selected_mod)
+               {
+                  modgrid.syncOtherLaneModsFromMod(last_selected_mod, _k.modShift()/*bSyncModMatrix*/);
+                  modgrid.updateGrid(true/*bRelayout*/);
+               }
+               else
+               {
+                  Global.Warning("Sync MPE/LPC/VRR lane mod(s): no mod selected");
+               }
+               return true;
+
+            case 'j':
+               if(-1 != last_selected_lane_idx)
+               {
+                  modgrid.handleSyncOtherLanesFromThis(last_selected_lane_idx, _k.modShift()/*bSyncModMatrix*/);
+               }
+               else
+               {
+                  Global.Warning("Sync MPE/LPC/VRR lane(s): no lane selected");
+               }
+               return true;
+
+            case 'l':
+               handleLoadPatch();
+               return true;
+
+            case 's':
+               handleSavePatchAs1();
+               return true;
+
+            case 'q':
+               if(LIST_TYPE_MODMATRIX != cm_list_type.getSelectedOption())
+               {
+                  if(track.b_ui_browser_visible)
+                  {
+                     handleToggleBrowser();
+                  }
+                  else
+                  {
+                     lazyShowBrowser();
+                     handleListTypeChanged(false/*bQuiet*/);
+                  }
+               }
+               else
+               {
+                  lazyShowBrowser();
+                  selectDefaultPluginListType(false/*bAction*/);
+                  handleListTypeChanged(false/*bQuiet*/);
+               }
+               return true;
+
+            case 'f':
+               lazyShowBrowser();
+               pluginlist_vst2.resetFilter(false/*bAllowDefault*/);
+               if(LIST_TYPE_VSTFX == cm_list_type.getSelectedOption())
+                  cm_list_type.setSelectedOption(LIST_TYPE_VSTI);
+               else
+                  cm_list_type.setSelectedOption(LIST_TYPE_VSTFX);
+               handleListTypeChanged(false/*bQuiet*/);
+               return true;
+
+            case 'e':
+               lazyShowBrowser();
+               cm_list_type.setSelectedOption(LIST_TYPE_PATCHVARIATIONS);
+               handleListTypeChanged(false/*bQuiet*/);
+               return true;
+
+            case 'r':
+               toggleModMatrixAndPlugins();
+               return true;
+
+            case 't':
+               if(_k.modShift())
+               {
+                  b_experimental_keys = !b_experimental_keys;
+                  Global.Print("Experimental keys (resampler) are "+Utils.GetEnableString(b_experimental_keys));
+               }
+               else
+               {
+                  lazyShowBrowser();
+                  cm_list_type.setSelectedOption(LIST_TYPE_STFX);
+                  handleListTypeChanged(false/*bQuiet*/);
+               }
+               return true;
+
+            case 'z':
+            case 'y':
+               lazyShowBrowser();
+               cm_list_type.setSelectedOption(LIST_TYPE_CLAP);
+               handleListTypeChanged(false/*bQuiet*/);
+               return true;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_INSERT:
+            if(LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption())
+            {
+               modmatrix.handleEntryAdd((0 != _k.mod)/*bClone*/);
+               return true;
+            }
+            break;
+
+         case VKEY_DELETE:
+            if(LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption())
+            {
+               modmatrix.handleEntryRemove();
+               return true;
+            }
+            break;
+
+         case VKEY_F1:
+            showAudioTracks();
+            return true;
+
+         case '1':
+            if(_k.modCtrl())
+            {
+               showAudioTracks();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(0.125);
+               return true;
+            }
+            break;
+
+         case VKEY_F2:
+            showInstrumentTracks();
+            return true;
+
+         case '2':
+            if(_k.modCtrl())
+            {
+               showInstrumentTracks();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(0.25);
+               return true;
+            }
+            break;
+
+         case VKEY_F4:
+            toggleModMatrixAndPlugins();
+            return true;
+
+         case '3':
+            if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(0.5);
+               return true;
+            }
+            break;
+
+         case '4':
+            if(_k.modCtrl())
+            {
+               toggleModMatrixAndPlugins();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(0.75);
+               return true;
+            }
+            break;
+
+         case VKEY_F5:
+            showSamples();
+            return true;
+
+         case '5':
+            if(_k.modCtrl())
+            {
+               showSamples();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(1.25);
+               return true;
+            }
+            break;
+
+         case '6':
+            if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(1.5);
+               return true;
+            }
+            break;
+
+         case '7':
+            if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(2.0);
+               return true;
+            }
+            break;
+
+         case '8':
+            if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(2.5);
+               return true;
+            }
+            break;
+
+         case '9':
+            if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(3.0);
+               return true;
+            }
+            break;
+
+         case '0':
+            if(_k.modShift())
+            {
+               if(b_experimental_keys)
+                  toggleResample(4.0);
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   public virtual pageHandleAutoFocusKey(Key _k) : boolean {
+      if(0 != _k.unicode)
+      {
+         if(0 == _k.mod)
+         {
+            if(UI.IsAutoFocusKey(_k))
+            {
+               if(!f_sampletimeline.hierarchyHasKeyboardFocus())
+               {
+                  if(LIST_TYPE_CLAP == cm_list_type.getSelectedOption())
+                     pluginlist_clap.autoFocusFilterWidget(_k);
+                  else if(LIST_TYPE_STFX == cm_list_type.getSelectedOption())
+                     pluginlist_stfx.autoFocusFilterWidget(_k);
+                  else
+                     pluginlist_vst2.autoFocusFilterWidget(_k);
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+
+      if(_ev.leftButtonUp())
+      {
+         Global.Debug("PageTrack::onMouseClick: STConfig.b_auto_hide_plugin_editors="+STConfig.b_auto_hide_plugin_editors);
+
+         modgrid.hideModParamSetDialog();
+
+         if(STConfig.b_auto_hide_plugin_editors &&
+            !((LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption()) && modmatrix.b_keep_plugin_editor_open)
+            )
+         {
+            current_project.hideAllPluginEditors(null/*except*/);
+         }
+      }
+      else if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      else if(_ev.middleButtonUp())
+      {
+         PageProject pgProject <= root_form.pg_project;
+         boolean bEdit = pgProject.handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
+         if(bEdit)
+         {
+            PageSample pgSample <= root_form.pg_sample;
+            pgSample.b_return_to_projects_page = false;
+         }
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_show.png>
+   protected method showDefaultBrowserOrModMatrix() : boolean {
+      if(LIST_TYPE_VSTFX < cm_list_type.getSelectedOption() <= LIST_TYPE_MODMATRIX)
+      {
+         lazyShowBrowser();
+         selectDefaultPluginListType(false/*bAction*/);
+         handleListTypeChanged(false/*bQuiet*/);
+         return true;
+      }
+      else if((UI.GetMouseFocus() instanceof ModGridButton) &&
+              (last_selected_mod instanceof Mod)
+              )
+      {
+         showModMatrix();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(showDefaultBrowserOrModMatrix())
+         return true;
+      // let RootForm handle it (return to parent page)
+      root_form.showPageParentOrPrev();
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(_ev.rightButtonDown())
+      {
+         return showDefaultBrowserOrModMatrix();
+      }
+      // let RootForm handle it (return to parent page)
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         if(0 == UI.GetKeyMod())
+            handleShowPreviousTrack();
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         if(0 == UI.GetKeyMod())
+            handleShowNextTrack();
+         return true;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      IntAction *iac;
+      StringAction *sa;
+
+      // Global.Debug("PageTrack::consumeAction: acName=\""+acName+"\" ap="+#(ap));
+
+      if(ModGrid.ACTION_MODGRID_RELAYOUT == acName)
+      {
+         Global.Debug("PageTrack::consumeAction: handle ACTION_MODGRID_RELAYOUT");
+         relayout();
+         redraw();
+         return true;
+      }
+      else if(ModGrid.ACTION_MODGRID_CHANGED == acName)
+      {
+         Global.Debug("PageTrack::consumeAction: handle ACTION_MODGRID_CHANGED");
+         iac <= _ac;
+         local int laneIdx = iac.getIntValue();
+         showTrack(track);  // calls consumeAction() recursively
+         Panel p <= modgrid.lane_panels.get(laneIdx);
+         sp_modgrid.makeWidgetVisible(p);
+         return true;
+      }
+      else if(OutputsControl.ACTION_OUTPUTS_CHANGED == acName)
+      {
+         iac <= _ac;
+         int nextVisIdx = iac.getIntValue();
+         handleOutputsChanged(nextVisIdx);
+         return true;
+      }
+      else if(TA_INPUT_AUTO == acName)
+      {
+         handleAutoSelectInput2();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            PageProject pgProject <= root_form.pg_project;
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "autoroute_replace":
+                  pgProject.handleAutoRouteReplace(track/*trackFltOrNull*/);
+                  pageFocusDefault();
+                  return true;
+
+               case "autoroute_parallel":
+                  pgProject.handleAutoRouteParallel(track/*trackFltOrNull*/);
+                  pageFocusDefault();
+                  return true;
+
+               case "autoroute_lane":
+                  pgProject.handleAutoRouteLane(track/*trackFltOrNull*/);
+                  showTrack(track);
+                  pageFocusDefault();
+                  return true;
+
+               case "clone_samples":
+                  handleCloneSamples1();
+                  return true;
+
+               case "merge_samples":
+                  handleMergeSamples1();
+                  return true;
+            }
+            return true;
+
+         case @(dlg_clone_samples):
+            handleCloneSamples2(dlg_clone_samples.getText());
+            pageFocusDefault();
+            return true;
+
+         case @(dlg_merge_samples):
+            handleMergeSamples2(dlg_merge_samples.getText());
+            pageFocusDefault();
+            return true;
+
+         case @(cm_list_type):
+            pluginlist_vst2.resetFilter(false/*bAllowDefault*/);
+            pluginlist_stfx.resetFilter(false/*bAllowDefault*/);
+            pluginlist_clap.resetFilter(false/*bAllowDefault*/);
+            handleListTypeChanged(false/*bQuiet*/);
+            return true;
+
+         case @(bt_toggle_browser):
+            handleToggleBrowser();
+            return true;
+
+         case @(tf_track_name):
+            track.setName(tf_track_name.getText());
+            Global.Print("Track name is \""+track.name+"\"");
+            if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               pageFocusDefault();
+            }
+            return true;
+
+         case @(tf_patch_name):
+            track.setPatchName(tf_patch_name.getText());
+            Global.Print("Patch name is \""+track.patch_name+"\"");
+            if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               pageFocusDefault();
+            }
+            return true;
+
+         case @(cm_dev):
+            handleDevChanged();
+            return true;
+
+         case @(cm_ch):
+            handleChChanged();
+            return true;
+
+         case @(cm_mode):
+            handleModeChanged();
+            return true;
+
+         case @(fp_multi_num):
+            handleMultiNumChanged();
+            return true;
+
+         case @(fp_multi_off):
+            handleMultiOffChanged();
+            return true;
+
+         case @(fp_multi_master_ch):
+            handleMultiMasterChChanged();
+            return true;
+
+         case @(cb_lane_fade):
+            handleEnableLaneFadeChanged();
+            return true;
+
+         case @(fp_lane_fade_cc):
+            handleLaneFadeCCChanged();
+            return true;
+
+         case @(cb_lane_fade_ctl_rel):
+            handleLaneFadeCtlRelChanged();
+            return true;
+
+         case @(fp_lane_fade_slew_up):
+            handleLaneFadeSlewUpChanged();
+            return true;
+
+         case @(fp_lane_fade_slew_down):
+            handleLaneFadeSlewDownChanged();
+            return true;
+
+         case @(cb_close_autosync):
+            handleCloseAutosyncChanged();
+            return true;
+
+         case @(cb_fx):
+            handleBypassFXChanged();
+            return true;
+
+         case @(cb_proc):
+            handleProcChanged();
+            return true;
+
+         case @(bt_parent_midi):
+            gotoParentMIDIOrAudioTrack();
+            return true;
+
+         case @(cm_parent_dev):
+            handleParentDevChanged();
+            return true;
+
+         case @(cm_parent_ch):
+            handleParentChChanged();
+            return true;
+
+         case @(cm_input):
+            handleInputChanged();
+            return true;
+
+         case @(bt_input_auto):
+            handleAutoSelectInput1();
+            return true;
+
+         case @(fp_multi_input):
+            handleNumMultiInputLanesChanged();
+            return true;
+
+         case @(cb_stereo_input):
+            handleStereoInputChanged();
+            return true;
+
+         case @(cb_inputtosc):
+            handleInputToSCChanged();
+            return true;
+
+         case @(bt_mute):
+            handleToggleMute();
+            return true;
+
+         case @(bt_solo):
+            handleToggleSolo();
+            return true;
+
+         case @(bt_load):
+            handleLoadPatch();
+            return true;
+
+         case @(cb_preview):
+            Global.Print("Patch preview is "+Utils.GetEnableString(cb_preview.isSelected()));
+            return true;
+
+         case @(cb_currentvar):
+            Global.Print("Load-to-current-variation is "+Utils.GetEnableString(cb_currentvar.isSelected()));
+            return true;
+
+         case @(bt_saveas):
+            handleSavePatchAs1();
+            return true;
+
+         case @(dlg_patch_filename):
+            Global.Debug("PageTrack: Dialogs.dialog_filename acName="+acName);
+            String pathName;
+
+            if(FileNameDialog.ACTION_RETURN == acName)
+            {
+               sa <= _ac;
+
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_SAVE:
+                     // // trace "xxx PRE: save patch as \""+pathName+"\"";
+                     pathName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PATCH_FILE_SUFFIX);
+                     if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+                     {
+                        if(null == dlg_overwrite_patch)
+                           dlg_overwrite_patch <= new Dialog_OverwritePatch;
+                        dlg_overwrite_patch.run(pathName);
+                     }
+                     else
+                     {
+                        handleSavePatchAs3(pathName);
+                     }
+                     break;
+
+                  case DLG_FILENAME_MODE_LOAD:
+                     pathName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PATCH_FILE_SUFFIX);
+                     if(b_preview_revert)
+                     {
+                        // Already loaded
+                        track.patch_suggested_pathname = Utils.RemoveDirPrefix(pathName, STConfig.patch_rootpath);
+                        tf_patch_name.setToolTipCaption(track.patch_suggested_pathname);
+                        UI.SetKeyboardFocus(bt_load);
+                        Global.Print("Patch previewed + loaded from \""+pathName+"\"");
+                     }
+                     else if(track.loadPatchFile(pathName, cb_currentvar.isSelected()/*bCurrent*/))
+                     {
+                        track.patch_suggested_pathname = Utils.RemoveDirPrefix(pathName, STConfig.patch_rootpath);
+
+                        // // // if(track.patch_name.isBlank())
+                        // // // {
+                           track.setPatchName((Utils.ExtractFileNameFromPathName(pathName)).replace(Global.PATCH_FILE_SUFFIX, ""));
+                        // // // }
+                        tf_patch_name.setToolTipCaption(track.patch_suggested_pathname);
+
+                        showTrack(track);
+                        UI.SetKeyboardFocus(bt_load);
+                        Global.Print("Patch loaded from \""+pathName+"\"");
+                     }
+                     else
+                     {
+                        showTrack(track);
+                        UI.SetKeyboardFocus(bt_load);
+                        Global.Error("Failed to load patch from \""+pathName+"\"");
+                     }
+                     break;
+               }
+            }
+            else if(FileNameDialog.ACTION_PREVIEW == acName)
+            {
+               sa <= _ac;
+
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_LOAD:
+                     pathName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PATCH_FILE_SUFFIX);
+                     b_preview_revert = true;
+                     UI.SetEnableLockKeyboardFocus(true);
+                     if(track.loadPatchFile(pathName, cb_currentvar.isSelected()/*bCurrent*/))
+                     {
+                        // // // if(track.patch_name.isBlank())
+                        // // // {
+                           track.setPatchName((Utils.ExtractFileNameFromPathName(pathName)).replace(Global.PATCH_FILE_SUFFIX, ""));
+                        // // // }
+
+                        showTrack(track);
+                        Global.Print("Preview patch \""+pathName+"\"");
+                     }
+                     else
+                     {
+                        showTrack(track);
+                        Global.Error("Failed to preview patch \""+pathName+"\"");
+                     }
+                     UI.SetEnableLockKeyboardFocus(false);
+                     break;
+               }
+            }
+            else if(FileNameDialog.ACTION_CANCEL == acName)
+            {
+               Global.Debug("PageTrack: file dialog was canceled");
+
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_SAVE:
+                     UI.SetKeyboardFocus(bt_saveas);
+                     break;
+
+                  case DLG_FILENAME_MODE_LOAD:
+                     if(cb_preview.isSelected() && b_preview_revert)
+                     {
+                        preview_undo_buffer.offset = 0;
+                        track.loadPatchState(preview_undo_buffer, false/*bCurrent*/);
+                        showTrack(track);
+                        Global.Print("Restore patch state after preview");
+                     }
+
+                     UI.SetKeyboardFocus(bt_load);
+                     break;
+               }
+            }
+
+            return true;
+
+         case @(bt_patch_variation_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleAddPatchVariation(true/*bClone*/);
+            }
+            else
+            {
+               handleAddPatchVariation(false/*bClone*/);
+            }
+            return true;
+
+         case @(bt_patch_variation_remove):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleRemovePatchVariation();
+            }
+            else
+            {
+               Global.Warning("Please Hold-click to remove patch variation !");
+            }
+            return true;
+
+         case @(bt_patch_variation_moveup):
+            handlePatchVariationMoveUp();
+            return true;
+
+         case @(bt_patch_variation_movedown):
+            handlePatchVariationMoveDown();
+            return true;
+
+         case @(tv_patch_variations):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               handleSelectPatchVariation();
+               tm_patch_variations.editColumn(PatchVariationsTM.COL_NAME, tm_patch_variations.getCursorIndex());
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleSelectPatchVariation();
+            }
+            return true;
+
+         case @(tv_instances):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               tm_instances.editColumn(InstancesTM.COL_NAME, tm_instances.getCursorIndex());
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleModMatrixInstanceSelected(true/*bRelayout*/);
+            }
+            return true;
+
+         case @(bt_audio_tracks):
+            showAudioTracks();
+            return true;
+
+         case @(bt_instr_tracks):
+            showInstrumentTracks();
+            return true;
+
+         case @(bt_modmatrix_or_plugins):
+            toggleModMatrixAndPlugins();
+            return true;
+
+         case @(bt_samples):
+            showSamples();
+            return true;
+      }
+
+      return Page::consumeAction(_ac);
+   }
+
+}

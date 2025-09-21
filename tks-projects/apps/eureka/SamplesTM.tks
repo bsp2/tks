@@ -1,0 +1,386 @@
+// ----
+// ---- file   : SamplesTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 22Dec2018
+// ---- changed: 20Jul2019, 15Oct2020, 17Oct2020, 31Jan2021, 08Aug2021, 05Feb2022, 09Apr2022
+// ----          17Jul2022, 21Feb2023, 18Nov2023, 19Apr2024, 02Aug2024, 08Nov2024, 14Jan2025
+// ----          03Apr2025, 31May2025
+// ----
+// ----
+// ----
+
+module MSamplesTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplesTMEntry {
+   int     id;  // index into current_project.samples (0..n)
+   Sample *sample;
+   int     num_prg_id_refs;
+   int     loc_nsp_idx;  // -1=not assigned to a namespace, >=0: sample index within list of namespace samples
+   int     loc_nsp_num;  // number of samples assigned to same namespace
+
+   public method init(int _id, Sample _sample) {
+      id               = _id;
+      sample          <= _sample;
+      num_prg_id_refs  = current_project.findNumSamplesByPrg(sample.prg_id);
+      loc_nsp_idx      = current_project.findSampleLocalNamespaceIdx(sample);
+      loc_nsp_num      = current_project.findNumSamplesAssignedToNamespace(sample.namespace_idx);
+   }
+}
+
+
+// <class.png>
+class SamplesTM : TableModel {
+
+   define int COL_ID   = 0;
+   define int COL_PRG  = 1;
+   define int COL_NSP  = 2;  // namespace
+   define int COL_LOC  = 3;  // index/nr in list of samples within same namespace (e.g. for smp_nsp_abs RPN#0080)
+   define int COL_NAME = 4;
+
+   PointerArray entries;  // SamplesTMEntry instances
+
+   static StringArray instr_letters = [ "0","1","2","3","4","5","6","7","8","9",
+                                        "A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+                                        "a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"
+                                        ];
+
+
+   // <method.png>
+   public method rebuildEntries(String _filter, int _namespaceFlt, boolean _bFilterAudioClips, int _excludeFromFilterSampleIdx) {
+      // 'bFilterAudioClips':  false=show all   true=hide audio clips   maybe=show audio clips only
+      int idx = 0;
+      Sample *sample;
+      SamplesTMEntry *en;
+      entries.free();
+
+      local String t; _filter.toLower() => t;
+      boolean bAudio;
+
+      if((t <= "p:") ||
+         (t <= "prg:")
+         )
+      {
+         t.replace("p:", "");
+         t.replace("prg:", "");
+         int fltPrg = int(t) - 1;
+         foreach sample in current_project.samples
+         {
+            boolean bNSPMatch = (sample.namespace_idx == _namespaceFlt);
+            if( 0 == _namespaceFlt || bNSPMatch )
+            {
+               bAudio = sample.b_audio_clip || (sample.unique_name <= "a_");
+               if(idx == _excludeFromFilterSampleIdx ||
+                  (bAudio && (true != _bFilterAudioClips)) ||
+                  (!bAudio && (maybe != _bFilterAudioClips))
+                  )
+               {
+                  if(sample.prg_id == fltPrg)
+                  {
+                     en <= new SamplesTMEntry;
+                     en.init(idx, sample);
+                     entries.add(#(deref en));
+                  }
+               }
+            }
+
+            // Next sample
+            idx++;
+         }
+      }
+      else
+      {
+         foreach sample in current_project.samples
+         {
+            if( 0 == _namespaceFlt || sample.namespace_idx == _namespaceFlt )
+            {
+               bAudio = sample.b_audio_clip || (sample.unique_name <= "a_");
+               if(idx == _excludeFromFilterSampleIdx ||
+                  (bAudio && (true != _bFilterAudioClips)) ||
+                  (!bAudio && (maybe != _bFilterAudioClips))
+                  )
+               {
+                  boolean bAdd = _filter.isBlank();
+                  if(!bAdd)
+                  {
+                     bAdd = (sample.unique_name & _filter);
+                  }
+
+                  if(bAdd)
+                  {
+                     en <= new SamplesTMEntry;
+                     en.init(idx, sample);
+                     entries.add(#(deref en));
+                  }
+               }
+            }
+
+            // Next sample
+            idx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public method invalidateEntries() {
+      // after project reload (see 01Apr2021 issue)
+      entries.free();
+   }
+
+   // <method_get.png>
+   public virtual getNumColumns() : int {
+      return 5;
+   }
+
+   // <method_get.png>
+   public virtual getColumnCaption(int _col) : String {
+      if([PageSample.PRG_DPY_UNIQUE_ID, PageSample.PRG_DPY_UNIQUE_ID_HEX].contains(STConfig.pgsample_prg_dpy_mode))
+         return ["Nr", "UID", "NSP", "Local", "Name"][_col];
+      else
+         return ["Nr", "Prg", "NSP", "Local", "Name"][_col];
+   }
+
+   // <method_get.png>
+   public virtual getNumRows() : int {
+      return entries.numElements;
+   }
+
+   // <method_get.png>
+   public virtual getCellCaption(int _col, _row) : String {
+      SamplesTMEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         Integer io;
+         switch(_col)
+         {
+            case COL_ID:
+               io = en.id + 1;
+               if(en.sample.b_autoload)
+                  return io.printf("%3d")+":A";
+               else
+                  return io.printf("%3d");
+
+            case COL_PRG:
+               String *sPrg;
+               switch(STConfig.pgsample_prg_dpy_mode)
+               {
+                  default:
+                  case PageSample.PRG_DPY_PC_DEC:
+                     sPrg <= (en.sample.prg_id) < 0 ? Object("-") : (String(en.sample.prg_id + 1));
+                     break;
+
+                  case PageSample.PRG_DPY_PC_HEX:
+                     io = en.sample.prg_id + 1;
+                     sPrg <= (en.sample.prg_id) < 0 ? Object("-") : io.printf("$%02x");
+                     if(en.num_prg_id_refs > 1)
+                        sPrg.append("!");
+                     break;
+
+                  case PageSample.PRG_DPY_PC_LETTER:
+                     sPrg <= (en.sample.prg_id) < 0 ? Object("-") : instr_letters.get(en.sample.prg_id + 1);
+                     if(en.num_prg_id_refs > 1)
+                        sPrg.append("!");
+                     break;
+
+                  case PageSample.PRG_DPY_UNIQUE_ID:
+                     sPrg <= (en.sample.unique_id < 0) ? "-" : (String(en.sample.unique_id));
+                     break;
+
+                  case PageSample.PRG_DPY_UNIQUE_ID_HEX:
+                     io = en.sample.unique_id;
+                     sPrg <= (en.sample.unique_id < 0) ? "-" : io.printf("$%x");
+                     break;
+               }
+               return deref sPrg;
+
+            case COL_NSP:
+               return current_project.getSampleNamespaceNameByIdx(en.sample.namespace_idx);
+
+            case COL_LOC:
+               return (en.loc_nsp_idx >= 0) ? ((1+en.loc_nsp_idx)+"/"+en.loc_nsp_num) : "-";
+
+            case COL_NAME:
+               return
+                  (en.sample.b_preview)
+                  ? ("*" + en.sample.unique_name)
+                  : (en.sample.b_audio_clip)
+                  ? ("<a>"+en.sample.unique_name)
+                  : en.sample.unique_name
+                  ;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 32;
+
+         case COL_PRG:
+            return 32;
+
+         case COL_NSP:
+            return 70;
+
+         case COL_LOC:
+            return 32;
+
+         case COL_NAME:
+            return 110;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 32;
+
+         case COL_PRG:
+            return 32;
+
+         case COL_NSP:
+            return 90;
+
+         case COL_LOC:
+            return 32;
+
+         case COL_NAME:
+            return 200;
+      }
+   }
+
+   // <method_get.png>
+   public virtual canDropObject(Object _dragObject, int _row) : boolean {
+      return (_dragObject instanceof StringArray); // pathname array, see PageSample.handleDropFiles()
+   }
+
+   // <method.png>
+   public method moveCursorToSampleNoAction(Sample _smp) : int {
+      if(null != _smp)
+      {
+         SamplesTMEntry *en;
+         int rowIdx = 0;
+         foreach en in entries
+         {
+            if(@(en.sample) == @(_smp))
+            {
+               table_view.moveCursorToRowNoAction(rowIdx);
+               return rowIdx;
+            }
+            rowIdx++;
+         }
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public method moveCursorToSampleIdxNoAction(int _smpIdx) : int {
+      Sample smp <= current_project.getSampleByIdx(_smpIdx);
+      if(null != smp)
+         return moveCursorToSampleNoAction(smp);
+      else
+      {
+         table_view.moveCursorToFirstRowNoAction();
+         return getCursorIndex();
+      }
+   }
+
+   // <method_get.png>
+   public method getRowIdxBySample(Sample _sample) : int {
+      int rowIdx = 0;
+      SamplesTMEntry *en;
+      foreach en in entries
+      {
+         if(@(en.sample) == @(_sample))
+            return rowIdx;
+         rowIdx++;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getSampleByRowIdx(int _rowIdx) : Sample {
+      SamplesTMEntry en <= entries.get(_rowIdx);
+      if(null != en)
+         return en.sample;
+      return null;
+   }
+
+   // <method_get.png>
+   public method getCursorSampleIdx() : int {
+      SamplesTMEntry en <= entries.get(getCursorIndex());
+      if(null != en)
+         return current_project.getSampleIdx(en.sample);
+      return -1;
+   }
+
+   // <ui_handle.png>
+   public virtual handleCellEditing(TableCellEditor _tce) {
+      switch(_tce.table_col)
+      {
+         case COL_NAME:
+            // // handleCellEdited(_tce);
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleCellEdited(TableCellEditor _tce) {
+
+      SamplesTMEntry en <= entries.get(_tce.table_row);
+      if(null != en)
+      {
+         TableCellEditorString *tcestr;
+
+         switch(_tce.table_col)
+         {
+            case COL_NAME:
+               tcestr <= _tce;
+               local String name = Utils.ConvertToFileName(tcestr.getText());
+               Sample sample <= en.sample;
+               sample.assignUniqueName(name);
+               sample.markParamsAsModified();
+               sample.markWaveformAsModified();  // need to save under new name
+               tableModelChanged();
+               PageSample pgSample <= root_form.pg_sample;
+               pgSample.handleSelectSample(false/*bStopAudio*/);
+               break;
+         }
+      }
+   }
+
+   // <ui.png>
+   public virtual getCellEditor(int _col, int _row) : TableCellEditor {
+
+      SamplesTMEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         TableCellEditorString *tcestr;
+
+         switch(_col)
+         {
+            case COL_NAME:
+               tcestr <= new TableCellEditorString;
+               tcestr.initStringEditor(en.sample.unique_name);
+               tcestr.setMaxCols(64);
+               tcestr.setRequiredSizeX(column_widths.get(_col)-2);
+               return deref tcestr;
+         }
+      }
+   }
+
+}

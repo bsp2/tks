@@ -1,0 +1,249 @@
+// ----
+// ---- file   : SampleMixerDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 29Dec2024
+// ---- changed: 30Dec2024
+// ----
+// ----
+// ----
+
+module MSampleMixerDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleMixerDialog extends Dialog {
+   protected Sample *sample;
+
+   protected XMLForm *xfm;
+
+   protected ScrollPane *sp_zones;
+   protected Panel      *p_zones;
+
+   protected ZoneMixForm *[] a_forms;
+
+
+   // <ui_init.png>
+   public method initSampleMixerDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleMixerDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSampleMixerDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Sample Mixer",
+                 200, 100,
+                 600*UI.font_scaling, 20*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSampleMixerDialog(Sample _sample) {
+      sample <= _sample;
+
+      p_zones.removeChildHierarchy();
+      a_forms.free();
+
+      int numZones = sample.getNumZones();
+      if(numZones > 0)
+      {
+         int zoneIdx = 0;
+         loop(numZones)
+         {
+            StSample s <= sample.getZoneByIdx(zoneIdx);
+
+            ZoneMixForm f <= new ZoneMixForm;
+            f.init();
+            f.showZone(sample, s);
+            a_forms.add(#(deref f));
+            p_zones.addLayer(f, Layout.BOTTOM);
+
+            // Next zone
+            zoneIdx++;
+         }
+
+         recursiveBuildTabCycleLists();
+
+         setWindowTitle("Sample Mixer: "+_sample.unique_name);
+
+         show();
+      }
+      else
+         Global.Warning("SampleMixer: no zones");
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      ZoneMixForm *f;
+      foreach f in a_forms
+         f.addTabCycleOverrides(layers);
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      PageSample pgSample <= root_form.pg_sample;
+      int zoneIdx = pgSample.getFirstSelectedZoneIdx();
+      ZoneMixForm f <= a_forms[zoneIdx];
+      f.refocusDefault();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(this);
+
+      ZoneMixForm f <= a_forms.first;
+
+      float sy = 0.0f;
+      sy += f.getMinimumSizePadY() * a_forms.numElements;
+      // trace "xxx SampleMixerDialog::postShow: sy="+sy;
+      setWindowContentSizeY(sy);
+      setMinimumSizeY(getSizePadY());
+      handleResize();
+
+      // trace "xxx SampleMixerDialog::postShow:  => window size_y="+getSizeY();
+      float sx = f.getMinimumSizePadX();
+      setWindowContentSizeX(f.getMinimumSizePadX());
+      resizeAtLeastTo(sx+18*UI.font_scaling, getSizePadY());  // (todo) why +18 ?
+      invalidateAbsolutePositions();
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SavePosition(this, STConfig.pgsample_samplemixer_pos_hidpi);
+      else
+         Utils.SavePosition(this, STConfig.pgsample_samplemixer_pos_lodpi);
+
+      PageSample pgSample <= root_form.pg_sample;
+      pgSample.handleSelectSample(false/*bStopAudio*/);  // update widgets
+
+      Dialog::hide();
+   }
+
+   // <method_get.png>
+   protected method getKeyboardFocusZoneIdx() : int {
+      ZoneMixForm *f;
+      int zoneIdx = 0;
+      foreach f in a_forms
+      {
+         if(f.hierarchyHasKeyboardFocus())
+            return zoneIdx;
+         zoneIdx++;
+      }
+      return -1;
+   }
+
+   // <ui_handle.png>
+   protected method selectPreviousZone() {
+      int zoneIdx = getKeyboardFocusZoneIdx();
+      if(zoneIdx > 0)
+      {
+         ZoneMixForm f <= a_forms.get(zoneIdx - 1);
+         f.refocusDefault();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method selectNextZone() {
+      int zoneIdx = getKeyboardFocusZoneIdx();
+      if(zoneIdx >= 0)
+      {
+         ZoneMixForm f <= a_forms.get(zoneIdx + 1);
+         if(null != f)
+            f.refocusDefault();
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         selectPreviousZone();
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         selectNextZone();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[trc] SampleMixerDialog::onKey: pressed="+_k.pressed+" name="+_k.name;
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction sac <= _action;
+      IntAction iac <= _action;
+
+      if(TextField.ACTION_CURSORUP == acName)
+      {
+         selectPreviousZone();
+         return true;
+      }
+      else if(TextField.ACTION_CURSORDOWN == acName)
+      {
+         selectNextZone();
+         return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

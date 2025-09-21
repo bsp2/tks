@@ -1,0 +1,273 @@
+// ----
+// ---- file   : CycleArgForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 18Aug2020
+// ---- changed: 19Aug2020, 20Aug2020, 31Aug2021, 11Nov2023, 01Dec2023, 07Dec2023, 14Feb2024
+// ----          10Jan2025, 31Jan2025
+// ----
+// ----
+// ----
+
+module MCycleArgForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class CycleArgForm : XMLForm, ActionProvider, MIDIMapDefs {
+   define String ACTION_ARG_PREVIOUS;
+   define String ACTION_ARG_NEXT;
+
+   CycleSynthDialog *parent_dlg;
+
+   int arg_idx;
+
+   Button      *bt_id;
+   CheckBox    *cb_shared;
+   Slider      *sl_value;
+   FloatParam  *fp_value;
+
+   CycleState *cycle_state;
+   CyclePatch *patch;
+
+
+   // <ui_init.png>
+   public method initArgForm() : boolean {
+
+      if(!initPakFile("CycleArgForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ARG_PREVIOUS, ACTION_ARG_NEXT];
+   }
+
+   // <ui_show.png>
+   public method showArg(CycleSynthDialog _dlg, int _argIdx, CycleState _synthState) {
+      parent_dlg  <= _dlg;
+      cycle_state <= _synthState;
+      patch       <= _dlg.patch;
+      arg_idx      = _argIdx;
+
+      CyArg arg <= patch.getArgByIndex(_argIdx);
+      if(null != arg)
+      {
+         String argId <= arg.id;
+         if(argId <= "a_")
+            bt_id.setCaption(arg.id.substring(2,-1));
+         else
+            bt_id.setCaption(arg.id);
+         bt_id.setEnableCaptionDim(false);
+
+         float f = patch.getArgValue(argId);
+
+         sl_value.setMinMaxValues(arg.min_value*1000.0, arg.max_value*1000.0);
+         sl_value.setResetValue(arg.def_value*1000.0);
+         sl_value.setValue(f*1000.0);
+         sl_value.setEditable(true);
+
+         fp_value.setMinMaxValues(arg.min_value, arg.max_value);
+         fp_value.setResetValue(arg.def_value);
+         fp_value.setValue(f);
+         fp_value.setEditable(true);
+
+         FloatArray  argPresetValues <= arg.preset_values;
+         StringArray argPresetNames  <= arg.preset_names;
+
+         if(argPresetValues.numElements > 0)
+         {
+            fp_value.setPresetOptions(argPresetValues, argPresetNames);
+         }
+         else
+         {
+            fp_value.setPresetOptions(null, null);
+         }
+
+         fp_value.setToolTipCaption("Arg "+(_argIdx+1)+" Value"+((null != arg.group_name)?(". Group: \""+arg.group_name+"\"."):""));
+
+         if(-1 != patch.shared_patch_idx)
+         {
+            cb_shared.setSelected(patch.isSharedArg(arg.id));
+            cb_shared.setEditable(true);
+         }
+         else
+         {
+            cb_shared.setSelected(false);
+            cb_shared.setEditable(false);
+         }
+
+         if(arg.b_local)
+         {
+            // "local" UI module arg (hide)
+            bt_id.setCaption("<"+bt_id.getCaption()+">");
+            bt_id.setEnableCaptionDim(true);
+            sl_value.setEditable(false);
+            fp_value.setEditable(false);
+            cb_shared.setSelected(false);
+            cb_shared.setEditable(false);
+         }
+      }
+      else
+      {
+         bt_id.setCaption("-");
+         sl_value.setMinMaxValues(0, 0);
+         sl_value.setValue(0);
+         sl_value.setEditable(false);
+
+         fp_value.setMinMaxValues(0, 0);
+         fp_value.setValue(0);
+         fp_value.setEditable(false);
+         fp_value.setToolTipCaption("Arg "+(_argIdx+1)+" Value (-unused-)");
+
+         cb_shared.setSelected(false);
+         cb_shared.setEditable(false);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      if(sl_value.isEditable())
+      {
+         layers.add(sl_value);
+         layers.add(cb_shared);
+         layers.add(fp_value);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSliderValueChanged() {
+      CyArg arg <= patch.getArgByIndex(arg_idx);
+      if(null != arg)
+      {
+         float f = sl_value.getValue() / 1000.0;
+         patch.setArgValue(arg.id, f);
+         patch.setSharedArgFlag(arg.id, false);
+         patch.last_edited_arg_idx = arg_idx;
+         cb_shared.setSelected(false);
+         arg.cur_value = f;
+
+         if(cycle_state.updateSharedPatchArgs(patch.patch_idx, arg.id, f) > 0)
+            cycle_state.setEnableRecalcAll(true);
+
+         fp_value.setValue(f);
+         fp_value.redraw();
+         Global.Print("Arg \""+arg.id+"\" value is "+fp_value.getFloatName());
+
+         parent_dlg.last_touched_arg_idx = arg_idx;
+
+         parent_dlg.queueRecalc();
+         current_project.markAsModified();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFPValueChanged() {
+      CyArg arg <= patch.getArgByIndex(arg_idx);
+      if(null != arg)
+      {
+         float f = fp_value.getFloatValue();
+         patch.setArgValue(arg.id, f);
+         patch.setSharedArgFlag(arg.id, false);
+         patch.last_edited_arg_idx = arg_idx;
+         cb_shared.setSelected(false);
+         arg.cur_value = f;
+
+         if(cycle_state.updateSharedPatchArgs(patch.patch_idx, arg.id, f) > 0)
+            cycle_state.setEnableRecalcAll(true);
+
+         sl_value.setValue(f * 1000.0);
+         sl_value.redraw();
+         Global.Print("Arg \""+arg.id+"\" value is "+fp_value.getFloatName());
+
+         parent_dlg.last_touched_arg_idx = arg_idx;
+
+         parent_dlg.queueRecalc();
+         current_project.markAsModified();
+      }
+
+      // // provideEdited();
+   }
+
+   // <ui_handle.png>
+   protected method handleSharedChanged() {
+      CyArg arg <= patch.getArgByIndex(arg_idx);
+      if(null != arg)
+      {
+         boolean bShared = cb_shared.isSelected();
+         patch.setSharedArgFlag(arg.id, bShared);
+         patch.last_edited_arg_idx = arg_idx;
+
+         parent_dlg.queueRecalc();
+         current_project.markAsModified();
+
+         if(bShared)
+         {
+            CyclePatch spShared <= cycle_state.getPatchByIdx(patch.shared_patch_idx);
+            if(null != spShared)
+            {
+               CyArg argShared <= spShared.getArgByIndex(arg_idx);
+               if(null != argShared)
+               {
+                  // Sync arg value
+                  float f = argShared.cur_value;
+                  patch.setArgValue(arg.id, f);
+                  sl_value.setValue(f * 1000.0);
+                  fp_value.setValue(f);
+               }
+            }
+         }
+
+         parent_dlg.last_touched_arg_idx = arg_idx;
+
+         Global.Print("Arg \""+arg.id+"\" is "+((bShared ? ("inherited from patch "+(patch.shared_patch_idx+1)) : "NOT shared")));
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(bt_id):
+            if(Button.ACTION_WHEEL_UP == acName)
+               provideActionByName(ACTION_ARG_PREVIOUS);
+            else if(Button.ACTION_WHEEL_DOWN == acName)
+               provideActionByName(ACTION_ARG_NEXT);
+            return true;
+
+         case @(sl_value):
+            handleSliderValueChanged();
+            return true;
+
+         case @(cb_shared):
+            handleSharedChanged();
+            return true;
+
+         case @(fp_value):
+            boolean bEntered = (FloatParam.ACTION_VALUEENTERED == acName);
+            handleFPValueChanged();
+            if(bEntered)
+               UI.SetKeyboardFocus(sl_value);
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

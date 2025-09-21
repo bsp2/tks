@@ -1,0 +1,185 @@
+// ----
+// ---- file   : ModMatrixForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 17Mar2018
+// ---- changed: 18Mar2018, 27Mar2018, 29Mar2018
+// ----
+// ----
+// ----
+
+module MModMatrixForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModMatrixForm : XMLForm, ActionProvider {
+
+   define String ACTION_RELAYOUT;
+
+   Track *track;
+   Mod *mod;
+
+   protected Button *bt_add;
+
+   protected SizeGroupX *sgx_arg1;
+   protected SizeGroupX *sgx_dst;
+   protected Panel *pn_entries;
+
+   protected PointerArray entry_forms;  // ModMatrixEntryForm refs
+
+   float entry_sx;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("ModMatrixForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      sgx_arg1 <= findSizeGroupById("sgx_arg1");
+      sgx_dst  <= findSizeGroupById("sgx_dst");
+
+      bt_add.setCaptionOffsetY(-3);
+      bt_add.setTextPlacement(Layout.TOP | Layout.CENTERX);
+      bt_add.setRequiredSizeY(15.0f);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_RELAYOUT
+              ];
+   }
+
+   // <ui_show.png>
+   public method showMod(Track _track, Mod _mod) {
+
+      track <= _track;
+      mod <= _mod;
+
+      UI.LoseKeyboardFocusIfWithin(pn_entries, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(pn_entries);
+
+      pn_entries.removeChildren();
+      entry_forms.empty();
+
+      if(null != _mod)
+      {
+         if(_mod.getNumParameters() > 0)
+         {
+            ModMatrixEntry *mme;
+            entry_sx = 0.0f;
+            ModMatrixEntryForm mmef <= null;
+            bt_add.setRequiredSizeX(32.0f);
+            foreach mme in _mod.mod_matrix
+            {
+               mmef <= new ModMatrixEntryForm;
+               mmef.init();
+               mmef.showEntry(track, _mod, mme, sgx_arg1, sgx_dst);
+               pn_entries.addLayer(deref mmef, Layout.BOTTOM);
+               entry_forms.add(mmef);
+            }
+
+            relayout();
+
+            if(null != mmef)
+            {
+               // hack to align "+" button width to actual entry width, excluding the remove button
+               entry_sx = mmef.getEntryWidth();
+               bt_add.setRequiredSizeX(entry_sx);
+            }
+
+            // trace "xxx pn_entries has "+pn_entries.getNumChildLayers()+" child layer(s)";
+         }
+
+         bt_add.setEditable(true);
+      }
+      else
+      {
+         bt_add.setEditable(false);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAdd() {
+
+      if(null != mod)
+      {
+         Mod *cmod;
+         foreach cmod in ModMatrix.current_mods
+         {
+            // (note) the gid should be the same for all (mirror-)mods since it was synced when editing began
+            ModMatrixEntry mmeNew <= cmod.addModMatrixEntry();
+            mmeNew.setEnableRelative(mod.b_relative_params);
+            cmod.allocNextModMatrixGID();
+         }
+
+         showMod(track, mod);
+
+         Global.Print("Add modmatrix entry");
+
+         provideAction(Action.New(getProvidedActionAlias(ACTION_RELAYOUT), this));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRemoveByIdx(int _modIdx) {
+      if(null != mod)
+      {
+         ModMatrixEntry mme <= mod.mod_matrix.get(_modIdx);
+         if(null != mme)
+         {
+            Mod *cmod;
+            int gid = mme.gid;
+            foreach cmod in ModMatrix.current_mods
+            {
+               cmod.removeModMatrixEntryByGID(gid);
+            }
+            showMod(track, mod);
+            Global.Print("Remove modulation entry "+_modIdx+" (gid="+gid+")");
+            provideAction(Action.New(getProvidedActionAlias(ACTION_RELAYOUT), this));
+         }
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(ModMatrixEntryForm.ACTION_REMOVE_ENTRY == acName)
+      {
+         int modIdx = entry_forms.indexOfPointer(ap, 0);
+         if(-1 != modIdx)
+         {
+            handleRemoveByIdx(modIdx);
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_add):
+            handleAdd();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

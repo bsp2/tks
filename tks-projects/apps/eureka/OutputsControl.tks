@@ -1,0 +1,350 @@
+// ----
+// ---- file   : OutputsControl.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 16Feb2018
+// ---- changed: 17Feb2018, 29Jul2023, 03Oct2023, 09Nov2023, 22Mar2024, 15Sep2024, 21Sep2024
+// ----          04Apr2025
+// ----
+// ----
+// ----
+
+module MOutputsControl;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class OutputsControl : Control, ActionConsumer {
+
+   define String ACTION_OUTPUTS_CHANGED;  // IntAction, value=next visible output idx
+
+   protected Output     *[] *outputs;
+   protected OutputForm *[]  output_forms;  // OutputForm references
+
+   protected Button *bt_add;
+
+   Track *parent_track;
+   int lane_idx;  // -1=track
+
+
+   // <ui_init.png>
+   public method init(Track _parentTrack, int _laneIdx) : boolean {
+      parent_track <= _parentTrack;
+      lane_idx = _laneIdx;
+      initLayer();
+      setPadding4f(0,0,0,0);
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OUTPUTS_CHANGED];
+   }
+
+   // <ui_show.png>
+   public method showOutputs(PointerArray _outputs, int _maxLanes) {
+      outputs <= _outputs;
+
+      setLayout(SuperBorderLayout);
+
+      UI.LoseKeyboardFocusIfWithin(this, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(this);
+      removeChildHierarchy();
+
+      output_forms.free();
+
+      Output *output;
+      int outputIdx = 0;
+      foreach output in outputs
+      {
+         OutputForm of <= new OutputForm;
+         of.init(this, lane_idx, outputIdx, outputs.numElements);
+         of.showOutput(output, _maxLanes);
+         output_forms.add(of);
+         addLayer(deref of, Layout.BOTTOM);
+         outputIdx++;
+      }
+
+      bt_add <= Button.New();
+      bt_add.setEnableLabelButton(true);
+      bt_add.setEnableHold(true);
+      bt_add.setAlignment(Layout.EXPANDX);
+      bt_add.setCaption("+");
+      bt_add.setCaptionOffsetY(-3);
+      bt_add.setTextPlacement(Layout.TOP | Layout.CENTERX);
+      bt_add.setToolTipCaption("Add output\n\n (note) hold-click to clone last output");
+      bt_add.setBackgroundTint(#50000000);
+      bt_add.setForegroundColor(#ffdddddd);
+      bt_add.setRequiredSizeY(15.0f * UI.font_scaling);
+      bt_add.setEnableKbdFocusOnMouse(false);
+      bt_add.setEnableHold(true);
+      bt_add.setPadding4f(0,0,0,0);
+      addLayer(deref bt_add, Layout.BOTTOM);
+   }
+
+   // <ui_update.png>
+   public method updateOutputTrackNames() {
+      OutputForm *of;
+      foreach of in output_forms
+         of.updateOutputTrackName();
+   }
+
+   // <method_find.png>
+   public method findAddButtonByMaxIdx(int _idx) : Button {
+      if(_idx == (output_forms.numElements-1))
+         return bt_add;
+      return null;
+   }
+
+   // <ui_update.png>
+   public method setBackgroundTint(int _c32) {
+      OutputForm *of;
+      foreach of in output_forms
+         of.setBackgroundTint(_c32);
+   }
+
+   // <method.png>
+   protected =replay= method outputsAdd_Sync(Output _output) {
+      outputs.add(#(deref _output));
+   }
+
+   // <ui_handle.png>
+   protected method handleAddOutput(boolean _bQuiet) : Output {
+      if(outputs.numElements < Output.MAX_OUTPUTS)
+      {
+         Output output <= new Output;
+         output.init();
+         outputsAdd_Sync(deref output);
+
+         if(!_bQuiet)
+            Global.Print("Add output "+outputs.numElements);
+
+         UI.LoseKeyboardFocusIfWithin(this, true/*bQuiet*/);
+         UI.LoseMouseFocusIfWithin(this);
+
+         Project.QueueTrackFormUpdate();
+
+         current_project.markAsModified();
+
+         if(!_bQuiet)
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, outputs.numElements-1));
+
+         return output;
+      }
+      else
+      {
+         Global.Warning("Maximum number of outputs ("+Output.MAX_OUTPUTS+") reached");
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected =replay= method cloneLastOutput_Sync() : Output {
+      Output outputLast <= outputs.last;
+      Output output <= handleAddOutput(true/*bQuiet*/);
+      if(null != output)
+      {
+         output.copyOutputFrom(outputLast);
+      }
+      return output;
+   }
+
+   // <ui_handle.png>
+   public method handleCloneLastOutput() {
+      if(outputs.numElements > 0)
+      {
+         if(null != cloneLastOutput_Sync())
+         {
+            Global.Print("Clone last output");
+
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, outputs.numElements-1));
+         }
+      }
+      else
+      {
+         Global.Warning("No outputs (cannot clone)");
+      }
+   }
+
+   // <method.png>
+   protected =replay= method addOutputToFXTrack_Sync(int _trackIdx) : Output {
+      Output output <= handleAddOutput(true/*bQuiet*/);
+      if(null != output)
+      {
+         output.setType(Output.TYPE_TRACK);
+         output.setTrackIdx(_trackIdx);
+         // // output.setLevel(0.33);
+      }
+      return output;
+   }
+
+   // <ui_handle.png>
+   public method handleAddOutputToFXTrack(int _trackIdx) {
+      Track track <= current_project.getTrackByIdx(_trackIdx);
+      if(null != track)
+      {
+         if(null != addOutputToFXTrack_Sync(_trackIdx))
+         {
+            Global.Print("Add FX-send to track \""+track.name+"\" (output "+outputs.numElements+")");
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, outputs.numElements-1));
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= method addOutputToLane_Sync(int _laneIdx) : Output {
+      Output output <= handleAddOutput(true/*bQuiet*/);
+      if(null != output)
+      {
+         output.setType(Output.TYPE_LANE);
+         output.setLaneIdx(_laneIdx);
+      }
+      return output;
+   }
+
+   // <ui_handle.png>
+   public method handleAddOutputToLane(int _laneIdx) {
+      if(null != addOutputToLane_Sync(_laneIdx))
+      {
+         Global.Print("Add send to lane "+(_laneIdx+1)+" (output "+outputs.numElements+")");
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, outputs.numElements-1));
+      }
+   }
+
+   // <method.png>
+   protected =replay= method outputsDelete_Sync(int _idx) {
+      outputs.delete(_idx);
+   }
+
+   // <ui_handle.png>
+   protected method handleDeleteOutput(int _idx) {
+      if(_idx < outputs.numElements)
+      {
+         int nextVisIdx = _idx;
+
+         Global.Print("Delete output "+(_idx+1)+"/"+outputs.numElements);
+         outputsDelete_Sync(_idx);
+
+         if(nextVisIdx >= outputs.numElements)
+            nextVisIdx--;
+
+         current_project.markAsModified();
+
+         Project.QueueTrackFormUpdate();
+
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, -nextVisIdx));
+      }
+   }
+
+   // <method.png>
+   protected =replay= outputsSwap_Sync(int _idxA, int _idxB) {
+      outputs.swap(_idxA, _idxB);
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveOutputUp(int _idx) {
+      if(0 < _idx < outputs.numElements)
+      {
+         int nextVisIdx = _idx - 1;
+
+         outputsSwap_Sync(_idx - 1, _idx);
+
+         Project.QueueTrackFormUpdate();
+
+         current_project.markAsModified();
+
+         Global.Print("Move output "+(_idx+1)+"/"+outputs.numElements+" up");
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, -nextVisIdx));
+      }
+      else
+      {
+         Global.Warning("Cannot move output "+(_idx+1)+"/"+outputs.numElements+" up");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveOutputDown(int _idx) {
+      if(_idx < (outputs.numElements-1))
+      {
+         int nextVisIdx = _idx + 1;
+
+         outputsSwap_Sync(_idx + 1, _idx);
+
+         Project.QueueTrackFormUpdate();
+
+         current_project.markAsModified();
+
+         Global.Print("Move output "+(_idx+1)+"/"+outputs.numElements+" down");
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, -nextVisIdx));
+      }
+      else
+      {
+         Global.Warning("Cannot move output "+(_idx+1)+"/"+outputs.numElements+" down");
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      //trace "xxx TrackForm::consumeAction: acName=\""+acName+"\".";
+
+      int outputIdx;
+
+      if(OutputForm.ACTION_DELETE_OUTPUT == acName)
+      {
+         outputIdx = output_forms.indexOfPointer(ap, 0);
+         if(-1 != outputIdx)
+         {
+            Global.Debug("OutputsControl: handle ACTION_DELETE_OUTPUT, outputIdx="+outputIdx);
+            handleDeleteOutput(outputIdx);
+         }
+         return true;
+      }
+      else if(OutputForm.ACTION_MOVE_OUTPUT_UP == acName)
+      {
+         outputIdx = output_forms.indexOfPointer(ap, 0);
+         if(-1 != outputIdx)
+         {
+            Global.Debug("OutputsControl: handle ACTION_MOVE_OUTPUT_UP, outputIdx="+outputIdx);
+            handleMoveOutputUp(outputIdx);
+         }
+         return true;
+      }
+      else if(OutputForm.ACTION_MOVE_OUTPUT_DOWN == acName)
+      {
+         outputIdx = output_forms.indexOfPointer(ap, 0);
+         if(-1 != outputIdx)
+         {
+            Global.Debug("OutputsControl: handle ACTION_MOVE_OUTPUT_DOWN, outputIdx="+outputIdx);
+            handleMoveOutputDown(outputIdx);
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleCloneLastOutput();
+            }
+            else
+            {
+               handleAddOutput(false/*bQuiet*/);
+            }
+            return true;
+      }
+
+      return false;
+   }
+}

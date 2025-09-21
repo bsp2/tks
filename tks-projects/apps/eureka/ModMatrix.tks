@@ -1,0 +1,1461 @@
+// ----
+// ---- file   : ModMatrix.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 16Mar2018
+// ---- changed: 17Mar2018, 18Mar2018, 26Mar2018, 27Mar2018, 29Mar2018, 13Dec2018, 29Dec2018
+// ----          17Jan2019, 10May2019, 26Aug2019, 15Oct2019, 06Feb2021, 20May2021, 23Aug2021
+// ----          17Jul2022, 29Jul2023, 21Sep2023, 09Nov2023, 22Mar2024, 03Jul2024, 04Jul2024
+// ----          22Dec2024, 23Dec2024, 21Jun2025
+// ----
+// ----
+// ----
+
+module MModMatrix;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModMatrix : XMLForm {
+
+   define int C32_CURVE_ENABLE = #5cffff00;
+
+   protected Mod *mod;
+   protected Track *track;
+
+   protected CheckBox *flt_note_on;
+   protected CheckBox *flt_note_off;
+   protected CheckBox *flt_pitchbend;
+   protected CheckBox *flt_chpressure;
+   protected CheckBox *flt_polypressure;
+
+   protected CheckBox *flt_cc_other;
+   protected CheckBox *flt_cc_footcontrol;
+   protected CheckBox *flt_cc_breathcontrol;
+   protected CheckBox *flt_cc_modwheel;
+   protected CheckBox *flt_cc_expression;
+
+   protected CheckBox *flt_cc_hold1sw;
+   protected CheckBox *flt_cc_hold2sw;
+   protected CheckBox *flt_cc_portamentosw;
+   protected CheckBox *flt_cc_sostenutosw;
+   protected CheckBox *flt_cc_softpedalsw;
+
+   protected CheckBox *flt_cc_legatosw;
+   protected CheckBox *flt_prgchg;
+   protected CheckBox *flt_sysex;
+
+   protected ComboBox *cm_flt_preset;
+
+   protected Panel      *p_note;
+   protected ComboBox   *cm_note_min;
+   protected Button     *bt_note_min_to_max;
+   protected ComboBox   *cm_note_max;
+   protected FloatParam *fp_note_transpose;
+
+   protected FloatParam *fp_vel_min;
+   protected FloatParam *fp_vel_max;
+   protected Button     *bt_vel_on_curve;
+   protected Button     *bt_vel_off_curve;
+
+   protected CheckBox *cb_relative_params;
+
+   protected Button *bt_editor;
+   protected CheckBox *cb_keep_plugin_editor_open;
+
+   ModMatrixEntryForm *f_entry;
+
+   protected TableView *tv_entries;
+   protected ModMatrixTM *tm_entries;
+   protected Button *bt_entry_add;
+   protected Button *bt_entry_remove;
+   protected Button *bt_entry_moveup;
+   protected Button *bt_entry_movedown;
+
+   protected PopupMenu *pm_contextmenu;
+   protected PopupMenu *pm_notefilter;
+
+   boolean b_keep_plugin_editor_open;
+
+   static Mod *[] mirror_mods;  // Mod(CLAP/VST2) refs, in MPE/LPC mode
+   static Mod *[] current_mods;  // "mod" + "mirror_mods"
+
+   static Envelope *[] mirror_envs;  // for CurveDialog multi-editing (MPE/LPC mirror modes)
+   static BezierEditState *[] mirror_env_states;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("ModMatrix.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      local StringArray notes; notes.empty();
+      String *note;
+      byte noteIdx = 0;
+      foreach note in MIDI.midi_notes
+      {
+         notes.add(note+" ("+noteIdx+")");
+         noteIdx++;
+      }
+
+      cm_note_min.setOptions(notes);
+      cm_note_max.setOptions(notes);
+
+      if(!f_entry.init())
+         return false;
+      f_entry.showEntry(null, null, null);
+
+      tm_entries <= new ModMatrixTM;
+      tm_entries.initTableModel();
+      tv_entries.setTableModel(tm_entries);
+      tm_entries.mod <= null;
+      tm_entries.f_entry <= f_entry;
+      tv_entries.tableModelChanged();
+
+      cb_keep_plugin_editor_open.setEditable(STConfig.b_auto_hide_plugin_editors);
+
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showInstance(Mod _mod, Track _track) {
+      mod <= _mod;
+      track <= _track;
+
+      if(null != mod)
+      {
+         ModInputFilter f <= mod.input_filter;
+
+         updateFilterWidgets();
+
+         cm_flt_preset.setEditable(true);
+
+         cm_note_min.setSelectedOptionAndEnable(f.noteMin);
+         bt_note_min_to_max.setEditable(true);
+         cm_note_max.setSelectedOptionAndEnable(f.noteMax);
+         fp_note_transpose.setValueAndEnable(f.noteTranspose);
+
+         fp_vel_min.setValueAndEnable(f.velocityMin);
+         fp_vel_max.setValueAndEnable(f.velocityMax);
+         bt_vel_on_curve.setEditable(true);
+         bt_vel_off_curve.setEditable(true);
+
+         if(mod instanceof ModCLAP)
+         {
+            ModCLAP modCLAP <= mod;
+            cb_relative_params.setSelected(modCLAP.isAnyParameterModulatable());
+            cb_relative_params.setEditable(false);
+         }
+         else
+         {
+            cb_relative_params.setSelected(mod.getEnableRelativeParams());
+            cb_relative_params.setEditable(mod.canDoRelativeParams());
+         }
+
+         bt_editor.setEditable( (mod instanceof ModCLAP) || (mod instanceof ModVST2) );
+
+         FindMirrorMods(track, mod);
+
+         tm_entries.mod <= mod;
+         mod.getParameterNamesArray(tm_entries.dst_options);
+         tv_entries.tableModelChanged();
+
+         if(-1 == tm_entries.getCursorIndex())
+            tv_entries.moveCursorToFirstRow();
+
+         handleModMatrixEntrySelected();
+      }
+      else
+      {
+         tm_entries.mod <= null;
+
+         mirror_mods.empty();
+         current_mods.empty();
+
+         flt_note_on.setSelectedAndDisable(false);
+         flt_note_off.setSelectedAndDisable(false);
+         flt_pitchbend.setSelectedAndDisable(false);
+         flt_chpressure.setSelectedAndDisable(false);
+         flt_polypressure.setSelectedAndDisable(false);
+
+         flt_cc_other.setSelectedAndDisable(false);
+         flt_cc_modwheel.setSelectedAndDisable(false);
+         flt_cc_breathcontrol.setSelectedAndDisable(false);
+         flt_cc_footcontrol.setSelectedAndDisable(false);
+         flt_cc_expression.setSelectedAndDisable(false);
+
+         flt_cc_hold1sw.setSelectedAndDisable(false);
+         flt_cc_hold2sw.setSelectedAndDisable(false);
+         flt_cc_portamentosw.setSelectedAndDisable(false);
+         flt_cc_sostenutosw.setSelectedAndDisable(false);
+         flt_cc_softpedalsw.setSelectedAndDisable(false);
+
+         flt_cc_legatosw.setSelectedAndDisable(false);
+         flt_prgchg.setSelectedAndDisable(false);
+         flt_sysex.setSelectedAndDisable(false);
+
+         cm_flt_preset.setEditable(false);
+
+         cm_note_min.setSelectedOptionAndDisable(-1);
+         bt_note_min_to_max.setEditable(false);
+         cm_note_max.setSelectedOptionAndDisable(-1);
+         fp_note_transpose.setValueAndDisable(-1);
+
+         fp_vel_min.setValueAndDisable(0);
+         fp_vel_max.setValueAndDisable(0);
+
+         cb_relative_params.setSelectedAndDisable(false);
+
+         bt_editor.setEditable(false);
+
+         f_entry.showEntry(null/*track*/, null/*mod*/, null/*mme*/);
+      }
+
+      updateNoteOnVelocityCurveEnableState();
+      updateNoteOffVelocityCurveEnableState();
+
+      UI.LayoutRootLayer();  // [24Sep2024]
+
+      UI.RedrawAll();
+   }
+
+   // <method.png>
+   public method leaveInstance() {
+      // when leaving page
+      mod <= null;
+      track <= null;
+      tm_entries.mod <= null;
+      mirror_mods.empty();
+      current_mods.empty();
+   }
+
+   // <method_get.png>
+   protected method getSelectedEntry() : ModMatrixEntry {
+      int ci = tm_entries.getCursorIndex();
+      if(-1 != ci)
+         return mod.mod_matrix.get(ci);
+      return null;
+   }
+
+   // <ui_handle.png>
+   protected method handleModMatrixEntrySelected() {
+      ModMatrixEntry mme <= getSelectedEntry();
+      if(null != mme)
+      {
+         f_entry.showEntry(track, mod, mme);
+      }
+      else
+      {
+         f_entry.showEntry(null/*track*/, null/*mod*/, null/*mme*/);
+      }
+      UI.LayoutRootLayer();  // [09Nov2023]
+      UI.RedrawAll();
+   }
+
+   // <ui_update.png>
+   protected method updateNoteOnVelocityCurveEnableState() {
+      if(null != mod)
+      {
+         if(mod.b_enable_noteon_velocity_env)
+            bt_vel_on_curve.setBackgroundTint(C32_CURVE_ENABLE);
+         else
+            bt_vel_on_curve.setBackgroundTint(0);
+      }
+      else
+      {
+         bt_vel_on_curve.setBackgroundTint(0);
+      }
+      bt_vel_on_curve.redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateNoteOffVelocityCurveEnableState() {
+      if(null != mod)
+      {
+         if(mod.b_enable_noteoff_velocity_env)
+            bt_vel_off_curve.setBackgroundTint(C32_CURVE_ENABLE);
+         else
+            bt_vel_off_curve.setBackgroundTint(0);
+      }
+      else
+      {
+         bt_vel_off_curve.setBackgroundTint(0);
+      }
+      bt_vel_off_curve.redraw();
+   }
+
+   // <method.png>
+   public static FindMirrorMods(Track track, Mod mod) {
+
+      mirror_mods.empty();
+      current_mods.empty();
+
+      current_mods.add(mod);
+
+      int maxNextModMatrixGID = mod.next_modmatrix_gid;
+
+      if(track.isMirrorMode())
+      {
+         int laneIdxMod = track.findLaneIdxByMod(mod);
+         // // trace "xxx findMirrorMods: laneIdxMod="+laneIdxMod;
+
+         if(-1 != laneIdxMod)
+         {
+            int laneIdx = 0;
+            Lane *lane;
+            foreach lane in track.lanes
+            {
+               if(track.multi_lane_offset <= laneIdx < (track.multi_lane_offset + track.multi_num_channels))
+               {
+                  if(laneIdx != laneIdxMod)
+                  {
+                     Mod modOther <= lane.findModAtY(mod.ui_grid_y);
+                     // // trace "xxx findMirrorMods: modOther="+#(modOther);
+
+                     if(modOther instanceof ModCLAP)
+                     {
+                        ModCLAP modOtherCLAP <= modOther;
+                        if(modOtherCLAP.modIsPatchCompatibleWith(mod))
+                        {
+                           CLAPPlugin pluginOtherCLAP <= modOtherCLAP.plugin;
+                           if(null != pluginOtherCLAP)
+                           {
+                              mirror_mods.add(modOtherCLAP);
+                              current_mods.add(modOtherCLAP);
+
+                              if(modOtherCLAP.next_modmatrix_gid > maxNextModMatrixGID)
+                                 maxNextModMatrixGID = modOtherCLAP.next_modmatrix_gid;
+                           }
+                        }
+                     }
+                     else if(modOther instanceof ModVST2)
+                     {
+                        ModVST2 modOtherVST2 <= modOther;
+                        if(modOtherVST2.modIsPatchCompatibleWith(mod))
+                        {
+                           VST2Plugin pluginOtherVST2 <= modOtherVST2.plugin;
+                           if(null != pluginOtherVST2)
+                           {
+                              mirror_mods.add(modOtherVST2);
+                              current_mods.add(modOtherVST2);
+
+                              if(modOtherVST2.next_modmatrix_gid > maxNextModMatrixGID)
+                                 maxNextModMatrixGID = modOtherVST2.next_modmatrix_gid;
+                           }
+                        }
+                     }
+                  }
+               }
+
+               // Next lane
+               laneIdx++;
+            }
+
+            // Sync next_modmatrix_gid
+            Mod *cmod;
+            foreach cmod in current_mods
+            {
+               cmod.next_modmatrix_gid = maxNextModMatrixGID;
+            }
+
+         }
+      }
+
+      // Global.Debug("ModMatrix::findMirrorMods: maxNextModMatrixGID="+maxNextModMatrixGID+" current_mods="+#(current_mods));
+   }
+
+   // <method.png>
+   public findMirrorEnvStatesAndEnvs_NoteOnVelocity() {
+      Mod *cmod;
+      mirror_envs.empty();
+      mirror_env_states.empty();
+
+      if(track.isMirrorMode())
+      {
+         foreach cmod in mirror_mods
+         {
+            mirror_envs.add(cmod.noteon_velocity_env);
+            mirror_env_states.add(cmod.noteon_velocity_env_state);
+         }
+      }
+   }
+
+   // <method.png>
+   public findMirrorEnvStatesAndEnvs_NoteOffVelocity() {
+      Mod *cmod;
+      mirror_envs.empty();
+      mirror_env_states.empty();
+
+      if(track.isMirrorMode())
+      {
+         foreach cmod in mirror_mods
+         {
+            mirror_envs.add(cmod.noteoff_velocity_env);
+            mirror_env_states.add(cmod.noteoff_velocity_env_state);
+         }
+      }
+   }
+
+   // <method.png>
+   public static FindMirrorEnvStatesAndEnvs_ModMatrixEntry(Track _track, ModMatrixEntry _mme) {
+      Mod *cmod;
+      ModMatrixEntry *e;
+      mirror_envs.empty();
+      mirror_env_states.empty();
+
+      if(_track.isMirrorMode())
+      {
+         foreach cmod in mirror_mods
+         {
+            foreach e in cmod.mod_matrix
+            {
+               if(e.gid == _mme.gid)
+               {
+                  mirror_env_states.add(e.input_mapper_env_state);
+                  mirror_envs.add(e.input_mapper_env);
+                  break;
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateFilterWidgets() {
+      ModInputFilter f <= mod.input_filter;
+
+      flt_note_on.setSelectedAndEditable(f.enableNoteOn);
+      flt_note_off.setSelectedAndEditable(f.enableNoteOff);
+      flt_pitchbend.setSelectedAndEditable(f.enablePitchbend);
+      flt_chpressure.setSelectedAndEditable(f.enableChannelPressure);
+      flt_polypressure.setSelectedAndEditable(f.enablePolyPressure);
+
+      flt_cc_other.setSelectedAndEditable(f.enableCCOther);
+      flt_cc_modwheel.setSelectedAndEditable(f.enableCCModWheel);
+      flt_cc_breathcontrol.setSelectedAndEditable(f.enableCCBreathControl);
+      flt_cc_footcontrol.setSelectedAndEditable(f.enableCCFootControl);
+      flt_cc_expression.setSelectedAndEditable(f.enableCCExpression);
+
+      flt_cc_hold1sw.setSelectedAndEditable(f.enableCCHold1SW);
+      flt_cc_hold2sw.setSelectedAndEditable(f.enableCCHold2SW);
+      flt_cc_portamentosw.setSelectedAndEditable(f.enableCCPortamentoSW);
+      flt_cc_sostenutosw.setSelectedAndEditable(f.enableCCSostenutoSW);
+      flt_cc_softpedalsw.setSelectedAndEditable(f.enableCCSoftPedalSW);
+
+      flt_cc_legatosw.setSelectedAndEditable(f.enableCCLegatoSW);
+      flt_prgchg.setSelectedAndEditable(f.enablePrgChg);
+      flt_sysex.setSelectedAndEditable(f.enableSysEx);
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterNoteOnChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_note_on.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableNoteOn = bEnable;
+      }
+      Global.Print("Note on messages are "+Utils.GetEnableString(mod.input_filter.enableNoteOn));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterNoteOffChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_note_off.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableNoteOff = bEnable;
+      }
+      Global.Print("Note off messages are "+Utils.GetEnableString(mod.input_filter.enableNoteOff));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterPitchbendChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_pitchbend.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enablePitchbend = bEnable;
+      }
+      Global.Print("Pitchbend messages are "+Utils.GetEnableString(mod.input_filter.enablePitchbend));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterChannelPressureChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_chpressure.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableChannelPressure = bEnable;
+      }
+      Global.Print("Channel Pressure messages are "+Utils.GetEnableString(mod.input_filter.enableChannelPressure));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterPolyPressureChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_polypressure.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enablePolyPressure = bEnable;
+      }
+      Global.Print("Poly Pressure messages are "+Utils.GetEnableString(mod.input_filter.enablePolyPressure));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCOtherChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_other.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCOther = bEnable;
+      }
+      Global.Print("CC: <other> messages are "+Utils.GetEnableString(mod.input_filter.enableCCOther));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCFootControlChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_footcontrol.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCFootControl = bEnable;
+      }
+      Global.Print("CC: Foot Control messages are "+Utils.GetEnableString(mod.input_filter.enableCCFootControl));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCBreathControlChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_breathcontrol.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCBreathControl = bEnable;
+      }
+      Global.Print("CC: Breath Control messages are "+Utils.GetEnableString(mod.input_filter.enableCCBreathControl));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCModWheelChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_modwheel.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCModWheel = bEnable;
+      }
+      Global.Print("CC: Mod Wheel messages are "+Utils.GetEnableString(mod.input_filter.enableCCModWheel));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCExpressionChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_expression.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCExpression = bEnable;
+      }
+      Global.Print("CC: Expression messages are "+Utils.GetEnableString(mod.input_filter.enableCCExpression));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCHold1SWChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_hold1sw.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCHold1SW = bEnable;
+      }
+      Global.Print("CC: Hold1 SW messages are "+Utils.GetEnableString(mod.input_filter.enableCCHold1SW));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCHold2SWChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_hold2sw.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCHold2SW = bEnable;
+      }
+      Global.Print("CC: Hold2 SW messages are "+Utils.GetEnableString(mod.input_filter.enableCCHold2SW));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCPortamentoSWChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_portamentosw.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCPortamentoSW = bEnable;
+      }
+      Global.Print("CC: Portamento SW messages are "+Utils.GetEnableString(mod.input_filter.enableCCPortamentoSW));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCSostenutoSWChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_sostenutosw.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCSostenutoSW = bEnable;
+      }
+      Global.Print("CC: Sostenuto SW messages are "+Utils.GetEnableString(mod.input_filter.enableCCSostenutoSW));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCSoftPedalSWChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_softpedalsw.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCSoftPedalSW = bEnable;
+      }
+      Global.Print("CC: Soft Pedal SW messages are "+Utils.GetEnableString(mod.input_filter.enableCCSoftPedalSW));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterCCLegatoSWChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_cc_legatosw.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableCCLegatoSW = bEnable;
+      }
+      Global.Print("CC: Legato SW messages are "+Utils.GetEnableString(mod.input_filter.enableCCLegatoSW));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterPrgChgChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_prgchg.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enablePrgChg = bEnable;
+      }
+      Global.Print("Program Change messages are "+Utils.GetEnableString(mod.input_filter.enablePrgChg));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterSysExChanged() {
+      Mod *cmod;
+      boolean bEnable = flt_sysex.isSelected();
+      foreach cmod in current_mods
+      {
+         ModInputFilter f <= cmod.input_filter;
+         f.enableSysEx = bEnable;
+      }
+      Global.Print("SysEx messages are "+Utils.GetEnableString(mod.input_filter.enableSysEx));
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterPresetSelected() {
+      if(null != mod)
+      {
+         Mod *cmod;
+         ModInputFilter *f;
+
+         switch(cm_flt_preset.getSelectedOption())
+         {
+            default:
+               break;
+
+            case 1: // Instrument
+               cm_flt_preset.setSelectedOption(0);
+               foreach cmod in current_mods
+               {
+                  f <= cmod.input_filter;
+                  f.loadDefaultsForInstrument();
+               }
+               updateFilterWidgets();
+               redraw();
+               Global.Print("Load instrument filter preset");
+               break;
+
+            case 2: // Effect
+               cm_flt_preset.setSelectedOption(0);
+               foreach cmod in current_mods
+               {
+                  f <= cmod.input_filter;
+                  f.loadDefaultsForEffect();
+               }
+               updateFilterWidgets();
+               redraw();
+               Global.Print("Load effect filter preset");
+               break;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNoteMinChanged(boolean _bBoth) {
+      Mod *cmod;
+      ModInputFilter *f;
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setNoteMin(cm_note_min.getSelectedOption());
+      }
+
+      if(_bBoth)
+      {
+         foreach cmod in current_mods
+         {
+            f <= cmod.input_filter;
+            f.setNoteMax(f.noteMin);
+         }
+
+         cm_note_max.setSelectedOption(mod.input_filter.noteMax);
+         Global.Print("Note range is "+cm_note_max.getSelectedOptionName());
+      }
+      else
+      {
+         Global.Print("Min Note is "+cm_note_min.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyNoteMinToMax() {
+      Mod *cmod;
+      ModInputFilter *f;
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setNoteMax(f.getNoteMin());
+      }
+
+      cm_note_max.setSelectedOption(cm_note_min.getSelectedOption());
+
+      Global.Print("Copy low to high note");
+   }
+
+   // <method.png>
+   public method setNoteFilterSingle(int _note) {
+      Global.Debug("ModMatrix::setNoteFilterSingle("+_note+")");
+      Mod *cmod;
+      ModInputFilter *f;
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setNoteMin(_note);
+         f.setNoteMax(_note);
+      }
+
+      cm_note_min.setSelectedOption(mod.input_filter.noteMin);
+      cm_note_max.setSelectedOption(mod.input_filter.noteMax);
+
+      StringArray aNotes <= MIDI.midi_notes;
+      Global.Print("Set note filter "+aNotes.get(_note)+"("+_note+")");
+   }
+
+   // <method.png>
+   public method setNoteFilterRange(int _min, int _max) {
+      Global.Debug("ModMatrix::setNoteFilterRange("+_min+", "+_max+")");
+      Mod *cmod;
+      ModInputFilter *f;
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setNoteMin(_min);
+         f.setNoteMax(_max);
+      }
+
+      cm_note_min.setSelectedOption(mod.input_filter.noteMin);
+      cm_note_max.setSelectedOption(mod.input_filter.noteMax);
+
+      StringArray aNotes <= MIDI.midi_notes;
+      Global.Print("Set note range "+aNotes.get(_min)+"("+_min+").."+aNotes.get(_max)+"("+_max+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleNoteMaxChanged(boolean _bBoth) {
+      Mod *cmod;
+      ModInputFilter *f;
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setNoteMax(cm_note_max.getSelectedOption());
+      }
+
+      if(_bBoth)
+      {
+         foreach cmod in current_mods
+         {
+            f <= cmod.input_filter;
+            f.setNoteMin(f.noteMax);
+         }
+
+         cm_note_min.setSelectedOption(mod.input_filter.noteMin);
+         Global.Print("Note range is "+cm_note_min.getSelectedOptionName());
+      }
+      else
+      {
+         Global.Print("Max Note is "+cm_note_max.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNoteTransposeChanged() {
+      Mod *cmod;
+      ModInputFilter *f;
+      int transpose = fp_note_transpose.getFloatValue();
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setNoteTranspose(transpose);
+      }
+
+      Global.Print("Note Transpose is "+transpose);
+   }
+
+   // <ui_handle.png>
+   protected method handleVelocityMinChanged() {
+      Mod *cmod;
+      ModInputFilter *f;
+      float val = fp_vel_min.getFloatValue();
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setVelocityMin(val);
+      }
+
+      Global.Print("Min Velocity is "+(mod.input_filter.velocityMin));
+   }
+
+   // <ui_handle.png>
+   protected method handleVelocityMaxChanged() {
+      Mod *cmod;
+      ModInputFilter *f;
+      float val = fp_vel_max.getFloatValue();
+
+      foreach cmod in current_mods
+      {
+         f <= cmod.input_filter;
+         f.setVelocityMax(val);
+      }
+
+      Global.Print("Max Velocity is "+(mod.input_filter.velocityMax));
+   }
+
+   // <ui_handle.png>
+   protected method handleEditNoteOnVelocityCurve(boolean _bToggle) {
+      Mod *cmod;
+      if(_bToggle)
+      {
+         if(null != mod)
+         {
+            boolean bEnable = !mod.b_enable_noteon_velocity_env;
+            foreach cmod in current_mods
+               cmod.setEnableNoteOnVelocityEnv(bEnable);
+            updateNoteOnVelocityCurveEnableState();
+         }
+      }
+      else
+      {
+         if(null != mod)
+         {
+            findMirrorEnvStatesAndEnvs_NoteOnVelocity();
+            foreach cmod in current_mods
+               cmod.setEnableNoteOnVelocityEnv(true);
+            updateNoteOnVelocityCurveEnableState();
+            Dialogs.ShowCurveDialog("Edit note-on velocity curve",
+                                    mod.noteon_velocity_env_state,
+                                    mod.noteon_velocity_env,
+                                    null/*stEnvOrNull*/,
+                                    mirror_env_states,
+                                    mirror_envs,
+                                    null/*mirrorStEnvsOrNull*/,
+                                    null/*mtxNamedRecalc*/
+                                    );
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEditNoteOffVelocityCurve(boolean _bToggle) {
+      Mod *cmod;
+      if(_bToggle)
+      {
+         if(null != mod)
+         {
+            boolean bEnable = !mod.b_enable_noteoff_velocity_env;
+            foreach cmod in current_mods
+               cmod.setEnableNoteOffVelocityEnv(bEnable);
+            updateNoteOffVelocityCurveEnableState();
+         }
+      }
+      else
+      {
+         if(null != mod)
+         {
+            findMirrorEnvStatesAndEnvs_NoteOffVelocity();
+            foreach cmod in current_mods
+               cmod.setEnableNoteOffVelocityEnv(true);
+            updateNoteOffVelocityCurveEnableState();
+            Dialogs.ShowCurveDialog("Edit note-off velocity curve",
+                                    mod.noteoff_velocity_env_state,
+                                    mod.noteoff_velocity_env,
+                                    null/*stEnvOrNull*/,
+                                    mirror_env_states,
+                                    mirror_envs,
+                                    null/*mirrorStEnvsOrNull*/,
+                                    null/*mtxNamedRecalc*/
+                                    );
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableRelativeParamsChanged() {
+      boolean bEnable = !mod.getEnableRelativeParams();
+      Mod *cmod;
+      foreach cmod in current_mods
+      {
+         cmod.hideEditor();
+         cmod.setEnableRelativeParams(bEnable);
+      }
+
+      tv_entries.tableModelChanged();
+
+      Global.Print("Relative param support is "+Utils.GetEnableString(mod.getEnableRelativeParams()));
+   }
+
+   // <method.png>
+   protected =replay= method removeEntry(ModMatrixEntry mme) {
+      Mod *cmod;
+      int gid = mme.gid;
+      foreach cmod in ModMatrix.current_mods
+         cmod.removeModMatrixEntryByGID(gid);
+   }
+
+   // <ui_handle.png>
+   public method handleEntryRemove() {
+      if(null != mod)
+      {
+         ModMatrixEntry mme <= getSelectedEntry();
+         if(null != mme)
+         {
+            Global.Print("Remove ModMatrix entry "+tm_entries.getCursorIndex()+" (gid="+mme.gid+")");
+            removeEntry(mme);
+            tv_entries.tableModelChanged();
+            mme <= getSelectedEntry();
+            f_entry.showEntry(track, mod, mme);
+            UI.LayoutRootLayer();  // [24Sep2024]
+            // provideAction(Action.New(getProvidedActionAlias(ACTION_RELAYOUT), this));
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= addEntry(ModMatrixEntry _mmeCloneOrNull) {
+      Mod *cmod;
+      foreach cmod in ModMatrix.current_mods
+      {
+         // (note) the gid should be the same for all (mirror-)mods since it was synced when editing began
+         ModMatrixEntry mmeNew <= cmod.addModMatrixEntry();
+         mmeNew.setEnableRelative(mod.b_relative_params);
+
+         if(null != _mmeCloneOrNull)
+            mmeNew.copyFrom(_mmeCloneOrNull);
+
+         cmod.allocNextModMatrixGID();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEntryAdd(boolean _bClone) {
+      if(null != mod)
+      {
+         local ModMatrixEntry *mmeClone;
+         if(_bClone)
+            mmeClone <= getSelectedEntry();
+         addEntry(mmeClone);
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToLastRow();
+         ModMatrixEntry mme <= getSelectedEntry();
+         f_entry.showEntry(track, mod, mme);
+
+         // if(1 == tv_entries.getNumRows())
+         //    f_entry.relayout();
+         UI.LayoutRootLayer();  // [24Sep2024]
+
+         Global.Print("Add modmatrix entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEntryMoveUp() {
+      int idx = tm_entries.getCursorIndex();
+      if(idx > 0)
+      {
+         // (note) move mirror mod entries ?
+         PointerArray entries <= mod.mod_matrix;
+         entries.swap(idx - 1, idx);
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToPreviousRow();
+         ModMatrixEntry mme <= getSelectedEntry();
+         f_entry.showEntry(track, mod, mme);
+         UI.LayoutRootLayer();  // [24Sep2024]
+         Global.Print("Move ModMatrix entry up");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryMoveDown() {
+      int idx = tm_entries.getCursorIndex();
+      if((idx >= 0) && (idx < ((mod.mod_matrix.numElements)-1)))
+      {
+         // (note) move mirror mod entries ?
+         PointerArray entries <= mod.mod_matrix;
+         entries.swap(idx, idx + 1);
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToNextRow();
+         ModMatrixEntry mme <= getSelectedEntry();
+         f_entry.showEntry(track, mod, mme);
+         UI.LayoutRootLayer();  // [24Sep2024]
+         Global.Print("Move ModMatrix entry down");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleConvertAbsoluteToRelativeModulation() {
+      int numConv = 0;
+      int numMods = 0;
+      ModVST2 *cmod;
+      foreach cmod in ModMatrix.current_mods
+      {
+         if(mod instanceof ModVST2)
+         {
+            numConv += cmod.convertModMatrixEntriesToRelative();
+            numMods++;
+         }
+      }
+      Global.Print("Converted "+numConv+" "+Utils.GetPluralStringEx(numConv, "entry", "entries")+" to relative mode ("+numMods+" mod"+Utils.GetPluralString(numMods)+")");
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+      pm_contextmenu <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_contextmenu;
+
+      pmb <= pm.addDefaultButton("Convert absolute to relative modulation",
+                                 "abs_to_rel"
+                                 );
+      pmb.setActive((mod instanceof ModVST2) && mod.getEnableRelativeParams());
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      Global.Print("Show context menu.");
+   }
+
+   // <ui_show.png>
+   protected method showNoteMenu() {
+      pm_notefilter <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_notefilter;
+
+      // - Drum BD1 (C-4)
+      // - Drum SD1 (D-4)
+      // - Drum CP1 (E-4)
+      // - Drum LT1 (F-4)
+      // - Drum MT1 (G-4)
+      // - Drum HT1 (A-4)
+      // - Drum CH1 (A#4)
+      // - Drum OH1 (B-4)
+      // - Chromatic (C-0..G-A)
+      // - Octave 3 (C-3..B-3)
+      // - Octave 4 (C-4..B-4)
+      // - Octave 5 (C-5..B-5)
+      // - Octave 6 (C-6..B-6)
+
+      pmb <= pm.addDefaultButton("Drum BD1 (C-4)",
+                                 "c4_bd1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum SD1 (D-4)",
+                                 "d4_sd1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum CP1 (E-4)",
+                                 "e4_cp1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum LT1 (F-4)",
+                                 "f4_lt1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum MT1 (G-4)",
+                                 "g4_mt1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum HT1 (A-4)",
+                                 "a4_ht1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum CH1 (A#4)",
+                                 "as4_ch1"
+                                 );
+      pmb <= pm.addDefaultButton("Drum OH1 (B-4)",
+                                 "b4_oh1"
+                                 );
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Chromatic (C-0..G-A)",
+                                 "chromatic"
+                                 );
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Octave 3 (C-3..B-3)",
+                                 "oct3"
+                                 );
+      pmb <= pm.addDefaultButton("Octave 4 (C-4..B-4)",
+                                 "oct4"
+                                 );
+      pmb <= pm.addDefaultButton("Octave 5 (C-5..B-5)",
+                                 "oct5"
+                                 );
+      pmb <= pm.addDefaultButton("Octave 6 (C-6..B-6)",
+                                 "oct6"
+                                 );
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      Global.Print("Show note filter menu.");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+
+      if(_ev.isRightButton())
+      {
+         if(p_note.isMouseOverWithin())
+         {
+            showNoteMenu();
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(ModMatrixEntryForm.ACTION_ENTRY_EDITED == acName)
+      {
+         tv_entries.tableModelChanged();
+         tv_entries.redraw();
+         return true;
+      }
+
+      if(null != mod)
+      {
+         ModInputFilter f <= mod.input_filter;
+
+         switch(@(ap))
+         {
+            case @(flt_note_on):
+               handleFilterNoteOnChanged();
+               return true;
+
+            case @(flt_note_off):
+               handleFilterNoteOffChanged();
+               return true;
+
+            case @(flt_pitchbend):
+               handleFilterPitchbendChanged();
+               return true;
+
+            case @(flt_chpressure):
+               handleFilterChannelPressureChanged();
+               return true;
+
+            case @(flt_polypressure):
+               handleFilterPolyPressureChanged();
+               return true;
+
+            case @(flt_cc_other):
+               handleFilterCCOtherChanged();
+               return true;
+
+            case @(flt_cc_footcontrol):
+               handleFilterCCFootControlChanged();
+               return true;
+
+            case @(flt_cc_breathcontrol):
+               handleFilterCCBreathControlChanged();
+               return true;
+
+            case @(flt_cc_modwheel):
+               handleFilterCCModWheelChanged();
+               return true;
+
+            case @(flt_cc_expression):
+               handleFilterCCExpressionChanged();
+               return true;
+
+            case @(flt_cc_hold1sw):
+               handleFilterCCHold1SWChanged();
+               return true;
+
+            case @(flt_cc_hold2sw):
+               handleFilterCCHold2SWChanged();
+               return true;
+
+            case @(flt_cc_portamentosw):
+               handleFilterCCPortamentoSWChanged();
+               return true;
+
+            case @(flt_cc_sostenutosw):
+               handleFilterCCSostenutoSWChanged();
+               return true;
+
+            case @(flt_cc_softpedalsw):
+               handleFilterCCSoftPedalSWChanged();
+               return true;
+
+            case @(flt_cc_legatosw):
+               handleFilterCCLegatoSWChanged();
+               return true;
+
+            case @(flt_prgchg):
+               handleFilterPrgChgChanged();
+               return true;
+
+            case @(flt_sysex):
+               handleFilterSysExChanged();
+               return true;
+
+            case @(cm_flt_preset):
+               handleFilterPresetSelected();
+               return true;
+
+               // Note Range
+            case @(cm_note_min):
+               handleNoteMinChanged(UI.KeyModAlt()/*bBoth*/);
+               return true;
+
+            case @(bt_note_min_to_max):
+               handleCopyNoteMinToMax();
+               return true;
+
+            case @(cm_note_max):
+               handleNoteMaxChanged(UI.KeyModAlt()/*bBoth*/);
+               return true;
+
+            case @(fp_note_transpose):
+               handleNoteTransposeChanged();
+               return true;
+
+               // Velocity Range
+            case @(fp_vel_min):
+               handleVelocityMinChanged();
+               return true;
+
+            case @(fp_vel_max):
+               handleVelocityMaxChanged();
+               return true;
+
+            case @(bt_vel_on_curve):
+               handleEditNoteOnVelocityCurve((Button.ACTION_HOLD_CLICK == acName)/*bToggle*/);
+               return true;
+
+            case @(bt_vel_off_curve):
+               handleEditNoteOffVelocityCurve((Button.ACTION_HOLD_CLICK == acName)/*bToggle*/);
+               return true;
+
+
+               // Miscellaneous
+
+            case @(cb_relative_params):
+               handleEnableRelativeParamsChanged();
+               return true;
+
+               // CLAP/VST2 Editor
+            case @(bt_editor):
+               if(mod instanceof ModCLAP)
+               {
+                  ModCLAP modCLAP <= mod;
+                  modCLAP.showEditor();
+               }
+               else if(mod instanceof ModVST2)
+               {
+                  ModVST2 modVST2 <= mod;
+                  modVST2.showEditor();
+               }
+               return true;
+
+            case @(cb_keep_plugin_editor_open):
+               b_keep_plugin_editor_open = cb_keep_plugin_editor_open.isSelected();
+               STConfig.b_auto_hide_plugin_editors = !b_keep_plugin_editor_open;
+               Global.Print("Force-keep-plugin-editor-open is "+Utils.GetEnableString(b_keep_plugin_editor_open));
+               return true;
+
+            case @(tv_entries):
+               if(TableView.ACTION_ROWCLICKED == acName)
+               {
+               }
+               else if(TableView.ACTION_ROWSELECTED == acName)
+               {
+                  handleModMatrixEntrySelected();
+               }
+               else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+               {
+                  showContextMenu();
+               }
+               return true;
+
+            case @(pm_contextmenu):
+               Global.Debug("pm_contextmenu acName="+acName);
+               switch(acName)
+               {
+                  case PopupMenu.ACTION_CANCEL:
+                  case "":
+                     Global.Print("Close context menu.");
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "abs_to_rel":
+                     handleConvertAbsoluteToRelativeModulation();
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+               }
+               return true;
+
+            case @(pm_notefilter):
+               Global.Debug("pm_notefilter acName="+acName);
+               switch(acName)
+               {
+                  case PopupMenu.ACTION_CANCEL:
+                  case "":
+                     Global.Print("Close note filter menu.");
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "c4_bd1":
+                     setNoteFilterSingle(4*12+0);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "d4_sd1":
+                     setNoteFilterSingle(4*12+2);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "e4_cp1":
+                     setNoteFilterSingle(4*12+4);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "f4_lt1":
+                     setNoteFilterSingle(4*12+5);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "g4_mt1":
+                     setNoteFilterSingle(4*12+7);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "a4_ht1":
+                     setNoteFilterSingle(4*12+9);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "as4_ch1":
+                     setNoteFilterSingle(4*12+10);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "b4_oh1":
+                     setNoteFilterSingle(4*12+11);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "chromatic":
+                     setNoteFilterRange(0, 127);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "oct3":
+                     setNoteFilterRange(3*12, 3*12+11);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "oct4":
+                     setNoteFilterRange(4*12, 4*12+11);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "oct5":
+                     setNoteFilterRange(5*12, 5*12+11);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+
+                  case "oct6":
+                     setNoteFilterRange(6*12, 6*12+11);
+                     UI.SetKeyboardFocus(tv_entries);
+                     return true;
+               }
+               return true;
+
+            case @(bt_entry_moveup):
+               handleEntryMoveUp();
+               return true;
+
+            case @(bt_entry_movedown):
+               handleEntryMoveDown();
+               return true;
+
+            case @(bt_entry_remove):
+               handleEntryRemove();
+               return true;
+
+            case @(bt_entry_add):
+               if(Button.ACTION_HOLD_CLICK == acName)
+               {
+                  handleEntryAdd(true/*bClone*/);
+               }
+               else
+               {
+                  handleEntryAdd(false/*bClone*/);
+               }
+               return true;
+
+         }
+      } // if mod
+
+      return XMLForm::consumeAction(_ac);
+   }
+}

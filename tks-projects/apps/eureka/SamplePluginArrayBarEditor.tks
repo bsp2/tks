@@ -1,0 +1,258 @@
+// ----
+// ---- file   : SamplePluginArrayBarEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 23Dec2023
+// ---- changed: 07Jan2024, 08Feb2024, 14Dec2024
+// ----
+// ----
+// ----
+
+module MSamplePluginArrayBarEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePluginArrayBarEditor : Layer {
+   // (todo) multi-edit zones
+
+   define float MIN_SIZE_Y = 160;
+
+   protected boolean b_lmb;
+   protected boolean b_rmb;
+
+   protected int   drag_step_idx;
+   protected float drag_step_val;
+   protected float drag_step_y;
+
+   SamplePluginArrayDialog *parent_dialog;
+   Sample                  *sample;
+   StPluginShared          *shared;
+   int                      param_idx;
+   FloatArray              *fa_data;
+
+
+   // <ui_init.png>
+   public method initSamplePluginArrayBarEditor(SamplePluginArrayDialog _parentDialog) {
+      initLayer();
+      parent_dialog <= _parentDialog;
+      drag_step_idx = -1;
+   }
+
+   // <ui_show.png>
+   public method showArray(Sample _sample, StPluginShared _shared, int _paramIdx, FloatArray _data) {
+      sample    <= _sample;
+      shared    <= _shared;
+      param_idx  = _paramIdx;
+      fa_data   <= _data;
+   }
+
+   // <method.png>
+   protected virtual calcSizeY() : float {
+      return MIN_SIZE_Y * UI.font_scaling;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      float w = getSizeX();
+      float h = getSizeY();
+
+      UIRenderer.DrawDefaultBackground(0, 0, w, h);
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, w, h);
+
+      if(null != fa_data)
+      {
+         int   num = fa_data.numElements;
+         float stepX = (w-4) / num;
+
+         int c32T = #ffaaaaaa;
+         // // int c32TP = #ffeeeecc;
+         int c32C = #ff777777;
+         // // int c32CP = #ff888877;
+         int c32Ctr = #ff444444;
+
+         float yMin = 1;
+         float yMax = h - 4;
+
+         float cx = 2;
+         int   stepIdx = 0;
+         loop(num)
+         {
+            // (note) usually the same for each element
+            parent_dialog.queryElementValueRange(stepIdx);
+
+            // Draw zero center line
+            float pyCtr;
+            if(parent_dialog.element_display_min < 0.0f)
+            {
+               pyCtr = parent_dialog.mapDisplayToPixel(0.0f, yMin, yMax);
+               UIRenderer.DrawLine(cx, pyCtr, cx+stepX, pyCtr, c32Ctr);
+            }
+            else
+               pyCtr = 0.0f;  // e.g. vsync (1..16)
+
+            // Map storage value to pixel range
+            float v = fa_data.get(stepIdx);
+            v = parent_dialog.mapStorageToPixel(v, yMin, yMax);
+
+            float pyMin = parent_dialog.mapDisplayToPixel(parent_dialog.element_display_min, yMin, yMax);
+            float pyMax = parent_dialog.mapDisplayToPixel(parent_dialog.element_display_max, yMin, yMax);
+
+            float barH = v - pyCtr;
+            // trace "xxx stepIdx="+stepIdx+" v="+v+" pyMin="+pyMin+" pyMax="+pyMax+" pyCtr="+pyCtr+" barH="+barH+" dpyMin="+parent_dialog.element_display_min+" dpyMax="+parent_dialog.element_display_max;
+            if(barH > 0)
+            {
+               // Draw bar from top to center (flip y)
+               UIRenderer.DrawFilledRectangle(cx, h-2 - v - 1, stepX, 1, c32T);
+               UIRenderer.DrawFilledRectangle(cx, h-2 - v,     stepX, barH - 1, c32C);
+            }
+            else if(barH < 0)
+            {
+               // Draw bar from center to bottom (flip y)
+               UIRenderer.DrawFilledRectangle(cx, pyCtr,        stepX, -barH, c32C);
+               UIRenderer.DrawFilledRectangle(cx, pyCtr - barH, stepX, 1, c32T);
+            }
+
+            // Next step
+            stepIdx++;
+            cx += stepX;
+         }
+      }
+
+   }
+
+   // <method_set.png>
+   protected /*=replay=*/ method setStepValue(int _idx, float _val) {
+
+      // Map to display range
+      parent_dialog.queryElementValueRange(_idx);
+      float fDpy = parent_dialog.mapStorageToDisplay(_val);
+
+      boolean bSnap = VMOD_LCTRL == UI.GetKeyMod();
+      if(bSnap)
+      {
+         // Snap to 1/16
+         fDpy = int(16.0 * fDpy + 0.5f) / 16.0;
+      }
+
+      // Map display to storage range
+      float f = parent_dialog.mapDisplayToStorage(fDpy);
+
+      fa_data.set(_idx, f);
+
+      sample.markParamsAsModified();
+
+      StPluginInfo info <= shared.info;
+      local String elementName <= info.getArrayParamElementName(param_idx, _idx);
+      // trace "xxx paramIdx="+param_idx+" elementIdx="+_idx+" => elementName=\""+elementName+"\"";
+      if(null != elementName)
+         elementName <= "\""+elementName+"\"("+(_idx+1)+"/"+fa_data.numElements+")";
+      else
+         elementName <= "Step "+(_idx+1)+"/"+fa_data.numElements;
+
+      if(bSnap)
+         Global.Print("Snap "+elementName+" to value "+fDpy+" (storage="+f+")");
+      else
+         Global.Print(elementName+" value is "+fDpy+" (storage="+f+")");
+      redraw();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if((-1 != drag_step_idx) || (VMOD_LSHIFT == UI.GetKeyMod()))
+         return false;
+
+      b_lmb = _ev.isLeftButtonDown();
+      b_rmb = _ev.isRightButtonDown();
+
+      if(b_lmb || b_rmb)
+      {
+         float w = getSizeX();
+         float h = getSizeY();
+         float stepX = (w-4) / fa_data.numElements;
+         int stepIdx = (_ev.mouse_rel_x - 2) / stepX;
+         parent_dialog.queryElementValueRange(stepIdx);
+         float f;
+         if(b_rmb)
+         {
+            StPluginInfo info <= shared.info;
+            float elementDpyReset = info.getArrayParamElementReset(param_idx, stepIdx);
+            if(elementDpyReset > -999999)
+            {
+               f = parent_dialog.mapDisplayToStorage(elementDpyReset);
+            }
+            else
+            {
+               f = parent_dialog.getStorageCtr(stepIdx);
+            }
+         }
+         else
+            f = parent_dialog.mapPixelToStorage((h - 2 - _ev.mouse_rel_y), 1, h-4);
+         float stepValOld = fa_data.get(stepIdx);
+         if(f != stepValOld)
+         {
+            setStepValue(stepIdx, f);
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual isMouseFocusLocked() : boolean {
+      return b_lmb || b_rmb;
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return (VMOD_LSHIFT != UI.GetKeyMod());
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if(VMOD_LSHIFT == UI.GetKeyMod())
+      {
+         float w = getSizeX();
+         float h = getSizeY();
+         int num = fa_data.numElements;
+         float stepX = (w-4) / num;
+         int stepIdx = (_ev.mouse_rel_x - 2) / stepX;
+         drag_step_idx = stepIdx;
+         drag_step_val = fa_data.get(stepIdx);
+         drag_step_y = _ev.mouse_rel_y;
+         // // UI.GrabMouse();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      float h = getSizeY();
+      float dy = (drag_step_y - _currentEv.mouse_rel_y) * 0.001f;
+      // trace "xxx dy="+dy;
+      setStepValue(drag_step_idx, drag_step_val + dy);
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      drag_step_idx = -1;
+      // // UI.UngrabMouse();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      setStepValue(drag_step_idx, drag_step_val);
+      drag_step_idx = -1;
+      // // UI.UngrabMouse();
+   }
+
+}

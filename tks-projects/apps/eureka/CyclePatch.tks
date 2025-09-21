@@ -1,0 +1,1490 @@
+// ----
+// ---- file   : CyclePatch.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 18Aug2020
+// ---- changed: 19Aug2020, 20Aug2020, 22Aug2020, 23Aug2020, 28Aug2020, 13Sep2020, 22Sep2020
+// ----          12Oct2020, 13Oct2020, 14Oct2020, 30Jul2021, 31Jul2021, 23Aug2021, 31Aug2021
+// ----          01Sep2021, 16Apr2023, 19Apr2023, 04May2023, 05May2023, 06May2023, 09May2023
+// ----          17Sep2023, 23Dec2023, 06Jan2024, 17Jan2024, 18Jan2024, 19Jan2024, 21Jan2024
+// ----          10Feb2024, 12Aug2024, 13Aug2024, 15Aug2024, 03Oct2024, 07Nov2024, 24Nov2024
+// ----          05Dec2024, 12Dec2024, 13Dec2024, 28Dec2024, 11Jan2025, 31Jan2025, 11Jun2025
+// ----          19Jun2025
+// ----
+// ----
+// ----
+
+module MCyclePatch;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug0 = 0;  // 1=show generated src
+boolean b_debug1 = 0;
+
+
+// <class.png>
+class CyclePatch {
+   define int   NUM_ARGS = 32;    // number of visible args
+   define int   MAX_ARGS = 700;   // maximum number of args, including "local" ones from UI modules
+   define float INVALID_VALUE = -999999;
+
+   define int NUM_USER_CURVES  = 16;  // allocated via 'curve' (abs or auto-enum)
+   define int NUM_LOCAL_CURVES = 48;  // local to UI module (auto-enum starting at idx 16)
+   define int TOTAL_NUM_CURVES = 64;
+
+   int patch_idx;
+
+   String patch_name;
+
+   define int TARGET_ZONE_GLOBAL_PLUGIN = -3;
+   define int TARGET_ZONE_PATCH_PLUGIN  = -2;
+   define int TARGET_ZONE_NONE          = -1;
+   int target_zone_idx;  // 0..n = sample zone, <0: not targeting a sample zone
+   define int TARGET_ZONE_UI_SHIFT = 3;  // combobox option index translation (-3 => 0, ..)
+
+   int shared_patch_idx;  // -1 or 0..(CycleState.MAX_PATCHES-1)
+
+   HashTable arg_values;
+   HashTable arg_shared_flags;
+
+   CyScript *cycle;
+
+   // CycleScript source ("machine")
+   //  (note) main buffer name is 'main' (getSourceBufferRef(), setSourceBuffer())
+   protected HashTable source_buffers;
+
+   boolean b_lofi;  // 16bit fixed point instead of float (emitInt() instead of emitFloat())
+
+   BezierEditState *[] curve_states;
+   Envelope *[]        curve_envs;
+   IntArray            curve_res;     // lo-fi/integer/C-export mode resolution. power of two, e.g. 5=2^5=32 elements
+   IntArray *[]        int_curves;    // lo-fi/integer mode curve tables
+   StringArray         new_curve_alias_order;   // in order of declaration/allocation (auto-assigned curves only)
+   StringArray         new_lcurve_alias_order;  // in order of declaration/allocation (auto-assigned curves only)
+   StringArray         last_curve_aliases;  // see CyScript.curve_aliases (when auto-assigning curve indices)
+   IntArray            curve_auto_assign;   // 1=auto-assigned index. 0=explicit index (may not be moved)
+   StringArray         curve_ui_preset_names;  // last loaded/saved preset names (persistent)
+
+   String last_error_buffer;        // "main, ".<patchbuffer>", or global inc file name (e.g. "pdsinesaw.cy")
+   int    last_error_line_idx;      // -2=reset, 0..n: line idx (see TextView.setHighlightLineIdx())
+   int    last_error_line_idx_inc;  // 0..n (line index in include file. not applicable when editing main source)
+
+   boolean b_plugin;  // temporary, set to true while exporting STFX plugin source
+   protected boolean b_plugin_hint;  // set to true once b_plugin=true. used by Sample::findAutoAddTags()
+
+   String last_compiled_plugin_id;  // e.g. "my_plugin_<chksum>" (TARGET_ZONE_PATCH_PLUGIN)
+
+   int last_edited_curve_idx;
+   int last_edited_arg_idx;
+
+   // for preselecting lcurve in ComboBoxPopup (TAB on "~mytempl id=xyz" line)
+   //  (note) not persistent
+   protected HashTable last_edited_lcurve_indices;
+
+   protected HashTable saved_buffer_x;
+   protected HashTable saved_buffer_y;
+
+
+   // <method_init.png>
+   public method init(CyclePatch _emptyPatch, int _patchIdx) {
+
+      patch_idx = _patchIdx;
+
+      source_buffers["main"] = Object("");
+
+      target_zone_idx  = TARGET_ZONE_NONE;
+      shared_patch_idx = -1;
+
+      last_error_line_idx = -2;
+      last_error_line_idx_inc = -2;
+
+      arg_values.alloc(MAX_ARGS);
+      arg_shared_flags.alloc(MAX_ARGS);
+
+      local BezierEditState *beStateEmpty;
+      local Envelope *beEnvEmpty;
+
+      if(null != _emptyPatch)
+      {
+         beStateEmpty <= _emptyPatch.curve_states.get(0);
+         beEnvEmpty   <= _emptyPatch.curve_envs.get(0);
+      }
+
+      curve_auto_assign.allocAndFill(TOTAL_NUM_CURVES, maybe);
+
+      loop(TOTAL_NUM_CURVES)
+      {
+         BezierEditState beState <= new BezierEditState;
+         Envelope beEnv <= new Envelope;
+         if(null != beStateEmpty)
+         {
+            beState = beStateEmpty;
+            beEnv   = beEnvEmpty;
+         }
+         else
+         {
+            // very slow (250ms per sample / 32 patches)
+            BezierCurveArrayForm.InitLinearEnv(beState, beEnv);
+         }
+         curve_states.add(#(deref beState));
+         curve_envs.add(#(deref beEnv));
+         curve_res.add(5);
+         int_curves.add(#(new IntArray));
+         last_curve_aliases.add("");
+         curve_ui_preset_names.add("");
+      }
+
+      last_edited_lcurve_indices.alloc(500);
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      if(null != cycle)
+         cycle.exit();  // free voice plugins
+   }
+
+   // <method_get.png>
+   public method isUsed() : boolean {
+      return !(getSourceBufferRefMain().isBlank());
+   }
+
+   // <method_delete.png>
+   public method deleteSourceBuffer(String _bufName) {
+      if(source_buffers.exists(_bufName))
+      {
+         source_buffers.delete(_bufName);
+         saved_buffer_x.delete(_bufName);
+         saved_buffer_y.delete(_bufName);
+      }
+      if(1)
+      {
+         String *key;
+         foreach key in source_buffers
+            trace "xxx deleteSourceBuffer: keep bufName=\""+key+"\"";
+      }
+   }
+
+   // <method_get.png>
+   public method getSourceBufferRef(String _bufName) : String {
+      // (note) returns null if buffer does not exist
+      return source_buffers.get(_bufName);
+   }
+
+   // <method_get.png>
+   public method getOrCreateSourceBufferRef(String _bufName) : String {
+      // trace "xxx CyclePatch::getOrCreateSourceBufferRef: bufName=\""+_bufName+"\" exists="+source_buffers.exists(_bufName);
+      if(!source_buffers.exists(_bufName))
+         source_buffers[_bufName] = Object("");
+      return source_buffers.get(_bufName);
+   }
+
+   // <method_set.png>
+   public method setSourceBuffer(String _bufName, String _src) {
+      String sBuf <= source_buffers.get(_bufName);
+      if(null != sBuf)
+         sBuf = _src;
+   }
+
+   // <method_get.png>
+   public method getSourceBufferRefMain() : String {
+      return source_buffers["main"];  // (note) always exists
+   }
+
+   // <method_set.png>
+   public method setSourceBufferMain(String _src) {
+      // buffer name 'main'
+      String sMain <= source_buffers["main"];
+      sMain = _src;
+   }
+
+   // <method_get.png>
+   public method getSourceBufferNames() : StringArray {
+      local StringArray a;
+      String *key;
+      foreach key in source_buffers
+         a.add(key);
+      return deref a;
+   }
+
+   // <method.png>
+   public method unloadVoicePlugins() {
+      if(null != cycle)
+         cycle.unloadVoicePlugins();  // free voice plugins
+   }
+
+   // <method.png>
+   public method reloadVoicePlugins() {
+      if(null != cycle)
+         cycle.reloadVoicePlugins();
+   }
+
+   // <method.png>
+   public method reparse(Sample _sample, float _defSampleRate, boolean _bMessage) : boolean {
+      CyArg *a;
+      int argIdx;
+      float f;
+
+      if(null != cycle)
+         cycle.exit();  // free voice plugins
+
+      cycle <= new CyScript;
+      cycle.init(_sample, this/*parentPatch*/);
+      cycle.sample_rate = _defSampleRate;
+      MCycle.b_plugin = b_plugin;
+      b_plugin_hint |= b_plugin;
+
+      CycleState synthState <= _sample.cycle_state;
+      CyclePatch spShared <= synthState.getPatchByIdx(shared_patch_idx);
+
+      curve_auto_assign.fill(maybe);
+
+      try
+      {
+         new_curve_alias_order.empty();
+         new_lcurve_alias_order.empty();
+
+         String sSrc <= (null != spShared) ? spShared.getSourceBufferRefMain() : getSourceBufferRefMain();
+         cycle.parseString(sSrc);
+
+         last_curve_aliases = cycle.curve_aliases;
+         // trace "xxx CyclePatch::reparse: last_curve_aliases="+last_curve_aliases;
+
+         // Restore arg values
+         argIdx = 0;
+         local HashTable newArgValues;
+         local HashTable newArgSharedFlags;
+         newArgValues.alloc(MAX_ARGS);
+         newArgSharedFlags.alloc(MAX_ARGS);
+
+         foreach a in cycle.args
+         {
+            if(arg_values.exists(a.id))
+            {
+               f = arg_values[a.id];
+               // trace "xxx restore old a.id="+a.id+" f="+f;
+               f = mathClampf(f, a.min_value, a.max_value);
+               a.cur_value = f;
+               newArgValues[a.id] = f;
+               newArgSharedFlags[a.id] = (true == arg_shared_flags.get(a.id)) ? true : false;
+            }
+            else
+            {
+               // new arg
+               newArgValues[a.id] = a.def_value;
+               arg_shared_flags[a.id] = (null != spShared) ? true : false;
+            }
+            argIdx++;
+         }
+
+         arg_values = newArgValues;
+         arg_shared_flags = newArgSharedFlags;
+
+         if(_bMessage)
+            Global.PrintShort("Recompile Cycle patch");
+
+         last_error_line_idx = -2;
+         last_error_line_idx_inc = -2;
+
+         return true;
+      }
+      catch(CyError e)
+      {
+         // e.g. '5: unknown module type "err"'  (in main source)
+         // e.g. '3:buf .mytemplateinc:2: unknown module type "err"' (in inc buffer)
+         //       |main source line nr |
+         //                            |inc source line nr
+         local String sMsg <= e.message;
+         trace "[---] CyclePatch::reparse: caught exception e.name=\""+e.name+"\" e.msg=\""+sMsg+"\"";
+         trace e.stackTrace;
+         if(_bMessage)
+            Global.Error(sMsg);
+         int idxCol = sMsg.indexOfChar(':', 0);
+         last_error_line_idx = int(sMsg.substring(0, idxCol)) - 1;
+         last_error_line_idx_inc = -2;
+         int idxCol2 = sMsg.indexOf(":buf ", idxCol);
+         if(idxCol2 == idxCol)
+         {
+            idxCol2 = sMsg.indexOfChar(':', idxCol+1+4);
+            last_error_buffer = sMsg.substring(idxCol+1+4/*skip "buf "*/, idxCol2-idxCol-1-4);
+            idxCol = sMsg.indexOfChar(':', idxCol2+1);
+            last_error_line_idx_inc = int(sMsg.substring(idxCol2+1, idxCol-idxCol2-1)) - 1;
+         }
+         else
+         {
+            last_error_buffer = "main";
+         }
+         // trace "[trc] CyclePatch::reparse: set last_error_buffer=\""+last_error_buffer+"\" last_error_line_idx_inc="+last_error_line_idx_inc;
+         return false;
+      }
+   }
+
+   // <method_get.png>
+   public method getArgByIndex(int _idx) : CyArg {
+      if(null != cycle)
+         return cycle.args.get(_idx);
+      else
+         return null;
+   }
+
+   // <method_get.png>
+   public method getNumArgs() : int {
+      if(null != cycle)
+         return cycle.args.numElements;
+      else
+         return 0;
+   }
+
+   // <method_set.png>
+   public method setArgValue(String _id, float _f) {
+      arg_values[_id] = _f;
+   }
+
+   // <method_get.png>
+   public method getArgValue(String _id) : float {
+      return arg_values.get(_id);
+   }
+
+   // <method_set.png>
+   public method setSharedArgFlag(String _id, boolean _bEnable) {
+      arg_shared_flags[_id] = _bEnable;
+   }
+
+   // <method_get.png>
+   public method isSharedArg(String _id) : boolean {
+      return arg_shared_flags.get(_id);
+   }
+
+   // <method_set.png>
+   public method setCurveRes(int _curveIdx, int _res) {
+      curve_res[_curveIdx] = _res;
+   }
+
+   // <method.png>
+   public method reserveCurveIndex(int _curveIdx) : int {
+      // "curve 4 mycurve"
+      curve_auto_assign[_curveIdx] = false;
+   }
+
+   // <method.png>
+   public method setCurveAlias(int _curveIdx, String _alias) {
+      // called by SamplePluginFMStackDialog::handleExportCycle()
+      last_curve_aliases[_curveIdx] = _alias;
+   }
+
+   // <method.png>
+   public method allocCurveIndex(String _alias, boolean _bLocal) : int {
+      // "curve mycurve"
+      //   - try to re-use previously allocated curve
+      int firstCurveIndex = _bLocal ? NUM_USER_CURVES : 0;
+      int curveIdx = last_curve_aliases.indexOfObject(_alias, firstCurveIndex);
+      // trace "xxx CyclePatch::allocCurveIndex: alias=\""+_alias+"\" => curveIdx="+curveIdx+", last_curve_aliases="+last_curve_aliases;
+      if(curveIdx >= 0)
+      {
+         // Re-use previously allocated curve index
+         if(_bLocal)
+            new_lcurve_alias_order.add(_alias);
+         else
+            new_curve_alias_order.add(_alias);
+         curve_auto_assign[curveIdx] = true;
+         return curveIdx;
+      }
+
+      // Find unused curve (or return -1)
+      curveIdx = last_curve_aliases.indexOfObject("", firstCurveIndex);
+      if(curveIdx >= 0)
+      {
+         if(_bLocal)
+            new_lcurve_alias_order.add(_alias);
+         else
+            new_curve_alias_order.add(_alias);
+         last_curve_aliases[curveIdx] = _alias;
+         curve_auto_assign[curveIdx] = true;
+      }
+      return curveIdx;
+   }
+
+   // <method.png>
+   public method findCurveIndex(String _alias) : int {
+      return last_curve_aliases.indexOfObject(_alias, 0);
+   }
+
+   // <method_update.png>
+   public method recalcAndGetCurveIntArray(int _curveIdx) : IntArray {
+      BezierEditState beState <= curve_states.get(_curveIdx);
+      Envelope env <= curve_envs.get(_curveIdx);
+      int res = (1 << curve_res.get(_curveIdx));
+      res = mathClampi(res, 8, 16384);
+      IntArray ia <= int_curves.get(_curveIdx);
+      ia.realloc(res);
+      ia.useAll();
+
+      // Global.Debug2("CyclePatch::createIntCurveTables: table["+curveIdx+"] sz="+res);
+      // trace "xxx updateCurveTables: curveIdx="+_curveIdx+" beState="+@(beState)+" beState.out_exponent="+beState.out_exponent;
+
+      float t = 0;
+      float tStep = 1.0 / (res-1);
+      int k = 0;
+      loop(res)
+      {
+         float f = env.valueAtTime(t);
+         f = mathPowerf(f, beState.out_exponent);
+         ia[k++] = f * CyDefs.FX_ONE;
+         // // ia[k++] = (f * 32767.0f);  // xxxxxxxxxxxx fmstack curve dev
+         t += tStep;
+      }
+      return ia;
+   }
+
+   // <method_update.png>
+   public method updateCurveTables() {
+      // (note) 'cycle' object must be valid (reparse())
+
+      int curveIdx = 0;
+      loop(TOTAL_NUM_CURVES)
+      {
+         if(cycle.isCurveUsed(curveIdx))
+         {
+            IntArray ia <= recalcAndGetCurveIntArray(curveIdx);
+            cycle.setCurveTable(curveIdx, ia);
+         }
+
+         // Next curve
+         curveIdx++;
+      }
+   }
+
+   // <method_set.png>
+   public method setSharedPatchIdx(byte _patchIdx) {
+      shared_patch_idx = _patchIdx;
+   }
+
+   // <method_set.png>
+   public method setCurvePresetNameByIdx(int _curveIdx, String _name) {
+      curve_ui_preset_names[_curveIdx] = _name;
+   }
+
+   // <method_get.png>
+   public method getCurvePresetNameByIdx(int _curveIdx) : String {
+      return curve_ui_preset_names[_curveIdx];
+   }
+
+   // <method.png>
+   public method copyFrom(CyclePatch _o) {
+      // (note) do _NOT_ copy patch_idx
+      patch_name      = _o.patch_name;
+      target_zone_idx = _o.target_zone_idx;
+      arg_values      = _o.arg_values;
+      source_buffers  = _o.source_buffers;
+      b_lofi          = _o.b_lofi;
+
+      // Copy curves
+      local Buffer bRaw;
+      bRaw.size = 1024*1024*4;
+      bRaw.offset = 0;
+      _o.saveCurves(bRaw);
+
+      bRaw.offset = 0;
+      loadCurves(bRaw, 13/*ver*/);
+
+      // // curve_ui_preset_names   = _o.curve_ui_preset_names;
+      // // last_curve_aliases      = _o.last_curve_aliases;
+      last_compiled_plugin_id = _o.last_compiled_plugin_id;
+   }
+
+   // // // <method.png>
+   // // public method remapCopyCurve(int _srcIdx, int _dstIdx) {
+   // //    // called by CyScript::optimizeCurveIndices()
+
+   // //    // Edit state
+   // //    BezierEditState beStateSrc <= curve_states[_srcIdx];
+   // //    BezierEditState beStateDst <= curve_states[_dstIdx];
+   // //    beStateDst = beStateSrc;
+
+   // //    // Envelope
+   // //    Envelope envSrc <= curve_envs[_srcIdx];
+   // //    Envelope envDst <= curve_envs[_dstIdx];
+   // //    envDst = envSrc;
+
+   // //    // Resolution
+   // //    curve_res[_dstIdx] = curve_res[_srcIdx];
+
+   // //    // IntArray
+   // //    IntArray iaSrc <= int_curves[_srcIdx];
+   // //    IntArray iaDst <= int_curves[_dstIdx];
+   // //    iaDst = iaSrc;
+
+   // //    // Preset name
+   // //    curve_ui_preset_names[_dstIdx] = curve_ui_preset_names[_srcIdx];
+   // // }
+
+   // <method.png>
+   protected method remapCopyCurveTo(int _idx,
+                                     BezierEditState _beStateDst,
+                                     Envelope        _envDst,
+                                     Integer         _resDst,
+                                     IntArray        _iaDst,
+                                     String          _presetNameDst
+                                     ) {
+      // Edit state
+      BezierEditState beStateSrc <= curve_states[_idx];
+      _beStateDst = beStateSrc;
+
+      // Envelope
+      Envelope envSrc <= curve_envs[_idx];
+      _envDst = envSrc;
+
+      // Resolution
+      _resDst = curve_res[_idx];
+
+      // IntArray
+      IntArray iaSrc <= int_curves[_idx];
+      _iaDst = iaSrc;
+
+      // Preset name
+      _presetNameDst = curve_ui_preset_names[_idx];
+   }
+
+   // <method.png>
+   protected method remapCopyCurveFrom(int _idx,
+                                       BezierEditState _beStateSrc,
+                                       Envelope        _envSrc,
+                                       int             _resSrc,
+                                       IntArray        _iaSrc,
+                                       String          _presetNameSrc
+                                       ) {
+      // Edit state
+      BezierEditState beStateDst <= curve_states[_idx];
+      beStateDst = _beStateSrc;
+
+      // Envelope
+      Envelope envDst <= curve_envs[_idx];
+      envDst = _envSrc;
+
+      // Resolution
+      curve_res[_idx] = _resSrc;
+
+      // IntArray
+      IntArray iaDst <= int_curves[_idx];
+      iaDst = _iaSrc;
+
+      // Preset name
+      curve_ui_preset_names[_idx] = _presetNameSrc;
+   }
+
+   // <method.png>
+   public method reorderCurves(IntArray _remapTbl, StringArray _curveAliases) {
+      // temporaries
+      local BezierEditState *[] aEdit;       aEdit      .alloc(CyclePatch.TOTAL_NUM_CURVES); aEdit      .useAll();
+      local Envelope *[]        aEnv;        aEnv       .alloc(CyclePatch.TOTAL_NUM_CURVES); aEnv       .useAll();
+      local IntArray            aRes;        aRes       .alloc(CyclePatch.TOTAL_NUM_CURVES); aRes       .useAll();
+      local IntArray *[]        aIa;         aIa        .alloc(CyclePatch.TOTAL_NUM_CURVES); aIa        .useAll();
+      local StringArray         aPresetName; aPresetName.alloc(CyclePatch.TOTAL_NUM_CURVES); aPresetName.useAll();
+
+      BezierEditState *beStateNew;
+      Envelope        *envNew;
+      local Integer    ioRes;
+      IntArray        *iaNew;
+      String          *sPresetNameNew;
+
+      int newIdx;
+      int curveIdx = 0;
+
+      // Copy (used) curves to temporaries
+      loop(TOTAL_NUM_CURVES)
+      {
+         newIdx = _remapTbl[curveIdx];
+         if(-1 != newIdx)  // in use ?
+         {
+            beStateNew <= new BezierEditState;
+            aEdit[curveIdx] = deref beStateNew;
+
+            envNew <= new Envelope;
+            aEnv[curveIdx] = deref envNew;
+
+            iaNew <= new IntArray;
+            aIa[curveIdx] = deref iaNew;
+
+            sPresetNameNew <= aPresetName[curveIdx];
+
+            remapCopyCurveTo(curveIdx,
+                             beStateNew,
+                             envNew,
+                             ioRes,
+                             iaNew,
+                             sPresetNameNew
+                             );
+
+            aRes[curveIdx] = ioRes;
+
+            // trace "[trc] CyclePatch::reorderCurves: copy curve from curveIdx="+curveIdx+" to newIdx="+newIdx;
+         }
+         curveIdx++;
+      }
+
+      local StringArray origAliases = _curveAliases;
+
+      // trace "xxx aEdit="+#(aEdit);
+
+      // Remap user curves in order of declaration
+      int orderIdx = 0;
+      newIdx = -1;
+      loop(new_curve_alias_order.numElements)
+      {
+         while(false == curve_auto_assign[++newIdx])  // skip explicitly allocated curve indices
+            ;
+         curveIdx = _curveAliases.indexOfObject(new_curve_alias_order[orderIdx], 0);
+         // trace "xxx _curveAliases="+_curveAliases+" indexOf("+new_curve_alias_order[orderIdx]+")="+curveIdx;
+         // trace "xxx id=\""+new_curve_alias_order[orderIdx]+"\" orderIdx="+orderIdx+" curveIdx="+curveIdx+" => newIdx="+newIdx;
+         _remapTbl[curveIdx] = newIdx;
+         orderIdx++;
+      }
+
+      // Remap local curves in order of declaration
+      orderIdx = 0;
+      newIdx = NUM_USER_CURVES - 1;
+      loop(new_lcurve_alias_order.numElements)
+      {
+         while(false == curve_auto_assign[++newIdx])  // skip explicitly allocated curve indices (note: not allowed for lcurves)
+            ;
+         curveIdx = _curveAliases.indexOfObject(new_lcurve_alias_order[orderIdx], NUM_USER_CURVES);
+         // trace "xxx _curveAliases="+_curveAliases+" indexOf("+new_curve_alias_order[orderIdx]+")="+curveIdx;
+         // trace "xxx id=\""+new_curve_alias_order[orderIdx]+"\" orderIdx="+orderIdx+" curveIdx="+curveIdx+" => newIdx="+newIdx;
+         _remapTbl[curveIdx] = newIdx;
+         orderIdx++;
+      }
+
+      // Clear curveAliases to avoid duplicates (after curve removal)
+      curveIdx = 0;
+      loop(TOTAL_NUM_CURVES)
+         _curveAliases[curveIdx++] = "";
+
+      // Copy temporaries back to patch
+      curveIdx = 0;
+      loop(TOTAL_NUM_CURVES)
+      {
+         newIdx = _remapTbl[curveIdx];
+         // if(-1 != newIdx)
+         //    trace "xxx copyback: curveIdx="+curveIdx+" => newIdx="+newIdx;
+         if(-1 != newIdx)
+         {
+            _curveAliases[newIdx] = origAliases[curveIdx];
+            if(newIdx != curveIdx)
+            {
+               // trace "xxx copyBack: aEdit[curveIdx]="+#(aEdit[curveIdx]);
+               remapCopyCurveFrom(newIdx,
+                                  aEdit[curveIdx],
+                                  aEnv[curveIdx],
+                                  aRes[curveIdx],
+                                  aIa[curveIdx],
+                                  aPresetName[curveIdx]
+                                  );
+            }
+         }
+         curveIdx++;
+      }
+
+      // Global.Debug2("CyclePatch::reorderCurves: final remapTbl="+_remapTbl);
+      // Global.Debug2("CyclePatch::reorderCurves: final curveAliases="+_curveAliases);
+   }
+
+   // <method_find.png>
+   public method findNumUserCurves() : int {
+      int curveIdx = NUM_USER_CURVES;
+      loop(NUM_USER_CURVES)
+      {
+         String sAlias <= last_curve_aliases[--curveIdx];
+         if(!sAlias.isBlank())
+            return curveIdx + 1;
+      }
+      return 0;
+   }
+
+   // <method_find.png>
+   public method findNumLocalCurves() : int {
+      int curveIdx = TOTAL_NUM_CURVES;
+      loop(NUM_LOCAL_CURVES)
+      {
+         String sAlias <= last_curve_aliases[--curveIdx];
+         if(!sAlias.isBlank())
+            return (curveIdx + 1) - NUM_USER_CURVES;
+      }
+      return 0;
+   }
+
+   // <method.png>
+   public method saveCurves(Stream ofs) {
+      // (note) v13 has 0..16 "USER" curves and 0..48 "LOCAL" curves curves
+
+      int numUserCurves  = findNumUserCurves();
+      int numLocalCurves = findNumLocalCurves();
+      ofs.i8 = numUserCurves;  // v13+
+      ofs.i8 = numLocalCurves; // v13+
+
+      int curveIdx = 0;
+      int numCurves = numUserCurves;
+      loop(2)
+      {
+         loop(numCurves)
+         {
+            // Last seen curve alias (v13+)
+            Utils.WriteString(ofs, last_curve_aliases.get(curveIdx));
+
+            // Curve resolution (v13+)
+            ofs.i8 = curve_res.get(curveIdx);
+
+            // Save last loaded/saved curve preset name (v13+)
+            Utils.WriteString(ofs, curve_ui_preset_names.get(curveIdx));
+
+            // Bezier editor state (v13+)
+            BezierEditState beState <= curve_states.get(curveIdx);
+            ofs << beState;
+
+            // Next curve
+            curveIdx++;
+         }
+
+         curveIdx  = NUM_USER_CURVES;
+         numCurves = numLocalCurves;
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Ver
+      ofs.i16 = 13;
+
+      // Patch name
+      Utils.WriteString(ofs, patch_name);
+
+      // Source
+      // pre v12: Utils.WriteString(ofs, getSourceBufferRefMain());
+      ofs.i8 = source_buffers.numElements;  // v12+
+      String *sBufId;
+      foreach sBufId in source_buffers
+      {
+         Utils.WriteString(ofs, sBufId);
+         Utils.WriteString(ofs, getSourceBufferRef(sBufId));
+      }
+
+      // Target Zone Idx
+      ofs.i16 = target_zone_idx;
+
+      // Shared Patch Idx (v7+)
+      ofs.i8 = shared_patch_idx;
+
+      // Lo-Fi flag (v2+)
+      ofs.i8 = b_lofi;
+
+      // Args (hash since v3+)
+      ofs << arg_values;
+
+      // Arg shared flags (v8+)
+      if(-1 != shared_patch_idx)
+         ofs << arg_shared_flags;
+
+      // Save curves (v4+)
+      saveCurves(ofs);
+
+      // Last compiled plugin id (v9+)
+      Utils.WriteString(ofs, last_compiled_plugin_id);
+   }
+
+   // <method.png>
+   public method loadCurves_preV13(Stream ifs, short ver) : boolean {
+      // ver<=12: fixed number of curves
+      int curveIdx = 0;
+      int numCurves = (ver >= 6) ? NUM_USER_CURVES/*16*/ : 4;
+      loop(numCurves)
+      {
+         BezierEditState beState <= curve_states.get(curveIdx);
+         Envelope beEnv <= curve_envs.get(curveIdx);
+         beState << ifs;
+         BezierCurveArrayForm.CalcEnv(beState, beEnv);
+         curveIdx++;
+      }
+
+      if(ver >= 5)
+      {
+         // Curve resolutions (v5+)
+         curve_res << ifs;
+
+         loop(TOTAL_NUM_CURVES - curve_res.numElements)
+            curve_res.add(5);
+      }
+
+      if(ver >= 10)
+      {
+         // Load last loaded/saved curve preset names (v10+)
+         curve_ui_preset_names << ifs;
+         curve_ui_preset_names.realloc(TOTAL_NUM_CURVES);
+      }
+
+      if(ver >= 11)
+      {
+         // Last seen curve aliases (v11+)
+         last_curve_aliases << ifs;
+         last_curve_aliases.realloc(TOTAL_NUM_CURVES);
+      }
+
+      return true;
+   }
+
+   // <method.png>
+   public method loadCurves(Stream ifs, short ver) : boolean {
+      // ver>=13: variable number of curves (0..TOTAL_NUM_CURVES)
+      int numUserCurves  = ifs.u8;
+      int numLocalCurves = ifs.u8;
+
+      // trace "xxx CyclePatch::loadCurves: ver="+ver+" numUserCurves="+numUserCurves+" numLocalCurves="+numLocalCurves;
+
+      int numCurves = numUserCurves;
+      int curveIdx = 0;
+      loop(2)
+      {
+         loop(numCurves)
+         {
+            // Last seen curve alias (v13+)
+            Utils.ReadString(ifs, last_curve_aliases.get(curveIdx));
+
+            // Curve resolution (v13+)
+            curve_res[curveIdx] = ifs.u8;
+
+            // Load last loaded/saved curve preset name (v13+)
+            Utils.ReadString(ifs, curve_ui_preset_names.get(curveIdx));
+
+            // Bezier editor state (v13+)
+            BezierEditState beState <= curve_states.get(curveIdx);
+            Envelope beEnv <= curve_envs.get(curveIdx);
+            beState << ifs;
+            // trace "xxx CyclePatch::loadCurves: curveIdx="+curveIdx+" #seg="+(beState.segments.numElements);
+            BezierCurveArrayForm.CalcEnv(beState, beEnv);
+
+            // Next curve
+            curveIdx++;
+         }
+
+         curveIdx  = NUM_USER_CURVES;
+         numCurves = numLocalCurves;
+      }
+
+      return true;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      short ver = ifs.u16;
+      if(1 <= ver <= 13)
+      {
+         // Patch name
+         Utils.ReadString(ifs, patch_name);
+
+         // Source
+         if(ver >= 12)
+         {
+            // v12+
+            int numBuffers = ifs.u8;
+            local String sBufId;
+            loop(numBuffers)
+            {
+               Utils.ReadString(ifs, sBufId);
+               Utils.ReadString(ifs, getOrCreateSourceBufferRef(sBufId));
+            }
+         }
+         else
+         {
+            // pre v12
+            String sMain <= getSourceBufferRefMain();
+            Utils.ReadString(ifs, sMain);
+            // trace "xxx read main source=\""+sMain+"\"";
+         }
+
+         // Target Zone Idx
+         target_zone_idx = ifs.s16;
+
+         if(ver >= 7)
+         {
+            // Shared Patch Idx (v7+)
+            shared_patch_idx = ifs.s8;
+         }
+         else
+         {
+            shared_patch_idx = -1;
+         }
+
+         if(ver >= 2)
+         {
+            // Lo-Fi (v2+)
+            b_lofi = ifs.b8;
+         }
+
+         // Args
+         if(ver >= 3)
+         {
+            arg_values << ifs;
+            arg_values.realloc(MAX_ARGS);
+         }
+         else
+         {
+            // old arg storage (pre v3)
+            int numArgs = ifs.u8;
+            int argIdx = 0;
+            loop(numArgs)
+            {
+               float fDummy = ifs.f32;
+            }
+         }
+
+         if(ver >= 8)
+         {
+            // Arg shared flags (v8+)
+            if(-1 != shared_patch_idx)
+            {
+               arg_shared_flags << ifs;
+               arg_shared_flags.realloc(MAX_ARGS);
+            }
+         }
+
+         if(ver >= 4)
+         {
+            // Read Curves (v4+)
+            if(ver >= 13)
+               loadCurves(ifs, ver);
+            else
+               loadCurves_preV13(ifs, ver);
+         }
+
+         if(ver >= 9)
+         {
+            // Last compiled plugin id (v9+)
+            Utils.ReadString(ifs, last_compiled_plugin_id);
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+         Global.Error("CyclePatch::loadState: invalid ver="+ver);
+
+      return false;
+   }
+
+   // <method_get.png>
+   public method getDefaultSampleRate(Sample sample) : float {
+      StSample s <= sample.getZoneByIdx(target_zone_idx);
+      if(null != s)
+      {
+         StWaveform wf <= sample.waveform;
+         float sr = wf.sampleRate * s.sampleRateRatio;
+         return sr;
+      }
+      return 44100.0f;
+   }
+
+   // <method_get.png>
+   public method targetsPatchPlugin() : boolean {
+      return (TARGET_ZONE_PATCH_PLUGIN == target_zone_idx);
+   }
+
+   // <method_get.png>
+   public method targetVoicePluginExists() : boolean {
+      if(TARGET_ZONE_PATCH_PLUGIN == target_zone_idx)
+         return VoicePlugins.PatchPluginLibraryForPluginIdExists(last_compiled_plugin_id);
+      return false;
+   }
+
+   // <method_get.png>
+   public method isPlugin() : boolean {
+      if(b_plugin_hint)
+         return true;
+      // (note) some older plugin-mode patches use target zone >= 0 which confuses Sample::findAutoAddTags()
+      //         => check if patch contains "id" line
+      String sMain <= source_buffers["main"];
+      local StringArray aLines <= sMain.splitChar('\n');
+      String *sLine;
+      foreach sLine in aLines
+      {
+         if(sLine <= "id")
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method recalcExportPlugin(Sample _sample, boolean _bMessage, boolean _bReloadSingle, HashTable _idMapAll) : boolean {
+      // (note) just recalc() when patch does not declare a plugin
+
+      // Export plugin source
+      b_plugin = true;
+      b_plugin_hint = true;
+      if(null != cycle)
+      {
+         cycle.exit();  // free voice plugins ('vpl')
+         cycle <= null;
+      }
+
+      String sBufCalc <= current_project.export_all_c_buf_calc;
+      sBufCalc.load("stfx_plugin_template.cpp", true/*bRemoveCR*/);
+      String sBufCall <= current_project.export_all_c_buf_call;
+      current_project.b_export_all_c = true;
+      current_project.b_export_all_c_float = true;
+      sBufCall.empty();
+
+      boolean bOk = recalc(_sample, _bMessage);
+
+      local String lastErrorBuffer = last_error_buffer;
+      int lastErrorLineIdx = last_error_line_idx;
+      int lastErrorLineIdxInc = last_error_line_idx_inc;
+
+      trace "[dbg] CyclePatch::recalcExportPlugin: sample.unique_name=\""+_sample.unique_name+"\" base_plugin_id=\""+((null != cycle)?cycle.plugin_id:"?(cycle=null)")+"\" bReloadSingle="+_bReloadSingle+" lastErrorLineIdx="+lastErrorLineIdx+" bOk="+bOk;
+
+      if(bOk)
+      {
+         local String *outDir;
+         if(TARGET_ZONE_PATCH_PLUGIN == target_zone_idx)
+         {
+            // Sample-specific patch plugin
+            local Integer chksum = sBufCalc.checksumIgnoreWhitespace;
+            cycle.plugin_id = cycle.plugin_id+"_0x"+chksum.printf("%08x");  // "my_plugin" => "my_plugin_<chksum>"
+
+            outDir <= STConfig.cached_voice_plugin_path;
+         }
+         else
+         {
+            // Global plugin
+            outDir <= STConfig.global_voice_plugin_path;
+         }
+
+         sBufCalc.replace("$(ID)", cycle.plugin_id);
+         sBufCalc.replace("$(DATE)", Utils.GetCurrentDateString()+" "+(Utils.GetCurrentTimeString().replace("_",":")));
+
+         local String sSrc <= Utils.ToNativePathName(outDir+"/cycle/cycle_"+Utils.ConvertToVarName(cycle.plugin_id)+".cpp");
+         sBufCalc.saveLocal(sSrc);
+
+         if(STConfig.b_stfx_cc)
+         {
+            // Compile plugin
+            local String sDst <= Utils.ToNativePathName(outDir+"/cycle/cycle_"+Utils.ConvertToVarName(cycle.plugin_id)+TKS.dllSuffix);
+            if(VoicePluginLibs.b_rename_new)
+               sDst.append(".new");
+            local String sCC = STConfig.stfx_cc;
+            sCC.replace("$(SRC)", sSrc);
+            sCC.replace("$(DST)", sDst);
+            sCC = Utils.SubstitutePathVars(sCC);
+            Global.Debug("recalcExportPlugin: sSrc=\""+sSrc+"\"");
+            Global.Debug("recalcExportPlugin: sDst=\""+sDst+"\"");
+            Global.Debug("recalcExportPlugin: sCC=\""+sCC+"\"");
+
+            // Compile plugin
+            local String *oldCWD;
+            if(Utils.IsWindows())
+            {
+               // (note) must change to MSYS2 ming64 dir so GCC can locate its DLL dependencies
+               oldCWD <= tkfileutils_getcwd();
+               tkfileutils_setcwd(STConfig.stfx_cc_msys2_dir);
+            }
+
+            // Exec compiler
+            int tStart = milliSeconds();
+            int ccRet = system(sCC);
+
+            if(Utils.IsWindows())
+               tkfileutils_setcwd(oldCWD);
+
+            Global.Debug("recalcExportPlugin: ccRet="+ccRet);
+
+            if(0 == ccRet)
+            {
+               Global.Profile("recalcExportPlugin: CC took "+(milliSeconds()-tStart)+"ms");
+               if(_bReloadSingle)
+               {
+                  // (re-)load single plugin
+
+                  // Find all patch plugins referenced in current project
+                  local StringArray patchPluginIds;
+                  current_project.findPatchPluginIds(patchPluginIds);  // add last_compiled_plugin_id
+                  patchPluginIds.add(cycle.plugin_id);  // add new plugin (last_compiled_plugin_id not updated, yet)
+                  int idxOld = patchPluginIds.indexOfObject(last_compiled_plugin_id, 0);
+                  if(-1 != idxOld)
+                  {
+                     // Don't reload old version of plugin
+                     patchPluginIds.delete(idxOld);
+                  }
+
+                  PageAudio pgAudio <= root_form.pg_audio;
+                  if(!last_compiled_plugin_id.isBlank())
+                  {
+                     // Plugin has previously been compiled, try to remap old to new version
+                     local HashTable idMapSingle;
+                     idMapSingle[_sample.unique_id+":"+last_compiled_plugin_id] = cycle.plugin_id;
+                     // (todo) (opt) add reload filter (reload only this plugin)
+                     pgAudio.handleReloadVoicePluginsRemap(idMapSingle, patchPluginIds);
+                  }
+                  else
+                  {
+                     // New plugin
+                     pgAudio.handleReloadVoicePluginsRemap(null/*idMapOrNull*/, patchPluginIds);
+                  }
+               }
+
+               // Replace old plugin version by new one during next batch reload
+               if(null != _idMapAll && !last_compiled_plugin_id.isBlank())
+                  _idMapAll[_sample.unique_id+":"+last_compiled_plugin_id] = Object(cycle.plugin_id);
+
+               if(last_compiled_plugin_id != cycle.plugin_id)
+               {
+                  last_compiled_plugin_id = cycle.plugin_id;
+                  _sample.markParamsAsModified();
+               }
+               Global.Debug2("recalcExportPlugin: last_compiled_plugin_id=\""+last_compiled_plugin_id+"\"");
+
+               if(_bReloadSingle)
+               {
+                  // rebuild plugin options
+                  PageSample pgSample <= root_form.pg_sample;
+                  pgSample.handleSelectSample(true/*bStopAudio*/);
+               }
+
+            }
+            else
+            {
+               Global.Error("Failed to compile plugin \""+cycle.plugin_id+"\" (ccRet="+ccRet+")");
+               bOk = false;
+            }
+         }
+         else
+         {
+            Global.Warning("Cycle native code compilation is currently disabled (plugin \""+cycle.plugin_id+"\")");
+            bOk = false;
+         }
+      }
+
+      // Revert to script / sample-calc mode
+      //  (todo) skip when plugin compilation succeeded ?
+      b_plugin = false;
+      MCycle.b_plugin = false;
+      current_project.b_export_all_c = false;
+      current_project.b_export_all_c_float = false;
+      recalc(_sample, false/*bMessage*/);
+
+      last_error_buffer = lastErrorBuffer;
+      last_error_line_idx = lastErrorLineIdx;
+      last_error_line_idx_inc = lastErrorLineIdxInc;
+      return bOk;
+   }
+
+   // <method.png>
+   public method recalc(Sample sample, boolean _bMessage) : boolean {
+
+      if(b_debug1)
+         Global.Debug2("CyclePatch::recalc: target_zone_idx="+target_zone_idx);
+      if(TARGET_ZONE_NONE != target_zone_idx)
+      {
+         StWaveform wf <= sample.waveform;
+         float sr = wf.sampleRate;
+
+         StSample s <= sample.getZoneByIdx(target_zone_idx);
+         if(null != s)
+            sr *= s.sampleRateRatio;
+         if(b_debug1)
+            trace "[trc] CyclePatch::recalc: target_zone_idx="+target_zone_idx+" => zone="+#(s);
+
+         if(null != cycle)
+            cycle.exit();
+         cycle <= null;  // hack for samplerate change to take effect
+
+         if(null == cycle)
+         {
+            if(!reparse(sample, sr, _bMessage))  // creates CyScript cycle instance
+               return false;
+
+            if(!cycle.isPlugin() && null == s)
+            {
+               trace "[---] CyclePatch::recalc: target_zone_idx="+target_zone_idx+" does not exist";
+               return false;
+            }
+         }
+
+         if(b_debug1)
+            trace "[trc] CyclePatch::recalc: script="+#(cycle);
+         if(null != cycle)
+         {
+            FloatArray smpAll <= wf.sampleData;
+            if(null != smpAll)
+            {
+               updateCurveTables();
+
+               local FloatArray smp;
+               if(null != s)
+                  smp.visit(smpAll, s.lastLoopOffset, s.lastLoopLen);
+
+               cycle.updateArgsFromHashTable(arg_values);
+
+               int maxXFadeFrames;
+
+               int wtW;
+               int wtH;
+               int wtCycleLen;
+
+               if(cycle.override_wt_cyclelen > 0)
+               {
+                  wtW        = mathClampi(cycle.override_wt_w,        0, CyScript.MAX_OVERRIDE_WT_W);
+                  wtH        = mathClampi(cycle.override_wt_h,        0, CyScript.MAX_OVERRIDE_WT_H);
+                  wtCycleLen = mathClampi(cycle.override_wt_cyclelen, 0, CyScript.MAX_OVERRIDE_WT_CYCLELEN);
+               }
+               else if(null != s && s.enableTimestretch)
+               {
+                  // (note) not reachable in plugin mode
+                  wtW = s.timestretch2DWidth;
+                  wtH = s.timestretch2DHeight;
+                  wtCycleLen = int(s.timestretchGranularity);
+               }
+               else
+               {
+                  wtW = 0;
+               }
+
+               if(wtW > 0)
+               {
+                  int totalNumFrames = smp.numElements;
+                  cycle.total_num_frames = totalNumFrames;
+                  cycle.num_frames = wtCycleLen;
+                  maxXFadeFrames = 0;  // must use "skip" to enable xfading
+                  cycle.wt_w = wtW;
+                  cycle.wt_h = wtH;
+                  if( (cycle.wt_w <= 0) || (cycle.wt_h <= 0) )
+                  {
+                     cycle.wt_w = (totalNumFrames / cycle.num_frames);
+                     cycle.wt_h = 1;
+                  }
+                  else
+                  {
+                     int reqNumFrames = cycle.num_frames * cycle.wt_w * cycle.wt_h;
+                     if(reqNumFrames > totalNumFrames)
+                     {
+                        cycle.wt_h = totalNumFrames / (cycle.num_frames * cycle.wt_w);
+                        if(cycle.wt_h <= 0)
+                        {
+                           cycle.wt_w = (totalNumFrames / cycle.num_frames);
+                           cycle.wt_h = 1;
+                        }
+                        trace "[~~~] CyclePatch::recalc: wavetable reqNumFrames>totalNumFrames ("+reqNumFrames+">"+totalNumFrames+"), truncating to w="+cycle.wt_w+" h="+cycle.wt_h+" (cyclelen="+cycle.num_frames+")";
+                     }
+                  }
+               }
+               else
+               {
+                  if(null != s)
+                  {
+                     maxXFadeFrames = mathMaxi(0, s.firstLoopOffset - s.lastLoopOffset);
+                     if(b_debug1)
+                        trace "[trc] CyclePatch::recalc: maxXFadeFrames="+maxXFadeFrames;
+                     cycle.total_num_frames = s.lastLoopLen;
+                     cycle.num_frames = s.lastLoopLen;
+                  }
+                  else
+                  {
+                     maxXFadeFrames = 0;
+                     cycle.total_num_frames = 0;
+                     cycle.num_frames       = 0;
+                  }
+               }
+
+               // trace "xxx current_project.b_export_all_c="+current_project.b_export_all_c;
+
+               if(current_project.b_export_all_c)
+               {
+                  // Export "C" code
+                  if(b_plugin)
+                  {
+                     cycle.setExportC("");
+                  }
+                  else
+                  {
+                     // (note) 's' is never null at this point
+                     cycle.setExportC(Utils.ConvertToVarName("_"+sample.unique_name+"_"+sample.getZoneIdx(s)+"_"+s.name));
+                  }
+
+                  int lastLoopOffset = (null != s) ? s.lastLoopOffset : 0;
+                  int lastLoopLen    = (null != s) ? s.lastLoopLen    : 0;
+                  if(current_project.b_export_all_c_float)
+                  {
+                     // 32bit IEEE float samples (ARM, PowerPC, MIPS, x86, ..)
+                     if(!cycle.emitFloat(current_project.export_all_c_buf_calc,
+                                         maxXFadeFrames,
+                                         current_project.export_all_c_buf_call,
+                                         current_project.export_all_c_buf_static_init,
+                                         current_project.export_all_c_wf_off + lastLoopOffset/*exportCFrameOffset*/,
+                                         lastLoopLen/*exportCFrameNum*/,  // for info purposes
+                                         sample/*exportCSample*/
+                                         ))
+                     {
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     // 8bit integer samples (MC68000)
+                     if(!cycle.emitInt(current_project.export_all_c_buf_calc,
+                                       maxXFadeFrames,
+                                       current_project.export_all_c_buf_call,
+                                       current_project.export_all_c_buf_static_init,
+                                       current_project.export_all_c_wf_off + lastLoopOffset/*exportCFrameOffset*/,
+                                       lastLoopLen/*exportCFrameNum*/,  // for info purposes
+                                       sample/*exportCSample*/
+                                       ))
+                     {
+                        return false;
+                     }
+                  }
+
+                  if(b_plugin)
+                     cycle.setExportC(null/*prefix*/);  // disables b_export_c
+               }
+               else
+               {
+                  local String buf;
+
+                  if(b_lofi)
+                  {
+                     // // Export "C" code
+                     // cycle.setExportC("debug");
+                     // cycle.emitInt(buf, maxXFadeFrames);
+                     // buf.saveLocal("autogen_cycle_debug.c");
+
+                     // Create temporary script code
+                     buf.empty();
+                     cycle.setExportC(null/*prefix*/);
+                     if(!cycle.emitInt(buf,
+                                       maxXFadeFrames,
+                                       null/*exportCCallBuf*/,
+                                       null/*exportCStaticInit*/,
+                                       0/*exportCFrameOffset*/,
+                                       0/*exportCFrameNum*/,
+                                       null/*exportCSample*/
+                                       )
+                        )
+                     {
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     buf.empty();
+                     cycle.setExportC(null/*prefix*/);
+                     if(!cycle.emitFloat(buf,
+                                         maxXFadeFrames,
+                                         null/*exportCCallBuf*/,
+                                         null/*exportCStaticInit*/,
+                                         0/*exportCFrameOffset*/,
+                                         0/*exportCFrameNum*/,
+                                         null/*exportCSample*/
+                                         )
+                        )
+                     {
+                        return false;
+                     }
+                  }
+
+                  if(!b_plugin)
+                     buf.saveLocal("autogen_cycle_debug.tks");
+
+                  if(cycle.run(buf, smp, true/*bSetLenToDst*/, sample))
+                  {
+                     if(b_debug0)
+                        trace buf;
+
+                     if(!sample.b_procedural)
+                     {
+                        sample.markWaveformAsModified();
+                        current_project.markAsModified();
+                     }
+                  }
+
+               }
+
+               // Succeeded
+               return true;
+            } // if smpAll
+         } // if cycle
+      } // if !TARGET_ZONE_NONE
+
+      return false;
+   }
+
+   // <method_get.png>
+   public method getNumSourceBuffers() : int {
+      // trace "xxx getNumSourceBuffers: #bufs="+source_buffers.numElements+" source_buffers="+#(source_buffers);
+      return source_buffers.numElements;
+   }
+
+   // <method.png>
+   public method findTemplateByName(String _templName) : CyTemplate {
+      if(null != cycle)
+         return cycle.findTemplateById(_templName);
+      return null;
+   }
+
+   // <method.png>
+   public method saveBufferXY(String _bufName, int _cursorX, int _cursorY) {
+      Global.Debug2("CyclePatch::saveBufferXY: bufName=\""+_bufName+"\" csr=("+_cursorX+","+_cursorY+")");
+      if(_bufName.isBlank())
+         _bufName <= "main";
+      saved_buffer_x[_bufName] = _cursorX;
+      saved_buffer_y[_bufName] = _cursorY;
+   }
+
+   // <method_get.png>
+   public method getSavedBufferX(String _bufName) : int {
+      if(_bufName.isBlank())
+         _bufName <= "main";
+      if(saved_buffer_x.exists(_bufName))
+         return saved_buffer_x[_bufName];
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getSavedBufferY(String _bufName) : int {
+      if(_bufName.isBlank())
+         _bufName <= "main";
+      if(saved_buffer_y.exists(_bufName))
+      {
+         // trace "xxx have saved_buffer_y[bufName=\""+_bufName+"\"] => "+saved_buffer_y[_bufName];
+         return saved_buffer_y[_bufName];
+      }
+      return 0;
+   }
+
+   // <method_set.png>
+   public method setLastEditedCurveIdx(int _curveIdx) {
+      last_edited_curve_idx = _curveIdx;
+   }
+
+   // <method_set.png>
+   public method setLastEditedLCurveIdxByTemplateInstanceId(String _sId, int _curveIdx) {
+      if(null != _sId && _curveIdx >= NUM_USER_CURVES)
+      {
+         last_edited_lcurve_indices[_sId] = _curveIdx;
+      }
+   }
+
+   // <method_get.png>
+   public method getLastEditedLCurveIdxByTemplateInstanceId(String _sId) : int {
+      if(null != _sId)
+      {
+         if(last_edited_lcurve_indices.exists(_sId))
+         {
+            return last_edited_lcurve_indices.get(_sId);
+         }
+      }
+      return -1;
+   }
+
+}

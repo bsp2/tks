@@ -1,0 +1,623 @@
+// ----
+// ---- file   : CycleCurveDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 15Aug2020
+// ---- changed: 20Aug2020, 31Jul2021, 04Oct2023, 30Oct2023, 02Nov2023, 23Nov2023, 23Dec2023
+// ----          09Feb2024, 10Feb2024, 14Feb2024, 25Apr2024, 12Aug2024, 15Sep2024, 03Oct2024
+// ----          08Oct2024, 27Dec2024, 11Jan2025, 11Jun2025
+// ----
+// ----
+// ----
+
+module MCycleCurveDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class CycleCurveDialog extends Dialog {
+
+   protected XMLForm *xfm;
+
+   protected CyclePatch       *patch;
+   protected CycleSynthDialog *parent_dlg;
+
+   // Curves
+   protected TabSwitch *ts_curves;
+   protected ScrollPane *sp_args;
+   protected Panel *p_curves_0;
+   protected Panel *p_curves_1;
+   protected Panel *p_curves_2;
+   protected Panel *p_curves_3;
+   public    BezierCurveArrayForm *[] f_curves;   // refs
+   protected LayerSwitch          *[] ls_curves;  // refs
+
+   protected PopupMenu *pm_tools;
+
+   static StringArray curve_labels = ["1", "2", "3", "4",
+                                      "5", "6", "7", "8"
+                                      ];
+
+   public boolean b_return_to_machine;
+
+
+   // <ui_init.png>
+   public method initCycleCurveDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("CycleCurveDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initCycleCurveDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      // Curves:
+      int curveIdx = 0;
+      loop(CyclePatch.NUM_USER_CURVES)
+      {
+         BezierCurveArrayForm curveForm <= xfm.findLayerById("f_curve_"+curveIdx);
+         if(!curveForm.initBezierCurveArrayForm(100.0f*UI.font_scaling/*reqLabelW*/)
+            )
+         {
+            trace "[---] CycleCurveDialog::init: initBezierCurveArrayForm() failed";
+            return false;
+         }
+         curveForm.setEnableCopyPasteKeys(false);  // leave lctrl-c/v to parent editor
+         f_curves.add(curveForm);
+         LayerSwitch lsCurve <= xfm.findLayerById("ls_curve_"+curveIdx);
+         ls_curves.add(lsCurve);
+         curveIdx++;
+      }
+
+      initWindow(xfm,
+                 "Curve Tables",
+                 163,   0,
+                 714, 384
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      if(_ev.isRightButton())
+      {
+         // showToolsMenu();
+         return true;
+      }
+
+      hide();
+      parent_dlg.showMachineEditor();
+      return true;
+      // return Dialog::onMouseClick(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       f_curves[0],
+                       f_curves[1],
+                       f_curves[2],
+                       f_curves[3],
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showCycleCurveDialog(CycleSynthDialog _parentDlg, CyclePatch _patch) {
+
+      parent_dlg <= _parentDlg;
+      patch <= _patch;
+
+      BezierCurveArrayForm *curveForm;
+      LayerSwitch          *lsCurve;
+      BezierEditState      *beState;
+      Envelope             *beEnv;
+
+      CyScript cycle <= patch.cycle;
+
+      int curveIdx = 0;
+      loop(CyclePatch.NUM_USER_CURVES)
+      {
+         curveForm <= f_curves.get(curveIdx);
+         lsCurve   <= ls_curves.get(curveIdx);
+         lsCurve.switchToLayerNr(1);  // show curve (not zoomed)
+         beState   <= patch.curve_states.get(curveIdx);
+         beEnv     <= patch.curve_envs.get(curveIdx);
+
+         String curveCaption <= null;
+
+         if(null != cycle)
+         {
+            String tblId <= cycle.findCurveAliasByIndex(curveIdx);
+            if((null != tblId) && !tblId.isBlank())
+            {
+               curveCaption <= tblId;
+            }
+         }
+
+         if(null == curveCaption)
+            curveCaption <= "Curve "+curveIdx;
+
+         curveForm.showCurve(curveCaption+":",
+                             beState, beEnv,
+                             null/*mtxNamedRecalc*/,
+                             patch, curveIdx
+                             );
+         curveForm.setRes(patch.curve_res.get(curveIdx));
+
+         curveIdx++;
+      }
+
+      b_return_to_machine = false;
+
+      setWindowTitle("Envelope Curve");
+      show();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      updateOverlays();
+
+      relayout();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+
+      // Set keyboard focus to last edit curve
+      BezierCurveArrayForm *curveForm;
+      if(patch.last_edited_curve_idx < CyclePatch.NUM_USER_CURVES)
+      {
+         showCurveGroup(patch.last_edited_curve_idx / 4);
+         curveForm <= f_curves.get(patch.last_edited_curve_idx);
+      }
+      else
+      {
+         // temporarily use curveIdx=0 for lcurve editing
+         showCurveGroup(0);
+         curveForm <= f_curves.get(0);
+      }
+      UI.SetKeyboardFocus(curveForm.be_env);
+
+      restoreCurveDialogGeometry();
+
+      relayout();
+   }
+
+   // <method.png>
+   protected method saveCurveDialogGeometry() {
+      if(isAnyCurveZoomed())
+      {
+         if(UI.IsHiDPI())
+            Utils.SaveGeometry(this, STConfig.cycle_curve_zoomed_geo_hidpi);
+         else
+            Utils.SaveGeometry(this, STConfig.cycle_curve_zoomed_geo_lodpi);
+      }
+      else
+      {
+         if(UI.IsHiDPI())
+            Utils.SaveGeometry(this, STConfig.cycle_curve_geo_hidpi);
+         else
+            Utils.SaveGeometry(this, STConfig.cycle_curve_geo_lodpi);
+      }
+   }
+
+   // <method.png>
+   protected method restoreCurveDialogGeometry() {
+      if(isAnyCurveZoomed())
+      {
+         restoreGeometryIfValid(UI.IsHiDPI()
+                                ? STConfig.cycle_curve_zoomed_geo_hidpi
+                                : STConfig.cycle_curve_zoomed_geo_lodpi
+                                );
+      }
+      else
+      {
+         restoreGeometryIfValid(UI.IsHiDPI()
+                                ? STConfig.cycle_curve_geo_hidpi
+                                : STConfig.cycle_curve_geo_lodpi
+                                );
+      }
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      
+      saveCurveDialogGeometry();
+
+      removeOverlays();
+
+      BezierCurveArrayForm *curveForm;
+      foreach curveForm in f_curves
+         curveForm.stopEditing();
+
+      Dialog::hide();
+
+      if(b_return_to_machine)
+      {
+         parent_dlg.showMachineEditor();
+         parent_dlg.focusMachineEditorBezierEdit();
+      }
+   }
+
+   // <method.png>
+   protected method updateOverlays() {
+      removeOverlays();
+
+      BezierCurveArrayForm *curveForm;
+      int curveIdx = 0;
+      int curGroup = ts_curves.getActiveTabIndex();
+      foreach curveForm in f_curves
+      {
+         if( (curveIdx/4) == curGroup )
+         {
+            LayerSwitch lsCurve <= ls_curves.get(curveIdx);
+            if(1 == lsCurve.getCurrentChildNr())
+               curveForm.addBezierOverlay(this);
+         }
+         curveIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method removeOverlays() {
+      BezierCurveArrayForm *curveForm;
+      foreach curveForm in f_curves
+      {
+         curveForm.removeBezierOverlay(this);
+      }
+   }
+
+   // <method_get.png>
+   protected method isAnyCurveZoomed() : boolean {
+      LayerSwitch *lsCurve;
+      foreach lsCurve in ls_curves
+      {
+         if(0 == lsCurve.getCurrentChildNr())
+            return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   protected method isCurveZoomed(int _curveIdx) : boolean {
+      boolean bAnyZoomed = false;
+      int zoomCurveIdx = 0;
+      for(int curveIdx = 0; curveIdx < CyclePatch.NUM_USER_CURVES; curveIdx++)
+      {
+         LayerSwitch lsCurve <= ls_curves.get(curveIdx);
+         if(0 == lsCurve.getCurrentChildNr())  // hidden ?
+            bAnyZoomed = true;
+         else
+            zoomCurveIdx = curveIdx;
+      }
+      return (bAnyZoomed && (zoomCurveIdx == _curveIdx));
+   }
+
+   // <ui_handle.png>
+   public method handleCurveZoom(int _curveIdx, boolean _bMaximize, boolean _bAllowHide) {
+      BezierCurveArrayForm *curveForm;
+      // // trace "xxx handleCurveZoom: curveIdx="+_curveIdx+" bMaximize="+_bMaximize;
+      patch.setLastEditedCurveIdx(_curveIdx);
+
+      saveCurveDialogGeometry();
+
+      for(int curveIdx = 0; curveIdx < CyclePatch.NUM_USER_CURVES; curveIdx++)
+      {
+         LayerSwitch lsCurve <= ls_curves.get(curveIdx);
+         curveForm <= f_curves.get(curveIdx);
+         curveForm.b_maximized = _bMaximize ? (_curveIdx == curveIdx) : false;
+         lsCurve.switchToLayerNr(_bMaximize ? curveForm.b_maximized : 1);
+         curveForm <= f_curves.get(_curveIdx);
+      }
+
+      restoreCurveDialogGeometry();
+
+      relayout();
+      curveForm <= f_curves.get(_curveIdx);
+      curveForm.focusBezierEdit();
+      updateOverlays();
+      redraw();
+
+      if(_bAllowHide && b_return_to_machine && !_bMaximize)
+         hide();
+   }
+
+   // <ui_show.png>
+   public method showCurveGroup(int _grp) {
+      if(isAnyCurveZoomed())
+         handleCurveZoom(0, false/*bMaximize*/, false/*bAllowHide*/);
+      ts_curves.setActiveTabIndex(_grp);
+      updateOverlays();
+      UI.SetKeyboardFocus(ts_curves);
+      Global.Print("Show curve group "+(_grp+1));
+   }
+
+   // <ui_show.png>
+   public method showZoomedLCurve(int _curveIdx) {
+      // (note) (temporarily) configure curveIdx=0 curveForm for lcurve editing
+      BezierEditState beState <= patch.curve_states.get(_curveIdx);
+      Envelope        beEnv   <= patch.curve_envs.get(_curveIdx);
+      BezierCurveArrayForm curveForm <= f_curves.get(0);
+      curveForm.showCurve("<lcurve>",
+                          beState, beEnv,
+                          null/*mtxNamedRecalc*/,
+                          patch, _curveIdx
+                          );
+      curveForm.setRes(patch.curve_res.get(_curveIdx));
+
+      showCurveGroup(0);  // overwrites last_edited_curve_idx
+      handleCurveZoom(0, true/*bMaximize*/, false/*bAllowHide*/);
+
+      patch.setLastEditedCurveIdx(_curveIdx);  // restore lcurve index
+   }
+
+   // <ui_handle.png>
+   protected method handleImportFromClipboard(int _curveIdx) {
+      // x/y pairs per line
+      local String sClipboard <= UI.GetClipboard();
+      if((null != sClipboard) && !sClipboard.isBlank())
+      {
+         Global.Debug("CycleCurveDialog::handleImportClipboard: sClipboard.numChars="+sClipboard.numChars);
+         BezierEdit beVal <= f_curves.get(_curveIdx).be_env;
+         if(beVal.importFromString(sClipboard))
+         {
+            parent_dlg.handleCurveChanged(_curveIdx);
+         }
+      }
+      else
+         Global.Warning("Import: clipboard is empty");
+   }
+
+   // <ui_handle.png>
+   protected method unzoomOrHide() {
+      if(patch.last_edited_curve_idx < CyclePatch.NUM_USER_CURVES)
+      {
+         if(isAnyCurveZoomed())
+            handleCurveZoom(0, false/*bMaximize*/, true/*bAllowHide*/);
+         else
+            hide();
+      }
+      else
+      {
+         // end <lcurve> editing
+         hide();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx CycleCurveDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageAudio pgAudio <= root_form.pg_audio;
+
+      int curGroup = ts_curves.getActiveTabIndex();
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            unzoomOrHide();
+            return true;
+
+         case VKEY_TAB:
+            if(_k.modCtrl())
+            {
+               hide();
+               parent_dlg.showMachineEditor();
+               return true;
+            }
+            break;
+
+         case 'c':
+            hide();
+            return true;
+
+         case '1':
+            if(_k.modShift())
+            {
+               showCurveGroup(0);
+            }
+            else
+            {
+               if(isCurveZoomed(curGroup*4 + 0))
+                  handleCurveZoom(curGroup*4 + 0, false/*bMaximize*/, false/*bAllowHide*/);
+               else
+                  handleCurveZoom(curGroup*4 + 0, true/*bMaximize*/, false/*bAllowHide*/);
+            }
+            return true;
+
+         case '2':
+            if(_k.modShift())
+            {
+               showCurveGroup(1);
+            }
+            else
+            {
+               if(isCurveZoomed(curGroup*4 + 1))
+                  handleCurveZoom(curGroup*4 + 1, false/*bMaximize*/, false/*bAllowHide*/);
+               else
+                  handleCurveZoom(curGroup*4 + 1, true/*bMaximize*/, false/*bAllowHide*/);
+            }
+            return true;
+
+         case '3':
+            if(_k.modShift())
+            {
+               showCurveGroup(2);
+            }
+            else
+            {
+               if(isCurveZoomed(curGroup*4 + 2))
+                  handleCurveZoom(curGroup*4 + 2, false/*bMaximize*/, false/*bAllowHide*/);
+               else
+                  handleCurveZoom(curGroup*4 + 2, true/*bMaximize*/, false/*bAllowHide*/);
+            }
+            return true;
+
+         case '4':
+            if(_k.modShift())
+            {
+               showCurveGroup(3);
+            }
+            else
+            {
+               if(isCurveZoomed(curGroup*4 + 3))
+                  handleCurveZoom(curGroup*4 + 3, false/*bMaximize*/, false/*bAllowHide*/);
+               else
+                  handleCurveZoom(curGroup*4 + 3, true/*bMaximize*/, false/*bAllowHide*/);
+            }
+            return true;
+
+         case '5':
+            showCurveGroup(0);
+            return true;
+
+         case '6':
+            showCurveGroup(1);
+            return true;
+
+         case '7':
+            showCurveGroup(2);
+            return true;
+
+         case '8':
+            showCurveGroup(3);
+            return true;
+
+         case 'p':
+         case 'w':
+         case VKEY_RALT:
+         case VKEY_RCTRL:
+            // export plugin
+            return parent_dlg.onKey(_k);
+
+      }
+
+      // // if(root_form.tryHandleTransportKey(_k))
+      // //    return true;
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int curveIdx;
+      BezierCurveArrayForm *curveForm;
+
+      if(BezierCurveArrayForm.ACTION_CURVE_EDITED == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         if(-1 != curveIdx)
+         {
+            parent_dlg.handleCurveChanged(curveIdx);
+            return true;
+         }
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_SAVED == acName)
+      {
+         foreach curveForm in f_curves
+            curveForm.updateCurvePresetOptions(false/*bForceRescan*/);  // (note) already rescanned in saveCurvePreset2()
+         return true;
+      }
+      else if((BezierCurveArrayForm.ACTION_CURVE_MAXIMIZE == acName) || (BezierCurveArrayForm.ACTION_CURVE_MINIMIZE == acName))
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveZoom(curveIdx, (BezierCurveArrayForm.ACTION_CURVE_MAXIMIZE == acName)/*bMaximize*/, true/*bAllowHide*/);
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_RES == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         curveForm <= ap;
+         // trace "xxx curveForm.getRes()="+curveForm.getRes();
+         parent_dlg.handleCurveResChanged(curveIdx, curveForm.getRes());
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_IMPORT == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         patch.setLastEditedCurveIdx(curveIdx);
+         handleImportFromClipboard(curveIdx);
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_CLICK == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         patch.setLastEditedCurveIdx(curveIdx);
+         return true;
+      }
+      else if(BezierCurveArrayForm.ACTION_CURVE_TAB == acName)
+      {
+         unzoomOrHide();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(ts_curves):
+            // curve tab changed
+            if(isAnyCurveZoomed())
+               handleCurveZoom(0, false/*bMaximize*/, false/*bAllowHide*/);
+            updateOverlays();
+            UI.SetKeyboardFocus(ts_curves);
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

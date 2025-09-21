@@ -1,0 +1,2325 @@
+// ----
+// ---- file   : ResynthDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 04May2019
+// ---- changed: 06May2019, 07May2019, 09May2019, 10May2019, 17May2019, 09Feb2020, 19Feb2020
+// ----          19May2020, 13May2022, 19Jun2022, 19Feb2023, 02Oct2023, 04Oct2023, 30Oct2023
+// ----          17Sep2025
+// ----
+// ----
+// ----
+
+
+module MResynthDialog;
+
+use namespace ui;
+use namespace st2;
+
+// <class.png>
+class ResynthThreadParams {
+   ResynthDialog *dlg;
+   FloatArray    *smp;
+   int            offset;
+   int            num_frames;
+   int            fft_idx;
+   float          sample_rate;
+   float          amp;
+   // int            affinity_mask_32;
+   // int            cpu_core_idx;
+
+   public method init(ResynthDialog _dlg,
+                      FloatArray    _smp,
+                      int           _offset,
+                      int           _numFrames,
+                      int           _fftIdx,
+                      float         _sampleRate,
+                      float         _amp//,
+                      // int           _affinityMask32,
+                      // int           _cpuCoreIdx
+                      ) {
+      dlg <= _dlg;
+      smp <= _smp;
+
+      offset           = _offset;
+      num_frames       = _numFrames;
+      fft_idx          = _fftIdx;
+      sample_rate      = _sampleRate;
+      amp              = _amp;
+      // affinity_mask_32 = _affinityMask32;
+      // cpu_core_idx     = _cpuCoreIdx;
+   }
+}
+
+function resynth_thread_entry(local Thread th) {
+   local ResynthThreadParams params <= th.userdata;
+
+   // if(!STConfig.b_ignore_thread_affinity)
+   // {
+   //    th.setAffinityMask32(params.affinity_mask_32);
+   //    th.setCPUCore(params.cpu_core_idx);  // calls SetThreadSelectedCpuSets on Win10
+   // }
+
+   local ResynthDialog dlg <= params.dlg;
+   local StFFT fft <= dlg.ffts.get(params.fft_idx);
+
+   if(dlg.b_truefreq)
+   {
+      local StFFT fftDelta <= dlg.delta_ffts.get(params.fft_idx);
+
+      fft.testIFFTSin_TrueFreq(params.smp, params.offset, params.num_frames, params.sample_rate,
+                               dlg.pitch_scl, dlg.freq_shift, params.amp,
+                               dlg.freq_rand_exp, dlg.freq_rand_scl,
+                               fftDelta, dlg.truefreq_frameoffset, dlg.phase_rand_amt,
+                               dlg.stfft_band_params
+                               );
+   }
+   else
+   {
+      fft.testIFFTSin(params.smp, params.offset, params.num_frames, params.sample_rate,
+                      dlg.pitch_scl, dlg.freq_shift, params.amp,
+                      dlg.freq_rand_exp, dlg.freq_rand_scl, dlg.phase_rand_amt,
+                      dlg.stfft_band_params
+                      );
+   }
+}
+
+
+// <class.png>
+class ResynthBandParams extends XMLForm {
+   ResynthDialog *dlg;
+   int band_idx;
+
+   protected CheckBox   *cb_enable;
+   protected FloatParam *fp_center;      // Semitones
+   protected FloatParam *fp_harmonics;   // Number of harmonics
+   protected FloatParam *fp_width;       // Semitones
+   protected FloatParam *fp_width_up;    // Percentage
+   protected FloatParam *fp_width_down;
+   protected FloatParam *fp_mag_scl;
+   protected FloatParam *fp_mag_dcy_lin;  // 1.0 = 100% linear
+   protected FloatParam *fp_mag_dcy_quad; // 1.0 = 100% quadratic
+
+   boolean b_enable = false;
+   float   center = 60;
+   int     harmonics = 1;
+   float   width = 12;
+   float   width_up = 1.0;
+   float   width_down = 1.0;
+   float   mag_scl = 0.0;
+   float   mag_dcy_lin = 0.0;
+   float   mag_dcy_quad = 1.0;
+
+
+   // <ui_init.png>
+   public method initBandParams(ResynthDialog _dlg, int _bandIdx) : boolean {
+      dlg <= _dlg;
+      band_idx = _bandIdx;
+
+      center = 48 + 12 * _bandIdx;
+
+      if(initPakFile("ResynthBandParams.xfm"))  // calls initLayer()
+      {
+         autoResolveIds(this);
+
+         updateParamWidgets();
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method copyToStFFTBandParams(StFFT_BandParams _stfftBandParams) {
+      _stfftBandParams.init(b_enable,
+                            center,
+                            harmonics,
+                            width,
+                            width_up,
+                            width_down,
+                            mag_scl,
+                            mag_dcy_lin,
+                            mag_dcy_quad
+                            );
+   }
+
+   // <ui_update.png>
+   public method updateParamWidgets() {
+      cb_enable.setSelected(b_enable);
+      fp_center.setValue(center);
+      fp_harmonics.setValue(harmonics);
+      fp_width.setValue(width);
+      fp_width_up.setValue(width_up);
+      fp_width_down.setValue(width_down);
+      fp_mag_scl.setValue(mag_scl);
+      fp_mag_dcy_lin.setValue(mag_dcy_lin);
+      fp_mag_dcy_quad.setValue(mag_dcy_quad);
+   }
+
+   // <save.png>
+   public method saveToStream(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // Enable
+      ofs.i8 = b_enable;
+
+      // Center
+      ofs.f32 = center;
+
+      // Harmonics
+      ofs.i8 = harmonics;
+
+      // Width
+      ofs.f32 = width;
+
+      // Width up
+      ofs.f32 = width_up;
+
+      // Width down
+      ofs.f32 = width_down;
+
+      // Mag Scale
+      ofs.f32 = mag_scl;
+
+      // Mag Linear Fall-Off
+      ofs.f32 = mag_dcy_lin;
+
+      // Mag Quadratic Fall-Off
+      ofs.f32 = mag_dcy_quad;
+   }
+
+   // <load.png>
+   public method loadFromStream(Stream ifs) : boolean {
+      // Ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Enable
+         b_enable = ifs.b8;
+
+         // Center
+         center = ifs.f32;
+
+         // Harmonics
+         harmonics = ifs.u8;
+
+         // Width
+         width = ifs.f32;
+
+         // Width up
+         width_up = ifs.f32;
+
+         // Width down
+         width_down = ifs.f32;
+
+         // Mag Scale
+         mag_scl = ifs.f32;
+
+         // Mag Linear Fall-Off
+         mag_dcy_lin = ifs.f32;
+
+         // Mag Quadratic Fall-Off
+         mag_dcy_quad = ifs.f32;
+
+         updateParamWidgets();
+
+         return true;
+      }
+      else
+      {
+         trace "[---] ResynthBandParams::loadStream: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(cb_enable):
+            b_enable = cb_enable.isSelected();
+            Global.Print("Band "+(band_idx+1)+" is "+Utils.GetEnableString(b_enable));
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_center):
+            center = fp_center.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" center is MIDI note "+center+" ("+(MIDI.midi_notes.get(int(center)))+") ("+Audio.NoteToFreq(center)+"Hz)");
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_harmonics):
+            harmonics = fp_harmonics.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" #harmonics is "+harmonics);
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_width):
+            width = fp_width.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" width is "+width+" MIDI note(s) ("+Audio.NoteToFreq(mathClampf(center - width*width_down, 0, 127))+"Hz .. "+Audio.NoteToFreq(mathClampf(center + width*width_up, 0, 127))+")");
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_width_up):
+            width_up = fp_width_up.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" width up is "+(width_up*100)+"% ("+Audio.NoteToFreq(mathClampf(center - width*width_down, 0, 127))+"Hz .. "+Audio.NoteToFreq(mathClampf(center + width*width_up, 0, 127))+")");
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_width_down):
+            width_down = fp_width_down.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" width down is "+(width_down*100)+"% ("+Audio.NoteToFreq(mathClampf(center - width*width_down, 0, 127))+"Hz .. "+Audio.NoteToFreq(mathClampf(center + width*width_up, 0, 127))+")");
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_mag_scl):
+            mag_scl = fp_mag_scl.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" magnitude is "+(mag_scl*100)+"%");
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_mag_dcy_lin):
+            mag_dcy_lin = fp_mag_dcy_lin.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" magnitude linear decay is "+(mag_dcy_lin*100)+"%");
+            dlg.handleRecalc();
+            return true;
+
+         case @(fp_mag_dcy_quad):
+            mag_dcy_quad = fp_mag_dcy_quad.getFloatValue();
+            Global.Print("Band "+(band_idx+1)+" magnitude quadratic decay is "+(mag_dcy_quad*100)+"%");
+            dlg.handleRecalc();
+            return true;
+      }
+
+      return Layer::consumeAction(_action);
+   }
+}
+
+
+// <class.png>
+class ResynthSampleView extends Layer {
+   Texture *tex_src;
+
+   public virtual onDraw() {
+      Layer::onDraw();
+
+      UIRenderer.DisableBlending();
+      UIRenderer.SetColorARGB(#ffffffff);
+      UIRenderer.DrawTexture(tex_src, 0, 0, getSizeX(), getSizeY(),
+                             0, 0, tex_src.sx, tex_src.sy
+                             );
+   }
+}
+
+class ResynthDialog extends Dialog {
+
+   define int MAX_OVERLAP = 16;
+
+   define int NUM_BAND_PARAMS = 6;
+
+   define int TYPE_AUDIOTRACK = 0;
+   define int TYPE_SAMPLE     = 1;
+   define int TYPE_TRACK      = 2;
+
+   define String TA_RECALC;
+   protected TimerAction *ta_recalc;
+
+   protected XMLForm *xfm;
+
+   protected Panel    *pn_preset;
+   protected ComboBox *cm_preset;
+   protected Button   *bt_preset_load;
+   protected CheckBox *cb_preset_autoload;
+   protected Button   *bt_preset_save;
+
+   String last_preset_name;
+   protected SaveResynthPresetDialog *dlg_preset_save;
+
+
+   protected Panel       *pn_src;
+   protected LayerSwitch *ls_src;
+   protected ComboBox    *cm_src_type;
+   protected ComboBox    *cm_src_audiotrack;
+   protected ComboBox    *cm_src_sample;
+   protected ComboBox    *cm_src_track;
+   protected Button      *bt_freeze_ringbuf;
+
+   protected Scroller    *sc_src_pos;
+
+   protected Panel       *pn_dst;
+   protected LayerSwitch *ls_dst;
+   protected ComboBox    *cm_dst_type;
+   protected ComboBox    *cm_dst_audiotrack;
+   protected ComboBox    *cm_dst_sample;
+   protected FloatParam  *fp_dst_skip;
+   protected FloatParam  *fp_dst_xfade;
+
+   protected ComboBox    *cm_fft_size;
+   protected ComboBox    *cm_fft_overlap;
+   protected FloatParam  *fp_fft_overlap_scl;
+   protected FloatParam  *fp_fft_overlap_scl_pitchfollow;
+   protected ComboBox    *cm_fft_window_type;  // 0=rect, 1=cos, 2=tri, 3=sin(todo)
+   protected CheckBox    *cb_truefreq;
+   protected FloatParam  *fp_truefreq_frameoffset;
+   protected FloatParam  *fp_min_bin;
+   protected FloatParam  *fp_max_bin;
+
+   protected FloatParam  *fp_rand_phase;
+   protected FloatParam  *fp_rand_freq_exp;
+   protected FloatParam  *fp_rand_freq_scl;
+
+   protected FloatParam  *fp_amp;
+   protected CheckBox    *cb_normalize;
+   protected FloatParam  *fp_pitch;
+   protected FloatParam  *fp_freq;
+
+   protected Button      *bt_calc;
+   protected CheckBox    *cb_autocalc;
+   protected FloatParam  *fp_autocalc_delay;
+   protected CheckBox    *cb_multithreading;
+
+   protected ResynthSampleView *srcview;
+
+   protected Button      *bt_appdst_clear;
+   protected ComboBox    *cm_appdst_type;
+   protected LayerSwitch *ls_appdst;
+   protected ComboBox    *cm_appdst_audiotrack;
+   protected ComboBox    *cm_appdst_sample;
+   protected Button      *bt_appdst_exec_append;
+   protected Button      *bt_appdst_exec_zone;
+   protected Button      *bt_appdst_newsample;
+
+   protected LayerSwitch *ls_bandparams;
+   protected Button      *bt_showhide_bandparams;
+   PointerArray band_params;       // ResynthBandParams refs
+   PointerArray stfft_band_params; // StFFT_BandParams instances
+
+
+   int truefreq_frameoffset = 32;
+   int fft_win_bits = 14;
+   int fft_win_size;
+
+   int num_overlap = 4;  // 1, 2, 4, 8, or 16
+   float overlap_scl = 0.0;
+   float overlap_scl_pitchfollow = 1.0;
+
+   // 0: rect window
+   // 1: cos window
+   // 2: tri window
+   int fft_window_type = 2;
+
+   boolean b_truefreq = true;
+
+   // 0..1
+   float phase_rand_amt = 0.46;
+
+   // // float freq_rand_exp = 8.0;
+   // // float freq_rand_scl = 6.0;
+
+   float freq_rand_exp = 3.0;
+   float freq_rand_scl = 6.0;
+
+   // // float freq_rand_exp = 4.2;
+   // // float freq_rand_scl = 0.5;
+
+   float min_bin = 0.0;
+   float max_bin = 0.3;
+
+   StFFT *[] ffts;        // StFFT instances. one for each overlap.
+   StFFT *[] delta_ffts;  // for true bin freq calculation
+
+   int fft_overlap_step;
+
+   float amp = 1.0;
+   boolean b_normalize = false;
+
+   float pitch_scl = 1.0;
+   float freq_shift = 0.0;
+
+   float skip_start_pct = 0.0;  // percentage
+   float xfade_pct = 0.0;
+
+   Texture tex_src;
+
+   FloatArray ringbuf_mono_freeze;
+
+
+   // <ui_init.png>
+   public method initResynthDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ResynthDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Spectral Resynthesis",
+                 140, 140,
+                 720, 310
+                 );
+
+      ta_recalc <= TimerAction.New(TA_RECALC, this, STConfig.resynth_autocalc_delay);
+
+      loop(MAX_OVERLAP)
+      {
+         StFFT fft <= new StFFT;
+         ffts.add(#(deref fft));
+         fft <= new StFFT;
+         delta_ffts.add(#(deref fft));
+      }
+
+      srcview.initLayer();
+      srcview.tex_src <= tex_src;
+
+      ringbuf_mono_freeze.allocAndFill(STConfig.resynth_ringbuf_num_frames, 0);
+
+      // Init band params
+      for(int bandIdx = 0; bandIdx < NUM_BAND_PARAMS; bandIdx++)
+      {
+         ResynthBandParams bandParams <= xfm.findLayerById("band_"+(bandIdx+1));
+         if(!bandParams.initBandParams(this, bandIdx))
+         {
+            trace "[---] failed to init ResynthBandParams["+bandIdx+"]";
+            return false;
+         }
+         band_params.add(bandParams);
+
+         StFFT_BandParams stfftBandParams <= new StFFT_BandParams;
+         stfft_band_params.add(#(deref stfftBandParams));
+      }
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showResynthDialog() {
+
+      scanResynthPresets();
+      pn_preset.relayout();
+
+      rebuildAudioTrackOptions();
+      rebuildSampleOptions();
+      rebuildTrackOptions();
+
+      pn_src.relayout();
+      pn_dst.relayout();
+
+      fp_autocalc_delay.setValue(STConfig.resynth_autocalc_delay);
+      cb_multithreading.setSelected(STConfig.b_resynth_multithreading);
+
+      resizeToMinimum();
+
+      onOpen();
+
+      showCentered();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(bt_calc);
+
+      updateSrcTexture();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      ta_recalc.cancel();
+   }
+
+   // <ui_update.png>
+   protected method updateSrcTexture() {
+      tex_src.alloc(1024, 1, 1);
+      tex_src.flags = TEX_1D | TEX_MODULATE;
+      tex_src.clear(0);
+      tex_src.unload();
+
+      Float srcSampleRate;
+      Integer srcNumCh;
+      FloatArray srcSmp <= getSampleDataAndRate(cm_src_type.getSelectedOption(),
+                                                cm_src_audiotrack.getSelectedOption(),
+                                                cm_src_sample.getSelectedOption(),
+                                                srcSampleRate,
+                                                srcNumCh
+                                                );
+      if(null != srcSmp)
+      {
+         if(1 == srcNumCh)
+         {
+            float fMax = srcSmp.absMax;
+            float lumScl = 255.0f / fMax;
+            Global.Debug("ResynthDialog::updateSrcTexture: #frames="+srcSmp.numElements+" fMax="+fMax+" lumScl="+lumScl);
+            tksampleedit_render_mono_sample_1d_8bit(tex_src, tex_src.sx, srcSmp, 0/*off*/, srcSmp.numElements, lumScl);
+            srcview.redraw();
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method rebuildAudioTrackOptions() {
+      local StringArray options;
+      Integer io = 1;
+      AudioTrack *atrack;
+      foreach atrack in current_project.audio_tracks
+      {
+         options.add(io.printf("%4d: ")+atrack.name);
+         io++;
+      }
+      cm_src_audiotrack.setOptions(options);
+      cm_dst_audiotrack.setOptions(options);
+      cm_appdst_audiotrack.setOptions(options);
+   }
+
+   // <ui_update.png>
+   protected method rebuildSampleOptions() {
+      local StringArray options;
+      Integer io = 1;
+      Sample *smp;
+      foreach smp in current_project.samples
+      {
+         options.add(io.printf("%4d: ")+smp.unique_name);
+         io++;
+      }
+      cm_src_sample.setOptions(options);
+      cm_dst_sample.setOptions(options);
+      cm_appdst_sample.setOptions(options);
+   }
+
+   // <ui_update.png>
+   protected method rebuildTrackOptions() {
+      local StringArray options;
+      Integer io = 1;
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         options.add(io.printf("%4d: ")+track.name);
+         io++;
+      }
+      cm_src_track.setOptions(options);
+   }
+
+   // <method.png>
+   protected method scanResynthPresets() {
+      local StringArray presetNames; presetNames.free();
+
+      local StringArray filenames <= Utils.ReadDirectory(STConfig.resynth_rootpath);
+
+      if(null != filenames)
+      {
+         String *filenameEn;
+
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               StringArray attr <= filenameEn.splitSpace(true);
+               String fileName <= attr.get(1);
+
+               if(fileName.endsWith(".resynth"))
+               {
+                  fileName.replace(".resynth", "");
+                  presetNames.add(String(fileName));
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      presetNames.sortByValue(ia, false/*bCS*/);
+      presetNames.rearrange(ia);
+
+      cm_preset.setOptions(presetNames);
+      pn_preset.relayout();
+      cm_preset.setToolTipCaption("Resynth Preset\n\n (note) dir=\""+STConfig.resynth_rootpath+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method saveResynthPreset1() {
+      dlg_preset_save <= new SaveResynthPresetDialog;
+      dlg_preset_save.run(this);
+   }
+
+   // <save.png>
+   public method saveResynthPresetToStream(Stream ofs) {
+      // Version
+      ofs.i16 = 5;
+
+      // FFT Window size
+      ofs.i16 = fft_win_bits;
+
+      // FFT Num Overlaps
+      ofs.i8 = num_overlap;
+
+      // Overlap scaling (v3+)
+      ofs.f32 = overlap_scl;
+
+      // Overlap scaling pitch follow (v3+)
+      ofs.f32 = overlap_scl_pitchfollow;
+
+      // FFT Window Type
+      ofs.i8 = fft_window_type;
+
+      // TrueFreq enable
+      ofs.i8 = b_truefreq;
+
+      // TrueFreq frameoffset
+      ofs.i16 = truefreq_frameoffset;
+
+      // Min.bin
+      ofs.f32 = min_bin;
+
+      // Max.bin
+      ofs.f32 = max_bin;
+
+      // Rand.Phase
+      ofs.f32 = phase_rand_amt;
+
+      // Rand.Freq.Exp
+      ofs.f32 = freq_rand_exp;
+
+      // Rand.Freq.Scl
+      ofs.f32 = freq_rand_scl;
+
+      // Amp
+      ofs.f32 = amp;
+
+      // Normalize (v4+)
+      ofs.i8 = b_normalize;
+
+      // Pitch
+      ofs.f32 = fp_pitch.getFloatValue();
+
+      // Freq
+      ofs.f32 = fp_freq.getFloatValue();
+
+      // Skip Start Percentage (v2+)
+      ofs.f32 = skip_start_pct;
+
+      // Crossfade Percentage (v2+)
+      ofs.f32 = xfade_pct;
+
+      // trace "xxx write bandparams @ofs.offset="+ofs.offset;
+
+      // Band settings (v5+)
+      for(int bandIdx = 0; bandIdx < NUM_BAND_PARAMS; bandIdx++)
+      {
+         ResynthBandParams bandParams <= band_params[bandIdx];
+         bandParams.saveToStream(ofs);
+      }
+   }
+
+   // <ui_handle.png>
+   public method saveResynthPreset2(String _name) {
+
+      _name.trim();
+      _name = Utils.ConvertToFileName(_name);
+
+      local String fileName = STConfig.resynth_rootpath+"/"+_name+".resynth";
+      local File f;
+      if(f.openLocal(fileName, IOS_OUT))
+      {
+         saveResynthPresetToStream(f);
+
+         f.close();
+
+         scanResynthPresets();
+         cm_preset.setSelectedOptionByName(_name);
+         Global.Success("Save preset \""+_name+"\"");
+      }
+      else
+      {
+         Global.Error("Save preset: failed to open preset file \""+fileName+"\"");
+      }
+   }
+
+   // <load.png>
+   public method loadResynthPresetFromStream(Stream ifs) : boolean {
+      boolean ret = false;
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         // FFT Window size
+         fft_win_bits = ifs.u16;
+         fft_win_size = (1 << fft_win_bits);
+         updateFFTSize();
+
+         // FFT Num Overlaps
+         num_overlap = ifs.u8;
+         updateFFTOverlap();
+
+         if(ver >= 3)
+         {
+            // Overlap scaling (v3+)
+            overlap_scl = ifs.f32;
+
+            // Overlap scaling pitch follow
+            overlap_scl_pitchfollow = ifs.f32;
+         }
+         else
+         {
+            overlap_scl = 0.0f;
+            overlap_scl_pitchfollow = 1.0;
+         }
+         fp_fft_overlap_scl.setValue(overlap_scl);
+         fp_fft_overlap_scl_pitchfollow.setValue(overlap_scl_pitchfollow);
+
+         // FFT Window Type
+         fft_window_type = ifs.u8;
+         cm_fft_window_type.setSelectedOption(fft_window_type);
+
+         // TrueFreq enable
+         b_truefreq = ifs.b8;
+         cb_truefreq.setSelected(b_truefreq);
+
+         // TrueFreq frameoffset
+         truefreq_frameoffset = ifs.u16;
+         fp_truefreq_frameoffset.setValue(truefreq_frameoffset);
+
+         // Min.bin
+         min_bin = ifs.f32;
+         fp_min_bin.setValue(min_bin);
+
+         // Max.bin
+         max_bin = ifs.f32;
+         fp_max_bin.setValue(max_bin);
+
+         // Rand.Phase
+         phase_rand_amt = ifs.f32;
+         fp_rand_phase.setValue(phase_rand_amt);
+
+         // Rand.Freq.Exp
+         freq_rand_exp = ifs.f32;
+         fp_rand_freq_exp.setValue(freq_rand_exp);
+
+         // Rand.Freq.Scl
+         freq_rand_scl = ifs.f32;
+         fp_rand_freq_scl.setValue(freq_rand_scl);
+
+         // Amp
+         amp = ifs.f32;
+         fp_amp.setValue(amp);
+
+         if(ver >= 4)
+         {
+            // Normalize (v4+)
+            b_normalize = ifs.b8;
+         }
+         else
+         {
+            b_normalize = false;
+         }
+         cb_normalize.setSelected(b_normalize);
+
+         // Pitch
+         fp_pitch.setValue(ifs.f32);
+         handlePitchChanged(true/*bQuiet*/);
+
+         // Freq
+         fp_freq.setValue(ifs.f32);
+         handleFreqChanged(true/*bQuiet*/);
+
+         if(ver >= 2)
+         {
+            // Skip Start Percentage (v2+)
+            skip_start_pct = ifs.f32;
+
+            // Crossfade Percentage (v2+)
+            xfade_pct = ifs.f32;
+         }
+         else
+         {
+            skip_start_pct = 0.0;
+            xfade_pct = 0.0;
+         }
+         fp_dst_xfade.setValue(xfade_pct);
+         fp_dst_skip.setValue(skip_start_pct);
+
+         if(ver >= 5)
+         {
+            // trace "xxx read bandparams @ifs.offset="+ifs.offset;
+            // Band settings (v5+)
+            for(int bandIdx = 0; bandIdx < NUM_BAND_PARAMS; bandIdx++)
+            {
+               ResynthBandParams bandParams <= band_params[bandIdx];
+               if(!bandParams.loadFromStream(ifs))
+               {
+                  trace "[---] ResynthDialog::loadResynthPresetFromStream: failed to load band["+bandIdx+"] settings";
+                  return false;
+               }
+
+            }
+         }
+
+         ret = true;
+      }
+      else
+      {
+         trace "[---] ResynthDialog::loadResynthPresetFromStream: failed (wrong ver="+ver+")";
+      }
+      return ret;
+   }
+
+   // <ui_handle.png>
+   public method handleRecalc() {
+      current_project.markAsModified();
+      ta_recalc.reschedule();
+   }
+
+   // <load.png>
+   protected method loadResynthPreset() : boolean {
+
+      String fileName = cm_preset.getSelectedOptionName();
+      fileName = STConfig.resynth_rootpath+"/"+fileName+".resynth";
+
+      Global.Debug("ResynthDialog::loadResynthPreset: fileName=\""+fileName+"\"");
+
+      local File f;
+      if(f.openLocal(fileName, IOS_IN))
+      {
+         last_preset_name = cm_preset.getSelectedOptionName();
+
+         if(loadResynthPresetFromStream(f))
+         {
+            Global.Success("Load resynth preset from \""+fileName+"\"");
+            handleRecalc();
+         }
+         else
+         {
+            Global.Error("Failed to resynth preset from \""+fileName+"\"");
+            f.close();
+         }
+
+         redraw();
+         return true;
+      }
+      else
+      {
+         Global.Error("Failed to open resynth file \""+fileName+"\"");
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method saveResynthSettingsToStream(Stream ofs) {
+      // Called when saving project files
+
+      // ver
+      ofs.i16 = 3;
+
+      // source type
+      ofs.i8 = cm_src_type.getSelectedOption();
+
+      // source audiotrack idx
+      ofs.i16 = cm_src_audiotrack.getSelectedOption();
+
+      // source sample idx
+      ofs.i16 = cm_src_sample.getSelectedOption();
+
+      // source track idx (v3+)
+      ofs.i16 = cm_src_track.getSelectedOption();
+
+      // source position
+      ofs.f32 = sc_src_pos.getValue();
+
+      // dest type
+      ofs.i8 = cm_dst_type.getSelectedOption();
+
+      // dest audiotrack idx
+      ofs.i16 = cm_dst_audiotrack.getSelectedOption();
+
+      // dest sample idx
+      ofs.i16 = cm_dst_sample.getSelectedOption();
+
+      // append dest type (v2+)
+      ofs.i8 = cm_appdst_type.getSelectedOption();
+
+      // append dest audiotrack idx (v2+)
+      ofs.i16 = cm_appdst_audiotrack.getSelectedOption();
+
+      // append dest sample idx (v2+)
+      ofs.i16 = cm_appdst_sample.getSelectedOption();
+
+      saveResynthPresetToStream(ofs);
+   }
+
+   // <load.png>
+   public method loadResynthSettingsFromStream(Stream ifs) : boolean {
+      // Called when saving project files
+      boolean ret = false;
+
+      rebuildAudioTrackOptions();
+      rebuildSampleOptions();
+      rebuildTrackOptions();
+
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // source type
+         cm_src_type.setSelectedOption(ifs.u8);
+         ls_src.switchToLayerNr(cm_src_type.getSelectedOption());
+
+         // source audiotrack idx
+         cm_src_audiotrack.setSelectedOption(ifs.u16);
+
+         // source sample idx
+         cm_src_sample.setSelectedOption(ifs.u16);
+
+         if(ver >= 3)
+         {
+            // source track idx (v3+)
+            cm_src_track.setSelectedOption(ifs.u16);
+            handleSrcTrackChanged(true/*bQuiet*/);
+         }
+
+         // source position
+         sc_src_pos.setValue(ifs.f32);
+
+         // dest type
+         cm_dst_type.setSelectedOption(ifs.u8);
+         ls_dst.switchToLayerNr(cm_dst_type.getSelectedOption());
+
+         // dest audiotrack idx
+         cm_dst_audiotrack.setSelectedOption(ifs.u16);
+
+         // dest sample idx
+         cm_dst_sample.setSelectedOption(ifs.i16);
+
+         if(ver >= 2)
+         {
+            // append dest type (v2+)
+            cm_appdst_type.setSelectedOption(ifs.u8);
+            ls_appdst.switchToLayerNr(cm_appdst_type.getSelectedOption());
+
+            // append dest audiotrack idx (v2+)
+            cm_appdst_audiotrack.setSelectedOption(ifs.u16);
+
+            // append dest sample idx (v2+)
+            cm_appdst_sample.setSelectedOption(ifs.u16);
+         }
+
+         ret = loadResynthPresetFromStream(ifs);
+      }
+
+      return ret;
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcTypeChanged() {
+      Global.Print("Source type is "+cm_src_type.getSelectedOptionName());
+      ls_src.switchToLayerNr(cm_src_type.getSelectedOption());
+      relayout();
+      updateSrcTexture();
+      redraw();
+      current_project.markAsModified();
+
+      // configure ringbuffer capture
+      handleSrcTrackChanged(true/*bQuiet*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcAudioTrackChanged() {
+      Global.Print("Audio Track source is \""+cm_src_audiotrack.getSelectedOptionName()+"\"");
+      updateSrcTexture();
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcSampleChanged() {
+      //cm_src_sample
+      Global.Print("Sample source is \""+cm_src_sample.getSelectedOptionName()+"\"");
+      updateSrcTexture();
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSrcTrackChanged(boolean _bQuiet) {
+      RingBuffer ringBuf <= current_project.resynth_ringbuf;
+      if(TYPE_TRACK == cm_src_type.getSelectedOption())
+      {
+         // enable ringbuf capture
+         ringBuf.setSource(RingBuffer.SRC_TRACK, -1, cm_src_track.getSelectedOption());
+         if(!_bQuiet)
+         {
+            Global.Print("Instrument Track source is \""+cm_src_track.getSelectedOptionName()+"\"");
+            updateSrcTexture();
+            current_project.markAsModified();
+         }
+      }
+      else
+      {
+         // disable ringbuf capture
+         ringBuf.setSource(RingBuffer.SRC_NONE, -1, -1);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFreezeRingBufCopySamples() {
+      RingBuffer ringBuf <= current_project.resynth_ringbuf;
+      ringBuf.readToBuffer(ringbuf_mono_freeze, 1/*dstNumCh*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleFreezeRingBuf() {
+      handleFreezeRingBufCopySamples();
+      updateSrcTexture();
+   }
+
+   // <ui_handle.png>
+   protected method handleSrcPosChanged() {
+      // (todo) show absolute sample position ?
+      Global.Print("Source position is "+(100 * sc_src_pos.getValue()/10000.0)+"%");
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleDstTypeChanged() {
+      Global.Print("Destination type is "+cm_dst_type.getSelectedOptionName());
+      ls_dst.switchToLayerNr(cm_dst_type.getSelectedOption());
+      relayout();
+      redraw();
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleDstAudioTrackChanged() {
+      //cm_dst_audiotrack
+      Global.Print("AudioTrack destination is \""+cm_dst_audiotrack.getSelectedOptionName()+"\"");
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleDstSampleChanged() {
+      //cm_dst_sample
+      Global.Print("Sample destination is \""+cm_dst_sample.getSelectedOptionName()+"\"");
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleAppDstTypeChanged() {
+      Global.Print("Append destination type is "+cm_appdst_type.getSelectedOptionName());
+      ls_appdst.switchToLayerNr(cm_appdst_type.getSelectedOption());
+      relayout();
+      redraw();
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleAppDstAudioTrackChanged() {
+      Global.Print("AudioTrack append destination is \""+cm_appdst_audiotrack.getSelectedOptionName()+"\"");
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleAppDstSampleChanged() {
+      Global.Print("Sample Append destination is \""+cm_appdst_sample.getSelectedOptionName()+"\"");
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAppDstClear() {
+      Audio.ResetAllTempSamples();
+
+      Sample smp <= getSample(cm_appdst_type.getSelectedOption(),
+                              cm_appdst_sample.getSelectedOption()
+                              );
+      if(null != smp)
+      {
+         Audio.ResetAllSampleVoices(smp);
+         smp.removeAllZones();
+      }
+
+      local Float appdstSampleRate;
+      local Integer appdstNumCh;
+      FloatArray appdstSmp <= getSampleDataAndRate(cm_appdst_type.getSelectedOption(),
+                                                   cm_appdst_audiotrack.getSelectedOption(),
+                                                   cm_appdst_sample.getSelectedOption(),
+                                                   appdstSampleRate,
+                                                   appdstNumCh
+                                                   );
+      if(null != appdstSmp)
+      {
+         int numFrames = appdstSmp.numElements / appdstNumCh;
+         appdstSmp.free();
+         Global.Print("Clear Append destination ("+numFrames+" frames)");
+      }
+      else
+      {
+         Global.Warning("Append destination does not exist");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAppDstExec() {
+      local Float appdstSampleRate;
+      local Integer appdstNumCh;
+      FloatArray appdstSmp <= getSampleDataAndRate(cm_appdst_type.getSelectedOption(),
+                                                   cm_appdst_audiotrack.getSelectedOption(),
+                                                   cm_appdst_sample.getSelectedOption(),
+                                                   appdstSampleRate,
+                                                   appdstNumCh
+                                                   );
+      if(null != appdstSmp)
+      {
+         local Float dstSampleRate;
+         local Integer dstNumCh;
+         FloatArray dstSmp <= getSampleDataAndRate(cm_dst_type.getSelectedOption(),
+                                                   cm_dst_audiotrack.getSelectedOption(),
+                                                   cm_dst_sample.getSelectedOption(),
+                                                   dstSampleRate,
+                                                   dstNumCh
+                                                   );
+         if(null != dstSmp)
+         {
+            if(appdstNumCh == dstNumCh)
+            {
+               int dstNumFrames = dstSmp.numElements / dstNumCh;
+
+               if(dstNumFrames > 0)
+               {
+                  int numFrames = appdstSmp.numElements / appdstNumCh;
+                  // trace "xxx appdstSmp.numElements="+appdstSmp.numElements+" (before append)";
+
+                  if(numFrames > 1)
+                  {
+                     local FloatArray faSilence;
+                     faSilence.allocAndFill(SampleView.NUM_BORDER_SILENCE_FRAMES * dstNumCh, 0);
+                     appdstSmp.join(appdstSmp, faSilence);
+                  }
+                  else
+                  {
+                     appdstSmp.empty();  // empty sample has initially 1 frame, remove it
+                  }
+
+                  int numZones = -1;
+                  int loopOff = appdstSmp.numElements / appdstNumCh;
+
+                  appdstSmp.join(appdstSmp, dstSmp);
+
+                  int loopLen = (appdstSmp.numElements / appdstNumCh) - loopOff;
+
+                  // Add new sample zone + sample loop (when append dest is "Sample")
+                  Sample smp <= getSample(cm_appdst_type.getSelectedOption(),
+                                          cm_appdst_sample.getSelectedOption()
+                                          );
+                  if(null != smp)
+                  {
+                     StSample s <= smp.newZone();
+                     if(null != s)
+                     {
+                        IntArray loops <= s.getOrCreateSampleLoops();
+                        loops.free();
+                        loops.add(loopOff);
+                        loops.add(loopLen);
+                        loops.add(0); // inf
+                        numZones = smp.getNumZones();
+                        root_form.pg_sample.setLastSelectedSampleIdx(current_project.getSampleIdx(smp));
+                     }
+                  }
+
+                  Global.Print("Append "+dstNumFrames+" frames (appdst now has "+(appdstSmp.numElements/appdstNumCh)+" frames"+((-1 != numZones)?(" and "+numZones+" zone"+Utils.GetPluralString(numZones)):"")+")");
+               }
+               else
+               {
+                  Global.Warning("Destination is empty");
+               }
+            }
+            else
+            {
+               Global.Warning("Append Destination / Destination channel mismatch ("+appdstNumCh+" != "+dstNumCh+")");
+            }
+         }
+         else
+         {
+            Global.Warning("Destination does not exist");
+         }
+      }
+      else
+      {
+         Global.Warning("Append destination does not exist");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAppDstNewSample() {
+      Sample sample <= current_project.newSample(null/*name=default*/, -1);
+
+      if(null != sample)
+      {
+         int sampleIdx = current_project.getSampleIdx(sample);
+         rebuildSampleOptions();
+
+         cm_appdst_type.setSelectedOption(1);
+         ls_appdst.switchToLayerNr(1);
+         cm_appdst_sample.setSelectedOption(sampleIdx);
+         relayout();
+         redraw();
+
+         handleAppDstExec();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFFTSizeChanged() {
+
+      switch(cm_fft_size.getSelectedOption())
+      {
+         case 0: // 64
+            fft_win_bits = 6;
+            break;
+
+         case 1: // 128
+            fft_win_bits = 7;
+            break;
+
+         case 2: // 256
+            fft_win_bits = 8;
+            break;
+
+         case 3: // 512
+            fft_win_bits = 9;
+            break;
+
+         case 4: // 1024
+            fft_win_bits = 10;
+            break;
+
+         case 5: // 2048
+            fft_win_bits = 11;
+            break;
+
+         case 6: // 4096
+            fft_win_bits = 12;
+            break;
+
+         case 7: // 8192
+            fft_win_bits = 13;
+            break;
+
+         case 8: // 16384
+            fft_win_bits = 14;
+            break;
+
+         case 9: // 32768
+            fft_win_bits = 15;
+            break;
+
+         case 10: // 65536
+            fft_win_bits = 16;
+            break;
+      }
+
+      fft_win_size = (1 << fft_win_bits);
+
+      Global.Print("FFT Window Size is "+fft_win_size);
+      handleRecalc();
+   }
+
+   // <ui_update.png>
+   protected method updateFFTSize() {
+
+      switch(fft_win_size)
+      {
+         case 64: // 0
+            cm_fft_size.setSelectedOption(0);
+            break;
+
+         case 128: // 1
+            cm_fft_size.setSelectedOption(1);
+            break;
+
+         case 256: // 2
+            cm_fft_size.setSelectedOption(2);
+            break;
+
+         case 512: // 3
+            cm_fft_size.setSelectedOption(3);
+            break;
+
+         case 1024: // 4
+            cm_fft_size.setSelectedOption(4);
+            break;
+
+         case 2048: // 5
+            cm_fft_size.setSelectedOption(5);
+            break;
+
+         case 4096: // 6
+            cm_fft_size.setSelectedOption(6);
+            break;
+
+         case 8192: // 7
+            cm_fft_size.setSelectedOption(7);
+            break;
+
+         case 16384: // 8
+            cm_fft_size.setSelectedOption(8);
+            break;
+
+         case 32768: // 9
+            cm_fft_size.setSelectedOption(9);
+            break;
+
+         case 65536: // 10
+            cm_fft_size.setSelectedOption(10);
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFFTOverlapChanged() {
+
+      switch(cm_fft_overlap.getSelectedOption())
+      {
+         case 0: // 1
+            num_overlap = 1;
+            break;
+
+         case 1: // 2
+            num_overlap = 2;
+            break;
+
+         case 2: // 4
+            num_overlap = 4;
+            break;
+
+         case 3: // 8
+            num_overlap = 8;
+            break;
+
+         case 4: // 16
+            num_overlap = 16;
+            break;
+      }
+
+      Global.Print("FFT #overlaps is "+num_overlap);
+      handleRecalc();
+   }
+
+   // <ui_update.png>
+   protected method updateFFTOverlap() {
+      switch(num_overlap)
+      {
+         case 1: // 0
+            cm_fft_overlap.setSelectedOption(0);
+            break;
+
+         case 2: // 1
+            cm_fft_overlap.setSelectedOption(1);
+            break;
+
+         case 4: // 2
+            cm_fft_overlap.setSelectedOption(2);
+            break;
+
+         case 8: // 3
+            cm_fft_overlap.setSelectedOption(3);
+            break;
+
+         case 16: // 4
+            cm_fft_overlap.setSelectedOption(4);
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFFTOverlapSclChanged() {
+      overlap_scl = fp_fft_overlap_scl.getFloatValue();
+      Global.Print("Overlap scaling is "+(100*overlap_scl)+"%");
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleFFTOverlapSclPitchFollowChanged() {
+      overlap_scl_pitchfollow = fp_fft_overlap_scl_pitchfollow.getFloatValue();
+      Global.Print("Overlap scaling pitch follow is "+(100*overlap_scl_pitchfollow)+"%");
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleFFTWindowTypeChanged() {
+
+      fft_window_type = cm_fft_window_type.getSelectedOption();
+
+      Global.Print("FFT Window Type is "+cm_fft_window_type.getSelectedOptionName());
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableTrueFreqChanged() {
+      b_truefreq = cb_truefreq.isSelected();
+
+      Global.Print("True bin frequencies are "+Utils.GetEnableString(b_truefreq));
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleTrueFreqFrameOffsetChanged() {
+      truefreq_frameoffset = fp_truefreq_frameoffset.getFloatValue();
+
+      Global.Print("True bin freq frame offset is "+truefreq_frameoffset);
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleRandPhaseChanged() {
+      phase_rand_amt = fp_rand_phase.getFloatValue();
+
+      Global.Print("Phase randomization amount is "+(100*phase_rand_amt)+"%");
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleRandFreqExpChanged() {
+      freq_rand_exp = fp_rand_freq_exp.getFloatValue();
+
+      Global.Print("Frequency randomization exponent is "+freq_rand_exp);
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleRandFreqSclChanged() {
+      freq_rand_scl = fp_rand_freq_scl.getFloatValue();
+
+      Global.Print("Frequency randomization scaling is "+freq_rand_scl);
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpChanged() {
+      amp = fp_amp.getFloatValue();
+
+      Global.Print("Amplification is "+(100*amp)+"%");
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleNormalizeChanged() {
+      b_normalize = cb_normalize.isSelected();
+
+      Global.Print("Normalization is "+Utils.GetEnableString(b_normalize));
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handlePitchChanged(boolean _bQuiet) {
+      float f = fp_pitch.getFloatValue();
+      int oct;
+      int semi;
+      float cents;
+      float t;
+
+      if(f < 0)
+      {
+         t = -f;
+         // // pitch_scl = 1.0 / -f;
+         // // t = -log2(pitch_scl) * 12;  // -12, -24, 24.75334, ..
+         pitch_scl = 1.0 / mathPowerf(2.0, (t / 12.0));
+         // trace "xxx t="+t;
+         oct = t / 12.0;
+         semi = t % 12;
+         cents = frac(t) * 100;
+
+         oct = -oct;
+         semi = -semi;
+         cents = -cents;
+      }
+      else
+      {
+         // pitch_scl = 1.0 + f;
+         // t = log2(pitch_scl) * 12;  // 0, 12, 24, 24.32323, ..
+         t = f;
+         pitch_scl = mathPowerf(2.0, (t / 12.0));
+         // trace "xxx t="+t;
+         oct = t / 12.0;
+         semi = t % 12;
+         cents = frac(t) * 100;
+      }
+
+      if(!_bQuiet)
+      {
+         Global.Print("Pitch is "+f+". Factor="+pitch_scl+" Oct="+oct+" Semi="+semi+" Cents="+cents);
+         handleRecalc();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFreqChanged(boolean _bQuiet) {
+      float f = fp_freq.getFloatValue();
+
+      if(f > 0)
+      {
+         f = f * f;
+         f = log2(2 + 2*f) - 1; // => 0..1
+         f *= 8000;
+      }
+      else
+      {
+         f = f * f;
+         f = log2(2 + 2*f) - 1; // => 0..1
+         f *= -8000;
+      }
+
+      freq_shift = f;
+
+      if(!_bQuiet)
+      {
+         Global.Print("Frequency shift is "+freq_shift+"Hz");
+         handleRecalc();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMinBinChanged() {
+      min_bin = fp_min_bin.getFloatValue();
+
+      Global.Print("Min bin is "+min_bin);
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleMaxBinChanged() {
+      max_bin = fp_max_bin.getFloatValue();
+
+      Global.Print("Max bin is "+max_bin);
+      handleRecalc();
+   }
+
+   // <ui_handle.png>
+   protected method handleCalc() {
+      if(analyze())
+      {
+         Global.Debug("ResynthDialog: analyze finished.");
+
+         resynth();
+      }
+      else
+      {
+         Global.Debug("ResynthDialog: analyze aborted due to error");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleBandParams() {
+      boolean bShow = bt_showhide_bandparams.getToggleState();
+      ls_bandparams.switchToLayerNr(bShow);
+      if(bShow)
+         bt_showhide_bandparams.setCaption("<< Band Params");
+      else
+         bt_showhide_bandparams.setCaption("Band Params >>");
+      relayout();
+      resizeToMinimum();
+      moveToClippedPosition2f((UI.viewport_width - getSizeX())*0.5f, getPositionY());
+      redraw();
+   }
+
+   // <method.png>
+   protected method getSampleDataAndRate(int _type, int _atrackIdx, int _smpIdx, Float _retRate, Integer _retNumCh) : FloatArray {
+      FloatArray ret <= null;
+
+      switch(_type)
+      {
+         case TYPE_AUDIOTRACK: // 0
+            AudioTrack atrack <= current_project.getAudioTrackByIdx(_atrackIdx);
+            if(null != atrack)
+            {
+               atrack.mergeClipSegments();  // flatten
+               _retNumCh = atrack.b_stereo ? 2 : 1;
+               _retRate = atrack.getFirstClipSampleRate();
+               ret <= atrack.getCurrentSampleData();  // live capture or first clip
+            }
+            break;
+
+         case TYPE_SAMPLE: // 1
+            Sample smp <= current_project.getSampleByIdx(_smpIdx);
+            if(null != smp)
+            {
+               _retNumCh = smp.waveform.numChannels;
+               _retRate = smp.waveform.sampleRate;
+               ret <= smp.waveform.sampleData;
+            }
+            break;
+
+         case TYPE_TRACK: // 2
+            _retNumCh = 1;
+            _retRate = Audio.mix_rate;
+            ret <= ringbuf_mono_freeze;
+            break;
+      }
+      return ret;
+   }
+
+   // <method.png>
+   protected method getSample(int _type, int _smpIdx) : Sample {
+      if(TYPE_SAMPLE/*1*/ == _type)
+      {
+         Sample smp <= current_project.getSampleByIdx(_smpIdx);
+         return smp;
+      }
+      else
+      {
+         return null;
+      }
+   }
+
+   // <method.png>
+   protected method markDstAsModified() {
+      switch(cm_dst_type.getSelectedOption())
+      {
+         case TYPE_AUDIOTRACK: // 0
+            AudioTrack atrack <= current_project.getAudioTrackByIdx(cm_src_audiotrack.getSelectedOption());
+            if(null != atrack)
+            {
+               atrack.markAsModified();
+            }
+            break;
+
+         case TYPE_SAMPLE: // 1
+            Sample smp <= current_project.getSampleByIdx(cm_src_sample.getSelectedOption());
+            if(null != smp)
+            {
+               smp.markWaveformAsModified();
+            }
+            break;
+      }
+   }
+
+   // <method.png>
+   public method analyze() : boolean {
+
+      local Float srcSampleRate;
+      local Integer srcNumCh;
+      FloatArray srcSmp <= getSampleDataAndRate(cm_src_type.getSelectedOption(),
+                                                cm_src_audiotrack.getSelectedOption(),
+                                                cm_src_sample.getSelectedOption(),
+                                                srcSampleRate,
+                                                srcNumCh
+                                                );
+
+      local Float dstSampleRate;
+      local Integer dstNumCh;
+      FloatArray dstSmp <= getSampleDataAndRate(cm_dst_type.getSelectedOption(),
+                                                cm_dst_audiotrack.getSelectedOption(),
+                                                cm_dst_sample.getSelectedOption(),
+                                                dstSampleRate,
+                                                dstNumCh
+                                                );
+
+      if(null == srcSmp)
+      {
+         Global.Error("No source sample data");
+         return false;
+      }
+
+      if(1 != srcNumCh)
+      {
+         Global.Error("Source must be mono");
+         return false;
+      }
+
+      if(null == dstSmp)
+      {
+         Global.Error("No destination sample data");
+         return false;
+      }
+
+      if(@(srcSmp) == @(dstSmp))
+      {
+         Global.Error("Source and destination cannot be the same");
+         return false;
+      }
+
+      if(1 != dstNumCh)
+      {
+         Global.Error("Destination must be mono");
+         return false;
+      }
+
+      fft_win_size = (1 << fft_win_bits);
+
+      int srcNumFrames = srcSmp.numElements;
+
+      if(srcNumFrames < (fft_win_size + truefreq_frameoffset))
+      {
+         Global.Error("Source is too short");
+         return false;
+      }
+
+      int dstNumFrames = dstSmp.numElements;
+
+      if(0 == dstNumFrames)
+      {
+         Global.Error("Destination has not been allocated, yet");
+         return false;
+      }
+
+      int srcOffset = (sc_src_pos.getValue()/10000.0) * srcNumFrames;
+
+      // // srcOffset = mathClampi(srcOffset, fft_win_size/2, srcNumFrames - fft_win_size/2);
+
+      trace "[...] analyze: fft_win_size="+fft_win_size+" srcOffset="+srcOffset;
+
+      // // int fftOffset = fft_win_size / 2 + srcOffset;
+      int fftOffset = srcOffset;
+      fft_overlap_step = fft_win_size / num_overlap;
+
+      StFFT *fft;
+      StFFT *fftDelta;
+      int fftIdx = 0;
+
+      int t = milliSeconds();
+
+      loop(num_overlap)
+      {
+         fft <= ffts.get(fftIdx);
+         fftDelta <= delta_ffts.get(fftIdx);
+
+         fft.setWindowSize(fft_win_bits);
+         fft.setEnableWindow(fft_window_type);
+         fft.setInputSamples(srcSmp, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+         fft.fft(fftOffset, 0/*inChOffset*/);
+
+         fftDelta.setWindowSize(fft_win_bits);
+         fftDelta.setEnableWindow(fft_window_type);
+         fftDelta.setInputSamples(srcSmp, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+         fftDelta.fft(fftOffset + truefreq_frameoffset, 0/*inChOffset*/);
+
+         fftOffset += fft_overlap_step;
+
+         fftIdx++;
+      }
+
+      t = milliSeconds() - t;
+
+      Global.Print("FFT analysis finished in "+t+" milliseconds");
+      return true;
+   }
+
+   // <method.png>
+   public method resynth() : boolean {
+
+      local Float srcSampleRate;
+      local Integer srcNumCh;
+      FloatArray srcSmp <= getSampleDataAndRate(cm_src_type.getSelectedOption(),
+                                                cm_src_audiotrack.getSelectedOption(),
+                                                cm_src_sample.getSelectedOption(),
+                                                srcSampleRate,
+                                                srcNumCh
+                                                );
+
+      local Float dstSampleRate;
+      local Integer dstNumCh;
+      FloatArray dstSmp <= getSampleDataAndRate(cm_dst_type.getSelectedOption(),
+                                                cm_dst_audiotrack.getSelectedOption(),
+                                                cm_dst_sample.getSelectedOption(),
+                                                dstSampleRate,
+                                                dstNumCh
+                                                );
+
+      int numFrames = dstSmp.numElements;
+      Global.Debug("ResynthDialog::resynth: calculate "+numFrames+" frames");
+
+      int skipFrames = skip_start_pct * numFrames;
+      int xfadeFrames = xfade_pct * numFrames;
+      numFrames += skipFrames + xfadeFrames;
+
+      float curAmp;
+      if(b_normalize)
+      {
+         curAmp = 1.0;
+      }
+      else
+      {
+         curAmp = amp / num_overlap;
+         curAmp += (num_overlap / 16.0) * 0.05;
+      }
+
+      StFFT *fft;
+      StFFT *fftDelta;
+
+      float curMinBin;
+      float curMaxBin;
+
+      if(min_bin < max_bin)
+      {
+         curMinBin = min_bin;
+         curMaxBin = max_bin;
+      }
+      else
+      {
+         curMinBin = max_bin;
+         curMaxBin = min_bin;
+      }
+
+      foreach fft in ffts
+      {
+         fft.testIFFTMinBin = curMinBin;
+         fft.testIFFTMaxBin = curMaxBin;
+      }
+
+      int fftOffset = -skipFrames;
+      int fftIdx = 0;
+
+      boolean bInPlace = (0 == xfadeFrames) && !STConfig.b_resynth_doublebuffer && !b_normalize;
+
+      if(bInPlace)
+      {
+         dstSmp.fill(0);
+      }
+
+      float overlapScl = overlap_scl;
+      if(overlapScl < 0.0f)
+      {
+         overlapScl = 1.0 / (-overlapScl + 1.0f);
+      }
+      else
+      {
+         overlapScl += 1.0f;
+      }
+      overlapScl *= (overlap_scl_pitchfollow / pitch_scl);
+      if(overlapScl < 0.0f)
+         overlapScl = 0.0f;
+      int overlapStep = fft_overlap_step * overlapScl;
+      Global.Debug("ResynthDialog::resynth: overlapScl="+overlapScl+" => overlapStep="+overlapStep);
+
+      // band params
+      for(int bandIdx = 0; bandIdx < NUM_BAND_PARAMS; bandIdx++)
+      {
+         ResynthBandParams bandParams <= band_params[bandIdx];
+         StFFT_BandParams  stfftBandParams <= stfft_band_params[bandIdx];
+         bandParams.copyToStFFTBandParams(stfftBandParams);
+      }
+
+      if(STConfig.b_resynth_multithreading)
+      {
+         local PointerArray params;
+         local PointerArray threads;
+         local PointerArray samples;
+         Thread *th;
+         FloatArray *thSmp;
+         fftIdx = 0;
+
+         int skipFramesLast = 0;
+
+         if(numFrames < ((num_overlap-1)*overlapStep))
+         {
+            skipFramesLast = ((num_overlap-1)*overlapStep);
+            numFrames += skipFramesLast;
+         }
+
+         // // Don't let worker threads collide with replay thread(s)
+         // int affinityMask32 = Thread.GetMaxAffinityMask32();
+         // local Integer io = affinityMask32;
+         // Global.Debug("ResynthDialog::resynth: MaxAffinityMask32=0x"+io.printf("%08x"));
+         // affinityMask32 &= ~(1 << STConfig.replay_thread_core);
+         // Track *track;
+         // foreach track in current_project.tracks
+         // {
+         //    affinityMask32 &= ~(1 << track.getActualCPUCore());
+         // }
+         // io = affinityMask32;
+         // Global.Debug("ResynthDialog::resynth: affinityMask32=0x"+io.printf("%08x"));
+         // // (note) affinitymask alone is not finished to prevent collisions => use win10 SetThreadSelectedCpuSets
+         // local IntArray availCPUCores;
+         // int cpuMask = 1;
+         // int cpuCoreIdx = 0;
+         // loop(31)
+         // {
+         //    if(affinityMask32 & cpuMask)
+         //       availCPUCores.add(cpuCoreIdx);
+         //    cpuCoreIdx++;
+         //    cpuMask = cpuMask << 1;
+         // }
+
+         // Start worker threads
+         // cpuCoreIdx = 0;
+
+         loop(num_overlap)
+         {
+            ResynthThreadParams p <= new ResynthThreadParams;
+            thSmp <= new FloatArray;
+            thSmp.allocAndFill(numFrames - skipFrames, 0);
+            // int workerCPUCoreIdx = availCPUCores.get(cpuCoreIdx);
+            // // trace "xxx worker["+fftIdx+"] cpuCoreIdx="+workerCPUCoreIdx;
+            p.init(this, thSmp, fftOffset, numFrames - skipFrames - fftOffset, fftIdx, dstSampleRate, curAmp//,
+                   // affinityMask32, workerCPUCoreIdx
+                   );
+            th <= new Thread;
+            th.userdata = p;
+            th.create(resynth_thread_entry);
+            threads.add(#(deref th));
+            params.add(#(deref p));
+            samples.add(#(deref thSmp));
+            fftOffset += overlapStep;
+            fftIdx++;
+            // cpuCoreIdx = (cpuCoreIdx + 1) % availCPUCores.numElements;
+         }
+
+         local FloatArray *blendDst;
+
+         if(!bInPlace)
+         {
+            blendDst <= new FloatArray;
+            blendDst.allocAndFill(numFrames - skipFrames - skipFramesLast, 0);
+         }
+         else
+         {
+            blendDst <= dstSmp;
+         }
+
+         fftIdx = 0;
+         loop(num_overlap)
+         {
+            th <= threads.get(fftIdx);
+            th.wait();
+            thSmp <= samples.get(fftIdx);
+            // tksampleedit_add_mono_to_mono(blendDst, 0, thSmp, skipFrames, numFrames-skipFrames-skipFramesLast);
+            tksampleedit_add_mono_to_mono(blendDst, 0, thSmp, 0, numFrames-skipFrames-skipFramesLast);
+            fftIdx++;
+         }
+
+         float normAmp;
+
+         if(xfadeFrames > 0)
+         {
+            // (note) (numFrames-skipFrames-xfadeFrames) samples will be written to dstSmp
+            // trace "xxx numFrames-skipFrames="+(numFrames-skipFrames);
+            // trace "xxx xfadeFrames="+xfadeFrames;
+            if(b_normalize)
+            {
+               normAmp = blendDst.absMax;
+               normAmp = amp / normAmp;
+               tksampleedit_amp_mono_to_mono(blendDst, 0, blendDst, 0, numFrames-skipFrames-skipFramesLast, normAmp);
+            }
+            tksampleedit_xfade_mono(dstSmp, blendDst, numFrames-skipFrames-skipFramesLast, xfadeFrames);
+         }
+         else if(!bInPlace)
+         {
+            if(b_normalize)
+            {
+               normAmp = blendDst.absMax;
+               normAmp = amp / normAmp;
+               tksampleedit_amp_mono_to_mono(dstSmp, 0, blendDst, 0, numFrames-skipFrames-skipFramesLast, normAmp);
+            }
+            else
+            {
+               tksampleedit_copy_mono_to_mono(dstSmp, 0, blendDst, 0, numFrames-skipFrames-skipFramesLast);
+            }
+         }
+
+         markDstAsModified();
+      }
+      else
+      {
+         // if(b_truefreq)
+         // {
+         //    loop(num_overlap)
+         //    {
+         //       fft <= ffts.get(fftIdx);
+         //       fftDelta <= delta_ffts.get(fftIdx);
+
+         //       fft.testIFFTSin_TrueFreq(dstSmp, fftOffset, numFrames - skipFrames - fftOffset, dstSampleRate, pitch_scl, freq_shift, curAmp, freq_rand_exp, freq_rand_scl, fftDelta, truefreq_frameoffset, phase_rand_amt);
+
+         //       fftOffset += overlapStep;
+         //       fftIdx++;
+         //    }
+         // }
+         // else
+         // {
+         //    // tri window + overlap add
+         //    loop(num_overlap)
+         //    {
+         //       fft <= ffts.get(fftIdx);
+
+         //       fft.testIFFTSin(dstSmp, fftOffset, numFrames - skipFrames - fftOffset, dstSampleRate, pitch_scl, freq_shift, curAmp, freq_rand_exp, freq_rand_scl, phase_rand_amt);
+         //       fftOffset += overlapStep;
+         //       fftIdx++;
+         //    }
+         // }
+      }
+
+      Global.Print("Resynthesized "+numFrames+" frames (skip "+skipFrames+", xfade "+xfadeFrames+")");
+      current_project.markAsModified();
+
+      UI.RedrawAll();
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_RECALC == acName)
+      {
+         if(cb_autocalc.isSelected())
+         {
+            handleCalc();
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(cm_preset):
+            if(cb_preset_autoload.isSelected())
+            {
+               loadResynthPreset();
+            }
+            return true;
+
+         case @(bt_preset_load):
+            loadResynthPreset();
+            return true;
+
+         case @(cb_preset_autoload):
+            Global.Print("Auto-load resynth preset is "+Utils.GetEnableString(cb_preset_autoload.isSelected()));
+            return true;
+
+         case @(bt_preset_save):
+            saveResynthPreset1();
+            return true;
+
+         case @(cm_src_type):
+            handleSrcTypeChanged();
+            return true;
+
+         case @(cm_src_audiotrack):
+            handleSrcAudioTrackChanged();
+            return true;
+
+         case @(cm_src_track):
+            handleSrcTrackChanged(false/*bQuiet*/);
+            return true;
+
+         case @(bt_freeze_ringbuf):
+            handleFreezeRingBuf();
+            return true;
+
+         case @(sc_src_pos):
+            handleSrcPosChanged();
+            return true;
+
+         case @(cm_src_sample):
+            handleSrcSampleChanged();
+            return true;
+
+         case @(cm_dst_type):
+            handleDstTypeChanged();
+            return true;
+
+         case @(cm_dst_audiotrack):
+            handleDstAudioTrackChanged();
+            return true;
+
+         case @(cm_dst_sample):
+            handleDstSampleChanged();
+            return true;
+
+         case @(fp_dst_skip):
+            skip_start_pct = fp_dst_skip.getFloatValue();
+            Global.Print("Skip start amount is "+(100*skip_start_pct)+"%");
+            handleRecalc();
+            return true;
+
+         case @(fp_dst_xfade):
+            xfade_pct = fp_dst_xfade.getFloatValue();
+            Global.Print("Crossfade amount is "+(100*xfade_pct)+"%");
+            handleRecalc();
+            return true;
+
+         case @(cm_fft_size):
+            handleFFTSizeChanged();
+            return true;
+
+         case @(cm_fft_overlap):
+            handleFFTOverlapChanged();
+            return true;
+
+         case @(fp_fft_overlap_scl):
+            handleFFTOverlapSclChanged();
+            return true;
+
+         case @(fp_fft_overlap_scl_pitchfollow):
+            handleFFTOverlapSclPitchFollowChanged();
+            return true;
+
+         case @(cm_fft_window_type):
+            handleFFTWindowTypeChanged();
+            return true;
+
+         case @(cb_truefreq):
+            handleEnableTrueFreqChanged();
+            return true;
+
+         case @(fp_truefreq_frameoffset):
+            handleTrueFreqFrameOffsetChanged();
+            return true;
+
+         case @(fp_min_bin):
+            handleMinBinChanged();
+            return true;
+
+         case @(fp_max_bin):
+            handleMaxBinChanged();
+            return true;
+
+         case @(fp_rand_phase):
+            handleRandPhaseChanged();
+            return true;
+
+         case @(fp_rand_freq_exp):
+            handleRandFreqExpChanged();
+            return true;
+
+         case @(fp_rand_freq_scl):
+            handleRandFreqSclChanged();
+            return true;
+
+         case @(fp_amp):
+            handleAmpChanged();
+            return true;
+
+         case @(cb_normalize):
+            handleNormalizeChanged();
+            return true;
+
+         case @(fp_pitch):
+            handlePitchChanged(false/*bQuiet*/);
+            return true;
+
+         case @(fp_freq):
+            handleFreqChanged(false/*bQuiet*/);
+            return true;
+
+         case @(bt_calc):
+            handleCalc();
+            return true;
+
+         case @(cb_autocalc):
+            Global.Print("Auto-Calc is "+Utils.GetEnableString(cb_autocalc.isSelected()));
+            return true;
+
+         case @(fp_autocalc_delay):
+            STConfig.resynth_autocalc_delay = fp_autocalc_delay.getFloatValue();
+            Global.Print("Auto-Calc delay is "+STConfig.resynth_autocalc_delay+" milliseconds");
+            ta_recalc.setDefaultTicks(STConfig.resynth_autocalc_delay,
+                                      STConfig.resynth_autocalc_delay,
+                                      STConfig.resynth_autocalc_delay,
+                                      STConfig.resynth_autocalc_delay
+                                      );
+            return true;
+
+         case @(cb_multithreading):
+            STConfig.b_resynth_multithreading = cb_autocalc.isSelected();
+            Global.Print("Multithreading is "+Utils.GetEnableString(STConfig.b_resynth_multithreading));
+            return true;
+
+         case @(cm_appdst_type):
+            handleAppDstTypeChanged();
+            return true;
+
+         case @(cm_appdst_audiotrack):
+            handleAppDstAudioTrackChanged();
+            return true;
+
+         case @(cm_appdst_sample):
+            handleAppDstSampleChanged();
+            return true;
+
+         case @(bt_appdst_clear):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleAppDstClear();
+            }
+            else
+            {
+               Global.Warning("Hold-click to really clear append destination (+remove all zones)");
+            }
+            return true;
+
+         case @(bt_appdst_exec_append):
+         case @(bt_appdst_exec_zone):
+            handleAppDstExec();
+            return true;
+
+         case @(bt_appdst_newsample):
+            handleAppDstNewSample();
+            return true;
+
+         case @(bt_showhide_bandparams):
+            handleToggleBandParams();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

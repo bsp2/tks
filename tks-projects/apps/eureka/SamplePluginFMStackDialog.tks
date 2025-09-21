@@ -1,0 +1,3343 @@
+// ----
+// ---- file   : SamplePluginFMStackDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 24Aug2023
+// ---- changed: 25Aug2023, 26Aug2023, 01Sep2023, 03Sep2023, 07Sep2023, 09Sep2023, 10Sep2023
+// ----          11Sep2023, 12Sep2023, 13Sep2023, 14Sep2023, 16Sep2023, 18Sep2023, 21Sep2023
+// ----          22Sep2023, 04Oct2023, 30Oct2023, 27Apr2024, 28Apr2024, 12Aug2024, 03Oct2024
+// ----          12Dec2024, 19Jun2025
+// ----
+// ----
+// ----
+
+module MSamplePluginFMStackDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePluginFMStackDialog extends Dialog {
+
+   define int PARAM_VAR_BASE        =  32;
+   define int PARAM_MATRIX_BASE     = 248;
+   define int NUM_PARAMS_PER_VAR    = 256;
+   define int NUM_PARAMS_PER_MATRIX = 5*8;
+
+   define int PARAM_NUM_VARIATIONS      =  8;
+   define int PARAM_VARIATION_EDIT_IDX  =  9;
+   define int PARAM_VARIATION_EDIT_LOCK = 10;
+   define int PARAM_VARIATION_EFF       = 11;
+
+   define int PARAM_OP_BASE      = 96;
+   define int PARAM_OP_PHASE     =  0;
+   define int PARAM_OP_COARSE    =  1;
+   define int PARAM_OP_FINE      =  2;
+   define int PARAM_OP_LEVEL     =  7;
+   define int PARAM_OP_VEL_CURVE = 11;
+   define int PARAM_OP_WS_MIX    = 14;
+   define int PARAM_OP_NUM       = 16;
+
+   define int NUM_ENV_PARAMS_PER_OP = 8;
+
+   // 1: OP_COARSE is in range -16..+16 (octaves)
+   // 2: OP_COARSE is in range -65536..+65536 (ratio)
+   short plugin_ver;
+
+   protected PageSample   *pg_sample;
+   protected Sample       *sample;
+   protected StSample *[] *zones;
+   protected StPluginShared *[] plugins_shared;
+
+   protected XMLForm *xfm;
+
+   protected FloatParam *[] mat_fp;
+   protected Button     *[] mat_bt;
+
+   protected LayerSwitch *ls_io_1;  // switches mgrp<>empty
+   protected LayerSwitch *ls_io_2;  // switches op nav buttons<>empty
+   protected LayerSwitch *ls_io_3;  // switches matrix + ops <> preset mixer
+   protected Button      *bt_io;
+
+   protected ComboBox   *cm_var;
+   protected CheckBox   *cb_var_lock;
+   protected FloatParam *fp_var_num;
+
+   protected Button *bt_var_copy;
+   protected Button *bt_var_paste;
+   protected FloatArray var_clipboard;
+
+   protected Button *bt_ls0;
+   protected Button *bt_ls1;
+   protected Button *bt_ls2;
+   protected int ls_idx;
+
+   protected SamplePluginFMStackOpForm *f_op_1;
+   protected SamplePluginFMStackOpForm *f_op_2;
+   protected SamplePluginFMStackOpForm *f_op_3;
+   protected SamplePluginFMStackOpForm *f_op_4;
+   protected SamplePluginFMStackOpForm *f_op_5;
+
+   protected SamplePluginFMStackModForm *f_mgrp_1;
+   protected SamplePluginFMStackModForm *f_mgrp_2;
+   protected SamplePluginFMStackModForm *f_mgrp_3;
+   protected SamplePluginFMStackModForm *f_mgrp_4;
+   protected SamplePluginFMStackModForm *f_mgrp_5;
+   protected SamplePluginFMStackModForm *f_mgrp_6;
+   protected SamplePluginFMStackModForm *f_mgrp_7;
+   protected SamplePluginFMStackModForm *f_mgrp_8;
+
+   // Preset / FM-Mixer view
+   protected StringArray    patch_names;  // filled by scanPatchDirectory()
+   protected IntArray       patch_checksums;
+   protected FloatArray *[] patch_data;
+
+   protected Button   *bt_revert;
+   protected Button   *bt_load;
+   protected Button   *bt_save;
+   protected ComboBox *cm_preset;
+   protected CheckBox *cb_autoload;
+   protected FloatArray revert_patch_data;
+
+   // FM Mixer
+   protected ComboBox   *cm_preset_tl;
+   protected FloatParam *fp_amt_tl;
+   protected Button     *bt_rand_tl;
+   protected ComboField *cf_flt_tl;
+   protected IntArray    opt_to_preset_map_tl;  /// maps (filtered) combobox option index to (unfiltered) preset index
+
+   protected ComboBox   *cm_preset_tr;
+   protected FloatParam *fp_amt_tr;
+   protected Button     *bt_rand_tr;
+   protected ComboField *cf_flt_tr;
+   protected IntArray    opt_to_preset_map_tr;
+
+   protected ComboBox   *cm_preset_bl;
+   protected FloatParam *fp_amt_bl;
+   protected Button     *bt_rand_bl;
+   protected ComboField *cf_flt_bl;
+   protected IntArray    opt_to_preset_map_bl;
+
+   protected ComboBox   *cm_preset_br;
+   protected FloatParam *fp_amt_br;
+   protected Button     *bt_rand_br;
+   protected ComboField *cf_flt_br;
+   protected IntArray    opt_to_preset_map_br;
+
+   protected XYPad *xy_pad;
+
+   // Morph filter
+   protected CheckBox *cb_flt_op1;
+   protected CheckBox *cb_flt_op2;
+   protected CheckBox *cb_flt_op3;
+   protected CheckBox *cb_flt_op4;
+   protected CheckBox *cb_flt_op5;
+   protected CheckBox *cb_flt_wave;
+   protected CheckBox *cb_flt_phase;
+   protected CheckBox *cb_flt_level;
+   protected CheckBox *cb_flt_matrix;
+   protected CheckBox *cb_flt_aenv;
+   protected CheckBox *cb_flt_levelamt;
+   protected CheckBox *cb_flt_velcurve;
+   protected CheckBox *cb_flt_pcoarse;
+   protected CheckBox *cb_flt_pfine;
+   protected CheckBox *cb_flt_penv;
+   protected CheckBox *cb_flt_pamt;
+   protected CheckBox *cb_flt_pkbd;
+
+   static SamplePluginFMStackPatchSaveDialog *dlg_save;
+   static Dialog_OverwriteFMStackPatch dlg_overwrite;
+
+   static int hl_op_idx;
+
+   protected FloatArray var_drag_base;     // one variation per zone
+   protected boolean    b_var_drag;        // when "gang editing" matrix amounts via LALT/LSHIFT modifier(s)
+   protected boolean    b_var_drag_shift;  // true=add deltas, false=multiply by ratio
+   protected float      var_drag_start;
+
+   protected PopupMenu *pm_mat_context;
+   protected PopupMenu *pm_context;
+
+   protected FloatArray mat_clipboard;
+
+
+   // <ui_init.png>
+   public method initSamplePluginFMStackDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SamplePluginFMStackDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSamplePluginFMStackDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      resolveMatrixFloatParamsAndButtons();
+
+      f_op_1.init();
+      f_op_2.init();
+      f_op_3.init();
+      f_op_4.init();
+      f_op_5.init();
+
+      f_mgrp_1.init();
+      f_mgrp_2.init();
+      f_mgrp_3.init();
+      f_mgrp_4.init();
+      f_mgrp_5.init();
+      f_mgrp_6.init();
+      f_mgrp_7.init();
+      f_mgrp_8.init();
+
+      updateWidgetNavButtonColors(0);
+
+      cf_flt_tl.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_tl.setSelectedOption(0);
+
+      cf_flt_tr.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_tr.setSelectedOption(0);
+
+      cf_flt_bl.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_bl.setSelectedOption(0);
+
+      cf_flt_br.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_br.setSelectedOption(0);
+
+      cm_preset_tl.setSelectedOption(0);
+      cm_preset_tr.setSelectedOption(0);
+      cm_preset_bl.setSelectedOption(0);
+      cm_preset_br.setSelectedOption(0);
+
+      initWindow(xfm,
+                 "FM Stack",
+                 140, 140,
+                 230, 310
+                 );
+
+      return true;
+   }
+
+   // <method.png>
+   static BipolarToScale(float _t, float _div, float _mul) : float {
+      // t (-1..1) => /_div .. *_mul
+      float s;
+
+      if(_t < 0.0f)
+      {
+         s = (1.0f / _div);
+         s = 1.0f + (s - 1.0f) * -_t;
+         if(s < 0.0f)
+            s = 0.0f;
+      }
+      else
+      {
+         s = _mul;
+         s = 1.0f + (s - 1.0f) * _t;
+      }
+
+      return s;
+   }
+
+   // <method.png>
+   protected method resolveMatrixFloatParamsAndButtons() {
+      int opSrcNr = 1;
+      loop(5)
+      {
+         int opDstNr = 1;
+         FloatParam *fp;
+         Button *bt;
+         loop(4)
+         {
+            fp <= xfm.findLayerById("fp_op"+String(opSrcNr)+String(opDstNr));
+            fp.setPadTop(0);
+            fp.setPadBottom(0);
+            fp.setEnableProvideDrag(true);
+            fp.setMousePrecision(2);
+            fp.setStepCoarse(0.01);
+            fp.setStepFine(0.001);
+            fp.setNominalValues(0.0, 1.0);
+            mat_fp.add(fp);
+
+            bt <= xfm.findLayerById("bt_op"+String(opSrcNr)+String(opDstNr));
+            bt.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            bt.setInnerPadding4f(1,1,1,1);
+            bt.setPadTop(0);
+            bt.setPadBottom(0);
+            bt.setEnableProvideRightClick(true);
+            bt.setToolTipCaption(" (note) RMB-click opens matrix context menu");
+            mat_bt.add(bt);
+
+            opDstNr++;
+         }
+
+         fp <= xfm.findLayerById("fp_op"+String(opSrcNr)+"out");
+         fp.setPadTop(0);
+         fp.setPadBottom(0);
+         fp.setEnableProvideDrag(true);
+         fp.setMousePrecision(2);
+         fp.setStepCoarse(0.01);
+         fp.setStepFine(0.001);
+         fp.setNominalValues(0.0, 1.0);
+         mat_fp.add(fp);
+
+         bt <= xfm.findLayerById("bt_op"+String(opSrcNr)+"out");
+         bt.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+         bt.setInnerPadding4f(1,1,1,1);
+         bt.setPadTop(0);
+         bt.setPadBottom(0);
+         bt.setEnableProvideRightClick(true);
+         bt.setToolTipCaption(" (note) RMB-click opens matrix context menu");
+         mat_bt.add(bt);
+
+         opSrcNr++;
+      }
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSamplePluginFMStackDialog(PageSample _pgSample, int _pluginSlotIdx, short _ver) {
+
+      pg_sample <= _pgSample;
+      plugin_ver = _ver;
+
+      sample <= pg_sample.getSelectedSample();
+      if(null != sample)
+      {
+         zones <= pg_sample.getSelectedZones();
+
+         if((null != zones) && !zones.isEmpty())
+         {
+            StSample *s;
+            plugins_shared.free();
+            foreach s in zones
+               plugins_shared.add(s.getVoicePluginShared(_pluginSlotIdx));
+
+            if(!plugins_shared.isEmpty())
+            {
+               recursiveBuildTabCycleLists();
+
+               StPluginShared shared <= plugins_shared.first;
+
+               cm_var.setSelectedOption(int(shared.getParamValue(PARAM_VARIATION_EDIT_IDX) * 100) - 1);
+               cb_var_lock.setSelected(shared.getParamValue(PARAM_VARIATION_EDIT_LOCK) >= 0.5f);
+               fp_var_num.setValue(int(shared.getParamValue(PARAM_NUM_VARIATIONS) * 100) );
+
+               scanPatchDirectory();
+               selectPresetByChecksum();
+
+               saveRevertPatchData();
+
+               showNearMouse(25, -78);
+               validateClippedPosition();
+            }
+            else
+            {
+               Global.Warning("FM Stack: no plugins");
+            }
+         }
+         else
+         {
+            Global.Warning("FM Stack: no zones");
+         }
+      }
+      else
+      {
+         Global.Warning("FM Stack: no sample");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateOps() {
+      f_op_1.showOp(this, sample, 0/*opIdx*/, plugins_shared, getEditVarIdx(), plugin_ver);
+      f_op_2.showOp(this, sample, 1/*opIdx*/, plugins_shared, getEditVarIdx(), plugin_ver);
+      f_op_3.showOp(this, sample, 2/*opIdx*/, plugins_shared, getEditVarIdx(), plugin_ver);
+      f_op_4.showOp(this, sample, 3/*opIdx*/, plugins_shared, getEditVarIdx(), plugin_ver);
+      f_op_5.showOp(this, sample, 4/*opIdx*/, plugins_shared, getEditVarIdx(), plugin_ver);
+   }
+
+   // <ui_update.png>
+   protected method updateModGroups() {
+      f_mgrp_1.showModGroup(sample, 0/*mgrpIdx*/, plugins_shared);
+      f_mgrp_2.showModGroup(sample, 1/*mgrpIdx*/, plugins_shared);
+      f_mgrp_3.showModGroup(sample, 2/*mgrpIdx*/, plugins_shared);
+      f_mgrp_4.showModGroup(sample, 3/*mgrpIdx*/, plugins_shared);
+      f_mgrp_5.showModGroup(sample, 4/*mgrpIdx*/, plugins_shared);
+      f_mgrp_6.showModGroup(sample, 5/*mgrpIdx*/, plugins_shared);
+      f_mgrp_7.showModGroup(sample, 6/*mgrpIdx*/, plugins_shared);
+      f_mgrp_8.showModGroup(sample, 7/*mgrpIdx*/, plugins_shared);
+   }
+
+   // <ui_show.png>
+   protected method showView(int _idx) {
+      int curIdx = ls_io_1.getCurrentChildNr();
+
+      ls_io_1.switchToLayerNr(_idx);
+      ls_io_2.switchToLayerNr(_idx);
+      ls_io_3.switchToLayerNr(_idx);
+      bt_io.setToggleState(_idx);
+      resizeToMinimum();
+      validateClippedPosition();
+      UI.RedrawAll();
+
+      if(1 == _idx && 0 == curIdx)
+      {
+         saveRevertPatchData();
+      }
+
+      if(_idx != curIdx)
+      {
+         updateMatFP();
+         updateOps();
+         updateModGroups();
+      }
+   }
+
+   // <method.png>
+   protected method getEditVarIdx() : int {
+      return cm_var.getSelectedOption();
+   }
+
+   // <method_set.png>
+   protected method setVarParam(StPluginShared _shared, int _paramIdx, float _f) {
+      if(_paramIdx >= PARAM_VAR_BASE)
+      {
+         _shared.setParamValue( (getEditVarIdx() * NUM_PARAMS_PER_VAR) + _paramIdx, _f );
+      }
+   }
+
+   // <method_get.png>
+   protected method getVarParam(StPluginShared _shared, int _paramIdx) : float {
+      // trace "xxx getVarParam: paramIdx="+_paramIdx;
+      if(_paramIdx >= PARAM_VAR_BASE)
+      {
+         return _shared.getParamValue( (getEditVarIdx() * NUM_PARAMS_PER_VAR) + _paramIdx );
+      }
+      return 0.0f;
+   }
+
+   // <ui_update.png>
+   protected method updateMatFP() {
+      StPluginShared shared <= plugins_shared.first;
+      int srcOpIdx = 0;
+      loop(5)
+      {
+         int dstIdx = 0;
+         loop(5)
+         {
+            float f = getVarParam(shared, PARAM_MATRIX_BASE + (srcOpIdx*8) + dstIdx);
+            // trace "xxx ["+srcOpIdx+";"+dstIdx+"] f="+f;
+            FloatParam fp <= mat_fp.get(5*srcOpIdx + dstIdx);
+            fp.setValue(f * 16.0);
+            updateFPTextColor(fp);
+
+            dstIdx++;
+         }
+         srcOpIdx++;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateFPTextColor(FloatParam _fp) {
+      int c32;
+      if(0.0 == _fp.getFloatValue())
+      {
+         c32 = lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG);
+         int c32fg = lnf_colors.get(LookAndFeel.COLOR_TEXT_EDIT_FG);
+         c32 = UI.MixColor32(c32, c32fg, 0.5);
+      }
+      else
+      {
+         c32 = lnf_colors.get(LookAndFeel.COLOR_TEXT_EDIT_FG);
+      }
+      _fp.setForegroundColor(c32);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMatFPChanged(FloatParam _fp, int _srcOpIdx, int _dstIdx) {
+      float f = _fp.getFloatValue();
+      local Float fo = f * 100;
+
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         setVarParam(shared, PARAM_MATRIX_BASE + (_srcOpIdx*8) + _dstIdx, f / 16.0);
+      }
+
+      updateFPTextColor(_fp);
+      _fp.redraw();
+
+      sample.markParamsAsModified();
+      Global.Print("FM Matrix ("+(_srcOpIdx+1)+";"+(_dstIdx+1)+") amount is "+fo.printf("%3.3f")+"% (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <ui_update.png>
+   protected method updateFilteredPresets() {
+      local String optFltTL = cf_flt_tl.getSelectedOptionName();
+      cf_flt_tl.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_tl.setSelectedOptionByName(optFltTL);
+
+      local String optFltTR = cf_flt_tr.getSelectedOptionName();
+      cf_flt_tr.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_tr.setSelectedOptionByName(optFltTR);
+
+      local String optFltBL = cf_flt_bl.getSelectedOptionName();
+      cf_flt_bl.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_bl.setSelectedOptionByName(optFltBL);
+
+      local String optFltBR = cf_flt_br.getSelectedOptionName();
+      cf_flt_br.setOptionsSortedWithSpaceOnTop(STConfig.fmstack_morph_preset_filters);
+      cf_flt_br.setSelectedOptionByName(optFltBR);
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(bt_io);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      updateMatFP();
+      updateOps();
+      updateModGroups();
+
+      resizeToMinimum();
+      validateClippedPosition();
+
+      updateFilteredPresets();
+
+      updateOpHLButtons();
+
+      refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      updateMorphPresetFiltersConfig();
+      Global.Debug2("SamplePluginFMStackDialog::hide: new STConfig.fmstack_morph_preset_filters="+#(STConfig.fmstack_morph_preset_filters));
+
+      pg_sample.handlePluginEditorWindowClosed();
+   }
+
+   // <ui_update.png>
+   protected method updateOpHLButtons() {
+      // Global.Debug2("SamplePluginFMStackDialog::updateOpHLButtons: hl_op_idx="+hl_op_idx);
+      f_op_1.updateHLButtons(0 == hl_op_idx);
+      f_op_2.updateHLButtons(1 == hl_op_idx);
+      f_op_3.updateHLButtons(2 == hl_op_idx);
+      f_op_4.updateHLButtons(3 == hl_op_idx);
+      f_op_5.updateHLButtons(4 == hl_op_idx);
+   }
+
+   // <method_set.png>
+   public method setHLOpIdx(int _opIdx) {
+      if(hl_op_idx != _opIdx)
+      {
+         hl_op_idx = _opIdx;
+         updateOpHLButtons();
+         f_op_1.redraw();
+         f_op_2.redraw();
+         f_op_3.redraw();
+         f_op_4.redraw();
+         f_op_5.redraw();
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateWidgetNavButtonColors(int _idx) {
+      switch(_idx)
+      {
+         case 0:
+            bt_ls0.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_BUTTON_CAPTION_FG));
+            bt_ls1.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            bt_ls2.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            break;
+
+         case 1:
+            bt_ls0.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            bt_ls1.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_BUTTON_CAPTION_FG));
+            bt_ls2.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            break;
+
+         case 2:
+            bt_ls0.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            bt_ls1.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+            bt_ls2.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_BUTTON_CAPTION_FG));
+            break;
+      }
+   }
+
+   // <method.png>
+   protected method showWidgets(int _idx) {
+
+      ls_idx = _idx;
+
+      SamplePluginFMStackOpForm *f;
+      foreach f in [f_op_1, f_op_2, f_op_3, f_op_4, f_op_5]
+      {
+         f.showWidgets(_idx);
+      }
+
+      updateWidgetNavButtonColors(_idx);
+
+      resizeToMinimum();
+      validateClippedPosition();
+      // UI.RedrawAll();
+      Global.Print("Show widget group "+_idx);
+   }
+
+   // <method.png>
+   protected method showNextWidgetGroup() {
+      showWidgets((ls_idx + 1) % 3);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVarChanged() {
+      int varNr = cm_var.getSelectedOption() + 1;
+
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         shared.setParamValue(PARAM_VARIATION_EDIT_IDX, varNr / 100.0f);
+      }
+
+      sample.markParamsAsModified();
+      Global.Print("Current Edit Variation is "+varNr+" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+
+      updateMatFP();
+      updateOps();
+      selectPresetByChecksum();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVarLockChanged() {
+      boolean bLock = cb_var_lock.isSelected();
+
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         shared.setParamValue(PARAM_VARIATION_EDIT_LOCK, bLock ? 1.0f : 0.0f);
+      }
+
+      sample.markParamsAsModified();
+      Global.Print("Variation Replay Lock is "+Utils.GetEnableString(bLock)+" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVarNumChanged() {
+      int num = fp_var_num.getFloatValue();
+
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         shared.setParamValue(PARAM_NUM_VARIATIONS, num / 100.0f);
+      }
+
+      sample.markParamsAsModified();
+      Global.Print("Num Variations is "+num+" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleVarCopy() {
+      var_clipboard.empty();
+      StPluginShared shared <= plugins_shared.first;
+      int j = PARAM_VAR_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+      loop(NUM_PARAMS_PER_VAR)
+         var_clipboard.add(shared.getParamValue(j++));
+      Global.Print("Copy variation to clipboard");
+   }
+
+   // <method.png>
+   static RatioToOct(float _ratio) : float {
+      // ratio 0..65536 => oct -16..+16
+      if(_ratio > 0.0f)
+      {
+         return log(_ratio) / log(2.0f);
+      }
+      else
+      {
+         return -16.0f;
+      }
+   }
+
+   // <method.png>
+   static OctToRatio(float _oct) : float {
+      return mathPowerf(2.0f, _oct);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVarCopyEff() {
+      StPluginShared shared <= plugins_shared.first;
+      var_clipboard.empty();
+
+      int numVar = int(shared.getParamValue(PARAM_NUM_VARIATIONS) * 100);
+      if(numVar < 1)
+         numVar = 1;
+      else if(numVar > 8)
+         numVar = 8;
+
+      float varIdxEff = shared.getParamValue(PARAM_VARIATION_EFF);  // written by synth (last seen effective variation idx)
+      int varIdxA = int(varIdxEff) % numVar;
+      int varIdxB = (int(varIdxEff) + 1) % numVar;
+      float amtB = frac(varIdxEff);
+
+      int paramOffA = PARAM_VAR_BASE + varIdxA * NUM_PARAMS_PER_VAR;
+      int paramOffB = PARAM_VAR_BASE + varIdxB * NUM_PARAMS_PER_VAR;
+      int i = 0;
+      loop(NUM_PARAMS_PER_VAR)
+      {
+         float fA = shared.getParamValue(paramOffA + i);
+         float fB = shared.getParamValue(paramOffB + i);
+
+         if( (PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_COARSE) == i )
+         {
+            fA *= 65536.0f;
+            fB *= 65536.0f;
+            float octA = RatioToOct(fA);
+            float octB = RatioToOct(fB);
+            float octD = mathLerpf(octA, octB, amtB);
+            if(octD < -15.9f)  // 0Hz
+               var_clipboard.add(0.0f);
+            else
+               var_clipboard.add(OctToRatio(octD) / 65536.0f);
+         }
+         else
+         {
+            var_clipboard.add(mathLerpf(fA, fB, amtB));
+         }
+
+         // Next variation param
+         i++;
+      }
+
+      Global.Print("Copy effective variation to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVarPaste() {
+      if(var_clipboard.numElements > 0)
+      {
+         StPluginShared *shared;
+         foreach shared in plugins_shared
+         {
+            int i = 0;
+            int j = PARAM_VAR_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+            loop(NUM_PARAMS_PER_VAR)
+               shared.setParamValue(j++, var_clipboard.get(i++));
+         }
+         sample.markParamsAsModified();
+         Global.Print("Paste Variation (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+         updateMatFP();
+         updateOps();
+      }
+      else
+      {
+         Global.Warning("Paste Variation: clipboard is empty");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleView() {
+      showView(bt_io.getToggleState());
+      Global.Print("Select view "+ls_io_1.getCurrentChildNr());
+      UI.SetKeyboardFocus(bt_io);
+   }
+
+   // // <method.png>
+   // protected method reselectXYOption(ComboBox _cm, String _optName) {
+   //    if(_optName.isBlank())
+   //       _cm.setSelectedOption(0);  // <current>
+   //    else
+   //       _cm.setSelectedOptionByName(_optName);
+   // }
+
+   // <ui_update.png>
+   protected method scanPatchDirectory() {
+      local String dirName <= STConfig.fmstackpatch_rootpath;
+      Global.Debug2("SamplePluginFMStackDialog::scanPatchDirectory: dirName=\""+dirName+"\"");
+      patch_names.empty();
+      patch_checksums.empty();
+      patch_data.free();
+
+      local StringArray filenames <= Utils.ReadDirectory(dirName);
+
+      if(null != filenames)
+      {
+         String *filenameEn;
+
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               StringArray attr <= filenameEn.splitSpace(true);
+               String fileName <= attr.get(1);
+
+               if(fileName.endsWith(Global.FMSTACK_PRESET_FILE_SUFFIX/*.fms*/))
+               {
+                  local String patchName <= fileName.replace(Global.FMSTACK_PRESET_FILE_SUFFIX/*.fms*/,"");
+
+                  // Read checksum
+                  local String pathName <= STConfig.fmstackpatch_rootpath+"/"+patchName+Global.FMSTACK_PRESET_FILE_SUFFIX/*.fms*/;
+                  local File f;
+                  int chk = -1;
+                  if(f.openLocal(Utils.ToNativePathName(pathName), IOS_IN))
+                  {
+                     short ver = f.u16;
+                     if(ver >= 2)
+                     {
+                        chk = f.i32;
+
+                        FloatArray fa <= new FloatArray;
+                        fa.alloc(NUM_PARAMS_PER_VAR);
+                        loop(NUM_PARAMS_PER_VAR)
+                        {
+                           fa.add(f.f32);
+                        }
+
+                        patch_names.add(patchName);
+                        patch_checksums.add(chk);
+                        patch_data.add(#(deref fa));
+                        Global.Debug3("scanPatchDirectory: patchName=\""+patchName+"\" chk="+chk);
+                     }
+                     f.close();
+                  }
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      patch_names.sortByValue(ia, false/*bCS*/);
+      patch_names.rearrange(ia);
+      patch_checksums.rearrange(ia);
+      patch_data.rearrange(ia);
+      cm_preset.setOptions(patch_names);
+
+      // Update XY options
+      updatePresetFilter(cf_flt_tl, cm_preset_tl, opt_to_preset_map_tl, true/*bOptionsChanged*/);
+      updatePresetFilter(cf_flt_tr, cm_preset_tr, opt_to_preset_map_tr, true/*bOptionsChanged*/);
+      updatePresetFilter(cf_flt_bl, cm_preset_bl, opt_to_preset_map_bl, true/*bOptionsChanged*/);
+      updatePresetFilter(cf_flt_br, cm_preset_br, opt_to_preset_map_br, true/*bOptionsChanged*/);
+
+      Global.Debug("SamplePluginFMStackDialog::scanPatchDirectory: found "+patch_names.numElements+" patch file(s)");
+   }
+
+   // <method.png>
+   protected method selectPresetByChecksum() {
+      int chkCur = calcPatchChecksum();
+      int idx = -1;
+      for(;;)
+      {
+         idx = patch_checksums.indexOf(chkCur, idx + 1);
+         Global.Debug2("selectPresetByChecksum: chkCur="+chkCur+" => idx="+idx);
+         if(idx >= 0)
+         {
+            FloatArray pd <= patch_data.get(idx);
+            if(null != pd)
+            {
+               // Compare actual patch data
+               int i = 0;
+               int j = PARAM_VAR_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+               StPluginShared shared <= plugins_shared.first;
+               boolean bSame = true;
+               loop(NUM_PARAMS_PER_VAR)
+               {
+                  bSame = bSame && (shared.getParamValue(j++) == pd.get(i++));
+                  if(!bSame)
+                     break;
+               }
+               if(bSame)
+                  break;
+            }
+         }
+         else
+            break;
+      }
+      cm_preset.setSelectedOption(idx);
+   }
+
+   // <ui_handle.png>
+   protected method handlePresetChanged() {
+      if(cb_autoload.isSelected())
+      {
+         if(handleLoadPatch())
+         {
+            Global.Print("Select + Load patch \""+cm_preset.getSelectedOptionName()+"\"");
+            sample.markParamsAsModified();
+         }
+         else
+            Global.Error("Select + Load patch \""+cm_preset.getSelectedOptionName()+"\" failed");
+      }
+      else
+      {
+         Global.Print("Select patch \""+cm_preset.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <method.png>
+   protected method saveRevertPatchData() {
+      revert_patch_data.empty();
+
+      StPluginShared shared <= plugins_shared.first;
+
+      int editVarIdx = getEditVarIdx();
+      int paramOff = editVarIdx * NUM_PARAMS_PER_VAR + PARAM_VAR_BASE;
+
+      int i = 0;
+      loop(NUM_PARAMS_PER_VAR)
+         revert_patch_data.add(shared.getParamValue(paramOff + i++));
+
+      Global.Debug2("SamplePluginFMStackDialog::saveRevertPatchData: numElements="+revert_patch_data.numElements);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRevertPatch() {
+      if(revert_patch_data.numElements > 0)
+      {
+         StPluginShared shared <= plugins_shared.first;
+
+         int editVarIdx = getEditVarIdx();
+         int paramOff = editVarIdx * NUM_PARAMS_PER_VAR + PARAM_VAR_BASE;
+
+         int i = 0;
+         loop(NUM_PARAMS_PER_VAR)
+         {
+            shared.setParamValue(paramOff + i, revert_patch_data.get(i));
+            i++;
+         }
+
+         Global.Debug2("SamplePluginFMStackDialog::handleRevertPatch: numElements="+revert_patch_data.numElements);
+         Global.Print("Revert Patch");
+         selectPresetByChecksum();
+      }
+      else
+      {
+         Global.Debug2("SamplePluginFMStackDialog::handleRevertPatch: revert_patch_data is empty");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadPatch() : boolean {
+      String *pathName;
+      if(-1 != cm_preset.getSelectedOption())
+      {
+         local String patchName = cm_preset.getSelectedOptionName();
+         pathName <= STConfig.fmstackpatch_rootpath+"/"+patchName+Global.FMSTACK_PRESET_FILE_SUFFIX/*.fms*/;
+         if(loadPatchFile(pathName))
+         {
+            updateMatFP();
+            updateOps();
+            updateModGroups();
+            Global.Print("Load patch \""+patchName+"\"");
+            return true;
+         }
+         else
+         {
+            Global.Error("failed to load patch \""+patchName+"\"");
+         }
+      }
+      else
+      {
+         Global.Warning("load patch: no preset selected");
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleSavePatch1() {
+      dlg_save <= new SamplePluginFMStackPatchSaveDialog;
+      String *suggestedName;
+      if(-1 != cm_preset.getSelectedOption())
+         suggestedName <= cm_preset.getSelectedOptionName();
+      else
+         suggestedName <= "new preset";
+      dlg_save.run(this, suggestedName);
+   }
+
+   // <method.png>
+   protected method calcPatchChecksum() : int {
+      StPluginShared shared <= plugins_shared.first;
+      int editVarIdx = getEditVarIdx();
+      int paramOff = editVarIdx * NUM_PARAMS_PER_VAR + PARAM_VAR_BASE;
+      int i = 0;
+      int chk = 0;
+      local Buffer b; b.size = 4;
+      loop(NUM_PARAMS_PER_VAR)
+      {
+         b.pokeF32(0, shared.getParamValue(paramOff + i++));
+         chk ^= b.peekI32(0);
+      }
+      return chk;
+   }
+
+   // <method.png>
+   protected method savePatchFile(String _pathName) : boolean {
+      local String nativePathName <= Utils.ToNativePathName(_pathName);
+      local File f;
+      if(f.open(nativePathName, IOS_OUT))
+      {
+         StPluginShared shared <= plugins_shared.first;
+
+         // Version
+         f.i16 = 2;
+
+         int editVarIdx = getEditVarIdx();
+         int paramOff = editVarIdx * NUM_PARAMS_PER_VAR + PARAM_VAR_BASE;
+
+         // Checksum
+         int chk = calcPatchChecksum();
+         f.i32 = chk;
+
+         // Param values
+         int i = 0;
+         loop(NUM_PARAMS_PER_VAR)
+            f.f32 = shared.getParamValue(paramOff + i++);
+
+         Global.Debug2("SamplePluginFMStackDialog::savePatchFile: pathName=\""+_pathName+"\" checksum="+chk+" size="+f.offset);
+         f.close();
+         return true;
+      }
+      else
+      {
+         Global.Error("Failed to open \""+nativePathName+"\" for writing");
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected =replay= method loadPatchFile(String _pathName) : boolean {
+      local String nativePathName <= Utils.ToNativePathName(_pathName);
+      local File f;
+      if(f.open(nativePathName, IOS_IN))
+      {
+         StPluginShared shared <= plugins_shared.first;
+
+         // Version
+         short ver = f.u16;
+
+         if(ver >= 2)
+         {
+            int editVarIdx = getEditVarIdx();
+            int paramOff = editVarIdx * NUM_PARAMS_PER_VAR + PARAM_VAR_BASE;
+
+            // Checksum
+            int chk = f.i32;
+
+            // Param values
+            int i = 0;
+            loop(NUM_PARAMS_PER_VAR)
+               shared.setParamValue(paramOff + i++, f.f32);
+
+            Global.Debug2("SamplePluginFMStackDialog::loadPatchFile: pathName=\""+_pathName+"\" checksum="+chk+" size="+f.offset);
+            f.close();
+            return true;
+         }
+         else
+         {
+            Global.Error("loadPatchFile: invalid ver="+ver);
+            f.close();
+         }
+      }
+      else
+      {
+         Global.Error("Failed to open \""+nativePathName+"\" for reading");
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleSavePatch2(String _name) {
+      local String currentPatchName = Utils.ConvertToFileName(_name);
+      local String pathName <= STConfig.fmstackpatch_rootpath + "/" + currentPatchName + Global.FMSTACK_PRESET_FILE_SUFFIX;
+      if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+      {
+         if(null == dlg_overwrite)
+         {
+            dlg_overwrite <= new Dialog_OverwriteFMStackPatch;
+         }
+         dlg_overwrite.run(this, _name);
+      }
+      else
+      {
+         handleSavePatch3(_name);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSavePatch3(String _name) {
+      local String currentPatchName = Utils.ConvertToFileName(_name);
+      local String pathName <= STConfig.fmstackpatch_rootpath + "/" + currentPatchName + Global.FMSTACK_PRESET_FILE_SUFFIX;
+
+      if(savePatchFile(pathName))
+      {
+         // Rescan patches
+         scanPatchDirectory();
+
+         selectPresetByChecksum();
+
+         updateFilteredPresets();
+
+         Global.Success("Save FM Stack patch \""+_name+"\"");
+      }
+   }
+
+   // <method.png>
+   protected method allowXYParam(int _varParamIdx) : boolean {
+      int opIdx;
+      int opMask =
+         (cb_flt_op1.isSelected() << 0) |
+         (cb_flt_op2.isSelected() << 1) |
+         (cb_flt_op3.isSelected() << 2) |
+         (cb_flt_op4.isSelected() << 3) |
+         (cb_flt_op5.isSelected() << 4) ;
+
+      if(_varParamIdx < (5*16))
+      {
+         opIdx = _varParamIdx / 16;
+         if(!(opMask & (1 << opIdx)))
+            return false;
+         switch(_varParamIdx & 15)
+         {
+            case 0:  // PARAM_OP_PHASE
+               return cb_flt_phase.isSelected();
+            case 1:  // PARAM_OP_COARSE
+               return cb_flt_pcoarse.isSelected();
+            case 2:  // PARAM_OP_FINE
+               return cb_flt_pfine.isSelected();
+            case 3:  // PARAM_OP_PITCH_KBD_CTR
+            case 4:  // PARAM_OP_PITCH_KBD_AMT
+               return cb_flt_pkbd.isSelected();
+            case 5:  // PARAM_OP_PITCH_ENV_AMT
+            case 6:  // PARAM_OP_PITCH_ENV_VEL_AMT
+               return cb_flt_pamt.isSelected();
+            case 7:  // PARAM_OP_LEVEL
+               return cb_flt_level.isSelected();
+            case 8:  // PARAM_OP_LEVEL_VEL_AMT
+            case 9:  // PARAM_OP_LEVEL_ENV_AMT
+            case 10: // PARAM_OP_LEVEL_ENV_VEL_AMT
+               return cb_flt_levelamt.isSelected();
+            case 11: // PARAM_OP_VEL_CURVE
+               return cb_flt_velcurve.isSelected();
+            case 12: // PARAM_OP_WS_A
+            case 13: // PARAM_OP_WS_B
+            case 14: // PARAM_OP_WS_MIX
+            case 15: // PARAM_OP_VOICEBUS
+               return cb_flt_wave.isSelected();
+         }
+      }
+      else if(_varParamIdx < ((5*16)+(5*8)))
+      {
+         // AEnv
+         opIdx = (_varParamIdx - (5*16)) / 8;
+         if(!(opMask & (1 << opIdx)))
+            return false;
+         return cb_flt_aenv.isSelected();
+      }
+      else if(_varParamIdx < ((5*16)+(5*8)+(5*8)))
+      {
+         // PEnv
+         opIdx = (_varParamIdx - (5*16) - (5*8)) / 8;
+         if(!(opMask & (1 << opIdx)))
+            return false;
+         return cb_flt_penv.isSelected();
+      }
+      else
+      {
+         // FM Matrix
+         opIdx = (_varParamIdx - (5*16) - (5*8) - (5*8)) / 32;
+         if(!(opMask & (1 << opIdx)))
+            return false;
+         return cb_flt_matrix.isSelected();
+      }
+      return true;
+   }
+
+   // <method.png>
+   protected method getXYPatchData(int _idx, IntArray _optToPresetMap) : FloatArray {
+      if(0 == _idx)
+      {
+         return revert_patch_data;
+      }
+      else
+      {
+         _idx = _optToPresetMap.get(_idx - 1);
+         return patch_data.get(_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleXYChanged() {
+      // Global.Print("XY changed");
+
+      StPluginShared shared <= plugins_shared.first;
+
+      int j = PARAM_VAR_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+
+      float px = xy_pad.getValueX();
+      float py = xy_pad.getValueY();
+
+      FloatArray pdTL <= getXYPatchData(cm_preset_tl.getSelectedOption(), opt_to_preset_map_tl);
+      FloatArray pdTR <= getXYPatchData(cm_preset_tr.getSelectedOption(), opt_to_preset_map_tr);
+      FloatArray pdBL <= getXYPatchData(cm_preset_bl.getSelectedOption(), opt_to_preset_map_bl);
+      FloatArray pdBR <= getXYPatchData(cm_preset_br.getSelectedOption(), opt_to_preset_map_br);
+      int numChanged = 0;
+
+      float amtTL = BipolarToScale(fp_amt_tl.getFloatValue(), 64.0f, 4.0f);
+      float amtTR = BipolarToScale(fp_amt_tr.getFloatValue(), 64.0f, 4.0f);
+      float amtBL = BipolarToScale(fp_amt_bl.getFloatValue(), 64.0f, 4.0f);
+      float amtBR = BipolarToScale(fp_amt_br.getFloatValue(), 64.0f, 4.0f);
+
+      if(null != pdTL && null != pdTR && null != pdBL && null != pdBR)
+      {
+         int i = 0;
+         loop(NUM_PARAMS_PER_VAR)
+         {
+            if(allowXYParam(i))
+            {
+               // Mix top left/right
+               float fA = pdTL.get(i);
+               float fB = pdTR.get(i);
+               float fT;
+               float octA;
+               float octB;
+               float octD;
+
+               if( (PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_COARSE) == i )
+               {
+                  fA *= 65536.0f;
+                  fB *= 65536.0f;
+                  octA = RatioToOct(fA);
+                  octB = RatioToOct(fB);
+                  octD = mathLerpf(octA, octB, px);
+                  fT = OctToRatio(octD);
+               }
+               else if( (PARAM_MATRIX_BASE - PARAM_VAR_BASE) <= i < (PARAM_MATRIX_BASE - PARAM_VAR_BASE + 8*5/*NUM_OPS*/) &&
+                        (4 != ((i - (PARAM_MATRIX_BASE - PARAM_VAR_BASE)) & 7)) // skip output amount
+                        )
+               {
+                  fA *= amtTL;
+                  fB *= amtTR;
+                  fT = mathLerpf(fA, fB, px);
+               }
+               else
+               {
+                  fT = mathLerpf(fA, fB, px);
+               }
+
+               // Mix bottom left/right
+               fA = pdBL.get(i);
+               fB = pdBR.get(i);
+               float f;
+
+               if( (PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_COARSE) == i )
+               {
+                  fA *= 65536.0f;
+                  fB *= 65536.0f;
+                  octA = RatioToOct(fA);
+                  octB = RatioToOct(fB);
+                  octD = mathLerpf(octA, octB, px);
+                  fB = OctToRatio(octD);
+
+                  // Mix top / bottom
+                  octA = RatioToOct(fT);
+                  octB = RatioToOct(fB);
+                  f = mathLerpf(octA, octB, py);
+                  f = OctToRatio(f) / 65536.0f;
+               }
+               else if( ((PARAM_MATRIX_BASE - PARAM_VAR_BASE) <= i < (PARAM_MATRIX_BASE - PARAM_VAR_BASE + 8*5/*NUM_OPS*/)) &&
+                        (4 != ((i - (PARAM_MATRIX_BASE - PARAM_VAR_BASE)) & 7)) // skip output amount
+                        )
+               {
+                  fA *= amtBL;
+                  fB *= amtBR;
+                  fB = mathLerpf(fA, fB, px);
+
+                  // Mix top / bottom
+                  f = mathLerpf(fT, fB, py);
+               }
+               else
+               {
+                  fB = mathLerpf(fA, fB, px);
+
+                  // Mix top / bottom
+                  f = mathLerpf(fT, fB, py);
+               }
+
+               // Update zone(s)
+               StPluginShared *sharedDst;
+               foreach sharedDst in plugins_shared
+               {
+                  sharedDst.setParamValue(j, f);
+               }
+               numChanged++;
+
+            } // if allowXYParam()
+
+            // Next variation param
+            i++;
+            j++;
+         }
+      }
+
+      if(numChanged > 0)
+         sample.markParamsAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMorphPos() {
+      xy_pad.setValues(rand(1.0),
+                       rand(1.0)
+                       );
+      handleXYChanged();
+      Global.Print("Randomize morph pos to ("+xy_pad.getValueX()+";"+xy_pad.getValueY()+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleRandXYSelection(ComboBox _cm, IntArray _optToPresetMap, String _name) {
+      int randIdx = rand(_optToPresetMap.numElements + 1/*<current>*/);
+      _cm.setSelectedOption(randIdx);
+      handleXYChanged();
+      Global.Print("Randomize "+_name);
+   }
+
+   // <ui_handle.png>
+   protected method handleRandAllPresets(int _keepIdx) {
+      int randIdx;
+
+      if(0 != _keepIdx)
+      {
+         randIdx = rand(opt_to_preset_map_tl.numElements);
+         cm_preset_tl.setSelectedOption(randIdx);
+      }
+
+      if(1 != _keepIdx)
+      {
+         randIdx = rand(opt_to_preset_map_tr.numElements);
+         cm_preset_tr.setSelectedOption(randIdx);
+      }
+
+      if(2 != _keepIdx)
+      {
+         randIdx = rand(opt_to_preset_map_bl.numElements);
+         cm_preset_bl.setSelectedOption(randIdx);
+      }
+
+      if(3 != _keepIdx)
+      {
+         randIdx = rand(opt_to_preset_map_br.numElements);
+         cm_preset_br.setSelectedOption(randIdx);
+      }
+
+      handleXYChanged();
+      Global.Print("Randomize all XY presets");
+   }
+
+   // <ui_handle.png>
+   protected method handleXYSelectionChanged(ComboBox _cm, String _name) {
+      Global.Print(_name+" XY preset is \""+_cm.getSelectedOptionName()+"\"");
+      handleXYChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleXYSelectionChangedMulti(ComboBox _cm, String _name) {
+      if(UI.KeyModAlt())
+      {
+         if(@(_cm) != @(cm_preset_tl))
+         {
+            cm_preset_tl.setSelectedOptionByName(_cm.getSelectedOptionName());
+            handleXYSelectionChanged(cm_preset_tl, "Top / Left");
+         }
+
+         if(@(_cm) != @(cm_preset_tr))
+         {
+            cm_preset_tr.setSelectedOptionByName(_cm.getSelectedOptionName());
+            handleXYSelectionChanged(cm_preset_tr, "Top / Right");
+         }
+
+         if(@(_cm) != @(cm_preset_bl))
+         {
+            cm_preset_bl.setSelectedOptionByName(_cm.getSelectedOptionName());
+            handleXYSelectionChanged(cm_preset_bl, "Bottom / Left");
+         }
+
+         if(@(_cm) != @(cm_preset_br))
+         {
+            cm_preset_br.setSelectedOptionByName(_cm.getSelectedOptionName());
+            handleXYSelectionChanged(cm_preset_br, "Bottom / Right");
+         }
+      }
+
+      handleXYSelectionChanged(_cm, _name);
+   }
+
+   // <ui_handle.png>
+   protected method handleXYPosChanged() {
+      Global.Print("XY pos is "+xy_pad.getValueX()+";"+xy_pad.getValueY());
+      handleXYChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphFilterChanged(CheckBox _cb, String _name) {
+      Global.Print("Morph group \""+_name+"\" is "+Utils.GetEnableString(_cb.isSelected()));
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphFilterToggleAll() {
+      local CheckBox*[] cbAll <= [
+         cb_flt_op1,
+         cb_flt_op2,
+         cb_flt_op3,
+         cb_flt_op4,
+         cb_flt_op5,
+         cb_flt_wave,
+         cb_flt_phase,
+         cb_flt_level,
+         cb_flt_matrix,
+         cb_flt_aenv,
+         cb_flt_levelamt,
+         cb_flt_velcurve,
+         cb_flt_pcoarse,
+         cb_flt_pfine,
+         cb_flt_penv,
+         cb_flt_pamt,
+         cb_flt_pkbd,
+                                  ];
+      boolean bAllSel = true;
+      CheckBox *cb;
+      foreach cb in cbAll
+      {
+         bAllSel = bAllSel && cb.isSelected();
+      }
+
+      bAllSel = !bAllSel;
+      foreach cb in cbAll
+      {
+         cb.setSelected(bAllSel);
+      }
+
+      Global.Print( (bAllSel?"Enable":"Disable")+" all morph param groups" );
+   }
+
+   // <method.png>
+   public method tuneOpRatios(int _refOpIdx) {
+      int refParamOff = (getEditVarIdx() * NUM_PARAMS_PER_VAR) + (_refOpIdx * PARAM_OP_NUM) + PARAM_OP_BASE;
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         float refCoarse = shared.getParamValue(refParamOff + PARAM_OP_COARSE/*1*/) * 65536.0f;
+         float refFine   = shared.getParamValue(refParamOff + PARAM_OP_FINE/*2*/) * 2.0 - 1.0;
+         float refRatio = refCoarse;
+         if(refFine > 0.0f)
+            refRatio *= (1.0f + refFine);
+         else if(refFine < 0.0f)
+            refRatio /= (-refFine + 1.0f);
+
+         float newRefCoarse = int(refRatio + 0.5);
+         if(0.0 == newRefCoarse)
+            newRefCoarse = 0.5f;
+         Global.Debug2("tuneOpRatios: refRatio="+refRatio+" newRefCoarse="+newRefCoarse);
+
+         int opIdx = 0;
+         loop(4)
+         {
+            if(opIdx == _refOpIdx)
+            {
+               shared.setParamValue(refParamOff + PARAM_OP_COARSE, newRefCoarse / 65536.0f);
+               shared.setParamValue(refParamOff + PARAM_OP_FINE, 0.5f/*==0*/);
+            }
+            else
+            {
+               int opParamOff = (getEditVarIdx() * NUM_PARAMS_PER_VAR) + (opIdx * PARAM_OP_NUM) + PARAM_OP_BASE;
+               float opCoarse = shared.getParamValue(opParamOff + PARAM_OP_COARSE/*1*/) * 65536.0f;
+               float opFine   = shared.getParamValue(opParamOff + PARAM_OP_FINE/*2*/) * 2.0 - 1.0;
+               float opRatio = opCoarse;
+               if(opFine > 0.0f)
+                  opRatio *= (1.0f + opFine);
+               else if(opFine < 0.0f)
+                  opRatio /= (-opFine + 1.0f);
+
+               float opRatioNew = opRatio * (newRefCoarse / refRatio);
+               Global.Debug2("tuneOpRatios: opIdx="+opIdx+" opRatio="+opRatio+", * "+(newRefCoarse/refRatio)+" => "+opRatioNew);
+
+               shared.setParamValue(opParamOff + PARAM_OP_COARSE, opRatioNew / 65536.0f);
+               shared.setParamValue(opParamOff + PARAM_OP_FINE, 0.5f/*==0*/);
+            }
+
+            // Next op
+            opIdx++;
+         }
+
+         Global.Print("Tune Ratios to Op "+(_refOpIdx+1)+" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+         updateOps();
+      }
+
+   }
+
+   // <method_get.png>
+   protected method getOpFormByIdx(int _idx) : SamplePluginFMStackOpForm {
+      switch(_idx)
+      {
+         default:
+         case 0:  return f_op_1;
+         case 1:  return f_op_2;
+         case 2:  return f_op_3;
+         case 3:  return f_op_4;
+         case 4:  return f_op_5;
+      }
+   }
+
+   // <method.png>
+   public method handleOpInit() {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleOpInit();
+   }
+
+   // <method.png>
+   public method handleOpInitAll() {
+      f_op_1.handleOpInit();
+      f_op_2.handleOpInit();
+      f_op_3.handleOpInit();
+      f_op_4.handleOpInit();
+      f_op_5.handleOpInit();
+   }
+
+   // <method.png>
+   public method handleOpCopy() {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleOpCopy();
+   }
+
+   // <method.png>
+   public method handleOpPaste() {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleOpPaste();
+   }
+
+   // <method.png>
+   public method handleEnvCopy(boolean _bPEnv) {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleEnvCopy(_bPEnv);
+   }
+
+   // <method.png>
+   public method handleEnvPaste(boolean _bPEnv) {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleEnvPaste(_bPEnv);
+   }
+
+   // <method.png>
+   public method handleOpRandWave() {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleRandWave();
+   }
+
+   // <method.png>
+   public method handleOpRandWaveAll() {
+      f_op_1.handleRandWave();
+      f_op_2.handleRandWave();
+      f_op_3.handleRandWave();
+      f_op_4.handleRandWave();
+
+      Global.Print("Randomize all Op waveforms (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <method.png>
+   public method handleOpRandRatio(boolean _bCoarse, boolean _bFine) {
+      SamplePluginFMStackOpForm f <= getOpFormByIdx(hl_op_idx);
+      f.handleRandRatio(_bCoarse, _bFine);
+   }
+
+   // <method.png>
+   public method handleOpRandRatioAll(boolean _bCoarse, boolean _bFine) {
+      f_op_1.handleRandRatio(_bCoarse, _bFine);
+      f_op_2.handleRandRatio(_bCoarse, _bFine);
+      f_op_3.handleRandRatio(_bCoarse, _bFine);
+      f_op_4.handleRandRatio(_bCoarse, _bFine);
+
+      Global.Print("Randomize all Op "+(_bFine?"fine":"coarse")+" ratios (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <method.png>
+   public method handleOpRatioScaleAll(float _s) {
+      f_op_1.handleScaleRatio(_s);
+      f_op_2.handleScaleRatio(_s);
+      f_op_3.handleScaleRatio(_s);
+      f_op_4.handleScaleRatio(_s);
+
+      if(_s < 1.0)
+      {
+         _s = 1.0 / _s;
+         _s = int(100 * _s) / 100.0;
+         Global.Print("Divide all Op ratios by "+_s+" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+      }
+      else
+      {
+         _s = int(100 * _s) / 100.0;
+         Global.Print("Multiply all Op ratios by "+_s+" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePresetFilter(ComboField _cf, ComboBox _cm, IntArray _optToPresetMap, boolean _bOptionsChanged) {
+      local String cfOpt = _cf.getSelectedOptionName();
+      // trace "xxx updatePresetFilter: cfOpt="+#(cfOpt);
+      local StringArray aOpt <= patch_names;
+      local StringArray aOptWithCur = aOpt;
+      aOptWithCur.insert(0, "<current>");
+      local String curOpt = _cm.getSelectedOptionName();
+      if(cfOpt.isBlank())
+      {
+         // all
+         _optToPresetMap.identity(aOpt.numElements);
+         _cm.setOptions(aOptWithCur);
+      }
+      else
+      {
+         // Filter presets
+         local StringArray aFlt <= cfOpt.splitCharset(";,");
+         local StringArray aFltOpt;
+         aFltOpt.add("<current>");
+         _optToPresetMap.empty();
+         String *sOpt;
+         int optIdx = 0;
+         foreach sOpt in aOpt
+         {
+            if(Utils.MatchFilterStringAny(aFlt, sOpt))
+            {
+               aFltOpt.add(sOpt);
+               _optToPresetMap.add(optIdx);
+            }
+            optIdx++;
+         }
+         _cm.setOptions(aFltOpt);
+      }
+
+      if(curOpt.isBlank())
+         _cm.setSelectedOption(0);  // <current>
+      else
+         _cm.setSelectedOptionByName(curOpt);
+
+      if(_bOptionsChanged)
+      {
+         // filter option has been added or removed
+         _cf.setOptionsSortedWithSpaceOnTop(_cf.getOptions());
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateOtherPresetFilters(ComboField _cf) {
+      if(@(_cf) != @(cf_flt_tl))
+         cf_flt_tl.setOptionsAndReselectByName(_cf.getOptions());
+      if(@(_cf) != @(cf_flt_tr))
+         cf_flt_tr.setOptionsAndReselectByName(_cf.getOptions());
+      if(@(_cf) != @(cf_flt_bl))
+         cf_flt_bl.setOptionsAndReselectByName(_cf.getOptions());
+      if(@(_cf) != @(cf_flt_br))
+         cf_flt_br.setOptionsAndReselectByName(_cf.getOptions());
+   }
+
+   // <ui_update.png>
+   protected method multiSelectPresetFilter(ComboField _cf) {
+      local String opt = _cf.getSelectedOptionName();
+
+      if(@(_cf) != @(cf_flt_tl))
+      {
+         cf_flt_tl.setSelectedOptionByName(opt);
+         updatePresetFilter(cf_flt_tl, cm_preset_tl, opt_to_preset_map_tl, false/*bOptionsChanged*/);
+      }
+
+      if(@(_cf) != @(cf_flt_tr))
+      {
+         cf_flt_tr.setSelectedOptionByName(opt);
+         updatePresetFilter(cf_flt_tr, cm_preset_tr, opt_to_preset_map_tr, false/*bOptionsChanged*/);
+      }
+
+      if(@(_cf) != @(cf_flt_bl))
+      {
+         cf_flt_bl.setSelectedOptionByName(opt);
+         updatePresetFilter(cf_flt_bl, cm_preset_bl, opt_to_preset_map_bl, false/*bOptionsChanged*/);
+      }
+
+      if(@(_cf) != @(cf_flt_br))
+      {
+         cf_flt_br.setSelectedOptionByName(opt);
+         updatePresetFilter(cf_flt_br, cm_preset_br, opt_to_preset_map_br, false/*bOptionsChanged*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePresetFilterCFAction(String _acName, ComboField _cf, ComboBox _cm, IntArray _optToPresetMap) {
+      if(ComboField.ACTION_OPTIONADDED == _acName)
+      {
+         updatePresetFilter(_cf, _cm, _optToPresetMap, true/*bOptionsChanged*/);
+         updateOtherPresetFilters(_cf);
+         PrefsDialog.b_force_edited = true;
+      }
+      else if(ComboField.ACTION_OPTIONSELECTED == _acName)
+      {
+         updatePresetFilter(_cf, _cm, _optToPresetMap, false/*bOptionsChanged*/);
+      }
+      else if(ComboField.ACTION_OPTIONRESELECTED == _acName)
+      {
+         // RETURN pressed while option already exists
+         updatePresetFilter(_cf, _cm, _optToPresetMap, false/*bOptionsChanged*/);
+      }
+      else if(ComboField.ACTION_OPTIONREMOVED == _acName)
+      {
+         updatePresetFilter(_cf, _cm, _optToPresetMap, true/*bOptionsChanged*/);
+         updateOtherPresetFilters(_cf);
+         PrefsDialog.b_force_edited = true;
+      }
+      else
+      {
+         // typing
+      }
+   }
+
+   // <method.png>
+   protected method addUniqueMorphPresetFiltersToConfig(StringArray _opt) {
+      local String *s;
+      foreach s in _opt
+      {
+         if("<current>" != s)
+         {
+            Utils.AddUniqueStringToArray(STConfig.fmstack_morph_preset_filters, s);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method updateMorphPresetFiltersConfig() {
+      addUniqueMorphPresetFiltersToConfig(cf_flt_tl.getOptions());
+      addUniqueMorphPresetFiltersToConfig(cf_flt_tr.getOptions());
+      addUniqueMorphPresetFiltersToConfig(cf_flt_bl.getOptions());
+      addUniqueMorphPresetFiltersToConfig(cf_flt_br.getOptions());
+   }
+
+   // <ui_handle.png>
+   public method copyVarToDragBase() {
+      // Backup all zones
+      var_drag_base.empty();
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         int j = PARAM_VAR_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         loop(NUM_PARAMS_PER_VAR)
+            var_drag_base.add(shared.getParamValue(j++));
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method restoreDragBase() {
+      // Restore all zones
+      StPluginShared *shared;
+      int i = 0;
+      foreach shared in plugins_shared
+      {
+         int j = PARAM_VAR_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         loop(NUM_PARAMS_PER_VAR)
+            shared.setParamValue(j++, var_drag_base.get(i++));
+      }
+      updateMatFP();
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragCoarse(float _mul, float _add) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_COARSE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = PARAM_OP_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR + PARAM_OP_COARSE;
+         int opIdx = 0;
+         loop(4)
+         {
+            float coarse = var_drag_base.get(i) * 65536.0f;
+            coarse *= _mul;
+            coarse += _add;
+            coarse /= 65536.0f;
+            coarse = mathClampf(coarse, 0.0f, 1.0f);
+            shared.setParamValue(k, coarse);
+
+            // Next op
+            i += PARAM_OP_NUM;
+            k += PARAM_OP_NUM;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragFine(float _mul, float _add) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_FINE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = PARAM_OP_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR + PARAM_OP_FINE;
+         int opIdx = 0;
+         loop(4)
+         {
+            float fine = var_drag_base.get(i) * 2.0 - 1.0;
+            fine *= _mul;
+            fine += _add;
+            fine = (fine + 1.0) / 2.0;
+            fine = mathClampf(fine, -1.0f, 1.0f);
+            shared.setParamValue(k, fine);
+
+            // Next op
+            i += PARAM_OP_NUM;
+            k += PARAM_OP_NUM;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragLevel(float _mul, float _add) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_LEVEL + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = PARAM_OP_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR + PARAM_OP_LEVEL;
+         int opIdx = 0;
+         loop(5)
+         {
+            float level = var_drag_base.get(i) * 16.0f;
+            level *= _mul;
+            level += _add;
+            level /= 16.0f;
+            level = mathClampf(level, 0.0f, 1.0f);
+            shared.setParamValue(k, level);
+
+            // Next op
+            i += PARAM_OP_NUM;
+            k += PARAM_OP_NUM;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragVelCurve(float _mul, float _add) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_VEL_CURVE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = PARAM_OP_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR + PARAM_OP_VEL_CURVE;
+         int opIdx = 0;
+         loop(5)
+         {
+            float c = var_drag_base.get(i);
+            c *= _mul;
+            c += _add;
+            c = mathClampf(c, -1.0f, 1.0f);
+            shared.setParamValue(k, c);
+
+            // Next op
+            i += PARAM_OP_NUM;
+            k += PARAM_OP_NUM;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragPhase(float _mul, float _add) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_PHASE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = PARAM_OP_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR + PARAM_OP_PHASE;
+         int opIdx = 0;
+         loop(4)
+         {
+            float phase = var_drag_base.get(i);
+            phase *= _mul;
+            phase += _add;
+            phase = mathClampf(phase, 0.0f, 1.0f);
+            shared.setParamValue(k, phase);
+
+            // Next op
+            i += PARAM_OP_NUM;
+            k += PARAM_OP_NUM;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragEnvTime(float _mul, float _add, int _paramIdx, String _paramName) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = _paramIdx - PARAM_VAR_BASE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = _paramIdx + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         int opIdx = 0;
+         loop(5)
+         {
+            float t = var_drag_base.get(i) * 10000.0f;
+            t *= _mul;
+            t += _add;
+            t = t / 10000.0f;
+            t = mathClampf(t, 0.0f, 1.0f);
+            shared.setParamValue(k, t);
+
+            // Next op
+            i += NUM_ENV_PARAMS_PER_OP;
+            k += NUM_ENV_PARAMS_PER_OP;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragEnvSustain(float _mul, float _add, int _paramIdx, String _paramName) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = _paramIdx - PARAM_VAR_BASE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = _paramIdx + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         int opIdx = 0;
+         loop(5)
+         {
+            float t = var_drag_base.get(i);
+            t *= _mul;
+            t += _add;
+            t = mathClampf(t, 0.0f, 1.0f);
+            shared.setParamValue(k, t);
+
+            // Next op
+            i += NUM_ENV_PARAMS_PER_OP;
+            k += NUM_ENV_PARAMS_PER_OP;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragEnvShape(float _mul, float _add, int _paramIdx, String _paramName) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = _paramIdx - PARAM_VAR_BASE + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = _paramIdx + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         int opIdx = 0;
+         loop(5)
+         {
+            float t = var_drag_base.get(i);
+            t *= _mul;
+            t += _add;
+            t = mathClampf(t, 0.0f, 1.0f);
+            shared.setParamValue(k, t);
+
+            // Next op
+            i += NUM_ENV_PARAMS_PER_OP;
+            k += NUM_ENV_PARAMS_PER_OP;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   public =replay= method varDragMatrixAmount(float _f, float _mul, float _add, int _srcOpIdx, int _dstIdx) {
+      local Float fo = _f * 100;
+
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_MATRIX_BASE - PARAM_VAR_BASE + zoneIdx * NUM_PARAMS_PER_VAR;
+         loop(5)
+         {
+            loop(5)
+            {
+               float amt = var_drag_base.get(i) * 16.0f;
+               amt *= _mul;
+               amt += _add;
+               amt /= 16.0f;
+               amt = mathClampf(amt, 0.0f, 1.0f);
+               setVarParam(shared, PARAM_VAR_BASE + i, amt);
+               i++;
+            }
+            i += (8-5);
+         }
+         // Next zone
+         zoneIdx++;
+      }
+
+      updateMatFP();
+
+      sample.markParamsAsModified();
+      Global.Print("FM Matrix ("+(_srcOpIdx+1)+";"+(_dstIdx+1)+") amount is "+fo.printf("%3.3f")+"% (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <method.png>
+      protected method handleMorphMatrixAmountChanged(FloatParam _fp, String _name) {
+      if(UI.KeyModAlt())
+      {
+         if(@(_fp) != @(fp_amt_tl))
+         {
+            fp_amt_tl.setValue(_fp.getFloatValue());
+         }
+         if(@(_fp) != @(fp_amt_tr))
+         {
+            fp_amt_tr.setValue(_fp.getFloatValue());
+         }
+         if(@(_fp) != @(fp_amt_bl))
+         {
+            fp_amt_bl.setValue(_fp.getFloatValue());
+         }
+         if(@(_fp) != @(fp_amt_br))
+         {
+            fp_amt_br.setValue(_fp.getFloatValue());
+         }
+      }
+      local Float fo = _fp.getFloatValue() * 100;
+      Global.Print(_name+" Matrix Amount is "+fo.printf("%3.3f"));
+      handleXYChanged();
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Export to Cycle Patch clipboard (last cfg)", "export_cycle");
+      pmb.setAccelerators("lctrl-y", "lctrl-z");
+
+      pmb <= pm.addDefaultButton("  (no sus, rls)",         "export_cycle_sus0");
+      pmb <= pm.addDefaultButton("  (no sus, skip rls)",    "export_cycle_sus0_skiprls");
+      pmb <= pm.addDefaultButton("  (sus 20ms, rls)",       "export_cycle_sus20");
+      pmb <= pm.addDefaultButton("  (sus 20ms, skip rls)",  "export_cycle_sus20_skiprls");
+      pmb <= pm.addDefaultButton("  (sus 50ms, rls)",       "export_cycle_sus50");
+      pmb <= pm.addDefaultButton("  (sus 50ms, skip rls)",  "export_cycle_sus50_skiprls");
+      pmb <= pm.addDefaultButton("  (sus 75ms, rls)",       "export_cycle_sus75");
+      pmb <= pm.addDefaultButton("  (sus 75ms, skip rls)",  "export_cycle_sus75_skiprls");
+      pmb <= pm.addDefaultButton("  (sus 100ms, rls)",      "export_cycle_sus100");
+      pmb <= pm.addDefaultButton("  (sus 100ms, skip rls)", "export_cycle_sus100_skiprls");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show context menu.");
+   }
+
+   // <ui_show.png>
+   protected method showMatrixContextMenu() {
+
+      pm_mat_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_mat_context;
+
+      boolean bHaveMatrixClipboard  = (mat_clipboard.numElements  > 0);
+
+      pmb <= pm.addDefaultButton("Copy Matrix to clipboard", "mat_copy");
+      pmb.setAccelerators("", "lshift-c");
+
+      pmb <= pm.addDefaultButton("Paste Matrix from clipboard", "mat_paste");
+      pmb.setAccelerators("", "lshift-v");
+      pmb.setActive(bHaveMatrixClipboard);
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Initialize Matrix", "mat_init");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Quantize Matrix", "mat_quant");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show Matrix context menu.");
+   }
+
+   // <ui_handle.png>
+   protected method handleMatrixCopy() {
+      mat_clipboard.empty();
+      StPluginShared shared <= plugins_shared.first;
+      int i = PARAM_MATRIX_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+      loop(NUM_PARAMS_PER_MATRIX)
+         mat_clipboard.add(shared.getParamValue(i++));
+      Global.Print("Copy matrix to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMatrixPaste() {
+      if(!mat_clipboard.isEmpty())
+      {
+         StPluginShared *shared;
+         foreach shared in plugins_shared
+         {
+            int i = 0;
+            int j = PARAM_MATRIX_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+            loop(NUM_PARAMS_PER_MATRIX)
+               shared.setParamValue(j++, mat_clipboard.get(i++));
+         }
+         updateMatFP();
+         Global.Print("Paste matrix from clipboard");
+      }
+      else
+      {
+         Global.Warning("Matrix clipboard is empty");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMatrixInit() {
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         StPluginInfo info <= shared.info;
+         int j = PARAM_MATRIX_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         loop(NUM_PARAMS_PER_MATRIX)
+         {
+            shared.setParamValue(j, info.getParamReset(j));
+            j++;
+         }
+      }
+      updateMatFP();
+      Global.Print("Initialize matrix");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMatrixQuantize() {
+      StPluginShared *shared;
+      foreach shared in plugins_shared
+      {
+         int j = PARAM_MATRIX_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR;
+         loop(NUM_PARAMS_PER_MATRIX)
+         {
+            float f = shared.getParamValue(j) * 16.0;
+            f = int(f * 1000) / 1000.0;
+            f /= 16.0;
+            shared.setParamValue(j, f);
+            j++;
+         }
+      }
+      updateMatFP();
+      Global.Print("Quantize matrix");
+   }
+
+   // <method.png>
+   public method multiEditCoarseStep(float _stepCoarse,
+                                     int   _mousePrecision,
+                                     int   _mousePrecisionMulDiv
+                                     ) {
+      f_op_1.updateCoarseStep(_stepCoarse, _mousePrecision, _mousePrecisionMulDiv);
+      f_op_2.updateCoarseStep(_stepCoarse, _mousePrecision, _mousePrecisionMulDiv);
+      f_op_3.updateCoarseStep(_stepCoarse, _mousePrecision, _mousePrecisionMulDiv);
+      f_op_4.updateCoarseStep(_stepCoarse, _mousePrecision, _mousePrecisionMulDiv);
+   }
+
+   // <method.png>
+   public method multiEditWSA(int _opt, String _optName) {
+      f_op_1.updateWSA(_opt);
+      f_op_2.updateWSA(_opt);
+      f_op_3.updateWSA(_opt);
+      f_op_4.updateWSA(_opt);
+      sample.markParamsAsModified();
+      Global.Print("Multi-Edit: Waveshape A is \""+_optName+"\" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <method.png>
+   public method multiEditWSB(int _opt, String _optName) {
+      f_op_1.updateWSB(_opt);
+      f_op_2.updateWSB(_opt);
+      f_op_3.updateWSB(_opt);
+      f_op_4.updateWSB(_opt);
+      sample.markParamsAsModified();
+      Global.Print("Multi-Edit: Waveshape B is \""+_optName+"\" (update "+plugins_shared.numElements+" plugin"+Utils.GetPluralString(plugins_shared.numElements)+")");
+   }
+
+   // <method.png>
+   public =replay= method varDragWSMix(float _mul, float _add) {
+      StPluginShared *shared;
+      int zoneIdx = 0;
+      foreach shared in plugins_shared
+      {
+         int i = PARAM_OP_BASE - PARAM_VAR_BASE + PARAM_OP_WS_MIX + zoneIdx * NUM_PARAMS_PER_VAR;
+         int k = PARAM_OP_BASE + getEditVarIdx() * NUM_PARAMS_PER_VAR + PARAM_OP_WS_MIX;
+         int opIdx = 0;
+         loop(4)
+         {
+            float mix = var_drag_base.get(i);
+            mix *= _mul;
+            mix += _add;
+            mix = mathClampf(mix, 0.0f, 1.0f);
+            shared.setParamValue(k, mix);
+
+            // Next op
+            i += PARAM_OP_NUM;
+            k += PARAM_OP_NUM;
+         }
+         // Next zone
+         zoneIdx++;
+      }
+      updateOps();
+   }
+
+   // <method.png>
+   protected method cycleExportFloatArrayToBezierSegments(FloatArray fa, int faRes, BezierEditState beState) {
+      trace "xxx cycleExportFloatArrayToBezierSegments: faRes="+faRes+" fa="+fa;
+      // Convert env to bezier spline
+      FloatArray beSeg <= beState.segments;
+      beSeg.empty();
+      int idx = 0;
+      loop(faRes)
+      {
+         float envX  = float(idx) / (faRes-1);
+         float envXn = mathMinf(float(idx+1) / (faRes-1), 1.0f);
+         float envY  = fa[idx]; 
+         float envYn = fa.get(idx+1);
+         beSeg.add(envX);  // px
+         beSeg.add(envY);  // py
+         beSeg.add((envXn + envX)*0.5);  // c1x
+         beSeg.add((envYn + envY)*0.5);  // c1y
+         beSeg.add((envXn + envX)*0.5);  // c2x
+         beSeg.add((envYn + envY)*0.5);  // c2y
+
+         idx++;
+      }
+   }
+
+   // <method.png>
+   define int cycle_envRes = 256;
+   define int cycle_envOutRes = 256;
+   static float cycle_sus_ms = 0.0f;  // last used setting (for kbd shortcut)
+   static boolean b_cycle_skip_rls = false;
+   protected method calcCycleExportEnvelope(int             srcOpIdx,
+                                            int             paramBase,
+                                            BezierEditState beState,
+                                            float           envAmt,
+                                            boolean         bPitch,
+                                            float           susMS,
+                                            boolean         bSkipRls
+                                            ) {
+
+      SamplePluginFMStackOpForm opForm <= getOpFormByIdx(srcOpIdx);
+      StPluginShared shared <= plugins_shared.first;
+
+      local FloatArray envAtk; envAtk.allocAndFill(cycle_envRes, 0);
+      local FloatArray envDcy; envDcy.allocAndFill(cycle_envRes, 0);
+      local FloatArray envRls; envRls.allocAndFill(cycle_envRes, 0);
+
+      local FloatArray envOut; envOut.allocAndFill(cycle_envOutRes, 0);
+
+      float envAtkT   = opForm.getEnvParam(shared, paramBase + 0/*atk*/) * 10000;  // ms
+      float envHldT   = opForm.getEnvParam(shared, paramBase + 1/*hld*/) * 10000;
+      float envDcyT   = opForm.getEnvParam(shared, paramBase + 2/*dcy*/) * 10000;
+      float envSusLvl = opForm.getEnvParam(shared, paramBase + 3/*atk*/);
+      float envRlsT   = bSkipRls ? 0 : opForm.getEnvParam(shared, paramBase + 4/*atk*/) * 10000;
+            
+      float envTotalMS = envAtkT + envHldT + envDcyT + envRlsT;
+      envAtkT /= envTotalMS;
+      envHldT /= envTotalMS;
+      envDcyT /= envTotalMS;
+      float envSusT = susMS / envTotalMS;
+      envRlsT /= envTotalMS;
+
+      trace "xxx op="+(srcOpIdx+1)+" envAtkT="+envAtkT;
+      trace "xxx op="+(srcOpIdx+1)+" envHldT="+envHldT;
+      trace "xxx op="+(srcOpIdx+1)+" envDcyT="+envDcyT;
+      trace "xxx op="+(srcOpIdx+1)+" envSusT="+envSusT;
+      trace "xxx op="+(srcOpIdx+1)+" envRlsT="+envRlsT;
+
+      float envHldStartT = envAtkT;
+      float envDcyStartT = envAtkT + envHldT;
+      float envSusStartT = envAtkT + envHldT + envDcyT;
+      float envRlsStartT = envAtkT + envHldT + envDcyT + envSusT;
+
+      float envAtkShp = opForm.getEnvParam(shared, paramBase + 5/*ATK_SHAPE*/) * 2 - 1;
+      float envDcyShp = opForm.getEnvParam(shared, paramBase + 6/*DCY_SHAPE*/) * 2 - 1;
+      float envRlsShp = opForm.getEnvParam(shared, paramBase + 7/*RLS_SHAPE*/) * 2 - 1;
+
+      MSamplePluginFMStackCurves.CalcInterpolatedCurve(envAtkShp, envAtk);
+      MSamplePluginFMStackCurves.CalcInterpolatedCurve(envDcyShp, envDcy);
+      MSamplePluginFMStackCurves.CalcInterpolatedCurve(envRlsShp, envRls);
+
+      trace "xxx op="+(srcOpIdx+1)+" envAtk="+envAtk;
+      trace "xxx op="+(srcOpIdx+1)+" envDcy="+envDcy;
+      trace "xxx op="+(srcOpIdx+1)+" envRls="+envRls;
+
+      trace "xxx op="+(srcOpIdx+1)+" envAtkShp="+envAtkShp;
+      trace "xxx op="+(srcOpIdx+1)+" envDcyShp="+envDcyShp;
+      trace "xxx op="+(srcOpIdx+1)+" envRlsShp="+envRlsShp;
+
+      trace "xxx op="+(srcOpIdx+1)+" envHldStartT="+envHldStartT;
+      trace "xxx op="+(srcOpIdx+1)+" envDcyStartT="+envDcyStartT;
+      trace "xxx op="+(srcOpIdx+1)+" envRlsStartT="+envRlsStartT;
+
+      float envT = 0;
+      float envW = 1.0f / cycle_envOutRes;
+      float envLvl;
+      int envOutIdx = 0;
+      float relT;
+      loop(cycle_envOutRes)
+      {
+         if(envT >= envRlsStartT)
+         {
+            // rls
+            relT = ((envT - envRlsStartT) / envRlsT);
+            envLvl = envRls.get(cycle_envRes * relT) * envSusLvl;
+            trace "xxx RLS op="+(srcOpIdx+1)+" envT="+envT+" relT="+relT+" env["+envOutIdx+"]="+envLvl;
+         }
+         else if(envT >= envSusStartT)
+         {
+            envLvl = envSusLvl;
+            trace "xxx SUS op="+(srcOpIdx+1)+" envT="+envT+" env["+envOutIdx+"]="+envLvl;
+         }
+         else if(envT >= envDcyStartT)
+         {
+            // dcy
+            relT = ((envT - envDcyStartT) / envDcyT);
+            envLvl = envSusLvl + (1.0f - envSusLvl) * envDcy.get(cycle_envRes * relT);
+            trace "xxx DCY op="+(srcOpIdx+1)+" envT="+envT+" relT="+relT+" env["+envOutIdx+"]="+envLvl;
+         }
+         else if(envT >= envHldStartT)
+         {
+            // hld
+            trace "xxx HLD op="+(srcOpIdx+1)+" envT="+envT+" env["+envOutIdx+"]="+envLvl;
+            envLvl = 1.0f;
+         }
+         else
+         {
+            // atk
+            relT = 1.0f - (envT / envAtkT);
+            envLvl = envAtk.get(cycle_envRes * relT);
+            trace "xxx ATK op="+(srcOpIdx+1)+" envT="+envT+" relT="+relT+" env["+envOutIdx+"]="+envLvl;
+         }
+
+         if(bPitch)
+         {
+            envOut[envOutIdx] = mathPowerf(2.0f, envLvl * envAmt);
+         }
+         else
+         {
+            if(envAmt >= 0.0f)
+               envLvl = 1.0f + (envLvl - 1.0f) * envAmt;
+            else
+               envLvl = 1.0f + ((1.0f - envLvl) - 1.0f) * -envAmt;
+
+            envOut[envOutIdx] = bPitch ? mathPowerf(2.0f, envLvl) : envLvl;
+         }
+
+         envOutIdx++;
+         envT += envW;
+      }
+
+      cycleExportFloatArrayToBezierSegments(envOut, cycle_envOutRes, beState);
+   }
+
+   // <method.png>
+   define int cycle_waveRes = 256;
+   protected method calcCycleExportWave(int opWaveA, int opWaveB, float opMix, BezierEditState beState) {
+
+      local FloatArray waveOut; waveOut.allocAndFill(cycle_waveRes, 0);
+
+      MSamplePluginFMStackWaves.CalcInterpolatedWave(opWaveA, opWaveB, opMix, waveOut);
+
+      cycleExportFloatArrayToBezierSegments(waveOut, cycle_waveRes, beState);
+
+      beState.scale_tbl_off_y = 9;  // bipolar
+   }
+
+   // <method.png>
+   protected method handleExportCycle(float susMS, boolean bSkipRls) {
+      cycle_sus_ms     = susMS;
+      b_cycle_skip_rls = bSkipRls;
+
+      CyclePatch patch <= CycleSynthDialog.GetOrCreatePatchClipboard();
+      patch.target_zone_idx = 0;
+      StPluginShared shared <= plugins_shared.first;
+      
+      String buf <= patch.getSourceBufferRefMain();
+      buf.empty();
+
+      buf.append("# auto-generated from FM Stack patch \""+sample.unique_name+"\"\n");
+      buf.append("\n");
+      buf.append("oct 0\n");
+      buf.append("dither y\n");
+      buf.append("\n");
+      buf.append("$(ARGS)");
+      buf.append("$(CURVES)");
+      buf.append("$(VARS)");
+
+      // // buf.append("var v_out\n");
+
+      buf.append("\n<out:\n");
+
+      local StringArray argNames;
+      local StringArray argValues;
+      SamplePluginFMStackOpForm *opForm;
+      local String sVars;
+      local String sCurves;
+      BezierEditState *beState;
+      String *sCurveAlias;
+
+      argNames.add("p_env_ms");
+      argValues.add("0 0 2000");  // 0=auto-stretch to wave size
+         
+      int nextCurveIdx = 0;
+      sVars.append("var v_env_rmp\n");
+      buf.append("  rmp $p_env_ms 0 "+(float(cycle_envOutRes-1)/cycle_envOutRes)+"\n");
+      buf.append("  sto v_env_rmp\n");
+
+      // Find active ops
+      int opMask = 0;
+      int srcOpIdx = 0;
+      int dstIdx;
+      float opRatio;
+      float opLevel;
+      float matLevel;
+      loop(5-1/*skip 'X'*/)
+      {
+         opForm <= getOpFormByIdx(srcOpIdx);
+         opLevel = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_LEVEL) * 16.0f;
+         // trace "xxx srcOpIdx="+srcOpIdx+" opLevel="+opLevel;//+" shared="+#(shared)+" opForm="+#(opForm);
+         if(opLevel > 0.0f)
+         {
+            dstIdx = 0;
+            loop(5)
+            {
+               matLevel = getVarParam(shared, PARAM_MATRIX_BASE + (srcOpIdx*8) + dstIdx) * 16.0f;
+               if(matLevel > 0.0f)
+               {
+                  boolean bUsed = (4/*out*/ == dstIdx);
+                  
+                  if(!bUsed)
+                  {
+                     SamplePluginFMStackOpForm opFormDst <= getOpFormByIdx(dstIdx);
+                     bUsed = (opFormDst.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_LEVEL) > 0.0f);
+                  }
+
+                  if(bUsed)
+                  {
+                     trace "xxx srcOpIdx="+srcOpIdx+" dstIdx="+dstIdx+" matLevel="+matLevel;
+                     opMask |= (1 << srcOpIdx);
+
+                     if(4 == dstIdx)
+                     {
+                        argNames.add("p_o"+(srcOpIdx+1)+"_to_out");
+                        argValues.add(String(matLevel)+" 0 4");
+                     }
+                     else
+                     {
+                        argNames.add("p_o"+(srcOpIdx+1)+"_to_o"+(dstIdx+1));
+                        argValues.add(String(matLevel)+" 0 4");
+                     }
+                  }
+               }
+               dstIdx++;
+            }
+         }
+         srcOpIdx++;
+      }
+
+      // Calc ops
+      srcOpIdx = 3;
+      int srcOpBit = (1 << 3);
+      loop(5-1/*skip 'X'*/)
+      {
+         opForm <= getOpFormByIdx(srcOpIdx);
+         if(opMask & srcOpBit)
+         {
+            opLevel = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_LEVEL) * 16.0f;
+            // // f = getVarParam(shared, PARAM_MATRIX_BASE + (srcOpIdx*8) + dstIdx) * 16.0f * opLevel;
+            argNames.add("p_o"+(srcOpIdx+1)+"_level");
+            argValues.add(String(opLevel));
+
+            sVars.append("var v_o"+(srcOpIdx+1)+"\n");
+
+            opRatio = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_COARSE) * 65536;
+            float opFine = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_FINE) * 2 - 1;
+            if(opFine < 0.0f)
+               opRatio *= 1.0f / (1.0f - opFine);
+            else
+               opRatio *= 1.0f + opFine;
+
+            local String sArgRatio <= "p_o"+(srcOpIdx+1)+"_ratio";
+            argNames.add(sArgRatio);
+            argValues.add(String(opRatio)+" 0 15");
+
+            float opPhase = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_PHASE);
+            if(opPhase > 0.99f)
+               opPhase = 0.0f; // <rand> / free>  (ignore)
+            else
+               opPhase = opPhase / 0.99f;
+            
+            // Oscillator
+            //  (note) create lut for each op even when 2 or more ops share the same wave
+            //          => allow per-op wave tweaks after export
+            //          => share-optimization can be done by simply assigning the same lut (in the generated source)
+            int opWaveA = int(opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_WS_A) * 100 + 0.5);
+            int opWaveB = int(opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_WS_B) * 100 + 0.5);
+            float opMix = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_WS_MIX);
+            boolean bOpLut = (opWaveA > 1)/*sin*/ || (opWaveB > 1 && opMix > 0.0001f);
+            int opCurveIdx;
+            if(bOpLut)
+            {
+               opCurveIdx = nextCurveIdx;
+               sCurveAlias <= "o"+(srcOpIdx+1)+"_wave";
+               sCurves.append("curve "+nextCurveIdx+" "+sCurveAlias+"\n");
+               patch.setCurveAlias(nextCurveIdx, sCurveAlias);
+               patch.setCurveRes(nextCurveIdx, 8);
+               buf.append("  pha\n");
+               beState <= patch.curve_states.get(nextCurveIdx++);
+               calcCycleExportWave(opWaveA, opWaveB, opMix, beState);
+            }
+            else
+            {
+               buf.append("  sin\n");
+            }
+            buf.append("    freq:\n");
+            buf.append("       $"+sArgRatio+"\n");
+
+            // Pitch Envelope
+            float pitchEnvAmt = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_PITCH_ENV_AMT) * 8 - 4;
+            if(abs(pitchEnvAmt) > 0.001f)
+            {
+               trace "xxx op="+(srcOpIdx+1)+" pitchEnvAmt="+pitchEnvAmt;
+
+               sCurveAlias <= "o"+(srcOpIdx+1)+"_pitch";
+               sCurves.append("curve "+nextCurveIdx+" "+sCurveAlias+"\n");
+               patch.setCurveAlias(nextCurveIdx, sCurveAlias);
+               patch.setCurveRes(nextCurveIdx, 8);
+
+               buf.append("       * $v_env_rmp\n");
+               buf.append("         lut "+sCurveAlias+" lin=1\n\n");
+
+               beState <= patch.curve_states.get(nextCurveIdx++);
+
+               calcCycleExportEnvelope(srcOpIdx,
+                                       SamplePluginFMStackOpForm.PARAM_PENV_ATK/*base*/,
+                                       beState,
+                                       pitchEnvAmt,
+                                       true/*bPitch*/,
+                                       susMS,
+                                       bSkipRls
+                                       );
+
+               beState.scale_tbl_off_y = 8;  // >1 visible
+
+            } // if lvlEnvAmt > 0
+
+            buf.append("    phasemod:\n");
+            if(opPhase > 0.001f)
+               buf.append("      "+opPhase+"\n");
+            else
+               buf.append("      0\n");
+            int matSrcOpIdx = 0;
+            loop(4)
+            {
+               SamplePluginFMStackOpForm opFormSrc <= getOpFormByIdx(matSrcOpIdx);
+               if(opFormSrc.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_LEVEL) > 0.0f)
+               {
+                  matLevel = getVarParam(shared, PARAM_MATRIX_BASE + (matSrcOpIdx*8) + srcOpIdx/*dstIdx*/) * 16.0f;
+                  if(matLevel > 0.0f)
+                  {
+                     buf.append("      + $v_o"+(matSrcOpIdx+1)+"\n");
+                     buf.append("        * $p_o"+(matSrcOpIdx+1)+"_to_o"+(srcOpIdx+1)+"\n");
+                  }
+               }
+               matSrcOpIdx++;
+            }
+
+            if(bOpLut)
+            {
+               buf.append("  lut o"+(srcOpIdx+1)+"_wave lin=1\n");
+            }
+
+            // Amp Envelope
+            float lvlEnvAmt = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_LEVEL_ENV_AMT) * 2 - 1;
+            if(abs(lvlEnvAmt) > 0.001f)
+            {
+               trace "xxx op="+(srcOpIdx+1)+" lvlEnvAmt="+lvlEnvAmt;
+
+               sCurveAlias <= "o"+(srcOpIdx+1)+"_amp";
+               sCurves.append("curve "+nextCurveIdx+" "+sCurveAlias+"\n");
+               patch.setCurveAlias(nextCurveIdx, sCurveAlias);
+               patch.setCurveRes(nextCurveIdx, 8);
+
+               buf.append("  * $v_env_rmp\n");
+               buf.append("    lut "+sCurveAlias+" lin=1\n\n");
+
+               beState <= patch.curve_states.get(nextCurveIdx++);
+
+               calcCycleExportEnvelope(srcOpIdx,
+                                       SamplePluginFMStackOpForm.PARAM_AENV_ATK/*base*/,
+                                       beState,
+                                       lvlEnvAmt,
+                                       false/*bPitch*/,
+                                       susMS,
+                                       bSkipRls
+                                       );
+
+            } // if lvlEnvAmt > 0
+
+            buf.append("  * $p_o"+(srcOpIdx+1)+"_level\n");
+            buf.append("  sto v_o"+(srcOpIdx+1)+"\n");
+            buf.append("\n");
+         }
+
+         srcOpBit >>= 1;
+         srcOpIdx--;
+      }
+
+      // Calc output
+      boolean bFirstOut = true;
+      srcOpIdx = 0;
+      loop(5-1/*skip 'X'*/)
+      {
+         opForm <= getOpFormByIdx(srcOpIdx);
+         opLevel = opForm.getOpParam(shared, SamplePluginFMStackOpForm.PARAM_OP_LEVEL) * 16.0f;
+         // trace "xxx srcOpIdx="+srcOpIdx+" opLevel="+opLevel;//+" shared="+#(shared)+" opForm="+#(opForm);
+         if(opLevel > 0.0f)
+         {
+            matLevel = getVarParam(shared, PARAM_MATRIX_BASE + (srcOpIdx*8) + 4/*dstIdx=out*/) * 16.0f;
+            if(matLevel > 0.0f)
+            {
+               trace "xxx srcOpIdx="+srcOpIdx+" outLevel="+matLevel;
+               if(bFirstOut)
+               {
+                  bFirstOut = false;
+                  buf.append("  $v_o"+(srcOpIdx+1)+"\n");
+                  buf.append("  * $p_o"+(srcOpIdx+1)+"_to_out\n");
+               }
+               else
+               {
+                  buf.append("  + $v_o"+(srcOpIdx+1)+"\n");
+                  buf.append("    * $p_o"+(srcOpIdx+1)+"_to_out\n");
+               }
+            }
+         }
+         srcOpIdx++;
+      }
+
+      // Generate args
+      local String sArg;
+      int argIdx = 0;
+      if(argNames.numElements > 0)
+      {
+         loop(argNames.numElements)
+         {
+            if(argIdx < 32)
+            {
+               sArg.append("arg "+argNames.get(argIdx)+" "+argValues.get(argIdx)+"\n");
+            }
+            else
+            {
+               // out of args => hardcode arg values
+               buf.replace("$"+argNames.get(argIdx), argValues.get(argIdx).splitSpace(false).get(0));
+            }
+            argIdx++;
+         }
+         sArg.append("\n");
+      }
+
+      buf.replace("$(ARGS)",   sArg);
+      buf.replace("$(CURVES)", sCurves);
+      buf.replace("$(VARS)",   sVars);
+
+      Global.Success("Export to Cycle Patch clipboard");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         if(ls_idx > 0)
+            showWidgets(ls_idx - 1);
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         if(ls_idx < 2)
+            showWidgets(ls_idx + 1);
+         return true;
+      }
+      return Dialog::onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+         showContextMenu();
+      else
+         showNextWidgetGroup();
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case VKEY_TAB:
+            // (note) reserve lctrl-lshift-TAB for scope
+            if(!_k.modShift())
+            {
+               bt_io.toggleStateAction();
+               return true;
+            }
+            break;
+
+         case 'a':
+            break;
+
+         case 'c':
+            if(_k.modAlt())
+            {
+               handleOpCopy();
+               return true;
+            }
+            else if(_k.modCtrlOnly())
+            {
+               handleVarCopy();
+               return true;
+            }
+            else if(_k.modCtrl() && _k.modShift())
+            {
+               handleVarCopyEff();
+               return true;
+            }
+            break;
+
+         case 'e':
+            if(_k.modAlt())
+            {
+               if(_k.modShift())
+                  handleEnvPaste(false/*bPEnv*/);
+               else
+                  handleEnvCopy(false/*bPEnv*/);
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleOpRandRatioAll(false/*bCoarse*/, true/*bFine*/);
+               else
+                  handleOpRandRatio(false/*bCoarse*/, true/*bFine*/);
+               return true;
+            }
+            break;
+
+         case 'i':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleOpInitAll();
+               else
+                  handleOpInit();
+               return true;
+            }
+            break;
+
+         case 'p':
+            if(_k.modAlt())
+            {
+               if(_k.modShift())
+                  handleEnvPaste(true/*bPEnv*/);
+               else
+                  handleEnvCopy(true/*bPEnv*/);
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(1 == ls_io_1.getCurrentChildNr())  // Preset/Morph view visible ?
+            {
+               if(_k.modCtrl())
+               {
+                  handleRandAllPresets(-1);
+                  return true;
+               }
+               else
+               {
+                  handleRandMorphPos();
+                  return true;
+               }
+            }
+            else if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleOpRandRatioAll(true/*bCoarse*/, false/*bFine*/);
+               else
+                  handleOpRandRatio(true/*bCoarse*/, false/*bFine*/);
+               return true;
+            }
+            break;
+
+         case 't':
+            if(_k.modAlt())
+            {
+               tuneOpRatios(hl_op_idx);
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleOpRandRatioAll(true/*bCoarse*/, true/*bFine*/);
+               else
+                  handleOpRandRatio(true/*bCoarse*/, true/*bFine*/);
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modAlt())
+            {
+               handleOpPaste();
+               return true;
+            }
+            else if(_k.modCtrlOnly())
+            {
+               handleVarPaste();
+               return true;
+            }
+            break;
+
+         case 'w':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleOpRandWaveAll();
+               else
+                  handleOpRandWave();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               // when opened via PageSample 'w' key
+               hide();
+            }
+            break;
+
+         case 'y':
+         case 'z':
+            handleExportCycle(cycle_sus_ms, b_cycle_skip_rls);
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int idxFP = mat_fp.indexOfPointer(ap, 0);
+      if(-1 != idxFP)
+      {
+         FloatParam fp <= ap;
+         float dragRatio;
+         float dragDelta;
+         // trace "xxx mat idxFP="+idxFP+" acName="+acName+" provideDrag="+fp.getEnableProvideDrag();
+         if(FloatParam.ACTION_STARTEDITING == acName)
+         {
+            b_var_drag = UI.KeyModAlt();
+            if(b_var_drag)
+            {
+               b_var_drag_shift = UI.KeyModShift();
+               copyVarToDragBase();
+               var_drag_start = fp.getFloatValue();
+            }
+         }
+         else if(FloatParam.ACTION_STOPEDITING == acName)
+         {
+            b_var_drag = false;
+         }
+         else if(FloatParam.ACTION_CANCELEDITING == acName)
+         {
+            if(b_var_drag)
+            {
+               b_var_drag = false;
+               restoreDragBase();
+            }
+         }
+         else
+         {
+            if(b_var_drag)
+            {
+               if(b_var_drag_shift)
+               {
+                  dragDelta = fp.getFloatValue() - var_drag_start;
+                  varDragMatrixAmount(fp.getFloatValue(), 1.0f/*ratio*/, dragDelta, idxFP/5/*srcOp*/, idxFP%5/*dst*/);
+               }
+               else
+               {
+                  dragRatio = fp.getFloatValue() / var_drag_start;
+                  varDragMatrixAmount(fp.getFloatValue(), dragRatio, 0.0f/*delta*/, idxFP/5/*srcOp*/, idxFP%5/*dst*/);
+               }
+            }
+            else
+            {
+               handleMatFPChanged(ap, idxFP/5/*srcOp*/, idxFP%5/*dst*/);
+            }
+         }
+         return true;
+      }
+
+      int idxBT = mat_bt.indexOfPointer(ap, 0);
+      if(-1 != idxBT)
+      {
+         if(Button.ACTION_RIGHT_CLICK == acName)
+         {
+            showMatrixContextMenu();
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("SamplePluginFMStackDialog: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  refocusDefault();
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "export_cycle":
+                  handleExportCycle(cycle_sus_ms, b_cycle_skip_rls);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus0":
+                  handleExportCycle(0.0f/*susMS*/, false/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus0_skiprls":
+                  handleExportCycle(0.0f/*susMS*/, true/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus20":
+                  handleExportCycle(20.0f/*susMS*/, false/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus20_skiprls":
+                  handleExportCycle(20.0f/*susMS*/, true/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus50":
+                  handleExportCycle(50.0f/*susMS*/, false/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus50_skiprls":
+                  handleExportCycle(50.0f/*susMS*/, true/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus75":
+                  handleExportCycle(75.0f/*susMS*/, false/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus75_skiprls":
+                  handleExportCycle(75.0f/*susMS*/, true/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus100":
+                  handleExportCycle(100.0f/*susMS*/, false/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+
+               case "export_cycle_sus100_skiprls":
+                  handleExportCycle(100.0f/*susMS*/, true/*bSkipRls*/);
+                  refocusDefault();
+                  return true;
+            }
+            return true;
+      
+         case @(pm_mat_context):
+            Global.Debug2("SamplePluginFMStackDialog: pm_mat_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close Matrix context menu.");
+                  refocusDefault();
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "mat_copy":
+                  handleMatrixCopy();
+                  refocusDefault();
+                  return true;
+
+               case "mat_paste":
+                  handleMatrixPaste();
+                  refocusDefault();
+                  return true;
+
+               case "mat_init":
+                  handleMatrixInit();
+                  refocusDefault();
+                  return true;
+
+               case "mat_quant":
+                  handleMatrixQuantize();
+                  refocusDefault();
+                  return true;
+            }
+            return true;
+
+         case @(cm_var):
+            handleVarChanged();
+            return true;
+
+         case @(cb_var_lock):
+            handleVarLockChanged();
+            return true;
+
+         case @(fp_var_num):
+            handleVarNumChanged();
+            return true;
+
+         case @(bt_var_copy):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleVarCopyEff();
+            }
+            else
+            {
+               handleVarCopy();
+            }
+            return true;
+
+         case @(bt_var_paste):
+            handleVarPaste();
+            return true;
+
+         case @(bt_ls0):
+            showWidgets(0);
+            return true;
+
+         case @(bt_ls1):
+            showWidgets(1);
+            return true;
+
+         case @(bt_ls2):
+            showWidgets(2);
+            return true;
+
+         case @(bt_io):
+            handleToggleView();
+            return true;
+
+         case @(cm_preset):
+            handlePresetChanged();
+            return true;
+
+         case @(bt_revert):
+            handleRevertPatch();
+            return true;
+
+         case @(bt_load):
+            handleLoadPatch();
+            return true;
+
+         case @(bt_save):
+            handleSavePatch1();
+            return true;
+
+         case @(cm_preset_tl):
+            handleXYSelectionChangedMulti(cm_preset_tl, "Top / Left");
+            return true;
+
+         case @(bt_rand_tl):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleRandAllPresets(0);
+            else
+               handleRandXYSelection(cm_preset_tl, opt_to_preset_map_tl, "Top / Left");
+            return true;
+
+         case @(cm_preset_tr):
+            handleXYSelectionChangedMulti(cm_preset_tr, "Top / Right");
+            return true;
+
+         case @(bt_rand_tr):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleRandAllPresets(1);
+            else
+               handleRandXYSelection(cm_preset_tr, opt_to_preset_map_tr, "Top / Right");
+            return true;
+
+         case @(cm_preset_bl):
+            handleXYSelectionChangedMulti(cm_preset_bl, "Bottom / Left");
+            return true;
+
+         case @(bt_rand_bl):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleRandAllPresets(2);
+            else
+               handleRandXYSelection(cm_preset_bl, opt_to_preset_map_bl, "Bottom / Left");
+            return true;
+
+         case @(cm_preset_br):
+            handleXYSelectionChangedMulti(cm_preset_br, "Bottom / Right");
+            return true;
+
+         case @(bt_rand_br):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleRandAllPresets(3);
+            else
+               handleRandXYSelection(cm_preset_br, opt_to_preset_map_br, "Bottom / Right");
+            return true;
+
+         case @(xy_pad):
+            handleXYPosChanged();
+            return true;
+
+         case @(cb_flt_op1):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_op1, "Op 1");
+            return true;
+
+         case @(cb_flt_op2):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_op2, "Op 2");
+            return true;
+
+         case @(cb_flt_op3):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_op3, "Op 3");
+            return true;
+
+         case @(cb_flt_op4):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_op4, "Op 4");
+            return true;
+
+         case @(cb_flt_op5):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_op5, "Op 5");
+            return true;
+
+         case @(cb_flt_wave):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_wave, "Wave");
+            return true;
+
+         case @(cb_flt_phase):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_phase, "Phase");
+            return true;
+
+         case @(cb_flt_level):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_level, "Op Level");
+            return true;
+
+         case @(cb_flt_matrix):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_matrix, "Matrix Amount");
+            return true;
+
+         case @(cb_flt_aenv):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_aenv, "Amp Envelope");
+            return true;
+
+         case @(cb_flt_levelamt):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_levelamt, "Level (Vel/Env) Amount");
+            return true;
+
+         case @(cb_flt_velcurve):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_velcurve, "Velocity Curve");
+            return true;
+
+         case @(cb_flt_pcoarse):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_pcoarse, "Pitch Coarse");
+            return true;
+
+         case @(cb_flt_pfine):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_pfine, "Pitch Fine");
+            return true;
+
+         case @(cb_flt_penv):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_penv, "Pitch Envelope");
+            return true;
+
+         case @(cb_flt_pamt):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_pamt, "Pitch (Env) Amount");
+            return true;
+
+         case @(cb_flt_pkbd):
+            if(CheckBox.ACTION_HOLD_CLICK == acName)
+               handleMorphFilterToggleAll();
+            else
+               handleMorphFilterChanged(cb_flt_pkbd, "Pitch Keytracking");
+            return true;
+
+         case @(cf_flt_tl):
+            handlePresetFilterCFAction(acName, cf_flt_tl, cm_preset_tl, opt_to_preset_map_tl);
+            if(UI.KeyModAlt())
+               multiSelectPresetFilter(cf_flt_tl);
+            return true;
+
+         case @(cf_flt_tr):
+            handlePresetFilterCFAction(acName, cf_flt_tr, cm_preset_tr, opt_to_preset_map_tr);
+            if(UI.KeyModAlt())
+               multiSelectPresetFilter(cf_flt_tr);
+            return true;
+
+         case @(cf_flt_bl):
+            handlePresetFilterCFAction(acName, cf_flt_bl, cm_preset_bl, opt_to_preset_map_bl);
+            if(UI.KeyModAlt())
+               multiSelectPresetFilter(cf_flt_bl);
+            return true;
+
+         case @(cf_flt_br):
+            handlePresetFilterCFAction(acName, cf_flt_br, cm_preset_br, opt_to_preset_map_br);
+            if(UI.KeyModAlt())
+               multiSelectPresetFilter(cf_flt_br);
+            return true;
+
+         case @(fp_amt_tl):
+            handleMorphMatrixAmountChanged(fp_amt_tl, "Top / Left");
+            return true;
+
+         case @(fp_amt_tr):
+            handleMorphMatrixAmountChanged(fp_amt_tr, "Top / Right");
+            return true;
+
+         case @(fp_amt_bl):
+            handleMorphMatrixAmountChanged(fp_amt_bl, "Bottom / Left");
+            return true;
+
+         case @(fp_amt_br):
+            handleMorphMatrixAmountChanged(fp_amt_br, "Bottom / Right");
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,246 @@
+// ----
+// ---- file   : ModParamSet.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 04Mar2023, 06Mar2023, 07Mar2023, 08Mar2023, 29Jul2023, 05Nov2023, 09Nov2023
+// ----          06Jan2024, 02Jul2024
+// ----
+// ----
+// ----
+
+module MModParamSet;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ModParamSet {
+   String     name;
+   IntArray   param_numbers;
+   FloatArray param_values;
+
+
+   // <method_init.png>
+   public method init() {
+   }
+
+   // <method.png>
+   public method copyFrom(ModParamSet _o) {
+      name          = _o.name;
+      param_numbers = _o.param_numbers;
+      param_values  = _o.param_values;
+   }
+
+   // <method_get.png>
+   public method getNumParameters() : int {
+      return param_numbers.numElements;
+   }
+
+   // <method.png>
+   public method loadParameters(local Mod _mod) {
+      local int relParamIdx;
+      loop(param_numbers.numElements)
+      {
+         local int paramIdx = param_numbers[relParamIdx];
+         _mod.setParameterValue(paramIdx, param_values[relParamIdx]);
+         relParamIdx++;
+      }
+   }
+
+   // <method.png>
+   public method loadParametersSmooth(local Mod _mod, local ModParamSet _psB, local float _frac, int _order) {
+      local int relParamIdxA;
+      local IntArray pnB <= _psB.param_numbers;
+      local IntArray pvB <= _psB.param_values;
+      loop(param_numbers.numElements)
+      {
+         local int paramIdx = param_numbers[relParamIdxA];
+         local int relParamIdxB = pnB.indexOf(paramIdx, 0);
+         if(-1 != relParamIdxB)
+         {
+            // Interpolate between sets
+            _mod.setParameterValue(paramIdx, mathSmoothStepNf(param_values[relParamIdxA],
+                                                              pvB[relParamIdxB],
+                                                              _frac,
+                                                              _order
+                                                              )
+                                   );
+         }
+         else
+         {
+            // Not available in set B
+            _mod.setParameterValue(paramIdx, param_values[relParamIdxA]);
+         }
+         relParamIdxA++;
+      }
+   }
+
+   // <method.png>
+   public method clearParameters() {
+      param_numbers.free();
+      param_values.free();
+   }
+
+   // <method.png>
+   public method queryParameters(Mod _mod) {
+      param_numbers.free();
+      param_values.free();
+      int numParams = _mod.getNumParameters();
+      int paramIdx = 0;
+      loop(numParams)
+      {
+         param_numbers.add(paramIdx);
+         param_values .add(_mod.getParameterValue(paramIdx));
+
+         // Next param
+         paramIdx++;
+      }
+   }
+
+   // <method.png>
+   public method hasParam(int _paramIdx) : boolean {
+      return param_numbers.contains(_paramIdx);
+   }
+
+  // <method.png>
+   public method hasParamWithValue(int _paramIdx, float _value) : boolean {
+      int relParamIdx = param_numbers.indexOf(_paramIdx, 0);
+      if(-1 != relParamIdx)
+      {
+         return (param_values.get(relParamIdx) == _value);
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method getParamValue(int _paramIdx) : float {
+      int relParamIdx = param_numbers.indexOf(_paramIdx, 0);
+      if(-1 != relParamIdx)
+      {
+         return param_values.get(relParamIdx);
+      }
+      return -999999;
+   }
+
+   // <method.png>
+   public method setParamValue(int _paramIdx, float _val) : float {
+      int relParamIdx = param_numbers.indexOf(_paramIdx, 0);
+      if(-1 != relParamIdx)
+      {
+         param_values[relParamIdx] = _val;
+      }
+   }
+
+   // <method.png>
+   public method deleteParam(int _paramIdx) {
+      int relParamIdx = param_numbers.indexOf(_paramIdx, 0);
+      if(-1 != relParamIdx)
+      {
+         param_numbers.delete(relParamIdx);
+         param_values .delete(relParamIdx);
+      }
+   }
+
+   // <method.png>
+   public method addParam(int _paramIdx, float _val) {
+      if(-1 == param_numbers.indexOf(_paramIdx, 0))
+      {
+         param_numbers.add(_paramIdx);
+         param_values.add(_val);
+      }
+   }
+
+   // <method.png>
+   public method initParametersFromDiffToBaseLine(Mod _mod) {
+      FloatArray baseLine <= _mod.param_set_baseline;
+      param_numbers.free();
+      param_values.free();
+      int numParams = _mod.getNumParameters();
+      int paramIdx = 0;
+      loop(numParams)
+      {
+         if(paramIdx < baseLine.numElements)
+         {
+            float oval = baseLine.get(paramIdx);
+            float nval = _mod.getParameterValue(paramIdx);
+            if(oval != nval)
+            {
+               param_numbers.add(paramIdx);
+               param_values .add(nval);
+            }
+         }
+
+         // Next param
+         paramIdx++;
+      }
+   }
+
+   // <method.png>
+   public method updateParameters(Mod _mod) : int {
+      int numUpdated = 0;
+      int paramIdx;
+      int relParamIdx = 0;
+      foreach paramIdx in param_numbers
+      {
+         float oval = param_values[relParamIdx];
+         float nval = _mod.getParameterValue(paramIdx);
+         if(oval != nval)
+         {
+            param_values[relParamIdx] = nval;
+            numUpdated++;
+         }
+
+         // Next param
+         relParamIdx++;
+      }
+      return numUpdated;
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) : boolean {
+
+      _ofs.i16 = 1;  // version
+
+      // Name
+      Utils.WriteString(_ofs, name);
+
+      // Param numbers
+      Utils.WriteIntArray(_ofs, param_numbers);
+
+      // Param values
+      Utils.WriteFloatArray(_ofs, param_values);
+
+      return true;
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs) : boolean {
+
+      short ver = _ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Name
+         Utils.ReadString(_ifs, name);
+
+         // Param numbers
+         Utils.ReadIntArray(_ifs, param_numbers);
+
+         // Param values
+         Utils.ReadFloatArray(_ifs, param_values);
+
+         return true;
+      }
+      else
+      {
+         trace "[---] ModParamSet::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+}

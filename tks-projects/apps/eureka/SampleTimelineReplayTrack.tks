@@ -1,0 +1,203 @@
+// ----
+// ---- file   : SampleTimelineReplayTrack.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----           (note) adapted from DrumPadDialog
+// ----
+// ---- created: 07Apr2025
+// ---- changed: 09Apr2025, 01May2025, 13Jun2025
+// ----
+// ----
+// ----
+
+module MSampleTimelineReplayTrack;
+
+use namespace ui;
+namespace st2;
+
+
+// <class.png>
+class SampleTimelineReplayTrack {
+   define int MAX_VOICES     = 8;
+   define int NUM_LANE_SENDS = 8;
+
+   SampleTimeline *parent_sample_timeline;
+
+   StSamplePlayer *sample_player;
+   FloatArray mix_buffer;
+
+   float level;  // (todo) remove ? (currently always 1.0)
+   float pan;    // (todo) remove ? (currently always 0.0)
+
+   FloatArray current_lane_sends_l;  // lane send levels (left channel)
+   FloatArray current_lane_sends_r;  // lane send levels (right channel)
+
+   FloatArray target_lane_sends_l;  // (slew target) lane send levels (left channel)
+   FloatArray target_lane_sends_r;  // (slew target) lane send levels (right channel)
+
+   define float SEND_SLEW_OFF    = 1.0;    // instant
+   define float SEND_SLEW_FAST   = 0.1;    // ~0.25sec
+   define float SEND_SLEW_MEDIUM = 0.01;   // ~1.5sec
+   define float SEND_SLEW_SLOW   = 0.001;  // ~5sec
+   static FloatArray send_slew_tbl = [ SEND_SLEW_OFF, SEND_SLEW_FAST, SEND_SLEW_MEDIUM, SEND_SLEW_SLOW ];
+
+
+   public method init(SampleTimeline _parent) {
+      parent_sample_timeline <= _parent;
+
+      sample_player <= new StSamplePlayer;
+      sample_player.allocVoices(MAX_VOICES);
+      sample_player.volume           = 1.0;
+      sample_player.defaultMixRate   = Audio.mix_rate;
+      sample_player.defaultFreqTable = Audio.default_freq_table;
+
+      mix_buffer.alloc(Audio.STREAM_MAX_FRAMES * 2);
+      mix_buffer.useAll();
+
+      level = 1.0f;  // (todo) remove ? (always 1.0)
+      pan   = 0.0f;  // (todo) remove ? (always 0.0)
+
+      current_lane_sends_l.allocAndFill(NUM_LANE_SENDS, 0.0f);
+      current_lane_sends_r.allocAndFill(NUM_LANE_SENDS, 0.0f);
+
+      current_lane_sends_l[0] = 1.0f;
+      current_lane_sends_r[0] = 1.0f;
+
+      target_lane_sends_l.allocAndFill(NUM_LANE_SENDS, 0.0f);
+      target_lane_sends_r.allocAndFill(NUM_LANE_SENDS, 0.0f);
+
+      target_lane_sends_l[0] = 1.0f;
+      target_lane_sends_r[0] = 1.0f;
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      sample_player <= null;
+   }
+
+   // <method_init.png>
+   public method copyFrom(SampleTimelineReplayTrack _o) {
+
+      current_lane_sends_l = _o.current_lane_sends_l;
+      current_lane_sends_r = _o.current_lane_sends_r;
+
+      target_lane_sends_l = _o.target_lane_sends_l;
+      target_lane_sends_r = _o.target_lane_sends_r;
+   }
+
+   // <replay.png>
+   public method resetVoices() {
+      sample_player.resetVoices();
+   }
+
+   // <replay.png>
+   public method allNotesOff(local boolean _bRelease) {
+      if(_bRelease)
+         sample_player.allNotesOffRelease();
+      else
+         sample_player.allNotesOff();
+   }
+
+   // <replay.png>
+   public method resetAllSampleVoices(local Sample _sampleOrNull) {
+      if(null != _sampleOrNull)
+      {
+         local StSample smp <= _sampleOrNull.sample_bank.firstSample;
+         while(null != smp)
+         {
+            // trace "xxx ResetAllSampleVoices: sample="+#(_sample)+" zone="+#(smp);
+            sample_player.resetVoicesBySample(smp);
+            smp <= smp.next;
+         }
+      }
+      else
+      {
+         sample_player.resetVoices();
+      }
+   }
+
+   // <replay.png>
+   public method process(local Track _curTrack, local int _numFrames) {
+
+      if(sample_player.numPlayingVoices > 0)
+      {
+         mix_buffer.numElements = _numFrames * 2;
+         mix_buffer.fill(0);
+         // // sample_player.renderWithInputs(_mixBuffer, parent_track.input_bufs, true/*bRender*/, replay.process_tick_nr);
+         sample_player.render(mix_buffer);
+
+         local int sendIdx = 0;
+         loop(SampleTimelineReplayTrack.NUM_LANE_SENDS/*8*/)
+         {
+            if( (current_lane_sends_l[sendIdx] + current_lane_sends_r[sendIdx]) > 0.0f )
+            {
+               FloatArray laneInputBuf <= _curTrack.getLaneInputBuffer(sendIdx/*laneIdx*/, true/*bOverride*/);
+               if(null != laneInputBuf)
+               {
+                  tksampleedit_add_pan_stereo_to_stereo(laneInputBuf, 0/*outOff*/, mix_buffer, 0/*inoff*/,
+                                                        current_lane_sends_l[sendIdx], current_lane_sends_r[sendIdx],
+                                                        _numFrames
+                                                        );
+               }
+            }
+
+            // Next send
+            sendIdx++;
+         }
+      }
+
+   }
+
+   // <method_update.png>
+   public method updateLaneSendLevelLR(local FloatArray _aTrackLevel,      // SampleTimelineModelTrack::lane_level
+                                       local FloatArray _aTrackPan,        // SampleTimelineModelTrack::lane_pan
+                                       local FloatArray _aClipLevelModOrNull,
+                                       local FloatArray _aClipPanModOrNull,
+                                       local float      _laneSendsSlewAmt  // SampleTimelineModelTrack::lane_sends_slew_amt
+                                       ) {
+      // (note) called in process()
+      // trace "xxx SampleTimelineReplayTrack::updateLaneSendLevelLR: aClipLevelModOrNull="+#(_aClipLevelModOrNull);
+      // trace "xxx SampleTimelineReplayTrack::updateLaneSendLevelLR: aClipPanModOrNull="+#(_aClipPanModOrNull);
+
+      local int sendIdx = 0;
+      loop(NUM_LANE_SENDS)
+      {
+         // Linear (center max=1.0)
+         local float t = mathClampf(pan + _aTrackPan[sendIdx] +
+                                    ((null != _aClipPanModOrNull) ? _aClipPanModOrNull.get(sendIdx) : 0.0f),
+                                    -1.0f, 1.0f
+                                    );
+         local float levelL = (t < 0.0f) ? 1.0 : (1.0f - t);
+         local float levelR = (t > 0.0f) ? 1.0 : (1.0f + t);
+
+         t = mathClampf(level * mathClampf(_aTrackLevel[sendIdx] +
+                                           ((null != _aClipLevelModOrNull) ? _aClipLevelModOrNull.get(sendIdx) : 0.0f),
+                                           0.0f, 1.0f
+                                           ),
+                        0.0f, 8.0f
+                        );
+         local float tL = levelL * t;
+         local float tR = levelR * t;
+         target_lane_sends_l[sendIdx] = tL;
+         target_lane_sends_r[sendIdx] = tR;
+         if(_laneSendsSlewAmt < 1.0)
+         {
+            current_lane_sends_l[sendIdx] = mathLerpf(current_lane_sends_l[sendIdx], tL, _laneSendsSlewAmt);
+            current_lane_sends_r[sendIdx] = mathLerpf(current_lane_sends_r[sendIdx], tR, _laneSendsSlewAmt);
+         }
+         else
+         {
+            current_lane_sends_l[sendIdx] = tL;
+            current_lane_sends_r[sendIdx] = tR;
+         }
+
+         // Next send
+         sendIdx++;
+      }
+   }
+
+}

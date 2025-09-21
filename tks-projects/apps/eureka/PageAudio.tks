@@ -1,0 +1,1163 @@
+// ----
+// ---- file   : PageAudio.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 22Jan2018
+// ---- changed: 25Jan2018, 31Jan2018, 10Feb2018, 15Feb2018, 22Feb2018, 03Apr2018, 02Jun2018
+// ----          22Jun2018, 21Jul2018, 06Dec2018, 09Dec2018, 11Dec2018, 21Dec2018, 23Dec2018
+// ----          03Jan2019, 06Jan2019, 17Jan2019, 10May2019, 17May2019, 13Jul2019, 26Aug2019
+// ----          09Feb2020, 15May2020, 17May2020, 20May2020, 21Aug2020, 28Aug2020, 11Oct2020
+// ----          01Feb2021, 04Aug2021, 10Aug2021, 25Aug2021, 11Oct2021, 04Dec2021, 11Dec2021
+// ----          22Dec2021, 14Jan2022, 18Jan2022, 16Jul2022, 22Jul2022, 02Dec2022, 19Feb2023
+// ----          20Feb2023, 01Apr2023, 12Apr2023, 12May2023, 29Jul2023, 10Aug2023, 16Aug2023
+// ----          21Sep2023, 03Oct2023, 04Nov2023, 02Dec2023, 06Jan2024, 12Jan2024, 13Jan2024
+// ----          18Jan2024, 19Apr2024, 05Jul2024, 12Aug2024, 17Sep2024, 22Sep2024, 24Sep2024
+// ----          08Dec2024, 23Dec2024, 30Dec2024, 03Apr2025, 05Apr2025, 06Apr2025, 20May2025
+// ----          15Jun2025, 21Jun2025, 09Sep2025
+// ----
+// ----
+// ----
+
+module MPageAudio;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageAudio : Page {
+
+   protected Button   *bt_purge_cache;
+   protected Button   *bt_reload_voice_plugins;
+   protected Button   *bt_asiocontrolpanel;
+   protected Button   *bt_prefs;
+   protected Button   *bt_edit_cfg;
+   protected Button   *bt_edit_local_cfg;
+
+   protected CheckBox *cb_processwhenmuted;
+   protected CheckBox *cb_processeffectwhenmuted;
+   protected CheckBox *cb_autohidevsteditors;
+   protected CheckBox *cb_fx;
+   protected CheckBox *cb_dock;
+
+   protected Button    *bt_rescan;
+   protected PopupMenu *pm_rescan;
+
+   protected Button    *bt_export;
+   protected PopupMenu *pm_export;
+
+   protected Button *bt_instr_tracks;
+   protected Button *bt_instr_curtrack;
+   protected Button *bt_samples;
+   protected Button *bt_create;
+   protected Button *bt_loadseqproj;
+   protected Button *bt_init;
+
+   public AudioTracksForm *f_audiotracks;
+
+   protected PopupMenu *pm_samples;
+
+   protected PrefsDialog *dlg_prefs;
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageAudio.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      cb_processwhenmuted.setSelected(STConfig.b_process_when_muted);
+      cb_processeffectwhenmuted.setSelected(STConfig.b_process_effect_when_muted);
+
+      f_audiotracks.init();
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public method pageEnter() {
+      Page::pageEnter();
+
+      cb_autohidevsteditors.setSelected(STConfig.b_auto_hide_plugin_editors);
+      cb_fx.setSelected(!b_bypass_all_fx);
+      cb_dock.setSelected(STConfig.b_window_docked);
+
+      updateTracks();
+
+      f_audiotracks.handleEnterForm();  // install SampleView overlay
+
+      replay.b_calc_io_avg = true;
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      f_audiotracks.handleLeaveForm();  // uninstall SampleView overlay
+
+      replay.b_calc_io_avg = false;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetActiveSampleView() : SampleView {
+      return f_audiotracks.sv_wave;
+   }
+
+   // <ui_handle.png>
+   public method handleStartRecord() {
+      f_audiotracks.handleStartRecord();
+   }
+
+   // <ui_handle.png>
+   public method handleStopRecord() {
+      f_audiotracks.handleStopRecord();
+   }
+
+   // <ui_handle.png>
+   public method invalidateSampleView() {
+      // see events.tks, sysex.tks
+      f_audiotracks.invalidateSampleView();
+   }
+
+   // <ui_update.png>
+   public method updateTracks() {
+      Global.Debug2("PageAudio::updateTracks: #audiotracks="+(current_project.audio_tracks.numElements));
+      f_audiotracks.updateTracks();
+   }
+
+   // <ui.png>
+   public virtual pageFocusDefault() {
+      f_audiotracks.refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_purge_cache,
+         cb_processwhenmuted,
+         cb_processeffectwhenmuted,
+         cb_autohidevsteditors,
+         cb_fx,
+         cb_dock,
+                              ];
+
+      f_audiotracks.addTabCycleOverrides(_retLayers);
+
+      _retLayers.joinRR(_retLayers,
+                        [
+                           bt_instr_tracks,
+                           bt_instr_curtrack,
+                           bt_loadseqproj,
+                           bt_init
+                         ]
+                        );
+   }
+
+   // <ui_show.png>
+   protected method showPrefsDialog() {
+      Global.Print("Show preferences dialog");
+      if(null == dlg_prefs)
+      {
+         dlg_prefs <= new PrefsDialog;
+         dlg_prefs.initPrefsDialog();
+      }
+      dlg_prefs.showPrefsDialog();
+   }
+
+   // <ui_handle.png>
+   protected method handleEditConfig() {
+      if(Utils.LaunchSystemTextEditor(st2::program_directory+"/eureka_config.tks"))
+         Global.Print("Edit eureka_config.tks");
+   }
+
+   // <ui_handle.png>
+   protected method handleEditLocalConfig() {
+      if(Utils.LaunchSystemTextEditor(ConfigIO.GetLocalConfigPathName()))
+         Global.Print("Edit "+ConfigIO.GetLocalConfigPathName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleProcessWhenMutedChanged() {
+      STConfig.b_process_when_muted = cb_processwhenmuted.isSelected();
+      Global.Print("Process "+((false == STConfig.b_process_when_muted) ? "nothing" : (maybe == STConfig.b_process_when_muted) ? "MIDI" : "MIDI+audio")+" when track, lane, or plugin is muted");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleProcessEffectWhenMutedChanged() {
+      STConfig.b_process_effect_when_muted = cb_processeffectwhenmuted.isSelected();
+      Global.Print(STConfig.b_process_effect_when_muted ? "Process effect when track, lane, or plugin is muted" : "Never process effect when track, lane, or plugin is muted");
+   }
+
+   // <ui_handle.png>
+   public method handleInitProject() {
+      replay.stop();
+      handleInitProject2();
+   }
+   public =replay= method handleInitProject2() {
+      Global.InitProject();
+      replay.start();
+      updateTracks();
+      Global.Print("Initialize project");
+   }
+
+   // <ui_handle.png>
+   public method handleLoadSeqProject(boolean _bTest) {
+      if(_bTest)
+      {
+         Global.LoadProject("eureka_test_1_a");
+         updateTracks();
+      }
+      else
+      {
+         // Query current project name, sequencer replies with PROJECT_LOAD when connected
+         Global.Debug2("PageAudio::handleLoadSeqProject: QueueSendProjectQueryAutoload()");
+         SysEx.QueueSendProjectQueryAutoload();
+      }
+   }
+
+   // <ui_show.png>
+   public method showASIOControlPanel() {
+      Global.Debug("PageAudio::showASIOControlPanel: audio_device_index="+STConfig.audio_device_index);
+
+      if(STConfig.b_enable_audio)
+      {
+         Audio.b_allow_process = false;
+
+         replay.stop();
+
+         Audio.StopDefaultDevice();
+         // Audio.Exit();
+
+         int devIdx = STConfig.audio_device_index;
+         if(devIdx < 0)
+            devIdx = PortAudio.GetDefaultOutputDeviceIndex();
+         PortAudio.ShowControlPanel(devIdx, SDL.nativeWindowHandle);
+
+         Audio.StartDefaultDevice();
+
+         Audio.RestartStream();
+         replay.start();
+         Audio.ResetUnderrunProtection();
+         Audio.b_allow_process = true;
+      }
+
+   }
+
+   // <ui_handle.png>
+   public method showInstrumentTracks() {
+      root_form.showPage(RootForm.PAGE_PROJECT, true/*bAllowHistory*/);
+   }
+
+   // <ui_handle.png>
+   public method showSamples() {
+      root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+   }
+
+   // <method.png>
+   protected method addAudioClipTracksToSamplesMenu(PopupMenu _parentMenu, String _sFontName) {
+      local PopupMenu *spm;
+      PopupMenuButton *pmb;
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         if(track.isAudioClipTrack())
+         {
+            ModSample modSample <= track.findFirstModSample();
+            if(modSample instanceof ModSample)
+            {
+               if(null == spm)
+               {
+                  spm <= PopupMenu.New(_parentMenu);
+                  _parentMenu.addSeparator();
+                  pmb <= _parentMenu.addMenu("Create Audio-Clip", deref spm);
+                  pmb.setFontByName(_sFontName);
+               }
+               pmb <= spm.addDefaultButton(track.name,
+                                           "samples_create_audioclip_"+current_project.getTrackIdx(track)
+                                           );
+               pmb.setFontByName(_sFontName);
+            }
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showSamplesMenu() {
+      pm_samples <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_samples;
+      Sample sample <= root_form.pg_sample.getSelectedSample();
+      String smpName <= (null != sample) ? sample.unique_name : "";
+      SampleView sv <= f_audiotracks.sv_wave;
+
+      String sFontName <= "big9";
+
+      pmb <= pm.addDefaultButton("Create timeline clip from selection",
+                                 "samples_create_timeline_clip_from_selection"
+                                 );
+      pmb.setFontByName(sFontName);
+      pmb.setActive(0 != sv.getNumSelectedSamples());
+      pmb.setAccelerators("", "lctrl-x a");
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Create new sample from selection",
+                                 "samples_create_from_selection"
+                                 );
+      pmb.setFontByName(sFontName);
+      pmb.setActive(0 != sv.getNumSelectedSamples());
+      pmb.setAccelerators("", "lctrl-x s");
+      pm.addSeparator();
+
+      int numZones = sv.autochop_start_offsets.numElements;
+      if(0 == numZones) numZones = 1;
+      pmb <= pm.addDefaultButton("Create new sample ("+numZones+" zone"+Utils.GetPluralString(numZones)+")",
+                                 "samples_create_from_zones"
+                                 );
+      pmb.setFontByName(sFontName);
+      pmb.setActive(sv.haveSamples());
+      pmb.setAccelerators("lctrl-x y", "lctrl-x z");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Create layered+alt multi-sample ("+numZones+" zone"+Utils.GetPluralString(numZones)+")",
+                                 "samples_create_from_zones_layered_alt"
+                                 );
+      pmb.setFontByName(sFontName);
+      pmb.setActive((numZones > 0));
+      pmb.setAccelerators("lctrl-x l", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Create tuned multi-sample ("+numZones+" zone"+Utils.GetPluralString(numZones)+")",
+                                 "samples_create_from_zones_tuned_multisample"
+                                 );
+      pmb.setFontByName(sFontName);
+      pmb.setActive((numZones > 0));
+      pmb.setAccelerators("lctrl-x t", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Create new granular sample from selection",
+                                 "samples_create_granular_from_selection"
+                                 );
+      pmb.setFontByName(sFontName);
+      pmb.setActive(0 != sv.getNumSelectedSamples());
+      pmb.setAccelerators("", "lctrl-x g");
+      pm.addSeparator();
+
+      // Find audio-clip track candidates
+      addAudioClipTracksToSamplesMenu(pm, sFontName);
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_create);
+      Global.Print("Show samples menu.");
+   }
+
+   // <ui_handle.png>
+   public method handleSamplesCreateNewFromArray(FloatArray _samples,
+                                                 int _numCh, int _chOff, int _dstNumCh,
+                                                 float _sampleRate,
+                                                 boolean _bLoop,
+                                                 boolean _bSwitchToSamples,
+                                                 boolean _bAudioClip,
+                                                 float _audioClipBPMOr0
+                                                 ) : Sample {
+      PageSample pgSample <= root_form.pg_sample;
+      Sample sample <= pgSample.createSingleSampleFromWaveform(_samples,
+                                                               _numCh, _chOff, _dstNumCh,
+                                                               _sampleRate,
+                                                               _bLoop,
+                                                               _bAudioClip,
+                                                               _audioClipBPMOr0
+                                                               );
+      if(_bSwitchToSamples)
+      {
+         PageSample.ShowSampleAndSwitchToPage(sample, -1/*prefNamespaceIdx*/, false/*bFromTrack*/);
+      }
+      return sample;
+   }
+
+   // <ui_handle.png>
+   public method handleSamplesCreateNewFromSelection(boolean _bSwitchToSamples, boolean _bAudioClip, float _audioClipBPMOr0) {
+      SampleView sv <= f_audiotracks.sv_wave;
+      if(sv.haveSelection())
+      {
+         FloatArray smp   <= sv.getSelectedSamples();
+         int   numCh       = sv.getNumChannels();
+         int   chOff       = sv.getSelectionChannelOffset();
+         int   dstNumCh    = sv.getSelectionNumChannels();
+         float sampleRate  = sv.getSampleRate();
+         Sample sample <= handleSamplesCreateNewFromArray(smp,
+                                                          numCh, chOff, dstNumCh,
+                                                          sampleRate,
+                                                          f_audiotracks.cb_loop.isSelected(),
+                                                          _bSwitchToSamples,
+                                                          _bAudioClip,
+                                                          _audioClipBPMOr0
+                                                          );
+         Global.Print("Create sample from selection ("+numCh+" channel"+Utils.GetPluralString(numCh)+", "+(smp.numElements / numCh)+" frames)");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSamplesCreateNewGranularFromSelection(boolean _bSwitchToSamples) {
+      SampleView sv <= f_audiotracks.sv_wave;
+      if(sv.haveSelection())
+      {
+         FloatArray smp <= sv.getSelectedSamples();
+         PageSample pgSample <= root_form.pg_sample;
+         int numCh = sv.getNumChannels();
+         if( (smp.numElements / numCh) >= 16384)
+         {
+            int dstNumCh = sv.getSelectionNumChannels();
+            int chOff = sv.getSelectionChannelOffset();
+            Sample sample <= pgSample.createGranularSampleFromWaveform(smp, numCh, chOff, dstNumCh, sv.getSampleRate(),
+                                                                       f_audiotracks.cb_loop.isSelected()
+                                                                       );
+            if(_bSwitchToSamples)
+            {
+               PageSample.ShowSampleAndSwitchToPage(sample, -1/*prefNamespaceIdx*/, false/*bFromTrack*/);
+            }
+
+            Global.Print("Create granular sample from selection ("+numCh+" channel"+Utils.GetPluralString(numCh)+", "+(smp.numElements / numCh)+" frames)");
+         }
+         else
+         {
+            Global.Warning("Create granular sample: selection too short (< 16384 frames)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSamplesCreateNewFromZones(boolean _bSwitchToSamples) {
+      SampleView sv <= f_audiotracks.sv_wave;
+      if(sv.haveSamples())
+      {
+         FloatArray smp <= sv.getSamples();
+         PageSample pgSample <= root_form.pg_sample;
+         int numCh = sv.getNumChannels();
+         Sample sample <= pgSample.createSampleFromWaveform(smp, numCh, sv.getSampleRate(),
+                                                            sv.autochop_start_offsets, sv.autochop_end_offsets,
+                                                            f_audiotracks.cb_loop.isSelected()
+                                                            );
+         if(_bSwitchToSamples)
+         {
+            PageSample.ShowSampleAndSwitchToPage(sample, -1/*prefNamespaceIdx*/, false/*bFromTrack*/);
+         }
+
+         Global.Print("Create sample from regions ("+numCh+" channel"+Utils.GetPluralString(numCh)+", "+(smp.numElements / numCh)+" frames, "+(sv.autochop_start_offsets.numElements)+" zone"+Utils.GetPluralString(sv.autochop_start_offsets.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSamplesCreateNewFromZonesLayeredAlt(boolean _bSwitchToSamples) {
+      SampleView sv <= f_audiotracks.sv_wave;
+      if(sv.haveSamples())
+      {
+         FloatArray smp <= sv.getSamples();
+         PageSample pgSample <= root_form.pg_sample;
+         int numCh = sv.getNumChannels();
+         Sample sample <= pgSample.createSampleFromWaveform(smp, numCh, sv.getSampleRate(),
+                                                            sv.autochop_start_offsets, sv.autochop_end_offsets,
+                                                            f_audiotracks.cb_loop.isSelected()
+                                                            );
+         if(_bSwitchToSamples)
+         {
+            PageSample.ShowSampleAndSwitchToPage(sample, -1/*prefNamespaceIdx*/, false/*bFromTrack*/);
+
+            pgSample.handleReInitZoneRanges(Sample.TYPE_LAYERED);
+            pgSample.selectAllZones();
+            pgSample.setEnableAlt(true);
+            pgSample.setEnableSolo(false);
+         }
+         Global.Print("Create layered+alt multisample from selection ("+numCh+" channel"+Utils.GetPluralString(numCh)+", "+(smp.numElements / numCh)+" frames, "+(sv.autochop_start_offsets.numElements)+" zone"+Utils.GetPluralString(sv.autochop_start_offsets.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSamplesCreateNewFromZonesTunedMultisample(boolean _bSwitchToSamples) {
+      SampleView sv <= f_audiotracks.sv_wave;
+      if(sv.haveSamples())
+      {
+         FloatArray smp <= sv.getSamples();
+         PageSample pgSample <= root_form.pg_sample;
+         int numCh = sv.getNumChannels();
+         Sample sample <= pgSample.createSampleFromWaveform(smp, numCh, sv.getSampleRate(),
+                                                            sv.autochop_start_offsets, sv.autochop_end_offsets,
+                                                            f_audiotracks.cb_loop.isSelected()
+                                                            );
+         if(_bSwitchToSamples)
+         {
+            PageSample.ShowSampleAndSwitchToPage(sample, -1/*prefNamespaceIdx*/, false/*bFromTrack*/);
+
+            pgSample.selectAllZones();
+            pgSample.handleAutoTuneSelectedZones(1.0/16/*prefilterCutoff*/);
+            sample.reorderZonesByTranspose();
+            pgSample.setEnableSolo(false);
+            pgSample.handlePageCmdReorderWaveformByZones();
+            pgSample.handleReInitZoneRanges(Sample.TYPE_TUNED_MULTISAMPLE);
+         }
+         Global.Print("Create tuned multisample from selection ("+numCh+" channel"+Utils.GetPluralString(numCh)+", "+(smp.numElements / numCh)+" frames, "+(sv.autochop_start_offsets.numElements)+" zone"+Utils.GetPluralString(sv.autochop_start_offsets.numElements)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSamplesCreateAudioClipFromSelection(Track _track) {
+      Global.Debug("PageAudio::handleSamplesCreateAudioClipFromSelection: track.name=\""+_track.name+"\"");
+      ModSample modSample <= _track.findFirstModSample();  // should not be null
+      if(null != modSample)
+      {
+         SampleView sv <= f_audiotracks.sv_wave;
+         if(!sv.haveSelection())
+            sv.selectAll(false/*bAction*/);
+         if(sv.haveSelection())
+         {
+            int nspIdx = current_project.getOrCreateSampleNamespace(_track.name);  // "a_mytrack"
+            if(-1 != nspIdx)
+            {
+               FloatArray smp      <= sv.getSelectedSamples();
+               PageSample pgSample <= root_form.pg_sample;
+               int numCh    = sv.getNumChannels();
+               int dstNumCh = sv.getSelectionNumChannels();
+               int chOff    = sv.getSelectionChannelOffset();
+               // (todo) call current_projet.createLiveRecSample()
+               Sample sample <= pgSample.createSingleSampleFromWaveform(smp, numCh, chOff, dstNumCh, sv.getSampleRate(),
+                                                                        false/*bLoop*/,
+                                                                        false/*bAudioClip*/,
+                                                                        current_project.bpm/*audioClipBPMOr0*/
+                                                                        );
+               sample.setNamespaceIdx(nspIdx);
+               sample.assignUniqueName(_track.name+" clip 1");  // auto-enumerates (1 => 2,3,...,99,..)
+               // (note) -18dB is the default level when creating liverec samples from Synergy AudioLiveRecForm
+               sample.setVolume(Audio.DecibelToLevel(STConfig.default_audio_clip_level/*levelDB*/));
+
+               StSample s <= sample.getZoneByIdx(0);
+               Sample.InitLiveRecZone(s, (2 == numCh)/*bStereo*/);
+
+               modSample.setSampleIdx(current_project.getSampleIdx(sample));
+               modSample.preferred_namespace_idx = nspIdx;
+
+               // Select track and show sample editor
+               PageProject pgProject <= root_form.pg_project;
+               pgProject.setFocusIdx(current_project.getTrackIdx(_track));
+               root_form.showPage(RootForm.PAGE_PROJECT, true/*bAllowHistory*/);
+               pgProject.handleEditFocusTrack();
+
+               pgSample.autoselect_sample_idx    = current_project.getSampleIdx(sample);
+               pgSample.autoselect_namespace_idx = sample.namespace_idx;
+               root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+
+               Global.Print("Create audio-clip from selection ("+numCh+" channel"+Utils.GetPluralString(numCh)+", "+(smp.numElements / numCh)+" frames)");
+            }
+            else
+            {
+               Global.Error("Failed to create sample namespace \""+_track.name+"\"");
+            }
+         } // if sv.haveSelection
+         else
+            Global.Warning("create audio-clip: no sample selection");
+      } // if modSample
+   }
+
+   // <ui_show.png>
+   protected method showRescanMenu() {
+      pm_rescan <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_rescan;
+
+      pmb <= pm.addDefaultButton("Rescan Samples",
+                                 "rescan_samples"
+                                 );
+      pmb.setToolTipCaption("Rescan sample directory and write new samplecache.dat file");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Rescan CLAP plugins",
+                                 "rescan_clap"
+                                 );
+      pmb.setToolTipCaption("Rescan CLAP plugins (may take quite a while)");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Rescan VST2 plugins",
+                                 "rescan_vst2"
+                                 );
+      pmb.setToolTipCaption("Rescan VST2 plugins (may take quite a while)");
+
+      pm.resizeToMinimum();
+      pm.showBelowLayer(bt_rescan);
+      Global.Print("Show rescan menu.");
+   }
+
+   // <ui_show.png>
+   protected method showExportMenu() {
+      pm_export <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_export;
+
+      pmb <= pm.addDefaultButton("Export MOD..",
+                                 "export_mod"
+                                 );
+      pmb.setToolTipCaption("Export samples to mod file\n\n (note) mod file \"mod.<prjname>\" must already exist\n (note) keep patterns+orderlist");
+
+      pmb <= pm.addDefaultButton("Export MOD to project dir",
+                                 "export_mod_project_dir"
+                                 );
+      pmb.setToolTipCaption("Export samples to mod file\n\n (note) mod file \"mod.<prjname>\" must already exist\n (note) keep patterns+orderlist\n\n (note) export to $(PROJECT_SAMPLES)/export.mod");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Export TSR",
+                                 "export_tsr"
+                                 );
+      pmb.setToolTipCaption("Export sample calculator source for Tiny Synergy Replay (A500)\n\n (note) writes autogen_calc_<prjname>.c\n\n (note) saves static samples to autogen_calc_<prjname>.smp\n\n (note) also saves (temporary) sample infos to $(TMP)/eureka_tsr_smp.dat (imported by Synergy)");
+
+      pmb <= pm.addDefaultButton("Export TSR (force static samples)",
+                                 "export_tsr_force_static"
+                                 );
+      pmb.setToolTipCaption("Export sample calculator source for Tiny Synergy Replay (A500)\n\n (note) writes autogen_calc_<prjname>.c\n\n (note) force static samples\n\n (note) saves static samples to autogen_calc_<prjname>.smp\n\n (note) also saves (temporary) sample infos to $(TMP)/eureka_tsr_smp.dat (imported by Synergy)");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Export SYN",
+                                 "export_syn"
+                                 );
+      pmb.setToolTipCaption("Export sample calculator source for Synergy Replay (PC / Mac)\n\n (note) writes autogen_calc_<prjname>.c\n\n (note) saves track+sample infos+static (16bit) samples to autogen_<prjname>.syn");
+
+      pmb <= pm.addDefaultButton("Export SYN (force static samples)",
+                                 "export_syn_force_static"
+                                 );
+      pmb.setToolTipCaption("Export sample calculator source for Synergy Replay (PC / Mac)\n\n (note) writes autogen_calc_<prjname>.c\n\n (note) force static samples\n\n (note) saves track+sample infos+static (16bit) samples to autogen_<prjname>.syn");
+
+      pm.resizeToMinimum();
+      pm.showBelowLayer(bt_export);
+      Global.Print("Show export menu.");
+   }
+
+   // <ui_handle.png>
+   static String export_mod_last_pathname;
+   public method handleExportMod() {
+      if(export_mod_last_pathname.isBlank())
+         export_mod_last_pathname = Global.MOD_FILE_PREFIX+Utils.ConvertToFileName(current_project.project_name);
+      String selectedPathName <= UI.SaveFileDialog(null/*dirname*/,
+                                                   export_mod_last_pathname,
+                                                   "Export samples to MOD file",
+                                                   ["MOD (*.mod)", "MOD (mod.*)"],
+                                                   ["*.mod", "mod.*"],
+                                                   false/*bDirectoriesOnly*/
+                                                   );
+      if(null != selectedPathName)
+      {
+         export_mod_last_pathname = selectedPathName;
+         Global.ExportSamplesToModFile(selectedPathName);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleExportModToEurekaSamplesDir() {
+      export_mod_last_pathname = "$(PROJECT_SAMPLES)/export.mod";
+      Global.ExportSamplesToModFile(export_mod_last_pathname);
+   }
+
+   // <ui_handle.png>
+   public method handleWindowDockChanged() {
+      STConfig.b_window_docked = cb_dock.isSelected();
+      SDL.setEnableWindowTitleAndBorder(!STConfig.b_window_docked/*bTitle*/, !STConfig.b_window_docked/*bBorder*/);
+      Global.Print("Window dock is "+Utils.GetEnableString(STConfig.b_window_docked));
+   }
+
+   // <ui_handle.png>
+   public method handleExportTSR() {
+      Global.ExportTSR();
+   }
+
+   // <ui_handle.png>
+   public method handleExportSYN() {
+      Global.ExportSYN();
+   }
+
+   // <method.png>
+   public method tryCopyToLiveCaptureBuffers(boolean _bForce) {
+      if(replay.b_live_capture && replay.b_recording)
+      {
+         if(current_project.tryCopyToLiveCaptureBuffers(_bForce))
+         {
+            Global.Debug("PageAudio: live capture buffer changed, restarting recording");
+            root_form.stopAudioRecording();
+            root_form.startAudioRecording();
+            f_audiotracks.reselectCurrentTrack();
+         }
+      }
+   }
+
+   // <method.png>
+   public method handleReloadVoicePlugins() {
+      int numReloaded = current_project.reloadAllVoicePlugins();
+      Global.Success("Reload "+numReloaded+" voice plugin"+Utils.GetPluralString(numReloaded));
+   }
+
+   // <method.png>
+   public method handleReloadVoicePluginsRemap(HashTable _idMap, StringArray _patchPluginIds) {
+      int numReloaded = current_project.reloadAllVoicePluginsRemap(_idMap,
+                                                                   _patchPluginIds,
+                                                                   true/*bRescanGlobal*/,
+                                                                   true/*bRescanPatch*/
+                                                                   );
+      Global.Success("Reload "+numReloaded+" voice plugin"+Utils.GetPluralString(numReloaded));
+   }
+
+   // <ui_page.png>
+   public virtual pageHandleIdleTimer() {
+
+      tryCopyToLiveCaptureBuffers(false/*bForce*/);
+
+      AudioTrackForm *tf;
+      foreach tf in f_audiotracks.track_forms
+      {
+         tf.handleIdleTimer();
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(UI.mouse_layer instanceof Panel)
+      {
+         showInstrumentTracks();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            handleSamplesCreateNewFromSelection(true/*bSwitchToSamples*/,
+                                                true/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                );
+            return true;
+
+         case 'g':
+            handleSamplesCreateNewGranularFromSelection(true/*bSwitchToSamples*/);
+            return true;
+
+         case 'i':
+            f_audiotracks.showSampleImportDialog();
+            return true;
+
+         case 'l':
+            handleSamplesCreateNewFromZonesLayeredAlt(true/*bSwitchToSamples*/);
+            return true;
+
+         case 's':
+            handleSamplesCreateNewFromSelection(true/*bSwitchToSamples*/,
+                                                false/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                );
+            return true;
+
+         case 't':
+            handleSamplesCreateNewFromZonesTunedMultisample(true/*bSwitchToSamples*/);
+            return true;
+
+         case 'z':
+         case 'y':
+            handleSamplesCreateNewFromZones(true/*bSwitchToSamples*/);
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          a  :  New audio clip sample from selection
+          i  :  Show import dialog
+          l  :  New sample (<n> zones alt layered)
+          s  :  New sample from selection
+          t  :  New sample (<n> zones tuned multisample)
+          z  :  New sample (<n> zones)
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "[>>>] PageAudio: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod;
+      // trace "[>>>] PageAudio: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod+" keyboard_focus="+#(UI.GetKeyboardFocus());
+
+      AudioTrackForm *af;
+
+      switch(_k.pressed)
+      {
+         case 'i':
+            if(_k.modAlt())
+            {
+               f_audiotracks.showSampleImportDialog();
+            }
+            break;
+
+         case 'l':
+            if(_k.modAlt())
+            {
+               handleLoadSeqProject(false/*bTest*/);
+               return true;
+            }
+            break;
+
+         // // case VKEY_BACKSPACE:
+         // // case VKEY_F3:
+         // //    if(_k.modShift())
+         // //    {
+         // //       trace "xxx PageAudio: VKEY_BACKSPACE/F3 (debug key repeat)";
+         // //       TKS.sleep(500);
+         // //       return true;
+         // //    }
+         // //    break;
+      }
+
+      if(0 == _k.mod)
+      {
+         switch(_k.pressed)
+         {
+            case 't':
+               showInstrumentTracks();
+               return true;
+
+            case VKEY_ESCAPE:
+               showInstrumentTracks();
+               return true;
+
+            case 'n':
+               f_audiotracks.handleAddTrack();
+               af <= f_audiotracks.getSelectedTrackForm();
+               af.tf_name.onTabFocus();
+               return true;
+
+            case VKEY_UP:  // not reachable ?!
+               f_audiotracks.handleSelectPreviousTrack();
+               return true;
+
+            case VKEY_DOWN:  // not reachable ?!
+               f_audiotracks.handleSelectNextTrack();
+               return true;
+
+            case VKEY_SPACE:
+               if(Audio.IsAnyTempSamplePlaying())
+                  f_audiotracks.stopClip();
+               else
+                  f_audiotracks.playClip();
+               return true;
+         }
+
+      }
+
+      switch(_k.pressed)
+      {
+         case '.'  // macOS style (cmd-., lctrl-., ..)
+            showPrefsDialog();
+            return true;
+
+         case 'n':
+            if(_k.modShiftOnly())
+            {
+               af <= f_audiotracks.getSelectedTrackForm();
+               if(null != af)
+               {
+                  af.tf_name.onTabFocus();
+               }
+               return true;
+            }
+            break;
+
+         case VKEY_F2:
+            showInstrumentTracks();
+            return true;
+
+         case '2':
+            if(_k.modCtrl())
+            {
+               showInstrumentTracks();
+               return true;
+            }
+            break;
+
+         case VKEY_F3:
+            root_form.pg_project.handleEditFocusTrack();
+            return true;
+
+         case '3':
+            if(_k.modCtrl())
+            {
+               root_form.pg_project.handleEditFocusTrack();
+               return true;
+            }
+            break;
+
+         case VKEY_F1:
+         case VKEY_F5:
+            showSamples();
+            return true;
+
+         case '5':
+            if(_k.modCtrl())
+            {
+               showSamples();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      int numValid;
+
+      // trace "xxx PageAudio::consumeAction: acName=\""+acName+"\".";
+
+      switch(@(ap))
+      {
+         case @(bt_purge_cache):
+            CLAP.FreeInstancePoolsAndBundles(false/*bForceUnloadBundles*/);
+            VST2.FreeInstancePools();
+            Global.Print("Clear plugin caches");
+            return true;
+
+         case @(bt_reload_voice_plugins):
+            handleReloadVoicePlugins();
+            return true;
+
+         case @(bt_asiocontrolpanel):
+            showASIOControlPanel();
+            return true;
+
+         case @(bt_prefs):
+            showPrefsDialog();
+            return true;
+
+         case @(bt_edit_cfg):
+            handleEditConfig();
+            return true;
+
+         case @(bt_edit_local_cfg):
+            handleEditLocalConfig();
+            return true;
+
+         case @(cb_processwhenmuted):
+            handleProcessWhenMutedChanged();
+            return true;
+
+         case @(cb_processeffectwhenmuted):
+            handleProcessEffectWhenMutedChanged();
+            return true;
+
+         case @(cb_autohidevsteditors):
+            STConfig.b_auto_hide_plugin_editors = cb_autohidevsteditors.isSelected();
+            Global.Print("Auto-hide VST windows is "+Utils.GetEnableString(STConfig.b_auto_hide_plugin_editors));
+            return true;
+
+         case @(cb_fx):
+            b_bypass_all_fx = !cb_fx.isSelected();
+            Global.Print("FX are "+Utils.GetEnableString(!b_bypass_all_fx));
+            return true;
+
+         case @(cb_dock):
+            handleWindowDockChanged();
+            return true;
+
+         case @(bt_init):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleInitProject();
+            }
+            else
+            {
+               Global.Warning("Init project: ignoring click, use hold-click to init !");
+            }
+            return true;
+
+         case @(bt_loadseqproj):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               // (todo) show file requester instead
+               // // handleLoadSeqProject(true/*bTest*/);
+               root_form.handleManualLoad();
+            }
+            else
+            {
+               handleLoadSeqProject(false/*bTest*/);
+            }
+            return true;
+
+         case @(bt_instr_tracks):
+            showInstrumentTracks();
+            return true;
+
+         case @(bt_instr_curtrack):
+            PageProject pgProject <= root_form.pg_project;
+            boolean bMiddleClick = (Button.ACTION_MIDDLE_CLICK == acName);  // acName's rewritten after handleEditFocusTrack()
+            pgProject.handleEditFocusTrack();
+            if(bMiddleClick)
+            {
+               pgProject.handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
+            }
+            return true;
+
+         case @(bt_samples):
+            showSamples();
+            return true;
+
+         case @(bt_create):
+            showSamplesMenu();
+            return true;
+
+         case @(pm_samples):
+            Global.Debug("pm_samples acName="+acName);
+
+            if(acName <= "samples_create_audioclip_")
+            {
+               handleSamplesCreateAudioClipFromSelection(current_project.getTrackByIdx(acName.replace("samples_create_audioclip_", "")));
+               // pageFocusDefault();
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close samples menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "samples_create_timeline_clip_from_selection":
+                  handleSamplesCreateNewFromSelection(true/*bSwitchToSamples*/,
+                                                      true/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                      );
+                  return true;
+
+               case "samples_create_from_selection":
+                  handleSamplesCreateNewFromSelection(true/*bSwitchToSamples*/,
+                                                      false/*bAudioClip*/, current_project.bpm/*audioClipBPMOr0*/
+                                                      );
+                  return true;
+
+               case "samples_create_from_zones":
+                  handleSamplesCreateNewFromZones(true/*bSwitchToSamples*/);
+                  return true;
+
+               case "samples_create_from_zones_layered_alt":
+                  handleSamplesCreateNewFromZonesLayeredAlt(true/*bSwitchToSamples*/);
+                  return true;
+
+               case "samples_create_from_zones_tuned_multisample":
+                  handleSamplesCreateNewFromZonesTunedMultisample(true/*bSwitchToSamples*/);
+                  return true;
+
+               case "samples_create_granular_from_selection":
+                  handleSamplesCreateNewGranularFromSelection(true/*bSwitchToSamples*/);
+                  return true;
+
+            }
+            return true;
+
+         case @(bt_rescan):
+            showRescanMenu();
+            return true;
+
+         case @(pm_rescan):
+            Global.Debug("pm_rescan acName="+acName);
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close rescan menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "rescan_samples":
+                  Samples.RescanSamples();
+                  return true;
+
+               case "rescan_clap":
+                  numValid = CLAP.RescanAllPlugins();
+                  if(numValid > 0)
+                     Global.Success("rescan_clap: found "+numValid+" valid plugin"+Utils.GetPluralString(numValid));
+                  else
+                     Global.Error("rescan_clap: no valid plugins found");
+                  return true;
+
+               case "rescan_vst2":
+                  numValid = VST2.RescanAllPlugins();
+                  if(numValid > 0)
+                     Global.Success("rescan_vst2: found "+numValid+" valid plugin"+Utils.GetPluralString(numValid));
+                  else
+                     Global.Error("rescan_vst2: no valid plugins found");
+                  return true;
+            }
+            return true;
+
+         case @(bt_export):
+            showExportMenu();
+            return true;
+
+         case @(pm_export):
+            Global.Debug("pm_export acName="+acName);
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close export menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "export_mod":
+                  current_project.b_force_static_samples = false;
+                  handleExportMod();
+                  return true;
+
+               case "export_mod_project_dir":
+                  current_project.b_force_static_samples = false;
+                  handleExportModToEurekaSamplesDir();
+                  return true;
+
+               case "export_tsr":
+                  current_project.b_force_static_samples = false;
+                  handleExportTSR();
+                  return true;
+
+               case "export_tsr_force_static":
+                  current_project.b_force_static_samples = true;
+                  handleExportTSR();
+                  return true;
+
+               case "export_syn":
+                  current_project.b_force_static_samples = false;
+                  handleExportSYN();
+                  return true;
+
+               case "export_syn_force_static":
+                  current_project.b_force_static_samples = true;
+                  handleExportSYN();
+                  return true;
+            }
+            return true;
+      }
+
+      return Page::consumeAction(_ac);
+   }
+
+}

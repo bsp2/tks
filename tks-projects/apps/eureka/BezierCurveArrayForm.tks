@@ -1,0 +1,541 @@
+// ----
+// ---- file   : BezierCurveArrayForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 27Mar2018
+// ---- changed: 29Mar2018, 28Dec2018, 29Dec2018, 08Jun2019, 09Jun2019, 10Jun2019, 21Sep2019
+// ----          06Nov2019, 07Jul2020, 10Aug2020, 13Aug2020, 20Aug2020, 19Feb2023, 02Nov2023
+// ----          23Dec2023, 14Feb2024, 25Apr2024, 15Sep2024, 21Sep2024, 03Oct2024, 05Dec2024
+// ----          28Dec2024, 11Jan2025, 14Jan2025
+// ----
+// ----
+// ----
+
+module MBezierCurveArrayForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class BezierCurveArrayForm extends Form, ActionProvider {
+   // (note) used by CycleCurveDialog
+
+   define String ACTION_CURVE_EDITED;
+   define String ACTION_CURVE_SAVED;
+   define String ACTION_CURVE_MAXIMIZE;
+   define String ACTION_CURVE_MINIMIZE;
+   define String ACTION_CURVE_RES;
+   define String ACTION_CURVE_IMPORT;
+   define String ACTION_CURVE_CLICK;
+   define String ACTION_CURVE_TAB;
+
+   define String TA_SYNC;
+   protected TimerAction *ta_sync;  // delayed syncMirrorEnvs()
+
+   protected XMLForm *xfm;
+
+   protected Button *bt_copy;
+   protected Button *bt_paste;
+
+   protected Button *bt_zoom;
+
+   public BezierEdit *be_env;
+
+   protected CyclePatch *cycle_patch;  // used for updating last loaded preset name. may be null.
+   protected int         cycle_curve_idx;
+
+   protected Panel    *pn_preset;
+   protected Label    *lb_name;
+   protected ComboBox *cm_preset;
+   protected Button   *bt_preset_load;
+   protected CheckBox *cb_preset_autoload;
+   protected Button   *bt_preset_save;
+
+   protected FloatParam *fp_exp;
+   protected FloatParam *fp_res;
+   protected Button     *bt_import;
+
+
+   BezierEditState *env_state;
+   Envelope        *env;
+
+   static BezierEditState default_env_state;
+   static Envelope default_env;
+
+   static String *mtx_named_recalc;
+   static Mutex mtx_recalc;
+
+   String last_preset_name;
+   protected SaveBezierCurveArrayPresetDialog *dlg_preset_save;
+
+   boolean b_enable_copypaste_keys;
+
+   boolean b_maximized;
+
+
+   // <ui_init.png>
+   public method initBezierCurveArrayForm(float _reqLabelW) : boolean {
+
+      initForm();
+
+      xfm <= XMLForm.New_PakFile("BezierCurveArrayForm.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      ta_sync <= TimerAction.New(TA_SYNC, this, 50);
+
+      be_env.setEnableProvideClick(true);
+
+      be_env.setEnableLockFirstLastX(true);
+      be_env.setEnvelope(env);
+
+      be_env.clearCtlPoints();
+      be_env.addCtlPoint(0.0,0.0, 0.333, 0.333, 0.666, 0.666);
+      be_env.addCtlPoint(1.0,1.0, 0.0,0.0, 0.0,0.0);
+      be_env.recalc(false/*bAction*/);
+      be_env.addScaleTblOffY(-3);
+      be_env.saveState(default_env_state);
+      be_env.mtx_recalc <= mtx_recalc;
+      be_env.saveResetScaleXY();
+      be_env.setEnableProvideTab(true);
+      be_env.setEnableAllowWASDKeys(false);
+      // trace "[dbg] BezierCurveArrayForm: default state has "+default_env_state.getNumSegments()+" segments";
+
+      addLayer(xfm, Layout.CENTER);
+
+      b_enable_copypaste_keys = true;
+
+      b_maximized = false;
+
+      if(_reqLabelW > 0)
+         lb_name.setRequiredSizeX(_reqLabelW);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_CURVE_EDITED,
+              ACTION_CURVE_SAVED,
+              ACTION_CURVE_MAXIMIZE,
+              ACTION_CURVE_MINIMIZE,
+              ACTION_CURVE_RES,
+              ACTION_CURVE_IMPORT,
+              ACTION_CURVE_CLICK,
+              ACTION_CURVE_TAB,
+              ];
+   }
+
+   // <method_set.png>
+   public method setEnableCopyPasteKeys(boolean _bEnable) {
+      b_enable_copypaste_keys = _bEnable;
+   }
+
+   // <ui_focus.png>
+   public method focusBezierEdit() {
+      UI.SetKeyboardFocus(be_env);
+      UI.SetMouseFocus(be_env);
+      UI.RedrawAll();
+   }
+
+   // <ui_focus.png>
+   public method refocusDefault() {
+      focusBezierEdit();
+   }
+
+   // <method.png>
+   public static InitLinearEnv(BezierEditState _be, Envelope _env) {
+      local BezierEdit be;  // (todo) a bit heavyweight for this purpose, might optimize this later
+      be.initBezierEdit();
+      be.setEnableLockFirstLastX(true);
+      be.setEnvelope(_env);
+      be.clearCtlPoints();
+      be.addCtlPoint(0.0,0.0, 0.333, 0.333, 0.666, 0.666);
+      be.addCtlPoint(1.0,1.0, 0.0,0.0, 0.0,0.0);
+      be.recalc(false/*bAction*/);
+      be.resetZoom();
+      be.addScaleTblOffY(-3);
+      be.saveState(_be);
+      // trace "xxx _be.recursion_limit="+_be.recursion_limit;
+   }
+
+   // <method.png>
+   public static CalcEnv(BezierEditState _be, Envelope _env) {
+      // called by SynthPatch::loadCurves()
+      local BezierEdit be;  // (todo) a bit heavyweight for this purpose, might optimize this later
+      be.initBezierEdit();
+      be.unsetCurrentState();
+      be.loadState(_be);
+      be.setEnvelope(_env);
+      be.recalc(false/*bAction*/);
+   }
+
+   // <method.png>
+   static LockRecalcMutex() {
+      if(null != mtx_named_recalc)
+         TKS.lockNamedMutex(mtx_named_recalc);
+      else
+         mtx_recalc.lock();
+   }
+
+   // <method.png>
+   static UnlockRecalcMutex() {
+      if(null != mtx_named_recalc)
+         TKS.unlockNamedMutex(mtx_named_recalc);
+      else
+         mtx_recalc.unlock();
+   }
+
+   // <ui_show.png>
+   public method showCurve(String          _name,
+                           BezierEditState _envState,
+                           Envelope        _env,
+                           String          _mtxNamedRecalc,  // e.g. "replay"
+                           CyclePatch      _cyclePatchOrNull,
+                           int             _cycleCurveIdx
+                           ) : BezierEdit {
+
+      env_state <= _envState;
+      env <= _env;
+
+      cycle_patch     <= _cyclePatchOrNull;
+      cycle_curve_idx  = _cycleCurveIdx;
+
+      lb_name.setCaption(_name);
+
+      mtx_named_recalc <= deref _mtxNamedRecalc;
+      be_env.mtx_named_recalc <= mtx_named_recalc;
+
+      be_env.unsetCurrentState();
+      be_env.loadState(_envState);
+      be_env.setEnvelope(_env);
+
+      be_env.b_draw_tabfocus_border = false;//app_lnf.b_bezieredit_draw_tabfocus_border;
+
+      fp_exp.setValue(env_state.out_exponent);
+
+      updateCurvePresetOptions(false/*bForceRescan*/);
+      if(null != cycle_patch)
+      {
+         String sPresetName <= cycle_patch.getCurvePresetNameByIdx(cycle_curve_idx);
+         if(null != sPresetName && !sPresetName.isBlank())
+         {
+            cm_preset.setSelectedOptionByName(sPresetName);
+            last_preset_name = sPresetName;
+         }
+         else
+         {
+            cm_preset.setSelectedOption(0/*"-"*/);
+            last_preset_name = "";
+         }
+      }
+      pn_preset.relayout();
+
+      b_maximized = false;
+
+      return be_env;
+   }
+
+   // <method_set.png>
+   public method setRes(int _res) {
+      fp_res.setValue(_res);
+   }
+
+   // <method_get.png>
+   public method getRes() : int {
+      return fp_res.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handleExponentChanged() {
+      float f = fp_exp.getFloatValue();
+      be_env.out_exponent = f;
+      env_state.out_exponent = f;
+      Global.Print("Exponent is "+be_env.out_exponent);
+
+      ta_sync.schedule();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_EDITED), this));
+   }
+
+   // <method.png>
+   public method addBezierOverlay(Layer _d) {
+      _d.addOverlay(be_env);
+   }
+
+   // <method.png>
+   public method removeBezierOverlay(Layer _d) {
+      _d.removeOverlay(be_env);
+   }
+
+   // <ui_hide.png>
+   public method stopEditing() {
+      be_env.saveCurrentState();
+      ta_sync.cancel();
+   }
+
+   // <method.png>
+   protected =replay= method syncMirrorEnvs() {
+      be_env.saveCurrentState();
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      Global.Debug("BezierCurveArrayForm::handleCopy");
+      BezierEditState cb <= Global.GetOrCreateBezierEditClipboard();
+      cb = env_state;
+      Global.Print("Copy curve to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+
+      BezierEditState cb <= Global.GetBezierEditClipboard();
+      if(null == cb)
+      {
+         Global.Warning("BezierCurveArrayForm: clipboard is empty");
+         return;
+      }      
+
+      Global.Debug("BezierCurveArrayForm::handlePaste");
+
+      env_state = cb;
+
+      be_env.unsetCurrentState();
+      be_env.loadState(env_state);
+      be_env.setEnvelope(env);
+
+      syncMirrorEnvs();
+
+      be_env.redraw();
+
+      Global.Print("Paste curve from clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleMaximize() {
+      b_maximized = !b_maximized;
+      if(b_maximized)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_MAXIMIZE), this));
+      else
+         provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_MINIMIZE), this));
+   }
+
+   // <method.png>
+   public method updateCurvePresetOptions(boolean _bForceRescan) {
+      cm_preset.setOptions(Global.GetOrScanCurvePresetFilenames(_bForceRescan));
+      pn_preset.relayout();
+      cm_preset.setToolTipCaption("Curve Preset\n\n (note) dir=\""+STConfig.curve_rootpath+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method saveCurvePreset1() {
+      dlg_preset_save <= new SaveBezierCurveArrayPresetDialog;
+      dlg_preset_save.run(this);
+   }
+
+   // <ui_handle.png>
+   public method saveCurvePreset2(String _presetName) {
+      _presetName.trim();
+      _presetName = Utils.ConvertToFileName(_presetName);
+      local String pathName = STConfig.curve_rootpath+"/"+_presetName+".curve";
+      local File f;
+      if(f.openLocal(Utils.ToNativePathName(pathName), IOS_OUT))
+      {
+         be_env.saveCurrentState();
+         f << env_state;
+         f.close();
+
+         last_preset_name = _presetName;
+
+         if(null != cycle_patch)
+            cycle_patch.setCurvePresetNameByIdx(cycle_curve_idx, _presetName);
+
+         updateCurvePresetOptions(true/*bForceRescan*/);
+         cm_preset.setSelectedOptionByName(_presetName);
+
+         Global.Success("Save preset \""+_presetName+"\"");
+         provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_SAVED), this));
+      }
+      else
+      {
+         Global.Error("Save preset: failed to open preset file \""+Utils.ToNativePathName(pathName)+"\"");
+      }
+   }
+
+   // <load.png>
+   protected method loadCurvePreset() : boolean {
+      local String presetName <= cm_preset.getSelectedOptionName();
+      if("-" != presetName)
+      {
+         local String fileName = STConfig.curve_rootpath+"/"+presetName+".curve";
+
+         Global.Debug("BezierCurveArrayForm::loadCurvePreset: fileName=\""+fileName+"\"");
+
+         local File f;
+         if(f.openLocal(Utils.ToNativePathName(fileName), IOS_IN))
+         {
+            last_preset_name = presetName;
+
+            env_state << f;
+            f.close();
+
+            if(null != cycle_patch)
+               cycle_patch.setCurvePresetNameByIdx(cycle_curve_idx, presetName);
+
+            be_env.unsetCurrentState();
+            be_env.loadState(env_state);
+            be_env.setEnvelope(env);
+            syncMirrorEnvs();
+
+            Global.Success("Load curve preset from \""+Utils.ToNativePathName(fileName)+"\"");
+            redraw();
+            return true;
+         }
+         else
+         {
+            Global.Error("Failed to open curve file \""+Utils.ToNativePathName(fileName)+"\"");
+         }
+      }
+      else
+      {
+         if(null != cycle_patch)
+            cycle_patch.setCurvePresetNameByIdx(cycle_curve_idx, "");
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx BezierCurveArrayForm::onKey: k.pressed="+_k.pressed;
+
+      switch(_k.pressed)
+      {
+         case 'c':
+            if(b_enable_copypaste_keys)
+            {
+               if(_k.modCtrl())
+               {
+                  handleCopy();
+                  return true;
+               }
+            }
+            break;
+
+         case 'v':
+            if(b_enable_copypaste_keys)
+            {
+               if(_k.modCtrl())
+               {
+                  handlePaste();
+                  return true;
+               }
+            }
+            break;
+
+         case 'e':
+            if(0 == _k.mod)
+            {
+               handleToggleMaximize();
+               return true;
+            }
+            break;
+      }
+      return Form::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_SYNC == acName)
+      {
+         syncMirrorEnvs();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_copy):
+            handleCopy();
+            return true;
+
+         case @(bt_paste):
+            handlePaste();
+            return true;
+
+         case @(bt_zoom):
+            handleToggleMaximize();
+            return true;
+
+         case @(be_env):
+            if(BezierEdit.ACTION_RECALC == acName)
+            {
+               ta_sync.schedule();
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_EDITED), this));
+            }
+            else if(BezierEdit.ACTION_CLICK == acName)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_CLICK), this));
+            }
+            else if(BezierEdit.ACTION_TAB == acName)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_TAB), this));
+            }
+            return true;
+
+         case @(cm_preset):
+            if(cb_preset_autoload.isSelected())
+            {
+               loadCurvePreset();
+               ta_sync.schedule();
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_EDITED), this));
+            }
+            return true;
+
+         case @(bt_preset_load):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               updateCurvePresetOptions(true/*bForceRescan*/);
+            }
+            else
+            {
+               loadCurvePreset();
+               ta_sync.schedule();
+               provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_EDITED), this));
+            }
+            return true;
+
+         case @(cb_preset_autoload):
+            Global.Print("Auto-load curve preset is "+Utils.GetEnableString(cb_preset_autoload.isSelected()));
+            return true;
+
+         case @(bt_preset_save):
+            saveCurvePreset1();
+            return true;
+
+         case @(fp_exp):
+            handleExponentChanged();
+            return true;
+
+         case @(fp_res):
+            provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_RES), this));
+            return true;
+
+         case @(bt_import):
+            provideAction(Action.New(getProvidedActionAlias(ACTION_CURVE_IMPORT), this));
+            return true;
+      }
+
+      return Form::consumeAction(_action);
+   }
+
+}

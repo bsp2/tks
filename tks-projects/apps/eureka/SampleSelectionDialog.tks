@@ -1,0 +1,252 @@
+// ----
+// ---- file   : SampleSelectionDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2024-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 31Dec2024
+// ---- changed: 04Jan2025, 19May2025
+// ----
+// ----
+// ----
+
+module MSampleSelectionDialog;
+
+use namespace ui;
+
+
+// <class.png>
+class SampleSelectionDialog extends Dialog, ActionProvider {
+
+   define String ACTION_OK;
+   define String ACTION_CANCEL;
+
+   protected XMLForm *xfm;
+
+   protected TableView         *tv_sel;
+   protected SampleSelectionTM *tm_sel;
+
+   protected TextView *tx_info;
+
+   protected Button *bt_ok;
+   protected Button *bt_cancel;
+
+   protected ActionConsumer *recipient;
+
+   protected Sample *[] samples;
+
+
+   // <ui_init.png>
+   public method initSampleSelectionDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleSelectionDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      tm_sel <= new SampleSelectionTM;
+      tm_sel.samples <= samples;
+      tm_sel.initTableModel();
+      tv_sel.setTableModel(tm_sel);
+
+      initWindow(xfm,
+                 "Remove unreferenced samples",
+                 100, 100,
+                 500*UI.font_scaling, 400*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OK, ACTION_CANCEL];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSampleSelectionDialog(PointerArray _samples, String _sTitle, String _sOkCaption, ActionConsumer _recipient) {
+
+      samples = _samples;
+      recipient <= _recipient;
+
+      bt_ok.setCaption(_sOkCaption);
+
+      tv_sel.tableModelChanged();
+
+      setWindowTitle(_sTitle);
+
+      show();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(tv_sel);
+      layers.add(bt_ok);
+      layers.add(bt_cancel);
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+      relayout();
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      resizeAtLeastToMinimum();
+      tv_sel.moveCursorToFirstRow();
+      tv_sel.selectAll();
+      UI.SetKeyboardFocus(tv_sel);
+   }
+
+   // <method_get.png>
+   public method getSelectedSamples() : PointerArray {
+      local PointerArray ret;
+      if(samples.numElements > 0)
+      {
+         local IntArray rows = tm_sel.getSelectedRows();
+         if(0 == rows.numElements)
+            rows.add(tm_sel.getCursorIndex());
+
+         int rowIdx;
+         foreach rowIdx in rows
+         {
+            ret.add(samples.get(rowIdx));
+         }
+      }
+      return deref ret;
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         Utils.SaveGeometry(this, STConfig.pgsample_sampleselection_geo_hidpi);
+      else
+         Utils.SaveGeometry(this, STConfig.pgsample_sampleselection_geo_lodpi);
+
+      Dialog::hide();
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_CANCEL), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleOk() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_OK), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdateInfoText() {
+      int idx = tm_sel.getCursorIndex();
+      if(-1 != idx)
+      {
+         Sample s <= samples.get(idx);
+         if(null != s)
+         {
+            tx_info.setText(s.description);
+            return;
+         }
+      }
+      tx_info.setText("");
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleOk();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      // trace "xxx SampleSelectionDialog: got action name="+name;
+
+      switch(acName)
+      {
+         case "ok":
+            handleOk();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(tv_sel):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               // // handleOk();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleUpdateInfoText();
+            }
+            return true;
+
+         case @(bt_ok):
+            handleOk();
+            return true;
+
+         case @(bt_cancel):
+            handleCancel();
+            return true;
+      }
+
+      return true;
+   }
+
+}

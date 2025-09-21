@@ -1,0 +1,652 @@
+// ----
+// ---- file   : GenericParamDialogSTFX.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 21Apr2023
+// ---- changed: 29Jul2023, 04Oct2023, 30Oct2023, 04Nov2023, 11Nov2023, 04Jul2024, 10Aug2024
+// ----          17Sep2024, 27Sep2024
+// ----
+// ----
+// ----
+
+module MGenericParamDialogSTFX;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class GenericParamDialogSTFX extends Dialog {
+
+   // max params simultaneously displayed in UI (dialog height)
+   define int MAX_DISPLAYED_PARAMS = 21;
+
+   define int MAX_VISIBLE_PARAMS = 500;
+
+   protected XMLForm *xfm;
+
+   protected StPluginInfo   *info;
+   protected StPluginShared *shared;
+
+   protected ModSTFX *mod_or_null;     // when editing lane module
+   protected Sample  *sample_or_null;  // when editing sample voice plugin
+
+   protected StringArray param_names;
+   protected IntArray widget_to_param_map;  // filtered to unfiltered mapping table
+
+   protected ScrollPane *sp_params;
+   protected SizeGroupX *sgx_lb_nr;
+   protected SizeGroupX *sgx_lb_group;
+   protected SizeGroupX *sgx_lb_name;
+   protected SizeGroupX *sgx_bt_a;
+   protected Panel      *pn_params;
+
+   protected Slider *[]     pa_sliders;
+   protected FloatParam *[] pa_floatparams;
+   protected Button *[]     pa_bt_a;
+   protected Button *[]     pa_lbt_name;
+   protected Button *[]     pa_lbt_group;
+   protected Button *[]     pa_lbt_nr;
+
+   protected int last_selected_param_idx;  // -1=unknown
+
+   static SamplePluginArrayDialog *dlg_array;
+
+
+   // <ui_init.png>
+   public method initGenericParamDialogSTFX() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("GenericParamDialogSTFX.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Generic Param Editor (STFX)",
+                 140, 140,
+                 480*UI.font_scaling, 310*UI.font_scaling
+                 );
+
+      sgx_lb_nr    <= new SizeGroupX;
+      sgx_lb_group <= new SizeGroupX;
+      sgx_lb_name  <= new SizeGroupX;
+      pn_params.addSizeGroup("sgx_lb_nr",    sgx_lb_nr);
+      pn_params.addSizeGroup("sgx_lb_group", sgx_lb_group);
+      pn_params.addSizeGroup("sgx_lb_name",  sgx_lb_name);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   protected method getContextString() : String {
+      if(null != mod_or_null)
+         return mod_or_null.getName();   // getUniqueIDString() ?
+      else if(null != sample_or_null)
+         return "sample=\""+sample_or_null.unique_name+"\" id=\""+info.id+"\"";
+      return "id=\""+info.id+"\"";  // unreachable
+   }
+
+   // <ui_show.png>
+   public method showGenericParamDialogSTFX(StPluginInfo _info, StPluginShared _shared, ModSTFX _modSTFXOrNull, Sample _sampleOrNull) {
+
+      info   <= _info;
+      shared <= _shared;
+
+      mod_or_null    <= _modSTFXOrNull;
+      sample_or_null <= _sampleOrNull;      
+
+      createParamWidgets();
+
+      float sy = mathMini(MAX_DISPLAYED_PARAMS, widget_to_param_map.numElements) * (FloatParam.GetMinSizeY()+4+2*UI.pad_scaling);
+      Global.Debug("showGenericParamDialogSTFX: sy="+sy);
+      setWindowContentSizeY(sy);
+      relayout();
+      handleResize();
+
+      setWindowTitle("Generic Param Editor (STFX): "+getContextString());
+
+      recursiveBuildTabCycleLists();
+
+      showNearMouse(25*UI.font_scaling, -68*UI.font_scaling);
+
+      last_selected_param_idx = -1;
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+      resizeAtLeastToMinimum();
+      validateClippedPosition();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      if(sample_or_null)
+      {
+         // called from SamplePluginForm, update it
+         PageSample pgSample <= root_form.pg_sample;
+         pgSample.handlePluginEditorWindowClosed();
+      }
+   }
+
+   // // <method.png>
+   // protected method filterParamNames(StringArray _allParamNames, StringArray _retParamNames) : boolean {
+   //    widget_to_param_map.identity(_allParamNames.numElements);
+   //    return false;
+   // }
+
+   // <ui_init.png>
+   protected method createParamWidgets() {
+      local StringArray *paramNames;
+      local StringArray allParamNames;
+      ModSTFX.GetSharedParamNamesArray(shared, allParamNames);
+
+      // if(!filterParamNames(allParamNames, paramNames))
+           paramNames <= allParamNames;
+
+      widget_to_param_map.identity(allParamNames.numElements);
+
+      pn_params.removeChildren();
+      pa_sliders.empty();
+      pa_floatparams.empty();
+
+      int numVisibleParams = paramNames.numElements;
+      Global.Debug("GenericParamDialogSTFX::createParamWidgets: show "+numVisibleParams+" / "+allParamNames.numElements+" param(s)");
+
+      if(numVisibleParams <= MAX_VISIBLE_PARAMS)
+      {
+         String *paramName;
+         local int visibleParamIdx = 0;
+         local String lastSectionName <= null;
+         foreach paramName in paramNames
+         {
+            local Integer paramIdx = widget_to_param_map[visibleParamIdx];
+            float paramVal = ModSTFX.GetSharedParamValue(shared, paramIdx);
+            // Global.Debug("createParamWidgets: param["+paramIdx+"] name=\""+paramName+"\" val="+paramVal);
+            float paramResetVal = ModSTFX.GetSharedParamResetValue(info, paramIdx);
+            boolean bArray = (info.getArrayParamSize(paramIdx) > 0);
+            int groupIdx = info.getParamGroupIdx(paramIdx);
+            String groupName <= info.getParamGroupName(groupIdx);
+            int sectionIdx = info.getParamSectionIdx(paramIdx);
+            local String sectionName <= info.getParamSectionName(sectionIdx);
+
+            Panel *p;
+            Label *lb;
+            Button *lbt;
+
+            // Section divider
+            if(sectionName != lastSectionName)
+            {
+               p <= Panel.New();
+               p.setPadding4f(3,0,1,0);
+               p.setEnableFillBackground(false);
+               lb <= Label.New();
+               lb.setCaption(sectionName);
+               lb.setFontByName("big9");
+               lb.setEnableCaptionDim(false);
+               lb.setTextPlacement(Layout.LEFT);
+               lb.setAlignment(Layout.LEFT);
+               p.addLayer(deref lb, Layout.LEFT);
+               pn_params.addLayer(deref p, Layout.BOTTOM);
+               lastSectionName <= deref sectionName;
+            }
+
+            p <= Panel.New();
+            p.setAlignment(Layout.EXPANDX);
+
+            // FloatParam / Dial
+            FloatParam fp <= FloatParam.New();
+            fp.setDisplayType(FloatParam.DISPLAY_PERCENT);
+            fp.setStepCoarse(0.002);
+            fp.setStepFine(0.0001);
+            fp.setMinMaxValues(0, 1);
+            fp.setResetValue(paramResetVal);
+            fp.setValue(paramVal);
+            fp.setPrecision(5);
+            fp.setAlignment(Layout.CENTERY);
+
+            local StringArray presetNames;
+            local FloatArray  presetValues <= shared.queryDynamicParamPresetValues(paramIdx);
+            // trace "xxx paramIdx="+paramIdx+" presetValues="+presetValues;
+            if(null != presetValues && presetValues.numElements > 0)
+            {
+               presetNames.empty();
+               int presetIdx = 0;
+               loop(presetValues.numElements)
+                  presetNames.add(shared.queryDynamicParamPresetName(paramIdx, presetIdx++));
+               // Global.Debug2("SamplePluginForm::handleSelectPluginSlot: paramIdx="+paramIdx+" presetNames="+presetNames);
+               fp.setPresetOptions(presetValues, presetNames);
+            }
+            else
+            {
+               fp.setPresetOptions(null, null);
+            }
+
+            p.addLayer(deref fp, Layout.LEFT);
+            pa_floatparams.add(fp);
+
+            // Slider
+            Slider sl <= Slider.New(0/*min*/, 1/*max*/, paramVal, 0.002/*step*/);
+            // // sl.setEnableFlatHighContrast(true);
+            sl.setLookAndFeel(LookAndFeel.LIGHT);
+            sl.setLayerStyle(LookAndFeel.STYLE_BEVEL);
+            sl.setEnableAdaptiveKnobSize(false);
+            sl.setResetValue(paramResetVal);
+            sl.setLayoutWeightX(1.0);
+            sl.setAlignment(Layout.CENTERY | Layout.EXPANDX);
+
+            p.addLayer(deref sl, Layout.LEFT);
+            pa_sliders.add(sl);
+
+            // Array-edit button
+            if(bArray)
+            {
+               Button btA <= Button.New();
+               btA.setCaption("a");
+               btA.setTextPlacement(Layout.LEFT);
+               btA.setAlignment(Layout.CENTERY);
+               btA.setSizeGroup(sgx_bt_a);
+               p.addLayer(deref btA, Layout.LEFT);
+               pa_bt_a.add(btA);
+            }
+            else
+            {
+               // Not an array param
+               Spacer spcA <= Spacer.New();
+               spcA.setSizeGroup(sgx_bt_a);
+               p.addLayer(deref spcA, Layout.LEFT);
+               pa_bt_a.add(null);
+            }
+
+            // Label (caption)
+            lbt <= Button.New();
+            lbt.setEnableLabelButton(true);
+            if(null != sectionName && paramName <= (sectionName+"_"))
+               lbt.setCaption(paramName.replace(sectionName+"_", ""));
+            else
+               lbt.setCaption(paramName);
+            lbt.setEnableCaptionDim(true);
+            lbt.setTextPlacement(Layout.LEFT);
+            lbt.setAlignment(Layout.CENTERY);
+            lbt.setSizeGroup(sgx_lb_name);
+            lbt.setToolTipCaption("Press r to randomize parameter "+paramIdx+" (\""+paramName+"\")");
+            p.addLayer(deref lbt, Layout.LEFT);
+            pa_lbt_name.add(lbt);
+
+            // Label (group)
+            lbt <= Button.New();
+            lbt.setEnableLabelButton(true);
+            if(null != groupName && !groupName.isBlank())
+               lbt.setCaption(" ["+groupName+"] ");
+            else
+               lbt.setCaption("");
+            lbt.setTextPlacement(Layout.LEFT);
+            lbt.setAlignment(Layout.CENTERY);
+            lbt.setSizeGroup(sgx_lb_group);
+            lbt.setForegroundTint(#30ffffff);
+            lbt.setToolTipCaption("Press lshift-r to randomize all params in group \""+groupName+"\"\n (note) lctrl-lshift-r randomizes all param groups");
+            p.addLayer(deref lbt, Layout.LEFT);
+            pa_lbt_group.add(lbt);
+
+            // Label (nr)
+            lbt <= Button.New();
+            lbt.setEnableLabelButton(true);
+            lbt.setEnableCaptionDim(true);
+            lbt.setCaption(paramIdx.printf("%3d")+":");
+            lbt.setTextPlacement(Layout.RIGHT);
+            lbt.setAlignment(Layout.CENTERY);
+            lbt.setSizeGroup(sgx_lb_nr);
+            lbt.setToolTipCaption("Press r to randomize parameter "+paramIdx);
+            p.addLayer(deref lbt, Layout.LEFT);
+            pa_lbt_nr.add(lbt);
+
+            pn_params.addLayer(deref p, Layout.BOTTOM);
+
+            // Next param
+            visibleParamIdx++;
+         }
+      }
+      else
+      {
+         Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+") "+getContextString());
+      }
+   }
+
+   // <method.png>
+   protected method markAsModified() {
+      if(null != sample_or_null)
+         sample_or_null.markParamsAsModified();
+      else
+         current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleSliderChanged(int _idx) {
+      FloatParam fp <= pa_floatparams.get(_idx);
+      Slider     sl <= pa_sliders.get(_idx);
+      float paramVal = sl.getValue();
+      fp.setValue(paramVal);
+      fp.redraw();
+      int paramIdx = widget_to_param_map[_idx];
+      local String *sValue;
+      if(null != mod_or_null)
+      {
+         mod_or_null.setSharedParamValue(paramIdx, paramVal);
+         sValue <= mod_or_null.getSharedParamValueString(paramIdx);
+      }
+      else
+      {
+         ModSTFX.SetSharedParamValue_Sync(shared, paramIdx, paramVal);  // Sample voiceplugin
+         sValue <= ModSTFX.GetSharedParamValueString(shared, paramIdx);
+      }
+      markAsModified();
+      Global.Print("Param "+paramIdx+" is "+paramVal+((null != sValue)?(" ("+sValue+")"):""));
+   }
+
+   // <ui_handle.png>
+   protected method handleFloatParamChanged(int _idx) {
+      FloatParam fp <= pa_floatparams.get(_idx);
+      Slider     sl <= pa_sliders.get(_idx);
+      float paramVal = fp.getValue();
+      sl.setValue(paramVal);
+      sl.redraw();
+      int paramIdx = widget_to_param_map[_idx];
+      local String *sValue;
+      if(null != mod_or_null)
+      {
+         mod_or_null.setSharedParamValue(paramIdx, paramVal);
+         sValue <= mod_or_null.getSharedParamValueString(paramIdx);
+      }
+      else
+      {
+         ModSTFX.SetSharedParamValue_Sync(shared, paramIdx, paramVal);  // Sample voiceplugin
+         sValue <= ModSTFX.GetSharedParamValueString(shared, paramIdx);
+      }
+      markAsModified();
+      Global.Print("Param "+paramIdx+" is "+paramVal+((null != sValue)?(" ("+sValue+")"):""));
+   }
+
+   // <ui_show.png>
+   protected method showArrayDialog(int _paramIdx) {
+      dlg_array <= new SamplePluginArrayDialog;
+      if(dlg_array.initSamplePluginArrayDialog())
+      {
+         dlg_array.showSamplePluginArrayDialog(sample_or_null/*sampleOrNull*/, shared, _paramIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleArrayEdit(int _idx) {
+      int paramIdx = widget_to_param_map[_idx];
+      showArrayDialog(paramIdx);
+      Global.Print("Show array editor (paramIdx="+paramIdx+")");
+   }
+
+   // <ui_handle.png>
+   protected method randomizeLastSelectedParam() {
+      int paramIdx = last_selected_param_idx;
+      if(0 <= paramIdx < info.numParams)
+      {
+         float paramVal = rand(1.0);
+         if(null != mod_or_null)
+            mod_or_null.setSharedParamValue(paramIdx, paramVal);
+         else
+            ModSTFX.SetSharedParamValue_Sync(shared, paramIdx, paramVal);  // Sample voiceplugin
+         markAsModified();
+
+         int visParamIdx = widget_to_param_map.indexOf(paramIdx, 0);
+         if(visParamIdx >= 0)
+         {
+            FloatParam fp <= pa_floatparams.get(visParamIdx);
+            fp.setValue(paramVal);
+
+            Slider sl <= pa_sliders.get(visParamIdx);
+            sl.setValue(paramVal);
+         }
+
+         Global.Print("Randomize param "+paramIdx+" to "+paramVal);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method randomizeLastSelectedParamGroup() {
+      int paramIdx = last_selected_param_idx;
+      if(0 <= paramIdx < info.numParams)
+      {
+         int groupIdx = info.getParamGroupIdx(last_selected_param_idx);
+         String groupName <= info.getParamGroupName(groupIdx);
+         if(null != groupName)
+         {
+            paramIdx = 0;
+            int numRand = 0;
+            loop(info.numParams)
+            {
+               if(info.getParamGroupIdx(paramIdx) == groupIdx)
+               {
+                  float paramVal = rand(1.0);
+                  if(null != mod_or_null)
+                     mod_or_null.setSharedParamValue(paramIdx, paramVal);  // also updates patch_data
+                  else
+                     ModSTFX.SetSharedParamValue_Sync(shared, paramIdx, paramVal);  // Sample voiceplugin
+
+                  int visParamIdx = widget_to_param_map.indexOf(paramIdx, 0);
+                  if(visParamIdx >= 0)
+                  {
+                     FloatParam fp <= pa_floatparams.get(visParamIdx);
+                     fp.setValue(paramVal);
+
+                     Slider sl <= pa_sliders.get(visParamIdx);
+                     sl.setValue(paramVal);
+                  }
+
+                  numRand++;
+               }
+
+               paramIdx++;
+            }
+
+            if(numRand > 0)
+            {
+               markAsModified();
+               Global.Print("Randomize "+numRand+" param"+Utils.GetPluralString(numRand)+" in group \""+groupName+"\"");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method randomizeAllParamGroups() {
+      int numRand = 0;
+      local IntArray aGroupIndices;
+      int paramIdx = 0;
+      loop(info.numParams)
+      {
+         int groupIdx = info.getParamGroupIdx(paramIdx);
+         String groupName <= info.getParamGroupName(groupIdx);
+         if(null != groupName)  // is assigned to group ?
+         {
+            float paramVal = rand(1.0);
+            if(null != mod_or_null)
+               mod_or_null.setSharedParamValue(paramIdx, paramVal);  // also updates patch_data
+            else
+               ModSTFX.SetSharedParamValue_Sync(shared, paramIdx, paramVal);  // Sample voiceplugin
+
+            int visParamIdx = widget_to_param_map.indexOf(paramIdx, 0);
+            if(visParamIdx >= 0)
+            {
+               FloatParam fp <= pa_floatparams.get(visParamIdx);
+               fp.setValue(paramVal);
+
+               Slider sl <= pa_sliders.get(visParamIdx);
+               sl.setValue(paramVal);
+            }
+
+            if(!aGroupIndices.contains(groupIdx))
+               aGroupIndices.add(groupIdx);
+
+            numRand++;
+         }
+
+         paramIdx++;
+      }
+
+      if(numRand > 0)
+      {
+         markAsModified();
+         int numRandGroups = aGroupIndices.numElements;
+         Global.Print("Randomize "+numRand+" param"+Utils.GetPluralString(numRand)+" in "+numRandGroups+" group "+Utils.GetPluralString(numRandGroups));
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'g':
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         // // case VKEY_F12:
+         // //    current_project.addModMatrixEntryForLastTouchedParamSTFX(mod.plugin);
+         // //    return true;
+
+         case 'r':
+            if(_k.modShift())
+            {
+               if(_k.modCtrl())
+                  randomizeAllParamGroups();
+               else
+                  randomizeLastSelectedParamGroup();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               randomizeLastSelectedParam();
+               return true;
+            }
+            return false;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int idx;
+
+      // Try slider
+      idx = pa_sliders.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         last_selected_param_idx = widget_to_param_map.get(idx);
+         handleSliderChanged(idx);
+         return true;
+      }
+
+      // Try floatparam / dial
+      idx = pa_floatparams.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         last_selected_param_idx = widget_to_param_map.get(idx);
+         handleFloatParamChanged(idx);
+         return true;
+      }
+
+      // Try array-edit button
+      idx = pa_bt_a.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         last_selected_param_idx = widget_to_param_map.get(idx);
+         handleArrayEdit(idx);
+         return true;
+      }
+
+      // Try labelbutton (nr)
+      idx = pa_lbt_nr.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         last_selected_param_idx = widget_to_param_map.get(idx);
+         Global.Print("Select param "+last_selected_param_idx);
+         return true;
+      }
+
+      // Try labelbutton (group)
+      idx = pa_lbt_group.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         last_selected_param_idx = widget_to_param_map.get(idx);
+         int groupIdx = info.getParamGroupIdx(last_selected_param_idx);
+         String groupName <= info.getParamGroupName(groupIdx);
+         Global.Print("Select param "+last_selected_param_idx+" group="+groupName);
+         return true;
+      }
+
+      // Try labelbutton (name)
+      idx = pa_lbt_name.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         last_selected_param_idx = widget_to_param_map.get(idx);
+         Global.Print("Select param "+last_selected_param_idx+" name="+shared.queryDynamicParamName(last_selected_param_idx));
+         return true;
+      }
+
+
+      // switch(@(ap))
+      // {
+      // }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

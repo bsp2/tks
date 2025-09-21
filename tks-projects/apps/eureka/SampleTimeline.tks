@@ -1,0 +1,1025 @@
+// ----
+// ---- file   : SampleTimeline.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 27Jun2021
+// ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
+// ----          04Apr2025, 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 01May2025, 04May2025
+// ----          06May2025, 20May2025, 22May2025, 29May2025, 30May2025, 04Jun2025, 14Jun2025
+// ----          22Jun2025
+// ----
+// ----
+// ----
+
+module MSampleTimeline;
+
+use namespace ui;
+namespace st2;
+
+
+// <class.png>
+class SampleTimeline {
+   define int MAX_REPLAY_TRACKS = 16;
+   define int MAX_TIMELINES = 128;
+   define int SEQ_TRIG_NOTE   = (3*12)/*C-3*/;   // which externally sent note starts the replay
+   define int SEQ_REPLAY_NOTE = (5*12)/*C-5*/;   // sample base note (should be C-5)
+
+   Track *parent_track;
+
+   SampleTimelineModel *edit_model;
+   SampleTimelineModel *replay_model;
+   SampleTimelineModel *[] all_models;   // all (128) timelines (program-changeable)
+
+   public boolean b_edited;  // true=track mode was changed to DRUM at least once
+
+   SampleTimelineReplayTrack *[] replay_tracks;
+
+   // current play position in timeline units (1024 ticks per beat/quarter, see SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT)
+   int   play_pos;
+   float num_tick_frames_left;
+   int   loop_start;
+   int   loop_len;
+
+   float   beats_per_minute;
+   boolean b_use_project_bpm;  // false=use global timeline BPM, true=use project BPM, maybe=use timeline BPM
+
+   boolean b_playing;  // OR'd to replay.b_seq_playing
+
+   namespace boolean b_update_lane_sends;
+   protected int seek_ms_lo;
+   protected MIDIPipeEvent pev;
+
+
+   // <method_init.png>
+   public method initSampleTimeline(Track _track) {
+      parent_track <= _track;
+
+      beats_per_minute = 120.0f;
+      b_use_project_bpm = true;
+
+      loop_start = 0;
+      loop_len   = SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BAR * 2;
+
+      all_models.alloc(MAX_TIMELINES);
+      all_models.useAll();
+
+      edit_model <= newModelAt(0, false/*bLoad*/);
+      replay_model <= edit_model;
+
+      loop(MAX_REPLAY_TRACKS)
+      {
+         SampleTimelineReplayTrack replayTrack <= new SampleTimelineReplayTrack;
+         replayTrack.init(this);
+         replay_tracks.add(#(deref replayTrack));
+      }
+
+      b_update_lane_sends = true;
+   }
+
+   // <method_new.png>
+   public =replay= method newModelAt(int _idx, boolean _bLoad) : SampleTimelineModel {
+      Global.Debug2("SampleTimeline::newModelAt: idx="+_idx);
+      SampleTimelineModel m <= new SampleTimelineModel;
+      m.initModel(_bLoad);
+      m.parent_sample_timeline <= this;
+      all_models[_idx] = deref m;
+      return m;
+   }
+
+   // <method.png>
+   public =replay= method selectEditModel(int _idx) {
+      edit_model <= all_models.get(_idx);
+   }
+
+   // <method.png>
+   public =replay= method selectReplayModel(int _idx) {
+      replay_model <= all_models.get(_idx);
+   }
+
+   // <method_get.png
+   public method getModelIndex(SampleTimelineModel _model) : int {
+      return all_models.indexOfPointer(_model, 0);
+   }
+
+   // <method_get.png
+   public method getEditModelIndex() : int {
+      return all_models.indexOfPointer(edit_model, 0);
+   }
+
+   // <method_get.png
+   public method getModelByIndex(int _idx) : SampleTimelineModel {
+      return all_models.get(_idx);
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      SampleTimelineReplayTrack *replayTrack;
+      foreach replayTrack in replay_tracks
+      {
+         replayTrack.exit();
+      }
+      replay_tracks.free();
+   }
+
+   // <method_init.png>
+   public method copyFrom(SampleTimeline _o, boolean _bCopyEditIdx) {
+      b_edited = _o.b_edited;
+
+      play_pos   = _o.play_pos;
+      num_tick_frames_left = _o.num_tick_frames_left;
+      loop_start = _o.loop_start;
+      loop_len   = _o.loop_len;
+
+      beats_per_minute  = _o.beats_per_minute;
+      b_use_project_bpm = _o.b_use_project_bpm;
+
+      SampleTimelineReplayTrack *replayTrack;
+      int replayTrackIdx = 0;
+      foreach replayTrack in replay_tracks
+      {
+         replayTrack.copyFrom(_o.replay_tracks.get(replayTrackIdx++));
+      }
+
+      b_update_lane_sends = true;
+   }
+
+   // <method.png>
+   public method autoLoadSamples(String _dirNameOverrideOrNull) : boolean {
+      // (todo)
+      return true;
+   }
+
+   // <method.png>
+   public method autoUnloadSamples() : boolean {
+      // (todo) autoUnloadSamples()
+      return true;
+   }
+
+   // <method.png>
+   public method remapSampleNamespaceIndices(IntArray _iaRemap) {
+      // (todo)
+      // default_namespace_idx = _iaRemap.get(default_namespace_idx);
+      // SamplePadCommon *sc;
+      // foreach sc in pads
+      //    sc.namespace_idx = _iaRemap.get(sc.namespace_idx);
+   }
+
+   // <method.png>
+   public method handleShiftSampleIds(int _idxStart, int _shift) {
+      SampleTimelineModel *m;
+      foreach m in all_models
+      {
+         if(null != m)
+            m.handleShiftSampleIds(_idxStart, _shift);
+      }
+   }
+
+   // <method.png>
+   public method handleSwapSamples(int _smpIdxA, int _smpIdxB) {
+      SampleTimelineModel *m;
+      foreach m in all_models
+      {
+         if(null != m)
+            m.handleSwapSamples(_smpIdxA, _smpIdxB);
+      }
+   }
+
+   // <method_find.png>
+   public method findNumSampleRefsBySampleIdx(int _sampleIdx) : int {
+      int numRefs = 0;
+      SampleTimelineModel *m;
+      foreach m in all_models
+      {
+         if(null != m)
+            numRefs += m.findNumSampleRefsBySampleIdx(_sampleIdx);
+      }
+      return numRefs;
+   }
+
+   // <method_get.png>
+   public method getCurrentReplayBPM() : float {
+      if(false == b_use_project_bpm)
+         return beats_per_minute;
+      else if(maybe == b_use_project_bpm && null != replay_model)
+         return replay_model.beats_per_minute;
+      return current_project.bpm;
+   }
+
+   // <method_get.png>
+   public method getCurrentEditBPM() : float {
+      if(false == b_use_project_bpm)
+         return beats_per_minute;
+      else if(maybe == b_use_project_bpm && null != edit_model)
+         return edit_model.beats_per_minute;
+      return current_project.bpm;
+   }
+
+   // <method_get.png>
+   public method getNumFramesPerUnit(float _sampleRate) : float {
+      // called by SampleTimelineForm::showClipDetails() and SampleTimelineEditorClip::timelineClipRenderWaveform()
+      float bpm = getCurrentEditBPM();
+      float numFramesPerBeat = _sampleRate * (60.0f / bpm);
+      int numUnitsPerBeat =
+         (null != edit_model)
+         ? edit_model.num_units_per_beat
+         : SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT
+         ;
+      float numFramesPerUnit = numFramesPerBeat / numUnitsPerBeat;
+      return numFramesPerUnit;
+   }
+
+   // <method_get.png>
+   public =replay= getPlayPos() : int {
+      return play_pos;
+   }
+
+   // <replay.png>
+   protected method allNotesOff(local boolean _bRelease) {
+      // Start release phase
+      // // trace "[>>>] SampleTimeline::allNotesOff: #rt="+replay_tracks.numElements;
+      local SampleTimelineReplayTrack *replayTrack;
+      foreach replayTrack in replay_tracks
+      {
+         replayTrack.allNotesOff(_bRelease);
+      }
+   }
+
+   // <replay.png>
+   public method resetAllSampleVoices(local Sample _sampleOrNull) {
+      // Immediately cut voices
+      local SampleTimelineReplayTrack *replayTrack;
+      foreach replayTrack in replay_tracks
+      {
+         replayTrack.resetAllSampleVoices(_sampleOrNull);
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 2;
+
+      // b_edited
+      ofs.i8 = b_edited;
+
+      // // trace "xxx SampleTimeline::saveState: b_edited="+b_edited;
+
+      if(b_edited)
+      {
+         // Play pos
+         ofs.i32 = play_pos;
+
+         // Loop
+         ofs.i32 = loop_start;
+         ofs.i32 = loop_len;
+
+         // BPM (v2+)
+         ofs.f32 = beats_per_minute;
+
+         // Use-Project-BPM (v2+)
+         ofs.i8 = b_use_project_bpm;
+
+         // Models
+         int modelIdx = 0;
+         ofs.i8 = all_models.numElements;
+         loop(all_models.numElements)
+         {
+            SampleTimelineModel m <= all_models.get(modelIdx);
+            if(null != m && m.haveAnyClips())
+            {
+               ofs.i8 = 1;  // used flag
+               m.saveState(ofs);
+            }
+            else
+            {
+               ofs.i8 = 0;  // unused flag
+            }
+            modelIdx++;
+         }
+
+         // Replay model idx
+         ofs.i8 = all_models.indexOfPointer(replay_model, 0);
+
+         // Edit model idx
+         ofs.i8 = all_models.indexOfPointer(edit_model, 0);
+
+      } // if b_edited
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bKeepLaneSends) : boolean {
+      short ver;
+      boolean bDebug = 0;
+
+      // Read version
+      ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // b_edited
+         b_edited = ifs.b8;
+
+         if(bDebug) trace "[trc] SampleTimeline::loadState: b_edited="+b_edited;
+
+         if(b_edited)
+         {
+            // Play pos
+            play_pos = ifs.i32;
+
+            // Loop
+            loop_start = ifs.i32;
+            loop_len   = ifs.i32;
+            if(bDebug) trace "[trc] SampleTimeline::loadState: read loop_start="+loop_start+" loop_len="+loop_len;
+
+            if(ver >= 2)
+            {
+               // BPM (v2+)
+               beats_per_minute = ifs.f32;
+
+               // Use-Project-BPM (v2+)
+               b_use_project_bpm = ifs.s8;
+            }
+
+            // Models
+            int numModels = ifs.u8;
+            if(bDebug) trace "[trc] SampleTimeline::loadState: read numModels="+numModels;
+            if(MAX_TIMELINES == numModels)
+            {
+               all_models.alloc(MAX_TIMELINES);
+               all_models.useAll();
+
+               int modelIdx = 0;
+               loop(numModels)
+               {
+                  if(0 != ifs.b8)  // used ?
+                  {
+                     SampleTimelineModel m <= newModelAt(modelIdx, true/*bLoad*/);
+                     if(bDebug) trace "[trc] SampleTimeline::loadState: read modelIdx="+modelIdx;
+                     if(!m.loadState(ifs))
+                     {
+                        trace "[!!!] SampleTimeline::loadState: failed to load modelIdx="+modelIdx;
+                        return false;
+                     }
+                     else
+                     {
+                        // unused (empty slot)
+                     }
+                  }
+                  else
+                  {
+                     if(bDebug) trace "[trc] SampleTimeline::loadState: skip modelIdx="+modelIdx;
+                  }
+                  modelIdx++;
+               }
+            }
+            else
+            {
+               trace "[!!!] SampleTimeline::loadState: invalid numModels="+numModels+" (expected "+MAX_TIMELINES+")";
+               return false;
+            }
+
+            // Replay model idx
+            int replayModelIdx = ifs.u8;
+            if(bDebug) trace "[trc] SampleTimeline::loadState: read replayModelIdx="+replayModelIdx;
+            replay_model <= all_models.get(replayModelIdx);
+
+            // Edit model idx
+            int editModelIdx = ifs.u8;
+            if(bDebug) trace "[trc] SampleTimeline::loadState: read editModelIdx="+editModelIdx;
+            edit_model <= all_models.get(editModelIdx);
+
+         } // if b_edited
+
+         b_update_lane_sends = true;
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <replay.png>
+   public =replay= method queueUpdateLaneSends() {
+      // called by SampleTimelineForm UI after editing lane level or pan
+      b_update_lane_sends = true;
+   }
+
+   // <replay.png>
+   public =replay= method toggleReplay(int _playPos) {
+      // called from UI (SPACE key)
+      if(b_playing)
+      {
+         b_playing = false;
+
+         SampleTimelineReplayTrack *replayTrack;
+         foreach replayTrack in replay_tracks
+         {
+            replayTrack.resetVoices();
+         }
+
+         if(null != replay_model)
+            replay_model.invalidateClipIndexHints();
+      }
+      else
+      {
+         replay_model <= edit_model;
+         if(null != replay_model)
+            replay_model.invalidateClipIndexHints();
+         b_playing = true;
+      }
+      play_pos = _playPos;
+      Global.Debug("SampleTimeline::toggleReplay: b_playing="+b_playing);
+   }
+
+   // <replay.png>
+   public method resetAllControllers(local int _replayTrackIdx) {
+      // -1==replayTrackIdx: reset all replay tracks
+      local SampleTimelineReplayTrack *replayTrack;
+      local StSamplePlayer *sp;
+
+      if(_replayTrackIdx < 0)
+      {
+         // Reset all replay tracks
+         foreach replayTrack in replay_tracks
+         {
+            sp <= replayTrack.sample_player;
+            sp.resetModulators();
+            sp.updateVol(1.0);
+            sp.updatePan(0.0);
+         }
+      }
+      else
+      {
+         // Reset single replay track
+         replayTrack <= replay_tracks.get(_replayTrackIdx % MAX_REPLAY_TRACKS);
+         if(null != replayTrack)
+         {
+            sp <= replayTrack.sample_player;
+            sp.resetModulators();
+            sp.updateVol(1.0);
+            sp.updatePan(0.0);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method updatePerfCtlMSBLSB7(local int     _replayTrackIdx,
+                                      local int     _perfCtlIdx,
+                                      local boolean _bMSB,
+                                      local int     _val7
+                                      ) {
+      // -1==replayTrackIdx: update all replay tracks
+      local SampleTimelineReplayTrack *replayTrack;
+      local StSamplePlayer *sp;
+
+      if(_replayTrackIdx < 0)
+      {
+         // Update all replay tracks
+         foreach replayTrack in replay_tracks
+         {
+            sp <= replayTrack.sample_player;
+            if(_bMSB)
+               sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
+            else
+               sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
+         }
+      }
+      else
+      {
+         // Update single replay track
+         replayTrack <= replay_tracks.get(_replayTrackIdx % MAX_REPLAY_TRACKS);
+         if(null != replayTrack)
+         {
+            sp <= replayTrack.sample_player;
+            if(_bMSB)
+               sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
+            else
+               sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method updatePerfCtlVolMSBLSB7(local int     _replayTrackIdx,
+                                         local int     _perfCtlIdx,
+                                         local boolean _bMSB,
+                                         local int     _val7
+                                         ) {
+      // -1==replayTrackIdx: update all replay tracks
+      local SampleTimelineReplayTrack *replayTrack;
+      local StSamplePlayer *sp;
+      local float newVol;
+
+      if(_replayTrackIdx < 0)
+      {
+         // Update all replay tracks
+         foreach replayTrack in replay_tracks
+         {
+            sp <= replayTrack.sample_player;
+            if(_bMSB)
+               newVol = sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
+            else
+               newVol = sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
+            sp.updateVol(newVol / 127.0f);
+         }
+      }
+      else
+      {
+         // Update single replay track
+         replayTrack <= replay_tracks.get(_replayTrackIdx % MAX_REPLAY_TRACKS);
+         if(null != replayTrack)
+         {
+            sp <= replayTrack.sample_player;
+            if(_bMSB)
+               newVol = sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
+            else
+               newVol = sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
+            sp.updateVol(newVol / 127.0f);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method updatePerfCtlPanMSBLSB7(local int     _replayTrackIdx,
+                                         local int     _perfCtlIdx,
+                                         local boolean _bMSB,
+                                         local int     _val7
+                                         ) {
+      // -1==replayTrackIdx: update all replay tracks
+      local SampleTimelineReplayTrack *replayTrack;
+      local StSamplePlayer *sp;
+      local float newPan;
+
+      if(_replayTrackIdx < 0)
+      {
+         // Update all replay tracks
+         foreach replayTrack in replay_tracks
+         {
+            sp <= replayTrack.sample_player;
+            if(_bMSB)
+               newPan = sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
+            else
+               newPan = sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
+            newPan = (newPan < 64) ? ((newPan - 64)/64.0) : ((newPan - 64) / 63.0);
+            sp.updatePan(newPan/*-1..1*/);
+         }
+      }
+      else
+      {
+         // Update single replay track
+         replayTrack <= replay_tracks.get(_replayTrackIdx % MAX_REPLAY_TRACKS);
+         if(null != replayTrack)
+         {
+            sp <= replayTrack.sample_player;
+            if(_bMSB)
+               newPan = sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
+            else
+               newPan = sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
+            newPan = (newPan < 64) ? ((newPan - 64)/64.0) : ((newPan - 64) / 63.0);
+            sp.updatePan(newPan/*-1..1*/);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method process(local Track _curTrack, local int _curTrackIdx, local int _numFrames) {
+      local SampleTimelineReplayTrack *replayTrack;
+      local boolean bDebug = 0;
+
+      if(replay.b_reset_all_controllers)  // "Reset" button clicked
+      {
+         resetAllControllers(-1/*all replay tracks*/);
+         allNotesOff(false/*bRelease*/);
+         b_playing = false;
+      }
+
+      if(replay.b_have_events)
+      {
+         local MIDIPipeFrame fr <= replay.midi_input_frame;
+         local int  devIdx = _curTrack.dev_idx;
+         local byte midiCh = _curTrack.midi_ch;  // -1=MIDI channel per timeline replay track (perf.ctl)
+
+         if(bDebug) trace "[>>>] SampleTimeline: have events";
+
+         if(fr.getFilteredNoteOffVelocity(_curTrack.dev_idx, _curTrack.midi_ch, SEQ_TRIG_NOTE) >= 0.0f)
+         {
+            // Stop timeline
+            if(bDebug) trace "[>>>] SampleTimeline: SEQ_TRIG_NOTE-off (stop)";
+            b_playing = false;
+            allNotesOff(true/*bRelease*/);
+         }
+
+         if(fr.getFilteredNoteOnVelocity(_curTrack.dev_idx, _curTrack.midi_ch, SEQ_TRIG_NOTE) > 0.0f)
+         {
+            // Start timeline
+            if(bDebug) trace "[>>>] SampleTimeline: SEQ_TRIG_NOTE loop_start="+loop_start;
+            play_pos = loop_start;
+            b_playing = true;
+            num_tick_frames_left = 0.0f;
+            if(null != replay_model)
+               replay_model.invalidateClipIndexHints();
+            allNotesOff(true/*bRelease*/);
+            b_update_lane_sends = true;
+         }
+
+         local int prg = fr.getFilteredPrgChg(_curTrack.dev_idx, _curTrack.midi_ch);
+         if(prg >= 0)
+         {
+            local int curPrg = (null != replay_model) ? all_models.indexOfPointer(replay_model, 0) : -1;
+            if(bDebug) trace "[>>>] SampleTimeline: select replay model idx="+prg+" cur="+curPrg;
+            if(prg != curPrg)
+            {
+               if(bDebug) trace "[>>>] SampleTimeline: switch to new replay model idx="+prg;
+               allNotesOff(true/*bRelease*/);
+               replay_model <= all_models.get(prg);
+               if(null != replay_model)
+                  replay_model.invalidateClipIndexHints();
+               b_update_lane_sends = true;
+            }
+         }
+
+         // Process performance controllers and relay to track sampleplayers
+         local int numEv;
+         local int evIdx;
+
+         // CC
+         numEv = fr.getNumEventsCCByFlt(devIdx, midiCh);
+         evIdx = 0;
+         loop(numEv)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, devIdx, midiCh))
+            {
+               local int replayTrackIdx = (-1 == midiCh) ? pev.midiCh : -1;
+
+               switch(pev.ccId)
+               {
+                  case 1: // modwheel MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 33: // modwheel LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 2: // breath control MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 34: // breath control LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 4: // foot control MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 36: // foot control LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 7: // volume MSB
+                     // // trace "xxx SampleTimeline: CC7 pev.ccValue="+pev.ccValue+" replayTrackIdx="+replayTrackIdx;
+                     updatePerfCtlVolMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC7_VOLUME, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 39: // volume LSB
+                     updatePerfCtlVolMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC7_VOLUME, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 8: // balance MSB
+                     updatePerfCtlPanMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC8_BALANCE, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 40: // balance LSB
+                     updatePerfCtlPanMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC8_BALANCE, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 10: // pan MSB
+                     updatePerfCtlPanMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC10_PAN, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 42: // pan LSB
+                     updatePerfCtlPanMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC10_PAN, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 11: // expression MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 43: // expression LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 16: // general purpose 1 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 48: // general purpose 1 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 17: // general purpose 2 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 49: // general purpose 2 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 18: // general purpose 3 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 50: // general purpose 3 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 19: // general purpose 4 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 51: // general purpose 4 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 74: // brightness MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC74_BRIGHTNESS, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 106: // brightness LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC74_BRIGHTNESS, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 80: // general purpose 5 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 112: // general purpose 5 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 81: // general purpose 6 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 113: // general purpose 6 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 82: // general purpose 7 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 114: // general purpose 7 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 83: // general purpose 8 MSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8, true/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 115: // general purpose 8 LSB
+                     updatePerfCtlMSBLSB7(replayTrackIdx, STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8, false/*bMSB*/, pev.ccValue);
+                     break;
+
+                  case 121:  // Controller Reset
+                     resetAllControllers(replayTrackIdx);
+                     break;
+               }
+            }
+
+            // Next CC event
+            evIdx++;
+         }
+
+         // Pitchbend
+         numEv = fr.getNumEventsPitchbendByFlt(devIdx, midiCh);
+         evIdx = 0;
+         loop(numEv)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PITCHBEND, devIdx, midiCh))
+            {
+               // pitchbend = pev.pitchbend;
+               // pitchbend_norm = ((pitchbend - 8192) < 0) ? (pitchbend - 8192) / 8192.0 : (pitchbend - 8192) / 8191.0;
+               // handlePitchbendChanged();
+               // sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_PITCHBEND, pev.pitchbend);
+            }
+
+            // Next pitchbend event
+            evIdx++;
+         }
+
+      }
+
+      local float bpm = getCurrentReplayBPM();
+      local float numFramesPerBeat = Audio.mix_rate * (60.0f / bpm);
+      local int numUnitsPerBeat =
+         (null != replay_model)
+         ? replay_model.num_units_per_beat
+         : SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT
+         ;
+      local float numFramesPerUnit = numFramesPerBeat / numUnitsPerBeat;
+      local float numUnitsPerMS = Audio.mix_rate / (1000.0f * numFramesPerUnit);
+
+      if(replay.b_have_events)
+      {
+         // Seek
+         //  (note) expects low offset to be sent first
+         local short smpOffLo = fr.getFilteredRPN(_curTrack.dev_idx, _curTrack.midi_ch, ModSample.RPN_SMP_OFFMS_LO/*88*/);
+         if(-1 != smpOffLo)
+         {
+            seek_ms_lo = smpOffLo;  // 1/64 ms units
+         }
+
+         // (note) high offset may arrive in a different MIDIPipeFrame than OFFMS_LO
+         local short smpOffHi = fr.getFilteredRPN(_curTrack.dev_idx, _curTrack.midi_ch, ModSample.RPN_SMP_OFFMS_HI/*89*/);
+         if(-1 != smpOffHi)
+         {
+            local float seekMS =
+               (seek_ms_lo / 64.0f) +
+               (smpOffHi << 8)
+               ;
+            allNotesOff(false/*bRelease*/);
+            play_pos = (seekMS * numUnitsPerMS + 0.5f);
+            if(bDebug) trace "[>>>] SampleTimeline: seek to ms="+seekMS+" numUnitsPerMS="+numUnitsPerMS+" => play_pos="+play_pos;
+            if(null != replay_model)
+               replay_model.invalidateClipIndexHints();
+         }
+      }
+
+      // (todo) add option (checkbox) to sync playback with project play state
+      local boolean bAdvSeq = b_playing;
+      local SampleTimelineModelTrack *track;
+      local SampleTimelineModelClip *clip;
+      local int trackIdx;
+
+      while(num_tick_frames_left <= 0.0f)
+      {
+         if(bAdvSeq)
+         {
+            if(null != replay_model)
+            {
+               // Start / stop clips at play_pos
+               trackIdx = 0;
+               foreach track in replay_model.tracks
+               {
+                  // can be null if SampleTimeline.MAX_REPLAY_TRACKS is exceeded
+                  replayTrack <= replay_tracks.get(trackIdx);
+                  local StSamplePlayer sp <= (null != replayTrack) ? replayTrack.sample_player : null;
+
+                  local boolean bCalcStartOffset = (-1 == track.replay_clip_idx_hint);  // after seek
+                  local int clipIdx = mathMaxi(0, track.replay_clip_idx_hint);
+                  for(;;)
+                  {
+                     clip <= track.clips.get(clipIdx);
+                     if(null != clip)
+                     {
+                        if(clip.start == play_pos || (bCalcStartOffset && (clip.start <= play_pos < clip.end)))
+                        {
+                           // Start clip
+                           if(bDebug) trace "[>>>] SampleTimeline: start clip uid="+clip.uid+" range=("+clip.start+","+clip.end+") track_idx="+track.track_idx;
+                           track.replay_clip_idx_hint = clipIdx;
+                           if(!clip.b_mute)
+                           {
+                              if(null != sp)
+                              {
+                                 local Sample sample <= current_project.getSampleByIdx(clip.sample_idx);
+                                 if(null != sample)
+                                 {
+                                    sp.setLastStartedSampleBankHint(sample.sample_bank);
+                                    local int voiceKey = sp.startSampleBank(sample.sample_bank,
+                                                                            null/*freqTable*/,
+                                                                            SEQ_REPLAY_NOTE,
+                                                                            clip.vel_on/127.0f/*velocity*/,
+                                                                            0.0f/*modVal*/,
+                                                                            1.0f/*volume*/,
+                                                                            0.0f/*pan*/,
+                                                                            0/*freq*/
+                                                                            );
+                                    local float offsetMS = (clip.offset / numUnitsPerMS);
+                                    if(bCalcStartOffset)
+                                       offsetMS += (play_pos - clip.start) / numUnitsPerMS;  // after seek
+                                    if(bDebug && offsetMS > 0)
+                                       trace "[>>>] SampleTimeline:: start clip noteOn voiceKey="+voiceKey+" offsetMs="+offsetMS;
+                                    sp.setInitialSampleOffsetMsByKey(voiceKey, offsetMS);
+
+                                    if(clip.cc_mw >= 0.0f)
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, clip.cc_mw);
+                                    else
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, 0.0f);
+
+                                    if(clip.cc_bc >= 0.0f)
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, clip.cc_bc);
+                                    else
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, 0.0f);
+
+                                    if(clip.cc_fc >= 0.0f)
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, clip.cc_fc);
+                                    else
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, 0.0f);
+
+                                    if(clip.cc_ex >= 0.0f)
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, clip.cc_ex);
+                                    else
+                                       sp.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, 0.0f);
+
+                                    sp.initStartedVoicesByKey(voiceKey);
+                                 }
+                              }
+
+                              b_update_lane_sends = true;
+                           }
+                           break;
+                        }
+                        else if(clip.end == play_pos)
+                        {
+                           // Stop clip
+                           if(bDebug) trace "[>>>] SampleTimeline: stop clip uid="+clip.uid+" range=("+clip.start+","+clip.end+") track_idx="+track.track_idx;
+                           if(null != sp)
+                           {
+                              if(clip.b_release)
+                                 sp.noteOff(SEQ_REPLAY_NOTE, clip.vel_off/127.0f/*velocity*/);
+                              else
+                                 sp.allNotesOff();
+                           }
+                           track.replay_clip_idx_hint++;
+
+                           b_update_lane_sends = true;
+                        }
+                     }
+                     else
+                     {
+                        break;
+                     }
+                     clipIdx++;
+                  }
+                  trackIdx++;
+               }
+
+            } // if replay_model
+
+            // Next tick
+            play_pos++;
+            if(loop_start <= play_pos <= (loop_start + loop_len))
+            {
+               if(play_pos == (loop_start + loop_len))
+               {
+                  if(bDebug) trace "[>>>] SampleTimeline: loop (start="+loop_start+" len="+loop_len+")";
+                  play_pos = loop_start;
+                  if(null != replay_model)
+                     replay_model.invalidateClipIndexHints();
+                  allNotesOff(true/*bRelease*/);
+               }
+            }
+
+         } // if bAdvSeq
+
+         num_tick_frames_left += numFramesPerUnit;
+      }
+
+      // Process replay tracks
+      trackIdx = 0;
+      loop(replay_tracks.numElements)
+      {
+         replayTrack <= replay_tracks.get(trackIdx);
+         track <= replay_model.tracks.get(trackIdx);
+         if( null != track && (b_update_lane_sends || track.lane_sends_slew_amt < 1.0) )
+         {
+            local FloatArray aClipLevelMod <= null;
+            local FloatArray aClipPanMod   <= null;
+
+            clip <= track.clips.get(track.replay_clip_idx_hint);
+            if(null != clip)
+            {
+               if(clip.start <= play_pos < clip.end)  // (todo) not 100% precise: more than one tick may have passed
+               {
+                  aClipLevelMod <= clip.lane_level_mod;
+                  aClipPanMod   <= clip.lane_pan_mod;
+                  // // trace "xxx process: clip has mods, aLevelMod="+#(aLevelMod);
+               }
+            }
+
+            replayTrack.updateLaneSendLevelLR(track.lane_level, track.lane_pan,
+                                              aClipLevelMod, aClipPanMod,
+                                              track.lane_sends_slew_amt
+                                              );
+         }
+
+         replayTrack.process(_curTrack, _numFrames);
+
+         // Next track
+         trackIdx++;
+      }
+
+      num_tick_frames_left -= _numFrames;
+
+      b_update_lane_sends = false;
+   }
+
+}

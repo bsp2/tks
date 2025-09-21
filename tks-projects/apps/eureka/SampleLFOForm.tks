@@ -1,0 +1,614 @@
+// ----
+// ---- file   : SampleLFOForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 29Dec2018
+// ---- changed: 02Jan2019, 30Mar2019, 17May2019, 10Feb2021, 28Sep2024
+// ----
+// ----
+// ----
+
+module MSampleLFOForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleLFOForm : XMLForm, ActionProvider {
+
+   define String ACTION_ENTRY_EDITED;
+
+   StLFO *lfo;
+   Sample *sample_sci;
+   int lfo_idx;  // 0=freq, 1=vol, 2=pan, 3=aux
+
+   protected ComboBox    *cm_type;
+   protected FloatParam  *fp_pw;
+   protected FloatParam  *fp_phase;
+   protected FloatParam  *fp_freq;
+   protected CheckBox    *cb_global;
+   protected CheckBox    *cb_reset;
+   protected CheckBox    *cb_oneshot;
+
+   protected FloatParam  *fp_delay;
+   protected FloatParam  *fp_fade_time;
+   protected FloatParam  *fp_fade_start;
+   protected FloatParam  *fp_fade_end;
+   protected FloatParam  *fp_offset;
+
+   protected FloatParam  *fp_noise_min_amp;
+   protected FloatParam  *fp_noise_max_amp;
+   protected FloatParam  *fp_noise_min_spd;
+   protected FloatParam  *fp_noise_max_spd;
+   protected CheckBox    *cb_noise_interpol;
+   protected FloatParam  *fp_faded_speed_factor;
+
+   protected LayerSwitch *ls_osc;
+   protected LayerSwitch *ls_noise;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("SampleLFOForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ENTRY_EDITED];
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      sample_sci.markParamsAsModified();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_ENTRY_EDITED), this));
+   }
+
+   // <ui_show.png>
+   public method showLFO(StLFO _lfo, int _lfoIdx, Sample _sampleSCI) {
+      lfo <= _lfo;
+      lfo_idx = _lfoIdx;
+      sample_sci <= _sampleSCI;
+
+      boolean bEditable = (null != lfo);
+
+      cm_type   .setEditable(bEditable);
+
+      updateEditableAllExceptType(bEditable);
+
+      if(bEditable)
+      {
+         cm_type.setSelectedOption(lfo.type);
+         fp_pw.setValue(lfo.pulseWidth);
+         fp_phase.setValue(lfo.phase);
+         fp_freq.setValue(lfo.freq);
+
+         cb_global.setSelected(lfo.enableGlobal);
+         cb_reset.setSelected(lfo.enableReset);
+         cb_oneshot.setSelected(lfo.enableOneShot);
+
+         fp_delay.setValue(lfo.delay);
+         fp_fade_time.setValue(lfo.fadeInTime);
+         fp_fade_start.setValue(lfo.startLevel);
+         fp_fade_end.setValue(lfo.fadedLevel);
+         fp_offset.setValue(lfo.dcOffset);
+
+         fp_noise_min_amp.setValue(lfo.noiseMinAmp);
+         fp_noise_max_amp.setValue(lfo.noiseMaxAmp);
+         fp_noise_min_spd.setValue(lfo.noiseMinSpeed);
+         fp_noise_max_spd.setValue(lfo.noiseMaxSpeed);
+         cb_noise_interpol.setSelected(lfo.enableNoiseInterpol);
+
+         fp_faded_speed_factor.setValue(lfo.fadedSpeedFactor);
+
+         updateEditable();
+      }
+      else
+      {
+         cm_type.setSelectedOption(-1);
+         fp_pw.setValue(0);
+         fp_phase.setValue(0);
+         fp_freq.setValue(0);
+         cb_global.setSelected(false);
+         cb_reset.setSelected(false);
+         cb_oneshot.setSelected(false);
+
+         fp_delay.setValue(0);
+         fp_fade_time.setValue(0);
+         fp_fade_start.setValue(0);
+         fp_fade_end.setValue(0);
+         fp_offset.setValue(0);
+
+         fp_noise_min_amp.setValue(0);
+         fp_noise_max_amp.setValue(0);
+         fp_noise_min_spd.setValue(0);
+         fp_noise_max_spd.setValue(0);
+         cb_noise_interpol.setSelected(false);
+
+         fp_faded_speed_factor.setValue(1.0f);
+      }
+
+      updateLS();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.add(cm_type);
+
+      boolean bNoise = (STLFO_TYPE_NOISE == cm_type.getSelectedOption());
+
+      if(!bNoise)
+      {
+         if(STLFO_TYPE_PULSE == cm_type.getSelectedOption())
+            _retLayers.add(fp_pw);
+         _retLayers.add(fp_phase);
+         _retLayers.add(fp_freq);
+      }
+
+      _retLayers.joinRR(_retLayers, [
+         fp_delay,
+         fp_fade_time,
+         fp_fade_start,
+         fp_fade_end,
+         ]
+                        );
+
+      if(bNoise)
+      {
+         _retLayers.add(fp_noise_min_spd);
+         _retLayers.add(fp_noise_max_spd);
+         _retLayers.add(fp_noise_min_amp);
+         _retLayers.add(fp_noise_max_amp);
+      }
+
+      _retLayers.joinRR(_retLayers, [
+         fp_offset,
+         cb_global,
+         cb_reset,
+         cb_oneshot,
+                                     ]
+                        );
+
+      if(bNoise)
+         _retLayers.add(cb_noise_interpol);
+      else
+         _retLayers.add(fp_faded_speed_factor);
+   }
+
+   // <ui_update.png>
+   protected method updateLS() {
+      StSample s <= root_form.pg_sample.getFirstSelectedZone();
+      boolean bOSC = true;
+      if(null != s)
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         if(STLFO_TYPE_NOISE == lfo.type)
+         {
+            bOSC = false;
+         }
+      }
+      ls_osc.switchToLayerNr(bOSC ? 1 : 0);
+      ls_noise.switchToLayerNr(bOSC ? 0 : 1);
+      cb_noise_interpol.setEditable( (null != s) && !bOSC );
+      relayout();
+      UI.RedrawAll();
+   }
+
+   // <ui_update.png>
+   protected method updateEditableAllExceptType(boolean bEditable) {
+      fp_pw     .setEditable(bEditable);
+      fp_phase  .setEditable(bEditable);
+      fp_freq   .setEditable(bEditable);
+      cb_global .setEditable(bEditable);
+      cb_reset  .setEditable(bEditable);
+      cb_oneshot.setEditable(bEditable);
+
+      fp_delay     .setEditable(bEditable);
+      fp_fade_time .setEditable(bEditable);
+      fp_fade_start.setEditable(bEditable);
+      fp_fade_end  .setEditable(bEditable);
+      fp_offset    .setEditable(bEditable);
+
+      fp_noise_min_amp .setEditable(bEditable);
+      fp_noise_max_amp .setEditable(bEditable);
+      fp_noise_min_spd .setEditable(bEditable);
+      fp_noise_max_spd .setEditable(bEditable);
+      cb_noise_interpol.setEditable(bEditable);
+
+      fp_faded_speed_factor.setEditable(bEditable);
+   }
+
+   // <ui_update.png>
+   protected method updateEditable() {
+      // when type has changed
+      updateEditableAllExceptType(STLFO_TYPE_NONE != lfo.type);
+      if(STLFO_TYPE_NONE != lfo.type)
+      {
+         fp_pw.setEditable(STLFO_TYPE_PULSE == lfo.type);
+         if(STLFO_TYPE_NOISE == lfo.type)
+         {
+            fp_phase.setEditable(false);
+            fp_freq.setEditable(false);
+            fp_noise_min_amp.setEditable(true);
+            fp_noise_max_amp.setEditable(true);
+            fp_noise_min_spd.setEditable(true);
+            fp_noise_max_spd.setEditable(true);
+            cb_reset.setEditable(false);
+            cb_oneshot.setEditable(false);
+            cb_noise_interpol.setEditable(true);
+            fp_faded_speed_factor.setEditable(false);
+         }
+         else
+         {
+            fp_phase.setEditable(true);
+            fp_freq.setEditable(true);
+            fp_noise_min_amp.setEditable(false);
+            fp_noise_max_amp.setEditable(false);
+            fp_noise_min_spd.setEditable(false);
+            fp_noise_max_spd.setEditable(false);
+            cb_reset.setEditable(true);
+            cb_oneshot.setEditable(true);
+            cb_noise_interpol.setEditable(false);
+            fp_faded_speed_factor.setEditable(true);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTypeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      int type = cm_type.getSelectedOption();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.type = type;
+      }
+
+      updateLS();
+      updateEditable();
+
+      provideEdited();
+      Global.Print("LFO Type is "+cm_type.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePulseWidthChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      Float pw = fp_pw.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.pulseWidth = pw;
+      }
+      provideEdited();
+      pw *= 100;
+      Global.Print("LFO Pulse Width is "+pw.printf("%3.2f")+"%");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePhaseChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      Float phase = fp_phase.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.phase = phase;
+      }
+      provideEdited();
+      phase *= 100;
+      Global.Print("LFO Phase is "+phase.printf("%3.2f")+"%");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFreqChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float freq = fp_freq.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.freq = freq;
+      }
+      provideEdited();
+      Global.Print("LFO Freq is "+freq);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleGlobalChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_global.isSelected();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.enableGlobal = bEnable;
+      }
+      provideEdited();
+      Global.Print("LFO Global Mode is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleResetChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_reset.isSelected();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.enableReset = bEnable;
+      }
+      provideEdited();
+      Global.Print("LFO Phase Reset is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOneshotChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_oneshot.isSelected();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.enableOneShot = bEnable;
+      }
+      provideEdited();
+      Global.Print("LFO One-Shot Mode is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDelayChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float delay = fp_delay.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.delay = delay;
+      }
+      provideEdited();
+      Global.Print("LFO Delay is "+delay+" ms");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFadeTimeChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float fadeInTime = fp_fade_time.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.fadeInTime = fadeInTime;
+      }
+      provideEdited();
+      Global.Print("LFO Fade-In Time is "+fadeInTime+" ms");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleStartLevelChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float startLevel = fp_fade_start.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.startLevel = startLevel;
+      }
+      provideEdited();
+      Global.Print("LFO Start Level is "+startLevel);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEndLevelChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float fadedLevel = fp_fade_end.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.fadedLevel = fadedLevel;
+      }
+      provideEdited();
+      Global.Print("LFO Faded Level is "+lfo.fadedLevel);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFadedSpeedFactorChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float factor = fp_faded_speed_factor.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.fadedSpeedFactor = factor;
+      }
+      provideEdited();
+      Global.Print("LFO Faded Speed Factor is "+factor);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleOffsetChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float dcOffset = fp_offset.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.dcOffset = dcOffset;
+      }
+      provideEdited();
+      Global.Print("LFO DC Offset is "+dcOffset);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoiseMinSpdChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float noiseMinSpeed = fp_noise_min_spd.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.noiseMinSpeed = noiseMinSpeed;
+      }
+      provideEdited();
+      Global.Print("LFO Noise Min Speed is "+noiseMinSpeed+" Hz");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoiseMaxSpdChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float noiseMaxSpeed = fp_noise_max_spd.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.noiseMaxSpeed = noiseMaxSpeed;
+      }
+      provideEdited();
+      Global.Print("LFO Noise Max Speed is "+noiseMaxSpeed+" Hz");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoiseMinAmpChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float noiseMinAmp = fp_noise_min_amp.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.noiseMinAmp = noiseMinAmp;
+      }
+      provideEdited();
+      Global.Print("LFO Noise Min Amp is "+noiseMinAmp);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoiseMaxAmpChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      float noiseMaxAmp = fp_noise_max_amp.getFloatValue();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.noiseMaxAmp = noiseMaxAmp;
+      }
+      provideEdited();
+      Global.Print("LFO Noise Max Amp is "+noiseMaxAmp);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoiseInterpolChanged() {
+      local PointerArray zones <= root_form.pg_sample.getSelectedZones();
+      StSample *s;
+      boolean bEnable = cb_noise_interpol.isSelected();
+      foreach s in zones
+      {
+         StLFO lfo <= s.getOrCreateLFOByIndex(lfo_idx);
+         lfo.enableNoiseInterpol = bEnable;
+      }
+      provideEdited();
+      Global.Print("LFO Noise Interpolation is "+Utils.GetEnableString(bEnable));
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      //trace "xxx ModMatrixForm::consumeAction: acName=\""+acName+"\".";
+
+      switch(@(ap))
+      {
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+
+         case @(fp_pw):
+            handlePulseWidthChanged();
+            return true;
+
+         case @(fp_phase):
+            handlePhaseChanged();
+            return true;
+
+         case @(fp_freq):
+            handleFreqChanged();
+            return true;
+
+         case @(cb_global):
+            handleGlobalChanged();
+            return true;
+
+         case @(cb_reset):
+            handleResetChanged();
+            return true;
+
+         case @(cb_oneshot):
+            handleOneshotChanged();
+            return true;
+
+         case @(fp_delay):
+            handleDelayChanged();
+            return true;
+
+         case @(fp_fade_time):
+            handleFadeTimeChanged();
+            return true;
+
+         case @(fp_fade_start):
+            handleStartLevelChanged();
+            return true;
+
+         case @(fp_fade_end):
+            handleEndLevelChanged();
+            return true;
+
+         case @(fp_faded_speed_factor):
+            handleFadedSpeedFactorChanged();
+            return true;
+
+         case @(fp_offset):
+            handleOffsetChanged();
+            return true;
+
+         case @(fp_noise_min_spd):
+            handleNoiseMinSpdChanged();
+            return true;
+
+         case @(fp_noise_max_spd):
+            handleNoiseMaxSpdChanged();
+            return true;
+
+         case @(fp_noise_min_amp):
+            handleNoiseMinAmpChanged();
+            return true;
+
+         case @(fp_noise_max_amp):
+            handleNoiseMaxAmpChanged();
+            return true;
+
+         case @(cb_noise_interpol):
+            handleNoiseInterpolChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

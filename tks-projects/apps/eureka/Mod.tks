@@ -1,0 +1,1564 @@
+// ----
+// ---- file   : Mod.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 24Jan2018, 26Jan2018, 28Jan2018, 31Jan2018, 12Feb2018, 15Feb2018, 16Feb2018
+// ----          22Feb2018, 23Feb2018, 27Feb2018, 02Mar2018, 03Mar2018, 05Mar2018, 06Mar2018
+// ----          16Mar2018, 17Mar2018, 18Mar2018, 26Mar2018, 27Mar2018, 29Mar2018, 22Jun2018
+// ----          21Jul2018, 08Dec2018, 09Dec2018, 05Jan2019, 17Jan2019, 22Mar2019, 31Mar2019
+// ----          30Jul2019, 26Aug2019, 15Oct2019, 12Nov2019, 16Feb2020, 12Sep2020, 31Oct2020
+// ----          06Feb2021, 25Apr2021, 12Dec2021, 26Dec2021, 27Dec2021, 31Dec2021, 04Mar2023
+// ----          06Mar2023, 07Mar2023, 08Mar2023, 29Jul2023, 05Nov2023, 09Nov2023, 06Jan2024
+// ----          02Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 17Sep2024, 19Sep2024, 07Jan2025
+// ----          08Jan2025, 21Jun2025
+// ----
+// ----
+// ----
+
+module MMod;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ModIO {
+   String name;
+}
+
+
+// <class.png>
+abstract class Mod {
+   // must be at least 2 (stereo L/R).
+   //  (note) inputs 3+4 (if allocated) are the (default) sidechain inputs
+   //  (note) VST2 / CLAP modules use a much larger number of I/O buffers
+   define int DEF_NUM_IO_BUFFERS    =   2;
+
+   define int MAX_MODMATRIX_ENTRIES = 500;
+   define int MAX_PARAM_SETS        =  32;
+
+   define int RPN_CTL_BASE = 100;  // RPN_CTL_0 in Synergy
+   define int RPN_CTL_NUM  = 100;
+
+   int instance_id;
+   static int next_instance_id;
+
+   ModIO *[] inputs;   // ModIO instances
+   ModIO *[] outputs;  // ModIO instances
+
+   FloatArray *[] input_bufs;  // FloatArray instances, mono input channels (capacity=at least DEF_NUM_IO_BUFFERS)
+   FloatArray *[] output_bufs;  // FloatArray instances, mono output channels
+
+   // (note) see setResample(). used (by ModVST2) when b_resample=true
+   FloatArray *[] resample_input_bufs;  // FloatArray instances, mono input channels (capacity=Audio.STREAM_MAX_FRAMES)
+   FloatArray *[] resample_output_bufs;  // FloatArray instances, mono output channels
+
+   SpeexResampler *[] *input_srs;   // lazy-alloc
+   SpeexResampler *[] *output_srs;
+
+   FloatArray parallel_tmp_buf_l;  // used to save/restore PROCESS_L/R other channel
+   FloatArray parallel_tmp_buf_r;
+
+   boolean b_postload_done;  // true=postload called (may have failed, though). false=init pending
+   boolean b_postload;       // true=postload was successful
+
+   int ui_grid_y;  // mod-grid position (vertical cell index) (saved)
+
+   boolean b_enabled;
+
+   define int PROCESS_LR        = 0;  // Process stereo
+   define int PROCESS_L         = 1;  // Process left/mono/mid only (replicate to stereo, process, convert back to mono)
+   define int PROCESS_R         = 2;  // Process right/side only (replicate to stereo, process, convert back to mono)
+   define int PROCESS_PARALLEL  = 3;  // Process stereo / Add to previous output
+   define int NUM_PROCESS_MODES = 4;
+   int process_mode;
+   static StringArray process_mode_names = [
+      "Stereo",
+      "L / Mid",
+      "R / Side",
+      "Parallel"
+                                            ];
+
+   boolean b_mono_in;          // true=mono input (left stereo ch) [21Jul2018: unused now]
+   boolean b_mono_out;         // true=mono output(s) (outputs 2..n to lanes 2..n) [21Jul2018: unused now]
+   boolean b_sidechain_in;     // true=send channel 2 (b_mono_in) or channels 3&4 (!b_mono_in) to SC input (2(mono) / 3+4)
+   boolean b_multi_out;        // true=send outputs 3..n to lanes 2..n/2
+   boolean b_relative_params;  // only supported by ModVST2 (and a core feature in CLAP, i.e. no need to emulate it)
+
+   ModInputFilter input_filter;  // see tkmidipipe/ModInputFilter.h
+
+   String display_name;  // blank=use effect name, overrides default mod name otherwise
+
+   IntArray ui_param_history;  // last edited params (param indices), see STConfig.mod_param_history_size
+
+   // ModMatrixEntry instances
+   ModMatrixEntry *[] mod_matrix;
+
+   // stores PointerArray instances that reference all ModMatrixEntries for each src type (TOTAL_NUM_SOURCES)
+   protected PointerArray mod_matrix_src_refs;
+
+   // stores PointerArray instances that reference all ModMatrixEntries for each target param (numParameters)
+   protected PointerArray mod_matrix_param_refs;
+
+   // temporary array that store all parameter indices that changed after new input event(s) have arrived
+   protected IntArray mod_matrix_temp_param_indices;
+
+   Float tmp_modmatrix_val;   // normalized value (0..1)
+   Float tmp_modmatrix_vel;   // normalized velocity (note off/on only)
+
+   int next_modmatrix_gid;  // see ModMatrixEntry.gid
+
+   BezierEditState noteon_velocity_env_state;
+   Envelope        noteon_velocity_env;
+   boolean         b_enable_noteon_velocity_env;
+
+   BezierEditState noteoff_velocity_env_state;
+   Envelope        noteoff_velocity_env;
+   boolean         b_enable_noteoff_velocity_env;
+
+   MIDIPipeFrame vel_frame;
+
+   boolean b_resample_changed;  // true=update VST2 plugin blksize+samplerate during next process() call
+   boolean b_resample;          // becomes true when factor != 1.0
+   float   resample_factor;     // <1: downsample, process, upsample  >1: upsample, process, downsample
+   int     resample_quality;    // 0..10 (def=4)
+   boolean b_resample_init;     // 1=set sample rate when plugin is instantiated, 0=set immediately before first process call
+
+   boolean b_queued_ui_update;  // true after param change when widget(s) need to be updated
+
+   Mutex mtx_ui_update;
+   Mutex mtx_param;
+
+   ModParamSet *[] param_sets;
+   byte       param_set_rpn_group;
+   boolean    b_param_set_rpn;
+   byte       param_set_interpolation_order;  // 0=linear .. 6=steep
+   byte       ui_param_set_edit_idx;
+   FloatArray param_set_baseline;
+
+   byte ui_mutex_group_id;  // -1=none, 0=1A, 1=1B, 2=2A, 3=2B, 4=3A, ..
+
+
+   // <method_init.png>
+   public method init() {
+      instance_id = next_instance_id++;
+
+      parallel_tmp_buf_l.allocAndFill(Audio.STREAM_MAX_FRAMES, 0.0f);
+      parallel_tmp_buf_r.allocAndFill(Audio.STREAM_MAX_FRAMES, 0.0f);
+
+      b_enabled = true;
+      process_mode = PROCESS_LR;
+
+      b_mono_in = false;
+      b_mono_out = false;
+
+      b_sidechain_in = false;
+
+      b_multi_out = false;
+
+      next_modmatrix_gid = 1;
+
+      noteon_velocity_env_state         = CurveDialog.default_env_state;
+      noteon_velocity_env.interpolation = ENV_LINEAR;
+      b_enable_noteon_velocity_env      = false;
+
+      noteoff_velocity_env_state         = CurveDialog.default_env_state;
+      noteoff_velocity_env.interpolation = ENV_LINEAR;
+      b_enable_noteoff_velocity_env      = false;
+
+      resample_factor  = 1.0;
+      b_resample       = false;
+      resample_quality = 4;
+      b_resample_init  = false;
+
+      param_set_rpn_group = 0;  // see Synergy internal.msp (70..74 are reserved for Mods 1..5, i.e. up to 5 mods can share the same MIDI channel and still receive separate param set changes. 75..79 are used for smooth param set interpolation)
+      b_param_set_rpn = true;
+
+      ui_param_set_edit_idx = 0;
+
+      ui_mutex_group_id = -1;
+   }
+
+   // <method.png>
+   protected method addInputBuf() {
+      local FloatArray fa <= new FloatArray;
+      fa.allocAndFill(Audio.STREAM_MAX_FRAMES, 0.0f);
+      input_bufs.add(#(deref fa));
+   }
+
+   // <method.png>
+   protected method addOutputBuf() {
+      local FloatArray fa <= new FloatArray;
+      fa.allocAndFill(Audio.STREAM_MAX_FRAMES, 0.0f);
+      output_bufs.add(#(deref fa));
+   }
+
+   // <method_init.png>
+   protected method allocateIOBuffers(int _numIn, int _numOut) {
+      // called by derived classes
+      FloatArray *fa;
+      input_bufs.alloc(_numIn);
+      output_bufs.alloc(_numOut);
+
+      loop(_numIn)
+         addInputBuf();
+
+      loop(_numOut)
+         addOutputBuf();
+   }
+
+   // <method_exit.png>
+   public method exit() {
+   }
+
+   // <method.png>
+   public method unload() {
+      // Called when switching patch variation
+   }
+
+   // // // <method.png>
+   // // public method queryPatchData() : boolean {
+   // // }
+
+   // <method.png>
+   public method allocNextModMatrixGID() {
+      next_modmatrix_gid++;
+   }
+
+   // <method.png>
+   public method modClone(boolean _bFullInit) : Mod {
+      // bFullInit: true=init VST instance. false=init for clipboard only
+   }
+
+   // <method.png>
+   public method modCopyBaseFrom(Mod _o) {
+      // when cloning mod. called by derived classes.
+      ui_grid_y    = _o.ui_grid_y;
+      process_mode = _o.process_mode;
+
+      b_enabled         = _o.b_enabled;
+      b_mono_in         = _o.b_mono_in;
+      b_mono_out        = _o.b_mono_out;
+      b_sidechain_in    = _o.b_sidechain_in;
+      b_multi_out       = _o.b_multi_out;
+      b_relative_params = _o.b_relative_params;
+
+      ui_mutex_group_id = _o.ui_mutex_group_id;
+
+      input_filter = _o.input_filter;
+
+      setName(_o.display_name);
+
+      noteon_velocity_env_state    = _o.noteon_velocity_env_state;
+      noteon_velocity_env          = _o.noteon_velocity_env;
+      b_enable_noteon_velocity_env = _o.b_enable_noteon_velocity_env;
+
+      noteoff_velocity_env_state    = _o.noteoff_velocity_env_state;
+      noteoff_velocity_env          = _o.noteoff_velocity_env;
+      b_enable_noteoff_velocity_env = _o.b_enable_noteoff_velocity_env;
+
+      resample_quality = _o.resample_quality;
+      setResample(_o.resample_factor);
+
+      modCopyParamSetsFrom(_o);
+   }
+
+   // <method.png>
+   public method modCopyParamSetsFrom(Mod _o) {
+      param_set_rpn_group   = _o.param_set_rpn_group;
+      b_param_set_rpn       = _o.b_param_set_rpn;
+      param_set_interpolation_order = _o.param_set_interpolation_order;
+      ui_param_set_edit_idx = _o.ui_param_set_edit_idx;
+      param_set_baseline    = _o.param_set_baseline;
+
+      param_sets.free();
+      ModParamSet *ops;
+      foreach ops in _o.param_sets
+      {
+         if(null != ops)
+         {
+            ModParamSet ps <= newParamSet();
+            ps.copyFrom(ops);
+         }
+         else
+            param_sets.add(null);
+      }
+   }
+
+   // <method.png>
+   public method modIsPatchCompatibleWith(Mod _o) : boolean {
+      return false;
+   }
+
+   // <method.png>
+   public method modCopyPatchFrom(Mod _o) {
+   }
+
+   // <method.png>
+   public method modCopyMatrixFrom(Mod _o) {
+      ModMatrixEntry *mmeO;
+
+      // (note) no multi-lane cloning here since this method is already called for each lane/mode
+      //         when cloning a patch variation
+
+      // Free all entries
+      mod_matrix.free();
+
+      next_modmatrix_gid = 1;
+
+      foreach mmeO in _o.mod_matrix
+      {
+         ModMatrixEntry mme <= addModMatrixEntry();
+         mme.copyFrom(mmeO);
+
+         mme.gid = mmeO.gid;
+         if(mme.gid >= next_modmatrix_gid)
+         {
+            next_modmatrix_gid = mme.gid + 1;
+         }
+      }
+
+      handleModMatrixChanged();
+   }
+
+   // <method_get.png>
+   public method getName() : String {
+      // never called (abstract base class)
+      return "n/a";
+   }
+
+   // <method_get.png>
+   public method getNameForInstanceTable() : String {
+      return getName();
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      current_project.markAsModified();
+
+      if(null != _name)
+      {
+         if(!_name.isBlank())
+         {
+            display_name = _name;
+            return;
+         }
+      }
+      display_name.empty();
+   }
+
+   // <method.png>
+   public method isEffect() : boolean {
+      return false;
+   }
+
+   // <method.png>
+   protected method addInput(local String _name) : ModIO {
+      local ModIO io;
+      io.name = _name;
+      inputs.add(#(deref io));
+      return io;
+   }
+
+   // <method.png>
+   public method getNumInputs() : int {
+      return inputs.numElements;
+   }
+
+   // <method.png>
+   protected method addOutput(local String _name) : ModIO {
+      local ModIO io;
+      io.name = _name;
+      outputs.add(#(deref io));
+      return io;
+   }
+
+   // <method.png>
+   public method getNumOutputs() : int {
+      return outputs.numElements;
+   }
+
+   // <method.png>
+   public =replay= method addModMatrixEntry() : ModMatrixEntry {
+      ModMatrixEntry mme <= new ModMatrixEntry;
+      mme.init(next_modmatrix_gid);
+      mod_matrix.add(#(deref mme));
+      current_project.markAsModified();
+      return mme;
+   }
+
+   // <method.png>
+   public =replay= method removeModMatrixEntry(ModMatrixEntry _mme) {
+      mod_matrix.remove(_mme);
+      handleModMatrixChanged();
+      current_project.markAsModified();
+   }
+
+   // <method.png>
+   public =replay= method removeModMatrixEntryByGID(int _gid) : boolean {
+      ModMatrixEntry *mme;
+      foreach mme in mod_matrix
+      {
+         if(mme.gid == _gid)
+         {
+            mod_matrix.remove(mme);
+            handleModMatrixChanged();
+            current_project.markAsModified();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnable(boolean _bEnabled) {
+      if(b_enabled != _bEnabled)
+      {
+         b_enabled = _bEnabled;
+
+         current_project.markAsModified();
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setProcessMode(int _mode) {
+      if(_mode != process_mode)
+      {
+         process_mode = _mode;
+
+         current_project.markAsModified();
+      }
+   }
+
+   // <method_set.png>
+   public method nextProcessMode() {
+      setProcessMode((process_mode + 1) % NUM_PROCESS_MODES);
+   }
+
+   // <method_get.png>
+   public method getProcessModeName() : String {
+      return process_mode_names.get(process_mode);
+   }
+
+   // <method_get.png>
+   public method isEnabled() {
+      return b_enabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMonoIn(boolean _bEnable) {
+      b_mono_in = _bEnable;
+
+      if(!b_mono_in && (1 == inputs.numElements))
+         b_mono_in = true;
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMonoOut(boolean _bEnable) {
+      b_mono_out = _bEnable;
+
+      if(!b_mono_out && (1 == outputs.numElements))
+         b_mono_out = true;
+
+      if(b_multi_out)
+      {
+         if(b_mono_out)
+         {
+            if(outputs.numElements < 2)
+               b_multi_out = false;
+         }
+         else
+         {
+            if(outputs.numElements < 4)
+               b_multi_out = false;
+         }
+      }
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableSidechainIn(boolean _bEnable) {
+      b_sidechain_in = _bEnable;
+
+      if(!b_mono_in && (inputs.numElements < 4))  // need inputs 3+4
+         b_sidechain_in = false;
+      else if(b_mono_in && (inputs.numElements < 2))  // need input 2
+         b_sidechain_in = false;
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMultiOut(boolean _bEnable) {
+      b_multi_out = _bEnable;
+
+      if(b_multi_out)
+      {
+         if(b_mono_out)
+         {
+            if(outputs.numElements < 2)
+               b_multi_out = false;
+         }
+         else
+         {
+            if(outputs.numElements < 4)
+               b_multi_out = false;
+         }
+      }
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableReceiveMIDI(boolean _bEnable) {
+      if(_bEnable)
+         input_filter.loadDefaultsForInstrument();
+      else
+         input_filter.loadDefaultsForEffect();
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getEnableReceiveMIDI() : boolean {
+      return input_filter.enableNoteOn;
+   }
+
+   // <method_get.png>
+   public method canDoRelativeParams() : boolean {
+      // overriden by ModVST2
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRelativeParams(boolean _bEnabled) {
+      // intentionally left blank. used by ModVST2.
+   }
+
+   // <method_get.png>
+   public method getEnableRelativeParams() : boolean {
+      return b_relative_params;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableNoteOnVelocityEnv(boolean _bEnable) {
+      b_enable_noteon_velocity_env = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableNoteOffVelocityEnv(boolean _bEnable) {
+      b_enable_noteoff_velocity_env = _bEnable;
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public method setUIMutexGroupId(byte _mtxGrp) {
+      ui_mutex_group_id = _mtxGrp;
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method getUIMutexGroupName() : String {
+      return ["-",
+              "1A", "1B",
+              "2A", "2B",
+              "3A", "3B",
+              "4A", "4B"
+              ].get(ui_mutex_group_id+1);
+   }
+
+   // <method_set.png>
+   public =replay= method setResample(float _factor) {
+      b_resample = (1.0 != _factor);
+      resample_factor = _factor;
+
+      if(b_resample && resample_input_bufs.isEmpty())
+      {
+         FloatArray *fa;
+
+         loop(input_bufs.numElements)
+         {
+            fa <= new FloatArray;
+            fa.allocAndFill(Audio.STREAM_MAX_FRAMES, 0.0f);
+            resample_input_bufs.add(#(deref fa));
+         }
+
+         loop(output_bufs.numElements)
+         {
+            fa <= new FloatArray;
+            fa.allocAndFill(Audio.STREAM_MAX_FRAMES, 0.0f);
+            resample_output_bufs.add(#(deref fa));
+         }
+      }
+
+      b_resample_changed = true;
+
+      current_project.markAsModified();
+   }
+
+   // <method.png>
+   public method toggleResample(float _factor) {
+      trace "xxx toggle resampler: old b_resample="+b_resample+" new factor="+_factor;
+      float oldFactor = resample_factor;
+      if(resample_factor == _factor)
+         setResample(1.0);
+      else
+         setResample(_factor);
+      trace "xxx toggle resampler: new b_resample="+b_resample;
+      Global.Print("Resample: oldFactor="+oldFactor+" newFactor="+resample_factor+" (quality="+resample_quality+")");
+   }
+
+   // <method.png>
+   public method toggleResampleInit() {
+      b_resample_init = !b_resample_init;
+      Global.Print("Resample: init mode is "+Utils.GetEnableString(b_resample_init));
+   }
+
+   // <method_get.png>
+   public method getLatencyNumFrames() : int {
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getNumParameters() : int {
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+   }
+
+   // <method_get.png>
+   public method isParameterModulatable(local int _paramIdx) : boolean {
+      // (note) overridden by ModCLAP
+      return false;
+   }
+
+   // <method_get.png>
+   public method isAnyParameterModulatable() : boolean {
+      // (note) overridden by ModCLAP
+      return false;
+   }
+
+   // <method_get.png>
+   public method isParameterStepped(local int _paramIdx) : boolean {
+      // (note) overridden by ModCLAP
+      return false;
+   }
+
+   // <method.png>
+   public method getParameterMinValue(local int _idx) : float {
+      // (note) ModCLAP / ModSTFX may return min value != 0.0
+      return 0.0f;
+   }
+
+   // <method.png>
+   public method getParameterMaxValue(local int _idx) : float {
+      // (note) ModCLAP / ModSTFX may return max value != 0.0
+      return 1.0f;
+   }
+
+   // <method_get.png>
+   public method getParameterValue(local int _idx) : float {
+   }
+
+   // <method_get.png>
+   public method getParameterValueRelBase(local int _idx) : float {
+   }
+
+   // <method_set.png>
+   public method setParameterValue(local int _idx, local float _value) {
+      // called internally / implemented by derived classes
+   }
+
+   // <method.png>
+   public method parameterValueToText(local int _idx, local float _value) : String {
+      // implemented by ModCLAP
+      return null;
+   }
+
+   // <method.png>
+   public method parameterTextToValue(local int _idx, local String _text) : float {
+      // implemented by ModCLAP
+      return 0.0f;
+   }
+
+   // <method.png>
+   public =replay= method stopVoices() {
+      // Stop all voices and reverb/delay trails
+   }
+
+   // <method_set.png>
+   public method setTempo(float _bpm, int _ppq) {
+      // implemented by derived classes
+   }
+
+   // <method_new.png>
+   public =replay= method newParamSet() : ModParamSet {
+      ModParamSet ps <= new ModParamSet;
+      ps.init();
+      param_sets.add(#(deref ps));
+      return ps;
+   }
+
+   // <method_new.png>
+   public =replay= method newParamSetAtIdx(int _idx) : ModParamSet {
+      if(_idx >= param_sets.numElements)
+         param_sets.realloc(_idx + 1);
+      ModParamSet ps <= new ModParamSet;
+      ps.init();
+      param_sets[_idx] = deref ps;
+      return ps;
+   }
+
+   // <method_get.png>
+   public method getParamSetByIndex(int _idx) : ModParamSet {
+      return param_sets.get(_idx);
+   }
+
+   // <method_get.png>
+   public method getNumParamSets() : int {
+      return param_sets.numElements;
+   }
+
+   // <method.png>
+   public =replay= method queryParamSetBaseLine() {
+      int numParams = getNumParameters();
+      int paramIdx = 0;
+      param_set_baseline.empty();
+      loop(numParams)
+      {
+         param_set_baseline.add(getParameterValue(paramIdx));
+
+         // Next param
+         paramIdx++;
+      }
+   }
+
+   // <method.png>
+   public =replay= method setParamSetRPNGroup(short _grp) {
+      param_set_rpn_group = _grp;
+   }
+
+   // <method.png>
+   public =replay= method setParamSetInterpolationOrder(byte _order) {
+      param_set_interpolation_order = _order;
+   }
+
+   // <method.png>
+   public =replay= method setEnableParamSetRPN(boolean _bEnable) {
+      b_param_set_rpn = _bEnable;
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) : boolean {
+
+      _ofs.i16 = 20;  // version
+
+      // Instance-ID (v12+)
+      _ofs.i32 = instance_id;
+
+      // Grid Y
+      _ofs.i8 = ui_grid_y;
+
+      // Enable
+      _ofs.i8 = b_enabled; // v2+
+
+      // Mutex group id (v20+)
+      _ofs.i8 = ui_mutex_group_id;
+
+      // Process mode (v11+)
+      _ofs.i8 = process_mode;
+
+      // Mono I/O
+      _ofs.i8 = b_mono_in;  // v3+
+      _ofs.i8 = b_mono_out; // v3+
+
+      // Sidechain input
+      _ofs.i8 = b_sidechain_in;  // v10+
+
+      // Multi-out (v3+)
+      _ofs.i8 = b_multi_out; // v3+
+
+      // Resample (v13+)
+      _ofs.f32 = resample_factor;  // v13+
+      _ofs.i8 = resample_quality;  // v13+
+      _ofs.i8 = b_resample_init;   // v14+
+
+      // Input filter (v4+)
+      input_filter.saveState(_ofs);
+
+      // Relative param support (v5+)
+      _ofs.i8 = b_relative_params;
+
+      // Display name (v6+)
+      Utils.WriteString(_ofs, display_name);
+
+      // Note-On Velocity map (v8+)
+      _ofs.i8 = b_enable_noteon_velocity_env;
+      _ofs << noteon_velocity_env_state;
+      Utils.WriteEnvelope(_ofs, noteon_velocity_env);
+
+      // Note-Off Velocity map (v9+)
+      _ofs.i8 = b_enable_noteoff_velocity_env;
+      _ofs << noteoff_velocity_env_state;
+      Utils.WriteEnvelope(_ofs, noteoff_velocity_env);
+
+      // ModMatrix (v7+)
+      _ofs.i32 = mod_matrix.numElements;
+      ModMatrixEntry *mme;
+      foreach mme in mod_matrix
+      {
+         mme.saveState(_ofs);
+      }
+
+      // Param history (v15+)
+      Utils.WriteIntArray(_ofs, ui_param_history);
+
+      // Param sets (v16+)
+      _ofs.i8 = param_sets.numElements;
+      ModParamSet *ps;
+      foreach ps in param_sets
+      {
+         if(null != ps)
+         {
+            _ofs.i8 = true;
+            ps.saveState(_ofs);
+         }
+         else
+         {
+            // Unused slot
+            _ofs.i8 = false;
+         }
+      }
+
+      // // // Param set change RPN (v16+)
+      // // _ofs.i16 = param_set_rpn;
+
+      // Param set change RPN group (v18+)
+      _ofs.i8 = param_set_rpn_group;
+
+      // Enable Param set change RPN (v17+)
+      _ofs.i8 = b_param_set_rpn;
+
+      // Currently edited param set (v16+)
+      _ofs.i8 = ui_param_set_edit_idx;
+
+      // Param set interpolation order (v19+)
+      _ofs.i8 = param_set_interpolation_order;
+
+      // Current param set baseline (v16+)
+      Utils.WriteFloatArray(_ofs, param_set_baseline);
+
+      return true;
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = false;
+
+      short ver = _ifs.i16;
+
+      next_modmatrix_gid = 1;
+
+      if(ver >= 1)
+      {
+         if(ver >= 12)
+         {
+            // (note) prior to v12, only ModVST2 instances had instance_ids
+            int instanceId = _ifs.i32;
+
+            if(_bRestoreInstanceIDs)
+            {
+               instance_id = instanceId;
+
+               // When loading project files
+               //  (note) track last used instance_id
+               if(instance_id >= next_instance_id)
+                  next_instance_id = instance_id + 1;
+            }
+            else
+            {
+               // When loading track patches, use auto-assigned instance id (see Mod::init())
+            }
+         }
+         else
+         {
+            // Use auto-assigned instance id (see Mod::init())
+         }
+
+         ui_grid_y = _ifs.s8;
+
+         if(ver >= 2)
+         {
+            b_enabled = _ifs.b8;  // v2+
+         }
+
+         if(ver >= 20)
+         {
+            // Mutex group id (v20+)
+            ui_mutex_group_id = _ifs.s8;
+         }
+
+         if(ver >= 11)
+         {
+            // Process mode (v11+)
+            process_mode = _ifs.i8;
+         }
+
+         // Mono I/O (v3+)
+         if(ver >= 3)
+         {
+            b_mono_in  = _ifs.b8;  // v3+
+            b_mono_out = _ifs.b8;  // v3+
+         }
+
+         if(ver >= 10)
+         {
+            // Sidechain input (v10+)
+            b_sidechain_in = _ifs.b8;
+         }
+
+         // Multi-out (v3+)
+         if(ver >= 3)
+         {
+            b_multi_out = _ifs.b8;  // v3+
+         }
+
+         // Resample (v13+)
+         if(ver >= 13)
+         {
+            resample_factor = _ifs.f32;
+            resample_quality = _ifs.i8;
+            if(ver >= 14)
+               b_resample_init = _ifs.b8;  // v14+
+         }
+
+         if(ver >= 4)
+         {
+            // Input filter (v4+)
+            if(!input_filter.loadState(_ifs))
+            {
+               trace "[---] Mod::loadState: failed to load input_filter state.\n";
+               return false;
+            }
+         }
+
+         if(ver >= 5)
+         {
+            // Relative param support (v5+)
+            b_relative_params = _ifs.b8;
+         }
+
+         if(ver >= 6)
+         {
+            // Display name (v6+)
+            Utils.ReadString(_ifs, display_name);
+         }
+
+         if(ver >= 8)
+         {
+            // Note-On Velocity curve (v8+)
+            b_enable_noteon_velocity_env = _ifs.b8;
+            noteon_velocity_env_state << _ifs;
+            if(!Utils.ReadEnvelope(_ifs, noteon_velocity_env))
+            {
+               trace "[---] Mod::loadState: failed to read noteon_velocity_env";
+               return false;
+            }
+
+            if(ver >= 9)
+            {
+               // Note-Off Velocity curve (v9+)
+               b_enable_noteoff_velocity_env = _ifs.b8;
+               noteoff_velocity_env_state << _ifs;
+               if(!Utils.ReadEnvelope(_ifs, noteoff_velocity_env))
+               {
+                  trace "[---] Mod::loadState: failed to read noteoff_velocity_env";
+                  return false;
+               }
+            }
+         }
+
+         // Succeeded (unless mod_matrix fails)
+         r = true;
+
+         // ModMatrix (v7+)
+         mod_matrix.free();
+
+         if(ver >= 7)
+         {
+            int numModMatrixEntries = _ifs.i32;
+            int modMatrixIdx = 0;
+
+            if(numModMatrixEntries < MAX_MODMATRIX_ENTRIES)
+            {
+               loop(numModMatrixEntries)
+               {
+                  ModMatrixEntry mme <= addModMatrixEntry();
+
+                  if(!mme.loadState(_ifs))
+                  {
+                     trace "[---] Mod::loadState: failed to load mod_matrix entry "+(modMatrixIdx+1)+"/"+numModMatrixEntries;
+                     r = false;
+                     break;
+                  }
+
+                  if(mme.gid >= next_modmatrix_gid)
+                     next_modmatrix_gid = mme.gid + 1;
+
+                  // Next mod_matrix entry
+                  modMatrixIdx++;
+               }
+            }
+            else
+            {
+               trace "[---] Mod::loadState: invalid number of mod_matrix entries ("+numModMatrixEntries+" >= "+MAX_MODMATRIX_ENTRIES+")";
+               r = false;
+            }
+         }
+
+         // Param history (v15+)
+         //  (note) moved from ModVST2 to Mod base class in v15+
+         if(ver >= 15)
+         {
+            Utils.ReadIntArray(_ifs, ui_param_history);
+         }
+
+         // Param sets (v16+)
+         if(ver >= 16)
+         {
+            int numParamSets = _ifs.u8;
+            param_sets.alloc(numParamSets);
+            ModParamSet *ps;
+            int psIdx = 0;
+            loop(numParamSets)
+            {
+               boolean bPSUsed = _ifs.b8;
+               if(bPSUsed)
+               {
+                  ps <= new ModParamSet;
+                  ps.init();
+                  if(ps.loadState(_ifs))
+                  {
+                     param_sets.add(#(deref ps));
+                  }
+                  else
+                  {
+                     trace "[---] Mod::loadState: failed to load paramset "+(psIdx+1)+"/"+numParamSets;
+                     r = false;
+                     break;
+                  }
+               }
+               else
+               {
+                  // Unused slot
+                  param_sets.add(null);
+               }
+               psIdx++;
+            }
+
+            if(ver < 18)
+            {
+               // Param set change RPN (v16+)
+               param_set_rpn_group = mathClampi(_ifs.u16 - 70, 0, 4);
+            }
+            else
+            {
+               param_set_rpn_group = _ifs.u8;
+            }
+
+            if(ver >= 17)
+            {
+               // Enable Param set change RPN (v17+)
+               b_param_set_rpn = _ifs.b8;
+            }
+
+            // Currently edited param set (v16+)
+            ui_param_set_edit_idx = _ifs.u8;
+
+            if(ver >= 19)
+            {
+               // Param set interpolation order (v19+)
+               param_set_interpolation_order = _ifs.u8;
+            }
+
+            // Current param set baseline (v16+)
+            Utils.ReadFloatArray(_ifs, param_set_baseline);
+         }
+
+         handleModMatrixChanged();
+      }
+      else
+      {
+         trace "[---] Mod::loadState: invalid ver="+ver;
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method isThreadedPostLoadSupported() : boolean {
+      return false;
+   }
+
+   // <load.png>
+   public method loadStatePost(local boolean _bThreaded) : boolean {
+      // (possibly) multi-threaded
+      // (note) must update b_postload_done when postload was performed (regardless of result)
+      // (note) must update b_postload when postload was successful
+      return true;
+   }
+
+   // <replay.png>
+   public method processVelocityCurvesFrame(local int _fltDev, local int _fltCh) {
+      local int numEv;
+      local int evIdx;
+      local float vel;
+
+      if(b_enable_noteon_velocity_env)
+      {
+         numEv = vel_frame.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
+
+         if(numEv > 0)
+         {
+            evIdx = 0;
+
+            loop(numEv)
+            {
+               vel  = vel_frame.getNormalizedNoteOnVelocityByIdxAndFlt(evIdx, _fltDev, _fltCh);
+
+               if(vel > 0.0f)
+               {
+                  CurveDialog.LockRecalcMutex();
+                  noteon_velocity_env.time = vel;
+                  vel = noteon_velocity_env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  vel_frame.noteOnVelReplaceByIdxAndFlt(evIdx,
+                                                        _fltDev, _fltCh,
+                                                        vel * 127
+                                                        );
+               }
+
+               evIdx++;
+            }
+         }
+      }
+
+      if(b_enable_noteoff_velocity_env)
+      {
+         numEv = vel_frame.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+
+         if(numEv > 0)
+         {
+            evIdx = 0;
+
+            loop(numEv)
+            {
+               vel  = vel_frame.getNormalizedNoteOffVelocityByIdxAndFlt(evIdx, _fltDev, _fltCh);
+
+               if(vel >= 0.0f)
+               {
+                  CurveDialog.LockRecalcMutex();
+                  noteoff_velocity_env.time = vel;
+                  vel = noteoff_velocity_env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  vel_frame.noteOffVelReplaceByIdxAndFlt(evIdx,
+                                                         _fltDev, _fltCh,
+                                                         vel * 127
+                                                         );
+               }
+
+               evIdx++;
+            }
+         }
+      }
+
+   }
+
+   // <replay.png>
+   protected method recalcModMatrixForParam(local int _paramIdx) {
+      // (note) default implementation (overridden by ModVST2)
+
+      local float curVal = ModMatrixEntry.INVALID_VALUE;
+
+      local PointerArray paramRefs <= mod_matrix_param_refs.get(_paramIdx);
+
+      if(null != paramRefs)
+      {
+         local ModMatrixEntry *mme;
+
+         foreach mme in paramRefs
+         {
+            if(ModMatrixEntry.INVALID_VALUE != mme.last_ctl_value)
+            {
+               local float modVal = mme.last_ctl_value;
+
+               // Apply curve to modVal
+               if(mme.b_enable_input_mapper_env)
+               {
+                  // (todo) use per-track mutex
+                  CurveDialog.LockRecalcMutex();
+                  local Envelope env <= mme.input_mapper_env;
+                  env.time = modVal;
+                  modVal = env.get();
+                  CurveDialog.UnlockRecalcMutex();
+                  modVal = mathPowerf(modVal, mme.input_mapper_env_state.out_exponent);
+
+                  // if(bDebug)
+                  //    trace "xxx 1curve modVal="+modVal;
+               }
+
+               // Rescale normalized ctl value (0..1) to value range
+               local float minVal = mme.value_min;
+               local float maxVal = mme.value_max;
+
+               if(mme.b_asym && mme.b_relative)
+               {
+                  if(modVal < 0.5)
+                  {
+                     modVal = minVal * ((0.5 - modVal) * 2.0);
+                  }
+                  else
+                  {
+                     modVal = maxVal * ((modVal - 0.5) * 2.0);
+                  }
+               }
+               else
+               {
+                  modVal = minVal + ((maxVal - minVal) * modVal);
+               }
+
+               // Direct parameter modulation
+               if(ModMatrixEntry.INVALID_VALUE == curVal)
+               {
+                  curVal = getParameterValue(_paramIdx);
+               }
+
+               if(mme.b_relative)
+               {
+                  // (note) first entry should not be relative
+                  curVal = mathLerpf(curVal, curVal + modVal, mme.amount);
+               }
+               else
+               {
+                  // (note) first entry should use amount=100%
+                  curVal = mathLerpf(curVal, modVal, mme.amount);
+               }
+
+            } // if !INVALID_VALUE
+
+            // Next entry
+         } // foreach mme in paramRefs
+
+      } // if paramRefs
+
+      if(ModMatrixEntry.INVALID_VALUE != curVal)
+      {
+         // Clamp to VST2 parameter range
+         curVal = mathClampf(curVal, 0.0f, 1.0f);
+
+         // Update parameter
+         setParameterValue(_paramIdx, curVal);
+      }
+   }
+
+   // <replay.png>
+   public method processModMatrixEvents(local int _fltDev, local int _fltCh, local int _globalCh) {
+      // (note) default implementation (overridden by ModVST2)
+
+      local MIDIPipeFrame fr <= replay.midi_input_frame;
+      local int numEv = fr.numEvents;
+
+      local IntArray tmpParams <= mod_matrix_temp_param_indices;
+      tmpParams.empty();
+
+      if(numEv > 0)
+      {
+         local int evIdx = 0;
+
+         loop(numEv)
+         {
+            // in 0..TOTAL_NUM_SOURCE-1 range
+            local int srcIdx =
+               fr.modMatrixCheckEventByFlt(evIdx,
+                                           _fltDev,
+                                           _fltCh,
+                                           _globalCh,
+                                           tmp_modmatrix_val,   // returns normalized 0..1 value
+                                           tmp_modmatrix_vel    // returns normalized velocity value
+                                           );
+
+            local boolean bDebug = false;
+
+            if(-1 != srcIdx)
+            {
+               local PointerArray *srcRefs;
+               local ModMatrixEntry *mme;
+
+               // Iterate all entries that reference the given srcidx and update their current ctl value
+               srcRefs <= mod_matrix_src_refs.get(srcIdx);
+               if(null != srcRefs)
+               {
+                  foreach mme in srcRefs
+                  {
+                     mme.last_ctl_value = mme.pickValue(srcIdx, tmp_modmatrix_val, tmp_modmatrix_vel);
+
+                     if(!tmpParams.contains(mme.param_idx))
+                        tmpParams.add(mme.param_idx);
+                  }
+               }
+
+            } // if -1 != srcIdx
+
+            // Next event
+            evIdx++;
+
+         } // loop events
+
+         // Iterate all affected parameters and recalculate the modmatrix output(s)
+         //  (note) [25Apr2021] moved outside of event loop to fix redundant param setting + liverec double-swap issue
+         local int paramIdx;
+         foreach paramIdx in tmpParams
+         {
+            recalcModMatrixForParam(paramIdx);
+         } // foreach paramIdx
+
+      } // if have events
+
+   }
+
+   // <replay.png>
+   public method processParamSetChange(local int _fltDev, local int _fltCh) {
+      if(b_param_set_rpn)
+      {
+         local MIDIPipeFrame fr <= replay.midi_input_frame;
+         local short psIdx = fr.getFilteredRPN(_fltDev, _fltCh, param_set_rpn_group + 70/*paramset_1*/);
+         local ModParamSet *ps;
+         if(psIdx > 0)
+         {
+            if(STConfig.b_debug_rt)
+               trace "[>>>] Mod::processParamSetChange: select ABS param set "+psIdx;
+            ps <= param_sets.get(psIdx - 1);
+            if(null != ps)
+            {
+               ps.loadParameters(this);
+            }
+         }
+
+         psIdx = fr.getFilteredRPN(_fltDev, _fltCh, param_set_rpn_group + 75/*paramset_smooth_1*/);
+         if(psIdx >= 0)
+         {
+            // (note) 0..16383 => (16384/32) = 512 fraction steps between two adjacent param sets
+            if(STConfig.b_debug_rt)
+               trace "[>>>] Mod::processParamSetChange: select SMOOTH param set psIdx="+psIdx+" => "+(psIdx/512.0);
+            ps <= param_sets.get(psIdx >> 9);
+            if(null != ps)
+            {
+               local ModParamSet psB <= param_sets.get( ((psIdx >> 9) + 1) & 31 );
+               if(null != psB)
+               {
+                  ps.loadParametersSmooth(this, psB, (psIdx&511) / 512.0, param_set_interpolation_order);
+               }
+               else
+               {
+                  ps.loadParameters(this);
+               }
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public method process(local int _numFrames,
+                         local int _fltDev, local int _fltCh,
+                         local int _forceCh, local int _globalCh,
+                         local boolean _bPlaying
+                         ) {
+   }
+
+   // <method.png>
+   protected method rebuildModMatrixSrcRefs() {
+      ModMatrixEntry *mme;
+
+      mod_matrix_src_refs.alloc(ModMatrixEntry.TOTAL_NUM_SOURCES);
+      mod_matrix_src_refs.useAll();
+
+      foreach mme in mod_matrix
+      {
+         if(mme.b_enable)
+         {
+            int srcIdx = mme.src_idx;
+            PointerArray refs <= mod_matrix_src_refs.get(srcIdx);
+            if(null == refs)
+            {
+               refs <= new PointerArray;
+               mod_matrix_src_refs[srcIdx] = deref refs;
+            }
+            refs.add(mme);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method rebuildModMatrixParamRefs() {
+      ModMatrixEntry *mme;
+
+      int numParams = getNumParameters();
+
+      mod_matrix_param_refs.alloc(numParams);
+      mod_matrix_param_refs.useAll();
+
+      foreach mme in mod_matrix
+      {
+         if(mme.b_enable)
+         {
+            int paramIdx = mme.param_idx;
+            PointerArray refs <= mod_matrix_param_refs.get(paramIdx);
+            if(null == refs)
+            {
+               refs <= new PointerArray;
+               mod_matrix_param_refs[paramIdx] = deref refs;
+            }
+            refs.add(mme);
+         }
+      }
+   }
+
+   // <method_handle.png>
+   public =replay= method handleModMatrixChanged() {
+      rebuildModMatrixSrcRefs();
+      rebuildModMatrixParamRefs();
+
+      // (note) each entry can reference one param
+      // (note) preallocate to avoid reallocations during replay
+      mod_matrix_temp_param_indices.alloc(mod_matrix.numElements);
+   }
+
+   // <method.png>
+   public static NewModMatrixRPNCtlUsedFlags() : IntArray {
+      local IntArray usedFlags;
+      usedFlags.alloc(RPN_CTL_NUM);  // RPN 100..199
+      usedFlags.useAll();
+      usedFlags.fill(false);
+      return deref usedFlags;
+   }
+
+   // <method.png>
+   public method flagUsedModMatrixRPNCtl(IntArray _usedFlags) {
+      ModMatrixEntry *mme;
+      foreach mme in mod_matrix
+      {
+         // // if(mme.b_enable)
+         {
+            if(ModMatrixEntry.SRC_RPN == mme.src)
+            {
+               if(RPN_CTL_BASE <= mme.arg1 < (RPN_CTL_BASE + RPN_CTL_NUM))
+               {
+                  _usedFlags[mme.arg1 - RPN_CTL_BASE] = true;
+               }
+            }
+         }
+      }
+   }
+
+   // <method_find.png>
+   public static FindFirstUnusedModMatrixRPNCtl(IntArray _usedFlags) : short {
+      short unusedRPN = 0;
+      loop(RPN_CTL_NUM)
+      {
+         if(!_usedFlags[unusedRPN])
+         {
+            unusedRPN += RPN_CTL_BASE;
+            return unusedRPN;
+         }
+         unusedRPN++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findUnusedModMatrixRPNCtl() : int {
+      // Return RPN_CTL_n or -1 (all in use)
+      local IntArray usedFlags <= NewModMatrixRPNCtlUsedFlags();
+      flagUsedModMatrixRPNCtl(usedFlags);
+      return FindFirstUnusedModMatrixRPNCtl(usedFlags);
+   }
+
+   // <method.png>
+   public method showEditor() {
+   }
+
+   // <method.png>
+   public method hideEditor() {
+   }
+
+   // <method.png>
+   public method closeEditor() {
+   }
+
+   // <method.png>
+   public method isEditorVisible() : boolean {
+      return false;
+   }
+
+   // <method.png>
+   protected method queueUIUpdate() {
+      // called from setParameterValue() in replay thread
+      mtx_ui_update.lock();
+      b_queued_ui_update = true;
+      mtx_ui_update.unlock();
+   }
+
+   // <method.png>
+   public method checkResetQueuedUIUpdate() {
+      mtx_ui_update.lock();
+      local boolean r = b_queued_ui_update;
+      b_queued_ui_update = false;
+      mtx_ui_update.unlock();
+      return r;
+   }
+
+   // <method_get.png>
+   public method hasUIParamHistory() : boolean {
+      // (note) overridden by ModSTFX (no history)
+      return true;
+   }
+
+   // <method_add.png>
+   public method addToUIParamHistory(int _paramIdx) {
+      ui_param_history.add(_paramIdx);
+      if(ui_param_history.numElements > STConfig.mod_param_history_size)
+         ui_param_history.delete(0);
+   }
+
+   // <method_get.png>
+   public method getUIParamHistoryLast() : int {
+      return ui_param_history.last;
+   }
+
+   // <method.png>
+   protected static UpdateLastIOPatchNameFromPathName(String _lastIOPatchName, String _pathName) {
+      local String sPath;
+      // trace "[trc] Mod::UpdateLastIOPatchNameFromPathName: oldlastIOPatchName=\""+_lastIOPatchName+"\" pathName=\""+_pathName+"\"";
+      local String sNewIOPatchName;
+      Utils.SplitPathname(_pathName, sPath, sNewIOPatchName);
+      if(_lastIOPatchName != sNewIOPatchName)
+      {
+         _lastIOPatchName = sNewIOPatchName;
+         current_project.markAsModified();
+      }
+   }
+
+}

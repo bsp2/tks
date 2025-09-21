@@ -1,0 +1,1073 @@
+// ----
+// ---- file   : SampleTuningDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : based on Synergy's MTSDialog
+// ----
+// ---- created: 09Feb2019
+// ---- changed: 07May2022, 08Jul2023, 29Jul2023, 04Oct2023, 20Oct2023, 30Oct2023, 28Sep2024
+// ----          29Sep2024, 30Sep2024
+// ----
+// ----
+// ----
+
+module MSampleTuningDialog;
+
+use namespace ui;
+
+
+// <class.png>
+class SampleTuningDialog extends Dialog {
+
+   protected Sample       *sample_sci;            // parent Sample script class ref
+   protected PointerArray *sample_zones_or_null;  // either (selected)sample-zones array
+   protected StSampleBank *samplebank_or_null;    //  or samplebank
+
+   protected XMLForm *xfm;
+
+   protected FloatParam *fp_edit;
+   protected CheckBox   *cb_force;
+
+   protected Button     *bt_copy;
+   protected Button     *bt_paste;
+   protected Button     *bt_clear;
+
+   protected TextField  *tf_name;
+
+   protected ComboBox   *cm_preset;
+   protected CheckBox   *cb_preset_autoload;
+   protected Button     *bt_preset_load;
+
+   protected Button     *bt_equal;
+
+   protected Button     *bt_rand_detune2;
+   protected FloatParam *fp_detune_rand;
+   protected Button     *bt_rand_all;
+
+   protected Button     *bt_replicate_oct;
+   protected FloatParam *fp_replicate_oct_src;
+
+   protected ComboBox   *cm_scl_rootkey;
+   protected CheckBox   *cb_scl_keytohz;
+   protected FloatParam *fp_scl_roothz;
+
+   protected ScrollPane *sp_entries;
+   protected Button     *bt_default;
+   protected Button     *bt_close;
+
+   Label      *[] en_idx;      // Index labels (1..128)
+   FloatParam *[] en_freq;     // Frequency floatparams
+   ComboBox   *[] en_note;     // Note comboboxes
+   FloatParam *[] en_detune1;  // Detune1 floatparams
+   FloatParam *[] en_detune2;  // Detune2 floatparams
+
+   static SampleTuningTable *default_table;  // equal-temperament table, not editable
+
+   static SampleTuningTable *tbl_clipboard;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      local String xfmSrc;
+      if(xfmSrc.load("SampleTuningDialog.xfm", true/*bRemoveCR*/))
+      {
+         createEntryWidgets(xfmSrc);
+
+         xfm <= new XMLForm;
+         if(xfm.parseXMLForm(xfmSrc))
+         {
+            resolveEntryWidgets();
+            xfm.autoResolveIds(this);
+
+            Global.LazyScanTuningTablePresets(false/*bForce*/);
+            cm_preset.setOptions(Global.tuning_table_opt_short);
+            cm_preset.setOptionsLong(Global.tuning_table_opt_long);
+            cm_preset.setToolTipCaption(cm_preset.getToolTipCaption().replace("$(PATH)", STConfig.tuning_table_rootpath));
+
+            cm_scl_rootkey.setOptions(MIDI.midi_notes);
+            cm_scl_rootkey.setSelectedOption(5*12/*C-5*/);
+
+            initWindow(xfm,
+                       "Micro-Tuning",  // updated in showTuningDialog()
+                       100, 100,
+                       940, 540         // updated in preShow()
+                       );
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showTuningDialog(Sample       _sample,
+                                  PointerArray _sampleZonesOrNull,
+                                  StSampleBank _sampleBankOrNull
+                                  ) {
+      sample_sci           <= _sample;
+      sample_zones_or_null <= deref _sampleZonesOrNull;  // selected zones
+      samplebank_or_null   <= _sampleBankOrNull;
+
+      int editTableIdx = getEditTableIdx();
+      fp_edit.setMaxValue(STSAMPLE_MAX_TUNING_TABLES/*16*/);
+      fp_edit.setValue(editTableIdx + 1);
+
+      updateUIFromEditTable(true/*bSelectPreset*/);
+
+      if(null != _sampleZonesOrNull)
+         setWindowTitle("Sample-Zone Micro-Tuning ("+_sampleZonesOrNull.numElements+" zone"+Utils.GetPluralString(_sampleZonesOrNull.numElements)+")");
+      else
+         setWindowTitle("Sample-Bank Micro-Tuning");
+
+      showCentered();
+   }
+
+   // <method.png>
+   protected method getEditTableIdx() : int {
+      if(null != sample_zones_or_null)
+      {
+         StSample firstZone <= sample_zones_or_null.first;
+         return firstZone.defaultTuningTableIdx;
+      }
+      return samplebank_or_null.defaultTuningTableIdx;
+   }
+
+   // <method.png>
+   protected =replay= method setEditTableIdx(int _idx) : int {
+      if(null != sample_zones_or_null)
+      {
+         StSample *s;
+         foreach s in sample_zones_or_null
+         {
+            s.defaultTuningTableIdx = _idx;
+         }
+      }
+      else
+      {
+         samplebank_or_null.defaultTuningTableIdx = _idx;
+      }
+      sample_sci.markParamsAsModified();
+   }
+
+   // <method.png>
+   protected method getEditTable() : SampleTuningTable {
+      // (note) editor info is stored in StSampleBank / StSample
+      int tblIdx = getEditTableIdx();
+
+      if(tblIdx < 0)
+      {
+         // Default table (not editable)
+         if(null == default_table)
+         {
+            default_table <= new SampleTuningTable;
+            default_table.init();
+         }
+         default_table.loadDefault();
+         return default_table;
+      }
+
+      SampleTuningTable *tbl;
+      if(null != sample_zones_or_null)
+      {
+         // Sample-zone(s)
+         //  - lazy-alloc editor meta data
+         StSample *s;
+         foreach s in sample_zones_or_null
+         {
+            tbl <= s.getTuningTableMetaData(tblIdx);
+            if(null == tbl)
+            {
+               tbl <= new SampleTuningTable;
+               tbl.init();
+               tbl.loadDefault();
+               tbl.name = "table "+(tblIdx+1);
+               s.setTuningTableMetaData(tblIdx, #(deref tbl));
+            }
+         }
+      }
+      else
+      {
+         // Samplebank
+         tbl <= samplebank_or_null.getTuningTableMetaData(tblIdx);
+         if(null == tbl)
+         {
+            // Lazy-alloc editor meta data
+            tbl <= new SampleTuningTable;
+            tbl.init();
+            tbl.loadDefault();
+            tbl.name = "table "+(tblIdx+1);
+            samplebank_or_null.setTuningTableMetaData(tblIdx, #(deref tbl));
+         }
+      }
+      return tbl;
+   }
+
+   // <ui_init.png>
+   protected method createEntryWidgets(String _xfmSrc) {
+      local String templ;
+      if(templ.load("SampleTuningEntryTemplate.xfm", true/*bRemoveCR*/))
+      {
+         local String buf;
+         local String enBuf;
+
+         int entryIdx = 0;
+         loop(128)
+         {
+            // One panel per octave
+            if(0 == (entryIdx % 12))
+            {
+               if(entryIdx > 0)
+                  buf.append("</Panel>\n");
+               buf.append("<Panel dir=RIGHT padLeft=10>\n");
+            }
+
+            enBuf = templ;
+            enBuf.replace("$(IDX)", String(entryIdx));
+
+            buf.append(enBuf);
+
+            entryIdx++;
+         }
+
+         buf.append("</Panel>\n");
+
+         _xfmSrc.replace("$(ENTRIES)", buf);
+      }
+   }
+
+   // <ui_init.png>
+   protected method resolveEntryWidgets() {
+      Label *lb;
+      FloatParam *fp;
+      ComboBox *cm;
+      int entryIdx = 0;
+
+      en_idx.alloc(128);
+      en_freq.alloc(128);
+      en_note.alloc(128);
+      en_detune1.alloc(128);
+      en_detune2.alloc(128);
+
+      loop(128)
+      {
+         // Entry nr
+         lb <= xfm.findLayerById("lb_en_nr_"+entryIdx);
+         lb.setCaption(entryIdx+":");
+         en_idx.add(lb);
+         lb.getSizeX();
+         lb.getSizeY();
+         // trace "xxx ["+entryIdx+"] lb.size="+lb.getSizeString()+" prefSz="+lb.getPreferredSizeString();
+
+         // Freq
+         fp <= xfm.findLayerById("fp_en_freq_"+entryIdx);
+         en_freq.add(fp);
+         // trace "xxx ["+entryIdx+"] fp_en_freq.size="+fp.getSizeString();
+
+         // Note
+         cm <= xfm.findLayerById("cm_en_note_"+entryIdx);
+         cm.setOptions(MIDI.midi_notes);
+         en_note.add(cm);
+
+         // Detune 1
+         fp <= xfm.findLayerById("fp_en_detune1_"+entryIdx);
+         en_detune1.add(fp);
+
+         // Detune 2
+         fp <= xfm.findLayerById("fp_en_detune2_"+entryIdx);
+         en_detune2.add(fp);
+
+         // Next entry
+         entryIdx++;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateUIFromEditTable(boolean _bSelectPreset) {
+      Label *lb;
+      FloatParam *fp;
+      ComboBox *cm;
+      SampleTuningTable tbl <= getEditTable();
+      int editTableIdx = getEditTableIdx();
+      boolean bEditable = (editTableIdx >= 0);
+      setForcedTuningTableIdx(cb_force.isSelected() ? editTableIdx : -1);
+
+      bt_paste.setEditable(bEditable && (null != tbl_clipboard));
+      bt_clear.setEditable(!tbl.b_default);
+
+      tf_name.setText(bEditable ? tbl.name : "-");
+      tf_name.setEditable(bEditable);
+
+      cm_preset         .setEditable(bEditable);
+      cb_preset_autoload.setEditable(bEditable);
+      bt_preset_load    .setEditable(bEditable);
+
+      cm_scl_rootkey.setEditable(bEditable);
+      cb_scl_keytohz.setEditable(bEditable);
+      fp_scl_roothz .setEditable(bEditable);
+
+      if(bEditable)
+      {
+         if(_bSelectPreset)
+         {
+            int presetIdx = findPresetIdxByBaseName(tbl.scl_basename);
+            cm_preset.setSelectedOption(presetIdx);
+         }
+         // trace "xxx updateUI: tbl.scl_rootkey="+tbl.scl_rootkey;
+         cm_scl_rootkey.setSelectedOption(tbl.scl_rootkey);
+         cb_scl_keytohz.setSelected      (tbl.b_scl_keytohz);
+         fp_scl_roothz .setValue         (tbl.scl_roothz);
+      }
+      else
+      {
+         cm_preset.setSelectedOption(-1);
+         cm_scl_rootkey.setSelectedOption(-1);
+         cb_scl_keytohz.setSelected      (false);
+         fp_scl_roothz .setValue         (261.625f);
+      }
+
+      bt_equal.setEditable(bEditable && !(tbl.b_default && SampleTuningTable.CompareFreqTables(Audio.default_freq_table, Audio.eqtemp_freq_table)));
+      bt_rand_detune2.setEditable(bEditable);
+      fp_detune_rand.setEditable(bEditable);
+      bt_rand_all.setEditable(bEditable);
+      bt_replicate_oct.setEditable(bEditable);
+      fp_replicate_oct_src.setEditable(bEditable);
+      cm_scl_rootkey.setEditable(bEditable);
+      cb_scl_keytohz.setEditable(bEditable);
+      fp_scl_roothz.setEditable(bEditable);
+
+      bt_default.setEditable(!SampleTuningTable.CompareFreqTables(tbl.getFloatArray(), Audio.default_freq_table));
+
+      int entryIdx = 0;
+      loop(128)
+      {
+         SampleTuningEntry en <= tbl.getEntryByIdx(entryIdx);
+
+         // Freq
+         fp <= en_freq[entryIdx];
+         float freq = en.calcFreq();
+         fp.setValue(freq);
+         fp.setEditable(bEditable);
+
+         // Note
+         cm <= en_note[entryIdx];
+         cm.setSelectedOption(en.note);
+         cm.setEditable(bEditable);
+
+         // Detune 1
+         fp <= en_detune1[entryIdx];
+         fp.setValue(en.detune1);
+         fp.setEditable(bEditable);
+
+         // Detune 2
+         fp <= en_detune2[entryIdx];
+         fp.setValue(en.detune2);
+         fp.setEditable(bEditable);
+
+         // Next entry
+         entryIdx++;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      // (todo)
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+      if(!b_layer_postinit_done)
+      {
+         handleResize();
+         setSize2f(850*UI.font_scaling,
+                   (2.0 == UI.font_scaling) ? 610 : 340*UI.font_scaling
+                   );
+         handleResize();
+      }
+
+      relayout();
+
+      Dialog::preShow();
+   }
+
+   // <method.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_close);
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <method.png>
+   protected =replay= method setForcedTuningTableIdx(int _idx) {
+      // trace "xxx setForcedTuningTableIdx("+_idx+")";
+      if(null != sample_zones_or_null)
+      {
+         StSample *s;
+         foreach s in sample_zones_or_null
+            s.forcedTuningTableIdx = _idx;
+      }
+      else
+      {
+         samplebank_or_null.forcedTuningTableIdx = _idx;
+      }
+   }
+
+   // <method.png>
+   protected =replay= method copyToSample(int tblIdx, SampleTuningTable tbl, FloatArray fa) {
+      // trace "xxx SampleTuningDialog::handleTableChanged: freq="+#(fa);
+      if(null != sample_zones_or_null)
+      {
+         // Copy to StSample(s)
+         StSample *s;
+         foreach s in sample_zones_or_null
+         {
+            s.setTuningTable(tblIdx, fa);
+
+            // Mirror editor data
+            SampleTuningTable tblO <= s.getTuningTableMetaData(tblIdx);
+            if(null != tbl)
+            {
+               if(null == tblO)
+               {
+                  tblO <= new SampleTuningTable;
+                  tblO.init();
+                  tblO.loadDefault();
+                  s.setTuningTableMetaData(tblIdx, #(deref tblO));
+               }
+               if(@(tblO) != @(tbl))
+               {
+                  tblO.copyFrom(tbl);
+               }
+            }
+            else if(null != tblO)
+               tblO.loadDefault();
+         }
+      }
+      else
+      {
+         // Copy to StSampleBank
+         samplebank_or_null.setTuningTable(tblIdx, fa);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTableChanged() {
+      // Copy updated tuning table to sample(bank)
+      //  (note) replay uses default (equal temperament) freq tbl when tuning table is null
+      int tblIdx = getEditTableIdx();
+      SampleTuningTable tbl <= getEditTable();
+      local FloatArray fa <= tbl.getFloatArray();
+      if(tblIdx >= 0)
+      {
+         tbl.b_default = SampleTuningTable.CompareFreqTables(fa, Audio.default_freq_table);
+         trace "[trc] SampleTuningDialog::handleTableChanged: => tbl.b_default="+tbl.b_default;
+      }
+      bt_clear.setEditable(!tbl.b_default);
+      bt_equal.setEditable(tblIdx >= 0 && !(tbl.b_default && SampleTuningTable.CompareFreqTables(Audio.default_freq_table, Audio.eqtemp_freq_table)));
+      bt_default.setEditable(!tbl.b_default);
+
+      if(tbl.b_default)
+      {
+         tbl <= null;
+         fa <= null;
+      }
+
+      copyToSample(tblIdx, tbl, fa);
+      sample_sci.markParamsAsModified();
+   }
+
+   // <ui_update.png>
+   protected method updateEntryWidgets(SampleTuningEntry en, int idx) {
+      FloatParam fpFreq <= en_freq.get(idx);
+      ComboBox cmNote <= en_note.get(idx);
+      FloatParam fpDetune1 <= en_detune1.get(idx);
+      FloatParam fpDetune2 <= en_detune2.get(idx);
+      fpFreq.setValue(en.calcFreq());
+      cmNote.setSelectedOption(en.note);
+      fpDetune1.setValue(en.detune1);
+      fpDetune2.setValue(en.detune2);
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleEntryWidget(Layer _l, String _acName) : boolean {
+      int idx;
+      SampleTuningEntry *en;
+      FloatParam *fp;
+      ComboBox *cm;
+      SampleTuningTable tbl <= getEditTable();
+      String *sNote;
+      StringArray aMIDINotes <= MIDI.midi_notes;
+
+      // Freq
+      idx = en_freq.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         sNote <= aMIDINotes.get(idx);
+         en <= tbl.getEntryByIdx(idx);
+         fp <= en_freq.get(idx);
+         en.setFreq(fp.getFloatValue());
+
+         updateEntryWidgets(en, idx);
+         handleTableChanged();
+
+         Global.Print("Note "+idx+"("+sNote+") frequency is "+fp.getFloatValue()+" Hz");
+
+         if(FloatParam.ACTION_VALUECHANGED == _acName)
+            refocusDefault();
+
+         return true;
+      }
+
+      // Note
+      idx = en_note.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         sNote <= aMIDINotes.get(idx);
+         en <= tbl.getEntryByIdx(idx);
+         cm <= en_note.get(idx);
+         en.setBaseNote(cm.getSelectedOption());
+
+         updateEntryWidgets(en, idx);
+         handleTableChanged();
+
+         Global.Print("Note "+idx+"("+sNote+") equal-tempered base note is "+cm.getSelectedOptionName());
+         return true;
+      }
+
+      // Detune 1
+      idx = en_detune1.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         sNote <= aMIDINotes.get(idx);
+         en <= tbl.getEntryByIdx(idx);
+         fp <= en_detune1.get(idx);
+         en.setDetune1(fp.getFloatValue());
+
+         updateEntryWidgets(en, idx);
+         handleTableChanged();
+
+         Global.Print("Note "+idx+"("+sNote+") detune1 is "+(en.detune1*100)+" cents");
+
+         if(FloatParam.ACTION_VALUECHANGED == _acName)
+            refocusDefault();
+
+         return true;
+      }
+
+      // Detune 2
+      idx = en_detune2.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         sNote <= aMIDINotes.get(idx);
+         en <= tbl.getEntryByIdx(idx);
+         fp <= en_detune2.get(idx);
+         en.setDetune2(fp.getFloatValue());
+
+         updateEntryWidgets(en, idx);
+         handleTableChanged();
+
+         Global.Print("Note "+idx+"("+sNote+") detune2 is "+(en.detune2*100)+" cents");
+
+         if(FloatParam.ACTION_VALUECHANGED == _acName)
+            refocusDefault();
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null == tbl_clipboard)
+      {
+         tbl_clipboard <= new SampleTuningTable;
+         tbl_clipboard.init();
+      }
+      tbl_clipboard.copyFrom(getEditTable());
+      bt_paste.setEditable(true);
+      Global.Print("Copy to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handlePaste() {
+      if(null != tbl_clipboard)
+      {
+         SampleTuningTable dst <= getEditTable();
+         dst.copyFrom(tbl_clipboard);
+         handleTableChanged();
+         updateUIFromEditTable(true/*bSelectPreset*/);
+         Global.Print("Paste from clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClear() {
+      if(!getEditTableIdx() >= 0)
+      {
+         SampleTuningTable tbl <= getEditTable();
+         tbl.loadDefault();
+         handleTableChanged();
+         updateUIFromEditTable(true/*bSelectPreset*/);
+         Global.Print("Clear table / Load default");
+      }
+   }
+
+   // <method.png>
+   protected =replay= method autoDeleteDefaultTables() {
+      int numDeleted = 0;
+      int idx = 0;
+      SampleTuningTable *tbl;
+      local String *sMsg;
+
+      if(null != sample_zones_or_null)
+      {
+         // Sample-zone
+         StSample *s;
+         foreach s in sample_zones_or_null
+         {
+            idx = 0;
+            loop(STSAMPLE_MAX_TUNING_TABLES/*16*/)
+            {
+               tbl <= s.getTuningTableMetaData(idx);
+               if(null != tbl)
+               {
+                  if(tbl.isDefault())
+                  {
+                     s.setTuningTable(idx, null);
+                     s.setTuningTableMetaData(idx, null);
+                     numDeleted++;
+                  }
+               }
+               idx++;
+            }
+         }
+         sMsg <= "auto-delete "+numDeleted+" sample zone tuning table"+Utils.GetPluralString(numDeleted);
+         Global.Debug("SampleTuningDialog::autoDeleteDefaultTables: "+sMsg);
+         if(numDeleted > 0)
+            Global.Print(sMsg);
+      }
+      else
+      {
+         // Samplebank
+         loop(STSAMPLE_MAX_TUNING_TABLES/*16*/)
+         {
+            tbl <= samplebank_or_null.getTuningTableMetaData(idx);
+            if(null != tbl)
+            {
+               if(tbl.isDefault())
+               {
+                  samplebank_or_null.setTuningTable(idx, null);
+                  samplebank_or_null.setTuningTableMetaData(idx, null);
+                  numDeleted++;
+               }
+            }
+            idx++;
+         }
+         sMsg <= "auto-delete "+numDeleted+" sample bank tuning table"+Utils.GetPluralString(numDeleted);
+         Global.Debug("SampleTuningDialog::autoDeleteDefaultTables: "+sMsg);
+         if(numDeleted > 0)
+            Global.Print(sMsg);
+      }
+   }
+
+   // <method.png>
+   protected method tryReimportScl() : boolean {
+      if(getEditTableIdx() >= 0)
+      {
+         SampleTuningTable tbl <= getEditTable();
+         if(null != tbl.scl_buffer)
+         {
+            if(tbl.tryImportScl(tbl.scl_buffer, tbl.scl_basename))
+            {
+               handleTableChanged();
+               updateUIFromEditTable(true/*bSelectPreset*/);
+               Global.Print("Re-import .scl ("+tbl.scl_num_notes+" note"+Utils.GetPluralString(tbl.scl_num_notes)+")");
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleReplicateOctave() {
+      if(getEditTableIdx() >= 0)
+      {
+         SampleTuningTable tbl <= getEditTable();
+         tbl.replicateOctave(fp_replicate_oct_src.getFloatValue()/*srcOct*/,
+                             true/*bNote*/,
+                             true/*bDetune1*/,
+                             true/*bDetune2*/
+                             );
+         handleTableChanged();
+         updateUIFromEditTable(false/*bSelectPreset*/);
+         Global.Print("Replicate octave "+fp_replicate_oct_src.getDisplayedText());
+      }
+   }
+
+   // <method.png>
+   protected method setAsGlobalDefault() {
+      SampleTuningTable tbl <= getEditTable();
+      local FloatArray fa <= tbl.getFloatArray();
+      Audio.CopyToDefaultFreqTable(fa, tbl.name);
+      PrefsDialog.b_force_edited = true;
+      if(SampleTuningTable.CompareFreqTables(fa, Audio.eqtemp_freq_table))
+         Global.Print("Reset global default tuning to equal temperament");
+      else
+         Global.Print("Set custom table as global default tuning");
+      handleTableChanged();
+   }
+
+   // <method.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      autoDeleteDefaultTables();
+      setForcedTuningTableIdx(-1);
+   }
+
+   // <method.png>
+   protected method importTuningFile(String _pathName, String _msgPresetNameOrNull) : boolean {
+      local String buf;
+      if(buf.loadLocal(_pathName, true/*bRemoveCR*/))
+      {
+         Global.Debug("SampleTuningDialog::loadPreset: file loaded");
+
+         if(getEditTableIdx() >= 0)
+         {
+            SampleTuningTable tbl <= getEditTable();
+
+            if(_pathName >= Global.TUN_FILE_SUFFIX/*".tun"*/)
+            {
+               if(tbl.tryImportTun(buf))
+               {
+                  handleTableChanged();
+                  updateUIFromEditTable(false/*bSelectPreset*/);
+                  if(null != _msgPresetNameOrNull)
+                     Global.Print("Import .tun preset \""+_msgPresetNameOrNull+"\"");
+                  else
+                     Global.Print("Import .tun from file \""+_pathName+"\"");
+                  return true;
+               }
+            }
+            else if(_pathName >= Global.SCL_FILE_SUFFIX/*".scl"*/)
+            {
+               if(tbl.tryImportScl(buf, getPresetBaseName()))
+               {
+                  handleTableChanged();
+                  updateUIFromEditTable(false/*bSelectPreset*/);
+                  if(null != _msgPresetNameOrNull)
+                     Global.Print("Import .scl preset \""+_msgPresetNameOrNull+"\" ("+tbl.scl_num_notes+" note"+Utils.GetPluralString(tbl.scl_num_notes)+")");
+                  else
+                     Global.Print("Import .scl from file \""+_pathName+"\" ("+tbl.scl_num_notes+" note"+Utils.GetPluralString(tbl.scl_num_notes)+")");
+                  return true;
+               }
+            }
+            else
+               Global.Warning("Import tuning: expected .tun or .scl file suffix");
+         }
+         else
+         {
+            Global.Warning("Import tuning: cannot replace default table");
+         }
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   protected method findPresetIdxByBaseName(String _baseName) : int {
+      Global.Debug("SampleTuningDialog::findPresetIdxByBaseName(\""+_baseName+"\")");
+      if(null != _baseName)
+      {
+         StringArray a <= Global.tuning_table_pathnames;
+         String *s;
+         int i = 0;
+         foreach s in a
+         {
+            if(s & _baseName)
+               return i;
+            i++;
+         }
+      }
+      return -1;
+   }
+
+   // <method.png>
+   protected method getPresetBaseName() : String {
+      String s <= cm_preset.getOptionNameLongByIdx(cm_preset.getSelectedOption());
+      // trace "xxx getPresetBaseName(): s=\""+s+"\"";
+      if(null != s)
+      {
+         int idxTab = s.indexOfChar('\t', 0);
+         if(-1 != idxTab)
+         {
+            // trace "xxx getPresetBaseName: found s=\""+s+"\" => baseName=\""+s.substring(0, idxTab)+"\"";
+            return s.substring(0, idxTab);
+         }
+         return s;
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadPreset() {
+      int idx = cm_preset.getSelectedOption();
+      local String nativePathName <= Utils.ToNativePathName(STConfig.tuning_table_rootpath+"/"+(Global.tuning_table_pathnames.get(idx)));
+      importTuningFile(nativePathName, cm_preset.getSelectedOptionName()/*msgPresetNameOrNull*/);
+   }
+
+   // <ui_handler.png>
+   protected method onDropFiles(StringArray _fileNames) {
+      Global.Debug("SampleTuningDialog::onDropFiles: fileNames="+#(_fileNames));
+
+      if(_fileNames.numElements >= 1)
+      {
+         importTuningFile(_fileNames.first, null/*msgPresetNameOrNull*/);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               handleCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               handlePaste();
+               return true;
+            }
+            break;
+
+         case VKEY_BACKSPACE:
+            if(_k.modCtrl())
+            {
+               handleClear();
+               return true;
+            }
+            break;
+
+         case VKEY_PAGEUP:
+            fp_edit.incCoarse();
+            return true;
+
+         case VKEY_PAGEDOWN:
+            fp_edit.decCoarse();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      int editTableIdx = getEditTableIdx();
+      SampleTuningTable tbl <= getEditTable();
+
+      switch(@(ap))
+      {
+         default:
+            if(tryHandleEntryWidget(ap, acName))
+               return true;
+            break;
+
+         case @(fp_edit):
+            setEditTableIdx(fp_edit.getFloatValue()-1);
+            updateUIFromEditTable(true/*bSelectPreset*/);
+            if(fp_edit.getFloatValue() > 0)
+               Global.Print("Tuning table is "+fp_edit.getFloatValue()+"/"+STSAMPLE_MAX_TUNING_TABLES);
+            else
+               Global.Print("Tuning table is unset (use default)");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cb_force):
+            setForcedTuningTableIdx(cb_force.isSelected() ? editTableIdx : -1);
+            Global.Print("Force-tuning-table-replay is "+Utils.GetEnableString(cb_force.isSelected()));
+            return true;
+
+         case @(bt_copy):
+            handleCopy();
+            return true;
+
+         case @(bt_paste):
+            handlePaste();
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            return true;
+
+         case @(tf_name):
+            tbl.name = tf_name.getText();
+            Global.Print("Table name is \""+tbl.name+"\"");
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_preset):
+            if(cb_preset_autoload.isSelected())
+               handleLoadPreset();
+            else
+               Global.Print("Select preset \""+cm_preset.getSelectedOptionName()+"\" (skip autoload)");
+            return true;
+
+         case @(cb_preset_autoload):
+            Global.Print("Preset auto-load is "+Utils.GetEnableString(cb_preset_autoload.isSelected()));
+            return true;
+
+         case @(bt_preset_load):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               Global.LazyScanTuningTablePresets(true/*bForce*/);
+               int numPresets = Global.tuning_table_pathnames.numElements;
+               Global.Print("Rescan: found "+numPresets+" tuning table preset"+Utils.GetPluralString(numPresets));
+            }
+            else
+            {
+               handleLoadPreset();
+            }
+            return true;
+
+         case @(bt_equal):
+            tbl.loadEqualTemperament();
+            tbl.resetSclRoot();
+            handleTableChanged();
+            updateUIFromEditTable(false/*bSelectPreset*/);
+            Global.Print("Load equal temperament"+(tbl.b_default?" (default)":""));
+            return true;
+
+         case @(bt_rand_detune2):
+            if(editTableIdx >= 0)
+            {
+               tbl.randomizeDetune2(fp_detune_rand.getFloatValue());
+               handleTableChanged();
+               updateUIFromEditTable(false/*bSelectPreset*/);
+               Global.Print("Randomize detune 2 (max=+-"+(fp_detune_rand.getFloatValue()*100)+" cents");
+            }
+            else
+               Global.Warning("Randomize detune 2: cannot edit default table 0");
+            return true;
+
+         case @(fp_detune_rand):
+            Global.Print("Detune randomization amount is "+(fp_detune_rand.getFloatValue()*100)+" cents");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_rand_all):
+            if(editTableIdx >= 0)
+            {
+               tbl.randomizeNote();
+               tbl.randomizeDetune1(fp_detune_rand.getFloatValue());
+               handleTableChanged();
+               updateUIFromEditTable(false/*bSelectPreset*/);
+               Global.Print("Randomize note + detune 1 (max=+-"+(fp_detune_rand.getFloatValue()*100)+" cents");
+            }
+            else
+               Global.Warning("Randomize all: cannot edit default table 0");
+            return true;
+
+         case @(cm_scl_rootkey):
+            if(editTableIdx >= 0)
+            {
+               tbl.scl_rootkey = cm_scl_rootkey.getSelectedOption();
+               float rootKeyHz = Audio.NoteToFreq(tbl.scl_rootkey);
+               if(tbl.b_scl_keytohz)
+               {
+                  tbl.scl_roothz = rootKeyHz;
+                  fp_scl_roothz.setValue(rootKeyHz);
+               }
+               tryReimportScl();
+               Global.Print("Scala import root-key is \""+tbl.scl_rootkey+"\" ("+rootKeyHz+" Hz 12-tET)");
+            }
+            return true;
+
+         case @(fp_scl_roothz):
+            if(editTableIdx >= 0)
+            {
+               tbl.scl_roothz = fp_scl_roothz.getFloatValue();
+               Global.Print("Scala import root-Hz is "+tbl.scl_roothz);
+               tryReimportScl();
+            }
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cb_scl_keytohz):
+            Global.Print("Scala import root-key-to-Hz is "+Utils.GetEnableString(cb_scl_keytohz.isSelected()));
+            if(editTableIdx >= 0)
+            {
+               tbl.b_scl_keytohz = cb_scl_keytohz.isSelected();
+            }
+            return true;
+
+         case @(bt_replicate_oct):
+            handleReplicateOctave();
+            return true;
+
+         case @(fp_replicate_oct_src):
+            Global.Print("Replicate-Octave source notes are \""+fp_replicate_oct_src.getDisplayedText()+"\"");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_default):
+            setAsGlobalDefault();
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return false;
+   }
+
+}

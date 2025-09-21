@@ -1,0 +1,4380 @@
+// ----
+// ---- file   : timeline.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 27Jun2021, 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 24Jun2022
+// ---- changed: 25Jun2022, 26Jun2022, 04Apr2025, 04Apr2025, 05Apr2025, 06Apr2025, 10Apr2025
+// ----          01May2025, 06May2025, 20May2025, 22May2025, 31May2025, 13Jun2025, 14Jun2025
+// ----          15Jun2025, 22Jun2025, 26Jun2025, 13Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MTimeline;
+
+use namespace ui;
+use namespace st2;
+
+//                  WHEEL : scroll y (previous / next track) OR zoom x (when scrolling is not possible)
+//         lshift - WHEEL : scroll x (15% of visible area)
+//          lctrl - WHEEL : zoom y (track height)
+//            LMB + WHEEL : zoom y
+// lshift - lctrl - WHEEL : zoom x
+//            RMB + WHEEL : zoom x
+//               RMB drag : scroll
+//           LMB-dblclick : over bg: reset view  over clip: toggle zoom
+//               LMB-hold : over bg: ray-select  over clip: split at mouse/cursor position
+//               RMB-hold : over clip: split all track clips at mouse/cursor position
+//     LMB-drag clip edge : move clip start or end
+//   LMB-drag clip center : move clip
+//
+//              lctrl - a : select all track clips, all clips, or none
+//     lctrl - lshift - a : select none
+//                      c : set loop to selection
+//              lctrl - c : copy selected clips
+//                      e : erase selection
+//                      l : toggle draw labels
+//                      m : merge selected clips
+//                     (n): (in SampleTimelineEditor) toggle normalize-waveform-display
+//                      r : split clips at cursor position (clip mouseover) or kbd selection
+//             lshift - r : split clips at cursor position on all tracks
+//                      s : toggle snap
+//             lshift - s : cycle snap table index (e.g. 16th, 8th, 4th)
+//                      t : Mute selected clips
+//              lctrl - v : paste clipboard
+//     lctrl - lshift - v : insert space on all tracks and paste clipboard
+//              lctrl - w : cut selected clips
+//                      w : set cursor to top/left selection OR draw clips when there's a selection
+//              lctrl - z : undo
+//      lctrl - shift - z : redo
+//               lalt - z : select clips until end
+//                 DELETE : delete selected clips OR delete <selection size> ticks
+//                 INSERT : insert <selection size> ticks (def=<snap units> when there's no selection)
+//        lshift - INSERT : insert <selection size> ticks (def=<snap units> on all tracks when there's no selection)
+//                 RETURN : edit selected clip
+//                   LEFT : move cursor left
+//           lctrl - LEFT : move cursor left fast
+//          lshift - LEFT : move cursor left and select
+//  lctrl - lshift - LEFT : move cursor left fast and select
+//                  RIGHT : move cursor right
+//          lctrl - RIGHT : move cursor right fast
+//         lshift - RIGHT : move cursor right and select
+// lctrl - lshift - RIGHT : move cursor right fast and select
+//                     UP : move cursor up
+//             lctrl - UP : move cursor up fast
+//            lshift - UP : move cursor up and select
+//    lctrl - lshift - UP : move cursor up fast and select
+//                   DOWN : move cursor down
+//           lctrl - DOWN : move cursor down fast
+//          lshift - DOWN : move cursor down and select
+//  lctrl - lshift - DOWN : move cursor down fast and select
+
+
+boolean b_debug = 0;
+
+
+// <function.png>
+function Backtrace() {
+   try { throw UncriticalError("debug/backtrace"); } catch(UncriticalError e) { trace e.stackTrace; }
+}
+
+
+// <class.png>
+class TimelineClip : Layer {
+   Timeline *parent_timeline;
+   TimelineTrack *parent_track;
+
+   static Font *font;
+
+   define int DRAG_NONE  = 0;
+   define int DRAG_MOVE  = 1;
+   define int DRAG_START = 2;
+   define int DRAG_END   = 3;
+   static int drag_mode;
+   define int DRAG_EDGE_THRESHOLD = 16;  // in pixels. half is outside the visible clip widget area.
+   define int DRAG_X_OFFSET = 8;  // small offset to prevent clip from moving left when mouse is dragged left just a single pixel
+   static int drag_start_x;
+   static int drag_start_y;
+
+
+   public method initTimelineClip(TimelineTrack _track) {
+      b_editable = true;
+      parent_track <= _track;
+      parent_timeline <= _track.parent_timeline;
+      initLayer();
+   }
+
+   public method timelineClipGetUID() : int {
+      // query unique id. must not change after clip creation. used for multiple selections.
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipIsSelected() : boolean {
+      IntArray clipSelection <= parent_timeline.clip_selection;
+      return clipSelection.contains(timelineClipGetUID());
+   }
+
+   public method timelineClipSetPositionX(float _px) {
+      setPositionX(_px - DRAG_EDGE_THRESHOLD/2.0);
+   }
+
+   public method timelineClipGetPositionX() : float {
+      return getPositionX() + DRAG_EDGE_THRESHOLD/2.0;
+   }
+
+   public method timelineClipSetPositionY(float _py) {
+      setPositionY(_py);
+   }
+
+   public method timelineClipGetPositionY() : float {
+      return getPositionY();
+   }
+
+   public method timelineClipSetSizeX(float _w) {
+      setRequiredSizeX(_w + DRAG_EDGE_THRESHOLD);
+   }
+
+   public method timelineClipGetSizeX() : float {
+      return getSizeX() - DRAG_EDGE_THRESHOLD;
+   }
+
+   public method timelineClipGetSizeY() : float {
+      return getSizeY();
+   }
+
+   public method timelineClipSetStart(int _start) {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetStart() : int {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipSetEnd(int _end) {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetEnd() : int {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetMinLen() : int {
+      // implemented by derived classes
+      return 1;
+   }
+
+   public method timelineClipGetName() : String {
+      // implemented by derived classes
+      return "<no clip name>";
+   }
+
+   public method timelineClipSetName(String _name) {
+      // implemented by derived classes
+   }
+
+   public method timelineClipSetEnableMute(boolean _bMute) {
+      // implemented by derived classes
+   }
+
+   public method timelineClipGetEnableMute() : boolean {
+      // implemented by derived classes
+   }
+
+   public method timelineClipSetOffset(int _offset/*numUnits*/) {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetOffset() : int {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipCopyExtDataFrom(TimelineClip _o) {
+      // may be implemented by derived classes (e.g. copy sample_idx)
+   }
+
+   public method timelineClipToggleSelect() {
+      IntArray clipSelection <= parent_timeline.clip_selection;
+      int uid = timelineClipGetUID();
+      if(clipSelection.contains(uid))
+      {
+         // Deselect
+         clipSelection.remove(uid);
+      }
+      else
+      {
+         // Select
+         clipSelection.add(uid);
+      }
+      redraw();
+   }
+
+   public method timelineClipMerge(TimelineClip _clipR) : boolean {
+      // must be implemented by derived classes
+      // (note) caller ensures that both clips belong to the same track
+      // (note) caller ensures that this clip starts before 'clipR'
+      // (note) caller ensures that there are no clips between this clip and 'clipR'
+      return false;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      // trace "xxx TimelineClip::onMouseEnter";
+      redraw();
+      grabKeyboardFocus();
+      return true;
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      // trace "xxx TimelineClip::onMouseLeave";
+      redraw();
+      return true;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return (DRAG_NONE != drag_mode);
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButtonDown())
+      {
+         parent_timeline.timelineSplitClipsAtPix(_ev.mouse_rel_x + getPositionX() + parent_track.getPositionX(),
+                                                 _ev.mouse_rel_y + getPositionY() + parent_track.getPositionY()
+                                                 );
+         return true;
+      }
+      else if(_ev.isRightButtonDown())
+      {
+         // Split all tracks at mouse pos
+         parent_timeline.timelineSplitAllTracksAtPix(_ev.mouse_rel_x + getPositionX() + parent_track.getPositionX(),
+                                                     _ev.mouse_rel_y + getPositionY() + parent_track.getPositionY()
+                                                     );
+         // // parent_timeline.timelineSelectNone();
+         return true;
+      }
+      return true;
+   }
+
+   // // public virtual onMouseHold(MouseEvent _ev) : boolean {
+   // //    trace "xxx onMouseHold";
+   // //    if(_ev.isMiddleButton())
+   // //    {
+   // //       parent_timeline.timelineSwapRects();
+   // //       loop(8)
+   // //          parent_timeline.zoomIn(_ev.mouse_rel_x);
+   // //       loop(8)
+   // //          parent_timeline.zoomInY();
+   // //       parent_timeline.sp_clips.makeWidgetVisible(this);
+   // //       return true;
+   // //    }
+   // //    return false;
+   // // }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         grabKeyboardFocus();
+         if(VMOD_LCTRL == UI.GetKeyMod())
+         {
+            timelineClipToggleSelect();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      // trace "xxx TimelineClip::onMouseDoubleClick";
+      if(_ev.isLeftButton())
+      {
+         parent_timeline.zoomInToClip(this,
+                                      (_ev.mouse_rel_x-DRAG_EDGE_THRESHOLD/2)/timelineClipGetSizeX(),
+                                      _ev.mouse_rel_y/getSizeY(),
+                                      true/*bAllowResetView*/
+                                      );
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+
+      if(VMOD_LCTRL == UI.GetKeyMod())
+         return false; // allow rectangular selection
+
+      // trace "xxx TimelineClip::onMouseBeginDrag";
+      TimelineData data <= parent_timeline.data;
+      data.drag_clip <= null;
+      data.b_drag_clip_overlap = false;
+      if(_ev.isLeftButtonDown())
+      {
+         parent_timeline.timelineKbdSelectNone();
+
+         if(timelineClipIsSelected())
+         {
+         }
+         else
+         {
+            parent_timeline.timelineSelectNone();
+         }
+
+         data.drag_clip <= this;
+         drag_start_x = _dragStart.mouse_rel_x;
+         drag_start_y = _dragStart.mouse_rel_y;
+
+         float w = getSizeX();
+         float h = getSizeY();
+
+         if(VMOD_LSHIFT == UI.GetKeyMod())
+         {
+            drag_mode = DRAG_END;
+         }
+         else if(w >= (DRAG_EDGE_THRESHOLD * 3))
+         {
+            if(_dragStart.mouse_rel_x < DRAG_EDGE_THRESHOLD)
+            {
+               drag_mode = DRAG_START;
+            }
+            else if((_dragStart.mouse_rel_x >= (w - DRAG_EDGE_THRESHOLD)) )
+            {
+               drag_mode = DRAG_END;
+            }
+            else
+            {
+               drag_mode = DRAG_MOVE;
+            }
+         }
+         else
+         {
+            drag_mode = DRAG_MOVE;
+         }
+         return true;
+      }
+      return false;
+   }
+
+   protected method clipDragDeltaUnits(int deltaUnits) : int {
+      int clipLen;
+
+      if(DRAG_MOVE == drag_mode)
+      {
+         // clipLen = timelineClipGetEnd() - timelineClipGetStart();
+         if( (timelineClipGetStart() + deltaUnits) < 0 )
+         {
+            deltaUnits = -timelineClipGetStart();
+         }
+         else if( (timelineClipGetEnd() + deltaUnits) > parent_timeline.canvas_size)
+         {
+            deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
+         }
+      }
+
+      if(DRAG_START == drag_mode)
+      {
+         clipLen = timelineClipGetEnd() - timelineClipGetStart() - deltaUnits;
+         if(clipLen <= timelineClipGetMinLen())
+         {
+            clipLen = timelineClipGetMinLen();
+            deltaUnits = (timelineClipGetEnd() - timelineClipGetStart()) - clipLen;
+         }
+         else if( (timelineClipGetStart() + deltaUnits) < 0 )
+         {
+            deltaUnits = -timelineClipGetStart();
+         }
+      }
+
+      if(DRAG_END == drag_mode)
+      {
+         clipLen = timelineClipGetEnd() - timelineClipGetStart() + deltaUnits;
+
+         if(clipLen <= timelineClipGetMinLen())
+         {
+            clipLen = timelineClipGetMinLen();
+            deltaUnits = (clipLen - (timelineClipGetEnd() - timelineClipGetStart()));
+         }
+         else if( (timelineClipGetEnd() + deltaUnits) > parent_timeline.canvas_size)
+         {
+            deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
+         }
+      }
+      return deltaUnits;
+   }
+
+   protected method dragDeltaUnits(int deltaUnits) {
+      switch(drag_mode)
+      {
+         case DRAG_MOVE:
+            timelineClipSetStart(timelineClipGetStart() + deltaUnits);
+            timelineClipSetEnd(timelineClipGetEnd() + deltaUnits);
+            break;
+
+         case DRAG_START:
+            timelineClipSetStart(timelineClipGetStart() + deltaUnits);
+            break;
+
+         case DRAG_END:
+            timelineClipSetEnd(timelineClipGetEnd() + deltaUnits);
+            break;
+      }
+   }
+
+   public method checkClipDragOverlap(TimelineTrack _destTrack, int deltaUnits) : boolean {
+      int newClipStart;
+      int newClipEnd;
+      switch(drag_mode)
+      {
+         case DRAG_MOVE:
+            newClipStart = timelineClipGetStart() + deltaUnits;
+            newClipEnd   = timelineClipGetEnd()   + deltaUnits;
+            break;
+
+         case DRAG_START:
+            newClipStart = timelineClipGetStart() + deltaUnits;
+            newClipEnd   = timelineClipGetEnd();
+            break;
+
+         case DRAG_END:
+            newClipStart = timelineClipGetStart();
+            newClipEnd   = timelineClipGetEnd()   + deltaUnits;
+            break;
+      }
+
+      IntArray clipSelection <= parent_timeline.clip_selection;
+      TimelineClip *destClip;
+      foreach destClip in _destTrack.clips
+      {
+         if(@(destClip) != @(this))
+         {
+            if(!clipSelection.contains(destClip.timelineClipGetUID())) // skip self intersection
+            {
+               int destClipStart = destClip.timelineClipGetStart();
+               int destClipEnd   = destClip.timelineClipGetEnd();
+
+               if( (destClipStart <= newClipStart < destClipEnd) ||
+                   (destClipStart < newClipEnd < destClipEnd) ||
+                   ((newClipStart < destClipStart) && (newClipEnd >= destClipEnd))
+                   )
+               {
+                  // trace "xxx overlap: this=("+newClipStart+";"+newClipEnd+") dest=("+destClipStart+";"+destClipEnd+") thisAddr="+@(this)+" destAddr="+@(destClip)+" thisUID="+timelineClipGetUID()+" destUID="+destClip.timelineClipGetUID();
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   protected method clipDragDeltaTrackIdx(int deltaTrackIdx) {
+      // trace "xxx parent_track.track_idx="+parent_track.track_idx;
+      // trace "xxx deltaTrackIdx="+deltaTrackIdx;
+      int newTrackIdx = parent_track.track_idx + deltaTrackIdx;
+      if(newTrackIdx < 0)
+         deltaTrackIdx = -parent_track.track_idx;
+      else if(newTrackIdx >= parent_timeline.tracks.numElements)
+         deltaTrackIdx = (parent_timeline.tracks.numElements - 1 - parent_track.track_idx);
+      return deltaTrackIdx;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+
+      TimelineData data <= parent_timeline.data;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      // trace "xxx TimelineClip::onMouseDrag: currentEv.p=("+_currentEv.mouse_rel_x+";"+_currentEv.mouse_rel_y+")";
+      int dx = _currentEv.mouse_rel_x - drag_start_x;
+      if(DRAG_START == drag_mode)
+      {
+         dx += DRAG_EDGE_THRESHOLD/2;
+      }
+      else if(DRAG_END == drag_mode)
+      {
+         dx -= DRAG_EDGE_THRESHOLD/2;
+      }
+      else if(DRAG_MOVE == drag_mode)
+      {
+         dx += DRAG_X_OFFSET;
+      }
+      int newX = getPositionX() + parent.getPositionX()/*track*/ + dx;
+      if(DRAG_END == drag_mode)
+      {
+         newX += getSizeX();
+      }
+
+      int dy = _currentEv.mouse_rel_y;// - drag_start_y;
+      if(!parent_timeline.b_allow_cross_track_clip_drag || (DRAG_MOVE != drag_mode))
+         dy = 0;
+      // trace "xxx TimelineClip::onMouseDrag: delta=("+dx+";"+dy+") position="+getPositionString();
+
+      int newY = getPositionY() + parent.getPositionY()/*track*/ + dy;
+      newY = int( (newY - trackHeaderH) / parent_timeline.track_size_y) * parent_timeline.track_size_y;
+      // // data.drag_delta_y = newY - (position_y + parent.position_y);
+
+      int newUnits = parent_timeline.timelinePixToUnits(newX);
+      if(newUnits < 0)
+         newUnits = 0;
+      if(parent_timeline.b_snap)
+         newUnits = parent_timeline.timelineSnapUnits(newUnits, true/*bAlignRight*/);
+
+      int deltaUnits;
+      int deltaTrackIdx = 0;
+      if( (DRAG_MOVE == drag_mode) && parent_timeline.b_allow_cross_track_clip_drag )
+      {
+         int newTrackIdx = newY / parent_timeline.track_size_y;
+         deltaTrackIdx = newTrackIdx - parent_timeline.timelineGetTrackIndex(parent_track);
+      }
+      int uid;
+
+      switch(drag_mode)
+      {
+         case DRAG_MOVE:
+            deltaUnits = newUnits - timelineClipGetStart();
+            break;
+
+         case DRAG_START:
+            deltaUnits = newUnits - timelineClipGetStart();
+            break;
+
+         case DRAG_END:
+            deltaUnits = newUnits - timelineClipGetEnd();
+            break;
+      }
+
+      IntArray clipSelection <= parent_timeline.clip_selection;
+      if(clipSelection.isEmpty())
+      {
+         // Single clip
+         deltaUnits = clipDragDeltaUnits(deltaUnits);
+         deltaTrackIdx = clipDragDeltaTrackIdx(deltaTrackIdx);
+      }
+      else
+      {
+         // Multiple selection
+         foreach uid in clipSelection
+         {
+            TimelineClip clip <= parent_timeline.timelineFindClipByUID(uid);
+            deltaUnits = clip.clipDragDeltaUnits(deltaUnits);
+            deltaTrackIdx = clip.clipDragDeltaTrackIdx(deltaTrackIdx);
+         }
+      }
+
+      // Check move to new track
+      data.b_drag_clip_overlap = false;
+      if(!parent_timeline.b_allow_clip_overlap )
+      {
+         TimelineTrack *destTrack;
+         if(clipSelection.isEmpty())
+         {
+            // Single clip
+            destTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
+            data.b_drag_clip_overlap = checkClipDragOverlap(destTrack, deltaUnits);
+         }
+         else
+         {
+            // Multiple selection
+            foreach uid in clipSelection
+            {
+               clip <= parent_timeline.timelineFindClipByUID(uid);
+               destTrack <= parent_timeline.timelineGetTrackByIndex(clip.parent_track.track_idx + deltaTrackIdx);
+               data.b_drag_clip_overlap = clip.checkClipDragOverlap(destTrack, deltaUnits);
+               if(data.b_drag_clip_overlap)
+                  break;
+            }
+         }
+      }
+
+      data.drag_delta_x = parent_timeline.timelineUnitsToPix(deltaUnits);
+      data.drag_delta_y = deltaTrackIdx * parent_timeline.track_size_y;
+
+      UI.CompositeAll();
+      return true;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      Timeline timeline <= parent_timeline;
+      TimelineData data <= parent_timeline.data;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      int dx = _ev.mouse_rel_x - drag_start_x;
+      if(DRAG_START == drag_mode)
+         dx += DRAG_EDGE_THRESHOLD/2;
+      else if(DRAG_END == drag_mode)
+         dx -= DRAG_EDGE_THRESHOLD/2;
+      else if(DRAG_MOVE == drag_mode)
+         dx += DRAG_X_OFFSET;
+      int newX = position_x + parent.position_x/*track*/ + dx;
+      if(DRAG_END == drag_mode)
+         newX += getSizeX();
+
+      int dy = _ev.mouse_rel_y;// - drag_start_y;
+      if(!parent_timeline.b_allow_cross_track_clip_drag || (DRAG_MOVE != drag_mode))
+         dy = 0;
+      if(b_debug)
+         trace "[dbg] TimelineClip::onMouseEndDrag: delta=("+dx+";"+dy+")";
+      int newY = position_y + parent.position_y/*track*/ + dy;
+      newY = int( (newY - trackHeaderH) / parent_timeline.track_size_y) * parent_timeline.track_size_y;
+
+      int newUnits = parent_timeline.timelinePixToUnits(newX);
+      if(newUnits < 0)
+         newUnits = 0;
+      if(parent_timeline.b_snap)
+         newUnits = parent_timeline.timelineSnapUnits(newUnits, true/*bAlignRight*/);
+
+      int deltaUnits;
+      int uid;
+      TimelineClip *clip;
+      local PointerArray tracks;
+
+      switch(drag_mode)
+      {
+         case DRAG_MOVE:
+            deltaUnits = newUnits - timelineClipGetStart();
+            break;
+
+         case DRAG_START:
+            deltaUnits = newUnits - timelineClipGetStart();
+            break;
+
+         case DRAG_END:
+            deltaUnits = newUnits - timelineClipGetEnd();
+            break;
+      }
+
+      // Clip delta x
+      IntArray clipSelection <= parent_timeline.clip_selection;
+      if(clipSelection.isEmpty())
+      {
+         // Single clip
+         deltaUnits = clipDragDeltaUnits(deltaUnits);
+      }
+      else
+      {
+         // Multiple selection
+         foreach uid in clipSelection
+         {
+            clip <= parent_timeline.timelineFindClipByUID(uid);
+            deltaUnits = clip.clipDragDeltaUnits(deltaUnits);
+         }
+      }
+
+      // Clip track move
+      int newTrackIdx = newY / parent_timeline.track_size_y;
+      int deltaTrackIdx = newTrackIdx - parent_timeline.timelineGetTrackIndex(parent_track);
+      // trace "xxx newTrackIdx="+newTrackIdx+" deltaTrackIdx="+deltaTrackIdx;
+      if( (DRAG_MOVE == drag_mode) && parent_timeline.b_allow_cross_track_clip_drag )
+      {
+         // trace "xxx newTrackIdx="+newTrackIdx+" deltaTrackIdx="+deltaTrackIdx;
+
+         if(0 != deltaTrackIdx)
+         {
+            if(clipSelection.isEmpty())
+            {
+               // Single clip
+               deltaTrackIdx = clipDragDeltaTrackIdx(deltaTrackIdx);
+            }
+            else
+            {
+               // Multiple selection
+
+               // Clip delta
+               foreach uid in clipSelection
+               {
+                  clip <= parent_timeline.timelineFindClipByUID(uid);
+                  deltaTrackIdx = clip.clipDragDeltaTrackIdx(deltaTrackIdx);
+               }
+            }
+         }
+      }
+
+      // Check overlap
+      data.b_drag_clip_overlap = false;
+      if(!parent_timeline.b_allow_clip_overlap)
+      {
+         TimelineTrack *destTrack;
+         if(clipSelection.isEmpty())
+         {
+            // Single clip
+            destTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
+            data.b_drag_clip_overlap = checkClipDragOverlap(destTrack, deltaUnits);
+         }
+         else
+         {
+            // Multiple selection
+            foreach uid in clipSelection
+            {
+               clip <= parent_timeline.timelineFindClipByUID(uid);
+               destTrack <= parent_timeline.timelineGetTrackByIndex(clip.parent_track.track_idx + deltaTrackIdx);
+               data.b_drag_clip_overlap = clip.checkClipDragOverlap(destTrack, deltaUnits);
+               if(data.b_drag_clip_overlap)
+                  break;
+            }
+         }
+      }
+
+      boolean bUpdate = !data.b_drag_clip_overlap;
+
+      if(bUpdate)
+      {
+         parent_timeline.timelineUndoBegin();
+
+         // Update clips
+         if(clipSelection.isEmpty())
+         {
+            // Single clip
+            dragDeltaUnits(deltaUnits);
+            parent_track.timelineTrackHandleClipOrderChanged();
+         }
+         else
+         {
+            // Multiple selection
+            tracks.empty();
+            foreach uid in clipSelection
+            {
+               clip <= parent_timeline.timelineFindClipByUID(uid);
+               clip.dragDeltaUnits(deltaUnits);
+               if(!tracks.containsPointer(clip.parent_track))
+                  tracks.add(clip.parent_track);
+            }
+            TimelineTrack *track;
+            foreach track in tracks
+               track.timelineTrackHandleClipOrderChanged();
+         }
+
+
+         // Move to new track
+         if( (DRAG_MOVE == drag_mode) && parent_timeline.b_allow_cross_track_clip_drag )
+         {
+            if(0 != deltaTrackIdx)
+            {
+               if(clipSelection.isEmpty())
+               {
+                  // Single clip
+                  parent_timeline.timelineMoveClipToTrack(this, parent_track.track_idx + deltaTrackIdx);
+               }
+               else
+               {
+                  // Multiple selection
+
+                  foreach uid in clipSelection
+                  {
+                     clip <= parent_timeline.timelineFindClipByUID(uid);
+                     parent_timeline.timelineMoveClipToTrack(clip, clip.parent_track.track_idx + deltaTrackIdx);
+                  }
+               }
+            }
+
+         }
+
+         parent_timeline.timelineUndoEnd();
+
+         parent_timeline.timelineMarkAsModified();
+
+      } // !data.b_drag_clip_overlap
+
+      data.drag_clip <= null;
+      data.b_drag_clip_overlap = false;
+      drag_mode = DRAG_NONE;
+      redraw();
+
+      if(bUpdate)
+      {
+         // (note) destroys 'this'
+         parent_timeline.timelineUpdate();
+
+         // Restore mouse focus
+         clip <= timeline.timelineFindClipAtXY(newX, newY);
+         if(null != clip)
+         {
+            UI.SetMouseFocus(clip);
+            UI.SetKeyboardFocus(clip);
+         }
+      }
+
+      UI.RevertCursor();
+   }
+
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      TimelineData data <= parent_timeline.data;
+      data.drag_clip <= null;
+      data.b_drag_clip_overlap = false;
+      drag_mode = DRAG_NONE;
+      UI.CompositeAll();
+      UI.RevertCursor();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx TimelineClip::onKey: _k.pressed="+_k.name;
+      switch(_k.pressed)
+      {
+         case VKEY_DELETE:
+            if(!parent_timeline.timelineHaveSelection())
+            {
+               if(isMouseOver())
+               {
+                  if(b_debug) trace "xxx TimelineClip::onKey: delete clip under mouse";
+                  Timeline parentTimeline <= parent_timeline;
+                  parentTimeline.timelineDeleteClips(this/*singleClipOrNull*/, true/*bUndoBegin*/);
+                  // (note) 'this' is invalid now
+                  parentTimeline.timelineMarkAsModified();
+               }
+               return true;
+            }
+            // else: fall through to TimelineData:onKey()
+            break;
+
+         case 'c':
+            if(_k.modCtrlOnly())
+            {
+               if(!parent_timeline.timelineHaveSelection())
+               {
+                  if(isMouseOver())
+                  {
+                     parent_timeline.timelineCopy(this/*singleClipOrNull*/);
+                  }
+                  return true;
+               }
+               // else: fall through to TimelineData:onKey()
+            }
+            else if(_k.modNone() || _k.modShiftOnly())
+            {
+               parent_timeline.handleSetLoop(_k.modShift()/*bPreferRegion*/);
+               return true;
+            }
+            break;
+
+         case 't':
+            if(!parent_timeline.timelineHaveSelection())
+            {
+               if(isMouseOver())
+               {
+                  parent_timeline.timelineToggleMuteClips(this/*singleClipOrNull*/);
+                  parent_timeline.timelineMarkAsModified();
+               }
+               return true;
+            }
+            // else: fall through to TimelineData:onKey()
+            break;
+
+         case 'w':
+            if(_k.modCtrl())
+            {
+               if(!parent_timeline.timelineHaveSelection())
+               {
+                  if(isMouseOver())
+                  {
+                     parent_timeline.timelineCopy(this/*singleClipOrNull*/);
+                     parent_timeline.timelineDeleteClips(this/*singleClipOrNull*/, true/*bUndoBegin*/);
+                     parent_timeline.timelineMarkAsModified();
+                  }
+                  return true;
+               }
+               // else: fall through to TimelineData:onKey()
+            }
+            break;
+      }
+      return false;
+   }
+
+   protected method timelineClipRenderWaveform(float _offX, float _offY, float _sizeX, float _sizeY) {
+      // (optionally) implemented by derived classes
+   }
+
+   public virtual onDraw() {
+      boolean bMouseOver = isMouseOver();
+
+      float offX = DRAG_EDGE_THRESHOLD / 2.0;
+      float offY = 0;
+      float sizeX = timelineClipGetSizeX();
+      float sizeY = timelineClipGetSizeY();
+
+      int bg32;
+      int c32;
+      boolean bSelected = timelineClipIsSelected();
+
+      if(bSelected)
+      {
+         bg32 = parent_timeline.c32_clip_bg_select;
+      }
+      else
+      {
+         if(bMouseOver)
+            bg32 = parent_timeline.c32_clip_bg_mouseover;
+         else
+            bg32 = parent_timeline.c32_clip_bg;
+      }
+
+      UIRenderer.DrawFilledRectangle(offX, offY, sizeX, sizeY, bg32);
+
+      timelineClipRenderWaveform(offX, offY, sizeX, sizeY);
+
+      c32 = (bSelected && parent_timeline.b_selection_copied) ? parent_timeline.c32_clip_border_copied : parent_timeline.c32_clip_border;
+      UIRenderer.DrawRectangle(offX, offY, sizeX, sizeY, 1, c32);
+      // trace "xxx draw clip this="+#(this);
+
+      if(null == font)
+      {
+         font <= UI.GetFontByName("lbsmall");//UIConstants.DEFAULT_FONT_NAME_LABEL);
+      }
+
+      if(parent_timeline.b_draw_clip_labels)
+      {
+         String clipLabel <= timelineClipGetName();
+
+         if((null != clipLabel) && !clipLabel.isBlank())
+         {
+            int c32ClipLabel = (bMouseOver && !bSelected) ? parent_timeline.c32_clip_label_mouseover : parent_timeline.c32_clip_label;
+
+            int labelW = mathMini(font.stringWidth(clipLabel)+2, sizeX-4);
+            // int labelW = sizeX - 4;
+            UIRenderer.EnableBlending();
+            if(bSelected)
+               bg32 = parent_timeline.c32_clip_label_bg_select;
+            else if(bMouseOver)
+               bg32 = parent_timeline.c32_clip_label_bg_mouseover;
+            else
+               bg32 = parent_timeline.c32_clip_label_bg;
+            UIRenderer.DrawFilledRectangle(offX+2, offY+1, labelW, 14, bg32);
+            UIRenderer.DisableBlending();
+
+            UIRenderer.DrawTextClipped(clipLabel,
+                                       font,
+                                       c32ClipLabel, c32ClipLabel,
+                                       offX+2, offY+1,
+                                       offX+2/*clipLeft*/,
+                                       offY+1/*clipTop*/,
+                                       offX+sizeX-2/*clipRight*/,
+                                       offY+sizeY-2/*clipBottom*/
+                                       );
+         }
+      }
+
+      if(timelineClipGetEnableMute())
+      {
+         UIRenderer.EnableBlending();
+         UIRenderer.DrawFilledRectangle(offX, offY, sizeX, sizeY, parent_timeline.c32_clip_mute_bg);
+         UIRenderer.DrawLine(offX+1, offY+1,
+                             offX + sizeX-1, offY + sizeY-1,
+                             parent_timeline.c32_clip_mute_fg
+                             );
+         UIRenderer.DrawLine(offX+1, offY + sizeY-1,
+                             offX + sizeX-1, offY+1,
+                             parent_timeline.c32_clip_mute_fg
+                             );
+         UIRenderer.DisableBlending();
+      }
+   }
+}
+
+
+// <class.png>
+class TimelineTrack : Composite {
+   Timeline *parent_timeline;
+   int track_idx;
+
+   // in ascending order (ordered by start position)
+   TimelineClip *[] clips;  // display objects
+
+
+   public method initTimelineTrack(Timeline _timeline) {
+      parent_timeline <= _timeline;
+      initComposite();
+   }
+
+   public method timelineTrackGetName() : String {
+      return "<no track name>";
+   }
+
+   public method timelineTrackSetName(String _name) {
+   }
+
+   public method timelineTrackInitClips() {
+      // create display objects from data model
+      // implemented by derived classes
+   }
+
+   // // public method timelineTrackHandleClipOrderChanged() {
+   // //    // after clip move, insert, ..
+   // // }
+
+   public method timelineTrackLayoutClips() {
+      float cx = 0;
+      TimelineClip *clip;
+      foreach clip in clips
+      {
+         float xs = parent_timeline.timelineUnitsToPix(clip.timelineClipGetStart());
+         float xe = parent_timeline.timelineUnitsToPix(clip.timelineClipGetEnd());
+         int xsi = int(xs);
+         int xei = int(xe);
+         clip.timelineClipSetPositionX(xsi);
+         clip.timelineClipSetSizeX(xei-xsi);
+      }
+   }
+
+   public method timelineTrackHandleClipOrderChanged() {
+      // after moving / adding clips
+      // implemented by derived classes
+   }
+
+   protected method timelineTrackNewClip() : TimelineClip {
+      // implemented by derived classes
+      return new TimelineClip;
+   }
+
+   public method timelineTrackCreateClip() : TimelineClip {
+      // create new clip display object
+      // called while initializing clips
+      TimelineClip clip <= timelineTrackNewClip();
+      clip.initTimelineClip(this);
+      clips.add(#(deref clip));
+      addChildLayer(clip);
+      return clip;
+   }
+
+   public method timelineTrackDeleteClip(TimelineClip _clip) {
+      // implemented by derived classes
+   }
+
+   public method timelineTrackModelCreateClip(int _start, int _end) : int {
+      // implemented by derived classes
+      // return uid
+   }
+
+   public method timelineTrackGetNextClip(TimelineClip _clip) : TimelineClip {
+      int idx = clips.indexOfPointer(_clip, 0);
+      if(-1 != idx)
+      {
+         return clips.get(idx + 1);
+      }
+      return null;
+   }
+
+   public virtual onDraw() {
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), (track_idx&1) ? parent_timeline.c32_track_bg_odd : parent_timeline.c32_track_bg_even);
+   }
+}
+
+
+// <class.png>
+class TimelineTrackGroup {
+   // foldable tracks
+   Timeline *parent_timeline;
+
+   TimelineTrack *[] tracks;
+}
+
+
+// <class.png>
+class TimelineData : Composite {
+   Timeline *parent_timeline;
+
+   TimelineClip *drag_clip;
+   boolean b_drag_clip_overlap;  // while dragging clips: true=invalid clip geometry
+   int drag_delta_x;
+   int drag_delta_y;
+
+
+   define int DRAG_NONE   = 0;
+   define int DRAG_SELECT = 1;
+   static int drag_mode;
+   static int drag_start_x;
+   static int drag_start_y;
+   static int drag_end_x;
+   static int drag_end_y;
+
+
+   public method initTimelineData() {
+      initComposite();
+      b_editable = true;
+   }
+
+   public method selectClipFromMouseEvent(int _x, int _y) {
+      // trace "xxx TimelineData::selectClipFromMouseEvent: p=("+_x+","+_y+")";
+      parent_timeline.timelineSelectNone();
+      parent_timeline.timelineCursorSetPositionFromPix(_x, _y);
+      parent_timeline.timelineShowCursorClipDetails();
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      // trace "xxx onMouseClick  kbdFocus="+#(UI.GetKeyboardFocus());
+      if(!hierarchyHasKeyboardFocus())
+         grabKeyboardFocus();
+
+      if(_ev.isLeftButton())
+      {
+         selectClipFromMouseEvent(_ev.mouse_rel_x, _ev.mouse_rel_y);
+         return true;
+      }
+      else if(_ev.isMiddleButton())
+      {
+         parent_timeline.timelineSwapRects();
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      // trace "xxx TimelineData::onMouseBeginDrag";
+      if(_ev.isLeftButtonDown())
+      {
+         drag_start_x = _dragStart.mouse_rel_x;
+         drag_start_y = _dragStart.mouse_rel_y;
+         drag_end_x = drag_start_x;
+         drag_end_y = drag_start_y;
+         drag_mode = DRAG_SELECT;
+         UI.CompositeAll();
+         // // parent_timeline.timelineCursorSetPositionFromPix(_ev.mouse_rel_x, _ev.mouse_rel_y);
+         parent_timeline.timelineKbdSelectNone();
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      // trace "xxx TimelineData::onMouseDrag";
+
+      drag_end_x = _currentEv.mouse_rel_x;
+      drag_end_y = _currentEv.mouse_rel_y;
+      UI.CompositeAll();
+
+      Rectangle2f rect;
+      rect.init(mathMini(drag_start_x, drag_end_x), mathMini(drag_start_y, drag_end_y),
+                mathMaxi(drag_start_x, drag_end_x), mathMaxi(drag_start_y, drag_end_y)
+                );
+
+      // convert mouse selection to kbd selection (draw aligned selection outline)
+      parent_timeline.timelineSetKbdSelectionFromPixelRectangle(rect);
+
+      if(parent_timeline.updateClipSelectionFromPixelRectangle(rect, true/*bTouch*/))
+      {
+         parent_timeline.timelineCursorSetPositionTopLeftClipSelection();
+
+         redraw();
+      }
+
+      return true;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+
+      // convert mouse selection to kbd selection
+      Rectangle2f rect;
+      rect.init(mathMini(drag_start_x, drag_end_x), mathMini(drag_start_y, drag_end_y),
+                mathMaxi(drag_start_x, drag_end_x), mathMaxi(drag_start_y, drag_end_y)
+                );
+      parent_timeline.timelineSetKbdSelectionFromPixelRectangle(rect);
+
+      drag_mode = DRAG_NONE;
+   }
+
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      drag_mode = DRAG_NONE;
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButtonDown())
+      {
+         parent_timeline.timelineRaySelect(_ev.mouse_rel_x);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      // trace "xxx onMouseDoubleClick";
+      // // if(_ev.isMiddleButton())
+      if(_ev.isLeftButton())
+      {
+         parent_timeline.timelineResetView();
+         parent_timeline.timelineMarkAsModified();
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      // (note) ev.mouse_rel_x is translated by viewpane offset
+
+      boolean bShift = (0 != (UI.GetKeyMod() & VMOD_LSHIFT));
+      boolean bCtrl  = (0 != (UI.GetKeyMod() & VMOD_LCTRL));
+      boolean bRMB   = _ev.isRightButtonDown();
+      boolean bLMB   = _ev.isLeftButtonDown();
+
+      boolean bSwapWheelZoom = parent_timeline.b_swap_wheel_zoom;
+
+      parent_timeline.timelineSetHighlightPos(_ev.mouse_rel_x, _ev.mouse_rel_y);
+
+      if(_ev.wheelUp())
+      {
+         if(bShift)
+         {
+            if(bCtrl)
+            {
+               if(bSwapWheelZoom && !parent_timeline.b_allow_swap_wheel_zoom)
+                  parent_timeline.scrollTrack(-1);
+               else
+                  parent_timeline.zoomIn(_ev.mouse_rel_x);
+            }
+            else
+            {
+               parent_timeline.pageLeft();
+            }
+            parent_timeline.timelineMarkAsModified();
+         }
+         else if(bLMB || bCtrl)
+         {
+            parent_timeline.zoomInY(_ev.mouse_rel_y);
+            parent_timeline.timelineMarkAsModified();
+         }
+         else
+         {
+            if(bRMB || bSwapWheelZoom)
+               parent_timeline.zoomIn(_ev.mouse_rel_x);
+            else
+               parent_timeline.scrollTrack(-1);
+            parent_timeline.timelineMarkAsModified();
+         }
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         if(bShift)
+         {
+            if(bCtrl)
+            {
+               if(bSwapWheelZoom && !parent_timeline.b_allow_swap_wheel_zoom)
+                  parent_timeline.scrollTrack(1);
+               else
+                  parent_timeline.zoomOut(_ev.mouse_rel_x);
+            }
+            else
+            {
+               parent_timeline.pageRight();
+            }
+            parent_timeline.timelineMarkAsModified();
+         }
+         else if(bLMB || bCtrl)
+         {
+            parent_timeline.zoomOutY(_ev.mouse_rel_y);
+            parent_timeline.timelineMarkAsModified();
+         }
+         else
+         {
+            if(bRMB || bSwapWheelZoom)
+               parent_timeline.zoomOut(_ev.mouse_rel_x);
+            else
+               parent_timeline.scrollTrack(1);
+            parent_timeline.timelineMarkAsModified();
+         }
+         return true;
+      }
+
+      TimelineClip clip <= parent_timeline.timelineFindClipAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y);
+      if(null != clip)
+      {
+         float clipRelX = _ev.mouse_rel_x - clip.getPositionX();
+         float clipRelY = _ev.mouse_rel_y - clip.getPositionY();
+
+         // trace "xxx clipRel=("+clipRelX+";"+clipRelY+")";
+
+         float w = clip.getSizeX();
+
+         if(VMOD_LSHIFT == UI.GetKeyMod())
+         {
+            UI.ShowCursor(UIConstants.CURSOR_MOVEX);
+         }
+         else if(w >= (TimelineClip.DRAG_EDGE_THRESHOLD * 3))
+         {
+            if(clipRelX < TimelineClip.DRAG_EDGE_THRESHOLD)
+            {
+               UI.ShowCursor(UIConstants.CURSOR_MOVEX);
+            }
+            else if( (clipRelX >= (clip.getSizeX() - TimelineClip.DRAG_EDGE_THRESHOLD)) )
+            {
+               UI.ShowCursor(UIConstants.CURSOR_MOVEX);
+            }
+            else
+            {
+               UI.ShowCursor(UIConstants.CURSOR_MOVE);
+            }
+         }
+         else
+         {
+            UI.ShowCursor(UIConstants.CURSOR_MOVE);
+         }
+      }
+      else
+      {
+         UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      }
+
+
+      float units = parent_timeline.timelinePixToUnits(_ev.mouse_rel_x);
+      // trace "xxx mouseX="+_ev.mouse_rel_x+" units="+units+" bar="+int(units / parent_timeline.num_units_per_bar);
+      return false;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx _k.pressed="+_k.name;
+      switch(_k.pressed)
+      {
+         case VKEY_INSERT:
+            parent_timeline.timelineShiftClipsBySelection(_k.modShift()/*bAllTracks*/, false/*bDelete*/);
+            return true;
+
+         case VKEY_DELETE:
+            if(b_debug) trace "xxx TimelineData::onKey: VKEY_DELETE";
+            parent_timeline.handleDelete(_k.modShift()/*bAllTracks*/);
+            return true;
+
+         case VKEY_RETURN:
+            parent_timeline.timelineEditModeExec(parent_timeline.edit_mode);
+            parent_timeline.timelineMarkAsModified();
+            return true;
+
+         case VKEY_LEFT:
+            if(_k.modCtrl())
+            {
+               loop(4)
+                  parent_timeline.timelineCursorMoveLeft(_k.modShift()/*bSelect*/);
+            }
+            else
+            {
+               parent_timeline.timelineCursorMoveLeft(_k.modShift()/*bSelect*/);
+            }
+            parent_timeline.timelineMarkAsModified();
+            return true;
+
+         case VKEY_RIGHT:
+            if(_k.modCtrl())
+            {
+               loop(4)
+                  parent_timeline.timelineCursorMoveRight(_k.modShift()/*bSelect*/);
+            }
+            else
+            {
+               parent_timeline.timelineCursorMoveRight(_k.modShift()/*bSelect*/);
+            }
+            parent_timeline.timelineMarkAsModified();
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               loop(4)
+                  parent_timeline.timelineCursorMoveUp(_k.modShift()/*bSelect*/);
+            }
+            else
+            {
+               parent_timeline.timelineCursorMoveUp(_k.modShift()/*bSelect*/);
+            }
+            parent_timeline.timelineMarkAsModified();
+            return true;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               loop(4)
+                  parent_timeline.timelineCursorMoveDown(_k.modShift()/*bSelect*/);
+            }
+            else
+            {
+               parent_timeline.timelineCursorMoveDown(_k.modShift()/*bSelect*/);
+            }
+            parent_timeline.timelineMarkAsModified();
+            return true;
+
+         case 'a':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  parent_timeline.timelineSelectNone();
+               else
+                  parent_timeline.timelineToggleSelectTrackClipsOrAllClips();
+               redraw();
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrlOnly())
+            {
+               parent_timeline.handleClipCopy();
+               return true;
+            }
+            break;
+
+         case 'e':
+            if(0 == _k.mod)
+            {
+               parent_timeline.handleKeyE();
+               return true;
+            }
+            break;
+
+         case 'l':
+            if(0 == _k.mod)
+            {
+               parent_timeline.timelineToggleDrawClipLabels();
+               return true;
+            }
+            break;
+
+         case 'm':
+            if(0 == _k.mod)
+            {
+               parent_timeline.timelineMergeClipsFromKbdSelection();
+               parent_timeline.timelineMarkAsModified();
+               return true;
+            }
+            break;
+
+         case 'q':
+            if(0 == _k.mod)
+            {
+               parent_timeline.handleKeyQ();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(0 == _k.mod)
+            {
+               parent_timeline.handleKeyR();
+               return true;
+            }
+            else// if(_k.modShift())
+            {
+               parent_timeline.handleKeyRShift();
+               return true;
+            }
+            break;
+
+         case 's':
+            if(0 == _k.mod)
+            {
+               parent_timeline.timelineToggleSnap();
+               return true;
+            }
+            else if(_k.modShiftOnly())
+            {
+               parent_timeline.timelineCycleSnapUnits();
+               parent_timeline.timelineMarkAsModified();
+               return true;
+            }
+            break;
+
+         case 't':
+            if(0 == _k.mod)
+            {
+               parent_timeline.handleKeyT();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               parent_timeline.handleClipPaste(_k.modShift()/*bShift*/);
+               return true;
+            }
+            break;
+
+         case 'w':
+            if(_k.modCtrl())
+            {
+               parent_timeline.handleClipCut();
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               if(parent_timeline.handleKeyW())
+                  return true;
+            }
+            break;
+
+         case 'z':
+         case 'y':
+            if(_k.modAlt())
+            {
+               parent_timeline.timelineSelectUntilEnd();
+            }
+            else if(_k.modShift())
+            {
+               parent_timeline.timelineRedo();
+            }
+            else
+            {
+               parent_timeline.timelineUndo();
+            }
+            return true;
+      }
+      return Composite::onKey(_k);
+   }
+
+   protected method drawDragClipOutline(TimelineClip clip) {
+
+      int c32 = b_drag_clip_overlap ? parent_timeline.c32_clip_drag_outline_err : parent_timeline.c32_clip_drag_outline;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      float clipX = clip.timelineClipGetPositionX() + clip.parent_track.getPositionX() + 1;
+      float clipY = clip.timelineClipGetPositionY() + clip.parent_track.getPositionY() + 1;
+      float clipW = clip.timelineClipGetSizeX() - 2;
+      float clipH = clip.timelineClipGetSizeY() - 2;
+
+      switch(TimelineClip.drag_mode)
+      {
+         case TimelineClip.DRAG_MOVE:
+            UIRenderer.DrawStippledRectangle(clipX + drag_delta_x,
+                                             clipY + drag_delta_y,
+                                             clipW,
+                                             clipH,
+                                             2.0,
+                                             c32
+                                             );
+            break;
+
+         case TimelineClip.DRAG_START:
+            clipW -= drag_delta_x;
+            UIRenderer.DrawStippledRectangle(clipX + drag_delta_x,
+                                             clipY + drag_delta_y,
+                                             clipW,
+                                             clipH,
+                                             2.0,
+                                             c32
+                                             );
+            break;
+
+         case TimelineClip.DRAG_END:
+            clipW += drag_delta_x;
+            UIRenderer.DrawStippledRectangle(clipX,
+                                             clipY + drag_delta_y,
+                                             clipW,
+                                             clipH,
+                                             2.0,
+                                             c32
+                                             );
+            break;
+      }
+   }
+
+   public virtual onDrawOverlays() {
+      // trace "xxx TimelineData::onDrawOverlays";
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      if(TimelineClip.DRAG_NONE != TimelineClip.drag_mode)
+      {
+         UIRenderer.EnableBlending();
+
+         float clipX;
+         float clipY;
+         float clipW;
+         float clipH;
+
+         IntArray clipSelection <= parent_timeline.clip_selection;
+         if(clipSelection.isEmpty())
+         {
+            // Single clip
+            // trace "xxx drag_delta=("+drag_delta_x+";"+drag_delta_y+")";
+
+            drawDragClipOutline(drag_clip);
+         }
+         else
+         {
+            int uid;
+            foreach uid in clipSelection
+            {
+               TimelineClip clip <= parent_timeline.timelineFindClipByUID(uid);
+               if(null != clip) // should not be null
+               {
+                  drawDragClipOutline(clip);
+               }
+            }
+         }
+
+         UIRenderer.DisableBlending();
+      }
+      else if(DRAG_SELECT == drag_mode)
+      {
+         // // draw unaligned rect
+         // UIRenderer.EnableBlending();
+         // UIRenderer.DrawStippledRectangle(drag_start_x,
+         //                                  drag_start_y,
+         //                                  drag_end_x - drag_start_x,
+         //                                  drag_end_y - drag_start_y,
+         //                                  2.0,
+         //                                  parent_timeline.c32_select_outline
+         //                                  );
+         // UIRenderer.DisableBlending();
+      }
+
+      if(parent_timeline.timelineHaveKbdSelection())
+      {
+         // int viewX = parent_timeline.sp_clips.getViewOffsetX();
+         // int viewY = parent_timeline.sp_clips.getViewOffsetY();
+         int kbdSelX1 = parent_timeline.timelineUnitsToPix(parent_timeline.kbd_selection_units_start_sorted) + 1;
+         int kbdSelY1 = parent_timeline.track_size_y * parent_timeline.kbd_selection_track_start_sorted      + 1 + trackHeaderH;
+         int kbdSelX2 = parent_timeline.timelineUnitsToPix(parent_timeline.kbd_selection_units_end_sorted)   - 1;
+         int kbdSelY2 = parent_timeline.track_size_y * (parent_timeline.kbd_selection_track_end_sorted + 1)  - 1 + trackHeaderH;
+         UIRenderer.EnableBlending();
+         UIRenderer.DrawFilledRectangle(kbdSelX1, kbdSelY1,
+                                        (kbdSelX2 - kbdSelX1), (kbdSelY2 - kbdSelY1),
+                                        parent_timeline.c32_kbdsel_bg
+                                        );
+         UIRenderer.DrawStippledRectangle(kbdSelX1, kbdSelY1,
+                                          (kbdSelX2 - kbdSelX1), (kbdSelY2 - kbdSelY1),
+                                          parent_timeline.b_selection_copied ? 2.0 : 1.0,
+                                          parent_timeline.c32_kbdsel_fg
+                                          );
+         UIRenderer.DisableBlending();
+      }
+
+      // Draw cursor and play positions
+      UIRenderer.EnableBlending();
+
+      // Cursor position
+      float cursorX = parent_timeline.timelineUnitsToPix(parent_timeline.cursor_units);
+      float cursorY = parent_timeline.cursor_track * parent_timeline.track_size_y + trackHeaderH;
+      float w = parent_timeline.b_snap ? parent_timeline.timelineUnitsToPix(parent_timeline.timelineGetSnapUnits()) : 1;
+      UIRenderer.DrawFilledRectangle(cursorX, 0 + Timeline.GetTrackHeaderH(),
+                                     w, parent_timeline.sp_clips.getViewSizeY()- trackHeaderH,
+                                     parent_timeline.c32_cursor
+                                     );
+      UIRenderer.DrawFilledRectangle(cursorX+1, cursorY, w-1, parent_timeline.track_size_y, parent_timeline.c32_cursor);
+      // Draw mouse position
+      UIRenderer.DrawFilledRectangle(parent_timeline.highlight_px, 0 + trackHeaderH,
+                                     w, parent_timeline.sp_clips.getViewSizeY() - trackHeaderH,
+                                     parent_timeline.c32_mouse
+                                     );
+      UIRenderer.DrawFilledRectangle(parent_timeline.highlight_px+1, parent_timeline.highlight_py,
+                                     w-1, parent_timeline.track_size_y,
+                                     parent_timeline.c32_mouse
+                                     );
+
+      // Play position
+      float playPosX = parent_timeline.timelineUnitsToPix(parent_timeline.timelineGetPlayPos());
+      float sy = getSizeY();
+      UIRenderer.DrawFilledRectangle(playPosX, trackHeaderH,
+                                     2, sy - trackHeaderH,
+                                     parent_timeline.c32_play_pos
+                                     );
+
+      // Loop start position
+      float loopStartX = parent_timeline.timelineUnitsToPix(parent_timeline.timelineGetLoopStart());
+      UIRenderer.DrawFilledRectangle(loopStartX, trackHeaderH,
+                                     2, sy - trackHeaderH,
+                                     parent_timeline.c32_loop_start
+                                     );
+
+      // Loop end position
+      float loopEndX = parent_timeline.timelineUnitsToPix(parent_timeline.timelineGetLoopEnd());
+      UIRenderer.DrawFilledRectangle(loopEndX, trackHeaderH,
+                                     2, sy - trackHeaderH,
+                                     parent_timeline.c32_loop_end
+                                     );
+
+      UIRenderer.DisableBlending();
+
+      UI.CompositeAll();
+   }
+
+}
+
+
+// <class.png>
+class TimelineRect {
+   boolean b_valid;
+   int view_top;
+   int view_left;
+   int num_visible;
+   int track_size_y;
+}
+
+// <class.png>
+class TimelineEditorState {
+   // persistent save state
+   boolean  b_initialized;
+   int      num_visible;
+   int      track_size_y;
+   float    view_units;   // view offset
+   float    view_tracks;
+   IntArray clip_selection;  // clip UIDs
+   boolean  b_snap;
+   int      snap_tbl_idx;
+   int      units_per_beat;
+   int      beats_per_bar;
+   int      cursor_units;
+   int      cursor_track;
+   int      kbd_selection_units_start;
+   int      kbd_selection_track_start;
+   int      kbd_selection_units_end;
+   int      kbd_selection_track_end;
+   int      kbd_selection_units_start_sorted;
+   int      kbd_selection_track_start_sorted;
+   int      kbd_selection_units_end_sorted;
+   int      kbd_selection_track_end_sorted;
+   boolean  b_selection_copied;
+
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 2;
+
+      ofs.i8  = b_initialized;
+      ofs.i32 = num_visible;
+      ofs.i32 = track_size_y;
+      ofs.f32 = view_units;
+      ofs.f32 = view_tracks;
+      clip_selection.yacSerialize(ofs, false/*bRTTI*/);
+      ofs.i8  = b_snap;
+      ofs.i8  = snap_tbl_idx;
+      ofs.i32 = cursor_units;
+      ofs.i16 = cursor_track;
+      ofs.i32 = kbd_selection_units_start;
+      ofs.i32 = kbd_selection_track_start;
+      ofs.i32 = kbd_selection_units_end;
+      ofs.i32 = kbd_selection_track_end;
+      ofs.i32 = kbd_selection_units_start_sorted;
+      ofs.i32 = kbd_selection_track_start_sorted;
+      ofs.i32 = kbd_selection_units_end_sorted;
+      ofs.i32 = kbd_selection_track_end_sorted;
+      ofs.i8  = b_selection_copied;
+
+      if(b_debug) trace "[dbg] TimelineEditorState::saveState: cursor_units="+cursor_units+" cursor_track="+cursor_track+" track_size_y="+track_size_y;
+   }
+
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(ver >= 2)
+            b_initialized = ifs.b8;
+
+         num_visible     = ifs.i32;
+         track_size_y    = ifs.i32;
+         view_units      = ifs.f32;
+         view_tracks     = ifs.f32;
+         clip_selection.yacDeserialize(ifs, false/*bRTTI*/);
+         b_snap          = ifs.u8;
+         snap_tbl_idx    = ifs.u8;
+         cursor_units    = ifs.i32;
+         cursor_track    = ifs.i16;
+         kbd_selection_units_start        = ifs.i32;
+         kbd_selection_track_start        = ifs.i32;
+         kbd_selection_units_end          = ifs.i32;
+         kbd_selection_track_end          = ifs.i32;
+         kbd_selection_units_start_sorted = ifs.i32;
+         kbd_selection_track_start_sorted = ifs.i32;
+         kbd_selection_units_end_sorted   = ifs.i32;
+         kbd_selection_track_end_sorted   = ifs.i32;
+         b_selection_copied               = ifs.i8;
+         if(b_debug) trace "[dbg] TimelineEditorState::loadState: cursor_units="+cursor_units+" cursor_track="+cursor_track+" track_size_y="+track_size_y;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] TimelineEditorState::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class TimelineUndoEntry {
+   Buffer buffer;  // model + editor state
+}
+
+
+// <class.png>
+class Timeline : Composite {
+   define int UNDO_HISTORY_SIZE = 100;
+
+   define int TRACK_HEADER_H = 24;  // unscaled / lo-dpi height
+
+   // @members
+   TimelineTrack *[] tracks;  // display objects
+
+   int num_units_per_beat;  // updated from edit model in timelineInitTracks()
+   int num_beats_per_bar;   // ^^
+   int num_visible;      // in units
+   int min_visible;      // in units
+   int zoom_min_visible; // in units
+   // // int max_visible;      // in units
+   int canvas_size;      // in units  (updated from edit model in timelineInitTracks())
+
+   Panel *pn_left;   // left-hand side track header panels
+   TimelineData *data;  // right-hand side clip tracks
+
+   ViewPane *vp_tracks;
+   ScrollPane *sp_clips;
+
+   // define int TRACK_SY_MIN = 16;
+   // define int TRACK_SY_MAX = 128;
+
+   FloatArray track_size_tbl = [16,24,32,48,64,80,96,128,192,256];  // in pixels
+   int track_size_y;          // scaled/hi-dpi
+   int default_track_size_y;  // scaled/hi-dpi
+   int zoom_track_size_y;  // when dbl-clicking clip
+
+   boolean b_allow_swap_wheel_zoom;  // true=autoswap when there are no scrollable tracks
+   boolean b_swap_wheel_zoom;  // true=swap lctrl-lshift-WHEEL / WHEEL behaviour
+
+   TimelineRect rect_a;
+   TimelineRect rect_b;
+   TimelineRect *cur_rect;
+
+   int c32_header_bg;
+   int c32_header_beat_ticks_fg;
+   int c32_header_bar_ticks_fg;
+   int c32_header_beat_label_fg;
+   int c32_header_bar_label_fg;
+   int c32_bg;
+   int c32_track_bg_even;  // 0,2,4,..
+   int c32_track_bg_odd;   // 1,3,5,..
+   int c32_clip_bg;
+   int c32_clip_bg_mouseover;
+   int c32_clip_label_bg;
+   int c32_clip_label_bg_mouseover;
+   int c32_clip_label_bg_select;
+   int c32_clip_bg_select;
+   int c32_clip_label;
+   int c32_clip_label_mouseover;
+   int c32_clip_border;
+   int c32_clip_border_copied;
+   int c32_clip_drag_outline;
+   int c32_clip_drag_outline_err;
+   int c32_clip_mute_bg;
+   int c32_clip_mute_fg;
+   int c32_select_outline;
+   int c32_cursor;
+   int c32_kbdsel_bg;
+   int c32_kbdsel_fg;
+   int c32_mouse;
+   int c32_play_pos;
+   int c32_loop_start;
+   int c32_loop_end;
+
+   Font *beat_label_font;
+   Font *bar_label_font;
+
+   boolean b_draw_clip_labels;
+
+   boolean b_allow_cross_track_clip_drag;
+   boolean b_allow_clip_overlap;
+
+   IntArray snap_tbl = [2,4,8,16];
+   StringArray snap_tbl_names = ["2 units", "4 units", "8 units", "16 units"];
+   int snap_tbl_idx;
+   boolean b_snap;  // snap x pos to grid ('s')
+
+   IntArray clip_selection;  // uids
+
+   Buffer undo_buffer;  // (todo) add undo history
+   TimelineUndoEntry *[] undo_entries;
+   TimelineUndoEntry *[] redo_entries;
+
+   // cursor position
+   int cursor_units;
+   int cursor_track;
+
+   int kbd_selection_units_start;  // -1=no selection
+   int kbd_selection_track_start;
+   int kbd_selection_units_end;
+   int kbd_selection_track_end;
+
+   int kbd_selection_units_start_sorted;
+   int kbd_selection_track_start_sorted;
+   int kbd_selection_units_end_sorted;
+   int kbd_selection_track_end_sorted;
+   boolean b_selection_copied;
+
+   int highlight_px;  // last seen mouse position
+   int highlight_py;  // last seen mouse position
+
+   define int EDIT_SELECT    = 0;  // 'q'
+   define int EDIT_DRAW      = 1;  // 'w'
+   define int EDIT_ERASE     = 2;  // 'e'
+   define int EDIT_RAZOR     = 3;  // 'r'
+   define int EDIT_MUTE      = 4;  // 't'
+   define int NUM_EDIT_MODES = 5;
+   int edit_mode;
+   static StringArray edit_mode_names = ["Select", "Draw", "Erase", "Razor", "Mute"];
+
+   static int clipboard_modification_time;
+
+
+   public method initTimeline() {
+      initComposite();
+      b_editable = true;
+
+      setLayout(SuperBorderLayout);
+
+      pn_left <= new Panel;
+      pn_left.initPanel();
+      pn_left.setLayout(null);
+      pn_left.setAlignment(Layout.EXPAND);
+
+      vp_tracks <= new ViewPane;
+      vp_tracks.initViewPane();
+      vp_tracks.setRequiredSizeX(100);
+      // // // vp_tracks.setEnableAdaptiveViewSize(true);
+      vp_tracks.setInnerLayer(deref pn_left);
+      addLayer(deref vp_tracks, Layout.LEFT);
+
+      data <= new TimelineData;
+      data.parent_timeline <= this;
+      data.initTimelineData();
+      data.setLayout(null);
+      data.setAlignment(Layout.EXPAND);
+
+      sp_clips <= new ScrollPane;
+      sp_clips.initScrollPane(null);
+      sp_clips.setEnableWheel(false);
+      sp_clips.setEnableScrollGrab(true);
+      sp_clips.setLayerStyle(LookAndFeel.STYLE_FLAT);
+      sp_clips.setInnerLayer(deref data);
+      // // sp_clips.setEnableAdaptiveViewSize(true);
+      addLayer(deref sp_clips, Layout.CENTER);
+
+      if(0 == num_units_per_beat)
+         num_units_per_beat = timelineGetDefaultNumUnitsPerBeat();
+
+      if(0 == num_beats_per_bar)
+         num_beats_per_bar = timelineGetDefaultNumBeatsPerBar();
+
+      if(0 == min_visible)
+         min_visible = 2;
+
+      if(0 == zoom_min_visible)
+         zoom_min_visible = 2;
+
+      canvas_size = timelineGetDefaultCanvasSize();
+
+      // // if(0 == max_visible)
+      // //    max_visible = canvas_size;
+
+      if(0 == default_track_size_y)
+         default_track_size_y = (UI.font_scaling > 1.4 ? 16 : 16);
+      if(0 == zoom_track_size_y)
+         zoom_track_size_y = track_size_tbl.last;
+      track_size_y = default_track_size_y;
+
+      b_allow_swap_wheel_zoom = true;
+      b_swap_wheel_zoom = false;
+
+      cur_rect <= rect_a;
+
+      timelineInitPalette();
+
+      b_draw_clip_labels = true;
+
+      b_snap = true;
+
+      timelineKbdSelectNone();
+   }
+
+   public static GetTrackHeaderH() : float {
+      return (UI.font_scaling > 1.4) ? TRACK_HEADER_H*1.1 : TRACK_HEADER_H;
+   }
+
+   public method timelineMarkAsModified() {
+      // implemented by derived classes
+   }
+
+   public method timelineGetPlayPos() : int {
+      // implemented by derived classes
+      return 0;
+   }
+
+   public method timelineGetLoopStart() : int {
+      // implemented by derived classes
+      return 0;
+   }
+
+   public method timelineGetLoopEnd() : int {
+      // implemented by derived classes
+      return 0;
+   }
+
+   public method timelineSetLoop(int _start, int _len) {
+      // implemented by derived classes
+   }
+
+   public method timelineSetTrackLabelWidth(float _w) {
+      if(null != vp_tracks)
+         vp_tracks.setRequiredSizeX(_w);
+   }
+
+   public method timelineInitPalette() {
+
+      c32_header_bg               = #ffCCCCCC;  // #ffff0000
+      c32_header_beat_ticks_fg    = #ff666666;
+      c32_header_bar_ticks_fg     = #ff222222;
+      c32_header_beat_label_fg    = #ff999999;
+      c32_header_bar_label_fg     = #ff000000;
+
+      c32_bg                      = #ff333333;
+      c32_track_bg_even           = #ff202020;
+      c32_track_bg_odd            = #ff181818;
+      // // c32_clip_bg                 = #ff888800;
+      // // c32_clip_bg_mouseover       = #ffdddd00;
+      c32_clip_bg                 = #ff777700;
+      c32_clip_bg_mouseover       = #ffa5a500;
+      c32_clip_bg_select          = #ff556688;
+      // // // c32_clip_label_bg           = #ff7e7e00;
+      // // // c32_clip_label_bg_mouseover = #ffeeee00;
+      // // c32_clip_label_bg           = #ff7b7b00;
+      // // c32_clip_label_bg_mouseover = #ffeeee60;
+      c32_clip_label_bg           = #ff6b6b00;
+      // // c32_clip_label_bg_mouseover = #ffaaaa38;
+      c32_clip_label_bg_mouseover = #ffdddd68;
+      c32_clip_label_bg_select    = #ff445577;
+      c32_clip_label              = #ffeeeeee;
+      c32_clip_label_mouseover    = #ff000000;
+      c32_clip_border             = #ff000000;
+      c32_clip_border_copied      = #ffccddee;
+      // // c32_clip_drag_outline       = #ffbbbbbb;
+      c32_clip_drag_outline       = #ff88ff88;
+      c32_clip_drag_outline_err   = #ffff6666;
+      c32_select_outline          = #ff888888;
+      c32_cursor                  = #30ffffff;
+      c32_kbdsel_bg               = #4070A0F0;
+      c32_kbdsel_fg               = #a0ffffff;
+      c32_clip_mute_bg            = #50000000;
+      c32_clip_mute_fg            = #d0ff3322;
+      c32_mouse                   = #10ffffff;
+      c32_play_pos                = #a02f9f2f;
+      c32_loop_start              = #90bf6a04;
+      c32_loop_end                = #90bf6a04;
+   }
+
+   public method timelineSetDefaultTrackSizeY(int _trackSizeY) {
+      default_track_size_y = _trackSizeY;
+   }
+
+   public method timelineGetDefaultTrackSizeY() : int {
+      return default_track_size_y;
+   }
+
+   public method timelineSetZoomTrackSizeY(int _zoomY) {
+      zoom_track_size_y = _zoomY;
+   }
+
+   public method timelineGetZoomTrackSizeY() : int {
+      return zoom_track_size_y;
+   }
+
+   public method timelineSetEnableCrossTrackClipDrag(boolean _bEnable) {
+      b_allow_cross_track_clip_drag = _bEnable;
+   }
+
+   public method timelineGetEnableCrossTrackClipDrag() : boolean {
+      return b_allow_cross_track_clip_drag;
+   }
+
+   public method timelineSetEnableClipOverlap(boolean _bEnable) {
+      b_allow_clip_overlap = _bEnable;
+   }
+
+   public method timelineGetEnableClipOverlap() : boolean {
+      return b_allow_clip_overlap;
+   }
+
+   public method timelineGetDefaultNumUnitsPerBeat() : int {
+      // (note) implemented by derived classes
+      return 1;
+   }
+
+   public method timelineSetNumUnitsPerBeat(int _num) {
+      // (note) overridden by derived classes (mirror to current edit model)
+      num_units_per_beat = _num;
+   }
+
+   public method timelineGetDefaultNumBeatsPerBar() : int {
+      // (note) implemented by derived classes
+      return 4;
+   }
+
+   public method timelineSetNumBeatsPerBar(int _num) {
+      // (note) overridden by derived classes (mirror to current edit model)
+      num_beats_per_bar = _num;
+   }
+
+   public method timelineSetNumVisible(int _num) {
+      num_visible = _num;
+      cur_rect.num_visible = _num;
+   }
+
+   public method timelineGetNumVisible() : int {
+      return num_visible;
+   }
+
+   public method timelineSetMinVisible(int _min) {
+      min_visible = _min;
+   }
+
+   public method timelineGetMinVisible() : int {
+      return min_visible;
+   }
+
+   public method timelineSetZoomMinVisible(int _min) {
+      zoom_min_visible = _min;
+   }
+
+   public method timelineGetZoomMinVisible() : int {
+      return zoom_min_visible;
+   }
+
+   // // public method timelineSetMaxVisible(int _max) {
+   // //    max_visible = _max;
+   // // }
+
+   // // public method timelineGetMaxVisible() : int {
+   // //    return max_visible;
+   // // }
+
+   public method timelineSetCanvasSize(int _sz) {
+      // (note) overridden by derived classes (mirror to current edit model)
+      canvas_size = _sz;
+   }
+
+   public method timelineGetCanvasSize() : int {
+      // (note) overridden by derived classes (read from current edit model)
+      return canvas_size;
+   }
+
+   public method timelineGetDefaultCanvasSize() : int {
+      // (note) implemented by derived classes
+      return 0;
+   }
+
+   protected method saveCurrentRect() {
+      cur_rect.b_valid      = true;
+      cur_rect.num_visible  = num_visible;
+      cur_rect.view_top     = sp_clips.getViewOffsetY();
+      cur_rect.view_left    = sp_clips.getViewOffsetX();
+      cur_rect.track_size_y = track_size_y;
+   }
+
+   public method timelineResetView() {
+      num_visible = canvas_size;
+      // // if(num_visible > max_visible)
+      // //    num_visible = max_visible;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      // // track_size_y = default_track_size_y;
+      float availY = (sp_clips.getSizeY() - trackHeaderH);
+      availY -= sp_clips.getScrollXSizeY();
+      track_size_y = availY / tracks.numElements;
+      // trace "xxx timelineResetView: track_size_y="+track_size_y;
+      if(track_size_y < track_size_tbl[0])
+         track_size_y = track_size_tbl[0];
+      // trace "xxx timelineResetView: clipped track_size_y="+track_size_y;
+
+      timelineUpdateLayout();
+      timelineUpdateTrackHeight();
+
+      sp_clips.setViewOffset(0, 0);
+   }
+
+   public method timelineSwapRects() {
+
+      saveCurrentRect();
+
+      if(@(rect_a) == @(cur_rect))
+      {
+         cur_rect <= rect_b;
+      }
+      else
+      {
+         cur_rect <= rect_a;
+      }
+
+      if(cur_rect.b_valid)
+      {
+         num_visible = cur_rect.num_visible;
+         track_size_y = cur_rect.track_size_y;
+
+         timelineUpdateLayout();
+         timelineUpdateTrackHeight();
+
+         sp_clips.setViewOffset(cur_rect.view_top, cur_rect.view_left);
+      }
+      else
+      {
+         saveCurrentRect();
+      }
+   }
+
+   public method timelinePixToUnits(float _px) : float {
+      float w = getClipsWidth();
+      float units = (_px * num_visible) / w;
+      return units;
+   }
+
+   public method timelineUnitsToPix(float _units) : float {
+      float w = getClipsWidth();
+      float x = (_units * w) / num_visible;
+      return x;
+   }
+
+   public method timelineGetPixPerUnit() : float {
+      float w = getClipsWidth();
+      return w / num_visible;
+   }
+
+   public method timelineSnapUnits(int _units, boolean _bAlignRight) : int {
+      int snapUnits = snap_tbl.get(snap_tbl_idx);
+      if(_bAlignRight)
+         // // return ((_units + (snapUnits/2)) / snapUnits) * snapUnits;
+         return ((_units + (snapUnits-1)) / snapUnits) * snapUnits;
+      else
+         return (_units / snapUnits) * snapUnits;
+   }
+
+   public method timelineGetSnapUnits() : int {
+      return snap_tbl.get(snap_tbl_idx);
+   }
+
+   protected method timelineIncNumVisible() {
+      num_visible = ((num_visible * 3.0) / 2) + 0.5;
+      // num_visible++;
+      if(num_visible > canvas_size)
+         num_visible = canvas_size;
+      // // if(num_visible > max_visible)
+      // //    num_visible = max_visible;
+   }
+
+   protected method timelineDecNumVisible() {
+      num_visible = (num_visible * 2) / 3;
+      // num_visible--;
+      if(num_visible < min_visible)
+         num_visible = min_visible;
+   }
+
+   public method pageLeft() {
+      float w = getClipsWidth();
+      sp_clips.setViewOffsetX(sp_clips.getViewOffsetX() - w * 0.15f);
+   }
+
+   public method pageRight() {
+      float w = getClipsWidth();
+      sp_clips.setViewOffsetX(sp_clips.getViewOffsetX() + w * 0.15f);
+   }
+
+   public method zoomIn(float _mouseX) {
+      float units = timelinePixToUnits(_mouseX);
+      float viewOffX = sp_clips.getViewOffsetX();
+      float relX = _mouseX - viewOffX;
+      // trace "xxx preZoom: viewOffX="+viewOffX+" mouseX="+_mouseX+" units="+units+" relX="+relX;
+      // trace "xxx relX="+relX+" units="+units;
+
+      timelineDecNumVisible();
+      // trace "xxx num_visible="+num_visible;
+
+      timelineUpdateLayout();
+
+      float newMouseX = timelineUnitsToPix(units);
+      sp_clips.setViewOffsetX(newMouseX - relX);
+   }
+
+   public method zoomInToClip(TimelineClip _clip, float _relX, float _relY, boolean _bAllowResetView) {
+      // (note) relX/Y are in range 0..visibleWidgetW/H (not including edges)
+
+      int oldViewOffX = sp_clips.getViewOffsetX();
+      int oldViewOffY = sp_clips.getViewOffsetY();
+      int oldNumVisible = num_visible;
+      int oldTrackSizeY = track_size_y;
+
+      int trackIdx = tracks.indexOfPointer(_clip.parent_track, 0);
+      int start = _clip.timelineClipGetStart();
+      int end   = _clip.timelineClipGetEnd();
+      int len   = end - start;
+
+      num_visible = mathClampi(len + 2, zoom_min_visible, canvas_size);
+      // // int shiftStart = ((len+min_visible/2) < min_visible) ? (min_visible - (len+min_visible/2)) : 0;
+
+      if(track_size_y < zoom_track_size_y)
+         track_size_y = zoom_track_size_y;
+
+      timelineUpdateLayout();
+      timelineUpdateTrackHeight();
+
+      int x = timelineUnitsToPix(start);
+      if(x < 0)
+         x = 0;
+
+      float w = getClipsWidth();
+      float ctrX = (w - _clip.getSizeX())*0.5;
+      if(ctrX < 0)
+         ctrX = 0;
+      x -= ctrX;
+
+      sp_clips.setViewOffsetX(x);
+      sp_clips.setViewOffsetY((trackIdx*track_size_y) - ((sp_clips.getSizeY()-track_size_y)*0.5));
+
+      if( _bAllowResetView                           &&
+          (oldViewOffX == sp_clips.getViewOffsetX()) &&
+          (oldViewOffY == sp_clips.getViewOffsetY()) &&
+          (oldNumVisible == num_visible)             &&
+          (oldTrackSizeY == track_size_y)
+          )
+      {
+         // View did not change, reset
+         timelineResetView();
+
+         x = timelineUnitsToPix(start);
+         if(x < 0)
+            x = 0;
+
+         ctrX = (w - _clip.getSizeX())*0.5;
+         if(ctrX < 0)
+            ctrX = 0;
+         x -= ctrX;
+
+         sp_clips.setViewOffsetX(x);
+         sp_clips.setViewOffsetY((trackIdx*track_size_y) - ((sp_clips.getSizeY()-track_size_y)*0.5));
+      }
+
+      Point2f p; _clip.calcAbsolutePosition(p);
+      Mouse.warpTo(p.x + _clip.timelineClipGetSizeX()*_relX + TimelineClip.DRAG_EDGE_THRESHOLD/2,
+                   p.y + _clip.getSizeY()*_relY
+                   );
+   }
+
+   public method zoomOut(float _mouseX) {
+      // // trace "xxx zoomOut";
+
+      float units = timelinePixToUnits(_mouseX);
+      float viewOffX = sp_clips.getViewOffsetX();
+      float relX = _mouseX - viewOffX;
+      // trace "xxx preZoom: viewOffX="+viewOffX+" mouseX="+_mouseX+" units="+units+" relX="+relX;
+      // trace "xxx relX="+relX+" units="+units;
+
+      timelineIncNumVisible();
+      // trace "xxx num_visible="+num_visible;
+
+      timelineUpdateLayout();
+
+      float newMouseX = timelineUnitsToPix(units);
+      sp_clips.setViewOffsetX(newMouseX - relX);
+   }
+
+   public method zoomInY(float _mouseY) {
+
+      float trackIdx = _mouseY / track_size_y;
+      float relY = _mouseY - sp_clips.getViewOffsetY();
+
+      int idx = track_size_tbl.findNearestIdx1d(track_size_y, 0/*off*/, 1/*stride*/, 99999999.0f/*maxDist*/);
+      idx++;
+      if(idx >= track_size_tbl.numElements)
+         idx = track_size_tbl.numElements - 1;
+      track_size_y = track_size_tbl.get(idx);
+
+      // // trace "xxx zoomInY: track_size_y="+track_size_y+" idx="+idx;
+
+      timelineUpdateTrackHeight();
+
+      float newMouseY = trackIdx * track_size_y;
+      sp_clips.setViewOffsetY(newMouseY - relY);
+   }
+
+   public method zoomOutY(float _mouseY) {
+
+      float trackIdx = _mouseY / track_size_y;
+      float relY = _mouseY - sp_clips.getViewOffsetY();
+
+      // // int idx = track_size_tbl.indexOf(track_size_y, 0);
+      int idx = track_size_tbl.findNearestIdx1d(track_size_y, 0/*off*/, 1/*stride*/, 99999999.0f/*maxDist*/);
+      idx--;
+      if(idx < 0)
+         idx = 0;
+      track_size_y = track_size_tbl.get(idx);
+
+      timelineUpdateTrackHeight();
+
+      float newMouseY = trackIdx * track_size_y;
+      sp_clips.setViewOffsetY(newMouseY - relY);
+   }
+
+   public method scrollTrack(int _dir) {
+      int y = sp_clips.getViewOffsetY();
+      int trackIdx = y / track_size_y;
+      if(_dir < 0)
+      {
+         if(y == (trackIdx * track_size_y))
+         {
+            trackIdx--;
+            if(trackIdx < 0)
+               trackIdx = 0;
+         }
+      }
+      else
+      {
+         // // if(y == (trackIdx * track_size_y))
+         // // {
+            trackIdx++;
+            if(trackIdx >= tracks.numElements)
+               trackIdx = tracks.numElements - 1;
+         // // }
+      }
+      y = trackIdx * track_size_y;
+      sp_clips.setViewOffsetY(y);
+   }
+
+   public method timelineToggleDrawClipLabels() {
+      b_draw_clip_labels = !b_draw_clip_labels;
+      Global.Debug("Timeline::timelineToggleDrawClipLabels: b_draw_clip_labels is "+b_draw_clip_labels);
+      redraw();
+   }
+
+   public method timelineSetSnapTable(IntArray _tbl, StringArray _tblNames) {
+      snap_tbl = _tbl;
+      snap_tbl_names = _tblNames;
+   }
+
+   public method timelineSetSnapTableIndex(int _index) {
+      snap_tbl_idx = _index;
+   }
+
+   public method timelineToggleSnap() {
+      b_snap = !b_snap;
+      Global.Debug("Timeline::timelineToggleSnap: b_snap is "+b_snap);
+      UI.CompositeAll();
+   }
+
+   public method timelineCycleSnapUnits() {
+      snap_tbl_idx = (snap_tbl_idx + 1) % snap_tbl.numElements;
+      Global.Debug("Timeline::timelineCycleSnapUnits: snap_tbl_idx is "+snap_tbl_idx+" => "+snap_tbl.get(snap_tbl_idx)+" \""+snap_tbl_names.get(snap_tbl_idx)+"\"");
+      UI.CompositeAll();
+   }
+
+   protected method timelineNewTrack() : TimelineTrack {
+      // implemented by derived classes
+      return new TimelineTrack;
+   }
+
+   public method timelineCreateTrack() : TimelineTrack {
+      // create new clip display object
+      // called while initializing tracks
+      TimelineTrack track <= timelineNewTrack();
+      track.track_idx = tracks.numElements;
+      track.initTimelineTrack(this);
+      TimelineTrack trackLast <= tracks.last;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+      if(null != trackLast)
+      {
+         track.setPositionY(trackLast.getPositionY() + trackLast.getSizeY());
+      }
+      else
+      {
+         track.setPositionY(trackHeaderH);
+      }
+      tracks.add(#(deref track));
+      data.addChildLayer(track);
+      return track;
+   }
+
+   // public method timelineDeleteTrack() : TimelineClip {
+   // }
+
+   public method timelineGetTrackByIndex(int _trackIdx) : TimelineTrack {
+      return tracks.get(_trackIdx);
+   }
+
+   public method timelineGetTrackIndex(TimelineTrack _track) : int {
+      // // return tracks.indexOfPointer(_track, 0);
+      return _track.track_idx;
+   }
+
+   public method timelineFreeTracksAndClips() {
+      UI.LoseMouseFocusIfWithin(data);
+      UI.LoseKeyboardFocusIfWithin(data, true/*bQuiet*/);
+
+      // remove all display objects
+      pn_left.removeChildHierarchy();
+      data.removeChildHierarchy();
+      tracks.free();
+   }
+
+   public method timelineInitTracks() {
+      // create TimelineTrack display objects from data model
+      // implemented by derived classes
+   }
+
+   public method timelineInitTrackClips() {
+      // iterate tracks and create TimelineClip display objects from data model
+      TimelineTrack *track;
+      foreach track in tracks
+      {
+         track.timelineTrackInitClips();
+      }
+   }
+
+   public method getClipsWidth() : float {
+      float clipsW = sp_clips.getSizeX();
+      if(num_visible == canvas_size)
+         clipsW -= Scroller.BUTTON_W;
+      return clipsW;
+   }
+
+   // public method timelineFindClipAtXYNoEdge(float _x, float _y) : TimelineClip {
+   //    int units = timelinePixToUnits(_x);
+   //    int trackIdx = _y / track_size_y;
+
+   //    TimelineTrack track <= tracks.get(trackIdx);
+   //    if(null != track)
+   //    {
+   //       TimelineClip *clip;
+   //       foreach clip in track.clips
+   //       {
+   //          int clipStart = clip.timelineClipGetStart();
+   //          int clipEnd = clip.timelineClipGetEnd();
+   //          if(clipStart <= units < clipEnd)
+   //          {
+   //             return clip;
+   //          }
+   //       }
+   //    }
+   //    return null;
+   // }
+
+   public method timelineFindClipAtXY(float _x, float _y) : TimelineClip {
+      // find including edges
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      if(_y >= trackHeaderH)
+      {
+         _y -= trackHeaderH;
+         int trackIdx = _y / track_size_y;
+
+         TimelineTrack track <= tracks.get(trackIdx);
+         if(null != track)
+         {
+            TimelineClip *clip;
+            foreach clip in track.clips
+            {
+               int clipX1 = timelineUnitsToPix(clip.timelineClipGetStart()) - TimelineClip.DRAG_EDGE_THRESHOLD/2;
+               int clipX2 = timelineUnitsToPix(clip.timelineClipGetEnd()) + TimelineClip.DRAG_EDGE_THRESHOLD/2;
+               if(clipX1 <= _x < clipX2)
+               {
+                  return clip;
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public method updateClipSelectionFromPixelRectangle(Rectangle2f _rect, boolean _bTouch) : boolean {
+      // trace "xxx updateClipSelectionFromPixelRectangle";
+
+      IntArray newSelection; newSelection.empty();
+
+      // trace "xxx sp_clips.getViewOffsetX()="+sp_clips.getViewOffsetX();
+
+      // trace "xxx mouseRect="+_rect.getString();
+
+      TimelineTrack *track;
+      foreach track in tracks
+      {
+         TimelineClip *clip;
+         foreach clip in track.clips
+         {
+            Rectangle2f clipRect;
+            clipRect.qx = clip.timelineClipGetPositionX() + track.getPositionX();
+            clipRect.qy = clip.timelineClipGetPositionY() + track.getPositionY();
+            int clipW = clip.timelineClipGetSizeX();
+            int clipH = clip.timelineClipGetSizeY();
+            clipRect.px = clipRect.qx + clipW;
+            clipRect.py = clipRect.qy + clipH;
+
+            // trace "xxx clipRect="+clipRect.getString();
+            if(_bTouch)
+            {
+               // trace "xxx _rect="+_rect.getString()+" clipRect="+clipRect.getString();
+               if(_rect.rectangleIntersectionTest(clipRect))
+               {
+                  newSelection.add(clip.timelineClipGetUID());
+               }
+            }
+            else
+            {
+               if( (_rect.qx <= clipRect.qx) &&
+                   (_rect.px >= clipRect.px) &&
+                   (_rect.qy <= clipRect.qy) &&
+                   (_rect.py >= clipRect.py)
+                   )
+               {
+                  newSelection.add(clip.timelineClipGetUID());
+               }
+            }
+         }
+      }
+
+      // trace "xxx newSelection="+newSelection;
+
+      if(clip_selection != newSelection)
+      {
+         clip_selection = newSelection;
+         return true;
+      }
+      else
+      {
+         clip_selection = newSelection;
+         return false;
+      }
+   }
+
+   public method timelineSetKbdSelectionFromPixelRectangle(Rectangle2f _rect) {
+      int x1 = timelinePixToUnits(_rect.qx);
+      int x2 = timelinePixToUnits(_rect.px);
+      boolean bAlignRight = ( (x2 -x1) >= 16 );
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+      if(b_snap)
+      {
+         x1 = timelineSnapUnits(x1, false/*bAlignRight*/);
+         x2 = timelineSnapUnits(x2, bAlignRight);
+      }
+      int y1 = (_rect.qy - trackHeaderH) / track_size_y;
+      int y2 = (_rect.py - trackHeaderH) / track_size_y;
+      kbd_selection_units_start = x1;
+      kbd_selection_units_end   = x2;
+      kbd_selection_track_start = y1;
+      kbd_selection_track_end   = y2;
+      x1 = mathMaxi(0, x1);
+      x2 = mathMaxi(0, x2);
+      x1 = mathMini(x1, canvas_size);
+      x2 = mathMini(x2, canvas_size);
+      timelineSortKbdSelection();
+      timelineHandleKbdSelectionChanged();
+      UI.CompositeAll();
+   }
+
+   public method timelineKbdSelectionFromClipSelection() {
+      trace "xxx timelineKbdSelectionFromClipSelection: timelineHaveSelection()="+timelineHaveSelection();
+      if(timelineHaveSelection())
+      {
+         local Integer unitsMin, unitsMax;
+         timelineGetSelectionMinMaxUnits(unitsMin, unitsMax);
+         // // trace "xxx timelineKbdSelectionFromClipSelection: unitsMin="+unitsMin+" unitsMax="+unitsMax;
+         if(unitsMax > unitsMin)
+         {
+            kbd_selection_units_start        = unitsMin;
+            kbd_selection_units_start_sorted = unitsMin;
+            kbd_selection_units_end          = unitsMax;
+            kbd_selection_units_end_sorted   = unitsMax;
+            redraw();
+         }
+      }
+   }
+
+   public method timelineKbdSelectNone() {
+      kbd_selection_units_start = -1;
+      kbd_selection_units_start_sorted = -1;
+      timelineHandleKbdSelectionChanged();
+   }
+
+   public method timelineSelectNone() {
+      // if(b_debug)
+      //    trace "[dbg] timelineSelectNone()";
+      clip_selection.empty();
+      timelineKbdSelectNone();
+      b_selection_copied = false;
+      redraw();
+   }
+
+   public method timelineSelectClipUnderCursor() {
+      kbd_selection_units_start = cursor_units;
+      kbd_selection_units_end   = cursor_units;
+      kbd_selection_track_start = cursor_track;
+      kbd_selection_track_end   = cursor_track;
+      timelineSortKbdSelection();
+      timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+      // trace "xxx timelineSelectClipUnderCursor";
+   }
+
+   public method timelineKbdSelectionFromCursorSnapUnits(boolean _bAllTracks) {
+      kbd_selection_units_start = cursor_units;
+      kbd_selection_units_end   = cursor_units + timelineGetSnapUnits();
+      kbd_selection_track_start = _bAllTracks ? 0 : cursor_track;
+      kbd_selection_track_end   = _bAllTracks ? (tracks.numElements - 1) : cursor_track;
+      timelineSortKbdSelection();
+   }
+
+   public method timelineSelectUntilEnd() {
+      local IntArray oldSelection = clip_selection;
+
+      // Select on all tracks
+      kbd_selection_units_start = cursor_units;
+      kbd_selection_units_end   = canvas_size;
+      kbd_selection_track_start = 0;
+      kbd_selection_track_end   = tracks.numElements - 1;
+      timelineSortKbdSelection();
+      timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+      timelineKbdSelectionFromClipSelection();
+
+      if(clip_selection == oldSelection)
+      {
+         // Already selected, sort on current track only
+         kbd_selection_units_start = cursor_units;
+         kbd_selection_units_end   = canvas_size;
+         kbd_selection_track_start = cursor_track;
+         kbd_selection_track_end   = cursor_track;
+         timelineSortKbdSelection();
+         timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+         timelineKbdSelectionFromClipSelection();
+      }
+
+      redraw();
+   }
+
+   public method timelineHaveSelection() : boolean {
+      return !clip_selection.isEmpty();
+   }
+
+   public method timelineGetClipArrayMinMaxUnits(PointerArray _clips, Integer _retMin, Integer _retMax) {
+      // // trace "xxx timelineGetClipArrayMinMaxUnits: _clips.numElements="+_clips.numElements;
+      if(_clips.numElements > 0)
+      {
+         TimelineClip *clip;
+         int tMin = 99999999;
+         int tMax = 0;
+         foreach clip in _clips
+         {
+            tMin = mathMini(tMin, clip.timelineClipGetStart());
+            tMax = mathMaxi(tMax, clip.timelineClipGetEnd());
+         }
+         // // trace "xxx timelineGetClipArrayMinMaxUnits: tMin="+tMin+" tMax="+tMax;
+         _retMin = tMin;
+         _retMax = tMax;
+      }
+      else
+      {
+         _retMin = 0;
+         _retMax = 0;
+      }
+   }
+
+   public method timelineGetSelectionMinMaxUnits(Integer _retMin, Integer _retMax) {
+      local PointerArray aClips <= timelineGetSelectedClips();
+      timelineGetClipArrayMinMaxUnits(aClips, _retMin, _retMax);
+   }
+
+   // public method timelineGetSelectionUnits() : int {
+   //    local Integer retMin;
+   //    local Integer retMax;
+   //    timelineGetSelectionMinMaxUnits(retMin, retMax);
+   //    return retMax - retMin;
+   // }
+
+   public method timelineHaveKbdSelection() : boolean {
+      return (-1 != kbd_selection_units_start_sorted);
+   }
+
+   public method timelineGetClipboardNumUnits() : int {
+      // implemented by derived classes
+      return 0;
+   }
+
+   public method timelineToggleSelectTrackClipsOrAllClips() {
+      if(b_debug)
+         trace "[dbg] timelineToggleSelectTrackClipsOrAllClips";
+
+      TimelineTrack track <= tracks.get(cursor_track);
+
+      if(null != track)
+      {
+         TimelineClip *clip;
+
+         local IntArray trackClipSelection;
+         foreach clip in track.clips
+            trackClipSelection.add(clip.timelineClipGetUID());
+
+         local IntArray allClipSelection;
+         foreach track in tracks
+         {
+            foreach clip in track.clips
+               allClipSelection.add(clip.timelineClipGetUID());
+         }
+
+         // trace "xxx clip_selection="+#(clip_selection);
+         // trace "xxx trackClipSelection="+#(trackClipSelection);
+         // trace "xxx allClipSelection="+#(allClipSelection);
+
+         if(clip_selection == trackClipSelection)
+         {
+            clip_selection = allClipSelection;
+         }
+         else
+         {
+            if(clip_selection == allClipSelection)
+               clip_selection.empty();
+            else
+            {
+               track <= tracks.get(cursor_track);
+               trackClipSelection.empty();
+               foreach clip in track.clips
+                  trackClipSelection.add(clip.timelineClipGetUID());
+
+               clip_selection = trackClipSelection;
+            }
+         }
+
+         redraw();
+      }
+   }
+
+   public method timelineExpandCursorToVerticalKbdSelection() {
+      kbd_selection_units_start = cursor_units;
+      kbd_selection_units_end   = cursor_units;
+      kbd_selection_track_start = 0;
+      kbd_selection_track_end   = tracks.numElements -1;
+      timelineSortKbdSelection();
+      timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+   }
+
+   public method timelineSortKbdSelection() {
+      kbd_selection_units_start_sorted = mathMini(kbd_selection_units_start, kbd_selection_units_end);
+      kbd_selection_units_end_sorted   = mathMaxi(kbd_selection_units_start, kbd_selection_units_end);
+      kbd_selection_track_start_sorted = mathMini(kbd_selection_track_start, kbd_selection_track_end);
+      kbd_selection_track_end_sorted   = mathMaxi(kbd_selection_track_start, kbd_selection_track_end);
+   }
+
+   public method timelineClipSelectionFromKbdSelection(boolean _bTouch) {
+      local Rectangle2f rect;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+      rect.qx = int(timelineUnitsToPix(kbd_selection_units_start_sorted));
+      rect.qy = int(track_size_y * kbd_selection_track_start_sorted + trackHeaderH);
+      rect.px = int(timelineUnitsToPix(kbd_selection_units_end_sorted));
+      rect.py = int(track_size_y * (kbd_selection_track_end_sorted + 1) + trackHeaderH);
+      if(updateClipSelectionFromPixelRectangle(rect, _bTouch))
+         redraw();
+   }
+
+   public method timelineGetSelectedClips() : PointerArray {
+      local TimelineClip *[] r;
+      int uid;
+      foreach uid in clip_selection
+      {
+         TimelineClip clip <= timelineFindClipByUID(uid);
+         if(null != clip)
+            r.add(clip);
+      }
+      return deref r;
+   }
+
+   public method timelineRaySelect(float _x) {
+      // local IntArray oldSelection = clip_selection;
+      local Rectangle2f rect;
+      rect.init(_x, 0,
+                _x, sp_clips.getViewSizeY()
+                );
+
+      updateClipSelectionFromPixelRectangle(rect, true/*bTouch*/);
+      redraw();
+   }
+
+   public method timelineMoveClipToTrack(TimelineClip _clip, int _newTrackIdx) : boolean {
+      // implemented by derived classes (when supported)
+      //  - only called when b_allow_cross_track_clip_drag=true
+   }
+
+   public method timelineFindClipByUID(int _uid) : TimelineClip {
+      TimelineTrack *track;
+      foreach track in tracks
+      {
+         TimelineClip *clip;
+         foreach clip in track.clips
+         {
+            if(clip.timelineClipGetUID() == _uid)
+               return clip;
+         }
+      }
+      return null;
+   }
+
+   public method timelineFindClipAtUnits(int _unitsX, int _track) : TimelineClip {
+      TimelineTrack track <= tracks.get(_track);
+      if(null != track)
+      {
+         TimelineClip *clip;
+         foreach clip in track.clips
+         {
+            if(_unitsX >= clip.timelineClipGetStart() &&
+               _unitsX  < clip.timelineClipGetEnd()
+               )
+            {
+               return clip;
+            }
+         }
+      }
+      return null;
+   }
+
+   public method timelineUpdateLayout() {
+      float clipsW = getClipsWidth();
+      float canvasW = (clipsW * canvas_size) / num_visible;
+      float canvasH = 0;
+      data.setRequiredSizeX(canvasW);
+      TimelineTrack trackLast <= tracks.last;
+      if(null != trackLast)
+      {
+         // trace "xxx trackLast.getPositionY()="+trackLast.getPositionY();
+         // trace "xxx trackLast.getSizeY()="+trackLast.getSizeY();
+         canvasH = trackLast.getPositionY() + trackLast.getSizeY();
+      }
+      data.setRequiredSizeY(canvasH);
+
+      // trace "xxx canvas sz=("+canvasW+";"+canvasH+")";
+      sp_clips.setViewSize2f(canvasW, canvasH);
+
+      TimelineTrack *track;
+      foreach track in tracks
+      {
+         track.setRequiredSizeX(canvasW);
+         track.timelineTrackLayoutClips();
+      }
+
+      sp_clips.updateLayout();
+      relayout(); // update relative knob sizes
+
+      // data.debugPrintChildLayersRecursive(0, true);
+
+      if(b_allow_swap_wheel_zoom)
+         b_swap_wheel_zoom = (canvasH < sp_clips.getSizeY());
+   }
+
+   public method timelineUpdateTrackHeight() {
+      TimelineTrack *track;
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      int cy = trackHeaderH;
+      foreach track in tracks
+      {
+         track.setPositionY(cy);
+         track.setRequiredSizeY(track_size_y);
+
+         TimelineClip *clip;
+         foreach clip in track.clips
+         {
+            clip.setRequiredSizeY(track_size_y);
+         }
+
+         cy += track_size_y;
+      }
+
+      timelineUpdateLayout();
+
+      redraw();
+   }
+
+   public method timelineUpdate() {
+      // trace "xxx Timeline::timelineUpdate()";
+
+      // Remove all track+clip display objects
+      timelineFreeTracksAndClips();
+
+      timelineInitTracks();
+      timelineInitTrackClips();
+
+      relayout();
+      timelineUpdateLayout();
+      timelineShowCursorClipDetails();
+
+      // trace "xxx timeline.sizeX="+getSizeX();
+      // trace "xxx vp_tracks.sizeX="+vp_tracks.getSizeX();
+      // trace "xxx sp_clips.sizeX="+sp_clips.getSizeX();
+      // trace "xxx sp_clips.getViewSizeY()="+sp_clips.getViewSizeY();
+      // trace "xxx pn_left.sizeX="+pn_left.getSizeX();
+      // trace "xxx data.sizeX="+data.getSizeX();
+
+      UI.SetKeyboardFocus(data);
+   }
+
+   public method timelineStoreEditorState(TimelineEditorState _state) {
+      if(b_debug) trace "[dbg] Timeline::timelineStoreEditorState state="+#(_state);
+      _state.num_visible     = num_visible;
+      _state.track_size_y    = track_size_y;
+      _state.view_units      = timelinePixToUnits(sp_clips.getViewOffsetX());
+      _state.view_tracks     = sp_clips.getViewOffsetY() / float(track_size_y);
+      // trace "xxx timelineStoreEditorState: view_units="+_state.view_units+" view_tracks="+_state.view_tracks;
+      _state.clip_selection  = clip_selection;
+      _state.b_snap          = b_snap;
+      _state.snap_tbl_idx    = snap_tbl_idx;
+      _state.cursor_units    = cursor_units;
+      _state.cursor_track    = cursor_track;
+      _state.kbd_selection_units_start        = kbd_selection_units_start;
+      _state.kbd_selection_track_start        = kbd_selection_track_start;
+      _state.kbd_selection_units_end          = kbd_selection_units_end;
+      _state.kbd_selection_track_end          = kbd_selection_track_end;
+      _state.kbd_selection_units_start_sorted = kbd_selection_units_start_sorted;
+      _state.kbd_selection_track_start_sorted = kbd_selection_track_start_sorted;
+      _state.kbd_selection_units_end_sorted   = kbd_selection_units_end_sorted;
+      _state.kbd_selection_track_end_sorted   = kbd_selection_track_end_sorted;
+      _state.b_selection_copied               = b_selection_copied;
+   }
+
+   public method timelineRestoreEditorState(TimelineEditorState _state) {
+      if(b_debug) trace "[dbg] Timeline::timelineRestoreEditorState state="+#(_state);
+      num_visible  = _state.num_visible;
+      track_size_y = _state.track_size_y;
+      timelineUpdate();
+      // // timelineUpdateTrackHeight();  // [01May2025]
+      if(b_debug) trace "[dbg] timelineRestoreEditorState: view_units="+_state.view_units+" view_tracks="+_state.view_tracks+" track_size_y="+track_size_y;
+      sp_clips.setViewOffset(_state.view_tracks * track_size_y/*top*/,
+                             timelineUnitsToPix(_state.view_units)/*lef*/
+                             );
+      clip_selection = _state.clip_selection;
+      b_snap       = _state.b_snap;
+      snap_tbl_idx = _state.snap_tbl_idx;
+      cursor_units = _state.cursor_units;
+      cursor_track = _state.cursor_track;
+      kbd_selection_units_start        = _state.kbd_selection_units_start;
+      kbd_selection_track_start        = _state.kbd_selection_track_start;
+      kbd_selection_units_end          = _state.kbd_selection_units_end;
+      kbd_selection_track_end          = _state.kbd_selection_track_end;
+      kbd_selection_units_start_sorted = _state.kbd_selection_units_start_sorted;
+      kbd_selection_track_start_sorted = _state.kbd_selection_track_start_sorted;
+      kbd_selection_units_end_sorted   = _state.kbd_selection_units_end_sorted;
+      kbd_selection_track_end_sorted   = _state.kbd_selection_track_end_sorted;
+      b_selection_copied               = _state.b_selection_copied;
+   }
+
+   public method timelineModelGetEditorState() : TimelineEditorState {
+      // implemented by derived classes
+      return null;
+   }
+
+   public method timelineModelSaveState(Stream ofs) {
+      // implemented by derived classes
+   }
+
+   public method timelineModelLoadState(Stream ifs) : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+   public method timelineUndoSaveState(Buffer _b) {
+      TimelineEditorState es <= timelineModelGetEditorState();
+      if(null != es)
+      {
+         timelineStoreEditorState(es);
+      }
+
+      local DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      timelineModelSaveState(ds);
+
+      _b.size = ds.offset;
+      _b.offset = 0;
+      timelineModelSaveState(_b);
+   }
+
+   public method timelineUndoLoadState(Buffer _b) : boolean {
+      _b.offset = 0;
+      if(timelineModelLoadState(_b))
+      {
+         TimelineEditorState es <= timelineModelGetEditorState();
+         if(null != es)
+         {
+            // (Re-)Create track+clip widgets and restore zoom/scrolloffset + other editor state
+            timelineRestoreEditorState(es);
+         }
+         else
+         {
+            timelineUpdate();
+         }
+
+         redraw();
+
+         return true;
+      }
+      return false;
+   }
+
+   public method timelineUndoBegin() {
+      timelineUndoSaveState(undo_buffer);
+      // trace "xxx undo_buffer.size="+undo_buffer.size;
+   }
+
+   public method timelineUndoEnd() : boolean {
+      local Buffer b;
+      timelineUndoSaveState(b);
+      if(b != undo_buffer)
+      {
+         TimelineUndoEntry en <= new TimelineUndoEntry;
+         en.buffer = undo_buffer;
+         undo_entries.add(#(deref en));
+         if(undo_entries.numElements >= UNDO_HISTORY_SIZE)
+            undo_entries.delete(0);
+         redo_entries.free();
+         return true;
+      }
+      else
+      {
+         Global.Debug("Timeline::timelineUndoEnd: no changes, discarding undo state");
+         undo_buffer.free();
+         return false;
+      }
+   }
+
+   public method timelineUndo() {
+      if(undo_entries.numElements > 0)
+      {
+         TimelineUndoEntry *en;
+
+         // Create redo entry
+         en <= new TimelineUndoEntry;
+         timelineUndoSaveState(en.buffer);
+         redo_entries.add(#(deref en));
+
+         // Undo + remove from stack
+         en <= undo_entries.last;
+         en.buffer.setOffset(0);
+         timelineUndoLoadState(en.buffer);
+         undo_entries.delete(undo_entries.numElements -1);
+
+         UI.SetKeyboardFocus(data);
+      }
+   }
+
+   public method timelineRedo() {
+      // trace "xxx redo_entries.numElements="+redo_entries.numElements;
+      if(redo_entries.numElements > 0)
+      {
+         TimelineUndoEntry *en;
+
+         // Create undo entry
+         en <= new TimelineUndoEntry;
+         timelineUndoSaveState(en.buffer);
+         undo_entries.add(#(deref en));
+
+         // Redo + remove from stack
+         en <= redo_entries.last;
+         timelineUndoLoadState(en.buffer);
+         redo_entries.delete(redo_entries.numElements -1);
+
+         UI.SetKeyboardFocus(data);
+      }
+   }
+
+   public =replay= method timelineDeleteClips(TimelineClip _singleClipOrNull, boolean _bUndoBegin) {
+
+      if(b_debug)
+         trace "[dbg] timelineDeleteClips: singleClipOrNull="+#(_singleClipOrNull)+" clip_selection="+clip_selection;
+
+      if(_bUndoBegin)
+         timelineUndoBegin();
+
+      TimelineTrack *track;
+
+      if(null != _singleClipOrNull)
+      {
+         track <= _singleClipOrNull.parent_track;
+         track.timelineTrackDeleteClip(_singleClipOrNull);
+      }
+      else
+      {
+         local PointerArray selectedClips <= timelineGetSelectedClips();
+         TimelineClip *clip;
+         foreach clip in selectedClips
+         {
+            track <= clip.parent_track;
+            track.timelineTrackDeleteClip(clip);
+         }
+      }
+
+      if(_bUndoBegin)
+      {
+         if(timelineUndoEnd())
+         {
+            timelineUpdate();
+         }
+         timelineSelectNone();
+      }
+   }
+
+   public method timelineToggleMuteClips(TimelineClip _singleClipOrNull) {
+      if(b_debug) trace "[dbg] timelineToggleMuteClips: singleClipOrNull="+#(_singleClipOrNull)+" clip_selection="+clip_selection;
+
+      timelineUndoBegin();
+
+      if(null != _singleClipOrNull)
+      {
+         _singleClipOrNull.timelineClipSetEnableMute(!_singleClipOrNull.timelineClipGetEnableMute());
+      }
+      else
+      {
+         local PointerArray selectedClips <= timelineGetSelectedClips();
+         TimelineClip *clip;
+         foreach clip in selectedClips
+         {
+            clip.timelineClipSetEnableMute(!clip.timelineClipGetEnableMute());
+         }
+      }
+
+      if(timelineUndoEnd())
+      {
+         redraw();
+      }
+
+   }
+
+   public method timelineHandleCursorTrackChanged() {
+      // implemented by derived classes
+   }
+
+   public method timelineHandleKbdSelectionChanged() {
+      // implemented by derived classes
+   }
+
+   public method timelineCursorSetPositionFromPix(int _x, int _y) {
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+      _y -= trackHeaderH;
+      cursor_units = timelinePixToUnits(_x);
+      if(b_snap)
+         cursor_units = timelineSnapUnits(cursor_units, false/*bAlignRight*/);
+      int oldCursorTrack = cursor_track;
+      cursor_track = _y / track_size_y;
+      cursor_track = mathClampi(cursor_track, 0, tracks.numElements - 1);
+      if(oldCursorTrack != cursor_track)
+         timelineHandleCursorTrackChanged();
+      UI.CompositeAll();
+   }
+
+   public method timelineCursorSetPositionTopLeftClipSelection() {
+      int uid;
+      int minX = (1 << 30);
+      int minY = (1 << 30);
+      // // int maxX = 0;
+      // // int maxY = 0;
+      foreach uid in clip_selection
+      {
+         TimelineClip clip <= timelineFindClipByUID(uid);
+         minX = mathMini(minX, clip.timelineClipGetStart());
+         // // maxX = mathMaxi(maxX, clip.timelineClipGetEnd());
+         minY = mathMini(minY, clip.parent_track.track_idx);
+         // // maxY = mathMaxi(maxY, clip.track_idx);
+      }
+      cursor_units = minX;
+      int oldCursorTrack = cursor_track;
+      cursor_track = minY;
+      if(oldCursorTrack != cursor_track)
+         timelineHandleCursorTrackChanged();
+      UI.CompositeAll();
+   }
+
+   public method timelineCursorMakeVisible() {
+      int snapUnits = timelineGetSnapUnits();
+      int w = timelineUnitsToPix(snapUnits);
+      Point2f p; p.init(timelineUnitsToPix(cursor_units), cursor_track * track_size_y);
+      Size2f s; s.init(w, track_size_y);
+      sp_clips.makeRectVisible(p, s);
+      UI.CompositeAll();
+   }
+
+   public method timelineCursorMoveLeft(boolean _bSelect) {
+      TimelineClip clipPrev <= timelineFindClipAtUnits(cursor_units, cursor_track);
+
+      if(_bSelect && (-1 == kbd_selection_units_start))
+      {
+         kbd_selection_units_start = cursor_units;
+         kbd_selection_track_start = cursor_track;
+         kbd_selection_track_end   = cursor_track;
+      }
+      int snapUnits = timelineGetSnapUnits();
+      cursor_units = timelineSnapUnits(cursor_units - snapUnits, false/*bAlignRight*/);
+      if(cursor_units < 0)
+         cursor_units = 0;
+      timelineCursorMakeVisible();
+      if(_bSelect)
+      {
+         kbd_selection_units_end = cursor_units;
+         timelineSortKbdSelection();
+         timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+      }
+      else
+      {
+         timelineSelectNone();
+      }
+
+      TimelineClip clipCur <= timelineFindClipAtUnits(cursor_units, cursor_track);
+      if(@(clipPrev) != @(clipCur))
+      {
+         timelineShowClipDetails(clipCur);
+      }
+   }
+
+   public method timelineCursorMoveRight(boolean _bSelect) {
+      TimelineClip clipPrev <= timelineFindClipAtUnits(cursor_units, cursor_track);
+
+      if(_bSelect && (-1 == kbd_selection_units_start))
+      {
+         kbd_selection_units_start = cursor_units;
+         kbd_selection_track_start = cursor_track;
+         kbd_selection_track_end   = cursor_track;
+      }
+      int snapUnits = timelineGetSnapUnits();
+      cursor_units = timelineSnapUnits(cursor_units + snapUnits, false/*bAlignRight*/);
+      if(cursor_units >= canvas_size)
+         cursor_units = canvas_size - snapUnits;
+      timelineCursorMakeVisible();
+      if(_bSelect)
+      {
+         kbd_selection_units_end = cursor_units;
+         timelineSortKbdSelection();
+         timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+      }
+      else
+      {
+         timelineSelectNone();
+      }
+
+      TimelineClip clipCur <= timelineFindClipAtUnits(cursor_units, cursor_track);
+      if(@(clipPrev) != @(clipCur))
+      {
+         timelineShowClipDetails(clipCur);
+      }
+   }
+
+   public method timelineCursorMoveUp(boolean _bSelect) {
+      if(_bSelect && (-1 == kbd_selection_units_start))
+      {
+         kbd_selection_units_start = cursor_units;
+         kbd_selection_units_end   = cursor_units;
+         kbd_selection_track_start = cursor_track;
+      }
+      int oldCursorTrack = cursor_track;
+      cursor_track--;
+      if(cursor_track < 0)
+         cursor_track = 0;
+      timelineCursorMakeVisible();
+      if(_bSelect)
+      {
+         kbd_selection_track_end = cursor_track;
+         timelineSortKbdSelection();
+         timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+      }
+      else
+      {
+         timelineSelectNone();
+      }
+      if(oldCursorTrack != cursor_track)
+         timelineHandleCursorTrackChanged();
+   }
+
+   public method timelineCursorMoveDown(boolean _bSelect) {
+      if(_bSelect && (-1 == kbd_selection_units_start))
+      {
+         kbd_selection_units_start = cursor_units;
+         kbd_selection_units_end   = cursor_units;
+         kbd_selection_track_start = cursor_track;
+      }
+      int oldCursorTrack = cursor_track;
+      cursor_track++;
+      if(cursor_track >= tracks.numElements)
+         cursor_track = tracks.numElements - 1;
+      timelineCursorMakeVisible();
+      if(_bSelect)
+      {
+         kbd_selection_track_end = cursor_track;
+         timelineSortKbdSelection();
+         timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+      }
+      else
+      {
+         timelineSelectNone();
+      }
+      if(oldCursorTrack != cursor_track)
+         timelineHandleCursorTrackChanged();
+   }
+
+   public method timelineModelCopyClipSelectionToClipboard(IntArray _clipUIDs) {
+      // implemented by derived classes
+   }
+
+   public method timelineModelGetClipboardWidth() : int {
+      // implemented by derived classes
+   }
+
+   public method timelineModelGetClipboardHeight() : int {
+      // implemented by derived classes
+   }
+
+   public method timelineModelHaveClipsInRect(int _units, int _trackIdx, int _numUnits, int _numTracks) : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+   public method timelineCopy(TimelineClip _singleClipOrNull) {
+      if(b_debug)
+         trace "[dbg] timelineCopy: singleClipOrNull="+#(_singleClipOrNull);
+      if(null != _singleClipOrNull)
+      {
+         local IntArray singleSelection;
+         singleSelection.add(_singleClipOrNull.timelineClipGetUID());
+         timelineModelCopyClipSelectionToClipboard(singleSelection);
+         clipboard_modification_time = milliSeconds();
+      }
+      else if(!clip_selection.isEmpty())
+      {
+         // trace "xxx clip_selection="+clip_selection;
+         timelineModelCopyClipSelectionToClipboard(clip_selection);
+         clipboard_modification_time = milliSeconds();
+      }
+      b_selection_copied = true;
+      redraw();///UI.CompositeAll();
+   }
+
+   public method timelineModelCanPasteClipClipboard(int _units, int _trackIdx) : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+   public method timelineModelPasteClipClipboard(int _units, int _trackIdx) : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+   public method timelinePasteOther() : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+   public method timelinePaste(boolean _bShift) {
+      trace "xxx timelinePaste: bShift="+_bShift;
+
+      boolean bCanPaste = true;
+
+      if(_bShift)
+      {
+         int numClipboardUnits = timelineGetClipboardNumUnits();
+         trace "xxx timelinePaste: numClipboardUnits="+numClipboardUnits;
+         if(numClipboardUnits > 0)
+         {
+            kbd_selection_units_start        = cursor_units;
+            kbd_selection_units_start_sorted = kbd_selection_units_start;
+            kbd_selection_units_end          = cursor_units + numClipboardUnits;
+            kbd_selection_units_end_sorted   = kbd_selection_units_end;
+            kbd_selection_track_start        = 0;
+            kbd_selection_track_start_sorted = 0;
+            kbd_selection_track_end          = tracks.numElements - 1;
+            kbd_selection_track_end_sorted   = tracks.numElements - 1;
+            timelineShiftClipsBySelection(true/*bAllTracks*/, false/*bDelete*/);
+         }
+         else
+         {
+            return;
+         }
+      }
+      else if(!b_allow_clip_overlap)
+      {
+         bCanPaste = timelineModelCanPasteClipClipboard(cursor_units, cursor_track);
+      }
+
+      if(bCanPaste)
+      {
+         timelineUndoBegin();
+         if(timelineModelPasteClipClipboard(cursor_units, cursor_track))
+         {
+            int cbw = timelineModelGetClipboardWidth();
+            int cbh = timelineModelGetClipboardHeight();
+            Point2f p; p.init(timelineUnitsToPix(cursor_units), cursor_track * track_size_y);
+            Size2f s; s.init(timelineUnitsToPix(cbw), cbh*track_size_y);
+            // trace "xxx p="+p.getString()+" s="+s.getString();
+            sp_clips.makeRectVisible(p, s);
+            cursor_units += cbw;
+         }
+         timelineUndoEnd();
+         timelineUpdate();
+      }
+   }
+
+   public method timelineSetEditMode(int _mode) {
+      edit_mode = _mode;
+      trace "[...] Timeline::timelineSetEditMode: edit_mode is "+edit_mode_names.get(edit_mode)+" ("+edit_mode+")";
+   }
+
+   public method timelineDrawClip(int _units, int _trackIdx, int _numUnits, int _numTracks) {
+      boolean bCanDraw = true;
+
+      if(!b_allow_clip_overlap)
+      {
+         bCanDraw = !timelineModelHaveClipsInRect(_units, _trackIdx, _numUnits, _numTracks);
+      }
+
+      if(bCanDraw)
+      {
+         timelineUndoBegin();
+
+         int trackIdx = _trackIdx;
+         loop(_numTracks)
+         {
+            TimelineTrack track <= tracks.get(trackIdx);
+            if(null != track)
+            {
+               int uid = track.timelineTrackModelCreateClip(_units/*start*/, (_units + _numUnits)/*end*/);
+            }
+            trackIdx++;
+         }
+
+         if(timelineUndoEnd())
+         {
+            timelineUpdate();
+            redraw();
+         }
+      }
+   }
+
+   public method timelineSplitSelectedClipsIntAt(int _units, boolean _bReturnR) : IntArray {
+      local IntArray addSelection;
+      int uid;
+      foreach uid in clip_selection
+      {
+         TimelineClip clip <= timelineFindClipByUID(uid);
+         int clipStart = clip.timelineClipGetStart();
+         int clipEnd   = clip.timelineClipGetEnd();
+         if(clipStart < _units < clipEnd)
+         {
+            int clipOffset = clip.timelineClipGetOffset();
+            clip.timelineClipSetEnd(_units);
+            TimelineTrack track <= clip.parent_track;
+            int uidR = track.timelineTrackModelCreateClip(_units, clipEnd);
+            addSelection.add(_bReturnR ? uidR : uid);
+            timelineUpdate();
+            clip <= timelineFindClipByUID(uid);
+            TimelineClip clipR <= timelineFindClipByUID(uidR);
+            clipR.timelineClipSetOffset(clipOffset + (_units - clipStart));
+            clipR.timelineClipSetEnableMute(clip.timelineClipGetEnableMute());
+            clipR.timelineClipCopyExtDataFrom(clip);
+            clipR.parent_track.timelineTrackHandleClipOrderChanged();
+         }
+      }
+      return deref addSelection;
+   }
+
+   public method timelineSplitSelectedClipsAt(int _units) {
+      timelineUndoBegin();
+
+      timelineSplitSelectedClipsIntAt(_units, true/*_bReturnR*/);
+
+      if(timelineUndoEnd())
+      {
+         timelineUpdate();
+         timelineSelectNone();
+         redraw();
+      }
+   }
+
+   public method timelineSplitSelectedClipsAtKbdSelection(boolean _bUndoBegin) {
+      if(b_debug)
+         trace "[dbg] timelineSplitSelectedClipsAtKbdSelection";
+
+      if(_bUndoBegin)
+         timelineUndoBegin();
+
+      local IntArray addSelection;
+      addSelection <= timelineSplitSelectedClipsIntAt(kbd_selection_units_start_sorted, true/*bReturnR*/);
+      clip_selection.join(clip_selection, addSelection);
+      addSelection <= timelineSplitSelectedClipsIntAt(kbd_selection_units_end_sorted, true/*bReturnR*/);
+      // // clip_selection.join(clip_selection, addSelection);
+
+      if(_bUndoBegin)
+      {
+         if(timelineUndoEnd())
+         {
+            timelineUpdate();
+            timelineSelectNone();
+            redraw();
+         }
+      }
+   }
+
+   public method timelineSplitAllTracksAtPix(int _x, int _y) {
+      timelineUndoBegin();
+      timelineCursorSetPositionFromPix(_x, _y);
+      timelineSelectNone();
+      timelineExpandCursorToVerticalKbdSelection();
+      timelineSplitSelectedClipsAtKbdSelection(false/*bUndoBegin*/);
+      timelineSelectNone();
+      if(timelineUndoEnd())
+      {
+         timelineUpdate();
+         redraw();
+      }
+   }
+
+   public method timelineSplitClipsAtPix(int _x, int _y) {
+      timelineUndoBegin();
+
+      timelineCursorSetPositionFromPix(_x, _y);
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      if(timelineHaveSelection())
+      {
+         // // timelineSplitSelectedClipsAt(parent_timeline.cursor_units);
+         timelineSplitSelectedClipsIntAt(cursor_units, true/*_bReturnR*/);
+         timelineSelectNone();
+      }
+
+      if(timelineUndoEnd())
+      {
+         timelineUpdate();
+         redraw();
+      }
+   }
+
+   // // public method timelineEraseKbdSelection_OLD() {
+   // //    trace "xxx timelineEraseKbdSelection";
+   // //    timelineUndoBegin();
+
+   // //    local IntArray eraseSelection;
+   // //    local IntArray addSelection;
+   // //    addSelection <= timelineSplitSelectedClipsIntAt(kbd_selection_units_start_sorted, true/*bReturnR*/);
+   // //    clip_selection.join(clip_selection, addSelection);
+   // //    // // eraseSelection = addSelection;
+   // //    addSelection <= timelineSplitSelectedClipsIntAt(kbd_selection_units_end_sorted, false/*bReturnR*/);
+   // //    // // // eraseSelection.join(eraseSelection, addSelection);
+   // //    eraseSelection = addSelection;
+
+   // //    clip_selection = eraseSelection;
+   // //    timelineDeleteClips(null/*singleClipOrNull*/, false/*bUndoBegin*/);
+   // //    timelineUpdate();
+
+   // //    timelineClipSelectionFromKbdSelection(false/*bTouch*/);
+   // //    timelineDeleteClips(null/*singleClipOrNull*/, false/*bUndoBegin*/);  // clips that start before and end after selection
+   // //    timelineSelectNone();
+
+   // //    if(timelineUndoEnd())
+   // //    {
+   // //       timelineUpdate();
+   // //       redraw();
+   // //    }
+   // // }
+
+   public method timelineEraseKbdSelection() {
+      if(b_debug) trace "[dbg] timelineEraseKbdSelection";
+
+      timelineUndoBegin();
+
+      int uStart = kbd_selection_units_start_sorted;
+      int uEnd   = kbd_selection_units_end_sorted;
+
+      int uid;
+      foreach uid in clip_selection
+      {
+         TimelineClip clip <= timelineFindClipByUID(uid);
+         int clipStart = clip.timelineClipGetStart();
+         int clipEnd   = clip.timelineClipGetEnd();
+         TimelineTrack track <= clip.parent_track;
+         int clipOffset = clip.timelineClipGetOffset();
+
+         if(uStart <= clipStart && clipEnd <= uEnd)
+         {
+            // Erase entire clip
+            track.timelineTrackDeleteClip(clip);
+         }
+         else if(uStart <= clipStart && uEnd < clipEnd)
+         {
+            // Erase area at start of clip
+            //  - move clip start and offset
+            clip.timelineClipSetOffset(clipOffset + (uEnd - clipStart));
+            clip.timelineClipSetStart(uEnd);
+         }
+         else if(uStart > clipStart && clipEnd <= uEnd)
+         {
+            // Erase area at end of clip
+            clip.timelineClipSetEnd(uStart);
+         }
+         else if(uStart > clipStart && uEnd < clipEnd)
+         {
+            // Erase area inside the clip
+            //  - split and create new clip
+            clip.timelineClipSetEnd(uStart);
+            int uidR = track.timelineTrackModelCreateClip(uEnd, clipEnd);
+            timelineUpdate();  // invalidates 'clip' layer
+            clip <= timelineFindClipByUID(uid);
+            TimelineClip clipR <= timelineFindClipByUID(uidR);
+            clipR.timelineClipSetOffset(clipOffset + (uEnd - clipStart));
+            clipR.timelineClipCopyExtDataFrom(clip);  // e.g. selected sample
+            clipR.parent_track.timelineTrackHandleClipOrderChanged();
+         }
+
+         // // if(clipStart < _units < clipEnd)
+         // // {
+         // //    clip.timelineClipSetEnd(_units);
+         // //    int uidR = track.timelineTrackModelCreateClip(_units, clipEnd);
+         // //    addSelection.add(_bReturnR ? uidR : uid);
+         // //    timelineUpdate();
+         // //    TimelineClip clipR <= timelineFindClipByUID(uidR);
+         // //    clipR.timelineClipSetOffset(clipOffset + (_units - clipStart));
+         // // }
+      }
+
+      timelineSelectNone();
+
+      if(timelineUndoEnd())
+      {
+         timelineUpdate();
+         redraw();
+      }
+   }
+
+   public method timelineEditModeExec(int _editMode) {
+      // via RETURN key
+      switch(_editMode)
+      {
+         case EDIT_DRAW:
+            if(timelineHaveKbdSelection())
+            {
+               timelineDrawClip(kbd_selection_units_start_sorted,
+                                kbd_selection_track_start_sorted,
+                                (kbd_selection_units_end_sorted - kbd_selection_units_start_sorted),
+                                (kbd_selection_track_end_sorted - kbd_selection_track_start_sorted + 1)
+                                );
+            }
+            break;
+      }
+   }
+
+   public method timelineSetHighlightPos(int _x, int _y) {
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+      _y -= trackHeaderH;
+      int units = timelinePixToUnits(_x);
+      if(b_snap)
+         units = timelineSnapUnits(units, false/*bAlignRight*/);
+      int px = timelineUnitsToPix(units);
+      int py = int(_y / track_size_y) * track_size_y + trackHeaderH;
+      if((px != highlight_px) || (py != highlight_py))
+      {
+         highlight_px = px;
+         highlight_py = py;
+         UI.CompositeAll();
+      }
+   }
+
+   // // public method timelineMergeClips(TimelineClip _clipL, TimelineClip _clipR) : boolean {
+   // //    if(null != _clipL && null != _clipR)
+   // //    {
+   // //       if(@(_clipL.parent_track) == @(_clipR.parent_track))
+   // //       {
+
+   // //          return _clipL.timelineClipMerge(_clipR);
+   // //       }
+   // //    }
+   // //    return false;
+   // // }
+
+   public method timelineMergeClipsFromKbdSelection() {
+
+      timelineUndoBegin();
+
+      // // timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+
+      local TimelineTrack *curTrack;
+      int uidL;
+      int uidR;
+      int selectionIdx = 0;
+      boolean bOk = true;
+      while(selectionIdx < (clip_selection.numElements - 1))
+      {
+         uidL = clip_selection.get(selectionIdx);
+         TimelineClip clipL <= timelineFindClipByUID(uidL);
+
+         uidR = clip_selection.get(selectionIdx + 1);
+         TimelineClip clipR <= timelineFindClipByUID(uidR);
+
+         // trace "xxx merge: uidL="+uidL+" uidR="+uidR;
+
+         if(@(clipL.parent_track) != @(curTrack))
+         {
+            // First track clip
+            curTrack <= clipL.parent_track;
+         }
+
+         if(@(clipR.parent_track) == @(curTrack))
+         {
+            // // if(!b_allow_clip_overlap)
+            // check if there are clips between clipL and clipR
+            TimelineClip clipLNext <= curTrack.timelineTrackGetNextClip(clipL);
+            if(@(clipLNext) == @(clipR))
+            {
+               bOk = clipL.timelineClipMerge(clipR);
+
+               if(!bOk)
+                  break;
+
+               curTrack.timelineTrackDeleteClip(clipR);
+               clip_selection.delete(selectionIdx-- + 1);
+               // (note) keep clipL as left-hand side clip
+               timelineUpdate();
+            }
+            // else: there are one or more clips between clipL and clipR, can't merge
+         }
+         else
+         {
+            // clipR is first clip on next track, don't try to merge
+         }
+
+         selectionIdx++;
+      }
+
+      if(timelineUndoEnd())
+      {
+         timelineUpdate();
+         if(!bOk)
+         {
+            timelineUndo();
+            timelineUpdate();
+         }
+         redraw();
+      }
+   }
+
+   public method timelineKbdSelectionStartCrossesClip() : boolean {
+      // true when kbd selection starts in the middle of a clip
+      //  called when checking if insert silence is allowed
+      int trackIdx = kbd_selection_track_start_sorted;
+      while(trackIdx <= kbd_selection_track_end_sorted)
+      {
+         TimelineTrack track <= tracks.get(trackIdx);
+         TimelineClip *[] clips <= track.clips;
+         TimelineClip *clip;
+         foreach clip in clips
+         {
+            int clipStart = clip.timelineClipGetStart();
+            int clipEnd   = clip.timelineClipGetEnd();
+            if(clipStart > kbd_selection_units_start_sorted)
+               break;
+            else if(clipStart < kbd_selection_units_start_sorted < clipEnd )
+               return true;
+         }
+         trackIdx++;
+      }
+      return false;
+   }
+
+   public method timelineShiftClipsBySelection(boolean _bAllTracks, boolean _bDelete) {
+      Global.Debug2("timelineShiftClipsBySelection: bAllTracks="+_bAllTracks);
+
+      timelineUndoBegin();
+
+      if(!timelineHaveKbdSelection())
+         timelineKbdSelectionFromCursorSnapUnits(_bAllTracks);
+
+      int selectionNumUnits;
+      if(kbd_selection_units_start == kbd_selection_units_end)
+      {
+         selectionNumUnits = timelineGetSnapUnits();
+         kbd_selection_units_end += selectionNumUnits;
+         kbd_selection_units_end_sorted += selectionNumUnits;
+      }
+      else
+         selectionNumUnits = kbd_selection_units_end_sorted - kbd_selection_units_start_sorted;
+
+      if(_bDelete)
+         selectionNumUnits = -selectionNumUnits;  // shift left
+
+      boolean bOk = false;
+      if(_bDelete)
+      {
+         local IntArray oldSelection = clip_selection;
+         timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+         bOk = clip_selection.isEmpty();
+         clip_selection = oldSelection;
+      }
+      else
+      {
+         bOk = !timelineKbdSelectionStartCrossesClip();
+      }
+      if(bOk)
+      {
+         int trackIdx = kbd_selection_track_start_sorted;
+         while(trackIdx <= kbd_selection_track_end_sorted)
+         {
+            TimelineTrack track <= tracks.get(trackIdx);
+            TimelineClip *clip;
+            int clipIdx = 0;
+            boolean bTrackDone = false;
+            TimelineClip *[] clips <= track.clips;
+            foreach clip in clips
+            {
+               if(clip.timelineClipGetStart() >= kbd_selection_units_start_sorted)
+               {
+                  // Move remaining clips
+                  int numClips = clips.numElements;
+                  while(clipIdx < numClips)
+                  {
+                     // trace "xxx trackIdx="+trackIdx+" clipIdx="+clipIdx+" numClips="+numClips;
+                     clip <= clips.get(clipIdx);
+                     clip.timelineClipSetStart(clip.timelineClipGetStart() + selectionNumUnits);
+                     clip.timelineClipSetEnd(clip.timelineClipGetEnd() + selectionNumUnits);
+                     clipIdx++;
+                  }
+                  bTrackDone = true;
+               }
+
+               if(bTrackDone)
+                  break;
+
+               // Next clip
+               clipIdx++;
+            }
+
+            // Next track
+            trackIdx++;
+         }
+      }
+      else
+      {
+         // Can't shift, selected area contains clips
+      }
+
+      if(timelineUndoEnd())
+      {
+         timelineUpdate();
+         redraw();
+      }
+   }
+
+   public method timelineShowClipDetails(TimelineClip _clipOrNull) {
+      // implemented by derived classes (e.g. update SampleView)
+   }
+
+   public method timelineShowCursorClipDetails() {
+      TimelineClip clip <= timelineFindClipAtUnits(cursor_units, cursor_track);
+      if(clip instanceof TimelineClip)
+         timelineShowClipDetails(clip);
+      else
+         timelineShowClipDetails(null);
+   }
+
+   public method timelineSetLoopFromSelection(boolean _bPreferRegion) {
+      // // trace "[trc] timelineSetLoopFromSelection: bPreferRegion="+_bPreferRegion;
+      // 'c'
+      int loopStartPrev = timelineGetLoopStart();
+      int loopEndPrev   = timelineGetLoopEnd();
+
+      boolean bDone = false;
+      boolean bTryKbdSel = _bPreferRegion;
+
+      timelineSortKbdSelection();
+
+      loop(2)
+      {
+         if(bTryKbdSel && !bDone)
+         {
+            if(timelineHaveKbdSelection())
+            {
+               int kbdStart = kbd_selection_units_start_sorted;
+               int kbdEnd = kbd_selection_units_end_sorted;
+               int kbdLen = kbdEnd  - kbdStart;
+               if(kbdLen > 0)
+               {
+                  timelineSetLoop(kbdStart, kbdLen);
+                  bDone = true;
+                  break;
+               }
+            }
+         }
+
+         if(!bDone)
+         {
+            if(!timelineHaveSelection() && !timelineHaveKbdSelection())
+               timelineSelectClipUnderCursor();
+            if(timelineHaveSelection())
+            {
+               local Integer tMin, tMax;
+               timelineGetSelectionMinMaxUnits(tMin, tMax);
+               timelineSetLoop(tMin, tMax - tMin);
+               timelineMarkAsModified();
+               bDone = true;
+               break;
+            }
+         }
+
+         bTryKbdSel = !bDone;
+      }
+
+      int loopStart = timelineGetLoopStart();
+      int loopEnd   = timelineGetLoopEnd();
+
+      if(loopStart == loopStartPrev && loopEnd == loopEndPrev)
+      {
+         if(0 != loopStart || loopEnd != canvas_size)
+         {
+            // loop all
+            timelineSetLoop(0, canvas_size);
+            timelineMarkAsModified();
+         }
+      }
+   }
+
+   public method handleSetLoop(boolean _bPreferRegion) {
+      timelineSetLoopFromSelection(_bPreferRegion);
+      timelineKbdSelectNone();
+   }
+
+   public method handleClipCopy() {
+      // lctrl-c
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      timelineCopy(null/*singleClipOrNull*/);
+      timelineKbdSelectNone();
+   }
+
+   public method handleClipCut() {
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      timelineCopy(null/*singleClipOrNull*/);
+      timelineDeleteClips(null/*singleClip*/, true/*bUndoBegin*/);
+      timelineShowClipDetails(null);
+      timelineMarkAsModified();
+   }
+
+   public method handleClipPaste(boolean _bShift) {
+      // lctrl-v, lctrl-lshift-v
+      if(timelinePasteOther())   // e.g. paste from SampleView clipboard
+      {
+      }
+      else
+      {
+         timelinePaste(_bShift);
+      }
+      timelineMarkAsModified();
+      timelineShowCursorClipDetails();
+   }
+
+   public method handleDelete(boolean _bAllTracks) {
+      int origKbdSelectionUnitsStart = kbd_selection_units_start;
+      int origKbdSelectionUnitsEnd   = kbd_selection_units_end;
+      int origKbdSelectionTrackStart = kbd_selection_track_start;
+      int origKbdSelectionTrackEnd   = kbd_selection_track_end;
+      // trace "xxx origKbdSelectionTrackStart="+origKbdSelectionTrackStart+" origKbdSelectionTrackEnd="+origKbdSelectionTrackEnd;
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      if(timelineHaveSelection())
+      {
+         timelineDeleteClips(null/*singleClip*/, true/*bUndoBegin*/);
+      }
+      else
+      {
+         kbd_selection_units_start = origKbdSelectionUnitsStart;
+         kbd_selection_units_end   = origKbdSelectionUnitsEnd;
+         kbd_selection_track_start = origKbdSelectionTrackStart;
+         kbd_selection_track_end   = origKbdSelectionTrackEnd;
+         timelineSortKbdSelection();
+         timelineShiftClipsBySelection(_bAllTracks, true/*bDelete*/);
+      }
+      timelineShowClipDetails(null);
+      timelineMarkAsModified();
+   }
+
+   public method handleKeyQ() {
+      timelineSetEditMode(Timeline.EDIT_SELECT);
+   }
+
+   public method handleKeyW() : boolean {
+      if(timelineHaveSelection())
+      {
+         timelineCursorSetPositionTopLeftClipSelection();
+         redraw();
+         return true;
+      }
+      else if(timelineHaveKbdSelection())
+      {
+         timelineEditModeExec(Timeline.EDIT_DRAW);
+         timelineMarkAsModified();
+         return true;
+      }
+      else
+      {
+         timelineSetEditMode(Timeline.EDIT_DRAW);
+         return true;
+      }
+      return false;
+   }
+
+   public method handleKeyE() {
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      if(timelineHaveSelection())
+      {
+         if(timelineHaveKbdSelection())
+         {
+            timelineEraseKbdSelection();
+            timelineMarkAsModified();
+         }
+      }
+      else
+      {
+         timelineSetEditMode(Timeline.EDIT_ERASE);
+      }
+   }
+
+   public method handleKeyR() {
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      if(timelineHaveSelection())
+      {
+         if(timelineHaveKbdSelection())
+            timelineSplitSelectedClipsAtKbdSelection(true/*bUndoBegin*/);
+         else
+            timelineSplitSelectedClipsAt(cursor_units);
+         timelineMarkAsModified();
+      }
+      else
+      {
+         timelineSetEditMode(Timeline.EDIT_RAZOR);
+      }
+   }
+
+   public method handleKeyRShift() {
+      timelineSelectNone();
+      timelineExpandCursorToVerticalKbdSelection();
+      timelineSplitSelectedClipsAtKbdSelection(true/*bUndoBegin*/);
+      timelineMarkAsModified();
+   }
+
+   public method handleKeyT() {
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      if(timelineHaveSelection())
+      {
+         timelineToggleMuteClips(null/*singleClipOrNull*/);
+         timelineKbdSelectNone();
+         timelineMarkAsModified();
+      }
+      else
+      {
+         timelineSetEditMode(Timeline.EDIT_MUTE);
+      }
+   }
+
+   public method onDraw() {
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), c32_bg);
+      // // trace "xxx timeline::onDraw";
+      // // printHierarchy();
+   }
+
+   public virtual onDrawPost() {
+
+      float x = vp_tracks.getSizePadX() + 1;
+      float scrollW = sp_clips.getScrollYSizeX();
+      // trace "xxx scrollW="+scrollW;
+      // trace "xxx x="+x;
+      // trace "xxx getSizeX()="+getSizeX();
+      float w = getSizeX() - scrollW - x;
+      float viewOffsetX = sp_clips.getViewOffsetX();
+      // trace "xxx onDrawPost: viewOffsetX="+viewOffsetX;
+      // (todo) draw ticks
+      // (todo) draw bar labels
+      float trackHeaderH = Timeline.GetTrackHeaderH();
+
+      local Point2f abspos;
+      // // calcAbsolutePositionFBO(abspos); // (todo) optimize/cache
+      calcAbsolutePosition(abspos); // (todo) optimize/cache
+
+      sdvg_PushScissor(abspos.x+0.5+x, abspos.y+0.5, w+0.5, getSizeY()+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.DrawFilledRectangle(x, 0, w, trackHeaderH, c32_header_bg);
+
+      // trace "xxx Timeline::onDrawPost:";
+
+      int unitsL = timelinePixToUnits(viewOffsetX);
+      int unitsR = timelinePixToUnits(viewOffsetX + w);
+      float pixPerUnit = timelineGetPixPerUnit();
+      int unitsPerBeat = num_units_per_beat;
+      int unitsPerBar = unitsPerBeat * num_beats_per_bar;
+      float pixPerBeat = unitsPerBeat * pixPerUnit;
+      float pixPerBar = unitsPerBar * pixPerUnit;
+      int barIdxL = int(unitsL / unitsPerBar);
+      int beatIdxL = barIdxL * num_beats_per_bar;
+      float xL = ((barIdxL * unitsPerBar) - unitsL) * pixPerUnit + x;
+      unitsL = barIdxL * unitsPerBar;
+      int barIdxR = (unitsR + unitsPerBar -1) / unitsPerBar;
+      int beatIdxR = barIdxR * num_beats_per_bar;
+      unitsR = int(barIdxR * unitsPerBar);
+      // trace "xxx beatIdxL="+beatIdxL+" unitsPerBeat="+unitsPerBeat+" unitsL="+unitsL+" beatIdxR="+beatIdxR+" => xL="+xL;
+
+      boolean bDrawBeat = false;
+      boolean bDrawBeatLabel = false;
+      boolean bDrawBarLabel = false;
+      int drawBarModulo = 1;
+
+      if(null == beat_label_font)
+         beat_label_font <= UI.GetFontByName("lbsmall");//UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+      if(null == bar_label_font)
+         bar_label_font <= UI.GetFontByName("lbsmall_bold");//UIConstants.DEFAULT_FONT_NAME_LABEL_BOLD);
+
+      if(pixPerBeat >= 8)
+      {
+         // Draw bar labels + beat labels
+         bDrawBeat = true;
+      }
+      if(pixPerBeat >= 32)
+      {
+         // Draw bar labels + beat labels
+         bDrawBeatLabel = true;
+      }
+
+      if(pixPerBar >= 32)
+      {
+         // Draw every bar label
+         bDrawBarLabel = true;
+      }
+      else if( (pixPerBar*2) >= 32 )
+      {
+         // Draw every 2nd bar label
+         drawBarModulo = 2;
+         bDrawBarLabel = true;
+      }
+      else if( (pixPerBar*4) >= 32 )
+      {
+         // Draw every 4th bar label
+         drawBarModulo = 4;
+         bDrawBarLabel = true;
+      }
+      else if( (pixPerBar*8) >= 32 )
+      {
+         // Draw every 8th bar label
+         drawBarModulo = 8;
+         bDrawBarLabel = true;
+      }
+
+      int beatIdx;
+      int barIdx;
+      float cx;
+
+      // trace "drawBarModulo="+drawBarModulo;
+
+      // Draw ticks (beat)
+      if(bDrawBeat)
+      {
+         UIRenderer.SetColorARGB(c32_header_beat_ticks_fg);
+         UIRenderer.SetLineWidth(1.0f);
+         if(UIRenderer.BeginLinesAA(1024))
+         {
+            beatIdx = beatIdxL;
+            cx = xL;
+            while(beatIdx <= beatIdxR)
+            {
+               // trace "xxx beatIdx="+beatIdx+" cx="+cx+" beatIdxR="+beatIdxR;
+               if(0 != (beatIdx % num_beats_per_bar))
+               {
+                  UIRenderer.Vertex2f(int(cx), trackHeaderH*0.87);
+                  UIRenderer.Vertex2f(int(cx), trackHeaderH);
+               }
+
+               // Next beat
+               cx += pixPerBeat;
+               beatIdx++;
+            }
+            UIRenderer.End();
+         }
+      }
+
+      String sCaption;
+      int barNr;
+      int beatNr;
+
+      // Draw ticks (bar)
+      if(1)
+      {
+         UIRenderer.ColorARGB(c32_header_bar_ticks_fg);
+         UIRenderer.SetLineWidth(1.0f);
+         if(UIRenderer.BeginLinesAA(1024))
+         {
+            barIdx = barIdxL;
+            cx = xL;
+            while(barIdx <= barIdxR)
+            {
+               // trace "xxx barIdx="+barIdx+" cx="+cx+" barIdxR="+barIdxR;
+               UIRenderer.Vertex2f(int(cx), trackHeaderH*0.8);
+               UIRenderer.Vertex2f(int(cx), trackHeaderH);
+
+               // Next bar
+               cx += pixPerBar;
+               barIdx++;
+            }
+            UIRenderer.End();
+         }
+      }
+
+      // Draw beat labels
+      if(bDrawBeatLabel)
+      {
+         beatIdx = beatIdxL;
+         cx = xL;
+         while(beatIdx <= beatIdxR)
+         {
+            // trace "xxx beatIdx="+beatIdx+" cx="+cx+" beatIdxR="+beatIdxR;
+            if(0 != (beatIdx % num_beats_per_bar))
+            {
+               barNr = (beatIdx / num_beats_per_bar) + 1;
+               beatNr = (beatIdx % num_beats_per_bar) + 1;
+               sCaption = barNr+"."+beatNr;
+
+               UIRenderer.DrawTextClipped(sCaption,
+                                          beat_label_font,
+                                          c32_header_beat_label_fg, c32_header_beat_label_fg,
+                                          int(cx+1),
+                                          6,
+                                          cx/*clipLeft*/,
+                                          0/*clipTop*/,
+                                          cx + pixPerBeat/*clipRight*/,
+                                          trackHeaderH/*clipBottom*/
+                                          );
+            }
+
+            // Next beat
+            cx += pixPerBeat;
+            beatIdx++;
+         }
+      }
+
+      // Draw bar labels
+      if(bDrawBarLabel)
+      {
+         barIdx = barIdxL;
+         cx = xL;
+         while(barIdx <= barIdxR)
+         {
+            // trace "xxx beatIdx="+beatIdx+" cx="+cx+" beatIdxR="+beatIdxR;
+            if(0 == (barIdx % drawBarModulo))
+            {
+               barNr = barIdx + 1;
+               sCaption = barNr;
+
+               UIRenderer.DrawTextClipped(sCaption,
+                                          bar_label_font,
+                                          c32_header_bar_label_fg, c32_header_bar_label_fg,
+                                          int(cx+1),
+                                          4,
+                                          cx/*clipLeft*/,
+                                          0/*clipTop*/,
+                                          cx + pixPerBar/*clipRight*/,
+                                          trackHeaderH/*clipBottom*/
+                                          );
+            }
+
+            // Next bar
+            cx += pixPerBar;
+            barIdx++;
+         }
+      }
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+   }
+
+}

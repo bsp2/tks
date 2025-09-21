@@ -1,0 +1,2867 @@
+// ----
+// ---- file   : ModSample.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 05Jan2019
+// ---- changed: 06Jan2019, 17Jan2019, 05Mar2019, 22Mar2019, 23Mar2019, 24Mar2019, 30Mar2019
+// ----          12May2019, 17May2019, 06Jul2019, 13Jul2019, 25Jul2019, 30Jul2019, 01Aug2019
+// ----          14Oct2019, 15Oct2019, 16Feb2020, 19Feb2020, 20Feb2020, 21Feb2020, 22Feb2020
+// ----          25Feb2020, 04Mar2020, 12Sep2020, 31Jan2021, 06Feb2021, 25Apr2021, 20May2021
+// ----          17Jul2021, 10Aug2021, 30Aug2021, 27Dec2021, 05Feb2022, 11Feb2022, 10Aug2022
+// ----          01Dec2022, 10Dec2022, 10Mar2023, 14Jun2023, 07Sep2023, 08Sep2023, 10Sep2023
+// ----          17Nov2023, 06Jan2024, 19Jan2024, 11Sep2024, 13Sep2024, 17Sep2024, 18Sep2024
+// ----          19Sep2024, 30Sep2024, 08Nov2024, 30Dec2024, 07Jan2025, 14Jan2025, 15Jan2025
+// ----          28May2025, 29May2025
+// ----
+// ----
+// ----
+
+module MModSample;
+
+use tksdl;
+
+namespace st2;
+
+
+// <class.png>
+class ModSample : Mod {
+
+   // (note) inputs (including sidechain inputs 3+4) can be read in live-recorder
+   define int MODSAMPLE_NUM_IN_BUFFERS  = 4;
+   define int MODSAMPLE_NUM_OUT_BUFFERS = 2;
+
+   define int RPN_SMP_NSP_ABS  = 80;  // sample selection within list of samples assigned to same namespace (0=no chg, 1..n)
+   define int RPN_SMP_NSP_REL  = 81;  // sample selection within list of samples assigned to same namespace (0..16383 => first..last)
+   define int RPN_SMP_OFFMS_LO = 88;  // for audio-track like samples (sent by NodeTracker)
+   define int RPN_SMP_OFFMS_HI = 89;  // ^^
+   define int RPN_SMP_UID      = 90;  // see "../synergy/midi_synth_profiles/internal.msp" (alternative sample selection)
+
+   define int PARAM_NONE                  =  0;
+   define int PARAM_VOICEMODSW            =  1;  // >0: modulate last voice, 1=modulate all voices  (see b_mod_voice)
+   define int PARAM_BARRIER               =  2;  // >0: invalidate group key so that voice params won't take effect until next note-on
+   define int PARAM_OFFSET                =  3;  // 0..1
+   define int PARAM_SHIFT                 =  4;  // 0..1, shift all sample starts and loops
+   define int PARAM_SHIFT_EOL             =  5;  // 0..1, shift all sample starts and loops when current loop ends (+declick)
+   define int PARAM_CYCLELEN              =  6;  // 0..1, modulate sample/wavetable loop length
+   define int PARAM_JUMPTOLOOP_REL        =  7;  // 0..1 (0..num_loops-1)
+   define int PARAM_JUMPTOLOOP_ABS        =  8;  // 0..1 (0..127)
+   define int PARAM_FREQ                  =  9;  // 0..1 => -1..1
+   define int PARAM_VOLUME                = 10;  // 0..1
+   define int PARAM_PAN                   = 11;  // 0..1 => -1..1
+   define int PARAM_RETRIGMASK            = 12;  // 0..1 => 0..255. $XY: x=lfo mask, y=env mask  1=freq,2=vol,4=pan,8=aux
+   define int PARAM_LFOFREQRESETPHASE     = 13;
+   define int PARAM_LFOFREQSPD            = 14;
+   define int PARAM_LFOFREQLVL            = 15;
+   define int PARAM_LFOFREQAMT            = 16;
+   define int PARAM_LFOVOLRESETPHASE      = 17;
+   define int PARAM_LFOVOLSPD             = 18;
+   define int PARAM_LFOVOLLVL             = 19;
+   define int PARAM_LFOVOLAMT             = 20;
+   define int PARAM_LFOPANRESETPHASE      = 21;
+   define int PARAM_LFOPANSPD             = 22;
+   define int PARAM_LFOPANLVL             = 23;
+   define int PARAM_LFOPANAMT             = 24;
+   define int PARAM_LFOAUXRESETPHASE      = 25;
+   define int PARAM_LFOAUXSPD             = 26;
+   define int PARAM_LFOAUXLVL             = 27;
+   define int PARAM_LFOAUXFLTAMT          = 28;
+   define int PARAM_ENVFREQSPD            = 29;
+   define int PARAM_ENVFREQLVL            = 30;
+   define int PARAM_ENVFREQINT            = 31;
+   define int PARAM_ENVFREQATKSPD         = 32;
+   define int PARAM_ENVFREQSUSSPD         = 33;
+   define int PARAM_ENVFREQRELSPD         = 34;
+   define int PARAM_ENVVOLSPD             = 35;
+   define int PARAM_ENVVOLLVL             = 36;
+   define int PARAM_ENVVOLINT             = 37;
+   define int PARAM_ENVVOLATKSPD          = 38;
+   define int PARAM_ENVVOLSUSSPD          = 39;
+   define int PARAM_ENVVOLRELSPD          = 40;
+   define int PARAM_ENVPANSPD             = 41;
+   define int PARAM_ENVPANLVL             = 42;
+   define int PARAM_ENVPANINT             = 43;
+   define int PARAM_ENVPANATKSPD          = 44;
+   define int PARAM_ENVPANSUSSPD          = 45;
+   define int PARAM_ENVPANRELSPD          = 46;
+   define int PARAM_ENVAUXSPD             = 47;
+   define int PARAM_ENVAUXLVL             = 48;
+   define int PARAM_ENVAUXINT             = 49;
+   define int PARAM_ENVAUXATKSPD          = 50;
+   define int PARAM_ENVAUXSUSSPD          = 51;
+   define int PARAM_ENVAUXRELSPD          = 52;
+   define int PARAM_GLIDESWITCH           = 53;
+   define int PARAM_GLIDESPEED            = 54;
+   define int PARAM_FLTCUTOFF             = 55;
+   define int PARAM_FLTPAN                = 56;
+   define int PARAM_FLTOFFSET             = 57;
+   define int PARAM_FLTRES                = 58;
+   define int PARAM_LIVEREC_START_MASK    = 59;  // 0..1 => 0..127 (zone mask, bit0=zone1, bit1=zone2, ..)
+   define int PARAM_LIVEREC_CONTINUE_MASK = 60;  // 0..1 => 0..127
+   define int PARAM_LIVEREC_STOP_MASK     = 61;  // 0..1 => 0..127
+   define int PARAM_LIVEREC_LOOP_SHIFT    = 62;  // 0..1 => -64..+63 (added to zone liverec_loop_idx)
+   define int PARAM_LIVEREC_START_IDX     = 63;  // 0..1 => 0..127 (zone idx, 0=zone1, 1=zone2, ..)
+   define int PARAM_LIVEREC_CONTINUE_IDX  = 64;  // 0..1 => 0..127
+   define int PARAM_LIVEREC_STOP_IDX      = 65;  // 0..1 => 0..127
+   define int PARAM_LIVEREC_DBLBUF_IDX    = 66;  // 0=record top buf 1(left), >=0.5=record to buf 2(right)
+   define int PARAM_LIVEREC_INPUT_PAN     = 67;  // 0..1 => -100%(L)..+100%(R) 0.5=center (default)
+   define int NUM_PARAMS                  = 68;
+
+   protected FloatArray mix_buffer;
+
+   public StSamplePlayer sample_player;
+
+   int sample_idx;  // 0..n, index into current_project.samples. **NOT** a sample.unique_id !!
+
+   int preferred_namespace_idx;  // namespace hint. 0=global
+
+   String autoload_unique_name;
+   String autoload_suggested_pathname;  // e.g. "/bsp/cycle_stfx"
+
+   boolean b_fx_auto_note_on;  // 1=auto-start note after instantiation (and ignore note-ons/offs)
+
+   IntArray voicekeys;  // 128 midi notes
+   FloatArray voicepressure;      // current poly pressure for each note (0..1)
+   FloatArray voicepressure_max;  // max poly pressure for each note (0..1) (for MODSRC_POLYPRESSURE_MAX)
+   IntArray queued_voicekeys;  // temp, all note voicekeys started in current tick
+   int last_noteon_ms;
+   FloatArray initial_voice_params;  // for (slightly delayed) chord notes that belong to the same voice group
+   define int VOICEPARAMRESET_MILLISEC_THRESHOLD = 40;
+
+   // Current (last seen) controller values:
+   float cc_modwheel;     // cc1,  0..127 (14bit)
+   float cc_breath;       // cc2,  0..127 (14bit)
+   float cc_foot;         // cc4,  0..127 (14bit)
+   float cc_expr;         // cc11, 0..127 (14bit)
+
+   float cc_vol_norm;     // cc7, 0..1
+   float cc_pan_norm;     // cc10, -1..1
+   byte  cc_brightness;   // cc74, 0..127
+
+   byte  aftertouch;      // 0..127
+   short pitchbend;       // 0..16383
+   float pitchbend_norm;  // -1..1
+
+   boolean  b_sustain;     // CC64
+   FloatArray sustain_noteoff_queue;  // pending note-offs (note/vel01 pairs) (sent when sustain pedal is released)
+
+   boolean b_portamento;   // CC65
+
+   boolean  b_sostenuto;   // CC66
+   IntArray sostenuto_notes;
+
+   boolean b_mod_voice;   // 1=params modulate last voice set, 0=params modulate all voices  (def=0)
+   FloatArray queued_voice_params;  // for per-voice modulation (since MIDI ctls are sent before note-on)
+   IntArray param_voicekeys;  // current voice param group
+
+   // 28 bit milliseconds sample offset
+   //  (22 bit integer part, 6 bit fractional
+   //     => ~69.9min range with sample-exact positioning at up to 64kHz sample rate)
+   float initial_sample_offset_ms;  // -1=none, >=0: sample start in milliseconds (for audio track style samples)
+   short initial_sample_offset_ms_lo;  // 14bit RPN (98). lower 6bits = fractional part
+
+   MIDIPipeEvent pev;
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(MODSAMPLE_NUM_IN_BUFFERS/*numIn*/, MODSAMPLE_NUM_OUT_BUFFERS/*numOut*/);
+
+      mix_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0);
+
+      sample_player.allocVoices(32);
+      sample_player.volume           = 1.0;
+      sample_player.defaultMixRate   = Audio.mix_rate;
+      sample_player.defaultFreqTable = Audio.default_freq_table;
+
+      resetAllControllers();
+
+      voicekeys.allocAndFill(128, -1);
+      voicepressure.allocAndFill(128, 0.0f);
+      voicepressure_max.allocAndFill(128, 0.0f);
+
+      addInput("In L");
+      addInput("In R");
+      addInput("SC L");
+      addInput("SC R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      b_mod_voice = false;
+
+      queued_voice_params.allocAndFill(NUM_PARAMS, -1);
+      initial_voice_params.allocAndFill(NUM_PARAMS, -1);
+
+      initial_sample_offset_ms = -1;
+      initial_sample_offset_ms_lo = 0;
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      handleAutoUnloadSample();
+      sample_player.resetVoices();
+      sample_player.unloadVoicePlugins();
+      Mod::exit();
+   }
+
+   // <method.png>
+   public method unloadVoicePlugins() {
+      sample_player.unloadVoicePlugins();
+   }
+
+   // <method.png>
+   public method handleFXAutoNoteOn() {
+      // called by
+      //  - Project::handleFXAutoNoteOns()   (after reloading voice plugins)
+      //  - setEnableFXAutoNoteOn()          (after selecting context menu checkbox)
+      //  - loadStatePost()                  (after loading project or track patch)
+      //  - modCopyPatchFrom()               (after cloning mod)
+      //  - process()                        (after clicking "Reset" button)
+      //  - PageSample::handleSelectSample() (after selecting sample)
+      if(b_fx_auto_note_on)
+      {
+         // trace "[>>>] ******************** ModSample::handleFXAutoNoteOn: this="+#(this)+" sample_idx="+sample_idx;
+         // // trace "xxx sample_player.numUsedVoices="+sample_player.numUsedVoices;
+         if(0 == sample_player.numUsedVoices)
+            noteOn(5*12/*C-5*/, 1.0/*vel*/, true/*bAllowNoteOff*/);
+      }
+   }
+
+   // <method.png>
+   public method resetVoicesBySample(local Sample _smp) {
+      // called by Audio.ResetAllSampleVoices()
+      sample_player.resetVoicesBySample(_smp);
+   }
+
+   // <method.png>
+   public method handleReorderVoicePlugins(local StSampleBank _sb, local IntArray _ia) {
+      // called by Audio.HandleReorderVoicePlugins()
+      sample_player.handleReorderVoicePlugins(_sb, _ia);
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "Sample";
+   }
+
+   // <method_get.png>
+   public method getNameForInstanceTable() : String {
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+         return "smp<"+(sample_idx+1)+">:"+sample.unique_name;
+      else
+         return "smp<"+(sample_idx+1)+">: <unused>";
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableFXAutoNoteOn(boolean _bEnable) {
+      b_fx_auto_note_on = _bEnable;
+
+      if(b_fx_auto_note_on)
+         handleFXAutoNoteOn();
+      else
+         sample_player.resetVoices();
+   }
+
+   // <method_get.png>
+   public method getEnableFXAutoNoteOn() : boolean {
+      return b_fx_auto_note_on;
+   }
+
+   // <method.png>
+   public method handleAutoLoadSample() {
+      // Called after loading TrackPatch(Variation) from file
+      local Sample sample <= current_project.findSampleByUniqueName(autoload_unique_name);
+      if(null == sample)
+      {
+         sample <= current_project.newSample(autoload_unique_name, -1/*idxHint*/);
+         if(null != sample)
+         {
+            local String pathName = autoload_suggested_pathname + "/" + autoload_unique_name + Global.SAMPLE_FILE_SUFFIX;
+            boolean bLoaded = sample.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bReloadPatchPlugins*/);
+            if(!bLoaded)
+            {
+               pathName <= Samples.FindSamplePathnameByUniqueName(autoload_unique_name);
+               if(null != pathName)
+                  bLoaded = sample.loadFile(pathName, STConfig.sample_rootpath, false/*bProject*/, true/*bReloadPatchPlugins*/);
+               else
+                  Global.Error("auto-load sample \""+autoload_unique_name+"\" not found in sample cache");
+            }
+            if(bLoaded)
+            {
+               sample_idx = current_project.getSampleIdx(sample);
+               Global.Info("auto-load sample \""+pathName+"\" => sample_idx="+sample_idx);
+               sample.b_autoload = true;
+            }
+            else
+            {
+               Global.Error("failed to auto-load sample \""+pathName+"\" from global sample repository");
+            }
+         }
+         // else: newSample() failed
+      }
+      else
+      {
+         sample_idx = current_project.getSampleIdx(sample);
+         Global.Info("use pre-loaded project sample \""+autoload_unique_name+"\" => sample_idx="+sample_idx);
+      }
+   }
+
+   // <method.png>
+   public method handleAutoUnloadSample() : boolean {
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         if(sample.b_autoload)
+         {
+            if(1 == current_project.findNumSampleRefsBySampleIdx(sample_idx))
+               current_project.deleteSample(sample);
+            sample_idx = -1;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method clearSampleAutoload() {
+      // When sample was selected via combobox (prgchg is handled directly)
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         sample.b_autoload = false;
+      }
+   }
+
+   // <method_get.png>
+   public method getUnsavedSampleName(String _retName) {
+      // Check if ref'd sample is present in sample repository
+      //  (note) called before saving track patch manually
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         String pathName <= Samples.FindSamplePathnameByUniqueName(sample.unique_name);
+         if(null == pathName)
+         {
+            // Sample not present in repository
+            _retName = sample.unique_name;
+         }
+      }
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModSample cl <= new ModSample;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModSample);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModSample)
+      {
+         ModSample o <= _o;
+         sample_idx                  = o.sample_idx;
+         sample_player.allocVoices(o.sample_player.numVoices);
+         b_mod_voice                 = o.b_mod_voice;
+         preferred_namespace_idx     = o.preferred_namespace_idx;
+         autoload_unique_name        = o.autoload_unique_name;
+         autoload_suggested_pathname = o.autoload_suggested_pathname;
+         b_fx_auto_note_on           = o.b_fx_auto_note_on;
+         if(b_fx_auto_note_on)
+            handleFXAutoNoteOn();
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public static Bipolar7ToScale(local float _t, local float _div, local float _mul) : float {
+      // t (0..127) => /_div .. *_mul
+
+      if(_t < 0)
+         _t = 0;
+      else if(_t > 127)
+         _t = 127;
+
+      local float s;
+
+      if(_t < 64)
+      {
+         s = (1.0f / _div);
+         s = s + ( (1.0 - s) * (_t / 64.0) );
+      }
+      else
+      {
+         s = 1.0 + ((_t - 64.0) / (63.0 / (_mul - 1.0)));
+      }
+
+      return s;
+   }
+
+   // <replay.png>
+   public method resetAllControllers() {
+      Global.Debug3("ModSample::resetAllControllers");
+
+      local ModMatrixEntry *mme;
+      foreach mme in mod_matrix
+         mme.last_ctl_value = ModMatrixEntry.INVALID_VALUE;
+
+      sample_player.resetModulators();
+      sample_player.allNotesOff();
+
+      voicekeys.fill(-1);
+      voicepressure.fill(0.0f);
+      voicepressure_max.fill(0.0f);
+
+      sample_player.updateSampleOff(0.0f);
+      sample_player.updateFreq(0.0f);
+      sample_player.updateVol(1.0f);
+      sample_player.updatePan(0.0f);
+
+      cc_modwheel = 0;
+      cc_breath   = 0;
+      cc_foot     = 0;
+      cc_expr     = 0;
+
+      cc_vol_norm = 1.0f;
+      cc_pan_norm = 0.0f;
+      cc_brightness = 0;
+
+      aftertouch = 0;
+      pitchbend = 8192;
+      pitchbend_norm = 0.0f;
+
+      b_sustain = false;
+      sustain_noteoff_queue.empty();
+
+      b_portamento = true;
+      sample_player.updateGlideSwitch(b_portamento);
+
+      sostenuto_notes.empty();
+
+      queued_voice_params.fill(-1);
+      initial_voice_params.fill(-1);
+
+      param_voicekeys.empty();
+
+      b_mod_voice = false;
+
+      // Reload initial performance controllers from sample
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+         sample_player.updatePerfCtls(sample.initial_perf_ctl);
+
+      sample_player.setSustainPedal(0);
+      sample_player.setSoftPedal(0);
+   }
+
+   // <method_set.png>
+   public =replay= virtual setEnableRelativeParams(boolean _bEnabled) {
+      // intentionally left blank
+   }
+
+   // <method_get.png>
+   public virtual getEnableRelativeParams() : boolean {
+      // intentionally left blank
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      _retParamNames = [
+         "-",                            //  0: PARAM_NONE
+         "Per-Voice Modulation Switch",  //  1: PARAM_VOICEMODSW
+         "Per-Voice Modulation Barrier", //  2: PARAM_BARRIER
+         "Sample Offset",                //  3: PARAM_OFFSET
+         "Sample Shift",                 //  4: PARAM_SHIFT
+         "Sample Shift (End Of Loop)",   //  5: PARAM_SHIFT_EOL
+         "Loop Cycle Length",            //  6: PARAM_CYCLELEN
+         "Jump To Loop (rel)",           //  7: PARAM_JUMPTOLOOP_REL
+         "Jump To Loop (abs)",           //  8: PARAM_JUMPTOLOOP_ABS
+         "Freq",                         //  9: PARAM_FREQ
+         "Volume",                       // 10: PARAM_VOLUME
+         "Pan",                          // 11: PARAM_PAN
+         "LFO/Env Retrig Mask",          // 12: PARAM_RETRIGMASK
+         "Freq LFO Phase Reset",         // 13: PARAM_LFOAUXRESETPHASE
+         "Freq LFO Speed",               // 14: PARAM_LFOFREQSPD
+         "Freq LFO Level",               // 15: PARAM_LFOFREQLVL
+         "Freq LFO => Freq Amount",      // 16: PARAM_LFOFREQLVL
+         "Volume LFO Phase Reset",       // 17: PARAM_LFOAUXRESETPHASE
+         "Volume LFO Speed",             // 18: PARAM_LFOVOLSPD
+         "Volume LFO Level",             // 19: PARAM_LFOVOLLVL
+         "Volume LFO => Vol Amount",     // 20: PARAM_LFOVOLLVL
+         "Pan LFO Phase Reset",          // 21: PARAM_LFOPANRESETPHASE
+         "Pan LFO Speed",                // 22: PARAM_LFOPANSPD
+         "Pan LFO Level",                // 23: PARAM_LFOPANLVL
+         "Pan LFO => Pan Amount",        // 24: PARAM_LFOPANLVL
+         "Aux LFO Phase Reset",          // 25: PARAM_LFOAUXRESETPHASE
+         "Aux LFO Speed",                // 26: PARAM_LFOAUXSPD
+         "Aux LFO Level",                // 27: PARAM_LFOAUXLVL
+         "Aux LFO => Flt Amount",        // 28: PARAM_LFOAUXLVL
+         "Freq Env Speed",               // 29: PARAM_ENVFREQSPD
+         "Freq Env Level",               // 30: PARAM_ENVFREQLVL
+         "Freq Env Intensity",           // 31: PARAM_ENVFREQINT
+         "Freq Env Attack Speed",        // 32: PARAM_ENVFREQATKSPD
+         "Freq Env Sustain Speed",       // 33: PARAM_ENVFREQSUSSPD
+         "Freq Env Release Speed",       // 34: PARAM_ENVFREQRELSPD
+         "Volume Env Speed",             // 35: PARAM_ENVVOLSPD
+         "Volume Env Level",             // 36: PARAM_ENVVOLLVL
+         "Volume Env Intensity",         // 37: PARAM_ENVVOLINT
+         "Volume Env Attack Speed",      // 38: PARAM_ENVVOLATKSPD
+         "Volume Env Sustain Speed",     // 39: PARAM_ENVVOLSUSSPD
+         "Volume Env Release Speed",     // 40: PARAM_ENVVOLRELSPD
+         "Pan Env Speed",                // 41: PARAM_ENVPANSPD
+         "Pan Env Level",                // 42: PARAM_ENVPANLVL
+         "Pan Env Intensity",            // 43: PARAM_ENVPANINT
+         "Pan Env Attack Speed",         // 44: PARAM_ENVPANATKSPD
+         "Pan Env Sustain Speed",        // 45: PARAM_ENVPANSUSSPD
+         "Pan Env Release Speed",        // 46: PARAM_ENVPANRELSPD
+         "Aux Env Speed",                // 47: PARAM_ENVAUXSPD
+         "Aux Env Level",                // 48: PARAM_ENVAUXLVL
+         "Aux Env Intensity",            // 49: PARAM_ENVAUXINT
+         "Aux Env Attack Speed",         // 50: PARAM_ENVAUXATKSPD
+         "Aux Env Sustain Speed",        // 51: PARAM_ENVAUXSUSSPD
+         "Aux Env Release Speed",        // 52: PARAM_ENVAUXRELSPD
+         "Glide Switch",                 // 53: PARAM_GLIDESWITCH
+         "Glide Speed",                  // 54: PARAM_GLIDESPEED
+         "Filter CutOff",                // 55: PARAM_FLTCUTOFF
+         "Filter Pan",                   // 56: PARAM_FLTPAN
+         "Filter Offset",                // 57: PARAM_FLTOFFSET
+         "Filter Resonance",             // 58: PARAM_FLTRES
+         "LiveRec Start Mask",           // 59: PARAM_LIVEREC_START_MASK
+         "LiveRec Continue Mask",        // 60: PARAM_LIVEREC_CONTINUE_MASK
+         "LiveRec Stop Mask",            // 61: PARAM_LIVEREC_STOP_MASK
+         "LiveRec Target Loop Shift",    // 62: PARAM_LIVEREC_LOOP_SHIFT
+         "LiveRec Start Index",          // 63: PARAM_LIVEREC_START_IDX
+         "LiveRec Continue Index",       // 64: PARAM_LIVEREC_CONTINUE_IDX
+         "LiveRec Stop Index",           // 65: PARAM_LIVEREC_STOP_IDX
+         "LiveRec DblBuf Index",         // 66: PARAM_LIVEREC_DBLBUF_IDX
+         "LiveRec Input Pan",            // 67: PARAM_LIVEREC_INPUT_PAN
+                        ];
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getParameterValue(local int _idx) : float {
+      // (todo) (e.g. for ModParamSet)
+
+      // switch(_idx)
+      // {
+      //    case PARAM_VOLUME:
+      //       return cc_vol_norm;
+      // }
+      return 0.0f;
+   }
+
+   // <method_set.png>
+   protected method setVoiceParameterValue(local int _voicekey, local int _paramIdx, local float _value) : boolean {
+      // returns 'maybe' when parameter is global for sampleplayer instance
+
+      // trace "xxx ModSample::setVoiceParameterValue: voicekey="+_voicekey+" paramIdx="+_paramIdx+" value="+_value;
+      local Sample *sample;
+      switch(_paramIdx)
+      {
+         case PARAM_OFFSET:
+            sample_player.updateSampleOffByKey(_voicekey, _value);
+            break;
+
+         case PARAM_SHIFT:
+            sample_player.updateSampleShiftByKey(_voicekey, _value);
+            break;
+
+         case PARAM_SHIFT_EOL:
+            sample_player.updateSampleShiftEndOfLoopByKey(_voicekey, _value);
+            break;
+
+         case PARAM_CYCLELEN:
+            sample_player.updateCycleLenByKey(_voicekey, _value);
+            break;
+
+         case PARAM_JUMPTOLOOP_REL:
+            sample_player.updateJumpToLoopRelByKey(_voicekey, _value);
+            break;
+
+         case PARAM_JUMPTOLOOP_ABS:
+            sample_player.updateJumpToLoopByKey(_voicekey, int(_value * 127.0f + 0.5f));
+            break;
+
+         case PARAM_FREQ:
+            sample <= current_project.getSampleByIdx(sample_idx);
+            if(null != sample)
+            {
+               local float newFreq = (_value - 0.5f) * 2.0;
+               if(newFreq < 0.0f)
+                  newFreq *= sample.pitchbend_down;
+               else
+                  newFreq *= sample.pitchbend_up;
+               sample_player.updateFreqByKey(_voicekey, newFreq);
+            }
+            break;
+
+         case PARAM_VOLUME:
+            sample_player.updateVolByKey(_voicekey, _value);
+            break;
+
+         case PARAM_PAN:
+            sample_player.updatePanByKey(_voicekey, (_value - 0.5f) * 2.0);
+            break;
+
+         case PARAM_RETRIGMASK:
+            // // local Integer io = int((_value * 255)+0.5);
+            // // trace "xxx param_retrigmask = "+io.printf("0x%08x");
+            sample_player.updateRetrigMaskByKey(_voicekey, int((_value * 255)+0.5));
+            break;
+
+         case PARAM_LFOFREQRESETPHASE:
+            if(_value >= 0.5f)
+               sample_player.resetLFOFreqPhaseByKey(_voicekey);
+            break;
+
+         case PARAM_LFOFREQSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateLFOFreqSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOFREQLVL:
+            _value *= 8.0f;
+            sample_player.updateLFOFreqLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOFREQAMT:
+            sample_player.updateLFOFreqAmtByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOVOLRESETPHASE:
+            if(_value >= 0.5f)
+               sample_player.resetLFOVolPhaseByKey(_voicekey);
+            break;
+
+         case PARAM_LFOVOLSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateLFOVolSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOVOLLVL:
+            _value *= 8.0f;
+            sample_player.updateLFOVolLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOVOLAMT:
+            sample_player.updateLFOVolAmtByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOPANRESETPHASE:
+            if(_value >= 0.5f)
+               sample_player.resetLFOPanPhaseByKey(_voicekey);
+            break;
+
+         case PARAM_LFOPANSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateLFOPanSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOPANLVL:
+            _value *= 8.0f;
+            sample_player.updateLFOPanLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOPANAMT:
+            sample_player.updateLFOPanAmtByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOAUXRESETPHASE:
+            if(_value >= 0.5f)
+               sample_player.resetLFOAuxPhaseByKey(_voicekey);
+            break;
+
+         case PARAM_LFOAUXSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateLFOAuxSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOAUXLVL:
+            _value *= 8.0f;
+            sample_player.updateLFOAuxLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LFOAUXFLTAMT:
+            sample_player.updateLFOAuxFltAmtByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVFREQSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateADSRFreqSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVFREQLVL:
+            _value *= 8.0f;
+            sample_player.updateADSRFreqLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVFREQINT:
+            sample_player.updateADSRFreqIntByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVFREQATKSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateAFreqSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVFREQSUSSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateSFreqSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVFREQRELSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateRFreqSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVVOLSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateADSRVolSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVVOLLVL:
+            _value *= 8.0f;
+            sample_player.updateADSRVolLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVVOLINT:
+            sample_player.updateADSRVolIntByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVVOLATKSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateAVolSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVVOLSUSSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateSVolSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVVOLRELSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateRVolSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVPANSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateADSRPanSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVPANLVL:
+            _value *= 8.0f;
+            sample_player.updateADSRPanLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVPANINT:
+            sample_player.updateADSRPanIntByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVPANATKSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateAPanSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVPANSUSSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateSPanSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVPANRELSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateRPanSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVAUXSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateADSRAuxSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVAUXLVL:
+            _value *= 8.0f;
+            sample_player.updateADSRAuxLvlByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVAUXINT:
+            sample_player.updateADSRAuxIntByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVAUXATKSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateAAuxSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVAUXSUSSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateSAuxSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_ENVAUXRELSPD:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateRAuxSpdByKey(_voicekey, _value);
+            break;
+
+         case PARAM_GLIDESWITCH:
+            sample_player.updateGlideSwitchByKey(_voicekey, (_value >= 0.5f));
+            break;
+
+         case PARAM_GLIDESPEED:
+            _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+            sample_player.updateGlideSpeedByKey(_voicekey, _value);
+            break;
+
+         case PARAM_FLTCUTOFF:
+            _value = (_value - 0.5f) * 2.0f;
+            sample_player.updateFltCutOffByKey(_voicekey, _value);
+            break;
+
+         case PARAM_FLTPAN:
+            _value = (_value - 0.5f) * 2.0f;
+            sample_player.updateFltPanByKey(_voicekey, _value);
+            break;
+
+         case PARAM_FLTOFFSET:
+            _value = (_value - 0.5f) * 2.0f;
+            sample_player.updateFltOffsetByKey(_voicekey, _value);
+            break;
+
+         case PARAM_FLTRES:
+            _value = (_value - 0.5f) * 2.0f;
+            sample_player.updateFltResByKey(_voicekey, _value);
+            break;
+
+         case PARAM_LIVEREC_START_MASK:
+            // // local Integer io = int((_value * 127)+0.5);
+            // // trace "xxx ModSample::setVoiceParameterValue: param_liverec_start_mask = "+io.printf("0x%08x");
+            sample_player.startLiveRecording(int((_value * 127 + 0.5f)), false/*bIndex*/, true/*bRestart*/);
+            return maybe;
+
+         case PARAM_LIVEREC_CONTINUE_MASK:
+            // // local Integer io = int((_value * 255)+0.5);
+            // // trace "xxx param_liverec_start = "+io.printf("0x%08x");
+            sample_player.startLiveRecording(int((_value * 127 + 0.5f)), false/*bIndex*/, false/*bRestart*/);
+            return maybe;
+
+         case PARAM_LIVEREC_STOP_MASK:
+            // // local Integer io = int((_value * 255)+0.5);
+            // // trace "xxx param_liverec_start = "+io.printf("0x%08x");
+            sample_player.stopLiveRecording(int((_value * 127 + 0.5f)), false/*bIndex*/);
+            return maybe;
+
+         case PARAM_LIVEREC_START_IDX:
+            // // local Integer io = int((_value * 255)+0.5);
+            // // trace "xxx param_liverec_start = "+io.printf("0x%08x");
+            sample_player.startLiveRecording(int((_value * 127 + 0.5f)), true/*bIndex*/, true/*bRestart*/);
+            return maybe;
+
+         case PARAM_LIVEREC_CONTINUE_IDX:
+            // // local Integer io = int((_value * 255)+0.5);
+            // // trace "xxx param_liverec_start = "+io.printf("0x%08x");
+            sample_player.startLiveRecording(int((_value * 127 + 0.5f)), true/*bIndex*/, false/*bRestart*/);
+            return maybe;
+
+         case PARAM_LIVEREC_STOP_IDX:
+            // // local Integer io = int((_value * 255)+0.5);
+            // // trace "xxx param_liverec_start = "+io.printf("0x%08x");
+            sample_player.stopLiveRecording(int((_value * 127 + 0.5f)), true/*bIndex*/);
+            return maybe;
+
+         case PARAM_LIVEREC_LOOP_SHIFT:
+            if(_value < 0.5f)
+            {
+               _value = (_value * 128.0f) - 64.0f;
+            }
+            else
+            {
+               _value = (_value - 0.5f) * 126.0f;
+            }
+            sample_player.setLiveRecLoopShift(int(_value + 0.5f));
+            return maybe;
+
+         case PARAM_LIVEREC_DBLBUF_IDX:
+            sample_player.setLiveRecDoubleBufferIndex((_value >= 0.5f) ? 1 : 0);
+            return maybe;
+
+         case PARAM_LIVEREC_INPUT_PAN:
+            sample <= current_project.getSampleByIdx(sample_idx);
+            if(null != sample)
+            {
+               local StSample s <= sample.sample_bank.getSampleByIdx(0);  // (todo)
+               while(null != s)
+               {
+                  if(s.liveRecEnable)
+                  {
+                     s.liveRecInputPan = (_value - 0.5f) * 2.0f;
+                  }
+                  s <= s.next;
+               }
+               Events.SendUpdateSampleInfo();
+            }
+            return maybe;
+      }
+
+      return false;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // Called by recalcModMatrixForParam() or remote param handler (sysex)
+      //  - global parameters are handled immediately
+      //  - per-voice(group) parameters are queued
+      //  - remember initial_voice_params for new voices within the same voice group (slightly delayed chord notes)
+      // trace "xxx ModSample::setParameterValue: b_mod_voice="+b_mod_voice+" idx="+_idx+" value="+_value;
+
+      mtx_param.lock();
+
+      switch(_idx)
+      {
+         case PARAM_VOICEMODSW:
+            b_mod_voice = (_value > 0.0f);
+            if(!b_mod_voice)
+               param_voicekeys.empty();
+            break;
+
+         case PARAM_BARRIER:
+            if(_value > 0.0f)
+            {
+               // trace "xxx PARAM_BARRIER";
+               param_voicekeys.empty();
+               last_noteon_ms = 0;
+            }
+            break;
+
+         case PARAM_OFFSET:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateSampleOff(_value);
+            }
+            break;
+
+         case PARAM_SHIFT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateSampleShift(_value);
+            }
+            break;
+
+         case PARAM_SHIFT_EOL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateSampleShiftEndOfLoop(_value);
+            }
+            break;
+
+         case PARAM_CYCLELEN:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateCycleLen(_value);
+            }
+            break;
+
+         case PARAM_JUMPTOLOOP_REL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateJumpToLoopRel(_value);
+            }
+            break;
+
+         case PARAM_JUMPTOLOOP_ABS:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateJumpToLoop(int(_value * 127.0f + 0.5f));
+            }
+            break;
+
+         case PARAM_FREQ:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateFreq((_value - 0.5f) * 2.0);
+            }
+            break;
+
+         case PARAM_VOLUME:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               cc_vol_norm = _value;
+               sample_player.updateVol(cc_vol_norm);
+            }
+            break;
+
+         case PARAM_PAN:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updatePan((_value - 0.5f) * 2.0);
+            }
+            break;
+
+         case PARAM_RETRIGMASK:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateRetrigMask(int(_value * 255 + 0.5f));
+            }
+            break;
+
+         case PARAM_LFOFREQRESETPHASE:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               if(_value >= 0.5f)
+                  sample_player.resetLFOFreqPhase();
+            }
+            break;
+
+         case PARAM_LFOFREQSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateLFOFreqSpd(_value);
+            }
+            break;
+
+         case PARAM_LFOFREQLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateLFOFreqLvl(_value);
+            }
+            break;
+
+         case PARAM_LFOFREQAMT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateLFOFreqAmt(_value);
+            }
+            break;
+
+         case PARAM_LFOVOLRESETPHASE:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               if(_value >= 0.5f)
+                  sample_player.resetLFOVolPhase();
+            }
+            break;
+
+         case PARAM_LFOVOLSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateLFOVolSpd(_value);
+            }
+            break;
+
+         case PARAM_LFOVOLLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateLFOVolLvl(_value);
+            }
+            break;
+
+         case PARAM_LFOVOLAMT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateLFOVolAmt(_value);
+            }
+            break;
+
+         case PARAM_LFOPANRESETPHASE:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               if(_value >= 0.5f)
+                  sample_player.resetLFOPanPhase();
+            }
+            break;
+
+         case PARAM_LFOPANSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateLFOPanSpd(_value);
+            }
+            break;
+
+         case PARAM_LFOPANLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateLFOPanLvl(_value);
+            }
+            break;
+
+         case PARAM_LFOPANAMT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateLFOPanAmt(_value);
+            }
+            break;
+
+         case PARAM_LFOAUXRESETPHASE:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               if(_value >= 0.5f)
+                  sample_player.resetLFOAuxPhase();
+            }
+            break;
+
+         case PARAM_LFOAUXSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateLFOAuxSpd(_value);
+            }
+            break;
+
+         case PARAM_LFOAUXLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateLFOAuxLvl(_value);
+            }
+            break;
+
+         case PARAM_LFOAUXFLTAMT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateLFOAuxFltAmt(_value);
+            }
+            break;
+
+         case PARAM_ENVFREQSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateADSRFreqSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVFREQLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateADSRFreqLvl(_value);
+            }
+            break;
+
+         case PARAM_ENVFREQINT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateADSRFreqInt(_value);
+            }
+            break;
+
+         case PARAM_ENVFREQATKSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateAFreqSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVFREQSUSSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateSFreqSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVFREQRELSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateRFreqSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVVOLSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateADSRVolSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVVOLLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateADSRVolLvl(_value);
+            }
+            break;
+
+         case PARAM_ENVVOLINT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateADSRVolInt(_value);
+            }
+            break;
+
+         case PARAM_ENVVOLATKSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateAVolSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVVOLSUSSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateSVolSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVVOLRELSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateRVolSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVPANSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateADSRPanSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVPANLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateADSRPanLvl(_value);
+            }
+            break;
+
+         case PARAM_ENVPANINT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateADSRPanInt(_value);
+            }
+            break;
+
+         case PARAM_ENVPANATKSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateAPanSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVPANSUSSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateSPanSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVPANRELSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateRPanSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVAUXSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateADSRAuxSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVAUXLVL:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value *= 8.0f;
+               sample_player.updateADSRAuxLvl(_value);
+            }
+            break;
+
+         case PARAM_ENVAUXINT:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateADSRAuxInt(_value);
+            }
+            break;
+
+         case PARAM_ENVAUXATKSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateAAuxSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVAUXSUSSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateSAuxSpd(_value);
+            }
+            break;
+
+         case PARAM_ENVAUXRELSPD:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateRAuxSpd(_value);
+            }
+            break;
+
+         case PARAM_GLIDESWITCH:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               sample_player.updateGlideSwitch(_value >= 0.5f);
+            }
+            break;
+
+         case PARAM_GLIDESPEED:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = Bipolar7ToScale(_value * 127, 8.0/*div*/, 8.0/*mul*/);
+               sample_player.updateGlideSpeed(_value);
+            }
+            break;
+
+         case PARAM_FLTCUTOFF:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = (_value - 0.5f) * 2.0f;
+               sample_player.updateFltCutOff(_value);
+            }
+            break;
+
+         case PARAM_FLTPAN:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = (_value - 0.5f) * 2.0f;
+               sample_player.updateFltPan(_value);
+            }
+            break;
+
+         case PARAM_FLTOFFSET:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = (_value - 0.5f) * 2.0f;
+               sample_player.updateFltOffset(_value);
+            }
+            break;
+
+         case PARAM_FLTRES:
+            if(b_mod_voice)
+            {
+               queued_voice_params[_idx] = _value;
+               initial_voice_params[_idx] = _value;
+            }
+            else
+            {
+               _value = (_value - 0.5f) * 2.0f;
+               sample_player.updateFltRes(_value);
+            }
+            break;
+
+         case PARAM_LIVEREC_START_MASK:
+            // local Integer io = int((_value * 127)+0.5);
+            // trace "xxx ModSample::setParameterValue: param_liverec_start_mask = "+io.printf("0x%08x");
+            sample_player.startLiveRecording(int(_value * 127.0f + 0.5f), false/*bIndex*/, true/*bRestart*/);
+            break;
+
+         case PARAM_LIVEREC_CONTINUE_MASK:
+            sample_player.startLiveRecording(int(_value * 127.0f + 0.5f), false/*bIndex*/, false/*bRestart*/);
+            break;
+
+         case PARAM_LIVEREC_STOP_MASK:
+            sample_player.stopLiveRecording(int(_value * 127.0f + 0.5f), false/*bIndex*/);
+            break;
+
+         case PARAM_LIVEREC_START_IDX:
+            sample_player.startLiveRecording(int(_value * 127.0f + 0.5f), true/*bIndex*/, true/*bRestart*/);
+            break;
+
+         case PARAM_LIVEREC_CONTINUE_IDX:
+            sample_player.startLiveRecording(int(_value * 127.0f + 0.5f), true/*bIndex*/, false/*bRestart*/);
+            break;
+
+         case PARAM_LIVEREC_STOP_IDX:
+            sample_player.stopLiveRecording(int(_value * 127.0f + 0.5f), true/*bIndex*/);
+            break;
+
+         case PARAM_LIVEREC_LOOP_SHIFT:
+            // trace "xxx ModSample: PARAM_LIVEREC_LOOP_SHIFT is "+_value;
+            if(_value < 0.5f)
+            {
+               _value = (_value * 128.0f) - 64.0f;
+            }
+            else
+            {
+               _value = (_value - 0.5f) * 126.0f;
+            }
+            // int iVal = _value;
+            //    trace "xxx ====> ModSample: PARAM_LIVEREC_LOOP_SHIFT is "+_value+" (int="+int(_value)+", iVal="+iVal+")";
+            sample_player.setLiveRecLoopShift(int(_value + 0.5f));
+            break;
+
+         case PARAM_LIVEREC_DBLBUF_IDX:
+            sample_player.setLiveRecDoubleBufferIndex((_value >= 0.5f) ? 1 : 0);
+            break;
+
+         case PARAM_LIVEREC_INPUT_PAN:
+            local Sample sample <= current_project.getSampleByIdx(sample_idx);
+            if(null != sample)
+            {
+               local StSample s <= sample.getZoneByIdx(0);
+               while(null != s)
+               {
+                  if(s.liveRecEnable)
+                  {
+                     s.liveRecInputPan = (_value - 0.5f) * 2.0f;
+                  }
+                  s <= s.next;
+               }
+               Events.SendUpdateSampleInfo();
+            }
+            break;
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setSampleIdx_NoSync(local int _sampleIdx, local boolean _bMarkProjectAsModified) {
+      // // trace "xxx ModSample::setSampleIdx_NoSync: sampleIdx="+_sampleIdx+" bMarkProjectAsModified="+_bMarkProjectAsModified;
+      local boolean bChanged = (sample_idx != _sampleIdx);
+      sample_idx = _sampleIdx;
+      if(bChanged && _bMarkProjectAsModified)
+         current_project.markAsModified();
+
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         sample_player.setLastStartedSampleBankHint(sample.sample_bank);
+         sample_player.updatePerfCtls(sample.initial_perf_ctl);
+         preferred_namespace_idx = sample.namespace_idx;
+         // trace "xxx ModSample::setSampleId: uid="+sample.unique_id+" nsp="+sample.namespace_idx;
+
+         if(bChanged && b_fx_auto_note_on)
+         {
+            sample_player.resetVoices();
+            handleFXAutoNoteOn();
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setSampleIdx(local int _sampleIdx) {
+      setSampleIdx_NoSync(_sampleIdx, true/*bMarkProjectAsModified*/);
+   }
+
+   // <method_handle.png>
+   public =replay= method handleSwapSamples(int _smpIdA, int _smpIdB) {
+      if(sample_idx == _smpIdA)
+         sample_idx = _smpIdB;
+      else if(sample_idx == _smpIdB)
+         sample_idx = _smpIdA;
+   }
+
+   // <method_handle.png>
+   public =replay= method handleShiftSampleIds(int _idxStart, int _shift) {
+      if(sample_idx >= _idxStart)
+         sample_idx += _shift;
+   }
+
+   // <method_set.png>
+   public =replay= method setPoly(int _poly) {
+      sample_player.allocVoices(_poly);
+      current_project.markAsModified();
+   }
+
+   // <method.png>
+   public =replay= virtual stopVoices() {
+      // trace "xxx SamplePlayer::resetVoices";
+      sample_player.resetVoices();
+   }
+
+   // <method_set.png>
+   public method setTempo(float _bpm, int _ppq) {
+      sample_player.setTempo(_bpm, _ppq);
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 5;
+
+      // Sample Idx
+      _ofs.i16 = sample_idx;
+
+      // Preferred namespace hint (v4+)
+      _ofs.i8 = preferred_namespace_idx;
+
+      // Polyphony
+      _ofs.i16 = sample_player.numVoices;
+
+      // Mod voice (v2+)
+      _ofs.i8 = b_mod_voice;
+
+      // FX auto note-on (v5+)
+      _ofs.i8 = b_fx_auto_note_on;
+
+      // Autoload (v3+)
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         // Autoload (v3+)
+         _ofs.i8 = true;  // bHaveAutoLoadInfo
+
+         // Sample name
+         Utils.WriteString(_ofs, sample.unique_name);
+
+         // Suggested path name
+         Utils.WriteString(_ofs, sample.suggested_pathname);
+      }
+      else
+      {
+         // Autoload (v3+)
+         _ofs.i8 = false;
+      }
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Sample Idx
+            sample_idx = _ifs.u16;
+            // trace "xxx loadState: sample_idx="+sample_idx;
+
+            if(ver >= 4)
+            {
+               // Preferred namespace hint (v4+)
+               preferred_namespace_idx = _ifs.u8 % Sample.NUM_NAMESPACES;
+               // trace "xxx ModSample::loadState: read preferred_namespace_idx="+preferred_namespace_idx;
+            }
+            // else
+            //    trace "xxx ModSample::loadState: using old preferred_namespace_idx="+preferred_namespace_idx;
+
+            // Polyphony
+            sample_player.allocVoices(_ifs.u16);
+
+            if(ver >= 2)
+            {
+               // Mod voice (v2+)
+               b_mod_voice = _ifs.b8;
+               b_mod_voice = false;  // [25Jul2019] don't restore from stream
+            }
+
+            if(ver >= 5)
+            {
+               // FX auto note-on (v5+)
+               b_fx_auto_note_on = _ifs.b8;
+            }
+
+            if(ver >= 3)
+            {
+               boolean bHaveAutoloadInfo = _ifs.b8;
+
+               if(bHaveAutoloadInfo)
+               {
+                  // Sample name
+                  Utils.ReadString(_ifs, autoload_unique_name);
+
+                  // Suggested path name
+                  Utils.ReadString(_ifs, autoload_suggested_pathname);
+                  // trace "xxx ModSample: autoload_suggested_pathname=\""+autoload_suggested_pathname+"\"";
+               }
+               // else: reference to non-existing sample
+            }
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModSample::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public virtual loadStatePost(local boolean _bThreaded) : boolean {
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      // trace "xxx ModSample::loadStatePost: sample_idx="+sample_idx+" sample="+#(sample);
+      if(null != sample)
+      {
+         // for live-recording (after loading project / before starting any voices)
+         sample_player.setLastStartedSampleBankHint(sample.sample_bank);
+         // trace "xxx ModSample::loadStatePost: update preferred_namespace_idx to sample.namespace_idx="+sample.namespace_idx;
+         preferred_namespace_idx = sample.namespace_idx;  // paranoia
+
+         if(b_fx_auto_note_on)
+            handleFXAutoNoteOn();
+      }
+      b_postload_done = true;
+      b_postload = true;
+      return true;
+   }
+
+   // <method_get.png>
+   protected method getModVal(local Sample sample) : float {
+      local float modVal = 0.0;
+
+      switch(sample.mod_src)
+      {
+         default:
+         case Sample.MODSRC_CC_NONE:
+            break;
+
+         case Sample.MODSRC_CC_MODWHEEL:
+            modVal = cc_modwheel / 127.0;
+            break;
+
+         case Sample.MODSRC_CC_BREATH:
+            modVal = cc_breath / 127.0;
+            break;
+
+         case Sample.MODSRC_CC_FOOT:
+            modVal = cc_foot / 127.0;
+            break;
+
+         case Sample.MODSRC_CC_EXPR:
+            modVal = cc_expr / 127.0;
+            break;
+
+         case Sample.MODSRC_CC_BRIGHTNESS:
+            modVal = cc_brightness / 127.0;
+            break;
+
+         case Sample.MODSRC_CHPRESSURE:
+            modVal = aftertouch / 127.0;
+            break;
+      }
+      return modVal;
+   }
+
+   // <replay.png>
+   public method noteOn(local int _note, local float _vel, boolean _bAllowNoteOff) {
+      // (note) 'vel' is in range 0..1
+
+      if(_bAllowNoteOff && -1 != voicekeys[_note])
+      {
+         sample_player.noteOffByKey(voicekeys[_note], _vel);
+      }
+
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+
+      // trace "xxx ModSample::noteOn: note="+_note+" vel="+_vel+" bAllowNoteOff="+_bAllowNoteOff+" sample_idx="+sample_idx+" sample="+#(sample);
+
+      if(null != sample)
+      {
+         local int voicekey = -1;
+         local float modVal = getModVal(sample);
+
+         if(-1 == sample.solo_zone_idx)
+         {
+            voicekey = sample_player.startSampleBank(sample.sample_bank,
+                                                     null/*freqTable=default*/, _note, _vel,
+                                                     modVal,
+                                                     1.0f/*volume*/,
+                                                     0/*pan*/,
+                                                     0/*freq*/
+                                                     );
+         }
+         else
+         {
+            local StSample s <= sample.sample_bank.getSampleByIdx(sample.solo_zone_idx);
+            if(null != s)
+            {
+               voicekey = sample_player.startSample(s,
+                                                    null/*freqTable=default*/, _note, _vel,
+                                                    modVal,
+                                                    1.0f/*volume*/,
+                                                    0/*pan*/,
+                                                    0/*freq*/
+                                                    );
+            }
+         }
+
+         if(voicekey > 0)
+         {
+            // (note) freq/vol/pan/off randomization is handled in StSamplePlayer
+
+            sample_player.updateVol(cc_vol_norm);
+            sample_player.updatePan(cc_pan_norm);
+
+            handlePitchbendChanged();
+
+            if(initial_sample_offset_ms >= 0)
+            {
+               // trace "xxx ModSample::noteOn: initial_sample_offset_ms="+initial_sample_offset_ms;
+               sample_player.setInitialSampleOffsetMsByKey(voicekey, initial_sample_offset_ms);
+            }
+
+            if(!sample.b_mod_src_noteon)
+            {
+               // Reset per-voice mod to 0 (effective mod = sp mod + voice mod)
+               sample_player.updateModByKey(voicekey, 0.0f);
+               sample_player.updateMod(modVal);
+            }
+            // (note) don't reset sp mod
+
+            if(Sample.MODSRC_POLYPRESSURE == sample.mod_src)
+            {
+               sample_player.updateModByKey(voicekey, voicepressure[_note]);
+            }
+            else if(Sample.MODSRC_POLYPRESSURE_MAX == sample.mod_src)
+            {
+               // Reset pressure and only update when next new value is higher than last
+               sample_player.updateModByKey(voicekey, 0.0);
+               voicepressure[_note] = 0.0;
+               voicepressure_max[_note] = 0.0;
+            }
+
+            if(b_mod_voice)
+               param_voicekeys.add(voicekey);  // add to current voice group
+
+            queued_voicekeys.add(voicekey);  // queue for start
+
+            voicekeys[_note] = voicekey;
+
+            // trace "xxx ModSample::noteOn: note="+_note+" vel="+_vel+"  => voiceKey="+voicekey;
+         }
+      } // if sample
+
+      initial_sample_offset_ms = -1;
+   }
+
+   // <replay.png>
+   protected method handlePitchbendChanged() {
+      local Sample sample <= current_project.getSampleByIdx(sample_idx);
+      if(null != sample)
+      {
+         local float freq = 0;
+
+         if(pitchbend_norm < 0)
+            freq = sample.pitchbend_down * pitchbend_norm;
+         else
+            freq = sample.pitchbend_up  * pitchbend_norm;
+
+         sample_player.updateFreq(freq);
+      }
+   }
+
+   // <replay.png>
+   public method noteOff(local int _note, local float _vel) {
+      // 'vel' is in range 0..1
+      // trace "xxx ModSample::noteOff: note="+_note+" vel="+_vel+" b_sustain="+b_sustain+" b_sostenuto="+b_sostenuto;
+      if(b_sustain)
+      {
+         sustain_noteoff_queue.add(_note);
+         sustain_noteoff_queue.add(_vel);
+         return;
+      }
+      else if(b_sostenuto)
+      {
+         if(sostenuto_notes.contains(_note))
+            return;
+      }
+      local int voicekey = voicekeys[_note];
+      // trace "xxx ModSample::noteOff:    voiceKey="+voicekey;
+      if(-1 != voicekey)
+      {
+         local int historyIdx = 0;
+         for(;;)
+         {
+            local int prevGlideNote = sample_player.findPreviousGlideNoteByKeyAndHistoryIdx(voicekey, historyIdx);
+            // trace "xxx noteOff: GLIDE voicekey="+voicekey+" note="+_note+" historyIdx="+historyIdx+" prevGlideNote="+prevGlideNote;
+            if(-1 != prevGlideNote)
+            {
+               if(prevGlideNote != _note)
+               {
+                  // trace "xxx noteOff: GLIDE voicekeys[prevGlideNote]="+voicekeys[prevGlideNote];
+                  if(-1 != voicekeys[prevGlideNote])  // note key still pressed ?
+                  {
+                     // Revert to previous note
+                     //  (note) following noteOffByKey() has no effect since gliding voice(s) will be assigned a new voicekey
+                     voicekeys[prevGlideNote] = -1;  // prevent noteOffByKey in noteOn()
+                     // (todo) remember + re-use original note on velocity ? (first check if 'vel' is actually used in glide case => does not seem so)
+                     noteOn(prevGlideNote, 1.0/*vel*/, false/*bAllowNoteOff*/);
+                     // (todo) skip voice start (will be called anyway on same tick) ?
+                     // // local int qvoicekey;
+                     // // foreach qvoicekey in queued_voicekeys
+                     // //    sample_player.initStartedVoicesByKey(qvoicekey);
+                     // // queued_voicekeys.empty();
+                     break;
+                  }
+               }
+               // else
+               //    trace "xxx ModSample::noteOff: ERR: note="+_note+"==prevGlideNote";
+               if(sample_player.removeFromGlideNoteHistory(prevGlideNote, false/*bLastOnly*/))
+                  historyIdx = 0;  // one or more histories have changed, restart loop
+               else
+                  historyIdx++;
+            }
+            else
+               break;
+         }
+
+         // Global.Debug("ModSample::noteOff: note="+_note+" vel="+_vel+" voiceKey="+voicekey);
+         sample_player.removeFromGlideNoteHistory(_note, true/*bLastOnly*/);
+         sample_player.noteOffByKey(voicekey, _vel);
+         voicekeys[_note] = -1;
+      }
+   }
+
+   // <method.png>
+   public method allNotesOff() {
+      sample_player.allNotesOff();
+      voicekeys.fill(-1);
+      param_voicekeys.empty();
+      last_noteon_ms = 0;
+      queued_voice_params.fill(-1);
+      initial_voice_params.fill(-1);
+      input_filter.vrrNote = -1;
+   }
+
+   // <replay.png>
+   public method processMIDICtls(local MIDIPipeFrame fr,
+                                 local int _fltDev, local int _fltCh
+                                 ) {
+      local int evIdx = 0;
+      local Sample *sample;
+      local boolean bUpdateMod = false;
+
+      // Program Change
+      if(input_filter.enablePrgChg)
+      {
+         local int numPC = fr.getNumEventsPrgChgByFlt(_fltDev, _fltCh);
+         evIdx = 0;
+         loop(numPC)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PRGCHG, _fltDev, _fltCh))
+            {
+               sample <= current_project.findSampleByPrg(pev.prgChg);
+               if(null != sample)
+               {
+                  sample_idx = current_project.getSampleIdx(sample);
+                  sample.b_autoload = false;
+                  preferred_namespace_idx = sample.namespace_idx;
+               }
+            }
+            // Next program change event
+            evIdx++;
+         }
+      }
+
+      // RPN unique sample id (alternative program change)
+      local short smpUID = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_UID);
+      if(smpUID >= 0)
+      {
+         sample <= current_project.findSampleByUniqueID(smpUID);
+         // trace "xxx ModSample: recv RPN_SMP_UID smpUID="+smpUID+" => sample="+#(sample);
+         if(null != sample)
+         {
+            setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
+            sample.b_autoload = false;
+            preferred_namespace_idx = sample.namespace_idx;
+         }
+      }
+
+      // RPN namespace sample nr (alternative program change)
+      local short smpNspNr = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_NSP_ABS);
+      if(smpNspNr > 0)
+      {
+         sample <= current_project.findSampleByLocalNamespaceIdx(smpNspNr - 1, preferred_namespace_idx);
+         // trace "xxx ModSample: recv RPN_SMP_NSP_ABS smpNspNr="+smpNspNr+" => sample="+#(sample);
+         if(null != sample)
+         {
+            setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
+            sample.b_autoload = false;
+            preferred_namespace_idx = sample.namespace_idx;
+         }
+      }
+
+      // RPN namespace sample nr (alternative program change)
+      local short smpNspRel = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_NSP_REL);
+      if(smpNspRel >= 0)
+      {
+         local int nspNum = current_project.findNumSamplesAssignedToNamespace(preferred_namespace_idx);
+         if(nspNum > 0)
+         {
+            local int smpNspIdx = mathClampi((smpNspRel * nspNum) >> 14/*/16384*/, 0, nspNum-1);
+            sample <= current_project.findSampleByLocalNamespaceIdx(smpNspIdx, preferred_namespace_idx);
+            // trace "xxx ModSample: recv RPN_SMP_NSP_REL smpNspRel="+smpNspRel+" => smpNspIdx="+smpNspIdx+" => sample="+#(sample);
+            if(null != sample)
+            {
+               setSampleIdx_NoSync(current_project.getSampleIdx(sample), false/*bMarkProjectAsModified*/);
+               sample.b_autoload = false;
+               preferred_namespace_idx = sample.namespace_idx;
+            }
+         }
+      }
+
+      // CC
+      local int numCC = fr.getNumEventsCCByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numCC)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, _fltDev, _fltCh))
+         {
+            // trace "xxx ModSample: recv CC pev.ccId="+pev.ccId;
+            switch(pev.ccId)
+            {
+               case 1: // modwheel MSB
+                  if(input_filter.enableCCModWheel)
+                  {
+                     cc_modwheel = pev.ccValue;  // sets LSB to 0
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, pev.ccValue);
+                  }
+                  break;
+
+               case 33: // modwheel LSB
+                  if(input_filter.enableCCModWheel)
+                  {
+                     cc_modwheel = int(cc_modwheel) + (pev.ccValue / 128.0);  // keep MSB
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL, cc_modwheel);
+                  }
+                  break;
+
+               case 2: // breath control MSB
+                  if(input_filter.enableCCBreathControl)
+                  {
+                     cc_breath = pev.ccValue;  // sets LSB to 0
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, pev.ccValue);
+                  }
+                  break;
+
+               case 34: // breath control LSB
+                  if(input_filter.enableCCBreathControl)
+                  {
+                     cc_breath = int(cc_breath) + (pev.ccValue / 128.0);  // keep MSB
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL, cc_breath);
+                  }
+                  break;
+
+               case 4: // foot control MSB
+                  if(input_filter.enableCCFootControl)
+                  {
+                     cc_foot = pev.ccValue;
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, pev.ccValue);
+                  }
+                  break;
+
+               case 36: // foot control LSB
+                  if(input_filter.enableCCFootControl)
+                  {
+                     cc_foot = int(cc_foot) + (pev.ccValue / 128.0);  // keep MSB
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL, cc_foot);
+                  }
+                  break;
+
+               case 11: // expression MSB
+                  if(input_filter.enableCCExpression)
+                  {
+                     cc_expr = pev.ccValue;  // sets LSB to 0
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, pev.ccValue);
+                  }
+                  break;
+
+               case 43: // expression LSB
+                  if(input_filter.enableCCExpression)
+                  {
+                     cc_expr = int(cc_expr) + (pev.ccValue / 128.0);  // keep MSB
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION, cc_expr);
+                  }
+                  break;
+
+               case 7: // volume
+                  if(input_filter.enableCCOther)
+                  {
+                     cc_vol_norm = pev.ccValue / 127.0;
+                     sample_player.updateVol(cc_vol_norm);
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC7_VOLUME, pev.ccValue);
+                  }
+                  break;
+
+               case 8: // balance
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC8_BALANCE, pev.ccValue);
+                  }
+                  break;
+
+               case 10: // panorama
+                  if(input_filter.enableCCOther)
+                  {
+                     cc_pan_norm = (pev.ccValue < 64) ? ((pev.ccValue - 64)/64.0) : ((pev.ccValue - 64) / 63.0);
+                     sample_player.updatePan(cc_pan_norm);
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC10_PAN, pev.ccValue);
+                  }
+                  break;
+
+               case 16: // general purpose 1
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1, pev.ccValue);
+                  }
+                  break;
+
+               case 17: // general purpose 2
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2, pev.ccValue);
+                  }
+                  break;
+
+               case 18: // general purpose 3
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3, pev.ccValue);
+                  }
+                  break;
+
+               case 19: // general purpose 4
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4, pev.ccValue);
+                  }
+                  break;
+
+               case 64: // sustain pedal
+                  if(input_filter.enableCCHold1SW)
+                  {
+                     sample_player.setSustainPedal(pev.ccValue >= 64);
+
+                     sample <= current_project.getSampleByIdx(sample_idx);
+                     if( (null != sample) ? sample.b_sustain : true )
+                     {
+                        if(pev.ccValue >= 64)
+                        {
+                           b_sustain = true;
+                        }
+                        else if(b_sustain)
+                        {
+                           b_sustain = false;
+                           local int noteOffIdx = 0;
+                           loop(sustain_noteoff_queue.numElements/2)
+                           {
+                              noteOff(sustain_noteoff_queue[noteOffIdx]/*note*/, sustain_noteoff_queue[noteOffIdx+1]/*vel*/);
+                              noteOffIdx += 2;
+                           }
+                           sustain_noteoff_queue.empty();
+                        }
+                     }
+                     // else: let sample handle sustain in mod matrix (or not)
+                  }
+                  break;
+
+               case 65:  // portamento switch
+                  if(input_filter.enableCCPortamentoSW)
+                  {
+                     b_portamento = (pev.ccValue >= 64);
+                     sample_player.updateGlideSwitch(b_portamento);
+                  }
+                  break;
+
+               case 66: // sostenuto
+                  if(input_filter.enableCCSostenutoSW)
+                  {
+                     if(pev.ccValue >= 64)
+                     {
+                        if(!b_sostenuto)
+                        {
+                           b_sostenuto = true;
+                           local int sostNoteIdx = 0;
+                           sostenuto_notes.empty();
+                           loop(128)
+                           {
+                              if(-1 != voicekeys[sostNoteIdx])
+                                 sostenuto_notes.add(sostNoteIdx);
+                              sostNoteIdx++;
+                           }
+                        }
+                     }
+                     else if(b_sostenuto)
+                     {
+                        b_sostenuto = false;
+                        local int sostNote;
+                        foreach sostNote in sostenuto_notes
+                           noteOff(sostNote, 0.0/*vel*/);
+                        sostenuto_notes.empty();
+                     }
+                  }
+                  break;
+
+               case 67: // soft pedal
+                  if(input_filter.enableCCSoftPedalSW)
+                  {
+                     sample_player.setSoftPedal(pev.ccValue >= 64);
+                  }
+                  break;
+
+               case 74: // brightness
+                  if(input_filter.enableCCOther)
+                  {
+                     cc_brightness = pev.ccValue;
+                     bUpdateMod = true;
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC74_BRIGHTNESS, pev.ccValue);
+                  }
+                  break;
+
+               case 80: // general purpose 5
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5, pev.ccValue);
+                  }
+                  break;
+
+               case 81: // general purpose 6
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6, pev.ccValue);
+                  }
+                  break;
+
+               case 82: // general purpose 7
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7, pev.ccValue);
+                  }
+                  break;
+
+               case 83: // general purpose 8
+                  if(input_filter.enableCCOther)
+                  {
+                     sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8, pev.ccValue);
+                  }
+                  break;
+
+               case 121:  // Controller Reset
+                  resetAllControllers();
+                  break;
+
+               case 123:  // All Notes off
+                  if(!b_fx_auto_note_on)
+                     allNotesOff();
+                  break;
+            }
+         }
+         // Next CC event
+         evIdx++;
+      }
+
+      // Pitchbend
+      if(input_filter.enablePitchbend)
+      {
+         local int numPB = fr.getNumEventsPitchbendByFlt(_fltDev, _fltCh);
+         evIdx = 0;
+         loop(numPB)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PITCHBEND, _fltDev, _fltCh))
+            {
+               pitchbend = pev.pitchbend;
+               pitchbend_norm = ((pitchbend - 8192) < 0) ? (pitchbend - 8192) / 8192.0 : (pitchbend - 8192) / 8191.0;
+               handlePitchbendChanged();
+               sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_PITCHBEND, pev.pitchbend);
+            }
+            // Next pitchbend event
+            evIdx++;
+         }
+      }
+
+      // Channel Pressure
+      if(input_filter.enableChannelPressure)
+      {
+         local int numAT = fr.getNumEventsChPressureByFlt(_fltDev, _fltCh);
+         evIdx = 0;
+         loop(numAT)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CHPRESSURE, _fltDev, _fltCh))
+            {
+               aftertouch = pev.chPressure;
+               bUpdateMod = true;
+               sample_player.updatePerfCtl(STSAMPLEPLAYER_PERFCTL_PRESSURE, pev.chPressure);
+            }
+            // Next channel pressure event
+            evIdx++;
+         }
+      }
+
+      // Polyphonic Aftertouch
+      if(input_filter.enablePolyPressure)
+      {
+         local int numPAT = fr.getNumEventsPolyPressureByFlt(_fltDev, _fltCh);
+         evIdx = 0;
+         loop(numPAT)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, _fltDev, _fltCh))
+            {
+               voicepressure[pev.polyPressureNote] = pev.polyPressureValue / 127.0;
+
+               sample_player.updatePerfCtlByKey(voicekeys[pev.polyPressureNote], STSAMPLEPLAYER_PERFCTL_PRESSURE, pev.polyPressureValue);
+
+               sample <= current_project.getSampleByIdx(sample_idx);
+               if(null != sample)
+               {
+                  if(Sample.MODSRC_POLYPRESSURE == sample.mod_src)
+                  {
+                     if(!sample.b_mod_src_noteon)
+                     {
+                        if(-1 != voicekeys[pev.polyPressureNote])
+                        {
+                           sample_player.updateModByKey(voicekeys[pev.polyPressureNote], voicepressure[pev.polyPressureNote]);
+                        }
+                     }
+                  }
+                  else if(Sample.MODSRC_POLYPRESSURE_MAX == sample.mod_src)
+                  {
+                     if(voicepressure[pev.polyPressureNote] > voicepressure_max[pev.polyPressureNote])
+                     {
+                        voicepressure_max[pev.polyPressureNote] = voicepressure[pev.polyPressureNote];
+                        if(-1 != voicekeys[pev.polyPressureNote])
+                        {
+                           sample_player.updateModByKey(voicekeys[pev.polyPressureNote], voicepressure[pev.polyPressureNote]);
+                        }
+                     }
+                  }
+               }
+            }
+            // Next channel pressure event
+            evIdx++;
+         }
+      }
+
+      local short smpOffLo = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_OFFMS_LO);
+      if(-1 != smpOffLo)
+      {
+         initial_sample_offset_ms_lo = smpOffLo;
+      }
+
+      local short smpOffHi = fr.getFilteredRPN(_fltDev, _fltCh, RPN_SMP_OFFMS_HI);
+      if(-1 != smpOffHi)
+      {
+         initial_sample_offset_ms =
+            (initial_sample_offset_ms_lo / 64.0f) +
+            (smpOffHi << 8)
+            ;
+      }
+
+      if(bUpdateMod)
+      {
+         sample <= current_project.getSampleByIdx(sample_idx);
+         if(null != sample)
+         {
+            if(!sample.b_mod_src_noteon)
+            {
+               local float modVal = getModVal(sample);
+               sample_player.updateMod(modVal);
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public method processMIDINotes(local MIDIPipeFrame fr,
+                                  local int _fltDev, local int _fltCh
+                                  ) {
+      local int evIdx = 0;
+      local int xNote;
+
+      // Handle note-offs (pre note-on)
+      local int numNoteOffPre = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOffPre)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
+         {
+            if(pev.isNoteOffPre())
+            {
+               // trace "xxx ModSample: noteOff pre evIdx="+evIdx+" pev.note="+pev.note;
+               xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
+               // trace "xxx ModSample:    xNote="+xNote+" input_filter.enableVRR="+input_filter.enableVRR+" noteMin="+input_filter.noteMin+" noteMax="+input_filter.noteMax;
+
+               if(input_filter.enableVRR)
+               {
+                  if(input_filter.vrrNote == pev.note)
+                  {
+                     if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                        noteOff(xNote, pev.velocity / 127.0);
+                     // trace "xxx vrr noteoff<smp>: note="+input_filter.vrrNote;
+                     input_filter.vrrNote = -1;
+                  }
+               }
+               else
+               {
+                  if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                     noteOff(xNote, pev.velocity / 127.0);
+               }
+               // trace "xxx ModSample: noteoff<pre> "+pev.note;
+            }
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+
+      // Handle note-ons
+      local int numNoteOn = fr.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDev, _fltCh))
+         {
+            xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
+
+            if(input_filter.enableVRR)
+            {
+               if(evIdx == input_filter.vrrNoteOnIdx)
+               {
+                  if((input_filter.noteMin <= pev.note <= input_filter.noteMax) &&
+                     (input_filter.velocityMin <= pev.velocity <= input_filter.velocityMax)
+                     )
+                     noteOn(xNote, pev.velocity / 127.0, true/*bAllowNoteOff*/);
+                  input_filter.vrrNote = pev.note;
+                  // trace "xxx vrr noteon<smp>: note="+input_filter.vrrNote;
+               }
+            }
+            else
+            {
+               if((input_filter.noteMin <= pev.note <= input_filter.noteMax) &&
+                  (input_filter.velocityMin <= pev.velocity <= input_filter.velocityMax)
+                  )
+                  noteOn(xNote, pev.velocity / 127.0, true/*bAllowNoteOff*/);
+            }
+            // trace "xxx ModSample: noteon "+pev.note;
+         }
+
+         // Next note-on event
+         evIdx++;
+      }
+
+      // Handle note-offs (post note-on)
+      local int numNoteOffPost = fr.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numNoteOffPost)
+      {
+         if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh))
+         {
+            if(!pev.isNoteOffPre())
+            {
+               // trace "xxx ModSample: noteOff post evIdx="+evIdx+" pev.note="+pev.note;
+               xNote = mathClampi(pev.note + input_filter.noteTranspose, 0, 127);
+
+               if(input_filter.enableVRR)
+               {
+                  if(input_filter.vrrNote == pev.note)
+                  {
+                     if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                        noteOff(xNote, pev.velocity / 127.0);
+                     // trace "xxx vrr noteoff<smp>: note="+input_filter.vrrNote;
+                     input_filter.vrrNote = -1;
+                  }
+               }
+               else
+               {
+                  if(input_filter.noteMin <= pev.note <= input_filter.noteMax)
+                     noteOff(xNote, pev.velocity / 127.0);
+               }
+               // trace "xxx ModSample: noteoff "+pev.note;
+            }
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+   }
+
+   // <method.png>
+   public method startQueuedVoices() {
+      local int voicekey;
+      // if(queued_voicekeys.numElements > 0)
+      //    trace "xxx queued_voicekeys="+#(queued_voicekeys)+" num="+queued_voicekeys.numElements;
+      foreach voicekey in queued_voicekeys
+      {
+         // trace "xxx 1 initStartedVoicesByKey: numPlayingVoices="+sample_player.numPlayingVoices+" numActiveVoices="+sample_player.numActiveVoices;
+         sample_player.initStartedVoicesByKey(voicekey);
+         // trace "xxx 2 initStartedVoicesByKey:   => numPlayingVoices="+sample_player.numPlayingVoices+" numActiveVoices="+sample_player.numActiveVoices;
+      }
+      queued_voicekeys.empty();
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying)
+      {
+         mtx_param.lock();
+
+         if(replay.b_reset_all_controllers)  // "Reset" button clicked
+         {
+            resetAllControllers();
+            sample_player.resetVoices();
+            handleFXAutoNoteOn();
+         }
+
+         if(replay.b_have_events)
+         {
+            local MIDIPipeFrame frame <= replay.midi_input_frame;
+
+            if(frame.getNumEventsNoteOnByFlt(_fltDev, _fltCh) > 0)
+            {
+               // Reset param_voicekeys when last note on delta time exceeds threshold
+               //  (note) due to MIDI latency, chord notes may not arrive on the same "tick"
+               local int newMS = milliSeconds();
+               if((newMS - last_noteon_ms) >= VOICEPARAMRESET_MILLISEC_THRESHOLD)
+               {
+                  last_noteon_ms = newMS;
+                  param_voicekeys.empty();
+
+                  // Reset initial params unless the paramreset timeout has already expired and there are queued params
+                  initial_voice_params = queued_voice_params;
+               }
+            }
+
+            // Program change, MW/BC/FC/VOL/PAN/EXPR/BRIGHTNESS/CtlReset/AllNotesOff, pitchbend, channel+polypressure, RPN smpid
+            processMIDICtls(frame, _fltDev, _fltCh);
+
+            // Calc modmatrix, update params via setParameterValue()
+            processModMatrixEvents(_fltDev, _fltCh, _globalCh);
+
+            // Process on/off velocity curves
+            if(b_enable_noteon_velocity_env || b_enable_noteoff_velocity_env)
+            {
+               vel_frame = frame;
+               frame <= vel_frame;
+               processVelocityCurvesFrame(_fltDev, _fltCh);  // note on and off velocities
+            }
+
+            // Handle Note-On (allocate voices), and Note-Off
+            if(!b_fx_auto_note_on)
+               processMIDINotes(frame, _fltDev, _fltCh);
+
+            local int paramIdx;
+            local float paramVal;
+            local int paramVoiceKey;
+
+            // Update voice(-group) parameters
+            if(param_voicekeys.numElements > 0)
+            {
+               if(queued_voice_params.max >= 0.0f)  // not all -1 ?
+               {
+                  paramIdx = 0;
+                  loop(NUM_PARAMS)
+                  {
+                     paramVal = queued_voice_params.get(paramIdx);
+                     if(-1 != paramVal)
+                     {
+                        // Update each voice in the current voice group
+                        foreach paramVoiceKey in param_voicekeys
+                        {
+                           // (note) some (pseudo-per-voice) params like LIVEREC_START_* must only be exec'd once per sampleplayer
+                           if(maybe == setVoiceParameterValue(paramVoiceKey, paramIdx, paramVal))
+                              break;
+                        }
+                     }
+                     paramIdx++;
+                  }
+
+                  // Only update once (e.g. sample offset)
+                  queued_voice_params.fill(-1);
+               }
+            } // if param_voicekeys.numElements
+
+            // Set initial voice(-group) parameters and start new voices
+            if(queued_voicekeys.numElements > 0)
+            {
+               // Set initial params
+               if(initial_voice_params.max >= 0.0f)  // not all -1 ?
+               {
+                  paramIdx = 0;
+                  loop(NUM_PARAMS)
+                  {
+                     paramVal = initial_voice_params.get(paramIdx);
+                     if(-1 != paramVal)
+                     {
+                        // Update each new voice
+                        foreach paramVoiceKey in queued_voicekeys
+                        {
+                           if(maybe == setVoiceParameterValue(paramVoiceKey, paramIdx, paramVal))
+                              break;
+                        }
+                     }
+                     paramIdx++;
+                  }
+               }
+
+               // Start voices
+               startQueuedVoices();
+            }
+
+         } // if replay.b_have_events
+
+         if(replay.b_process_audio)  // (todo) always true at this point ?!
+         {
+            // Clear mix_buffer
+            mix_buffer.numElements = _numFrames * 2;
+            mix_buffer.fill(0);
+
+            if(sample_player.numPlayingVoices > 0)
+            {
+               // Render sample voices
+               sample_player.renderWithInputs(mix_buffer, input_bufs, true/*bRender*/, replay.process_tick_nr);
+            }
+            else
+            {
+               // Process live-recording (may write monitor input to output)
+               sample_player.renderWithInputs(mix_buffer, input_bufs, false/*bRender*/, replay.process_tick_nr);
+            }
+
+            // Split interleaved mix_buffer
+            tksampleedit_copy_mono_adv_to_mono(outL, 0, mix_buffer, 0, 2, _numFrames);
+            tksampleedit_copy_mono_adv_to_mono(outR, 0, mix_buffer, 1, 2, _numFrames);
+         }
+
+         mtx_param.unlock();
+
+      } // if bPlaying
+      else
+      {
+         outL.fill(0);
+         outR.fill(0);
+      }
+   }
+
+}

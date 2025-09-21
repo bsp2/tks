@@ -1,0 +1,337 @@
+// ----
+// ---- file   : CycleState.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 18Aug2020
+// ---- changed: 19Aug2020, 20Aug2020, 22Aug2020, 23Aug2020, 28Aug2020, 13Sep2020, 22Sep2020
+// ----          12Oct2020, 13Oct2020, 14Oct2020, 30Jul2021, 31Jul2021, 23Aug2021, 31Aug2021
+// ----          01Sep2021, 16Apr2023, 19Apr2023, 04May2023, 05May2023, 06May2023, 09May2023
+// ----          17Sep2023, 23Dec2023, 06Jan2024, 17Jan2024, 18Jan2024, 19Jan2024, 21Jan2024
+// ----          10Feb2024, 12Aug2024, 13Aug2024, 15Aug2024, 23Sep2024, 14Jun2025
+// ----
+// ----
+// ----
+
+module MCycleState;
+
+
+// <class.png>
+class CycleState {
+   define int MAX_PATCHES = 32;
+
+   int last_selected_patch_idx;  // 0..n
+
+   boolean b_patch_by_zone;
+   boolean b_recalc_all;  // true=auto-recalc all patches when single patch changes
+
+   CyclePatch *[] patches;
+
+   static CyclePatch *empty_patch;
+
+
+   // <method_init.png>
+   public method init() {
+      last_selected_patch_idx = 0;
+      b_patch_by_zone = STConfig.b_cycle_patch_by_zone;
+
+      initPatches();
+   }
+
+   // <method_exit.png>
+   public method exit() {
+      CyclePatch *sp;
+      foreach sp in patches
+         sp.exit();
+   }
+
+   // <method.png>
+   public method unloadVoicePlugins() {
+      CyclePatch *sp;
+      foreach sp in patches
+         sp.unloadVoicePlugins();
+   }
+
+   // <method.png>
+   public method reloadVoicePlugins() {
+      CyclePatch *sp;
+      foreach sp in patches
+         sp.reloadVoicePlugins();
+   }
+
+   // <method.png>
+   public method initPatches() {
+
+      if(null == empty_patch)
+      {
+         empty_patch <= new CyclePatch;
+         empty_patch.init(null/*emptyPatch*/, -1/*patchIdx*/);
+      }
+
+      patches.free();
+      int patchIdx = 0;
+      loop(MAX_PATCHES)
+      {
+         CyclePatch sp <= new CyclePatch;
+         sp.init(empty_patch, patchIdx++);
+         patches.add(#(deref sp));
+      }
+   }
+
+   // <method_get.png>
+   public method getPatchByIdx(int _idx) : CyclePatch {
+      return patches.get(_idx);
+   }
+
+   // <method_get.png>
+   public method getLastUsedPatchIdx() : int {
+      int r = -1;
+      CyclePatch *sp;
+      int spIdx = 0;
+      foreach sp in patches
+      {
+         if(sp.isUsed())
+            r = spIdx;
+         spIdx++;
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   public method findLastAssignedPatchIdx() : int {
+      int r = -1;
+      CyclePatch *sp;
+      int spIdx = 0;
+      foreach sp in patches
+      {
+         if(CyclePatch.TARGET_ZONE_NONE != sp.target_zone_idx)
+            r = spIdx;
+         spIdx++;
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPatchIdx() : int {
+      CyclePatch *sp;
+      int spIdx = 0;
+      foreach sp in patches
+      {
+         if(CyclePatch.TARGET_ZONE_NONE == sp.target_zone_idx)
+            return spIdx;
+         spIdx++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findPatchIdxByZoneIdx(int _zoneIdx) : int {
+      CyclePatch *sp;
+      int spIdx = 0;
+      foreach sp in patches
+      {
+         if(sp.target_zone_idx == _zoneIdx)
+            return spIdx;
+         spIdx++;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public method shiftTargetZones(int _firstZoneIdx, int _delta) {
+      // called when insert/deleting zones
+      CyclePatch *sp;
+      foreach sp in patches
+      {
+         if(sp.target_zone_idx >= _firstZoneIdx)
+            sp.target_zone_idx = sp.target_zone_idx + _delta;
+      }
+   }
+
+   // <method.png>
+   public method swapTargetZones(int _leftZoneIdx) {
+      // called when moving zones up/down
+      CyclePatch *sp;
+      foreach sp in patches
+      {
+         if(sp.target_zone_idx == _leftZoneIdx)
+            sp.target_zone_idx = sp.target_zone_idx + 1;
+         else if(sp.target_zone_idx == (_leftZoneIdx + 1))
+            sp.target_zone_idx = sp.target_zone_idx - 1;
+      }
+   }
+
+   // <method_set.png>
+   public method setEnableRecalcAll(boolean _bEnable) {
+      b_recalc_all = _bEnable;
+   }
+
+   // <method_update.png>
+   public method updateSharedPatchArgs(int _patchIdx, String _argId, float _f) : int {
+      int numUpdated = 0;
+
+      CyclePatch *sp;
+      foreach sp in patches
+      {
+         if(sp.patch_idx != _patchIdx)
+         {
+            if(sp.shared_patch_idx == _patchIdx)
+            {
+               if(sp.isSharedArg(_argId))
+               {
+                  sp.setArgValue(_argId, _f);
+                  numUpdated++;
+               }
+            }
+         }
+      }
+
+      return numUpdated;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Ver
+      ofs.i16 = 3;
+
+      // Patch-by-zone (v2+)
+      ofs.i8 = b_patch_by_zone;
+
+      // Recalc-all (v3+)
+      ofs.i8 = b_recalc_all;
+
+      int lastUsedIdx = getLastUsedPatchIdx();
+      // trace "xxx CycleState::saveState: lastUsedIdx="+lastUsedIdx;
+
+      // Num patches
+      ofs.i8 = lastUsedIdx + 1;
+
+      int spIdx = 0;
+      loop(lastUsedIdx + 1)
+      {
+         CyclePatch sp <= patches.get(spIdx);
+         // trace "xxx CycleState::saveState: write patch at offset "+ofs.offset+" spIdx="+spIdx+" lastUsedIdx="+lastUsedIdx;
+         sp.saveState(ofs);
+         // trace "xxx CycleState::saveState:   END write patch at offset "+ofs.offset;
+         spIdx++;
+      }
+
+      // Last selected patch idx
+      ofs.i8 = last_selected_patch_idx;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      short ver = ifs.u16;
+      // trace "xxx CycleState::loadState: ver="+ver;
+      if(1 <= ver <= 3)
+      {
+         if(ver >= 2)
+         {
+            // Patch-by-zone (v2+)
+            b_patch_by_zone = ifs.b8;
+         }
+
+         if(ver >= 3)
+         {
+            // Recalc-all (v3+)
+            b_recalc_all = ifs.b8;
+         }
+
+         unloadVoicePlugins();
+
+         // int t = milliSeconds();
+         initPatches();
+         // t = milliSeconds() - t;
+         // Global.Profile("Sample::loadState: initPatches() took "+t+" milliseconds");
+
+
+         int numPatches = ifs.u8;
+         // trace "xxx CycleState: numPatches="+numPatches;
+         int spIdx = 0;
+         loop(numPatches)
+         {
+            CyclePatch sp <= patches.get(spIdx);
+            if(!sp.loadState(ifs))
+            {
+               trace "[---] CycleState: failed to load patch "+(spIdx+1)+"/"+numPatches;
+               return false;
+            }
+            spIdx++;
+         }
+
+         // Last selected patch idx
+         last_selected_patch_idx = ifs.u8;
+
+         return true;
+      }
+      else
+         Global.Error("CycleState::loadState: invalid ver="+ver);
+
+      return false;
+   }
+
+   // <method.png>
+   public method copyFrom(CycleState _o) {
+      last_selected_patch_idx = _o.last_selected_patch_idx;
+      b_patch_by_zone         = _o.b_patch_by_zone;
+      b_recalc_all            = _o.b_recalc_all;
+
+      CyclePatch *sp;
+      int spIdx = 0;
+      foreach sp in patches
+      {
+         CyclePatch spo <= _o.patches.get(spIdx++);
+         sp.copyFrom(spo);
+      }
+   }
+
+   // <method_find.png>
+   public method findPatchPluginIds(StringArray _ret) {
+      CyclePatch *sp;
+      foreach sp in patches
+      {
+         if(CyclePatch.TARGET_ZONE_PATCH_PLUGIN == sp.target_zone_idx)
+         {
+            //trace "xxx CycleState::findPatchPluginIds: TARGET_ZONE_PATCH_PLUGIN. sp.last_compiled_plugin_id=\""+sp.last_compiled_plugin_id+"\"";
+            if(!sp.last_compiled_plugin_id.isBlank())
+               _ret.add(sp.last_compiled_plugin_id);
+         }
+      }
+   }
+
+   // <method.png>
+   public method mergePatchesFrom(CycleState _o, int _zoneShift) : boolean {
+      CyclePatch *pO;
+      foreach pO in _o.patches
+      {
+         if(pO.isUsed())
+         {
+            int patchIdx = findFirstUnusedPatchIdx();
+            if(patchIdx >= 0)
+            {
+               CyclePatch p <= patches.get(patchIdx);
+               p.copyFrom(pO);
+               if(p.target_zone_idx >= 0)  // targeting zone ?
+               {
+                  trace "[trc] CycleState::mergePatchesFrom: relocate target_zone_idx from "+p.target_zone_idx+" to "+(p.target_zone_idx + _zoneShift);
+                  p.target_zone_idx += _zoneShift;
+               }
+            }
+            else
+            {
+               trace "[~~~] CycleState::mergePatchesFrom: findFirstUnusedPatchIdx() failed (all patches in use)";
+               return false;
+            }
+         }
+      }
+      return true;
+   }
+
+}

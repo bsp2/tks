@@ -1,0 +1,223 @@
+// ----
+// ---- file   : InstancesTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 16Mar2018
+// ---- changed: 17Mar2018, 05Jan2019, 26Aug2019, 20Nov2022, 04Oct2023, 02Dec2023, 03Aug2024
+// ----          04Oct2024
+// ----
+// ----
+// ----
+
+module MInstancesTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class InstancesTMEntry {
+   int     lane_nr;
+   String  caption;
+   Mod    *mod;
+}
+
+
+// <class.png>
+class InstancesTM : TableModel {
+
+   define int COL_INSTANCE_ID = 0;
+   define int COL_LANE        = 1;
+   define int COL_NAME        = 2;
+
+   Track *track;
+
+   PointerArray entries;  // InstancesTMEntry instances
+
+
+   // <method.png>
+   public method rebuildEntries(Track _track) {
+      track <= _track;
+      entries.free();
+
+      // Add VST and Sample mods
+      Lane *lane;
+      int laneNr = 1;
+      foreach lane in _track.lanes
+      {
+         Mod *mod;
+         foreach mod in lane.mods
+         {
+            InstancesTMEntry en <= new InstancesTMEntry;
+            en.lane_nr  = laneNr;
+            en.caption  = mod.getNameForInstanceTable();
+            en.mod     <= mod;
+            entries.add(#(deref en));
+         }
+
+         // Next lane
+         laneNr++;
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedEntry() : InstancesTMEntry {
+      int rowIdx = getCursorIndex();
+      if(-1 != rowIdx)
+         return entries.get(rowIdx);
+      return null;
+   }
+
+   // <method_find.png>
+   public method findRowIdxByMod(Mod _mod) : int {
+      InstancesTMEntry *en;
+      int rowIdx = 0;
+      foreach en in entries
+      {
+         if(@(en.mod) == @(_mod))
+            return rowIdx;
+         rowIdx++;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public virtual tableModelChanged() {
+      TableModel::tableModelChanged();
+   }
+
+   // <method_get.png>
+   public virtual getNumColumns() : int {
+      return 3;
+   }
+
+   // <method_get.png>
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id", "Lane", "Name"][_col];
+   }
+
+   // <method_get.png>
+   public virtual getNumRows() : int {
+      return (null != track) ? entries.numElements : 0;
+   }
+
+   // <method_get.png>
+   public virtual getCellCaption(int _col, _row) : String {
+      InstancesTMEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         switch(_col)
+         {
+            case COL_INSTANCE_ID:
+               return (null != en.mod) ? (en.mod.instance_id) : -1;
+
+            case COL_LANE:
+               return String(en.lane_nr);
+
+            case COL_NAME:
+               return en.caption;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+      lb.setEnableFillBackground(true);
+      return lb;
+   }
+
+   // <method_update.png>
+   public virtual updateCellRendererColors(Layer l, int _col, int _row, int _visibleRow) {
+      TableModel::updateCellRendererColors(l, _col, _row, _visibleRow);
+      if(cursor_index != _row)
+      {
+         l.setBackgroundColor(#df343436);
+         l.setForegroundColor(#ffc8c2be);
+         l.setEnableFillBackground(true);
+      }
+   }
+
+   // <method_get.png>
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_INSTANCE_ID:
+            return 32;
+
+         case COL_LANE:
+            return 12;
+
+         case COL_NAME:
+            return 140;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_INSTANCE_ID:
+            return 32;
+
+         case COL_LANE:
+            return 12;
+
+         case COL_NAME:
+            return 140;
+      }
+   }
+
+   public virtual handleCellEditing(TableCellEditor _tce) {
+      switch(_tce.table_col)
+      {
+         case COL_NAME:
+            handleCellEdited(_tce);
+            break;
+      }
+   }
+
+   public virtual handleCellEdited(TableCellEditor _tce) {
+
+      InstancesTMEntry en <= entries.get(_tce.table_row);
+      if(null != en)
+      {
+         TableCellEditorString *tcestr;
+
+         switch(_tce.table_col)
+         {
+            case COL_NAME:
+               tcestr <= _tce;
+               en.mod.setName(tcestr.getText());
+               en.caption = en.mod.getName();
+               root_form.pg_track.updateModGrid();
+
+               tableModelChanged();
+               break;
+         }
+      }
+   }
+
+   public virtual getCellEditor(int _col, int _row) : TableCellEditor {
+
+      InstancesTMEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         TableCellEditorString *tcestr;
+
+         switch(_col)
+         {
+            case COL_NAME:
+               tcestr <= new TableCellEditorString;
+               tcestr.initStringEditor(en.mod.getName());
+               return deref tcestr;
+         }
+      }
+   }
+
+}

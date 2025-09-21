@@ -1,0 +1,543 @@
+// ----
+// ---- file   : AudioClip.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 06Dec2018, 07Dec2018, 11Dec2018, 12Dec2018, 15Dec2018, 16Dec2018, 22Dec2018
+// ----          05Jan2019, 18Jan2019, 31May2019, 09Feb2020, 14May2020, 15May2020, 17Aug2020
+// ----          27Nov2020, 08Feb2021, 25Aug2021, 26Sep2022, 13Feb2023, 24Mar2023, 29Jul2023
+// ----          23Sep2024, 24Sep2024, 08Dec2024
+// ----
+// ----
+// ----
+
+module MAudioClip;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <class.png>
+class AudioClip {
+   // (todo) start_frames
+   // (todo) end_frames
+   // (todo) frame_offset
+   define int MAX_SEG_FRAMES = 100000;  // ~2.26sec @44.1kHz
+   define int REC_APPEND_SILENCE_NUM_FRAMES = 10000;
+
+   int num_channels;  // 1=mono, 2=stereo
+   float sample_rate;
+
+   FloatArray *[] segments;
+   FloatArray *cur_seg;
+
+   StWaveform waveform;  // references sur_seg
+
+   StWaveform wf_live_capture;  // last_live_capture
+   FloatArray fa_live_capture;
+   define int LC_STATE_WAITING         = 0;  // waiting for first sample
+   define int LC_STATE_SIGNAL          = 1;  // have signal
+   define int LC_STATE_SIGNAL_WAITFADE = 2;  // (still) have signal after forced copy (sysex) (don't store to buffer)
+   define int LC_STATE_SILENCE         = 3;  // n seconds of silence after last signal
+   int     live_capture_state;
+   int     live_capture_num_silent_frames;
+
+   String last_exported_wav_relpathname;
+
+   boolean b_modified;
+
+   public method init() {
+      b_modified = false;
+   }
+
+   public method prepareRecord() {
+      if(current_project.b_record_replace || (0 == segments.numElements))
+      {
+         segments.free();
+         addSegment();
+         sample_rate = Audio.mix_rate;
+      }
+      else
+      {
+         // Add some silence before new recording
+         local FloatArray silence;
+         silence.alloc(REC_APPEND_SILENCE_NUM_FRAMES * num_channels);
+         silence.useAll();
+         silence.fill(0);
+         addSampleFrames(silence, 0, num_channels, REC_APPEND_SILENCE_NUM_FRAMES);
+      }
+      b_modified = true;
+   }
+
+   protected =replay= method updateWaveform() {
+      waveform.numChannels = num_channels;
+      waveform.sampleRate = sample_rate;
+      waveform.baseFrequency = 261.63/*c-4*/; // 440.0/*a-4*/;
+      waveform.setSampleData(cur_seg, num_channels);
+   }
+
+   public =replay= method updateWaveformLiveCapture() {
+      wf_live_capture.numChannels = num_channels;
+      wf_live_capture.sampleRate = sample_rate;
+      wf_live_capture.baseFrequency = 261.63/*c-4*/; // 440.0/*a-4*/;
+      wf_live_capture.setSampleData(fa_live_capture, num_channels);
+   }
+
+   public method addSegment() {
+      cur_seg <= new FloatArray;
+      cur_seg.alloc(MAX_SEG_FRAMES * num_channels);
+      segments.add(#(deref cur_seg));
+      updateWaveform();
+      b_modified = true;
+   }
+
+   public =replay= method allocEmpty_Sync() {
+      addSegment();
+      sample_rate = Audio.mix_rate;
+      updateWaveform();
+   }
+
+   public =replay= method lazyAllocEmptyLiveCapture_Sync() {
+      if(0 == fa_live_capture.numElements)
+      {
+         fa_live_capture.alloc(MAX_SEG_FRAMES * num_channels);
+      }
+      sample_rate = Audio.mix_rate;
+      updateWaveformLiveCapture();
+   }
+
+   public method getTotalNumFrames() : int {
+      int r = 0;
+      FloatArray *seg;
+      foreach seg in segments
+         r += seg.numElements;
+      return r  / num_channels;
+   }
+
+   public method addSampleFrames(FloatArray _src, int _srcOff, int _numSrcChannels, int _numFrames) {
+
+      if(_numSrcChannels < num_channels)
+      {
+         trace "[!!!] AudioClip::addSampleFrames: internal error: numSrcChannels < num_channels ("+_numSrcChannels+" < "+num_channels+")";
+         return;
+      }
+
+      int numLeft = _numFrames;
+
+      while(numLeft > 0)
+      {
+         if(cur_seg.numElements == cur_seg.maxElements)
+            addSegment();
+
+         int numFrames = mathMini((cur_seg.maxElements - cur_seg.numElements) / num_channels, numLeft);
+         int outOff = cur_seg.numElements;
+
+         //tksampleedit_copy_mono_adv_to_mono_adv(YAC_Object *_faOut, sUI _outOff, sUI _outAdv, YAC_Object *_faIn, sUI _inOff, sUI _inAdv, sUI _numFrames);
+         if(2 == num_channels)
+         {
+            cur_seg.numElements = cur_seg.numElements + (numFrames * 2);
+
+            // Append left channel
+            tksampleedit_copy_mono_adv_to_mono_adv(cur_seg, outOff + 0, 2/*outAdv*/,
+                                                   _src, _srcOff + 0, _numSrcChannels/*inAdv*/,
+                                                   numFrames
+                                                   );
+
+            // Append right channel
+            tksampleedit_copy_mono_adv_to_mono_adv(cur_seg, outOff + 1, 2/*outAdv*/,
+                                                   _src, _srcOff + 1, _numSrcChannels/*inAdv*/,
+                                                   numFrames
+                                                   );
+         }
+         else
+         {
+            cur_seg.numElements = cur_seg.numElements + (numFrames * 1);
+
+            // Append mono channel
+            tksampleedit_copy_mono_adv_to_mono_adv(cur_seg, outOff + 0, 1/*outAdv*/,
+                                                   _src, _srcOff + 0, _numSrcChannels/*inAdv*/,
+                                                   numFrames
+                                                   );
+         }
+
+         numLeft -= numFrames;
+         _srcOff += numFrames * _numSrcChannels;
+      }
+
+      b_modified = true;
+   }
+
+   // <method.png>
+   public method addSampleFramesInputRing(int _srcCh, int _srcOff, int _numFrames) {
+
+      int numLeft = _numFrames;
+
+      while(numLeft > 0)
+      {
+         if(cur_seg.numElements == cur_seg.maxElements)
+            addSegment();
+
+         int numFrames = mathMini((cur_seg.maxElements - cur_seg.numElements) / num_channels, numLeft);
+         int outOff = cur_seg.numElements;
+
+         int chIdx = 0;
+         loop(num_channels)
+         {
+            FloatArray inBuf <= replay.input_buffers.get(_srcCh + chIdx);
+            if(null != inBuf)  // (note) should never be null
+            {
+               tksampleedit_copy_mono_adv_ring_to_mono_adv(cur_seg, outOff + chIdx, num_channels,
+                                                           inBuf, _srcOff, 1, Replay.INPUT_RINGBUFFER_SIZE,
+                                                           numFrames
+                                                           );
+            }
+
+            // Next channel
+            chIdx++;
+         }
+
+         cur_seg.numElements = cur_seg.numElements + (numFrames * num_channels);
+         numLeft -= numFrames;
+         _srcOff = (_srcOff + numFrames) % Replay.INPUT_RINGBUFFER_SIZE;
+      }
+
+      b_modified = true;
+   }
+
+   // <method.png>
+   public method handleLiveCaptureInput(FloatArray _src, int _srcOff, int _numSrcChannels, int _numFrames) {
+      // (note) _srcOff is 1 when capturing right channel from stereo track or main output
+      // (note) the buffer is always rather small (64 sample frames) so we can get away with testing the entire buffer
+      if(_numSrcChannels < num_channels)
+      {
+         // should not be reachable
+         return;
+      }
+
+      float rms = tksampleedit_calc_rms_mono_adv(_src, _srcOff, _numSrcChannels, _numFrames);
+      if(num_channels > 1)
+         rms = mathMaxf(rms, tksampleedit_calc_rms_mono_adv(_src, _srcOff + 1, _numSrcChannels, _numFrames));
+
+      boolean bSilence = (rms < ((LC_STATE_WAITING == live_capture_state) ? STConfig.live_capture_silence_threshold_start_lvl : STConfig.live_capture_silence_threshold_end_lvl));
+      if((LC_STATE_SIGNAL == live_capture_state) && bSilence && (0 == live_capture_num_silent_frames))
+         trace "xxx handleLiveCaptureInput: detect silence";
+      updateLiveCaptureState(bSilence, _numFrames);
+   }
+
+   // <method.png>
+   public method handleLiveCaptureInputRing(int _srcCh, int _srcOff, int _numFrames) {
+
+      float rms = 0.0f;
+
+      int chIdx = 0;
+      loop(num_channels)
+      {
+         FloatArray inBuf <= replay.input_buffers.get(_srcCh + chIdx);
+
+         if(null != inBuf)  // (note) should never be null
+         {
+            rms = mathMaxf(rms,
+                           tksampleedit_calc_rms_mono_adv_ring(inBuf, _srcOff, 1/*adv*/, Replay.INPUT_RINGBUFFER_SIZE, _numFrames)
+                           );
+         }
+
+         // Next channel
+         chIdx++;
+      }
+
+      boolean bSilence = (rms < ((LC_STATE_WAITING == live_capture_state) ? STConfig.live_capture_silence_threshold_start_lvl : STConfig.live_capture_silence_threshold_end_lvl));
+      if((LC_STATE_SIGNAL == live_capture_state) && bSilence && (0 == live_capture_num_silent_frames))
+         trace "xxx handleLiveCaptureInputRing: detect silence";
+      updateLiveCaptureState(bSilence, _numFrames);
+   }
+
+   // <method.png>
+   protected method updateLiveCaptureState(boolean _bSilence, int _numFrames) {
+      switch(live_capture_state)
+      {
+         case LC_STATE_WAITING:
+            if(!_bSilence)
+            {
+               live_capture_state = LC_STATE_SIGNAL;
+               live_capture_num_silent_frames = 0;
+               trace "xxx updateLiveCaptureState: enter LC_STATE_SIGNAL";
+            }
+            break;
+
+         case LC_STATE_SIGNAL:
+         case LC_STATE_SIGNAL_WAITFADE:
+            if(_bSilence)
+            {
+               live_capture_num_silent_frames += _numFrames;
+               if(live_capture_num_silent_frames >= (STConfig.live_capture_silence_threshold_sec * sample_rate))
+               {
+                  if(LC_STATE_SIGNAL_WAITFADE == live_capture_state)
+                  {
+                     live_capture_state = LC_STATE_WAITING;
+                     trace "xxx updateLiveCaptureState: enter LC_STATE_WAITING";
+                  }
+                  else
+                  {
+                     live_capture_state = LC_STATE_SILENCE;
+                     trace "xxx updateLiveCaptureState: enter LC_STATE_SILENCE";
+                  }
+               }
+            }
+            else
+            {
+               live_capture_num_silent_frames = 0;
+            }
+            break;
+
+         case LC_STATE_SILENCE:
+            // state transition from this state is initiated by UI thread (after copying live_capture buffer)
+            break;
+      }
+   }
+
+   // <method.png>
+   public method copyToLiveCaptureBuffer(boolean _bForce) : boolean {
+      boolean ret = true;
+
+      if(ret)
+      {
+         mergeSegments();
+
+         FloatArray faSeg <= segments.get(0);
+         fa_live_capture = faSeg;
+
+         segments.free();
+         addSegment();
+
+         updateWaveformLiveCapture();
+
+         Global.Debug("AudioTrack: copied "+faSeg.numElements+" samples to live_capture buffer");
+      }
+
+      if(!_bForce)
+      {
+         live_capture_state = LC_STATE_WAITING;
+      }
+      else
+      {
+         live_capture_state = LC_STATE_SIGNAL_WAITFADE;
+      }
+
+      return ret;
+   }
+
+   // <method_get.png>
+   public =replay= method getCurrentSampleData() : FloatArray {
+      if(replay.b_live_capture)
+         return fa_live_capture;
+      else
+         return cur_seg;
+   }
+
+   // <method_get.png>
+   public method getCurrentWaveform() : StWaveform {
+      if(replay.b_live_capture)
+         return wf_live_capture;
+      else
+         return waveform;
+   }
+
+   // <method.png>
+   static WavIOReadFxn(AudioClip _clip, int _segIdx) : FloatArray {
+      return _clip.segments.get(_segIdx);
+   }
+
+   // <method.png>
+   public =replay= method mergeSegments() {
+      if(segments.numElements > 1)
+      {
+         int totalNumFrames = getTotalNumFrames();
+         FloatArray faNew <= new FloatArray;
+         int numSeg = segments.numElements;
+         if(faNew.alloc(totalNumFrames * num_channels))
+         {
+            FloatArray *faSeg;
+            foreach faSeg in segments
+               faNew.addArray(faSeg, 0, faSeg.numElements);
+            segments.free();
+            segments.add(#(deref faNew));
+            cur_seg <= faNew;
+            updateWaveform();
+            b_modified = true;
+            Global.Debug("AudioClip::mergeSegments: merged "+numSeg+" segments ("+totalNumFrames+" frames)");
+         }
+         else
+         {
+            trace "[---] AudioClip::mergeSegments: failed to alloc "+totalNumFrames+" sample frames";
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method lazyMergeSegments() {
+      // called by AudioTracksForm::handleSelectTrack()
+
+      // [16Dec2018] lazy alloc first segment so sampleview becomes editable (e.g. drop files)
+      if(replay.b_live_capture)
+      {
+         lazyAllocEmptyLiveCapture_Sync();
+      }
+      else
+      {
+         if(0 == segments.numElements)
+         {
+            allocEmpty_Sync();
+         }
+         else if(segments.numElements > 1)
+         {
+            mergeSegments();
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method convertToNumChannels(int _num) {
+      mergeSegments();
+
+      if(num_channels != _num)
+      {
+         int numFrames = (null != cur_seg) ? (cur_seg.numElements / num_channels) : 0;
+
+         if(numFrames > 0)
+         {
+            local FloatArray newSmp;
+
+            if((1 == num_channels) && (2 == _num))
+            {
+               // Mono to stereo
+               newSmp.alloc(numFrames * 2);
+               newSmp.useAll();
+
+               tksampleedit_copy_mono_adv_to_mono_adv(newSmp, 0, 2,
+                                                      cur_seg, 0, 1,
+                                                      numFrames
+                                                      );
+
+               tksampleedit_copy_mono_adv_to_mono_adv(newSmp, 1, 2,
+                                                      cur_seg, 0, 1,
+                                                      numFrames
+                                                      );
+            }
+            else if((2 == num_channels) && (1 == _num))
+            {
+               // Stereo to Mono (keep left ch)
+               newSmp.alloc(numFrames);
+               newSmp.useAll();
+
+               tksampleedit_copy_mono_adv_to_mono_adv(newSmp, 0, 1,
+                                                      cur_seg, 0, 2,
+                                                      numFrames
+                                                      );
+
+            }
+
+            cur_seg.unlinkFrom(newSmp);
+         }
+
+         num_channels = _num;
+         waveform.numChannels = _num;
+      }
+   }
+
+   // <save.png>
+   public method exportWav(String _relpathname) {
+      String nativeRootPath <= Global.GetAudioTrackWavRootPath();
+      String nativePathName = nativeRootPath + "/" + _relpathname;
+
+      WavIO.SaveLocalFxn(nativePathName,
+                         AudioClip.WavIOReadFxn,
+                         this/*userData*/,
+                         getTotalNumFrames(),
+                         sample_rate,
+                         num_channels,
+                         Sample.KEY_MIDDLE_C/*C-5*/, 0/*loopStart*/, 0/*loopEnd*/,
+                         null/*bwfHint*/
+                         );
+
+      last_exported_wav_relpathname = _relpathname;
+
+      b_modified = false;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      ofs.i16 = 1; // ver
+
+      // Num channels
+      ofs.i8 = num_channels;
+
+      // Sample rate
+      ofs.f32 = sample_rate;
+
+      // Last exported WAV file relative path name
+      Utils.WriteString(ofs, last_exported_wav_relpathname);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         segments.free();
+
+         // Num channels
+         num_channels = ifs.i8;
+
+         // Sample rate
+         sample_rate = ifs.f32;
+
+         // Last exported WAV file relative path name
+         Utils.ReadString(ifs, last_exported_wav_relpathname);
+
+         Global.Debug("AudioClip::loadState: last_exported_wav_relpathname=\""+last_exported_wav_relpathname+"\"");
+
+         if(!last_exported_wav_relpathname.isBlank())
+         {
+            // Try to reload wav file
+            String rootPath <= Global.GetAudioTrackWavRootPath();
+            String pathName = rootPath + "/" + last_exported_wav_relpathname;
+            pathName.replace("//", "/");
+            addSegment();
+            Integer retSampleRate;
+            Integer retNumCh;
+            local WavIO_BWF bwf;
+            try
+            {
+               WavIO.LoadLocal(pathName, cur_seg,
+                               retSampleRate,
+                               retNumCh,
+                               null/*retFileInfo*/,
+                               null/*sampleHint*/,
+                               bwf/*bwfHint*/
+                               );
+               trace "[...] AudioClip::loadState: reloaded WAV file from \""+pathName+"\"";
+               sample_rate = sample_rate;
+               num_channels = retNumCh;
+               updateWaveform();
+            }
+            catch(Error e)
+            {
+               trace "[~~~] AudioClip::loadState: caught exception e="+e.message;
+               trace "[~~~] AudioClip::loadState: failed to reload WAV file from \""+pathName+"\"";
+               segments.free();
+            }
+         }
+
+         updateWaveform();
+         b_modified = false;
+
+         return true;
+      }
+      return false;
+   }
+}

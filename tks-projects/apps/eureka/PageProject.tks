@@ -1,0 +1,1489 @@
+// ----
+// ---- file   : PageProject.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 10Feb2018
+// ---- changed: 16Feb2018, 17Feb2018, 21Feb2018, 23Feb2018, 24Feb2018, 07Mar2018, 20May2018
+// ----          09Dec2018, 17Dec2018, 21Dec2018, 06Jan2019, 17Nov2019, 04Feb2021, 31May2021
+// ----          05Feb2022, 06Feb2022, 11Feb2022, 10Jul2022, 04Aug2022, 16Mar2023, 29Jul2023
+// ----          16Aug2023, 21Sep2023, 04Oct2023, 06Oct2023, 31Oct2023, 04Nov2023, 05Nov2023
+// ----          08Nov2023, 16Nov2023, 17Nov2023, 18Nov2023, 02Dec2023, 15Dec2023, 05Jul2024
+// ----          07Jul2024, 12Aug2024, 19Sep2024, 20Sep2024, 05Oct2024, 23Dec2024, 30Dec2024
+// ----          16Mar2025, 09Sep2025
+// ----
+// ----
+// ----
+
+module MPageProject;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageProject : Page {
+
+   protected CheckBox *cb_overview;
+   protected ComboBox *cm_track_layout_all;
+   protected Button   *bt_add;
+
+   protected ScrollPane *sp_tracks;
+   protected TrackForm *[] track_forms;  // TrackForm instances
+   protected Panel *pn_trackforms;
+
+   protected LayerSwitch *ls_add_track_v;
+   protected Button *bt_add_track_v;
+
+   protected Button *bt_audio_tracks;
+   protected Button *bt_instr_curtrack;
+   protected Button *bt_samples;
+
+   protected PopupMenu *pm_context;
+
+   public static int focus_idx;
+
+   protected boolean b_add_track_v;  // after updateTrackForms(). true=add button below tracks, false=right next to last track
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageProject.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public method pageGetParent() : int {
+      return RootForm.PAGE_AUDIO;
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      TrackForm tf <= track_forms.get(focus_idx);
+      if(null != tf)
+         UI.SetKeyboardFocus(tf);
+   }
+
+   // <ui_kbd.png>
+   public virtual pageForceKbdFocusSelMode() {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      cb_overview.setSelected(current_project.b_track_overview);
+      cm_track_layout_all.setSelectedOption(current_project.track_layout_all_idx);
+
+      if(Project.CheckResetQueuedTrackFormUpdate())
+         updateTrackForms();
+
+      RedirectRemoteEventsToCurrentTrack();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      if(null != pm_context)
+         pm_context.hide();
+
+      replay.redirectRemoteEvents(-1/*devIdx*/, -1/*midiCh*/);
+
+      Page::pageLeave();
+   }
+
+   // <method.png>
+   public static RedirectRemoteEventsToCurrentTrack() {
+
+      Track track <= current_project.getTrackByIdx(focus_idx);
+
+      if(null != track)
+      {
+         // Redirect remote events to current track
+         replay.redirectRemoteEvents(track.dev_idx, track.midi_ch);
+      }
+      else
+      {
+         // Should not be reachable (no track selected)
+         replay.redirectRemoteEvents(-1/*devIdx*/, -1/*midiCh*/);
+      }
+   }
+
+   // <method_get.png>
+   public method getNumTracksPerRow() : int {
+      if(STConfig.pgproject_num_tracks_per_row <= 0)
+         return root_form.getSizeX() / (TrackForm.ESTIMATED_SIZE_X * UI.font_scaling);
+      else
+         return STConfig.pgproject_num_tracks_per_row;
+   }
+
+   // <ui_update.png>
+   protected method removeTrackForms() {
+      UI.LoseKeyboardFocusIfWithin(this, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(this);
+      UI.SetKeyboardFocus(null);  // should not be needed but is
+
+      pn_trackforms.removeChildHierarchy();
+      track_forms.free();
+   }
+
+   // <ui_update.png>
+   public method updateTrackForms() {
+
+      Global.Debug3("PageProject: updateTrackForms");
+      removeTrackForms();
+      Global.Debug3("PageProject: updateTrackForms2");
+
+      float viewY = sp_tracks.getViewOffsetY();
+
+      Track *track;
+      TrackForm *tf;
+      int trackIdx = 0;
+
+      boolean bShowAddTrackV = !current_project.b_track_overview;
+
+      if(current_project.b_track_overview)
+      {
+         // Grid layout
+         int numGridX = getNumTracksPerRow();
+         int cx = 0;
+         Panel tfp <= null;
+
+         // trace "xxx PageProject::updateTrackForms: current_project.tracks="+#(current_project.tracks);
+
+         foreach track in current_project.tracks
+         {
+            if(0 == cx)
+            {
+               tfp <= Panel.New();
+               tfp.setPadTop(2);
+            }
+
+            tf <= new TrackForm;
+            tf.init(track, trackIdx);
+            track_forms.add(tf);
+
+            tfp.addLayer(deref tf, Layout.RIGHT);
+
+            if(++cx == numGridX)
+            {
+               pn_trackforms.addLayer(deref tfp, Layout.BOTTOM);
+               tfp <= null;
+               cx = 0;
+            }
+
+            trackIdx++;
+         }
+
+         if(null != tfp)
+         {
+            pn_trackforms.addLayer(deref tfp, Layout.BOTTOM);
+            tf.setEnableShowAddTrackH(true);
+         }
+         else
+         {
+            bShowAddTrackV = true;
+         }
+      }
+      else
+      {
+         // Vertical layout
+         foreach track in current_project.tracks
+         {
+            tf <= new TrackForm;
+            tf.init(track, trackIdx);
+            track_forms.add(tf);
+            if(trackIdx > 0)
+               tf.setPadTop(4);
+            else
+               tf.setPadTop(0);
+            pn_trackforms.addLayer(deref tf, Layout.BOTTOM);
+            trackIdx++;
+         }
+      }
+
+      Global.Debug3("PageProject: updateTrackForms4");
+
+      b_add_track_v = bShowAddTrackV;
+      ls_add_track_v.switchToLayerNr(bShowAddTrackV);
+
+      sp_tracks.updateLayout();
+      relayout();
+
+      sp_tracks.setViewOffsetY(viewY);
+
+      updateFocusColors();
+
+      Global.Debug3("PageProject: updateTrackForms5 (leave)");
+   }
+
+   // <method.png>
+   public method invalidateTrackForms() {
+      // Called after (re-)loading project
+      pn_trackforms.removeChildHierarchy();
+      track_forms.free();
+   }
+
+   // <method_find.png>
+   protected method findTrackFormByTrack(Track _track) : TrackForm {
+      TrackForm *tf;
+      foreach tf in track_forms
+      {
+         if(@(tf.track) == @(_track))
+            return tf;
+      }
+      return null;
+   }
+
+   // <method_set.png>
+   public method setFocusIdx(int _idx) {
+      // called by AudioTrackForm::handleEditTrack()
+      focus_idx = _idx;
+      updateFocusColors();
+      RedirectRemoteEventsToCurrentTrack();
+   }
+
+   // <ui_update.png>
+   protected method updateFocusColors() {
+      int tfIdx = 0;
+      TrackForm *tf;
+      foreach tf in track_forms
+      {
+         tf.setEnableFocus(tfIdx == focus_idx);
+         tfIdx++;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateTrackFormOutputTrackNames() {
+      TrackForm *tf;
+      foreach tf in track_forms
+         tf.updateOutputTrackNames();
+   }
+
+   // <ui_update.png>
+   protected method updateMuteSolo() {
+      Global.Debug("PageProject::updateMuteSolo");
+      TrackForm *tf;
+      foreach tf in track_forms
+         tf.updateMuteSolo();
+   }
+
+   // <ui_show.png>
+   public method makeTrackVisible(int _trackIdx) {
+      TrackForm tf <= track_forms.get(_trackIdx);
+      if(null != tf)
+         sp_tracks.makeWidgetVisible(tf);
+   }
+
+   // <ui_handle.png>
+   public method handleAddTrackAutoOrder(boolean _bAtEnd, boolean _bClone) : Track {
+      // (note) 'bAtEnd=true': add after last track (click on small '+' button)
+      Track focusTrack <= current_project.getTrackByIdx(focus_idx);
+      if(_bAtEnd || focus_idx >= (current_project.tracks.numElements))
+         focus_idx = (current_project.tracks.numElements) - 1;
+      int idx = focus_idx;
+      if(-1 != idx)
+      {
+         // Insert after current track
+         idx++;
+      }
+      if(!_bAtEnd)
+      {
+         // Insert new track before master track (avoid additional processing latency)
+         int masterTrackIdx = current_project.findMasterTrackIdx();
+         if(-1 != masterTrackIdx)
+         {
+            if(idx > masterTrackIdx)
+               idx = masterTrackIdx;
+         }
+         Global.Debug("handleAddTrackAutoOrder: focus_idx="+focus_idx+" masterTrackIdx="+masterTrackIdx+" idx="+idx);
+      }
+      else
+      {
+         Global.Debug("handleAddTrackAutoOrder: idx="+idx);
+      }
+      Track newTrack <= handleAddTrack(null/*trackNameOrNull*/, idx);
+      if(_bClone && null != focusTrack)
+         newTrack.copyFrom(focusTrack);
+
+      updateTrackForms();
+
+      // // if(_bClone && null != focusTrack)
+      // // {
+         TrackForm tf <= findTrackFormByTrack(newTrack);
+         tf.focusNameWidget();
+      // // }
+      return newTrack;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAddTrack_Project(String _trackNameOrNull, int _idx) : Track {
+      // (note) idx=-1: append after last track, otherwise insert before 'idx'
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      current_project.trackReorderBegin();
+
+      // Auto-route to "master" track, if it exists
+      int masterTrackIdx = current_project.findMasterTrackIdx();
+
+      if(null == _trackNameOrNull)
+      {
+         // Find track nr
+         int nextTrackNr = 1;
+         Track *trackO;
+         foreach trackO in current_project.tracks
+         {
+            if(trackO.name == ("Trk"+nextTrackNr))
+               nextTrackNr++;
+            else
+               break;
+         }
+
+         _trackNameOrNull <= "Trk"+nextTrackNr;
+      }
+
+      Track track <= current_project.newTrack(_trackNameOrNull, _idx);
+      track.start();
+      focus_idx  = (-1 == _idx) ? (current_project.tracks.numElements - 1) : _idx;
+
+      if(-1 != masterTrackIdx)
+      {
+         Output trackOut <= track.getOutputByIdx(0);
+         trackOut.setTrackIdx(masterTrackIdx);
+         trackOut.setType(Output.TYPE_TRACK);
+      }
+
+      current_project.trackReorderEnd();  // update Output/Lane routings
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+      return track;
+   }
+
+   // <ui_handle.png>
+   public method handleAddTrack(String _trackNameOrNull, int _idx) : Track {
+
+      removeTrackForms();
+
+      Track track <= handleAddTrack_Project(_trackNameOrNull, _idx);
+
+      if(null != track)
+      {
+         updateTrackForms();
+
+         if(b_add_track_v)
+         {
+            sp_tracks.makeWidgetVisible(bt_add_track_v);
+         }
+         else
+         {
+            TrackForm tf <= track_forms.last;
+            if(null != tf)
+            {
+               Button btAddTrackH <= tf.findChildLayerById("bt_add_track_h");
+               if(null != btAddTrackH)
+               {
+                  sp_tracks.makeWidgetVisible(btAddTrackH);
+               }
+            }
+         }
+
+         Global.Print("Add track");
+      }
+      else
+      {
+         Global.Warning("Failed to add track");
+      }
+
+      return track;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAddAudioTrack_Project(Track _parentTrack, boolean _bStereo) : Track {
+      Track ret <= null;
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      byte audioTrackMidiCh = current_project.findFirstUnusedTrackMIDIChannel(STConfig.preferred_audio_track_dev_idx);
+      if(-1 != audioTrackMidiCh)
+      {
+         // Create sampler track
+         int midiTrackIdx = current_project.getTrackIdx(_parentTrack);
+         local String audioTrackName <= "a_"+_parentTrack.name;
+         Track audioTrack <= handleAddTrack(audioTrackName, midiTrackIdx + 1);
+         // (note) 'this' is now invalid
+         audioTrack.setDevIdx(STConfig.preferred_audio_track_dev_idx);
+         audioTrack.setMidiCh(audioTrackMidiCh);
+         audioTrack.parent_midi_track_dev_idx_hint = _parentTrack.dev_idx;
+         audioTrack.parent_midi_track_midi_ch_hint = _parentTrack.midi_ch;
+         Lane lane <= audioTrack.getLaneByIdx(0);
+         ModSample modSample <= lane.newMod("Sample");  // create ModSample instance
+
+         // Create sample namespace
+         int nspIdx = current_project.getOrCreateSampleNamespace(audioTrackName);
+         if(nspIdx > 0)
+         {
+            // Create empty sample
+            Sample smp <= current_project.newSample(audioTrackName+"_1", -1/*idxHint*/);
+            smp.setNamespaceIdx(nspIdx);
+            modSample.setSampleIdx(current_project.getSampleIdx(smp));
+
+            StWaveform wf <= smp.waveform;
+            float ms = ( (1000 * 60 * 0.25) * 32/*num16th*/ ) / current_project.bpm;
+            int numFrames = (ms * wf.sampleRate) / 1000;
+            FloatArray smpDat <= wf.sampleData;
+            smpDat.allocAndFill( (_bStereo?2:1) * numFrames, 0);
+            if(_bStereo)
+               wf.numChannels = 2;
+
+            // Try to load audio clip preset sample
+            boolean bPresetLoaded = smp.loadAudioClipPreset();
+            StSample *s;
+            IntArray *loops;
+
+            if(bPresetLoaded)
+            {
+               s <= smp.getZoneByIdx(0);
+               if(null != s)
+               {
+                  loops <= s.getOrCreateSampleLoops();
+                  loops.add(0);
+                  loops.add(numFrames);
+                  loops.add(1);
+                  s.verifySampleAreas();
+                  smp.markParamsAsModified();
+               }
+               else
+                  trace "[~~~] PageProject::handleAddAudioTrack_Project: preset sample has no zones";
+            }
+            else
+            {
+               smp.b_procedural = false;
+               smp.setMaxVoices(4);
+               smp.setEnableModSrcNoteOn(true);
+               smp.setVolume(1.0f);////Utils.DBToLevel(-3));
+               smp.markParamsAsModified();
+
+               smp.newZone();
+               s <= smp.getZoneByIdx(0);
+               s.setVolumeRampStepsMillisecIn(1);
+               s.setVolumeRampStepsMillisecOut(4);
+
+               s.liveRecEnable   = true;
+               s.liveRecStereo   = true/*bStereo*/;
+               s.liveRecInputPan = 0.0f;
+               s.liveRecMonitor  = maybe;  // add input to output (src track mute state (seq or audio) effectively controls monitoring)
+               s.enableSumInput  = maybe;
+               s.sumInputXFade   = 0.0f;  //
+               s.liveRecClear    = maybe; // overdub
+               s.liveRecSkipInputNumFrames = 0;////STConfig.audio_chunk_size;
+               s.setMaxVoices(4);
+
+               loops <= s.getOrCreateSampleLoops();
+               loops.add(0);
+               loops.add(numFrames);
+               loops.add(1);
+
+               StADSR *adsr;
+               StLFO *lfo;
+               StEnvelope *env;
+               BezierEditState *beState;
+               Envelope *beData;
+               // // StModSeq *mseq;
+
+               // // adsr <= s.volADSR;
+               // // env <= adsr.envAttack;
+               // // beState <= env.metaData;
+               // // beData <= env.data;
+               // // Dialogs.curve_dialog.initSustainEnv(beState, beData);
+
+               // Update volume attack envelope (final level = 90%)
+               adsr <= s.getOrCreateVolADSR();
+               env <= adsr.getOrCreateEnvAttack();
+               beState <= new BezierEditState;
+               beData <= env.getOrCreateData();
+               Dialogs.curve_dialog.initAttackEnvAudioClip(beState, beData);
+               env.setMetaData(#(deref beState));
+               env.intensity = 1.0;
+               env.timescale = 200.0;
+
+               env <= adsr.getOrCreateEnvRelease();
+               env.timescale = 500.0;
+            }
+
+            // Add output / send to audio track
+            PointerArray outputs <= _parentTrack.outputs;
+            Output output <= new Output;
+            output.init();
+            output.setType(Output.TYPE_TRACK);
+            output.setTrackIdx(current_project.getTrackIdx(audioTrack));
+            // (note) should mute or even delete "Default" output => monitoring is done through audiotrack
+            outputs.add(#(deref output));
+
+            Project.QueueTrackFormUpdate();
+         }
+         else
+            Global.Warning("Failed to create namespace \""+audioTrackName+"\"");
+
+
+         ret <= audioTrack;
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      return ret;
+   }
+
+   // <ui_handle.png>
+   public method handleAddAudioTrack(Track _parentTrack, boolean _bStereo) : Track {
+
+      Track track <= handleAddAudioTrack_Project(_parentTrack, _bStereo);
+      if(null != track)
+      {
+         updateTrackForms();
+
+         Global.Print("Create audio track \""+track.name+"\" (parent=\""+_parentTrack.name+"\")");
+      }
+      else
+      {
+         Global.Warning("Create audio track: all MIDI channels in use (pref dev_idx="+STConfig.preferred_audio_track_dev_idx+")");
+      }
+
+      return track;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAppendTrack_Project(String _name) : Track {
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      current_project.trackReorderBegin();
+
+      Track track <= current_project.newTrackAppend(_name);
+      track.start();
+
+      Project.QueueTrackFormUpdate();
+
+      current_project.trackReorderEnd();  // update Output/Lane routings
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      return track;
+   }
+
+   // <ui_handle.png>
+   public method handleAppendTrack(String _name) : Track {
+
+      removeTrackForms();
+
+      Track track <= handleAppendTrack_Project(_name);
+      updateTrackForms();
+
+      Global.Debug("PageProject::handleAppendTrack: added track \""+_name+"\"");
+   }
+
+   // <ui_update.png>
+   protected method updateAllLayouts() {
+      TrackForm *tf;
+      foreach tf in track_forms
+         tf.updateLayout();
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusTrack(int _newFocusIdx) {
+      focus_idx = _newFocusIdx;
+      makeTrackVisible(focus_idx);
+      updateFocusColors();
+      RedirectRemoteEventsToCurrentTrack();
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusPreviousTrack() {
+      if(focus_idx > 0)
+      {
+         focus_idx--;
+         handleFocusTrack(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusNextTrack() {
+      if(focus_idx < (track_forms.numElements-1))
+      {
+         focus_idx++;
+         handleFocusTrack(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusTrackUp() {
+      int numTracksPerRow = getNumTracksPerRow();
+      if(focus_idx >= numTracksPerRow)
+      {
+         focus_idx -= numTracksPerRow;
+         handleFocusTrack(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusTrackDown() {
+      int numTracksPerRow = getNumTracksPerRow();
+      int numTracks = current_project.getNumTracks();
+      if( (focus_idx + numTracksPerRow) < numTracks)
+      {
+         focus_idx += numTracksPerRow;
+         handleFocusTrack(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusTrackLeft() {
+      int numTracksPerRow = getNumTracksPerRow();
+      int focusIdxCol = focus_idx % numTracksPerRow;
+      if(focusIdxCol > 0)
+      {
+         focus_idx--;
+         handleFocusTrack(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFocusTrackRight() {
+      int numTracksPerRow = getNumTracksPerRow();
+      int numTracks = current_project.getNumTracks();
+      int focusIdxCol = (focus_idx % numTracksPerRow) + 1;
+      if( ( focusIdxCol < numTracksPerRow ) &&
+          ( (focus_idx + 1) < numTracks )
+          )
+      {
+         focus_idx++;
+         handleFocusTrack(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackToggleMute() {
+      TrackForm tf <= track_forms.get(focus_idx);
+      if(null != tf)
+         tf.handleToggleMute();
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackToggleSolo() {
+      TrackForm tf <= track_forms.get(focus_idx);
+      if(null != tf)
+         tf.handleToggleSolo();
+   }
+
+   // <method.png>
+   protected method forceRelayoutTracks() {
+      // After layout change
+      invalidateSizeCaches();
+      invalidateChildContainerMinSizeCaches();
+      invalidateAbsolutePositions();
+      invalidateSizeGroupMemberSizes();
+      relayout();
+      UI.RedrawAll();
+   }
+
+   // <ui_handle.png>
+   public method handleEditFocusTrack() {
+      TrackForm tf <= track_forms.get(focus_idx);
+
+      if(null != tf)
+      {
+         tf.handleEditTrack();
+      }
+      else
+      {
+         // First invocation of track page, show tracks page to init forms
+         if(@(root_form.getCurrentPage()) != @(this))
+         {
+            root_form.showPage(RootForm.PAGE_PROJECT, false/*bAllowHistory*/);
+            tf <= track_forms.get(focus_idx);
+            if(null != tf)
+            {
+               tf.handleEditTrack();
+               return;
+            }
+         }
+
+         Global.Warning("No track selected");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEditFocusTrackFirstModSample(byte _noteIdxHint) : boolean {
+      TrackForm tf <= track_forms.get(focus_idx);
+      if(null != tf)
+      {
+         Track track <= tf.track;
+         ModSample modSample <= track.findFirstModSample();
+         if(null != modSample)
+         {
+            Global.Print("Edit track #"+((current_project.getTrackIdx(track))+1)+" first ModSample");
+
+            PageSample pgSample <= root_form.pg_sample;
+            pgSample.autoselect_sample_idx    = modSample.sample_idx;
+            pgSample.autoselect_note_idx_hint = _noteIdxHint;
+            pgSample.ui_parent_track_nr = current_project.getTrackIdx(track) + 1;
+            pgSample.mod_sample        <= modSample;
+            pgSample.sample_pad_common <= null;
+            pgSample.sample_pad        <= null;
+            pgSample.sample_pad_kit    <= null;
+            pgSample.b_return_to_projects_page = true;
+            root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleEditFocusTrackFirstModCLAPorVST2(byte _noteIdxHint) : boolean {
+      TrackForm tf <= track_forms.get(focus_idx);
+      if(null != tf)
+      {
+         PageTrack pgTrack <= root_form.pg_track;
+         ModGrid modGrid <= pgTrack.modgrid;
+
+         Track track <= tf.track;
+
+         ModCLAP modCLAP <= track.findFirstModCLAP();
+         if(null != modCLAP)
+         {
+            Global.Print("Edit track #"+((current_project.getTrackIdx(track))+1)+" first ModCLAP");
+
+            handleEditFocusTrack();
+
+            modGrid.editFirstModCLAP();  // (note) ignoring 'noteIdxHint'
+            return true;
+         }
+         else
+         {
+            ModVST2 modVST2 <= track.findFirstModVST2();
+            if(null != modVST2)
+            {
+               Global.Print("Edit track #"+((current_project.getTrackIdx(track))+1)+" first ModVST2");
+
+               handleEditFocusTrack();
+
+               modGrid.editFirstModVST2();  // (note) ignoring 'noteIdxHint'
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleEditFocusTrackFirstMod(byte _noteIdxHint) : boolean {
+      TrackForm tf <= track_forms.get(focus_idx);
+      if(null != tf)
+      {
+         Track track <= tf.track;
+
+         handleEditFocusTrack();
+
+         // Try drum pad track
+         if( (_noteIdxHint >= 0) && track.isDrumMode() )
+         {
+            Global.Debug("PageProject::handleEditFocusTrackFirstMod: isDrumMode, noteIdxHint="+_noteIdxHint);
+            TrackPatchVariation tpv <= track.getCurrentPatchVariation();
+            if(null != tpv)  // should not be null
+            {
+               SamplePadKit spk <= tpv.sample_pad_kit;
+               SamplePadKitVariation spkv <= spk.getEditKitVariation();
+               int padIdx = 0;
+               loop(SamplePadKit.NUM_PADS)
+               {
+                  SamplePadCommon padCommon <= spk.getPadCommonByIndex(padIdx);
+                  if(null != padCommon)
+                  {
+                     if(padCommon.note_nr == _noteIdxHint)
+                     {
+                        spk.edit_pad_idx = padIdx;
+                        PageTrack pgTrack <= root_form.pg_track;
+                        SamplePadForm fSamplePad <= pgTrack.f_samplepad;
+                        fSamplePad.handleEditSample();
+                        return true;
+                     }
+                  }
+                  // Try next pad
+                  padIdx++;
+               }
+            }
+         }
+
+         if(handleEditFocusTrackFirstModSample(_noteIdxHint))
+            return true;
+
+         if(handleEditFocusTrackFirstModCLAPorVST2(_noteIdxHint))
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectLayoutAll(int _dir) {
+      TrackForm tf <= track_forms.get(focus_idx);
+
+      if(null != tf)
+      {
+         tf.handleNextLayout(_dir);
+         updateAllLayouts();
+         forceRelayoutTracks();
+         makeTrackVisible(focus_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   public method showAudioTracks() {
+      root_form.showPage(RootForm.PAGE_AUDIO, true/*bAllowHistory*/);
+   }
+
+   // <ui_handle.png>
+   public method showSamples() {
+      root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+   }
+
+   // <method_find.png>
+   static public FindAudioOutputIndicesByAlias(String _alias, Integer _retL, Integer _retR) : boolean {
+      int audioIdx = 0;
+      StringArray aliases <= STConfig.audio_out_aliases;
+      loop(aliases.numElements/3)  // mono/stereo/shortname tuples
+      {
+         if(_alias == aliases.get(audioIdx*3+0))
+         {
+            // Mono output
+            _retL = audioIdx;
+            _retR = -1;
+            return true;
+         }
+         else if(_alias == aliases.get(audioIdx*3+1))
+         {
+            // Stereo output
+            _retL = audioIdx;
+            _retR = audioIdx+1;
+            return true;
+         }
+         else if(_alias == aliases.get(audioIdx*3+2))
+         {
+            // Short name => Stereo output
+            _retL = audioIdx;
+            _retR = audioIdx+1;
+            return true;
+         }
+
+         audioIdx++;
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public static FindAutoRouteAudioChannelNameByTrackName(HashTable _htAutoRoute, String _trackName) {
+      String *key;
+      foreach key in _htAutoRoute
+      {
+         Track *track;
+         foreach track in current_project.tracks
+         {
+            if(_trackName.compareIgnoreCase(key))
+            {
+               String outAlias <= _htAutoRoute[key];
+               return outAlias;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAutoRouteReplace(Track _trackFltOrNull) {
+      HashTable ht <= STConfig.track_autoroute_map_replace;
+      String *key;
+      local Integer outL;
+      local Integer outR;  // -1 or outL+1
+      int numUpdated = 0;
+      foreach key in ht
+      {
+         Track *track;
+         foreach track in current_project.tracks
+         {
+            if(track.name.compareIgnoreCase(key) && ((null == _trackFltOrNull) || @(_trackFltOrNull) == @(track)))
+            {
+               String outAlias <= ht[key];
+
+               if(FindAudioOutputIndicesByAlias(outAlias, outL, outR))
+               {
+                  Global.Debug("autoroute<REPLACE>: route track \""+track.name+"\" to output \""+outAlias+"\" outL="+outL+" outR="+outR);
+                  Output out <= track.findDefaultOutput();
+                  if(null != out)
+                  {
+                     out.setType((-1 != outR) ? Output.TYPE_AUDIO_STEREO : Output.TYPE_AUDIO_LEFT);
+                     out.setChannelIdx(outL);
+                     numUpdated++;
+                  }
+               }
+            }
+         }
+      }
+
+      if(numUpdated > 0)
+         updateTrackForms();
+
+      Global.Print("autoroute<REPLACE>: update "+numUpdated+" track"+Utils.GetPluralString(numUpdated));
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAutoRouteParallel(Track _trackFltOrNull) {
+      HashTable ht <= STConfig.track_autoroute_map_parallel;
+      String *key;
+      local Integer outL;
+      local Integer outR;  // -1 or outL+1
+      int numAdded = 0;
+      foreach key in ht
+      {
+         Track *track;
+         foreach track in current_project.tracks
+         {
+            if(track.name.compareIgnoreCase(key) && ((null == _trackFltOrNull) || @(_trackFltOrNull) == @(track)))
+            {
+               String outAlias <= ht[key];
+
+               if(FindAudioOutputIndicesByAlias(outAlias, outL, outR))
+               {
+                  Global.Debug("autoroute<PARALLEL>: route track \""+track.name+"\" to output \""+outAlias+"\" outL="+outL+" outR="+outR);
+                  boolean bExists = false;
+                  Output *out;
+                  foreach out in track.outputs
+                  {
+                     if(out.outputsToAudioChannelIdx(outL))
+                     {
+                        bExists = true;
+                        break;
+                     }
+                  }
+                  if(!bExists)
+                  {
+                     out <= track.newOutput();
+                     if(null != out)
+                     {
+                        out.setType((-1 != outR) ? Output.TYPE_AUDIO_STEREO : Output.TYPE_AUDIO_LEFT);
+                        out.setChannelIdx(outL);
+                        numAdded++;
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      if(numAdded > 0)
+         updateTrackForms();
+
+      Global.Print("autoroute<PARALLEL>: add "+numAdded+" track output"+Utils.GetPluralString(numAdded));
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAutoRouteLane(Track _trackFltOrNull) {
+      HashTable ht <= STConfig.track_autoroute_map_lane;
+      String *key;
+      local Integer outL;
+      local Integer outR;  // -1 or outL+1
+      int numAdded = 0;
+      foreach key in ht
+      {
+         Track *track;
+         foreach track in current_project.tracks
+         {
+            if(track.name.compareIgnoreCase(key) && ((null == _trackFltOrNull) || @(_trackFltOrNull) == @(track)))
+            {
+               String outAlias <= ht[key];
+
+               if(FindAudioOutputIndicesByAlias(outAlias, outL, outR))
+               {
+                  Global.Debug("autoroute<LANE>: route track \""+track.name+"\" to output \""+outAlias+"\" outL="+outL+" outR="+outR);
+                  Lane lastLane <= track.lanes.last;
+                  if(null != lastLane)
+                  {
+                     boolean bExists = false;
+                     Output *out;
+                     foreach out in lastLane.outputs
+                     {
+                        if(out.outputsToAudioChannelIdx(outL))
+                        {
+                           bExists = true;
+                           break;
+                        }
+                     }
+
+                     if(!bExists)
+                     {
+                        Lane newLane <= track.newLane();
+                        Output newOut <= newLane.outputs.first;
+                        int newLaneIdx = track.getIdxByLane(newLane);
+
+                        // Route to audio channel send
+                        out <= newLane.getOutputByIdx(0);
+                        out.setType((-1 != outR) ? Output.TYPE_AUDIO_STEREO : Output.TYPE_AUDIO_LEFT);
+                        out.setChannelIdx(outL);
+
+                        // Update previous lanes and add send to new lane
+                        Lane *lane;
+                        foreach lane in track.lanes
+                        {
+                           if(@(lane) != @(newLane))
+                           {
+                              if(!lane.outputsToLaneIdx(newLaneIdx))
+                              {
+                                 out <= lane.newOutput();
+                                 out.setType(Output.TYPE_LANE);
+                                 out.setIdx(newLaneIdx);
+                              }
+                           }
+                        }
+
+                        numAdded++;
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      Global.Print("autoroute<LANE>: add "+numAdded+" lane output"+Utils.GetPluralString(numAdded));
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Create \"master\" track",
+                                 "create_master"
+                                 );
+      pmb.setActive(null == current_project.findTrackByName(STConfig.track_autoroute_master_name));
+
+      pmb <= pm.addDefaultButton("Create \"focus\" track",
+                                 "create_focus"
+                                 );
+      pmb.setActive(null == current_project.findTrackByName(STConfig.track_autoroute_focus_name));
+
+      pm.addSeparator();
+
+      pmb <= pm.addIconButton("New track", "add", "create_new");
+      pmb.setIconScale(0.5);
+
+      pmb <= pm.addDefaultButton("Clone track", "create_clone");
+      pmb.setActive(-1 != focus_idx);
+
+      if(STConfig.b_show_autoroute_menu_tems)
+      {
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Auto-Route individual output sends (REPLACE)",
+                                    "autoroute_replace"
+                                    );
+         pmb.setToolTipCaption("Replace track outputs according to STConfig.track_autoroute_map_replace\n\n (note) for sending tracks to mixing disk");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Auto-Route individual output sends (PARALLEL)",
+                                    "autoroute_parallel"
+                                    );
+         pmb.setToolTipCaption("Add track outputs according to STConfig.track_autoroute_map_parallel\n\n (note) e.g. for external FX sends");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Auto-Route parallel lanes and individual output sends (PARALLEL LANE)",
+                                    "autoroute_lane"
+                                    );
+         pmb.setToolTipCaption("Add lanes and individual output sends to last lane according to STConfig.track_autoroute_map_lane");
+      }
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      Global.Print("Show context menu.");
+   }
+
+   // <ui_timer.png>
+   public method pageHandleIdleTimer() {
+      TrackForm *tf;
+      foreach tf in track_forms
+      {
+         tf.handleIdleTimer();
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      handleEditFocusTrack();
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      if(_ev.wheelDown())
+      {
+         if(UI.KeyModCtrl())
+            handleSelectLayoutAll(-1);
+         else
+            handleFocusNextTrack();
+         return true;
+      }
+      else if(_ev.wheelUp())
+      {
+         if(UI.KeyModCtrl())
+            handleSelectLayoutAll(1);
+         else
+            handleFocusPreviousTrack();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[>>>] PageProject: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod+" keyboard_focus="+#(UI.GetKeyboardFocus());
+
+      switch(_k.pressed)
+      {
+         // // case VKEY_ESCAPE:
+         // //    root_form.showPage(RootForm.PAGE_AUDIO, true/*bAllowHistory*/);
+         // //    return true;
+
+         case VKEY_UP:
+            handleFocusTrackUp();
+            return true;
+
+         case VKEY_DOWN:
+            handleFocusTrackDown();
+            return true;
+
+         case VKEY_LEFT:
+            handleFocusTrackLeft();
+            return true;
+
+         case VKEY_RIGHT:
+            handleFocusTrackRight();
+            return true;
+
+         case 'd':
+            handleTrackToggleMute();
+            return true;
+
+         case 's':
+            handleTrackToggleSolo();
+            return true;
+
+         case 'e':
+         case 't':
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            if(_k.mod)
+               handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
+            else
+               handleEditFocusTrack();
+            return true;
+
+         case 'f':
+         case 'w':
+            handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
+            return true;
+
+         case 'c':
+            handleAddTrackAutoOrder(false/*bAtEnd*/, true/*bClone*/);
+            if(_k.modCtrl())
+               handleEditFocusTrack();
+            return true;
+
+         case 'n':
+            Global.Debug("PageProject::onKey: add new track");
+            if(_k.modShift())
+            {
+               Track midiTrack <= current_project.getTrackByIdx(focus_idx);
+               if(null != midiTrack)
+               {
+                  Track audioTrack <= handleAddAudioTrack(midiTrack, _k.modCtrl()/*bStereo*/);
+               }
+               else
+               {
+                  trace "[!!!] invalid focus_idx, cannot add audio track"; // should not be reachable
+               }
+               return true;
+            }
+            else
+            {
+               handleAddTrackAutoOrder(false/*bAtEnd*/, false/*bClone*/);
+            }
+            if(_k.modCtrl())
+               handleEditFocusTrack();
+            return true;
+
+         case VKEY_F1:
+            showAudioTracks();
+            return true;
+
+         case '1':
+            if(_k.modCtrl())
+            {
+               showAudioTracks();
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               cm_track_layout_all.setSelectedOptionAction(0);
+               return true;
+            }
+            break;
+
+         case VKEY_F3:
+            handleEditFocusTrack();
+            return true;
+
+         case '2':
+            if(0 == _k.mod)
+            {
+               cm_track_layout_all.setSelectedOptionAction(1);
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modCtrl())
+            {
+               handleEditFocusTrack();
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               cm_track_layout_all.setSelectedOptionAction(2);
+               return true;
+            }
+            break;
+
+         case '4':
+            if(0 == _k.mod)
+            {
+               cm_track_layout_all.setSelectedOptionAction(3);
+               return true;
+            }
+            break;
+
+         case VKEY_F5:
+            showSamples();
+            return true;
+
+         case '5':
+            if(_k.modCtrl())
+            {
+               showSamples();
+               return true;
+            }
+            else if(0 == _k.mod)
+            {
+               cm_track_layout_all.setSelectedOptionAction(4);
+               return true;
+            }
+            break;
+
+         case '6':
+            if(0 == _k.mod)
+            {
+               cm_track_layout_all.setSelectedOptionAction(5);
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if((TrackForm.ACTION_TRACK_DELETED == acName) ||
+         (TrackForm.ACTION_TRACK_MOVED == acName)   ||
+         (OutputsControl.ACTION_OUTPUTS_CHANGED == acName)
+         )
+      {
+         if(focus_idx >= (current_project.tracks.numElements))
+            focus_idx--;
+
+         updateTrackForms();
+         return true;
+      }
+
+      if(TrackForm.ACTION_TRACK_RENAMED == acName)
+      {
+         updateTrackFormOutputTrackNames();
+         return true;
+      }
+
+      if((TrackForm.ACTION_TRACK_RELAYOUT == acName) ||
+         (TrackForm.ACTION_TRACK_UPDATE_LAYOUT_ALL == acName)
+         )
+      {
+         if(TrackForm.ACTION_TRACK_UPDATE_LAYOUT_ALL == acName)
+         {
+            Global.Debug2("PageProject: updateAllLayouts()");
+            updateAllLayouts();
+            cm_track_layout_all.setSelectedOption(current_project.track_layout_all_idx);
+         }
+         forceRelayoutTracks();
+         return true;
+      }
+
+      if(TrackForm.ACTION_TRACK_MUTESOLO == acName)
+      {
+         updateMuteSolo();
+         return true;
+      }
+
+      if(TrackForm.ACTION_TRACK_FOCUS == acName)
+      {
+         focus_idx = track_forms.indexOfPointer(ap, 0);
+         if(-1 == focus_idx)
+            focus_idx = 0; // should not be reachable
+         updateFocusColors();
+         RedirectRemoteEventsToCurrentTrack();
+         return true;
+      }
+
+      if(TrackForm.ACTION_TRACK_EDITFIRSTMOD == acName)
+      {
+         focus_idx = track_forms.indexOfPointer(ap, 0);
+         if(-1 == focus_idx)
+            focus_idx = 0; // should not be reachable
+         updateFocusColors();
+         RedirectRemoteEventsToCurrentTrack();
+
+         handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "create_new":
+                  handleAddTrackAutoOrder(false/*bAtEnd*/, false/*bClone*/);
+                  return true;
+
+               case "create_clone":
+                  handleAddTrackAutoOrder(false/*bAtEnd*/, true/*bClone*/);
+                  return true;
+
+               case "create_master":
+                  handleAppendTrack(STConfig.track_autoroute_master_name);
+                  pageFocusDefault();
+                  return true;
+
+               case "create_focus":
+                  handleAppendTrack(STConfig.track_autoroute_focus_name);
+                  pageFocusDefault();
+                  return true;
+
+               case "autoroute_replace":
+                  handleAutoRouteReplace(null/*trackFltOrNull*/);
+                  pageFocusDefault();
+                  return true;
+
+               case "autoroute_parallel":
+                  handleAutoRouteParallel(null/*trackFltOrNull*/);
+                  pageFocusDefault();
+                  return true;
+
+               case "autoroute_lane":
+                  handleAutoRouteLane(null/*trackFltOrNull*/);
+                  pageFocusDefault();
+                  return true;
+            }
+            return true;
+
+         case @(bt_add_track_v):  // small "+" button
+            handleAddTrackAutoOrder(true/*bAtEnd*/, (Button.ACTION_HOLD_CLICK == acName)/*bClone*/);
+            return true;
+
+         case @(bt_add):  // "New track" button
+            handleAddTrackAutoOrder(false/*bAtEnd*/, (Button.ACTION_HOLD_CLICK == acName)/*bClone*/);
+            return true;
+
+         case @(cb_overview):
+            current_project.b_track_overview = cb_overview.isSelected();
+            Global.Print("Track Overview is "+Utils.GetEnableString(current_project.b_track_overview));
+            updateTrackForms();
+            makeTrackVisible(focus_idx);
+            return true;
+
+         case @(cm_track_layout_all):
+            current_project.track_layout_all_idx = cm_track_layout_all.getSelectedOption();
+            current_project.setLayoutForAllTracks(current_project.track_layout_all_idx);
+            updateAllLayouts();
+            forceRelayoutTracks();
+            makeTrackVisible(focus_idx);
+            Global.Print("Track size is "+cm_track_layout_all.getSelectedOptionName());
+            return true;
+
+         case @(bt_audio_tracks):
+            showAudioTracks();
+            return true;
+
+         case @(bt_instr_curtrack):
+            boolean bMiddleClick = (Button.ACTION_MIDDLE_CLICK == acName);  // acName's rewritten after handleEditFocusTrack()
+            handleEditFocusTrack();
+            if(bMiddleClick)
+               handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
+            return true;
+
+         case @(bt_samples):
+            showSamples();
+            return true;
+      }
+
+      return Page::consumeAction(_ac);
+   }
+
+}

@@ -1,0 +1,627 @@
+// ----
+// ---- file   : ModGridButton.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 12Feb2018
+// ---- changed: 13Feb2018, 15Feb2018, 17Feb2018, 21Feb2018, 22Feb2018, 23Feb2018, 24Feb2018
+// ----          28Feb2018, 01Mar2018, 06Mar2018, 26Mar2018, 21May2018, 30May2018, 21Jul2018
+// ----          30Jul2019, 26Aug2019, 17Nov2019, 31Oct2020, 01Nov2020, 06Feb2021, 12Dec2021
+// ----          31Dec2021, 13Feb2022, 04Mar2023, 08Mar2023, 18Mar2023, 21Apr2023, 08Jul2023
+// ----          21Sep2023, 05Nov2023, 22Mar2024, 06Jul2024, 04Oct2024, 07Jan2025
+// ----
+// ----
+// ----
+
+module MModGridButton;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModGridButton : ModGridButtonBase {
+
+   define String ACTION_TOGGLE_EDITOR;  // left mouse click
+   define String ACTION_EDIT_PARAMSET;  // middle mouse click
+
+
+   // <method.png>
+   public method initModGridButton() {
+      initButton();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteModFromModClipboard() {
+      Mod mod <= getUserData();
+
+      if(ModGrid.IsModClipboardCompatibleWith(mod))
+      {
+         mod.modCopyPatchFrom(ModGrid.mod_clipboard);
+         mod.modCopyMatrixFrom(ModGrid.mod_clipboard);
+
+         Global.Print("Paste mod from clipboard");
+      }
+   }
+
+   // <ui_show.png>
+   protected method contextMenuAddExtraConfigItems(PopupMenu pm) {
+      // implemented by ModGridSampleButton (FX auto note on)
+   }
+
+   // <method.png>
+   protected method contextMenuAddExtraPatchItems(PopupMenu spm) {
+      // implemented by ModGridVST2Button
+   }
+
+   // <method.png>
+   protected method contextMenuAddExperimentalSubMenu(PopupMenu pm) {
+      // implemented by ModGridVST2Button
+   }
+
+   // <method.png>
+   protected method contextMenuAddPresetSubMenu(PopupMenu pm) {
+      // implemented by ModGridSampleButton
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      UI.SetKeyboardFocus(this);
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenu pm <= pm_context;
+      PopupMenu *spm;
+      PopupMenu *spm2;
+
+      PopupMenuButton *pmb;
+
+      Mod mod <= getUserData();
+      Track track <= current_project.findTrackByMod(mod);
+      int laneIdx = track.findLaneIdxByMod(mod);
+
+      String sInfo <= "Inputs:"+mod.getNumInputs()+"  Outputs:"+mod.getNumOutputs();
+      if(1.0f != mod.resample_factor)
+         sInfo.append("    Resample: "+int(mod.resample_factor*100)+"%");
+      if(0 != mod.getLatencyNumFrames())
+         sInfo.append("    Latency: "+mod.getLatencyNumFrames());
+      if(mod.isAnyParameterModulatable())
+         sInfo.append("    PMod");
+      pmb <= pm.addDefaultButton(sInfo, "__channel_info__");
+      pmb.setActive(true);
+
+      if(0)
+      {
+         pm.addSeparator();
+
+         // (note) [21Jul2018] removed. auto-use mono input when numInputs==1 (mono out when numOutputs=1)
+         pmb <= pm.addCheckButton("Mono input", (mod.getNumInputs()>0) && (mod.b_mono_in || (1 == mod.getNumInputs())), "mono_in");
+         pmb.setActive(mod.getNumInputs() > 1);
+
+         pmb <= pm.addCheckButton("Mono output", mod.b_mono_out || (1 == mod.getNumOutputs()), "mono_out");
+         pmb.setActive(mod.getNumOutputs() > 1);
+      }
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Process ["+mod.getProcessModeName()+"]", deref spm);
+      pmb <= spm.addDefaultButton("Stereo",       "process_mode_stereo");
+      pmb <= spm.addDefaultButton("Left / Mid",   "process_mode_leftmid");
+      pmb <= spm.addDefaultButton("Right / Side", "process_mode_rightside");
+      pmb <= spm.addDefaultButton("Parallel",     "process_mode_parallel");
+
+      pmb <= pm.addCheckButton("Sidechain input", (mod.getNumInputs() >= 4) && mod.b_sidechain_in, "sidechain_in");
+      pmb.setActive(mod.getNumInputs() >= 4);
+
+      pmb <= pm.addCheckButton("Multi-lane output", mod.b_multi_out, "multi_out");
+      pmb.setActive(
+         ((mod.b_mono_out && mod.getNumOutputs() >= 2) || (!mod.b_mono_out && mod.getNumOutputs() >= 4))
+                    );
+
+      pmb <= pm.addCheckButton("Receive MIDI", mod.getEnableReceiveMIDI(), "recv_midi");
+      pmb.setToolTipCaption("Receive MIDI\n\n (note) this is a shortcut for the instrument/effect MIDI filter presets (see Mod Matrix view)");
+
+      contextMenuAddExtraConfigItems(pm);
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Copy mod to clipboard", "copy_mod_to_clipboard");
+
+      pmb <= pm.addDefaultButton("Paste mod from clipboard", "paste_mod_from_clipboard");
+      pmb.setActive(ModGrid.IsModClipboardCompatibleWith(mod));
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Move to new lane and add send", "send_new_lane_right");
+      pmb.setActive(Track.MAX_LANES != num_lanes);
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Patch", deref spm);
+
+      pmb <= spm.addDefaultButton("Param Set editor..", "patch_paramset");
+      pmb.setAccelerators("lalt-LMB click", "MMB click");
+
+      contextMenuAddExtraPatchItems(spm);
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Lane", deref spm);
+
+      Lane lane <= parent_modgrid.getLaneByIdx(grid_x);
+      pmb <= spm.addCheckButton("Lane Input from Track", lane.b_track_input, "lane_track_input");
+      pmb.setToolTipCaption("When checked, default lane input is copied from track input\n\n When unchecked, lane input is zero, unless the output of a previous lane is routed to this lane");
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("Move lane left", "move_lane_left");
+      pmb.setActive(grid_x > 0);
+
+      pmb <= spm.addDefaultButton("Move lane right", "move_lane_right");
+      pmb.setActive(grid_x != (num_lanes-1));
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("Insert lane right", "insert_lane_right");
+      pmb.setActive(Track.MAX_LANES != num_lanes);
+
+      pmb <= spm.addDefaultButton("Duplicate lane", "duplicate_lane");
+      pmb.setActive(Track.MAX_LANES != num_lanes);
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Copy lane to clipboard", "copy_lane_to_clipboard");
+
+      pmb <= spm.addDefaultButton("Paste new lane from clipboard", "paste_new_lane_from_clipboard");
+      pmb.setActive(Track.MAX_LANES != num_lanes);
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Delete unused lanes", "delete_unused_lanes");
+      pmb.setActive(num_lanes > 1);
+      pmb.setBackgroundTint(pmb.isActive() ? DELETE_TINT32_ACTIVE : DELETE_TINT32_INACTIVE);
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Delete lane", "delete_lane");
+      pmb.setActive(num_lanes > 1);
+      pmb.setBackgroundTint(pmb.isActive() ? DELETE_TINT32_ACTIVE : DELETE_TINT32_INACTIVE);
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Mutex Group ["+mod.getUIMutexGroupName()+"]", deref spm);
+      pmb <= spm.addRadioButton("-", (-1 == mod.ui_mutex_group_id), "mtxgrp_off");
+      byte mtxGrpId = 0;
+      byte mtxGrpNr = 1;
+      loop(4)
+      {
+         spm.addSeparator();
+         pmb <= spm.addRadioButton(mtxGrpNr+"A", (mtxGrpId == mod.ui_mutex_group_id), "mtxgrp_"+mtxGrpId);
+         mtxGrpId++;
+         pmb <= spm.addRadioButton(mtxGrpNr+"B", (mtxGrpId == mod.ui_mutex_group_id), "mtxgrp_"+mtxGrpId);
+         mtxGrpId++;
+         mtxGrpNr++;
+      }
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Clear mutex group 1", "mtxgrp_clear_1");
+      pmb <= spm.addDefaultButton("Clear mutex group 2", "mtxgrp_clear_2");
+      pmb <= spm.addDefaultButton("Clear mutex group 3", "mtxgrp_clear_3");
+      pmb <= spm.addDefaultButton("Clear mutex group 4", "mtxgrp_clear_4");
+      pmb <= spm.addDefaultButton("Clear all mutex groups", "mtxgrp_clear_all");
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Sync", deref spm);
+
+      pmb <= spm.addDefaultButton("Sync lane mods from clipboard", "sync_lane_mods_from_clipboard");
+      pmb.setToolTipCaption("Sync lane mods from clipboard\n\n (note) clipboard lane must have exact same setup");
+
+      pmb <= spm.addDefaultButton("Sync lane mods + mod matrices from clipboard", "sync_lane_mods_and_mod_matrices_from_clipboard");
+      pmb.setToolTipCaption("Sync lane mods and mod matrices from clipboard\n\n (note) clipboard lane must have exact same setup");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Sync other MPE/LPC/VRR lanes from this", "sync_other_lanes_from_this");
+      pmb.setToolTipCaption("Sync other MPE/LPC/VRR lanes from this lane\n\n (note) other lanes must have exact same setup");
+      pmb.setAccelerators("lctrl-j", "");
+
+      pmb <= spm.addDefaultButton("Sync other MPE/LPC/VRR lanes + mod matrices from this", "sync_other_lanes_and_mod_matrices_from_this");
+      pmb.setToolTipCaption("Sync other MPE/LPC/VRR lanes and mod matrices from this lane\n\n (note) other lanes must have exact same setup");
+      pmb.setAccelerators("lctrl-lshift-j", "");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Sync other MPE/LPC/VRR mods from this", "sync_other_lane_mods_from_this");
+      pmb.setToolTipCaption("Sync other MPE/LPC/VRR lane mods from this mod");
+      pmb.setAccelerators("lctrl-h", "");
+
+      pmb <= spm.addDefaultButton("Sync other MPE/LPC/VRR mods + mod matrices from this", "sync_other_lane_mods_and_mod_matrices_from_this");
+      pmb.setToolTipCaption("Sync other MPE/LPC/VRR lane mods and mod matrices from this mod");
+      pmb.setAccelerators("lctrl-lshift-h", "");
+
+      contextMenuAddExperimentalSubMenu(pm);
+
+      pm.addSeparator();
+      pmb <= pm.addIconButton("Delete instance", "trashcan_sm", "delete_mod");
+      pmb.setBackgroundTint(pmb.isActive() ? DELETE_TINT32_ACTIVE : DELETE_TINT32_INACTIVE);
+
+      contextMenuAddPresetSubMenu(pm);
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30 * UI.font_scaling, 0);
+
+      Global.Print("Show instance context menu.");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      UI.ShowCursor(UIConstants.CURSOR_DENIED);
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      Layer l <= root_form.layerAt2f(_currentEv.mouse_abs_x, _currentEv.mouse_abs_y);
+
+      boolean bHandled = false;
+
+      if(l instanceof ModGridEmptyButton)
+      {
+         UI.RevertCursor();
+
+         if(VMOD_LCTRL == UI.GetKeyMod())
+         {
+            UI.ShowCursor(UIConstants.CURSOR_ADD);
+         }
+         else
+         {
+            UI.ShowCursor(UIConstants.CURSOR_MOVE);
+         }
+
+         bHandled = true;
+      }
+      else if(null != l)
+      {
+         if(l.hasParent(root_form.pg_track.pluginlist_vst2))
+         {
+            UI.RevertCursor();
+            UI.ShowCursor(UIConstants.CURSOR_NOPENCIL);
+            bHandled = true;
+         }
+      }
+
+      if(!bHandled)
+      {
+         UI.RevertCursor();
+         UI.ShowCursor(UIConstants.CURSOR_DENIED);
+      }
+
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public =replay= virtual onMouseEndDrag(MouseEvent _ev) {
+
+      UI.RevertCursor();
+
+      Layer l <= root_form.layerAt2f(_ev.mouse_abs_x, _ev.mouse_abs_y);
+
+      Mod modSrc <= getUserData();
+      Track track <= current_project.findTrackByMod(modSrc);
+      Lane laneSrc <= track.findLaneByMod(modSrc);
+      Lane *laneDst;
+
+      if(l instanceof ModGridEmptyButton)
+      {
+         ModGridEmptyButton btDstGridEmptyButton <= l;
+         UnsignedInteger gridXY <= btDstGridEmptyButton.getUserData();
+         laneDst <= track.getOrCreateLaneByIdx_Sync(gridXY >> 16);
+
+         if(VMOD_LCTRL == UI.GetKeyMod())
+         {
+            // Duplicate to empty cell
+            boolean bIgnoreAutoOrigCLAP = CLAP.PushIgnoreAutomation();
+            boolean bIgnoreAutoOrigVST2 = VST2.PushIgnoreAutomation();
+
+            Mod modNew <= modSrc.modClone(true/*bFullInit*/);
+
+            if(null != modNew)
+            {
+               modNew.modCopyPatchFrom(modSrc);
+               modNew.modCopyMatrixFrom(modSrc);
+               laneDst.insertModAtY_Sync(deref modNew, (gridXY & 65535));
+               parent_modgrid.updateGrid(true/*bRelayout*/);
+               Global.Print("Clone mod "+modNew.getName());
+            }
+            else
+            {
+               Global.Error("Failed to clone mod");
+            }
+
+            VST2.PopIgnoreAutomation(bIgnoreAutoOrigVST2);
+            CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
+         }
+         else
+         {
+            // Move to empty cell
+            modSrc <= laneSrc.unlinkMod(modSrc);
+            laneDst.insertModAtY_Sync(deref modSrc, (gridXY & 65535));
+            parent_modgrid.updateGrid(true/*bRelayout*/);
+            Global.Print("Move mod "+modSrc.getName());
+         }
+      }
+      else if(null != l)
+      {
+         // Move back into list
+         if(l.hasParent(root_form.pg_track.pluginlist_vst2) ||
+            l.hasParent(root_form.pg_track.pluginlist_clap) ||
+            l.hasParent(root_form.pg_track.pluginlist_stfx)
+            )
+         {
+            parent_modgrid.handleDeleteMod(modSrc);
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      StringArray r = Button::getProvidedActionNames();
+      r.add(ACTION_TOGGLE_EDITOR);
+      r.add(ACTION_EDIT_PARAMSET);
+      return r;
+   }
+
+   // <ui_handle.png>
+   public method handleEditMod() : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleEditModParamSet() : boolean {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_EDIT_PARAMSET), this));
+      return true;
+   }
+
+   // <ui_mouse.png>
+   protected virtual onMouseClick(MouseEvent _ev/*or null*/) : boolean {
+      // // trace "xxx ModGridButton::handleButtonClick: lnf="+#(lnf)+" UI.GetKeyMod()="+UI.GetKeyMod();
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      else if(_ev.isMiddleButton())
+      {
+         return handleEditModParamSet();
+      }
+      else
+      {
+         if(VMOD_LALT == UI.GetKeyMod())
+            return handleEditModParamSet();
+         return handleEditMod();
+      }
+      return Button::onMouseClick(_ev);
+   }
+
+   // <ui_mouse.png>
+   protected virtual onMouse(MouseEvent _ev/*or null*/) : boolean {
+      if(@(PageTrack.last_selected_mod) != @(user_data))
+      {
+         parent_modgrid.unsetTintOfLastSelectedMod();
+         Mod mod <= user_data;
+         Track track <= current_project.findTrackByMod(mod);
+         PageTrack.last_selected_mod <= mod;
+         PageTrack.last_selected_lane_idx = track.findLaneIdxByMod(mod);
+         setBackgroundTint(PageTrack.C32_LAST_SELECTED_MOD);
+         redraw();
+      }
+      return Button::onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public method onMouseLeave(MouseEvent _ev) : boolean {
+      return Button::onMouseLeave(_ev);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+
+      String acName <= _action.getActionName();
+      ActionProvider ap <= _action.getActionProvider();
+
+      // trace "xxx ModGridButton: acName="+acName;
+
+      Mod mod <= getUserData();
+      ModVST2 modVST2 <= mod;
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("ModGridButton: pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               case "process_mode_stereo":
+                  mod.setProcessMode(Mod.PROCESS_LR);
+                  parent_modgrid.reshowTrack(); // update toggle button color to indicate L/R mode
+                  Global.Print("Mod process mode is "+mod.getProcessModeName());
+                  return true;
+
+               case "process_mode_leftmid":
+                  mod.setProcessMode(Mod.PROCESS_L);
+                  parent_modgrid.reshowTrack(); // update toggle button color to indicate L/R mode
+                  Global.Print("Mod process mode is "+mod.getProcessModeName());
+                  return true;
+
+               case "process_mode_rightside":
+                  mod.setProcessMode(Mod.PROCESS_R);
+                  parent_modgrid.reshowTrack(); // update toggle button color to indicate L/R mode
+                  Global.Print("Mod process mode is "+mod.getProcessModeName());
+                  return true;
+
+               case "process_mode_parallel":
+                  mod.setProcessMode(Mod.PROCESS_PARALLEL);
+                  parent_modgrid.reshowTrack(); // update toggle button color to indicate L/R mode
+                  Global.Print("Mod process mode is "+mod.getProcessModeName());
+                  return true;
+
+               case "mono_in":
+                  mod.setEnableMonoIn(!mod.b_mono_in);
+                  Global.Print("Mod mono input is "+Utils.GetEnableString(mod.b_mono_in)+" (numIn="+mod.getNumInputs()+")");
+                  return true;
+
+               case "mono_out":
+                  mod.setEnableMonoOut(!mod.b_mono_out);
+                  Global.Print("Mod mono output is "+Utils.GetEnableString(mod.b_mono_out)+" (numOut="+mod.getNumOutputs()+")");
+                  return true;
+
+               case "sidechain_in":
+                  mod.setEnableSidechainIn(!mod.b_sidechain_in);
+                  Global.Print("Mod sidechain input is "+Utils.GetEnableString(mod.b_sidechain_in)+" (numIn="+mod.getNumInputs()+" bMonoIn="+mod.b_mono_in+")");
+                  return true;
+
+               case "multi_out":
+                  mod.setEnableMultiOut(!mod.b_multi_out);
+                  Global.Print("Mod multi-lane output is "+Utils.GetEnableString(mod.b_multi_out)+" (mono_out="+Utils.GetEnableString(mod.b_mono_out)+", numOut="+mod.getNumOutputs()+")");
+                  return true;
+
+               case "recv_midi":
+                  mod.setEnableReceiveMIDI(!mod.getEnableReceiveMIDI());
+                  Global.Print("Mod "+mod.getName()+" receive-MIDI is "+Utils.GetEnableString(mod.getEnableReceiveMIDI()));
+                  return true;
+
+               case "copy_mod_to_clipboard":
+                  ModGrid.CopyModToClipboard(mod);
+                  Global.Print("Copy mod "+mod.getName()+" to clipboard");
+                  return true;
+
+               case "paste_mod_from_clipboard":
+                  handlePasteModFromModClipboard();
+                  return true;
+
+               case "patch_paramset":
+                  parent_modgrid.showModParamSetDialog(mod);
+                  return true;
+
+               case "send_new_lane_right":
+                  parent_modgrid.handleSendNewLaneRight(mod);
+                  return true;
+
+               case "insert_lane_right":
+                  parent_modgrid.handleInsertLaneRight(grid_x, false/*bQuiet*/);
+                  return true;
+
+               case "duplicate_lane":
+                  parent_modgrid.handleDuplicateLane(grid_x);
+                  return true;
+
+               case "copy_lane_to_clipboard":
+                  parent_modgrid.handleCopyLaneToClipboard(grid_x);
+                  return true;
+
+               case "paste_new_lane_from_clipboard":
+                  parent_modgrid.handlePasteNewLaneFromClipboard(grid_x);
+                  return true;
+
+               case "sync_lane_mods_from_clipboard":
+                  parent_modgrid.handleSyncLaneModsFromClipboard(grid_x, false/*bSyncModMatrix*/);
+                  return true;
+
+               case "sync_lane_mods_and_mod_matrices_from_clipboard":
+                  parent_modgrid.handleSyncLaneModsFromClipboard(grid_x, true/*bSyncModMatrix*/);
+                  return true;
+
+               case "sync_other_lanes_from_this":
+                  parent_modgrid.handleSyncOtherLanesFromThis(grid_x, false/*bSyncModMatrix*/);
+                  return true;
+
+               case "sync_other_lanes_and_mod_matrices_from_this":
+                  parent_modgrid.handleSyncOtherLanesFromThis(grid_x, true/*bSyncModMatrix*/);
+                  return true;
+
+               case "sync_other_lane_mods_from_this":
+                  parent_modgrid.syncOtherLaneModsFromMod(mod, false/*bSyncModMatrix*/);
+                  parent_modgrid.updateGrid(true/*bRelayout*/);
+                  return true;
+
+               case "sync_other_lane_mods_and_mod_matrices_from_this":
+                  parent_modgrid.syncOtherLaneModsFromMod(mod, true/*bSyncModMatrix*/);
+                  parent_modgrid.updateGrid(true/*bRelayout*/);
+                  return true;
+
+               case "lane_track_input":
+                  parent_modgrid.toggleLaneTrackInput(grid_x);
+                  return true;
+
+               case "move_lane_left":
+                  parent_modgrid.handleMoveLaneLeft(grid_x);
+                  return true;
+
+               case "move_lane_right":
+                  parent_modgrid.handleMoveLaneRight(grid_x);
+                  return true;
+
+               case "delete_lane":
+                  parent_modgrid.handleDeleteLane(grid_x);
+                  return true;
+
+               case "delete_unused_lanes":
+                  parent_modgrid.handleDeleteUnusedLanes();
+                  return true;
+
+               case "delete_mod":
+                  parent_modgrid.handleDeleteMod(mod);
+                  return true;
+
+               case "mtxgrp_off":
+                  mod.setUIMutexGroupId(-1);
+                  Global.Print("Mod mutex group is \"-\"");
+                  return true;
+
+               case "mtxgrp_0":
+               case "mtxgrp_1":
+               case "mtxgrp_2":
+               case "mtxgrp_3":
+               case "mtxgrp_4":
+               case "mtxgrp_5":
+               case "mtxgrp_6":
+               case "mtxgrp_7":
+                  mod.setUIMutexGroupId(acName.replace("mtxgrp_",""));
+                  Global.Print("Mod mutex group is \""+mod.getUIMutexGroupName()+"\" ("+mod.ui_mutex_group_id+")");
+                  return true;
+
+               case "mtxgrp_clear_1":
+                  parent_modgrid.handleClearMutexGroups(1);
+                  Global.Print("Clear mutex group 1");
+                  return true;
+
+               case "mtxgrp_clear_2":
+                  parent_modgrid.handleClearMutexGroups(2);
+                  Global.Print("Clear mutex group 2");
+                  return true;
+
+               case "mtxgrp_clear_3":
+                  parent_modgrid.handleClearMutexGroups(3);
+                  Global.Print("Clear mutex group 3");
+                  return true;
+
+               case "mtxgrp_clear_4":
+                  parent_modgrid.handleClearMutexGroups(4);
+                  Global.Print("Clear mutex group 4");
+                  return true;
+
+               case "mtxgrp_clear_all":
+                  parent_modgrid.handleClearMutexGroups(-1);
+                  Global.Print("Clear all mutex groups");
+                  return true;
+            }
+            return false;  // (note) let derived classes handle it (ModGridVST2Button, ModGridCLAPButton, ..)
+      }
+      return Button::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,330 @@
+// ----
+// ---- file   : SampleBrowserTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 12Jul2019
+// ---- changed: 29Jul2023, 01Nov2023, 05Jan2024, 03Aug2024, 31Dec2024, 01Jan2025
+// ----
+// ----
+// ----
+
+module MSampleBrowserTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleBrowserTM : TableModel {
+
+   define int MAX_TAG_LABELS = 20;
+
+   define int COL_ID     = 0;
+   define int COL_PATH   = 1;  // sample folder path OR sorted tag list (b_show_tags)
+   define int COL_RATING = 2;
+   define int COL_NAME   = 3;
+
+   SampleCacheEntry *[] *entries;  // SampleCacheEntry refs (ref to SampleBrowserDialog.entries)
+
+   protected Label *lb_path;
+   protected Panel *pn_tag_labels;
+   protected Label *[] a_tag_labels;
+   protected Font *font_small;  // tags
+   protected Font *font_default;
+   protected Label *lb_rating;
+
+   public boolean b_show_tags;
+
+   public boolean b_ratings_changed;
+
+
+   // <ui_init.png>
+   public virtual initTableModel() {
+      TableModel::initTableModel();
+
+      lb_path <= Label.New();
+      lb_path.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      lb_path.setTextPlacement(Layout.LEFT);
+      lb_path.setInnerPadding4f(1,2,1,1);
+      lb_path.setEnableAbbreviation(true);
+
+      font_small   <= UI.GetFontByName("big10");
+      font_default <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+      pn_tag_labels <= Panel.New();
+      pn_tag_labels.setLayout(null);
+      pn_tag_labels.setEnableFillBackground(true);
+      pn_tag_labels.setPanelAlpha(48);
+      pn_tag_labels.setPanelBackgroundShape(Panel.SHAPE_RECT);  // use new-style bgcolor instead of tinted WINDOW_BG (which ignores bgcolor)
+      pn_tag_labels.setPanelTint(#c0ffffff);
+      pn_tag_labels.setEnableBackgroundKeepAlpha(true);
+      pn_tag_labels.setPanelBackgroundBlend(UI.BLEND_SRCOVER);
+      // // pn_tag_labels.setInnerPadding4f(0,0,0,0);
+      loop(MAX_TAG_LABELS)
+      {
+         Label lb <= Label.New();
+         lb.setFont(font_small);
+         lb.setInnerPadding4f(0,0,0,0);
+         lb.setInnerPadTopScaled(1);
+         lb.setTextPlacement(Layout.LEFT);
+         lb.setBackgroundTint(0);
+         lb.setEnableCaptionDim(false);
+         lb.setEnableBackgroundKeepAlpha(true);
+         lb.setEnableFillBackground(false);
+         lb.setPadLeft(0 == a_tag_labels.numElements ? 0 : 4);
+         a_tag_labels.add(#(deref lb));
+      }
+
+      lb_rating <= Label.New();
+      lb_rating.setIconScale(0.375 * UI.font_scaling);
+      lb_rating.setIconPadLeft(1);
+      lb_rating.setIconPadTop(2);
+   }
+
+   // <method_get.png>
+   public virtual getNumColumns() : int {
+      return 4;
+   }
+
+   // <method_get.png>
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id", b_show_tags ? "Tags" : "Path", "Rating", "Name"][_col];
+   }
+
+   // <method_get.png>
+   public virtual getNumRows() : int {
+      if(null != entries)
+         return entries.numElements;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getCellCaption(int _col, _row) : String {
+      SampleCacheEntry en <= entries.get(_row);
+      if(null != en)
+      {
+         Integer io;
+
+         switch(_col)
+         {
+            case COL_ID:
+               io = _row + 1;
+               return io.printf("%5d");
+
+            case COL_PATH:
+               return b_show_tags ? ((null != en.sorted_tag_string) ? en.sorted_tag_string : "-") : en.rel_path;
+
+            case COL_RATING:
+               return "";
+
+            case COL_NAME:
+               return en.unique_name;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      SampleCacheEntry en <= entries.get(_row);
+      if(COL_PATH == _col)
+      {
+         String cap <= getCellCaption(_col, _row);
+         lb_path.setCaption(cap);
+
+         if(b_show_tags)
+         {
+            if(null != en.tags)
+            {
+               // // trace "xxx SampleBrowserTM: en.tags="+#(en.tags);
+               pn_tag_labels.removeChildHierarchy();
+               // // pn_tag_labels.setDebug(true);
+               pn_tag_labels.invalidateSizeCaches();
+               pn_tag_labels.setEnableForceMinimumSize(false, false);
+               pn_tag_labels.setRequiredSize2f(0, 0);
+               pn_tag_labels.setEnableFillBackground(_row == cursor_index);
+               float totalSizeX = 0;
+               float totalSizeY = 0;
+               float curX = 0;
+               String *sTag;
+               int tagIdx = 0;
+               // // IntArray freqTints <= STConfig.sample_tags_frequency_tints;
+               foreach sTag in en.tags
+               {
+                  // // int tint32 = freqTints.get(tagIdx*2 + 1);
+                  Label lb <= a_tag_labels.get(tagIdx++);
+                  if(null != lb)
+                  {
+                     lb.setEnableForceMinimumSize(false, false);
+                     lb.setRequiredSize2f(0, 0);
+                     lb.invalidateSizeCache();
+                     lb.invalidateContentLayout();
+                     lb.setCaption(sTag);
+                     lb.setCaptionTint(Samples.GetTagFrequencyTint(sTag));
+                     float w = lb.getMinimumSizeX();
+                     float h = lb.getMinimumSizeY();
+                     // trace "xxx    lb w="+w+" h="+h+" curX="+curX+" sTag=\""+sTag+"\" padL="+lb.getPadLeft()+" padR="+lb.getPadRight();
+                     lb.setRequiredSize2f(w, h);
+                     lb.setPosition2f(curX + lb.getPadLeft(), 0);
+                     lb.layoutContent();
+                     w += lb.getPadLeft();
+                     w += lb.getPadRight();
+                     totalSizeX += w;
+                     totalSizeY = mathMaxi(totalSizeY, h);
+                     curX += w;
+                     pn_tag_labels.addChildLayer(lb);
+                  }
+               }
+               pn_tag_labels.setRequiredSize2f(totalSizeX, totalSizeY);
+               return pn_tag_labels;
+            }
+            else
+            {
+               // no tags
+               lb_path.setBackgroundTint(0); // xxx
+               lb_path.setEnableCaptionDim(false);
+               lb_path.setEnableBackgroundKeepAlpha(true);
+               lb_path.setCaption("-");
+               lb_path.setFont(font_small);
+               return lb_path;
+            }
+         }
+         else
+         {
+            lb_path.setBackgroundTint(0); // xxx
+            lb_path.setEnableCaptionDim(true);
+            lb_path.setEnableBackgroundKeepAlpha(true);
+
+            // // lb_path.setToolTipCaption("Tags: \""+en.sorted_tag_string+"\"\nPath: \""+en.rel_path+"\"");  // (todo) never shown
+            
+            lb_path.setFont(font_default);
+            return lb_path;
+         }
+
+      }
+      else if(COL_RATING == _col)
+      {
+         byte ratingIdx = mathClampi((en.rating + 10) / 20, 0, 5);  // 0..100 => 0..5
+         if(ratingIdx > 0)
+            lb_rating.setIcon(UI.GetIcon("star_rating_lvl_"+ratingIdx));
+         else
+            lb_rating.setIcon(null);
+         return lb_rating;
+      }
+      else
+         return TableModel::getCellRenderer(_col, _row, _visibleRow);
+   }
+
+   // <method.png>
+   public virtual updateCellRendererColors(Layer l, int _col, int _row, int _visibleRow) {
+      TableModel::updateCellRendererColors(l, _col, _row, _visibleRow);
+      if(COL_PATH == _col && !b_show_tags)
+      {
+         l.setForegroundColor(UI.TintColor32(l.getForegroundColor(), #30000000));
+      }
+      else
+      {
+         l.setForegroundColor(UI.TintColor32(l.getForegroundColor(), #00000000));
+      }
+   }
+
+   // <method_get.png>
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 40;
+
+         case COL_PATH:
+            return 200;
+
+         case COL_RATING:
+            return 14;
+
+         case COL_NAME:
+            return 200;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 40;
+
+         case COL_PATH:
+            return 1000;
+
+         case COL_RATING:
+            return 14;
+
+         case COL_NAME:
+            return 1500;
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+      if(COL_RATING == _col)
+      {
+         boolean bLMB = _ev.leftButtonUp();
+         boolean bWheelUp = _ev.wheelUp();
+         boolean bWheelDown = _ev.wheelDown();
+         if(bLMB | bWheelUp | bWheelDown)
+         {
+            SampleCacheEntry en <= entries.get(_row);
+            trace "[trc] SampleBrowserTM::handleCellOnMouse: inc rating row="+_row+" cur="+en.rating;
+            if(bWheelUp)
+            {
+               en.rating = mathMini(100, en.rating+(100/5));
+            }
+            else if(bWheelDown)
+            {
+               en.rating = mathMaxi(0, en.rating-(100/5));
+            }
+            else
+            {
+               if(UI.GetKeyMod())
+                  en.rating += (100/5);
+               else
+                  en.rating += 100;
+               if(en.rating > 100)
+                  en.rating = 0;
+            }
+            
+            // (note) sample_ratings.ini is saved when SampleBrowserDialog is closed
+            b_ratings_changed = true;
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getDragObject(int _row) : Object {
+      SampleCacheEntry en;
+      local StringArray ret;
+      if(selected_rows.numElements >= 1)
+      {
+         int selRowIdx;
+         foreach selRowIdx in selected_rows
+         {
+            en <= entries.get(selRowIdx);
+            ret.add(STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name);
+         }
+      }
+      else
+      {
+         en <= entries.get(_row);
+         ret.add(STConfig.sample_rootpath+"/"+en.rel_path+"/"+en.unique_name);
+      }
+      return deref ret;
+   }
+
+}

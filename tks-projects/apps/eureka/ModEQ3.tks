@@ -1,0 +1,460 @@
+// ----
+// ---- file   : ModEQ3.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 18Dec2022
+// ---- changed: 06Mar2023, 06Jan2024, 21Jan2024, 18Sep2024, 19Sep2024, 07Jan2025
+// ----
+// ----
+// ----
+
+module MModEQ3;
+
+use tksdl;
+use tksampler;
+
+namespace st2;
+
+
+// <class.png>
+class ModEQ3 : Mod {
+   // (note) uses tksampler voice plugin effect (fx_example voice plugin library)
+   // (note) processing base/center freq is C-5 (261.63Hz)
+   define String FX_ID = "bsp eq3";
+
+   define int PARAM_NONE     = 0;
+   define int PARAM_GAIN     = 1;  // -1..1 => -100..100
+   define int PARAM_FREQ_LO  = 2;  // 0..1
+   define int PARAM_GAIN_LO  = 3;  // -1..1 => -100..100
+   define int PARAM_GAIN_MID = 4;  // -1..1 => -100..100
+   define int PARAM_FREQ_HI  = 5;  // 0..1
+   define int PARAM_GAIN_HI  = 6;  // -1..1 => -100..100
+   define int NUM_PARAMS     = 7;
+
+   float p_gain;
+   float p_freq_lo;
+   float p_gain_lo;
+   float p_gain_mid;
+   float p_freq_hi;
+   float p_gain_hi;
+
+   public    StPluginShared *shared;
+   protected StPluginVoice  *voice;
+   protected FloatArray      io_buf;  // interleaved stereo buffer for STFX plugin
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(DEF_NUM_IO_BUFFERS/*numIn*/, DEF_NUM_IO_BUFFERS/*numOut*/);
+
+      p_gain     = 0.0;
+      p_freq_lo  = 0.4;
+      p_gain_lo  = 0.0;
+      p_gain_mid = 0.0;
+      p_freq_hi  = 0.75;
+      p_gain_hi  = 0.0;
+
+      addInput("In L");
+      addInput("In R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      io_buf.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+      handleReloadVoicePlugin(true/*bReload*/);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      Mod::exit();
+
+      voice <= null;
+      shared <= null;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return "EQ3";
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      ModEQ3 cl <= new ModEQ3;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      return (_o instanceof ModEQ3);
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModEQ3)
+      {
+         ModEQ3 o <= _o;
+         p_gain     = o.p_gain;
+         p_freq_lo  = o.p_freq_lo;
+         p_gain_lo  = o.p_gain_lo;
+         p_gain_mid = o.p_gain_mid;
+         p_freq_hi  = o.p_freq_hi;
+         p_gain_hi  = o.p_gain_hi;
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method handleReloadVoicePlugin(boolean _bReload) {
+      // called when voice plugin DLL is unloaded or reloaded
+      voice <= null;
+      shared <= null;
+      if(_bReload)
+      {
+         StPluginInfo info <= VoicePlugins.FindVoicePluginInfoById(FX_ID);
+         if(null != info)
+         {
+            shared <= info.createSharedInstance();
+            if(null != shared)
+            {
+               voice <= shared.createVoiceInstance(Audio.mix_rate, 0/*voiceIdx*/);
+               trace "[trc] ModEQ3::handleReloadVoicePlugin: voice="+#(voice);
+            }
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      return NUM_PARAMS;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      _retParamNames.empty();
+
+      _retParamNames = [
+         "-",             //  0: PARAM_NONE
+         "Gain",          //  1: PARAM_GAIN
+         "Freq Lo",       //  2: PARAM_FREQ_LO
+         "Gain Lo",       //  3: PARAM_GAIN_LO
+         "Gain Mid",      //  4: PARAM_GAIN_MID
+         "Freq Hi",       //  5: PARAM_FREQ_HI
+         "Gain Hi",       //  6: PARAM_GAIN_HI
+                        ];
+
+      return true;
+   }
+
+   // <method_set.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // trace "xxx ModEQ3::setParameterValue: idx="+_idx+" value="+_value;
+
+      switch(_idx)
+      {
+         case PARAM_GAIN:
+            setGain(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_FREQ_LO:
+            setFreqLo(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_GAIN_LO:
+            setGainLo(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_GAIN_MID:
+            setGainMid(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_FREQ_HI:
+            setFreqHi(_value);
+            queueUIUpdate();
+            break;
+
+         case PARAM_GAIN_HI:
+            setGainHi(_value);
+            queueUIUpdate();
+            break;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getParameterValue(local int _idx) : float {
+      switch(_idx)
+      {
+         case PARAM_GAIN:
+            return p_gain;
+
+         case PARAM_FREQ_LO:
+            return p_freq_lo;
+
+         case PARAM_GAIN_LO:
+            return p_gain_lo;
+
+         case PARAM_GAIN_MID:
+            return p_gain_mid;
+
+         case PARAM_FREQ_HI:
+            return p_freq_hi;
+
+         case PARAM_GAIN_HI:
+            return p_gain_hi;
+      }
+
+      return 0.0f;
+   }
+
+   // <method_set.png>
+   public method setGain(local float _f) {
+      _f = mathClampf(_f, -1.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(p_gain != _f)
+      {
+         p_gain = _f;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setFreqLo(local float _f) {
+      _f = mathClampf(_f, 0.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(p_freq_lo != _f)
+      {
+         p_freq_lo = _f;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setGainLo(local float _f) {
+      _f = mathClampf(_f, -1.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(p_gain_lo != _f)
+      {
+         p_gain_lo = _f;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setGainMid(local float _f) {
+      _f = mathClampf(_f, -1.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(p_gain_mid != _f)
+      {
+         p_gain_mid = _f;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setFreqHi(local float _f) {
+      _f = mathClampf(_f, 0.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(p_freq_hi != _f)
+      {
+         p_freq_hi = _f;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public method setGainHi(local float _f) {
+      _f = mathClampf(_f, -1.0f, 1.0f);
+
+      mtx_param.lock();
+
+      if(p_gain_hi != _f)
+      {
+         p_gain_hi = _f;
+
+         current_project.markAsModified();
+      }
+
+      mtx_param.unlock();
+   }
+
+   // <method_get.png>
+   public method getInfoString() : String {
+      return "gain="+p_gain+" lo=("+p_freq_lo+";"+p_gain_lo+") mid="+p_gain_mid+" hi=("+p_freq_hi+";"+p_gain_hi+")";
+   }
+
+   // <save.png>
+   public virtual saveState(Stream _ofs) : boolean {
+
+      Mod::saveState(_ofs);
+
+      // Write version
+      _ofs.i16 = 1;
+
+      // Gain
+      _ofs.f32 = p_gain;
+
+      // Freq Lo
+      _ofs.f32 = p_freq_lo;
+
+      // Gain Lo
+      _ofs.f32 = p_gain_lo;
+
+      // Gain Mid
+      _ofs.f32 = p_gain_mid;
+
+      // Freq Hi
+      _ofs.f32 = p_freq_hi;
+
+      // Gain Hi
+      _ofs.f32 = p_gain_hi;
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream _ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(_ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = _ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Gain
+            p_gain = _ifs.f32;
+
+            // Freq Lo
+            p_freq_lo = _ifs.f32;
+
+            // Gain Lo
+            p_gain_lo = _ifs.f32;
+
+            // Gain Mid
+            p_gain_mid = _ifs.f32;
+
+            // Freq Hi
+            p_freq_hi = _ifs.f32;
+
+            // Gain Hi
+            p_gain_hi = _ifs.f32;
+
+            r = true;
+         }
+         else
+         {
+            Global.Error("ModEQ3::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying)/// || (true == STConfig.b_process_when_muted))
+      {
+         mtx_param.lock();
+
+         if(replay.b_have_events)
+         {
+            // Calc modmatrix, update params via setParameterValue()
+            processModMatrixEvents(_fltDev, _fltCh, _globalCh);
+         }
+
+         if(replay.b_process_audio)  // (todo) always true at this point ?!
+         {
+            if(null != voice)
+            {
+               // Interleave
+               tksampleedit_copy_dualmono_to_stereo(io_buf, 0,
+                                                    inL, inR, 0,
+                                                    _numFrames
+                                                    );
+
+               // Process delay
+               shared.setParamValue(1/*PARAM_GAIN*/,    p_gain*0.5f + 0.5f);
+               shared.setParamValue(2/*PARAM_FREQLO*/,  p_freq_lo);
+               shared.setParamValue(3/*PARAM_GAINLO*/,  p_gain_lo*0.5f + 0.5f);
+               shared.setParamValue(4/*PARAM_FREQHI*/,  p_freq_hi);
+               shared.setParamValue(5/*PARAM_GAINHI*/,  p_gain_hi*0.5f + 0.5f);
+               shared.setParamValue(6/*PARAM_GAINMID*/, p_gain_mid*0.5f + 0.5f);
+               voice.processReplace(io_buf, _numFrames);
+
+               // De-Interleave
+               tksampleedit_copy_stereo_to_dualmono(outL, outR, 0,
+                                                    io_buf, 0,
+                                                    _numFrames
+                                                    );
+            }
+            else
+            {
+               // Bypass (copy input to output)
+               tksampleedit_copy_dualmono_to_dualmono(outL, outR, 0,
+                                                      inL, inR, 0,
+                                                      _numFrames
+                                                      );
+            }
+         }
+
+         mtx_param.unlock();
+
+      } // if _bPlaying
+   }
+
+}

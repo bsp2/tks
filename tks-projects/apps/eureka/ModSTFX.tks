@@ -1,0 +1,918 @@
+// ----
+// ---- file   : ModSTFX.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 21Apr2023
+// ---- changed: 09May2023, 12May2023, 06Jan2024, 21Jan2024, 05Jul2024, 10Aug2024, 11Sep2024,
+// ----          17Sep2024, 18Sep2024, 19Sep2024, 27Sep2024, 07Jan2025, 08Jan2025
+// ----
+// ----
+// ----
+
+module MModSTFX;
+
+use tksdl;
+// use tkspeexdsp;
+
+namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class ModSTFX : Mod {
+
+   // (note) sidechain inputs 3+4 are routed to voice bus #1
+   define int STFX_NUM_IN_BUFFERS  = 4;
+   define int STFX_NUM_OUT_BUFFERS = 2;
+
+   // (note) getParameter() / setParameter() reads / writes voice modulation (relative to parameter values)
+   // (note) no ui_param_history (
+
+   // must equal STSAMPLEVOICE_MAX_VOICE_BUS_FRAMES (128)
+   define int MAX_VOICE_BUS_FRAMES = 128;
+
+   // must equal ST_PLUGIN_MAX_LAYERS (32)
+   define int MAX_VOICE_BUSES      = 32;
+
+   String unique_id_string;  // StPluginInfo.id, e.g. "bsp schroederverb"
+
+   StPluginInfo   *info;
+   StPluginShared *shared;
+   StPluginVoice  *voice;
+
+   FloatArray *patch_data;  // lazy-alloc'd when querying plugin or loading from stream
+
+   String last_io_patch_name;  // base filename
+
+   protected FloatArray io_buf;     // interleaved stereo buffer
+   protected FloatArray io_buf_sc;  // interleaved stereo buffer (side-chain / voice bus #1)
+
+   protected String clipboard_name;  // used for clipboard instances where no actual plugin instance is available
+
+   static GenericParamDialogSTFX *dlg_genericparam;
+
+   protected FloatArray mod_values;
+
+
+   // <method_init.png>
+   public virtual init() {
+      Mod::init();
+      allocateIOBuffers(STFX_NUM_IN_BUFFERS/*numIn*/, STFX_NUM_OUT_BUFFERS/*numOut*/);
+
+      addInput("In L");
+      addInput("In R");
+
+      addInput("SC L");
+      addInput("SC R");
+
+      addOutput("Out L");
+      addOutput("Out R");
+
+      io_buf.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+
+      handleReloadVoicePlugin(true/*bReload*/);
+   }
+
+   // <method_exit.png>
+   public virtual exit() {
+      unload();
+      Mod::exit();
+   }
+
+   // <method.png>
+   public =replay= method handleReloadVoicePlugin(boolean _bReload) {
+      // called when voice plugin DLL is unloaded or reloaded
+      Global.Debug2("ModSTFX::handleReloadVoicePlugin: unique_id_string=\""+unique_id_string+"\" bReload="+_bReload);
+      freePlugin();
+
+      if(_bReload)
+      {
+         info <= VoicePlugins.FindVoicePluginInfoById(unique_id_string);
+         if(null != info)
+         {
+            shared <= info.createSharedInstance();
+            if(null != shared)
+            {
+               voice <= shared.createVoiceInstance(Audio.mix_rate, 0/*voiceIdx*/);
+               Global.Debug2("ModSTFX::handleReloadVoicePlugin: id=\""+info.id+"\" voice="+#(voice));
+
+               restorePatchData();
+
+               mod_values.allocAndFill(info.numMods, 0.0f);
+
+               if(info.doVoiceBus())
+               {
+                  if(io_buf_sc.isEmpty())
+                     io_buf_sc.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+               }
+            }
+         }
+         else
+         {
+            // (note) unique_id_string is usually "" when called from init()
+            // trace "[~~~] ModSTFX::handleReloadVoicePlugin: FindVoicePluginInfoById(unique_id_string=\""+unique_id_string+"\") failed";
+         }
+      }
+   }
+
+   // <method.png>
+   protected method freePlugin() {
+      if(null != info)
+      {
+         voice  <= null;
+         shared <= null;
+         info   <= null;
+      }
+   }
+
+   // <method_exit.png>
+   public virtual unload() {
+      // When changing patch variations
+
+      // patch data may be needed after switching patch variations (for cloning / restoring)
+      queryPatchData();
+
+      freePlugin();
+   }
+
+   // <method.png>
+   public virtual isEffect() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual canDoRelativeParams() : boolean {
+      return false;
+   }
+
+   // <method.png>
+   public virtual modClone(boolean _bFullInit) : Mod {
+      local ModSTFX cl;
+      cl.init();
+      cl.modCopyBaseFrom(this);
+      cl.loadPluginByUniqueIDString(unique_id_string);
+      return deref cl;
+   }
+
+   // <method.png>
+   public virtual modIsPatchCompatibleWith(Mod _o) : boolean {
+      if(_o instanceof ModSTFX)
+      {
+         ModSTFX o <= _o;
+         return (unique_id_string == o.unique_id_string);
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual modCopyPatchFrom(Mod _o) : boolean {
+      if(_o instanceof ModSTFX)
+      {
+         ModSTFX o <= _o;
+
+         if(null != o.info)
+            o.queryPatchData();
+         // else: no actual instance (just the clipboard)
+
+         Global.Debug("ModSTFX::modCopyPatchFrom: o="+#(o)+" o.patch_data="+#(o.patch_data));
+
+         if(null != o.patch_data)
+         {
+            if(null == patch_data)
+               patch_data <= new FloatArray;
+
+            patch_data = o.patch_data;
+
+            if(null != info)
+            {
+               restorePatchData();
+            }
+            else
+            {
+               // else: no actual instance (just the clipboard)
+               // (todo) OR: copying patch data while cloning patch variation (plugins are already unloaded)
+               clipboard_name = o.getName();
+            }
+         }
+         else
+         {
+            patch_data <= null;
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method loadInitPatch(_filterHintOrNull) : boolean {
+      String dirName = getSTFXPatchDir();
+      String fileName = "init";
+      boolean bLoaded = false;
+      String pathName;
+
+      if(null != _filterHintOrNull)
+      {
+         if(!_filterHintOrNull.isBlank())
+         {
+            fileName = Utils.ConvertToFileName("init_"+_filterHintOrNull.toLower());
+
+            Global.Debug("ModSTFX::loadInitPatch: try read \""+fileName+"\"");
+
+            pathName = dirName+"/"+fileName+Global.STFX_PRESET_FILE_SUFFIX/*.stfx*/;
+            Global.Debug("ModSTFX::loadInitPatch: check exists \""+pathName+"\"");
+
+            if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+            {
+               Global.Debug("ModSTFX::loadInitPatch: try load \""+pathName+"\"");
+               bLoaded = loadSTFXPatchFromFile(pathName);
+            }
+         }
+      }
+
+      if(!bLoaded)
+      {
+         pathName = dirName+"/init"+Global.STFX_PRESET_FILE_SUFFIX/*.stfx*/;
+         Global.Debug("ModSTFX::loadInitPatch: check exists \""+pathName+"\"");
+
+         if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+         {
+            Global.Debug("ModSTFX::loadInitPatch: try load \""+pathName+"\"");
+            bLoaded = loadSTFXPatchFromFile(pathName);
+         }
+      }
+
+      return bLoaded;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      if(!display_name.isBlank())
+         return display_name;
+
+      if(null != info)
+         return info.getName();
+
+      return clipboard_name;
+   }
+
+   // <method_get.png>
+   public method getUniqueIDString() : String {
+      if(null != info)
+         return unique_id_string;
+      return "n/a";
+   }
+
+   // <method.png>
+   public method loadPluginByUniqueIDString(local String _uniqueIDString) : boolean {
+      local boolean r = false;
+
+      freePlugin();
+
+      unique_id_string = _uniqueIDString;
+
+      local StPluginInfo pluginInfo <= VoicePlugins.FindVoicePluginInfoById(_uniqueIDString);
+
+      if(null != pluginInfo)
+      {
+         local StPluginShared pluginShared <= pluginInfo.createSharedInstance();
+
+         if(null != pluginShared)
+         {
+            StPluginVoice pluginVoice <= pluginShared.createVoiceInstance(Audio.mix_rate, 0/*voiceIdx*/);
+
+            if(null != pluginVoice)
+            {
+               voice  <= deref pluginVoice;
+               shared <= deref pluginShared;
+               info   <= deref pluginInfo;
+
+               if(info.doVoiceBus())
+               {
+                  if(io_buf_sc.isEmpty())
+                     io_buf_sc.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
+               }
+
+               r = true;
+            }
+            else
+            {
+               trace "[---] ModSTFX::loadPluginByUniqueIDString: failed to create voice instance (id=\""+unique_id_string+"\")";
+            }
+         }
+         else
+         {
+            trace "[---] ModSTFX::loadPluginByUniqueIDString: failed to create shared instance (id=\""+unique_id_string+"\")";
+         }
+      }
+      else
+      {
+         Global.Warning("ModSTFX::loadPluginByUniqueIDString: id \""+_uniqueIDString+"\" not found in plugin cache !!");
+      }
+
+      // In case the plugin has changed the current working directory
+      tkfileutils_setcwd(program_directory);
+
+      return r;
+   }
+
+   // <method_get.png>
+   public virtual getLatencyNumFrames() : int {
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual hasUIParamHistory() : boolean {
+      // (note) overridden by ModSTFX (no history)
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNumParameters() : int {
+      if(null != info)
+         return info.numMods;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getParameterNamesArray(StringArray _retParamNames) : boolean {
+      boolean r = false;
+
+      _retParamNames.empty();
+
+      if(null != info)
+      {
+         int numMods = info.numMods;
+
+         if(numMods > 0)
+         {
+            int modIdx = 0;
+            loop(numMods)
+               _retParamNames.add(info.getModName(modIdx++));
+
+            r = true;
+         }
+      }
+
+      return r;
+   }
+
+   // <method.png>
+   public virtual getParameterMinValue(local int _idx) : float {
+      // (note) actual min is an arbitrary float. add getParameterMinLimit() and auto-extend in ModParamSetDialog ?
+      return -1.0f;
+   }
+
+   // <method.png>
+   public virtual getParameterMaxValue(local int _idx) : float {
+      // (note) actual max is an arbitrary float
+      return 1.0f;
+   }
+
+   // <method_get.png>
+   public virtual getParameterValue(local int _idx) : float {
+      // query modulation, _not_ the base parameter value
+      if(null != voice)
+      {
+         if(_idx < info.numMods)
+         {
+            // // return voice.getModValue(_idx);
+            return mod_values.get(_idx);
+         }
+      }
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public virtual setParameterValue(local int _idx, local float _value) {
+      // update modulation, _not_ the base parameter value
+      mtx_param.lock();
+      if(null != voice)
+      {
+         if(_idx < info.numMods)
+         {
+            voice.setModValue(_idx, _value, 0/*frameOff*/);
+            mod_values[_idx] = _value;
+         }
+      }
+      mtx_param.unlock();
+   }
+
+   // <method.png>
+   public static GetSharedParamNamesArray(Object _infoOrShared, StringArray _retParamNames) : boolean {
+      boolean r = false;
+
+      StPluginInfo   info   <= _infoOrShared;
+      StPluginShared shared <= _infoOrShared;
+
+      _retParamNames.empty();
+
+      if(null != _infoOrShared)
+      {
+         int numParams = (shared instanceof StPluginShared) ? (shared.info.numParams) : info.numParams;
+         if(numParams > 0)
+         {
+            int paramIdx = 0;
+            loop(numParams)
+            {
+               if(shared instanceof StPluginShared)
+                  _retParamNames.add(shared.queryDynamicParamName(paramIdx++));
+               else
+                  _retParamNames.add(info.getParamName(paramIdx++));
+            }
+
+            r = true;
+         }
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getSharedParamNamesArray(StringArray _retParamNames) : boolean {
+      return GetSharedParamNamesArray(info, _retParamNames);
+   }
+
+   // <method_get.png>
+   public static GetSharedParamResetValue(local StPluginInfo _info, local int _idx) : float {
+      if(null != _info)
+      {
+         if(_idx < _info.numParams)
+            return _info.getParamReset(_idx);
+      }
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public method getSharedParamResetValue(local int _idx) : float {
+      return GetSharedParamResetValue(info, _idx);
+   }
+
+   // <method_get.png>
+   public static GetSharedParamValue(local StPluginShared _shared, local int _idx) : float {
+      if(null != _shared)
+      {
+         local StPluginInfo info <= _shared.info;
+         if(_idx < info.numParams)
+            return _shared.getParamValue(_idx);
+      }
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public method getSharedParamValue(local int _idx) : float {
+      // query base parameter value
+      return GetSharedParamValue(shared, _idx);
+   }
+
+   // <method_get.png>
+   public static GetSharedParamValueString(local StPluginShared _shared, local int _idx) : String {
+      // called by UI
+      if(null != _shared)
+      {
+         local StPluginInfo info <= _shared.info;
+         if(_idx < info.numParams)
+            return _shared.getParamValueString(_idx);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSharedParamValueString(local int _idx) : String {
+      // called by UI (return ms, dB, ..)
+      return GetSharedParamValueString(shared, _idx);
+   }
+
+   // <method_set.png>
+   public static SetSharedParamValue(local StPluginShared _shared, local int _idx, local float _value) {
+      if(null != _shared)
+      {
+         local StPluginInfo info <= _shared.info;
+         if(_idx < info.numParams)
+            _shared.setParamValue(_idx, _value);
+      }
+   }
+
+   // <method_set.png>
+   public =replay= static SetSharedParamValue_Sync(local StPluginShared _shared, local int _idx, local float _value) {
+      // Called when editing Sample voiceplugin base parameter
+      SetSharedParamValue(_shared, _idx, _value);
+   }
+
+   // <method_set.png>
+   public method setSharedParamValue(local int _idx, local float _value) {
+      // set base parameter value
+      //  (note) called by GenericParamDialogSTFX
+      if(null != shared)
+      {
+         mtx_param.lock();
+         if(null == patch_data)
+            queryPatchData();
+         SetSharedParamValue(shared, _idx, _value);
+         patch_data[_idx] = _value;
+         mtx_param.unlock();
+      }
+   }
+
+   // <method.png>
+   public method queryPatchData() : boolean {
+      local boolean r = false;
+      if(null != shared)
+      {
+         if(null == patch_data)
+            patch_data <= new FloatArray;
+         patch_data.allocAndFill(info.numParams, 0.0f);
+         local int paramIdx = 0;
+         loop(info.numParams)
+         {
+            patch_data[paramIdx] = shared.getParamValue(paramIdx);
+            paramIdx++;
+         }
+
+         Global.Debug2("ModSTFX::queryPatchData: saved "+info.numParams+" params (unique_id_string=\""+unique_id_string+"\")");
+
+         r = true;
+      }
+      return r;
+   }
+
+   // <method.png>
+   public method restorePatchData() : boolean {
+      // trace "xxx restorePatchData";
+      if(null != shared)
+      {
+         if(null != patch_data)
+         {
+            int paramIdx = 0;
+            loop(patch_data.numElements)
+            {
+               if(paramIdx < info.numParams)
+                  shared.setParamValue(paramIdx, patch_data[paramIdx]);
+               paramIdx++;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= virtual stopVoices() {
+      // (todo) Stop all voices and reverb/delay trails
+      // queryPatchData();
+      // restorePatchData();
+   }
+
+   // <save.png>
+   public virtual saveState(Stream ofs) : boolean {
+
+      Mod::saveState(ofs);
+
+      // Write version
+      ofs.i16 = 2;
+
+      // Unique ID string
+      Utils.WriteString(ofs, unique_id_string);
+
+      // Last I/O patch name (v2+)
+      Utils.WriteString(ofs, last_io_patch_name);
+
+      savePatchDataToStream(ofs, true/*bSkipVerAndId*/);
+
+      return true;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream ifs, boolean _bRestoreInstanceIDs) : boolean {
+
+      boolean r = Mod::loadState(ifs, _bRestoreInstanceIDs);
+
+      if(r)
+      {
+         // Read version
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Unique ID string
+            Utils.ReadString(ifs, unique_id_string);
+
+            if(ver >= 2)
+            {
+               // Last I/O patch name (v2+)
+               Utils.ReadString(ifs, last_io_patch_name);
+            }
+
+            if(!loadPluginByUniqueIDString(unique_id_string))
+               trace "[~~~] ModSTFX::loadState: failed to instantiate plugin id=\""+unique_id_string+"\"";
+
+            // (note) continue loading even if plugin is not (currently) available (just load to patch_data)
+            loadPatchDataFromStream(ifs, true/*bSkipVerAndId*/);
+
+            // Succeeded
+            r = true;
+
+         } // if version check
+         else
+         {
+            Global.Error("ModSTFX::loadState: invalid ver="+ver);
+            r = false;
+         }
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public virtual loadStatePost(local boolean _bThreaded) : boolean {
+      // trace "xxx ModSTFX::loadStatePost: ENTER";
+      if(null == shared)
+      {
+         if(!loadPluginByUniqueIDString(unique_id_string))
+            trace "[~~~] ModSTFX::loadStatePost: failed to instantiate plugin id=\""+unique_id_string+"\"";
+      }
+      restorePatchData();
+      // trace "xxx ModSTFX::loadStatePost: LEAVE";
+   }
+
+   // <method_get.png>
+   public method getSTFXPatchDir() : String {
+      return Utils.FixFileName(STConfig.stfxpatch_rootpath+"/"+Utils.ConvertToFileName(unique_id_string));
+   }
+
+   // load.png>
+   public method loadPatchDataFromStream(Stream ifs, boolean _bSkipVerAndId) : boolean {
+      boolean r = false;
+
+      // version
+      short ver = _bSkipVerAndId ? 1 : ifs.u16;
+
+      if(ver >= 1)
+      {
+         // id
+         boolean bIdOk;
+         if(!_bSkipVerAndId)
+         {
+            local String sID;
+            Utils.ReadString(ifs, sID);
+
+            bIdOk = (sID == unique_id_string);
+         }
+         else
+            bIdOk = _bSkipVerAndId;
+
+         if(bIdOk)
+         {
+            // num params
+            short numParams = ifs.u16;
+
+            if(null == patch_data)
+               patch_data <= new FloatArray;
+
+            patch_data.allocAndFill(numParams, 0.0f);
+
+            // param values
+            local int paramIdx = 0;
+            loop(numParams)
+            {
+               float paramVal = ifs.f32;
+               patch_data[paramIdx] = paramVal;
+               if( (null != shared) && (paramIdx < info.numParams) )
+                  shared.setParamValue(paramIdx, paramVal);
+               paramIdx++;
+            }
+
+            // Succeeded
+            r = true;
+         }
+         else
+         {
+            trace "[---] ModSTFX::loadPatchDataFromStream: id mismatch (have=\""+sID+"\" expect=\""+unique_id_string+"\")";
+         }
+      } // if ver >= 1
+      else
+      {
+         trace "[---] ModSTFX::loadPatchDataFromStream: invalid ver="+ver;
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public =replay= method loadSTFXPatchFromFile(String _pathName) : boolean {
+      local File f;
+      boolean r = false;
+
+      if(null == info)
+         return false;
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_IN))
+      {
+         f.byteOrder = LITTLE_ENDIAN;
+
+         r = loadPatchDataFromStream(f, false/*bSkipVerAndId*/);
+
+         f.close();
+
+         UpdateLastIOPatchNameFromPathName(last_io_patch_name, _pathName);
+      }
+      else
+      {
+         trace "[---] ModSTFX::loadSTFXPatchFromFile: failed to open \""+_pathName+"\" for reading.";
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+      return r;
+   }
+
+   // <save.png>
+   protected method savePatchDataToStream(Stream ofs, boolean _bSkipVerAndId) {
+
+      if(!_bSkipVerAndId)
+      {
+         // version
+         ofs.i16 = 1;
+
+         // plugin id
+         Utils.WriteString(ofs, unique_id_string);
+      }
+
+      if(null != patch_data)
+      {
+         // Num params
+         ofs.i16 = patch_data.numElements;
+
+         // Parameter values
+         int paramIdx = 0;
+         loop(patch_data.numElements)
+            ofs.f32 = patch_data[paramIdx++];
+      }
+      else
+      {
+         // should not be reachable
+         ofs.i16 = 0; // num params
+      }
+   }
+
+   // <save.png>
+   public method saveSTFXPatchToFile(String _pathName) : boolean {
+
+      if(null == shared)
+         return false;
+
+      if(!queryPatchData())
+      {
+         trace "[---] ModSTFX::saveSTFXPatchToFile: queryPatchData() failed.";
+         return false;
+      }
+
+      local File f;
+      boolean r = false;
+
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_OUT))
+      {
+         f.byteOrder = LITTLE_ENDIAN;
+
+         UpdateLastIOPatchNameFromPathName(last_io_patch_name, _pathName);
+
+         savePatchDataToStream(f, false/*bSkipVerAndId*/);
+
+         f.close();
+
+         // Succeeded
+         r = true;
+      }
+      else
+      {
+         trace "[---] ModSTFX::saveSTFXPatchToFile: failed to open \""+_pathName+"\" for writing.";
+      }
+
+      return r;
+   }
+
+   // <replay.png>
+   protected method resetAllControllers() {
+      if(null != voice)
+      {
+         local int modIdx = 0;
+         loop(info.numMods)
+            voice.setModValue(modIdx++, 0.0f, 0/*frameOff*/);
+      }
+   }
+
+   // <method.png>
+   public virtual showEditor() {
+      if(null != shared)
+         showGenericParamDialog();
+   }
+
+   // <ui_show.png>
+   public method showGenericParamDialog() {
+      if(null == dlg_genericparam)
+      {
+         dlg_genericparam <= new GenericParamDialogSTFX;
+         dlg_genericparam.initGenericParamDialogSTFX();
+      }
+      dlg_genericparam.showGenericParamDialogSTFX(info, shared, this, null/*sampleOrNull*/);
+   }
+
+   // <method.png>
+   public virtual hideEditor() {
+      if(null != dlg_genericparam)
+         dlg_genericparam.hide();
+   }
+
+   // <method.png>
+   public method closeEditor() {
+   }
+
+   // <method.png>
+   public method isEditorVisible() : boolean {
+   }
+
+   // <replay.png>
+   public virtual process(local int _numFrames,
+                          local int _fltDev, local int _fltCh,
+                          local int _forceCh, local int _globalCh,
+                          local boolean _bPlaying
+                          ) {
+
+      local FloatArray inL <= input_bufs.get(0);
+      local FloatArray inR <= input_bufs.get(1);
+
+      local FloatArray outL <= output_bufs.get(0);
+      local FloatArray outR <= output_bufs.get(1);
+
+      if(_bPlaying)
+      {
+         mtx_param.lock();
+
+         if(replay.b_reset_all_controllers)
+            resetAllControllers();
+
+         // (todo) update mods instead of params
+         if(replay.b_have_events)
+         {
+            // Calc modmatrix, update params via setParameterValue()
+            processModMatrixEvents(_fltDev, _fltCh, _globalCh);
+         }
+
+         if(replay.b_process_audio && (null != voice))
+         {
+            // Interleave
+            tksampleedit_copy_dualmono_to_stereo(io_buf, 0,
+                                                 inL, inR, 0,
+                                                 _numFrames
+                                                 );
+
+            if(info.doVoiceBus())
+            {
+               // Interleave side-chain input (module inputs 2+3 to voice bus #1)
+               local FloatArray inLSC <= input_bufs.get(2);
+               local FloatArray inRSC <= input_bufs.get(3);
+               // trace "xxx inLSC.numElements="+inLSC.numElements+" inRSC.numElements="+inRSC.numElements+" io_buf_sc.numElements="+io_buf_sc.numElements+" numFrames="+_numFrames;
+               tksampleedit_copy_dualmono_to_stereo(io_buf_sc, 0,
+                                                    inLSC, inRSC, 0,
+                                                    _numFrames
+                                                    );
+
+               // trace "xxx inLSC="+#(inLSC);
+               // trace "xxx io_buf_sc="+#(io_buf_sc);
+
+               // Process effect with voice buffers (voice bus 1 = interleaved side-chain input)
+               voice.processReplaceVoiceBus1SideChain(io_buf, io_buf_sc, _numFrames);
+            }
+            else
+            {
+               // Process effect
+               voice.processReplace(io_buf, _numFrames);
+            }
+
+            // De-Interleave
+            tksampleedit_copy_stereo_to_dualmono(outL, outR, 0,
+                                                 io_buf, 0,
+                                                 _numFrames
+                                                 );
+         }
+         else
+         {
+            // Bypass (copy input to output)
+            tksampleedit_copy_dualmono_to_dualmono(outL, outR, 0,
+                                                   inL, inR, 0,
+                                                   _numFrames
+                                                   );
+         }
+
+         mtx_param.unlock();
+
+      } // if _bPlaying
+
+   }
+
+}

@@ -1,0 +1,429 @@
+// ----
+// ---- file   : Output.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 12Feb2018, 15Feb2018, 16Feb2018, 17Feb2018, 20Feb2018, 28Feb2018, 21Jul2018
+// ----          22Feb2019, 04Feb2021, 31May2021, 24Nov2023, 20Sep2024
+// ----
+// ----
+// ----
+
+module MOutput;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <class.png>
+class Output {
+
+   define int MAX_OUTPUTS = 8;
+
+   define int TYPE_DEFAULT      =  0;  // send stereo to default audio output (1+2)
+   define int TYPE_NONE         =  1;
+   define int TYPE_TRACK        =  2;  // send stereo to track input
+   define int TYPE_TRACK_SC     =  3;  // send stereo to track sidechannel input
+   define int TYPE_AUDIO_STEREO =  4;  // send stereo to audio output channel pair
+   define int TYPE_AUDIO_LEFT   =  5;  // send left/mono/mid channel to audio output
+   define int TYPE_AUDIO_RIGHT  =  6;  // send right/side channel to audio output
+   define int TYPE_LANE         =  7;  // Lanes only (send stereo)
+   define int TYPE_LANE_SC      =  8;  // Lanes only (send stereo to lane sidechannel input)
+   define int TYPE_LANE_L       =  9;  // Lanes only (no implicit channel replication)
+   define int TYPE_LANE_R       = 10;  // Lanes only (no implicit channel replication)
+   define int TYPE_LANE_L_ST    = 11;  // Lanes only (replicate channel to stereo)
+   define int TYPE_LANE_R_ST    = 12;  // Lanes only (replicate channel to stereo)
+   define int TYPE_LANE_M_L     = 13;  // Lanes only (send monomix to left channel)
+   define int TYPE_LANE_M_R     = 14;  // Lanes only (send monomix to right channel)
+
+   define int PAN_LINEAR  = 0;
+   define int PAN_LERP    = 1;
+   define int PAN_SQRT    = 2;
+   define int PAN_COS     = 3;
+   define int PAN_POW     = 4;
+
+   int   type;        // TYPE_xxx
+   int   channel_idx;
+   int   track_idx;   // -1=self
+   int   lane_idx;
+   float level;
+   int   pan_type;    // PAN_xxx
+   float pan;
+
+   float level_l;     // see updateLevelLR()
+   float level_r;
+
+
+   // <method_init.png>
+   public method init() {
+      type        = TYPE_DEFAULT;
+      level       = 1.0;
+      pan         = 0.0;
+      pan_type    = STConfig.default_pan_law;
+      channel_idx = 0;
+      track_idx   = 0;
+
+      updateLevelLR();
+   }
+
+   // <method_set.png>
+   public =replay= method setType(int _type) {
+      type = _type;
+
+      current_project.markAsModified();
+   }
+
+   // <method_get.png>
+   public method isTypeDefault() : boolean {
+      return (TYPE_DEFAULT == type);
+   }
+
+   // <method_get.png>
+   public method isTrack() : boolean {
+      return
+         (Output.TYPE_TRACK    == type) ||
+         (Output.TYPE_TRACK_SC == type) ;
+   }
+
+   // <method_get.png>
+   public method isLane() : boolean {
+      return
+         (Output.TYPE_LANE <= type <= TYPE_LANE_M_R);
+   }
+
+   // <method_set.png>
+   public =replay= method setChannelIdx(int _channelIdx) {
+      channel_idx = _channelIdx;
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setTrackIdx(int _trackIdx) {
+      track_idx = _trackIdx;
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setLaneIdx(int _laneIdx) {
+      lane_idx = _laneIdx;
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setIdx(int _idx) {
+      switch(type)
+      {
+         default:
+         case TYPE_DEFAULT:
+            break;
+
+         case TYPE_AUDIO_STEREO:
+         case TYPE_AUDIO_LEFT:
+         case TYPE_AUDIO_RIGHT:
+            channel_idx = _idx;
+            current_project.markAsModified();
+            break;
+
+         case TYPE_TRACK:
+         case TYPE_TRACK_SC:
+            track_idx = _idx;
+            current_project.markAsModified();
+            break;
+
+         case TYPE_LANE:
+         case TYPE_LANE_SC:
+         case TYPE_LANE_L:
+         case TYPE_LANE_R:
+         case TYPE_LANE_L_ST:
+         case TYPE_LANE_R_ST:
+         case TYPE_LANE_M_L:
+         case TYPE_LANE_M_R:
+            lane_idx = _idx;
+            current_project.markAsModified();
+            break;
+      }
+   }
+
+   // <method_get.png>
+   public method getIdx() : int {
+      switch(type)
+      {
+         default:
+         case TYPE_DEFAULT:
+            break;
+
+         case TYPE_AUDIO_STEREO:
+         case TYPE_AUDIO_LEFT:
+         case TYPE_AUDIO_RIGHT:
+            return channel_idx;
+
+         case TYPE_TRACK:
+         case TYPE_TRACK_SC:
+            return track_idx;
+
+         case TYPE_LANE:
+         case TYPE_LANE_SC:
+         case TYPE_LANE_L:
+         case TYPE_LANE_R:
+         case TYPE_LANE_L_ST:
+         case TYPE_LANE_R_ST:
+         case TYPE_LANE_M_L:
+         case TYPE_LANE_M_R:
+            return lane_idx;
+      }
+      return 0;
+   }
+
+   // <method_get.png>
+   public method hasIdx() : boolean {
+      switch(type)
+      {
+         default:
+         case TYPE_DEFAULT:
+            break;
+
+         case TYPE_AUDIO_STEREO:
+         case TYPE_AUDIO_LEFT:
+         case TYPE_AUDIO_RIGHT:
+         case TYPE_TRACK:
+         case TYPE_TRACK_SC:
+         case TYPE_LANE:
+         case TYPE_LANE_SC:
+         case TYPE_LANE_L:
+         case TYPE_LANE_R:
+         case TYPE_LANE_L_ST:
+         case TYPE_LANE_R_ST:
+         case TYPE_LANE_M_L:
+         case TYPE_LANE_M_R:
+            return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method outputsToAudioChannelIdx(int _idx) : boolean {
+      switch(type)
+      {
+         case TYPE_AUDIO_STEREO:
+            return (channel_idx == _idx) || ((channel_idx+1) == _idx);
+
+         case TYPE_AUDIO_LEFT:
+         case TYPE_AUDIO_RIGHT:
+            return (channel_idx == _idx);
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method outputsToLaneIdx(int _idx) : boolean {
+      switch(type)
+      {
+         case TYPE_LANE:
+            return (lane_idx == _idx);
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method isStereo() : boolean {
+      return ! ([TYPE_AUDIO_LEFT,
+                 TYPE_AUDIO_RIGHT,
+                 TYPE_LANE_L,
+                 TYPE_LANE_R].contains(type));
+   }
+
+   // <method_update.png>
+   protected method updateLevelLR() {
+      float t;
+
+      switch(pan_type)
+      {
+         default:
+         case PAN_LINEAR:
+            t = pan;
+            level_l = (t < 0.0f) ? 1.0f : (1.0f - t);
+            level_r = (t > 0.0f) ? 1.0f : (1.0f + t);
+            break;
+
+         case PAN_LERP:
+            t = ((1.0f - pan) * 0.5f);
+            level_l = t;
+            level_r = (1.0f - t);
+            break;
+
+         case PAN_SQRT:
+            t = (0.5f + pan*0.5f);
+            level_l = sqrt(1.0f - t);
+            level_r = sqrt(t);
+            break;
+
+         case PAN_COS:
+            t = (0.25f + pan*0.25f) * PI;
+            level_l = cos(t);
+            level_r = cos(PI*0.5 - t);
+            break;
+
+         case PAN_POW:
+            t = (0.5f + pan*0.5f);
+            level_l = mathPowerf(E, (1.0f - t) * 0.6931) - 1.0f;
+            level_r = mathPowerf(E, t * 0.6931) - 1.0f;
+            break;
+      }
+
+      level_l *= level;
+      level_r *= level;
+
+      // trace "[dbg] Output::updateLevelLR: type="+pan_type+" levels=("+level_l+";"+level_r+")";
+   }
+
+   // <method_set.png>
+   public =replay= method setPan(float _pan) {
+      pan = _pan;
+
+      updateLevelLR();
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setPanType(int _type) {
+      pan_type = _type;
+
+      updateLevelLR();
+
+      current_project.markAsModified();
+   }
+
+   // <method_set.png>
+   public =replay= method setLevel(float _level) {
+      level = _level;
+
+      updateLevelLR();
+
+      current_project.markAsModified();
+   }
+
+   // <method.png>
+   public method handleTrackReorder(IntArray _reorderMap) {
+      if(track_idx >= 0)
+         track_idx = _reorderMap.get(track_idx);
+   }
+
+   // <method.png>
+   public method handleLaneReorder(IntArray _reorderMap) {
+      // trace "xxx update output: lane_idx="+lane_idx+" => "+_reorderMap.get(lane_idx);
+      lane_idx = _reorderMap.get(lane_idx);
+   }
+
+   // <method.png>
+   public method referencesLane(int _laneIdx) : boolean {
+      if(lane_idx == _laneIdx)
+      {
+         if(TYPE_LANE <= type <= TYPE_LANE_M_R)
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method copyOutputFrom(Output _o) {
+      type        = _o.type;
+      channel_idx = _o.channel_idx;
+      track_idx   = _o.track_idx;
+      lane_idx    = _o.lane_idx;
+      level       = _o.level;
+      pan_type    = _o.pan_type;
+      pan         = _o.pan;
+      updateLevelLR();
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 4;
+
+      // Type
+      ofs.i8 = type;
+
+      // Channel idx
+      ofs.i8 = channel_idx;
+
+      // Track idx (v2+)
+      ofs.i8 = track_idx;
+
+      // Lane idx (v3+)
+      ofs.i8 = lane_idx;
+
+      // Level
+      ofs.f32 = level;
+
+      // Pan type
+      ofs.i8 = pan_type;
+
+      // Pan
+      ofs.f32 = pan;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      boolean r = false;
+
+      // Version
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Type
+         type = ifs.u8;
+
+         // Stereo
+         if(ver < 4)
+            boolean bStereoDummy = ifs.b8;
+
+         // Channel idx
+         channel_idx = ifs.u8;
+
+         if(ver >= 2)
+         {
+            // Track idx (v2+)
+            track_idx = ifs.s8;  // (note) -1=self
+         }
+
+         if(ver >= 3)
+         {
+            // Lane idx (v3+)
+            lane_idx = ifs.u8;
+         }
+
+         // Level
+         level = ifs.f32;
+
+         // Pan type
+         pan_type = ifs.u8;
+
+         // Pan
+         pan = ifs.f32;
+
+         updateLevelLR();
+
+         // Succeeded
+         r = true;
+      }
+      else
+      {
+         trace "[---] Output::loadState: invalid version "+ver;
+      }
+
+      return r;
+   }
+}

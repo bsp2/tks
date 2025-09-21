@@ -1,0 +1,1071 @@
+// ----
+// ---- file   : voiceplugins.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 14May2020
+// ---- changed: 17May2020, 19May2020, 20May2020, 21May2020, 22May2020, 23May2020, 31May2020
+// ----          04Jun2020, 08Jun2020, 10Jun2020, 19Aug2020, 20Aug2020, 23Aug2020, 06Sep2020
+// ----          23Sep2020, 06Oct2020, 03Feb2021, 23Feb2021, 26Apr2021, 30Apr2021, 20May2021
+// ----          26Jun2021, 10Aug2021, 30Aug2021, 05Oct2021, 20Oct2021, 28Oct2021, 16Jul2022
+// ----          23Nov2022, 24Nov2022, 10Dec2022, 18Dec2022, 20Dec2022, 21Dec2022, 22Dec2022
+// ----          23Dec2022, 27Dec2022, 28Dec2022, 30Dec2022, 06Feb2023, 19Feb2023, 26Feb2023
+// ----          09Mar2023, 10Mar2023, 21Apr2023, 29Jul2023, 11Aug2023, 16Aug2023, 13Sep2023
+// ----          19Sep2023, 22Sep2023, 11Nov2023, 16Nov2023, 17Nov2023, 18Nov2023, 23Dec2023
+// ----          05Jan2024, 06Jan2024, 12Jan2024, 18Jan2024, 19Jan2024, 14Feb2024, 05Jul2024
+// ----          07Nov2024, 22Nov2024, 24Nov2024, 14Jan2025, 14Jun2025
+// ----
+// ----
+// ----
+
+module MVoicePlugins;
+
+// use namespace ui;
+use namespace st2;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class StashedVoicePluginArrayParam {
+   int param_idx;  // can be removed (never read)
+   int array_size;
+   int num_variations;
+   FloatArray *fa_data_all;  // all variations (concatenated, array_size*num_variations elements)
+
+   public method initFrom(Object _sharedOrMissing, int _paramIdx) {
+      StPluginShared *shared;
+      StPluginSharedMissing *sharedMissing;
+
+      param_idx      = _paramIdx;
+
+      if(_sharedOrMissing instanceof StPluginShared)
+      {
+         shared <= _sharedOrMissing;
+         sharedMissing <= null;
+
+         StPluginInfo info <= shared.info;
+         array_size     = info.getArrayParamSize(_paramIdx);
+         num_variations = info.getArrayParamNumVariations(_paramIdx);
+      }
+      else
+      {
+         shared <= null;
+         sharedMissing <= _sharedOrMissing;
+
+         array_size     = sharedMissing.getArrayParamSize(_paramIdx);
+         num_variations = sharedMissing.getArrayParamNumVariations(_paramIdx);
+      }
+
+      if(b_debug)
+         Global.Debug2("StashedVoicePluginArrayParam::initFrom<"+((null != shared)?"shared":"missing")+">: param_idx="+param_idx+" array_size="+array_size+" num_variations="+num_variations);
+
+      if(array_size > 0 && num_variations > 0)
+      {
+         fa_data_all <= new FloatArray;
+         fa_data_all.alloc(array_size * num_variations);
+         int varIdx = 0;
+         loop(num_variations)
+         {
+            FloatArray faData <=
+               (null != shared)
+               ? shared       .getArrayParamVariationPtr(_paramIdx, varIdx)
+               : sharedMissing.getArrayParamVariationPtr(_paramIdx, varIdx)
+               ;
+            if(null != faData)
+            {
+               int arrayIdx = 0;
+               loop(array_size)
+                  fa_data_all.add(faData.get(arrayIdx++));
+            }
+            else
+            {
+               // Bad plugin: data ptr is null
+               loop(array_size)
+                  fa_data_all.add(0);
+            }
+
+            // Next variation
+            varIdx++;
+         }
+      }
+      else
+      {
+         // Not an Array Param
+         array_size      = 0;
+         num_variations  = 0;
+         fa_data_all    <= null;
+      }
+   }
+
+   public restoreTo(Object _sharedOrMissing, int _paramIdx) : int {
+      // returns number of restored elements (including variations)
+      int numRestored = 0;
+
+      // assert(_paramIdx == param_idx)
+      if(param_idx != _paramIdx)
+         trace "[~~~] StashedVoicePluginArrayParam::restoreTo: param_idx("+param_idx+") != _paramIdx("+_paramIdx+")";
+
+      if(array_size > 0 && num_variations > 0)
+      {
+         StPluginShared *shared;
+         StPluginSharedMissing *sharedMissing;
+         int paramArraySize;
+         int paramNumVar;
+
+         if(_sharedOrMissing instanceof StPluginShared)
+         {
+            shared <= _sharedOrMissing;
+            sharedMissing <= null;
+            StPluginInfo info <= shared.info;
+            paramArraySize = info.getArrayParamSize(_paramIdx);
+            paramNumVar    = info.getArrayParamNumVariations(_paramIdx);
+         }
+         else
+         {
+            shared <= null;
+            sharedMissing <= _sharedOrMissing;
+            if(array_size > 0 && num_variations > 0)
+            {
+               sharedMissing.allocArrayParam(_paramIdx, array_size, num_variations);
+            }
+            paramArraySize = sharedMissing.getArrayParamSize(_paramIdx);
+            paramNumVar    = sharedMissing.getArrayParamNumVariations(_paramIdx);
+         }
+
+         if(b_debug)
+            Global.Debug2("StashedVoicePluginArrayParam::restoreTo<"+((null != shared)?"shared":"missing")+">: param_idx="+param_idx+" array_size="+array_size+" paramArraySize="+paramArraySize+" num_variations="+num_variations+" paramNumVar="+paramNumVar);
+
+         if(paramArraySize > 0 && paramNumVar > 0)
+         {
+            int varIdx = 0;
+            int arrayIdxRead = 0;
+            loop(num_variations)
+            {
+               if(varIdx < paramNumVar)
+               {
+                  FloatArray faData <=
+                     (null != shared)
+                     ? shared       .getArrayParamVariationPtr(_paramIdx, varIdx)
+                     : sharedMissing.getArrayParamVariationPtr(_paramIdx, varIdx)
+                     ;
+                  if(null != faData)
+                  {
+                     int restoreSz = mathMini(array_size, paramArraySize);
+                     int arrayIdxWrite = 0;
+                     loop(restoreSz)
+                        faData[arrayIdxWrite++] = fa_data_all.get(arrayIdxRead++);
+                     if(paramArraySize < array_size)
+                        arrayIdxRead += (array_size - paramArraySize);  // Plugin Changed: skip extra (unrestorable) elements
+                     numRestored += restoreSz;
+                  }
+                  else
+                  {
+                     // Bad Plugin: paramArraySize/paramNumVar > 0 but data ptr is NULL (=> skip)
+                     arrayIdxRead += array_size;
+                  }
+
+                  // Next variation
+                  varIdx++;
+               }
+               else
+               {
+                  // Plugin Changed: less variations than in backup
+                  break;
+               }
+            } // loop num_variations
+         }
+         else
+         {
+            // Plugin Changed: not an array param anymore
+            arrayIdxRead += array_size * num_variations;
+         }
+      }
+      // else was not any array param (=> nothing to restore)
+      return numRestored;
+   }
+}
+
+
+// <class.png>
+class StashedVoicePluginParams {
+   // used by SamplePluginForm in 'R'estore mode
+   FloatArray params;
+   StashedVoicePluginArrayParam *[] array_params;
+
+   public method initFrom(Object _sharedOrMissing) {
+      int numParams;
+      local StPluginShared *shared;
+      local StPluginSharedMissing *sharedMissing;
+      if(_sharedOrMissing instanceof StPluginShared)
+      {
+         shared <= _sharedOrMissing;
+         StPluginInfo info <= shared.info;
+         numParams = info.numParams;
+      }
+      else
+      {
+         sharedMissing <= _sharedOrMissing;
+         numParams = sharedMissing.numParams;
+      }
+      params.free();
+      array_params.free();
+      int paramIdx = 0;
+      loop(numParams)
+      {
+         if(null != shared)
+            params.add(shared.getParamValue(paramIdx));
+         else
+            params.add(sharedMissing.getParamValue(paramIdx));
+         StashedVoicePluginArrayParam arrayParam <= new StashedVoicePluginArrayParam;
+         arrayParam.initFrom(_sharedOrMissing, paramIdx);
+         array_params.add(#(deref arrayParam));
+         // Next parameter
+         paramIdx++;
+      }
+   }
+
+   public restoreTo(Object _sharedOrMissing) : int {
+      // returns number of restored elements
+      int numRestored = 0;
+      int numParams;
+      local StPluginShared *shared;
+      local StPluginSharedMissing *sharedMissing;
+      if(_sharedOrMissing instanceof StPluginShared)
+      {
+         shared <= _sharedOrMissing;
+         StPluginInfo info <= shared.info;
+         numParams = info.numParams;
+      }
+      else
+      {
+         sharedMissing <= _sharedOrMissing;
+         numParams = sharedMissing.numParams;
+      }
+      int paramIdx = 0;
+      loop(numParams)
+      {
+         if(paramIdx < params.numElements)
+         {
+            if(null != shared)
+               shared.setParamValue(paramIdx, params.get(paramIdx));
+            else
+               sharedMissing.setParamValue(paramIdx, params.get(paramIdx));
+            StashedVoicePluginArrayParam arrayParam <= array_params.get(paramIdx);
+            arrayParam.restoreTo(_sharedOrMissing, paramIdx);
+            numRestored++;
+         }
+         // Next parameter
+         paramIdx++;
+      }
+      return numRestored;
+   }
+
+   public method getNumParams() : int {
+      return params.numElements;
+   }
+
+}
+
+// <class.png>
+class STFXAuthor {
+   // for PluginListSTFX
+   String name;
+
+   StPluginInfo *[] entries;  // StPluginInfo references
+}
+
+
+// <class.png>
+class VoicePluginLibs {
+   StPluginLibrary *[] voice_plugin_libs;   // StPluginLibrary instances
+   StPluginInfo    *[] voice_plugin_infos;  // StPluginInfo instances
+   StringArray         voice_plugin_ids;
+
+   int num_skipped;  // temporary during rescanVoicePlugins()
+
+   int index_offset;  // may be >0 for patch plugins (shared index space)
+
+   // 1=create ".<dllsuffix>.new" and rename during rescan
+   //  (note) Windows write-permission-denied-while-dll-is-loaded workaround
+   static boolean b_rename_new = Utils.IsWindows();
+
+
+   public method getNumInfos() : int {
+      // debug
+      return voice_plugin_infos.numElements;
+   }
+
+   public method getNumLibs() : int {
+      // debug
+      return voice_plugin_libs.numElements;
+   }
+
+   // <method.png>
+   public method freeVoicePluginLibs() {
+      voice_plugin_infos.free();
+      voice_plugin_libs .free();
+      voice_plugin_ids  .free();
+   }
+
+   // <method.png>
+   public method scanVoicePlugin(String _pathName) {
+      if(b_debug)
+         Global.Debug2("VoicePluginLibs::scanVoicePlugin: pathName=\""+_pathName+"\"");
+      local StPluginLibrary lib;
+      if(lib.open(_pathName))
+      {
+         int pluginIdx = 0;
+         for(;;)
+         {
+            StPluginInfo pluginInfo <= lib.getPluginInfoByIndex(pluginIdx);
+            if(null != pluginInfo)
+            {
+               pluginInfo.index = index_offset + voice_plugin_infos.numElements;
+               voice_plugin_infos.add(#(deref pluginInfo));
+               voice_plugin_ids.add(pluginInfo.id);
+               pluginIdx++;
+            }
+            else
+            {
+               // No more plugins
+               break;
+            }
+         }
+
+         if(pluginIdx > 0)
+         {
+            voice_plugin_libs.add(#(deref lib));
+         }
+      }
+   }
+
+   // <method.png>
+   public method recursiveScanVoicePlugins(local String _dirName, local StringArray _aFileFilterOrNull) {
+      if(b_debug)
+         Global.Debug("VoicePluginLibs::recursiveScanVoicePlugins: scan dirName=\""+_dirName+"\"");
+      local StringArray a <= Utils.ReadDirectory(_dirName);
+      local String dllSuffix <= TKS.dllSuffix;
+      if(null != a)
+      {
+         local String *fileEntry;
+
+         foreach fileEntry in a
+         {
+            local StringArray attribs <= fileEntry.splitSpace(true);
+            local String fileName <= attribs.get(1);
+
+            if('d' == fileEntry.getc(0))
+            {
+               if!( (fileName == ".") || (fileName == "..") )
+               {
+                  recursiveScanVoicePlugins(_dirName + "/" + fileName, _aFileFilterOrNull);
+               }
+            }
+            else
+            {
+               if(VoicePluginLibs.b_rename_new && (fileName >= (dllSuffix+".new")))
+               {
+                  // Rename freshly compiled .dll (after unload)
+                  //  (note) workaround for write-permission issue on Windows 
+                  local String fileNameOld = fileName;
+                  fileName <= fileName.replace(dllSuffix+".new", dllSuffix);
+                  trace "[trc] VoicePluginLibs::recursiveScanVoicePlugins: rename \""+fileNameOld+"\" => \""+fileName+"\"";
+                  tkfileutils_rename(Utils.ToNativePathName(_dirName+"/"+fileNameOld),
+                                     Utils.ToNativePathName(_dirName+"/"+fileName)
+                                     );
+               }
+
+               if(fileName >= dllSuffix)
+               {
+                  boolean bScan = (null == _aFileFilterOrNull);
+                  if(!bScan)
+                  {
+                     local String *sFilter;
+                     foreach sFilter in _aFileFilterOrNull
+                     {
+                        if(fileName & sFilter)
+                        {
+                           // Patch plugin is referenced in current project => load library
+                           bScan = true;
+                           break;
+                        }
+                     }
+                  }
+
+                  if(bScan)
+                     scanVoicePlugin(_dirName + "/" + fileName);
+                  else
+                  {
+                     if(b_debug)
+                        trace "[xxx] VoicePluginLibs::recursiveScanVoicePlugins: skip unreferenced patch plugin \""+fileName+"\"";
+                     num_skipped++;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method_find.png>
+   public method findVoicePluginInfoById(local String _id) : StPluginInfo {
+      local StPluginInfo *info;
+      foreach info in voice_plugin_infos
+      {
+         if(info.id == _id)
+            return info;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method getVoicePluginInfoByIndex(local int _index) : StPluginInfo {
+      return voice_plugin_infos.get(_index);
+   }
+
+   // <method_find.png>
+   public method getVoicePluginIdByIndex(local int _index) : String {
+      return voice_plugin_ids.get(_index);
+   }
+
+   // <method.png>
+   public method sortVoicePluginsByAuthor(PointerArray _authors) {
+
+      _authors.free();
+
+      STFXAuthor *author;
+      STFXAuthor *oauthor;
+      StPluginInfo *en;
+      int authorIdx;
+      int enIdx;
+
+      foreach en in voice_plugin_infos
+      {
+         // Find author
+         boolean bFoundAuthor = false;
+         foreach author in _authors
+         {
+            if(author.name == en.author)
+            {
+               bFoundAuthor = true;
+               break;
+            }
+         }
+
+         if(!bFoundAuthor)
+         {
+            // Add sorted author
+            author <= new STFXAuthor;
+            author.name = en.author;
+            boolean bAddedAuthor = false;
+            authorIdx = 0;
+            foreach oauthor in _authors
+            {
+               if(author.name.isPredecessor(oauthor.name, false/*bCaseSensitive*/))
+               {
+                  _authors.insert(authorIdx, #(deref author));
+                  bAddedAuthor = true;
+                  break;
+               }
+               authorIdx++;
+            }
+            if(!bAddedAuthor)
+            {
+               _authors.add(#(deref author));
+            }
+         }
+
+         // Add sorted plugin
+         StPluginInfo *oen;
+         boolean bAddedEntry = false;
+         enIdx = 0;
+         foreach oen in author.entries
+         {
+            if(en.getName().isPredecessor(oen.getName(), false/*bCaseSensitive*/))
+            {
+               author.entries.insert(enIdx, en);
+               bAddedEntry = true;
+               break;
+            }
+            enIdx++;
+         }
+         if(!bAddedEntry)
+         {
+            author.entries.add(en);
+         }
+      } // loop entries
+
+      // Debug-print results
+      if(0)
+      {
+         authorIdx = 0;
+         foreach author in _authors
+         {
+            enIdx = 0;
+            foreach en in author.entries
+            {
+               trace "xxx author["+authorIdx+"].name=\""+author.name+"\" en["+enIdx+"].name="+en.getName();
+               enIdx++;
+            }
+            authorIdx++;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getVoicePluginNames(boolean _bShort, StringArray _ret) {
+      StPluginInfo *info;
+      foreach info in voice_plugin_infos
+      {
+         if(_bShort)
+            _ret.add(info.shortName);
+         else if(maybe == _bShort)
+            _ret.add(info.name+"\t"+info.categoryName);
+         else if(!(info.author.isBlank()))
+            _ret.add(info.name+" ("+info.author+")"+"\t"+info.categoryName);
+         else
+            _ret.add(info.name+"\t"+info.categoryName);
+      }
+   }
+
+   // <method_get.png>
+   public method getVoicePluginIds(StringArray _ret, boolean _bPatch) {
+      // 'bPatch': maybe=all plugins, false=all global plugins, true=all patch plugins
+      StPluginInfo *info;
+      foreach info in voice_plugin_infos
+      {
+         String id <= info.id;
+         if(maybe == _bPatch)
+            _ret.add(id);     // global or patch
+         else
+         {
+            boolean bIsPatch = (id & "_0x");
+            if(_bPatch)
+            {
+               if(bIsPatch)
+                  _ret.add(id);  // patch only
+            }
+            else if(!bIsPatch)
+               _ret.add(id);     // global only
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class VoicePlugins {
+   define int MAX_VOICE_PLUGINS = 3000;
+
+   // (note) shared index space: 0..num_global..(num_global+num_patch)
+   static VoicePluginLibs global_voice_plugins;
+   static VoicePluginLibs patch_voice_plugins;
+
+   static STFXAuthor *[] sorted_voice_plugin_infos;  // STFXAuthor instances
+
+
+   // <method_get.png>
+   public static GetVoicePluginNames(boolean _bShort, StringArray _ret) {
+      // called by SamplePluginForm
+      _ret.empty();
+      global_voice_plugins.getVoicePluginNames(_bShort, _ret);
+      patch_voice_plugins .getVoicePluginNames(_bShort, _ret);
+   }
+
+   // <method_get.png>
+   public static GetVoicePluginIds(StringArray _ret, boolean _bPatch) {
+      // called by SamplePluginForm
+      //   'bPatch': maybe=all plugins, false=all global plugins, true=all patch plugins
+      _ret.empty();
+      if(true != _bPatch)
+         global_voice_plugins.getVoicePluginIds(_ret, false/*bPatch*/);
+      if(false != _bPatch)
+         patch_voice_plugins .getVoicePluginIds(_ret, true/*bPatch*/);
+   }
+
+   // <method_find.png>
+   public static FindVoicePluginInfoById(local String _id) : StPluginInfo {
+      local StPluginInfo ret <= global_voice_plugins.findVoicePluginInfoById(_id);
+      if(null == ret)
+         ret <= patch_voice_plugins.findVoicePluginInfoById(_id);
+      return ret;
+   }
+
+   // <method_find.png>
+   public static GetVoicePluginInfoByIndex(local int _index) : StPluginInfo {
+      // unused ?
+      local int numGlobal = global_voice_plugins.getNumInfos();
+      if(_index < numGlobal)
+         return global_voice_plugins.getVoicePluginInfoByIndex(_index);
+      return patch_voice_plugins.getVoicePluginInfoByIndex(_index - numGlobal);
+   }
+
+   // <method_find.png>
+   public static GetVoicePluginIdByIndex(local int _index) : String {
+      local int numGlobal = global_voice_plugins.getNumInfos();
+      if(_index < numGlobal)
+         return global_voice_plugins.getVoicePluginIdByIndex(_index);
+      return patch_voice_plugins.getVoicePluginIdByIndex(_index - numGlobal);
+   }
+
+   // <method.png>
+   public static FreeAllVoicePluginLibs() {
+      global_voice_plugins.freeVoicePluginLibs();
+      patch_voice_plugins.freeVoicePluginLibs();
+   }
+
+   // <method.png>
+   public static RescanVoicePlugins(boolean _bRescanGlobal, StringArray _patchPluginIdsOrNull) {
+      // (when not null) 'patchPluginIds' is used as a file filter to skip all (patch) plugins that are not referenced in current project
+
+      local String *dirName;
+
+      // Scan global plugins
+      if(_bRescanGlobal)
+      {
+         global_voice_plugins.num_skipped = 0;
+         dirName <= Utils.ToNativePathName(STConfig.global_voice_plugin_path);
+         Global.Info("Samples::RescanVoicePlugins<global>: scan dir \""+STConfig.global_voice_plugin_path+"\" (=>\""+dirName+"\")");
+         global_voice_plugins.recursiveScanVoicePlugins(dirName, null/*aFileFilterOrNull*/);
+         int numGlobalInfos = global_voice_plugins.getNumInfos();
+         int numGlobalLibs  = global_voice_plugins.getNumLibs();
+         Global.Info("Samples::RescanVoicePlugins<global>: found "+numGlobalInfos+" global plugin"+Utils.GetPluralString(numGlobalInfos)+" in "+numGlobalLibs+" lib"+Utils.GetPluralString(numGlobalLibs));
+         patch_voice_plugins.index_offset = numGlobalInfos;
+      }
+
+      // Scan sample+patch specific cached plugins
+      if(null != _patchPluginIdsOrNull)
+      {
+         patch_voice_plugins.num_skipped = 0;
+         dirName <= Utils.ToNativePathName(STConfig.cached_voice_plugin_path);
+         Global.Info("Samples::RescanVoicePlugins<cached>: scan dir \""+STConfig.cached_voice_plugin_path+"\" (=>\""+dirName+"\")");
+         patch_voice_plugins.recursiveScanVoicePlugins(dirName, _patchPluginIdsOrNull/*aFileFilterOrNull*/);
+         int numPatchInfos = patch_voice_plugins.getNumInfos();
+         int numPatchLibs  = patch_voice_plugins.getNumLibs();
+         Global.Info("Samples::RescanVoicePlugins<cached>: found "+numPatchInfos+" patch plugin"+Utils.GetPluralString(numPatchInfos)+" in "+numPatchLibs+" lib"+Utils.GetPluralString(numPatchLibs)+" ("+patch_voice_plugins.num_skipped+" skipped)");
+      }
+
+      if(_bRescanGlobal)
+         global_voice_plugins.sortVoicePluginsByAuthor(sorted_voice_plugin_infos);
+   }
+
+   // <method.png>
+   public static PatchPluginLibraryForPluginIdExists(String _pluginId) : boolean {
+      local String dirName <= Utils.ToNativePathName(STConfig.cached_voice_plugin_path);
+      local String pathName <= dirName+"/cycle/cycle_"+_pluginId+TKS.dllSuffix;
+      // trace "xxx PatchPluginLibraryForPluginIdExists: pathName=\""+pathName+"\"";
+      return Utils.CanFileBeRead(pathName);
+   }
+
+   // <method.png>
+   public =replay= static UnloadAllVoicePlugins() {
+      // Stop all sample voices and free plugin instances
+      current_project.freeSamplePlayerPluginCaches();
+
+      current_project.unloadCycleVoicePlugins();
+
+      Audio.temp_sp.unloadVoicePlugins();
+      Audio.temp_mod_sample.unloadVoicePlugins();
+
+      // Update ModDelay instances
+      current_project.reloadModDelayVoicePlugins(false/*bReload*/);
+
+      // Update ModEQ3 instances
+      current_project.reloadModEQ3VoicePlugins(false/*bReload*/);
+
+      // Update ModSync instances
+      current_project.reloadModSyncVoicePlugins(false/*bReload*/);
+
+      // Update ModSTFX instances
+      current_project.reloadModSTFXVoicePlugins(false/*bReload*/);
+   }
+
+   // <method.png>
+   public =replay= static ReloadVoicePlugins(local HashTable   _idMapOrNull,
+                                             local StringArray _patchPluginIdsOrNull,
+                                             local boolean     _bRescanGlobal,
+                                             local boolean     _bRescanPatch
+                                             ) : int {
+      // 'idMap' is used to map patch plugin ids to (possibly) new patch plugin ids,
+      //   e.g. "my_plugin_<oldchksum>" to "my_plugin_<newchksum>"
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      int tStartAll = milliSeconds();
+      int tStart = tStartAll;
+
+      // _bRescanGlobal = true;  // (todo) rescan global + patch plugins separately
+      // _bRescanPatch  = true;
+
+      if(_bRescanGlobal)
+         _bRescanPatch = true;  // must also rescan patch-plugins because of shared index space (index_offset / info.offset)
+
+      UnloadAllVoicePlugins();
+
+      Global.Profile("ReloadVoicePlugins: UnloadAllVoicePlugins() took "+(milliSeconds()-tStart)+"ms");
+
+      tStart = milliSeconds();
+
+      // Build id map for all samples and zones
+      local StringArray ids;
+      local FloatArray *[] paParams;
+      local StashedVoicePluginArrayParam *[] paArrayParams;
+      local FloatArray *params;
+      local StashedVoicePluginArrayParam *arrayParam;
+      Sample *sample;
+      int pluginIdx;
+      StPluginShared *pluginShared;
+      StPluginSharedMissing *pluginSharedMissing;
+      StPluginInfo *pluginInfo;
+      StSample *s;
+      String *sId;
+      int paramIdx;
+      int numReloaded = 0;
+      String *oldId;
+      String *newId;
+      local String *htKey;
+
+      // Stash params and delete old StPluginShared instances
+      int sampleIdx = 0;
+      foreach sample in current_project.samples
+      {
+         // trace "xxx stash sampleIdx="+sampleIdx+" name=\""+sample.unique_name+"\" id_off="+ids.numElements+" #zones="+sample.getNumZones();
+         s <= sample.getZoneByIdx(0);
+         int zoneIdx = 0;
+         while(null != s)
+         {
+            pluginIdx = 0;
+            loop(STSAMPLE_NUM_PLUGINS)
+            {
+               pluginShared <= s.getVoicePluginShared(pluginIdx);
+               if(null != pluginShared)
+               {
+                  pluginInfo <= pluginShared.info;
+                  if(null != _idMapOrNull)
+                  {
+                     // Try to remap sample specific patch plugin to new version
+                     oldId <= pluginInfo.id;
+                     htKey <= sample.unique_id+":"+oldId;
+                     if(_idMapOrNull.exists(htKey))
+                     {
+                        // e.g. "my_plugin_<oldchksum>" => "my_plugin_<newchksum>"
+                        newId <= _idMapOrNull[htKey];  // patch plugin id (possibly) changed (chksum)
+                        if(newId != oldId)
+                           Global.Debug2("VoicePlugins::ReloadVoicePlugins: remap sampleIdx="+sampleIdx+"(\""+sample.unique_name+"\") oldId=\""+oldId+"\" => newId=\""+newId+"\" (zoneIdx="+zoneIdx+" pluginIdx="+pluginIdx+")");
+                        ids.add(newId);
+                     }
+                     else
+                        ids.add(oldId);
+                  }
+                  else
+                     ids.add(pluginInfo.id);
+
+                  // Save params
+                  if(pluginInfo.numParams > 0)
+                  {
+                     paramIdx = 0;
+                     params <= new FloatArray;
+                     loop(pluginInfo.numParams)
+                     {
+                        params.add(pluginShared.getParamValue(paramIdx));
+
+                        if(pluginInfo.getArrayParamSize(paramIdx) > 0)
+                        {
+                           // Save Array Param Data
+                           arrayParam <= new StashedVoicePluginArrayParam;
+                           arrayParam.initFrom(pluginShared, paramIdx);
+                           paArrayParams.add(#(deref arrayParam));
+                        }
+                        else
+                        {
+                           // Not an Array Param
+                           paArrayParams.add(null);
+                        }
+
+                        // Next parameter
+                        paramIdx++;
+                     }
+                     paParams.add(#(deref params));
+                  }
+                  else
+                  {
+                     // No params
+                     paParams.add(null);
+                  }
+
+                  // Delete old shared instance
+                  s.setVoicePluginShared(pluginIdx, null);
+               }
+               else
+               {
+                  if(null != _idMapOrNull)
+                  {
+                     pluginSharedMissing <= s.getVoicePluginSharedMissing(pluginIdx);
+                     if(null != pluginSharedMissing)
+                     {
+                        oldId <= pluginSharedMissing.pluginId;
+                        htKey <= sample.unique_id+":"+oldId;
+                        if(_idMapOrNull.exists(htKey))
+                        {
+                           // e.g. "my_plugin_<oldchksum>" => "my_plugin_<newchksum>"
+                           //  (note) should this ever be reachable ? (patch plugin compilation failed?)
+                           newId <= _idMapOrNull[htKey];  // patch plugin id (possibly) changed (chksum)
+                           if(newId != oldId)
+                           {
+                              Global.Debug2("VoicePlugins::ReloadVoicePlugins<missing>: remap sampleIdx="+sampleIdx+"(\""+sample.unique_name+"\" uniqueId="+sample.unique_id+") oldId=\""+oldId+"\" => newId=\""+newId+"\" (zoneIdx="+zoneIdx+" pluginIdx="+pluginIdx+")");
+                              pluginSharedMissing.pluginId = newId;
+                           }
+                        }
+                     }
+                  }
+
+                  // No reloadable plugin / No Params (keep StSharedPluginMissing, if exists)
+                  ids.add("");
+                  paParams.add(null);
+               }
+
+               // Next plugin slot
+               pluginIdx++;
+            }
+
+            // Next zone
+            s <= s.next;
+            zoneIdx++;
+         } // loop zones
+
+         // Next sample
+         sampleIdx++;
+      } // loop samples
+
+      Global.Profile("ReloadVoicePlugins: build id map took "+(milliSeconds()-tStart)+"ms");
+      // trace "xxx #ids="+ids.numElements+" ids="+ids.string;
+
+      trace "[dbg] ReloadVoicePlugins: bRescanGlobal="+_bRescanGlobal+" bRescanPatch="+_bRescanPatch+" (cur #globalInfos="+global_voice_plugins.getNumInfos()+" #patchInfos="+patch_voice_plugins.getNumInfos()+")";
+      if(_bRescanGlobal || _bRescanPatch)
+      {
+         // Free info objects and library handles
+         tStart = milliSeconds();
+         if(_bRescanGlobal)
+            global_voice_plugins.freeVoicePluginLibs();
+         if(_bRescanPatch)
+            patch_voice_plugins.freeVoicePluginLibs();
+         Global.Profile("ReloadVoicePlugins: freeVoicePluginLibs() took "+(milliSeconds()-tStart)+"ms");
+
+         // Rescan voice plugin DLLs/SOs/dylibs
+         tStart = milliSeconds();
+         if(_bRescanGlobal)
+            RescanVoicePlugins(true/*bGlobal*/, null/*patchPluginIdsOrNull*/);
+         if(_bRescanPatch)
+            RescanVoicePlugins(false/*bGlobal*/, _patchPluginIdsOrNull);
+         Global.Profile("ReloadVoicePlugins: RescanVoicePlugins() took "+(milliSeconds()-tStart)+"ms");
+      }
+
+      // Update samples / Recreate shared instances and Restore params
+      tStart = milliSeconds();
+      int j = 0; // index into paParams / ids
+      int arrayParamRestoreIdx = 0;  // index into paArrayParams
+      sampleIdx = 0;
+      foreach sample in current_project.samples
+      {
+         // trace "xxx reload sampleIdx="+sampleIdx+" j="+j+" #zones="+sample.getNumZones();
+         s <= sample.getZoneByIdx(0);
+         while(null != s)
+         {
+            pluginIdx = 0;
+            loop(STSAMPLE_NUM_PLUGINS)
+            {
+               pluginSharedMissing <= s.getVoicePluginSharedMissing(pluginIdx);
+               if(null != pluginSharedMissing)
+               {
+                  // Plugin was not loaded => try loading it now
+                  pluginInfo <= FindVoicePluginInfoById(pluginSharedMissing.pluginId);
+                  if(null != pluginInfo)
+                  {
+                     pluginShared <= pluginInfo.createSharedInstance();
+
+                     // Restore params
+                     if(pluginInfo.numParams > 0)
+                     {
+                        paramIdx = 0;
+                        loop(pluginInfo.numParams)
+                        {
+                           pluginShared.setParamValue(paramIdx, pluginSharedMissing.getParamValue(paramIdx));
+                           int arraySz = pluginInfo.getArrayParamSize(paramIdx);
+                           if(arraySz > 0)
+                           {
+                              // Array Parameter
+                              int numVar = pluginInfo.getArrayParamNumVariations(paramIdx);
+
+                              int arraySzMissing = pluginSharedMissing.getArrayParamSize(paramIdx);
+                              int numVarMissing  = pluginSharedMissing.getArrayParamNumVariations(paramIdx);
+
+                              int varIdx = 0;
+                              loop(mathMini(numVar, numVarMissing))
+                              {
+                                 FloatArray faData <= pluginShared.getArrayParamVariationPtr(paramIdx, varIdx);
+                                 FloatArray faDataMissing <= pluginSharedMissing.getArrayParamVariationPtr(paramIdx, varIdx);
+
+                                 int arrayIdx = 0;
+                                 loop(mathMini(arraySz, arraySzMissing))
+                                    faData[arrayIdx] = faDataMissing[arrayIdx++];
+
+                                 // Next variation
+                                 varIdx++;
+                              }
+                           }
+
+                           // Next parameter
+                           paramIdx++;
+                        }
+                     }
+
+                     // Delete StPluginSharedMissing instance
+                     s.setVoicePluginSharedMissing(pluginIdx, null);
+
+                     // Update sample zone plugin slot with new shared instance
+                     s.setVoicePluginShared(pluginIdx, #(deref pluginShared));
+
+                     numReloaded++;
+                  }
+                  // else: still not available => keep StPluginSharedMissing
+               }
+               else
+               {
+                  // Plugin was previously loaded => try reloading it
+                  sId <= ids.get(j);
+                  // trace "xxx ReloadVoicePlugins: try reload sId=\""+sId+"\"";
+                  if(!sId.isBlank())
+                  {
+                     params <= paParams.get(j);
+                     // Create new shared instance
+                     pluginInfo <= FindVoicePluginInfoById(sId);
+                     // trace "xxx ReloadVoicePlugins: try reload pluginInfo="+#(pluginInfo);
+                     if(null != pluginInfo)
+                     {
+                        pluginShared <= pluginInfo.createSharedInstance();
+
+                        // Restore params
+                        if(pluginInfo.numParams > 0)
+                        {
+                           if(null != params)
+                           {
+                              paramIdx = 0;
+                              loop(pluginInfo.numParams)
+                              {
+                                 if(paramIdx < params.numElements)
+                                 {
+                                    pluginShared.setParamValue(paramIdx, params.get(paramIdx));
+                                    arrayParam <= paArrayParams.get(arrayParamRestoreIdx + paramIdx);
+                                    if(null != arrayParam)
+                                       arrayParam.restoreTo(pluginShared, paramIdx);
+                                 }
+                                 // Next parameter
+                                 paramIdx++;
+                              }
+
+                              arrayParamRestoreIdx += params.numElements;
+                           }
+                           // else: New plugin version now has params (and previously had none)
+                        }
+                        else
+                        {
+                           // Plugin has no params (not anymore or never had)
+                           arrayParamRestoreIdx += (null != params) ? params.numElements : 0;
+                        }
+                     }
+                     else
+                     {
+                        // Plugin does not exist anymore
+                        pluginShared <= null;
+                        Global.Debug("[~~~] VoicePlugins::ReloadVoicePlugins: plugin id=\""+sId+"\" does not exist anymore, restoring to StPluginSharedMissing");
+                        pluginSharedMissing <= new StPluginSharedMissing;
+                        pluginSharedMissing.pluginId = sId;
+
+                        if(null != params)
+                        {
+                           pluginSharedMissing.numParams = params.numElements;
+
+                           paramIdx = 0;
+                           loop(params.numElements)
+                           {
+                              pluginSharedMissing.setParamValue(paramIdx, params.get(paramIdx));
+                              arrayParam <= paArrayParams.get(arrayParamRestoreIdx + paramIdx);
+                              // trace "xxx arrayParam="+#(arrayParam);
+                              if(null != arrayParam)
+                                 arrayParam.restoreTo(pluginSharedMissing, paramIdx);
+
+                              // Next parameter
+                              paramIdx++;
+                           }
+
+                           arrayParamRestoreIdx += params.numElements;
+                        }
+
+                        s.setVoicePluginSharedMissing(pluginIdx, #(deref pluginSharedMissing));
+                     }
+
+                     // Update sample zone plugin slot with new shared instance
+                     s.setVoicePluginShared(pluginIdx, #(deref pluginShared));
+
+                     numReloaded++;
+                  }
+                  // else: voice plugin slot is unused
+               }
+
+               // Next plugin slot
+               pluginIdx++;
+               j++;
+            }
+
+            // Next sample zone
+            s <= s.next;
+         }
+
+         // Reload Cycle synth patch voice instances
+         CycleState sst <= sample.cycle_state;
+         sst.reloadVoicePlugins();
+
+         // Next sample
+         sampleIdx++;
+      }
+
+      // trace "xxx #ids="+ids.numElements+" j="+j;
+
+      // Update ModDelay instances
+      current_project.reloadModDelayVoicePlugins(true/*bReload*/);
+
+      // Update ModEQ3 instances
+      current_project.reloadModEQ3VoicePlugins(true/*bReload*/);
+
+      // Update ModSync instances
+      current_project.reloadModSyncVoicePlugins(true/*bReload*/);
+
+      // Update ModSTFX instances
+      current_project.reloadModSTFXVoicePlugins(true/*bReload*/);
+
+      // Autostart FX notes
+      current_project.handleFXAutoNoteOns();
+
+      Global.Profile("ReloadVoicePlugins: reload took "+(milliSeconds()-tStart)+"ms");
+      Global.Profile("ReloadVoicePlugins: took "+(milliSeconds()-tStartAll)+"ms");
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+      return numReloaded;
+   }
+
+   // <method_update.png>
+   static =replay= UpdateCurveLUTByVoicePluginId(String _pluginId, int _curveIdx, FloatArray _fa) {
+      // Called when curve is edited
+      StPluginInfo info <= FindVoicePluginInfoById(_pluginId);
+      // trace "xxx UpdateCurveLUTByVoicePluginId: pluginId=\""+_pluginId+"\" curveIdx="+_curveIdx+" #elem="+_fa.numElements+" info="+#(info);
+      if(null != info)
+         info.updateLUT(_curveIdx, _fa);
+   }
+
+}

@@ -1,0 +1,280 @@
+// ----
+// ---- file   : ZoneMixForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 29Dec2024
+// ---- changed: 30Dec2024
+// ----
+// ----
+// ----
+
+module MZoneMixForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ZoneMixForm extends XMLForm, ActionProvider {
+   Sample   *sample;
+   StSample *zone;
+
+   protected XMLForm *xfm;
+
+   protected Label      *lb_nr;
+   protected TextField  *tf_name;
+   protected Slider     *sl_level;
+   protected FloatParam *fp_level;
+   protected Dial       *dl_pan;
+   protected FloatParam *fp_pan;
+
+   protected CheckBox   *cb_eq3;
+   protected Dial       *dl_eq3_gain;
+   protected Dial       *dl_eq3_low_freq;
+   protected Dial       *dl_eq3_low_gain;
+   protected Dial       *dl_eq3_mid_gain;
+   protected Dial       *dl_eq3_hi_freq;
+   protected Dial       *dl_eq3_hi_gain;
+
+   protected ComboBox   *cm_voicebus;
+
+   protected StPluginShared *eq3_plugin_shared;
+   protected int             eq3_plugin_idx;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("ZoneMixForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      fp_level.setPresetOptions([0.0, -3.0, -6.0, -9.0, -12.0, -15.0, -18.0, -24.0], ["0dB: max", "-3dB: drums", "-6dB: mono synth", "-9dB: mono synth (quiet)", "-12dB: poly synth", "-15dB: poly synth (quiet)", "-18dB: audio clip", "-24dB: audio clip (quiet)"]);
+
+      return true;
+   }
+
+   // <ui_update.png>
+   protected method setEQ3Editable(boolean _bEditable) {
+      dl_eq3_gain    .setEditable(_bEditable);
+      dl_eq3_low_freq.setEditable(_bEditable);
+      dl_eq3_low_gain.setEditable(_bEditable);
+      dl_eq3_mid_gain.setEditable(_bEditable);
+      dl_eq3_hi_freq .setEditable(_bEditable);
+      dl_eq3_hi_gain .setEditable(_bEditable);
+   }
+
+   // <ui_show.png>
+   public method showZone(Sample _sample, StSample _zone) {
+      sample <= _sample;
+      zone   <= _zone;
+
+      lb_nr.setCaption(String(_sample.getZoneIdx(_zone)+1)+":");
+      tf_name.setText(zone.name);
+
+      float dB = Utils.LevelToDB(zone.volume);
+      dB = int(dB * 100) / 100.0;
+      sl_level.setValue(dB * 100);
+      fp_level.setValue(dB);
+
+      dl_pan.setValue(zone.pan);
+      fp_pan.setValue(zone.pan);
+
+      eq3_plugin_shared <= sample.getZoneSamplePluginById(zone, ModEQ3.FX_ID);
+      boolean bEditable = (null != eq3_plugin_shared);
+      // // cb_eq3         .setEditable(bEditable);
+      boolean bEQ3Enable = bEditable && zone.getEnableVoicePlugin(eq3_plugin_idx);
+      setEQ3Editable(bEQ3Enable);
+      if(bEditable)
+      {
+         eq3_plugin_idx = sample.getZoneSamplePluginIndexByPluginShared(zone, eq3_plugin_shared);
+         cb_eq3.setSelected(zone.getEnableVoicePlugin(eq3_plugin_idx));
+         dl_eq3_gain.setValue(eq3_plugin_shared.getParamValue(1/*PARAM_GAIN*/) * 2.0f - 1.0f);
+         dl_eq3_low_freq.setValue(eq3_plugin_shared.getParamValue(2/*PARAM_FREQLO*/)  * 2.0f - 1.0f);
+         dl_eq3_low_gain.setValue(eq3_plugin_shared.getParamValue(2/*PARAM_GAINLO*/)  * 2.0f - 1.0f);
+         dl_eq3_mid_gain.setValue(eq3_plugin_shared.getParamValue(6/*PARAM_GAINMID*/) * 2.0f - 1.0f);
+         dl_eq3_hi_freq .setValue(eq3_plugin_shared.getParamValue(4/*PARAM_FREQHI*/)  * 2.0f - 1.0f);
+         dl_eq3_hi_gain .setValue(eq3_plugin_shared.getParamValue(5/*PARAM_GAINHI*/)  * 2.0f - 1.0f);
+      }
+      else
+      {
+         cb_eq3.setCaption("-");
+         cb_eq3.setSelected(false);
+         dl_eq3_low_freq.setValue(0);
+         dl_eq3_low_gain.setValue(0);
+         dl_eq3_mid_gain.setValue(0);
+         dl_eq3_hi_freq .setValue(0);
+         dl_eq3_hi_gain .setValue(0);
+      }
+      cm_voicebus.setSelectedOption(zone.voiceBus + 1);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       tf_name,
+                       sl_level,
+                       fp_level,
+                       dl_pan,
+                       fp_pan,
+                       cb_eq3,
+                       dl_eq3_gain,
+                       dl_eq3_low_freq,
+                       dl_eq3_low_gain,
+                       dl_eq3_mid_gain,
+                       dl_eq3_hi_freq,
+                       dl_eq3_hi_gain,
+                       cm_voicebus,
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(tf_name);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEQ3EnableChanged() {
+      if(null != eq3_plugin_shared)
+      {
+         zone.setEnableVoicePlugin(eq3_plugin_idx, cb_eq3.isSelected());
+         setEQ3Editable(cb_eq3.isSelected());
+         Global.Print("EQ3 is "+Utils.GetEnableString(zone.getEnableVoicePlugin(eq3_plugin_idx)));
+      }
+      else
+      {
+         // Install new EQ3 plugin
+         eq3_plugin_shared <= sample.getOrCreateZoneSamplePluginById(zone, ModEQ3.FX_ID);
+         if(null != eq3_plugin_shared)
+         {
+            eq3_plugin_idx = sample.getZoneSamplePluginIndexByPluginShared(zone, eq3_plugin_shared);
+            zone.setEnableVoicePlugin(eq3_plugin_idx, true);
+            cb_eq3.setCaption("EQ3");
+            setEQ3Editable(true);
+            Global.Print("Install+enable EQ3 plugin (plugin slot #"+(eq3_plugin_idx+1)+")");
+         }
+         else
+         {
+            Global.Error("Failed to install EQ3 voice plugin");
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= method setBipolarEQ3Param(int _paramIdx, float _value) {
+      eq3_plugin_shared.setParamValue(_paramIdx, _value*0.5f + 0.5f);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLevelChanged(float _db) {
+      zone.volume = Utils.DBToLevel(_db);
+      sl_level.setValue(_db * 100.0);
+      fp_level.setValue(_db);
+      Global.Print("Volume is "+fp_level.getText()+" ("+(int(zone.volume*10000)/100.0)+"%)");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePanChanged(float _pan) {
+      zone.pan = _pan;
+      dl_pan.setValue(_pan);
+      fp_pan.setValue(_pan);
+      Global.Print("Pan is "+fp_pan.getText());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVoiceBusChanged() {
+      zone.voiceBus = cm_voicebus.getSelectedOption() - 1;
+      Global.Print("VoiceBus is "+cm_voicebus.getSelectedOptionName());
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction sac <= _action;
+      IntAction iac <= _action;
+
+      PageSample pgSample <= root_form.pg_sample;
+
+      switch(@(ap))
+      {
+         case @(tf_name):
+            if((TextField.ACTION_TEXTENTERED == acName) ||
+               (TextField.ACTION_TEXTCHANGED == acName)
+               )
+            {
+               zone.name = tf_name.getText();
+               pgSample.updateZoneTable();
+               return true;
+            }
+            break; // let SampleMixerDialog handle CURSORUP/DOWN
+
+         case @(sl_level):
+            handleLevelChanged(sl_level.getValue() / 100.0);
+            return true;
+
+         case @(fp_level):
+            handleLevelChanged(fp_level.getFloatValue());
+            return true;
+
+         case @(dl_pan):
+            handlePanChanged(dl_pan.getValue());
+            return true;
+
+         case @(fp_pan):
+            handlePanChanged(fp_pan.getFloatValue());
+            return true;
+
+         case @(cb_eq3):
+            handleEQ3EnableChanged();
+            return true;
+
+         case @(dl_eq3_gain):
+            setBipolarEQ3Param(1/*PARAM_GAIN*/, dl_eq3_gain.getValue());
+            Global.Print("EQ3 Gain is "+dl_eq3_gain.getValue());
+            return true;
+
+         case @(dl_eq3_low_freq):
+            setBipolarEQ3Param(2/*PARAM_FREQLO*/, dl_eq3_low_freq.getValue());
+            Global.Print("EQ3 Low Freq is "+dl_eq3_low_freq.getValue());
+            return true;
+
+         case @(dl_eq3_low_gain):
+            setBipolarEQ3Param(3/*PARAM_GAINLO*/, dl_eq3_low_gain.getValue());
+            Global.Print("EQ3 Low Gain is "+dl_eq3_low_gain.getValue());
+            return true;
+
+         case @(dl_eq3_mid_gain):
+            setBipolarEQ3Param(6/*PARAM_GAINMID*/, dl_eq3_mid_gain.getValue());
+            Global.Print("EQ3 Mid Gain is "+dl_eq3_mid_gain.getValue());
+            return true;
+
+         case @(dl_eq3_hi_freq):
+            setBipolarEQ3Param(4/*PARAM_FREQHI*/, dl_eq3_hi_freq.getValue());
+            Global.Print("EQ3 High Freq is "+dl_eq3_hi_freq.getValue());
+            return true;
+
+         case @(dl_eq3_hi_gain):
+            setBipolarEQ3Param(5/*PARAM_GAINHI*/, dl_eq3_hi_gain.getValue());
+            Global.Print("EQ3 High Gain is "+dl_eq3_hi_gain.getValue());
+            return true;
+
+         case @(cm_voicebus):
+            handleVoiceBusChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

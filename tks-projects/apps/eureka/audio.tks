@@ -1,0 +1,1777 @@
+// ----
+// ---- file   : audio.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 25Feb2010, 18Jul2010, ........., 24Sep2010, 20Oct2010, 19Jan2011, 23Jan2011
+// ----          18Feb2011, 13Mar2011, 26Jun2012, 21Dec2012, 03May2013, 04May2013, 07May2013
+// ----          23May2013, 31May2013, 05Jun2013, 09Feb2014, 10Feb2014, 08Mar2014, 09Aug2014
+// ----          11Aug2014, 23Aug2014, 04Sep2014, 23Oct2015, 24Jan2018, 25Jan2018, 31Jan2018
+// ----          15Feb2018, 01Mar2018, 23Mar2018, 30Mar2018, 09Apr2018, 22Jun2018, 23Jun2018
+// ----          13Dec2018, 15Dec2018, 16Dec2018, 18Dec2018, 23Dec2018, 29Dec2018, 17Jan2019
+// ----          05Mar2019, 06May2019, 07May2019, 12May2019, 06Jul2019, 21Jul2019, 09Sep2019
+// ----          14Feb2020, 16Feb2020, 19Feb2020, 24May2020, 29Nov2020, 01Feb2021, 07Apr2021
+// ----          14Apr2021, 26Jun2021, 17Jul2021, 28Jul2021, 29Sep2021, 14Jan2022, 16Jul2022
+// ----          26Sep2022, 30Dec2022, 06Feb2023, 08Feb2023, 18Mar2023, 25Mar2023, 14Jun2023
+// ----          18Jul2023, 26Jul2023, 08Sep2023, 15Sep2023, 16Sep2023, 22Sep2023, 11Nov2023
+// ----          06Jan2024, 16Apr2024, 17Sep2024, 18Sep2024, 23Sep2024, 26Sep2024, 28Sep2024
+// ----          29Sep2024, 07Nov2024, 27Nov2024, 30Dec2024, 21Jun2025
+// ----
+// ----
+// ----
+
+module MAudio;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_process = false;
+boolean b_use_switch_to_thread = false;  // call SwitchToThread() instead of sleep(1/*ms*/)
+boolean b_playtemp_debug = false;
+
+int MAX_UNDERRUNS = 500;
+int num_underruns = 0;
+
+
+function onAudioBeginBlock(FloatArray _fa) {
+   // SDL stream callback
+   //  (note) DEPRECATED
+   // trace "xxx onAudioBeginBlock #samples="+_fa.numElements;
+
+   _fa.fill(0);
+   // Audio.RenderSine(_fa, 0, _fa.numElements/2, 2);
+
+   if(!STConfig.b_databridge)
+   {
+      if(b_process && STConfig.b_process_audio)
+      {
+         int   numInCh = 0;
+         int   numOutCh = 2;
+         float outLatencyMS = (STConfig.audio_sdl_bufsize * 1000.0f) / Audio.mix_rate;
+
+         float lvlL = current_project.master_level_l;
+         float lvlR = current_project.master_level_r;
+         float dim  = current_project.getMasterDim() ? Utils.DBToLevel(STConfig.master_dim_db) : 1.0f;
+
+         FloatArray input;  // dummy array
+         int numFrames = _fa.numElements / 2;
+
+         // trace "xxx dim="+dim+" lvlL="+lvlL+" lvlR="+lvlR;
+
+         // trace "xxx replay.ring_size="+replay.ring_size;
+         if(0 == replay.ring_size)
+         {
+            Audio.ProcessAudioDirect(numInCh, numOutCh, outLatencyMS,
+                                     input, _fa/*output*/,
+                                     numFrames,
+                                     lvlL, lvlR, dim
+                                     );
+         }
+         else
+         {
+            Audio.ProcessAudioRing(numInCh, numOutCh, outLatencyMS,
+                                   input, _fa/*output*/,
+                                   numFrames,
+                                   lvlL, lvlR, dim
+                                   );
+         }
+
+      }
+   }
+
+   AudioDevice.finishBlock();
+}
+
+
+// <class.png>
+class Audio {
+
+   define int STREAM_MAX_FRAMES          = (64*8);  // max chunk size (mix buffers, queued input frames, ..)
+   define int STREAM_MAX_INPUT_CHANNELS  =     48;  //
+   define int STREAM_MAX_OUTPUT_CHANNELS =     32;  //
+
+   static boolean b_audio_sine;  // true=render test tone
+
+   static PaStream stream;
+   static boolean  b_audio_running;
+   static int      num_stream_callbacks;
+   static boolean  b_allow_process;  // underrun/overload protection (realtime priority)
+
+   static float mix_rate;     // #samples per second (actually an integer)
+   static int   buffer_size;  // set at the beginning of the audio callback / process call
+
+   static FloatArray eqtemp_freq_table;   // equal temperament reference note frequencies (128 entries)
+   static FloatArray default_freq_table;  // default table for StSamplePlayer
+
+   static ModSample      temp_mod_sample;  // Used when ref_sample is != null
+   static StSamplePlayer temp_sp;          // Used for playing (other) waveforms / waveform areas
+   static StSample       temp_sample;
+   static StWaveform     temp_waveform;
+   static int            temp_voicekey;
+   static IntArray       temp_voicekeys_poly;  // indexed by MIDI note. for polypressure.
+   static Sample        *ref_sample;
+   static float          temp_cc_modwheel_prev;  // 0..127 (14bit precision, MSB+LSB)
+   static float          temp_cc_modwheel;
+   static float          temp_cc_breath;
+   static float          temp_cc_foot;
+   static float          temp_cc_expr;
+   static short          temp_pitchbend;  // 0..16383
+   static float          temp_pitchbend_norm; // -1..1
+
+   static StWaveform wf_reftone;
+
+   static boolean b_suppress_underrun_error;  // true while loading project (or other, possibly lengthy, ops)
+
+   static int process_last_chunk_frames_left;
+   static FloatArray process_last_chunk_buffer;
+
+   static int last_underrun_ms = 0;
+
+   static =replay= SetTempo(float _bpm, int _ppq) {
+      // called by Project::setTempo()
+      temp_sp.setTempo(_bpm, _ppq);
+   }
+
+   static =audio= ResetUnderrunProtection() {
+      num_underruns = 0;
+      b_allow_process = true;
+   }
+
+   static PushSuppressUnderrunError() : boolean {
+      return = b_suppress_underrun_error;
+      b_suppress_underrun_error = true;
+      return;
+   }
+
+   static PopSuppressUnderrunError(boolean _bRestore) {
+      b_suppress_underrun_error = _bRestore;
+   }
+
+   static float testtone_ang_sin = 0;
+   static RenderSineStereo(FloatArray renderBuf, int outFrameOff, int numFrames, int numOutCh) {
+      int i = outFrameOff;
+      loop(numFrames)
+      {
+         float v = sin(testtone_ang_sin) * 0.1;
+         testtone_ang_sin += (2PI * STConfig.test_tone_freq) / Audio.mix_rate;
+         if(testtone_ang_sin >= 2PI)
+            testtone_ang_sin -= 2PI;
+         renderBuf[i+0] = v;
+         renderBuf[i+1] = v;
+         i += numOutCh;
+      }
+   }
+
+   static float testtone_ang_saw = 0;
+   static RenderSaw(FloatArray renderBuf, int outFrameOff, int numFrames, int numOutCh) {
+      int i = outFrameOff;
+      loop(numFrames)
+      {
+         float v = -1 + testtone_ang_saw;
+         // v*= 0.1;
+         testtone_ang_saw += (2.0 * STConfig.test_tone_freq) / Audio.mix_rate;
+         if(testtone_ang_saw >= 2.0)
+            testtone_ang_saw -= 2.0;
+         renderBuf[i+0] = v;
+         renderBuf[i+1] = v;
+         i += numOutCh;
+      }
+   }
+
+   static float testtone_ang_index = 0;
+   static RenderIndex(FloatArray renderBuf, int outFrameOff, int numFrames, int numOutCh) {
+      // debug (see replay.tks)
+      int i = outFrameOff;
+      loop(numFrames)
+      {
+         float v = testtone_ang_index;
+         testtone_ang_index += 1.0;
+         if(testtone_ang_index >= 256.0)
+            testtone_ang_index -= 256.0;
+         renderBuf[i+0] = v;
+         renderBuf[i+1] = v;
+         i += numOutCh;
+      }
+   }
+
+   static =audio= SetMixRate(float _rate) {
+      mix_rate = _rate;
+   }
+
+   static method CalcEqTempFreqTable() {
+      // equal temperament reference table
+      FloatArray r <= eqtemp_freq_table;
+      float i = 0;
+      r.alloc(128);
+      loop(128)
+      {
+         r.add( ((440.0f/32.0f)*exp( ((i-9.0)/12.0)*log(2.0) )) );
+         i++;
+      }
+   }
+
+   static method CopyToDefaultFreqTable(FloatArray _aFreq, String _name) {
+      STConfig.audio_default_freq_table_name  = _name;
+      STConfig.audio_default_freq_table      <= Object(_aFreq);
+      if(default_freq_table.numElements == _aFreq.numElements)
+         default_freq_table = _aFreq;  // copy, don't reallocate (ref'd by C++ code)
+      else
+         trace "[!!!] Audio.CopyToDefaultFreqTable: numElements differ";  // should not be reachable, would trigger reallocation
+   }
+
+   static method NoteToFreq(float _note) : float {
+      // (note) always uses the equal temperament reference table
+      float r;
+      r = eqtemp_freq_table.get(int(_note));
+      if(_note < 127)
+      {
+         float r2 = eqtemp_freq_table.get(int(_note)+1);
+         r += frac(_note) * (r2-r);
+      }
+      return r;
+   }
+
+   static method FreqToIntNote(float _freq) : int {
+      // (note) always uses the equal temperament reference table
+      int r = 0;
+      loop(eqtemp_freq_table.numElements)
+      {
+         if(eqtemp_freq_table.get(r) > _freq)
+            break;
+         r++;
+      }
+      return (r - 1);
+   }
+
+   static method FreqToFracNote(float _freq) : float {
+      // (note) always uses the equal temperament reference table
+      float r = eqtemp_freq_table.findNearestIdx1d(_freq, 0/*off*/, 1/*stride*/, 1000/*maxDist*/);
+      if(r >= 0.0f)
+      {
+         float tblFreq = eqtemp_freq_table.get(r);
+         float freqRel;
+         if(_freq >= tblFreq)
+         {
+            if(r < 127.0f)
+            {
+               float tblFreqNext = eqtemp_freq_table.get(int(r) + 1);
+               freqRel = (_freq - tblFreq) / (tblFreqNext - tblFreq);  // (todo) not mathematically correct (freq is logarithmic)
+               r += freqRel;
+            }
+         }
+         else
+         {
+            if(r > 0)
+            {
+               float tblFreqPrev = eqtemp_freq_table.get(int(r) - 1);
+               freqRel = (_freq - tblFreqPrev) / (tblFreq - tblFreqPrev);  // (todo) not mathematically correct (freq is logarithmic)
+               r -= (1.0f - freqRel);
+            }
+         }
+      }
+      return r;
+   }
+
+   static method FracNoteToString(float _note) : String {
+      float noteFrac = frac(_note);
+      if(noteFrac > 0.5)
+      {
+         _note    += 1.0;
+         noteFrac -= 1.0;
+      }
+      noteFrac = int(100*noteFrac);
+      if(0 <= _note < 127)
+         return (MIDI.midi_notes.get(int(_note)))+((noteFrac>=0.0)?("+"+noteFrac):noteFrac);
+      else
+         return "?"+((noteFrac>=0.0)?("+"+noteFrac):noteFrac);
+   }
+
+   static method HzToNoteString(float _hz) : String {
+      // (note) always uses the equal temperament reference table
+      if(_hz <= Sample.MAX_NOTE_FREQ)
+      {
+         float note = FreqToFracNote(_hz);
+         return FracNoteToString(note);
+      }
+      return "";
+   }
+
+   static method DecibelToLevel(float _db) : float {
+      return mathPowerf(2.0f, _db * (1.0f / 6));
+   }
+
+   static method LevelToDecibel(float _v) : float {
+      /*
+        ld(x) = ln(x) / ln(2)
+        db = (ln(v) / ln(2)) * 6
+      */
+      return 6.0f * log(_v) / log(2.0f);
+   }
+
+   static method UseSDL() {
+      return ((true == STConfig.b_audio_sdl) || ((maybe == STConfig.b_audio_sdl) && STConfig.b_databridge));
+   }
+
+   static method UsePortAudio() {
+      return (true != STConfig.b_audio_sdl) && !STConfig.b_databridge;
+   }
+
+   static =replay= method Init() {
+
+      // (note) can be 0 (=> update to actual mix rate when device is opened)
+      mix_rate = STConfig.audio_mixrate;
+
+      // Calculate equal temperament reference frequency table
+      CalcEqTempFreqTable();
+
+      // Override default_freq_table via config
+      FloatArray cfgFreqTable <= STConfig.audio_default_freq_table;
+      if(128 == cfgFreqTable.numElements)
+      {
+         trace "[dbg] Audio::Init: using \""+STConfig.audio_default_freq_table_name+"\" default_freq_table";
+         default_freq_table = STConfig.audio_default_freq_table;
+      }
+      else
+      {
+         trace "[dbg] Audio::Init: using equal temperament default_freq_table";
+         default_freq_table = eqtemp_freq_table;
+      }
+
+      InitRefTone();
+
+      if(UsePortAudio())
+         PortAudio.Initialize();
+
+      // // InitTempSamplePlayer();  // ==> postponed until device has been opened and actual mix rate is known
+   }
+
+   static method InitRefTone() {
+      wf_reftone <= new StWaveform;
+      wf_reftone.alloc(1, 256);
+      FloatArray fa <= wf_reftone.sampleData;
+      fa.empty();
+      float w = 2PI/256;
+      float a = 0;
+      loop(256)
+      {
+         fa.add(sin(a));
+         a += w;
+      }
+      wf_reftone.loopLen = 256;
+      wf_reftone.sampleRate = 47872;
+      wf_reftone.baseFrequency = 187; // 47872/256
+   }
+
+   static method InitTempSamplePlayer() {
+      // Create temporary sample player
+      temp_sp.allocVoices(256);
+      temp_sp.volume           = 1.0;
+      temp_sp.defaultMixRate   = Audio.mix_rate;
+      temp_sp.defaultFreqTable = default_freq_table;
+
+      SetTempSampleNumVoices(16);
+
+      StADSR adsr <= temp_sample.getOrCreateVolADSR();
+      adsr.timescaleMillisec = 250;
+      Envelope *env;
+
+      env <= adsr.getOrCreateEnvAttackData();
+      env.alloc(2 * 2);
+      env.add(0);
+      env.add(0);
+      env.add(0);
+      env.add(1);
+
+      env <= adsr.getOrCreateEnvSustainData();
+      env.alloc(2 * 2);
+      env.add(0);
+      env.add(1);
+      env.add(1);
+      env.add(1);
+
+      SetTempSampleReleaseTime(0.15);
+
+      temp_voicekeys_poly.allocAndFill(128, -1);
+
+      temp_mod_sample.init();
+      temp_mod_sample.setSampleIdx_NoSync(-1, false/*bMarkProjectAsModified*/);
+   }
+
+   static =replay= method SetTempSampleVelAmt(float _amt) {
+      temp_sample.volumeVelocityAmount = _amt;
+   }
+
+   static =replay= method SetTempSampleReleaseTime(float _t) {
+      StADSR adsr <= temp_sample.getOrCreateVolADSR();
+      adsr.timescaleMillisec = 250;
+      Envelope *env;
+      env <= adsr.getOrCreateEnvReleaseData();
+      env.alloc(4 * 2);
+      env.add(0);
+      env.add(1);
+      float tdt = _t / 4.0f;
+      env.add(tdt);
+      env.add(0.4);
+      env.add(tdt);
+      env.add(0.15);
+      env.add(tdt);
+      env.add(0.05);
+      env.add(tdt);
+      env.add(0.0);
+   }
+
+   static =replay= method SetTempSampleNumVoices(int _num) {
+      temp_sample.maxVoices = _num;
+   }
+
+   static =replay= method UpdateTemporarySampleFromFile(String _path, Object _retFileInfo) {
+      temp_sp.resetVoices();
+      temp_mod_sample.stopVoices();
+      ref_sample <= null;
+      try
+      {
+         StSample   s  <= temp_sample;
+         StWaveform wf <= temp_waveform;
+         s.waveform = wf;
+         s.freeSampleLoops();
+         local WavIO_BWF bwf;
+         wf.uiInvalidateLastPlayedOffset();
+         Waveforms.CreateFromFile(wf, _path, _retFileInfo, s/*sampleHint*/, bwf/*bwfHint*/);
+
+         // // IntArray loops <= s.getOrCreateSampleLoops();
+         // // trace "xxx loops="+#(loops);
+
+         wf.baseFrequency = Sample.BASE_FREQ_MIDDLE_C;
+         s.offset   = 0;
+         s.volume   = 1.0f;
+         s.volumeVelocityAmount = current_project.temp_vel_amt; ///1.0f;
+         s.len      = wf.numFrames;
+
+         trace "[...] Audio::UpdateTemporarySampleFromFile: sample \""+_path+"\" loaded. numFrames="+wf.numFrames;
+         Global.SuccessShort("Sample \""+_path+"\" loaded. numFrames="+wf.numFrames);
+
+         Audio.ResetUnderrunProtection();
+
+         // (todo) update sample loops, midibasenote/basefrequency
+      }
+      catch(WavIO::Fail e)
+      {
+         trace "[---] Audio::UpdateTemporarySampleFromFile: error while loading sample \""+_path+"\", e.message=\""+e.message+"\".";
+      }
+   }
+
+   static =replay= method UpdateTemporarySampleFromWaveform(StWaveform _wf) {
+      temp_sp.resetVoices();
+      temp_mod_sample.stopVoices();
+      ref_sample <= null;
+      StSample s <= temp_sample;
+      if(null != _wf)
+      {
+         _wf.uiInvalidateLastPlayedOffset();
+         s.waveform = _wf;
+         s.offset   = 0;
+         s.volume   = 1.0f;
+         s.volumeVelocityAmount = current_project.temp_vel_amt; ///1.0f;
+         s.len = _wf.numFrames;
+         s.volumeRampStepsMillisecIn = 1.0;
+         s.freeSampleLoops();
+      }
+      else
+      {
+         s.waveform = null;
+      }
+   }
+
+   static =replay= method UpdateTemporarySampleFromWaveformArea(StWaveform _wf, int _off, int _length, boolean _bLoop, boolean _bRamp) {
+      temp_sp.resetVoices();
+      temp_mod_sample.stopVoices();
+      if(null != _wf)
+      {
+         // trace "xxx UpdateTemporarySampleFromWaveformArea: off="+_off+" len="+_length+" #ch="+_wf.numChannels;
+         _wf.uiInvalidateLastPlayedOffset();
+         StSample s <= temp_sample;
+         s.waveform = _wf;
+         s.offset   = _off;
+         s.volume   = 1.0f;
+         s.volumeVelocityAmount = current_project.temp_vel_amt; ///1.0f;
+         s.len = _length;
+         s.volumeRampStepsMillisecIn = (_bRamp ? 1.0 : 0.0);
+         s.freeSampleLoops();
+         s.sampleRateRatio = 1.0;
+         if(_bLoop)
+         {
+            IntArray loops <= s.getOrCreateSampleLoops();
+            loops.add(_off);
+            loops.add(_length);
+            loops.add(0);  // inf
+         }
+      }
+      ref_sample <= null;
+   }
+
+   static =replay= method UpdateTemporarySampleFromArray(FloatArray _buf,
+                                                         int   _frameOffset,
+                                                         int   _numFrames,
+                                                         int   _numChannels,
+                                                         float _mixRate
+                                                        ) {
+      StWaveform wf <= temp_waveform;
+      wf.setSampleData(_buf, _numChannels);
+      wf.sampleRate    = _mixRate;
+      wf.baseFrequency = Sample.BASE_FREQ_MIDDLE_C;
+      UpdateTemporarySampleFromWaveformArea(wf, _frameOffset, _numFrames, false/*bLoop*/, true/*bRamp*/);
+   }
+
+   static =replay= method UpdateTemporarySampleFromArrayLoop(FloatArray _buf,
+                                                             int     _frameOffset,
+                                                             int     _numFrames,
+                                                             int     _numChannels,
+                                                             float   _mixRate,
+                                                             boolean _bLoop,
+                                                             boolean _bRamp
+                                                             ) {
+      // trace "xxx UpdateTemporarySampleFromArrayLoop: off="+_frameOffset+" num="+_numFrames+" ch="+_numChannels+" rate="+_mixRate;
+      StWaveform wf <= temp_waveform;
+      wf.setSampleData(_buf, _numChannels);
+      wf.sampleRate    = _mixRate;
+      wf.baseFrequency = Sample.BASE_FREQ_MIDDLE_C;
+      UpdateTemporarySampleFromWaveformArea(wf, _frameOffset, _numFrames, _bLoop, _bRamp);
+   }
+
+   static =replay= method SetEnableTemporarySampleLoop(boolean _bEnable) {
+      ResetAllTempSamples();
+      temp_sample.freeSampleLoops();
+      if(_bEnable)
+      {
+         IntArray ia <= temp_sample.getOrCreateSampleLoops();
+         ia.add(temp_sample.offset);  // offset
+         ia.add(temp_sample.len);     // length
+         ia.add(0);                   // times (0=infinite)
+      }
+      ref_sample <= null;
+   }
+
+   static =replay= method SetEnableTemporarySampleRamp(boolean _bEnable) {
+      temp_sample.volumeRampStepsMillisecIn = (_bEnable ? 1.0 : 0.0);
+   }
+
+   static =replay= method PlayRefToneTempSample() {
+      // trace "xxx playreftone";
+      UpdateTemporarySampleFromWaveform(wf_reftone);
+      SetEnableTemporarySampleLoop(true);
+      PlayTempSample(45+24, 1.0/*vel*/); // play a-4
+   }
+
+   static =replay= method PlayTempSample(int _note, float _vel) {
+
+      if(-1 != temp_voicekey)
+         StopTempSample(false/*bReset*/);
+
+      if(null != ref_sample)
+      {
+         if(b_playtemp_debug)
+            Global.Debug("Audio::PlayTempSample<ref>: note="+_note+" vel="+_vel);
+
+         temp_mod_sample.noteOn(_note, _vel, true/*bAllowNoteOff*/);
+         temp_mod_sample.startQueuedVoices();
+      }
+      else if(null != temp_sample.waveform)
+      {
+         // trace "xxx PlayTempSample: note="+_note+" vel="+_vel;
+         temp_voicekey = temp_sp.startSample(temp_sample, null, _note, _vel, 0, 1.0/*vol*/, 0, 0);
+         temp_sp.updateFreq(0);
+         temp_sp.initStartedVoicesByKey(temp_voicekey);
+         temp_sample.waveform.uiInvalidateLastPlayedOffset();
+
+         if(b_playtemp_debug)
+            Global.Debug("Audio::PlayTempSample: note="+_note+" vel="+_vel+"  => voiceKey="+temp_voicekey);
+      }
+   }
+
+   static =replay= method IsAnyTempSamplePlaying() : boolean {
+      // // if(-1 != temp_voicekey)
+      // trace "xxx Audio::IsAnyTempSamplePlaying: temp_sp.numPlayingVoices="+temp_sp.numPlayingVoices;
+      return (temp_sp.numPlayingVoices > 0);
+   }
+
+   static =replay= method StopTempSample(boolean _bReset) {
+
+      temp_mod_sample.allNotesOff();
+      if(_bReset)
+         temp_mod_sample.stopVoices();  // calls resetVoices()
+
+      if(b_playtemp_debug)
+         Global.Debug("Audio::StopTempSample: bReset="+_bReset);
+      temp_sp.stopVoicesByKey(temp_voicekey);
+      temp_voicekey = -1;
+      if(_bReset)
+         temp_sp.resetVoices();
+   }
+
+   static =replay= ResetAllTempSamples() {
+      if(b_playtemp_debug)
+         Global.Debug("Audio::ResetAllTempSamples");
+
+      temp_mod_sample.stopVoices();
+      temp_sp.resetVoices();
+      temp_voicekey = -1;
+   }
+
+   static =replay= UnloadAllTempSampleVoicePlugins() {
+      temp_mod_sample.unloadVoicePlugins();
+      temp_sp.unloadVoicePlugins();
+   }
+
+   static CopyTemporaryWaveformToSampleViewClipboard() {
+      SampleView.FreeClipboard();
+      int numFrames = temp_waveform.numFrames;
+      String sCh <= (2 == temp_waveform.numChannels) ? "stereo" : "mono";
+      int chMask = (2 == temp_waveform.numChannels) ? SampleView.CHANNEL_MASK_LR : SampleView.CHANNEL_MASK_L;
+      if(numFrames > 0)
+      {
+         SampleView.AppendSamplesToClipboardBorderSilence(temp_waveform.sampleData,
+                                                          temp_waveform.numChannels,
+                                                          chMask
+                                                          );
+         Global.Print("Copy "+numFrames+" "+sCh+" frame"+Utils.GetPluralString(numFrames)+" to clipboard");
+      }
+   }
+
+   static AppendTemporaryWaveformToSampleViewClipboard(boolean _bSilence) {
+      int numFrames = temp_waveform.numFrames;
+      if(numFrames > 0)
+      {
+         String sCh <= (2 == temp_waveform.numChannels) ? "stereo" : "mono";
+         int chMask = (2 == temp_waveform.numChannels) ? SampleView.CHANNEL_MASK_LR : SampleView.CHANNEL_MASK_L;
+         if(_bSilence)
+         {
+            SampleView.AppendSamplesToClipboardBorderSilence(temp_waveform.sampleData,
+                                                             temp_waveform.numChannels,
+                                                             chMask
+                                                             );
+            Global.Print("Append "+numFrames+" "+sCh+" frame"+Utils.GetPluralString(numFrames)+" to clipboard (with silence)");
+         }
+         else
+         {
+            SampleView.AppendSamplesToClipboard(temp_waveform.sampleData,
+                                                temp_waveform.numChannels,
+                                                chMask
+                                                );
+            Global.Print("Append "+numFrames+" "+sCh+" frame"+Utils.GetPluralString(numFrames)+" to clipboard");
+         }
+      }
+   }
+
+   static =replay= ResetAllSampleVoicesMods(Sample _sampleOrNull) {
+      // Find all sample players that play any of 'sampleOrNull''s zones
+      //  - ModSample
+      //  - SamplePadState
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         track.resetAllSampleVoices(_sampleOrNull);
+      }
+   }
+
+   static =replay= ResetAllSampleVoices(Sample _sample) {
+      if(null != _sample)
+      {
+         if(@(_sample) == @(ref_sample))
+         {
+            StSample smp <= _sample.sample_bank.firstSample;
+            while(null != smp)
+            {
+               // trace "xxx ResetAllSampleVoices: sample="+#(_sample)+" zone="+#(smp);
+               temp_sp.resetVoicesBySample(smp);
+               temp_mod_sample.resetVoicesBySample(smp);
+               smp <= smp.next;
+            }
+         }
+      }
+
+      ResetAllSampleVoicesMods(_sample);
+   }
+
+   static protected HandleReorderVoicePluginsMods(StSampleBank _sb, IntArray _ia) {
+      Track *track;
+      foreach track in current_project.tracks
+      {
+         TrackPatchVariation *tpv;
+         foreach tpv in track.patch_variations
+         {
+            SamplePadKit spk <= track.sample_pad_kit;
+            spk.handleReorderVoicePlugins(_sb, _ia);
+
+            Lane *lane;
+            foreach lane in tpv.lanes
+            {
+               ModSample *modSample;
+               foreach modSample in lane.mods
+               {
+                  if(modSample instanceof ModSample)
+                  {
+                     StSamplePlayer sp <= modSample.sample_player;
+                     sp.handleReorderVoicePlugins(_sb, _ia);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   static HandleReorderVoicePlugins(Sample _sample, IntArray _ia) {
+      // (note) caller must lock =replay=
+      StSampleBank sb <= _sample.sample_bank;
+      temp_sp.handleReorderVoicePlugins(sb, _ia);
+      temp_mod_sample.handleReorderVoicePlugins(sb, _ia);
+      HandleReorderVoicePluginsMods(sb, _ia);
+   }
+
+   static =replay= method PlayTempSamplePoly(local int _note, local float _vel) {
+      // called by Replay.parseMIDIInputEventsSysExAndTempSample()
+
+      // trace "xxx PlayTempSamplePoly: ref_sample="+#(ref_sample);
+      // Utils.Backtrace();
+
+      if(null != ref_sample)
+      {
+         // // return PlayTempSampleBankPoly(_note, _vel);
+         temp_mod_sample.noteOn(_note, _vel, true/*bAllowNoteOff*/);
+         temp_mod_sample.startQueuedVoices();
+         return;
+      }
+
+      if(null != temp_sample.waveform)
+      {
+         // trace "xxx PlayTempSamplePoly: note="+_note+" vel="+_vel;
+         if(-1 != temp_voicekeys_poly[_note])
+         {
+            // // temp_sp.stopVoicesByKey(temp_voicekeys_poly[_note]);
+            temp_sp.noteOffByKey(temp_voicekeys_poly[_note], _vel);
+         }
+
+         local int voicekey = temp_sp.startSample(temp_sample, null, _note, _vel, 0, 1.0/*vol*/, 0, 0);
+         // trace "xxx call initStartedVoicesByKey 1";
+
+         local float randOff = rand(current_project.temp_sampleoff_rand);
+         temp_sp.updateSampleOffByKey(voicekey, current_project.temp_sampleoff + randOff);
+
+         local float randPan = rand(current_project.temp_pan_rand*2) - current_project.temp_pan_rand;
+         temp_sp.updatePanByKey(voicekey, randPan);
+
+         HandleTempPitchbendChanged();
+
+         temp_sp.initStartedVoicesByKey(voicekey);
+         // trace "xxx call initStartedVoicesByKey 2";
+         temp_voicekeys_poly[_note] = voicekey;
+
+         if(b_playtemp_debug)
+            Global.Debug("Audio::PlayTempSamplePoly: note="+_note+" vel="+_vel+"  => voiceKey="+voicekey);
+      }
+   }
+
+   static =replay= method PlayTempSampleBankPoly(local int _note, local float _vel) {
+      // called by Audio.HandleSmpPreview()
+
+      // trace "xxx PlayTempSampleBankPoly: note="+_note+" vel="+_vel+" temp_voicekeys_poly[_note]="+temp_voicekeys_poly[_note];
+      if(-1 != temp_voicekeys_poly[_note])
+      {
+         // temp_sp.stopVoicesByKey(temp_voicekeys_poly[_note]);
+         temp_sp.noteOffByKey(temp_voicekeys_poly[_note], _vel);
+      }
+
+      if(null != ref_sample)
+      {
+         // // return PlayTempSampleBankPoly(_note, _vel);
+         temp_mod_sample.noteOn(_note, _vel, true/*bAllowNoteOff*/);
+         temp_mod_sample.startQueuedVoices();
+         // trace "xxx temp_mod_sample.noteOn(note="+_note+"! vel="+_vel+")";
+         return;
+      }
+
+      local int voicekey = -1;
+
+      // trace "xxx PlayTempSampleBankPoly: ref_sample.solo_zone_idx="+ref_sample.solo_zone_idx;
+
+      local float modVal = temp_cc_modwheel / 127.0;
+
+      if(-1 == ref_sample.solo_zone_idx)
+      {
+         voicekey = temp_sp.startSampleBank(ref_sample.sample_bank,
+                                            null/*freqTable*/, _note, _vel,
+                                            // // ref_sample.b_mod_src_noteon ? modVal : 0.0/*mod*/,
+                                            modVal,
+                                            1.0f/*volume*/,
+                                            0/*pan*/,
+                                            0/*freq*/
+                                            );
+      }
+      else
+      {
+         local StSample s <= ref_sample.sample_bank.getSampleByIdx(ref_sample.solo_zone_idx);
+         if(null != s)
+         {
+            voicekey = temp_sp.startSample(s,
+                                           null/*freqTable*/, _note, _vel,
+                                           modVal,
+                                           1.0f * (ref_sample.sample_bank.volume)/*volume*/,
+                                           0/*pan*/,
+                                           0/*freq*/
+                                           );
+         }
+      }
+
+      // trace "xxx PlayTempSampleBankPoly: => voicekey="+voicekey;
+
+      if(voicekey > 0)
+      {
+         // (note) randomization is handled by StSampleBank / StSamplePlayer
+         // // float randOff = rand(ref_sample.getSampleoffRand());
+         // // temp_sp.updateSampleOffByKey(voicekey, randOff);
+
+         // // float randFreq = rand(ref_sample.getFreqRand()*2) - ref_sample.getFreqRand();
+         // // temp_sp.updateFreqByKey(voicekey, randFreq);
+
+         // // float randVol = rand(ref_sample.getVolumeRand()*2) - ref_sample.getVolumeRand();
+         // // temp_sp.updateVolByKey(voicekey, randVol + ref_sample.getVolume());
+
+         // // float randPan = rand(ref_sample.getPanRand()*2) - ref_sample.getPanRand();
+         // // temp_sp.updatePanByKey(voicekey, randPan + ref_sample.getPan());
+
+         HandleTempPitchbendChanged();
+
+         // // // if(ref_sample.b_mod_src_noteon)
+         // // //    modVal = 0;
+         // // // temp_sp.updateMod(modVal);
+
+         // // // if(!ref_sample.b_mod_src_noteon)
+         // // //    temp_sp.updateMod(modVal);
+
+         if(!ref_sample.b_mod_src_noteon)
+         {
+            // Reset per-voice mod to 0 (effective mod = sp mod + voice mod)
+            temp_sp.updateModByKey(voicekey, 0.0f);
+            temp_sp.updateMod(modVal);
+         }
+         // (note) don't reset sp mod
+
+         // trace "xxx call temp_sp.initStartedVoicesByKey(voicekey="+voicekey+")";
+         temp_sp.initStartedVoicesByKey(voicekey);
+         // trace "xxx call initStartedVoicesByKey 2";
+         temp_voicekeys_poly[_note] = voicekey;
+
+         if(b_playtemp_debug)
+            Global.Debug("Audio::PlayTempSampleBankPoly: note="+_note+" vel="+_vel+"  => voiceKey="+voicekey);
+      }
+      // trace "xxx Audio::PlayTempSampleBankPoly: LEAVE";
+   }
+
+   static =replay= HandleTempPitchbendChanged() {
+      local float pbUp;
+      local float pbDown;
+
+      if(null != ref_sample)
+      {
+         pbUp = ref_sample.pitchbend_up;
+         pbDown = ref_sample.pitchbend_down;
+      }
+      else
+      {
+         pbUp = 12;
+         pbDown = 12;
+      }
+
+      local float freq = (temp_pitchbend_norm < 0) ? (pbDown * temp_pitchbend_norm) : (pbUp * temp_pitchbend_norm);
+      temp_sp.updateFreq(freq);
+   }
+
+   static =replay= HandlePolyPressureChanged(byte _note, byte _val) {
+      // voicepressure[_note] = _val / 127.0;
+      int voicekey = temp_voicekeys_poly.get(_note);
+      if(-1 != voicekey)
+         temp_sp.updatePerfCtlByKey(voicekey, STSAMPLEPLAYER_PERFCTL_PRESSURE, _val);
+   }
+
+   static =replay= method StopTempSamplePoly(int _note, float _vel) {
+      // trace "xxx StopTempSamplePoly: note="+_note+" vel="+_vel;
+      int voicekey = temp_voicekeys_poly[_note];
+      if(-1 != voicekey)
+      {
+         if(b_playtemp_debug)
+            Global.Debug("Audio::StopTempSamplePoly: note="+_note+" vel="+_vel+" voiceKey="+voicekey);
+         temp_sp.noteOffByKey(voicekey, _vel);
+         // temp_sp.stopVoicesByKey(voicekey);
+         temp_voicekeys_poly[_note] = -1;
+      }
+
+      temp_mod_sample.noteOff(_note, _vel);
+   }
+
+   static =replay= method UpdateTempRefSample(Sample _ref) {
+      ref_sample <= _ref;
+
+      StSamplePlayer sp <= temp_mod_sample.sample_player;
+
+      if(null != ref_sample)
+      {
+         temp_sp.setLiveRecSampleBank(ref_sample.sample_bank);
+         temp_mod_sample.setSampleIdx_NoSync(current_project.getSampleIdx(ref_sample), false/*bMarkProjectAsModified*/);
+         sp.setLiveRecSampleBank(ref_sample.sample_bank);
+      }
+      else
+      {
+         temp_sp.setLiveRecSampleBank(null);
+         temp_mod_sample.setSampleIdx_NoSync(-1, false/*bMarkProjectAsModified*/);
+         sp.setLiveRecSampleBank(null);
+      }
+   }
+
+   static method Exit() {
+      if(UsePortAudio())
+         PortAudio.Terminate();
+   }
+
+   static int waitCount = 0;
+   static int lastProcessQueueMS = 0;
+
+   static method ProcessAudioDirect(int numInCh, int numOutCh, float outLatencyMS,
+                                    FloatArray _input, FloatArray _output,
+                                    int _numFrames,
+                                    float lvlL, float lvlR, float dim
+                                    ) {
+      // (note) called when ring_size is 0 (and b_force_single_thread==true)
+
+      // trace "xxx ProcessAudioDirect: numFrames="+_numFrames+" numOutCh="+numOutCh+" numInCh="+numInCh+" replay.b_running="+replay.b_running;
+      _output.fill(0.0f);
+      if(!replay.b_running)
+         return;
+
+      replay.appendInterleavedSamplesToInputBuffers(_input, numInCh, _numFrames);
+
+      int numFramesLeft = _numFrames;
+      int outFrameOff = 0;
+
+      while(numFramesLeft > 0)
+      {
+         boolean bLoopWait = true;
+
+         while(bLoopWait)
+         {
+            boolean bAvail = (process_last_chunk_frames_left > 0);
+            if(!bAvail)
+            {
+               if(!STConfig.b_force_single_thread)
+               {
+                  // Wait for condition in multi-threaded rendering mode
+                  bAvail = replay.hasProcessFinished();
+               }
+               else
+               {
+                  // Process immediately in single-threaded rendering mode
+                  replay.queueProcess();
+                  lastProcessQueueMS = milliSeconds();
+                  process_last_chunk_buffer <= replay.mix_buffer;
+                  process_last_chunk_frames_left = chunk_sz;
+                  bAvail = true;
+                  // trace "xxx process_last_chunk_buffer="+#(process_last_chunk_buffer);
+               }
+            }
+
+            if(bAvail)
+            {
+               FloatArray *replayBuf;
+               if(process_last_chunk_frames_left > 0)
+               {
+                  replayBuf <= process_last_chunk_buffer;
+               }
+               else
+               {
+                  replayBuf <= replay.mix_buffer;
+                  process_last_chunk_buffer <= replayBuf;
+                  process_last_chunk_frames_left = chunk_sz;
+               }
+
+               // trace "xxx outFrameOff="+outFrameOff+" numFramesLeft="+numFramesLeft+" replayBuf="+#(replayBuf);
+
+               int processSize = mathMini(process_last_chunk_frames_left, numFramesLeft);
+
+               // Output interleaved stereo channel pairs
+               //  (can also be seen as mono channels, when panned to the center)
+               int chIdx = 0;
+               int minNumOutCh = mathMini(replay.num_out_ch, numOutCh);
+
+               // trace "xxx outFrameOff="+outFrameOff+" numFramesLeft="+numFramesLeft+" processSize="+processSize+" replay.num_out_ch="+replay.num_out_ch+" minNumOutCh="+minNumOutCh+" lvl=("+(lvlL*dim)+";"+(lvlR*dim)+")";
+
+               loop(minNumOutCh / 2)
+               {
+                  // tksampleedit_copy_pan_tanh_dim_stereo_adv_to_stereo_adv(_output, outFrameOff + chIdx, numOutCh,
+                  //                                                         replayBuf, (64 - process_last_chunk_frames_left)*replay.num_out_ch + chIdx, replay.num_out_ch,
+                  //                                                         lvlL, lvlR, dim,
+                  //                                                         processSize
+                  //                                                         );
+                  tksampleedit_copy_pan_stereo_adv_to_stereo_adv(_output, outFrameOff + chIdx, numOutCh,
+                                                                 replayBuf, (chunk_sz - process_last_chunk_frames_left)*replay.num_out_ch + chIdx, replay.num_out_ch,
+                                                                 lvlL*dim, lvlR*dim,
+                                                                 processSize
+                                                                 );
+                  chIdx += 2;
+               }
+               // trace "xxx output="+#(_output);
+
+               // // tksampleedit_copy_pan_tanh_dim_stereo_adv_to_stereo_adv(_output, 0, numOutCh, replayBuf, 0, 2, lvlL, lvlR, dim, _numFrames);
+
+               bLoopWait = false;
+
+               process_last_chunk_frames_left -= processSize;
+               numFramesLeft -= processSize;
+               outFrameOff += processSize * numOutCh;
+            }
+            else
+            {
+               // (note)
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722251ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=14 (-1.50567) @t=722266ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722280ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722293ms
+               // (note) the StreamCallback is sometimes called more frequently than expected
+               int msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+               boolean bInTime = true;
+               if(msSinceLastQueue >= outLatencyMS)
+               {
+                  if(b_use_switch_to_thread)
+                     Thread.SwitchToThread();
+                  else
+                     TKS.sleep(1);
+
+                  if(!replay.hasProcessFinished())
+                  {
+                     msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+
+                     if(b_use_switch_to_thread)
+                        Thread.SwitchToThread();
+                     else
+                        TKS.sleep(1);
+
+                     if(!replay.hasProcessFinished())
+                     {
+                        msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+
+                        // underrun
+                        if(!b_suppress_underrun_error)
+                           trace "[~~~] Audio::ProcessStreamDirect: underrun ms since last queue="+msSinceLastQueue+" ("+(outLatencyMS-msSinceLastQueue)+") @t="+milliSeconds()+"ms";
+                        num_underruns++;
+                        bInTime = false;
+                        if(num_underruns > MAX_UNDERRUNS)
+                        {
+                           num_underruns = MAX_UNDERRUNS;
+                           bLoopWait = false;
+                           b_allow_process = false;
+                        }
+                     }
+                     else
+                        bInTime =true;
+                  }
+                  else
+                     bInTime = true;
+               }
+               if(bInTime)
+               {
+                  if(num_underruns > 0)
+                  {
+                     num_underruns = mathMaxi(0, num_underruns-1);
+                     if(0 == num_underruns)
+                        b_allow_process = true;
+                  }
+               }
+            }
+         } // while bLoopWait
+
+         if(0 == process_last_chunk_frames_left)
+         {
+            if(!STConfig.b_force_single_thread)///// || (STConfig.b_force_single_thread && (numFramesLeft > 0)))
+            {
+               replay.queueProcess();
+               lastProcessQueueMS = milliSeconds();
+            }
+         }
+      } // while numFramesLeft
+   }
+
+   static method ProcessAudioRing(int numInCh, int numOutCh, float outLatencyMS,
+                                  FloatArray _input, FloatArray _output,
+                                  int _numFrames,
+                                  float lvlL, float lvlR, float dim
+                                  ) {
+
+      // trace "\n\nxxx ProcessAudioRing: ms="+milliSeconds()+" numFrames="+_numFrames+" sr="+Audio.mix_rate+" output.numElements="+_output.numElements+" numOutCh="+numOutCh;
+
+      // // boolean bInputQueued = false;
+      replay.queueInterleavedInput(_input, numInCh, _numFrames);
+
+      int numFramesLeft = _numFrames;
+      int outFrameOff = 0;
+
+      // // _output.fill(0.0f);  // already done by C++ tkportaudio stream callback
+
+      // trace "xxx ------- ProcessAudioRing: numFrames="+_numFrames;
+
+      while(numFramesLeft > 0)
+      {
+         // trace "xxx ProcessAudioRing: totalNumFrames="+_numFrames+" numFramesLeft="+numFramesLeft+" outFrameOff="+outFrameOff+" process_last_chunk_frames_left="+process_last_chunk_frames_left;
+         boolean bLoopWait = true;
+
+         while(bLoopWait)
+         {
+            boolean bAvail = (process_last_chunk_frames_left > 0);
+            if(!bAvail)
+               bAvail = (replay.ringHaveMixBuffer() >= 1);
+            // trace "xxx ProcessAudioRing: 1 bAvail="+bAvail;
+            if(!bAvail)
+            {
+               bAvail = replay.hasProcessFinished();
+               if(!bAvail && !b_suppress_underrun_error)
+               {
+                  int tUnderrun = milliSeconds();
+                  if(0 != last_underrun_ms)
+                  {
+                     if( (tUnderrun - last_underrun_ms) < 20)
+                     {
+                        num_underruns++;
+                        if(0 == (num_underruns % 100))
+                           trace "xxx wait (ringbuffer underrun, num="+num_underruns+")";
+                        if(num_underruns > MAX_UNDERRUNS)
+                        {
+                           num_underruns = MAX_UNDERRUNS;
+                           bLoopWait = false;
+                           b_allow_process = false;
+                        }
+                     }
+                  }
+                  last_underrun_ms = tUnderrun;
+               }
+            }
+
+            // trace "xxx ProcessAudioRing: 2 bAvail="+bAvail;
+            if(bAvail)
+            {
+               FloatArray *replayBuf;
+
+               // trace "xxx process has finished";
+               if(process_last_chunk_frames_left > 0)
+               {
+                  replayBuf <= process_last_chunk_buffer;
+               }
+               else
+               {
+                  replayBuf <= replay.ringConsumeNextMixBuffer();
+                  process_last_chunk_buffer <= replayBuf;
+                  process_last_chunk_frames_left = chunk_sz;
+
+                  // trace "xxx audio reader: replayBuf="+#(replayBuf)+" numElem="+(replayBuf.numElements);
+               }
+
+               int processSize = mathMini(process_last_chunk_frames_left, numFramesLeft);
+
+               // Output interleaved stereo channel pairs
+               //  (can also be seen as mono channels, when panned to the center)
+               int chIdx = 0;
+               int minNumOutCh = mathMini(replay.num_out_ch, numOutCh);
+               if(0)
+               {
+                  // Audio.RenderSineStereo(_output, 0, _numFrames, numOutCh);
+                  // return;
+
+                  Audio.RenderSaw(_output, outFrameOff, processSize, numOutCh);
+               }
+               else
+               {
+                  // trace "xxx replayBuf.absMax="+replayBuf.absMax;
+                  loop(minNumOutCh / 2)
+                  {
+                     // tksampleedit_copy_pan_tanh_dim_stereo_adv_to_stereo_adv(_output, outFrameOff + chIdx, numOutCh,
+                     //                                                         replayBuf, (64 - process_last_chunk_frames_left)*replay.num_out_ch + chIdx, replay.num_out_ch,
+                     //                                                         lvlL, lvlR, dim,
+                     //                                                         processSize
+                     //                                                         );
+                     tksampleedit_copy_pan_stereo_adv_to_stereo_adv(_output, outFrameOff + chIdx, numOutCh,
+                                                                    replayBuf, (chunk_sz - process_last_chunk_frames_left)*replay.num_out_ch + chIdx, replay.num_out_ch,
+                                                                    lvlL*dim, lvlR*dim,
+                                                                    processSize
+                                                                    );
+                     chIdx += 2;
+                  }
+               }
+
+               if(0)
+                  Audio.RenderSineStereo(_output, outFrameOff, processSize, numOutCh);
+
+               bLoopWait = false;
+
+               process_last_chunk_frames_left -= processSize;
+               numFramesLeft -= processSize;
+               outFrameOff += processSize * numOutCh;
+            }
+            else
+            {
+               // (note)
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722251ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=14 (-1.50567) @t=722266ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722280ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722293ms
+               // (note) the StreamCallback is sometimes called more frequently than expected
+               int msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+               // // boolean bInTime = true;
+               if(msSinceLastQueue >= outLatencyMS)
+               {
+                  if(b_use_switch_to_thread)
+                     Thread.SwitchToThread();
+                  else
+                     TKS.sleep(1);
+
+                  if(!replay.hasProcessFinished())
+                  {
+                     msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+
+                     if(b_use_switch_to_thread)
+                        Thread.SwitchToThread();
+                     else
+                        TKS.sleep(1);
+
+                     if(!replay.hasProcessFinished())
+                     {
+                        msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+
+                        // underrun
+                        if(!b_suppress_underrun_error)
+                           trace "[~~~] Audio::ProcessStreamRing: underrun ms since last queue="+msSinceLastQueue+" ("+(outLatencyMS-msSinceLastQueue)+") @t="+milliSeconds()+"ms";
+                        bLoopWait = false;
+                        // // num_underruns++;
+                        // // bInTime = false;
+                        // // if(num_underruns > MAX_UNDERRUNS)
+                        // // {
+                        // //    num_underruns = MAX_UNDERRUNS;
+                        // //    bLoopWait = false;
+                        // //    b_allow_process = false;
+                        // // }
+                     }
+                     else
+                     {
+                        // // else
+                        // //    bInTime = true;
+                        bAvail = true;
+                     }
+                  }
+                  else
+                  {
+                     // // else
+                     // //    bInTime = true;
+                     bAvail = true;
+                  }
+               }
+               // // if(bInTime)
+               // // {
+               // //    if(num_underruns > 0)
+               // //    {
+               // //       num_underruns = mathMaxi(0, num_underruns-1);
+               // //       if(0 == num_underruns)
+               // //          b_allow_process = true;
+               // //    }
+               // // }
+            }
+         } // while(bLoopWait)
+
+         // // if(!bInputQueued && current_project.b_uses_inputs && bAvail)
+         // // {
+         // //    replay.queueInterleavedInput1(_input, numInCh, _numFrames);
+         // //    bInputQueued = true;
+         // // }
+
+         if(0 == process_last_chunk_frames_left)
+         {
+            replay.queueProcess();
+            lastProcessQueueMS = milliSeconds();
+         }
+
+      } // while numFramesLeft
+
+      replay.queueProcess();
+      lastProcessQueueMS = milliSeconds();
+   }
+
+   static int real_numframes = 0;
+
+   static method StreamCallback(PaStream   _stream,
+                                FloatArray _input,
+                                FloatArray _output,
+                                int        _numFrames
+                                ) {
+      num_stream_callbacks++;
+
+      if(!STConfig.b_process_audio)
+         return;
+
+      // PortAudio callback function
+      //  (note) must not contain any heavy processing (otherwise micro-underruns/clicks will occur)
+      //  (note) portaudio usually requests 8 sample frames at a time
+
+      // trace "xxx --------------------- StreamCallback numFrames="+_numFrames+" b_process="+b_process;
+       // return;
+      // trace "xxx StreamCallback: ENTER";
+
+      int   numInCh      = stream.numInputChannels;
+      int   numOutCh     = stream.numOutputChannels;
+      float outLatencyMS = stream.outputLatency * 1000.0f;
+
+      if(0 == real_numframes)
+      {
+         real_numframes = _numFrames;
+         Global.Debug2("StreamCallback: #frames per callback is "+real_numframes);
+      }
+
+      if(b_allow_process && b_process && !STConfig.b_databridge)
+      {
+         float lvlL = current_project.master_level_l;
+         float lvlR = current_project.master_level_r;
+         float dim  = current_project.getMasterDim() ? Utils.DBToLevel(STConfig.master_dim_db) : 1.0f;
+
+         // trace "xxx dim="+dim+" lvlL="+lvlL+" lvlR="+lvlR;
+
+         // trace "xxx replay.ring_size="+replay.ring_size;
+         if(0 == replay.ring_size)
+         {
+            ProcessAudioDirect(numInCh, numOutCh, outLatencyMS,
+                               _input, _output,
+                               _numFrames,
+                               lvlL, lvlR, dim
+                               );
+         }
+         else
+         {
+            ProcessAudioRing(numInCh, numOutCh, outLatencyMS,
+                             _input, _output, _numFrames,
+                             lvlL, lvlR, dim
+                             );
+         }
+
+         if(b_audio_sine)
+            Audio.RenderSineStereo(_output, 0, _numFrames, numOutCh);
+      }
+      else
+      {
+         // // if(!b_allow_process)
+         // // {
+         // //    num_underruns = mathMaxi(0, num_underruns-1);
+         // //    if(0 == num_underruns)
+         // //       b_allow_process = true;
+         // // }
+         _output.fill(0);
+      }
+      // trace "xxx StreamCallback: LEAVE";
+   }
+
+   static method MetaHostProcess(FloatArray _inputs, FloatArray _outputs, int _numFrames) {
+      // (note) used when built as a plugin (deprecated, will most likely be removed)
+      // trace "\n\nxxx metahostprocess ms="+milliSeconds()+" numFrames="+_numFrames+" sr="+Audio.mix_rate;
+
+      replay.queueInterleavedInput(_inputs, Replay.METAHOST_NUM_INPUTS, _numFrames);
+
+      int numFramesLeft = _numFrames;
+      int outFrameOff = 0;
+
+      _outputs.fill(0.0f);
+
+      float lvlL = current_project.master_level_l;
+      float lvlR = current_project.master_level_r;
+
+      float dim = current_project.getMasterDim() ? Utils.DBToLevel(STConfig.master_dim_db) : 1.0f;
+
+      while(numFramesLeft > 0)
+      {
+         // trace "xxx metahostprocess: totalNumFrames="+_numFrames+" numFramesLeft="+numFramesLeft+" outFrameOff="+outFrameOff+" process_last_chunk_frames_left="+process_last_chunk_frames_left;
+         boolean bLoopWait = true;
+
+         while(bLoopWait)
+         {
+            boolean bAvail = (process_last_chunk_frames_left > 0);
+            if(!bAvail)
+               bAvail = (replay.ringHaveMixBuffer() >= 1);
+            // trace "xxx metahostprocess: 1 bAvail="+bAvail;
+            if(!bAvail)
+               bAvail = replay.hasProcessFinished();
+            // trace "xxx metahostprocess: 2 bAvail="+bAvail;
+            if(bAvail)
+            {
+               FloatArray *replayBuf;
+
+               // trace "xxx process has finished";
+               if(process_last_chunk_frames_left > 0)
+               {
+                  replayBuf <= process_last_chunk_buffer;
+               }
+               else
+               {
+                  replayBuf <= replay.ringConsumeNextMixBuffer();
+                  process_last_chunk_buffer <= replayBuf;
+                  process_last_chunk_frames_left = chunk_sz;
+               }
+
+               int processSize = mathMini(process_last_chunk_frames_left, numFramesLeft);
+
+               // Output 8 stereo channel pairs
+               //  (can also be seen as 16 mono channels, when panned to the center)
+               int chIdx = 0;
+               loop(Replay.METAHOST_NUM_OUTPUTS / 2)
+               {
+                  tksampleedit_copy_pan_stereo_adv_to_stereo_adv(_outputs, outFrameOff + chIdx, Replay.METAHOST_NUM_OUTPUTS/*numOutputCh*/,
+                                                                 replayBuf, (chunk_sz - process_last_chunk_frames_left)*Replay.METAHOST_NUM_OUTPUTS + chIdx, Replay.METAHOST_NUM_OUTPUTS,
+                                                                 lvlL*dim, lvlR*dim,
+                                                                 processSize
+                                                                 );
+                  chIdx += 2;
+               }
+
+               bLoopWait = false;
+
+               process_last_chunk_frames_left -= processSize;
+               numFramesLeft -= processSize;
+               outFrameOff += processSize * Replay.METAHOST_NUM_OUTPUTS;
+            }
+            else
+            {
+               // (note)
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722251ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=14 (-1.50567) @t=722266ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722280ms
+               //   [~~~] Audio::StreamCallback: underrun ms since last queue=13 (-0.505669) @t=722293ms
+               // (note) the StreamCallback is sometimes called more frequently than expected
+               int msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+               float outLatency = (stream.outputLatency * 1000.0f);
+               if(msSinceLastQueue >= outLatency)
+               {
+                  if(b_use_switch_to_thread)
+                     Thread.SwitchToThread();
+                  else
+                     TKS.sleep(1);
+
+                  if(!replay.hasProcessFinished())
+                  {
+                     msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+
+                     if(b_use_switch_to_thread)
+                        Thread.SwitchToThread();
+                     else
+                        TKS.sleep(1);
+
+                     if(!replay.hasProcessFinished())
+                     {
+                        msSinceLastQueue = (milliSeconds() - lastProcessQueueMS);
+
+                        // underrun
+                        // if(!b_suppress_underrun_error)
+                        //    trace "[~~~] Audio::MetaHostProcess: underrun ms since last queue="+msSinceLastQueue+" ("+(outLatency-msSinceLastQueue)+") @t="+milliSeconds()+"ms";
+                        bLoopWait = false;
+                     }
+                  }
+               }
+            }
+         }
+
+         if(0 == process_last_chunk_frames_left)
+         {
+            replay.queueProcess();
+            lastProcessQueueMS = milliSeconds();
+         }
+      } // while numFramesLeft
+
+      if(b_audio_sine)
+         Audio.RenderSineStereo(_outputs, 0, _numFrames, Replay.METAHOST_NUM_OUTPUTS/*numOutputCh*/);
+
+      replay.queueProcess();
+      lastProcessQueueMS = milliSeconds();
+   }
+
+   static method ListDevices() {
+      if(UsePortAudio())
+      {
+         if(STConfig.b_debug_lofreq)
+         {
+            int numDev = PortAudio.GetNumDevices();
+
+            Global.Debug("Audio::ListDevices: numDev="+numDev);
+
+            int devIdx = 0;
+            loop(numDev)
+            {
+               PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+               Global.Debug("Audio::ListDevices:\n\t devIdx=" + devIdx +" name=\""+devInfo.name+"\" apiName=\""+devInfo.hostApiName + "\""
+                            "\n\t maxInputCh="+devInfo.maxInputChannels+" maxOutputCh="+devInfo.maxOutputChannels+
+                            "\n\t defLowInputLatency="+devInfo.defaultLowInputLatency+" defLowOutputLatency="+devInfo.defaultLowOutputLatency+
+                            "\n\t defHighInputLatency="+devInfo.defaultHighInputLatency+" defHighOutputLatency="+devInfo.defaultHighOutputLatency+
+                            "\n\t defSampleRate="+devInfo.defaultSampleRate);
+
+               int chIdx;
+
+               if(0)
+               {
+                  // List input channels:
+                  trace "[...]\t input channels:";
+                  chIdx = 0;
+                  loop(devInfo.maxInputChannels)
+                  {
+                     trace "[...]\t\t #"+chIdx+" : \"" + devInfo.getInputChannelName(chIdx) + "\"";
+                     chIdx++;
+                  }
+               }
+
+               if(0)
+               {
+                  // List output channels:
+                  trace "[...]\t output channels:";
+                  chIdx = 0;
+                  loop(devInfo.maxOutputChannels)
+                  {
+                     trace "[...]\t\t #"+chIdx+" : \"" + devInfo.getOutputChannelName(chIdx) + "\"";
+                     chIdx++;
+                  }
+               }
+
+               devIdx++;
+            }
+         }
+      }
+   }
+
+   static method TrySelectPreferredDevice() {
+      if(UsePortAudio())
+      {
+         int numDev = PortAudio.GetNumDevices();
+         int devIdx = 0;
+         loop(numDev)
+         {
+            PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+
+            if(STConfig.audio_pref_device_name == devInfo.name && devInfo.maxOutputChannels >= 2)
+            {
+               Global.Debug("Audio::TrySelectPreferredDevice: preferred dev name=\""+devInfo.name+"\" index="+devIdx);
+               STConfig.audio_device_index = devIdx;
+               return;
+            }
+
+            devIdx++;
+         }
+      }
+   }
+
+   static StartDefaultDevice() {
+      // // trace "xxx StartDefaultDevice";
+      if(!b_audio_running)
+      {
+         b_allow_process = false;
+
+         if(UseSDL())
+         {
+            // Start SDL audio output
+            Global.Debug("Audio::StartDefaultDevice: starting SDL audio output.");
+            use onAudioBeginBlock for AudioDevice.onAudioBeginBlock;
+            if(mix_rate < 16000)
+               mix_rate = 48000;
+            if(AudioDevice.openDSP(mix_rate, STConfig.audio_sdl_bufsize))
+            {
+               trace "[...] Audio::StartDefaultDevice: OK, SDL audio openend.";
+               AudioDevice.start();
+               b_audio_running = true;
+               b_process = true;
+            }
+            else
+            {
+               trace "[---] Audio::StartDefaultDevice: failed to open SDL audio.";
+            }
+         }
+         else
+         {
+            // Start PortAudio device
+
+            int devIdx = STConfig.audio_device_index;
+            if(devIdx < 0)
+               devIdx = PortAudio.GetDefaultOutputDeviceIndex();
+
+            PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+            if(null != devInfo)
+            {
+               PaStreamParameters isp, osp;
+
+               // Input stream parameters
+               isp.deviceIndex      = devIdx;
+
+               if(mix_rate < 16000)
+               {
+                  mix_rate = devInfo.defaultSampleRate;
+                  trace "[...] Audio::StartDefaultDevice: using default sample_rate="+mix_rate;
+               }
+
+               if(Utils.IsLinux() || STConfig.audio_num_in > devInfo.maxInputChannels)
+               {
+                  // (note) some ALSA devices fail to open when not requesting the exact number of supported channels
+                  STConfig.audio_num_in = devInfo.maxInputChannels;
+               }
+               if(STConfig.audio_num_in > STREAM_MAX_INPUT_CHANNELS)
+                  STConfig.audio_num_in = STREAM_MAX_INPUT_CHANNELS;
+               isp.channelCount     = STConfig.audio_num_in;
+
+               // int smpFmt = PA_INT16;
+               // int smpFmt = PA_INT24;
+               // int smpFmt = PA_FLOAT32;
+               int smpFmt = STConfig.audio_sample_format;
+               if(smpFmt < 0)
+                  smpFmt = devInfo.defaultSampleFormat;
+
+               isp.sampleFormat     = smpFmt;
+               isp.suggestedLatency = STConfig.audio_suggested_latency;
+
+               // Output stream parameters
+               osp.deviceIndex      = devIdx;
+
+               if(Utils.IsLinux() || STConfig.audio_num_out > devInfo.maxOutputChannels)
+               {
+                  // (note) some ALSA devices fail to open when not requesting the exact number of supported channels
+                  STConfig.audio_num_out = devInfo.maxOutputChannels;
+               }
+               if(STConfig.audio_num_out > STREAM_MAX_OUTPUT_CHANNELS)
+                  STConfig.audio_num_out = STREAM_MAX_OUTPUT_CHANNELS;
+               osp.channelCount     = STConfig.audio_num_out;
+               osp.sampleFormat     = smpFmt;
+               osp.suggestedLatency = STConfig.audio_suggested_latency;
+
+               ////mix_rate = devInfo.defaultSampleRate;
+
+               num_stream_callbacks = 0;
+               b_audio_running = true;
+               b_process = true;
+               int retryCount = 0;
+               do
+               {
+                  if(PortAudio.OpenStream(isp, osp,
+                                          mix_rate,
+                                          STConfig.audio_frames_per_buffer/*framesPerBuffer*/,
+                                          Audio.StreamCallback,
+                                          stream
+                                          )
+                     )
+                  {
+                     Float inputLatency = stream.inputLatency * 1000.0f;
+                     Float outputLatency = stream.outputLatency * 1000.0f;
+                     trace "[...] Audio::StartDefaultDevice: stream opened OK. (rate="+stream.sampleRate+" inputLatency="+inputLatency.printf("%.2f ms")+" outputLatency="+outputLatency.printf("%.2f ms")+" numIn="+stream.numInputChannels+" numOut="+stream.numOutputChannels+")\n";
+
+                     stream.start();
+                     break;
+                  }
+                  else
+                  {
+                     trace "[---] Audio::StartDefaultDevice: FAILED to open stream.\n";
+                     b_audio_running = false;
+                     TKS.sleep(200);
+                  }
+               } while(!b_audio_running && retryCount++<10);
+
+            } // null != devInfo
+
+         }
+      }
+   }
+
+   protected static StopDefaultDeviceNoSync(boolean _bWaitStreamThread) {
+
+      b_audio_running = false;
+
+      if(UseSDL())
+      {
+         AudioDevice.stop();
+         AudioDevice.closeDSP();
+         Global.Debug("Audio:StopDefaultDeviceNoSync: SDL audio stream stopped.");
+      }
+      else
+      {
+         Global.Debug2("Audio:StopDefaultDeviceNoSync: call stream.stop()");
+         stream.stop();
+         Global.Debug2("Audio:StopDefaultDeviceNoSync: call stream.abort()");
+         stream.abort();
+         Global.Debug2("Audio:StopDefaultDeviceNoSync: call stream.close()");
+         stream.close();
+         Global.Debug("Audio:StopDefaultDeviceNoSync: stream stopped.");
+      }
+
+      process_last_chunk_frames_left = 0;
+      num_stream_callbacks = 0;
+   }
+
+   static =replay= RestartStream() {
+      // called by Replay::resetAudio()
+      Global.Debug("Audio::RestartStream");
+      stream.stop();
+      num_stream_callbacks = 0;
+      stream.abort();
+      stream.start();
+   }
+
+   static StopDefaultDevice() {
+      Global.Debug("Audio::StopDefaultDevice: b_audio_running="+b_audio_running);
+      if(b_audio_running)
+      {
+         b_process = false;
+
+         StopDefaultDevice2();
+      }
+   }
+
+   protected =audio= static StopDefaultDevice2() {
+      StopDefaultDeviceNoSync(true/*bWaitStreamThread*/);
+   }
+
+   static =replay= HandleSmpPreview(short _smpPreviewSmpUID,
+                                    byte  _smpPreviewNote,
+                                    byte  _smpPreviewVel
+                                    ) {
+      Sample smp <= current_project.findSampleByUniqueID(_smpPreviewSmpUID);
+      if(null != smp)
+      {
+         UpdateTemporarySampleFromWaveform(null);
+         UpdateTempRefSample(smp);
+         if(_smpPreviewVel > 0)
+         {
+            PlayTempSampleBankPoly(_smpPreviewNote, _smpPreviewVel / 127.0);
+            // PlayTempSample(_smpPreviewNote, _smpPreviewVel / 127.0);
+         }
+         else
+         {
+            StopTempSample(false/*bReset*/);
+         }
+         UpdateTempRefSample(null);
+      }
+   }
+
+   static =replay= SetEnableProcess(boolean _bProcess) {
+      b_process = _bProcess;
+   }
+
+   static MacOSAudioWorkgroupJoin() : PaStreamMacOSWorkgroupJoinToken {
+      // called when worker thread is entered.
+      // no-op on Linux / Windows
+      local PaStreamMacOSWorkgroupJoinToken ret <= stream.macOSAudioWorkgroupJoin();
+      // // trace "[trc] Audio.MacOSAudioWorkgroupJoin: joinToken="+#(ret);  // printed in thread entry
+      return deref ret;
+      // return null;
+   }
+
+   static MacOSAudioWorkgroupLeave(local PaStreamMacOSWorkgroupJoinToken _joinToken) {
+      // called before worker thread terminates.
+      // no-op on Linux / Windows
+      trace "[trc] Audio.MacOSAudioWorkgroupLeave: joinToken="+#(_joinToken);
+      if(null != _joinToken)
+         stream.macOSAudioWorkgroupLeave(deref _joinToken);
+   }
+
+} // class Audio

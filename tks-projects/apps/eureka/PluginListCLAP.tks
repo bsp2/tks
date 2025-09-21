@@ -1,0 +1,386 @@
+// ----
+// ---- file   : PluginListCLAP.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 204 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 03Jul2024
+// ---- changed: 20Sep2024
+// ----
+// ----
+// ----
+
+module MPluginListCLAP;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PluginListCLAP : XMLForm {
+
+   int list_type;  // see PageTrack.LIST_TYPE_xxx
+
+   public    TableView        *tv_plugins;
+   protected PluginListCLAPTM *tm_plugins;
+   public    TextField        *tf_filter;
+   protected ComboBox         *cm_filter_preset;
+
+   protected CLAPVendor *[] *vendors;  // CLAPVendor instances
+
+   static StringArray filter_presets;
+   static StringArray filter_mapping;  // synthname,filter pairs
+   static String default_filter_str;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PluginListCLAP.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      configureAsControlPanel();
+
+      tm_plugins <= new PluginListCLAPTM;
+      tm_plugins.setVendors(CLAP.sorted_instruments);
+      tm_plugins.initTableModel();
+      tv_plugins.setTableModel(tm_plugins);
+      tv_plugins.tableModelChanged();
+
+      IntArray colors <= tm_plugins.cloneLookAndFeelColors();
+      colors[LookAndFeel.COLOR_TABLEVIEW_CELL_FG_NORMAL] = #ffece8e4;
+      colors[LookAndFeel.COLOR_TABLEVIEW_CELL_FG_CURSOR_NOFOCUS] = #ffece8e4;
+
+      loadFilters();
+
+      return true;
+   }
+
+   public virtual getPreferredSizeX() : float {
+      return 200;
+   }
+
+   // <method.png>
+   public method loadFilters() {
+      local String buf;
+      filter_presets.free();
+      filter_mapping.free();
+
+      if(buf.loadLocal(Utils.ToNativePathName("$(ROOT)/plugin_filters_clap.ini"), false/*bRemoveCR*/))
+      {
+         buf.replace("\r","");  // bRemoveCR replaces it with ' '
+         boolean bCatList = true;
+         String curCat = "Other";
+         local StringArray lines <= buf.splitChar('\n');
+
+         filter_presets.add("");
+
+         if(null != lines)
+         {
+            String *line;
+            foreach line in lines
+            {
+               if(!line.isBlank())
+               {
+                  if!(line.trim() <= "#")
+                  {
+                     if(line <= "[")
+                     {
+                        bCatList = false;
+                        line.trim();
+                        if(line.endsWith("]"))
+                        {
+                           line.replace("[", "");
+                           line.replace("]", "");
+
+                           if(-1 == filter_presets.indexOfObject(line, 0))
+                           {
+                              // Lazy-add filter category
+                              filter_presets.add(line);
+                           }
+
+                           curCat = line;
+                        }
+                     }
+                     else if(line & "default=")
+                     {
+                        default_filter_str = line.replace("default=", "").trim();
+                     }
+                     else if(bCatList)
+                     {
+                        filter_presets.add(line);
+                     }
+                     else
+                     {
+                        // trace "xxx add filter_mapping \""+line+"\" => \""+curCat+"\"";
+                        filter_mapping.add(line);
+                        filter_mapping.add(curCat);
+                     }
+                  }
+               }
+            } // loop lines
+            filter_presets.add("");
+         }
+      }
+
+      String *fltPreset;
+      local StringArray fltPresetsDpy;
+      foreach fltPreset in filter_presets
+      {
+         String fltPresetDpy = fltPreset.replace("f:","");
+         fltPresetDpy.replace("i:", "");
+         fltPresetsDpy.add(fltPresetDpy);
+      }
+      cm_filter_preset.setOptions(fltPresetsDpy);
+   }
+
+   // <method_set.png>
+   public method setVendors(PointerArray _vendors) {
+      vendors <= _vendors;
+   }
+
+   // <ui_handle.png>
+   public method handleTypeChanged(int _listType, boolean _bQuiet) {
+
+      list_type = _listType;
+
+      int oldCursorRow;
+
+      if(!_bQuiet)
+      {
+         oldCursorRow = tv_plugins.getCursorRow();
+         if(-1 == oldCursorRow)
+            oldCursorRow = 0;
+      }
+
+      updateTable();
+
+      if(!_bQuiet)
+         tv_plugins.moveCursorToRow(oldCursorRow);
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterPresetChanged() {
+      // // int optIdx = cm_filter_preset.getSelectedOption();
+      // // String opt = filter_presets.get(optIdx);
+      tf_filter.setText(cm_filter_preset.getSelectedOptionName());
+      tf_filter.redraw();
+      handleTypeChanged(list_type, false/*bQuiet*/);
+      local String flt = tf_filter.getText();
+      if(!flt.isBlank())
+         Global.Print("Filter preset is \""+flt+"\"");
+   }
+
+   // <method.png>
+   public method resetFilter(boolean _bAllowDefault) {
+      tf_filter.setText(_bAllowDefault ? default_filter_str : "");
+      cm_filter_preset.setSelectedOption(-1);
+   }
+
+   // <method.png>
+   public method autoFocusFilterWidget(Key _k) {
+      if(@(UI.GetKeyboardFocus()) != @(tf_filter))
+      {
+         UI.SetKeyboardFocus(tf_filter);
+         tf_filter.selectAll();
+      }
+      tf_filter.onKey(_k);
+   }
+
+   // <ui_update.png>
+   public method updateTable() {
+      local String filter = tf_filter.getText().trim().toLower();
+
+      PointerArray *allVendors;
+
+      if(!filter.isBlank())
+      {
+         allVendors <= CLAP.sorted_all;
+         PointerArray fltVendors <= new PointerArray;
+         CLAPVendor *vendor;
+
+         String *mapName;
+         String *mapFlt;
+         local StringArray mapNameMatchLC;
+         local StringArray mapFltMatchLC;
+         int mapIdx = 0;
+         loop(filter_mapping.numElements / 2)
+         {
+            mapName <= filter_mapping.get(mapIdx + 0);
+            mapFlt  <= filter_mapping.get(mapIdx + 1);
+
+            if(mapFlt.toLower() & filter)
+            {
+               mapNameMatchLC.add(mapName.toLower());
+               mapFltMatchLC.add(mapFlt.toLower());
+            }
+            mapIdx += 2;
+         }
+
+         // int ms = milliSeconds();
+
+         foreach vendor in allVendors
+         {
+            CLAPVendor addVendor <= null;
+            CLAPPluginEntry *en;
+
+            if((vendor.name.toLower()) & filter)
+            {
+               addVendor <= new CLAPVendor;
+               addVendor.name = vendor.name;
+            }
+
+            foreach en in vendor.entries
+            {
+               String effectNameLC <= en.getName().toLower();
+
+               boolean bAdd =
+                  ((en.path_name.toLower()) & filter) ||
+                  ((en.s_vendor.toLower())  & filter) ||
+                  (effectNameLC             & filter) ;
+
+               if(!bAdd)
+               {
+                  mapIdx = 0;
+                  loop(mapNameMatchLC.numElements)
+                  {
+                     mapName <= mapNameMatchLC[mapIdx];
+                     mapFlt  <= mapFltMatchLC [mapIdx];
+
+                     if(effectNameLC & mapName)
+                     {
+                        bAdd = true;
+                        break;
+                     }
+
+                     mapIdx++;
+                  }
+               }
+
+               if(bAdd)
+               {
+                  if(null == addVendor)
+                  {
+                     addVendor <= new CLAPVendor;
+                     addVendor.name = vendor.name;
+                  }
+                  addVendor.entries.add(en);
+               }
+            }
+
+            if(null != addVendor)
+            {
+               fltVendors.add(#(deref addVendor));
+            }
+         }
+
+         // ms = milliSeconds() - ms;
+         // trace "xxx autofilter key processing took "+ms+" ms";
+
+         tm_plugins.setVendors(deref fltVendors);
+      }
+      else
+      {
+         // // if(PageTrack.LIST_TYPE_CLAP_INSTRUMENTS == list_type)
+         // // {
+         // //    allVendors <= CLAP.sorted_instruments;
+         // // }
+         // // else
+         // // {
+         // //    allVendors <= CLAP.sorted_effects;
+         // // }
+
+         allVendors <= CLAP.sorted_all;
+         tm_plugins.setVendors(allVendors);
+      }
+
+      tm_plugins.tableModelChanged();
+      tv_plugins.tableModelChanged();
+   }
+
+   // <method_get.png>
+   public method isEmpty() : boolean {
+      return (0 == tm_plugins.getNumRows());
+   }
+
+   // <ui_show.png>
+   protected method showSelectedPluginInfo() {
+      int rowIdx = tm_plugins.getCursorIndex();
+      if(-1 != rowIdx)
+      {
+         CLAPPluginEntry en <= tm_plugins.getDragObject(rowIdx);
+         if(null != en)
+            Global.Print("UID:"+en.getUniqueIDString()+" name=\""+en.s_name+"\"");
+      }
+   }
+
+   // <method_get.png>
+   public method getFilterPreset() : String {
+      return tf_filter.getText();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx PluginListCLAP::onKey: name="+_k.name+" pressed="+_k.pressed+" released="+_k.released;
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+            case 'f':
+               UI.SetKeyboardFocus(tf_filter);
+               return true;
+
+            case 'g':
+               UI.SetKeyboardFocus(cm_filter_preset);
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(tv_plugins):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               showSelectedPluginInfo();
+            }
+            return true;
+
+         case @(tf_filter):
+            if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               UI.SetKeyboardFocus(tv_plugins);
+            }
+
+            cm_filter_preset.setSelectedOption(-1);
+            handleTypeChanged(list_type, false/*bQuiet*/);
+            Global.Print("Filter is \""+tf_filter.getText()+"\"");
+            return true;
+
+         case @(cm_filter_preset):
+            handleFilterPresetChanged();
+            return true;
+      }
+
+      return Panel::consumeAction(_ac);
+   }
+
+}

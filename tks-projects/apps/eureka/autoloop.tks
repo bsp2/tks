@@ -1,0 +1,372 @@
+// ----
+// ---- file   : autoloop.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ---           (this is a simplified version, based on nnxt-rev)
+// ----
+// ---- created: 03Jan2019
+// ---- changed: 15Jan2019, 08Feb2020, 13May2022, 29Jul2023, 29Mar2025
+// ----
+// ----
+// ----
+
+module MAutoLoop;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class MT_UserData {
+   int  offset;
+}
+
+// <class.png>
+class AutoLoop {
+   static FloatArray     *mt_smp_dat;
+   static int             mt_start_frame_idx;
+   static int             mt_end_frame_idx;
+   static IntArray        mt_loop_start_cand;
+   static FloatArray      mt_corr_amt;
+   static FloatArray      mt_magnitudes_end;
+   static int             mt_modulo;
+   static Thread *[]      mt_threads;  // Thread instances
+   static MT_UserData *[] mt_threads_ud;  // MT_UserData instances
+
+   static int num_threads = 1;
+
+   static int fftWinBits = 10; // 15
+   static int fftWinSize = (1 << fftWinBits);
+
+   static boolean b_quiet = false;
+
+   public int result_offset;
+   public int result_len;
+
+
+   static LD_ThreadEntry(local Thread _thread) {
+      local MT_UserData mud <= _thread.userdata;
+      local int offset = mud.offset;
+
+      local FloatArray smpDatLoop;
+      smpDatLoop.alloc(fftWinSize);
+      smpDatLoop.useAll();
+
+      local StFFT fft;
+      fft.setEnableWindow(false);
+      fft.setWindowSize(fftWinBits);
+      fft.setInputSamples(smpDatLoop, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+      local int numBins = fftWinSize/2 +1;
+
+      local FloatArray magnitudes;
+      magnitudes.alloc(numBins);
+
+      local int candIdx = 0;
+      loop(mt_loop_start_cand.numElements)
+      {
+         if(0 == ((candIdx - offset) % mt_modulo))
+         {
+            // trace "xxx offset="+offset+" candIdx="+candIdx;
+            local int loopStart = mt_loop_start_cand.get(candIdx);
+
+            local int srcFrameOff = (loopStart - (fftWinSize/2))/*srcFrameOff*/;
+            // // local int srcFrameOff = loopEnd + (fftWinSize/2);  // NO
+            // local int srcFrameOff = loopEnd; // ok
+            // local int srcFrameOff = loopEnd - fftWinSize;  // NO
+            tksampleedit_copy_looped_samples_mono(smpDatLoop, 0/*dstFrameOff*/,
+                                                  mt_smp_dat, srcFrameOff,
+                                                  mt_start_frame_idx,
+                                                  mt_end_frame_idx,////mt_smp_dat.numElements/*loopEnd*/,
+                                                  fftWinSize/*numFrames*/
+                                                  );
+
+
+            fft.fft(fftWinSize/2, 0);
+            fft.calcMagnitudes(magnitudes);
+
+            mt_corr_amt[candIdx] = mt_magnitudes_end.getAbsMaxDiff(magnitudes);
+
+            // DebugTrace("corrAmt["+candIdx+"]="+mt_corr_amt[candIdx]+"    loopEnd="+loopEnd);
+
+            if(!b_quiet)
+               stdout ".";
+         }
+         candIdx++;
+      }
+      if(!b_quiet) trace "";
+   }
+
+   // <method.png>
+   public method loopDetect(StWaveform _wf, int _frameOff, int _numFrames, boolean _bRand) {
+
+      if(_numFrames < 8192)///fftWinSize*2)
+      {
+         trace "[~~~] AutoLoop::loopDetect: sample too short, aborting";
+         return false;
+      }
+
+      FloatArray smpDatWf <= _wf.sampleData;
+      if(null == smpDatWf || smpDatWf.numElements < 256)
+         return false;
+
+      local FloatArray *smpDat;
+
+      if(1 != _wf.numChannels)
+      {
+         trace "[~~~] AutoLoop::loopDetect: need mono waveform, converting to temporary..";
+         smpDat <= new FloatArray;
+         smpDat.alloc(_wf.numFrames);
+         smpDat.useAll();
+         tksampleedit_copy_mono_adv_to_mono_adv(smpDat, 0, 1,
+                                                smpDatWf, 0, 2,
+                                                _wf.numFrames
+                                                );
+      }
+      else
+      {
+         smpDat <= smpDatWf;
+      }
+
+      if(_bRand)
+      {
+         // (note) search starts at end of sample so by randomizing the sample end position (numFrames)
+         //         we get 'random' loops
+         // (note) the sample end position is set to a random zero-crossing
+         int numZeroCrossings = 0;
+         int zcOff = _numFrames - 1;
+         local FloatArray smpDatZC; smpDatZC.visit(smpDat, _frameOff, _numFrames);
+         local IntArray zcOffsets;
+         for(;;)
+         {
+            int zcNextOff = tksampleedit_find_edge_near_bwd(smpDatZC, 0/*choff*/, 1/*numCh*/, zcOff-1, true/*bRise*/, true/*bFall*/, 0.001f/*distThreshold*/);
+            if(zcNextOff != zcOff && zcNextOff >= 8192)
+            {
+               zcOffsets.add(zcNextOff);
+               zcOff = zcNextOff;
+            }
+            else
+               break;
+         }
+         if(zcOffsets.numElements > 1)
+         {
+            int zcRandIdx = rand(zcOffsets.numElements);  // => 0..zcOffsets.numElements-1
+            zcOff = zcOffsets[zcRandIdx];
+            _numFrames = zcOff;
+         }
+      }
+
+
+      int loopdetectTotalMS = 0;
+
+      mt_threads.empty();
+      mt_threads_ud.empty();
+
+      Thread *thread;
+      MT_UserData *mud;
+
+      // Create threads
+      int threadIdx = 0;
+      loop(num_threads)
+      {
+         thread <= new Thread;
+         mud <= new MT_UserData;
+         // // mud.sxt <= this;
+         mud.offset = threadIdx;
+         thread.setUserdata(mud);
+         mt_threads_ud.add(#(deref mud));
+         mt_threads.add(#(deref thread));
+         threadIdx++;
+      }
+
+      // num_auto_crossfade = 0;
+
+      // (foreach zone)
+
+      int minLoopLen = 8192;////min_loop_len * zone.sample_rate;
+      // Debug("minLoopLen="+minLoopLen+" sr="+zone.sample_rate);
+
+      int startFrameIdx = _frameOff;
+      // // if(-1 != zone.detected_loop_start_skip)
+      // //    startFrameIdx = zone.detected_loop_start_skip;
+      // // else
+      // //    startFrameIdx = numFrames * loop_skip_start_amount;
+
+      int endFrameIdx = _frameOff + _numFrames - 1;
+
+      mt_start_frame_idx = startFrameIdx;
+      mt_end_frame_idx = endFrameIdx;
+
+      // // if(-1 != zone.detected_loop_end_skip)
+      // //    endFrameIdx = zone.detected_loop_end_skip;
+      // // else
+      // //    endFrameIdx = numFrames - 1 - (numFrames*loop_skip_end_amount);
+
+      // Debug("loopDetect "+zoneNr+"/"+(body.zones.numElements)+": sz="+(smpDat.numElements/numCh)+" possible start="+startFrameIdx+" end="+endFrameIdx);
+
+      if(1)////startFrameIdx < (endFrameIdx - zone.detected_loop_length))
+      {
+         Global.Debug("autoloop: startFrameIdx="+startFrameIdx+" endFrameIdx="+endFrameIdx);
+
+         // Find zero crossing
+         int frameIdx;
+         float lastSmp;
+         float curSmp;
+
+         int loopStart = -1;
+         int loopEnd = -1;
+
+         int estLoopLen = 256;////zone.detected_loop_length;
+
+         int crossStartType;
+
+         // Find zero-crossing near loop end
+         lastSmp = smpDat.get(endFrameIdx - 1);
+         frameIdx = endFrameIdx - 2;
+         while(frameIdx >= startFrameIdx)
+         {
+            curSmp = smpDat.get(frameIdx);
+
+            // trace "xxx curSmp="+curSmp+" lastSmp="+lastSmp;
+
+            if(( (curSmp < 0) && (lastSmp > 0) ) ||
+               ( (curSmp > 0) && (lastSmp < 0) )
+               )
+            {
+               if(frameIdx <= (endFrameIdx - (fftWinSize/2)))
+               {
+                  crossStartType = ((curSmp > 0) && (lastSmp < 0)) ? 1 : -1;
+                  Global.Debug("autoloop: end zero-crossing at "+frameIdx);
+                  loopEnd = frameIdx;
+                  break;
+               }
+            }
+
+            lastSmp = curSmp;
+            frameIdx--;
+         }
+
+         Global.Debug("autoloop: Loop end="+loopEnd+" estLoopLen="+estLoopLen);
+
+         if(-1 != loopEnd)
+         {
+            // Find zero crossing near start
+            if( ((loopEnd - startFrameIdx) >= minLoopLen) )
+            {
+               // // // trace "xxx estLoopLen="+estLoopLen;
+               // // int t = (endFrameIdx - loopStart) / estLoopLen;
+               // // endFrameIdx = t * estLoopLen + loopStart;
+
+               frameIdx = startFrameIdx;// + estLoopLen/3;
+               lastSmp = smpDat.get(frameIdx);
+               frameIdx++;
+
+               mt_loop_start_cand.empty();
+
+               // int maxLoopCandidates = 20000;
+               // Global.Debug("autoloop: maxLoopCandidates="+maxLoopCandidates);
+
+               while((frameIdx < (loopEnd - 1/*min_num_loops*/ *estLoopLen)) &&
+                     (frameIdx < (loopEnd - minLoopLen))
+                     )
+               {
+                  curSmp = smpDat.get(frameIdx);
+
+                  if(( ((curSmp < 0) && (lastSmp > 0))) ||
+                     ( ((curSmp > 0) && (lastSmp < 0)))
+                     )
+                  {
+                     // trace "xxx end zero crossing at "+frameIdx;
+                     // trace "xxx frameIdx off="+(frameIdx - (loopStart+minLoopLen));
+                     loopStart = frameIdx;
+                     mt_loop_start_cand.add(loopStart);
+                     // if(mt_loop_start_cand.numElements > maxLoopCandidates)
+                     //    break;
+                  }
+
+                  lastSmp = curSmp;
+                  frameIdx++;
+               }
+
+               if(mt_loop_start_cand.numElements > 1)
+               {
+                  int tStart = milliSeconds();
+
+                  local StFFT fft;
+                  local FloatArray smpDatLoop;
+                  smpDatLoop.alloc(fftWinSize);
+                  smpDatLoop.useAll();
+
+                  fft.setEnableWindow(false);
+                  fft.setWindowSize(fftWinBits);
+                  fft.setInputSamples(smpDatLoop, 1/*numCh*/, null/*img*/, 0/*imgSkip*/);
+                  int numBins = fftWinSize/2 +1;
+
+                  mt_magnitudes_end.alloc(numBins);
+
+                  int srcFrameOff = (loopEnd - (fftWinSize/2))/*srcFrameOff*/;
+                  if( (srcFrameOff + fftWinSize) <= smpDat.numElements )  // 29May2021 OOB read (fix attempt)
+                  {
+                     tksampleedit_copy_looped_samples_mono(smpDatLoop, 0/*dstFrameOff*/,
+                                                           mt_smp_dat, srcFrameOff,
+                                                           mt_start_frame_idx,
+                                                           mt_end_frame_idx,
+                                                           fftWinSize/*numFrames*/
+                                                           );
+                  }
+                  else
+                  {
+                     smpDatLoop.fill(0);
+                  }
+
+                  fft.fft(fftWinSize/2, 0);
+                  fft.calcMagnitudes(mt_magnitudes_end);
+
+                  mt_corr_amt.alloc(mt_loop_start_cand.numElements);
+                  mt_corr_amt.useAll();
+
+                  mt_smp_dat <= smpDat;
+                  mt_modulo = num_threads;
+
+                  // LD_ThreadEntry_debug(thread_ud.get(0));
+
+                  foreach thread in mt_threads
+                  {
+                     thread.create(AutoLoop.LD_ThreadEntry);
+                  }
+
+                  foreach thread in mt_threads
+                  {
+                     thread.wait();
+                  }
+
+                  int corrMinIdx = mt_corr_amt.getMinIdx();
+                  float corrMinAmt = mt_corr_amt.get(corrMinIdx);
+
+                  loopStart = mt_loop_start_cand.get(corrMinIdx);
+                  Global.Debug("loopDetect: best match="+corrMinIdx+" amt="+mt_corr_amt.get(corrMinIdx)+" loopStart="+loopStart);
+
+                  int tDur = milliSeconds() - tStart;
+                  Global.Debug("  (time = "+tDur+" ms)");
+                  loopdetectTotalMS += tDur;
+               }
+
+               if(-1 != loopStart)
+               {
+                  // zone.setLoopStartFrame(loopStart);
+                  // zone.setLoopEndFrame(loopEnd);
+                  // zone.setPlayMode(0x01/*fw-loop*/);
+                  Global.Debug("#frames="+_numFrames+" loop start="+loopStart+" end="+loopEnd+" len="+(loopEnd-loopStart));
+                  result_offset = loopStart;
+                  result_len = (loopEnd - loopStart);
+               }
+            }
+         }
+
+      }
+
+   }
+}

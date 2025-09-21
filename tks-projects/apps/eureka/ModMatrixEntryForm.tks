@@ -1,0 +1,708 @@
+// ----
+// ---- file   : ModMatrixEntryForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 17Mar2018
+// ---- changed: 18Mar2018, 27Mar2018, 29Mar2018, 05May2018, 02Jun2018, 03Jun2018, 13Dec2018
+// ----          17Jan2019, 26Aug2019, 06Feb2021, 29Jul2023, 04Oct2023, 22Mar2024, 04Jul2024
+// ----          05Jul2024, 24Sep2024, 21Jun2025
+// ----
+// ----
+// ----
+
+module MModMatrixEntryForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ModMatrixEntryForm : XMLForm, ActionProvider, MIDIMapDefs {
+
+   define String ACTION_ENTRY_EDITED;
+
+   Track          *track;
+   Mod            *mod;
+   ModMatrixEntry *mme;
+
+   namespace CheckBox    *cb_enable;
+   protected ComboBox    *cm_src;
+   protected LayerSwitch *ls_arg1;
+   protected ComboBox    *cm_arg1;
+   protected FloatParam  *fp_arg1;
+   protected Button      *bt_learn;
+   protected Button      *bt_curve;
+   namespace FloatParam  *fp_amount;
+   protected ComboBox    *cm_dst;
+   namespace CheckBox    *cb_asym;
+   namespace CheckBox    *cb_relative;
+   namespace FloatParam  *fp_min;
+   namespace FloatParam  *fp_max;
+
+   protected Button *bt_remove;
+
+   protected Panel *pn_entry;  // used for size calculations
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("ModMatrixEntryForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      cm_src.setOptions(ModMatrixEntry.src_names_short);
+      cm_src.setOptionsLong(ModMatrixEntry.src_names_long);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ENTRY_EDITED];
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_ENTRY_EDITED), this));
+   }
+
+   // <ui_show.png>
+   public method showEntry(Track _track, Mod _mod, ModMatrixEntry _mme) {
+      track <= _track;
+      mod   <= _mod;
+      mme   <= _mme;
+
+      boolean bEditable = (null != mme);
+
+      if(bEditable)
+      {
+         cb_enable  .setEditable(true);
+         cm_src     .setEditable(true);
+         ls_arg1    .setEditable(true);
+         cm_arg1    .setEditable(true);
+         fp_arg1    .setEditable(true);
+         bt_learn   .setEditable(true);
+         bt_curve   .setEditable(true);
+         fp_amount  .setEditable(true);
+         cm_dst     .setEditable(true);
+         cb_asym    .setEditable(true);
+         fp_min     .setEditable(true);
+         fp_max     .setEditable(true);
+         bt_remove  .setEditable(true);
+
+         cb_enable.setSelected(mme.b_enable);
+         cm_src.setSelectedOption( mathMaxi(mme.src, 1) - 1 );  // [24Sep2024] removed SRC_MACROCTL
+         updateArg1();
+         updateCurveEnableState();
+         fp_amount.setValue(mme.amount);
+         local StringArray dstOptions;
+         _mod.getParameterNamesArray(dstOptions);
+         cm_dst.setOptions(dstOptions);
+         cm_dst.setSelectedOption(mme.param_idx);
+         cb_asym.setSelected(mme.b_asym);
+         cb_asym.setEditable(true);  // (note) CLAP parameters may be negative (min/max != 0..1)
+
+         updateRelative();
+         updateMinMax();
+      }
+      else
+      {
+         cb_enable  .setSelectedAndDisable(false);
+         cm_src     .setSelectedOptionAndDisable(-1);
+         ls_arg1    .setEditable(bEditable);
+         cm_arg1    .setSelectedOptionAndDisable(-1);
+         fp_arg1    .setEditable(bEditable);
+         bt_learn   .setEditable(bEditable);
+         bt_curve   .setEditable(bEditable);
+         fp_amount  .setEditable(bEditable);
+         cm_dst     .setSelectedOptionAndDisable(-1);
+         cb_asym    .setSelectedAndDisable(false);
+         cb_relative.setSelectedAndDisable(false);
+         fp_min     .setEditable(bEditable);
+         fp_max     .setEditable(bEditable);
+         bt_remove  .setEditable(bEditable);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateArg1() {
+      switch(mme.src)
+      {
+         default:
+         case ModMatrixEntry.SRC_NOTE_ON:
+         case ModMatrixEntry.SRC_NOTE_ON_VEL:
+         case ModMatrixEntry.SRC_NOTE_OFF:
+         case ModMatrixEntry.SRC_NOTE_OFF_VEL:
+         case ModMatrixEntry.SRC_PRGCHG:
+         case ModMatrixEntry.SRC_PITCHBEND:
+         case ModMatrixEntry.SRC_PRESSURE:
+            ls_arg1.switchToLayerNr(0);
+            cm_arg1.setSelectedOptionAndDisable(-1);
+            break;
+
+         case ModMatrixEntry.SRC_MACROCTL:
+            ls_arg1.switchToLayerNr(0);
+            cm_arg1.setOptions(mme.getArg1OptionsShort());
+            cm_arg1.setOptionsLong(mme.getArg1OptionsLong());
+            cm_arg1.setToolTipCaptions(mme.getArg1OptionsLong());
+            cm_arg1.setSelectedOptionAndEnable(mme.arg1);
+            break;
+
+         case ModMatrixEntry.SRC_CC:
+            ls_arg1.switchToLayerNr(0);
+            cm_arg1.setOptions(mme.getArg1OptionsShort());
+            cm_arg1.setOptionsLong(mme.getArg1OptionsLong());
+            cm_arg1.setToolTipCaptions(mme.getArg1OptionsLong());
+            cm_arg1.setSelectedOptionAndEnable(mme.arg1);
+            break;
+
+         case ModMatrixEntry.SRC_RPN:
+         case ModMatrixEntry.SRC_NRPN:
+            ls_arg1.switchToLayerNr(1);
+            fp_arg1.setValueAndEnable(mme.arg1);
+            break;
+      }
+
+   }
+
+   // <ui_update.png>
+   protected method updateRelative() {
+      boolean bRelative = mod.canDoRelativeParams() && mod.isParameterModulatable(mme.param_idx);
+      cb_relative.setEditable(bRelative);
+      cb_relative.setSelected(bRelative && mme.b_relative);
+   }
+
+   // <ui_update.png>
+   protected method updateMinMax() {
+      float paramMin = mod.getParameterMinValue(mme.param_idx);
+      float paramMax = mod.getParameterMaxValue(mme.param_idx);
+      float paramRange = (paramMax - paramMin);
+      // // trace "xxx ModMatrixEntryForm::updateMinmax: paramMin="+paramMin+" paramMax="+paramMax;
+
+      if(mod.isParameterStepped(mme.param_idx))
+      {
+         fp_min.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_max.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_min.setStep(1.0);
+         fp_max.setStep(1.0);
+      }
+      else if(0.0 == paramMin && 1.0 == paramMax)
+      {
+         fp_min.setDisplayType(FloatParam.DISPLAY_PERCENT);
+         fp_max.setDisplayType(FloatParam.DISPLAY_PERCENT);
+         fp_min.setStep(paramRange / 500.0);
+         fp_max.setStep(paramRange / 500.0);
+      }
+      else
+      {
+         fp_min.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_max.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_min.setStep(paramRange / 500.0);
+         fp_max.setStep(paramRange / 500.0);
+      }
+
+      if(mme.b_relative)
+      {
+         fp_min.setMinMaxValues(-paramRange, paramRange);
+         fp_max.setMinMaxValues(-paramRange, paramRange);
+      }
+      else
+      {
+         fp_min.setMinMaxValues(paramMin, paramMax);
+         fp_max.setMinMaxValues(paramMin, paramMax);
+      }
+
+      fp_min.setValue(mme.value_min);
+      fp_max.setValue(mme.value_max);
+   }
+
+   // <ui_update.png>
+   protected method updateCurveEnableState() {
+      if(mme.b_enable_input_mapper_env)
+         bt_curve.setBackgroundTint(ModMatrix.C32_CURVE_ENABLE);
+      else
+         bt_curve.setBackgroundTint(0);
+      bt_curve.redraw();
+   }
+
+   // <ui_handle.png>
+   namespace method handleEnableChanged() {
+      boolean bEnable = cb_enable.isSelected();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setEnable(bEnable);
+               cmod.handleModMatrixChanged();
+               break;
+            }
+         }
+      }
+      provideEdited();
+
+      Global.Print("Modulation is "+Utils.GetEnableString(mme.b_enable));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSrcChanged() {
+
+      int src = cm_src.getSelectedOption() + 1;
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setSrc(src);
+               cmod.handleModMatrixChanged();
+               break;
+            }
+         }
+      }
+
+      updateArg1();
+      Global.Print("Modulation source is "+cm_src.getSelectedOptionName());
+      relayout();
+      provideEdited();
+   }
+
+   // <ui_handle.png>
+   protected method handleArg1ChangedCM() {
+
+      int arg1 = cm_arg1.getSelectedOption();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setArg1(arg1);
+               cmod.handleModMatrixChanged();
+               break;
+            }
+         }
+      }
+      provideEdited();
+
+      Global.Print("Modulation src arg is "+cm_arg1.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleArg1ChangedFP() {
+
+      int arg1 = fp_arg1.getFloatValue();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setArg1(arg1);
+               cmod.handleModMatrixChanged();
+               break;
+            }
+         }
+      }
+      provideEdited();
+      Global.Print("Modulation (N)RPN src arg is "+fp_arg1.getFloatValue());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLearnFrame() {
+
+      Integer extNr = -1;
+      int evType = replay.getLastSeenEventType(track.dev_idx, track.midi_ch, extNr);
+
+      trace "xxx ModMatrixEntryForm::handleLearnFrame: evType="+evType+" extNr="+extNr;
+
+      if(evType >= 0)
+      {
+         boolean bArg1ChangedCM = false;
+         boolean bArg1ChangedFP = false;
+
+         switch(evType)
+         {
+            case TYPE_NOTE_OFF:
+               mme.src = ModMatrixEntry.SRC_NOTE_OFF;
+               updateArg1();
+               break;
+
+            case TYPE_NOTE_ON:
+               mme.src = ModMatrixEntry.SRC_NOTE_ON;
+               updateArg1();
+               break;
+
+            case TYPE_POLY_PRESSURE:
+               mme.src = ModMatrixEntry.SRC_PRESSURE;
+               updateArg1();
+               break;
+
+            case TYPE_CC:
+               mme.src = ModMatrixEntry.SRC_CC;
+               mme.arg1 = extNr;
+               updateArg1();
+               bArg1ChangedCM = true;
+               break;
+
+            case TYPE_PROGRAM_CHANGE:
+               mme.src = ModMatrixEntry.SRC_PRGCHG;
+               updateArg1();
+               break;
+
+            case TYPE_CHANNEL_PRESSURE:
+               mme.src = ModMatrixEntry.SRC_PRESSURE;
+               updateArg1();
+               break;
+
+            case TYPE_PITCHBEND:
+               mme.src = ModMatrixEntry.SRC_PITCHBEND;
+               updateArg1();
+               break;
+
+            case TYPE_SYSEX:
+               break;
+
+            case TYPE_SYSCOM_TIMECODE:
+            case TYPE_SYSCOM_SONG_POSITION:
+            case TYPE_SYSCOM_SONG_SELECT:
+            case TYPE_SYSCOM_F4:
+            case TYPE_SYSCOM_F5:
+            case TYPE_SYSCOM_TUNE_REQUEST:
+            case TYPE_SYSRT_TIMING_CLOCK:
+            case TYPE_SYSRT_F9:
+            case TYPE_SYSRT_START:
+            case TYPE_SYSRT_CONTINUE:
+            case TYPE_SYSRT_STOP:
+            case TYPE_SYSRT_FD:
+            case TYPE_SYSRT_ACTIVE_SENSING:
+            case TYPE_SYSRT_SYSTEM_RESET:
+               break;
+
+            case TYPE_RPN:
+               mme.src = ModMatrixEntry.SRC_RPN;
+               mme.arg1 = extNr;
+               updateArg1();
+               bArg1ChangedFP = true;
+               break;
+
+            case TYPE_NRPN:
+               mme.src = ModMatrixEntry.SRC_NRPN;
+               mme.arg1 = extNr;
+               updateArg1();
+               bArg1ChangedFP = true;
+               break;
+
+         }
+
+         cm_src.setSelectedOption(mme.src - 1);
+         handleSrcChanged();
+
+         if(bArg1ChangedCM)
+            handleArg1ChangedCM();
+
+         if(bArg1ChangedFP)
+            handleArg1ChangedFP();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLearn() {
+      return handleLearnFrame();
+   }
+
+   // <ui_handle.png>
+   protected method handleEditInputMapperEnv(boolean _bToggle) {
+      Mod *cmod;
+      ModMatrixEntry *e;
+
+      if(_bToggle)
+      {
+         boolean bEnable = !mme.b_enable_input_mapper_env;
+
+         foreach cmod in ModMatrix.current_mods
+         {
+            foreach e in cmod.mod_matrix
+            {
+               if(e.gid == mme.gid)
+               {
+                  e.setEnableInputMapperEnv(bEnable);
+                  break;
+               }
+            }
+         }
+
+         updateCurveEnableState();
+         provideEdited();
+      }
+      else
+      {
+         ModMatrix.FindMirrorEnvStatesAndEnvs_ModMatrixEntry(track, mme);
+
+         foreach cmod in ModMatrix.current_mods
+         {
+            foreach e in cmod.mod_matrix
+            {
+               if(e.gid == mme.gid)
+               {
+                  e.setEnableInputMapperEnv(true);
+                  break;
+               }
+            }
+         }
+
+         mme.setEnableInputMapperEnv(true);
+         updateCurveEnableState();
+         Dialogs.ShowCurveDialog("Edit mapping curve: "+cm_src.getSelectedOptionName()+":"+cm_arg1.getSelectedOptionName()+" => "+cm_dst.getSelectedOptionName(),
+                                 mme.input_mapper_env_state,
+                                 mme.input_mapper_env,
+                                 null/*stEnvOrNull*/,
+                                 ModMatrix.mirror_env_states,
+                                 ModMatrix.mirror_envs,
+                                 null/*mirrorStEnvsOrNull*/,
+                                 null/*mtxNamedRecalc*/
+                                 );
+      }
+   }
+
+   // <ui_handle.png>
+   namespace method handleAmountChanged() {
+
+      float amt = fp_amount.getFloatValue();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            // trace "xxx e.gid="+e.gid+" mme.gid="+mme.gid;
+            if(e.gid == mme.gid)
+            {
+               e.setAmount(amt);
+               break;
+            }
+         }
+      }
+
+      provideEdited();
+      Global.Print("Modulation amount is "+(mme.amount*100)+"%");
+   }
+
+   // <ui_handle.png>
+   protected method handleDstChanged() {
+
+      int dst = cm_dst.getSelectedOption();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setParamIdx(dst);
+               cmod.handleModMatrixChanged();
+               break;
+            }
+         }
+      }
+
+      updateRelative();
+      updateMinMax();
+
+      provideEdited();
+      Global.Print("Modulation destination is "+cm_dst.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   namespace method handleAsymChanged() {
+
+      boolean bAsym = cb_asym.isSelected();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setEnableAsym(bAsym);
+               break;
+            }
+         }
+      }
+
+      provideEdited();
+      Global.Print("Asymmetric modulation is "+Utils.GetEnableString(mme.b_asym));
+   }
+
+   // <ui_handle.png>
+   namespace method handleRelativeChanged() {
+
+      boolean bRelative = cb_relative.isSelected();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setEnableRelative(bRelative);
+               cmod.handleModMatrixChanged();
+               break;
+            }
+         }
+      }
+
+      updateMinMax();
+
+      cb_asym.setEditable(mme.b_relative);
+
+      provideEdited();
+
+      if(!(mod instanceof ModCLAP) && !mod.b_relative_params && mme.b_relative)
+      {
+         Global.Warning("Relative modulation is enabled in entry but not in module");
+      }
+      else
+      {
+         Global.Print("Relative modulation is "+Utils.GetEnableString(mme.b_relative));
+      }
+   }
+
+   // <ui_handle.png>
+   namespace method handleMinChanged() {
+
+      float f = fp_min.getFloatValue();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            if(e.gid == mme.gid)
+            {
+               e.setValueMin(f);
+               break;
+            }
+         }
+      }
+
+      provideEdited();
+
+      Global.Print("Min value is "+mme.value_min);
+   }
+
+   // <ui_handle.png>
+   namespace method handleMaxChanged() {
+
+      float f = fp_max.getFloatValue();
+
+      Mod *cmod;
+      ModMatrixEntry *e;
+      foreach cmod in ModMatrix.current_mods
+      {
+         foreach e in cmod.mod_matrix
+         {
+            // trace "xxx cmod="+#(cmod)+" mme.gid="+mme.gid+" e.gid="+e.gid;
+            if(e.gid == mme.gid)
+            {
+               e.setValueMax(f);
+               break;
+            }
+         }
+      }
+
+      provideEdited();
+
+      Global.Print("Max value is "+mme.value_max);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(cb_enable):
+            handleEnableChanged();
+            return true;
+
+         case @(cm_src):
+            handleSrcChanged();
+            return true;
+
+         case @(cm_arg1):
+            handleArg1ChangedCM();
+            return true;
+
+         case @(fp_arg1):
+            handleArg1ChangedFP();
+            return true;
+
+         case @(bt_learn):
+            handleLearn();
+            return true;
+
+         case @(bt_curve):
+            handleEditInputMapperEnv((Button.ACTION_HOLD_CLICK == acName)/*bToggle*/);
+            return true;
+
+         case @(fp_amount):
+            handleAmountChanged();
+            return true;
+
+         case @(cm_dst):
+            handleDstChanged();
+            return true;
+
+         case @(cb_asym):
+            handleAsymChanged();
+            return true;
+
+         case @(cb_relative):
+            handleRelativeChanged();
+            return true;
+
+         case @(fp_min):
+            handleMinChanged();
+            return true;
+
+         case @(fp_max):
+            handleMaxChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

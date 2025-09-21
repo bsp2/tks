@@ -1,0 +1,309 @@
+// ----
+// ---- file   : SamplePluginChainPatchBrowserDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 09Feb2021
+// ---- changed: 10Jul2022, 19Feb2023, 09Sep2023, 04Oct2023, 30Oct2023, 27Sep2024
+// ----
+// ----
+// ----
+
+module MSamplePluginChainPatchBrowserDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SamplePluginChainPatchBrowserDialog extends Dialog {
+
+   protected PageSample   *pg_sample;
+   protected Sample       *sample;
+   protected StSample *[] *zones;
+
+   protected XMLForm *xfm;
+
+   protected StringArray patch_names;
+
+   protected SamplePluginChainPatchBrowserTM *tm_patches;
+   protected TableView                       *tv_patches;
+
+   protected Button *bt_revert;
+   protected Button *bt_load;
+   protected Button *bt_save;
+
+   protected VoicePluginChainPatch revert_patch;
+   protected VoicePluginChainPatch current_patch;
+
+   static SamplePluginChainPatchBrowserSaveDialog *dlg_save;
+
+
+   // <ui_init.png>
+   public method initSamplePluginChainPatchBrowserDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SamplePluginChainPatchBrowserDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSamplePluginChainPatchBrowserDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_patches <= new SamplePluginChainPatchBrowserTM;
+      tm_patches.initTableModel();
+      tm_patches.patch_names <= patch_names;
+      tv_patches.setTableModel(tm_patches);
+      tv_patches.tableModelChanged();
+
+      initWindow(xfm,
+                 "Voice plugin chain preset",
+                 140, 140,
+                 230*UI.font_scaling, 310*UI.font_scaling
+                 );
+
+      revert_patch.init();
+      current_patch.init();
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showSamplePluginChainPatchBrowserDialog(PageSample _pgSample) {
+
+      pg_sample <= _pgSample;
+
+      sample <= pg_sample.getSelectedSample();
+      if(null != sample)
+      {
+         zones <= pg_sample.getSelectedZones();
+
+         if( null != zones && !zones.isEmpty() )
+         {
+            // Save current patch
+            saveRevertPatch();
+            current_patch.copyFrom(revert_patch);
+
+            scanPatchDirectory();
+            tv_patches.tableModelChanged();
+
+            recursiveBuildTabCycleLists();
+
+            showNearMouse(25, -78);
+         }
+         else
+         {
+            Global.Warning("voice patch browser: no zones");
+         }
+      }
+      else
+      {
+         Global.Warning("voice patch browser: no sample");
+      }
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(tv_patches);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected =replay= method saveRevertPatch() {
+      StSample zone <= zones.get(0);
+      revert_patch.copyFromZone(zone);
+   }
+
+   // <method.png>
+   protected =replay= method loadRevertPatch() {
+      revert_patch.copyToSample(sample, zones);
+
+      pg_sample.f_plugin.reshowSample();
+
+      Global.Print("Revert voice patch");
+   }
+
+   // <ui_update.png>
+   protected method scanPatchDirectory() {
+      local String dirName <= STConfig.voicepluginchainpatch_rootpath;
+      Global.Debug("SamplePluginChainPatchBrowserDialog::scanPatchDirectory: dirName=\""+dirName+"\"");
+      patch_names.empty();
+
+      local StringArray filenames <= Utils.ReadDirectory(dirName);
+
+      if(null != filenames)
+      {
+         String *filenameEn;
+
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               StringArray attr <= filenameEn.splitSpace(true);
+               String fileName <= attr.get(1);
+
+               if(fileName.endsWith(Global.VOICEPLUGIN_CHAIN_PRESET_FILE_SUFFIX/*.evp*/))
+               {
+                  patch_names.add(fileName.replace(Global.VOICEPLUGIN_CHAIN_PRESET_FILE_SUFFIX/*.evp*/,""));
+               }
+            }
+         }
+      }
+
+      local IntArray ia;
+      patch_names.sortByValue(ia, false/*bCS*/);
+      patch_names.rearrange(ia);
+
+      Global.Debug("SamplePluginChainPatchBrowserDialog::scanPatchDirectory: found "+patch_names.numElements+" patch file(s)");
+   }
+
+   // <ui_handle.png>
+   protected method handleRevertPatch() {
+      loadRevertPatch();
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadPatch() {
+      local String patchName <= patch_names.get(tm_patches.getCursorIndex());
+
+      if(null != patchName)
+      {
+         local String pathName <= STConfig.voicepluginchainpatch_rootpath + "/" + patchName + Global.VOICEPLUGIN_CHAIN_PRESET_FILE_SUFFIX;
+
+         Global.Debug("SamplePluginChainPatchBrowserDialog::handleLoadPatch: pathName=\""+pathName+"\"");
+
+         if(current_patch.loadFile(pathName))
+         {
+            current_patch.copyToSample(sample, zones);
+
+            pg_sample.f_plugin.reshowSample();
+
+            Global.Print("Load voice patch \""+patchName+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to load voice patch \""+patchName+"\"");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSavePatch1() {
+      dlg_save <= new SamplePluginChainPatchBrowserSaveDialog;
+      String *suggestedName;
+      if(-1 != tm_patches.getCursorIndex())
+         suggestedName <= patch_names.get(tm_patches.getCursorIndex());
+      else
+         suggestedName <= "new preset";
+      dlg_save.run(this, suggestedName);
+   }
+
+   // <ui_handle.png>
+   public method handleSavePatch2(String _name) {
+      current_patch.name = Utils.ConvertToFileName(_name);
+      local String pathName <= STConfig.voicepluginchainpatch_rootpath + "/" + current_patch.name + Global.VOICEPLUGIN_CHAIN_PRESET_FILE_SUFFIX;
+
+      if(current_patch.saveFile(pathName))
+      {
+         // Rescan patches
+         scanPatchDirectory();
+         tv_patches.tableModelChanged();
+
+         Global.Success("Save voice patch \""+_name+"\"");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(tv_patches):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               hide();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleLoadPatch();
+            }
+            return true;
+
+         case @(bt_revert):
+            handleRevertPatch();
+            return true;
+
+         case @(bt_load):
+            handleLoadPatch();
+            return true;
+
+         case @(bt_save):
+            handleSavePatch1();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

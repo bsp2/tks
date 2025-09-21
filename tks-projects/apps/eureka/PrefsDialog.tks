@@ -1,0 +1,568 @@
+// ----
+// ---- file   : PrefsDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 12May2023
+// ---- changed: 16Jul2023, 10Sep2023, 02Oct2023, 04Oct2023, 27Oct2023, 30Oct2023, 17Dec2023
+// ----          25Apr2024, 12Aug2024, 21Sep2024, 23Sep2024, 08Dec2024
+// ----
+// ----
+// ----
+
+module MPrefsDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PrefsDialog extends Dialog {
+   protected XMLForm *xfm;
+
+   protected TextField *tf_rootpath;
+   protected TextField *tf_sample_rootpath;
+   protected TextField *tf_sample_userpath;
+
+   protected ComboBox *cm_audio_dev;
+   protected ComboBox *cm_audio_mixrate;
+
+   protected ComboBox *cm_ring;
+   protected CheckBox *cb_poll;
+   protected CheckBox *cb_spread_chunks;
+   protected CheckBox *cb_affinity;
+
+   protected CheckBox *cb_remote_autoload;
+
+   protected CheckBox *cb_remote_save;
+   protected CheckBox *cb_metahost_save_ref_only;
+
+   protected CheckBox *cb_autocreatepatchvariations;
+
+   protected CheckBox *cb_stfx_cc;
+
+   protected CheckBox *cb_auto_scope;
+
+   protected ComboBox *cm_ui_size_preset;
+   protected ComboBox *cm_ui_cursor_zoom;
+
+   boolean b_edited;
+   static boolean b_force_edited;  // used by SamplePluginFMStackDialog when morph preset filters have changed
+   boolean b_restart;  // true=configuration change requires application restart
+
+   static IntArray audio_mixrates = [32000, 44100, 48000, 88200, 96000];
+
+
+   // <ui_init.png>
+   public method initPrefsDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("PrefsDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Prefs",
+                 140, 140,
+                 420, 310
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       tf_rootpath,
+                       tf_sample_rootpath,
+                       tf_sample_userpath,
+
+                       cm_audio_dev,
+                       cm_audio_mixrate,
+
+                       cm_ring,
+                       cb_poll,
+                       cb_spread_chunks,
+                       cb_affinity,
+
+                       cb_remote_autoload,
+
+                       cb_remote_save,
+                       cb_metahost_save_ref_only,
+
+                       cb_autocreatepatchvariations,
+
+                       cb_stfx_cc,
+
+                       cb_auto_scope,
+
+                       cm_ui_size_preset,
+                       cm_ui_cursor_zoom,
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <method.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <method.png>
+   public static MarkAsEdited() {
+      b_force_edited = true;
+   }
+
+   // <ui_show.png>
+   public method showPrefsDialog() {
+
+      tf_rootpath.setText(STConfig.rootpath);
+
+      tf_sample_rootpath.setText(STConfig.sample_rootpath);
+      tf_sample_userpath.setText(STConfig.sample_userpath);
+
+      updateAudioDeviceOptions();
+      cm_audio_dev.setSelectedOption( mathMaxi(STConfig.audio_device_index + 1, 0) );
+      cm_audio_mixrate.setSelectedOption(audio_mixrates.indexOf(STConfig.audio_mixrate, 0));
+
+      // // trace "xxx replay.ring_size="+replay.ring_size;
+      cm_ring.setSelectedOption( STConfig.b_force_single_thread ? 0 :
+                                 (1 == replay.ring_size) ? 1 :
+                                 (2 == replay.ring_size) ? 2 :
+                                 (3 == replay.ring_size) ? 3 :
+                                 (4 == replay.ring_size) ? 4 :
+                                 (5 == replay.ring_size) ? 5 :
+                                 (6 == replay.ring_size) ? 6 :
+                                 (7 == replay.ring_size) ? 7 :
+                                 (8 == replay.ring_size) ? 8 : 8
+                                 );
+      cb_affinity.setSelected(!STConfig.b_ignore_thread_affinity);
+      cb_spread_chunks.setSelected(STConfig.b_midi_spread_events);
+      cb_poll.setSelected(STConfig.b_poll);
+
+      cb_remote_autoload.setSelected(STConfig.b_autoload_project);
+
+      cb_remote_save.setSelected(STConfig.b_remote_save);
+      cb_metahost_save_ref_only.setSelected(STConfig.b_metahost_save_project_ref_only);
+
+      cb_autocreatepatchvariations.setSelected(STConfig.b_autocreate_patch_variation_after_manual_patch_save);
+
+      cb_stfx_cc.setSelected(STConfig.b_stfx_cc);
+
+      cb_auto_scope.setSelected(STConfig.b_scope_pgsample_autoshowhide);
+
+      cm_ui_size_preset.setSelectedOption(STConfig.ui_size_preset + 1);
+      cm_ui_cursor_zoom.setSelectedOption(STConfig.cursor_zoom - 1);
+
+      updateCustomSize();
+
+      resizeToMinimum();
+      onOpen();
+      showCentered();
+
+      b_edited = b_force_edited;
+      b_force_edited = false;
+      b_restart = false;
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      if(b_edited)
+      {
+         ConfigIO.Save();
+         if(b_restart)
+         {
+            InfoDialog dlg <= InfoDialog.NewInfo("Configuration edited", "Configuration edited. Please restart the application.", null/*recipient*/);
+            dlg.showCentered();
+         }
+      }
+      else
+         Global.Print("Configuration unchanged");
+   }
+
+   // <ui_update.png>
+   protected method updateAudioDeviceOptions() {
+      local StringArray options;
+      options.add("<default>");
+      int numDev = PortAudio.GetNumDevices();
+      int devIdx = 0;
+      int devIdxDef = PortAudio.GetDefaultOutputDeviceIndex();
+      loop(numDev)
+      {
+         PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+         int numIn  = devInfo.maxInputChannels;
+         int numOut = devInfo.maxOutputChannels;
+         if(devIdxDef == devIdx)
+            options.add(devIdx+": "+devInfo.name+"\t*"+numIn+" in, "+numOut+" out ");
+         else
+            options.add(devIdx+": "+devInfo.name+"\t"+numIn+" in, "+numOut+" out ");
+         devIdx++;
+      }
+      cm_audio_dev.setOptions(options);
+   }
+
+   // <ui_handle.png>
+   protected method handleRootPathChanged() {
+      STConfig.SetRootPath(tf_rootpath.getText());
+      Global.PrintFast("Root Path is \""+STConfig.rootpath+"\"");
+      b_edited = true;
+      b_restart = true;
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleRootPathChanged() {
+      STConfig.sample_rootpath = tf_sample_rootpath.getText();
+      Global.PrintFast("Sample Root Path is \""+STConfig.sample_rootpath+"\"");
+      b_edited = true;
+      b_restart = true;
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleUserPathChanged() {
+      STConfig.sample_userpath = tf_sample_userpath.getText();
+      Global.PrintFast("Sample User Path is \""+STConfig.sample_userpath+"\"");
+      b_edited = true;
+      b_restart = true;
+   }
+
+   // <ui_handle.png>
+   protected method handleAudioDevChanged() {
+      int devIdxSel = cm_audio_dev.getSelectedOption() - 1;
+      int devIdx = devIdxSel;
+      if(devIdx < 0)
+         devIdx = PortAudio.GetDefaultOutputDeviceIndex();
+      PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+      if(null != devInfo)
+      {
+         STConfig.audio_device_index     = devIdxSel;
+         STConfig.audio_pref_device_name = (devIdxSel >= 0) ? devInfo.name : "<default>";
+         Global.PrintFast("Preferred audio device is \""+devInfo.name+"\" (idx="+devIdx+")");
+         b_edited = true;
+         b_restart = true;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAudioMixRateChanged() {
+      STConfig.audio_mixrate = audio_mixrates.get(cm_audio_mixrate.getSelectedOption());
+      Global.PrintFast("Audio sample rate is "+STConfig.audio_mixrate);
+      b_edited = true;
+      b_restart = true;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAffinityChanged() {
+      STConfig.b_ignore_thread_affinity = !cb_affinity.isSelected();
+
+      Thread uiThread <= GetCurrentThread();
+
+      if(STConfig.b_ignore_thread_affinity)
+      {
+         Thread.SetProcessAffinityMaskByString(g_thread_affinity_all);
+         uiThread.setAffinityMaskByString(g_thread_affinity_all);
+      }
+      else
+      {
+         Global.Debug("Setting process affinity mask to \""+STConfig.process_affinity_mask+"\"");
+         Thread.SetProcessAffinityMaskByString(STConfig.process_affinity_mask);
+         uiThread.setAffinityMaskByString(STConfig.ui_thread_affinity_mask);
+      }
+
+      replay.updateWriterThreadAffinityMask(false/*bInit*/);
+
+      Track *track;
+      foreach track in current_project.tracks
+         track.updateWriterThreadAffinityMask(false/*bInit*/);
+
+      Global.Print("User-defined thread affinities are "+Utils.GetEnableString(!STConfig.b_ignore_thread_affinity));
+
+      b_edited = true;
+   }
+
+   // <ui_handle.png>
+   protected method handlePollChanged() {
+      replay.resetAudio_Begin();
+      STConfig.b_poll = cb_poll.isSelected();
+      STConfig.b_replay_thread_poll = STConfig.b_poll;
+      STConfig.b_track_thread_poll  = STConfig.b_poll;
+      Global.Print("CPU multi-core polling is "+Utils.GetEnableString(STConfig.b_poll));
+      replay.resetAudio_End();
+      b_edited = true;
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoCreatePatchVariationsChanged() {
+      STConfig.b_autocreate_patch_variation_after_manual_patch_save =
+         cb_autocreatepatchvariations.isSelected();
+
+      Global.Print("Auto-create patch variations after save is "+Utils.GetEnableString(STConfig.b_autocreate_patch_variation_after_manual_patch_save));
+      b_edited = true;
+   }
+
+   // <ui_update.png>
+   protected method updateCustomSize() {
+      boolean bEditable = (0 == cm_ui_size_preset.getSelectedOption());
+      // fp_ui_zoom.setEditable(bEditable);
+      // bt_ui_zoom_apply.setEditable(bEditable);
+      // // cm_ui_cursor_zoom.setEditable(bEditable);
+   }
+
+   // <ui_handle.png>
+   protected method handleUIZoomApply() {
+      UI.QueueReopen();
+      // // Global.ConfigureVSync();
+      UI.SetZoom(STConfig.zoom_x, STConfig.zoom_y);
+   }
+
+   // <ui_handle.png>
+   protected method handleUISizePresetChanged() {
+      STConfig.ui_size_preset = cm_ui_size_preset.getSelectedOption() - 1;
+      switch(STConfig.ui_size_preset)
+      {
+         case 0:  // small    (1k)
+            cm_ui_cursor_zoom.setSelectedOptionAction(0/*1x*/);
+            STConfig.window_sx = 960;
+            STConfig.window_sy = 600;
+            STConfig.zoom_x = 1;
+            STConfig.zoom_y = 1;
+            // fp_ui_zoom.setValue(1);
+            break;
+
+         case 1:  // small x2 (2k)
+            cm_ui_cursor_zoom.setSelectedOptionAction(1/*2x*/);
+            STConfig.window_sx = 960;
+            STConfig.window_sy = 600;
+            STConfig.zoom_x = 2;
+            STConfig.zoom_y = 2;
+            // fp_ui_zoom.setValue(2);
+            break;
+
+         case 2:  // large    (4k)
+            cm_ui_cursor_zoom.setSelectedOptionAction(0/*1x*/);
+            STConfig.window_sx = 1873;
+            STConfig.window_sy = 1600;
+            STConfig.zoom_x = 1;
+            STConfig.zoom_y = 1;
+            // fp_ui_zoom.setValue(1);
+            break;
+      }
+      updateCustomSize();
+      Global.Print("UI Size Preset is "+cm_ui_size_preset.getSelectedOptionName());
+      if(STConfig.ui_size_preset >= 0)
+      {
+         handleUIZoomApply();
+         UI.QueueCustomResizePrefs(STConfig.window_sx, STConfig.window_sy);
+         b_edited = true;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleUICursorZoomChanged() {
+      STConfig.cursor_zoom = cm_ui_cursor_zoom.getSelectedOption() + 1;
+      UI.SetCursorZoom(STConfig.cursor_zoom);
+      if(Utils.IsWindows())
+      {
+         Global.Print("Cursor Zoom is "+cm_ui_cursor_zoom.getSelectedOptionName()+" (requires app restart on Windows)");
+      }
+      else
+      {
+         UI.UpdateCursors();
+         Global.Print("Cursor Zoom is "+cm_ui_cursor_zoom.getSelectedOptionName());
+      }
+      b_edited = true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         // case 96: // '^' (ger) / '`' (us)
+         case 'q':
+         case '@':
+         case '.':
+            hide();
+            return true;
+
+         case 'r':
+            UI.SetKeyboardFocus(tf_rootpath);
+            return true;
+
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(tf_rootpath):
+            handleRootPathChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(tf_sample_rootpath):
+            handleSampleRootPathChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(tf_sample_userpath):
+            handleSampleUserPathChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_audio_dev):
+            handleAudioDevChanged();
+            return true;
+
+         case @(cm_audio_mixrate):
+            handleAudioMixRateChanged();
+            return true;
+
+         case @(cm_ring):
+            int ringMode = cm_ring.getSelectedOption();
+            replay.reconfigureRingMode((0 != ringMode)/*bEnable*/,
+                                       ringMode/*ringSize*/
+                                       );
+            if(0 == ringMode)
+            {
+               STConfig.b_force_single_thread = true;
+               STConfig.standalone_ring_size = 0;
+            }
+            else
+            {
+               STConfig.b_force_single_thread = false;
+               STConfig.standalone_ring_size = ringMode;
+            }
+            replay.resetReplay();
+            Global.Print("Ring mode is "+cm_ring.getSelectedOptionName());
+            b_edited = true;
+            return true;
+
+         case @(cb_poll):
+            handlePollChanged();
+            return true;
+
+         case @(cb_spread_chunks):
+            STConfig.b_midi_spread_events = cb_spread_chunks.isSelected();
+            Global.Print("Spread Chunks is "+Utils.GetEnableString(STConfig.b_midi_spread_events));
+            b_edited = true;
+            return true;
+
+         case @(cb_affinity):
+            handleAffinityChanged();
+            return true;
+
+         case @(cb_remote_autoload):
+            STConfig.b_autoload_project = cb_remote_autoload.isSelected();
+            Global.Print("Auto-Load Project is "+Utils.GetEnableString(STConfig.b_autoload_project));
+            b_edited = true;
+            return true;
+
+         case @(cb_remote_save):
+            STConfig.b_remote_save = cb_remote_save.isSelected();
+            Global.Print("Remote-Save is "+Utils.GetEnableString(STConfig.b_remote_save));
+            b_edited = true;
+            return true;
+
+         case @(cb_metahost_save_ref_only):
+            STConfig.b_metahost_save_project_ref_only = cb_metahost_save_ref_only.isSelected();
+            Global.Print("Metahost Save Project-ref Only is "+Utils.GetEnableString(STConfig.b_metahost_save_project_ref_only));
+            b_edited = true;
+            return true;
+
+         case @(cb_autocreatepatchvariations):
+            handleAutoCreatePatchVariationsChanged();
+            return true;
+
+         case @(cb_stfx_cc):
+            STConfig.b_stfx_cc = cb_stfx_cc.isSelected();/////!STConfig.b_stfx_cc;
+            Global.Print("Cycle native code compilation is "+Utils.GetEnableString(STConfig.b_stfx_cc));
+            b_edited = true;
+            return true;
+
+         case @(cb_auto_scope):
+            STConfig.b_scope_pgsample_autoshowhide = cb_auto_scope.isSelected();
+            Global.Print("Auto show/hide scope on Sample page is "+Utils.GetEnableString(STConfig.b_scope_pgsample_autoshowhide));
+            b_edited = true;
+            return true;
+
+         case @(cm_ui_size_preset):
+            handleUISizePresetChanged();
+            return true;
+
+         case @(cm_ui_cursor_zoom):
+            handleUICursorZoomChanged();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,262 @@
+// ----
+// ---- file   : SamplePadPresetDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 09Jul2022
+// ---- changed: 19Feb2023, 04Oct2023
+// ----
+// ----
+// ----
+
+module MSamplePadPresetDialog;
+
+use namespace ui;
+use namespace st2;
+
+namespace st2;
+
+
+// <class.png>
+class SamplePadPresetDialog extends Dialog {
+
+   protected SamplePadForm *parent_form;
+
+   protected XMLForm *xfm;
+
+   protected ComboBox *cm_preset;
+   protected Button   *bt_load;
+   protected CheckBox *cb_autoload;
+   protected CheckBox *cb_remove_prev_samples;
+   protected CheckBox *cb_keep_lane_sends;
+
+   protected StringArray preset_drumkit_names;  // folder names, e.g. "first test kit"
+
+
+   // <ui_init.png>
+   public method initSamplePadPresetDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SamplePadPresetDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initSamplePadPresetDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Load Sample Pad Preset DrumKit",
+                 263,  82,
+                 770, 364
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       cm_preset,
+                       bt_load,
+                       cb_remove_prev_samples,
+                       cb_keep_lane_sends,
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showSamplePadPresetDialog(SamplePadForm _parentForm) {
+
+      parent_form <= _parentForm;
+
+      scanDrumKits();
+      cm_preset.setOptions(preset_drumkit_names);
+
+      recursiveBuildTabCycleLists();
+      relayout();
+      resizeToMinimum();
+
+      showNearMouse(-80, 10);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(cm_preset);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected method scanDrumKits() {
+      preset_drumkit_names.empty();
+      local String repoDirName = Utils.ToNativePathName(STConfig.sample_rootpath+"/"+STConfig.sample_userpath+"/"+STConfig.sample_pad_drumkit_folder_name);
+      Global.Debug2("SamplePadPresetDialog::scanDrumKits: repoDirName=\""+repoDirName+"\"");
+      local StringArray a <= Utils.ReadDirectory(repoDirName);
+      if(null != a)
+      {
+         local String *fileEntry;
+         foreach fileEntry in a
+         {
+            local StringArray attribs <= fileEntry.splitSpace(true);
+            local String fileName <= attribs.get(1);
+
+            if('d' == fileEntry.getc(0))
+            {
+               if!( (fileName == ".") || (fileName == "..") )
+               {
+                  // Directory
+                  if(Utils.CanFileBeRead(repoDirName+"/"+fileName+"/"+fileName+Global.SAMPLE_PAD_KIT_FILE_SUFFIX))
+                  {
+                     Global.Debug2("SamplePadPresetDialog::scanDrumKits: found drumkit \""+fileName+"\"");
+                     preset_drumkit_names.add(fileName);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method doUnloadSamples() : boolean {
+      return cb_remove_prev_samples.isSelected();
+   }
+
+   // <method_get.png>
+   public method doKeepLaneSends() : boolean {
+      return cb_keep_lane_sends.isSelected();
+   }
+
+   // <ui_handle.png>
+   protected method handlePresetChanged() {
+
+      Global.Print("Preset is \""+cm_preset.getSelectedOptionName()+"\"");
+
+      if(cb_autoload.isSelected())
+         handleLoad();
+   }
+
+   // <ui_handle.png>
+   protected method handleLoad() {
+      parent_form.handleLoadDrumKit(cm_preset.getSelectedOptionName());
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx SamplePadPresetDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageSample pgSample <= root_form.pg_sample;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(cm_preset):
+            handlePresetChanged();
+            return true;
+
+         case @(bt_load):
+            handleLoad();
+            return true;
+
+         case @(cb_autoload):
+            Global.Print("Auto-load is "+Utils.GetEnableString(cb_autoload.isSelected()));
+            return true;
+
+         case @(cb_remove_prev_samples):
+            Global.Print("Remove-previous-samples is "+Utils.GetEnableString(cb_remove_prev_samples.isSelected()));
+            return true;
+
+         case @(cb_keep_lane_sends):
+            Global.Print("Keep-lane-sends is "+Utils.GetEnableString(cb_keep_lane_sends.isSelected()));
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}
