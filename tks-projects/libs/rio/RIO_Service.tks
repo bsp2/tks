@@ -1,0 +1,183 @@
+///
+/// file   : RIO_Service.tks
+/// author : Bastian Spiegel <bs@tkscript.de>
+/// descr. : 
+/// license: 
+/// Copyright 2005 The Bali Project. All rights reserved.
+/// 
+/// Redistribution and use in source and binary forms, with or without modification, are permitted provided that 
+/// the following conditions are met:
+/// 
+///    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the 
+///       following disclaimer.
+///    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
+///       the following disclaimer in the documentation and/or other materials provided with the distribution.
+/// 
+/// THIS SOFTWARE IS PROVIDED BY THE BALI PROJECT ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
+/// BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+/// IN NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+/// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+/// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+/// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+/// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/// 
+/// The views and conclusions contained in the software and documentation are those of the authors and should not be 
+/// interpreted as representing official policies, either expressed or implied, of the Bali Project.
+/// 
+/// created: 27Aug2005
+/// changed: 28Aug2005 / 11Sep2005
+///
+///
+
+module MRIO_Service;
+
+class RIO_Service {
+   static RIO_ServiceProvider rsp;
+   static Script script;
+
+   // Create the script interface for the given service provider.
+   // The script interface is used to map RIO requests to script class methods.
+   static protected GenScript():boolean {
+
+      script <= new Script;
+
+      String r;
+      r=
+         "module MRIO_ssi;\n"
+         ;
+      // For each namespace procedure find the script class for the namespace
+      // and map procedures to script class methods.
+      // The argument hashtable is unsorted by its nature so
+      // we need to create a mapping to translate argument names to method
+      // argument indices.
+      // Arguments which do not exist in the current _args hashtable
+      // will be substituted by "null" in the argument list.
+      HashTable cls <= rsp.classes, nsp <= rsp.namespaces;
+      
+      String cns, cpn, methName, argName, argScriptName, argType, arrayType, t;
+      int argNum, i;
+      HashTable argHash, argMap, procHash;
+      StringArray anames;
+      foreach cns in nsp
+      {
+         r.append( "\n// ---- begin namespace \""+cns+"\".\n" );
+         procHash <= nsp[cns];
+         foreach cpn in procHash
+         {
+            if(cpn[0] == '_')
+            {
+               cpn.substring(1, cpn.length-1) => methName;
+            }
+            else
+            {
+               methName = cpn;
+            }
+            r.append(
+               "\nfunction "+cns+"__"+cpn+"(HashTable _args) {\n"
+               "   "+rsp.namespace_daos[cns].yacMetaClassName()+" dao <= "+rsp.namespace_daos[cns].yacMetaClassName()+";\n"
+               "   return dao."+methName+"("
+               );
+            anames <= TKS.getMethodArgumentNames(null, rsp.namespace_daos[cns].yacMetaClassName(), cpn);
+            if(anames instanceof StringArray)
+            {
+               argHash <= procHash[cpn];
+               argNum = argHash.numElements-RIO.ARGHASH_NUM_SPECIAL;
+               argMap <= argHash[RIO.ARGHASH_ARGMAP];
+               i=0;
+               loop(anames.numElements)
+               {
+                  if(i>0)
+                  {
+                     r.append(", ");
+                  }
+                  argScriptName = anames[i++];
+                  if(argScriptName[0] == '_')
+                  {
+                     argScriptName.substring(1, argScriptName.length-1) => argName;
+                  }
+                  else
+                  {
+                     argName = argScriptName;
+                  }
+                  argMap[argName] = i - 1;
+                  print cpn+"::argScriptName=\""+argScriptName+"\" argName=\""+argName+"\"";
+                  print "argHash="+argHash.string;
+                  if(! argHash.exists(argName) )
+                  {
+                     trace 
+                        "[---] RIO_Service::genScript: unable to map script method \""+cns+"::"+cpn+"\" argument \"" + 
+                        argScriptName+"\" to procedure argument \""+argName+"\".";
+                     return false;
+                  }
+                  argType = argHash[argName];
+                  r.append("_args.getDeref(\""+argName+"\")");
+               } // loop anames
+
+               r.append(");\n}\n");
+
+               if(argNum > anames.numElements)
+               {
+                  trace "[---] RIO_Service::genScript: script method \""+cns+"::"+cpn+"\" has less arguments than specified in the RIO-IDL.";
+                  return false;
+               }
+               else if(anames.numElements > argNum)
+               {
+                  trace "[---] RIO_Service::genScript: script method \""+cns+"::"+cpn+"\" has more arguments than specified in the RIO-IDL ("+anames.numElements+">"+argNum+").";
+                  return false;
+               }
+            }
+            else
+            {
+               trace "[---] RIO_Service::GenScript: failed to map namespace \""+cns+"\" procedure \""+cpn+"\" to class method \""+cns+"::"+cpn+"\".";
+               return false;
+            }
+            
+         } // foreach procedure
+
+      } // foreach namespace
+      
+      print "***************************\nscript=\n"+r+"\n******************************\n";
+      if(script.load(r))
+      {
+         return true;
+      }
+      else
+      {
+         trace "[---] RIO_Service::GenScript: failed to compile service script interface.\n";
+      }
+      return false;
+   }
+
+   static public HandleRequest(String _query, String _r):boolean {
+      if(RIO_RequestParser.Eval(this, _query, _r))
+      {
+         trace "[+++] RIO_Service::HandleRequest: return value=>>"+_r+"<<.";
+         return true;
+      }
+      return false;
+   }
+
+  
+   // Examine the RIO_ServiceProvider and prepare the service
+   static Start(RIO_ServiceProvider _rsp):boolean {
+      rsp <= deref _rsp;
+      if(rsp.init())
+      {
+         if(GenScript())
+         {
+            trace "[...] RIO_Service::Start(): script service interface created.";
+            return true;
+         }
+         else
+         {
+            trace "[---] RIO_Service::Start(name="+rsp.yacMetaClassName()+"): GenScript() failed.";
+         }
+      }
+      else
+      {
+         trace "[---] RIO_Service::Start(name="+rsp.yacMetaClassName()+"): init() failed.";
+      }
+      return false;
+   }
+
+}

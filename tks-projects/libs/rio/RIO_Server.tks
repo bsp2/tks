@@ -1,0 +1,162 @@
+///
+/// file   : RIO_Server.tks
+/// author : Bastian Spiegel <bs@tkscript.de>
+/// descr. : an example for a simple tcp server
+/// license: 
+/// Copyright 2005 The Bali Project. All rights reserved.
+/// 
+/// Redistribution and use in source and binary forms, with or without modification, are permitted provided that 
+/// the following conditions are met:
+/// 
+///    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the 
+///       following disclaimer.
+///    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
+///       the following disclaimer in the documentation and/or other materials provided with the distribution.
+/// 
+/// THIS SOFTWARE IS PROVIDED BY THE BALI PROJECT ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
+/// BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+/// IN NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+/// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+/// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+/// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+/// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/// 
+/// The views and conclusions contained in the software and documentation are those of the authors and should not be 
+/// interpreted as representing official policies, either expressed or implied, of the Bali Project.
+///
+/// created: 240402 / 27Aug2005
+/// changed: 28Aug2005
+///
+///
+
+module MRIO_Server;
+
+use tksdl;
+use tksdl_net;
+
+
+class RIO_Server  {
+   List      clients; // List<RIO_Client>
+   int       max_clients;
+   IPAddress ip;
+   TCPSocket server_socket;
+   static TCPSocket current_clientsocket;
+   
+   RIO_Server() {
+   }
+   
+   ~RIO_Server() {
+      removeAllClients();
+      server_socket.close();
+   }
+   
+   public start(int _port, int _maxclients) {
+      ip.init(INADDR_ANY, _port);
+      if(server_socket.open(ip))
+      {
+         trace("[...] RIO_Server::start: server socket ready.");
+         Network.allocSocketSet(_maxclients);
+         Network.addTCPSocket(server_socket);
+         max_clients = _maxclients;
+         return true;
+      }
+      return 0;
+   }
+
+   // add "current_clientsocket" client connection
+   public addClient():boolean {
+      int i;
+      if(clients.size != max_clients)
+      {
+         RIO_Client rc <= RIO_Client.New(deref current_clientsocket);
+         if(rc != null)
+         {
+            clients.addLast(#(deref rc));
+            trace "[...] RIO_Server::addClient: client connected.";
+            return 1;
+         }
+         else
+         {
+            trace "[---] RIO_Server::addClient: failed to create RIO_Client.";
+            return 0;
+         }
+      }
+      else
+      {
+         trace "[---] RIO_Server::addClient: maximum number of connections reached ("+max_clients+")";
+         return 0;
+      }
+   }
+   
+   public removeAllClients() {
+      ListNode l;
+      TCPSocket s;
+      trace "[...] RIO_Server::removeAllClients()";
+      foreach l in clients
+      {
+         s <= l.objectValue;
+         Network.removeSocket(s);
+         s.close();
+      }
+      clients.removeAll();
+   }
+   
+   public removeClient(TCPSocket _tcpclient) {
+      ListNode l<=clients.findPointer(_tcpclient);
+      if(l != null)
+      {
+         trace("[...] RIO_Server::removeClient()");
+         RIO_Client rc <= l.objectValue;
+         rc.close();
+         clients.remove(l);
+      }
+      else
+      {
+         die "[---] RIO_Server::removeClient: not found.";
+      }
+      print "[...] RIO_Server::removeClient: exit.";
+   }
+   
+   public process(Buffer _xferbuf) {
+      int nr=Network.checkSockets(10); // check every 1/100 second
+      if(nr)
+      {
+         if(server_socket.socketReady())
+         {
+            current_clientsocket <= server_socket.accept();
+            if(current_clientsocket != null)
+            {
+               addClient();
+            }
+         }
+         ListNode l;
+         TCPSocket s;
+         foreach l in clients
+         {
+            //trace("[...] RIO_Server::process: check client");
+            RIO_Client rc <= l.objectValue;
+            rc.checkSocket(_xferbuf);
+         }
+      }
+   }
+   
+   
+   public keepAlive() {
+      ListNode l;
+      RIO_Client rc;
+      l<=clients.head;
+      foreach l in clients
+         {
+            rc <= l.objectValue;
+            if(! rc.keepAlive())
+            {
+               trace("[...] RIO_Server::keepAlive: client keepalive ping FAILED. disconnecting..");
+               removeClient(rc);
+               return; // list may be corrupted now
+            }
+         }
+   }
+
+  
+}
+

@@ -1,0 +1,906 @@
+///
+/// file   : RIO_RequestParser.tks
+/// author : Bastian Spiegel <bs@tkscript.de>
+/// descr. : 
+/// license: 
+/// Copyright 2005 The Bali Project. All rights reserved.
+/// 
+/// Redistribution and use in source and binary forms, with or without modification, are permitted provided that 
+/// the following conditions are met:
+/// 
+///    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the 
+///       following disclaimer.
+///    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
+///       the following disclaimer in the documentation and/or other materials provided with the distribution.
+/// 
+/// THIS SOFTWARE IS PROVIDED BY THE BALI PROJECT ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
+/// BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+/// IN NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+/// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+/// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+/// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+/// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/// 
+/// The views and conclusions contained in the software and documentation are those of the authors and should not be 
+/// interpreted as representing official policies, either expressed or implied, of the Bali Project.
+/// 
+/// created: 27Aug2005
+/// changed: 28Aug2005 / 02Sep2005 / 03Sep2005 / 06Sep2005 / 11Sep2005 / 12Sep2005
+///
+///
+
+module MRIO_RequestParser;
+
+class RIO_RequestParser {
+   // Status variables
+   static RIO_Service service;
+   static private Object popObject, cObject, tObject;
+   static private IntArray seqstack;
+   static private IntArray argtodostack; // 
+   static private StringArray argnamestack;
+   static private StringArray classnamestack;
+   static private PointerArray objstack; // array of objects
+   static private PointerArray valstack; // array of hashtables
+   static private int seqstacki;
+
+   static private String tok;
+   static private int seqi = -3, seqargi, toki;
+   static private String nspName, procName, className, argName, argType, formalArgType;
+   static private int argNum, formalArgNum;
+   static private int argTodo;
+   static private HashTable argHash, procHash, argValueHash, classHash, hashHash;
+   static private StringArray  as;
+   static private IntArray     ai;
+   static private FloatArray   af;
+   static private ObjectArray  ab; // BooleanArray?
+   static private ObjectArray  ad; // DoubleArray?
+   static private ObjectArray  al; // LongArray?
+   static private ObjectArray  at; 
+   static private ObjectArray  ah;
+   static private ClassArray   ac;
+   static private HashTable    h;
+
+   static StringArray tokens;
+
+   static private AllocStack() {
+      argtodostack.alloc(RIO.STACK_SIZE); argtodostack.numElements=RIO.STACK_SIZE;
+      argnamestack.alloc(RIO.STACK_SIZE); argnamestack.numElements=RIO.STACK_SIZE;
+      seqstack.alloc(RIO.STACK_SIZE); seqstack.numElements=RIO.STACK_SIZE;
+      objstack.alloc(RIO.STACK_SIZE); objstack.numElements=RIO.STACK_SIZE;
+      valstack.alloc(RIO.STACK_SIZE); valstack.numElements=RIO.STACK_SIZE;
+      classnamestack.alloc(RIO.STACK_SIZE); classnamestack.numElements=RIO.STACK_SIZE;
+   }
+
+   static private PushState(int _ret_seqi):boolean {
+      if(seqstacki==0)
+      {
+         trace "[---] RIO_RequestParser::PushState: stack overflow (last seen token: ***"+tok+"***).";
+         return false;
+      }
+      seqstack[--seqstacki]     = _ret_seqi; 
+      argtodostack[seqstacki]   = argTodo; 
+      argnamestack[seqstacki]   = argName; 
+      classnamestack[seqstacki] = className;
+      objstack[seqstacki]       = deref cObject; 
+      valstack[seqstacki]       = deref argValueHash; 
+      print "HR: ~~~~~~~~ pushState: argValueHash="+#(valstack[seqstacki]);
+      return true;
+   }
+
+   static private PopState():boolean {
+      if(seqstacki==RIO.STACK_SIZE)
+      {
+         trace "[---] RIO_RequestParser::PopState: stack underflow (last seen token: ***"+tok+"***).";
+         return false;
+      }
+      popObject    <= deref cObject;
+      cObject      <= objstack.getDeref(seqstacki); 
+      seqi          = seqstack[seqstacki];
+      argTodo       = argtodostack[seqstacki];
+      argName       = argnamestack[seqstacki];
+      className     = classnamestack[seqstacki];
+      argValueHash <= valstack.getDeref(seqstacki);
+      print "HR: ~~~~~~~~ popState: argValueHash="+#(argValueHash);
+      seqstacki++;
+      return true;
+   }
+
+   // 
+   static public Eval(RIO_Service _service, String _query, String _r):boolean {
+      service <= _service;
+      prepare {
+         AllocStack();
+      }
+
+      cObject <= null;
+      popObject <= null;
+      seqstacki=RIO.STACK_SIZE;
+      argValueHash.free();
+
+      tokens <= _query.splitSpace(true);
+      toki=0;
+      seqi=-3;
+      print "HR: numTokens="+tokens.numElements;
+      while(toki<=tokens.numElements)
+      {
+         if(toki>=tokens.numElements)
+         {
+            tok <= ":EOL:";
+         }
+         else
+         {
+            tok<=tokens[toki++];
+         }
+         print "HR: toki="+toki+"/"+tokens.numElements+" seqi="+seqi+" tok=\""+tok+"\" seqstacki="+seqstacki;
+         switch(seqi)
+         {
+            case -3:
+               // Parse namespace name
+               nspName = tok;
+               print "HR: nspName=\""+nspName+"\"";
+               if!(RIO_Service.rsp.namespaces.exists(nspName))
+               {
+                  trace "[---] RIO_RequestParser::Eval: unknown namespace \""+nspName+"\".";
+                  return false;
+               }
+               procHash <= RIO_Service.rsp.namespaces.get(nspName);
+               seqi++;
+               break;
+            case -2:
+               // Parse procedures name
+               procName = tok;
+               print "HR: procName=\""+procName+"\"";
+               if!(procHash.exists(procName))
+               {
+                  trace "[---] RIO_RequestParser::Eval: unknown procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               argHash <= procHash.get(procName);
+               seqi++;
+               break;
+            case -1:
+               // Parse num arguments
+               argNum = tok;
+               print "HR: argNum="+argNum;
+               if( (argNum<0) || (argNum>RIO.MAX_PROC_ARGS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of arguments (argNum="+argNum+
+                     ") to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               argTodo = argNum;
+               cObject <= null;
+               seqi++;
+               break;
+            case 0:
+               // Parse argument name
+               print "HR: argTodo="+argTodo;
+               if(--argTodo >= 0)
+               {
+                  argName = tok;
+                  print "HR: current argName=\""+argName+"\"";
+                  if(seqstacki==RIO.STACK_SIZE)
+                  {
+                     if(! argHash.exists(argName))
+                     {
+                        trace "[---] RIO_RequestParser::Eval: procedure \""+nspName+"::"+procName+"\". has no argument called \""+argName+"\".";
+                        return false;
+                     }
+                  }
+                  seqi++;
+               }
+               else
+               {
+                  print "HR: cObject="+#(cObject);
+                  if( (toki == tokens.numElements) && (tok == ':EOL:') && (seqstacki==RIO.STACK_SIZE))
+                  {
+                     toki=tokens.numElements+1; // finish parsing (last node was simple argument);
+                  }
+                  else
+                  {
+                     if(cObject==null)
+                     {
+                        trace "[---] RIO_RequestParser::Eval: client passes more than "+
+                           argNum+" arguments to procedure \""+nspName+"::"+procName+"\".";
+                        return false;
+                     }
+                     else
+                     {
+                        if(seqstacki<RIO.STACK_SIZE)
+                        {
+                           print "HR: Continue with last sequence";
+                           // Continue with last sequence
+                           if(!PopState())
+                           {
+                              return false;
+                           }
+                           toki--;
+                        }
+                        else
+                        {
+                           toki=tokens.numElements+1; // finish parsing (last node was class/hashtable/..)
+                        }
+                     }
+                  }
+               }
+               break;
+            case 1:
+               // Parse argument type
+               argType = tok;
+               if(seqstacki==RIO.STACK_SIZE)
+               {
+                  formalArgType = argHash.get(argName);
+                  print "HR: formalArgType=\""+formalArgType+"\" arg(Type)=\""+argType+"\"";
+                  trace "xxx bla="+#(["i","f","l","b","d"/*,"x"*/,"t"]);
+                  if(["i","f","l","b","d"/*,"x"*/,"t"].containsObject(formalArgType))
+                  {
+                     if(argType != formalArgType)
+                     {
+                        trace "[---] RIO_RequestParser::Eval: argument type mismatch, expected "+formalArgType+", got "+argType+
+                           " in call to procedure \""+nspName+"::"+procName+"\".";
+                        return false;
+                     }
+                  }
+               }
+               else
+               {
+                  formalArgType="s";
+               }
+
+               print "HR: switch argType=\""+argType+"\"";
+               switch(argType)
+               {
+                  case "ab":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of booleans, next token must be array size
+                     print "HR: Parse booleanarray";
+                     seqi=500;
+                     break;
+                  case "ai":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of integers, next token must be array size
+                     print "HR: Parse integerarray";
+                     seqi=600;
+                     break;
+                  case "af":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of floating point numbers, next token must be array size
+                     print "HR: Parse floatarray";
+                     seqi=700;
+                     break;
+                  case "ad":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of doubles, next token must be array size
+                     print "HR: Parse doublearray";
+                     seqi=800;
+                     break;
+                  case "al":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of longs, next token must be array size
+                     print "HR: Parse longarray";
+                     seqi=900;
+                     break;
+                  case "at":
+                     // Todo
+                     trace "[---] missing implementation for at argtype.";
+                     return false;
+                  case "as":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of strings, next token must be array size
+                     print "HR: Parse stringarray";
+                     seqi=1100;
+                     break;
+                  case "aa":
+                     // Todo 
+                     break;
+                  case "ah":
+                     if(!PushState(90))
+                     {
+                        return false;
+                     }
+                     // Continue to parse array of hashtables, next token must be array size
+                     print "HR: Parse hasharray";
+                     seqi=400;
+                     break;
+                  default:
+                     print "HR: switch argtype defaultcase";
+                     if(argType[0]=='a')
+                     {
+                        if(seqstacki==RIO.STACK_SIZE)
+                        {
+                           if(argType != formalArgType)
+                           {
+                              trace "[---] RIO_RequestParser::Eval: argument type mismatch, expected "+formalArgType+", got "+argType+
+                                 " in call to procedure \""+nspName+"::"+procName+"\".";
+                              return false;
+                           }
+                        }
+
+                        // Is array of class instances
+                        argType.substring(1, argType.length-1) => className;
+
+                        if(!PushState(90))
+                        {
+                           return false;
+                        }
+                        // Continue to parse array of class instances, next token must be array size
+                        seqi=300; 
+                     }
+                     else if(argType[0] == '(')
+                     {
+                        argType.substring(1, argType.length-1) => className;
+
+                        if(className != formalArgType)
+                        {
+                           trace "[---] RIO_RequestParser::Eval: argument type mismatch, expected "+formalArgType+", got "+argType+
+                              " in call to procedure \""+nspName+"::"+procName+"\".";
+                           return false;
+                        }
+
+                        // Try class
+                        if!(RIO_Service.rsp.classes.exists(className))
+                        {
+                           trace 
+                              "[---] RIO_RequestParser::genScript: illegal argument type \""+argType+
+                              "\" (argName="+argName+" in \""+nspName+"::"+procName+"\")";
+                           return false;
+                        }
+                        // Is single class instance
+
+                        // Push current context
+                        if(! PushState(91) )
+                        {
+                           return false;
+                        }
+                        cObject <= new HashTable; 
+                        argValueHash <= cObject;
+
+                        // Continue to parse class member hash values, next token must be hash size
+                        seqi=200; 
+                     }
+                     else
+                     {
+                        print "HR: Is string value";
+                        // Is string value
+                        if(seqstacki==RIO.STACK_SIZE)
+                        {
+                           if(formalArgType!="s")
+                           {
+                              trace "[---] RIO_RequestParser::Eval: argument type mismatch, expected s, got "+argType+
+                                 " in call to procedure \""+nspName+"::"+procName+"\".";
+                              return false;
+                           }
+                        }
+                        argValueHash[argName] = String.New(argType);
+                        print "argValueHash="+#(argValueHash);
+                        seqi=0; // Parse next argument
+                     }
+                     break;
+                  case "i":  seqi=100;  break;
+                  case "f":  seqi=110;  break;
+                  case "s":  seqi=120;  break;
+                  case "l":  seqi=130;  break;
+                  case "d":  seqi=140;  break;
+                  case "t":  seqi=150;  break;
+                  case "h":  
+                     // Push current context
+                     if(! PushState(90) )
+                     {
+                        return false;
+                     }
+                     cObject <= new HashTable; 
+                     argValueHash <= cObject; 
+                     className = ""; 
+                     // Continue to parse hash values, next token must be hash size
+                     seqi = 200; 
+                     break;
+                  case "x":
+                     trace 
+                        "[---] RIO_Service::genScript: argument type \"x\" is not supported, yet"
+                        " (argName="+argName+" in \""+nspName+"::"+procName+"\")";
+                     return false;
+               } // switch(argType)
+               break;
+
+            case 300:
+               // Parse array of class instances
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new ClassArray;
+               ac <= cObject;
+               ac.template = TKS.findScriptClass(default, className);
+               if(ac.template == null)
+               {
+                  trace "[---] RIO_RequesterParser::Eval: cannot resolve array class \""+className+"\".";
+                  return false;
+               }  
+
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 301:
+               // Loop array elements
+               toki--;
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next classarray element. argTodo="+argTodo;
+                  seqi++;
+                  // Push current context
+                  if(!PushState(302))
+                  {
+                     return false;
+                  }
+                  print "HR: nextclassarrayelement cObject="+#(deref cObject);
+                  cObject<=new HashTable; argValueHash<=cObject;
+                  seqi=200; // Parse class member hashtable 
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 302:
+               // Class member hashtable returned (classarray)
+               tObject <= TKS.newObjectByName(default, className);
+               if(tObject instanceof Class)
+               {
+                  print "302: popObject="+#(popObject);
+                  if!( TKS.hashTableToClass(popObject, tObject) )
+                  {
+                     trace "[---] RIO_RequestParser::Eval: failed to convert member hashtable to class \""+className+"\".";
+                     return false;
+                  }
+                  else
+                  {
+                     print "HR: converted hashtable to class \""+className+"\" tObject="+#(tObject);
+                     // Wrap the reference to the new object in a Value and add it to the ClassArray
+                     ac <= cObject;
+                     ac.add(#(deref tObject)); 
+                     print "HR: ac = "+#(ac);
+                     
+                     // Process next array element
+                     toki--;
+                     seqi=301;
+                  }
+               }
+               else
+               {
+                  trace "[---] RIO_RequestParser::Eval: failed to create new script class object (class=\""+className+"\").";
+                  return false;
+               }
+               break;
+
+            case 400:
+               // Parse array of hashtables
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new ObjectArray;
+               ah <= cObject;
+               ah.template = HashTable;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 401:
+               // Loop hashtable array elements
+               toki--;
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next hasharray element. argTodo="+argTodo;
+                  seqi++;
+                  // Push current context
+                  if(!PushState(402))
+                  {
+                     return false;
+                  }
+                  print "HR: nexthasharrayelement cObject="+#(deref cObject);
+                  cObject<=new HashTable; argValueHash<=cObject;
+                  seqi=200; // Parse hashtable 
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 402:
+               // Hashtable returned (hasharray)
+               print "HR: adding hashtable to hasharray popObject="+#(popObject);
+               // Wrap the reference to the new object in a Value and add it to the ObjectArray
+               ah <= cObject;
+               ah.add(#(deref popObject)); 
+               
+               // Process next array element
+               toki--;
+               seqi=401;
+               break;
+
+            case 500:
+               // Parse array of booleans
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of boolean array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new ObjectArray;
+               ab <= cObject;
+               ab.template = Boolean;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 501:
+               // Loop boolean array elements
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next booleanarray element. argTodo="+argTodo;
+                  ab <= cObject;
+                  ab.add(#(Boolean.News(tok)));
+               }
+               else
+               {
+                  toki--;
+                  PopState();
+               }
+               break;
+
+            case 600:
+               // Parse array of integers
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of integer array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new IntArray;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 601:
+               // Loop integer array elements
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next integerarray element. argTodo="+argTodo;
+                  ai <= cObject;
+                  ai.add(int(tok));
+               }
+               else
+               {
+                  toki--;
+                  PopState();
+               }
+               break;
+
+            case 700:
+               // Parse array of 32bit floating point numbers
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of float array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new FloatArray;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 701:
+               // Loop float array elements
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next floatarray element. argTodo="+argTodo;
+                  af <= cObject;
+                  af.add(float(tok));
+               }
+               else
+               {
+                  toki--;
+                  PopState();
+               }
+               break;
+
+            case 800:
+               // Parse array of doubles
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of double array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new ObjectArray;
+               ad <= cObject;
+               ad.template = Double;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 801:
+               // Loop double array elements
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next doublearray element. argTodo="+argTodo;
+                  ad <= cObject;
+                  ad.add(#(Double.News(tok)));
+               }
+               else
+               {
+                  toki--;
+                  PopState();
+               }
+               break;
+
+            case 900:
+               // Parse array of 64bit signed integers
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of long array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new ObjectArray;
+               ad <= cObject;
+               ad.template = Long;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 901:
+               // Loop long array elements
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next longarray element. argTodo="+argTodo;
+                  al <= cObject;
+                  al.add(#(Long.News(tok)));
+               }
+               else
+               {
+                  toki--;
+                  PopState();
+               }
+               break;
+
+            case 1100:
+               // Parse array of strings
+               argTodo = tok;
+               
+               if( (argTodo<0) || (argTodo>RIO.MAX_ARRAY_ELEMENTS) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal number of string array elements (num="+argTodo+" max="+RIO.MAX_ARRAY_ELEMENTS+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               cObject <= new StringArray;
+               if(argTodo>0)
+               {
+                  seqi++;
+               }
+               else
+               {
+                  PopState();
+               }
+               break;
+            case 1101:
+               // Loop string array elements
+               if(--argTodo >=0)
+               {
+                  print "HR: parse next stringarray element. argTodo="+argTodo;
+                  as <= cObject;
+                  as.add(tok);
+               }
+               else
+               {
+                  toki--;
+                  PopState();
+               }
+               break;
+
+            case 90:
+               // HashTable object 
+               // or Array of Classes 
+               // or Array of HashTables
+               // returned
+               trace "xxx HashTable Object\n";
+               cObject <= popObject;
+               argValueHash[argName] = deref popObject;
+               toki--;
+               seqi=0;
+               break;
+            case 91:
+               // Member HashTable for script class object returned
+               print "HR: Member HashTable for script class object returned";
+               cObject <= TKS.newObjectByName(default, className);
+               if(cObject instanceof Class)
+               {
+                  if(! TKS.hashTableToClass(popObject, cObject))
+                  {
+                     trace "[---] RIO_RequestParser::Eval: failed to convert member hashtable to class \""+className+"\".";
+                     return false;
+                  }
+                  else
+                  {
+                     print "HR: converted hashtable to class \""+className+"\"";
+                     argValueHash[argName] = deref cObject;
+                     print "HR: class argValueHash="+#(argValueHash);
+                  }
+   
+               }
+               else
+               {
+                  trace "[---] RIO_RequestParser::Eval: failed to create new script class object (class=\""+className+"\").";
+                  return false;
+               }
+               toki--;
+               seqi=0;
+               break;
+
+            case 200:
+               // Parse HashTable
+               print "HR: parse Hashtable";
+               argNum = tok;
+               if( (argNum<0) || (argNum>RIO.MAX_HASH_SIZE) )
+               {
+                  trace "[---] RIO_RequestParser::Eval: illegal hash size (argNum="+argNum+
+                     ") in call to procedure \""+nspName+"::"+procName+"\".";
+                  return false;
+               }
+               argTodo = argNum;
+               seqi=0;
+               break;
+
+            case 100:
+               // Parse Integer value
+               argValueHash[argName] = Integer.New(tok);
+               seqi=0;
+               break;
+            case 110:
+               // Parse Float value
+               argValueHash[argName] = Float.New(tok);
+               seqi=0;
+               break;
+            case 120:
+               // Parse String value
+               argValueHash[argName] = String.New(tok);
+               seqi=0;
+               break;
+            case 130:
+               // Parse Long value
+               argValueHash[argName] = Long.News(tok);
+               seqi=0;
+               break;
+            case 140:
+               // Parse Double value
+               argValueHash[argName] = Double.News(tok);
+               seqi=0;
+               break;
+            case 150:
+               // Parse Time value
+               argValueHash[argName] = RIO.ParseTime(tok);
+               seqi=0;
+               break;
+
+         } // switch seqi
+
+      } // foreach tok
+
+      if( (seqi>0) || (seqargi>0) || (seqstacki!=RIO.STACK_SIZE))
+      {
+         trace "[---] RIO_RequestParser::Eval: unexpected end of call request (last token was ***"+tok+"***).";
+         return false;
+      }
+      
+      // Parsing succeeded
+      print "[...] RIO_RequestParser::Parsing Succeeded";
+      print "[...] RIO_RequestParser: >>"+nspName+"."+procName+" args="+#(argValueHash);
+      Function fun <= RIO_Service.script.findFunction(nspName+"__"+procName);
+      if(fun!=null)
+      {
+         //Value vr = #( fun.callWithArgs({argValueHash}) );
+         Value vr = #( fun.eval({argValueHash}) );
+
+         _r.append("return ");
+
+         if(vr.type >= 3)
+         {
+            if(vr.objectValue instanceof RIO_RawReturn)
+            {
+               _r.append(vr.objectValue.data);
+               return true;
+            }
+         }
+         //String formalRetType = argHash[RIO.ARGHASH_RETURN];
+
+         if(RIO.ValueToString(vr, _r))
+         {
+            return true;
+         }
+         else
+         {
+            trace "[---] RIO_RequestParser: failed to encode return value.";
+         }
+      }
+      else
+      {
+         trace "[---] RIO_RequestParser:internal error: cannot resolve function \""+nspName+"__"+procName+"\".";
+      }
+      return false;
+   }
+   
+
+}

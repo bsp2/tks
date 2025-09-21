@@ -1,0 +1,210 @@
+///
+/// file   : RIO_Client.tks
+/// author : Bastian Spiegel <bs@tkscript.de>
+/// descr. : 
+/// license: 
+/// Copyright 2005 The Bali Project. All rights reserved.
+/// 
+/// Redistribution and use in source and binary forms, with or without modification, are permitted provided that 
+/// the following conditions are met:
+/// 
+///    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the 
+///       following disclaimer.
+///    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
+///       the following disclaimer in the documentation and/or other materials provided with the distribution.
+/// 
+/// THIS SOFTWARE IS PROVIDED BY THE BALI PROJECT ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
+/// BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+/// IN NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+/// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+/// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+/// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+/// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/// 
+/// The views and conclusions contained in the software and documentation are those of the authors and should not be 
+/// interpreted as representing official policies, either expressed or implied, of the Bali Project.
+/// 
+/// created: 27Aug2005
+/// changed: 
+///
+///
+
+module MRIO_Client;
+
+use tksdl;
+use tksdl_net;
+
+
+class RIO_Client {
+
+   protected TCPSocket tcpsocket;
+   protected String authkey;
+   protected String hostkey;
+   protected String sessionkey;
+   protected int sequence_nr;
+   protected int keepalive_timeout; // decreased appr. every 1/100s
+
+   public static New(TCPSocket _tcpsocket) returns RIO_Client {
+      local RIO_Client rc; rc.init(deref _tcpsocket);
+      return deref rc;
+   }
+
+   public init(TCPSocket _tcpsocket) {
+      tcpsocket <= deref _tcpsocket;
+      Network.addTCPSocket(_tcpsocket);
+      authkey <= null;
+      hostkey <= null;
+      sessionkey <= null;
+      sequence_nr = rnd(200000-rnd(100000));
+      keepalive_timeout = 1;
+   }
+
+   protected parseMessageContent(String _msg):boolean {
+      return false;
+   }
+
+   protected parseCall(String _call):boolean {
+      print "RIO_Client::parseCall: \""+_call+"\".";
+      //if(RIO_Service.HandleRequest("TestDAO create 2 key MyKey value MyValue"))
+      //if(RIO_Service.HandleRequest("PersonDAO create 1 person (PersonVO 2 forename Foo surname Bar"))
+      String r="";
+      if(RIO_Service.HandleRequest(_call, r))
+      {
+         sendHTTPOK(r);
+         trace "[...] RIO_Client::parseCall: OK.";
+         return true;
+      }
+      else
+      {
+         trace "[---] RIO_Client::parseCall: failed.";
+         sendHTTPStatus(RIO.HTTP_400_BADREQUEST);
+      }
+      return false;
+   }
+
+   // Process newly arrived data
+   protected recv(Buffer _xferbuf):boolean {
+      String s = _xferbuf.getString(0, _xferbuf.offset);
+      s.replaceChar('\r',0);
+      print "[...] RIO_Client::recv:\n"+s+"\n";
+      if(s.startsWith(RIO.HTTP_GET_INDEX))
+      {
+         // HTML Browser client request for table of contents
+         sendHTMLIndex(RIO.HTML_INDEX);
+         return true;
+      }
+      else if(s.startsWith("GET ///"))
+      {
+         // "GET ///" is used for message content requests
+         return parseMessageContent(s);
+      }
+      else if(s.startsWith("GET //"))
+      {
+         // "GET //" is used for URI call requests
+         int idxlf=s.indexOfChar('\n', 0);
+         if(idxlf>0)
+         {
+            print "s=\""+s+"\"";
+            //print "s.length="+s.length;
+            String sw; s.substring(0, idxlf) => sw;
+            print #(sw);
+            String scall <= sw.splitSpace(false)[1].substring(2, RIO.MAX_MSG_SIZE);
+            print "scall=\""+scall+"\"";
+            return parseCall(RIO.DecodeURI(scall));
+         }
+      }
+      sendHTTPStatus(RIO.HTTP_404_NOTFOUND);
+      return false;
+   }
+
+   // Check whether new data has arrived; pro
+   public checkSocket(Buffer _xferbuf) {
+      if(tcpsocket.socketReady())
+      {
+         _xferbuf.offset=0;
+         int recvd=tcpsocket.recv(_xferbuf, _xferbuf.size);
+         if(recvd>0)
+         {
+            recv(_xferbuf);
+         }
+      }
+   }
+
+   protected sendHTMLIndex(String _content) {
+      sendString(RIO.HTTP_200_OK + 
+                 RIO.HTTP_Date() +
+                 RIO.HTTP_Server()+
+                 RIO.HTTP_Content("text/html", _content) +
+                 RIO.HTTP_END + 
+                 _content
+                 );
+   }
+
+   // _status: RIO.HTTP_200_OK, RIO.HTTP_404_NOTFOUND ...
+   //    _msg: text/html content
+   protected sendHTTPStatus(String _status) {
+      sendString(_status +
+                 RIO.HTTP_Date() +
+                 RIO.HTTP_Server()+
+                 RIO.HTTP_Content("text/plain", _status) +
+                 RIO.HTTP_END + 
+                 _status
+                 );
+
+   }
+
+   protected sendHTTPOK(String _content) {
+      sendString(RIO.HTTP_200_OK +
+                 RIO.HTTP_Date() +
+                 RIO.HTTP_Server()+
+                 RIO.HTTP_Content("text/plain", _content) +
+                 RIO.HTTP_END + 
+                 _content
+                 );
+
+   }
+
+   // Send a string to the client host
+   protected sendString(String _s) {
+      print "RIO_Client::sendString: \""+_s+"\".";
+      if(1)//tcpsocket.socketReady())
+      {
+         tcpsocket.sendString(_s);
+         keepalive_timeout++;
+      }
+      else
+      {
+         trace "[---] RIO_Client::sendString: client socket is *NOT* ready.";
+      }
+   }
+
+   // Check whether the client host is still available
+   public method keepAlive():boolean {
+      Buffer pingbuf;
+      if(keepalive_timeout-->0)
+      {
+         return true;
+      }
+      else
+      {
+         keepalive_timeout = RIO.KEEPALIVE_INTERVAL;
+         pingbuf.size = 5;
+         pingbuf.offset = 0;
+         pingbuf.setString(0, "HELO");
+         if(tcpsocket.send(pingbuf, 4))
+         {
+            return true;
+         }
+         else
+         {
+            return false;
+         }
+      }
+   }
+
+   // Close the socket connection to this client
+   public method close() {
+      Network.removeSocket(tcpsocket);
+      tcpsocket.close();
+   }
+}

@@ -1,0 +1,264 @@
+///
+/// file   : RIO_ServiceProvider.tks
+/// author : Bastian Spiegel <bs@tkscript.de>
+/// descr. : 
+/// license: 
+/// Copyright 2005 The Bali Project. All rights reserved.
+/// 
+/// Redistribution and use in source and binary forms, with or without modification, are permitted provided that 
+/// the following conditions are met:
+/// 
+///    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the 
+///       following disclaimer.
+///    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
+///       the following disclaimer in the documentation and/or other materials provided with the distribution.
+/// 
+/// THIS SOFTWARE IS PROVIDED BY THE BALI PROJECT ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
+/// BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+/// IN NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+/// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+/// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+/// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+/// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/// 
+/// The views and conclusions contained in the software and documentation are those of the authors and should not be 
+/// interpreted as representing official policies, either expressed or implied, of the Bali Project.
+/// 
+/// created: 27Aug2005
+/// changed: 28Aug2005 / 10Sep2005
+///
+///
+
+module "MRIO_ServiceProvider";
+
+class RIODAO : RIO_Namespace {
+   getName() { return "rio"; }
+   getProcedures() { return "ap 2 namespaces 0 : as procedures 1 name s : s"; }
+
+   namespaces() : StringArray {
+      StringArray ret;
+      String nsname;
+      int i=0;
+      prepare foreach nsname in RIO_Service.rsp.namespaces 
+      {
+         ret[i++] = nsname;
+      }
+      print "namespaces.ret="+ret;
+      return ret;
+   }
+
+   procedures(String name) : RIO_RawReturn {
+      String ret;
+      HashTable nsHash <= RIO_Service.rsp.namespace_daos;
+      String procName;
+      int i=0;
+      if(nsHash.exists(name))
+      {
+         RIO_Namespace dao <= nsHash.get(name);
+         ret = dao.getProcedures();
+      }
+      else
+      {
+         ret = "";
+      }
+      return ret;
+   }
+}
+
+
+class RIO_ServiceProvider {
+   public HashTable classes; // hash of hashes (members)
+   public HashTable namespaces; // hash of hashes (procedures)
+   public HashTable namespace_daos; // hash of RIO_Namespace objects
+
+
+   // Parse procedure interface description _p
+   // Create a new HashTable in _ht[procname] for each procedure
+   // in the PID.
+   protected parseProcedures(HashTable _ht, String _pid):boolean {
+      String tok;
+      int seqi = -2, seqargi;
+      String procName, argName, argType;
+      int procNum = 0, argNum;
+      int procTodo, argTodo;
+      HashTable procHash <= _ht, argHash;
+      foreach tok in _pid.splitSpace(true) 
+      {
+         switch(seqi)
+         {
+            case -2:
+               // Parse RIO-IDL return type (ap == array of procedures)
+               if(tok != "ap")
+               {
+                  return false;
+               }
+               seqi++;
+               break;
+            case -1:
+               // Parse num procedures (RIO-IDL array size)
+               procNum = tok;
+               stderr RIO.MAX_PROCEDURES;
+               if( (procNum<0) || (procNum>RIO.MAX_PROCEDURES) )
+               {
+                  trace "[---] RIO_ServiceProvider::parseProcedures: error parsing numProc (="+tok+").";
+                  return false;
+               }
+               procTodo = procNum;
+               seqi++;
+               break;
+            case 0:
+               // Parse procedure name
+               if(--procTodo >= 0)
+               {
+                  procName = tok;
+                  if(procHash.exists(procName))
+                  {
+                     trace "[---] RIO_ServiceProvider::parseProcedures: procedure \""+procName+"\" is already declared.";
+                     return false;
+                  }
+                  argHash <= new HashTable;
+                  procHash[procName] = deref argHash;
+                  seqi++;
+               }
+               else
+               {
+                  trace "[---] RIO_ServiceProvider::parseProcedures: found more than "+procNum+" procedures (stopped at token ***"+tok+"***).";
+                  return false;
+               }
+               break;
+            case 1:
+               // Parse num arguments
+               argNum = tok;
+               if( (argNum<0) || (argNum>RIO.MAX_PROC_ARGS) )
+               {
+                  trace "[---] RIO_ServiceProvider::parseProcedures: illegal argument count (stopped at token ***"+tok+"***).";
+                  return false;
+               }
+               argHash.alloc(argNum+RIO.ARGHASH_NUM_SPECIAL);
+               argTodo = argNum;
+               seqargi = 0;
+               seqi++;
+               break;
+            case 2:
+               // Parse args
+               switch(seqargi)
+               {
+                  case 0:
+                     // Parse argument name
+                     if(--argTodo >= 0)
+                     {
+                        argName = tok;
+                        if(argHash.exists(argName))
+                        {
+                           trace "[---] RIO_ServiceProvider::parseProcedures: argument name already exists (stopped at token ***"+tok+"***).";
+                           return false;
+                        }
+                        seqargi++;
+                     }
+                     else
+                     {
+                        if(tok == ":") // Return type decl?
+                        {
+                           seqargi = 2;
+                        }
+                        else
+                        {
+                           trace "[---] RIO_ServiceProvider::parseProcedures: found more than "+argNum+" args (stopped at token ***"+tok+"***).";
+                           return false;
+                        }
+                     }
+                     break;
+                  case 1:
+                     // Parse argument type
+                     argHash[argName] = String(tok);
+                     seqargi = 0;
+                     break;
+                  case 2:
+                     // Parse procedure return type
+                     argHash[RIO.ARGHASH_RETURN] = String(tok);
+                     argHash[RIO.ARGHASH_ATYPE] = null;
+                     argHash[RIO.ARGHASH_ARGMAP] = new HashTable;
+                     seqargi = 0;
+                     seqi = 0;
+                     trace "[...] RIO_ServiceProvider::added procedure \""+procName+"\".";
+                     break;
+
+               } // switch seqargi
+               break;
+
+         } // switch seqi
+
+      } // foreach tok
+
+      if( (seqi>0) || (seqargi>0) )
+      {
+         trace "[---] RIO_ServiceProvider::parseProcedures: unexpected end of procedure interface description (last token was ***"+tok+"***).";
+         return false;
+      }
+      
+      // Parsing succeeded
+      return true;
+
+   } // parseProcedures()
+
+   
+   protected addNamespace(RIO_Namespace _dao):boolean {
+      if(_dao instanceof RIO_Namespace)
+      {
+         local HashTable ht;
+         String name=_dao.getName();
+         if(namespaces.exists(name))
+         {
+            trace "[---] RIO_ServiceProvider::addNamespace(): namespace \""+name+"\" already exists.";
+            return false;
+         }
+         namespaces[name] = deref ht;
+         namespace_daos[name] = deref _dao;
+         String proc_idl = _dao.getProcedures();
+         if(proc_idl instanceof String)
+         {
+            if(!proc_idl.isBlank())
+            {
+               // Parse the procedure interface description (in RIO-IDL format)
+               if(parseProcedures(ht, proc_idl))
+               {
+                  trace "[...] RIO_ServiceProvider::added namespace \""+name+"\".";
+                  return true;
+               }
+               else
+               {
+                  trace "[---] RIO_ServiceProvider::addNamespace(namespace="+name+"): failed to parse RIO-IDL.";
+               }
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   protected addClass(Object _class):boolean {
+      String cln;
+      if(_class instanceof String)
+      {
+         cln = _class;
+      }
+      if(_class instanceof Class)
+      {
+         cln = _class.yacMetaClassName();
+      }
+      local HashTable ht;
+      if( TKS.classToHashTable(_class, ht) )
+      {
+         classes[cln] = deref ht;
+         print "[...] RIO_ServiceProvider::added class \""+cln+"\".";
+         return true;
+      }
+      return false;
+   }
+
+   public init():boolean {
+      addNamespace(RIODAO);
+      return true;
+   }
+         
+}

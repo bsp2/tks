@@ -1,0 +1,582 @@
+///
+/// file   : RIO.tks
+/// author : Bastian Spiegel <bs@tkscript.de>
+/// descr. : 
+/// license: 
+/// Copyright 2005 The Bali Project. All rights reserved.
+/// 
+/// Redistribution and use in source and binary forms, with or without modification, are permitted provided that 
+/// the following conditions are met:
+/// 
+///    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the 
+///       following disclaimer.
+///    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
+///       the following disclaimer in the documentation and/or other materials provided with the distribution.
+/// 
+/// THIS SOFTWARE IS PROVIDED BY THE BALI PROJECT ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, 
+/// BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. 
+/// IN NO EVENT SHALL THE FREEBSD PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+/// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; 
+/// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
+/// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
+/// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/// 
+/// The views and conclusions contained in the software and documentation are those of the authors and should not be 
+/// interpreted as representing official policies, either expressed or implied, of the Bali Project.
+/// 
+/// created: 27Aug2005
+/// changed: 
+///
+///
+
+module MRIO;
+
+class RIO {
+   define int MAX_MSG_SIZE       = 256*1024;
+   define int MAX_PROC_ARGS      = 255;
+   define int MAX_ARRAY_ELEMENTS = 4096;
+   define int MAX_PROCEDURES     = 512;
+   define int MAX_HASH_SIZE      = 1024;
+
+   define int STACK_SIZE = 1024;
+
+   define int KEEPALIVE_INTERVAL = 20;
+
+   define String ARGHASH_RETURN  = "(return";
+   define String ARGHASH_ATYPE   = "(atype";
+   define String ARGHASH_ARGMAP  = "(argmap";
+
+   define String ARGHASH_NUM_SPECIAL  = 3;
+
+   static String HTTP_SERVER = "Server: rio/tkscript "+TKS.versionString+"\n";
+
+   define String HTTP_END = "\n";
+
+   define String HTTP_200_OK             = "HTTP/1.1 200 OK\n";
+   define String HTTP_202_ACCEPTED       = "HTTP/1.1 202 Accepted\n";
+   define String HTTP_400_BADREQUEST     = "HTTP/1.1 400 Bad Request\n";
+   define String HTTP_401_UNAUTHORIZED   = "HTTP/1.1 401 Unauthorized\n";
+   define String HTTP_404_NOTFOUND       = "HTTP/1.1 404 Not Found\n";
+   define String HTTP_500_SERVERERROR    = "HTTP/1.1 500 Internal Server Error\n";
+   define String HTTP_501_NOTIMPLEMENTED = "HTTP/1.1 501 Not Implemented\n";
+
+   define String HTTP_GET_INDEX = "GET / HTTP/1.1";
+
+   static String HTML_INDEX = "<html>
+<body>
+<h4>RIO</h4>
+<i>-- remote interface for objects</i>
+<br>&nbsp;<br>
+<code>This is a test-server running on TkScript "+TKS.versionString+". The current GMT is "+RIO.HTTP_Date()+".</code>
+</body>
+</html>
+"
+   ;
+   
+   ////define String HTML_CALL_FAILED = "<html><body><code>HTTP/1.1 404 Not Found</code></body></html>";
+
+   public static HTTP_Date():String {
+      Time t; t.gmtime();
+      return 
+         "Date: " +
+         (["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.weekday]) + 
+         ", " +
+         Integer.New(t.monthday).printf("%02i") + 
+         " " + 
+         (["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month]) +
+         " " +
+         t.year + 
+         " " + 
+         (Integer.New(t.hour).printf("%02i")+":"+Integer.New(t.min).printf("%02i")+":"+Integer.New(t.sec).printf("%02i")) + 
+         " GMT\n";
+   }
+
+   public static HTTP_Server():String {
+      return HTTP_SERVER;
+   }
+
+   public static HTTP_Content(String _mime, String _content):String {
+      return "Content-Type: "+_mime+"\nContent-Length: "+(_content.length-1)+"\n";
+   }
+
+   public static DecodeURI(String _uri):String {
+      String r=_uri;
+      r.replace("%20", " ");
+      r.replace("%22", "\"");
+      r.replace("%5B", "[");
+      r.replace("%5C", "\\");
+      r.replace("%5D", "]");
+      r.replace("%5E", "^");
+      r.replace("%7B", "{");
+      r.replace("%7D", "}");
+      r.replace("%A7", "§");
+      r.replace("%B0", "°");
+      r.replace("%E4", "ä");
+      r.replace("%F6", "ö");
+      r.replace("%FC", "ü");
+      r.replace("%%", "%");
+      return r;
+   }
+
+   public static ParseTime(String _s) returns Time {
+      local Time t;
+      // xxx convert time..
+      t.now();
+      return deref t;
+   }
+
+   public static EncodeTime(Time _t) returns String {
+      local String s;
+      // xxx encode time..
+      s = "2005-08-25-17-52-04-781250000";
+      return deref s;
+   }
+
+   public static BooleanArrayToString(Object _o, String _r):boolean {
+      print "RIO::BooleanArrayToString _o = "+#(_o);
+      int l=_o.yacArrayGetNumElements();
+      print "RIO::l="+l;
+      _r.append(String(l));
+      Value v;
+      String vs;
+      int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         vs = v.intValue & 1;
+         _r.append(vs);
+      }
+      return true;
+   }
+
+   public static IntArrayToString(Object _o, String _r):boolean {
+      int l=_o.yacArrayGetNumElements();
+      print "IntArrayToString: _o="+#(_o);
+      _r.append(String(l));
+      Value v;
+      String vs;
+      int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         print "intarraytostring v="+v;
+         vs = v.intValue;
+         _r.append(vs);
+      }
+      return true;
+   }
+
+   public static FloatArrayToString(Object _o, String _r):boolean {
+      int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      Value v;
+      String vs;
+      int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         vs = v.floatValue;
+         _r.append(vs);
+      }
+      return true;
+   }
+
+   public static StringArrayToString(Object _o, String _r):boolean {
+      int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      Value v;
+      int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         v.typecast(YAC_TYPE_STRING);
+         _r.append("\""+v.stringValue+"\"");
+      }
+      return true;
+   }
+
+   public static TimeArrayToString(Object _o, String _r):boolean {
+      int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      Value v;
+      int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         if(v.type==YAC_TYPE_OBJECT)
+         {
+            Time t<=v.objectValue;
+            if(t instanceof Time)
+            {
+               _r.append(RIO.EncodeTime(t));
+            }
+            else
+            {
+               _r.append("n");
+            }
+         }
+         else
+         {
+            trace "[---] RIO::TimeArrayToString: array element "+(i-1)+" is not a Time object.";
+            return false;
+         }
+      }
+      return true;
+   }
+
+   public static DoubleArrayToString(Object _o, String _r):boolean {
+      int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      Value v;
+      int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         if(v.type==YAC_TYPE_OBJECT)
+         {
+            Double d<=v.objectValue;
+            if(d instanceof Double)
+            {
+               _r.append(d.string);
+            }
+            else
+            {
+               _r.append("n");
+            }
+         }
+         else
+         {
+            _r.append(Double.News(v.stringValue));
+            trace "[---] RIO::DoubleArrayToString: WARNING: array element "+(i-1)+" is not a Double object.";
+         }
+      }
+      return true;
+   }
+
+   public static LongArrayToString(Object _o, String _r):boolean {
+      int n=_o.yacArrayGetNumElements();
+      _r.append(String(n));
+      Value v;
+      int i=0;
+      loop(n)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         if(v.type==YAC_TYPE_OBJECT)
+         {
+            Long l<=v.objectValue;
+            if(l instanceof Long)
+            {
+               _r.append(l.string);
+            }
+            else
+            {
+               _r.append("n"); // xxx
+            }
+         }
+         else
+         {
+            _r.append(Long.News(v.stringValue).string);
+            trace "[---] RIO::LongArrayToString: WARNING: array element "+(i-1)+" is not a Long object.";
+         }
+      }
+      return true;
+   }
+
+   public static HashTableArrayToString(local Object _o, local String _r):boolean {
+      local int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      local Value v;
+      local int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         if(v.type==YAC_TYPE_OBJECT)
+         {
+            local HashTable h<=v.objectValue;
+            if(h instanceof HashTable)
+            {
+               HashTableToString(h, _r);
+            }
+            else
+            {
+               _r.append("n");
+            }
+         }
+         else
+         {
+            trace "[---] RIO::LongArrayToString: ERROR: array element "+(i-1)+" is not a HashTable object.";
+            return false;
+         }
+      }
+      return true;
+   }
+
+   public static ClassToString(local Class c, local String _r):boolean {
+      local HashTable classht; 
+      // xxx check that c is a registered classes
+      if(TKS.classToHashTable(c, classht))
+      {
+         return RIO.HashTableToString(classht, _r);
+      }
+      else
+      {
+         trace "[---] RIO::ValueToString: failed to convert object "+#(c)+" to HashTable.";
+         return false;
+      }
+   }
+
+   public static ClassArrayToString(local Object _o, local String _r):boolean {
+      ClassArray ca <= _o;
+      _r.append("a");
+      Class ct <= ca.template;
+      if(ct instanceof Class)
+      {
+         _r.append(ct.yacMetaClassName());
+      }
+      else
+      {
+         trace "[---] RIO::ClassArrayToString: classarray has no template object.\n";
+         return false;
+      }
+      _r.append(" ");
+      local int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      local Value v;
+      local int i=0;
+      print _o.yacArrayGetNumElements();
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         if(v.type==YAC_TYPE_OBJECT)
+         {
+            local Class c <= v.objectValue;
+            if(c instanceof Class)
+            {
+               ClassToString(c, _r);
+            }
+            else
+            {
+               _r.append("n");
+            }
+         }
+         else
+         {
+            trace "[---] RIO::ClassArrayToString: ERROR: array element "+(i-1)+" ("+v+") is not a Class object.";
+            return false;
+         }
+      }
+      return true;
+   }
+
+   public static ObjectArrayToString(Object _o, String _r):boolean {
+      // array of arrays
+      local int l=_o.yacArrayGetNumElements();
+      _r.append(String(l));
+      local Value v;
+      local int i=0;
+      loop(l)
+      {
+         _r.append(" ");
+         v = _o.yacArrayGet(i++);
+         if(v.type==YAC_TYPE_OBJECT)
+         {
+            Object ro<=v.objectValue;
+            if(ro==null)
+            {
+               _r.append("n");
+            }
+            else if(! ArrayToString(ro, _r))
+            {
+               trace "[---] RIO::ObjectArrayToString: ERROR: ArrayToString() failed for array element "+(i-1)+".";
+               return false;
+            }
+         }
+         else
+         {
+            trace "[---] RIO::ObjectArrayToString: ERROR: array element "+(i-1)+" is not an object.";
+            return false;
+         }
+      }
+      return true;
+   }
+
+   public static ArrayToString(Object ro, String _r):boolean {
+      if(ro instanceof IntArray)
+      {
+         _r.append("ai ");
+         return RIO.IntArrayToString(ro, _r);
+      }
+      else if(ro instanceof FloatArray)
+      {
+         _r.append("af ");
+         return RIO.FloatArrayToString(ro, _r);
+      }
+      else if(ro instanceof StringArray)
+      {
+         _r.append("as "); // WARNING: ["a","b","c"] is a pointerarray!
+         return RIO.StringArrayToString(ro, _r);
+      }
+      else if(ro instanceof PointerArray) 
+      {
+         _r.append("aa ");
+         return RIO.ObjectArrayToString(ro, _r);
+      }
+      else if(ro instanceof ObjectArray)
+      {
+         local ObjectArray oa <= ro;
+         print "objectarray to string: oa.template="+#(oa.template);
+         if(oa.template instanceof Boolean)
+         {
+            _r.append("ab ");
+            return RIO.BooleanArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof Integer)
+         {
+            _r.append("ai ");
+            return RIO.IntArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof Float)
+         {
+            _r.append("af ");
+            return RIO.FloatArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof Double)
+         {
+            _r.append("ad ");
+            return RIO.DoubleArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof Long)
+         {
+            _r.append("al ");
+            return RIO.LongArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof Time)
+         {
+            _r.append("at ");
+            return RIO.TimeArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof HashTable)
+         {
+            print "hasharray to string: oa="+#(oa);
+            _r.append("ah ");
+            return RIO.HashTableArrayToString(ro, _r);
+         }
+         else if(oa.template instanceof ObjectArray)
+         {
+            _r.append("aa ");
+            return RIO.ObjectArrayToString(ro, _r);
+         }
+      }
+      else if(ro instanceof ClassArray)
+      {
+         //_r.append("a<class> "); done by RIO.ClassArrayToString
+         return RIO.ClassArrayToString(ro, _r);
+      }
+      else
+      {
+         trace "[---] RIO::ArrayToString: ERROR: unregistered object "+#(ro)+" encountered.";
+         return false;
+      }
+   }
+      
+   public static ValueToString(local Value vr, local String _r):boolean {
+      // Decode script value to RIO return value
+      local Object ro <= vr.objectValue;
+      switch(typeid(vr.value))
+      {
+         default:
+         case YAC_TYPE_VOID:
+            trace "[---] RIO::ValueToString: ERROR: cannot handle <void> value.";
+            return false;
+         case YAC_TYPE_INT:
+            _r.append("i " + vr.intValue);
+            break;
+         case YAC_TYPE_FLOAT:
+            _r.append("f " + vr.floatValue);
+            break;
+         case YAC_TYPE_STRING:
+            _r.append("s \"" + vr.stringValue+"\"");
+            break;
+         case YAC_TYPE_OBJECT:
+            if(ro==null)
+            {
+               _r.append("n");
+            }
+            else
+            {
+               if(ro instanceof Boolean)
+               {
+                  _r.append("b "+ro);
+               }
+               else if(ro instanceof Integer)
+               {
+                  _r.append("i "+ro);
+               }
+               else if(ro instanceof Float)
+               {
+                  _r.append("f "+ro);
+               }
+               else if(ro instanceof Double)
+               {
+                  _r.append("d "+ro);
+               }
+               else if(ro instanceof Long)
+               {
+                  _r.append("l "+ro);
+               }
+               else if(ro instanceof String)
+               {
+                  _r.append("s "+ro);
+               }
+               else if(ro instanceof Time)
+               {
+                  _r.append("t "+RIO.EncodeTime(ro));
+               }
+               else if(ro instanceof HashTable)
+               {
+                  _r.append("h ");
+                  return RIO.HashTableToString(ro, _r);
+               }
+               else if(ro instanceof Class)
+               {
+                  _r.append("("+ro.yacMetaClassName()+" ");
+                  return RIO.ClassToString(ro, _r);
+               }
+               else
+               {
+                  return RIO.ArrayToString(ro, _r);
+               }
+            }
+            break;
+      } // switch typeid
+      return true;
+   }
+
+   public static HashTableToString(local HashTable _ht, local String _r) {
+      // leave out "h" so this routine can also be used to write out classes
+      _r.append(String(_ht.numElements));
+      local String key;
+      foreach key in _ht 
+      {
+         _r.append(" ");
+         _r.append(key);
+         _r.append(" ");
+         if(! RIO.ValueToString(#(_ht.get(key)), _r))
+         {
+            return false;
+         }
+      }
+      return true;
+   }
+
+}
+
