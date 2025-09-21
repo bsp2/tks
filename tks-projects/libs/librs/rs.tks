@@ -1,0 +1,751 @@
+// ----
+// ---- file   : rs.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : remote-script API for evaluating temp scripts in another process
+// ----           - based on 'localmidi' lib / module
+// ----
+// ---- created: 21Jul2023
+// ---- changed: 22Jul2023, 17Aug2024, 18Aug2024, 20Aug2024, 22Aug2024, 23Aug2024
+// ----
+// ----
+// ----
+
+module MRemoteScript;
+
+
+// <class.png>
+class RemoteScriptPort {
+   define int CONN_TIMEOUT_MS = 1000;
+
+   define int DEF_DATA_SZ = 256*1024;//4*1024*1024;
+
+   define int OFF_CONNID_CLIENT  =  0;
+   define int OFF_CONNID_HOST    =  4;
+   define int OFF_PID_CLIENT     =  8;
+   define int OFF_PID_HOST       = 12;
+   define int OFF_WRITEOFF       = 16;
+   define int OFF_READOFF        = 20;
+   define int OFF_DATA           = 24;
+
+   // off 0: .i connection id (inc'd by client)
+   // off 4: .i connection id (inc'd by host)
+   //     8: .i write offset (updated by ring writer)
+   //    12: .i read offset (updated by ring reader)
+   //    16: bytes[4*1024*1024]
+   SharedBuffer sh;
+   int          data_sz;
+   int          last_conn_id;
+   int          write_off;
+   int          read_off;
+   String       name; // debug
+
+   boolean b_debug = 0;
+   boolean b_sigusr1 = 0;
+
+
+   // <method.png>
+   public method create(local String _name, local int _dataSz) : boolean {
+
+      if(0 == _dataSz)
+         _dataSz = DEF_DATA_SZ;
+
+      if(sh.allocSharedMemoryByKey("rs_"+_name, OFF_DATA + _dataSz))
+      {
+         if(b_debug)
+            trace "[dbg] RemoteScriptPort::create: shared memory \""+_name+"\" dataSz="+_dataSz;
+
+         sh.fillZero();
+
+         sh.pokeI32(OFF_PID_HOST, Process.GetPID());
+
+         write_off    = 0;
+         last_conn_id = 0;
+         data_sz      = _dataSz;
+         name         = _name;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] RemoteScriptPort::create: failed to create shared memory \""+_name+"\" dataSz="+_dataSz;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method connect(local String _name, local int _dataSz) : boolean {
+
+      if(0 == _dataSz)
+         _dataSz = DEF_DATA_SZ;
+
+      if(sh.visitSharedMemory("rs_"+_name, OFF_DATA + _dataSz))
+      {
+         if(b_debug)
+            trace "[dbg] RemoteScriptPort::connect: shared memory \""+_name+"\" dataSz="+_dataSz;
+
+         sh.pokeI32(OFF_PID_CLIENT, Process.GetPID());
+
+         // Initiate connection
+         local int connIdC = sh.peekI32(OFF_CONNID_CLIENT) + 1;
+         if(0 == connIdC)
+            connIdC++;
+         sh.pokeI32(OFF_CONNID_CLIENT, connIdC);
+
+         write_off = sh.peekI32(OFF_WRITEOFF);
+
+         if(b_sigusr1)
+         {
+            int pidHost = getHostPID();
+            if(pidHost > 0)
+               Process.SendSignal_SIGUSR1(pidHost);
+         }
+
+         local int tStart = milliSeconds();
+         while(sh.peekI32(OFF_CONNID_HOST) != connIdC)
+         {
+            // // TKS.sleep(1);
+            Thread.Yield();
+            if( (milliSeconds() - tStart) >= CONN_TIMEOUT_MS )
+            {
+               trace "[---] RemoteScriptPort::connect: connection time out";
+               sh.free();
+               return false;
+            }
+         }
+
+         if(b_debug)
+            trace "[dbg] RemoteScript::connect: connected to host. client id="+connIdC;
+
+         data_sz   = _dataSz;
+         name      = _name;
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method checkForNewConnection() : boolean {
+      if(sh.isOpen() && sh.isOwner())
+      {
+         // trace "xxx checkForNewConnection name=\""+name+"\"";
+
+         // Check for new connection
+         local int connIdC = sh.peekI32(OFF_CONNID_CLIENT);
+         if(last_conn_id != connIdC)
+         {
+            // New client connection, reset ring buffer
+            last_conn_id = connIdC;
+            // write_off = 0;
+            // read_off = 0;
+            // sh.pokeI32(OFF_WRITEOFF, 0);
+            // sh.pokeI32(OFF_READOFF, 0);
+            sh.pokeI32(OFF_CONNID_HOST, last_conn_id);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method waitForConnection(local int _timeoutMS) : boolean {
+      if(sh.isOpen())
+      {
+         // Wait for new connection request
+         local int tStart = milliSeconds();
+         while(sh.peekI32(OFF_CONNID_HOST) == sh.peekI32(OFF_CONNID_CLIENT))
+         {
+            Thread.Yield();
+            // // TKS.sleep(1);
+            if( (milliSeconds() - tStart) >= _timeoutMS)
+            {
+               trace "[~~~] RemoteScriptPort::waitForConnection: time out";
+               return false;
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method isOpen() : boolean {
+      return sh.isOpen();
+   }
+
+   // <method.png>
+   public method getHostPID() : int {
+      return sh.peekI32(OFF_PID_HOST);
+   }
+
+   // <method.png>
+   public method getClientPID() : int {
+      return sh.peekI32(OFF_PID_CLIENT);
+   }
+
+   // <method.png>
+   public method isConnected() : boolean {
+      local int connIdH = sh.peekI32(OFF_CONNID_HOST);
+      local int connIdC = sh.peekI32(OFF_CONNID_CLIENT);
+      return sh.isOpen() && (connIdH > 0) && (connIdH == connIdC);
+   }
+
+   // <method.png>
+   public method send(local Buffer _buf) : boolean {
+      if(sh.isOpen())
+      {
+         checkForNewConnection();
+
+         if(isConnected())  // is reader connected ?
+         {
+            local int readOff = sh.peekI32(OFF_READOFF);
+            if(b_debug) trace "[trc] RemoteScriptPort::send: readOff="+readOff+" write_off="+write_off+" hostPID="+getHostPID()+" clientPID="+getClientPID();
+            local int numAvail = (write_off - readOff);
+            if(numAvail < 0)
+               numAvail += data_sz;
+
+            if(b_debug) trace "[trc] RemoteScriptPort::send: avail: "+numAvail+"/"+data_sz+" write_off="+write_off+" readOff="+readOff+" reqSz="+_buf.offset;
+
+            if( (numAvail + _buf.offset) <= data_sz )
+            {
+               write_off = sh.ringWriteBuffer(OFF_DATA, data_sz, write_off, _buf, 0/*srcOff*/, _buf.offset/*numBytes*/);
+               sh.pokeI32(OFF_WRITEOFF, write_off);
+               if(b_debug) trace "[trc] RemoteScriptPort::send: WRITE_OFF is "+sh.peekI32(OFF_WRITEOFF);
+               return true;
+            }
+            else
+            {
+               trace "[~~~] RemoteScriptPort::send: ring buffer full (numAvail="+numAvail+", reqSz="+_buf.offset+")";
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method recv(local Buffer _buf) : boolean {
+      _buf.offset = 0;
+      if(sh.isOpen())
+      {
+         checkForNewConnection();
+
+         local int writeOff = sh.peekI32(OFF_WRITEOFF);
+         // trace "xxx writeOff="+writeOff+" read_off="+read_off;
+
+         local int numAvail = (writeOff - read_off);
+         if(numAvail < 0)
+            numAvail += data_sz;
+
+         // trace "xxx numAvail="+numAvail+" writeOff="+writeOff+" read_off="+read_off;
+
+         if(numAvail > 0)
+         {
+            local int readSz = mathMini(numAvail, _buf.size);
+
+            local int oldReadOff = read_off;
+            read_off = sh.ringReadBuffer(OFF_DATA, data_sz, read_off, _buf, 0/*dstOff*/, readSz/*numBytes*/);
+            sh.pokeI32(OFF_READOFF, read_off);
+            _buf.offset = (oldReadOff != read_off) ? readSz : 0;
+            if(b_debug)
+               trace "[trc] RemoteScript::recv: xxx oldReadOff="+oldReadOff+" new READOFF="+read_off;
+            // trace "xxx RemoteScript::recv: buf.offset="+_buf.offset+" data=";
+            // _buf.hexdump(0, _buf.offset);
+            return (_buf.offset > 0);
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method disconnect() {
+      if(sh.isOpen())
+      {
+         // Terminate connection
+         sh.pokeI32(OFF_CONNID_CLIENT, sh.peekI32(OFF_CONNID_CLIENT) + 1);
+         // // sh.free();
+      }
+   }
+
+   // <method.png>
+   public method waitForDisconnect(local int _timeoutMS) {
+      if(sh.isOpen())
+      {
+         // Wait until client is disconnected
+         local int tStart = milliSeconds();
+         for(;;)
+         {
+            local int connIdC = sh.peekI32(OFF_CONNID_CLIENT);
+            if(connIdC > 0)
+            {
+               if(sh.peekI32(OFF_CONNID_HOST) != connIdC)
+                  return;
+               Thread.Yield();
+               // // TKS.sleep(1);
+               if( (milliSeconds() - tStart) >= _timeoutMS )
+               {
+                  trace "[~~~] RemoteScriptPort::waitForDisconnect: time out after "+_timeoutMS+" ms";
+                  break;
+               }
+            }
+            else
+               break;
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class RemoteScriptHost {
+   define String DEF_HOST_NAME = "host";
+
+   protected RemoteScriptPort port;  // client writes to this port
+
+   protected Buffer buf_recv;
+   protected int    recv_num_avail;
+   protected Buffer buf_send;
+   protected String req_payload;
+
+   public boolean b_debug = 0;
+   public boolean b_keep_alive;
+   public boolean b_yield;
+   public boolean b_sigusr1;
+
+   protected HashTable client_ports;  // when b_keep_alive=true
+
+   protected boolean   b_tangle;
+   protected String    tangle_output_pathname;  // e.g. "rs_tangle_debug.tks". initially unset.
+   protected HashTable ht_strings;  // "// string <<mystring>>"
+   protected HashTable ht_macros;   // "// macro <<mymacro>>"  (tangle with "// tangle <<mymacro>")
+
+   protected Script script;
+
+   protected int req_count;  // debug (track number of requests)
+
+
+   public method setEnableDebug(boolean _bEnable) {
+      b_debug = _bEnable;
+   }
+
+   public method setEnableKeepAlive(boolean _bEnable) {
+      b_keep_alive = _bEnable;
+   }
+
+   public method setEnableYield(boolean _bEnable) {
+      b_yield = !_bEnable;
+   }
+
+   public method setEnableSIGUSR1(boolean _bEnable) {
+      b_sigusr1 = _bEnable;
+   }
+  
+   public method setEnableTangle(boolean _bEnable) {
+      b_tangle = _bEnable;
+   }
+
+   public method setTangleOutputPathname(String _pathName) {
+      tangle_output_pathname = _pathName;
+   }
+
+   public method setLineOffset(int _off) {
+      script.lineOffset = _off;
+   }
+
+   public method initRemoteScriptHost(local String _hostIdOrNull, local int _maxReqSzOr0) : boolean {
+      if(port.create(null != _hostIdOrNull ? _hostIdOrNull : DEF_HOST_NAME, _maxReqSzOr0))
+      {
+         port.b_debug = b_debug;
+         port.b_sigusr1 = b_sigusr1;
+         buf_recv.size = port.data_sz;
+         buf_send.size = port.data_sz;
+         trace "[...] RemoteScriptHost::init: awaiting requests (this PID="+port.getHostPID()+", bSIGUSR1="+b_sigusr1+")";
+         client_ports.alloc(1000);
+         ht_strings.alloc(1000);
+         ht_macros.alloc(1000);
+         recv_num_avail = 0;
+         req_count = 0;
+         return true;
+      }
+      return false;
+   }
+
+   public method exit() {
+      port.disconnect();
+   }
+
+   protected static EscString(local String _s) : String {
+      local String r = _s;
+      r.replace("\\", "\\\\");
+      r.replace("\'", "\\\'");
+      r.replace("\"", "\\\"");
+      r.replace("\n", "\\n");
+      r.replace("\t", "\\t");
+      return deref r;
+   }
+
+   protected method untangleAndEval(local String _sExtra) : String {
+      local String buf;
+      local String *sId;
+
+      // trace "xxx sExtra=\""+_sExtra+"\"";
+
+      // Define string vars
+      foreach sId in ht_strings
+      {
+         // (todo) remove \n handling (fix in escapeControlChars())
+         buf.append("String "+sId+" = \""+EscString(ht_strings[sId])+"\";\n");
+      }
+
+      buf.append(_sExtra);
+
+      // trace "\n~~~~~~~~~~~~~~~~~~~~~~~~~+\nxxx sExtra=\""+_sExtra+"\"";
+
+      if(ht_macros.numElements > 0)
+      {
+         buf.append("\n// num macros: "+ht_macros.numElements+"\n");
+         // max macro recursion depth = 20
+         loop(20)
+         {
+            foreach sId in ht_macros
+            {
+               // buf.append("// tangle macro \""+sId+"\"\n");
+               // trace "xxx ht_macros["+sId+"] = \""+ht_macros[sId]+"\"";
+               buf.replace("// tangle <<"+sId+">>", ht_macros[sId]);  // (todo) replace at start of line only
+            }
+         }
+      }
+
+      buf.append("\nvar ___________________end___________________;\n");
+      if(tangle_output_pathname >= ".tks")
+         buf.saveLocal(tangle_output_pathname);
+
+      return evalString(buf);
+   }
+
+   public method evalString(local String _s) {
+      // trace "xxx call TKS.evalScript: buf=\""+buf+"\"";
+      script.installPrintHook();
+      if(script.load(_s))
+         script.eval();
+      local String r <= script.getPrintHookOutputAndClear();
+      script.uninstallPrintHook();
+      return deref r; ////TKS.evalScript(buf);
+      // return "n/a2";
+   }
+
+   public method handleRequest(local String _payload) : String {
+      // returns reply payload or null (== request not handled)
+      //   (note) can be overwritten by derived classes to pre payload or postprocess output
+      // trace "xxx handleRequest: payload=\""+_payload+"\"";
+      if(!b_tangle)
+      {
+         return evalString(_payload);
+      }
+      else
+      {
+         local StringArray *lines;
+         local int lineNr;
+         local String sId <= new String;
+         local String *line;
+         local int idxS;
+         local int idxE;
+         local String sValue <= new String;
+
+         if(_payload <= "// string <<")
+         {
+            // payload defines string variable, store remaining lines in hashtable
+            lines <= _payload.splitChar('\n');
+            line <= lines.get(0);
+            idxS = 12;
+            idxE = line.indexOf(">>", 0);
+            if(idxE >= 0)
+            {
+               line.substring(idxS, idxE-idxS) => sId;
+               lineNr = 1;
+               foreach line in lines
+               {
+                  if(lineNr++ > 1)
+                     sValue.append(line+"\n");
+               }
+               ht_strings[sId] = Object(sValue);
+            }
+            return untangleAndEval("");
+         }
+         else if(_payload <= "// macro <<")
+         {
+            // payload defines macro, store payload in hashtable
+            lines <= _payload.splitChar('\n');
+            line <= lines.get(0);
+            idxS = 11;
+            idxE = line.indexOf(">>", 0);
+            if(idxE >= 0)
+            {
+               line.substring(idxS, idxE-idxS) => sId;
+               // trace "xxx define macro \""+sId+"\" = \""+_payload+"\"";
+               ht_macros[sId] = Object(_payload);
+            }
+            return untangleAndEval("");
+         }
+         else
+         {
+            return untangleAndEval(_payload);
+         }
+      }
+   }
+
+   protected method recvMore() {
+      port.recv(buf_recv);
+      recv_num_avail = buf_recv.offset;
+      buf_recv.offset = 0;
+      if(b_debug && recv_num_avail > 0)
+      {
+         trace "[dbg] RemoteScriptHost::recvMore: recv'd "+recv_num_avail+" bytes";
+         // buf_recv.hexdump(0, buf_recv.offset);
+      }
+   }
+
+   public method processNextRequest() : boolean {
+      if(b_sigusr1)
+         Process.WaitSignal_SIGUSR1();
+      if(0 == recv_num_avail)
+         recvMore();
+      if(recv_num_avail > 0)
+      {
+         // buf_recv.hexdump(0, buf_recv.offset);
+         local int bufRecvOffsetStart = buf_recv.offset;
+         if(b_debug) trace "[dbg] RemoteScriptHost::processNextRequest: recv_num_avail="+recv_num_avail+" bufRecvOffsetStart="+bufRecvOffsetStart;
+         local String clientId;
+         clientId << buf_recv;
+         // if(clientId.isBlank())
+         //    trace "xxx bufRecvOffsetStart="+bufRecvOffsetStart+" recv_num_avail="+recv_num_avail;
+         req_payload << buf_recv;
+         // // loop( (4 - (buf_recv.offset & 3)) & 3 )
+         // //    buf_recv.getI8();  // dword alignment
+         local int numRead = buf_recv.offset - bufRecvOffsetStart;
+         recv_num_avail -= numRead;
+         req_count++;
+         if(b_debug) trace "[dbg] RemoteScriptHost::processNextRequest: ["+req_count+"] numRead="+numRead+" new clientId=\""+clientId+"\" req=\""+req_payload+"\"";
+         local String sReplyPayload <= handleRequest(req_payload);
+         if(null != sReplyPayload)
+         {
+            // Send reply
+            local RemoteScriptPort *client;
+            local boolean bConnected;
+            if(!client_ports.exists(clientId))
+            {
+               client <= new RemoteScriptPort;
+               client.b_debug = b_debug;
+               client.b_sigusr1 = b_sigusr1;
+               bConnected = client.connect(clientId, port.data_sz);
+               if(b_keep_alive)
+               {
+                  trace "[...] RemoteScriptHost::processNextRequest: ["+req_count+"] new clientId=\""+clientId+"\" (keep-alive)";
+                  client_ports[clientId] = deref client;
+               }
+               else
+               {
+                  trace "[...] RemoteScriptHost::processNextRequest: ["+req_count+"] new clientId=\""+clientId+"\"";
+               }
+            }
+            else
+            {
+               client <= client_ports.get(clientId);
+               bConnected = client.isConnected();
+               if(!bConnected)
+               {
+                  trace "[dbg] RemoteScriptHost::processNextRequest: ["+req_count+"] clientId=\""+clientId+"\" exists but is not connected => reconnecting";
+                  bConnected = client.connect(clientId, port.data_sz);
+               }
+            }
+
+            if(bConnected)
+            {
+               buf_send.offset = 0;
+               buf_send << sReplyPayload;
+               // // loop( (4 - (buf_send.offset & 3)) & 3 )
+               // //    buf_send.i8 = 0;  // dword alignment
+               // trace "xxx processNextRequest: sReplyPayload=\""+sReplyPayload+"\" buf_send data:";
+               // buf_send.hexdump(0, buf_send.offset);
+               client.send(buf_send);
+               local int pidClient = client.getHostPID();
+               if(b_debug) trace "[dbg] RemoteScriptHost::processNextRequest: ["+req_count+"] sent "+buf_send.offset+" reply bytes. pidClient="+pidClient;
+               if(b_sigusr1 && pidClient > 0)
+                  Process.SendSignal_SIGUSR1(pidClient);
+               if(b_yield)
+                  Thread.Yield();
+               if(!b_keep_alive)
+                  client.disconnect();
+               return true;
+            }
+            else
+            {
+               trace "[---] RemoteScriptHost::processNextRequest: ["+req_count+"] failed to connect to clientId=\""+clientId+"\"";
+               recv_num_avail = 0;
+            }
+         } // if payload
+         else
+         {
+            // handleRequest() failed
+            recv_num_avail = 0;
+         }
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class RemoteScriptClient {
+   define int RECV_TIMEOUT_MS = 2000;
+
+   protected RemoteScriptPort host_port;    // client writes to this port
+   protected RemoteScriptPort client_port;  // host replies to this port
+
+   protected Buffer buf_recv;
+   protected Buffer buf_send;
+   protected String host_id;
+   protected String reply_payload;
+
+   public boolean b_debug;
+   public boolean b_keep_alive;
+   public boolean b_yield;
+   public boolean b_sigusr1;
+
+   protected int req_count;
+
+
+   public method setEnableDebug(boolean _bEnable) {
+      b_debug = _bEnable;
+   }
+
+   public method setEnableKeepAlive(boolean _bEnable) {
+      b_keep_alive = _bEnable;
+   }
+
+   public method setEnableYield(boolean _bEnable) {
+      b_yield = _bEnable;
+   }
+
+   public method setEnableSIGUSR1(boolean _bEnable) {
+      b_sigusr1 = _bEnable;
+   }
+
+   public method initRemoteScriptClient(local String _hostIdOrNull, local int _maxReqSzOr0) : boolean {
+      host_id <= (null != _hostIdOrNull) ? _hostIdOrNull : RemoteScriptHost.DEF_HOST_NAME;
+      if(client_port.create(host_id+"-client"/*+@(this)*/, _maxReqSzOr0))
+      {
+         client_port.b_debug = b_debug;
+         client_port.b_sigusr1 = b_sigusr1;
+         host_port.b_sigusr1 = b_sigusr1;
+         buf_recv.size = client_port.data_sz;
+         buf_send.size = client_port.data_sz;
+         if(b_debug) trace "[...] RemoteScriptClient::init: OK. client_port.name=\""+client_port.name+"\"";
+         req_count = 0;
+         return true;
+      }
+      return false;
+   }
+
+   public method exit() {
+      client_port.disconnect();
+      host_port.disconnect();
+   }
+
+   public method evalScript(local String _sPayload) : String {
+      // returns host reply or "" if an error occured
+      boolean bConnected = host_port.isConnected();
+      if(!bConnected)
+         bConnected = host_port.connect(host_id, client_port.data_sz);
+      if(bConnected)
+      {
+         buf_send.offset = 0;
+         buf_send << client_port.name;
+         buf_send << _sPayload;
+         // // loop( (4 - (buf_send.offset & 3)) & 3 )
+         // //    buf_send.i8 = 0;  // dword alignment
+         // trace "xxx RemoteScriptClient::evalScript: buf_send.offset="+buf_send.offset+" buf_send data:";
+         // buf_send.hexdump(0, buf_send.offset);
+         if(host_port.send(buf_send))
+         {
+            req_count++;
+            local int pidHost = host_port.getHostPID();
+            if(b_debug) trace "[dbg] RemoteScriptClient: ["+req_count+"] sent "+buf_send.offset+" bytes. pidHost="+pidHost;
+
+            if(0)
+            {
+               // Don't wait
+               return "";
+            }
+            else
+            {
+               // Wait for reply
+               if(b_sigusr1 && pidHost > 0)
+                  Process.SendSignal_SIGUSR1(pidHost);
+               if(b_yield)
+                  Thread.Yield();
+               if(b_sigusr1)
+                  Process.WaitSignal_SIGUSR1();
+               local int tStart = milliSeconds();
+               while( (milliSeconds() - tStart) < RECV_TIMEOUT_MS )
+               {
+                  if(client_port.recv(buf_recv))
+                  {
+                     if(b_debug) trace "[dbg] RemoteScriptClient: ["+req_count+"] recvd "+buf_recv.offset+" bytes from host \""+host_port.name+"\"";
+                     buf_recv.offset = 0;
+                     reply_payload << buf_recv;
+                     if(b_debug) trace "[dbg] RemoteScriptClient: ["+req_count+"] reply_payload=\""+reply_payload+"\"";
+                     if(!b_keep_alive)
+                        host_port.disconnect();
+                     return reply_payload;
+                  }
+                  else if(b_yield)
+                  {
+                     // // TKS.sleep(1);
+                     Thread.Yield();
+                  }
+               }
+               trace "[~~~] RemoteScriptClient::evalScript: ["+req_count+"] timeout while waiting for reply";
+            }
+         }
+         else
+            trace "[---] RemoteScriptClient::evalScript: ["+req_count+"] host_port.send() failed";
+         if(!b_keep_alive)
+            host_port.disconnect();
+      }
+      else
+         trace "[---] RemoteScriptClient::evalScript: ["+req_count+"] failed to connect to host port \""+host_id+"\"";
+      return "";
+   }
+
+   public method evalFile(local String _pathName) : String {
+      local String s;
+      if(s.loadLocal(_pathName, true/*bRemoveCR*/))
+         return evalScript(s);
+      return "";
+   }
+
+   public static EvalFileToStdout(local String _host, local String _pathName) {
+      // called by "ob-tks-rs.el" emacs org-mode extension
+      local RemoteScriptClient client;
+      if(client.initRemoteScriptClient(_host, 0/*reqSz=def*/))
+         trace client.evalFile(_pathName);
+      client.exit();
+   }
+
+   public static EvalString(local String _host, local String _s) : String {
+      local RemoteScriptClient client;
+      local String *r;
+      client.setEnableDebug(Configuration.debugLevel > 0);
+      if(client.initRemoteScriptClient(_host, 0/*reqSz=def*/))
+         r <= Object(client.evalScript(_s));  // return a copy since evalScript() return value refs client.reply_payload
+      client.exit();
+      return deref r;
+   }
+
+}
