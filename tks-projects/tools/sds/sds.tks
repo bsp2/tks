@@ -1,0 +1,1610 @@
+
+// (note) based on sds.tks example code
+
+// see "A5000E_manual.PDF":4.1:SAMPLE DUMP STANDARD
+// also see <http://www.blitter.com/~russtopia/MIDI/~jglatt/tech/sds.htm>
+
+// see http://www.midi.org/techspecs/ca19.pdf for extended header docs
+
+use tksampler;
+use tkmidi;
+use tksamplechain;
+use tkanalogrytm;
+
+
+// boolean b_debug = true;
+boolean b_debug = false;
+
+boolean b_upload_smp = true;
+boolean b_upload_kit = true;
+
+boolean b_logfile = true;
+
+
+File logFile;
+int logMsStart;
+if(b_logfile)
+{
+   logMsStart = milliSeconds();
+   logFile.openLocal("sds_log.txt", IOS_OUT);
+}
+
+function LogWrite(String s) {
+   if(b_logfile)
+   {
+      Integer logMs = milliSeconds() - logMsStart;
+      logFile.writeString("["+logMs.printf("%10d")+"]: "+s+"\n", 0,0);
+      logFile.flush();
+   }
+}
+
+
+LogWrite("start");
+
+class Utils {
+
+   static SplitPathname(String name, path, file) {
+      // Split last used file name into directory/file components
+      
+      int idx = name.lastIndexOf("/");
+      int idxDos = name.lastIndexOf("\\");
+      if(idxDos > idx)
+      {
+         idx = idxDos;
+      }
+
+      if(-1 != idx)
+      {
+         name.substring(0, idx) => path;
+         name.substring(idx+1, -1) => file;
+      }
+      else
+      {
+         path = null;
+         file = name;
+      }
+
+      ////trace "xxx SplitPathname: name=\""+name+"\" path=\""+path+"\" file=\""+file+"\".";
+   }
+}
+
+
+// String inDevName = "MIDISPORT 4x4 Anniversary In D"; // Yamaha A5000
+// String outDevName = "MIDISPORT 4x4 Anniversary Out D"; // Yamaha A5000
+
+// String inDevName = "Elektron Analog Rytm";
+// String outDevName = "Elektron Analog Rytm";
+
+String inDevName = "Analog Rytm in 1";
+String outDevName = "Analog Rytm out 1";
+
+// String inDevName = "In From MIDI Yoke:  1";
+// String outDevName = "Out To MIDI Yoke:  2";
+
+// String inDevName = "In From MIDI Yoke:  2";
+// String outDevName = "Out To MIDI Yoke:  1";
+
+
+int sysexChannel = 0;
+
+// String fileName = "f:/samples/percussion/drum_machines/roland/tr606/tr606__Ed_Vargo/606BASS.WAV";
+// String fileName = "f:/samples/percussion/drum_machines/roland/tr606/tr606__Ed_Vargo/606SNAR.WAV";
+//String fileName = "h:/samples/percussion/drum_machines/roland/tr909/tr909__rob_coy/ST3TAS3.WAV";
+// String fileName = "f:/samples/bsp/guitar-25Aug2010_0002_f_MONO.wav";
+//String fileName = "f:/samples/percussion/drum_machines/roland/tr808/TR808_KIT/808 Cowbell.WAV";
+// String fileName = "f:/samples/bsp/funky-drummer-breakbeat_MONO.wav";
+//String fileName = "f:/samples/bsp/guitar-25Aug2010_0001_b_MONO.wav";
+
+function Usage() {
+   trace "[...] Usage: tks app:sds [-chain <length>] [-varichain] [-autodir] [-dir <dirprefix>] <filelist.txt> [-single <file.wav>] [-name <samplename>] [-pad <chainpadsize>] [-minpad <varichainminpadsize>] [-d] [-indev <name>] [-outdev <name>] [-chainout <filename>] [-kitsyxout <filename>] [-kitsmpnr <nr>]";
+   exit(5);
+}
+
+if(Arguments.numElements < 1)
+{
+   Usage();
+}
+
+String single_filename = "";
+int chain_size = 0;
+boolean b_varichain = false;
+boolean b_chain = false;
+
+int argIdx = 0;
+String filelistFileName = "";
+
+String dir_prefix = "";
+boolean b_autodir = false;
+
+String force_sample_name = "";
+int extra_padding = 0;
+int min_padding = 0;
+
+String chain_output_filename = "debug.wav";
+boolean b_chainout = false;
+
+String kit_dat_input_filename = "kit_template.dat";
+String kit_syx_output_filename = "";
+int kit_smpnr = 1;  // 1..127
+
+String ts;
+
+while(argIdx < Arguments.numElements)
+{
+   switch(Arguments[argIdx])
+   {
+      default:
+         filelistFileName = Arguments[argIdx];
+         break;
+
+      case "-dir":
+         dir_prefix = Arguments[argIdx] + "/";
+         b_autodir = false;
+         trace "[dbg] Manual dir prefix set to \""+dir_prefix+"\".";
+         break;
+
+      case "-autodir":
+         b_autodir = true;
+         trace "[dbg] Enable automatic dir prefix";
+         break;
+         
+      case "-single":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            single_filename = Arguments[++argIdx];
+            trace "[dbg] Upload single file, name=\""+single_filename+"\"";
+         }
+         else Usage();
+         break;
+
+      case "-chain":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            chain_size = Arguments[++argIdx];
+
+            if(1 <= chain_size <= 120)
+            {
+               b_chain = true;
+               trace "[dbg] Enable fixed length chain mode. chain_size="+chain_size;
+            }
+            else
+            {
+               trace "[---] invalid chain_size ("+chain_size+"). must be within 1..120 range.";
+               Usage();
+            }
+         }
+         else Usage();
+         break;
+
+      case "-varichain":
+         b_varichain = true;
+         b_chain = true;
+         trace "[dbg] Enable varichain mode";
+         break;
+
+      case "-noupload":
+         trace "[dbg] Disable all uploads";
+         b_upload_smp = false;
+         b_upload_kit = false;
+         break;
+
+      case "-nouploadsmp":
+         trace "[dbg] Disable sample upload";
+         b_upload_smp = false;
+         break;
+
+      case "-nouploadkit":
+         trace "[dbg] Disable kit upload";
+         b_upload_kit = false;
+         break;
+
+      case "-name":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            force_sample_name = Arguments[++argIdx];
+            trace "[dbg] single/chain sample name set to \""+force_sample_name+"\"";
+         }
+         else Usage();
+         break;
+
+      case "-d":
+         b_debug = true;
+         b_chainout = true;
+         break;
+
+      case "-pad":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            extra_padding = Arguments[++argIdx];
+            if(0 <= extra_padding <= (1024*1024))
+            {
+               trace "[dbg] extra chain padding set to \""+extra_padding+"\" sample fragments";
+            }
+            else
+            {
+               trace "[---] invalid pad size ("+extra_padding+") (the valid range is 0..1048576).";
+               exit(5);
+            }
+         }
+         else Usage();
+         break;
+
+      case "-minpad":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            min_padding = Arguments[++argIdx];
+            if(0 <= min_padding <= (1024*1024))
+            {
+               trace "[dbg] min chain padding set to \""+min_padding+"\" sample fragments";
+            }
+            else
+            {
+               trace "[---] invalid min pad size ("+min_padding+") (the valid range is 0..1048576).";
+               exit(5);
+            }
+         }
+         else Usage();
+         break;
+
+      case "-indev":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            ts = Arguments[++argIdx];
+
+            if(!ts.isBlank())
+            {
+               inDevName = ts;
+            }
+         }
+         else Usage();
+         break;
+
+      case "-outdev":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            ts = Arguments[++argIdx];
+
+            if(!ts.isBlank())
+            {
+               outDevName = ts;
+            }
+         }
+         else Usage();
+         break;
+
+      case "-chainout":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            ts = Arguments[++argIdx];
+
+            if(!ts.isBlank())
+            {
+               if(ts.endsWith(".wav"))
+               {
+                  chain_output_filename = ts;
+                  b_chainout = true;
+               }
+               else
+               {
+                  trace "[---] chain output filename (\""+ts+"\") does not have \".wav\" suffix.";
+                  Usage();
+               }
+            }
+            else
+            {
+               chain_output_filename = "";
+               trace "[...] chain output disabled.";
+            }
+         }
+         else Usage();
+         break;
+
+      case "-kitsyxout":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            ts = Arguments[++argIdx];
+
+            if(!ts.isBlank())
+            {
+               if(ts.endsWith(".syx"))
+               {
+                  kit_syx_output_filename = ts;
+               }
+               else
+               {
+                  trace "[---] kit syx output filename (\""+ts+"\") does not have \".syx\" suffix.";
+                  Usage();
+               }
+            }
+            else
+            {
+               kit_syx_output_filename = "";
+               trace "[...] kit syx output disabled.";
+            }
+         }
+         else Usage();
+         break;
+
+      case "-kitsmpnr":
+         if( (argIdx+1) < Arguments.numElements)
+         {
+            kit_smpnr = Arguments[++argIdx];
+            if(1 <= kit_smpnr <= 127)
+            {
+               trace "[dbg] kit sample nr set to "+kit_smpnr;
+            }
+            else
+            {
+               trace "[---] invalid kit sample nr "+kit_smpnr+" (the valid range is 1..127).";
+               exit(5);
+            }
+         }
+         else Usage();
+         break;
+   }
+
+   argIdx++;
+}
+
+
+if(single_filename.isBlank())
+{
+   if(!filelistFileName.isBlank())
+   {
+      String filelist;
+      if(!filelist.loadLocal(filelistFileName, true/*bRemoveCR*/)) 
+      {
+         trace "[---] failed to load filelist from \""+filelistFileName+"\".";
+         exit(5);
+      }
+   }
+   else
+   {
+      trace "[---] please set the filelist filename";
+      Usage();
+   }
+}
+
+// trace "xxx filelist=\""+filelist+"\"";
+// exit(10);
+
+
+MIDIIn midiin;
+MIDIOut midiout;
+
+
+
+// List device names
+int devIdx;
+
+if(b_debug)
+{
+   trace "[dbg] found "+MIDIIn.GetNumDevices()+" input devices:";
+   devIdx = 0;
+   loop(MIDIIn.GetNumDevices())
+   {
+      trace "[dbg]  ["+devIdx+"]: \""+MIDIIn.GetDeviceNameByIdx(devIdx)+"\".";
+      devIdx++;
+   }
+
+   trace "";
+}
+
+
+if(b_debug)
+{
+   trace "[dbg] found "+MIDIOut.GetNumDevices()+" output devices:";
+   devIdx = 0;
+   loop(MIDIOut.GetNumDevices())
+   {
+      trace "[dbg]  ["+devIdx+"]: \""+MIDIOut.GetDeviceNameByIdx(devIdx)+"\".";
+      devIdx++;
+   }
+   // end List Device names
+}
+
+
+class SDS_Test {
+
+   Buffer in_buf;
+   Buffer out_buf;
+
+   /* if true, ignore WAIT msg from sampler.
+    * this considerably speeds up sample upload to the Elektron Analog Rytm but only works for small samples
+    */
+   // boolean b_ignore_waits = false;
+   boolean b_ignore_waits = true;
+
+    // boolean b_waitack = true;
+   boolean b_waitack = false;
+
+   boolean b_allow_resend = false; // does not work with Analog Rytm drum computer
+   // boolean b_allow_resend = true; // does not work with Analog Rytm drum computer
+
+   // int packet_sleep_interval = 0; // 32
+   // int packet_sleep_ms       = 0; // 30
+
+   // int packet_sleep_interval = 14; // 32
+   // int packet_sleep_ms       = 22; // 30
+
+   // works with ~242k sample:
+   // int packet_sleep_interval = 7; // 32
+   // int packet_sleep_ms       = 12; // 30
+
+   // works with 1.7mb sample (ignore_waits=true, b_waitack=true):
+   // int packet_sleep_interval = 6; // 32
+   // int packet_sleep_ms       = 13; // 30
+
+   // works with 1.7mb sample (ignore_waits=true, b_waitack=true): (=>19779.6 bytes/sec)
+   //  (but not reliably)
+   // int packet_sleep_interval = 5; // 32
+   // int packet_sleep_ms       = 10; // 30
+
+   // works with 1.7mb sample (ignore_waits=true, b_waitack=true): (=>10595.7 bytes/sec)
+   // int packet_sleep_interval = 1; // 32
+   // int packet_sleep_ms       = 3; // 30
+
+   int packet_sleep_interval = 23; // 32
+   int packet_sleep_ms       = 5; // 30
+
+
+   IntArray ack_buf;
+
+   protected StSample *sam;
+   protected StWaveform *wav;
+   protected FloatArray *dat;
+
+   protected short sample_nr;
+   protected byte sysex_channel;
+
+   protected int packet_nr;
+   protected int num_packets;
+
+   define int STATE_TIMEOUT = -1;
+   define int STATE_WAIT   = 0x7C;
+   define int STATE_CANCEL = 0x7D;
+   define int STATE_NAK    = 0x7E;
+   define int STATE_ACK    = 0x7F;
+
+
+   protected method sendDumpHeader() {
+      // Send dump header
+      out_buf.offset = 0;
+
+      out_buf.i8 = 0xF0;
+      out_buf.i8 = 0x7E;
+      out_buf.i8 = sysex_channel;
+      out_buf.i8 = 0x01;
+      out_buf.i8 = (sample_nr & 127);
+      out_buf.i8 = (sample_nr >> 7) & 127;
+      out_buf.i8 = 16; // bits per sample (8..28)
+
+      float rateNanoSec = (1000000.0 / (wav.sampleRate / 1000.0f));
+      out_buf.i8 = int(rateNanoSec) & 127;
+      out_buf.i8 = (int(rateNanoSec) >> 7) & 127;
+      out_buf.i8 = (int(rateNanoSec) >> 14) & 127;
+
+      int numWords = dat.numElements;
+      out_buf.i8 = numWords & 127;
+      out_buf.i8 = (numWords >> 7) & 127;
+      out_buf.i8 = (numWords >> 14) & 127;
+
+      int loopStart = numWords;
+      out_buf.i8 = loopStart & 127;
+      out_buf.i8 = (loopStart >> 7) & 127;
+      out_buf.i8 = (loopStart >> 14) & 127;
+
+      int loopEnd = numWords;
+      out_buf.i8 = loopEnd & 127;
+      out_buf.i8 = (loopEnd >> 7) & 127;
+      out_buf.i8 = (loopEnd >> 14) & 127;
+
+      out_buf.i8 = 0x7F; // loop type (0x00=forward, 0x01=pingpong)
+
+      out_buf.i8 = 0xF7;
+
+      // Send dump header to device
+      midiout.sendBuffer(out_buf);
+   }
+
+   protected method sendDumpHeaderExt() {
+
+      if(b_debug)
+      {
+         trace "[dbg] sendDumpHeaderExt";
+      }
+
+      // Send dump header
+      out_buf.offset = 0;
+
+      out_buf.i8 = 0xF0;
+      out_buf.i8 = 0x7E;
+      out_buf.i8 = sysex_channel;
+      out_buf.i8 = 0x05; // sub-id #1
+      out_buf.i8 = 0x05; // sub-id #2
+      out_buf.i8 = (sample_nr & 127);
+      out_buf.i8 = (sample_nr >> 7) & 127;
+      out_buf.i8 = 16; // bits per sample (8..28)
+
+      int srHzInt = wav.sampleRate;
+      out_buf.i8 = srHzInt & 127;
+      out_buf.i8 = (srHzInt >> 7) & 127;
+      out_buf.i8 = (srHzInt >> 14) & 127;
+      out_buf.i8 = (srHzInt >> 21) & 127;
+
+      int srHzFrac = frac(wav.sampleRate) * 10000000;
+      out_buf.i8 = srHzFrac & 127;
+      out_buf.i8 = (srHzFrac >> 7) & 127;
+      out_buf.i8 = (srHzFrac >> 14) & 127;
+      out_buf.i8 = (srHzFrac >> 21) & 127;
+
+      int numWords = dat.numElements;
+      out_buf.i8 = numWords & 127;
+      out_buf.i8 = (numWords >> 7) & 127;
+      out_buf.i8 = (numWords >> 14) & 127;
+      out_buf.i8 = (numWords >> 21) & 127;
+      out_buf.i8 = (numWords >> 28) & 127;
+
+      int loopStart = numWords;
+      out_buf.i8 = loopStart & 127;
+      out_buf.i8 = (loopStart >> 7) & 127;
+      out_buf.i8 = (loopStart >> 14) & 127;
+      out_buf.i8 = (loopStart >> 21) & 127;
+      out_buf.i8 = (loopStart >> 28) & 127;
+
+      int loopEnd = numWords;
+      out_buf.i8 = loopEnd & 127;
+      out_buf.i8 = (loopEnd >> 7) & 127;
+      out_buf.i8 = (loopEnd >> 14) & 127;
+      out_buf.i8 = (loopEnd >> 21) & 127;
+      out_buf.i8 = (loopEnd >> 28) & 127;
+
+      out_buf.i8 = 0; // loop type
+
+      out_buf.i8 = wav.numChannels;
+
+      out_buf.i8 = 0xF7;
+
+      // don't send out buffer immediately
+   }
+
+   public method enableElektronARTurbo() {
+      out_buf.offset = 0;
+
+      // out_buf.i8 = 0xF0;
+      // out_buf.i8 = 0x00;
+      // out_buf.i8 = 0x20;
+      // out_buf.i8 = 0x3C;
+      // out_buf.i8 = 0x04;
+      // out_buf.i8 = 0x00;
+      // out_buf.i8 = 0x01;
+      // out_buf.i8 = 0xF7;
+
+      out_buf.i8 = 0xF0;
+      out_buf.i8 = 0x00;
+      out_buf.i8 = 0x20;
+      out_buf.i8 = 0x3C;
+      out_buf.i8 = 0x04;
+      out_buf.i8 = 0x00;
+      out_buf.i8 = 0x02;
+      out_buf.i8 = 0x08;
+      out_buf.i8 = 0xF7;
+
+      midiout.sendBuffer(out_buf);
+   }
+
+   static public GetStateName(int state) : String {
+      switch(state)
+      {
+         default:
+            return "<UNKNOWN>";
+
+         case STATE_TIMEOUT:
+            return "<TIMEOUT>";
+
+         case STATE_WAIT:
+            return "WAIT";
+
+         case STATE_CANCEL:
+            return "CANCEL";
+
+         case STATE_ACK:
+            return "ACK";
+
+         case STATE_NAK:
+            return "NAK";
+      }
+   }
+
+   protected method waitAck(Integer _retPacketNr, boolean _bForceWait) : int {
+
+      explain "Wait for ACK from sampler. Returns state 0=ACK, 1=NAK, 2=CANCEL, 3=WAIT.";
+
+      int timeout = milliSeconds() + 2000;
+      
+      int numTimeouts = 0;
+
+      return = 0;
+
+      int numWaits = 0;
+
+      RecordedMIDIEvent *ev;
+
+      boolean bHaveAck = false;
+
+      while(!bHaveAck)
+      {
+         ev <= midiin.nextEvent;
+
+         if(null == ev)
+         {
+            ev <= midiin.waitNextEvent(100);
+         }
+
+         if(null != ev)
+         {
+            if(ev.isLongMessage())
+            {
+               //trace "xxx rcv'd sysex ev.size="+ev.size;
+
+               if(4 == ev.size)
+               {
+                  in_buf.offset = 0;
+                  ev.copyToStream(in_buf);
+
+                  if(0x7E == in_buf[0])
+                  {
+                     return = in_buf[2];
+
+                     _retPacketNr = in_buf[3]; // 0=dump header
+
+                     if(b_debug)
+                     {
+                        trace "[dbg] ok, recv'd state "+GetStateName(in_buf[2])+". packetNr="+_retPacketNr;
+                     }
+
+                     if(STATE_NAK == in_buf[2])
+                     {
+                        trace "[~~~] NAK, resending packet "+packet_nr+"/"+num_packets;
+                        sendNextPacket();
+                     }
+                     else if(STATE_ACK == in_buf[2])
+                     {
+                        ack_buf[_retPacketNr] = true;
+                        bHaveAck = (_retPacketNr == (packet_nr & 127));
+                     }
+                     else if(STATE_WAIT == in_buf[2])
+                     {
+                        if(b_ignore_waits && !_bForceWait)
+                        {
+                           
+                        }
+                        else
+                        {
+                           numWaits++;
+                           
+                           if(numWaits > 1)
+                           {
+                              if(b_debug)
+                              {
+                                 trace "[dbg] waiting..";
+                              }
+                              TKS.sleep(20);
+                           }
+                           
+                           if(numWaits > 500)
+                           {
+                              trace "[~~~] more than 500 WAIT replies recv'd";
+                              break;
+                           }
+                        }
+                     }
+                     else
+                     {
+                        // Cancel
+                        trace "[~~~] ***** CANCEL ****";
+                        return 2;
+                     }
+                  }
+               }
+            }
+         }
+
+         if(milliSeconds() >= timeout)
+         {
+            numTimeouts++;
+            trace "[~~~] SDS::waitAck: timeout after 2 sec (#timeouts="+numTimeouts+")";
+            if(numTimeouts >= 15)
+            {
+               return STATE_TIMEOUT;
+            }
+            timeout = milliSeconds() + 2000;
+         }
+      }
+
+      if(b_ignore_waits && !_bForceWait)
+      do
+      {
+         ev <= midiin.nextEvent;
+         if(null != ev)
+         {
+            in_buf.offset = 0;
+            ev.copyToStream(in_buf);
+            
+            if(0x7E == in_buf[0])
+            {
+               if(STATE_ACK == in_buf[2])
+               {
+                  int packetNr = in_buf[3];
+                  ack_buf[packetNr] = true;
+                  
+                  if(b_debug)
+                  {
+                     trace "[dbg] <queue> ok, recv'd state "+GetStateName(in_buf[2])+". packetNr="+packetNr;
+                  }
+               }
+               else if(STATE_WAIT == in_buf[2])
+               {
+                  if(b_debug)
+                  {
+                     trace "[dbg] <queue> ok, recv'd state "+GetStateName(in_buf[2])+". packetNr="+packetNr;
+                  }
+                  //TKS.sleep(20);
+               }
+               else if(STATE_NAK == in_buf[2])
+               {
+                  trace "[~~~] NAK, resending packet "+packet_nr+"/"+num_packets;
+                  sendNextPacket();
+               }
+               else if(STATE_CANCEL == in_buf[2])
+               {
+                  return 2;
+               }
+
+            }
+         }
+      } while(null != ev);
+   }
+
+   protected method sendNextPacket() {
+
+      // if( b_debug || (0 == packet_nr) || (packet_nr == (num_packets-1)) || (0 == (packet_nr % 10)) )
+      if( b_debug )
+      {
+         trace "[dbg] sending packet #"+packet_nr+" / "+num_packets+" (modpn="+(packet_nr&127)+")";
+      }
+      else
+      {
+         stdout ".";
+      }
+
+      out_buf.offset = 0;
+
+      out_buf.i8 = 0xF0;
+      out_buf.i8 = 0x7E;
+      out_buf.i8 = sysex_channel;
+      out_buf.i8 = 0x02;
+      out_buf.i8 = (packet_nr & 127);
+
+      int chksum = 0x7E ^ sysex_channel ^ 0x02 ^ (packet_nr & 127);
+
+      int smpOff = packet_nr * (120 / 3);
+
+      loop(120/3)
+      {
+         int smp = int(dat.get(smpOff) * 32767) + 0x8000;
+
+//01234567 01234567
+
+         // (note) left justified (MSB first)
+         byte b1 = (smp >> 9) & 127;
+         byte b2 = (smp >> 2) & 127;
+         byte b3 = (smp & 3);
+         
+         chksum = chksum ^ b1 ^ b2 ^ b3;
+
+         out_buf.i8 = b1;
+         out_buf.i8 = b2;
+         out_buf.i8 = b3;
+
+         smpOff++;
+      }
+
+      out_buf.i8 = (chksum & 127);
+
+      out_buf.i8 = 0xF7;
+
+      // Send data packet to device
+      midiout.sendBuffer(out_buf);
+   }
+
+   public method upload(StSample _sam, short _sampleNr, byte _sysexChannel, String _nameOrNull) : boolean {
+      in_buf.size = 4096;
+      out_buf.size = 4096;
+
+      ack_buf.alloc(128);
+      ack_buf.numElements = 128;
+      ack_buf.fill(false);
+
+      sam <= _sam;
+      wav <= sam.waveform;
+      dat <= wav.sampleData;
+
+      sample_nr = _sampleNr;
+      sysex_channel = _sysexChannel;
+
+      if(null != _nameOrNull)
+      {
+         sendDumpHeaderExt();
+         sendSampleNameExtPriv(_nameOrNull);
+
+         if(b_debug)
+         {
+            File f; f.openLocal("dbghdr.dat", IOS_OUT);
+            f.writeBuffer(out_buf, 0, out_buf.offset);
+            f.close();
+         }
+
+         // Send extended dump header to device
+         midiout.sendBuffer(out_buf);
+      }
+      else
+      {
+         sendDumpHeader();
+      }
+
+      Integer packetNrRecv;
+
+      // if(2 == waitAck(packetNrRecv, true))
+      // {
+      //    return false;
+      // }
+
+      // (note) 40 16bit samples fit into one data packet
+      num_packets = ((dat.numElements + 39) / (120/3));
+      packet_nr = 0;
+
+      loop(num_packets)
+      {
+         sendNextPacket();
+         // TKS.sleep(1);
+
+         if(b_waitack)
+         {
+            if(2 == waitAck(packetNrRecv, false))
+            {
+               return false;
+            }
+         }
+
+         // if(0 == packet_nr)
+         // {
+         //    TKS.sleep(10000);
+         // }
+
+         packet_nr++;
+
+         if(0 == (packet_nr & 127))
+         {
+            // Wait until all previous packages have been acknowledged
+            // int waitCnt = 0;
+            // while(-1 != ack_buf.indexOf(0, 0) && (waitCnt < 128))
+            // {
+            //    TKS.sleep(10);
+            //    waitAck(packetNrRecv, false);
+            //    waitCnt++;
+            // }
+
+            if(-1 != ack_buf.indexOf(0, 0))
+            {
+               if(b_allow_resend)
+               {
+                  if(b_debug)
+                  {
+                     trace "[dbg] wait ack all  buf="+ack_buf.string;
+                  }
+
+                  // resend packets
+                  packet_nr -= 128;
+
+                  int acki = 0;
+                  loop(128)
+                  {
+                     if(0 == ack_buf[acki])
+                     {
+                        if(b_debug)
+                        {
+                           trace "[dbg] resend packet "+packet_nr+"/"+num_packets;
+                        }
+
+                        sendNextPacket();
+                        if(2 == waitAck(packetNrRecv, true/*forceWait*/))
+                        {
+                           return false;
+                        }
+                     }
+                     acki++;
+                     packet_nr++;
+                  }
+               }
+               else
+               {
+                  if(b_debug)
+                  {
+                     trace "[~~~] not all packets ack'd  buf="+ack_buf.string;
+                  }
+               }
+            }
+
+            ack_buf.fill(false);
+         }
+
+         if(0 != packet_sleep_interval)
+         {
+            if(0 == (packet_nr % packet_sleep_interval))
+            {
+               TKS.sleep(packet_sleep_ms);
+            }
+         }
+
+      }
+
+      trace "";
+
+      return true;
+   }
+
+   protected method sendSampleNameExtPriv(String _name) {
+      // F0 7E 01 05 03 00 01 00 0E 52 65 6E 61 6D 65 64 20 53 61 6D 70 6C 65 F7
+
+      if(b_debug)
+      {
+         trace "[dbg] sendSampleNameExt";
+      }
+
+      // see http://www.midi.org/techspecs/ca19.pdf
+      //  (extended header)
+
+      int nlen = _name.length;
+
+      if(nlen > 0)
+      {
+         nlen--; // don't send ASCIIZ
+
+         if(nlen > 127)
+            nlen = 127;
+
+         out_buf.i8 = 0xF0;
+         out_buf.i8 = 0x7E;
+         out_buf.i8 = sysex_channel;
+         out_buf.i8 = 5;  // Sample Dump Extensions Command (sub-ID#1)
+         out_buf.i8 = 3;  // Sample Name Transmission Sub Command (sub-ID#2)
+         out_buf.i8 = (sample_nr & 127);
+         out_buf.i8 = (sample_nr >> 7) & 127;
+         out_buf.i8 = 0; // Sample Name Language Tag Length (default: 00)
+         out_buf.i8 = nlen; // Sample Name Length (up to 127 characters)
+
+         // Sample Name Data bytes (string of length nn):
+         int ci = 0;
+         loop(nlen)
+         {
+            out_buf.i8 = _name.getc(ci++);
+         }
+
+         out_buf.i8 = 0xF7;
+      }
+   }
+
+   public method sendSampleNameExt(int _sampleNr, int _sysexCh, String _name) {
+      // F0 7E 01 05 03 00 01 00 0E 52 65 6E 61 6D 65 64 20 53 61 6D 70 6C 65 F7
+
+      if(b_debug)
+      {
+         trace "[dbg] sendSampleNameExt";
+      }
+
+      // see http://www.midi.org/techspecs/ca19.pdf
+      //  (extended header)
+
+      sysex_channel = _sysexCh;
+      sample_nr = _sampleNr;
+
+      if(_name.length > 0)
+      {
+         out_buf.offset = 0;
+
+         sendSampleNameExtPriv(_name);
+         
+         // Send data packet to device
+         midiout.sendBuffer(out_buf);
+      }
+   }
+
+}
+
+
+StSample g_sam;
+StWaveform g_wav;
+Integer g_rate;
+Integer g_numCh;
+String g_fileInfo;
+
+g_wav.alloc(1/*numCh*/, 1/*numFrames*/);
+g_sam.setWaveform(g_wav);
+
+class ChainEntry {
+   StSample *sam;
+   StWaveform *wav;
+   StWaveform *twav;
+   Integer rate;
+   Integer numCh;
+   String fileInfo;
+   String fnPath;
+   String fnFile;
+
+
+   public method init() {
+      sam <= new StSample;
+      wav <= new StWaveform;
+      wav.alloc(1/*numCh*/, 1/*numFrames*/);
+      // trace "xxx init wav.sampleData="+#(wav.sampleData);
+      sam.setWaveform(wav);
+   }
+
+   public method load(String _pathname) : boolean {
+      boolean ret = false;
+
+      // trace "xxx wav.sampleData="+#(wav.sampleData);
+
+      if(WavIO.LoadLocal(_pathname, wav.sampleData, rate, numCh, fileInfo, sam))
+      {
+         if(b_debug)
+         {
+            trace "[dbg] wav.sampleData.numElements="+(wav.sampleData.numElements);
+            trace "[dbg]   abs max="+(wav.sampleData.absMax);
+         }
+
+         Utils.SplitPathname(_pathname, fnPath, fnFile);
+         fnFile.replace(".wav", "");
+         fnFile.replace(".WAV", "");
+
+         ret = true;
+      }
+      else
+      {
+         trace "[---] failed to open sample file \""+_pathname+"\".";
+      }
+
+      return ret;
+   }
+
+   public method getSampleSizeInBytes() : int {
+      return wav.sampleData.numElements * 2;
+   }
+
+   public method getSampleSize() : int {
+      return wav.sampleData.numElements;
+   }
+
+   public method upload() {
+
+      if(b_upload_smp)
+      {
+         SDS_Test sds <= new SDS_Test;
+      
+         int tStart = milliSeconds();
+
+         String remoteName = fnFile;
+
+         // sds.upload(sam, 0/*sampleNr*/, sysexChannel, "test2__name");
+         if(!single_filename.isBlank() || b_chain)
+         {
+            if(!force_sample_name.isBlank())
+            {
+               remoteName = force_sample_name;
+            }
+         }
+
+         sds.upload(sam, 0/*sampleNr*/, sysexChannel, remoteName);
+         // sds.upload(sam, 1127/*sampleNr*/, sysexChannel, remoteName);
+
+         int tDelta = milliSeconds() - tStart;
+      
+         trace "[...] file transfered in "+(tDelta/1000.0f)+" seconds ("+((2*wav.sampleData.numElements) / (tDelta/1000.0f))+" bytes/sec).";
+      }
+      else
+      {
+         trace "[...] skipping upload because of -noupload option";
+      }
+   }
+
+   public method resizeTo(int _sz) {
+      FloatArray dat <= wav.sampleData;
+
+      if(_sz <= 0)
+      {
+         dat.realloc(0);
+      }
+      else
+      {
+         if(dat.numElements != _sz)
+         {
+            FloatArray nd;
+            nd.realloc(_sz);
+            nd.useAll();
+            nd.fill(0.0f);
+            // trace "xxx copy "+((_sz > dat.numElements) ? dat.numElements : _sz)+" frames, szOld="+dat.numElements+" szNew="+_sz;
+            nd.copyFrom(dat,
+                        0,
+                        (_sz > dat.numElements) ? dat.numElements : _sz,
+                        0
+                        );
+            // trace "xxx nd.absMax="+nd.absMax;
+            dat = nd;
+         }
+      }
+   }
+
+}
+
+PointerArray chain; // ChainEntry instances
+ChainEntry out_chain;
+out_chain.init();
+
+SampleChain sample_chain;
+if(b_varichain)
+{
+   sample_chain.selectAlgorithm(0);
+   sample_chain.init(120);
+   sample_chain.setParameteri("extra_padding", extra_padding);
+   sample_chain.setParameteri("min_padding", min_padding);
+}
+else
+{
+   sample_chain.selectAlgorithm(1);
+   sample_chain.init(120);
+   sample_chain.setParameteri("extra_padding", extra_padding);
+   // sample_chain.setParameteri("chain_size", out_chain.numElements);
+}
+
+
+class ChainUtils {
+
+   static ResizeEntriesToSampleChain() {
+
+      ChainEntry *ch;
+
+      if(sample_chain.queryNumElements() > chain.numElements)
+      {
+         loop(sample_chain.queryNumElements() - chain.numElements)
+         {
+            // Add pad elements
+            ch <= new ChainEntry();
+            ch.init();
+            ch.fnFile = "<pad>";
+            chain.add(#(deref ch));
+         }
+      }
+
+      int elementIdx = 0;
+
+      int totalOutSz = sample_chain.queryTotalSize();
+
+      trace "[dbg] totalOutSz="+totalOutSz;
+
+      float slcSz = totalOutSz / 120.0;
+
+      Float sta = 0;
+
+      int dbgTotalSz = 0;
+
+      foreach ch in chain
+      {
+         Integer elSz = sample_chain.queryElementTotalSize(elementIdx);
+         Integer elOrigSz = sample_chain.queryElementOriginalSize(elementIdx);
+         Integer elPadSz = elSz - elOrigSz;
+
+         trace "[trc] STA="+sta.printf("%6.2f")+" origSz="+elOrigSz.printf("%8d")+" padSz="+elPadSz.printf("%6d")+" totalSz="+elSz.printf("%8d")+" file=\""+ch.fnFile+"\"";
+
+         ch.resizeTo(elSz);
+
+         sta += (elSz / slcSz);
+
+         dbgTotalSz += elSz;
+
+         elementIdx++;
+      }
+
+      // trace "xxx dbgTotalSz="+dbgTotalSz;
+   }
+
+   static BuildOutChain() {
+
+      FloatArray d <= out_chain.wav.sampleData;
+
+      d.free();
+
+      ChainEntry *ch;
+      foreach ch in chain
+      {
+         // trace "xxx ch.sz="+((ch.wav.sampleData.numElements)*2);
+         // trace "xxx ch.sz="+((ch.wav.sampleData.numElements));
+         // trace "xxx   abs max="+(ch.wav.sampleData.absMax);
+         d.join(d, ch.wav.sampleData);
+      }
+
+      // trace "xxx d.numElements="+d.numElements;
+   }
+
+   static WriteKit(String _filename) {
+      AR_Kit kit;
+
+      PakFile ifs;
+
+      if(ifs.open(kit_dat_input_filename))
+      {
+         if(kit.loadRawFromStream(ifs))
+         {
+            Buffer kitBuf;
+            kit.getRawBuffer(kitBuf);
+
+            int numTracks = (chain.numElements > 12) ? 12 : chain.numElements;
+
+            int totalOutSz = sample_chain.queryTotalSize();
+
+            float slcSz = totalOutSz / 120.0;
+
+            Float sta = 0;
+
+            int trkIdx = 0;
+
+            int kitOff;
+            char c;
+
+            // Store kit name
+            kitOff = 0x4;
+            int nameIdx = 0;
+            loop(15)
+            {
+               c = force_sample_name.getc(nameIdx);
+               if(c <= 32)
+                  c = ' ';
+               kitBuf.pokeI8(kitOff++, c);
+               nameIdx++;
+            }
+
+            int kitSoundNameOff = 0x3a; // sound name trk1
+
+            int kitSmpNrOff = 0x5E;
+
+            kitOff = 0x62; // sample start trk1
+
+            loop(numTracks)
+            {
+               ChainEntry ch <= chain.get(trkIdx);
+
+               Integer elSz = sample_chain.queryElementTotalSize(trkIdx);
+               Integer elOrigSz = sample_chain.queryElementOriginalSize(trkIdx);
+               Integer elPadSz = elSz - elOrigSz;
+
+               // Store sample nr
+               kitBuf.pokeI8(kitSmpNrOff, kit_smpnr);
+
+               // Store sound name
+               String smpName = ch.fnFile;
+               nameIdx = 0;
+               loop(15)
+               {
+                  c = smpName.getc(nameIdx);
+                  if(c <= 32)
+                     c = ' ';
+                  kitBuf.pokeI8(kitSoundNameOff + nameIdx, c);
+                  nameIdx++;
+               }
+               
+               // trace "[trc] STA="+sta.printf("%6.2f")+" origSz="+elOrigSz.printf("%8d")+" padSz="+elPadSz.printf("%6d")+" totalSz="+elSz.printf("%8d")+" file=\""+ch.fnFile+"\"";
+
+               Float end =sta;
+               end += (elSz / slcSz);
+
+               trace "[...] init kit track "+(trkIdx+1)+"/"+numTracks+" STA="+sta+" END="+end+" file=\""+ch.fnFile+"\"";
+
+               kitBuf.pokeI8(kitOff + 0, int(sta) & 127);
+               kitBuf.pokeI8(kitOff + 2, int(end) & 127);
+
+               // Next track
+               sta = end;
+
+               kitOff += 172;
+               kitSoundNameOff += 172;
+               kitSmpNrOff += 172;
+
+               trkIdx++;
+            }
+
+            File ofs;
+            if(ofs.openLocal(kit_syx_output_filename, IOS_OUT))
+            {
+               Buffer syx;
+               syx.size = kit.getRequiredSizeSyx(); // need 3095 bytes
+               syx.offset = 0;
+
+               if(kit.sendKitX(syx, 0/*devId*/, 127/*kitNr*/))
+               {
+                  ofs.writeBuffer(syx, 0, syx.size);
+
+                  trace "[...] ok, wrote \""+kit_syx_output_filename+"\"";
+
+                  if(b_upload_kit)
+                  {
+                     midiout.sendBuffer(syx);
+                  }
+               }
+               else
+               {
+                  trace "[---] kit.sendKitX() failed.";
+               }
+
+               ofs.close();
+            }
+            else
+            {
+               trace "[---] failed to open kit syx output file \""+kit_syx_output_filename+"\" for writing.";
+            }
+         }
+         else
+         {
+            trace "[---] kit.loadRawFromStream() failed.";
+         }
+
+         ifs.close();
+      }
+      else
+      {
+         trace "[---] failed to open kit template \""+kit_dat_input_filename+"\" for reading.";
+      }
+   }
+}
+
+if(b_autodir)
+{
+   String fnPathDir;
+   String fnFileDir;
+   Utils.SplitPathname(filelistFileName, fnPathDir, fnFileDir);
+   dir_prefix = fnPathDir + "/";
+}
+
+
+if(!(b_upload_smp||b_upload_kit) || midiin.openByName(inDevName))
+{
+   if(b_upload_smp||b_upload_kit)
+      midiin.start();
+   
+   if(!(b_upload_smp||b_upload_kit) || midiout.openByName(outDevName))
+   {
+      String fileName;
+      int fileNr = 1;
+
+      StringArray fileNames;
+
+      ChainEntry *en;
+
+      if(single_filename.isBlank())
+      {
+         fileNames <= filelist.splitChar('\n');
+      }
+      else
+      {
+         fileNames.add(single_filename);
+      }
+
+      // trace "xxx fileNames="+#(fileNames);
+
+      foreach fileName in fileNames
+      {
+         LogWrite("add file \""+fileName+"\"");
+
+         fileName.trim();
+
+         fileName = dir_prefix+fileName;
+
+         if(b_chain)
+         {
+            en <= new ChainEntry;
+            en.init();
+            if(en.load(fileName))
+            {
+               trace "[trc] add chain entry \""+fileName+"\"";
+               chain.add(#(deref en));
+            }
+         }
+         else
+         {
+            // Original upload code
+            if(fileNames.numElements > 1)
+            {
+               force_sample_name = "";
+            }
+
+            if(WavIO.LoadLocal(fileName, g_wav.sampleData, g_rate, g_numCh, g_fileInfo, g_sam))
+            {
+               if(b_debug)
+               {
+                  trace "[dbg] wav.sampleData.numElements="+(g_wav.sampleData.numElements);
+               }
+
+               if(b_upload_smp)
+               {
+                  SDS_Test sds <= new SDS_Test;
+
+                  int tStart = milliSeconds();
+
+                  // (note) on Yamaha AxK sampler, sampleNr determines the sample name:
+                  //   sampleNr=0 => "MIDI 00001"
+                  //   sampleNr=1 => "MIDI 00002"
+                  //   ...
+                  // (note) Yamaha AxK can handle 128 samples max., 127 per samplebank
+                  // sds.upload(sam, 1/*sampleNr*/, sysexChannel, null);
+
+                  /* NOTE: when uploading samples to the Elektron Analog Rhythm, sampleNr 0 _must_ be used! */
+                  /*  (recv CANCEL otherwise) */
+                  // sds.enableElektronARTurbo();
+
+                  String g_fnPath;
+                  String g_fnFile;
+                  Utils.SplitPathname(fileName, g_fnPath, g_fnFile);
+                  g_fnFile.replace(".wav", "");
+                  g_fnFile.replace(".WAV", "");
+
+                  String g_remoteName = g_fnFile;
+
+                  // sds.upload(sam, 0/*sampleNr*/, sysexChannel, "test2__name");
+                  if(!single_filename.isBlank())
+                  {
+                     if(!force_sample_name.isBlank())
+                     {
+                        g_remoteName = force_sample_name;
+                     }
+                  }
+
+                  if(g_remoteName.endsWith("_48k"))  // hack for SOX converted files (via Synergy UI)
+                     g_remoteName.replace("_48k", "");
+         
+                  // sds.upload(sam, 0/*sampleNr*/, sysexChannel, "test2__name");
+                  sds.upload(g_sam, 0/*sampleNr*/, sysexChannel, g_remoteName);
+                  // sds.upload(g_sam, 0/*sampleNr*/, sysexChannel, g_fnFile);
+
+                  // (note) 17.223 seconds for 424 packets (16960 samples)
+                  //          => 24.618 packets/sec
+                  //          => 984.729 samples/sec
+                  int tDelta = milliSeconds() - tStart;
+
+                  trace "[...] file "+fileNr+"/"+(fileNames.numElements)+" transfered in "+(tDelta/1000.0f)+" seconds ("+((2*g_wav.sampleData.numElements) / (tDelta/1000.0f))+" bytes/sec).";
+               }
+            
+            }
+            else
+            {
+               trace "[---] failed to open sample file \""+fileName+"\".";
+            }
+         } // if b_chain
+
+         fileNr++;
+      } // foreach file
+
+      if(b_chain)
+      {
+         LogWrite("chain mode is enabled ("+chain.numElements+" elements)");
+
+         if(chain.numElements > 0)
+         {
+            // Add chain elements to SampleChain object
+            foreach en in chain
+            {
+               sample_chain.add(en.getSampleSize(), en/*userData*/);
+            }
+
+            if(0 != chain_size)
+            {
+               // (note) will be rounded up so that 120/numElements is an integer
+               sample_chain.setParameteri("chain_size", chain.numElements);
+            }
+            else if(b_varichain)
+            {
+               // Varichain
+            }
+            
+            // Layout elements
+            sample_chain.calc();
+            
+            if(sample_chain.queryTotalSize() > 0)
+            {
+               // Resize element waveform data
+               ChainUtils.ResizeEntriesToSampleChain();
+            }
+            else
+            {
+               trace "[---] sample_chain.calc() failed (total size is 0).";
+               exit(5);
+            }
+         }
+         else
+         {
+            trace "[---] chain is empty, nothing to upload.";
+            exit(5);
+         }
+
+         trace "[...] Building sample chain..";
+         LogWrite("building sample chain");
+         ChainUtils.BuildOutChain();
+         LogWrite("finished building sample chain");
+
+         if(out_chain.getSampleSizeInBytes() >= (16*1024*1024))
+         {
+            trace "[---] the sample chain is larger than 16 MBytes, please reduce the chain size or the number of samples.";
+            exit(5);
+         }
+
+         trace "[...] sample chain size is "+float(out_chain.getSampleSizeInBytes() / 1024.0f)+" kBytes"; ///, sample start/end step is "+(120/chain.numElements);
+         
+         if(b_chainout && !chain_output_filename.isBlank())
+         {
+            trace "[...] writing generated sample chain to \""+chain_output_filename+"\"";
+            LogWrite("writing sample chain to \""+chain_output_filename+"\"");
+            WavIO.SaveLocal(chain_output_filename, out_chain.wav.sampleData, out_chain.wav.sampleRate, 1/*numCh*/);
+         }
+
+         if(!kit_syx_output_filename.isBlank())
+         {
+            trace "[...] writing generated AR kit to \""+kit_syx_output_filename+"\"";
+            LogWrite("writing kit to \""+chain_output_filename+"\"");
+            ChainUtils.WriteKit(kit_syx_output_filename);
+         }
+
+         if(b_upload_smp)
+         {
+            LogWrite("uploading chain");
+            out_chain.upload();
+            LogWrite("finished uploading chain");
+         }
+         
+      } // if b_chain
+
+      if(b_upload_smp||b_upload_kit)
+      {
+         LogWrite("closing midiout");
+         midiout.close();
+         LogWrite("midiout closed");
+
+         if(b_debug)
+         {
+            trace "[dbg] closed MIDI device";
+         }
+      }
+   }
+   else
+   {
+      trace "[---] failed to open MIDI output device \""+outDevName+"\".";
+   }
+   
+   if(b_upload_smp||b_upload_kit)
+   {
+      // hangs (sometimes, with Microsoft USB MIDI driver)
+      // LogWrite("stopping midiin");
+      // midiin.stop();
+      // LogWrite("midiin stopped");
+
+      LogWrite("closing midiin");
+      midiin.close();
+      LogWrite("midiin closed");
+   }
+}
+else
+{
+   trace "[---] failed to open MIDI input device \""+inDevName+"\".";
+}
+
+// trace "[dbg] exiting";
+LogWrite("exiting");
+if(b_logfile)
+   logFile.close();
