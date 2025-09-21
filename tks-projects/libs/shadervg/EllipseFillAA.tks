@@ -1,0 +1,398 @@
+// ----
+// ---- file   : ShaderVG_EllipseFillAA.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : ShaderVG render utilities
+// ----
+// ----
+// ----
+
+module MShaderVG_EllipseFillAA;
+
+namespace shadervg;
+
+
+class EllipseFillAA : Shape {
+
+   public method init() {
+      Shape::init();
+   }
+
+   // ------------ vertex shader --------------
+   static String vs_src =
+      "uniform mat4 u_transform; \n"
+      " \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
+      " \n"
+      "VARYING_OUT vec2 v_p; \n"
+      " \n"
+      "void main(void) { \n"
+      "  v_p = a_vertex; \n"
+      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
+      "} \n"
+      ;
+
+   // ------------ fragment shader ------------
+   static String fs_src =
+      "uniform vec2  u_center; \n"
+      "uniform vec2  u_radius; \n"
+      "uniform vec2  u_ob_radius; \n"
+      "uniform float u_radius_max; \n"
+      "uniform float u_ob_radius_max; \n"
+      "uniform float u_aa_range; \n"
+      "uniform float u_aa_exp; \n"
+      "uniform vec4  u_color_fill; \n"
+      "uniform float u_debug; \n"
+      " \n"
+      "VARYING_IN vec2 v_p; \n"
+      " \n"
+      "void main(void) { \n"
+      "  float aRect = 0.0; \n"
+      "  float aRound = 1.0; \n"
+      "  vec4 color = vec4(0,0,0,0); \n"
+      " \n"
+      "  // outer \n"
+      "  vec2 vd = abs(v_p - u_center); \n"
+      "  if(vd.x < u_radius.x && vd.y < u_radius.y) \n"
+      "  { \n"
+      "     aRect  = 1.0 - smoothstep(u_radius.x - u_aa_range, u_radius.x, vd.x); \n"
+      "     aRect *= 1.0 - smoothstep(u_radius.y - u_aa_range, u_radius.y, vd.y); \n"
+      "     color = u_color_fill; \n"
+      "     aRect = 1.0; \n"
+      "   \n"
+      "     // // if(vd.x > 0.0 && vd.y > 0.0) \n"
+      "     { \n"
+      "        vec2 vdn = vd * u_ob_radius; \n"
+      "        float as = asin(vdn.x) * (1.0 / 3.14159265359); \n"
+      "        float r = mix(u_radius.y, u_radius.x, as); \n"
+      "        float r2 = r * u_ob_radius_max; \n"
+      "        float aaR = u_aa_range * r2; \n"
+      "        aRound = 1.0 - smoothstep( (u_radius_max - aaR) * u_ob_radius_max, 1.0, length(vdn)); \n"
+      "     } \n"
+      "  } \n"
+      "   \n"
+      "  float a = aRect * aRound; \n"
+      "   \n"
+      "#if 1 \n"
+      "  a = pow(a, u_aa_exp); \n"
+      "#endif \n"
+      " \n"
+      "  FRAGCOLOR = vec4(color.xyz, color.a*a); \n"
+      "  if(u_debug > 0.0) \n"
+      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "} \n"
+      ;
+
+   public virtual onOpen() : boolean {
+      if(createShapeShader(vs_src, fs_src))
+      {
+         return true;
+      }
+      return false;
+   }
+
+   public method setupEllipseFillAAVBO32(Buffer _vb, Buffer _dl,
+                                         float _centerX, float _centerY,
+                                         float _radiusX, float _radiusY
+                                         ) {
+      //  +0  i32 vbOffInner
+      //  +4  i16 numVertsInner
+      //  +6  i32 vbOffBorder
+      //  +10 i16 numVertsBorder
+      //  +12 u16 primTypeBorder
+      //
+      int numSeg = ELLIPSE_NUM_SEG;
+      float rxI = _radiusX - ELLIPSE_EXTRUDE_I;
+      float rxO = _radiusX + ELLIPSE_EXTRUDE_O;
+      float ryI = _radiusY - ELLIPSE_EXTRUDE_I;
+      float ryO = _radiusY + ELLIPSE_EXTRUDE_O;
+      float aStep = 2PI / numSeg;
+      float a;
+      boolean bSingle =
+         (_radiusX < ELLIPSE_SINGLE_RADIUS_THRESHOLD) ||
+         (_radiusY < ELLIPSE_SINGLE_RADIUS_THRESHOLD)
+         ;
+      int numVerts;
+
+      // Inner
+      if(!bSingle && b_draw_inner)
+      {
+         // Calc inner mesh
+         a = aStep;
+         numVerts = (2 + numSeg);
+
+         _dl.i32 = _vb.offset;
+         _dl.i16 = numVerts;
+
+         _vb.f32 = _centerX;
+         _vb.f32 = _centerY;
+         _vb.f32 = _centerX + rxI;
+         _vb.f32 = _centerY;
+
+         loop(numSeg)
+         {
+            _vb.f32 = _centerX + rxI * cos(a);
+            _vb.f32 = _centerY + ryI * sin(a);
+            a += aStep;
+         }
+      }
+      else
+      {
+         _dl.i32 = _vb.offset;
+         _dl.i16 = 0/*numVerts*/;
+      }
+
+      // Outer border
+      if(b_draw_border || bSingle)
+      {
+         if(bSingle)
+         {
+            numVerts = 4;
+
+            _dl.i32 = _vb.offset;
+            _dl.i16 = numVerts;
+            _dl.i16 = GL_TRIANGLE_FAN;
+
+            float x = _centerX - _radiusX;
+            float y = _centerY - _radiusY;
+            float w = _radiusX * 2.0;
+            float h = _radiusY * 2.0;
+
+            _vb.f32 = x;       _vb.f32 = y;
+            _vb.f32 = x + w;   _vb.f32 = y;
+            _vb.f32 = x + w;   _vb.f32 = y + h;
+            _vb.f32 = x;       _vb.f32 = y + h;
+         }
+         else
+         {
+            a = aStep;
+            numVerts = (2 + numSeg*2);
+
+            _dl.i32 = _vb.offset;
+            _dl.i16 = numVerts;
+            _dl.i16 = GL_TRIANGLE_STRIP;
+
+            _vb.f32 = _centerX + rxI;
+            _vb.f32 = _centerY +   0;
+            _vb.f32 = _centerX + rxO;
+            _vb.f32 = _centerY +   0;
+
+            loop(numSeg)
+            {
+               _vb.f32 = _centerX + rxI * cos(a);
+               _vb.f32 = _centerY + ryI * sin(a);
+               _vb.f32 = _centerX + rxO * cos(a);
+               _vb.f32 = _centerY + ryO * sin(a);
+               a += aStep;
+            }
+         }
+      }
+      else
+      {
+         _dl.i32 = _vb.offset;
+         _dl.i16 = 0/*numVerts*/;
+         _dl.i16 = GL_NONE;
+      }
+   }
+
+   public method drawEllipseFillAAVBO32(int      _vboId,
+                                        int      _byteOffsetInner,
+                                        int      _numVertsInner,
+                                        int      _byteOffsetBorder,
+                                        int      _numVertsBorder,
+                                        int      _glPrimTypeBorder,
+                                        Matrix4f _projMatrix,
+                                        float    _centerX, float _centerY,
+                                        float    _radiusX, float _radiusY,
+                                        float    _fillR,   float _fillG,   float _fillB,   float _fillA,
+                                        float    _aaRange,
+                                        float    _aaExp
+                                        ) {
+
+      ShaderVG.BindVBO(_vboId);
+
+      if(_numVertsInner > 0)
+      {
+         int aVertexFill = ShaderVG.BindFillShader();
+
+         zglVertexAttribOffset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
+         glDrawArrays(GL_TRIANGLE_FAN, 0, _numVertsInner);
+
+         ShaderVG.EndFillShader();
+      }
+
+      // Outer border
+      if(_numVertsBorder > 0)
+      {
+         shape_shader.bind();
+
+         glUniformMatrix4fv(shape_u_transform, 1/*count*/, GL_TRUE/*transpose*/, _projMatrix);
+         glUniform2f(shape_u_center,   _centerX, _centerY);
+         glUniform2f(shape_u_radius,   _radiusX, _radiusY);
+         glUniform2f(shape_u_ob_radius,     1.0f / _radiusX, 1.0f / _radiusY);
+         glUniform1f(shape_u_ob_radius_max, (_radiusX > _radiusY) ? (1.0f / _radiusX) : (1.0f / _radiusY));
+         glUniform1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
+         glUniform1f(shape_u_aa_range, _aaRange);
+
+         if(-1 != shape_u_aa_exp)
+            glUniform1f(shape_u_aa_exp, _aaExp);
+
+         glUniform4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+
+         if(-1 != shape_u_debug)
+            glUniform1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
+
+         zglVertexAttribOffset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
+
+         glEnableVertexAttribArray(shape_a_vertex);
+
+         glDrawArrays(_glPrimTypeBorder, 0, _numVertsBorder);
+
+         glDisableVertexAttribArray(shape_a_vertex);
+      }
+   }
+
+   public method drawEllipseFillAA(Buffer _scratchBuf,
+                                   Matrix4f _projMatrix,
+                                   float _centerX, float _centerY,
+                                   float _radiusX, float _radiusY,
+                                   float _fillR,   float _fillG,   float _fillB,   float _fillA,
+                                   float _aaRange,
+                                   float _aaExp
+                                   ) {
+
+      ShaderVG.BindScratchBuffer();
+
+      int numSeg = 16;
+      float rxI = _radiusX - ELLIPSE_EXTRUDE_I;
+      float rxO = _radiusX + ELLIPSE_EXTRUDE_O;
+      float ryI = _radiusY - ELLIPSE_EXTRUDE_I;
+      float ryO = _radiusY + ELLIPSE_EXTRUDE_O;
+      float aStep = 2PI / numSeg;
+      float a;
+      int numVerts;
+      int allocSz;
+
+      boolean bSingle =
+         (_radiusX < ELLIPSE_SINGLE_RADIUS_THRESHOLD) ||
+         (_radiusY < ELLIPSE_SINGLE_RADIUS_THRESHOLD)
+         ;
+
+      // Inner
+      if(!bSingle && b_draw_inner)
+      {
+         int aVertexFill = ShaderVG.BindFillShader();
+
+         // Calc inner mesh
+         a = aStep;
+         numVerts = (2 + numSeg);
+
+         allocSz = numVerts * 2/*xy*/ * 4/*float*/;
+         allocScratchBuffer(aVertexFill, _scratchBuf, allocSz);
+
+         _scratchBuf.f32 = _centerX;
+         _scratchBuf.f32 = _centerY;
+         _scratchBuf.f32 = _centerX + rxI;
+         _scratchBuf.f32 = _centerY;
+
+         loop(numSeg)
+         {
+            _scratchBuf.f32 = _centerX + rxI * cos(a);
+            _scratchBuf.f32 = _centerY + ryI * sin(a);
+            a += aStep;
+         }
+
+         glDrawArrays(GL_TRIANGLE_FAN, 0, numVerts);
+
+         ShaderVG.EndFillShader();
+      }
+
+      // Outer border
+      shape_shader.bind();
+
+      glUniformMatrix4fv(shape_u_transform, 1/*count*/, GL_TRUE/*transpose*/, _projMatrix);
+      glUniform2f(shape_u_center,   _centerX, _centerY);
+      glUniform2f(shape_u_radius,   _radiusX, _radiusY);
+      glUniform2f(shape_u_ob_radius,     1.0f / _radiusX, 1.0f / _radiusY);
+      glUniform1f(shape_u_ob_radius_max, (_radiusX > _radiusY) ? (1.0f / _radiusX) : (1.0f / _radiusY));
+      glUniform1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
+      glUniform1f(shape_u_aa_range, _aaRange);
+
+      if(-1 != shape_u_aa_exp)
+         glUniform1f(shape_u_aa_exp, _aaExp);
+
+      glUniform4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+
+      if(-1 != shape_u_debug)
+         glUniform1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
+
+      glEnableVertexAttribArray(shape_a_vertex);
+
+      // Calc border mesh
+      if(b_draw_border || bSingle)
+      {
+         if(bSingle)
+         {
+            numVerts = 4;
+
+            allocSz = numVerts * 2/*xy*/ * 4/*float*/;
+            allocScratchBuffer(shape_a_vertex, _scratchBuf, allocSz);
+
+            float x = _centerX - _radiusX;
+            float y = _centerY - _radiusY;
+            float w = _radiusX * 2.0;
+            float h = _radiusY * 2.0;
+
+            _scratchBuf.f32 = x;       _scratchBuf.f32 = y;
+            _scratchBuf.f32 = x + w;   _scratchBuf.f32 = y;
+            _scratchBuf.f32 = x + w;   _scratchBuf.f32 = y + h;
+            _scratchBuf.f32 = x;       _scratchBuf.f32 = y + h;
+
+            glDrawArrays(GL_TRIANGLE_FAN, 0, numVerts);
+         }
+         else
+         {
+            a = aStep;
+            numVerts = (2 + numSeg*2);
+
+            allocSz = numVerts * 2/*xy*/ * 4/*float*/;
+            allocScratchBuffer(shape_a_vertex, _scratchBuf, allocSz);
+
+            _scratchBuf.f32 = _centerX + rxI;
+            _scratchBuf.f32 = _centerY +   0;
+            _scratchBuf.f32 = _centerX + rxO;
+            _scratchBuf.f32 = _centerY +   0;
+            loop(numSeg)
+            {
+               _scratchBuf.f32 = _centerX + rxI * cos(a);
+               _scratchBuf.f32 = _centerY + ryI * sin(a);
+               _scratchBuf.f32 = _centerX + rxO * cos(a);
+               _scratchBuf.f32 = _centerY + ryO * sin(a);
+               a += aStep;
+            }
+
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, numVerts);
+         }
+      }
+
+      glDisableVertexAttribArray(shape_a_vertex);
+   }
+
+}

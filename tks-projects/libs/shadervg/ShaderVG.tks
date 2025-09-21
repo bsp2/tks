@@ -1,0 +1,4566 @@
+// ----
+// ---- file   : ShaderVG.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2014-2025 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : ShaderVG render utilities
+// ----
+// ----
+// ----
+
+module MShaderVG;
+
+
+class ShaderVG_FBO {
+   int fbo_id;  // 0=unused
+   int fbo_msaa_id;  // 0=no MSAA
+   int tex_id;
+   int sx;
+   int sy;
+}
+
+class ShaderVG_CustomShape extends shadervg::Shape {
+
+   protected virtual validateShapeShader() : boolean {
+      return
+         (-1 != shape_a_vertex)       &&
+         (-1 != shape_u_transform)
+         ;
+   }
+
+   public virtual onOpen() : boolean {
+      shape_shader.destroy();
+      return true;
+   }
+}
+
+
+class ShaderVG {
+
+   // Default framebuffer size
+   //  (note) see sdvg_SetFramebufferSize()
+   define float DEFAULT_FB_W = 640;
+   define float DEFAULT_FB_H = 480;
+
+   // 0=use client-side scratch buffer (fastest but not available in GL core profile) [default]
+   // 1=use memory-mapped VBOs
+   // (note) see SetEnableVBO()
+   static boolean b_vbo = maybe;
+
+   // Currently bound VBO (0=none)
+   static int current_vbo_id;
+
+   // GL VBO id or 0
+   // (todo) unmap VBO before rendering (keeping it mapped works on macOS, though)
+   // (todo) use glBufferStorage() / GL_MAP_PERSISTENT_BIT (GLES3.1 / GL4.x)
+   static int scratch_vbo_id;
+
+   // (note) see SetScratchBufferSize()
+   define int DEFAULT_SCRATCH_BUFFER_SZ = 65536;
+   // define int DEFAULT_SCRATCH_BUFFER_SZ = (2*3*2*4);  // debug: auto-flush after each quad
+   static int scratch_buffer_sz;
+
+   // mapped scratchbuffer VBO (valid during onDraw()) OR allocated sysRAM buffer (when b_vbo == false)
+   //  (note) in VBO mode, this is used as a ring buffer.
+   //  (note) when a wrap-around occurs, the buffer is temporarily unmapped and the GL pipeline is flushed before the buffer is remapped
+   //          (see shadervg::Shape::allocScratchBuffer())
+   static Buffer scratch_buffer;
+
+   // mapped user-defined VBO. has precedence over scratch_buffer (sdvg_Begin*())
+   //  size = 0 when not mapped
+   static Buffer user_vbo_buffer;
+   static int mapped_user_vbo_id;
+
+   static Buffer *attrib_write_buffer;
+
+   static shadervg::TrianglesFillFlat32            triangles_fill_flat_32;
+   static shadervg::TrianglesFillFlat14_2          triangles_fill_flat_14_2;
+   static shadervg::TrianglesFillGouraud32         triangles_fill_gouraud_32;
+   static shadervg::TrianglesFillGouraud14_2       triangles_fill_gouraud_14_2;
+   static shadervg::TrianglesFillFlatEdgeAA32      triangles_fill_flat_edgeaa_32;
+   static shadervg::TrianglesFillFlatEdgeAA14_2    triangles_fill_flat_edgeaa_14_2;
+   static shadervg::TrianglesFillGouraudEdgeAA32   triangles_fill_gouraud_edgeaa_32;
+   static shadervg::TrianglesFillGouraudEdgeAA14_2 triangles_fill_gouraud_edgeaa_14_2;
+   static shadervg::PolygonFillFlat32              polygon_fill_flat_32;
+   static shadervg::PolygonFillFlat14_2            polygon_fill_flat_14_2;
+   static shadervg::PolygonFillGouraud32           polygon_fill_gouraud_32;
+   static shadervg::PolygonFillGouraud14_2         polygon_fill_gouraud_14_2;
+   static shadervg::RectFillAA                     rect_fill_aa;
+   static shadervg::RectStrokeAA                   rect_stroke_aa;
+   static shadervg::RectFillStrokeAA               rect_fill_stroke_aa;
+   static shadervg::EllipseFillAA                  ellipse_fill_aa;
+   static shadervg::EllipseStrokeAA                ellipse_stroke_aa;
+   static shadervg::EllipseFillStrokeAA            ellipse_fill_stroke_aa;
+   static shadervg::RoundRectFillAA                roundrect_fill_aa;
+   static shadervg::RoundRectStrokeAA              roundrect_stroke_aa;
+   static shadervg::RoundRectFillStrokeAA          roundrect_fill_stroke_aa;
+   static shadervg::RoundRectFillStrokeSymAA       roundrect_fill_stroke_sym_aa;
+   static shadervg::TrianglesTexUVFlat32           triangles_tex_uv_flat_32;
+   static shadervg::TrianglesTexUVGouraud32        triangles_tex_uv_gouraud_32;
+   static shadervg::TrianglesTexUVFlatDecal32      triangles_tex_uv_flat_decal_32;
+   static shadervg::TrianglesTexUVGouraudDecal32   triangles_tex_uv_gouraud_decal_32;
+   static shadervg::LineStripFlat14_2              line_strip_flat_14_2;
+   static shadervg::LineStripFlat32                line_strip_flat_32;
+   static shadervg::LineStripFlatAA14_2            line_strip_flat_aa_14_2;
+   static shadervg::LineStripFlatAA32              line_strip_flat_aa_32;
+   static shadervg::LineStripFlatBevelAA14_2       line_strip_flat_bevel_aa_14_2;
+   static shadervg::LineStripFlatBevelAA32         line_strip_flat_bevel_aa_32;
+   static shadervg::LinesFlatAA14_2                lines_flat_aa_14_2;
+   static shadervg::LinesFlatAA32                  lines_flat_aa_32;
+   static shadervg::PointsSquareAA32               points_square_aa_32;
+   static shadervg::PointsRoundAA32                points_round_aa_32;
+
+   static Shape *[] all_shapes = [triangles_fill_flat_32,
+                                  triangles_fill_flat_14_2,
+                                  triangles_fill_gouraud_32,
+                                  triangles_fill_gouraud_14_2,
+                                  triangles_fill_flat_edgeaa_32,
+                                  triangles_fill_flat_edgeaa_14_2,
+                                  triangles_fill_gouraud_edgeaa_32,
+                                  triangles_fill_gouraud_edgeaa_14_2,
+                                  polygon_fill_flat_32,
+                                  polygon_fill_flat_14_2,
+                                  polygon_fill_gouraud_32,
+                                  polygon_fill_gouraud_14_2,
+                                  rect_fill_aa,
+                                  rect_stroke_aa,
+                                  rect_fill_stroke_aa,
+                                  ellipse_fill_aa,
+                                  ellipse_stroke_aa,
+                                  ellipse_fill_stroke_aa,
+                                  roundrect_fill_aa,
+                                  roundrect_stroke_aa,
+                                  roundrect_fill_stroke_aa,
+                                  roundrect_fill_stroke_sym_aa,
+                                  triangles_tex_uv_flat_32,
+                                  triangles_tex_uv_gouraud_32,
+                                  triangles_tex_uv_flat_decal_32,
+                                  triangles_tex_uv_gouraud_decal_32,
+                                  line_strip_flat_14_2,
+                                  line_strip_flat_32,
+                                  line_strip_flat_aa_14_2,
+                                  line_strip_flat_aa_32,
+                                  line_strip_flat_bevel_aa_14_2,
+                                  line_strip_flat_bevel_aa_32,
+                                  lines_flat_aa_14_2,
+                                  lines_flat_aa_32,
+                                  points_square_aa_32,
+                                  points_round_aa_32,
+                                  ];
+
+   define float AA_RANGE_OFF = 0.001f;   // forced aa_range when b_aa = false
+
+   // (note) must match minnie.h settings
+   define float LINE_STROKE_W_OFFSET          = 0.75f;
+   define float RECT_FILL_AA_SIZE_OFFSET      = 1.0f;
+   define float RECT_AA_SIZE_OFFSET           = 0.75f;
+   define float RECT_AA_STROKE_OFFSET         = 0.25f;
+   define float ELLIPSE_FILL_AA_SIZE_OFFSET   = 1.0f;
+   define float ELLIPSE_AA_SIZE_OFFSET        = 0.75f;
+   define float ELLIPSE_AA_STROKE_OFFSET      = 0.25f;
+   define float ROUNDRECT_FILL_AA_SIZE_OFFSET = 1.0f;
+   define float ROUNDRECT_AA_SIZE_OFFSET      = 0.75f;
+   define float ROUNDRECT_AA_STROKE_OFFSET    = 0.25f;
+   define float POINTS_AA_RADIUS_OFFSET       = 0.75f;
+
+   // render state
+   static Matrix4f mvp_matrix;   // row major
+   static boolean  b_aa;
+   static float    aa_range;
+   static float    aa_exp;       // (todo) remove
+   static float    stroke_w;     // px
+   static float    point_radius; // px
+   static float    pixel_scl;    // vp/proj
+   static float    fill_r;
+   static float    fill_g;
+   static float    fill_b;
+   static float    fill_a;
+   static float    stroke_r;
+   static float    stroke_g;
+   static float    stroke_b;
+   static float    stroke_a;
+   static float    global_a;
+   static float    texture_decal_alpha;
+
+   define int MAX_FBOS = 16;
+   static ShaderVG_FBO *[] fbos;  // (note) fbo 0 is default FB
+
+   define int MAX_CUSTOM_SHADERS = 64;
+   static ShaderVG_CustomShape *[] custom_shapes;  // (note) shader 0 is 'none'
+   static shadervg::Shape *current_shape;
+
+   static int current_draw_num_vertices;   // see BeginScratch()
+   static int current_draw_stride;
+   static int current_draw_num_bytes;
+   static int current_draw_attrib_offset;  // incs with each AttribOffset*() call
+   static int current_draw_start_offset;
+   static int current_draw_lines_vertex_index;   // incs with each Vertex2f() call in DRAW_MODE_LINES*
+   static int current_draw_vertex_index;         // incs with each Vertex2f() call
+   define int DRAW_MODE_LINE_STRIP          = 7000;
+   define int DRAW_MODE_LINE_STRIP_AA       = 7001;
+   define int DRAW_MODE_LINE_STRIP_BEVEL    = 7002;
+   define int DRAW_MODE_LINE_STRIP_BEVEL_AA = 7003;
+   define int DRAW_MODE_LINES               = 7004;
+   define int DRAW_MODE_LINES_AA            = 7005;
+   define int DRAW_MODE_POINTS_SQUARE       = 7006;
+   define int DRAW_MODE_POINTS_SQUARE_AA    = 7007;
+   define int DRAW_MODE_POINTS_ROUND        = 7008;
+   define int DRAW_MODE_POINTS_ROUND_AA     = 7009;
+   static int current_draw_mode;  // GL_TRIANGLES/TRIANGLE_STRIP/TRIANGLE_FAN, line_strip, ..
+   static IntArray current_draw_attrib_enables;
+
+   define int VIEWPORT_STACK_SIZE = 8;
+   static IntArray viewport_stack;  // x,y,w,h
+   static int viewport_stacki;  // element offset (stack index * 4)
+   static int viewport_x;
+   static int viewport_y;  // 0=bottom (GL)
+   static int viewport_w;
+   static int viewport_h;
+
+   define int SCISSOR_STACK_SIZE = 8;
+   static IntArray scissor_stack;  // x,y,w,h
+   static int scissor_stacki;  // element offset (stack index * 4)
+   static int scissor_x;
+   static int scissor_y;  // 0=bottom (GL)
+   static int scissor_w;
+   static int scissor_h;
+
+   // true=use GL core profile (GLSL 3.x, VAO)
+   static boolean b_glcore;
+   static int vao_id;  // when b_glcore=1
+
+   // current framebuffer size (see sdvg_SetFramebufferSize())
+   static int fb_w;
+   static int fb_h;
+
+   // see SetGLSLVersion()
+   static String *s_glsl_version;
+   static String *s_glsl_attribute;
+   static String *s_glsl_varying_out;
+   static String *s_glsl_varying_in;
+   static String *s_glsl_fragcolor_def;
+   static String *s_glsl_fragcolor;
+   static String *s_glsl_texture2d;
+   static String *s_glsl_texture3d;
+   static String *s_glsl_tex_alpha;
+
+   // solid-fill shader, shared among all render classes
+   static ZGLShader fill_shader;
+   static int       fill_a_vertex;
+   static int       fill_u_transform;
+   static int       fill_u_color;
+
+   // ------------ fill vertex shader --------------
+   static String fill_vs_src =
+      "uniform mat4 u_transform; \n"
+      " \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
+      " \n"
+      "void main(void) { \n"
+      "   gl_Position = u_transform * vec4(a_vertex,0,1); \n"
+      "} \n"
+      ;
+
+   // ------------ fill fragment shader ------------
+   static String fill_fs_src =
+      "uniform vec4 u_color; \n"
+      " \n"
+      "void main(void) { \n"
+      "  FRAGCOLOR = u_color; \n"
+      "} \n"
+      ;
+
+   // (note) must be called before Init() (or this defaults to Desktop GL 2.x)
+   static SetGLSLVersion(boolean _bV3, boolean _bGLES, String _sVersionStringOrNull) {
+      if(null == _sVersionStringOrNull)
+         _sVersionStringOrNull <=
+            _bV3
+            ? _bGLES ? "300 es" : "410 core"
+            : _bGLES ? "100"    : "120"
+            ;
+      s_glsl_version       <= "#version "+_sVersionStringOrNull+"\n";
+      s_glsl_attribute     <= _bV3 ? "in"                      : "attribute";
+      s_glsl_varying_out   <= _bV3 ? "out"                     : "varying";
+      s_glsl_varying_in    <= _bV3 ? "in"                      : "varying";
+      s_glsl_fragcolor_def <= _bV3 ? "out vec4 o_FragColor;\n" : "";
+      s_glsl_fragcolor     <= _bV3 ? "o_FragColor"             : "gl_FragColor";
+      s_glsl_texture2d     <= _bV3 ? "texture"                 : "texture2D";
+      s_glsl_texture3d     <= _bV3 ? "texture"                 : "texture3D";
+      s_glsl_tex_alpha     <= _bV3 ? "r"                       : "a";
+   }
+
+   public static SaveScreenShotPNG(String _pathName) : boolean {
+      boolean ret = false;
+      if(_pathName >= ".png")
+      {
+         // (note) must be called in onDraw()
+         local Texture tex;
+         if(tex.alloc(Viewport.width, Viewport.height, 4))
+         {
+            glReadBuffer(GL_BACK);
+            int off = 0;
+            int y = Viewport.height - 1;
+            loop(Viewport.height)
+            {
+               zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+               y--;
+               off += Viewport.width;
+            }
+            tex.clearAlpha(255);
+            ret = tex.saveImage(_pathName);
+         }
+      }
+      return ret;
+   }
+
+   static SetScratchBufferSize(int _szBytes) {
+      scratch_buffer_sz = _szBytes;
+   }
+
+   static SetEnableVBO(boolean _bEnable) {
+      b_vbo = _bEnable;
+   }
+
+   static Init(boolean _bGLCore) {
+
+      b_glcore = _bGLCore;
+
+      if(null == s_glsl_version)
+      {
+         // default: Desktop GL 2.x
+         SetGLSLVersion(_bGLCore/*bV3*/, false/*bGLES*/, null/*sVersionStringOrNull*/);
+      }
+
+      if(scratch_buffer_sz <= 256)
+         scratch_buffer_sz = DEFAULT_SCRATCH_BUFFER_SZ;
+
+      // (note) single VBO is ~20% slower than client-side vertex array (== let GL driver handle VBO(s) internally)
+      if(maybe == b_vbo)
+         b_vbo = b_glcore;
+
+      fbos.alloc(MAX_FBOS);
+      loop(MAX_FBOS)
+         fbos.add(#(new ShaderVG_FBO));
+
+      custom_shapes.alloc(MAX_CUSTOM_SHADERS);
+      loop(MAX_CUSTOM_SHADERS)
+      {
+         ShaderVG_CustomShape cs <= new ShaderVG_CustomShape;
+         cs.init();
+         cs.b_builtin = false;
+         custom_shapes.add(#(deref cs));
+      }
+
+      // // SetProjection2D(DEFAULT_VP_W, DEFAULT_VP_H);
+      fb_w = DEFAULT_FB_W;
+      fb_h = DEFAULT_FB_H;
+
+      viewport_stack.allocAndFill(VIEWPORT_STACK_SIZE*4, 0);
+      viewport_stacki = VIEWPORT_STACK_SIZE*4;
+      viewport_x = 0;
+      viewport_y = 0;
+      viewport_w = 0;
+      viewport_h = 0;
+
+      shadervg::Shape *shape;
+      foreach shape in all_shapes
+         shape.init();
+
+      // SetEnableDebug(true);
+
+      b_aa                = true;
+      aa_range            = 1.5f;
+      aa_exp              = 1.0f;
+      stroke_w            = 1.0f;
+      point_radius        = 1.0f;
+      fill_r              = 0.1f;
+      fill_g              = 0.2f;
+      fill_b              = 0.4f;
+      fill_a              = 1.0f;
+      stroke_r            = 1.0f;
+      stroke_g            = 1.0f;
+      stroke_b            = 1.0f;
+      stroke_a            = 1.0f;
+      global_a            = 1.0f;
+      texture_decal_alpha = 1.0f;
+
+      mapped_user_vbo_id = 0;
+      attrib_write_buffer <= scratch_buffer;
+   }
+
+   static Exit() {
+      // (todo)
+   }
+
+   static GetEnableDebug() : boolean {
+      return ellipse_fill_aa.b_debug;
+   }
+
+   static SetEnableDebug(boolean _bEnable) {
+      shadervg::Shape *shape;
+      foreach shape in all_shapes
+         shape.b_debug = _bEnable;
+   }
+
+   static GetEnableDrawInner() : boolean {
+      // debug
+      return ellipse_fill_aa.b_draw_inner;
+   }
+
+   static SetEnableDrawInner(boolean _bEnable) {
+      // debug
+      ellipse_fill_aa         .b_draw_inner = _bEnable;
+      ellipse_fill_stroke_aa  .b_draw_inner = _bEnable;
+      roundrect_fill_aa       .b_draw_inner = _bEnable;
+      roundrect_fill_stroke_aa.b_draw_inner = _bEnable;
+      rect_fill_aa            .b_draw_inner = _bEnable;
+      rect_fill_stroke_aa     .b_draw_inner = _bEnable;
+   }
+
+   static GetEnableDrawBorder() : boolean {
+      // debug
+      return ellipse_fill_aa.b_draw_border;
+   }
+
+   static SetEnableDrawBorder(boolean _bEnable) {
+      // debug
+      ellipse_fill_aa         .b_draw_border = _bEnable;
+      ellipse_fill_stroke_aa  .b_draw_border = _bEnable;
+      roundrect_fill_aa       .b_draw_border = _bEnable;
+      roundrect_fill_stroke_aa.b_draw_border = _bEnable;
+      rect_fill_aa            .b_draw_border = _bEnable;
+      rect_fill_stroke_aa     .b_draw_border = _bEnable;
+   }
+
+   static CreateVBO(int _numBytes) : int {
+      int id = zglGenBuffer();
+      BindVBO(id);
+      zglBufferData(GL_ARRAY_BUFFER, _numBytes, null, GL_DYNAMIC_DRAW);
+      // // glBindBuffer(GL_ARRAY_BUFFER, 0);
+      return id;
+   }
+
+   static UpdateVBO(int _vboId, int _offset, int _numBytes, Object _data) {
+      if(current_vbo_id != _vboId)
+         BindVBO(_vboId);
+      zglBufferSubData(GL_ARRAY_BUFFER, _offset, _numBytes, _data);
+      // // // glBindBuffer(GL_ARRAY_BUFFER, 0);
+   }
+
+   static BindVBO(int _vboId) {
+      // trace "xxx BindVBO: current_vbo_id="+current_vbo_id+" _vboId="+_vboId;
+      if(current_vbo_id != _vboId)
+      {
+         if(current_vbo_id == scratch_vbo_id && 0 != scratch_vbo_id && scratch_vbo_id != _vboId)
+            UnbindScratchBuffer();
+         glBindBuffer(GL_ARRAY_BUFFER, _vboId);
+         current_vbo_id = _vboId;
+      }
+   }
+
+   static GetVBOSize() : int {
+      int vboSize = zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE);
+      return vboSize;
+   }
+
+   static GetMappedVBOOffset() : int {
+      if(0 != mapped_user_vbo_id)
+      {
+         return user_vbo_buffer.offset;
+      }
+      else if(current_vbo_id == scratch_vbo_id)
+      {
+         return scratch_buffer.offset;
+      }
+      return 0;
+   }
+
+   static MapVBO(int _vboId) {
+      if(mapped_user_vbo_id != _vboId)
+      {
+         BindVBO(_vboId);
+         // map GPU buffer to virtual address and reset io_offset
+         int vboSize = zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE);
+         // trace "xxx MapVBO: vboId="+_vboId+" vboSize="+vboSize+" user_vbo_buffer="+#(user_vbo_buffer);
+         zglMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY, user_vbo_buffer, vboSize);
+         mapped_user_vbo_id = _vboId;
+      }
+   }
+
+   static UnmapVBO() {
+      if(0 != mapped_user_vbo_id)
+      {
+         glUnmapBuffer(GL_ARRAY_BUFFER);
+         mapped_user_vbo_id = 0;
+      }
+   }
+
+   static UnbindVBO() {
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+      current_vbo_id = 0;
+   }
+
+   static DestroyVBO(int _id) {
+      zglDeleteBuffer(_id);
+   }
+
+   protected static CreateScratchBuffer() {
+      if(b_vbo)
+      {
+         scratch_vbo_id = CreateVBO(scratch_buffer_sz);
+      }
+      else
+      {
+         scratch_buffer.size = scratch_buffer_sz;
+      }
+   }
+
+   static GetScratchBuffer() : Buffer {
+      return scratch_buffer;
+   }
+
+   static BindScratchBuffer() {
+      if(b_vbo)
+      {
+         if(current_vbo_id != scratch_vbo_id)
+         {
+            glBindBuffer(GL_ARRAY_BUFFER, scratch_vbo_id);
+            // map GPU buffer to virtual address and reset io_offset
+            int oldOffset = scratch_buffer.offset;
+            zglMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY, scratch_buffer, scratch_buffer_sz);
+            scratch_buffer.offset = oldOffset;
+            current_vbo_id = scratch_vbo_id;
+         }
+      }
+      else if(0 != current_vbo_id)
+      {
+         glBindBuffer(GL_ARRAY_BUFFER, 0);
+         current_vbo_id = 0;
+      }
+   }
+
+   static UnbindScratchBuffer() {
+      // called by EndFrame() via glBindVBO(0)
+      if(b_vbo)
+      {
+         if(scratch_vbo_id == current_vbo_id)
+         {
+            glUnmapBuffer(GL_ARRAY_BUFFER);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            current_vbo_id = 0;
+         }
+      }
+   }
+
+   static AllocScratchBuffer(int _aVertex, Buffer _scratchBuf, int _numBytes) {
+      if(ShaderVG.b_vbo)
+      {
+         // trace "xxx allocScratchBuffer: offset="+_scratchBuf.offset+" size="+_scratchBuf.size+" numBytes="+_numBytes;
+         if(_scratchBuf.offset + _numBytes > _scratchBuf.size)
+         {
+            glUnmapBuffer(GL_ARRAY_BUFFER);
+            glFinish();
+            zglMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY, _scratchBuf, _scratchBuf.size);
+            _scratchBuf.offset = 0;
+         }
+         zglVertexAttribOffset(_aVertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _scratchBuf.offset);
+      }
+      else
+      {
+         _scratchBuf.offset = 0;
+         glVertexAttribPointer(_aVertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _scratchBuf);
+      }
+   }
+
+   static CreateFBOEx(int _w, int _h, boolean _bMSAA, boolean _bDepth, boolean _bStencil) : int {
+      int fboIdx = 1;
+      loop(MAX_FBOS - 1)
+      {
+         ShaderVG_FBO fbo <= fbos[fboIdx];
+         if(0 == fbo.fbo_id)
+         {
+            fbo.sx = _w;
+            fbo.sy = _h;
+
+            fbo.tex_id = zglGenTexture();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, fbo.tex_id);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+                         _w, _h,
+                         0, GL_BGRA, GL_UNSIGNED_BYTE, null
+                         );
+
+            // Create framebuffer and attach texture (renderbuffer) to it
+            fbo.fbo_id = zglGenFramebuffer();
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo.fbo_id);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo.tex_id, 0);
+
+            if(_bMSAA)
+            {
+               fbo.fbo_msaa_id = zglGenFramebuffer();
+               glBindFramebuffer(GL_FRAMEBUFFER, fbo.fbo_msaa_id);
+
+               int msaaRb = zglGenRenderbuffer();
+               glBindRenderbuffer(GL_RENDERBUFFER, msaaRb);
+               glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_RGBA8, _w, _h);
+               glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaRb);
+               glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+               if(_bDepth)
+               {
+                  int msaaDepthRb = zglGenRenderbuffer();
+                  glBindRenderbuffer(GL_RENDERBUFFER, msaaDepthRb);
+
+                  if(_bStencil)
+                  {
+                     // not available in OpenGL 4.1 core (macOS)
+                     glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_DEPTH24_STENCIL8, _w, _h);
+                     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaDepthRb);
+                  }
+                  else
+                  {
+                     glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24, _w, _h);
+                     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,  GL_RENDERBUFFER, msaaDepthRb);
+                  }
+
+                  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+               }
+               else if(_bStencil)
+               {
+                  // not available in OpenGL 4.1 core (macOS)
+                  int msaaStencilRb = zglGenRenderbuffer();
+                  glBindRenderbuffer(GL_RENDERBUFFER, msaaStencilRb);
+
+                  glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_STENCIL_INDEX8, _w, _h);
+                  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, msaaStencilRb);
+
+                  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+               }
+            }
+            else
+            {
+               if(_bDepth/* || _bStencil*/)
+               {
+                  int depthRb = zglGenRenderbuffer();
+                  glBindRenderbuffer(GL_RENDERBUFFER, depthRb);
+
+                  if(_bStencil)
+                  {
+                     // not available in OpenGL 4.1 core (macOS)
+                     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, _w, _h);
+                     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, depthRb);
+                  }
+                  else
+                  {
+                     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, _w, _h);
+                     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRb);
+                  }
+
+                  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+               }
+               else if(_bStencil)
+               {
+                  // not available in OpenGL 4.1 core (macOS)
+                  int stencilRb = zglGenRenderbuffer();
+                  glBindRenderbuffer(GL_RENDERBUFFER, stencilRb);
+
+                  glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, _w, _h);
+                  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, stencilRb);
+
+                  glBindRenderbuffer(GL_RENDERBUFFER, 0);
+               }
+            }
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            return fboIdx;
+         }
+
+         // Next FBO
+         fboIdx++;
+      }
+      // Failed
+      return 0;
+   }
+
+   static CreateFBO(int _w, int _h) : int {
+      return CreateFBOEx(_w, _h, false/*bMSAA*/, false/*bDepth*/, true/*bStencil*/);
+   }
+
+   static BindFBO(int _fboIdx) {
+      if(0 <= _fboIdx < MAX_FBOS)
+      {
+         ShaderVG_FBO fbo <= fbos[_fboIdx];
+         glBindFramebuffer(GL_FRAMEBUFFER, (0 != fbo.fbo_msaa_id) ? fbo.fbo_msaa_id : fbo.fbo_id);
+      }
+      else
+      {
+         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      }
+   }
+
+   static ResolveFBO(int _fboIdx) {
+      if(0 <= _fboIdx < MAX_FBOS)
+      {
+         ShaderVG_FBO fbo <= fbos[_fboIdx];
+         if(0 != fbo.fbo_msaa_id)
+         {
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo.fbo_msaa_id);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo.fbo_id);
+            glBlitFramebuffer(0, 0, fbo.sx, fbo.sy,
+                              0, 0, fbo.sx, fbo.sy,
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST
+                              );
+            // Re-bind backbuffer
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+         }
+      }
+      else
+      {
+         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+      }
+   }
+
+   static UnbindFBO() {
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+   }
+
+   static GetFBOTextureId(int _fboIdx) {
+      if(0 <= _fboIdx < MAX_FBOS)
+      {
+         ShaderVG_FBO fbo <= fbos[_fboIdx];
+         return fbo.tex_id;
+      }
+      return 0;
+   }
+
+   static DestroyFBO(int _fboIdx) {
+      if(0 <= _fboIdx < MAX_FBOS)
+      {
+         ShaderVG_FBO fbo <= fbos[_fboIdx];
+         if(0 != fbo.fbo_msaa_id)
+         {
+            zglDeleteFramebuffer(fbo.fbo_msaa_id);
+            fbo.fbo_msaa_id = 0;
+         }
+         if(0 != fbo.fbo_id)
+         {
+            zglDeleteFramebuffer(fbo.fbo_id);
+            fbo.fbo_id = 0;
+         }
+         if(0 != fbo.tex_id)
+         {
+            zglDeleteTexture(fbo.tex_id);
+            fbo.tex_id = 0;
+         }
+      }
+   }
+
+   static FixShaderSourceVert(String _s) : String {
+      local String r = s_glsl_version+" \n\n";
+      r.append(_s
+               .replace("ATTRIBUTE",     s_glsl_attribute)
+               .replace("VARYING_OUT",   s_glsl_varying_out)
+               .replace("TEXTURE2D",     s_glsl_texture2d)
+               .replace("TEXTURE3D",     s_glsl_texture3d)
+               .replace("TEX_ALPHA",     s_glsl_tex_alpha)
+               );
+      return deref r;
+   }
+
+   static FixShaderSourceFrag(String _s) : String {
+      local String r = s_glsl_version+" \n\n"+s_glsl_fragcolor_def+" \n";
+      r.append(_s
+               .replace("VARYING_IN",    s_glsl_varying_in)
+               // // .replace("FRAGCOLOR_DEF", s_glsl_fragcolor_def)
+               .replace("FRAGCOLOR",     s_glsl_fragcolor)
+               .replace("TEXTURE2D",     s_glsl_texture2d)
+               .replace("TEXTURE3D",     s_glsl_texture3d)
+               .replace("TEX_ALPHA",     s_glsl_tex_alpha)
+               );
+      return deref r;
+   }
+
+   protected static CreateFillShader() : boolean {
+      fill_shader.vertexSource   = FixShaderSourceVert(fill_vs_src);
+      fill_shader.fragmentSource = FixShaderSourceFrag(fill_fs_src);
+
+      if(!fill_shader.create())
+      {
+         trace "[---] ShaderVG::CreateFillShader: fill_shader.create() failed";
+         return false;
+      }
+
+      fill_a_vertex = fill_shader.getAttribLocation("a_vertex");
+
+      fill_u_transform = fill_shader.getUniformLocation("u_transform");
+      fill_u_color     = fill_shader.getUniformLocation("u_color");
+
+      return true;
+   }
+
+   static BindFillShader() : int {
+      // returns vertex attribute id (for allocScratchBuffer() calls)
+      fill_shader.bind();
+
+      glUniformMatrix4fv(fill_u_transform, 1/*count*/, GL_TRUE/*transpose*/, mvp_matrix);
+      glUniform4f(fill_u_color,  fill_r, fill_g, fill_b, fill_a * global_a);
+
+      glEnableVertexAttribArray(fill_a_vertex);
+
+      return fill_a_vertex;
+   }
+
+   static EndFillShader() {
+      glDisableVertexAttribArray(fill_a_vertex);
+   }
+
+   static UnbindFillShader() {
+      EndFillShader();
+      fill_shader.unbind();
+   }
+
+   static BufferAddRectTexUVFlat32(Buffer _b,
+                                   float _x,  float _y,
+                                   float _w,  float _h,
+                                   float _ul, float _ut,
+                                   float _ur, float _ub
+                                   ) {
+      _b.f32 = _x;       _b.f32 = _y;
+      _b.f32 = _ul;      _b.f32 = _ut;
+
+      _b.f32 = _x + _w;  _b.f32 = _y;
+      _b.f32 = _ur;      _b.f32 = _ut;
+
+      _b.f32 = _x + _w;  _b.f32 = _y + _h;
+      _b.f32 = _ur;      _b.f32 = _ub;
+
+      _b.f32 = _x;       _b.f32 = _y;
+      _b.f32 = _ul;      _b.f32 = _ut;
+
+      _b.f32 = _x + _w;  _b.f32 = _y + _h;
+      _b.f32 = _ur;      _b.f32 = _ub;
+
+      _b.f32 = _x;       _b.f32 = _y + _h;
+      _b.f32 = _ul;      _b.f32 = _ub;
+   }
+
+   static WriteC32AsRGBA8(Buffer _b, int _c32) {
+      _b.i8 = (_c32 >> 16) & 255;  // r
+      _b.i8 = (_c32 >>  8) & 255;  // g
+      _b.i8 = (_c32      ) & 255;  // b
+      _b.i8 = (_c32 >> 24) & 255;  // a
+   }
+
+   static BufferAddRectTexUVGouraud32(Buffer _b,
+                                      float _x,     float _y,
+                                      float _w,     float _h,
+                                      float _ul,    float _ut,
+                                      float _ur,    float _ub,
+                                      int   _c32LT, int _c32RT,
+                                      int   _c32LB, int _c32RB
+                                      ) {
+      _b.f32 = _x;       _b.f32 = _y;
+      _b.f32 = _ul;      _b.f32 = _ut;
+      WriteC32AsRGBA8(_b, _c32LT);
+
+      _b.f32 = _x + _w;  _b.f32 = _y;
+      _b.f32 = _ur;      _b.f32 = _ut;
+      WriteC32AsRGBA8(_b, _c32RT);
+
+      _b.f32 = _x + _w;  _b.f32 = _y + _h;
+      _b.f32 = _ur;      _b.f32 = _ub;
+      WriteC32AsRGBA8(_b, _c32RB);
+
+      _b.f32 = _x;       _b.f32 = _y;
+      _b.f32 = _ul;      _b.f32 = _ut;
+      WriteC32AsRGBA8(_b, _c32LT);
+
+      _b.f32 = _x + _w;  _b.f32 = _y + _h;
+      _b.f32 = _ur;      _b.f32 = _ub;
+      WriteC32AsRGBA8(_b, _c32RB);
+
+      _b.f32 = _x;       _b.f32 = _y + _h;
+      _b.f32 = _ul;      _b.f32 = _ub;
+      WriteC32AsRGBA8(_b, _c32LB);
+   }
+
+   static BufferAddLinePointFlat14_2(Buffer _b, float _x1, float _y1) {
+      int vtxIdx = 0;
+      loop(6)
+      {
+         _b.i16 = _x1 * 4.0;
+         _b.i16 = _y1 * 4.0;
+         _b.i16 = vtxIdx++;
+      }
+   }
+
+   static BufferAddLinePointFlat32(Buffer _b, float _x1, float _y1) {
+      int vtxIdx = 0;
+      loop(6)
+      {
+         _b.f32 = _x1;
+         _b.f32 = _y1;
+         _b.i16 = vtxIdx++;
+      }
+   }
+
+   static BufferAddLinePointFlatBevel14_2(Buffer _b, float _x1, float _y1) {
+      int vtxIdx = 0;
+      loop(9)
+      {
+         _b.i16 = _x1 * 4.0;
+         _b.i16 = _y1 * 4.0;
+         _b.i16 = vtxIdx++;
+      }
+   }
+
+   static BufferAddLinePointFlatBevel32(Buffer _b, float _x1, float _y1) {
+      int vtxIdx = 0;
+      loop(9)
+      {
+         _b.f32 = _x1;
+         _b.f32 = _y1;
+         _b.i16 = vtxIdx++;
+      }
+   }
+
+   static BufferAddLinesPointsFlat14_2(Buffer _b, float _x1, float _y1, float _x2, float _y2) {
+      int vtxIdx = 0;
+      loop(6)
+      {
+         _b.i16 = _x1 * 4.0;
+         _b.i16 = _y1 * 4.0;
+         _b.i16 = vtxIdx++;
+      }
+      loop(6)
+      {
+         _b.i16 = _x2 * 4.0;
+         _b.i16 = _y2 * 4.0;
+         _b.i16 = vtxIdx++;
+      }
+   }
+
+   static BufferAddLinesPointsFlat32(Buffer _b, float _x1, float _y1, float _x2, float _y2) {
+      // (note) also used for PointsSquareAA32, PointsRoundAA32
+      int vtxIdx = 0;
+      loop(6)
+      {
+         _b.f32 = _x1;
+         _b.f32 = _y1;
+         _b.i16 = vtxIdx++;
+      }
+      loop(6)
+      {
+         _b.f32 = _x2;
+         _b.f32 = _y2;
+         _b.i16 = vtxIdx++;
+      }
+   }
+
+   private static BufferAddLinesPointFlat14_2(Buffer _b, float _x, float _y) {
+      // called by sdvg_Vertex2f() in DRAW_MODE_LINES*
+      int vtxIdx = current_draw_lines_vertex_index;
+      loop(6)
+      {
+         _b.i16 = _x * 4.0f;
+         _b.i16 = _y * 4.0f;
+         _b.i16 = vtxIdx++;
+      }
+      current_draw_lines_vertex_index += 6;
+      if(current_draw_lines_vertex_index >= 12)
+         current_draw_lines_vertex_index = 0;
+   }
+
+   private static BufferAddLinesPointFlat32(Buffer _b, float _x, float _y) {
+      // called by sdvg_Vertex2f() in DRAW_MODE_LINES*
+      int vtxIdx = current_draw_lines_vertex_index;
+      // trace "xxx BufferAddLinesPointFlat32: vtxIdx="+vtxIdx;
+      loop(6)
+      {
+         _b.f32 = _x;
+         _b.f32 = _y;
+         _b.i16 = vtxIdx++;
+      }
+      current_draw_lines_vertex_index += 6;
+      if(current_draw_lines_vertex_index >= 12)
+         current_draw_lines_vertex_index = 0;
+   }
+
+   static OnOpen() : boolean {
+
+      if(b_glcore)
+         vao_id = zglGenVertexArray();
+
+      CreateScratchBuffer();
+
+      if(!CreateFillShader())
+      {
+         trace "[---] ShaderVG::OnOpen: CreateFillShader() failed";
+         return false;
+      }
+
+      // re-create built-in shape shaders
+      shadervg::Shape *shape;
+      foreach shape in all_shapes
+      {
+         if(!shape.onOpen())
+         {
+            trace "[---] ShaderVG::OnOpen: "+shape.yacMetaClassName()+".onOpen() failed";
+            return false;
+         }
+      }
+
+      // unload / destroy custom shaders (app must re-create them)
+      ShaderVG_CustomShape *cs;
+      foreach cs in custom_shapes
+         cs.onOpen();
+      current_shape <= null;
+
+      current_vbo_id = 0;
+
+      return true;
+   }
+
+   static SetFramebufferSize(int _w, int _h) {
+      fb_w = _w;
+      fb_h = _h;
+   }
+
+   static BeginFrame() {
+
+      viewport_stacki = VIEWPORT_STACK_SIZE*4;
+      viewport_x = 0;
+      viewport_y = 0;
+      viewport_w = fb_w;
+      viewport_h = fb_h;
+      glViewport(viewport_x, viewport_y,
+                 viewport_w, viewport_h
+                 );
+
+      scissor_stacki = SCISSOR_STACK_SIZE*4;
+      scissor_x = 0;
+      scissor_y = 0;
+      scissor_w = fb_w;
+      scissor_h = fb_h;
+      glScissor(scissor_x, scissor_y,
+                scissor_w, scissor_h
+                );
+      glEnable(GL_SCISSOR_TEST);
+
+      glDisable(GL_DEPTH_TEST);
+      glCullFace(GL_BACK);
+      glFrontFace(GL_CW);
+      glDisable(GL_CULL_FACE);
+
+      // // ShaderVG.SetProjection2D(minnie_setup.width, minnie_setup.height);
+      // // ShaderVG.SetAARangeAndExp(b_aa ? aa_range : 0.01f, aa_exp);
+      // // ShaderVG.SetStrokeWidth(1.5);
+      // // ShaderVG.SetFillColor4f(0.1, 0.4, 0.25, 1.0 * alpha);
+      // // ShaderVG.SetStrokeColor4f(1.0, 1.0, 1.0, 1.0 * alpha);
+      EnableBlending();
+
+      UnbindVBO();
+
+      current_draw_mode = GL_NONE;
+
+      current_draw_attrib_enables.empty();
+
+      pixel_scl = 1.0f;
+
+      if(b_glcore)
+         glBindVertexArray(vao_id);
+   }
+
+   static SetViewport(int _x, int _y, int _w, int _h) {
+
+      // (note) (0;0) = left/top  =>  (0;0) = left/bottom (GL)
+      viewport_x = _x;
+      viewport_y = fb_h - (_y + _h);
+      viewport_w = _w;
+      viewport_h = _h;
+
+      glViewport(viewport_x, viewport_y,
+                 viewport_w, viewport_h
+                 );
+   }
+
+   static PushViewport(int _x, int _y, int _w, int _h) {
+      if(viewport_stacki >= 4)
+      {
+         viewport_stack[--viewport_stacki] = viewport_h;
+         viewport_stack[--viewport_stacki] = viewport_w;
+         viewport_stack[--viewport_stacki] = viewport_y;
+         viewport_stack[--viewport_stacki] = viewport_x;
+
+         // (note) (0;0) = left/top  =>  (0;0) = left/bottom (GL)
+         viewport_x = _x;
+         viewport_y = fb_h - (_y + _h);
+         viewport_w = _w;
+         viewport_h = _h;
+
+         glViewport(viewport_x, viewport_y,
+                    viewport_w, viewport_h
+                    );
+      }
+      else
+      {
+         trace "[---] sdvg_PushViewport: stack overflow";
+      }
+   }
+
+   static PopViewport() {
+      if(viewport_stacki <= ((VIEWPORT_STACK_SIZE-1)*4))
+      {
+         viewport_x = viewport_stack[viewport_stacki++];
+         viewport_y = viewport_stack[viewport_stacki++];
+         viewport_w = viewport_stack[viewport_stacki++];
+         viewport_h = viewport_stack[viewport_stacki++];
+
+         glViewport(viewport_x, viewport_y,
+                    viewport_w, viewport_h
+                    );
+      }
+      else
+      {
+         trace "[---] sdvg_PopViewport: stack underflow";
+      }
+   }
+
+   static GetViewportWidth() : int {
+      return viewport_w;
+   }
+
+   static GetViewportHeight() : int {
+      return viewport_h;
+   }
+
+   static SetScissor(int _x, int _y, int _w, int _h) {
+
+      // (note) (0;0) = left/top  =>  (0;0) = left/bottom (GL)
+      scissor_x = _x;
+      scissor_y = fb_h - (_y + _h);
+      scissor_w = _w;
+      scissor_h = _h;
+
+      glScissor(scissor_x, scissor_y,
+                scissor_w, scissor_h
+                );
+   }
+
+   static PushScissor(int _x, int _y, int _w, int _h) {
+      if(scissor_stacki >= 4)
+      {
+         scissor_stack[--scissor_stacki] = scissor_h;
+         scissor_stack[--scissor_stacki] = scissor_w;
+         scissor_stack[--scissor_stacki] = scissor_y;
+         scissor_stack[--scissor_stacki] = scissor_x;
+
+         // (note) (0;0) = left/top  =>  (0;0) = left/bottom (GL)
+         _y = fb_h - (_y + _h);
+
+         if(_x < 0)
+         {
+            _w += _x;
+            _x = 0;
+         }
+
+         if(_y < 0)
+         {
+            _h += _y;
+            _y = 0;
+         }
+
+         if(scissor_w > 0)
+         {
+            if(_x < scissor_x)
+               _w -= (scissor_x - _x);
+
+            if(_y < scissor_y)
+               _h -= (scissor_y - _y);
+
+            // intersect with last scissor region
+            if(_x > scissor_x)
+            {
+               scissor_w -= (_x - scissor_x);
+               scissor_x = _x;
+            }
+
+            if(_y > scissor_y)
+            {
+               scissor_h -= (_y - scissor_y);
+               scissor_y = _y;
+            }
+
+            if(_w < scissor_w)
+               scissor_w = _w;
+
+            else if(scissor_w < 0)
+               scissor_w = 0;
+
+            if(_h < scissor_h)
+               scissor_h = _h;
+            else if(scissor_h < 0)
+               scissor_h = 0;
+         }
+         else
+         {
+            scissor_x = _x;
+            scissor_y = _y;
+            scissor_w = _w;
+            scissor_h = _h;
+         }
+
+         if(scissor_w < 0)
+            scissor_w = 0;
+
+         if(scissor_h < 0)
+            scissor_h = 0;
+
+         // trace "xxx sdvg_PushScissor: scissor_x="+scissor_x+" y="+scissor_y+" w="+scissor_w+" h="+scissor_h;
+         glScissor(scissor_x, scissor_y,
+                   scissor_w, scissor_h
+                   );
+      }
+      else
+      {
+         trace "[---] sdvg_PushScissor: stack overflow";
+      }
+   }
+
+   static PopScissor() {
+      if(scissor_stacki <= ((SCISSOR_STACK_SIZE-1)*4))
+      {
+         scissor_x = scissor_stack[scissor_stacki++];
+         scissor_y = scissor_stack[scissor_stacki++];
+         scissor_w = scissor_stack[scissor_stacki++];
+         scissor_h = scissor_stack[scissor_stacki++];
+
+         glScissor(scissor_x, scissor_y,
+                   scissor_w, scissor_h
+                   );
+      }
+      else
+      {
+         trace "[---] sdvg_PopScissor: stack underflow";
+      }
+   }
+
+   static EnableScissor() {
+      glEnable(GL_SCISSOR_TEST);
+   }
+
+   static DisableScissor() {
+      glDisable(GL_SCISSOR_TEST);
+   }
+
+   static Flush() {
+      if(b_vbo)
+      {
+         if(scratch_buffer.offset > 0)
+         {
+            UnbindScratchBuffer();
+            glFinish();
+         }
+      }
+   }
+
+   static ReturnToGL() {
+      // (note) helper function that unbinds/unmaps (scratch) VBO and shader program
+      // (note) needed during app transition from GL to ShaderVG/Minnie API
+      // (note) !! caution !! this call is _very_ expensive (~150x slowdown when called frequently)
+      if(0 != mapped_user_vbo_id)
+         UnmapVBO();
+      BindVBO(0);
+      glUseProgram(0);
+   }
+
+   static EndFrame() {
+      DisableBlending();
+      if(0 != mapped_user_vbo_id)
+         UnmapVBO();
+      BindVBO(0);
+      glUseProgram(0);
+      glDisable(GL_SCISSOR_TEST);
+   }
+
+   // // static SetProjection2D(float _w, float _h) {
+   // //    mvp_matrix.initOrtho(0.0f/*left*/,      _w/*right*/,
+   // //                         _h/*bottom*/,    0.0f/*top*/,
+   // //                         0.0f/*znear*/,  10.0f/*zfar*/
+   // //                         );
+   // // }
+
+   static SetTransform(Object _mat4) {
+      mvp_matrix = _mat4;
+   }
+
+   static GetTransformRef() : Matrix4f {
+      return mvp_matrix;
+   }
+
+   static SetEnableAA(boolean _bEnable) {
+      b_aa = _bEnable;
+   }
+
+   static SetAARange(float _aaRange) {
+      aa_range = _aaRange;
+   }
+
+   static SetAAExp(float _aaExp) {
+      // (todo) remove
+      aa_exp   = _aaExp;
+   }
+
+   static SetFillColor4f(float _fillR, float _fillG, float _fillB, float _fillA) {
+      fill_r = _fillR;
+      fill_g = _fillG;
+      fill_b = _fillB;
+      fill_a = _fillA;
+   }
+
+   static SetFillAlpha(float _fillA) {
+      fill_a = _fillA;
+   }
+
+   static SetFillColorARGB(int _c32) {
+      fill_r = ((_c32 >> 16)&255) * (1.0f / 255.0f);
+      fill_g = ((_c32 >>  8)&255) * (1.0f / 255.0f);
+      fill_b = ((_c32      )&255) * (1.0f / 255.0f);
+      fill_a = ((_c32 >> 24)&255) * (1.0f / 255.0f);
+   }
+
+   static SetStrokeWidth(float _strokeW) {
+      stroke_w = _strokeW;
+   }
+
+   static SetPointRadius(float _radius) {
+      point_radius = _radius;
+   }
+
+   static SetPixelScaling(float _s) {
+      pixel_scl = _s;
+   }
+
+   static SetStrokeColor4f(float _strokeR, float _strokeG, float _strokeB, float _strokeA) {
+      stroke_r = _strokeR;
+      stroke_g = _strokeG;
+      stroke_b = _strokeB;
+      stroke_a = _strokeA;
+   }
+
+   static SetStrokeColorARGB(int _c32) {
+      stroke_r = ((_c32 >> 16)&255) * (1.0f / 255.0f);
+      stroke_g = ((_c32 >>  8)&255) * (1.0f / 255.0f);
+      stroke_b = ((_c32      )&255) * (1.0f / 255.0f);
+      stroke_a = ((_c32 >> 24)&255) * (1.0f / 255.0f);
+   }
+
+   static SetGlobalAlpha(float _a) {
+      global_a = _a;
+   }
+
+   static SetTextureDecalAlpha(float _decalAlpha) {
+      texture_decal_alpha = _decalAlpha;
+   }
+
+   static EnableBlending() {
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                          GL_ZERO,      GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingAdditive() {
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingAdditiveKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA,  GL_ONE,
+                          GL_ZERO, GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingSrcColorKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_COLOR,  GL_ONE_MINUS_SRC_ALPHA,
+                          GL_ZERO, GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingDstColorKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA,  GL_DST_COLOR,
+                          GL_ZERO, GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   static DisableBlending() {
+      glDisable(GL_BLEND);
+   }
+
+   static AlphaWrite(boolean _bEnable) {
+      glColorMask(1,1,1, _bEnable);
+   }
+
+   static BindTexture(int _texId, boolean _bRepeat, boolean _bFilter) {
+
+      glActiveTexture(GL_TEXTURE0);
+
+      glBindTexture(GL_TEXTURE_2D, _texId);
+
+      int wrap = _bRepeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+
+      int filter = _bFilter ? GL_LINEAR : GL_NEAREST;
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+   }
+
+   static UnbindTexture() {
+      glBindTexture(GL_TEXTURE_2D, 0);
+   }
+
+   static DrawTrianglesFillFlatVBO32(int _vboId,
+                                     int _byteOffset,
+                                     int _numTris
+                                     ) {
+      //
+      // VBO vertex format (8 bytes per vertex):
+      //   f32 x
+      //   f32 y
+      //
+      triangles_fill_flat_32.drawTrianglesFillFlatVBO32(_vboId,
+                                                        _byteOffset,
+                                                        _numTris,
+                                                        mvp_matrix,
+                                                        fill_r, fill_g, fill_b, fill_a * global_a
+                                                        );
+   }
+
+   static DrawTrianglesFillFlatVBO14_2(int _vboId,
+                                       int _byteOffset,
+                                       int _numTris
+                                       ) {
+      // VBO vertex format (4 bytes per vertex):
+      //   s14.2 x
+      //   s14.2 y
+      triangles_fill_flat_14_2.drawTrianglesFillFlatVBO14_2(_vboId,
+                                                            _byteOffset,
+                                                            _numTris,
+                                                            mvp_matrix,
+                                                            fill_r, fill_g, fill_b, fill_a * global_a
+                                                            );
+   }
+
+   static DrawTrianglesFillGouraudVBO32(int _vboId,
+                                        int _byteOffset,
+                                        int _numTris
+                                        ) {
+      //
+      // VBO vertex format (12 bytes per vertex):
+      //   f32 x
+      //   f32 y
+      //   u8  r
+      //   u8  g
+      //   u8  b
+      //   u8  a
+      //
+      triangles_fill_gouraud_32.drawTrianglesFillGouraudVBO32(_vboId,
+                                                              _byteOffset,
+                                                              _numTris,
+                                                              mvp_matrix,
+                                                              global_a
+                                                              );
+   }
+
+   static DrawTrianglesFillGouraudVBO14_2(int _vboId,
+                                          int _byteOffset,
+                                          int _numTris
+                                          ) {
+      //
+      // VBO vertex format (8 bytes per vertex):
+      //   s14.2 x
+      //   s14.2 y
+      //   u8    r
+      //   u8    g
+      //   u8    b
+      //   u8    a
+      //
+      triangles_fill_gouraud_14_2.drawTrianglesFillGouraudVBO14_2(_vboId,
+                                                                  _byteOffset,
+                                                                  _numTris,
+                                                                  mvp_matrix,
+                                                                  global_a
+                                                                  );
+   }
+
+   static DrawTrianglesFillFlatEdgeAAVBO32(int _vboId,
+                                           int _byteOffset,
+                                           int _numTris
+                                           ) {
+      //
+      // VBO vertex format (26 bytes per vertex):
+      //     0 f32 x
+      //     4 f32 y
+      //     8 u8  edge_bc
+      //     9 u8  edge_ca
+      //    10 u8  edge_ab
+      //    11 u8  __pad1
+      //    12 f32 scale_s
+      //    16 f32 scale_t
+      //    20 f32 scale_u
+      //    24 u8  barycentric_s
+      //    25 u8  barycentric_t
+      //
+      triangles_fill_flat_edgeaa_32.drawTrianglesFillFlatEdgeAAVBO32(_vboId,
+                                                                     _byteOffset,
+                                                                     _numTris,
+                                                                     mvp_matrix,
+                                                                     fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                     b_aa
+                                                                     );
+   }
+
+   static DrawTrianglesFillFlatEdgeAAVBO14_2(int _vboId,
+                                             int _byteOffset,
+                                             int _numTris
+                                             ) {
+      //
+      // VBO vertex format (22 bytes per vertex):
+      //     0 s14.2 x
+      //     2 s14.2 y
+      //     4 u8    edge_bc
+      //     5 u8    edge_ca
+      //     6 u8    edge_ab
+      //     7 u8    __pad1
+      //     8 f32   scale_s
+      //    12 f32   scale_t
+      //    16 f32   scale_u
+      //    20 u8    barycentric_s
+      //    21 u8    barycentric_t
+      //
+      triangles_fill_flat_edgeaa_14_2.drawTrianglesFillFlatEdgeAAVBO14_2(_vboId,
+                                                                         _byteOffset,
+                                                                         _numTris,
+                                                                         mvp_matrix,
+                                                                         fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                         b_aa
+                                                                         );
+   }
+
+   static DrawTrianglesFillGouraudEdgeAAVBO32(int _vboId,
+                                              int _byteOffset,
+                                              int _numTris
+                                              ) {
+      //
+      // VBO vertex format (30 bytes per vertex):
+      //     0 f32 x
+      //     4 f32 y
+      //     8 u8  r
+      //     9 u8  g
+      //    10 u8  b
+      //    11 u8  a
+      //    12 u8  edge_bc
+      //    13 u8  edge_ca
+      //    14 u8  edge_ab
+      //    15 u8  __pad1
+      //    16 f32 scale_s
+      //    20 f32 scale_t
+      //    24 f32 scale_u
+      //    28 u8  barycentric_s
+      //    29 u8  barycentric_t
+      //
+      triangles_fill_gouraud_edgeaa_32.drawTrianglesFillGouraudEdgeAAVBO32(_vboId,
+                                                                           _byteOffset,
+                                                                           _numTris,
+                                                                           mvp_matrix,
+                                                                           b_aa,
+                                                                           global_a
+                                                                           );
+   }
+
+   static DrawTrianglesFillGouraudEdgeAAVBO14_2(int _vboId,
+                                                int _byteOffset,
+                                                int _numTris
+                                                ) {
+      //
+      // VBO vertex format (26 bytes per vertex):
+      //     0 f32 x
+      //     2 f32 y
+      //     4 u8  r
+      //     5 u8  g
+      //     6 u8  b
+      //     7 u8  a
+      //     8 u8  edge_bc
+      //     9 u8  edge_ca
+      //    10 u8  edge_ab
+      //    11 u8  __pad1
+      //    12 f32 scale_s
+      //    16 f32 scale_t
+      //    20 f32 scale_u
+      //    24 u8  barycentric_s
+      //    25 u8  barycentric_t
+      //
+      triangles_fill_gouraud_edgeaa_14_2.drawTrianglesFillGouraudEdgeAAVBO14_2(_vboId,
+                                                                               _byteOffset,
+                                                                               _numTris,
+                                                                               mvp_matrix,
+                                                                               b_aa,
+                                                                               global_a
+                                                                               );
+   }
+
+   static DrawPolygonFillFlatVBO32(int _vboId,
+                                   int _byteOffset,
+                                   int _numVerts
+                                   ) {
+      //
+      // VBO vertex format (8 bytes per vertex):
+      //   f32 x
+      //   f32 y
+      //
+      // (note) requires stencil buffer
+      //
+      polygon_fill_flat_32.drawPolygonFillFlatVBO32(_vboId,
+                                                      _byteOffset,
+                                                      _numVerts,
+                                                      mvp_matrix,
+                                                      fill_r, fill_g, fill_b, fill_a * global_a
+                                                      );
+   }
+
+   static DrawPolygonFillFlatVBO14_2(int _vboId,
+                                     int _byteOffset,
+                                     int _numVerts
+                                     ) {
+      //
+      // VBO vertex format (4 bytes per vertex):
+      //   s14.2 x
+      //   s14.2 y
+      //
+      // (note) requires stencil buffer
+      //
+      polygon_fill_flat_14_2.drawPolygonFillFlatVBO14_2(_vboId,
+                                                        _byteOffset,
+                                                        _numVerts,
+                                                        mvp_matrix,
+                                                        fill_r, fill_g, fill_b, fill_a * global_a
+                                                        );
+   }
+
+   static DrawPolygonFillGouraudVBO32(int _vboId,
+                                      int _byteOffset,
+                                      int _numVerts
+                                      ) {
+      //
+      // VBO vertex format (12 bytes per vertex):
+      //   f32 x
+      //   f32 y
+      //   u8  r
+      //   u8  g
+      //   u8  b
+      //   u8  a
+      //
+      // (note) requires stencil buffer
+      //
+      polygon_fill_gouraud_32.drawPolygonFillGouraudVBO32(_vboId,
+                                                          _byteOffset,
+                                                          _numVerts,
+                                                          mvp_matrix,
+                                                          global_a
+                                                          );
+   }
+
+   static DrawPolygonFillGouraudVBO14_2(int _vboId,
+                                        int _byteOffset,
+                                        int _numVerts
+                                        ) {
+      // VBO vertex format (8 bytes per vertex):
+      //   s14.2 x
+      //   s14.2 y
+      //   u8    r
+      //   u8    g
+      //   u8    b
+      //   u8    a
+      //
+      // (note) requires stencil buffer
+      //
+      polygon_fill_gouraud_14_2.drawPolygonFillGouraudVBO14_2(_vboId,
+                                                              _byteOffset,
+                                                              _numVerts,
+                                                              mvp_matrix,
+                                                              global_a
+                                                              );
+   }
+
+   static SetupRectFillAAVBO32(Buffer _vb, Buffer _dl,
+                               float _centerX, float _centerY,
+                               float _sizeX, float _sizeY
+                               ) {
+      // (note) 'size' is actually the radius (area is center-size..center+size)
+      float aaOff = b_aa ? pixel_scl * RECT_FILL_AA_SIZE_OFFSET : 0.0f;
+      rect_fill_aa.setupRectFillAAVBO32(_vb, _dl,
+                                        _centerX, _centerY,
+                                        _sizeX + aaOff, _sizeY + aaOff,
+                                        pixel_scl * aa_range
+                                        );
+   }
+
+   static DrawRectFillAAVBO32(int   _vboId,
+                              int   _byteOffsetInner,
+                              int   _numVertsInner,
+                              int   _byteOffsetBorder,
+                              int   _numVertsBorder,
+                              int   _glPrimTypeBorder,
+                              float _centerX, float _centerY,
+                              float _sizeX, float _sizeY
+                              ) {
+      float aaOff = b_aa ? pixel_scl * RECT_FILL_AA_SIZE_OFFSET : 0.0f;
+      rect_fill_aa.drawRectFillAAVBO32(_vboId,
+                                       _byteOffsetInner,
+                                       _numVertsInner,
+                                       _byteOffsetBorder,
+                                       _numVertsBorder,
+                                       _glPrimTypeBorder,
+                                       mvp_matrix,
+                                       _centerX, _centerY,
+                                       _sizeX + aaOff, _sizeY + aaOff,
+                                       fill_r, fill_g, fill_b, fill_a * global_a,
+                                       b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                       aa_exp
+                                       );
+   }
+
+   static DrawRectFillAA(float _centerX, float _centerY,
+                         float _sizeX,   float _sizeY
+                         ) {
+      float aaOff = b_aa ? pixel_scl * RECT_FILL_AA_SIZE_OFFSET : 0.0f;
+      rect_fill_aa.drawRectFillAA(scratch_buffer,
+                                  mvp_matrix,
+                                  _centerX, _centerY,
+                                  _sizeX + aaOff, _sizeY + aaOff,
+                                  fill_r, fill_g, fill_b, fill_a * global_a,
+                                  b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                  aa_exp
+                                  );
+   }
+
+   static SetupRectFillStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                     float _centerX, float _centerY,
+                                     float _sizeX, float _sizeY,
+                                     float _strokeW
+                                     ) {
+      // (note) 'size' is actually the radius (area is center-size..center+size)
+      float aaOffSize   = b_aa ? pixel_scl * RECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * RECT_AA_STROKE_OFFSET : 0.0f;
+      rect_fill_stroke_aa.setupRectFillStrokeAAVBO32(_vb, _dl,
+                                                     _centerX, _centerY,
+                                                     _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                     pixel_scl * _strokeW + aaOffStroke,
+                                                     pixel_scl * aa_range
+                                                     );
+   }
+
+   static DrawRectFillStrokeAAVBO32(int   _vboId,
+                                    int   _byteOffsetInner,
+                                    int   _numVertsInner,
+                                    int   _byteOffsetBorder,
+                                    int   _numVertsBorder,
+                                    int   _glPrimTypeBorder,
+                                    float _centerX, float _centerY,
+                                    float _sizeX, float _sizeY
+                                    ) {
+      float aaOffSize   = b_aa ? pixel_scl * RECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * RECT_AA_STROKE_OFFSET : 0.0f;
+      rect_fill_stroke_aa.drawRectFillStrokeAAVBO32(_vboId,
+                                                    _byteOffsetInner,
+                                                    _numVertsInner,
+                                                    _byteOffsetBorder,
+                                                    _numVertsBorder,
+                                                    _glPrimTypeBorder,
+                                                    mvp_matrix,
+                                                    _centerX, _centerY,
+                                                    _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                    fill_r, fill_g, fill_b, fill_a * global_a,
+                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                    pixel_scl * stroke_w + aaOffStroke,
+                                                    b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                    aa_exp
+                                                    );
+   }
+
+   static DrawRectFillStrokeAA(float _centerX, float _centerY,
+                               float _sizeX,   float _sizeY
+                               ) {
+      float aaOffSize   = b_aa ? pixel_scl * RECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * RECT_AA_STROKE_OFFSET : 0.0f;
+      rect_fill_stroke_aa.drawRectFillStrokeAA(scratch_buffer,
+                                               mvp_matrix,
+                                               _centerX, _centerY,
+                                               _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                               fill_r, fill_g, fill_b, fill_a * global_a,
+                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                               pixel_scl * stroke_w + aaOffStroke,
+                                               b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                               aa_exp
+                                               );
+   }
+
+   static SetupRectStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                 float _centerX, float _centerY,
+                                 float _sizeX, float _sizeY,
+                                 float _strokeW
+                                 ) {
+      // (note) 'size' is actually the radius (area is center-size..center+size)
+      float aaOffSize   = b_aa ? pixel_scl * RECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * RECT_AA_STROKE_OFFSET : 0.0f;
+      rect_stroke_aa.setupRectStrokeAAVBO32(_vb, _dl,
+                                            _centerX, _centerY,
+                                            _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                            pixel_scl * _strokeW + aaOffStroke,
+                                            pixel_scl * aa_range
+                                            );
+   }
+
+   static DrawRectStrokeAAVBO32(int   _vboId,
+                                int   _byteOffsetBorder,
+                                int   _numVertsBorder,
+                                int   _glPrimTypeBorder,
+                                float _centerX, float _centerY,
+                                float _sizeX, float _sizeY
+                                ) {
+      float aaOffSize   = b_aa ? pixel_scl * RECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * RECT_AA_STROKE_OFFSET : 0.0f;
+      rect_stroke_aa.drawRectStrokeAAVBO32(_vboId,
+                                           _byteOffsetBorder,
+                                           _numVertsBorder,
+                                           _glPrimTypeBorder,
+                                           mvp_matrix,
+                                           _centerX, _centerY,
+                                           _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                           stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                           pixel_scl * stroke_w + aaOffStroke,
+                                           b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                           aa_exp
+                                           );
+   }
+
+   static DrawRectStrokeAA(float _centerX, float _centerY,
+                           float _sizeX,   float _sizeY
+                           ) {
+      float aaOffSize   = b_aa ? pixel_scl * RECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * RECT_AA_STROKE_OFFSET : 0.0f;
+      rect_stroke_aa.drawRectStrokeAA(scratch_buffer,
+                                      mvp_matrix,
+                                      _centerX, _centerY,
+                                      _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                      stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                      pixel_scl * stroke_w + aaOffStroke,
+                                      b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                      aa_exp
+                                      );
+   }
+
+   static SetupEllipseFillAAVBO32(Buffer _vb, Buffer _dl,
+                                  float _centerX, float _centerY,
+                                  float _radiusX, float _radiusY
+                                  ) {
+      float aaOff = b_aa ? pixel_scl * ELLIPSE_FILL_AA_SIZE_OFFSET : 0.0f;
+      ellipse_fill_aa.setupEllipseFillAAVBO32(_vb, _dl,
+                                              _centerX, _centerY,
+                                              _radiusX + aaOff, _radiusY + aaOff
+                                              );
+   }
+
+   static DrawEllipseFillAAVBO32(int   _vboId,
+                                 int   _byteOffsetInner,
+                                 int   _numVertsInner,
+                                 int   _byteOffsetBorder,
+                                 int   _numVertsBorder,
+                                 int   _glPrimTypeBorder,
+                                 float _centerX, float _centerY,
+                                 float _radiusX, float _radiusY
+                                 ) {
+      float aaOff = b_aa ? pixel_scl * ELLIPSE_FILL_AA_SIZE_OFFSET : 0.0f;
+      ellipse_fill_aa.drawEllipseFillAAVBO32(_vboId,
+                                             _byteOffsetInner,
+                                             _numVertsInner,
+                                             _byteOffsetBorder,
+                                             _numVertsBorder,
+                                             _glPrimTypeBorder,
+                                             mvp_matrix,
+                                             _centerX, _centerY,
+                                             _radiusX + aaOff, _radiusY + aaOff,
+                                             fill_r, fill_g, fill_b, fill_a * global_a,
+                                             b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                             aa_exp
+                                             );
+   }
+
+   static DrawEllipseFillAA(float _centerX, float _centerY,
+                            float _sizeX,   float _sizeY
+                            ) {
+      float aaOff = b_aa ? pixel_scl * ELLIPSE_FILL_AA_SIZE_OFFSET : 0.0f;
+      ellipse_fill_aa.drawEllipseFillAA(scratch_buffer,
+                                        mvp_matrix,
+                                        _centerX, _centerY,
+                                        _sizeX + aaOff, _sizeY + aaOff,
+                                        fill_r, fill_g, fill_b, fill_a * global_a,
+                                        b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                        aa_exp
+                                        );
+   }
+
+
+   static SetupEllipseFillStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                        float _centerX, float _centerY,
+                                        float _radiusX, float _radiusY,
+                                        float _strokeW
+                                        ) {
+      float aaOffSize   = b_aa ? pixel_scl * ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ELLIPSE_AA_STROKE_OFFSET : 0.0f;
+      ellipse_fill_stroke_aa.setupEllipseFillStrokeAAVBO32(_vb, _dl,
+                                                           _centerX, _centerY,
+                                                           _radiusX + aaOffSize, _radiusY + aaOffSize,
+                                                           pixel_scl * _strokeW + aaOffStroke
+                                                           );
+   }
+
+   static DrawEllipseFillStrokeAAVBO32(int   _vboId,
+                                       int   _byteOffsetInner,
+                                       int   _numVertsInner,
+                                       int   _byteOffsetBorder,
+                                       int   _numVertsBorder,
+                                       int   _glPrimTypeBorder,
+                                       float _centerX, float _centerY,
+                                       float _radiusX, float _radiusY
+                                       ) {
+      float aaOffSize   = b_aa ? pixel_scl * ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ELLIPSE_AA_STROKE_OFFSET : 0.0f;
+      ellipse_fill_stroke_aa.drawEllipseFillStrokeAAVBO32(_vboId,
+                                                          _byteOffsetInner,
+                                                          _numVertsInner,
+                                                          _byteOffsetBorder,
+                                                          _numVertsBorder,
+                                                          _glPrimTypeBorder,
+                                                          mvp_matrix,
+                                                          _centerX, _centerY,
+                                                          _radiusX + aaOffSize, _radiusY + aaOffSize,
+                                                          fill_r,   fill_g,   fill_b,   fill_a * global_a,
+                                                          stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                          pixel_scl * stroke_w + aaOffStroke,
+                                                          b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                          aa_exp
+                                                          );
+   }
+
+   static DrawEllipseFillStrokeAA(float _centerX, float _centerY,
+                                  float _sizeX,   float _sizeY
+                                  ) {
+      float aaOffSize   = b_aa ? pixel_scl * ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ELLIPSE_AA_STROKE_OFFSET : 0.0f;
+      ellipse_fill_stroke_aa.drawEllipseFillStrokeAA(scratch_buffer,
+                                                     mvp_matrix,
+                                                     _centerX, _centerY,
+                                                     _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                     fill_r, fill_g, fill_b, fill_a * global_a,
+                                                     stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                     pixel_scl * stroke_w + aaOffStroke,
+                                                     b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                     aa_exp
+                                                     );
+   }
+
+   static SetupEllipseStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                    float _centerX, float _centerY,
+                                    float _radiusX, float _radiusY,
+                                    float _strokeW
+                                    ) {
+      float aaOffSize   = b_aa ? pixel_scl * ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ELLIPSE_AA_STROKE_OFFSET : 0.0f;
+      ellipse_stroke_aa.setupEllipseStrokeAAVBO32(_vb, _dl,
+                                                  _centerX, _centerY,
+                                                  _radiusX + aaOffSize, _radiusY + aaOffSize,
+                                                  pixel_scl * _strokeW + aaOffStroke
+                                                  );
+   }
+
+   static DrawEllipseStrokeAAVBO32(int   _vboId,
+                                   int   _byteOffsetBorder,
+                                   int   _numVertsBorder,
+                                   int   _glPrimTypeBorder,
+                                   float _centerX, float _centerY,
+                                   float _radiusX, float _radiusY
+                                   ) {
+      float aaOffSize   = b_aa ? pixel_scl * ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ELLIPSE_AA_STROKE_OFFSET : 0.0f;
+      ellipse_stroke_aa.drawEllipseStrokeAAVBO32(_vboId,
+                                                 _byteOffsetBorder,
+                                                 _numVertsBorder,
+                                                 _glPrimTypeBorder,
+                                                 mvp_matrix,
+                                                 _centerX, _centerY,
+                                                 _radiusX + aaOffSize, _radiusY + aaOffSize,
+                                                 stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                 pixel_scl * stroke_w + aaOffStroke,
+                                                 b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                 aa_exp
+                                                 );
+   }
+
+   static DrawEllipseStrokeAA(float _centerX, float _centerY,
+                              float _sizeX,   float _sizeY
+                              ) {
+      float aaOffSize   = b_aa ? pixel_scl * ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ELLIPSE_AA_STROKE_OFFSET : 0.0f;
+      ellipse_stroke_aa.drawEllipseStrokeAA(scratch_buffer,
+                                            mvp_matrix,
+                                            _centerX, _centerY,
+                                            _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                            stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                            pixel_scl * stroke_w + aaOffStroke,
+                                            b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                            aa_exp
+                                            );
+   }
+
+   static SetupRoundRectFillAAVBO32(Buffer _vb, Buffer _dl,
+                                    float _centerX, float _centerY,
+                                    float _sizeX,   float _sizeY,
+                                    float _radiusX, float _radiusY
+                                    ) {
+      float aaOff = b_aa ? pixel_scl * ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;
+      roundrect_fill_aa.setupRoundRectFillAAVBO32(_vb, _dl,
+                                                  _centerX, _centerY,
+                                                  _sizeX + aaOff, _sizeY + aaOff,
+                                                  _radiusX, _radiusY,
+                                                  pixel_scl * aa_range
+                                                  );
+   }
+
+   static DrawRoundRectFillAAVBO32(int   _vboId,
+                                   int   _byteOffsetInner,
+                                   int   _numVertsInner,
+                                   int   _byteOffsetBorder,
+                                   int   _numVertsBorder,
+                                   int   _glPrimTypeBorder,
+                                   float _centerX, float _centerY,
+                                   float _sizeX,   float _sizeY,
+                                   float _radiusX, float _radiusY
+                                   ) {
+      float aaOff = b_aa ? pixel_scl * ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;
+      roundrect_fill_aa.drawRoundRectFillAAVBO32(_vboId,
+                                                 _byteOffsetInner,
+                                                 _numVertsInner,
+                                                 _byteOffsetBorder,
+                                                 _numVertsBorder,
+                                                 _glPrimTypeBorder,
+                                                 mvp_matrix,
+                                                 _centerX, _centerY,
+                                                 _sizeX + aaOff, _sizeY + aaOff,
+                                                 _radiusX, _radiusY,
+                                                 fill_r, fill_g, fill_b, fill_a * global_a,
+                                                 b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                 aa_exp
+                                                 );
+   }
+
+   static DrawRoundRectFillAA(float _centerX, float _centerY,
+                              float _sizeX,   float _sizeY,
+                              float _radiusX, float _radiusY
+                              ) {
+      float aaOff = b_aa ? pixel_scl * ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;
+      roundrect_fill_aa.drawRoundRectFillAA(scratch_buffer,
+                                            mvp_matrix,
+                                            _centerX, _centerY,
+                                            _sizeX + aaOff, _sizeY + aaOff,
+                                            _radiusX, _radiusY,
+                                            fill_r, fill_g, fill_b, fill_a * global_a,
+                                            b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                            aa_exp
+                                            );
+   }
+
+   static SetupRoundRectFillStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                          float _centerX, float _centerY,
+                                          float _sizeX,   float _sizeY,
+                                          float _radiusX, float _radiusY,
+                                          float _strokeW
+                                          ) {
+      float aaOffSize   = b_aa ? pixel_scl * ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
+      roundrect_fill_stroke_aa.setupRoundRectFillStrokeAAVBO32(_vb, _dl,
+                                                               _centerX, _centerY,
+                                                               _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                               _radiusX, _radiusY,
+                                                               pixel_scl * _strokeW + aaOffStroke,
+                                                               pixel_scl * aa_range
+                                                               );
+   }
+
+   static DrawRoundRectFillStrokeAAVBO32(int   _vboId,
+                                         int   _byteOffsetInner,
+                                         int   _numVertsInner,
+                                         int   _byteOffsetBorder,
+                                         int   _numVertsBorder,
+                                         int   _glPrimTypeBorder,
+                                         float _centerX, float _centerY,
+                                         float _sizeX,   float _sizeY,
+                                         float _radiusX, float _radiusY
+                                         ) {
+      float aaOffSize   = b_aa ? pixel_scl * ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
+      roundrect_fill_stroke_aa.drawRoundRectFillStrokeAAVBO32(_vboId,
+                                                              _byteOffsetInner,
+                                                              _numVertsInner,
+                                                              _byteOffsetBorder,
+                                                              _numVertsBorder,
+                                                              _glPrimTypeBorder,
+                                                              mvp_matrix,
+                                                              _centerX, _centerY,
+                                                              _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                              _radiusX, _radiusY,
+                                                              fill_r, fill_g, fill_b, fill_a * global_a,
+                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                              pixel_scl * stroke_w + aaOffStroke,
+                                                              b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                              aa_exp
+                                                              );
+   }
+
+   static DrawRoundRectFillStrokeAA(float _centerX, float _centerY,
+                                    float _sizeX,   float _sizeY,
+                                    float _radiusX, float _radiusY
+                                    ) {
+      float aaOffSize   = b_aa ? pixel_scl * ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
+      roundrect_fill_stroke_aa.drawRoundRectFillStrokeAA(scratch_buffer,
+                                                         mvp_matrix,
+                                                         _centerX, _centerY,
+                                                         _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                         _radiusX, _radiusY,
+                                                         fill_r, fill_g, fill_b, fill_a * global_a,
+                                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                         pixel_scl * stroke_w + aaOffStroke,
+                                                         b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                         aa_exp
+                                                         );
+   }
+
+   static SetupRoundRectStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                      float _centerX, float _centerY,
+                                      float _sizeX,   float _sizeY,
+                                      float _radiusX, float _radiusY,
+                                      float _strokeW
+                                      ) {
+      float aaOffSize   = b_aa ? pixel_scl * ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
+      roundrect_stroke_aa.setupRoundRectStrokeAAVBO32(_vb, _dl,
+                                                      _centerX, _centerY,
+                                                      _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                      _radiusX, _radiusY,
+                                                      pixel_scl * _strokeW + aaOffStroke,
+                                                      pixel_scl * aa_range
+                                                      );
+   }
+
+   static DrawRoundRectStrokeAAVBO32(int   _vboId,
+                                     int   _byteOffsetBorder,
+                                     int   _numVertsBorder,
+                                     int   _glPrimTypeBorder,
+                                     float _centerX, float _centerY,
+                                     float _sizeX,   float _sizeY,
+                                     float _radiusX, float _radiusY
+                                     ) {
+      float aaOffSize   = b_aa ? pixel_scl * ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
+      roundrect_stroke_aa.drawRoundRectStrokeAAVBO32(_vboId,
+                                                     _byteOffsetBorder,
+                                                     _numVertsBorder,
+                                                     _glPrimTypeBorder,
+                                                     mvp_matrix,
+                                                     _centerX, _centerY,
+                                                     _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                     _radiusX, _radiusY,
+                                                     stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                     pixel_scl * stroke_w + aaOffStroke,
+                                                     b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                     aa_exp
+                                                     );
+   }
+
+   static DrawRoundRectStrokeAA(float _centerX, float _centerY,
+                                float _sizeX,   float _sizeY,
+                                float _radiusX, float _radiusY
+                                ) {
+      float aaOffSize   = b_aa ? pixel_scl * ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
+      float aaOffStroke = b_aa ? pixel_scl * ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
+      roundrect_stroke_aa.drawRoundRectStrokeAA(scratch_buffer,
+                                                mvp_matrix,
+                                                _centerX, _centerY,
+                                                _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                                _radiusX, _radiusY,
+                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                pixel_scl * stroke_w + aaOffStroke,
+                                                b_aa ? pixel_scl * aa_range : AA_RANGE_OFF,
+                                                aa_exp
+                                                );
+   }
+
+   static DrawTrianglesTexUVFlatVBO32(int _vboId,
+                                      int _byteOffset,
+                                      int _numTris
+                                      ) {
+      //
+      // VBO vertex format (16 bytes per vertex):
+      //     +0  f32 x
+      //     +4  f32 y
+      //     +8  f32 u
+      //     +12 f32 v
+      //
+      triangles_tex_uv_flat_32.drawTrianglesTexUVFlatVBO32(_vboId,
+                                                           _byteOffset,
+                                                           _numTris,
+                                                           mvp_matrix,
+                                                           fill_r, fill_g, fill_b, fill_a * global_a
+                                                           );
+   }
+
+   static DrawTrianglesTexUVGouraudVBO32(int _vboId,
+                                         int _byteOffset,
+                                         int _numTris
+                                         ) {
+      //
+      // VBO vertex format (20 bytes per vertex):
+      //     +0  f32 x
+      //     +4  f32 y
+      //     +8  f32 u
+      //     +12 f32 v
+      //     +16  u8 r
+      //     +17  u8 g
+      //     +18  u8 b
+      //     +19  u8 a
+      //
+      triangles_tex_uv_gouraud_32.drawTrianglesTexUVGouraudVBO32(_vboId,
+                                                                 _byteOffset,
+                                                                 _numTris,
+                                                                 mvp_matrix,
+                                                                 fill_r, fill_g, fill_b, fill_a * global_a
+                                                                 );
+   }
+
+   static DrawTrianglesTexUVFlatDecalVBO32(int   _vboId,
+                                           int   _byteOffset,
+                                           int   _numTris
+                                           ) {
+      //
+      // VBO vertex format (16 bytes per vertex):
+      //     +0  f32 x
+      //     +4  f32 y
+      //     +8  f32 u
+      //     +12 f32 v
+      //
+      triangles_tex_uv_flat_decal_32.drawTrianglesTexUVFlatDecalVBO32(_vboId,
+                                                                      _byteOffset,
+                                                                      _numTris,
+                                                                      mvp_matrix,
+                                                                      fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                      texture_decal_alpha
+                                                                      );
+   }
+
+   static DrawTrianglesTexUVGouraudDecalVBO32(int   _vboId,
+                                              int   _byteOffset,
+                                              int   _numTris
+                                              ) {
+      //
+      // VBO vertex format (20 bytes per vertex):
+      //     +0  f32 x
+      //     +4  f32 y
+      //     +8  f32 u
+      //     +12 f32 v
+      //     +16  u8 r
+      //     +17  u8 g
+      //     +18  u8 b
+      //     +19  u8 a
+      //
+      triangles_tex_uv_gouraud_decal_32.drawTrianglesTexUVGouraudDecalVBO32(_vboId,
+                                                                            _byteOffset,
+                                                                            _numTris,
+                                                                            mvp_matrix,
+                                                                            fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                            texture_decal_alpha
+                                                                            );
+   }
+
+   static DrawLineStripFlatVBO14_2(int   _vboId,
+                                   int   _byteOffset,
+                                   int   _numPoints
+                                   ) {
+      //
+      // VBO vertex format (6 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+      //   +4 i16   index
+      //
+      // (note) numVerts = 6*numPoints
+      // (note) numSeg   = (numPoints - 1)
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      line_strip_flat_14_2.drawLineStripFlatVBO14_2(_vboId,
+                                                    _byteOffset,
+                                                    _numPoints,
+                                                    mvp_matrix,
+                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                    pixel_scl * stroke_w + aaOff
+                                                    );
+   }
+
+   static DrawLineStripFlatVBO32(int   _vboId,
+                                 int   _byteOffset,
+                                 int   _numPoints
+                                 ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index
+      //
+      // (note) numVerts         = (numPoints * 6)
+      // (note) numSeg           = (numPoints - 1)
+      // (note) numTri           = (numPoints - 1) * 6
+      // (note) numBytesPerPoint = 6*10 = 60
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      line_strip_flat_32.drawLineStripFlatVBO32(_vboId,
+                                                _byteOffset,
+                                                _numPoints,
+                                                mvp_matrix,
+                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                pixel_scl * stroke_w + aaOff
+                                                );
+   }
+
+   static DrawLineStripFlatAAVBO14_2(int   _vboId,
+                                     int   _byteOffset,
+                                     int   _numPoints
+                                     ) {
+      //
+      // VBO vertex format (6 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+      //   +4 i16   index
+      //
+      // (note) numVerts = 6*numPoints
+      // (note) numSeg   = (numPoints - 1)
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      line_strip_flat_aa_14_2.drawLineStripFlatAAVBO14_2(_vboId,
+                                                         _byteOffset,
+                                                         _numPoints,
+                                                         mvp_matrix,
+                                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                         pixel_scl * stroke_w + aaOff,
+                                                         b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                         );
+   }
+
+   static DrawLineStripFlatAAVBO32(int   _vboId,
+                                   int   _byteOffset,
+                                   int   _numPoints
+                                   ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index
+      //
+      // (note) numVerts         = (numPoints * 6)
+      // (note) numSeg           = (numPoints - 1)
+      // (note) numTri           = (numPoints - 1) * 6
+      // (note) numBytesPerPoint = 6*10 = 60
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      line_strip_flat_aa_32.drawLineStripFlatAAVBO32(_vboId,
+                                                     _byteOffset,
+                                                     _numPoints,
+                                                     mvp_matrix,
+                                                     stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                     pixel_scl * stroke_w + aaOff,
+                                                     b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                     );
+   }
+
+   static DrawLineStripFlatBevelVBO14_2(int   _vboId,
+                                        int   _byteOffset,
+                                        int   _numPoints
+                                        ) {
+      //
+      // VBO vertex format (6 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+      //   +4 i16   index
+      //
+      // (note) numVerts = 9*numPoints
+      // (note) numSeg   = (numPoints - 1)
+      //
+      line_strip_flat_bevel_aa_14_2.drawLineStripFlatBevelAAVBO14_2(_vboId,
+                                                                    _byteOffset,
+                                                                    _numPoints,
+                                                                    mvp_matrix,
+                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                    pixel_scl * stroke_w,
+                                                                    AA_RANGE_OFF
+                                                                    );
+   }
+
+   static DrawLineStripFlatBevelVBO32(int   _vboId,
+                                      int   _byteOffset,
+                                      int   _numPoints
+                                      ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16 index
+      //
+      // (note) numVerts         = (numPoints * 9)
+      // (note) numSeg           = (numPoints - 1)
+      // (note) numTri           = (numPoints - 1) * 2 + (numPoints - 2)
+      // (note) numBytesPerPoint = 9*10 = 90
+      //
+      line_strip_flat_bevel_aa_32.drawLineStripFlatBevelAAVBO32(_vboId,
+                                                                _byteOffset,
+                                                                _numPoints,
+                                                                mvp_matrix,
+                                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                pixel_scl * stroke_w,
+                                                                AA_RANGE_OFF
+                                                                );
+   }
+
+   static DrawLineStripFlatBevelAAVBO14_2(int   _vboId,
+                                          int   _byteOffset,
+                                          int   _numPoints
+                                          ) {
+      //
+      // VBO vertex format (6 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+      //   +4 i16   index
+      //
+      // (note) numVerts = 9*numPoints
+      // (note) numSeg   = (numPoints - 1)
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      line_strip_flat_bevel_aa_14_2.drawLineStripFlatBevelAAVBO14_2(_vboId,
+                                                                    _byteOffset,
+                                                                    _numPoints,
+                                                                    mvp_matrix,
+                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                    pixel_scl * stroke_w + aaOff,
+                                                                    b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                                    );
+   }
+
+   static DrawLineStripFlatBevelAAVBO32(int   _vboId,
+                                        int   _byteOffset,
+                                        int   _numPoints
+                                        ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16 index
+      //
+      // (note) numVerts         = (numPoints * 9)
+      // (note) numSeg           = (numPoints - 1)
+      // (note) numTri           = (numPoints - 1) * 2 + (numPoints - 2)
+      // (note) numBytesPerPoint = 9*10 = 90
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      line_strip_flat_bevel_aa_32.drawLineStripFlatBevelAAVBO32(_vboId,
+                                                                _byteOffset,
+                                                                _numPoints,
+                                                                mvp_matrix,
+                                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                pixel_scl * stroke_w + aaOff,
+                                                                b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                                );
+   }
+
+   static DrawLinesFlatVBO14_2(int   _vboId,
+                               int   _byteOffset,
+                               int   _numPoints
+                               ) {
+      //
+      // VBO vertex format (6 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+      //   +4 i16   index (0..11)
+      //
+      // (note) numVerts         = (numPoints-1) * 6
+      // (note) numSeg           = (numPoints / 2)
+      // (note) numTri           = (numPoints-1) * 2
+      // (note) numBytesPerPoint = 6*6 = 36
+      // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
+      //
+      lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
+                                                _byteOffset,
+                                                _numPoints,
+                                                mvp_matrix,
+                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                pixel_scl * stroke_w,
+                                                AA_RANGE_OFF
+                                                );
+   }
+
+   static DrawLinesFlatVBO32(int   _vboId,
+                             int   _byteOffset,
+                             int   _numPoints
+                             ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index (0..1)
+      //
+      // (note) numVerts         = (numPoints * 6)
+      // (note) numSeg           = (numPoints - 1)
+      // (note) numTri           = (numPoints - 1) * 6
+      // (note) numBytesPerPoint = 6*10 = 60
+      // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
+      //
+      lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
+                                            _byteOffset,
+                                            _numPoints,
+                                            mvp_matrix,
+                                            stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                            pixel_scl * stroke_w,
+                                            AA_RANGE_OFF
+                                            );
+   }
+
+   static DrawLinesFlatAAVBO14_2(int   _vboId,
+                                 int   _byteOffset,
+                                 int   _numPoints
+                                 ) {
+      //
+      // VBO vertex format (6 bytes per vertex):
+      //   +0 s14.2 x
+      //   +2 s14.2 y
+      //   +4 i16   index (0..11)
+      //
+      // (note) numVerts         = (numPoints-1) * 6
+      // (note) numSeg           = (numPoints / 2)
+      // (note) numTri           = (numPoints-1) * 2
+      // (note) numBytesPerPoint = 6*6 = 36
+      // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
+                                                _byteOffset,
+                                                _numPoints,
+                                                mvp_matrix,
+                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                pixel_scl * stroke_w + aaOff,
+                                                b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                );
+   }
+
+   static DrawLinesFlatAAVBO32(int   _vboId,
+                               int   _byteOffset,
+                               int   _numPoints
+                               ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index (0..1)
+      //
+      // (note) numVerts         = (numPoints * 6)
+      // (note) numSeg           = (numPoints - 1)
+      // (note) numTri           = (numPoints - 1) * 6
+      // (note) numBytesPerPoint = 6*10 = 60
+      // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
+      //
+      float aaOff = b_aa ? pixel_scl * LINE_STROKE_W_OFFSET : 0.0f;
+      lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
+                                            _byteOffset,
+                                            _numPoints,
+                                            mvp_matrix,
+                                            stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                            pixel_scl * stroke_w + aaOff,
+                                            b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                            );
+   }
+
+   static DrawPointsSquareVBO32(int   _vboId,
+                                int   _byteOffset,
+                                int   _numPoints
+                                ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index (0..5)
+      //
+      // (note) numVerts          = (numPoints * 6)
+      // (note) numTri            = numPoints * 4
+      // (note) numBytesPerPoint  = 6*10 = 60
+      //
+      points_square_aa_32.drawPointsSquareAAVBO32(_vboId,
+                                                  _byteOffset,
+                                                  _numPoints,
+                                                  mvp_matrix,
+                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                  pixel_scl * point_radius,
+                                                  AA_RANGE_OFF
+                                                  );
+   }
+
+   static DrawPointsSquareAAVBO32(int   _vboId,
+                                  int   _byteOffset,
+                                  int   _numPoints
+                                  ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index (0..5)
+      //
+      // (note) numVerts          = (numPoints * 6)
+      // (note) numTri            = numPoints * 4
+      // (note) numBytesPerPoint  = 6*10 = 60
+      //
+      float aaOff = b_aa ? pixel_scl * POINTS_AA_RADIUS_OFFSET : 0.0f;
+      points_square_aa_32.drawPointsSquareAAVBO32(_vboId,
+                                                  _byteOffset,
+                                                  _numPoints,
+                                                  mvp_matrix,
+                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                  pixel_scl * point_radius + aaOff,
+                                                  b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                  );
+   }
+
+   static DrawPointsRoundVBO32(int   _vboId,
+                               int   _byteOffset,
+                               int   _numPoints
+                               ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index (0..5)
+      //
+      // (note) numVerts          = (numPoints * 6)
+      // (note) numTri            = numPoints * 4
+      // (note) numBytesPerPoint  = 6*10 = 60
+      //
+      points_round_aa_32.drawPointsRoundAAVBO32(_vboId,
+                                                _byteOffset,
+                                                _numPoints,
+                                                mvp_matrix,
+                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                pixel_scl * point_radius,
+                                                AA_RANGE_OFF
+                                                );
+   }
+
+   static DrawPointsRoundAAVBO32(int   _vboId,
+                                 int   _byteOffset,
+                                 int   _numPoints
+                                 ) {
+      //
+      // VBO vertex format (10 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //   +8 i16   index (0..5)
+      //
+      // (note) numVerts          = (numPoints * 6)
+      // (note) numTri            = numPoints * 4
+      // (note) numBytesPerPoint  = 6*10 = 60
+      //
+      float aaOff = b_aa ? pixel_scl * POINTS_AA_RADIUS_OFFSET : 0.0f;
+      points_round_aa_32.drawPointsRoundAAVBO32(_vboId,
+                                                _byteOffset,
+                                                _numPoints,
+                                                mvp_matrix,
+                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                pixel_scl * point_radius + aaOff,
+                                                b_aa ? pixel_scl * aa_range : AA_RANGE_OFF
+                                                );
+   }
+
+   // ----------- custom shaders ------------
+   static CreateShader(String vs, String fs) : int {
+      int shaderIdx = 1;
+      loop(MAX_CUSTOM_SHADERS - 1)
+      {
+         ShaderVG_CustomShape cs <= custom_shapes[shaderIdx];
+         ZGLShader shapeShader <= cs.shape_shader;
+         if(0 == shapeShader.getProgramId())
+         {
+            if(cs.createShapeShader(vs, fs))
+            {
+               return shaderIdx;
+            }
+            else
+            {
+               return 0;
+            }
+         }
+
+         // Next shader
+         shaderIdx++;
+      }
+
+      // Failed
+      trace "[---] sdvg_CreateShader: failed to allocate shader (MAX_CUSTOM_SHADERS="+MAX_CUSTOM_SHADERS+" exceeded)";
+      return 0;
+   }
+
+   static DestroyShader(int _shaderIdx) {
+      if(0 <= _shaderIdx < MAX_CUSTOM_SHADERS)
+      {
+         ShaderVG_CustomShape cs <= custom_shapes[_shaderIdx];
+         ZGLShader shapeShader <= cs.shape_shader;
+         shapeShader.destroy();
+         if(@(cs) == @(current_shape))
+            current_shape <= null;
+      }
+   }
+
+   static BindShape(shadervg::Shape _shape) {
+      ZGLShader shapeShader <= _shape.shape_shader;
+      shapeShader.bind();
+      current_shape <= _shape;
+   }
+
+   static UnsetShapeIfBuiltIn() {
+      // (note) do _not_ actually unbind it in GL
+      if(null != current_shape && current_shape.b_builtin)
+         current_shape <= null;
+   }
+
+   static BindShader(int _shaderIdx) {
+      if(1 <= _shaderIdx < MAX_CUSTOM_SHADERS)
+      {
+         ShaderVG_CustomShape cs <= custom_shapes[_shaderIdx];
+         BindShape(cs);
+      }
+      else
+      {
+         // (note) do NOT unbind from GL
+         current_shape <= null;
+      }
+   }
+
+   static UnbindShader() {
+      glUseProgram(0);
+      current_shape <= null;
+   }
+
+   static GetUniformLocation(String _name) : int {
+      int loc = -1;
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         loc = shapeShader.getUniformLocation(_name);
+      }
+      return loc;
+   }
+
+   static GetAttribLocation(String _name) : int {
+      int a = -1;
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         a = shapeShader.getAttribLocation(_name);
+      }
+      return a;
+   }
+
+   static UniformMatrix4(String _name, Object _matRowMajor) {
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc = shapeShader.getUniformLocation(_name);
+         if(loc >= 0)
+         {
+            glUniformMatrix4fv(loc, 1/*count*/, GL_TRUE/*transpose*/, _matRowMajor);
+         }
+      }
+   }
+
+   static Uniform1f(String _name, float _f) {
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc = shapeShader.getUniformLocation(_name);
+         if(loc >= 0)
+         {
+            glUniform1f(loc, _f);
+         }
+      }
+   }
+
+   static Uniform2f(String _name, float _f1, float _f2) {
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc = shapeShader.getUniformLocation(_name);
+         if(loc >= 0)
+         {
+            glUniform2f(loc, _f1, _f2);
+         }
+      }
+   }
+
+   static Uniform3f(String _name, float _f1, float _f2, float _f3) {
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc = shapeShader.getUniformLocation(_name);
+         if(loc >= 0)
+         {
+            glUniform3f(loc, _f1, _f2, _f3);
+         }
+      }
+   }
+
+   static Uniform4f(String _name, float _f1, float _f2, float _f3, float _f4) {
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc = shapeShader.getUniformLocation(_name);
+         if(loc >= 0)
+         {
+            glUniform4f(loc, _f1, _f2, _f3, _f4);
+         }
+      }
+   }
+
+   static Uniform1i(String _name, float _f) {
+      if(null != current_shape)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc = shapeShader.getUniformLocation(_name);
+         if(loc >= 0)
+         {
+            glUniform1i(loc, _f);
+         }
+      }
+   }
+
+   static BeginDraw(int _numVertices, int _stride) : boolean {
+
+      // trace "xxx BeginDraw: current_vbo_id="+current_vbo_id;
+      // trace "xxx BeginDraw: mapped_user_vbo_id="+mapped_user_vbo_id;
+      
+      if(0 == mapped_user_vbo_id && 0 == current_vbo_id)
+         BindScratchBuffer();
+
+      current_draw_num_vertices = _numVertices;
+      current_draw_stride       = _stride;
+      current_draw_num_bytes    = _numVertices * _stride;
+      current_draw_vertex_index = 0;
+      current_draw_lines_vertex_index = 0;
+
+      int bufSize;
+      boolean bScratch = false;
+      if(b_vbo)
+      {
+         if(current_vbo_id == scratch_vbo_id)
+         {
+            bufSize = scratch_buffer.size;
+            bScratch = true;
+         }
+         else
+         {
+            // User VBO
+            bufSize = zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE);
+         }
+      }
+      else if(0 != current_vbo_id)
+      {
+         // User VBO
+         bufSize = zglGetBufferParameter(GL_ARRAY_BUFFER, GL_BUFFER_SIZE);
+      }
+      else
+      {
+         bufSize = scratch_buffer.size;
+         bScratch = true;
+      }
+
+      if(current_draw_num_bytes <= bufSize)
+      {
+         if(b_vbo)
+         {
+            if(bScratch)
+            {
+               // trace "xxx ShaderVG.BeginDraw: offset="+scratch_buffer.offset+" size="+scratch_buffer.size+" #vert="+_numVertices+" stride="+_stride+" => numBytes="+current_draw_num_bytes;
+               if(scratch_buffer.offset + current_draw_num_bytes > scratch_buffer.size)
+               {
+                  glUnmapBuffer(GL_ARRAY_BUFFER);
+                  glFinish();
+                  zglMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY, scratch_buffer, scratch_buffer.size);
+                  scratch_buffer.offset = 0;
+               }
+               current_draw_attrib_offset = scratch_buffer.offset;
+            }
+            else
+            {
+               // User VBO
+               current_draw_attrib_offset = 0;
+               if(0 != mapped_user_vbo_id)
+                  user_vbo_buffer.offset = 0;
+               else
+                  current_draw_vertex_index = current_draw_num_vertices;
+            }
+         }
+         else if(bScratch)
+         {
+            scratch_buffer.offset = 0;
+            current_draw_attrib_offset = 0;
+         }
+         else
+         {
+            // User VBO
+            current_draw_attrib_offset = 0;
+            if(0 != mapped_user_vbo_id)
+               user_vbo_buffer.offset = 0;
+            else
+               current_draw_vertex_index = current_draw_num_vertices;
+         }
+
+         attrib_write_buffer <= bScratch ? scratch_buffer : user_vbo_buffer;
+         current_draw_start_offset = current_draw_attrib_offset;
+
+         return true;
+      }
+      else
+      {
+         trace "[~~~] shadervg:BeginDraw: bufSize exceeded ("+current_draw_num_bytes+" > "+bufSize+") bScratch="+bScratch+" current_vbo_id="+current_vbo_id;
+         return false;
+      }
+   }
+
+   static BeginVBO(int _numVertices, int _stride) {
+      // prepare-buffer mode (no rendering)
+      current_draw_mode = GL_NONE;
+      return BeginDraw(_numVertices, _stride);
+   }
+
+   static BeginTriangles(int _numVertices, int _stride) {
+      current_draw_mode = GL_TRIANGLES;
+      return BeginDraw(_numVertices, _stride);
+   }
+
+   static BeginTriangleFan(int _numVertices, int _stride) {
+      current_draw_mode = GL_TRIANGLE_FAN;
+      return BeginDraw(_numVertices, _stride);
+   }
+
+   static BeginTriangleStrip(int _numVertices, int _stride) {
+      current_draw_mode = GL_TRIANGLE_STRIP;
+      return BeginDraw(_numVertices, _stride);
+   }
+
+   static BeginFilledTriangles(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_fill_flat_32);
+      }
+      if(BeginTriangles(_numVertices, (2*4)/*stride*/))
+      {
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginFilledTriangleFan(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_fill_flat_32);
+      }
+      if(BeginTriangleFan(_numVertices, (2*4)/*stride*/))
+      {
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginFilledTriangleStrip(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_fill_flat_32);
+      }
+      if(BeginTriangleStrip(_numVertices, (2*4)/*stride*/))
+      {
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginFilledGouraudTriangles(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_fill_gouraud_32);
+      }
+      if(BeginTriangles(_numVertices, 4+(2*4)/*stride*/))
+      {
+         AttribOffsetARGB("a_color");
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginFilledGouraudTriangleFan(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_fill_gouraud_32);
+      }
+      if(BeginTriangleFan(_numVertices, 4+(2*4)/*stride*/))
+      {
+         AttribOffsetARGB("a_color");
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginFilledGouraudTriangleStrip(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_fill_gouraud_32);
+      }
+      if(BeginTriangleStrip(_numVertices, 4+(2*4)/*stride*/))
+      {
+         AttribOffsetARGB("a_color");
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangles(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_tex_uv_flat_32);
+      }
+      if(BeginTriangles(_numVertices, (4*4)/*stride*/))
+      {
+         AttribOffset2f("a_uv");
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangleStrip(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_tex_uv_flat_32);
+      }
+      if(BeginTriangleStrip(_numVertices, (4*4)/*stride*/))
+      {
+         AttribOffset2f("a_uv");
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangleFan(int _numVertices) : boolean {
+      if(null == current_shape)
+      {
+         BindShape(triangles_tex_uv_flat_32);
+      }
+      if(BeginTriangleFan(_numVertices, (4*4)/*stride*/))
+      {
+         AttribOffset2f("a_uv");
+         VertexOffset2f();
+         return true;
+      }
+      return false;
+   }
+
+   static BeginTexturedTrianglesAlpha(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedTriangleStripAlpha(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedTriangleFanAlpha(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangles(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleStrip(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleFan(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedGouraudTrianglesAlpha(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleStripAlpha(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleFanAlpha(int _numVertices) : boolean {
+      // (todo)
+      return false;
+   }
+
+   static BeginLineStrip(int _numPoints) {
+      current_draw_mode = DRAW_MODE_LINE_STRIP;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginLineStripAA(int _numPoints) {
+      current_draw_mode = DRAW_MODE_LINE_STRIP_AA;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginLineStripBevel(int _numPoints) {
+      current_draw_mode = DRAW_MODE_LINE_STRIP_BEVEL;
+      return BeginDraw(_numPoints, 90/*stride*/);
+   }
+
+   static BeginLineStripBevelAA(int _numPoints) {
+      current_draw_mode = DRAW_MODE_LINE_STRIP_BEVEL_AA;
+      return BeginDraw(_numPoints, 90/*stride*/);
+   }
+
+   static BeginLines(int _numPoints) {
+      current_draw_mode = DRAW_MODE_LINES;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginLinesAA(int _numPoints) {
+      current_draw_mode = DRAW_MODE_LINES_AA;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginPointsSquare(int _numPoints) {
+      current_draw_mode = DRAW_MODE_POINTS_SQUARE;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginPointsSquareAA(int _numPoints) {
+      current_draw_mode = DRAW_MODE_POINTS_SQUARE_AA;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginPointsRound(int _numPoints) {
+      current_draw_mode = DRAW_MODE_POINTS_ROUND;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static BeginPointsRoundAA(int _numPoints) {
+      current_draw_mode = DRAW_MODE_POINTS_ROUND_AA;
+      return BeginDraw(_numPoints, 60/*stride*/);
+   }
+
+   static VertexOffset2f() {
+      if(null != current_shape && 0 == mapped_user_vbo_id)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int a = current_shape.shape_a_vertex;
+         if(b_vbo || 0 != current_vbo_id)
+         {
+            zglVertexAttribOffset(a, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
+         }
+         else
+         {
+            Buffer tBuf; tBuf.visit(scratch_buffer, current_draw_attrib_offset, scratch_buffer.size - current_draw_attrib_offset);
+            glVertexAttribPointer(a, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, current_draw_stride, tBuf);
+         }
+         glEnableVertexAttribArray(a);
+         current_draw_attrib_enables.add(a);
+         current_draw_attrib_offset += 2 * 4;
+      }
+   }
+
+   static AttribOffsetf(String _name, int _size) {
+      if(null != current_shape && 0 == mapped_user_vbo_id)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int a = shapeShader.getAttribLocation(_name);
+         if(a >= 0)
+         {
+            if(b_vbo || 0 != current_vbo_id)
+               zglVertexAttribOffset(a, _size, GL_FLOAT, GL_FALSE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
+            else
+            {
+               Buffer tBuf; tBuf.visit(scratch_buffer, current_draw_attrib_offset, scratch_buffer.size - current_draw_attrib_offset);
+               glVertexAttribPointer(a, _size, GL_FLOAT, GL_FALSE/*normalize*/, current_draw_stride, tBuf);
+            }
+            glEnableVertexAttribArray(a);
+            current_draw_attrib_enables.add(a);
+            current_draw_attrib_offset += _size * 4;
+         }
+         else
+         {
+            trace "[~~~] sdvg_AttribOffsetf: failed to resolve attribute \""+_name+"\" (size="+_size+")";
+         }
+      }
+   }
+
+   static AttribOffset1f(String _name) {
+      AttribOffsetf(_name, 1);
+   }
+
+   static AttribOffset2f(String _name) {
+      AttribOffsetf(_name, 2);
+   }
+
+   static AttribOffset3f(String _name) {
+      AttribOffsetf(_name, 3);
+   }
+
+   static AttribOffset4f(String _name) {
+      AttribOffsetf(_name, 4);
+   }
+
+   static AttribOffsetARGB(String _name) {
+      if(null != current_shape && 0 == mapped_user_vbo_id)
+      {
+         ZGLShader shapeShader <= current_shape.shape_shader;
+         int a = shapeShader.getAttribLocation(_name);
+         if(a >= 0)
+         {
+            if(b_vbo || 0 != current_vbo_id)
+               zglVertexAttribOffset(a, 4, GL_UNSIGNED_BYTE, GL_TRUE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
+            else
+            {
+               Buffer tBuf; tBuf.visit(scratch_buffer, current_draw_attrib_offset, scratch_buffer.size - current_draw_attrib_offset);
+               glVertexAttribPointer(a, 4, GL_UNSIGNED_BYTE, GL_TRUE/*normalize*/, current_draw_stride, tBuf);
+            }
+            glEnableVertexAttribArray(a);
+            current_draw_attrib_enables.add(a);
+            current_draw_attrib_offset += 4;
+         }
+         else
+         {
+            trace "[~~~] sdvg_AttribOffsetARGB: failed to resolve attribute \""+_name+"\"";
+         }
+      }
+   }
+
+   static Attrib1f(float _f) {
+      attrib_write_buffer.f32 = _f;
+   }
+
+   static Attrib2f(float _f1, float _f2) {
+      attrib_write_buffer.f32 = _f1;
+      attrib_write_buffer.f32 = _f2;
+   }
+
+   static Vertex2f(float _x, float _y) {
+      switch(current_draw_mode)
+      {
+         default:
+            attrib_write_buffer.f32 = _x;
+            attrib_write_buffer.f32 = _y;
+            break;
+
+         case DRAW_MODE_LINE_STRIP:
+         case DRAW_MODE_LINE_STRIP_AA:
+         case DRAW_MODE_POINTS_SQUARE:
+         case DRAW_MODE_POINTS_SQUARE_AA:
+         case DRAW_MODE_POINTS_ROUND:
+         case DRAW_MODE_POINTS_ROUND_AA:
+            // BufferAddLinePointFlat14_2(attrib_write_buffer, _x, _y);
+            BufferAddLinePointFlat32(attrib_write_buffer, _x, _y);
+            break;
+
+         case DRAW_MODE_LINES:
+         case DRAW_MODE_LINES_AA:
+            // BufferAddLinesPointFlat14_2(attrib_write_buffer, _x, _y);
+            BufferAddLinesPointFlat32(attrib_write_buffer, _x, _y);
+            break;
+
+         case DRAW_MODE_LINE_STRIP_BEVEL:
+         case DRAW_MODE_LINE_STRIP_BEVEL_AA:
+            // BufferAddLinePointFlatBevel14_2(attrib_write_buffer, _x, _y);
+            BufferAddLinePointFlatBevel32(attrib_write_buffer, _x, _y);
+            break;
+      }
+      current_draw_vertex_index++;
+   }
+
+   static Attrib3f(float _f1, float _f2, float _f3) {
+      attrib_write_buffer.f32 = _f1;
+      attrib_write_buffer.f32 = _f2;
+      attrib_write_buffer.f32 = _f3;
+   }
+
+   static Attrib4f(float _f1, float _f2, float _f3, float _f4) {
+      attrib_write_buffer.f32 = _f1;
+      attrib_write_buffer.f32 = _f2;
+      attrib_write_buffer.f32 = _f3;
+      attrib_write_buffer.f32 = _f4;
+   }
+
+   static AttribARGB(int _c32) {
+      WriteC32AsRGBA8(attrib_write_buffer, _c32);
+   }
+
+   static ColorARGB(int _c32) {
+      AttribARGB(_c32);
+   }
+
+   protected static UpdateShaderUniforms() : boolean {
+      if(null != current_shape)
+      {
+         // // ZGLShader shapeShader <= current_shape.shape_shader;
+         int loc;
+
+         loc = current_shape.shape_u_color_fill;
+         if(loc >= 0)
+         {
+            glUniform4f(loc, fill_r, fill_g, fill_b, fill_a * global_a);
+         }
+
+         loc = current_shape.shape_u_color_stroke;
+         if(loc >= 0)
+            glUniform4f(loc, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
+
+         loc = current_shape.shape_u_global_alpha;
+         if(loc >= 0)
+            glUniform1f(loc, global_a);
+
+         loc = current_shape.shape_u_decal_alpha;
+         if(loc >= 0)
+            glUniform1f(loc, texture_decal_alpha);
+
+         loc = current_shape.shape_u_debug;
+         if(loc >= 0)
+            glUniform1f(loc, ellipse_fill_aa.b_debug ? 1.0f : 0.0f);
+
+         loc = current_shape.shape_u_sampler;
+         if(loc >= 0)
+            glUniform1i(loc, 0);
+
+         loc = current_shape.shape_u_tex_0;
+         if(loc >= 0)
+            glUniform1i(loc, 0);
+
+         loc = current_shape.shape_u_tex_1;
+         if(loc >= 0)
+            glUniform1i(loc, 1);
+
+         loc = current_shape.shape_u_transform;
+         if(loc >= 0)
+         {
+            glUniformMatrix4fv(loc, 1/*count*/, GL_TRUE/*transpose*/, mvp_matrix);
+
+            // (todo) unmap / remap scratch ?
+            return true;
+         }
+      }
+      return false;
+   }
+
+   static End() {
+      if(GL_NONE != current_draw_mode || 0 != mapped_user_vbo_id)
+      {
+         int bytesAvail = attrib_write_buffer.offset - current_draw_start_offset;
+         // trace "xxx End: bytesAvail="+bytesAvail;
+         if(bytesAvail <= current_draw_num_bytes)
+         {
+            if(0 == mapped_user_vbo_id && current_draw_vertex_index > 0)
+            {
+               switch(current_draw_mode)
+               {
+                  default:
+                     if(UpdateShaderUniforms())
+                     {
+                        glDrawArrays(current_draw_mode, 0/*first*/, current_draw_vertex_index);
+                     }
+                     break;
+
+                  case DRAW_MODE_LINE_STRIP:
+                     if(b_vbo)
+                     {
+                        // DrawLineStripFlatVBO14_2(current_vbo_id,
+                        //                          current_draw_start_offset,
+                        //                          current_draw_num_vertices
+                        //                          );
+                        DrawLineStripFlatVBO32(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
+                     }
+                     break;
+
+                  case DRAW_MODE_LINE_STRIP_AA:
+                     if(b_vbo)
+                     {
+                        // DrawLineStripFlatAAVBO14_2(current_vbo_id,
+                        //                            current_draw_start_offset,
+                        //                            current_draw_num_vertices
+                        //                            );
+                        DrawLineStripFlatAAVBO32(current_vbo_id,
+                                                 current_draw_start_offset,
+                                                 current_draw_vertex_index
+                                                 );
+                     }
+                     break;
+
+                  case DRAW_MODE_LINE_STRIP_BEVEL:
+                     if(b_vbo)
+                     {
+                        // DrawLineStripFlatBevelVBO14_2(current_vbo_id,
+                        //                               current_draw_start_offset,
+                        //                               current_draw_num_vertices
+                        //                               );
+                        DrawLineStripFlatBevelVBO32(current_vbo_id,
+                                                    current_draw_start_offset,
+                                                    current_draw_vertex_index
+                                                    );
+                     }
+                     break;
+
+                  case DRAW_MODE_LINE_STRIP_BEVEL_AA:
+                     if(b_vbo)
+                     {
+                        // DrawLineStripFlatBevelAAVBO14_2(current_vbo_id,
+                        //                                 current_draw_start_offset,
+                        //                                 current_draw_num_vertices
+                        //                                 );
+                        DrawLineStripFlatBevelAAVBO32(current_vbo_id,
+                                                      current_draw_start_offset,
+                                                      current_draw_vertex_index
+                                                      );
+                     }
+                     break;
+
+                  case DRAW_MODE_LINES:
+                     if(b_vbo)
+                     {
+                        // DrawLinesFlatVBO14_2(current_vbo_id,
+                        //                      current_draw_start_offset,
+                        //                      current_draw_num_vertices
+                        //                      );
+                        DrawLinesFlatVBO32(current_vbo_id,
+                                           current_draw_start_offset,
+                                           current_draw_vertex_index
+                                           );
+                     }
+                     break;
+
+                  case DRAW_MODE_LINES_AA:
+                     if(b_vbo)
+                     {
+                        // DrawLinesFlatAAVBO14_2(current_vbo_id,
+                        //                        current_draw_start_offset,
+                        //                        current_draw_num_vertices
+                        //                        );
+                        DrawLinesFlatAAVBO32(current_vbo_id,
+                                             current_draw_start_offset,
+                                             current_draw_vertex_index
+                                             );
+                     }
+                     break;
+
+                  case DRAW_MODE_POINTS_SQUARE:
+                     if(b_vbo)
+                     {
+                        DrawPointsSquareVBO32(current_vbo_id,
+                                              current_draw_start_offset,
+                                              current_draw_vertex_index
+                                              );
+                     }
+                     break;
+
+                  case DRAW_MODE_POINTS_SQUARE_AA:
+                     if(b_vbo)
+                     {
+                        DrawPointsSquareAAVBO32(current_vbo_id,
+                                                current_draw_start_offset,
+                                                current_draw_vertex_index
+                                                );
+                     }
+                     break;
+
+                  case DRAW_MODE_POINTS_ROUND:
+                     if(b_vbo)
+                     {
+                        DrawPointsRoundVBO32(current_vbo_id,
+                                             current_draw_start_offset,
+                                             current_draw_vertex_index
+                                             );
+                     }
+                     break;
+
+                  case DRAW_MODE_POINTS_ROUND_AA:
+                     if(b_vbo)
+                     {
+                        DrawPointsRoundAAVBO32(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
+                     }
+                     break;
+               }
+            }
+         }
+         else
+         {
+            trace "[~~~] sdvg_End: data size mismatch (expect="+current_draw_num_bytes+"("+(current_draw_num_bytes/current_draw_stride)+" verts), have="+bytesAvail+"("+(bytesAvail/current_draw_stride)+" verts), stride="+current_draw_stride+")";
+         }
+
+         if(0 == mapped_user_vbo_id)
+         {
+            int a;
+            foreach a in current_draw_attrib_enables
+               glDisableVertexAttribArray(a);
+            current_draw_attrib_enables.empty();
+         }
+
+         current_draw_mode = GL_NONE;
+      }
+
+      UnsetShapeIfBuiltIn();
+   }
+
+   static DrawFilledRectangle(float _x, float _y, float _w, float _h) {
+
+      BindScratchBuffer();
+
+      int aVertexFill = BindFillShader();
+
+      AllocScratchBuffer(aVertexFill, scratch_buffer, (4*2/*xy*/*4/*float*/));
+
+      scratch_buffer.add2f(_x,      _y     );
+      scratch_buffer.add2f(_x + _w, _y     );
+      scratch_buffer.add2f(_x + _w, _y + _h);
+      scratch_buffer.add2f(_x,      _y + _h);
+
+      glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+      EndFillShader();
+   }
+
+   static DrawRectangle(float _x, float _y, float _w, float _h, float _b) {
+
+      BindScratchBuffer();
+
+      int aVertexFill = BindFillShader();
+
+      AllocScratchBuffer(aVertexFill, scratch_buffer, (4*2/*xy*/*4/*float*/));
+
+      shadervg::Shape.EmitRectangleVertices(scratch_buffer,
+                                            _x, _y,
+                                            _w, _h,
+                                            _b
+                                            );
+
+      glDrawArrays(GL_TRIANGLES, 0, 8*3);
+
+      EndFillShader();
+   }
+
+}
+
+
+// native plugin "C" API compatibility
+namespace sdvgcapi;
+
+function sdvg_SetScratchBufferSize(int _sz) {
+   ShaderVG.SetScratchBufferSize(_sz);
+}
+
+function sdvg_SetGLSLVersion(boolean _bV3, boolean _bGLES, String _sVersionStringOrNull) {
+   ShaderVG.SetGLSLVersion(_bV3, _bGLES, _sVersionStringOrNull);
+}
+
+function sdvg_SetEnableVBO(boolean _bEnable) {
+   ShaderVG.SetEnableVBO(_bEnable);
+}
+
+function sdvg_Init(boolean _bGLCore) {
+   ShaderVG.Init(_bGLCore);
+}
+
+function sdvg_Exit() {
+   ShaderVG.Exit();
+}
+
+function sdvg_OnOpen() {
+   return ShaderVG.OnOpen();
+}
+
+function sdvg_SetFramebufferSize(int _w, int _h) {
+   ShaderVG.SetFramebufferSize(_w, _h);
+}
+
+function sdvg_BeginFrame() {
+   ShaderVG.BeginFrame();
+}
+
+function sdvg_SetViewport(int _x, int _y, int _w, int _h) {
+   ShaderVG.SetViewport(_x, _y, _w, _h);
+}
+
+function sdvg_PushViewport(int _x, int _y, int _w, int _h) {
+   ShaderVG.PushViewport(_x, _y, _w, _h);
+}
+
+function sdvg_PopViewport() {
+   ShaderVG.PopViewport();
+}
+
+function GetViewportWidth() {
+   return ShaderVG.GetViewportWidth();
+}
+
+function GetViewportHeight() {
+   return ShaderVG.GetViewportHeight();
+}
+
+function sdvg_SetScissor(int _x, int _y, int _w, int _h) {
+   ShaderVG.SetScissor(_x, _y, _w, _h);
+}
+
+function sdvg_PushScissor(int _x, int _y, int _w, int _h) {
+   ShaderVG.PushScissor(_x, _y, _w, _h);
+}
+
+function sdvg_PopScissor() {
+   ShaderVG.PopScissor();
+}
+
+function sdvg_EnableScissor() {
+   ShaderVG.EnableScissor();
+}
+
+function sdvg_DisableScissor() {
+   ShaderVG.DisableScissor();
+}
+
+function sdvg_Flush() {
+   ShaderVG.Flush();
+}
+
+function sdvg_ReturnToGL() {
+   ShaderVG.ReturnToGL();
+}
+
+function sdvg_EndFrame() {
+   ShaderVG.EndFrame();
+}
+
+function sdvg_SetTransform(Object _mat4) {
+   ShaderVG.SetTransform(_mat4);
+}
+
+function sdvg_GetTransformRef() {
+   return ShaderVG.mvp_matrix;
+}
+
+function sdvg_SetEnableAA(boolean _bEnable) {
+   ShaderVG.SetEnableAA(_bEnable);
+}
+
+function sdvg_SetAARange(float _aaRange) {
+   ShaderVG.SetAARange(_aaRange);
+}
+
+function sdvg_SetAAExp(float _aaExp) {  // **deprecated**
+   ShaderVG.SetAAExp(_aaExp);
+}
+
+function sdvg_SetFillColor4f(float _fillR, float _fillG, float _fillB, float _fillA) {
+   ShaderVG.SetFillColor4f(_fillR, _fillG, _fillB, _fillA);
+}
+
+function sdvg_SetFillAlpha(float _fillA) {
+   ShaderVG.SetFillAlpha(_fillA);
+}
+
+function sdvg_SetFillColorARGB(int _c32) {
+   ShaderVG.SetFillColorARGB(_c32);
+}
+
+function sdvg_SetStrokeWidth(float _strokeW) {
+   ShaderVG.SetStrokeWidth(_strokeW);
+}
+
+function sdvg_SetPointRadius(float _radius) {
+   ShaderVG.SetPointRadius(_radius);
+}
+
+function sdvg_SetPixelScaling(float _s) {
+   ShaderVG.SetPixelScaling(_s);
+}
+
+function sdvg_SetStrokeColor4f(float _strokeR, float _strokeG, float _strokeB, float _strokeA) {
+   ShaderVG.SetStrokeColor4f(_strokeR, _strokeG, _strokeB, _strokeA);
+}
+
+function sdvg_SetStrokeColorARGB(int _c32) {
+   ShaderVG.SetStrokeColorARGB(_c32);
+}
+
+function sdvg_SetGlobalAlpha(float _a) {
+   ShaderVG.SetGlobalAlpha(_a);
+}
+
+function sdvg_SetTextureDecalAlpha(float _decalAlpha) {
+   ShaderVG.SetTextureDecalAlpha(_decalAlpha);
+}
+
+function sdvg_Clear4f(float r, float g, float b, float a) {
+   glClearColor(r, g, b, a);
+   glClearStencil(0);
+   glClearDepth(0.0f);
+   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+}
+
+function sdvg_ClearARGB(int _c32) {
+   float r = ((_c32 >> 16) & 255) * (1.0f / 255.0f);
+   float g = ((_c32 >>  8) & 255) * (1.0f / 255.0f);
+   float b = ((_c32      ) & 255) * (1.0f / 255.0f);
+   float a = ((_c32 >> 24) & 255) * (1.0f / 255.0f);
+   sdvg_Clear4f(r, g, b, a);
+}
+
+function sdvg_EnableBlending() {
+   ShaderVG.EnableBlending();
+}
+
+function sdvg_EnableBlendingKeepAlpha() {
+   ShaderVG.EnableBlendingKeepAlpha();
+}
+
+function sdvg_EnableBlendingAdditive() {
+   ShaderVG.EnableBlendingAdditive();
+}
+
+function sdvg_EnableBlendingAdditiveKeepAlpha() {
+   ShaderVG.EnableBlendingAdditiveKeepAlpha();
+}
+
+function sdvg_EnableBlendingSrcColorKeepAlpha() {
+   ShaderVG.EnableBlendingSrcColorKeepAlpha();
+}
+
+function sdvg_EnableBlendingDstColorKeepAlpha() {
+   ShaderVG.EnableBlendingDstColorKeepAlpha();
+}
+
+function sdvg_DisableBlending() {
+   ShaderVG.DisableBlending();
+}
+
+function sdvg_AlphaWrite(boolean _bEnable) {
+   ShaderVG.AlphaWrite(_bEnable);
+}
+
+function sdvg_GetEnableDebug() {
+   return ShaderVG.GetEnableDebug();
+}
+
+function sdvg_SetEnableDebug(boolean _bEnable) {
+   ShaderVG.SetEnableDebug(_bEnable);
+}
+
+function sdvg_GetEnableDrawInner() {
+   return ShaderVG.GetEnableDrawInner();
+}
+
+function sdvg_SetEnableDrawInner(boolean _bEnable) {
+   ShaderVG.SetEnableDrawInner(_bEnable);
+}
+
+function sdvg_GetEnableDrawBorder() {
+   return ShaderVG.GetEnableDrawBorder();
+}
+
+function sdvg_SetEnableDrawBorder(boolean _bEnable) {
+   ShaderVG.SetEnableDrawBorder(_bEnable);
+}
+
+function sdvg_CreateVBO(int _numBytes) {
+   return ShaderVG.CreateVBO(_numBytes);
+}
+
+function sdvg_UpdateVBO(int _vboId, int _offset, int _numBytes, Object _data) {
+   ShaderVG.UpdateVBO(_vboId, _offset, _numBytes, _data);
+}
+
+function sdvg_BindVBO(int _vboId) {
+   ShaderVG.BindVBO(_vboId);
+}
+
+function sdvg_GetVBOSize() {
+   return ShaderVG.GetVBOSize();
+}
+
+function sdvg_GetMappedVBOOffset() {
+   return ShaderVG.GetMappedVBOOffset();
+}
+
+function sdvg_MapVBO(int _vboId) {
+   ShaderVG.MapVBO(_vboId);
+}
+
+function sdvg_UnmapVBO() {
+   ShaderVG.UnmapVBO();
+}
+
+function sdvg_UnbindVBO() {
+   ShaderVG.UnbindVBO();
+}
+
+function sdvg_DestroyVBO(int _vboId) {
+   ShaderVG.DestroyVBO(_vboId);
+}
+
+function sdvg_CreateFBOEx(int _w, int _h, boolean _bMSAA, boolean _bDepth, boolean _bStencil) {
+   return ShaderVG.CreateFBOEx(_w, _h, _bMSAA, _bDepth, _bStencil);
+}
+
+function sdvg_CreateFBO(int _w, int _h) {
+   return ShaderVG.CreateFBO(_w, _h);
+}
+
+function sdvg_BindFBO(int _fboIdx) {
+   ShaderVG.BindFBO(_fboIdx);
+}
+
+function sdvg_ResolveFBO(int _fboIdx) {
+   ShaderVG.ResolveFBO(_fboIdx);
+}
+
+function sdvg_UnbindFBO() {
+   ShaderVG.UnbindFBO();
+}
+
+function sdvg_GetFBOTextureId(int _fboIdx) {
+   return ShaderVG.GetFBOTextureId(_fboIdx);
+}
+
+function sdvg_BindFBOTexture(int _fboIdx, boolean _bRepeat, boolean _bFilter) {
+   int texId = sdvg_GetFBOTextureId(_fboIdx);
+   ShaderVG.BindTexture(texId, _bRepeat, _bFilter);
+}
+
+function sdvg_DestroyFBO(int _fboIdx) {
+   ShaderVG.DestroyFBO(_fboIdx);
+}
+
+function sdvg_BindTexture(int _texId, boolean _bRepeat, boolean _bFilter) {
+   ShaderVG.BindTexture(_texId, _bRepeat, _bFilter);
+}
+
+function sdvg_UnbindTexture() {
+   ShaderVG.UnbindTexture();
+}
+
+function sdvg_BufferAddRectTexUVFlat32(Buffer _b, float _x, float _y, float _w, float _h, float _ul, float _ut, float _ur, float _ub) {
+   ShaderVG.BufferAddRectTexUVFlat32(_b, _x, _y, _w, _h, _ul, _ut, _ur, _ub);
+}
+
+function sdvg_WriteC32AsRGBA8(Buffer _b, int _c32) {
+   ShaderVG.WriteC32AsRGBA8(_b, _c32);
+}
+
+function sdvg_BufferAddRectTexUVGouraud32(Buffer _b,  float _x, float _y, float _w, float _h, float _ul, float _ut, float _ur, float _ub, int _c32LT, int _c32RT, int _c32LB, int _c32RB) {
+   ShaderVG.BufferAddRectTexUVGouraud32(_b, _x, _y, _w, _h, _ul, _ut, _ur, _ub, _c32LT, _c32RT, _c32LB, _c32RB);
+}
+
+function sdvg_BufferAddLinePointFlat14_2(Buffer _b, float _x1, float _y1) {
+   ShaderVG.BufferAddLinePointFlat14_2(_b, _x1, _y1);
+}
+
+function sdvg_BufferAddLinePointFlatBevel14_2(Buffer _b, float _x1, float _y1) {
+   ShaderVG.BufferAddLinePointFlatBevel14_2(_b, _x1, _y1);
+}
+
+function sdvg_BufferAddLinesPointsFlat14_2(Buffer _b, float _x1, float _y1, float _x2, float _y2) {
+   ShaderVG.BufferAddLinesPointsFlat14_2(_b, _x1, _y1, _x2, _y2);
+}
+
+function sdvg_DrawTrianglesFillFlatVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillFlatVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillFlatVBO14_2(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillFlatVBO14_2(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillGouraudVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillGouraudVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillGouraudVBO14_2(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillGouraudVBO14_2(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillFlatEdgeAAVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillFlatEdgeAAVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillFlatEdgeAAVBO14_2(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillGouraudEdgeAAVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillGouraudEdgeAAVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesFillGouraudEdgeAAVBO14_2(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawPolygonFillFlatVBO32(int _vboId, int _byteOffset, int _numVerts) {
+   ShaderVG.DrawPolygonFillFlatVBO32(_vboId, _byteOffset, _numVerts);
+}
+
+function sdvg_DrawPolygonFillFlatVBO14_2(int _vboId, int _byteOffset, int _numVerts) {
+   ShaderVG.DrawPolygonFillFlatVBO14_2(_vboId, _byteOffset, _numVerts);
+}
+
+function sdvg_DrawPolygonFillGouraudVBO32(int _vboId, int _byteOffset, int _numVerts) {
+   ShaderVG.DrawPolygonFillGouraudVBO32(_vboId, _byteOffset, _numVerts);
+}
+
+function sdvg_DrawPolygonFillGouraudVBO14_2(int _vboId, int _byteOffset, int _numVerts) {
+   ShaderVG.DrawPolygonFillGouraudVBO14_2(_vboId, _byteOffset, _numVerts);
+}
+
+function sdvg_SetupRectFillAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.SetupRectFillAAVBO32(_vb, _dl, _centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_DrawRectFillAAVBO32(int _vboId, int _byteOffsetInner, int _numVertsInner, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawRectFillAAVBO32(_vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_DrawRectFillAA(float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawRectFillAA(_centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_SetupRectFillStrokeAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _sizeX, float _sizeY, float _strokeW) {
+   ShaderVG.SetupRectFillStrokeAAVBO32(_vb, _dl, _centerX, _centerY, _sizeX, _sizeY, _strokeW);
+}
+
+function sdvg_DrawRectFillStrokeAAVBO32(int _vboId, int _byteOffsetInner, int _numVertsInner, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawRectFillStrokeAAVBO32(_vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_DrawRectFillStrokeAA(float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawRectFillStrokeAA(_centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_SetupRectStrokeAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _sizeX, float _sizeY, float _strokeW) {
+   ShaderVG.SetupRectStrokeAAVBO32(_vb, _dl, _centerX, _centerY, _sizeX, _sizeY, _strokeW);
+}
+
+function sdvg_DrawRectStrokeAAVBO32(int _vboId, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawRectStrokeAAVBO32(_vboId, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_DrawRectStrokeAA(float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawRectStrokeAA(_centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_SetupEllipseFillAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _radiusX, float _radiusY) {
+   ShaderVG.SetupEllipseFillAAVBO32(_vb, _dl, _centerX, _centerY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawEllipseFillAAVBO32(int _vboId, int _byteOffsetInner, int _numVertsInner, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawEllipseFillAAVBO32(_vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawEllipseFillAA(float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawEllipseFillAA(_centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_SetupEllipseFillStrokeAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _radiusX, float _radiusY, float _strokeW) {
+   ShaderVG.SetupEllipseFillStrokeAAVBO32(_vb, _dl, _centerX, _centerY, _radiusX, _radiusY, _strokeW);
+}
+
+function sdvg_DrawEllipseFillStrokeAAVBO32(int _vboId, int _byteOffsetInner, int _numVertsInner, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawEllipseFillStrokeAAVBO32(_vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawEllipseFillStrokeAA(float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawEllipseFillStrokeAA(_centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_SetupEllipseStrokeAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _radiusX, float _radiusY, float _strokeW) {
+   ShaderVG.SetupEllipseStrokeAAVBO32(_vb, _dl, _centerX, _centerY, _radiusX, _radiusY, _strokeW);
+}
+
+function sdvg_DrawEllipseStrokeAAVBO32(int _vboId, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawEllipseStrokeAAVBO32(_vboId, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawEllipseStrokeAA(float _centerX, float _centerY, float _sizeX, float _sizeY) {
+   ShaderVG.DrawEllipseStrokeAA(_centerX, _centerY, _sizeX, _sizeY);
+}
+
+function sdvg_SetupRoundRectFillAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.SetupRoundRectFillAAVBO32(_vb, _dl, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawRoundRectFillAAVBO32(int _vboId, int _byteOffsetInner, int _numVertsInner, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawRoundRectFillAAVBO32(_vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawRoundRectFillAA(float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawRoundRectFillAA(_centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_SetupRoundRectFillStrokeAAVBO32(Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY, float _strokeW) {
+   ShaderVG.SetupRoundRectFillStrokeAAVBO32(_vb, _dl, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY, _strokeW);
+}
+
+function sdvg_DrawRoundRectFillStrokeAAVBO32 (int _vboId, int _byteOffsetInner, int _numVertsInner, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawRoundRectFillStrokeAAVBO32(_vboId, _byteOffsetInner, _numVertsInner, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawRoundRectFillStrokeAA(float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawRoundRectFillStrokeAA(_centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_SetupRoundRectStrokeAAVBO32 (Buffer _vb, Buffer _dl, float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY, float _strokeW) {
+   ShaderVG.SetupRoundRectStrokeAAVBO32(_vb, _dl, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY, _strokeW);
+}
+
+function sdvg_DrawRoundRectStrokeAAVBO32(int _vboId, int _byteOffsetBorder, int _numVertsBorder, int _glPrimTypeBorder, float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawRoundRectStrokeAAVBO32(_vboId, _byteOffsetBorder, _numVertsBorder, _glPrimTypeBorder, _centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawRoundRectStrokeAA(float _centerX, float _centerY, float _sizeX, float _sizeY, float _radiusX, float _radiusY) {
+   ShaderVG.DrawRoundRectStrokeAA(_centerX, _centerY, _sizeX, _sizeY, _radiusX, _radiusY);
+}
+
+function sdvg_DrawTrianglesTexUVFlatVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesTexUVFlatVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesTexUVGouraudVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesTexUVGouraudVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesTexUVFlatDecalVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesTexUVFlatDecalVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawTrianglesTexUVGouraudDecalVBO32(int _vboId, int _byteOffset, int _numTris) {
+   ShaderVG.DrawTrianglesTexUVGouraudDecalVBO32(_vboId, _byteOffset, _numTris);
+}
+
+function sdvg_DrawLineStripFlatVBO14_2(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatVBO14_2(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatAAVBO14_2(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatAAVBO14_2(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatAAVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatAAVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatBevelVBO14_2(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatBevelVBO14_2(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatBevelVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatBevelVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatBevelAAVBO14_2(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatBevelAAVBO14_2(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLineStripFlatBevelAAVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLineStripFlatBevelAAVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLinesFlatVBO14_2(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLinesFlatVBO14_2(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLinesFlatVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLinesFlatVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLinesFlatAAVBO14_2(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLinesFlatAAVBO14_2(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawLinesFlatAAVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawLinesFlatAAVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawPointsSquareVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawPointsSquareVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawPointsSquareAAVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawPointsSquareAAVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawPointsRoundVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawPointsRoundVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+function sdvg_DrawPointsRoundAAVBO32(int _vboId, int _byteOffset, int _numPoints) {
+   ShaderVG.DrawPointsRoundAAVBO32(_vboId, _byteOffset, _numPoints);
+}
+
+// ----------- custom shaders ------------
+function sdvg_CreateShader(String vs, String fs) {
+   return ShaderVG.CreateShader(vs, fs);
+}
+
+function sdvg_DestroyShader(int _shaderIdx) {
+   ShaderVG.DestroyShader(_shaderIdx);
+}
+
+function sdvg_BindShader(int _shaderIdx) {
+   ShaderVG.BindShader(_shaderIdx);
+}
+
+function sdvg_UnbindShader() {
+   ShaderVG.UnbindShader();
+}
+
+function sdvg_GetUniformLocation(String _name) : int {
+   return ShaderVG.GetUniformLocation(_name);
+}
+
+function sdvg_GetAttribLocation(String _name) : int {
+   return ShaderVG.GetAttribLocation(_name);
+}
+
+function sdvg_UniformMatrix4(String _name, Object _matRowMajor) {
+   ShaderVG.UniformMatrix4(_name, _matRowMajor);
+}
+
+function sdvg_Uniform1f(String _name, float _f) {
+   ShaderVG.Uniform1f(_name, _f);
+}
+
+function sdvg_Uniform2f(String _name, float _f1, float _f2) {
+   ShaderVG.Uniform2f(_name, _f1, _f2);
+}
+
+function sdvg_Uniform3f(String _name, float _f1, float _f2, float _f3) {
+   ShaderVG.Uniform3f(_name, _f1, _f2, _f3);
+}
+
+function sdvg_Uniform4f(String _name, float _f1, float _f2, float _f3, float _f4) {
+   ShaderVG.Uniform4f(_name, _f1, _f2, _f3, _f4);
+}
+
+function sdvg_Uniform1i(String _name, int _i) {
+   ShaderVG.Uniform1i(_name, _i);
+}
+
+function sdvg_BeginVBO(int _numVertices, int _stride) {
+   return ShaderVG.BeginVBO(_numVertices, _stride);
+}
+
+function sdvg_BeginTriangles(int _numVertices, int _stride) {
+   return ShaderVG.BeginTriangles(_numVertices, _stride);
+}
+
+function sdvg_BeginTriangleFan(int _numVertices, int _stride) {
+   return ShaderVG.BeginTriangleFan(_numVertices, _stride);
+}
+
+function sdvg_BeginTriangleStrip(int _numVertices, int _stride) {
+   return ShaderVG.BeginTriangleStrip(_numVertices, _stride);
+}
+
+function sdvg_BeginFilledTriangles(int _numVertices) : boolean {
+   return ShaderVG.BeginFilledTriangles(_numVertices);
+}
+
+function sdvg_BeginFilledTriangleFan(int _numVertices) : boolean {
+   return ShaderVG.BeginFilledTriangleFan(_numVertices);
+}
+
+function sdvg_BeginFilledTriangleStrip(int _numVertices) : boolean {
+   return ShaderVG.BeginFilledTriangleStrip(_numVertices);
+}
+
+function sdvg_BeginFilledGouraudTriangles(int _numVertices) : boolean {
+   return ShaderVG.BeginFilledGouraudTriangles(_numVertices);
+}
+
+function sdvg_BeginFilledGouraudTriangleFan(int _numVertices) : boolean {
+   return ShaderVG.BeginFilledGouraudTriangleFan(_numVertices);
+}
+
+function sdvg_BeginFilledGouraudTriangleStrip(int _numVertices) : boolean {
+   return ShaderVG.BeginFilledGouraudTriangleStrip(_numVertices);
+}
+
+function sdvg_BeginTexturedTriangles(int _numVertices) : boolean {
+   return ShaderVG.BeginTexturedTriangles(_numVertices);
+}
+
+function sdvg_BeginTexturedTriangleFan(int _numVertices) : boolean {
+   return ShaderVG.BeginTexturedTriangleFan(_numVertices);
+}
+
+function sdvg_BeginTexturedTriangleStrip(int _numVertices) : boolean {
+   return ShaderVG.BeginTexturedTriangleStrip(_numVertices);
+}
+
+function sdvg_BeginTexturedTrianglesAlpha(int _numVertices) {
+   return ShaderVG.BeginTexturedTrianglesAlpha(_numVertices);
+}
+
+function sdvg_BeginTexturedGouraudTriangles(int _numVertices) {
+   return ShaderVG.BeginTexturedGouraudTriangles(_numVertices);
+}
+
+function sdvg_BeginTexturedGouraudTriangleFan(int _numVertices) {
+   return ShaderVG.BeginTexturedGouraudTriangleFan(_numVertices);
+}
+
+function sdvg_BeginTexturedGouraudTriangleStrip(int _numVertices) {
+   return ShaderVG.BeginTexturedGouraudTriangleStrip(_numVertices);
+}
+
+function sdvg_BeginTexturedTriangleFanAlpha(int _numVertices) {
+   return ShaderVG.BeginTexturedTriangleFanAlpha(_numVertices);
+}
+
+function sdvg_BeginTexturedTriangleStripAlpha(int _numVertices) {
+   return ShaderVG.BeginTexturedTriangleStripAlpha(_numVertices);
+}
+
+function sdvg_BeginTexturedGouraudTrianglesAlpha(int _numVertices) {
+   return ShaderVG.BeginTexturedGouraudTrianglesAlpha(_numVertices);
+}
+
+function sdvg_BeginTexturedGouraudTriangleFanAlpha(int _numVertices) {
+   return ShaderVG.BeginTexturedGouraudTriangleFanAlpha(_numVertices);
+}
+
+function sdvg_BeginTexturedGouraudTriangleStripAlpha(int _numVertices) {
+   return ShaderVG.BeginTexturedGouraudTriangleStripAlpha(_numVertices);
+}
+
+function sdvg_BeginLineStrip(int _numPoints) {
+   return ShaderVG.BeginLineStrip(_numPoints);
+}
+
+function sdvg_BeginLineStripAA(int _numPoints) {
+   return ShaderVG.BeginLineStripAA(_numPoints);
+}
+
+function sdvg_BeginLineStripBevel(int _numPoints) {
+   return ShaderVG.BeginLineStripBevel(_numPoints);
+}
+
+function sdvg_BeginLineStripBevelAA(int _numPoints) {
+   return ShaderVG.BeginLineStripBevelAA(_numPoints);
+}
+
+function sdvg_BeginLines(int _numPoints) {
+   return ShaderVG.BeginLines(_numPoints);
+}
+
+function sdvg_BeginLinesAA(int _numPoints) {
+   return ShaderVG.BeginLinesAA(_numPoints);
+}
+
+function sdvg_BeginPointsSquare(int _numPoints) {
+   return ShaderVG.BeginPointsSquare(_numPoints);
+}
+
+function sdvg_BeginPointsSquareAA(int _numPoints) {
+   return ShaderVG.BeginPointsSquareAA(_numPoints);
+}
+
+function sdvg_BeginPointsRound(int _numPoints) {
+   return ShaderVG.BeginPointsRound(_numPoints);
+}
+
+function sdvg_BeginPointsRoundAA(int _numPoints) {
+   return ShaderVG.BeginPointsRoundAA(_numPoints);
+}
+
+function sdvg_VertexOffset2f() {
+   ShaderVG.VertexOffset2f();
+}
+
+function sdvg_AttribOffset1f(String _name) {
+   ShaderVG.AttribOffset1f(_name);
+}
+
+function sdvg_AttribOffset2f(String _name) {
+   ShaderVG.AttribOffset2f(_name);
+}
+
+function sdvg_AttribOffset3f(String _name) {
+   ShaderVG.AttribOffset3f(_name);
+}
+
+function sdvg_AttribOffset4f(String _name) {
+   ShaderVG.AttribOffset4f(_name);
+}
+
+function sdvg_AttribOffsetARGB(String _name) {
+   ShaderVG.AttribOffsetARGB(_name);
+}
+
+function sdvg_Attrib1f(float _f) {
+   ShaderVG.Attrib1f(_f);
+}
+
+function sdvg_Attrib2f(float _f1, float _f2) {
+   ShaderVG.Attrib2f(_f1, _f2);
+}
+
+function sdvg_Vertex2f(float _x, float _y) {
+   // alias
+   ShaderVG.Vertex2f(_x, _y);
+}
+
+function sdvg_TexCoord2f(float _u, float _v) {
+   // alias
+   ShaderVG.Attrib2f(_u, _v);
+}
+
+function sdvg_Attrib3f(float _f1, float _f2, float _f3) {
+   ShaderVG.Attrib3f(_f1, _f2, _f3);
+}
+
+function sdvg_Color3f(float _r, float _g, float _b) {
+   // alias
+   ShaderVG.Attrib3f(_r, _g, _b);
+}
+
+function sdvg_Attrib4f(float _f1, float _f2, float _f3, float _f4) {
+   ShaderVG.Attrib4f(_f1, _f2, _f3, _f4);
+}
+
+function sdvg_Color4f(float _r, float _g, float _b, float _a) {
+   // alias
+   ShaderVG.Attrib4f(_r, _g, _b, _a);
+}
+
+function sdvg_AttribARGB(int _c32) {
+   ShaderVG.AttribARGB(_c32);
+}
+
+function sdvg_ColorARGB(int _c32) {
+   ShaderVG.ColorARGB(_c32);
+}
+
+function sdvg_End() {
+   ShaderVG.End();
+}
+
+function sdvg_DrawFilledRectangle(float _x, float _y, float _w, float _h) {
+   ShaderVG.DrawFilledRectangle(_x, _y, _w, _h);
+}
+
+function sdvg_DrawRectangle(float _x, float _y, float _w, float _h, float _b) {
+   ShaderVG.DrawRectangle(_x, _y, _w, _h, _b);
+}
+
+function sdvg_ARGB(int _a, int _r, int _g, int _b) {
+   return argb(_a, _r, _g, _b);
+}
+
+function sdvg_ARGBf(float _a, float _r, float _g, float _b) {
+   return argb(_a * 255, _r * 255, _g * 255, _b * 255);
+}
+
+function sdvg_MixARGBf(int _x, int _y, float _t) {
+
+   int ax = (_x >> 24) & 255;
+   int rx = (_x >> 16) & 255;
+   int gx = (_x >>  8) & 255;
+   int bx = (_x      ) & 255;
+
+   int ay = (_y >> 24) & 255;
+   int ry = (_y >> 16) & 255;
+   int gy = (_y >>  8) & 255;
+   int by = (_y      ) & 255;
+
+   return argb(ax + (ay - ax) * _t,
+               rx + (ry - rx) * _t,
+               gx + (gy - gx) * _t,
+               bx + (by - bx) * _t
+               );
+}
+
+function sdvg_MixARGBx(int _x, int _y, int _t) {
+   return sdvg_MixARGBf(_x, _y, _t * (1.0f / 256.0f));
+}
+
+function sdvg_MixRGBf(int _x, int _y, float _t) {
+
+   int rx = (_x >> 16) & 255;
+   int gx = (_x >>  8) & 255;
+   int bx = (_x      ) & 255;
+
+   int ry = (_y >> 16) & 255;
+   int gy = (_y >>  8) & 255;
+   int by = (_y      ) & 255;
+
+   return argb(0,
+               rx + (ry - rx) * _t,
+               gx + (gy - gx) * _t,
+               bx + (by - bx) * _t
+               );
+}
+
+function sdvg_MixRGBx(int _x, int _y, int _t) {
+   return sdvg_MixRGBf(_x, _y, _t * (1.0f / 256.0f));
+}
+
+function sdvg_TintARGB(int _x, int _y) {
+   return sdvg_MixARGBf(_x, 0xFF000000 | (_y&0x00FFFFFF), ((_y>>24)&255)/255.0);
+}
+
+function sdvg_TintRGBAlpha(int _x, int _y, int _a8) {
+   return (sdvg_MixARGBf(_x, 0xFF000000 | (_y&0x00FFFFFF), ((_y>>24)&255)/255.0) & 0x00ffffff) | (_a8 << 24);
+}
+
+function sdvg_RGBAlpha(int _c32, int _a8) {
+   return (_c32 & 0x00FFFFFF) | (_a8 << 24);
+}
+
+function sdvg_HSVAToARGB(float _h, float _s, float _v, int _a8) {
+   // converts alpha '_a8' (0..255) + hue (0..360) + saturation/value (0..1) to ARGB32 int
+
+   if(_h >= 360)
+      _h -= 360;
+   _h /= 60;
+   int i = _h;
+   float f = _h - i;
+
+   int p = 255 * _v * ( 1 - _s );
+   int q = 255 * _v * ( 1 - _s * f );
+   int t = 255 * _v * ( 1 - _s * ( 1 - f ) );
+
+   _v *= 255;
+
+   switch(i)
+   {
+      case 0:
+         return argb(_a8, _v, t, p);
+      case 1:
+         return argb(_a8, q, _v, p);
+      case 2:
+         return argb(_a8, p, _v, t);
+      case 3:
+         return argb(_a8, p, q, _v);
+      case 4:
+         return argb(_a8, t, p, _v);
+      default:
+         return argb(_a8, _v, p, q);
+   }
+}
+
+function sdvg_ARGBToHSVA(int _c32, Float _retH, Float _retS, Float _retV) {
+   float r = ( (_c32 >> 16) & 255 ) * (1.0f / 255);
+   float g = ( (_c32 >>  8) & 255 ) * (1.0f / 255);
+   float b = ( (_c32      ) & 255 ) * (1.0f / 255);
+
+   float h, s, v;
+
+   v = mathMaxf(r, g);
+   v = mathMaxf(v, b);
+
+   float t = mathMinf(r, g);
+   t = mathMinf(t, b);
+
+   if(0 == v)
+      s = 0;
+   else
+      s = (v - t) / v;
+
+   float cr = (v - r) / (v - t);
+   float cg = (v - g) / (v - t);
+   float cb = (v - b) / (v - t);
+
+   if(r == v)
+      h = cb - cg;
+   else if(g == v)
+      h = 2 + cr - cb;
+   else if(b == v)
+      h = 4 + cg - cr;
+
+   h *= 60;
+
+   if(h < 0)
+      h += 360;
+
+   _retH = h;
+   _retS = s;
+   _retV = v;
+   return (_c32 >> 24) & 255;
+}

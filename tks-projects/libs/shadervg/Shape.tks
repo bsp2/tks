@@ -1,0 +1,551 @@
+// ----
+// ---- file   : ShaderVG_Shape.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : ShaderVG render utilities
+// ----
+// ----
+// ----
+
+module MShaderVG_Shape;
+
+namespace shadervg;
+
+
+class Shape {
+
+   define float ELLIPSE_EXTRUDE_I = 2.0f;
+   define float ELLIPSE_EXTRUDE_O = 6.0f;
+   define int   ELLIPSE_NUM_SEG   = 16;
+   define float ELLIPSE_SINGLE_RADIUS_THRESHOLD = 10.0f;
+
+   define int RECT_SINGLE_AREA_THRESHOLD = 256;
+
+   define int ROUNDRECT_SINGLE_AREA_THRESHOLD = 256;
+
+   ZGLShader shape_shader;
+   boolean b_builtin;
+
+   int shape_a_vertex;
+   int shape_a_vertex_n;   // optional
+   int shape_a_vertex_nn;  // optional
+   int shape_a_index;      // optional
+   int shape_a_color;      // optional
+   int shape_a_edge;       // optional
+   int shape_a_scale;      // optional
+   int shape_a_bc;         // optional
+   int shape_a_uv;         // optional
+
+   int shape_u_transform;
+   int shape_u_aa;               // optional
+   int shape_u_aa_range;         // optional for non-AA shader
+   int shape_u_aa_exp;           // optional
+   int shape_u_center;           // optional for non-AA shader
+   int shape_u_size;             // optional
+   int shape_u_size_i;           // optional
+   int shape_u_size_o;           // optional
+   int shape_u_radius;           // optional
+   int shape_u_radius_i;         // optional
+   int shape_u_radius_o;         // optional
+   int shape_u_ob_radius_i;      // optional
+   int shape_u_ob_radius_o;      // optional
+   int shape_u_ob_radius_i_max;  // optional
+   int shape_u_ob_radius_o_max;  // optional
+   int shape_u_radius_i_max;     // optional
+   int shape_u_radius_o_max;     // optional
+   int shape_u_ob_radius;        // optional
+   int shape_u_ob_radius_max;    // optional
+   int shape_u_radius_max;       // optional
+   int shape_u_point_radius;     // optional
+   int shape_u_color_fill;       // optional
+   int shape_u_color_stroke;     // optional
+   int shape_u_global_alpha;     // optional
+   int shape_u_decal_alpha;      // optional
+   int shape_u_sampler;          // optional
+   int shape_u_stroke_w;         // optional
+   int shape_u_debug;            // optional
+   int shape_u_tex_0;            // optional
+   int shape_u_tex_1;            // optional
+
+   // debug:
+   boolean b_draw_inner;
+   boolean b_draw_border;
+   boolean b_debug;
+
+
+   public method init() {
+      b_builtin = true;
+      b_draw_inner  = 1;
+      b_draw_border = 1;
+   }
+
+   protected method allocScratchBuffer(int _aVertex, Buffer _scratchBuf, int _numBytes) {
+      ShaderVG.AllocScratchBuffer(_aVertex, _scratchBuf, _numBytes);
+   }
+
+   protected static EmitQuadVertices(Buffer _vb,
+                                     float _x, float _y, float _w, float _h
+                                     ) {
+      // (note) GL_TRIANGLE_FAN
+      _vb.f32 = _x;        _vb.f32 = _y;
+      _vb.f32 = _x + _w;   _vb.f32 = _y;
+      _vb.f32 = _x + _w;   _vb.f32 = _y + _h;
+      _vb.f32 = _x;        _vb.f32 = _y + _h;
+   }
+
+   protected method setQuadVertices(int _aVertex,
+                                    Buffer _scratchBuf,
+                                    float _x, float _y, float _w, float _h
+                                    ) {
+      allocScratchBuffer(_aVertex, _scratchBuf, (4*2/*xy*/*4/*float*/));
+      _scratchBuf.f32 = _x;        _scratchBuf.f32 = _y;
+      _scratchBuf.f32 = _x + _w;   _scratchBuf.f32 = _y;
+      _scratchBuf.f32 = _x + _w;   _scratchBuf.f32 = _y + _h;
+      _scratchBuf.f32 = _x;        _scratchBuf.f32 = _y + _h;
+   }
+
+   public static EmitRectBorderVertices(Buffer _vb,
+                                        float _centerX, float _centerY,
+                                        float _sizeX, float _sizeY,
+                                        float _strokeW,
+                                        float _aaRange
+                                        ) {
+      // A_______________________B
+      // | C___________________D |
+      // | |                   | |
+      // | |                   | |
+      // | |                   | |
+      // | E-------------------F |
+      // G_______________________H
+
+      float ax = _centerX - _sizeX - _strokeW;
+      float ay = _centerY - _sizeY - _strokeW;
+
+      float bx = _centerX + _sizeX + _strokeW;
+      float by = ay;
+
+      float cx = _centerX - _sizeX + _strokeW + _aaRange;
+      float cy = _centerY - _sizeY + _strokeW + _aaRange;
+
+      float dx = _centerX + _sizeX - _strokeW - _aaRange;
+      float dy = cy;
+
+      float ex = cx;
+      float ey = _centerY + _sizeY - _strokeW - _aaRange;
+
+      float fx = dx;
+      float fy = ey;
+
+      float gx = ax;
+      float gy = _centerY + _sizeY + _strokeW;
+
+      float hx = bx;
+      float hy = gy;
+
+      _vb.add2f(ax, ay);  _vb.add2f(bx, by);  _vb.add2f(cx, cy);
+      _vb.add2f(cx, cy);  _vb.add2f(bx, by);  _vb.add2f(dx, dy);
+      _vb.add2f(ax, ay);  _vb.add2f(cx, cy);  _vb.add2f(ex, ey);
+      _vb.add2f(ax, ay);  _vb.add2f(ex, ey);  _vb.add2f(gx, gy);
+      _vb.add2f(dx, dy);  _vb.add2f(bx, by);  _vb.add2f(fx, fy);
+      _vb.add2f(fx, fy);  _vb.add2f(bx, by);  _vb.add2f(hx, hy);
+      _vb.add2f(fx, fy);  _vb.add2f(hx, hy);  _vb.add2f(ex, ey);
+      _vb.add2f(ex, ey);  _vb.add2f(hx, hy);  _vb.add2f(gx, gy);
+   }
+
+   public static EmitRectangleVertices(Buffer _vb,
+                                       float _x, float _y,
+                                       float _w, float _h,
+                                       float _b
+                                       ) {
+      // A_______________________B
+      // | C___________________D |
+      // | |                   | |
+      // | |                   | |
+      // | |                   | |
+      // | E-------------------F |
+      // G_______________________H
+
+      float ax = _x;
+      float ay = _y;
+
+      float bx = _x + _w;
+      float by = ay;
+
+      float cx = _x + _b;
+      float cy = _y + _b;
+
+      float dx = _x + _w - _b;
+      float dy = cy;
+
+      float ex = cx;
+      float ey = _y + _h - _b;
+
+      float fx = dx;
+      float fy = ey;
+
+      float gx = ax;
+      float gy = _y + _h;
+
+      float hx = bx;
+      float hy = gy;
+
+      _vb.add2f(ax, ay);  _vb.add2f(bx, by);  _vb.add2f(cx, cy);
+      _vb.add2f(cx, cy);  _vb.add2f(bx, by);  _vb.add2f(dx, dy);
+      _vb.add2f(ax, ay);  _vb.add2f(cx, cy);  _vb.add2f(ex, ey);
+      _vb.add2f(ax, ay);  _vb.add2f(ex, ey);  _vb.add2f(gx, gy);
+      _vb.add2f(dx, dy);  _vb.add2f(bx, by);  _vb.add2f(fx, fy);
+      _vb.add2f(fx, fy);  _vb.add2f(bx, by);  _vb.add2f(hx, hy);
+      _vb.add2f(fx, fy);  _vb.add2f(hx, hy);  _vb.add2f(ex, ey);
+      _vb.add2f(ex, ey);  _vb.add2f(hx, hy);  _vb.add2f(gx, gy);
+   }
+
+   protected static EmitRoundRectInnerVertices(Buffer _vb,
+                                               float _centerX, float _centerY,
+                                               float _sizeX,   float _sizeY,
+                                               float _radiusX, float _radiusY,
+                                               float _strokeW,
+                                               float _aaRange
+                                               ) : int {
+      int retNumTris = 8;  // 8..14 tris
+
+      //  A_______B________C______D
+      //  | E_____F________G____H |
+      //  | |    /|      / |\   | |
+      //  | |   / |    /   | \  | |
+      //  | |  /  |  /     |  \ | |
+      //  | | /   |/       |   \| |
+      // I1 J/----K--------L----M I2
+      //  | |     |  <var> |    | |  center area is omitted when (_sizeY <= _radiusY)
+      // N1 O-----P--------Q----R N2
+      //  | |\    |      / |   /| |
+      //  | | \   |    /   |  / | |
+      //  | |  \  |  /     | /  | |
+      //  | |   \ |/       |/   | |
+      //  | S----\T--------U----V |
+      //  W_______X________Y______Z
+      //
+
+      float ex = _centerX - _sizeX + _strokeW + _aaRange;
+      float ey = _centerY - _sizeY + _strokeW + _aaRange;
+
+      float fx = _centerX - _sizeX + _radiusX;
+      float fy = ey;
+
+      float gx = _centerX + _sizeX - _radiusX;
+      float gy = ey;
+
+      float hx = _centerX + _sizeX - _strokeW - _aaRange;
+      float hy = ey;
+
+      float jx = ex;
+      float jy = _centerY - _sizeY + _radiusY;
+
+      float kx = fx;
+      float ky = jy;
+
+      float lx = gx;
+      float ly = jy;
+
+      float mx = hx;
+      float my = jy;
+
+      float ox = jx;
+      float oy = _centerY + _sizeY - _radiusY;
+
+      float px = kx;
+      float py = oy;
+
+      float qx = lx;
+      float qy = oy;
+
+      float rx = mx;
+      float ry = oy;
+
+      float sx = ex;
+      float sy = _centerY + _sizeY - _strokeW - _aaRange;
+
+      float tx = px;
+      float ty = sy;
+
+      float ux = qx;
+      float uy = sy;
+
+      float vx = rx;
+      float vy = sy;
+
+      // emit triangles
+      _vb.add2f(jx, jy);  _vb.add2f(fx, fy);  _vb.add2f(kx, ky);
+      _vb.add2f(kx, ky);  _vb.add2f(fx, fy);  _vb.add2f(gx, gy);
+      _vb.add2f(gx, gy);  _vb.add2f(lx, ly);  _vb.add2f(kx, ky);
+      _vb.add2f(gx, gy);  _vb.add2f(mx, my);  _vb.add2f(lx, ly);
+
+      if(_sizeY > _radiusY)
+      {
+         // center area
+         _vb.add2f(jx, jy);  _vb.add2f(kx, ky);  _vb.add2f(ox, oy);
+         _vb.add2f(ox, oy);  _vb.add2f(kx, ky);  _vb.add2f(px, py);
+         _vb.add2f(kx, ky);  _vb.add2f(lx, ly);  _vb.add2f(px, py);
+         _vb.add2f(px, py);  _vb.add2f(lx, ly);  _vb.add2f(qx, qy);
+         _vb.add2f(qx, qy);  _vb.add2f(lx, ly);  _vb.add2f(mx, my);
+         _vb.add2f(mx, my);  _vb.add2f(rx, ry);  _vb.add2f(qx, qy);
+
+         retNumTris += 6;
+      }
+
+      _vb.add2f(ox, oy);  _vb.add2f(px, py);  _vb.add2f(tx, ty);
+      _vb.add2f(tx, ty);  _vb.add2f(px, py);  _vb.add2f(qx, qy);
+      _vb.add2f(qx, qy);  _vb.add2f(ux, uy);  _vb.add2f(tx, ty);
+      _vb.add2f(qx, qy);  _vb.add2f(rx, ry);  _vb.add2f(ux, uy);
+
+      return retNumTris;
+   }
+
+   protected static EmitRoundRectBorderVertices(Buffer _vb,
+                                                float _centerX, float _centerY,
+                                                float _sizeX,   float _sizeY,
+                                                float _radiusX, float _radiusY,
+                                                float _strokeW,
+                                                float _aaRange
+                                                ) : int {
+      int retNumTris = 24;  // 24..28 tris
+
+      //  A_______B________C______D
+      //  | E_____F________G____H |
+      //  | |    /|      / |\   | |
+      //  | |   / |    /   | \  | |
+      //  | |  /  |  /     |  \ | |
+      //  | | /   |/       |   \| |
+      // I1 J/----K--------L----M I2
+      //  | |     |  <var> |    | |  center area is omitted when (_sizeY <= _radiusY)
+      // N1 O-----P--------Q----R N2
+      //  | |\    |      / |   /| |
+      //  | | \   |    /   |  / | |
+      //  | |  \  |  /     | /  | |
+      //  | |   \ |/       |/   | |
+      //  | S----\T--------U----V |
+      //  W_______X________Y______Z
+      //
+
+      float ax = _centerX - _sizeX - _strokeW;
+      float ay = _centerY - _sizeY - _strokeW;
+
+      float bx = _centerX - _sizeX + _radiusX;
+      float by = ay;
+
+      float cx = _centerX + _sizeX - _radiusX;
+      float cy = ay;
+
+      float dx = _centerX + _sizeX + _strokeW;
+      float dy = ay;
+
+      float ex = _centerX - _sizeX + _strokeW + _aaRange;
+      float ey = _centerY - _sizeY + _strokeW + _aaRange;
+
+      float fx = _centerX - _sizeX + _radiusX;
+      float fy = ey;
+
+      float gx = _centerX + _sizeX - _radiusX;
+      float gy = ey;
+
+      float hx = _centerX + _sizeX - _strokeW - _aaRange;
+      float hy = ey;
+
+      float i1x = ax;
+      float i1y = _centerY - _sizeY + _radiusY;
+
+      float jx = ex;
+      float jy = i1y;
+
+      float kx = fx;
+      float ky = jy;
+
+      float lx = gx;
+      float ly = jy;
+
+      float mx = hx;
+      float my = jy;
+
+      float i2x = dx;
+      float i2y = my;
+
+      float n1x = ax;
+      float n1y = _centerY + _sizeY - _radiusY;
+
+      float ox = jx;
+      float oy = n1y;
+
+      float px = kx;
+      float py = oy;
+
+      float qx = lx;
+      float qy = oy;
+
+      float rx = mx;
+      float ry = oy;
+
+      float n2x = i2x;
+      float n2y = ry;
+
+      float sx = ex;
+      float sy = _centerY + _sizeY - _strokeW - _aaRange;
+
+      float tx = px;
+      float ty = sy;
+
+      float ux = qx;
+      float uy = sy;
+
+      float vx = rx;
+      float vy = sy;
+
+      float wx = ax;
+      float wy = _centerY + _sizeY + _strokeW;
+
+      float xx = tx;
+      float xy = wy;
+
+      float yx = ux;
+      float yy = wy;
+
+      float zx = dx;
+      float zy = wy;
+
+      // top
+      _vb.add2f(ax, ay);  _vb.add2f(bx, by);  _vb.add2f(ex, ey);
+      _vb.add2f(ex, ey);  _vb.add2f(bx, by);  _vb.add2f(fx, fy);
+
+      _vb.add2f(fx, fy);  _vb.add2f(bx, by);  _vb.add2f(cx, cy);
+      _vb.add2f(cx, cy);  _vb.add2f(gx, gy);  _vb.add2f(fx, fy);
+
+      _vb.add2f(cx, cy);  _vb.add2f(dx, dy);  _vb.add2f(gx, gy);
+      _vb.add2f(gx, gy);  _vb.add2f(dx, dy);  _vb.add2f(hx, hy);
+
+      // left top
+      _vb.add2f(ax,  ay);  _vb.add2f(ex, ey);  _vb.add2f(i1x, i1y);
+      _vb.add2f(i1x, i1y); _vb.add2f(ex, ey);  _vb.add2f(jx,  jy);
+
+      _vb.add2f(hx,  hy);  _vb.add2f(dx, dy);  _vb.add2f(i2x, i2y);
+      _vb.add2f(i2x, i2y); _vb.add2f(mx, my);  _vb.add2f(hx,  hy);
+
+      if(_sizeY > _radiusY)
+      {
+         // center area borders
+         _vb.add2f(i1x, i1y);  _vb.add2f(jx, jy);  _vb.add2f(n1x, n1y);
+         _vb.add2f(n1x, n1y);  _vb.add2f(jx, jy);  _vb.add2f(ox,  oy);
+
+         _vb.add2f(rx,  ry);   _vb.add2f(mx,  my);  _vb.add2f(i2x, i2y);
+         _vb.add2f(i2x, i2y);  _vb.add2f(n2x, n2y); _vb.add2f(rx,  ry);
+
+         retNumTris += 4;
+      }
+
+      _vb.add2f(n1x, n1y);  _vb.add2f(ox, oy);  _vb.add2f(wx, wy);
+      _vb.add2f(wx,  wy);   _vb.add2f(ox, oy);  _vb.add2f(sx, sy);
+
+      _vb.add2f(wx,  wy);   _vb.add2f(sx, sy);  _vb.add2f(xx, xy);
+      _vb.add2f(xx,  xy);   _vb.add2f(sx, sy);  _vb.add2f(tx, ty);
+
+      _vb.add2f(tx,  ty);   _vb.add2f(ux, uy);  _vb.add2f(xx, xy);
+      _vb.add2f(xx,  xy);   _vb.add2f(ux, uy);  _vb.add2f(yx, yy);
+
+      _vb.add2f(ux,  uy);   _vb.add2f(vx, vy);  _vb.add2f(zx, zy);
+      _vb.add2f(zx,  zy);   _vb.add2f(yx, yy);  _vb.add2f(ux, uy);
+
+      _vb.add2f(vx,  vy);   _vb.add2f(rx, ry);  _vb.add2f(n2x, n2y);
+      _vb.add2f(n2x, n2y);  _vb.add2f(zx, zy);  _vb.add2f(vx, vy);
+
+      // corners / diagonals
+      _vb.add2f(ex, ey);  _vb.add2f(fx, fy);  _vb.add2f(jx, jy);
+      _vb.add2f(gx, gy);  _vb.add2f(hx, hy);  _vb.add2f(mx, my);
+      _vb.add2f(ox, oy);  _vb.add2f(tx, ty);  _vb.add2f(sx, sy);
+      _vb.add2f(rx, ry);  _vb.add2f(vx, vy);  _vb.add2f(ux, uy);
+
+      return retNumTris;
+   }
+
+   protected method validateShapeShader() : boolean {
+      return
+         (-1 != shape_a_vertex)       &&
+         (-1 != shape_u_transform)    &&
+         (-1 != shape_u_aa_range)     &&
+         (-1 != shape_u_center)
+         ;
+   }
+
+   public method createShapeShader(String _sVS, String _sFS) : boolean {
+      shape_shader.vertexSource   = ShaderVG.FixShaderSourceVert(_sVS);
+      shape_shader.fragmentSource = ShaderVG.FixShaderSourceFrag(_sFS);
+
+      if(!shape_shader.create())
+      {
+         trace "[---] "+yacMetaClassName()+"::onOpen: failed to create shape_shader";
+         return false;
+      }
+
+      shape_a_vertex    = shape_shader.getAttribLocation("a_vertex");
+      shape_a_vertex_n  = shape_shader.getAttribLocation("a_vertex_n");   // optional
+      shape_a_vertex_nn = shape_shader.getAttribLocation("a_vertex_nn");  // optional
+      shape_a_index     = shape_shader.getAttribLocation("a_index");      // optional
+      shape_a_color     = shape_shader.getAttribLocation("a_color");      // optional
+      shape_a_edge      = shape_shader.getAttribLocation("a_edge");       // optional
+      shape_a_scale     = shape_shader.getAttribLocation("a_scale");      // optional
+      shape_a_bc        = shape_shader.getAttribLocation("a_bc");         // optional
+      shape_a_uv        = shape_shader.getAttribLocation("a_uv");         // optional
+
+      shape_u_transform       = shape_shader.getUniformLocation("u_transform");
+      shape_u_aa              = shape_shader.getUniformLocation("u_aa");               // optional
+      shape_u_aa_range        = shape_shader.getUniformLocation("u_aa_range");         // optional for non-AA shader
+      shape_u_aa_exp          = shape_shader.getUniformLocation("u_aa_exp");           // optional
+      shape_u_center          = shape_shader.getUniformLocation("u_center");           // optional for non-AA shader
+      shape_u_size            = shape_shader.getUniformLocation("u_size");             // optional
+      shape_u_size_i          = shape_shader.getUniformLocation("u_size_i");           // optional
+      shape_u_size_o          = shape_shader.getUniformLocation("u_size_o");           // optional
+      shape_u_radius          = shape_shader.getUniformLocation("u_radius");           // optional
+      shape_u_radius_i        = shape_shader.getUniformLocation("u_radius_i");         // optional
+      shape_u_radius_o        = shape_shader.getUniformLocation("u_radius_o");         // optional
+      shape_u_ob_radius_i     = shape_shader.getUniformLocation("u_ob_radius_i");      // optional
+      shape_u_ob_radius_o     = shape_shader.getUniformLocation("u_ob_radius_o");      // optional
+      shape_u_ob_radius_i_max = shape_shader.getUniformLocation("u_ob_radius_i_max");  // optional
+      shape_u_ob_radius_o_max = shape_shader.getUniformLocation("u_ob_radius_o_max");  // optional
+      shape_u_radius_i_max    = shape_shader.getUniformLocation("u_radius_i_max");     // optional
+      shape_u_radius_o_max    = shape_shader.getUniformLocation("u_radius_o_max");     // optional
+      shape_u_ob_radius       = shape_shader.getUniformLocation("u_ob_radius");        // optional
+      shape_u_ob_radius_max   = shape_shader.getUniformLocation("u_ob_radius_max");    // optional
+      shape_u_radius_max      = shape_shader.getUniformLocation("u_radius_max");       // optional
+      shape_u_point_radius    = shape_shader.getUniformLocation("u_point_radius");     // optional
+      shape_u_color_fill      = shape_shader.getUniformLocation("u_color_fill");       // optional
+      shape_u_color_stroke    = shape_shader.getUniformLocation("u_color_stroke");     // optional
+      shape_u_global_alpha    = shape_shader.getUniformLocation("u_global_alpha");     // optional
+      shape_u_decal_alpha     = shape_shader.getUniformLocation("u_decal_alpha");      // optional
+      shape_u_sampler         = shape_shader.getUniformLocation("u_sampler");          // optional
+      shape_u_stroke_w        = shape_shader.getUniformLocation("u_stroke_w");         // optional
+      shape_u_debug           = shape_shader.getUniformLocation("u_debug");            // optional
+      shape_u_tex_0           = shape_shader.getUniformLocation("u_tex_0");            // optional
+      shape_u_tex_1           = shape_shader.getUniformLocation("u_tex_1");            // optional
+
+      return validateShapeShader();
+   }
+
+   abstract method onOpen() : boolean {
+      // implemented by derived classes
+      return false;
+   }
+
+}

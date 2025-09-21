@@ -1,0 +1,381 @@
+// ----
+// ---- file   : ShaderVG_EllipseStrokeAA.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : ShaderVG render utilities
+// ----
+// ----
+// ----
+
+module MShaderVG_EllipseStrokeAA;
+
+namespace shadervg;
+
+
+class EllipseStrokeAA : Shape {
+
+   public method init() {
+      Shape::init();
+   }
+
+   // ------------ vertex shader --------------
+   static String vs_src =
+      "uniform mat4 u_transform; \n"
+      " \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
+      " \n"
+      "VARYING_OUT vec2 v_p; \n"
+      " \n"
+      "void main(void) { \n"
+      "  v_p = a_vertex; \n"
+      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
+      "} \n"
+      ;
+
+   // ------------ fragment shader ------------
+   static String fs_src =
+      "uniform vec2  u_center; \n"
+      "uniform vec2  u_size_i; \n"
+      "uniform vec2  u_size_o; \n"
+      "uniform vec2  u_radius; \n"
+      "uniform vec2  u_radius_i; \n"
+      "uniform vec2  u_radius_o; \n"
+      "uniform vec2  u_ob_radius_i; \n"
+      "uniform vec2  u_ob_radius_o; \n"
+      "uniform float u_ob_radius_i_max; \n"
+      "uniform float u_ob_radius_o_max; \n"
+      "uniform float u_radius_i_max; \n"
+      "uniform float u_radius_o_max; \n"
+      "uniform float u_aa_range; \n"
+      "uniform float u_aa_exp; \n"
+      "uniform vec4  u_color_stroke; \n"
+      "uniform float u_debug; \n"
+      " \n"
+      "VARYING_IN vec2 v_p; \n"
+      " \n"
+      "void main(void) { \n"
+      "  float aRectI = 0.0; \n"
+      "  float aRectO = 0.0; \n"
+      "  float aRoundI = 0.0; \n"
+      "  float aRoundO = 1.0; \n"
+      "  vec4 colorO = vec4(0,0,0,0); \n"
+      " \n"
+      "  // outer \n"
+      "  vec2 vd = abs(v_p - u_center); \n"
+      // // if(vd.x < u_size_o.x && vd.y < u_size_o.y)
+      "  { \n"
+      "    aRectO  = 1.0 - smoothstep(u_size_o.x-u_aa_range, u_size_o.x, vd.x); \n"
+      "    aRectO *= 1.0 - smoothstep(u_size_o.y-u_aa_range, u_size_o.y, vd.y); \n"
+      "    colorO = u_color_stroke; \n"
+      " \n"
+      // "    vd = vd - (u_size - u_radius); \n"
+      " \n"
+      "    if(vd.x > 0.0 && vd.y > 0.0) \n"
+      "    { \n"
+      "      vec2 vdn = vd * u_ob_radius_o; \n"
+      "      float as = asin(vdn.x) * (1.0 / 3.14159265359); \n"
+      "      float r = mix(u_radius_o.y, u_radius_o.x, as); \n"
+      "      float r2 = r * u_ob_radius_o_max; \n"
+      "      float aaR = u_aa_range * r2; \n"
+      "      aRoundO = 1.0 - smoothstep( (u_radius_o_max - aaR) * u_ob_radius_o_max, 1.0, length(vdn)); \n"
+      "    } \n"
+      "  } \n"
+      " \n"
+      "  // inner \n"
+      "  vd = abs(v_p - u_center); \n"
+      "  if(vd.x < u_size_i.x && vd.y < u_size_i.y) \n"
+      "  { \n"
+      "    aRectI  = 1.0 - smoothstep(u_size_i.x - u_aa_range, u_size_i.x, vd.x); \n"
+      "    aRectI *= 1.0 - smoothstep(u_size_i.y - u_aa_range, u_size_i.y, vd.y); \n"
+      " \n"
+      // "    vd = vd - (u_size - u_radius); \n"
+      " \n"
+      "    if(vd.x > 0.0 && vd.y > 0.0) \n"
+      "    { \n"
+      "      vec2 vdn = vd * u_ob_radius_i; \n"
+      "      float as = asin(vdn.x) * (1.0 / 3.14159265359); \n"
+      "      float r = mix(u_radius_i.y, u_radius_i.x, as); \n"
+      "      float r2 = r * u_ob_radius_i_max; \n"
+      "      float aaR = u_aa_range * r2; \n"
+      "      aRoundI = 1.0 - smoothstep( (u_radius_i_max - aaR) * u_ob_radius_i_max, 1.0, length(vdn) ); \n"
+      "    } \n"
+      "  } \n"
+      " \n"
+      "  float aI = 1.0 - aRectI * aRoundI; \n"
+      "  float aO = aRectO * aRoundO; \n"
+      " \n"
+      "#if 1 \n"
+      "  aI = pow(aI, u_aa_exp); \n"
+      "#endif \n"
+      "  // vec4 color = mix(colorO, vec4(0,0,0,0), aI); \n"
+      "  vec4 color = vec4(colorO.xyz, colorO.a * aI); \n"
+      " \n"
+      "#if 1 \n"
+      "  aO = pow(aO, u_aa_exp); \n"
+      "#endif \n"
+      " \n"
+      "  FRAGCOLOR = vec4(color.xyz, color.a*aO); \n"
+      "  if(u_debug > 0.0) \n"
+      "    FRAGCOLOR = vec4(1,0,0,1); \n"
+      "} \n"
+      ;
+
+   public virtual onOpen() : boolean {
+      if(createShapeShader(vs_src, fs_src))
+      {
+         return true;
+      }
+      return false;
+   }
+
+   public method setupEllipseStrokeAAVBO32(Buffer _vb, Buffer _dl,
+                                           float _centerX, float _centerY,
+                                           float _radiusX, float _radiusY,
+                                           float _strokeW
+                                           ) {
+      //  +0 i32 vbOffBorder
+      //  +4 i16 numVertsBorder
+      //  +6 u16 primTypeBorder
+      //
+      int numSeg = 16;
+      float rxI = _radiusX - _strokeW - ELLIPSE_EXTRUDE_I;
+      float rxO = _radiusX + _strokeW + ELLIPSE_EXTRUDE_O;
+      float ryI = _radiusY - _strokeW - ELLIPSE_EXTRUDE_I;
+      float ryO = _radiusY + _strokeW + ELLIPSE_EXTRUDE_O;
+      float aStep = 2PI / numSeg;
+      float a;
+      boolean bSingle =
+         (_radiusX < ELLIPSE_SINGLE_RADIUS_THRESHOLD) ||
+         (_radiusY < ELLIPSE_SINGLE_RADIUS_THRESHOLD)
+         ;
+      int numVerts;
+
+      // Outer border
+      if(bSingle)
+      {
+         numVerts = 4;
+
+         _dl.i32 = _vb.offset;
+         _dl.i16 = numVerts;
+         _dl.i16 = GL_TRIANGLE_FAN;
+
+         float x = _centerX - _radiusX - _strokeW;
+         float y = _centerY - _radiusY - _strokeW;
+         float w = (_radiusX + _strokeW) * 2.0;
+         float h = (_radiusY + _strokeW) * 2.0;
+
+         _vb.f32 = x;       _vb.f32 = y;
+         _vb.f32 = x + w;   _vb.f32 = y;
+         _vb.f32 = x + w;   _vb.f32 = y + h;
+         _vb.f32 = x;       _vb.f32 = y + h;
+      }
+      else
+      {
+         a = aStep;
+         numVerts = (2 + numSeg*2);
+
+         _dl.i32 = _vb.offset;
+         _dl.i16 = numVerts;
+         _dl.i16 = GL_TRIANGLE_STRIP;
+
+         _vb.f32 = _centerX + rxI;
+         _vb.f32 = _centerY +   0;
+         _vb.f32 = _centerX + rxO;
+         _vb.f32 = _centerY +   0;
+
+         loop(numSeg)
+         {
+            _vb.f32 = _centerX + rxI * cos(a);
+            _vb.f32 = _centerY + ryI * sin(a);
+            _vb.f32 = _centerX + rxO * cos(a);
+            _vb.f32 = _centerY + ryO * sin(a);
+            a += aStep;
+         }
+      }
+   }
+
+   public method drawEllipseStrokeAAVBO32(int      _vboId,
+                                          int      _byteOffsetBorder,
+                                          int      _numVertsBorder,
+                                          int      _glPrimTypeBorder,
+                                          Matrix4f _projMatrix,
+                                          float    _centerX, float _centerY,
+                                          float    _radiusX, float _radiusY,
+                                          float    _strokeR, float _strokeG, float _strokeB, float _strokeA,
+                                          float    _strokeW,
+                                          float    _aaRange,
+                                          float    _aaExp
+                                          ) {
+
+      ShaderVG.BindVBO(_vboId);
+
+      // Outer border
+      if(_numVertsBorder > 0)
+      {
+         shape_shader.bind();
+
+         glUniformMatrix4fv(shape_u_transform, 1/*count*/, GL_TRUE/*transpose*/, _projMatrix);
+         glUniform2f(shape_u_center,   _centerX, _centerY);
+         glUniform2f(shape_u_size_i,   _radiusX - _strokeW, _radiusY - _strokeW);
+         glUniform2f(shape_u_size_o,   _radiusX + _strokeW, _radiusY + _strokeW);
+         glUniform2f(shape_u_radius,   _radiusX, _radiusY);
+         glUniform2f(shape_u_radius_i, _radiusX - _strokeW, _radiusY - _strokeW);
+         glUniform2f(shape_u_radius_o, _radiusX + _strokeW, _radiusY + _strokeW);
+         float radiusIx = _radiusX - _strokeW;
+         float radiusIy = _radiusY - _strokeW;
+         float radiusOx = _radiusX + _strokeW;
+         float radiusOy = _radiusY + _strokeW;
+         glUniform2f(shape_u_radius_i,        radiusIx, radiusIy);
+         glUniform2f(shape_u_radius_o,        radiusOx, radiusOy);
+         glUniform2f(shape_u_ob_radius_i,     1.0f / radiusIx, 1.0f / radiusIy);
+         glUniform2f(shape_u_ob_radius_o,     1.0f / radiusOx, 1.0f / radiusOy);
+         glUniform1f(shape_u_ob_radius_i_max, (radiusIx > radiusIy) ? (1.0f / radiusIx) : (1.0f / radiusIy));
+         glUniform1f(shape_u_ob_radius_o_max, (radiusOx > radiusOy) ? (1.0f / radiusOx) : (1.0f / radiusOy));
+         glUniform1f(shape_u_radius_i_max,    (radiusIx > radiusIy) ? radiusIx : radiusIy);
+         glUniform1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
+         glUniform1f(shape_u_aa_range, _aaRange);
+
+         if(-1 != shape_u_aa_exp)
+            glUniform1f(shape_u_aa_exp, _aaExp);
+
+         glUniform4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+
+         if(-1 != shape_u_debug)
+            glUniform1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
+
+         zglVertexAttribOffset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
+         glEnableVertexAttribArray(shape_a_vertex);
+
+         glDrawArrays(_glPrimTypeBorder, 0, _numVertsBorder);
+
+         glDisableVertexAttribArray(shape_a_vertex);
+         shape_shader.unbind();
+      }
+   }
+
+   public method drawEllipseStrokeAA(Buffer _scratchBuf,
+                                     Matrix4f _projMatrix,
+                                     float _centerX, float _centerY,
+                                     float _radiusX, float _radiusY,
+                                     float _strokeR, float _strokeG, float _strokeB, float _strokeA,
+                                     float _strokeW,
+                                     float _aaRange,
+                                     float _aaExp
+                                     ) {
+
+      ShaderVG.BindScratchBuffer();
+
+      int numSeg = 16;
+      float rxI = _radiusX - _strokeW - ELLIPSE_EXTRUDE_I;
+      float rxO = _radiusX + _strokeW + ELLIPSE_EXTRUDE_O;
+      float ryI = _radiusY - _strokeW - ELLIPSE_EXTRUDE_I;
+      float ryO = _radiusY + _strokeW + ELLIPSE_EXTRUDE_O;
+      float aStep = 2PI / numSeg;
+      float a;
+      int numVerts;
+      int allocSz;
+
+      boolean bSingle =
+         (_radiusX < ELLIPSE_SINGLE_RADIUS_THRESHOLD) ||
+         (_radiusY < ELLIPSE_SINGLE_RADIUS_THRESHOLD)
+         ;
+
+      // Outer corners
+      shape_shader.bind();
+
+      glUniformMatrix4fv(shape_u_transform, 1/*count*/, GL_TRUE/*transpose*/, _projMatrix);
+      glUniform2f(shape_u_center,   _centerX, _centerY);
+      glUniform2f(shape_u_size_i,   _radiusX - _strokeW, _radiusY - _strokeW);
+      glUniform2f(shape_u_size_o,   _radiusX + _strokeW, _radiusY + _strokeW);
+      glUniform2f(shape_u_radius,   _radiusX, _radiusY);
+      glUniform2f(shape_u_radius_i, _radiusX - _strokeW, _radiusY - _strokeW);
+      glUniform2f(shape_u_radius_o, _radiusX + _strokeW, _radiusY + _strokeW);
+      float radiusIx = _radiusX - _strokeW;
+      float radiusIy = _radiusY - _strokeW;
+      float radiusOx = _radiusX + _strokeW;
+      float radiusOy = _radiusY + _strokeW;
+      glUniform2f(shape_u_radius_i,        radiusIx, radiusIy);
+      glUniform2f(shape_u_radius_o,        radiusOx, radiusOy);
+      glUniform2f(shape_u_ob_radius_i,     1.0f / radiusIx, 1.0f / radiusIy);
+      glUniform2f(shape_u_ob_radius_o,     1.0f / radiusOx, 1.0f / radiusOy);
+      glUniform1f(shape_u_ob_radius_i_max, (radiusIx > radiusIy) ? (1.0f / radiusIx) : (1.0f / radiusIy));
+      glUniform1f(shape_u_ob_radius_o_max, (radiusOx > radiusOy) ? (1.0f / radiusOx) : (1.0f / radiusOy));
+      glUniform1f(shape_u_radius_i_max,    (radiusIx > radiusIy) ? radiusIx : radiusIy);
+      glUniform1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
+      glUniform1f(shape_u_aa_range, _aaRange);
+
+      if(-1 != shape_u_aa_exp)
+         glUniform1f(shape_u_aa_exp, _aaExp);
+
+      glUniform4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+
+      if(-1 != shape_u_debug)
+         glUniform1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
+
+      glEnableVertexAttribArray(shape_a_vertex);
+
+      // Calc border mesh
+      if(bSingle)
+      {
+         numVerts = 4;
+         allocSz = numVerts * 2/*xy*/ * 4/*float*/;
+         allocScratchBuffer(shape_a_vertex, _scratchBuf, allocSz);
+
+         float x = _centerX - _radiusX - _strokeW;
+         float y = _centerY - _radiusY - _strokeW;
+         float w = (_radiusX + _strokeW) * 2.0;
+         float h = (_radiusY + _strokeW) * 2.0;
+
+         _scratchBuf.f32 = x;      _scratchBuf.f32 = y;
+         _scratchBuf.f32 = x + w;  _scratchBuf.f32 = y;
+         _scratchBuf.f32 = x + w;  _scratchBuf.f32 = y + h;
+         _scratchBuf.f32 = x;      _scratchBuf.f32 = y + h;
+
+         glDrawArrays(GL_TRIANGLE_FAN, 0, numVerts);
+      }
+      else
+      {
+         a = aStep;
+         numVerts = (2 + numSeg*2);
+
+         allocSz = numVerts * 2/*xy*/ * 4/*float*/;
+         allocScratchBuffer(shape_a_vertex, _scratchBuf, allocSz);
+
+         _scratchBuf.f32 = _centerX + rxI;
+         _scratchBuf.f32 = _centerY +   0;
+         _scratchBuf.f32 = _centerX + rxO;
+         _scratchBuf.f32 = _centerY +   0;
+
+         loop(numSeg)
+         {
+            _scratchBuf.f32 = _centerX + rxI * cos(a);
+            _scratchBuf.f32 = _centerY + ryI * sin(a);
+            _scratchBuf.f32 = _centerX + rxO * cos(a);
+            _scratchBuf.f32 = _centerY + ryO * sin(a);
+            a += aStep;
+         }
+
+         glDrawArrays(GL_TRIANGLE_STRIP, 0, numVerts);
+      }
+
+      glDisableVertexAttribArray(shape_a_vertex);
+   }
+
+}
