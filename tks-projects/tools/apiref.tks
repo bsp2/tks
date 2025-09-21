@@ -1,0 +1,743 @@
+// ----
+// ---- file   : apiref.tks
+// ---- author : bsp
+// ---- legal  : (c) 2022 by bsp
+// ----           
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : generates markdown code from "C" header file
+// ----
+// ---- created: 01Feb2022
+// ---- changed: 08Aug2022 <bsp> parse doc lines, add "-ad,--autodoc" and "-d,--debug" command line options
+// ----          09Aug2022 <bsp> fix void <fun> (void) parsing; implement autodoc parser; add "-n,--dry-run" options
+// ----                          add autodocFunction delegate; add -bp,--buffer-prefix command line option
+// ----
+// ----
+// ----
+
+module Main;
+
+boolean b_debug   = false;  // -d,--debug
+boolean b_autodoc = false;  // true=auto-add documentation lines based on parameter/argument name (-ad,--autodoc)
+boolean b_emit    = true;   // -n,--dry-run
+
+namespace apiref;
+APIRef apiref;
+apiref.init();
+
+// <class.png>
+class Utils {
+
+   public static ToMarkdown(String s) : String {
+      local String r;
+      s.replace("_", "\_") => r;
+      r.replace("*", "\*");
+      return deref r;
+   }
+
+   public static ToMarkdownInPlace(String s) {
+      s.replace("_", "\_");
+      s.replace("*", "\*");
+   }
+
+   public static ToMarkdownEscape(String s) : String {
+      local String r;
+      s.replace("\_", tcchar(1)) => r;
+      r.replace("\*", tcchar(2));
+      r.replace("_", "\_") => r;
+      r.replace("*", "\*");
+      return deref r;
+   }
+
+   public static ToMarkdownUnEscape(String s) : String {
+      local String r;
+      s.replace(tcchar(1), "_") => r;
+      r.replace(tcchar(2), "*");
+      return deref r;
+   }
+
+   static BuildAnchor(String _s) : String {
+      local String s <= _s.toLower();
+      s.replace("/", "_");
+      s.charsetBlacklist(":(){}[]<>&+#~\\?!=\"\'^`*%;,.");
+      s.replace(" ", "-");
+      return deref s;
+   }
+}
+
+// <function.png>
+function debug(String s) {
+   if(b_debug)
+      trace "[dbg] "+s;
+}
+
+// <class.png>
+class Arg {
+   String type;     // e.g. "const sU32 *"
+   String name;     // e.g. "dst"
+   String doc_body; // markdown doc for this argument
+
+   public method addDocBodyLine(String _s) {
+      doc_body.append(Utils.ToMarkdownEscape(_s).trim());
+      doc_body.append("\n");
+   }
+}
+
+// <class.png>
+class Typedef {
+   String name;
+   String ret_type;  // e.g. "void"
+   Arg *[] args;
+   String doc_ret;  // Return value documentation
+
+   public method addArgs(String _sArgs) {
+      debug("Typedef::addArgs: cur#args="+args.numElements+" sArgs=\""+_sArgs+"\"");
+      StringArray words <= _sArgs.splitCharset(" \t,);");
+      int wIdx = 0;
+      local Arg *cArg;
+      while(wIdx < words.numElements)
+      {
+         String w <= words.get(wIdx);
+         if(null == cArg)
+         {
+            cArg <= new Arg;
+            args.add(#(deref cArg));
+         }
+         if(w <= "*_")
+         {
+            cArg.type = cArg.type + " *";
+            cArg.name = w.replace("*_", "");
+            debug("  arg type=\""+cArg.type+"\" name=\""+cArg.name+"\"");
+            cArg <= null;
+         }
+         else if(w <= "_")
+         {
+            cArg.name = w.substring(1, 999);
+            String s <= cArg.name;
+            s.replace("[", "\\[");
+            s.replace("]", "\\]");
+            debug("  arg type=\""+cArg.type+"\" name=\""+cArg.name+"\"");
+            cArg <= null;
+         }
+         else
+         {
+            cArg.type = (cArg.type + " " + w).trim();
+         }
+         wIdx++;
+      }
+
+      if(b_debug)
+      {
+         foreach cArg in args
+            debug("  arg type=\""+cArg.type+"\" name=\""+cArg.name+"\"");
+      }
+   }
+
+   public method findArgByName(String _name) : Arg {
+      Arg *arg;
+      foreach arg in args
+         if(arg.name == _name)
+            return arg;
+      return null;
+   }
+}
+
+// <class.png>
+class Function : Typedef {
+   StringArray doc_lines;     // raw input for parseDocLines()
+   String      doc_synopsis;  // First doc paragraph (brief function description)
+   String      doc_body;      // Remaining documentation lines until "Parameters:", "Returns:", "See also:" line
+   String      doc_seealso;
+
+   static int g_arg_bufidx;
+
+   public method initFromTypedef(String _fxnName, Typedef _typedef) {
+      name     = _fxnName;
+      ret_type = _typedef.ret_type;
+      args    <= Object(_typedef.args);
+   }
+
+   public method debugPrint() {
+      trace "    name: \""+name+"\"";
+      trace "  return: \""+ret_type+"\"";
+      int argIdx = 0;
+      Arg *arg;
+      foreach arg in args
+      {
+         trace "     args["+argIdx+"] type=\""+arg.type+"\" name=\""+arg.name+"\"";
+         argIdx++;
+      }
+   }
+
+   public method emitMarkdown(String _buf) {
+      String buf;
+      buf.empty();
+
+      buf.append("  \n");
+      buf.append("## "+Utils.ToMarkdown(name)+"\n");
+      buf.append(Utils.ToMarkdownUnEscape(doc_synopsis));
+      buf.append("\n");
+      buf.append("\n");
+      buf.append(Utils.ToMarkdownUnEscape(doc_body));
+
+      int argBufIdx = g_arg_bufidx;
+      int argIdx = 0;
+      Arg *arg;
+      foreach arg in args
+      {
+         if(!arg.doc_body.isBlank())
+         {
+            buf.append("\n>>>"+apiref.buf_prefix+"arg"+(argBufIdx+argIdx)+"\n");
+            buf.append(Utils.ToMarkdownUnEscape(arg.doc_body));
+            buf.append("\n<<<\n");
+         }
+         argIdx++;
+      }
+
+      // // trace "   |:Return |:Function |:Argument Type |:Argument Name |:Arg Doc\n";
+      buf.append("   |noheader\n");
+      // //trace "   |cols=90,250,150,150";
+      buf.append("   |"+Utils.ToMarkdown(ret_type)+" | "+Utils.ToMarkdown(name)+" |         :|:  |:\n");
+      argIdx = 0;
+      foreach arg in args
+      {
+         buf.append("   |        |          | "+Utils.ToMarkdown(arg.type)+" |:"+Utils.ToMarkdown(arg.name));
+         if(!arg.doc_body.isBlank())
+         {
+            buf.append("  |: $(buf!"+apiref.buf_prefix+"arg"+(argBufIdx+argIdx)+")");  
+         }
+         buf.append("\n");
+         argIdx++;
+      }
+      g_arg_bufidx += args.numElements;
+      buf.append("].apifxn_table\n");
+
+      if(!doc_ret.isBlank())
+      {
+         buf.append("\n**Returns:**\n");
+         buf.append(Utils.ToMarkdownUnEscape(doc_ret));
+      }
+
+      if(!doc_seealso.isBlank())
+      {
+         buf.append("\n**See Also:**\n");
+         StringArray seeWords <= doc_seealso.replace("\_", tcchar(1)).splitCharset(" \t,");
+         String *seeW;
+         int seeWIdx = 0;
+         foreach seeW in seeWords
+         {
+            if(seeWIdx++ > 0)
+               buf.append(", ");
+            Function f <= apiref.findFunctionByName(seeW.replace(tcchar(1), "_").trim());
+            if(null != f)
+               buf.append("["+Utils.ToMarkdown(f.name)+"](#"+Utils.BuildAnchor(f.name)+")");
+            else
+               buf.append(Utils.ToMarkdownUnEscape(seeW.replace(tcchar(1), "\_")));
+         }
+      }
+
+      buf.append("\n");
+      _buf.append(buf);
+   }
+
+   define int DOC_ST_SYNOPSIS = 0;
+   define int DOC_ST_BODY     = 1;
+   define int DOC_ST_ARGS     = 2;
+   define int DOC_ST_RETURN   = 3;
+   define int DOC_ST_SEEALSO  = 4;
+   static StringArray md_argname_like_tags = ["note", "NOTE", "tip", "TIP", "caution", "CAUTION", "warning", "WARNING", "important", "IMPORTANT", "todo", "TODO"];
+
+   public method parseDocLines() {
+      if(!doc_lines.isEmpty())
+      {
+         int state = DOC_ST_SYNOPSIS;
+         debug("parseDocLines: fun=\""+name+"\"");
+         String *s;
+         String sLC;
+         Arg cArg <= null;
+         foreach s in doc_lines
+         {
+            s.toLower() => sLC;
+            if(sLC <= "parameters:")
+               state = DOC_ST_ARGS;
+            else if(sLC <= "returns:")
+               state = DOC_ST_RETURN;
+            else if(sLC <= "see also:")
+               state = DOC_ST_SEEALSO;
+            else
+            {
+               switch(state)
+               {
+                  case DOC_ST_SYNOPSIS:
+                     if(s.isBlank())
+                        state = DOC_ST_BODY;
+                     else
+                     {
+                        doc_synopsis.append(s);
+                        doc_synopsis.append("\n");
+                     }
+                     break;
+
+                  case DOC_ST_BODY:
+                     doc_body.append(s);
+                     doc_body.append("\n");
+                     break;
+
+                  case DOC_ST_ARGS:
+                     int idxCol = s.indexOfChar(':', 0);
+                     int idxSpc = s.indexOfChar(' ', 0);
+                     if( (-1 != idxCol) && ((-1 == idxSpc) || (idxSpc > idxCol) || (idxSpc == (idxCol-1))) )
+                     {
+                        String argName;
+                        s.substring(0, idxCol) => argName;
+                        argName.trim();
+                        Arg nArg <= findArgByName(argName);
+                        if(null == nArg)
+                           nArg <= findArgByName("_"+argName);
+                        if(null != nArg)
+                        {
+                           cArg <= nArg;
+                           cArg.addDocBodyLine(s.substring(idxCol+1, 99999));  // myarg : <first doc body line-->
+                        }
+                        else if( (null != cArg) && md_argname_like_tags.containsObject(argName))
+                           cArg.addDocBodyLine(s);
+                        else
+                        {
+                           trace "[---] parseDocLines: function \""+name+"\" arg \""+argName+"\" not found";
+                           exit(10);
+                        }
+                     }
+                     else if(null != cArg)
+                        cArg.addDocBodyLine(s);
+                     break;
+
+                  case DOC_ST_RETURN:
+                     doc_ret.append(s);
+                     doc_ret.append("\n");
+                     break;
+
+                  case DOC_ST_SEEALSO:
+                     doc_seealso.append(s);
+                     doc_seealso.append("\n");
+                     break;
+               }
+            }
+         } // foreach
+      }
+
+      doc_synopsis = Utils.ToMarkdownEscape(doc_synopsis);
+      doc_body     = Utils.ToMarkdownEscape(doc_body);
+      doc_ret      = Utils.ToMarkdownEscape(doc_ret);
+      doc_seealso  = Utils.ToMarkdownEscape(doc_seealso);
+      
+      if(b_autodoc)
+         apiref.autodocFunction(this);
+   }
+}
+
+// <class.png>
+class APIRef {
+   HashTable    typedefs;
+   Function *[] functions;
+   HashTable    ht_autodoc;
+   StringArray  lines;
+   String       buf_prefix;
+
+   // <init.png>
+   public method init() {
+      typedefs.alloc(2000);
+      ht_autodoc.alloc(2000);
+   }
+
+   // <method_parse.png>
+   public method parseTypedefs() {
+      String *line;
+      boolean bInTypedef = false;
+      foreach line in lines
+      {
+         if(line <= "typedef")
+         {
+            StringArray words <= line.splitCharset(" \t();");
+            Typedef tdef <= new Typedef;
+            tdef.ret_type = words.get(1);
+            String sName <= words.get(2);
+            if(sName <= "*")
+               tdef.name = sName.replace("*", "");
+            else
+               tdef.name = sName;
+
+            debug("APIRef::parseTypedefs: ret_type="+tdef.ret_type+" name=\""+tdef.name+"\"");
+            typedefs[tdef.name] = deref tdef;
+            String sArg1 <= words.get(3);
+            int idxArg1 = line.indexOf(sArg1+" ", 0);  // " " skips void(* .. 
+            String sArgs <= line.substring(idxArg1, 9999);
+            debug("APIRef::parseTypedefs: sArgs=\""+sArgs+"\"");
+            tdef.addArgs(sArgs);
+            bInTypedef = true;
+         }
+         else if(bInTypedef)
+         {
+            if(line.isBlank() || line <= "extern" || line & "_API" )
+               bInTypedef = false;
+            else if(null != tdef)
+            {
+               // continued typedef
+               tdef.addArgs(line);
+            }
+         }
+      }
+   }
+
+   // <method_find.png>
+   public method findFunctionByName(String _fxnName) {
+      Function *f;
+      foreach f in functions
+         if(f.name == _fxnName)
+            return f;
+      return null;
+   }
+
+   // <method_parse.png>
+   public method parseFunctions() {
+      boolean bInArgList = false;
+      boolean bInDoc = false;
+      local Function *cFunction;
+      StringArray docLines;
+      docLines.empty();
+      String *line;
+      foreach line in lines
+      {
+         line.trim();
+         if(line <= "extern")
+         {
+            String *sFxnName;
+            StringArray words <= line.splitCharset(" \t();");
+
+            if(line & "_fxn_t")
+            {
+               // Typedef fxn ptr
+               bInArgList = false;
+               bInDoc = false;
+               String sTypedef <= words.get(1);
+               Typedef tdef <= typedefs.get(sTypedef);
+               if(null != tdef)
+               {
+                  sFxnName <= words.get(2);
+                  if(null == findFunctionByName(sFxnName))
+                  {
+                     cFunction <= new Function;
+                     cFunction.initFromTypedef(sFxnName, tdef);
+                     functions.add(#(deref cFunction));
+                     cFunction.doc_lines = docLines;
+                     docLines.empty();
+                     cFunction <= null;
+                     debug("add function \""+sFxnName+" typedef=\""+sTypedef+"\"");
+                  }
+               }
+               else
+                  die "unresolved typedef \""+sTypedef+"\"";
+            }
+            else
+            {
+               // Regular function
+               sFxnName <= words.get(2);
+               if(sFxnName <= "*")
+               {
+                  words[1] = words[1] + " *";
+                  sFxnName.substring(1, 999);
+               }
+               if(null == findFunctionByName(sFxnName))
+               {
+                  cFunction <= new Function;
+                  functions.add(#(deref cFunction));
+                  debug("APIRef::parseFunctions: begin function \""+sFxnName+"\"");
+                  cFunction.ret_type = words.get(1);  // (todo) support multi-word return types (e.g. "const void *")
+                  cFunction.name = sFxnName;
+                  String sArg1 <= words.get(3);
+                  int idxFunName = line.indexOf(sFxnName, 0);
+                  int idxArg1 = line.indexOf(sArg1+" ", idxFunName);
+                  String sArgs <= line.substring(idxArg1, 9999);
+                  debug("APIRef::parseFunctions: sArgs=\""+sArgs+"\"");
+                  cFunction.addArgs(sArgs);
+                  cFunction.doc_lines = docLines;
+                  docLines.empty();
+                  bInArgList = true;
+                  bInDoc = false;
+               }
+            }
+         }
+         else if( (line <= "//") || (line <= "/*") || (line <= "*/") || (line <= "* ") || (line == "*"))
+         {
+            String docLine;
+            line.substring(2,99999) => docLine;
+            docLine.trim();
+            if(docLine <= "----")
+            {
+               if(!bInDoc)
+               {
+                  // Start new documentation block
+                  bInDoc = true;
+                  docLines.empty();
+               }
+               else
+               {
+                  // End new documentation block (optional)
+                  bInDoc = false;
+               }
+            }
+            else if(bInDoc)
+               docLines.add(docLine);
+         }
+         else if(line.isBlank())
+         {
+            bInArgList = false;
+            bInDoc = false;
+         }
+         else if(bInArgList)
+            cFunction.addArgs(line);
+         else
+            bInDoc = false;
+      }
+   }
+
+   // <method_parse.png>
+   public method parseAutodoc(String buf) {
+      // [arg <argname>] line followed by arg markdown doc lines
+      local StringArray lines <= buf.splitChar('\n');
+      String *line;
+      local String *argName;
+      local String argDoc;
+      foreach line in lines
+      {
+         line.trim();
+         if(line <= "[arg ")
+         {
+            if(null != argName)
+               ht_autodoc[argName] = argDoc.trim();
+            argDoc.empty();
+
+            argName <= line.substring(5, 9999);
+            argName.replace("]", "");
+            argName.trim();
+         }
+         else if(null != argName)
+         {
+            argDoc.append(line);
+            argDoc.append("\n");
+         }
+      }
+
+      if(null != argName)
+         ht_autodoc[argName] = argDoc.trim();
+
+      return true;
+   }
+
+   // <method_parse.png>
+   public method parseFunctionDocLines() {
+      Function *f;
+      foreach f in functions
+         f.parseDocLines();
+   }
+
+   // <method.png>
+   public method autodocFunction(Function _fun) {
+      Arg *arg;
+      foreach arg in _fun.args
+      {
+         String doc <= arg.doc_body;
+         if(doc.isBlank())
+         {
+            if(ht_autodoc.exists(arg.name))
+               doc = ht_autodoc[arg.name];
+         }
+      }
+
+      delegate "autodocFunction"(_fun);
+   }
+
+   // <method_parse.png>
+   public method parseHeaderAndEmit(String _inBuf, String _outBuf) {
+      lines <= _inBuf.splitChar('\n');
+
+      parseTypedefs();
+      parseFunctions();
+      parseFunctionDocLines();
+
+      if(b_emit || b_debug)
+      {
+         Function *f;
+         int fIdx = 0;
+         Function.g_arg_bufidx = 0;
+         foreach f in functions
+         {
+            if(b_debug)
+            {
+               trace "functions["+fIdx+"]:";
+               f.debugPrint();
+            }
+            if(b_emit)
+               f.emitMarkdown(_outBuf);
+            fIdx++;
+         }
+      }
+
+      lines.free();
+   }
+}
+
+// <function.png>
+function Usage() {
+   trace "Usage: apiref [-d,--debug] [-ad,--autodoc <my_autodoc.ini>] [-bp,--buffer-prefix <identifier_prefix>] [-n,--dry-run] <input.h>";
+   trace "";
+}      
+
+namespace default;
+use namespace apiref;
+
+// <function.png>
+function main() {
+   String inputFile;
+   String outputFile;
+   String autodocFile;
+   int numArgs = Arguments.numElements;
+   if(numArgs >= 1)
+   {
+      int argIdx = 0;
+      while(argIdx < numArgs)
+      {
+         String arg <= Arguments[argIdx++];
+         switch(arg)
+         {
+            default:
+               if(arg <= "-")
+               {
+                  trace "[---] invalid command line switch \""+arg+"\"";
+                  exit(10);
+               }
+               else
+               {
+                  inputFile = arg; // e.g.  "../../src/myheader.h"
+               }
+               break;
+
+            case "-d":
+            case "--debug":
+               b_debug = true;
+               break;
+
+            case "-n":
+            case "--dry-run":
+               b_emit = false;
+               break;
+
+            case "-o":
+            case "--output":
+               if(argIdx < numArgs)
+               {
+                  outputFile = Arguments[argIdx++];
+                  if!(outputFile >= ".md")
+                  {
+                     trace "[---] -o,--output: output file \""+outputFile+"\" does not have \".md\" suffix";
+                     exit(10);
+                  }
+               }
+               else
+               {
+                  trace "[---] -o,--output: missing <my_output_file.md> path name argument";
+                  exit(10);
+               }
+               break;
+
+            case "-ad":
+            case "--autodoc":
+               if(argIdx < numArgs)
+               {
+                  autodocFile = Arguments[argIdx++];
+                  b_autodoc = true;
+               }
+               else
+               {
+                  trace "[---] -ad,--autodoc: missing <my_autodoc.ini> path name argument";
+                  exit(10);
+               }
+               break;
+
+            case "-bp":
+            case "--buffer-prefix":
+               if(argIdx < numArgs)
+               {
+                  apiref.buf_prefix = Utils.BuildAnchor(Arguments[argIdx++]);
+               }
+               else
+               {
+                  trace "[---] -bp,--buffer-prefix: missing <buf_prefix> argument";
+                  exit(10);
+               }
+               break;
+         }
+      }
+
+      // Parse autodoc file
+      if(!autodocFile.isBlank())
+      {
+         String autodocBuf;
+         if(autodocBuf.loadLocal(autodocFile, true/*bRemoveCR*/))
+         {
+            if(!apiref.parseAutodoc(autodocBuf))
+            {
+               trace "[---] failed to parse autodoc input file \""+autodocFile+"\"";
+               exit(10);
+            }
+         }
+         else
+         {
+            trace "[---] failed to load autodoc input file \""+autodocFile+"\"";
+            exit(10);
+         }
+      }
+
+      // Parse "C" header file
+      String buf;
+      if(buf.loadLocal(inputFile, true/*bRemoveCR*/))
+      {
+         String outBuf;
+         apiref.parseHeaderAndEmit(buf, outBuf);
+
+         if(b_emit)
+         {
+            if(!outputFile.isBlank())
+            {
+               outBuf.saveLocal(outputFile);
+               trace "[...] wrote \""+outputFile+"\"";
+            }
+            else
+            {
+               trace outBuf;
+            }
+         }
+      }
+      else
+      {
+         trace "[---] failed to open input file \""+inputFile+"\"";
+         exit(10);
+      }
+   }
+   else
+   {
+      Usage();
+      exit(10);
+   }
+}
