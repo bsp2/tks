@@ -1,0 +1,281 @@
+
+use tksdl;
+use tkopengl;
+
+use polyraster;
+
+int numframesrendered = 0;
+
+Texture tex;
+
+int grid_sx = 640;
+int grid_sy = 480;
+
+int test_idx = 1;  // UP/DOWN
+
+boolean b_fill   = 1;  // 'f'
+boolean b_hole   = 1;  // 'h'
+boolean b_filter = 1;  // 't'
+
+FloatArray verts_concave = [
+   -0.9, -0.9,
+    0,    0.9,
+    0.9, -0.25,
+   -0.3,  0.25,
+    0.9, -0.9
+];
+
+FloatArray verts_quad = [
+   -0.6, -0.6,
+    0.6, -0.6,
+    0.6,  0.6,
+   -0.6,  0.6
+];
+
+FloatArray current_verts <= verts_concave;
+
+FloatArray va_win; va_win.allocAndFill(2*10, 0.0f);
+
+
+boolean b_queued_screenshot;
+
+
+// ---------------------------------------------------------------------------- SaveScreenShotPNG
+function SaveScreenShotPNG(String _pathName) {
+   boolean ret = false;
+   if(_pathName >= ".png")
+   {
+      // (note) must be called in onDraw()
+      local Texture tex;
+      if(tex.alloc(Viewport.width, Viewport.height, 4))
+      {
+         glReadBuffer(GL_BACK);
+         int off = 0;
+         int y = Viewport.height - 1;
+         loop(Viewport.height)
+         {
+            zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+            y--;
+            off += Viewport.width;
+         }
+         tex.clearAlpha(255);
+         ret = tex.saveImage(_pathName);
+      }
+   }
+   return ret;
+}
+
+
+// ---------------------------------------------------------------------------- calcRotVerts
+float rot = 0;
+function calcRotVerts(float dt) {
+   float w = 2PI / 4;
+   float a = rot;
+   int i = 0;
+   loop(4)
+   {
+      float cx = sin(a) * 0.8;
+      float cy = cos(a) * 0.8;
+      verts_quad[i++] = cx;
+      verts_quad[i++] = cy;
+      a += w;
+   }
+   rot += dt * 0.002;
+   if(rot >= 2PI)
+      rot -= 2PI;
+}
+
+// ---------------------------------------------------------------------------- initTexture
+function initTexture() {
+   tex.alloc(grid_sx * (b_filter ? 2 : 1),
+             grid_sy * (b_filter ? 2 : 1),
+             1
+             );
+   tex.flags = TEX_ALPHA;
+   if(b_filter)
+      tex.flags |= TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR;
+}
+
+// ---------------------------------------------------------------------------- CalcVAWin
+function CalcVAWin(FloatArray _va) {
+   int j = 0;
+   float vpwh = tex.sx / 2;
+   float vphh = tex.sy / 2;
+   loop(_va.numElements / 2)
+   {
+      float x = _va[j + 0];
+      float y = _va[j + 1];
+      va_win[j + 0] = (x * (vpwh-1)) + vpwh;
+      va_win[j + 1] = (y * (vphh-1)) + vphh;
+      j += 2;
+   }
+   va_win.numElements = _va.numElements;
+}
+
+// ---------------------------------------------------------------------------- onDraw
+function onDraw() {
+    float dt = FPS.precision;
+
+    glClearColor(0,0,0.2,1);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+    if(!(++numframesrendered&127))
+       trace "FPS.real="+FPS.real;
+
+    zglInitOrtho(1,1);
+    glColor3f(1.0, 1.0, 1.0);
+
+    tex.clear(0);
+    calcRotVerts(dt);
+
+    switch(test_idx)
+    {
+       default:
+       case 0:
+          CalcVAWin(current_verts);
+          polyraster(tex, va_win);
+          break;
+
+       case 1:
+          // Float minX, minY, maxX, maxY;
+          // RasterPoly_CalcBBox(va_win, minX, minY, maxX, maxY);
+          // trace "xxx bbMin=("+minX+";"+minY+") bbMax=("+maxX+";"+maxY+")";
+
+          CalcVAWin(verts_concave);
+          polyraster_edges(tex, va_win);
+
+          if(b_hole)
+          {
+             CalcVAWin(verts_quad);
+             polyraster_edges(tex, va_win);
+          }
+
+          if(b_fill)
+             polyraster_fill(tex);
+          break;
+    }
+
+    tex.update();
+    tex.bind();
+    glEnable(GL_TEXTURE_2D);
+
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+
+    glBegin(GL_QUADS);
+
+    glTexCoord2f(0,0);
+    glVertex2f(-1,-1);
+
+    glTexCoord2f(1,0);
+    glVertex2f( 1,-1);
+
+    glTexCoord2f(1,1);
+    glVertex2f( 1, 1);
+
+    glTexCoord2f(0,1);
+    glVertex2f(-1, 1);
+    glEnd();
+
+   if(b_queued_screenshot)
+   {
+      b_queued_screenshot = false;
+      SaveScreenShotPNG("screenshots/polyraster.png");
+   }
+}
+
+// ---------------------------------------------------------------------------- onReopen
+function onReopen() {
+   tex.unload();
+}
+
+// ---------------------------------------------------------------------------- onMouse
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+// ---------------------------------------------------------------------------- onKeyboard
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         if(@(current_verts) == @(verts_quad))
+         {
+            current_verts <= verts_concave;
+         }
+         else
+         {
+            current_verts <= verts_quad;
+         }
+         trace "[...] object="+#(current_verts);
+         break;
+
+      case 'f':
+         b_fill = !b_fill;
+         trace "[...] b_fill is "+b_fill;
+         break;
+
+      case 'h':
+         b_hole = !b_hole;
+         trace "[...] b_hole is "+b_hole;
+         break;
+
+      case 'p':
+         b_queued_screenshot = true;
+         trace "[...] queue screenshot";
+         break;
+
+      case 't':
+         b_filter = !b_filter;
+         trace "[...] b_filter is "+b_filter;
+         initTexture();
+         break;
+
+      case VKEY_UP:
+         test_idx = mathWrapi(test_idx + 1, 0, 1+1);
+         trace "[...] test_idx is "+test_idx;
+         break;
+
+      case VKEY_DOWN:
+         test_idx = mathWrapi(test_idx - 1, 0, 1+1);
+         trace "[...] test_idx is "+test_idx;
+         break;
+
+      case VKEY_RIGHT:
+         if(grid_sx < 1024)
+         {
+            grid_sx *= 2;
+            grid_sy *= 2;
+            initTexture();
+         }
+         break;
+
+      case VKEY_LEFT:
+         if(grid_sx > 4)
+         {
+            grid_sx /= 2;
+            grid_sy /= 2;
+            initTexture();
+         }
+         break;
+   }
+}
+
+// ---------------------------------------------------------------------------- main
+function main() {
+
+   initTexture();
+
+   use callbacks;
+   Viewport.openWindow(640, 480);
+
+   FPS.tickInterval = 1000.0 / 60;
+   FPS.limit = 60;
+
+   trace "[...] entering eventloop";
+   SDL.eventLoop();
+}
