@@ -1,0 +1,506 @@
+
+
+module MBezierPolyLine;
+
+
+
+class BezierPolyLine {
+
+   PointerArray segments; // BezierSegment instances
+
+   float cached_path_len;
+
+   public method copyFrom(BezierPolyLine o) {
+      BezierSegment s;
+      segments.free();
+      foreach s in o.segments {
+         BezierSegment n <= new BezierSegment;
+         n.copyFrom(s);
+         segments.add(#(deref n));
+      }
+      cached_path_len = o.cached_path_len;
+   }
+
+   public method scaleXY(float _sx, _sy) {
+      BezierSegment *s;
+      foreach s in segments
+      {
+         s.scaleXY(_sx, _sy);
+      }
+   }
+
+   public method addSimpleCtlPoint(float _x, _y) {
+      addSimpleSegment(_x, _y, _x, _y);
+   }
+
+   public method addSimpleSegment(float _x, _y, float _x2, float _y2) {
+      BezierSegment s <= new BezierSegment;
+      s.init(_x, _y);
+      //trace "xxx segments A: "+#(segments)+" s="+#(s);
+      segments.add(#(deref s));
+      //trace "xxx segments B: "+#(segments);
+      int idx = segments.indexOfPointer(s, 0);
+      //trace "xxx idx="+idx;
+      if(idx > 0)
+      {
+         _= segments[idx-1].join(s, true);
+      }
+      else
+      {
+//          if(idx != (segments.numElements-1))
+//          {
+//             s.dx = segments[idx+1].px;
+//             s.dy = segments[idx+1].py;
+//          }
+//          else
+//          {
+            s.dx = _x2;
+            s.dy = _y2;
+//          }
+      }
+//       if(idx < (segments.numElements - 1))
+//       {
+//          s.join(segments[idx + 1], true);
+//       }
+   }
+
+   public method debugPrintSegments() {
+      BezierSegment s;
+      int idx = 0;
+      foreach s in segments {
+         trace "[dbg] seg["+idx+"]: p=("+s.px+";"+s.py+") d=("+s.dx+";"+s.dy+") ctl1=("+s.ctl1x+";"+s.ctl1y+") ctl2=("+s.ctl2x+";"+s.ctl2y+")";
+         idx++;
+      }
+   }
+
+   public method findSegmentIdxBefore(float _x) : int {
+      int idx = 0;
+      BezierSegment b;
+      foreach b in segments {
+         float dist = (b.px - _x);
+         if(dist > 0)
+         {
+            break;
+         }
+         else
+         {
+            idx++;
+         }
+      }
+      return idx;
+   }
+
+   public method findSegmentIdxNearXY(float _x, _y, _maxDist, _aspect, Integer retP, retC1, retC2) : int {
+      int idx = 0;
+      int bestidxP  = -1;
+      int bestidxC1 = -1;
+      int bestidxC2 = -1;
+      //trace "xxx maxDist="+_maxDist;
+      float mindistP  = _maxDist;
+      float mindistC1 = _maxDist;
+      float mindistC2 = _maxDist;
+      BezierSegment b;
+      foreach b in segments {
+         float dx = (b.px - _x);
+         float dy = (b.py - _y);
+         float dist = sqrt(dx*dx + dy*dy);
+         //trace "xxx dist="+dist;
+         if(dist < mindistP)
+         {
+            if(-1 == bestidxP)
+            {
+               //trace "xxx *** HIT ***";
+               mindistP = dist;
+               bestidxP = idx;
+            }
+         }
+
+         dx = b.ctl1x - _x;
+         dy = b.ctl1y - _y;
+         dist = sqrt(dx*dx + dy*dy);
+         if(dist < mindistC1)
+         {
+            if(-1 == bestidxC1)
+            {
+               mindistC1 = dist;
+               bestidxC1 = idx;
+            }
+         }
+
+         dx = b.ctl2x - _x;
+         dy = b.ctl2y - _y;
+         dist = sqrt(dx*dx + dy*dy);
+         if(dist < mindistC2)
+         {
+            if(-1 == bestidxC2)
+            {
+               mindistC2 = dist;
+               bestidxC2 = idx;
+            }
+         }
+         idx++;
+      }
+      retP  = bestidxP;
+      retC1 = bestidxC1;
+      retC2 = bestidxC2;
+   }
+
+   public method insertSegment(float _x, _y) : BezierSegment {
+      local BezierSegment bs;
+
+      bs.init(_x, _y);
+
+      // Insert sorted into segments array
+      int idx = findSegmentIdxBefore(_x);
+      segments.insert(idx, #(deref bs));
+      
+      return bs;
+   }
+
+   public method insertSegmentAtRelIdx(_relIdx) {
+      int segIdx;// = (segments.numElements-1) * _relIdx;
+
+      float frac;
+
+      segIdx = 0;
+      loop(segments.numElements) {
+         BezierSegment t <= segments[segIdx];
+         ////trace "xxx _relIdx="+_relIdx+" t.cached_path_offset="+t.cached_path_offset;
+         if(t.cached_path_offset >= _relIdx)
+         {
+            if(segIdx > 0)
+            {
+               segIdx--;
+               BezierSegment tl <= segments[segIdx];
+               frac = (_relIdx - tl.cached_path_offset) / (t.cached_path_offset - tl.cached_path_offset);
+            }
+            else
+            {
+               frac = 0;
+            }
+            break;
+         }
+         else
+         {
+            segIdx++;
+         }
+      }
+
+
+      ////float frac = frac(segments.numElements * _relIdx);
+      ////trace "xxx insertSegmentAtRelIdx: _relIdx="+_relIdx+" segIdx="+segIdx+" frac="+frac+" #elements="+segments.numElements;
+      ////trace "xxx     segments.numElements * _relIdx = " + (segments.numElements * _relIdx);
+      if(segIdx != (segments.numElements-1))
+      {
+         BezierSegment l <= segments[segIdx];
+         BezierSegment r <= segments[segIdx + 1];
+         BezierSegment s <= new BezierSegment;
+         s.init(l.px*(1-frac)+r.px*frac, l.py*(1-frac)+r.py*frac);
+         l.ctl2x = s.px;
+         l.ctl2y = s.py;
+         s.dx = r.px;
+         s.dy = r.py;
+         
+         segments.insert(segIdx+1, #(deref s));
+         trace "[dbg] BezierPolyLine::insertSegmentAtRelIdx: relIdx="+_relIdx+" segIdx="+segIdx+" #segments="+segments.numElements;
+      }
+   }
+
+   public method deleteSegmentAtIdx(int segIdx) {
+      if(segments.numElements > 2)
+      {
+         segments.delete(segIdx);
+      }
+   }
+
+
+   public method initFromSVG(String svgPolyline) {
+      segments.alloc(100);
+
+      StringArray tokens <= svgPolyline.splitCharset(" ,");
+      trace "[dbg] bezier: got "+tokens.numElements+" tokens.";
+
+      BezierSegment seg;
+      char state = ' ';
+      int i = 0;
+      float cx, cy, nx, ny;
+      for(; i<tokens.numElements; i++)
+      {
+         String tok <= tokens[i];
+         ////trace "xxx tok["+i+"]=\""+tok+"\".";
+         switch(state)
+         {
+            case ' ':
+               switch(tok)
+               {
+                  case "M":
+                     state = 'M';
+                     break;
+                  case "C":
+                     state = 'C';
+                     break;
+                  case "z":
+                  case "Z":
+                     i = tokens.numElements; // End of polyline
+                     break;
+               }
+               break;
+
+            case 'M':
+               // Parse start of first curve
+               cx = float(tok);
+               tok <= tokens[++i];
+               cy = float(tok);
+               trace "[dbg] bezier: curve start =("+cx+"; "+cy+").";
+               state = ' ';
+               break;
+
+            case 'C':
+               // Parse cubic bezier curve
+               seg <= new BezierSegment;
+               seg.ctl1x = float(tok);
+               seg.ctl1y = float(tokens[++i]);
+               seg.ctl2x = float(tokens[++i]);
+               seg.ctl2y = float(tokens[++i]);
+               nx = float(tokens[++i]);
+               ny = float(tokens[++i]);
+               seg.px = cx;
+               seg.py = cy;
+               seg.dx = nx;
+               seg.dy = ny;
+               segments.add(#(deref seg));
+               cx = nx;
+               cy = ny;
+               state = ' ';
+               break;
+         }
+      }
+
+      trace "[dbg] bezier: parsed "+segments.numElements+" polyline segments";
+   }
+
+   public method joinSegments(boolean _bCtl2, boolean _bClosed) {
+      // Align end points and make ctl2 inverse of ctl1
+      int i;
+      BezierSegment seg;
+      BezierSegment seg2;
+      for(i=0; i< (segments.numElements-1); i++)
+      {
+         seg  <= segments[i];
+         seg2 <= segments[i+1];
+         seg.join(seg2, _bCtl2);
+      }
+      if(_bClosed)
+      {
+         seg <= segments[i];
+         seg2 <= segments[0];
+         seg.join(seg2, _bCtl2);
+      }
+      else
+      {
+         seg <= segments[i];
+         seg.join(seg, _bCtl2);
+         if(i > 0)
+         {
+            seg2 <= segments[i - 1];
+            seg2.join(seg, _bCtl2);
+         }
+      }
+   }
+   
+//    public method draw() {
+//       int i = 0;
+//       BezierSegment seg;
+//       FloatArray points;
+//       points.numElements = 0;
+//       for(; i<segments.numElements; i++)
+//       {
+//          seg <= segments[i];
+//          Bezier.CalcCubicBezierCurve_Casteljau(seg.px,    seg.py,
+//                                                seg.ctl1x, seg.ctl1y,
+//                                                seg.ctl2x, seg.ctl2y,
+//                                                seg.dx,    seg.dy,
+//                                                points
+//                                              );
+
+//       }
+
+//       //trace "Polyine has "+(bcpl.segments.numElements)+" segments and "+ total_num_vertices+" vertices.";
+//    }
+
+   public method calc(FloatArray points, float _fThreshold, _fThresholdP, boolean _bLast) {
+      int i = 0;
+      BezierSegment seg;
+      points.empty();
+      int num = segments.numElements;
+      if(!_bLast)
+      {
+         num--;
+      }
+      float segOffset = 0;
+      int lastNumPoints = 0;
+      float lastX = 0;
+      float lastY = 0;
+      for(; i<num; i++)
+      {
+         seg <= segments[i];
+
+         // Hack to reduce number of verts/polys on mobile devices:
+         float tmpThresholdP;
+         float tmpThreshold;
+         // if( (i > 0) && (i < (num-1)) )
+         // {
+         tmpThreshold = _fThreshold * 80.0;
+         tmpThresholdP = _fThresholdP*1.5;// * 8; /// XXX *1.5 hack 2014
+         // }
+         // else
+         // {
+         //    tmpThresholdP = _fThresholdP;
+         // }
+
+         // if(0 == i)
+         // {
+         //    points.add(seg.px);
+         //    points.add(seg.py);
+         // }
+
+         Bezier.CalcCubicBezierCurve_Casteljau(seg.px,    seg.py,
+                                               seg.ctl1x, seg.ctl1y,
+                                               seg.ctl2x, seg.ctl2y,
+                                               seg.dx,    seg.dy,
+                                               points,
+                                               //_fThreshold, _fThresholdP
+                                               tmpThreshold, tmpThresholdP
+                                               );
+
+         if(i == (num-1))
+         {
+            points.add(seg.dx);
+            points.add(seg.dy);
+         }
+
+         // Keep track of path offset at segment. this is later used in the editor.
+         seg.cached_path_offset = segOffset;
+         if(0 == lastNumPoints)
+         {
+            lastX = points[0];
+            lastY = points[1];
+         }
+         int pIdx = lastNumPoints;
+         loop((points.numElements - pIdx)/2)
+         {
+            float dx = points[pIdx+0] - lastX;
+            float dy = points[pIdx+1] - lastY;
+            segOffset += sqrt(dx*dx + dy*dy);
+            lastX = points[pIdx+0];
+            lastY = points[pIdx+1];
+            pIdx += 2;
+         }
+         lastNumPoints = pIdx;
+      }
+
+      if(segments.numElements)
+      {
+         seg <= segments[segments.numElements-1];
+         seg.cached_path_offset = segOffset;
+      }
+
+      trace "[dbg] BezierPolyLine: total path len="+segOffset;
+
+      cached_path_len = segOffset;
+
+      // Normalize segment offsets
+      segOffset = 1.0 / segOffset;
+      i = 0;
+      loop(segments.numElements)
+      {
+         seg <= segments[i++];
+         seg.cached_path_offset *= segOffset;
+      }
+
+      trace "[dbg] bezier: polyline has "+(segments.numElements)+" segments and "+ (points.numElements/2)+" vertices.";
+   }
+
+   public method calcEnv(Envelope _env, float _scly, float _fThreshold, float _fThresholdP) {
+      // Calc normalized envelope, i.e. all deltatimes sum up to 1.0
+      _env.empty();
+      _env.interpolation = ENV_LINEAR;
+      calc(_env, _fThreshold, _fThresholdP, false);
+      
+      //debugPrintSegments();
+
+      //trace "xxx calcEnv env="+_env;
+
+      if(_env.numElements < 2)
+      {
+         // No polyline segments => Envelope is empty
+         return;
+      }
+
+      // build delta times from 'x' component
+      int idx = 0;
+      float lastx = _env[0];
+      float totaldeltax = 0;
+      compile loop(_env.numElements / 2)
+      {
+         float deltax = _env[idx + 0] - lastx;
+         //trace "xxx env["+idx+"] = ("+_env[idx]+";"+_env[idx+1]+")";
+         //trace "xxx deltax="+deltax;
+         if(deltax < 0)
+         {
+            deltax = 0;
+         }
+         _env[idx + 0] = deltax;
+         lastx += deltax;
+         totaldeltax += deltax;
+         idx += 2;
+      }
+      
+      // Normalize deltas so they all sum up to 1
+      // Also normalize the amplitudes using 'scly'
+      float scalex = 1.0 / totaldeltax;
+      //trace "xxx scalex = "+scalex;
+      idx = 0;
+      compile loop(_env.numElements / 2)
+      {
+         _env[idx + 0] *= scalex;
+         _env[idx + 1] *= _scly;
+//          _env[idx + 0] = _env[idx + 0] * scalex;
+//          _env[idx + 1] = _env[idx + 1] * _scly;
+         idx += 2;
+      }
+
+   }
+
+
+   public method saveToStream(Stream os) {
+
+      // Store path segments
+      os.i32 = segments.numElements;
+      BezierSegment s;
+      foreach s in segments {
+         s.saveToStream(os);
+      }
+   }
+
+   public method loadFromStream(Stream is, int ver) {
+
+      // Load track segments
+      int numSegments = is.i32;
+      loop(numSegments)
+      {
+         BezierSegment s <= new BezierSegment;
+         s.loadFromStream(is, ver);
+         segments.add(#(deref s));
+      }
+   }
+
+   public method scaleAfterLoad(float _scale) {
+      BezierSegment s;
+      foreach s in segments {
+         s.scaleAfterLoad(_scale);
+      }
+   }
+   
+}
+

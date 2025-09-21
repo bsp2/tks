@@ -1,0 +1,820 @@
+//
+//    file: BezierEdit.tks
+//  author: (C) 2008 Bastian Spiegel
+//    date: 26-Nov-2008 27-Nov-2008, 16-Dec-2008
+//    info: a bezier edit "widget"
+// license: -TBD-
+
+module MBezierEdit;
+
+class BezierEdit {
+
+   define float ZOOM_MIN = 0.1;
+   define float ZOOM_MAX = 8;
+   define float ZOOM_SPEED = 0.0125;
+   define float ZOOM_FAST  = 4; // multipler when lshift is held down
+
+   protected FloatArray env <= null; // x/y pairs
+   protected BezierPolyLine bpl <= null;
+
+   protected int cursor_x = 0;
+   protected int cursor_y = 0;
+
+   public float norm_cursor_x = 0;
+   public float norm_cursor_y = 0;
+
+   protected Integer mouseover_idx_p;
+   protected Integer mouseover_idx_c1;
+   protected Integer mouseover_idx_c2;
+   protected boolean b_select_ctl;
+   protected boolean b_drag_p;
+   protected boolean b_drag_px;
+   protected boolean b_drag_c1;
+   protected boolean b_drag_c2;
+   protected boolean b_update_bezier;
+   protected boolean b_autojoin_ctls;
+   protected boolean b_zoom_indiv;
+   protected boolean b_zoom_only_y;
+
+   boolean b_env;
+  
+   float size_x;
+   float size_y;
+   float scale_x;  // left/right, e.g. 0.5
+   float scale_y;  // top/bottom, e.g. 0.5
+   float center_x; // how to translate normalized+scaled coords, e.g. 0.5
+   float center_y; // e.g. 0
+   float f_threshold;
+   float f_threshold_p;
+   float base_scale_x;
+   float base_scale_y;
+   float zoom_scale_x;
+   float zoom_scale_y;
+   int   zoom_dir_x;
+   int   zoom_dir_y;
+
+   public method init(boolean _bEnv, float _scaleX, _scaleY, _centerX, _centerY, _fThreshold, _fThresholdP) {
+      b_env         = _bEnv;
+      scale_x       = _scaleX;
+      scale_y       = _scaleY;
+      center_x      = _centerX;
+      center_y      = _centerY;
+      f_threshold   = _fThreshold;
+      f_threshold_p = _fThresholdP;
+      base_scale_x  = _scaleX;
+      base_scale_y  = _scaleY;
+      zoom_scale_x  = 1;
+      zoom_scale_y  = 1;
+      zoom_dir_x    = 0;
+      zoom_dir_y    = 0;
+      selectNone();
+   }
+
+   public method setEnableZoomOnlyY(boolean _bZoomOnlyY) {
+      b_zoom_only_y = _bZoomOnlyY;
+   }
+
+   public method setEnvelope(FloatArray _env, BezierPolyLine _bpl) {
+      bpl <= _bpl;
+      env <= _env;
+      selectNone();
+      b_drag_p  = false;
+      b_drag_c1 = false;
+      b_drag_c2 = false;
+      b_update_bezier = true;
+      b_autojoin_ctls = true;
+   }
+
+   public method selectNone() {
+      mouseover_idx_p = -1;
+      mouseover_idx_c1 = -1;
+      mouseover_idx_c2 = -1;
+   }
+
+   public method setZoomX(float _zoomX) {
+      if(_zoomX < ZOOM_MIN)
+         _zoomX = ZOOM_MIN;
+      else if(_zoomX > ZOOM_MAX)
+         _zoomX = ZOOM_MAX;
+      zoom_scale_x = _zoomX;
+      scale_x = _zoomX * base_scale_x;
+      queueBezierUpdate();
+   }
+
+   public method setZoomY(float _zoomY) {
+      if(_zoomY < ZOOM_MIN)
+         _zoomY = ZOOM_MIN;
+      else if(_zoomY > ZOOM_MAX)
+         _zoomY = ZOOM_MAX;
+      zoom_scale_y = _zoomY;
+      scale_y = _zoomY * base_scale_y;
+      queueBezierUpdate();
+   }
+
+   public method setSize(float _sx, _sy) {
+      size_x = _sx;
+      size_y = _sy;
+   }
+
+   public method queueBezierUpdate() {
+      b_update_bezier = true;
+   }
+
+   protected method handleBezierUpdate() {
+      if(b_update_bezier)
+      {
+         //trace "xxx handleBezierUpdate: bpl="+#(bpl)+" env="+#(env);
+         b_update_bezier = false;
+         if(null != bpl)
+         {
+            if(null != env)
+            {
+               // Re-calc envelope
+               bpl.joinSegments(false, false);
+               if(b_env)
+               {
+                  // deltatimes (always +)
+                  bpl.calcEnv(env, 1.0, f_threshold, f_threshold_p);
+               }
+               else
+               {
+                  bpl.calc(env, f_threshold, f_threshold_p, false);
+               }
+            }
+            //trace "xxx env="+env;
+         }
+      }
+   }
+
+   public method onDraw(float _dt) {
+
+      // Handle zoom in/out
+      int zoomDirX;
+      int zoomDirY;
+      if(b_zoom_indiv)
+      {
+         zoomDirX = zoom_dir_x;
+         zoomDirY = zoom_dir_y;
+      }
+      else
+      {
+         zoomDirX = zoom_dir_y;
+         zoomDirY = zoom_dir_y;
+         if(b_zoom_only_y)
+         {
+            zoomDirX = 0;
+         }
+      }
+      float zoomSpeedDt = ZOOM_SPEED * _dt;
+      if(b_select_ctl) // lshift down..
+      {
+         zoomSpeedDt *= ZOOM_FAST;
+      }
+      if(zoomDirX)
+      {
+         setZoomX(zoom_scale_x +  zoomSpeedDt * zoomDirX);
+      }
+      if(zoom_dir_y)
+      {
+         setZoomY(zoom_scale_y + zoomSpeedDt * zoomDirY);
+      }
+
+      // Draw envelope
+      handleBezierUpdate();
+
+      // warning: ugly crap hack follows..
+      if((null != env) && (null != bpl))
+      {
+         float scalex = size_x / (2*scale_x);
+         float centerx = size_x*0.5 - size_x * center_x;
+         float scaley = size_y / (2*scale_y);
+         float centery = size_y*0.5 - size_y * center_y;
+
+         // Draw bezier control points
+         if(null != bpl)
+         {
+            boolean bDrawC = false;
+
+            glLineWidth(1);
+
+            loop(2)
+            {
+               BezierSegment s;
+               glPointSize(8.0);
+               int segIdx = 0;
+               foreach s in bpl.segments {
+                  boolean bLastSeg = (segIdx == (bpl.segments.numElements-1));
+                  float px = s.px * scalex + centerx;
+                  float py = s.py * scaley + centery;
+                  float dx = s.dx * scalex + centerx;
+                  float dy = s.dy * scaley + centery;
+                  float c1x = s.ctl1x * scalex + centerx;
+                  float c1y = s.ctl1y * scaley + centery;
+                  float c2x = s.ctl2x * scalex + centerx;
+                  float c2y = s.ctl2y * scaley + centery;
+                  if(!bDrawC)
+                  {
+                     zglColorARGB(#ff000000);
+                     if(!bLastSeg)
+                     {
+                        glBegin(GL_LINES);
+                        glVertex2f(dx, dy);
+                        glVertex2f(c2x, c2y);
+                        glEnd();
+
+                        glBegin(GL_LINES);
+                        glVertex2f(px, py);
+                        glVertex2f(c1x, c1y);
+                        glEnd();
+                     }
+                  }
+
+                  if(b_select_ctl)
+                  {
+                     if!(bDrawC)
+                     {
+                        zglColorARGB(#ffffffff);
+                        glBegin(GL_POINTS);
+                        glVertex2f(px, py);
+                        glEnd();
+                     }
+                     else
+                     {
+                        if(b_drag_c2)
+                        {
+                           if(!bLastSeg)
+                           {
+                              zglColorARGB(#ffffdddd);
+                              glBegin(GL_POINTS);
+                              glVertex2f(c1x, c1y);
+                              glEnd();
+                           }
+                        
+                           if(mouseover_idx_c2 == segIdx)
+                           {
+                              zglColorARGB(#ffdd0000);
+                           }
+                           else
+                           {
+                              zglColorARGB(#ffdddddd);
+                           }
+                           if(!bLastSeg)
+                           {
+                              glBegin(GL_POINTS);
+                              glVertex2f(c2x, c2y);
+                              glEnd();
+                           }
+                        }
+                        else
+                        {
+                           if(!bLastSeg)
+                           {
+                              zglColorARGB(#ffdddddd);
+                              glBegin(GL_POINTS);
+                              glVertex2f(c2x, c2y);
+                              glEnd();
+                           }
+
+                           if(mouseover_idx_c1 == segIdx)
+                           {
+                              zglColorARGB(#ffdd0000);
+                           }
+                           else
+                           {
+                              zglColorARGB(#ffffdddd);
+                           }
+                           if(!bLastSeg)
+                           {
+                              glBegin(GL_POINTS);
+                              glVertex2f(c1x, c1y);
+                              glEnd();
+                           }
+                        
+                        }
+
+                     }
+                  }
+                  else
+                  {
+                     ////trace "xxx segIdx="+segIdx+" mouseover_idx_p="+mouseover_idx_p;
+                     if(mouseover_idx_p == segIdx)
+                     {
+                        if(bDrawC)
+                        {
+                           zglColorARGB(#ffff0000);
+                           glBegin(GL_POINTS);
+                           glVertex2f(px, py);
+                           glEnd();
+                        }
+                        else
+                        {
+                           zglColorARGB(#ffffff00);
+                           if(!bLastSeg)
+                           {
+                              glBegin(GL_POINTS);
+                              glVertex2f(c1x, c1y);
+                              glEnd();
+                           }
+
+                           if(!bLastSeg)
+                           {
+                              glBegin(GL_POINTS);
+                              glVertex2f(c2x, c2y);
+                              glEnd();
+                           }
+                        }
+                     }
+                     else
+                     {
+                        if(bDrawC)
+                        {
+                           zglColorARGB(#ffffffff);
+                           glBegin(GL_POINTS);
+                           glVertex2f(px, py);
+                           glEnd();
+                        }
+                        else
+                        {
+                           if(mouseover_idx_c1 == segIdx)
+                           {
+                              zglColorARGB(#ffff77dd);
+                           }
+                           else
+                           {
+                              zglColorARGB(#ffdddddd);
+                           }
+                           if(!bLastSeg)
+                           {
+                              glBegin(GL_POINTS);
+                              glVertex2f(c1x, c1y);
+                              glEnd();
+                           }
+
+                           if(mouseover_idx_c2 == segIdx)
+                           {
+                              zglColorARGB(#ffff77dd);
+                           }
+                           else
+                           {
+                              zglColorARGB(#ffdddddd);
+                           }
+                           if(!bLastSeg)
+                           {
+                              glBegin(GL_POINTS);
+                              glVertex2f(c2x, c2y);
+                              glEnd();
+                           }
+                        }
+                     }
+                  }
+
+                  segIdx++;
+               } // foreach segment
+
+               bDrawC = true;
+            } // loop2
+
+         } // if bpl
+
+         if(env.numElements > 0)
+         {
+            int idx = 0;
+            zglColorARGB(#ffcccccc);
+            glLineWidth(1.0);
+            glBegin(GL_LINES);
+
+            float lastX, lastY;
+            if(b_env)
+            {
+               lastX = env[0] * scalex + centerx;
+               lastY = env[1] * scaley + centery;
+               compile loop(env.numElements / 2)
+               {
+                  glVertex2f(lastX, lastY);
+                  lastX += env[idx + 0] * scalex + centerx;
+                  lastY  = env[idx + 1] * scaley + centery;
+                  glVertex2f(lastX, lastY);
+                  idx += 2;
+               }
+            }
+            else
+            {
+               lastX = env[0] * scalex + centerx;
+               lastY = env[1] * scaley + centery;
+               compile loop(env.numElements / 2)
+               {
+                  glVertex2f(lastX, lastY);
+                  lastX = env[idx + 0] * scalex + centerx;
+                  lastY = env[idx + 1] * scaley + centery;
+                  glVertex2f(lastX, lastY);
+                  idx += 2;
+               }
+            }
+            glEnd();
+         }
+
+      } // if env
+
+
+      // Draw mouse cursor
+      if(true)//if(RacerConfiguration.b_edit_env)
+      {
+         //trace "EnvEdit: cursor=("+cursor_x+";"+cursor_y+")";
+
+         glLineWidth(1.0);
+         zglColorARGB(#ffffff66);
+         int csrSize = 8;
+         glBegin(GL_LINES);
+         glVertex2f(cursor_x-csrSize, cursor_y-csrSize);
+         glVertex2f(cursor_x+csrSize, cursor_y+csrSize);
+
+         glVertex2f(cursor_x+csrSize, cursor_y-csrSize);
+         glVertex2f(cursor_x-csrSize, cursor_y+csrSize);
+         glEnd();
+         
+      }
+
+   }
+
+   public method handleEndMouseDrag() {
+      // to be implemented by derived class
+   }
+
+   public method onMouse(int _x, int _y, int _cbs, int _nbs) : boolean {
+      cursor_x = _x;
+      cursor_y = _y;// - (Viewport.height - HEIGHT);
+      ////trace "cursor=("+cursor_x+";"+cursor_y+")";
+      if(cursor_y < 0)
+      {
+         cursor_y = 0;
+      }
+
+      float scalex = (2*scale_x) / size_x;
+      float centerx = size_x*0.5 - center_x*size_x;
+      float scaley = (2*scale_y) / size_y;
+      float centery = size_y*0.5 - center_y*size_y;
+
+      norm_cursor_x = (cursor_x-centerx) * scalex;
+      norm_cursor_y = (cursor_y-centery) * scaley;
+
+      //trace "xxx onMouse norm_cursor=("+norm_cursor_x+";"+norm_cursor_y+")";
+
+      if!(b_drag_p || b_drag_c1 || b_drag_c2)
+      {
+         mouseover_idx_p  = -1;
+         mouseover_idx_c1 = -1;
+         mouseover_idx_c2 = -1;
+
+         if(null != bpl)
+         {
+            bpl.findSegmentIdxNearXY(norm_cursor_x, norm_cursor_y, 6*((2*scale_y)/size_y), float(size_x) / size_y, mouseover_idx_p, mouseover_idx_c1, mouseover_idx_c2);
+            //trace "idxP="+mouseover_idx_p+" idxC1="+mouseover_idx_c1+" idxC2="+mouseover_idx_c2;
+         }
+      }
+
+      BezierSegment s, t;
+      
+      if(_cbs & 2)
+      {
+         if(_nbs & 2)
+         {
+            // RMB press
+            if(-1 != mouseover_idx_p)
+            {
+               // Delete control point
+               if(b_env)
+               {
+                  if((mouseover_idx_p < 1) || (mouseover_idx_p >= (bpl.segments.numElements - 1)))
+                  {
+                     return;
+                  }
+               }
+               bpl.deleteSegmentAtIdx(mouseover_idx_p);
+               mouseover_idx_p = -1;
+               queueBezierUpdate();
+            }
+            else
+            {
+               // Insert new control point
+               insertPointNearNormCursor();
+            }
+            return;
+         }
+      }
+
+
+      if(_cbs & 1)
+      {
+         // LMB press/hold
+         if(b_select_ctl)
+         {
+            if(-1 == mouseover_idx_c2)
+            {
+               if(-1 != mouseover_idx_c1)
+               {
+                  b_drag_p  = false;
+                  b_drag_c1 = true;
+                  b_drag_c2 = false;
+               }
+            }
+            else
+            {
+               if(-1 != mouseover_idx_c1)
+               {
+                  if(mouseover_idx_c1 < mouseover_idx_c2)
+                  {
+                     b_drag_p  = false;
+                     b_drag_c1 = true;
+                     b_drag_c2 = false;
+                  }
+                  else
+                  {
+                     b_drag_p  = false;
+                     b_drag_c1 = false;
+                     b_drag_c2 = true;
+                  }
+               }
+               else
+               {
+                  b_drag_p  = false;
+                  b_drag_c1 = false;
+                  b_drag_c2 = true;
+               }
+            }
+         }
+         else
+         {
+            if(-1 != mouseover_idx_p)
+            {
+               b_drag_p  = true;
+               b_drag_px = !b_env || ((mouseover_idx_p != bpl.segments.numElements-1) && (mouseover_idx_p != 0));
+               b_drag_c1 = false;
+               b_drag_c2 = false;
+            }
+            else if(-1 == mouseover_idx_c2)
+            {
+               if(-1 != mouseover_idx_c1)
+               {
+                  b_drag_p  = false;
+                  b_drag_c1 = true;
+                  b_drag_c2 = false;
+               }
+            }
+            else
+            {
+               if(-1 != mouseover_idx_c1)
+               {
+                  if(mouseover_idx_c1 < mouseover_idx_c2)
+                  {
+                     b_drag_p  = false;
+                     b_drag_c1 = true;
+                     b_drag_c2 = false;
+                  }
+                  else
+                  {
+                     b_drag_p  = false;
+                     b_drag_c1 = false;
+                     b_drag_c2 = true;
+                  }
+               }
+               else
+               {
+                  b_drag_p  = false;
+                  b_drag_c1 = false;
+                  b_drag_c2 = true;
+               }
+            }
+            
+         }
+      }
+      else if(_nbs & 1)
+      {
+         // LMB release
+         b_drag_p  = false;
+         b_drag_c1 = false;
+         b_drag_c2 = false;
+         handleEndMouseDrag();
+      }
+
+      if(b_drag_p)
+      {
+         // Move segment position
+         s <= bpl.segments[mouseover_idx_p];
+         float deltapx;
+         float deltapy = norm_cursor_y - s.py;
+         if(b_drag_px)
+         {
+            deltapx = norm_cursor_x - s.px;
+            s.px = norm_cursor_x;
+         }
+         else
+         {
+            deltapx = 0;
+         }
+         s.py = norm_cursor_y;
+         //trace "xxx drag p=("+s.px+";"+s.py+")";
+         s.ctl1x += deltapx;
+         s.ctl1y += deltapy;
+         if(mouseover_idx_p > 0)
+         {
+            s <= bpl.segments[mouseover_idx_p - 1];
+            s.ctl2x += deltapx;
+            s.ctl2y += deltapy;
+         }
+         queueBezierUpdate();
+      }
+      if(b_drag_c1)
+      {
+         // Move control point 1
+         s <= bpl.segments[mouseover_idx_c1];
+         s.ctl1x = norm_cursor_x;
+         s.ctl1y = norm_cursor_y;
+         if(b_autojoin_ctls)
+         {
+            if(mouseover_idx_c1 > 0)
+            {
+               t <= bpl.segments[mouseover_idx_c1 - 1];
+               t.joinCtl2(s);
+            }
+         }
+         queueBezierUpdate();
+      }
+      if(b_drag_c2)
+      {
+         // Move control point 2
+         s <= bpl.segments[mouseover_idx_c2];
+         s.ctl2x = norm_cursor_x;
+         s.ctl2y = norm_cursor_y;
+         //trace "xxx drag ctl2=("+s.ctl2x+";"+s.ctl2y+")";
+         if(b_autojoin_ctls)
+         {
+            if(mouseover_idx_c2 != (bpl.segments.numElements-1))
+            {
+               t <= bpl.segments[mouseover_idx_c2 + 1];
+               t.joinCtl1(s);
+            }
+         }
+         queueBezierUpdate();
+      }
+
+      //trace "xxx b_drag_p="+b_drag_p+" b_drag_c1="+b_drag_c1+" b_drag_c2="+b_drag_c2;
+      
+   }
+
+   public method findRelIdxNearXY(float _x, _y) : float {
+      int bestidx = -1;
+      int idx;
+      float x=0, y;
+      if(null != env)
+      {
+         float bestdist = 9999999;
+         idx = 0;
+         loop(env.numElements/2)
+         {
+            if(b_env)
+            {
+               x += env[idx+0]; // sum deltatimes
+            }
+            else
+            {
+               x = env[idx+0];
+            }
+            y = env[idx+1];
+            float dist = sqrt( (_x-x)*(_x-x) + (_y-y)*(_y-y) );
+            ////trace "dist="+dist+" bestdist="+bestdist+" xy=("+_x+";"+_y+")  p=("+x+";"+y+")";
+            if(dist < bestdist)
+            {
+               bestidx = idx;
+               bestdist = dist;
+            }
+            idx += 2;
+         }
+      }
+
+      // Calculate relative path offset
+      //trace "xxx bestidx="+bestidx;
+      if(-1 != bestidx)
+      {
+         //float totalPathLen = bpl.cached_path_len;
+         x = 0;
+         float lastX, lastY;
+         float cOffset = 0;
+         lastX = env[0];
+         lastY = env[1];
+         idx = 0;
+         loop( (bestidx/2) )
+         {
+            if(b_env)
+            {
+               x += env[idx+0];
+            }
+            else
+            {
+               x = env[idx+0];
+            }
+            y = env[idx+1];
+            float dx = x - lastX;
+            float dy = y - lastY;
+            cOffset += sqrt(dx*dx + dy*dy);
+            lastX = x;
+            lastY = y;
+            idx += 2;
+         }
+         //trace "xxx b_env="+b_env+" cOffset="+cOffset;
+         //trace "xxx totalLen="+bpl.cached_path_len;
+         cOffset /= bpl.cached_path_len;
+         //trace "xxx relOffset="+cOffset;
+         return cOffset;
+      }
+      else
+      {
+         return -1;
+      }
+   }
+
+   protected method insertPointNearNormCursor() {
+      if(null != bpl)
+      {
+         trace "[dbg] BezierEdit::insertPointNearNormCursor: norm_cursor=("+norm_cursor_x+";"+norm_cursor_y+")";
+         float relIdx = findRelIdxNearXY(norm_cursor_x, norm_cursor_y);
+         trace "[dbg] BezierEdit::insertPointNearNormCursor: relIdx="+relIdx+" norm_cursor=("+norm_cursor_x+";"+norm_cursor_y+")";
+         if(relIdx >= 0)
+         {
+            bpl.insertSegmentAtRelIdx(relIdx);
+            queueBezierUpdate();
+         }
+      }
+   }
+
+   protected method deletePointNearNormCursor() {
+      if(null != bpl)
+      {
+      }
+   }
+
+   public method onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_LSHIFT: // only select ctls
+            b_select_ctl = true;
+            return true;
+         case VKEY_LCTRL:  // do not auto-join segments, i.e. edit ctl1+ctl2 separately
+            b_autojoin_ctls = false;
+            return true;
+         case VKEY_LALT:
+            b_zoom_indiv = true;
+            return true;
+         case VKEY_BACKSPACE:
+            setZoomX(1);
+            setZoomY(1);
+            return true;
+         case VKEY_INSERT: // insert new control point 
+            insertPointNearNormCursor();
+            return true;
+         case VKEY_DELETE: // delete control point 
+            deletePointNearNormCursor();
+            return true;
+         case VKEY_LEFT:
+            zoom_dir_x = -1;
+            return true;
+         case VKEY_RIGHT:
+            zoom_dir_x = 1;
+            return true;
+         case VKEY_UP:
+            zoom_dir_y = 1;
+            return true;
+         case VKEY_DOWN:
+            zoom_dir_y = -1;
+            return true;
+      }
+      switch(_k.released)
+      {
+         case VKEY_LSHIFT:
+            b_select_ctl = false;
+            return true;
+         case VKEY_LCTRL:
+            b_autojoin_ctls = true;
+            return true;
+         case VKEY_LALT:
+            b_zoom_indiv = false;
+            return true;
+         case VKEY_LEFT:
+            if(zoom_dir_x < 0)
+               zoom_dir_x = 0;
+            return true;
+         case VKEY_RIGHT:
+            if(zoom_dir_x > 0)
+               zoom_dir_x = 0;
+            return true;
+         case VKEY_UP:
+            if(zoom_dir_y > 0)
+               zoom_dir_y = 0;
+            return true;
+         case VKEY_DOWN:
+            if(zoom_dir_y < 0)
+               zoom_dir_y = 0;
+            return true;
+      }
+      return false;
+   }
+}

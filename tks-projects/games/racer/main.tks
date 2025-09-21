@@ -1,0 +1,291 @@
+//
+//    file: main.tks
+//  author: (C) 2008 Bastian Spiegel
+//    date: 31-Oct-2008, 01-Nov-2008, 02-Nov-2008, 03-Nov-2008, 04-Nov-2008, 07-Nov-2008, 08-Nov-2008, 09-Nov-2008, 15-Nov-2008, 16-Nov-2008
+//          22-Nov-2008, 27-Nov-2008, 28-Nov-2008, 29-Nov-2008, 30-Nov-2008, 01-Dec-2008, 02-Dec-2008, 03-Dec-2008, 10-Dec-2008, 11-Dec-2008
+//          13-Dec-2008, 15-Dec-2008, 16-Dec-2008, 17-Dec-2008, 18-Dec-2008, 20-Dec-2008
+//    info: "raCer", a 3D racing game written in TkScript
+// license: -TBD-
+//
+
+use tksdl;
+use tkopengl;
+use tkmath;
+
+dtrace true;
+
+namespace racer;
+
+
+function PrintKeyInfo() {
+   trace "\n\nWelcome to -= raCer =-  (preview 21Dec2008)\n\n";
+   trace "   Game Keys:";
+   trace "        return / JOY 'START'     : Reset player and map";
+   trace "    left+right / JOY AXIS 0      : Turn left/right";
+   trace "            up / JOY 'X'         : Accelerate";
+   trace "          down / JOY '[]'        : Brake";
+   trace "             k / JOY 'R1'        : Boost";
+   trace "                 JOY 'O'         : Accelerate + Boost";
+   trace "             i / JOY 'L1'        : Shield/Walls";
+   trace "           u+o / JOY AXIS 1      : Nose up/down";
+   trace "           j+l / JOY 'L2' + 'R2' : Strafe left/right (both=brake hard)";
+   trace "                 JOY AXIS 2      : Accelerate/Brake";
+   trace " ";
+   trace "            F2                   : Load next map";
+   trace "            F3                   : Load previous map";
+   trace " ";
+   trace "   Other Keys:";
+   trace "             m                   : Toggle OpenGL multi-sampling (default=off)";
+   trace "             s                   : Toggle stencil shadows (default=on)";
+   trace "             q                   : Toggle render mode ";
+   trace "                                   (none, dots, tris, default=textured tris)";
+   trace "      lshift-q                   : Toggle cubemap skybox (default=on)";
+   trace "             f                   : Toggle fog (default=off)";
+   trace "             7                   : Toggle motion blur (default=on)";
+   trace " ";
+   trace "\n\n";
+}
+
+
+function OpenWindow() {
+   Viewport.close();
+
+   if(RacerConfiguration.b_multisampling)
+   {
+      Viewport.multisampleBuffers = 1;
+      Viewport.multisampleSamples = 4;
+   }
+   else
+   {
+      Viewport.multisampleBuffers = 0;
+      Viewport.multisampleSamples = 0;
+   }
+
+   trace "[dbg] OpenWindow: #joysticks="+SDL.numJoysticks;
+
+   PrintKeyInfo();
+
+   if(RacerConfiguration.b_stencil_shadows)
+   {
+      Viewport.stencilBits = 8;
+   }
+   else
+   {
+      Viewport.stencilBits = 0;
+   }
+   Viewport.setScreenResolution(1920, 1200, 32);
+   Viewport.openWindow(1024, 600);
+   Viewport.swapInterval(1);
+}
+
+
+
+track.init();
+
+Editor.Init();
+
+OSD.Init();
+
+
+
+
+function onJoyAxisMotion(int dev, int axis, int val) {
+   //trace "[dbg] onJoyAxisMotion: dev="+dev+" axis="+axis+" val="+val;
+   OSD.OnJoyAxisMotion(dev, axis, val);
+}
+
+function onJoyHatMotion(int dev, int hat, int state) {
+   trace "[dbg] onJoyHatMotion: dev="+dev+" hat="+hat+" state="+state;
+   OSD.OnJoyHatMotion(dev, hat, state);
+}
+
+function onJoyBallMotion(int dev, int ball, int dx, int dy) {
+   trace "[dbg] onJoyBallMotion: dev="+dev+" ball="+ball+" dx="+dx+" dy="+dy;
+}
+
+function onJoyButton(int dev, int button, int pressed) {
+   trace "[dbg] onJoyButton: dev="+dev+" button="+button+" pressed="+pressed;
+   OSD.OnJoyButton(dev, button, pressed);
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   ///trace "[dbg] onMouse: x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   OSD.OnMouse(_x, _y, _cbs, _nbs);
+}
+
+function onOpen() {
+   track.onOpen();
+
+   // Load font texture
+   RenderUtils.OnOpen();
+
+//    if(RacerConfiguration.b_shadow_map)
+//    {
+//       // Load shadow map texture
+//       tex_shadowmap.unload();
+//       tex_shadowmap.loadImage("tex_shadowmap.png", 0,0,1);
+//       tex_shadowmap.expand2n();
+//       tex_shadowmap.flags = TEX_MODULATE | TEX_ALPHA;
+//       tex_shadowmap.upload();
+//    }
+
+   SkyBox.LoadTexture();
+
+   if(RacerConfiguration.b_motion_blur)
+   {
+      MotionBlur.OnOpen();
+   }
+
+   if(!b_startup)
+   {
+      track.updateTrack(); // Update VBOs
+   }
+
+   OSD.OnOpen();
+}
+
+function ToggleSkyBox() {
+   RacerConfiguration.b_draw_skybox = ! RacerConfiguration.b_draw_skybox;
+   trace "[...] b_draw_skybox is now "+RacerConfiguration.b_draw_skybox;
+   if(RacerConfiguration.b_draw_skybox)
+   {
+      track.fog_r = sky_fog_r;
+      track.fog_g = sky_fog_g;
+      track.fog_b = sky_fog_b;
+   }
+   else
+   {
+      track.fog_r = 0x6d/255.0; // Match glClearColor
+      track.fog_g = 0x6c/255.0;
+      track.fog_b = 0x7a/255.0;
+   }
+}
+
+function onKeyboard(Key _k) {
+   if(!OSD.OnKey(_k))
+   {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(_k.mod & VMOD_LSHIFT)
+            {
+               SDL.exitEventLoop();
+            }
+            break;
+
+         // case VKEY_HOME:
+         //    RacerConfiguration.ToggleTextureAnimDir();
+         //    return true;
+            
+         case 's':
+            if(VMOD_LSHIFT == _k.mod)
+            {
+               RacerConfiguration.ToggleShadows();
+               onOpen();
+               return true;
+            }
+            return false;
+
+         case 'f':
+            RacerConfiguration.ToggleFog();
+            return true;
+
+         case '0':
+            RacerConfiguration.ToggleTriOptimizer();
+            track.updateTrack();
+            return true;
+
+         case '9':
+            RacerConfiguration.ToggleJoyAxisAccel();
+            return true;
+
+         case 'q': // texture filter / draw mode (none, points, flat, textured)
+            if(_k.mod & VMOD_LCTRL)
+            {
+               RacerConfiguration.b_texture_filter = !RacerConfiguration.b_texture_filter;
+               onOpen();
+            }
+            else if(_k.mod & VMOD_LSHIFT)
+            {
+               ToggleSkyBox();
+            }
+            else
+            {
+               if(RacerConfiguration.b_debug_keys)
+               {
+                  RacerConfiguration.NextDrawMode();
+               }
+            }
+            break;
+
+            //case VKEY_PAGEDOWN:
+         case 'y':
+            SkyBox.LoadNext();
+            onOpen();
+            return true;
+
+         // case VKEY_PAGEUP:
+         //    SkyBox.LoadPrev();
+         //    onOpen();
+         //    return true;
+
+         case 'm':
+            RacerConfiguration.ToggleMultisampling();
+            OpenWindow();
+            break;
+
+         case '7':
+            RacerConfiguration.ToggleMotionBlur();
+            onOpen();
+            return true;
+
+         case 'g':
+            RacerConfiguration.b_draw_grid = !RacerConfiguration.b_draw_grid;
+            trace "[...] b_draw_grid is now "+RacerConfiguration.b_draw_grid;
+            return true;
+
+         case VKEY_BACKSPACE:
+            Viewport.toggleFullScreen();
+            return true;
+      }
+   }
+}
+
+
+
+function onDraw() {
+
+   ////trace "xxx onDraw-------------------------------";
+   
+   float dt = FPS.precision;
+   if(dt > 1) dt = 1;
+   //trace "dt="+dt;
+   //float dt = 1.0;
+
+   OSD.OnDraw(dt);
+
+}
+
+
+function main() {
+
+   use callbacks;
+
+   OpenWindow();
+
+   FPS.tickInterval=1000.0/60;
+   FPS.limit = 60;
+
+   trace "[...] entering game.";
+   b_startup = false;
+
+   //Editor.LoadTrackCycleList(0);
+   //Editor.LoadTrack(Editor.TRACK_FILENAME);
+
+   //OSD.ShowScreen(scr_ingame);
+   OSD.ShowScreen(scr_title);
+
+   
+
+   SDL.eventLoop();
+}

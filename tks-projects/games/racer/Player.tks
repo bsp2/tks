@@ -1,0 +1,1992 @@
+
+module MPlayer;
+
+use tkmath;
+use tksdl;
+use tkopengl;
+
+namespace racer;
+
+float light_x = 400.0*0.1;
+float light_y = 15000*0.1;
+float light_z = -2400.0*0.1;
+
+float SHADOW_INF = 8000.0*0.1;
+float SHADOW_INF_SCALE = 80.1;//8000.0;
+
+// Also see <http://developer.nvidia.com/object/fast_shadow_volumes.html>
+
+FloatArray ship_verts; ship_verts.alloc(7*3); // for stencil shadows
+FloatArray obj_verts; obj_verts.alloc(3*3); // for stencil shadows
+FloatArray shadow_verts; shadow_verts.alloc(3*3);
+
+      boolean bDebugSV = 0;
+      boolean bBruteForceSV = 0;
+boolean bDrawFrontSV = 0;
+
+#define I_MRO 0
+#define I_F   1
+#define I_MLO 2
+#define I_ML  3
+#define I_MR  4
+#define I_MU  5
+#define I_MD  6
+
+// #define SHIP_NUMFACES 4
+// IntArray ship_face_conn = [ // int i1,i2,i3,nb1,nb2,nb3,isFront;
+//    // 0    1     2       3  4  5    6
+//    I_MRO, I_F,  I_MU,    8, 2, 4,   0,   // 0, top
+//    I_MU,  I_F,  I_MLO,   8, 2, 4,   0,   // 0, top
+//    I_MRO, I_MU, I_MLO,   8, 2, 4,   0,   // 0, top
+//    I_MLO, I_F,  I_MRO,   9, 0, 4,   0,   // 1, bottom
+
+//    0
+// ];
+
+
+#define SHIP_NUMFACES 10
+IntArray ship_face_conn = [ // int i1,i2,i3,nb1,nb2,nb3,isFront;
+   // 0    1     2       3  4  5    6
+   I_MRO, I_F,  I_MR,    8, 2, 4,   0,   // 0, right wing
+   I_ML,  I_F,  I_MLO,   3, 9, 5,   0,   // 1, left wing
+   I_MR,  I_F,  I_MU,    0, 3, 7,   0,   // 2, right top side
+   I_MU,  I_F,  I_ML,    2, 1, 6,   0,   // 3, left top side
+   I_MRO, I_MR, I_MD,    0, 7, 8,   0,   // 4, right back side
+   I_MD,  I_ML, I_MLO,   6, 1, 9,   0,   // 5, left back side
+   I_MD,  I_MU, I_ML,    7, 3, 5,   0,   // 6, back left
+   I_MR,  I_MU, I_MD,    2, 6, 4,   0,   // 7, back right
+   I_MD,  I_F,  I_MRO,   9, 0, 4,   0,   // 8, right bottom
+   I_MLO, I_F,  I_MD,    1, 8, 5,   0    // 9, left bottom
+];
+
+
+
+IntArray ship_edge_table; // vtx1,vtx2,tri0,tri1,tri2
+function CalcShipEdgeTable() {
+   // Note: each edge in a closed mesh has exactly two neighbour faces
+   ship_edge_table.empty();
+   // Insert unique edges
+   int off = 0;
+   loop(SHIP_NUMFACES)
+   {
+      int edgeIdx=0;
+      loop(3)
+      {
+         int v1 = ship_face_conn[off+(edgeIdx+0)%3];
+         int v2 = ship_face_conn[off+(edgeIdx+1)%3];
+         int eoff = 0;
+         loop(ship_edge_table.numElements/4)
+         {
+            if( ( (ship_edge_table[eoff] == v1) || (ship_edge_table[eoff+1] == v1) ) &&
+                ( (ship_edge_table[eoff] == v2) || (ship_edge_table[eoff+1] == v2) )
+                )
+            {
+               // Edge already added, update neighbour 2
+               ship_edge_table[eoff + 3] = off/7;
+               break;
+            }
+            else
+            {
+               eoff += 4;
+            }
+         }
+         if(eoff == ship_edge_table.numElements)
+         {
+            // Edge not found, add it
+            ship_edge_table.add(v1);
+            ship_edge_table.add(v2);
+            ship_edge_table.add(off/7);  // Neighbour 1
+            ship_edge_table.add(-1);     // Neighbour 2
+         }
+         edgeIdx++;
+      }
+      off += 7;
+   }
+   ////trace "[dbg] ship has "+(ship_edge_table.numElements/4)+" edges:"; //edge_table="+ship_edge_table
+//    off = 0;
+//    loop(ship_edge_table.numElements/4)
+//       {
+//          trace "[dbg]   edge "+(off/4)+": "+ship_edge_table[off+0]+" "+ship_edge_table[off+1]+" n1="+ship_edge_table[off+2]+" n2="+ship_edge_table[off+3];
+//          off += 4;
+//       }
+}
+
+CalcShipEdgeTable();
+
+
+function DrawShipShadowVolume() /*compile*/ {
+   int off;
+
+   // Draw front cap
+   glDepthFunc(GL_NEVER);//
+   off = 0;
+   loop(ship_face_conn.numElements / 7)
+   {
+      if(ship_face_conn[off+6]) // is light facing ?
+      {
+         glBegin(GL_TRIANGLES);
+         glVertex3f(ship_verts[3*ship_face_conn[off+0] + 0],
+                    ship_verts[3*ship_face_conn[off+0] + 1],
+                    ship_verts[3*ship_face_conn[off+0] + 2]);
+         glVertex3f(ship_verts[3*ship_face_conn[off+1] + 0],
+                    ship_verts[3*ship_face_conn[off+1] + 1],
+                    ship_verts[3*ship_face_conn[off+1] + 2]);
+         glVertex3f(ship_verts[3*ship_face_conn[off+2] + 0],
+                    ship_verts[3*ship_face_conn[off+2] + 1],
+                    ship_verts[3*ship_face_conn[off+2] + 2]);
+         glEnd();
+      }
+      off += 7;
+   }
+   glDepthFunc(GL_LESS);
+
+//    // Draw back cap
+//    off = 0;
+//    loop(ship_face_conn.numElements / 7)
+//    {
+//       if(ship_face_conn[off+6]) // is light facing ?
+//       {
+//          float vx, vy, vz;
+//          glBegin(GL_TRIANGLES);
+//          vx = ship_verts[3*ship_face_conn[off+0] + 0];
+//          vy = ship_verts[3*ship_face_conn[off+0] + 1];
+//          vz = ship_verts[3*ship_face_conn[off+0] + 2];
+//          glVertex3f(vx + (vx - light_x) * SHADOW_INF_SCALE,
+//                     vy + (vy - light_y) * SHADOW_INF_SCALE,
+//                     vz + (vz - light_z) * SHADOW_INF_SCALE
+//                     );
+
+//          vx = ship_verts[3*ship_face_conn[off+0] + 0];
+//          vy = ship_verts[3*ship_face_conn[off+0] + 1];
+//          vz = ship_verts[3*ship_face_conn[off+0] + 2];
+//          glVertex3f(vx + (vx - light_x) * SHADOW_INF_SCALE,
+//                     vy + (vy - light_y) * SHADOW_INF_SCALE,
+//                     vz + (vz - light_z) * SHADOW_INF_SCALE
+//                     );
+
+//          vx = ship_verts[3*ship_face_conn[off+0] + 0];
+//          vy = ship_verts[3*ship_face_conn[off+0] + 1];
+//          vz = ship_verts[3*ship_face_conn[off+0] + 2];
+//          glVertex3f(vx + (vx - light_x) * SHADOW_INF_SCALE,
+//                     vy + (vy - light_y) * SHADOW_INF_SCALE,
+//                     vz + (vz - light_z) * SHADOW_INF_SCALE
+//                     );
+
+//          glEnd();
+//       }
+//       off += 7;
+//    }
+
+   // Draw silhouette..
+   off = 0;
+   loop(ship_edge_table.numElements/4) // Loop edges
+   {
+      int tri1 = ship_edge_table[off + 2];
+      int tri2 = ship_edge_table[off + 3];
+      if(ship_face_conn[tri1*7+6] ^ ship_face_conn[tri2*7+6]) // is possible silhouette edge ?
+      {
+         int v1Off, v2Off;
+         if(ship_face_conn[tri1*7+6]) // is lightfacing ?
+         {
+            v1Off = 3 * ship_edge_table[off + 0];
+            v2Off = 3 * ship_edge_table[off + 1];
+         }
+         else
+         {
+            v1Off = 3 * ship_edge_table[off + 1]; // Reverse indices
+            v2Off = 3 * ship_edge_table[off + 0];
+         }
+         float v1x = ship_verts[v1Off + 0];
+         float v1y = ship_verts[v1Off + 1];
+         float v1z = ship_verts[v1Off + 2];
+         float v2x = ship_verts[v2Off + 0];
+         float v2y = ship_verts[v2Off + 1];
+         float v2z = ship_verts[v2Off + 2];
+         float v3x = v1x + (v1x - light_x) * SHADOW_INF_SCALE;
+         float v3y = v1y + (v1y - light_y) * SHADOW_INF_SCALE;
+         float v3z = v1z + (v1z - light_z) * SHADOW_INF_SCALE;
+         float v4x = v2x + (v2x - light_x) * SHADOW_INF_SCALE;
+         float v4y = v2y + (v2y - light_y) * SHADOW_INF_SCALE;
+         float v4z = v2z + (v2z - light_z) * SHADOW_INF_SCALE;
+         if(bDebugSV)
+         {
+            //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glEnable(GL_BLEND);
+            glShadeModel(GL_SMOOTH);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBegin(GL_TRIANGLE_STRIP);
+            glColor4f(1,0,0,0.7);
+            glVertex3f(v1x, v1y, v1z);
+            glColor4f(1,1,1,0);
+            glVertex3f(v3x, v3y, v3z);
+            glColor4f(1,1,0,0.7);
+            glVertex3f(v2x, v2y, v2z);
+            glColor4f(1,1,0,0);
+            glVertex3f(v4x, v4y, v4z);
+            glEnd();
+            glDisable(GL_BLEND);
+
+            glLineWidth(1.0);
+            zglColorARGB(#ffffffff);
+            glBegin(GL_LINES);
+            glVertex3f(v1x, v1y, v1z);
+            glVertex3f(light_x, light_y, light_z);
+
+            glVertex3f(v2x, v2y, v2z);
+            glVertex3f(light_x, light_y, light_z);
+            glEnd();
+         }
+         else
+         {
+            glBegin(GL_TRIANGLE_STRIP);
+            glVertex3f(v1x, v1y, v1z);
+            glVertex3f(v3x, v3y, v3z);
+            glVertex3f(v2x, v2y, v2z);
+            glVertex3f(v4x, v4y, v4z);
+            glEnd();
+         }
+         if(bDebugSV)
+         {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            // Draw edge
+            glLineWidth(5.0);
+            zglColorARGB(#ffff00ff);
+            glBegin(GL_LINES);
+            glVertex3f(v1x, v1y, v1z);
+            glVertex3f(v2x, v2y, v2z);
+            glEnd();
+         }
+
+      }
+      off += 4;
+   }
+}
+
+
+
+
+
+
+
+
+function UpdateShipFaceLightVis(float _rotLightX, float _rotLightY, float _rotLightZ) compile {
+   int off = 0;
+   // Normalize light vector
+   float rotLightL = 1.0 / sqrt(_rotLightX * _rotLightX + _rotLightY * _rotLightY + _rotLightZ * _rotLightZ);
+   float lnx = _rotLightX * rotLightL;
+   float lny = _rotLightY * rotLightL;
+   float lnz = _rotLightZ * rotLightL;
+   loop(SHIP_NUMFACES)
+   {
+
+      // Calculate face normal
+      int v1Off = 3 * ship_face_conn[off + 0];
+      int v2Off = 3 * ship_face_conn[off + 1];
+      int v3Off = 3 * ship_face_conn[off + 2];
+      float v1x = ship_verts[v1Off + 0] - ship_verts[v3Off + 0];
+      float v1y = ship_verts[v1Off + 1] - ship_verts[v3Off + 1];
+      float v1z = ship_verts[v1Off + 2] - ship_verts[v3Off + 2];
+      float v2x = ship_verts[v1Off + 0] - ship_verts[v2Off + 0];
+      float v2y = ship_verts[v1Off + 1] - ship_verts[v2Off + 1];
+      float v2z = ship_verts[v1Off + 2] - ship_verts[v2Off + 2];
+
+      float nx = v1y * v2z - v1z * v2y;
+      float ny = v1z * v2x - v1x * v2z;
+      float nz = v1x * v2y - v1y * v2x;
+      float nl = -1.0 / sqrt(nx*nx + ny*ny + nz*nz);
+      nx *= nl;
+      ny *= nl;
+      nz *= nl;
+
+      float ldotn = nx*lnx + ny*lny + nz*lnz;
+      ship_face_conn[off+6] = (ldotn > 0) ? 1 :0;
+//       trace "xxx face "+(off/7)+" vis="+ship_face_conn[off+6];
+//       if( (off/7) == 3)
+//       {
+//          trace "xxx     face3 ldotn="+ldotn+" acos="+acos(ldotn)*(360.0/2PI);
+//       }
+      off += 7;
+      if(bDebugSV)
+      {
+         zglColorARGB(#ff00ff00);
+         glLineWidth(2);
+         glBegin(GL_LINES);
+         v1x = ship_verts[v1Off + 0];
+         v1y = ship_verts[v1Off + 1];
+         v1z = ship_verts[v1Off + 2];
+         glVertex3f(v1x, v1y, v1z);
+         glVertex3f(v1x+nx*1.3*0.01, v1y+ny*1.3*0.01, v1z+nz*1.3*0.01);
+
+         v1x = ship_verts[v2Off + 0];
+         v1y = ship_verts[v2Off + 1];
+         v1z = ship_verts[v2Off + 2];
+         glVertex3f(v1x, v1y, v1z);
+         glVertex3f(v1x+nx*1.3*0.01, v1y+ny*1.3*0.01, v1z+nz*1.3*0.01);
+
+         v1x = ship_verts[v3Off + 0];
+         v1y = ship_verts[v3Off + 1];
+         v1z = ship_verts[v3Off + 2];
+         glVertex3f(v1x, v1y, v1z);
+         glVertex3f(v1x+nx*1.3*0.01, v1y+ny*1.3*0.01, v1z+nz*1.3*0.01);
+         glEnd();
+      }
+   }
+}
+
+
+//Texture tex_shadowmap;
+
+// also see <http://nehe.gamedev.net/data/lessons/lesson.asp?lesson=27> for more about stencil shadow silhouettes
+
+
+function CalcTriangleShadowVolume(FloatArray verts, FloatArray shVerts, int off) {
+   int doff = 0;
+   compile loop(3)
+   {
+      float tx = (light_x - verts[off+0]);
+      float ty = (light_y - verts[off+1]);
+      float tz = (light_z - verts[off+2]);
+      float tl = -SHADOW_INF / sqrt(tx*tx + ty*ty + tz*tz);
+      tx *= tl; ty *= tl; tz *= tl;
+      tx += verts[off+0];//light_x;
+      ty += verts[off+1];//light_y;
+      tz += verts[off+2];//light_z;
+      shVerts[doff+0] = tx;
+      shVerts[doff+1] = ty;
+      shVerts[doff+2] = tz;
+      off += 3;
+      doff += 3;
+   }
+}
+
+function DrawShadowVolume(FloatArray verts, FloatArray shVerts, int off) {
+    // Draw back and front cap
+    glBegin(GL_TRIANGLES);
+    glVertex3f(shVerts[off+3*0+0], shVerts[off+3*0+1], shVerts[off+3*0+2]);
+    glVertex3f(shVerts[off+3*1+0], shVerts[off+3*1+1], shVerts[off+3*1+2]);
+    glVertex3f(shVerts[off+3*2+0], shVerts[off+3*2+1], shVerts[off+3*2+2]); // back cap
+
+    glVertex3f(verts[off+3*2+0], verts[off+3*2+1], verts[off+3*2+2]);
+    glVertex3f(verts[off+3*1+0], verts[off+3*1+1], verts[off+3*1+2]);
+    glVertex3f(verts[off+3*0+0], verts[off+3*0+1], verts[off+3*0+2]); // front cap
+    glEnd();
+
+    // Draw sides of shadow frustum
+    glBegin(GL_QUADS);
+    // front
+    glVertex3f(shVerts[off+3*2+0], shVerts[off+3*2+1], shVerts[off+3*2+2]);
+    glVertex3f(verts  [off+3*2+0], verts  [off+3*2+1], verts  [off+3*2+2]);
+    glVertex3f(verts  [off+3*1+0], verts  [off+3*1+1], verts  [off+3*1+2]);
+    glVertex3f(shVerts[off+3*1+0], shVerts[off+3*1+1], shVerts[off+3*1+2]);
+
+    // left
+    glVertex3f(shVerts[off+3*1+0], shVerts[off+3*1+1], shVerts[off+3*1+2]);
+    glVertex3f(verts  [off+3*1+0], verts  [off+3*1+1], verts  [off+3*1+2]);
+    glVertex3f(verts  [off+3*0+0], verts  [off+3*0+1], verts  [off+3*0+2]);
+    glVertex3f(shVerts[off+3*0+0], shVerts[off+3*0+1], shVerts[off+3*0+2]);
+
+    // right
+    glVertex3f(shVerts[off+3*0+0], shVerts[off+3*0+1], shVerts[off+3*0+2]);
+    glVertex3f(verts  [off+3*0+0], verts  [off+3*0+1], verts  [off+3*0+2]);
+    glVertex3f(verts  [off+3*2+0], verts  [off+3*2+1], verts  [off+3*2+2]);
+    glVertex3f(shVerts[off+3*2+0], shVerts[off+3*2+1], shVerts[off+3*2+2]);
+    glEnd();
+}
+
+
+function DrawShipShadowVolumeBruteForce() {
+   // do not calc silhouette.. 3 render passes for each frickin' triangle.. :/
+   int off = 0;
+   loop(SHIP_NUMFACES) // Loop faces
+   {
+      obj_verts[3*0 +0] = ship_verts[3*ship_face_conn[off + 0] + 0];
+      obj_verts[3*0 +1] = ship_verts[3*ship_face_conn[off + 0] + 1];
+      obj_verts[3*0 +2] = ship_verts[3*ship_face_conn[off + 0] + 2];
+
+      obj_verts[3*1 +0] = ship_verts[3*ship_face_conn[off + 1] + 0];
+      obj_verts[3*1 +1] = ship_verts[3*ship_face_conn[off + 1] + 1];
+      obj_verts[3*1 +2] = ship_verts[3*ship_face_conn[off + 1] + 2];
+
+      obj_verts[3*2 +0] = ship_verts[3*ship_face_conn[off + 2] + 0];
+      obj_verts[3*2 +1] = ship_verts[3*ship_face_conn[off + 2] + 1];
+      obj_verts[3*2 +2] = ship_verts[3*ship_face_conn[off + 2] + 2];
+
+      CalcTriangleShadowVolume(obj_verts, shadow_verts, 3*0);
+
+      glEnable(GL_CULL_FACE);
+      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      glDepthMask(GL_FALSE);
+      glEnable(GL_STENCIL_TEST);
+      glEnable(GL_POLYGON_OFFSET_FILL);
+      glPolygonOffset(0.0f, 100.0f);
+      
+      glCullFace(GL_FRONT);
+      glStencilFunc(GL_ALWAYS, 0x0, 0xff);
+      glStencilOp(GL_KEEP, GL_INCR, GL_KEEP);
+      DrawShadowVolume(obj_verts, shadow_verts, 0);
+
+      glCullFace(GL_BACK);
+      glStencilFunc(GL_ALWAYS, 0, ~0);
+      glStencilOp(GL_KEEP, GL_DECR, GL_KEEP);
+      DrawShadowVolume(obj_verts, shadow_verts, 0);
+
+      // --- Shadow PASS 3: draw actual shadow
+      glDisable(GL_POLYGON_OFFSET_FILL);
+      glDisable(GL_CULL_FACE);
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      glDepthMask(GL_TRUE);
+      glStencilFunc(GL_NOTEQUAL, 0, ~0);
+      glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
+      glDisable(GL_DEPTH_TEST);
+
+      glColor4f(0,0,0,0.08);
+      //glColor4f(1,0,0,0.45);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glMatrixMode(GL_PROJECTION);
+      glPushMatrix();
+      zglInitOrtho(1, -1);
+      glMatrixMode(GL_MODELVIEW);
+      glPushMatrix();
+      glLoadIdentity();
+      glBegin(GL_QUADS);
+      glVertex2f( 1,-1);
+      glVertex2f(-1,-1);
+      glVertex2f(-1, 1);
+      glVertex2f( 1, 1);
+      glEnd();
+      glPopMatrix();
+      glMatrixMode(GL_PROJECTION);
+      glPopMatrix();
+      glMatrixMode(GL_MODELVIEW);
+      glDisable(GL_BLEND);
+      glDisable(GL_STENCIL_TEST);
+      glEnable(GL_DEPTH_TEST);
+
+      off += 7;
+   }
+}
+
+
+
+class Player {
+   define float RADIUS = 1.23*1.5*0.01; // 1.23
+   define float SPRINGDIST = 5*0.01;
+   define float FRICTION = 0.99225;//0.99175;//0.994; //0.992;
+   define float GRAVITY = 0.04*0.01; // low gravity
+   define float MAXSPRINGGRAVITY = 3.0*0.01;
+   define float ACCELERATION = 0.0045*1.2*1.2;
+   //define float BOOSTFACTOR = 1.2;
+   define float BOOSTFACTOR = 1.12;
+   //define float BRAKESCALE = 0.997;
+   define float BRAKESCALE = 0.987;
+   define float HARDBRAKESCALE = 0.979;
+   //define float STRAFESPEED = 0.00235; // 0.00235
+   define float STRAFESPEED = 0.00785; // 0.00235
+   //define float STRAFEBRAKE = 0.99936989475; // 0.996989475
+   define float STRAFEBRAKE = 0.99036989475; // 0.996989475
+   define float STEERSPEED = 0.00235;
+   define float STEERSPEEDSCALE = 1.247;//2.54;
+   define float MAXSPEED = 7*0.01; // for physics (normalized speed)
+   define float SPEEDVIEWSCL = 0.4; // for graphics (current speed)
+   define float FATAL_FALL_VECY = -4*3*3 * 0.01;
+   //define float FATAL_POSY = -4000 * 0.01;
+   define float FATAL_POSY = -2500 * 0.01;
+   define float SHIP_STEER_ROT = 0.04;
+   define float SHIP_STEER_ROT_DAMP = 0.94;
+
+   PlayerSphere coll_left;
+   PlayerSphere coll_right;
+   PlayerSphere coll_front;
+
+   define float SIDE_X = 3.3 * 0.01;
+   define float FRONT_Z = 9.0 * 0.01;
+   define float BACK_Z = 3.0 * 0.01;
+
+   // for verlet-integrated "air-cushion" spring
+   float clx, crx, cfx;
+   float cly, cry, cfy;
+   float clz, crz, cfz;
+   float clx_last, crx_last, cfx_last;
+   float cly_last, cry_last, cfy_last;
+   float clz_last, crz_last, cfz_last;
+   float cld, cfd, crd;
+   float cld_last, cfd_last, crd_last;
+
+   Vector4f cam_eye;
+   Vector4f cam_center;
+   Vector4f cam_up;
+   Vector4f phy_up;
+   boolean b_reset_cam_interpol;
+   float eye_dist;
+
+   boolean b_fall_to_death = false;
+
+   float dir_x;
+   float dir_z;
+   float strafe_l;
+   float strafe_r;
+   boolean b_boost;
+
+   float last_mx;
+   float last_my;
+   float last_mz;
+   float speed; // 1=max, 0=slow
+
+   float nose_y;
+
+   float ship_rot;
+
+   boolean b_collision; // true=collision in last "tick"
+
+   boolean b_key_up;
+   boolean b_key_up_alt;
+   boolean b_key_down;
+   boolean b_key_down_alt;
+
+   public method setPositionAndDirection(Vector3f _pos, _dir) {
+      if(_dir.abs > 0)
+      {
+         _dir.unit();
+      }
+      else
+      {
+         _dir.init(0,0,1);
+      }
+
+      setPosition(_pos.x, _pos.y, _pos.z);
+
+      Vector3f up; up.init(0,1,0);
+      Vector3f r;
+      _dir.cross(up) => r;
+
+      coll_left.setPosition(_pos.x-SIDE_X*r.x, _pos.y, _pos.z-SIDE_X*r.z);
+      coll_right.setPosition(_pos.x+SIDE_X*r.x, _pos.y, _pos.z+SIDE_X*r.z);
+      coll_front.setPosition(_pos.x+FRONT_Z*_dir.x, _pos.y, _pos.z+FRONT_Z*_dir.z);
+
+      trace "[...] Player::setPositionAndDirection: set to pos="+_pos+" dir="+_dir;
+   }
+
+   public method setPosition(float _x, _y, _z) {
+      coll_left.setPosition(_x+SIDE_X, _y, _z+BACK_Z);
+      coll_right.setPosition(_x-SIDE_X, _y, _z+BACK_Z);
+      coll_front.setPosition(_x, _y, _z+FRONT_Z);
+
+      b_reset_cam_interpol = true;
+      resetSprings();
+      last_mx = _x;
+      last_my = _y;
+      last_mz = _z;
+   }
+
+   public method resetSprings() {
+      clx = coll_left.x;
+      cly = coll_left.y;
+      clz = coll_left.z;
+      crx = coll_right.x;
+      cry = coll_right.y;
+      crz = coll_right.z;
+      cfx = coll_front.x;
+      cfy = coll_front.y;
+      cfz = coll_front.z;
+      clx_last = clx;
+      cly_last = cly;
+      clz_last = clz;
+      crx_last = crx;
+      cry_last = cry;
+      crz_last = crz;
+      cfx_last = cfx;
+      cfy_last = cfy;
+      cfz_last = cfz;
+      cfd      = SPRINGDIST;
+      cfd_last = SPRINGDIST;
+      cld      = SPRINGDIST;
+      cld_last = SPRINGDIST;
+      crd      = SPRINGDIST;
+      crd_last = SPRINGDIST;
+   }
+
+   public method resetForces() {
+      coll_left.resetForces();
+      coll_right.resetForces();
+      coll_front.resetForces();
+      b_reset_cam_interpol = true;
+   }
+
+   public method reset() {
+      resetForces();
+      b_reset_cam_interpol = true;
+      
+      b_fall_to_death = false;
+      
+      RacerConfiguration.b_halt_collision = false;
+      
+      ship_rot = 0;
+      dir_x = 0;
+      dir_z = 0;
+      strafe_l = 0;
+      strafe_r = 0;
+      b_boost = 0;
+      nose_y = 0;
+      b_collision = false;
+      
+      speed = 0;
+      eye_dist = 3;
+
+      b_key_up       = false;
+      b_key_up_alt   = false;
+      b_key_down     = false;
+      b_key_down_alt = false;
+   }
+
+   public method flip() {
+      PlayerSphere t <= deref coll_right;
+      coll_right <= deref coll_left;
+      coll_left <= deref t;
+   }
+
+   public method calcBrakeScaleDt(float _scale, float _dt) {
+      float plySpeed = speed;
+      if(plySpeed > 1) plySpeed = 1;
+      return mathPowerf(_scale - (0.03 * (1.0-plySpeed)), _dt);
+   }
+
+   public method tick(float dt) compile {
+
+      if(RacerConfiguration.b_springs)
+      {
+         // phase out rotation when flying
+         if(!b_collision)
+         {
+            float t = coll_right.y - coll_left.y;
+            float tDt = dt * 0.241791;
+            coll_left.y += tDt * t;
+            coll_right.y -= tDt * t;
+         }
+      }
+
+      float mx = (coll_right.x + coll_left.x) * 0.5;
+      float my = (coll_right.y + coll_left.y) * 0.5;
+      float mz = (coll_right.z + coll_left.z) * 0.5;
+
+      float dx = coll_front.x - mx;
+      float dy = coll_front.y - my;
+      float dz = coll_front.z - mz;
+      float l = sqrt(dx*dx + dy*dy + dz*dz);
+
+      float upx = phy_up.x;
+      float upy = phy_up.y;
+      float upz = phy_up.z;
+      float upl = 1.0 / sqrt(upx*upx + upy*upy + upz*upz);
+      upx *= upl;
+      upy *= upl;
+      upz *= upl;
+
+      float hx = dy * upz - dz * upy;
+      float hy = dz * upx - dx * upz;
+      float hz = dx * upy - dy * upx;
+
+      if(RacerConfiguration.b_draw_forces)
+      {
+         zglColorARGB(#ffff0000);
+         glBegin(GL_LINES);
+         glVertex3f(mx, my+3, mz);
+         glVertex3f(coll_front.x, coll_front.y+3*0.01, coll_front.z);
+         glEnd();
+
+         zglColorARGB(#ff00ff00);
+         glBegin(GL_LINES);
+         glVertex3f(mx, my+3*0.01, mz);
+         glVertex3f(mx+hx, my+3*0.01+hy, mz+hz);
+         glEnd();
+      }
+
+      //trace "h=("+hx+";"+hy+";"+hz+") dir_x="+dir_x;
+
+      float plySpeed = speed;
+      if(RacerConfiguration.b_wiimote)
+         if(plySpeed > 3) plySpeed = 3;
+         else
+         if(plySpeed > 6) plySpeed = 6;
+      float steerDt = dt * dir_x * STEERSPEED * (1 + plySpeed*STEERSPEEDSCALE);
+      if(RacerConfiguration.b_wiimote)
+         steerDt *= 2;
+      coll_front.vecx += steerDt * hx;
+      coll_front.vecy += steerDt * hy;
+      coll_front.vecz += steerDt * hz;
+
+
+      ship_rot *= mathPowerf(SHIP_STEER_ROT_DAMP, dt);
+      if(RacerConfiguration.b_wiimote)
+         ship_rot += SHIP_STEER_ROT * dir_x * dt;
+      else
+         ship_rot += SHIP_STEER_ROT * dir_x * dt;
+
+
+      if(dir_z < 0)
+      {
+         // Accelerate
+         float accelDt = ACCELERATION;
+         float dirZ;
+         if((b_boost || RacerConfiguration.b_always_boost) && RacerConfiguration.b_allow_boost)
+         {
+            accelDt *= BOOSTFACTOR;
+            dirZ = -0.5 + dir_z*0.5;
+         }
+         else
+         {
+            dirZ = dir_z;
+         }
+         accelDt = dt * dirZ * accelDt;
+         coll_front.vecx -= accelDt * dx;
+         coll_front.vecy -= accelDt * dy;
+         coll_front.vecz -= accelDt * dz;
+      }
+      else if(dir_z > 0)
+      {
+         // Brake
+         float brakeDt = calcBrakeScaleDt(BRAKESCALE, dt);
+         coll_front.vecx *= brakeDt;
+         coll_front.vecy *= brakeDt;
+         coll_front.vecz *= brakeDt;
+      }
+
+      float strafeBrakeL = 1;
+      float strafeBrakeR = 1;
+      float strafeSpeed = dt * STRAFESPEED;
+      float strafeDt = 0;
+      
+      if( (strafe_l > 0) && (strafe_r > 0) )
+      {
+         // hard brake
+         strafeBrakeL = calcBrakeScaleDt(HARDBRAKESCALE, dt);
+         strafeBrakeR = strafeBrakeL;
+      }
+      else if(strafe_l > 0)
+      {
+         // strafe left
+         strafeBrakeL = calcBrakeScaleDt(STRAFEBRAKE, dt * strafe_l);
+         strafeDt = strafeSpeed * strafe_l;
+      }
+      else if(strafe_r > 0)
+      {
+         // strafe right
+         strafeBrakeR = calcBrakeScaleDt(STRAFEBRAKE, dt * strafe_r);
+         strafeDt = -strafeSpeed * strafe_r;
+      }
+      coll_left.vecx *= strafeBrakeL;
+      coll_left.vecy *= strafeBrakeL;
+      coll_left.vecz *= strafeBrakeL;
+      coll_right.vecx *= strafeBrakeR;
+      coll_right.vecy *= strafeBrakeR;
+      coll_right.vecz *= strafeBrakeR;
+      coll_front.vecx *= (strafeBrakeR + strafeBrakeL) * 0.5;
+      coll_front.vecy *= (strafeBrakeR + strafeBrakeL) * 0.5;
+      coll_front.vecz *= (strafeBrakeR + strafeBrakeL) * 0.5;
+      coll_left.vecx += strafeDt * hx;
+      coll_left.vecy += strafeDt * hy;
+      coll_left.vecz += strafeDt * hz;
+      coll_right.vecx += strafeDt * hx;
+      coll_right.vecy += strafeDt * hy;
+      coll_right.vecz += strafeDt * hz;
+
+      // Nose up/down
+      coll_front.vecy += nose_y * dt * (0.03 * 0.01) * 2;
+
+      coll_left.tick(dt);
+      coll_right.tick(dt);
+      coll_front.tick(dt);
+
+      // workaround "nose" bug..
+      if(coll_left.vecy < FATAL_FALL_VECY)
+      {
+         if(!b_fall_to_death)
+         {
+            trace "fall2death left";
+            b_fall_to_death = true;
+            coll_left.vecy *= 0.1;
+            coll_right.y = coll_left.y - 20 * 0.01;
+            coll_front.y = coll_left.y - 20 * 0.01;
+         }
+      }
+      if(coll_right.vecy < FATAL_FALL_VECY)
+      {
+         if(!b_fall_to_death)
+         {
+            trace "fall2death right";
+            b_fall_to_death = true;
+            coll_right.vecy *= 0.1;
+            coll_right.y = coll_right.y - 20 * 0.01;
+            coll_front.y = coll_right.y - 20 * 0.01;
+         }
+      }
+      if(coll_front.vecy < FATAL_FALL_VECY)
+      {
+         if(!b_fall_to_death)
+         {
+            trace "fall2death front";
+            b_fall_to_death = true;
+            coll_front.vecy *= 0.1;
+            coll_right.y = coll_front.y - 20 * 0.01;
+            coll_front.y = coll_front.y - 20 * 0.01;
+         }
+      }
+
+      if( (coll_front.y < FATAL_POSY) ||
+          (coll_left.y  < FATAL_POSY) ||
+          (coll_right.y < FATAL_POSY))
+      {
+         if(RacerConfiguration.b_replay_fail)
+         {
+            OSD.ShowScreen(scr_map_failed);
+         }
+         else
+         {
+            RacerConfiguration.race_millisec = RacerConfiguration.race_millisec_hiscore;
+            OSD.ShowScreen(scr_map_finish);
+         }
+      }
+
+      // apply spring to simulate air cushion
+      if(RacerConfiguration.b_springs)
+      {
+         tickSprings(dt);
+      }
+      else
+      {
+         clx = coll_left.x;
+         cly = coll_left.y;
+         clz = coll_left.z;
+         crx = coll_right.x;
+         cry = coll_right.y;
+         crz = coll_right.z;
+         cfx = coll_front.x;
+         cfy = coll_front.y;
+         cfz = coll_front.z;
+         clx_last = clx;
+         cly_last = cly;
+         clz_last = clz;
+         crx_last = crx;
+         cry_last = cry;
+         crz_last = crz;
+         cfx_last = cfx;
+         cfy_last = cfy;
+         cfz_last = cfz;
+      }
+
+      tickConstraints(dt);
+      //tickConstraintsOLD(dt*0.1);
+
+      // speed has an impact on steering and bounciness
+      //speed = sqrt(coll_front.vecx*coll_front.vecx + coll_front.vecy*coll_front.vecy + coll_front.vecz*coll_front.vecz);
+      float spdx = (mx - last_mx);
+      float spdy = (my - last_my);
+      float spdz = (mz - last_mz);
+      float oldSpeed = speed;
+      speed = sqrt(spdx*spdx + spdy*spdy + spdz*spdz);
+      ////trace "xxx speed = "+ speed;
+      float spdipol = dt * 0.1;
+      speed = (oldSpeed * (1-spdipol)) + ((speed / MAXSPEED) * 16)*spdipol;
+      last_mx = mx;
+      last_my = my;
+      last_mz = mz;
+   }
+
+   protected method tickSprings(float dt) compile {
+      float d;
+      float q;
+      float DIST = SPRINGDIST;
+
+      float IPOL  = 0.5535; // Verlet amount for "distance" springs
+      float IPOL2 = 0.0071385; // Force amount to set distance to real distance (lerp)
+      float IPOL4 = 0.015; // Force amount for moving spring distance to ideal distance (verlet)
+      float IPOL3 = 0.02 / 0.125; // Force amount for moving center to ideal position (lerp)
+
+      // Do verlet integration
+      float oldcfd = cfd;
+      float oldcld = cld;
+      float oldcrd = crd;
+      float ipolDt = mathPowerf(IPOL, dt);  // ORIGINAL
+      ////float ipolDt = mathPowerf(IPOL,0.125) * dt;
+      cfd += (oldcfd - cfd_last) * ipolDt;
+      cld += (oldcld - cld_last) * ipolDt;
+      crd += (oldcrd - crd_last) * ipolDt;
+      cfd_last = oldcfd;
+      cld_last = oldcld;
+      crd_last = oldcrd;
+
+      float rcfx = cfx; // should actually be coll_front/left/right but looks better this way ;)
+      float rcfy = cfy;
+      float rcfz = cfz;
+      float rclx = clx;
+      float rcly = cly;
+      float rclz = clz;
+      float rcrx = crx;
+      float rcry = cry;
+      float rcrz = crz;
+
+//       float rcfx = coll_front.x; // should actually be coll_front/left/right but looks better this way ;)
+//       float rcfy = coll_front.y;
+//       float rcfz = coll_front.z;
+//       float rclx = coll_left.x;
+//       float rcly = coll_left.y;
+//       float rclz = coll_left.z;
+//       float rcrx = coll_right.x;
+//       float rcry = coll_right.y;
+//       float rcrz = coll_right.z;
+
+      // Calc normalized up vector of plane spanned by collision sphere centers
+      float urx = (rcfx - rcrx);
+      float ury = (rcfy - rcry);
+      float urz = (rcfz - rcrz);
+      float ulx = (rcfx - rclx);
+      float uly = (rcfy - rcly);
+      float ulz = (rcfz - rclz);
+      float upx = uly * urz - ulz * ury;
+      float upy = ulz * urx - ulx * urz;
+      float upz = ulx * ury - uly * urx;
+      float upl = 1.0 / sqrt(upx*upx + upy*upy + upz*upz);
+      upx *= upl;
+      upy *= upl;
+      upz *= upl;
+      if(RacerConfiguration.b_draw_debug_sphere)
+      {
+         zglColorARGB(#ffff0000);
+         glBegin(GL_LINES);
+         glVertex3f(coll_front.x, coll_front.y, coll_front.z);
+         glVertex3f(coll_front.x + upx * (10 * 0.01), coll_front.y + upy * (10 * 0.01), coll_front.z + upz * (10 * 0.01));
+         
+         glVertex3f(coll_left.x, coll_left.y, coll_left.z);
+         glVertex3f(coll_left.x + upx * (10 * 0.01), coll_left.y + upy * (10 * 0.01), coll_left.z + upz * (10 * 0.01));
+         
+         glVertex3f(coll_right.x, coll_right.y, coll_right.z);
+         glVertex3f(coll_right.x + upx * (10 * 0.01), coll_right.y + upy * (10 * 0.01), coll_right.z + upz * (10 * 0.01));
+         glEnd();
+      }
+
+      // Move points towards their ideal plane distance
+      float ix, iy, iz;
+      float px, py, pz;
+      float ipol2Dt = IPOL2 * dt;
+      float ipol3Dt = IPOL3 * dt;////mathPowerf(IPOL3, dt);
+      //trace "dt="+dt;
+      //ipol3Dt = 0.02;
+      float ipol4Dt = IPOL4 * dt;
+      float dx, dy, dz;
+      float dDt;
+
+      // Left
+      ix = (coll_left.x + upx * DIST);
+      iy = (coll_left.y + upy * DIST);
+      iz = (coll_left.z + upz * DIST);
+      d = (upx * (clx - coll_left.x) + upy * (cly - coll_left.y) + upz * (clz - coll_left.z));// / DIST;
+      cld = (cld * (1-ipol2Dt)) + (d * ipol2Dt) + (SPRINGDIST - d) * ipol4Dt;
+      dx = coll_left.x + upx * cld; // project onto spring joint
+      dy = coll_left.y + upy * cld;
+      dz = coll_left.z + upz * cld;
+      // clx = (clx * (1-ipol3Dt)) + dx * ipol3Dt;
+      // cly = (cly * (1-ipol3Dt)) + dy * ipol3Dt;
+      // clz = (clz * (1-ipol3Dt)) + dz * ipol3Dt;
+      clx = clx + (dx - clx) * ipol3Dt;
+      cly = cly + (dy - cly) * ipol3Dt;
+      clz = clz + (dz - clz) * ipol3Dt;
+
+      // Right
+      ix = (coll_right.x + upx * DIST);
+      iy = (coll_right.y + upy * DIST);
+      iz = (coll_right.z + upz * DIST);
+      d = (upx * (crx - coll_right.x) + upy * (cry - coll_right.y) + upz * (crz - coll_right.z));// / DIST;
+      crd = (crd * (1-ipol2Dt)) + (d * ipol2Dt) + (SPRINGDIST - d) * ipol4Dt;
+      dx = coll_right.x + upx * crd; // project onto spring joint
+      dy = coll_right.y + upy * crd;
+      dz = coll_right.z + upz * crd;
+      // crx = (crx * (1-ipol3Dt)) + dx * ipol3Dt;
+      // cry = (cry * (1-ipol3Dt)) + dy * ipol3Dt;
+      // crz = (crz * (1-ipol3Dt)) + dz * ipol3Dt;
+      crx = crx + (dx - crx) * ipol3Dt;
+      cry = cry + (dy - cry) * ipol3Dt;
+      crz = crz + (dz - crz) * ipol3Dt;
+
+      // Front
+      ix = (coll_front.x + upx * DIST);
+      iy = (coll_front.y + upy * DIST);
+      iz = (coll_front.z + upz * DIST);
+      d = (upx * (cfx - coll_front.x) + upy * (cfy - coll_front.y) + upz * (cfz - coll_front.z));// / DIST;
+      cfd = (cfd * (1-ipol2Dt)) + (d * ipol2Dt) + (SPRINGDIST - d) * ipol4Dt;
+      dx = coll_front.x + upx * cfd; // project onto spring joint
+      dy = coll_front.y + upy * cfd;
+      dz = coll_front.z + upz * cfd;
+      // cfx = (cfx * (1-ipol3Dt)) + dx * ipol3Dt;
+      // cfy = (cfy * (1-ipol3Dt)) + dy * ipol3Dt;
+      // cfz = (cfz * (1-ipol3Dt)) + dz * ipol3Dt;
+      cfx = cfx + (dx - cfx) * ipol3Dt;
+      cfy = cfy + (dy - cfy) * ipol3Dt;
+      cfz = cfz + (dz - cfz) * ipol3Dt;
+
+      cfy += coll_front.spring_vecy * dt;
+      cly += coll_left .spring_vecy * dt;
+      cry += coll_right.spring_vecy * dt;
+   }
+
+   protected method tickConstraints(float dt) compile {
+      float interpol = 0.86 * dt;
+
+      // Calc center point between left and right vertex
+      float mx = (coll_left.x + coll_right.x) * 0.5;
+      float my = (coll_left.y + coll_right.y) * 0.5;
+      float mz = (coll_left.z + coll_right.z) * 0.5;
+
+      // Calc direction vector
+      float dx = 100 * (coll_front.x - mx);
+      float dy = 100 * (coll_front.y - my);
+      float dz = 100 * (coll_front.z - mz);
+      // float l = sqrt(dx*dx + dy*dy + dz*dz);
+      // dx *= 1.0 / l;
+      // dy *= 1.0 / l;
+      // dz *= 1.0 / l;
+      float l = 1.0 / sqrt(dx*dx + dy*dy + dz*dz);
+      dx *= l;
+      dy *= l;
+      dz *= l;
+
+      // Calc vector that is perpendicular to direction/up plane
+      float upx = 100 * phy_up.x;
+      float upy = 100 * phy_up.y;
+      float upz = 100 * phy_up.z;
+      float upl = 1.0f / sqrt(upx*upx + upy*upy + upz*upz);
+      upx *= upl;
+      upy *= upl;
+      upz *= upl;
+      float hx = dy * upz - dz * upy;
+      float hy = dz * upx - dx * upz;
+      float hz = dx * upy - dy * upx;
+
+      float ix, iy, iz;
+
+//       // Construct ideal midpoint
+//       mx = coll_front.x - dx * (FRONT_Z-BACK_Z);
+//       my = coll_front.y - dy * (FRONT_Z-BACK_Z);
+//       mz = coll_front.z - dz * (FRONT_Z-BACK_Z);
+
+      // Construct ideal midpoint
+      float imx = (coll_front.x - dx * (FRONT_Z-BACK_Z)) * 0.5 + mx * 0.5;
+      float imy = (coll_front.y - dy * (FRONT_Z-BACK_Z)) * 0.5 + my * 0.5;
+      float imz = (coll_front.z - dz * (FRONT_Z-BACK_Z)) * 0.5 + mz * 0.5;
+
+      // Construct ideal front point
+      if(!coll_front.b_last_tick_collision)
+      {
+         ix = imx + dx * (FRONT_Z-BACK_Z);
+         iy = imy + dy * (FRONT_Z-BACK_Z);
+         iz = imz + dz * (FRONT_Z-BACK_Z);
+         coll_front.x = coll_front.x*(1-interpol) + ix * interpol;
+         coll_front.y = coll_front.y*(1-interpol) + iy * interpol;
+         coll_front.z = coll_front.z*(1-interpol) + iz * interpol;
+      }
+
+      // Construct "ideal" coll_left
+      if(!coll_left.b_last_tick_collision)
+      {
+         ix = imx - SIDE_X * hx;
+         iy = imy - SIDE_X * hy;
+         iz = imz - SIDE_X * hz;
+         coll_left.x = coll_left.x*(1-interpol) + ix * interpol;
+         coll_left.y = coll_left.y*(1-interpol) + iy * interpol;
+         coll_left.z = coll_left.z*(1-interpol) + iz * interpol;
+      }
+         
+      // Construct "ideal" coll_rightleft
+      if(!coll_right.b_last_tick_collision)
+      {
+         ix = imx + SIDE_X * hx;
+         iy = imy + SIDE_X * hy;
+         iz = imz + SIDE_X * hz;
+         coll_right.x = coll_right.x*(1-interpol) + ix * interpol;
+         coll_right.y = coll_right.y*(1-interpol) + iy * interpol;
+         coll_right.z = coll_right.z*(1-interpol) + iz * interpol;
+      }
+
+   }
+
+
+   protected method tickConstraintsOLD(float dt) {
+      float interpol = 0.86 * dt;
+   
+      // Apply constraints:
+
+      float nx, ny, nz;
+
+      // left<->right
+      float dx = coll_right.x - coll_left.x;
+      float dy = coll_right.y - coll_left.y;
+      float dz = coll_right.z - coll_left.z;
+      float l = sqrt(dx*dx + dy*dy + dz*dz);
+      float obl;
+      ////trace "l left<->right = " + l;
+      if( (l != 6) || ( (dx<0) ^ (dy<0) ^ (dz<0)) )
+      {
+         obl = 6.0 / l;
+         // obl = 1.0 / l;
+         // // nx = dx / l;
+         // // ny = dy / l;
+         // // nz = dz / l;
+         // nx = dx * obl;
+         // ny = dy * obl;
+         // nz = dz * obl;
+         // dx = nx * 6;
+         // dy = ny * 6;
+         // dz = nz * 6;
+         dx *= obl;
+         dy *= obl;
+         dz *= obl;
+         // coll_left.x = coll_left.x*(1-interpol) + ((coll_right.x - dx) * interpol);
+         // coll_left.y = coll_left.y*(1-interpol) + ((coll_right.y - dy) * interpol);
+         // coll_left.z = coll_left.z*(1-interpol) + ((coll_right.z - dz) * interpol);
+         coll_left.x = coll_left.x + ((coll_right.x - dx) - coll_left.x) * interpol;
+         coll_left.y = coll_left.y + ((coll_right.y - dy) - coll_left.y) * interpol;
+         coll_left.z = coll_left.z + ((coll_right.z - dz) - coll_left.z) * interpol;
+
+         // coll_right.x = coll_right.x*(1-interpol) + ((coll_left.x + dx) * interpol);
+         // coll_right.y = coll_right.y*(1-interpol) + ((coll_left.y + dy) * interpol);
+         // coll_right.z = coll_right.z*(1-interpol) + ((coll_left.z + dz) * interpol);
+         coll_right.x = coll_right.x + ((coll_left.x + dx) - coll_right.x) * interpol;
+         coll_right.y = coll_right.y + ((coll_left.y + dy) - coll_right.y) * interpol;
+         coll_right.z = coll_right.z + ((coll_left.z + dz) - coll_right.z) * interpol;
+      }
+
+      // left<->front
+      dx = coll_front.x - coll_left.x;
+      dy = coll_front.y - coll_left.y;
+      dz = coll_front.z - coll_left.z;
+      l = sqrt(dx*dx + dy*dy + dz*dz);
+      ////trace "l left<->front = " + l;
+      if(l != 10)
+      {
+         obl = 10.0 / l;
+         // obl = 1.0 / l;
+         // // nx = dx / l;
+         // // ny = dy / l;
+         // // nz = dz / l;
+         // nx = dx * obl;
+         // ny = dy * obl;
+         // nz = dz * obl;
+         // dx = nx * 10;
+         // dy = ny * 10;
+         // dz = nz * 10;
+         dx *= obl;
+         dy *= obl;
+         dz *= obl;
+         // coll_left.x = coll_left.x*(1-interpol) + ((coll_front.x - dx) * interpol);
+         // coll_left.y = coll_left.y*(1-interpol) + ((coll_front.y - dy) * interpol);
+         // coll_left.z = coll_left.z*(1-interpol) + ((coll_front.z - dz) * interpol);
+         coll_left.x = coll_left.x + ((coll_front.x - dx) - coll_left.x) * interpol;
+         coll_left.y = coll_left.y + ((coll_front.y - dy) - coll_left.y) * interpol;
+         coll_left.z = coll_left.z + ((coll_front.z - dz) - coll_left.z) * interpol;
+
+         // coll_front.x = coll_front.x*(1-interpol) + ((coll_left.x + dx) * interpol);
+         // coll_front.y = coll_front.y*(1-interpol) + ((coll_left.y + dy) * interpol);
+         // coll_front.z = coll_front.z*(1-interpol) + ((coll_left.z + dz) * interpol);
+         coll_front.x = coll_front.x + ((coll_left.x + dx) - coll_front.x) * interpol;
+         coll_front.y = coll_front.y + ((coll_left.y + dy) - coll_front.y) * interpol;
+         coll_front.z = coll_front.z + ((coll_left.z + dz) - coll_front.z) * interpol;
+      }
+
+      // right<->front
+      dx = coll_front.x - coll_right.x;
+      dy = coll_front.y - coll_right.y;
+      dz = coll_front.z - coll_right.z;
+      l = sqrt(dx*dx + dy*dy + dz*dz);
+      ////trace "l right<->front = " + l;
+      if(l != 10)
+      {
+         obl = 10.0f / l;
+         // // nx = dx / l;
+         // // ny = dy / l;
+         // // nz = dz / l;
+         // nx = dx * obl;
+         // ny = dy * obl;
+         // nz = dz * obl;
+         // dx = nx * 10;
+         // dy = ny * 10;
+         // dz = nz * 10;
+         dx *= obl;
+         dy *= obl;
+         dz *= obl;
+         // coll_right.x = coll_right.x*(1-interpol) + ((coll_front.x - dx) * interpol);
+         // coll_right.y = coll_right.y*(1-interpol) + ((coll_front.y - dy) * interpol);
+         // coll_right.z = coll_right.z*(1-interpol) + ((coll_front.z - dz) * interpol);
+         coll_right.x = coll_right.x + ((coll_front.x - dx) - coll_right.x) * interpol;
+         coll_right.y = coll_right.y + ((coll_front.y - dy) - coll_right.y) * interpol;
+         coll_right.z = coll_right.z + ((coll_front.z - dz) - coll_right.z) * interpol;
+
+         // coll_front.x = coll_front.x*(1-interpol) + ((coll_right.x + dx) * interpol);
+         // coll_front.y = coll_front.y*(1-interpol) + ((coll_right.y + dy) * interpol);
+         // coll_front.z = coll_front.z*(1-interpol) + ((coll_right.z + dz) * interpol);
+         coll_front.x = coll_front.x + ((coll_right.x + dx) - coll_front.x) * interpol;
+         coll_front.y = coll_front.y + ((coll_right.y + dy) - coll_front.y) * interpol;
+         coll_front.z = coll_front.z + ((coll_right.z + dz) - coll_front.z) * interpol;
+      }
+
+   }
+
+   public method tickUp(float dt) compile {
+      float ipamountup = 0.89; // 0.99
+
+      // Calc cam_center point between left and right vertex
+      float mx = (coll_left.x + coll_right.x) * 0.5;
+      float my = (coll_left.y + coll_right.y) * 0.5;
+      float mz = (coll_left.z + coll_right.z) * 0.5;
+
+      // Calc direction vector
+      float dx = 100 * (coll_front.x - mx);
+      float dy = 100 * (coll_front.y - my);
+      float dz = 100 * (coll_front.z - mz);
+      float l = sqrt(dx*dx + dy*dy + dz*dz);
+      dx = (dx/l) * (9 * 0.01);
+      dy = (dy/l) * (9 * 0.01);
+      dz = (dz/l) * (9 * 0.01);
+
+      float tupx = (coll_right.x - coll_left.x);
+      float tupy = (coll_right.y - coll_left.y);
+      float tupz = (coll_right.z - coll_left.z);
+
+      float upx = (dz * tupy - dy * tupz);
+      float upy = (dx * tupz - dz * tupx);
+      float upz = (dy * tupx - dx * tupy);
+
+      if(b_reset_cam_interpol)
+      {
+         phy_up.init(upx, upy, upz, 1);
+      }
+      else
+      {
+         float interpol = mathPowerf(ipamountup, dt); // ORIGINAL (dt=0.96)
+         phy_up.x = phy_up.x * interpol + upx * (1-interpol);
+         phy_up.y = phy_up.y * interpol + upy * (1-interpol);
+         phy_up.z = phy_up.z * interpol + upz * (1-interpol);
+      }
+
+      if(RacerConfiguration.b_autoflip)
+      {
+         if(phy_up.y < 0)
+         {
+            flip();
+         }
+      }
+   }
+
+   public method tickCamera(float dt) compile {
+      // xxx 03Dev2008: use clx/clz instead of coll_left.x/coll_left.z.. (--> smooth camera but oscillator issue..)
+      float interpol;
+
+      float ipamount = 0.296193;
+      float ipamountup = 0.93; // 0.99
+
+      float rcfx = cfx;
+      float rcfy = cfy;
+      float rcfz = cfz;
+      float rclx = clx;
+      float rcly = cly;
+      float rclz = clz;
+      float rcrx = crx;
+      float rcry = cry;
+      float rcrz = crz;
+
+
+      ////cam_center.init(coll_front.x, cfy, coll_front.z, 1);
+
+      // Calc cam_center point between left and right vertex
+      float mx = (rclx + rcrx) * 0.5;
+      float my = (rcly + rcry) * 0.5;
+      float mz = (rclz + rcrz) * 0.5;
+
+      // Calc direction vector
+      float dx = rcfx - mx;
+      float dy = rcfy - my;
+      float dz = rcfz - mz;
+      float l = sqrt(dx*dx + dy*dy + dz*dz);
+      dx = (dx/l) * (9 * 0.01);
+      dy = (dy/l) * (9 * 0.01);
+      dz = (dz/l) * (9 * 0.01);
+
+      // Calc "cam_eye" vector
+      float ty = (my - dy*4.1);
+      ////if(ty < (my*0.01)) // keep camera above ship
+      if(false)
+      {
+         ty = my + (my - ty);
+      }
+
+      // tweak for loopings: decrease cam distance if going up or downwards
+      float EYEDIST = 0.5 * (4.0 - 3.2 * abs((dy/9)));
+      eye_dist = (eye_dist*(1-dt*0.02)) + EYEDIST*dt*0.02;
+
+      float eyex = (mx - dx*eye_dist);
+      float eyey = (my - dy*eye_dist) + 0.01*9*1.2;
+      float eyez = (mz - dz*eye_dist);
+      if(b_reset_cam_interpol)
+      {
+         cam_eye.init(eyex, eyey, eyez, 1);
+      }
+      else
+      {
+         interpol = mathPowerf(ipamount, dt); // ORIGINAL
+         ////interpol = ipamount * dt;
+         // cam_eye.x = cam_eye.x * interpol + eyex * (1-interpol);
+         // cam_eye.y = cam_eye.y * interpol + eyey * (1-interpol);
+         // cam_eye.z = cam_eye.z * interpol + eyez * (1-interpol);
+         cam_eye.x = eyex + (cam_eye.x - eyex) * interpol;
+         cam_eye.y = eyey + (cam_eye.y - eyey) * interpol;
+         cam_eye.z = eyez + (cam_eye.z - eyez) * interpol;
+      }
+      
+      // Calc "cam_center" vector
+      float centerx = rcfx + (mx + dx*(1511.7*100));
+      float centery = rcfy + (my + dy*(1511.7*100)) - 5000*1;
+      float centerz = rcfz + (mz + dz*(1511.7*100));
+      if(b_reset_cam_interpol)
+      {
+         cam_center.init(centerx, centery, centerz, 1);
+      }
+      else
+      {
+         interpol = mathPowerf(ipamount, dt); // ORIGINAL
+         /////interpol = ipamount * dt;
+         // cam_center.x = cam_center.x * interpol + centerx * (1-interpol);
+         // cam_center.y = cam_center.y * interpol + centery * (1-interpol);
+         // cam_center.z = cam_center.z * interpol + centerz * (1-interpol);
+         cam_center.x = centerx + (cam_center.x - centerx) * interpol;
+         cam_center.y = centery + (cam_center.y - centery) * interpol;
+         cam_center.z = centerz + (cam_center.z - centerz) * interpol;
+      }
+      ///trace "xxx cam center="+cam_center;
+
+      // Calc "up" vector
+      float tupx = (rcrx - rclx);
+      float tupy = (rcry - rcly);
+      float tupz = (rcrz - rclz);
+
+      float upx = (dz * tupy - dy * tupz);
+      float upy = (dx * tupz - dz * tupx);
+      float upz = (dy * tupx - dx * tupy);
+
+      // Draw "up" vector (debug)
+      if(RacerConfiguration.b_draw_forces)
+      {
+         zglColorARGB(#ffaf00af);
+         glBegin(GL_LINES);
+         glVertex3f(mx, my+3, mz);
+         glVertex3f(mx+tupx, my+tupy+3, mz+tupz);
+         glEnd();
+         
+         zglColorARGB(#ffffff00);
+         glBegin(GL_LINES);
+         glVertex3f(mx, my+3, mz);
+         glVertex3f(mx+upx, my+upy+3, mz+upz);
+         glEnd();
+      }
+
+      if(b_reset_cam_interpol)
+      {
+         cam_up.init(upx, upy, upz, 1);
+      }
+      else
+      {
+         interpol = mathPowerf(ipamountup, dt); // ORIGINAL
+         ////interpol = ipamountup * dt;
+         // cam_up.x = cam_up.x * interpol + upx * (1-interpol);
+         // cam_up.y = cam_up.y * interpol + upy * (1-interpol);
+         // cam_up.z = cam_up.z * interpol + upz * (1-interpol);
+         cam_up.x = upx + (cam_up.x - upx) * interpol;
+         cam_up.y = upy + (cam_up.y - upy) * interpol;
+         cam_up.z = upz + (cam_up.z - upz) * interpol;
+      }
+
+
+   }
+
+   public method loadTransform() {
+      glLoadIdentity();
+      zgluLookAt(cam_eye, cam_center, cam_up);
+   }
+
+   protected method drawStencilShadowVolumeBruteForce() {
+      DrawShipShadowVolumeBruteForce();
+   }
+
+   protected method drawStencilShadowVolumeSilhouette() compile {
+      
+      glDepthFunc(GL_LEQUAL);
+
+      UpdateShipFaceLightVis(light_x, light_y, light_z);
+
+       glEnable(GL_CULL_FACE);
+
+       // Draw shadow frustum
+       if(!bDebugSV)
+       {
+          glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+          glDepthMask(GL_FALSE);
+          glEnable(GL_STENCIL_TEST);
+          glEnable(GL_POLYGON_OFFSET_FILL);
+          glPolygonOffset(0.0f, 100.0f);
+       }
+
+       // --- Shadow PASS 1 ---
+       glCullFace(GL_FRONT);
+       //glCullFace(GL_BACK);
+       if(!bDebugSV)
+       {
+          //glStencilFunc(GL_ALWAYS, 0, ~0);
+          //glStencilOp(GL_KEEP, GL_INCR, GL_KEEP);
+
+          glStencilFunc(GL_ALWAYS, 1, ~0); // z-pass
+          glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+       }
+       else { glLineWidth(3.0); zglColorARGB(#ff00ff00); }
+       DrawShipShadowVolume();
+
+       // --- Shadow PASS 2 ---
+       glCullFace(GL_BACK);
+       //glCullFace(GL_FRONT);
+       if(!bDebugSV)
+       {
+          //glStencilFunc(GL_ALWAYS, 0, ~0);
+          //glStencilOp(GL_KEEP, GL_DECR, GL_KEEP);
+          glStencilOp(GL_KEEP, GL_KEEP, GL_DECR);
+       }
+       else { zglColorARGB(#ffff00ff); glLineWidth(1.2); glPolygonOffset(0, 100);}
+       DrawShipShadowVolume();
+
+       // --- Shadow PASS 3: draw actual shadow
+       glDisable(GL_POLYGON_OFFSET_FILL);
+       glDisable(GL_CULL_FACE);
+       glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+       glDepthMask(GL_TRUE);
+       glStencilFunc(GL_NOTEQUAL, 0, ~0);
+       glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
+       glDisable(GL_DEPTH_TEST);
+       
+       glColor4f(0,0,0,0.12);
+       glEnable(GL_BLEND);
+       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+       glMatrixMode(GL_PROJECTION);
+       glPushMatrix();
+       zglInitOrtho(1, -1);
+       glMatrixMode(GL_MODELVIEW);
+       glPushMatrix();
+       glLoadIdentity();
+       if(!bDebugSV)
+       {
+          glBegin(GL_QUADS);
+          glVertex2f( 1,-1);
+          glVertex2f(-1,-1);
+          glVertex2f(-1, 1);
+          glVertex2f( 1, 1);
+          glEnd();
+       }
+       glPopMatrix();
+       glMatrixMode(GL_PROJECTION);
+       glPopMatrix();
+       glMatrixMode(GL_MODELVIEW);
+       glDisable(GL_BLEND);
+       glDisable(GL_STENCIL_TEST);
+       glEnable(GL_DEPTH_TEST);
+   }
+   
+   public method draw() {
+      if(RacerConfiguration.b_draw_debug_sphere)
+      {
+         zglColorARGB(#ff00aaaa);
+         RenderUtils.DrawDebugSphere(coll_left.x, coll_left.y, coll_left.z, RADIUS);
+         RenderUtils.DrawDebugSphere(coll_right.x, coll_right.y, coll_right.z, RADIUS);
+         zglColorARGB(#ff00ffff);
+         RenderUtils.DrawDebugSphere(coll_front.x, coll_front.y, coll_front.z, RADIUS);
+
+         zglColorARGB(#ff00aaaa);
+         RenderUtils.DrawDebugSphere(clx, cly, clz, RADIUS*0.5);
+         RenderUtils.DrawDebugSphere(crx, cry, crz, RADIUS*0.5);
+         zglColorARGB(#ff00ffff);
+         RenderUtils.DrawDebugSphere(cfx, cfy, cfz, RADIUS*0.5);
+         
+         // Draw lightsource position and vector
+         glColor3f(1,1,0);
+         glLineWidth(1);
+         glBegin(GL_LINES);
+         glVertex3f(light_x, light_y, light_z);
+         glVertex3f(-light_x, -light_y, -light_z);
+         glEnd();
+      }
+
+      if(RacerConfiguration.b_draw_ship)
+      {
+         drawShip();
+
+         if(RacerConfiguration.b_stencil_shadows)
+         {
+            if(bBruteForceSV)
+            {
+               drawStencilShadowVolumeBruteForce();
+            }
+            else
+            {
+               drawStencilShadowVolumeSilhouette();
+            }
+         }
+      }
+   }
+
+   public method drawShip() compile {
+      // draw ship
+      float mx = (clx + crx) * 0.5;
+      float my = 1*0.01+ (cly + cry) * 0.5;
+      float mz = (clz + crz) * 0.5;
+
+      float dx = 100 * (cfx - mx);
+      float dy = 100 * (cfy - my);
+      float dz = 100 * (cfz - mz);
+      float dl = 1.0 / sqrt(dx*dx +dy*dy +dz*dz);
+      dx *= dl;
+      dy *= dl;
+      dz *= dl;
+
+      Matrix4f m;
+      Vector3f mDir; mDir.init(dx, dy, dz);
+      m.initRotate(ship_rot*(PI*0.4), mDir);
+      Vector4f t;
+      t.init(cam_up.x, cam_up.y, cam_up.z, 1);
+      Vector4f vup;
+      m.mulv(t) => vup;
+      
+      float upx = vup.x;
+      float upy = vup.y;
+      float upz = vup.z;
+      float upl = 1.0 / sqrt(upx*upx + upy*upy + upz*upz);
+      upx *= upl;
+      upy *= upl;
+      upz *= upl;
+
+      float hx = dy * upz - dz * upy;
+      float hy = dz * upx - dx * upz;
+      float hz = dx * upy - dy * upx;
+
+      // v5+: scale * 0.01
+      float V_SIZE  = 0.01 * 9;
+      float H_SIZE  = 0.01 * 1.83;
+      float HO_SIZE = 0.01 * 5;
+      float UO_SIZE = 0.01 * 1.3;
+      float U_SIZE  = 0.01 * 1.61;
+      float D_SIZE  = 0.01 * 0.25;
+
+
+      float fx = mx + dx*V_SIZE;
+      float fy = my + dy*V_SIZE;
+      float fz = mz + dz*V_SIZE;
+
+      float mlx = mx - hx * H_SIZE;
+      float mly = my - hy * H_SIZE;
+      float mlz = mz - hz * H_SIZE;
+      float mrx = mx + hx * H_SIZE;
+      float mry = my + hy * H_SIZE;
+      float mrz = mz + hz * H_SIZE;
+
+      float mlox = mx - hx * HO_SIZE - upx * UO_SIZE;
+      float mloy = my - hy * HO_SIZE - upy * UO_SIZE;
+      float mloz = mz - hz * HO_SIZE - upz * UO_SIZE;
+      float mrox = mx + hx * HO_SIZE - upx * UO_SIZE;
+      float mroy = my + hy * HO_SIZE - upy * UO_SIZE;
+      float mroz = mz + hz * HO_SIZE - upz * UO_SIZE;
+
+      float mux = mx + upx * U_SIZE;
+      float muy = my + upy * U_SIZE;
+      float muz = mz + upz * U_SIZE;
+
+      float mdx = mx - upx * D_SIZE;
+      float mdy = my - upy * D_SIZE;
+      float mdz = mz - upz * D_SIZE;
+
+      if(RacerConfiguration.b_stencil_shadows)
+      {
+         // Store ship outline for stencil shadow render pass
+         ship_verts[3*0+0] = mrox;
+         ship_verts[3*0+1] = mroy;
+         ship_verts[3*0+2] = mroz;
+         ship_verts[3*1+0] = fx;
+         ship_verts[3*1+1] = fy;
+         ship_verts[3*1+2] = fz;
+         ship_verts[3*2+0] = mlox;
+         ship_verts[3*2+1] = mloy;
+         ship_verts[3*2+2] = mloz;
+         ship_verts[3*3+0] = mlx;
+         ship_verts[3*3+1] = mly;
+         ship_verts[3*3+2] = mlz;
+         ship_verts[3*4+0] = mrx;
+         ship_verts[3*4+1] = mry;
+         ship_verts[3*4+2] = mrz;
+         ship_verts[3*5+0] = mux;
+         ship_verts[3*5+1] = muy;
+         ship_verts[3*5+2] = muz;
+         ship_verts[3*6+0] = mdx;
+         ship_verts[3*6+1] = mdy;
+         ship_verts[3*6+2] = mdz;
+      }
+
+      glEnable(GL_CULL_FACE);
+      glCullFace(GL_FRONT);
+
+      if(1)
+      {
+         // Wings
+         zglColorARGB(#ffaaa444);
+         glBegin(GL_TRIANGLES);
+         glVertex3f(mrox, mroy, mroz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mrx, mry, mrz);
+         
+         glVertex3f(mlx, mly, mlz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mlox, mloy, mloz);
+         glEnd();
+         
+         // Top sides
+         zglColorARGB(#ff00dddd);
+         glBegin(GL_TRIANGLES);
+         glVertex3f(mrx, mry, mrz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mux, muy, muz);
+
+         glVertex3f(mux, muy, muz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mlx, mly, mlz);
+         glEnd();
+
+         // Left/right back sides of wings
+         zglColorARGB(#ff666600);
+         glBegin(GL_TRIANGLES);
+         glVertex3f(mrox, mroy, mroz);
+         glVertex3f(mrx, mry, mrz);
+         glVertex3f(mdx, mdy, mdz);
+         
+         glVertex3f(mdx, mdy, mdz);
+         glVertex3f(mlx, mly, mlz);
+         glVertex3f(mlox, mloy, mloz);
+         glEnd();
+         
+         // Back
+         zglColorARGB(#ff007777);
+         glBegin(GL_TRIANGLES);
+         glVertex3f(mdx, mdy, mdz);
+         glVertex3f(mux, muy, muz);
+         glVertex3f(mlx, mly, mlz);
+         
+         glVertex3f(mrx, mry, mrz);
+         glVertex3f(mux, muy, muz);
+         glVertex3f(mdx, mdy, mdz);
+         glEnd();
+         
+         // Bottom
+         zglColorARGB(#ff606000);
+         glBegin(GL_TRIANGLES);
+         glVertex3f(mdx, mdy, mdz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mrox, mroy, mroz);
+         glEnd();
+         
+         zglColorARGB(#ff585800);
+         glBegin(GL_TRIANGLES);
+         glVertex3f(mlox, mloy, mloz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mdx, mdy, mdz);
+         glEnd();
+      }
+      else
+      {
+         glBegin(GL_TRIANGLES);
+         zglColorARGB(#ffff0000);
+         glVertex3f(mrox, mroy, mroz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mux, muy, muz);
+
+         zglColorARGB(#ffffff00);
+         glVertex3f(mux, muy, muz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mlox, mloy, mloz);
+
+         zglColorARGB(#ffffff00);
+         glVertex3f(mrox, mroy, mroz);
+         glVertex3f(mux, muy, muz);
+         glVertex3f(mlox, mloy, mloz);
+
+         zglColorARGB(#ff00ffff);
+         glVertex3f(mlox, mloy, mloz);
+         glVertex3f(fx, fy, fz);
+         glVertex3f(mrox, mroy, mroz);
+
+         glEnd();
+      }
+
+      glDisable(GL_CULL_FACE);
+   }
+
+   public method onKey(Key _k) : boolean {
+      // (note) ignore vmod since on Pandora shoulder buttons are lshift/lctrl
+      // if(0 != _k.mod)
+      // {
+      //    return false;
+      // }
+
+      //trace "xxx _k.pressed="+_k.pressed;
+
+      PlayerSphere f <= coll_front;
+      PlayerSphere l <= coll_left;
+      PlayerSphere r <= coll_right;
+
+      switch(_k.pressed)
+      {
+         case '1':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               f.y -= 2 * 0.01;
+               l.y -= 2 * 0.01;
+               r.y -= 2 * 0.01;
+            }
+            return true;
+         case '2':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               f.y += 2 * 0.01;
+               l.y += 2 * 0.01;
+               r.y += 2 * 0.01;
+            }
+            return true;
+         case '3':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               bDebugSV = !bDebugSV;
+               trace "[...] bDebugSV set to "+bDebugSV;
+            }
+            return true;
+         case '4':
+            bBruteForceSV = ! bBruteForceSV;
+            trace "[...] bBruteForceSV set to "+bBruteForceSV;
+            return true;
+
+         // // case VKEY_SPACE:
+         // //    b_walls = true; // activate wall shield
+         // //    return true;
+
+         case 'j':
+         case 'a':
+         case VKEY_RALT:
+         case 313:
+         case 303: // Pandora left shoulder button
+            strafe_l = 1;
+            return true;
+
+         case 'k':
+         case 's':
+         case 314: // right windows key
+            b_boost = true;
+            return true;
+
+         case 'l':
+         case 'd':
+         case VKEY_RCTRL:
+         case 305: // Pandora right shoulder button
+            strafe_r = 1;
+            return true;
+
+         case 'o':
+         case 'w':
+         case VKEY_END: // Pandora 'Y' button
+            nose_y = 1;
+            return true;
+
+         case 'q':
+         case 'i':
+            nose_y = -1;
+            return true;
+
+         case VKEY_LEFT:
+            dir_x = -1;
+            return true;
+
+         case VKEY_RIGHT:
+            dir_x = 1;
+            return true;
+
+         case VKEY_UP:
+            b_key_up = true;
+            dir_z = -1;
+            return true;
+            
+         case VKEY_PAGEDOWN: // Pandora 'X' button
+            b_key_up_alt = true;
+            dir_z = -1;
+            return true;
+
+         case VKEY_DOWN:
+         case VKEY_HOME: // Pandora 'A' button
+            dir_z = 1;
+            return true;
+         case 'r':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               coll_left.y += 15*0.01;
+               coll_right.y += 15*0.01;
+               coll_front.y += 15*0.01;
+               coll_left.vecy = 0;
+               coll_right.vecy = 0;
+               coll_front.vecy = 0;
+               coll_left.accy = 0;
+               coll_right.accy = 0;
+               coll_front.accy = 0;
+            }
+            break;
+      }
+      switch(_k.released)
+      {
+         // // case VKEY_SPACE:
+         // //    b_walls = false; // deactivate wall shield
+         // //    return true;
+
+         case 'j':
+         case 'a':
+         case VKEY_RALT:
+         case 313:
+         case 303: // Pandora left shoulder button
+            strafe_l = 0;
+            return true;
+
+         case 'k':
+         case 's':
+         case 314: // right windows key
+            b_boost = false;
+            return true;
+
+         case 'l':
+         case 'd':
+         case VKEY_RCTRL:
+         case 305: // Pandora right shoulder button
+            strafe_r = 0;
+            return true;
+
+         case 'o':
+         case 'w':
+         case VKEY_END: // Pandora 'Y' button
+            if(nose_y > 0)
+               nose_y = 0;
+            return true;
+
+         case 'i':
+         case 'q':
+            if(nose_y < 0)
+               nose_y = 0;
+            return true;
+
+         case VKEY_LEFT:
+            if(dir_x < 0)
+            {
+               dir_x = 0;
+            }
+            return true;
+
+         case VKEY_RIGHT:
+            if(dir_x > 0)
+            {
+               dir_x = 0;
+            }
+            return true;
+         case VKEY_UP:
+            b_key_up = false;
+            if(dir_z < 0)
+            {
+               dir_z = b_key_up_alt ? -1 : 0;
+            }
+            return true;
+
+         case VKEY_PAGEDOWN: // Pandora 'X' button
+            b_key_up_alt = false;
+            if(dir_z < 0)
+            {
+               dir_z = b_key_up ? -1 : 0;
+            }
+            return true;
+         case VKEY_DOWN:
+         case VKEY_HOME: // Pandora 'A' button
+            if(dir_z > 0)
+            {
+               dir_z = (b_key_up || b_key_up_alt) ? -1 : 0;
+            }
+            return true;
+      }
+      return false;
+   }
+
+   public method replayLerpCL(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      coll_left.x = (_x * dt1) + (_xr * dt);
+      coll_left.y = (_y * dt1) + (_yr * dt);
+      coll_left.z = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpCR(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      coll_right.x = (_x * dt1) + (_xr * dt);
+      coll_right.y = (_y * dt1) + (_yr * dt);
+      coll_right.z = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpCF(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      coll_front.x = (_x * dt1) + (_xr * dt);
+      coll_front.y = (_y * dt1) + (_yr * dt);
+      coll_front.z = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpSL(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      clx = (_x * dt1) + (_xr * dt);
+      cly = (_y * dt1) + (_yr * dt);
+      clz = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpSR(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      crx = (_x * dt1) + (_xr * dt);
+      cry = (_y * dt1) + (_yr * dt);
+      crz = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpSF(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      cfx = (_x * dt1) + (_xr * dt);
+      cfy = (_y * dt1) + (_yr * dt);
+      cfz = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpCamEye(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      cam_eye.x = (_x * dt1) + (_xr * dt);
+      cam_eye.y = (_y * dt1) + (_yr * dt);
+      cam_eye.z = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpCamCenter(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      cam_center.x = (_x * dt1) + (_xr * dt);
+      cam_center.y = (_y * dt1) + (_yr * dt);
+      cam_center.z = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpCamUp(float dt, float _x, _y, _z, float _xr, _yr, _zr) {
+      float dt1 = 1 - dt;
+      cam_up.x = (_x * dt1) + (_xr * dt);
+      cam_up.y = (_y * dt1) + (_yr * dt);
+      cam_up.z = (_z * dt1) + (_zr * dt);
+   }
+   public method replayLerpSpeed(float dt, float _x, _xr) {
+      float dt1 = 1 - dt;
+      speed = (_x * dt1) + (_xr * dt);
+   }
+   public method replayLerpShipRot(float dt, float _x, _xr) {
+      float dt1 = 1 - dt;
+      ship_rot = (_x * dt1) + (_xr * dt);
+   }
+
+}
+
+
+Player player;

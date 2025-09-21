@@ -1,0 +1,973 @@
+
+module MEditor;
+
+namespace racer;
+
+
+StringArray mapcycle_list = [ 
+   "maps/test_easyone.rat",
+   "maps/test_speedtrack_final.rat",
+   "maps/test_on_the_edge.rat",
+   "maps/test_bumpy_race.rat",
+   "maps/test_flatland.rat",
+   "maps/test_halfpipe_v04.rat",
+   "maps/test_falling_down_v03.rat",
+   "maps/test_another_tricky_one_final_v03.rat",
+   "maps/test_this_is_a_loop_final_v03.rat",
+   "maps/test_bigone_final_v03.rat",
+   "maps/test_this_is_a_smaller_loop_v03.rat",
+   "maps/test_twistytrack_v02.rat",
+   "maps/test_this_is_an_even_smaller_loop_v03.rat",
+   "maps/test_tricky_one.rat",
+   "maps/test_bruchbude_v02.rat",
+   "maps/test_first_noboost_loop.rat",
+   "maps/test_bigjump.rat",
+   "maps/test_grand_prix_final_v03.rat",
+   "maps/test_two_ways_to_do_it_v04.rat",
+   "maps/test_himalaya_v02.rat"
+];
+
+
+
+// level ratings:  (platinum, gold, silver, bronze)
+//    easy one      : 08:00  09:00  11:00  13:00
+//    falling down  : 09:00  10:00  11:00  15:00 
+//    on the edge   : 11:00  12:00  14:00  20:00
+//    grand prix    : 14:00  22:00  30:00  59:00
+//    two ways      : 09:00  11:00  13:00  16:00
+//    big one       : 29:00  40:00  48:00  59:00
+//    twisty track  : 12:00  20:00  24:00  32:00
+//    tricky one    : 14:00  16:00  17:00  18:00
+//    another tricky: 10:00  12:00  14:00  16:00
+//    bruchbude     : 07:00  08:00  11:00  20:00
+//    big jump      : 26:00? 30:00  35:00  40:00
+//    half pipe     : 07:00  09:00  13:00  16:00
+
+class Editor {
+
+   define String TRACK_FILENAME = "maps/test.rat";
+
+   define float CURSOR_WIDTH = 25 * 0.01;
+   define float CURSOR_DEPTH = 25 * 0.01;
+   define float CURSOR_HEIGHT = 1200.0f*2  * 0.01;
+   define float CURSOR_MARKER_HEIGHT = 20.0f  * 0.01;
+
+   static float cursor_x;
+   static float cursor_y;
+   static float cursor_z;
+
+   static float cursor_dirx;
+   static float cursor_diry;
+   static float cursor_dirz;
+
+   static TrackEntity sel_entity; // currently selected entity
+   static int env_nr; // 0=twist, 1=width, 2=height
+
+   static float edit_highlight_point_x;
+   static float edit_highlight_point_z;
+
+   static int current_cycle_idx = 0;
+
+   static boolean b_rotate_entity; // true=lctrl down, mouse rotate entity
+   static boolean b_lock_axis_x; // true=only rotate about x axis
+   static boolean b_lock_axis_y; // true=only rotate about y axis
+   static boolean b_lock_axis_z; // true=only rotate about z axis
+
+   static Init() {
+      cursor_x = 0;
+      cursor_y = 0;
+      cursor_z = 0;
+      cursor_dirx = 0;
+      cursor_diry = 0;
+      cursor_dirz = 0;
+      SelectEntity(null);
+      env_nr = 0;
+      RacerConfiguration.b_edit_env = false;
+      EnvEdit.Init();
+
+      PathEdit.Init();
+
+      b_rotate_entity = false;
+
+      LoadMapCycleList();
+   }
+
+   static SetEnabled(boolean bEnabled, boolean bCursorToPlyPos) {
+      if(bEnabled)
+      {
+         RacerConfiguration.b_debug_cam = true;
+         PathEdit.SetEnabled(RacerConfiguration.b_path_edit);
+         if(bCursorToPlyPos)
+         {
+            cursor_x = player.coll_front.x;
+            cursor_y = player.coll_front.y;
+            cursor_z = player.coll_front.z;
+         }
+      }
+      else
+      {
+         track.updateTrack();
+         track.resetTrack();
+         RacerConfiguration.b_debug_cam = false;
+         MovePlayerToCamera();
+         RacerConfiguration.b_ingame = true;
+      }
+   }
+
+   static LoadMapCycleList() {
+      String buf;
+      if(buf.loadLocal("mapcycle.txt", true))
+      {
+         StringArray lines <= buf.splitChar('\n');
+         String line;
+         mapcycle_list.empty();
+         foreach line in lines {
+            if(!line.startsWith("#") && !line.isBlank())
+            {
+               line.trim();
+               mapcycle_list.add(line);
+               trace "[dbg] LoadMapCyleList: map \""+line+"\" added.";
+            }
+         }
+         lines <= null;
+         trace "[...] LoadMapCyleList: loaded \"mapcycle.txt\".";
+      }
+   }
+
+   static LoadTrack(String fileName) {
+      track.loadLocal(fileName);
+      SelectEntity(null);
+      Viewport.caption = "track "+current_cycle_idx+"/"+mapcycle_list.numElements+": "+fileName;
+      RacerConfiguration.race_millisec_hiscore = 1000 * 60 * 9 + (1000 * 59); // Reset lap record
+      RacerConfiguration.current_map_name = fileName;
+   }
+
+   static LoadTrackCycleList(int idx) {
+      idx = idx % mapcycle_list.numElements;
+      LoadTrack(mapcycle_list[idx]);
+      current_cycle_idx = idx;
+   }
+
+   static LoadNextTrackCycle() {
+      current_cycle_idx = (current_cycle_idx + 1) % mapcycle_list.numElements;
+      LoadTrackCycleList(current_cycle_idx);
+   }
+
+   static LoadPrevTrackCycle() {
+      if(current_cycle_idx == 0)
+         current_cycle_idx = mapcycle_list.numElements -1;
+      else
+         current_cycle_idx--;
+      LoadTrackCycleList(current_cycle_idx);
+   }
+
+   static SaveTrack(String fileName) {
+      track.saveLocal(fileName);
+   }
+
+   static SelectEntity(TrackEntity _ent) {
+      sel_entity <= _ent;
+      if(sel_entity instanceof TrackPolyLineEntity)
+      {
+         TrackPolyLineEntity ple <= sel_entity;
+         PathEdit.SetEnvelope(ple.points, ple.bpl);
+         int idx = track.track_entities.indexOfPointer(sel_entity, 0);
+         Viewport.caption = "entity: #"+idx;
+      }
+      else
+      {
+         PathEdit.SetEnvelope(null, null);
+
+         if(sel_entity instanceof TrackCheckpointEntity)
+         {
+            TrackCheckpointEntity cpe <= sel_entity;
+            Viewport.caption = "checkpoint: id="+cpe.checkpoint_id+" goal="+cpe.b_goal;
+         }
+      }
+      EnvEdit.SetEnvelope(null, null);
+      if(sel_entity instanceof TrackEntity)
+      {
+         cursor_x = sel_entity.center_pos.x;
+         cursor_y = sel_entity.center_pos.y;
+         cursor_z = sel_entity.center_pos.z;
+      }
+   }
+
+   static SelectNextEntity(int _dir) {
+      int numEnt = track.track_entities.numElements;
+      if(numEnt > 0)
+      {
+         if(sel_entity != null)
+         {
+            int idx = track.track_entities.indexOfPointer(sel_entity, 0);
+            if(_dir > 0)
+            {
+               idx = (idx + _dir) % numEnt;
+            }
+            else
+            {
+               if(idx == 0)
+               {
+                  idx = numEnt - 1;
+               }
+               else
+               {
+                  idx--;
+               }
+            }
+            SelectEntity(track.track_entities[idx]);
+            trace "[...] selected entity #"+idx+" object="+#(sel_entity);
+         }
+         else
+         {
+            // Select first entity
+            SelectEntity(track.track_entities[0]);
+            trace "[...] selected entity #0"+" object="+#(sel_entity);
+         }
+         cursor_x = sel_entity.center_pos.x;
+         cursor_y = sel_entity.center_pos.y;
+         cursor_z = sel_entity.center_pos.z;
+      }
+   }
+
+   static SelectNearestEntity(boolean _bSetCursor) {
+
+      if(0 == track.track_entities.numElements)
+      {
+         return;
+      }
+
+      if(_bSetCursor)
+      {
+         SelectEntity(null);
+      }
+      
+
+      TrackEntity ent <= null;
+      //TrackEntity alt <= null;
+      //float mindist = 9999999;
+
+      PointerArray selCandidates;
+      FloatArray distances;
+      IntArray sortTable;
+      selCandidates.empty();
+      distances.empty();
+
+      TrackEntity te;
+      foreach te in track.track_entities {
+         Vector3f p;
+//          p.init(-cursor_x, -cursor_y, -cursor_z);
+//          p.add(te.bb_center);
+         p.init(te.bb_center.x - cursor_x, 0, te.bb_center.z - cursor_z);
+         float d = p.abs;
+         distances.add(d);
+         selCandidates.add(te);
+      }
+
+      distances.sortByValue(sortTable);
+      int curIdx = selCandidates.indexOfPointer(sel_entity, 0);
+      if(-1 != curIdx)
+      {
+         trace "xxx SelectNearestEntity: curIdx="+curIdx;
+         curIdx = (sortTable.indexOf(curIdx, 0) + 1) % selCandidates.numElements;
+         trace "xxx SelectNearestEntity: newIdx="+curIdx;
+         ent <= selCandidates[curIdx];
+      }
+      else
+      {
+         ent <= selCandidates[sortTable[0]];
+      }
+      
+
+      if(null != ent)
+      {
+         SelectEntity(ent);
+         if(_bSetCursor)
+         {
+            Vector3f bbCenter <= ent.bb_center;
+            //prev5: cam.eye.init(bbCenter.x * 0.01, bbCenter.y * 0.01 + 1, bbCenter.z * 0.01, 1);
+            cam.eye.init(bbCenter.x, bbCenter.y + 0.01, bbCenter.z, 1);
+            cursor_x = bbCenter.x;
+            cursor_y = bbCenter.y;
+            cursor_z = bbCenter.z;
+            trace "[dbg] Editor::SelectNearestEntity: camera set to ("+bbCenter+")";
+         }
+      }
+      else
+      {
+         SelectEntity(null);
+      }
+
+      SelectEnvelope(env_nr);
+
+      if(sel_entity instanceof TrackPolyLineEntity) 
+      {
+         TrackPolyLineEntity ple <= sel_entity;
+         PathEdit.SetEnvelope(ple.points, ple.bpl);
+      }
+
+      trace "[dbg] Editor::SelectNearestEntity: selected ent="+#(sel_entity);
+   }
+
+   static SelectEnvelope(int _envNr) {
+      env_nr = _envNr;
+      TrackPolyLineEntity ple <= sel_entity;
+      if(ple instanceof TrackPolyLineEntity)
+      {
+         switch(_envNr)
+         {
+            case 0:
+               EnvEdit.SetEnvelope(ple.env_twist, ple.bpl_twist);
+               trace "[...] selected 'twist' envelope";
+               Viewport.caption = "envedit: twist";
+               break;
+            case 1:
+               EnvEdit.SetEnvelope(ple.env_width, ple.bpl_width);
+               trace "[...] selected 'width' envelope";
+               Viewport.caption = "envedit: width";
+               break;
+            case 2:
+               EnvEdit.SetEnvelope(ple.env_height, ple.bpl_height);
+               trace "[...] selected 'height' envelope";
+               Viewport.caption = "envedit: height";
+               break;
+            case 3:
+               EnvEdit.SetEnvelope(ple.env_borderh, ple.bpl_borderh);
+               trace "[...] selected 'border height' envelope";
+               Viewport.caption = "envedit: border height";
+               break;
+         }
+      }
+      else
+      {
+         EnvEdit.SetEnvelope(null, null);
+      }
+   }
+
+   static MoveSelectedEntityToCursor() {
+      if(sel_entity != null)
+      {
+         sel_entity.moveTo3f(cursor_x, cursor_y, cursor_z);
+         track.updateTrack();
+         trace "[...] entity moved to ("+cursor_x+";"+cursor_y+";"+cursor_z+")";
+      }
+   }
+
+   static CopySelectedEntityToCursor() {
+      if(sel_entity != null)
+      {
+         if(sel_entity instanceof TrackPolyLineEntity)
+         {
+            TrackPolyLineEntity ple <= track.newPolyLineEntityAt3f(cursor_x, cursor_y, cursor_z);
+            ple.copyFrom(sel_entity);
+            ple.moveTo3f(cursor_x, cursor_y, cursor_z);
+
+            track.updateTrack();
+            trace "[...] polyline entity copied to ("+cursor_x+";"+cursor_y+";"+cursor_z+")";
+
+            SelectEntity(ple);
+         }
+      }
+   }
+
+   static NewPolyLineEntityAtCursor() {
+      track.newPolyLineEntityAt3f(cursor_x, cursor_y, cursor_z);
+      track.updateTrack();
+      SelectEntity(track.track_entities[track.track_entities.numElements - 1]);
+      EnvEdit.SetEnvelope(null, null);
+      trace "[...] polyline entity created at ("+cursor_x+";"+cursor_y+";"+cursor_z+")";
+   }
+
+   static NewCheckpointEntityAtCursor() {
+      track.newCheckpointEntityAt3f(cursor_x, cursor_y, cursor_z);
+      track.updateTrack();
+      SelectEntity(track.track_entities[track.track_entities.numElements - 1]);
+      EnvEdit.SetEnvelope(null, null);
+      trace "[...] checkpoint entity created at ("+cursor_x+";"+cursor_y+";"+cursor_z+")";
+   }
+
+   static ChangeCheckpointId(int _dir) {
+      if(sel_entity instanceof TrackCheckpointEntity) 
+      {
+         TrackCheckpointEntity cpe <= sel_entity;
+         cpe.checkpoint_id += _dir;
+         trace "[...] checkpoint_id is now "+cpe.checkpoint_id;
+         Viewport.caption = "checkpoint: id is now "+cpe.checkpoint_id;
+      }
+   }
+
+   static ToggleCheckpointGoalFlag() {
+      if(sel_entity instanceof TrackCheckpointEntity) 
+      {
+         TrackCheckpointEntity cpe <= sel_entity;
+         cpe.b_goal = ! cpe.b_goal;
+         trace "[...] checkpoint goal flag is now "+cpe.b_goal;
+         Viewport.caption = "checkpoint: goal is now "+cpe.b_goal;
+      }
+   }
+
+   static DeleteSelectedEntity() {
+      if(sel_entity != null)
+      {
+         track.track_entities.remove(sel_entity);
+         track.updateTrack();
+         SelectEntity(null);
+         trace "[...] entity deleted.";
+      }
+   }
+
+   static StorePlayerStart() {
+      Vector4f t, tRot;
+      t.init(0,0,1, 1);
+      Matrix4f m <= cam.cached_rot_matrix;
+      m.mulv(t) => tRot;
+
+      track.setPlayerStartAndDirection(cam.eye.x, cam.eye.y, cam.eye.z, tRot.x, tRot.y, tRot.z);
+   }
+
+   static MovePlayerToCamera() {
+      Vector4f t, tRot;
+      t.init(0,0,1, 1);
+      Matrix4f m <= cam.cached_rot_matrix;
+      m.mulv(t) => tRot;
+
+      player.setPositionAndDirection(vector3f(cam.eye.x, cam.eye.y, cam.eye.z), vector3f(tRot.x, tRot.y, tRot.z));
+   }
+
+   static DrawSelectedEntity() {
+      if(sel_entity != null)
+      {
+         glDisable(GL_BLEND);
+         glDepthFunc(GL_LEQUAL);
+
+         // Draw rotated bbox
+         Matrix4f rot <= sel_entity.rotation;
+         Vector3f bbMin = sel_entity.bb_min;
+         Vector3f bbMax = sel_entity.bb_max;
+         Vector3f bbCtr <= sel_entity.bb_center;
+         bbMin.sub(bbCtr);
+         bbMax.sub(bbCtr);
+         Vector4f t;
+         Vector4f lbn, ltn, rtn, rbn;
+         Vector4f lbf, ltf, rtf, rbf;
+         t.init(bbMin.x, bbMin.y, bbMin.z, 1); rot.mulv(t) => lbn; lbn.add(bbCtr);
+         t.init(bbMin.x, bbMax.y, bbMin.z, 1); rot.mulv(t) => ltn; ltn.add(bbCtr);
+         t.init(bbMax.x, bbMax.y, bbMin.z, 1); rot.mulv(t) => rtn; rtn.add(bbCtr);
+         t.init(bbMax.x, bbMin.y, bbMin.z, 1); rot.mulv(t) => rbn; rbn.add(bbCtr);
+         t.init(bbMin.x, bbMin.y, bbMax.z, 1); rot.mulv(t) => lbf; lbf.add(bbCtr);
+         t.init(bbMin.x, bbMax.y, bbMax.z, 1); rot.mulv(t) => ltf; ltf.add(bbCtr);
+         t.init(bbMax.x, bbMax.y, bbMax.z, 1); rot.mulv(t) => rtf; rtf.add(bbCtr);
+         t.init(bbMax.x, bbMin.y, bbMax.z, 1); rot.mulv(t) => rbf; rbf.add(bbCtr);
+
+         zglColorARGB(#ffffcf00);
+         glLineWidth(4.0);
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(lbn.x, lbn.y, lbn.z);
+         glVertex3f(lbf.x, lbf.y, lbf.z);
+         glVertex3f(ltf.x, ltf.y, ltf.z);
+         glVertex3f(ltn.x, ltn.y, ltn.z);
+         glEnd();
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(rbn.x, rbn.y, rbn.z);
+         glVertex3f(rbf.x, rbf.y, rbf.z);
+         glVertex3f(rtf.x, rtf.y, rtf.z);
+         glVertex3f(rtn.x, rtn.y, rtn.z);
+         glEnd();
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(ltn.x, ltn.y, ltn.z);
+         glVertex3f(ltf.x, ltf.y, ltf.z);
+         glVertex3f(rtf.x, rtf.y, rtf.z);
+         glVertex3f(rtn.x, rtn.y, rtn.z);
+         glEnd();
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(lbn.x, lbn.y, lbn.z);
+         glVertex3f(lbf.x, lbf.y, lbf.z);
+         glVertex3f(rbf.x, rbf.y, rbf.z);
+         glVertex3f(rbn.x, rbn.y, rbn.z);
+         glEnd();
+
+         
+         // Draw axis-aligned bbox
+         bbMin = sel_entity.bb_min;
+         bbMax = sel_entity.bb_max;
+
+         zglColorARGB(#ffff0000);
+         glLineWidth(2.0);
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(bbMin.x, bbMin.y, bbMin.z);
+         glVertex3f(bbMin.x, bbMax.y, bbMin.z);
+         glVertex3f(bbMax.x, bbMax.y, bbMin.z);
+         glVertex3f(bbMax.x, bbMin.y, bbMin.z);
+         glEnd();
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(bbMin.x, bbMin.y, bbMax.z);
+         glVertex3f(bbMin.x, bbMax.y, bbMax.z);
+         glVertex3f(bbMax.x, bbMax.y, bbMax.z);
+         glVertex3f(bbMax.x, bbMin.y, bbMax.z);
+         glEnd();
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(bbMin.x, bbMin.y, bbMin.z);
+         glVertex3f(bbMax.x, bbMin.y, bbMin.z);
+         glVertex3f(bbMax.x, bbMin.y, bbMax.z);
+         glVertex3f(bbMin.x, bbMin.y, bbMax.z);
+         glEnd();
+
+         glBegin(GL_LINE_LOOP);
+         glVertex3f(bbMin.x, bbMax.y, bbMin.z);
+         glVertex3f(bbMax.x, bbMax.y, bbMin.z);
+         glVertex3f(bbMax.x, bbMax.y, bbMax.z);
+         glVertex3f(bbMin.x, bbMax.y, bbMax.z);
+         glEnd();
+      }
+   }
+
+   static DrawCursor() {
+      glEnable(GL_BLEND);
+      glEnable(GL_DEPTH_TEST);
+      glDisable(GL_CULL_FACE);
+      float minx = (cursor_x - CURSOR_WIDTH);
+      float maxx = (cursor_x + CURSOR_WIDTH);
+      float minz = (cursor_z - CURSOR_DEPTH);
+      float maxz = (cursor_z + CURSOR_DEPTH);
+
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      zglColorARGB(#4f00ff00);
+      glBegin(GL_QUADS);
+
+      glVertex3f(minx, -CURSOR_HEIGHT, minz);
+      glVertex3f(minx,  CURSOR_HEIGHT, minz);
+      glVertex3f(maxx,  CURSOR_HEIGHT, minz);
+      glVertex3f(maxx, -CURSOR_HEIGHT, minz);
+
+      glVertex3f(minx, -CURSOR_HEIGHT, maxz);
+      glVertex3f(minx,  CURSOR_HEIGHT, maxz);
+      glVertex3f(maxx,  CURSOR_HEIGHT, maxz);
+      glVertex3f(maxx, -CURSOR_HEIGHT, maxz);
+
+      glVertex3f(minx, -CURSOR_HEIGHT, minz);
+      glVertex3f(minx,  CURSOR_HEIGHT, minz);
+      glVertex3f(minx,  CURSOR_HEIGHT, maxz);
+      glVertex3f(minx, -CURSOR_HEIGHT, maxz);
+
+      glVertex3f(maxx, -CURSOR_HEIGHT, minz);
+      glVertex3f(maxx,  CURSOR_HEIGHT, minz);
+      glVertex3f(maxx,  CURSOR_HEIGHT, maxz);
+      glVertex3f(maxx, -CURSOR_HEIGHT, maxz);
+
+      glEnd();
+
+      // Draw height marker
+      zglColorARGB(#6fff0000);
+      glPolygonOffset(0, -100);
+      glEnable(GL_POLYGON_OFFSET_FILL);
+      //glDisable(GL_DEPTH_TEST);
+      glBegin(GL_QUADS);
+
+      glVertex3f(minx, cursor_y, minz);
+      glVertex3f(minx, cursor_y + CURSOR_MARKER_HEIGHT, minz);
+      glVertex3f(maxx, cursor_y + CURSOR_MARKER_HEIGHT, minz);
+      glVertex3f(maxx, cursor_y, minz);
+
+      glVertex3f(minx, cursor_y, maxz);
+      glVertex3f(minx, cursor_y + CURSOR_MARKER_HEIGHT, maxz);
+      glVertex3f(maxx, cursor_y + CURSOR_MARKER_HEIGHT, maxz);
+      glVertex3f(maxx, cursor_y, maxz);
+
+      glVertex3f(minx, cursor_y, minz);
+      glVertex3f(minx, cursor_y + CURSOR_MARKER_HEIGHT, minz);
+      glVertex3f(minx, cursor_y + CURSOR_MARKER_HEIGHT, maxz);
+      glVertex3f(minx, cursor_y, maxz);
+
+      glVertex3f(maxx, cursor_y, minz);
+      glVertex3f(maxx, cursor_y + CURSOR_MARKER_HEIGHT, minz);
+      glVertex3f(maxx, cursor_y + CURSOR_MARKER_HEIGHT, maxz);
+      glVertex3f(maxx, cursor_y, maxz);
+
+      glEnd();
+      glDisable(GL_BLEND);
+      glDisable(GL_POLYGON_OFFSET_FILL);
+
+      // Draw ground region (to improve orientation)
+      minx = (cursor_x - CURSOR_WIDTH*4.5);
+      maxx = (cursor_x + CURSOR_WIDTH*4.5);
+      minz = (cursor_z - CURSOR_DEPTH*4.5);
+      maxz = (cursor_z + CURSOR_DEPTH*4.5);
+      glLineWidth(2);
+      zglColorARGB(#ffffff00);
+      glEnable(GL_DEPTH_TEST);
+      glBegin(GL_LINE_LOOP);
+      glVertex3f(minx, 0, minz);
+      glVertex3f(maxx, 0, minz);
+      glVertex3f(maxx, 0, maxz);
+      glVertex3f(minx, 0, maxz);
+      glEnd();
+      glDisable(GL_DEPTH_TEST);
+
+   }
+
+   static public method MoveCursor(float dirx, diry, dirz, float _dt) {
+      Vector4f cd, cdRot;
+      cd.init(dirx, 0, dirz, 1);
+      Matrix4f m <= cam.cached_rot_matrix;
+      m.mulv(cd) => cdRot;
+      cursor_x += cdRot.x * _dt * 10 * 0.01;
+      cursor_y += diry * _dt *  5 * 0.01;
+      cursor_z += cdRot.z * _dt * 10 * 0.01;
+      
+      if(cursor_x < (-Track.SIZE*0.5)) cursor_x = -Track.SIZE * 0.5;
+      else if(cursor_x > (Track.SIZE*0.5 - (Track.SIZE/Track.GRIDSIZE))) cursor_x = Track.SIZE*0.5 - (Track.SIZE/Track.GRIDSIZE);
+      
+      if(cursor_y < -CURSOR_HEIGHT) cursor_y = -CURSOR_HEIGHT;
+      else if(cursor_y > (CURSOR_HEIGHT - CURSOR_MARKER_HEIGHT)) cursor_y = CURSOR_HEIGHT - CURSOR_MARKER_HEIGHT;
+      
+      if(cursor_z < (-Track.SIZE*0.5)) cursor_z = -Track.SIZE * 0.5;
+      else if(cursor_z > (Track.SIZE*0.5 - (Track.SIZE/Track.GRIDSIZE))) cursor_z = Track.SIZE*0.5 - (Track.SIZE/Track.GRIDSIZE);
+   }
+
+   static public method OnDraw(float _dt) {
+
+      cam.b_sprint = 8;
+
+
+      // Highlight path point (see EnvEdit)
+      zglColorARGB(#ff00ff00);
+      glLineWidth(16);
+      glBegin(GL_LINES);
+      glVertex3f(edit_highlight_point_x, -CURSOR_HEIGHT, edit_highlight_point_z);
+      glVertex3f(edit_highlight_point_x,  CURSOR_HEIGHT, edit_highlight_point_z);
+      glEnd();
+
+      if(RacerConfiguration.b_path_edit)
+      {
+         PathEdit.OnDraw(_dt);
+      }
+      else
+      {
+         MoveCursor(-cursor_dirx, cursor_diry, -cursor_dirz, _dt);
+
+         DrawSelectedEntity();
+         DrawCursor();
+
+         EnvEdit.OnDraw(_dt);
+      }
+   }
+
+   static protected RotateEntityXY(int _mouseDx, _mouseDy) {
+      if(sel_entity != null)
+      {
+         Matrix4f m;
+         if(Mouse.buttons & MOUSE_RBUTTON)
+         {
+            m.initEulerXYZ( 
+               _mouseDy * (2PI / 1280),
+               0,
+               0
+               );
+         }
+         else
+         {
+            float rotY = b_lock_axis_y ? 0 : (_mouseDy * (2PI / 1280));
+            float rotX = b_lock_axis_x ? 0 : (_mouseDx * (2PI / 1280));
+            m.initEulerZYZ(rotY, rotX, 0);
+         }
+         Matrix4f rot <= sel_entity.rotation;
+         rot.mul(m);
+      }
+   }
+
+   static protected ScaleEntityXY(float _x, _y) {
+      if(null != sel_entity)
+      {
+         sel_entity.scaleXY(_x, _y);
+         track.updateTrack();
+      }
+   }
+
+   static public OnMouse(int _x, int _y, int _cbs, int _nbs) : boolean {
+      return = false;
+      if(RacerConfiguration.b_path_edit)
+      {
+         PathEdit.OnMouse(_x, _y, _cbs, _nbs);
+         return = true;
+      }
+      else if(RacerConfiguration.b_edit_env)
+      {
+         EnvEdit.OnMouse(_x, _y, _cbs, _nbs);
+         return = true;
+      }
+      else if(b_rotate_entity)
+      {
+         RotateEntityXY(Mouse.dx, Mouse.dy);
+         return = true;
+      }
+      else if(_cbs & MOUSE_RBUTTON)
+      {
+         if(_cbs & MOUSE_LBUTTON)
+         {
+            MoveCursor(0, Mouse.dy * -0.3, 0, 1);
+         }
+         else
+         {
+            MoveCursor(Mouse.dx * -0.3, 0, Mouse.dy * -0.3, 1);
+         }
+         return = true;
+      }
+      else if(_cbs & MOUSE_WHEELUP)
+      {
+         SelectNextEntity(1);
+         return = true;
+      }
+      else if(_cbs & MOUSE_WHEELDOWN)
+      {
+         SelectNextEntity(-1);
+         return = true;
+      }
+   }
+
+   static public method OnKey(Key _k) {
+      if(RacerConfiguration.b_path_edit)
+      {
+         if(PathEdit.OnKey(_k))
+         {
+            return true;
+         }
+      }
+      else
+      {
+         if(RacerConfiguration.b_edit_env)
+         {
+            if(EnvEdit.OnKey(_k))
+            {
+               return true;
+            }
+         }
+      }
+      if(true)
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_SPACE:
+               SelectNearestEntity( (_k.mod&VMOD_LCTRL) ? true : false );
+               return true;
+
+            case VKEY_PAGEDOWN:
+               SelectNextEntity(-1);
+               return true;
+
+            case VKEY_PAGEUP:
+               SelectNextEntity(1);
+               return true;
+
+            case VKEY_TAB:
+               SelectEnvelope((env_nr + 1) % 4);
+               return true;
+
+            case '1':
+               b_lock_axis_x = true;
+               return true;
+
+            case '2':
+               b_lock_axis_y = true;
+               return true;
+
+            case '3':
+               b_lock_axis_z = true;
+               return true;
+
+            case 'p':
+               StorePlayerStart();
+               return true;
+
+            case 'f':
+               RacerConfiguration.b_path_edit = !RacerConfiguration.b_path_edit;
+               PathEdit.SetEnabled(RacerConfiguration.b_path_edit);
+               trace "[dbg] path_edit is now "+(RacerConfiguration.b_path_edit ? "active" : "inactive");
+               return true;
+
+            case 'e':
+               RacerConfiguration.b_edit_env = ! RacerConfiguration.b_edit_env;
+               EnvEdit.SetEnabled(RacerConfiguration.b_edit_env);
+               trace "[dbg] env_edit is now "+(RacerConfiguration.b_edit_env ? "active" : "inactive");
+               return true;
+
+            case 't':
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  CopySelectedEntityToCursor();
+               }
+               else
+               {
+                  MoveSelectedEntityToCursor();
+               }
+               return true;
+
+            case VKEY_INSERT:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  NewCheckpointEntityAtCursor();
+               }
+               else
+               {
+                  NewPolyLineEntityAtCursor();
+               }
+               return true;
+
+            case VKEY_DELETE:
+               DeleteSelectedEntity();
+               return true;
+
+            case VKEY_LCTRL:
+               b_rotate_entity = true;
+               return true;
+
+            case VKEY_BACKSPACE:
+               if(sel_entity != null)
+               {
+                  sel_entity.rotation.initIdentity();
+                  track.updateTrack();
+               }
+               return true;
+
+            case VKEY_F1:
+               LoadTrack(TRACK_FILENAME);
+               return true;
+
+            case VKEY_F12:
+               SaveTrack(TRACK_FILENAME);
+               return true;
+
+            case VKEY_F2:
+               LoadNextTrackCycle();
+               return true;
+
+            case VKEY_F3:
+               LoadPrevTrackCycle();
+               return true;
+
+            case 'l':
+               ToggleCheckpointGoalFlag();
+               return true;
+
+            case VKEY_DOWN:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  cursor_diry = -1;
+               }
+               else
+               {
+                  cursor_dirz = 1;
+               }
+               return true;
+            case VKEY_UP:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  cursor_diry = 1;
+               }
+               else
+               {
+                  cursor_dirz = -1;
+               }
+               return true;
+            case VKEY_LEFT:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  ChangeCheckpointId(-1);
+               }
+               else
+               {
+                  cursor_dirx = -1;
+               }
+               return true;
+            case VKEY_RIGHT:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  ChangeCheckpointId(1);
+               }
+               else
+               {
+                  cursor_dirx = 1;
+               }
+               return true;
+            case 'i':
+               ScaleEntityXY(1.05, 1.05);
+               return true;
+            case 'o':
+               ScaleEntityXY(0.95, 0.95);
+               return true;
+         }
+         switch(_k.released)
+         {
+            case '1':
+               b_lock_axis_x = false;
+               return true;
+
+            case '2':
+               b_lock_axis_y = false;
+               return true;
+
+            case '3':
+               b_lock_axis_z = false;
+               return true;
+
+            case VKEY_LSHIFT:
+               if(cursor_diry != 0)
+               {
+                  cursor_dirz = -cursor_diry;
+                  cursor_diry = 0;
+                  return true;
+               }
+               break;
+
+            case VKEY_LCTRL:
+               b_rotate_entity = false;
+               track.updateTrack();
+               return true;
+
+            case VKEY_DOWN:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  if(cursor_diry < 0)
+                     cursor_diry = 0;
+               }
+               else
+               {
+                  if(cursor_dirz > 0)
+                     cursor_dirz = 0;
+               }
+               return true;
+            case VKEY_UP:
+               if(_k.mod & VMOD_LSHIFT)
+               {
+                  if(cursor_diry > 0)
+                     cursor_diry = 0;
+               }
+               else
+               {
+                  if(cursor_dirz < 0)
+                     cursor_dirz = 0;
+               }
+               return true;
+            case VKEY_LEFT:
+               if(cursor_dirx < 0)
+                  cursor_dirx = 0;
+               return true;
+            case VKEY_RIGHT:
+               if(cursor_dirx > 0)
+                  cursor_dirx = 0;
+               return true;
+         }
+         return false;
+      }
+      else
+      {
+         return true;
+      }
+   }
+}

@@ -1,0 +1,204 @@
+
+module MSkyBox;
+
+namespace racer;
+
+use tkopengl;
+use tkmath;
+
+
+StringArray skybox_filenames = [
+   "textures/skyboxes/skyboxsun25degtest.png",
+   "textures/skyboxes/skyboxsun45deg.png",
+   "textures/skyboxes/skyboxsun5deg.png",
+   "textures/skyboxes/skyboxsun5deg2.png"
+];
+int skybox_idx = 0;
+
+Texture tex_skybox_nx;
+Texture tex_skybox_ny;
+Texture tex_skybox_nz;
+Texture tex_skybox_px;
+Texture tex_skybox_py;
+Texture tex_skybox_pz;
+float sky_fog_r;
+float sky_fog_g;
+float sky_fog_b;
+
+
+class SkyBox {
+
+   protected static int xxx_save_id=0;
+   protected static PrepareTexture(Texture _t, int _target, int _sharedId) : int {
+      _t.target = _target;
+      if(-1 != _sharedId)
+      {
+         _t.id = _sharedId;
+      }
+      //_t.flipY();
+      _t.flags  = TEX_CLAMPTOEDGE_S | TEX_CLAMPTOEDGE_T;
+      _t.unload();
+      _t.upload();
+      //_t.freeImage();
+      //_t.saveImage("xxx_"+xxx_save_id+".png");
+      xxx_save_id++;
+      return _t.id;
+   }   
+
+   public static LoadTexture() {
+      trace "[dbg] SkyBox::LoadSkyboxTexture: ENTER";
+      Texture t;
+      if(t.loadLocalImage(skybox_filenames[skybox_idx], 4096, 3072, 4))
+      {
+         tex_skybox_nx.alloc(1024, 1024, t.z);
+         tex_skybox_ny.alloc(1024, 1024, t.z);
+         tex_skybox_nz.alloc(1024, 1024, t.z);
+         tex_skybox_px.alloc(1024, 1024, t.z);
+         tex_skybox_py.alloc(1024, 1024, t.z);
+         tex_skybox_pz.alloc(1024, 1024, t.z);
+         
+         tex_skybox_nx.copyRegion(t,    0, 1024,   1024, 1024, 0,0);
+         tex_skybox_ny.copyRegion(t, 1024,    0,   1024, 1024, 0,0);
+         tex_skybox_nz.copyRegion(t, 3072, 1024,   1024, 1024, 0,0);
+         
+         tex_skybox_px.copyRegion(t, 2048, 1024,   1024, 1024, 0,0);
+         tex_skybox_py.copyRegion(t, 1024, 2048,   1024, 1024, 0,0);
+         tex_skybox_pz.copyRegion(t, 1024, 1024,   1024, 1024, 0,0);
+
+         if(0 != skybox_idx)
+         {
+            track.calcFogColor(tex_skybox_px, 0,0,0);
+            // track.calcFogColor(tex_skybox_py, track.fog_r,track.fog_g,track.fog_b);
+            // track.calcFogColor(tex_skybox_pz, track.fog_r,track.fog_g,track.fog_b);
+            // track.calcFogColor(tex_skybox_nx, track.fog_r,track.fog_g,track.fog_b);
+            // track.calcFogColor(tex_skybox_ny, track.fog_r,track.fog_g,track.fog_b);
+            // track.calcFogColor(tex_skybox_nz, track.fog_r,track.fog_g,track.fog_b);
+         }
+         else
+         {
+            track.fog_r = 0.843137;
+            track.fog_g = 0.796078;
+            track.fog_b = 0.690196;
+         }
+
+         sky_fog_r = track.fog_r;
+         sky_fog_g = track.fog_g;
+         sky_fog_b = track.fog_b;
+
+//       tex_skybox_nx.setScreenArea(t,    0, 1024,   1024, 1024);
+//       tex_skybox_ny.setScreenArea(t, 1024, 2048,   1024, 1024);
+//       tex_skybox_nz.setScreenArea(t, 3072, 1024,   1024, 1024);
+//       tex_skybox_px.setScreenArea(t, 2048, 1024,   1024, 1024);
+//       tex_skybox_py.setScreenArea(t, 1024,    0,   1024, 1024);
+//       tex_skybox_pz.setScreenArea(t, 1024, 1024,   1024, 1024);
+
+         int sharedId =
+         PrepareTexture(tex_skybox_nx, GL_TEXTURE_CUBE_MAP_NEGATIVE_X, -1);
+         PrepareTexture(tex_skybox_py, GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, sharedId);
+         PrepareTexture(tex_skybox_nz, GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, sharedId);
+         
+         PrepareTexture(tex_skybox_px, GL_TEXTURE_CUBE_MAP_POSITIVE_X, sharedId);
+         PrepareTexture(tex_skybox_ny, GL_TEXTURE_CUBE_MAP_POSITIVE_Y, sharedId);
+         PrepareTexture(tex_skybox_pz, GL_TEXTURE_CUBE_MAP_POSITIVE_Z, sharedId);
+         
+         t.free();
+         
+         trace "[...] SkyBox::LoadTexture: skybox texture loaded OK.";
+      }
+      else
+      {
+         trace "[---] SkyBox::LoadTexture: failed to load skybox cubemap texture (4096x3072)";
+      }
+   }
+
+   public static LoadNext() {
+      if(skybox_idx == 0)
+      {
+         skybox_idx = skybox_filenames.numElements - 1;
+      }
+      else
+      {
+         skybox_idx--;
+      }
+   }
+
+   public static LoadPrev() {
+      skybox_idx = (skybox_idx + 1) % (skybox_filenames.numElements - 1);
+   }
+   
+   public static Draw(float dt) compile {
+
+      //////glEnable(GL_DEPTH_TEST);
+      glDisable(GL_TEXTURE_2D);
+      glDisable(GL_BLEND);
+      zglColorARGB(#FFFFFFFF);
+      tex_skybox_nx.bind();
+      glEnable(GL_TEXTURE_CUBE_MAP );
+      
+      glPushMatrix();
+      glLoadIdentity();
+      if(RacerConfiguration.b_debug_cam)
+      {
+         zgluLookAt(vector4f(0,0,0,1), cam.center, vector3f(0,1,0));
+      }
+      else
+      {
+         zgluLookAt(vector4f(0,0,0,1), player.cam_center, player.cam_up);
+      }
+// // //     Matrix4f camMat = cam.cached_rot_matrix;
+// // //     Matrix4f camMatInv;
+// // //     camMat.invert() => camMatInv;
+// // //     camMatInv.initIdentity();
+      
+      ////glEnable(GL_NORMALIZE);
+      
+      glBegin(GL_QUADS); // crashes with Linux ATI radeon driver
+      
+      float s = Z_FAR*0.5;
+      
+      Vector4f p, pRot;
+      
+      glTexCoord3f(-1, -1, -1);  glVertex3f(-s, -s, -s);
+      glTexCoord3f( 1, -1, -1);  glVertex3f( s, -s, -s);
+      glTexCoord3f( 1, -1,  1);  glVertex3f( s, -s,  s);
+      glTexCoord3f(-1, -1,  1);  glVertex3f(-s, -s,  s);
+      
+      glTexCoord3f(-1,  1, -1);  glVertex3f(-s,  s, -s);
+      glTexCoord3f( 1,  1, -1);  glVertex3f( s,  s, -s);
+      glTexCoord3f( 1,  1,  1);  glVertex3f( s,  s,  s);
+      glTexCoord3f(-1,  1,  1);  glVertex3f(-s,  s,  s);
+
+      glTexCoord3f(-1, -1, -1);  glVertex3f(-s, -s, -s);
+      glTexCoord3f(-1,  1, -1);  glVertex3f(-s,  s, -s);
+      glTexCoord3f(-1,  1,  1);  glVertex3f(-s,  s,  s);
+      glTexCoord3f(-1, -1,  1);  glVertex3f(-s, -s,  s);
+
+      glTexCoord3f( 1, -1, -1);  glVertex3f( s, -s, -s);
+      glTexCoord3f( 1,  1, -1);  glVertex3f( s,  s, -s);
+      glTexCoord3f( 1,  1,  1);  glVertex3f( s,  s,  s);
+      glTexCoord3f( 1, -1,  1);  glVertex3f( s, -s,  s);
+
+      glTexCoord3f(-1, -1, -1);  glVertex3f(-s, -s, -s);
+      glTexCoord3f(-1,  1, -1);  glVertex3f(-s,  s, -s);
+      glTexCoord3f( 1,  1, -1);  glVertex3f( s,  s, -s);
+      glTexCoord3f( 1, -1, -1);  glVertex3f( s, -s, -s);
+
+      glTexCoord3f(-1, -1,  1);  glVertex3f(-s, -s,  s);
+      glTexCoord3f(-1,  1,  1);  glVertex3f(-s,  s,  s);
+      glTexCoord3f( 1,  1,  1);  glVertex3f( s,  s,  s);
+      glTexCoord3f( 1, -1,  1);  glVertex3f( s, -s,  s);
+      
+      glEnd();
+      
+      glPopMatrix();
+      
+      glDisable(GL_TEXTURE_CUBE_MAP);
+      
+      ////glDisable(GL_NORMALIZE);
+      
+      // glMatrixMode(GL_TEXTURE);
+      // glLoadIdentity();
+      // glMatrixMode(GL_MODELVIEW);
+   }
+   
+}

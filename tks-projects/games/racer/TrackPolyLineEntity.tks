@@ -1,0 +1,726 @@
+
+module MTrackPolyLineEntity;
+
+namespace racer;
+
+class TrackPolyLineEntity extends TrackEntity {
+
+   define int MAX_POINTS = 65536;
+
+   define float THRESHOLD = 7.0 * 0.01;
+   define float THRESHOLD_P = 7 * 0.01;
+
+   FloatArray           points; // interpolated bezier points
+   FloatArray           lengths; // segment lengths (summed, first entry=length of first segment, last entry=total length of all segments)
+   BezierPolyLine       bpl; // path
+   boolean b_closed; // true=closed polyline, false=open
+   FloatArray           point_normals;
+   FloatArray           extruded_points;
+
+   Envelope  env_twist;
+   Envelope  env_width;
+   Envelope  env_height;
+   Envelope  env_borderh;
+   BezierPolyLine bpl_twist;
+   BezierPolyLine bpl_width;
+   BezierPolyLine bpl_height;
+   BezierPolyLine bpl_borderh;
+
+   public method copyFrom(TrackPolyLineEntity o) {
+      bb_min     = o.bb_min;
+      bb_max     = o.bb_max;
+      bb_center  = o.bb_center;
+      center_pos = o.center_pos;
+      scale      = o.scale;
+      rotation   = o.rotation;
+
+      points          = o.points;
+      lengths         = o.lengths;
+      b_closed        = o.b_closed;
+      point_normals   = o.point_normals;
+      extruded_points = o.extruded_points;
+      env_twist       = o.env_twist;
+      env_width       = o.env_width;
+      env_height      = o.env_height;
+      env_borderh     = o.env_borderh;
+      bpl.copyFrom(o.bpl);
+      bpl_twist.copyFrom(o.bpl_twist);
+      bpl_width.copyFrom(o.bpl_width);
+      bpl_height.copyFrom(o.bpl_height);
+      bpl_borderh.copyFrom(o.bpl_borderh);
+   }
+
+   public method scaleXY(float _sx, float _sy) {
+      bpl.scaleXY(_sx, _sy);
+   }
+
+   protected method calcSegmentLengths() {
+      float lx = points[0];
+      float ly = points[1];
+      lengths.alloc(points.numElements / 2);
+      int idx = 2;
+      float cx;
+      float cy;
+      float d = 0;
+      loop( (points.numElements/2) -1) {
+         cx = points[idx+0];
+         cy = points[idx+1];
+         d += sqrt( (cx-lx)*(cx-lx) + (cy-ly)*(cy-ly) );
+         lengths.add(d);         
+         lx = cx;
+         ly = cy;
+         idx += 2;
+      }
+      // Last segment
+      if(b_closed)
+      {
+         cx = points[0];
+         cy = points[1];
+         d += sqrt( (cx-lx)*(cy-lx) + (cy-ly)*(cy-ly) );
+      }
+      lengths.add(d);
+      ////trace "[dbg] total path length="+d;
+   }
+
+
+   protected method centerPoints() {
+      float minx = 999999.0f;
+      float maxx = -999999.0f;
+      float miny = 999999.0f;
+      float maxy = -999999.0f;
+
+      int idx = 0;
+      loop(points.numElements / 2) 
+      {
+         float x = points[idx+0];
+         float y = points[idx+1];
+         if(x > maxx)
+            maxx = x;
+         if(x < minx)
+            minx = x;
+         if(y > maxy)
+            maxy = y;
+         if(y < miny)
+            miny = y;
+
+         idx += 2;
+      }
+
+      float shiftX = (maxx + minx) * -0.5;
+      float shiftY = (maxy + miny) * -0.5;
+
+      idx = 0;
+      loop(points.numElements / 2)
+      {
+         points[idx + 0] += shiftX;
+         points[idx + 1] += shiftY;
+         idx += 2;
+      }
+   }
+
+   protected method calcPointNormals() {
+      int idx = 0;
+      int numPoints = points.numElements / 2;
+      float lastX = points[points.numElements -2];
+      float lastY = points[points.numElements -1];
+      point_normals.alloc(numPoints*2);
+      point_normals.numElements = point_normals.maxElements;
+      loop(numPoints) 
+      {
+         float x = points[idx + 0];
+         float y = points[idx + 1];
+
+         float tx = (x - lastX);
+         float ty = (y - lastY);
+         ////trace "tx["+idx+"]=("+tx+";"+ty+")";
+         float l = sqrt(tx*tx + ty*ty);
+         point_normals[idx+0] = -ty / l;
+         point_normals[idx+1] = tx / l;
+
+         idx += 2;
+         lastX = x;
+         lastY = y;
+      }
+   }
+
+   protected method scalePoints(float sx, sy) {
+      int idx = 0;
+      loop(points.numElements/2)
+      {
+         points[idx + 0] *= sx;
+         points[idx + 1] *= sy;
+         idx += 2;
+      }
+   }
+
+   public method drawLines() {
+      // Draw lines
+      int i = 0;
+      FloatArray p <= points;
+      zglColorARGB(#ff0080f0);
+      glLineWidth(3.0);
+      glBegin(GL_LINES);
+      compile loop((p.numElements/2)-1)
+      {
+         glVertex3f(p[i],   0, p[i+1]);
+         glVertex3f(p[i+2], 0, p[i+3]);
+         i = i + 2;
+      }
+      glEnd();
+   }
+
+   public method drawPointNormals() {
+      // Draw lines
+      int i = 0;
+      FloatArray p <= points;
+      FloatArray n <= point_normals;
+      zglColorARGB(#fff0f010);
+      glLineWidth(1.0);
+      glBegin(GL_LINES);
+      compile loop((p.numElements/2)-1)
+      {
+         float cx = p[i];
+         float cy = p[i+1];
+         float nx = n[i] * 10;
+         float ny = n[i+1] * 10;
+//          nx = 0.001; ny = 0.001; 
+         glVertex3f(cx, 0, cy);
+         glVertex3f(cx-nx,   0, cy-ny);
+
+         glVertex3f(cx, 0, cy);
+         glVertex3f(cx+nx,   0, cy+ny);
+         i = i + 2;
+      }
+      glEnd();
+   }
+
+   protected method updateBBox(Vector4f v) {
+      if(v.x < bb_min.x)
+         bb_min.x = v.x;
+
+      if(v.y < bb_min.y)
+         bb_min.y = v.y;
+
+      if(v.z < bb_min.z)
+         bb_min.z = v.z;
+
+      if(v.x > bb_max.x)
+         bb_max.x = v.x;
+
+      if(v.y > bb_max.y)
+         bb_max.y = v.y;
+
+      if(v.z > bb_max.z)
+         bb_max.z = v.z;
+   }
+
+   public method addSegmentsToTrack(Track _track) { //compile
+
+      points.alloc(2*MAX_POINTS);
+      points.numElements = 0;
+
+      bpl.calc(points, THRESHOLD, THRESHOLD_P, false);//true);
+      calcSegmentLengths();
+      
+      centerPoints();
+      scalePoints(scale.x, scale.z);
+      calcPointNormals();
+
+      // Calc segment meshes (for rendering and collision detection)
+      int i = 0;
+      FloatArray p <= points;
+      FloatArray n <= point_normals;
+      FloatArray lens <= lengths;
+      float lastX = points[points.numElements-2];
+      float lastY = points[points.numElements-1];
+      float lastNx = point_normals[point_normals.numElements-2];
+      float lastNy = point_normals[point_normals.numElements-1];
+
+      float angh = 0.0f;
+      float angspeedh = (1*2PI) / (point_normals.numElements/2);
+
+      float hs = 500 * 0.01;
+      float hsOff = 20 * 0.01;
+
+      float pathOffset = 0;
+      float totalPathLen = lens[lens.numElements-1];
+      int pathIdx = 0;
+
+      float lastZ = (0.5 + sin(-angspeedh)*0.5) * hs + hsOff;
+
+      float lastTwist = 0;
+
+      Vector4f vcLast;
+      Vector4f vliLast;
+      Vector4f vriLast;
+      Vector4f vloLast;
+      Vector4f vroLast;
+      Vector4f vloCollLast;
+      Vector4f vroCollLast;
+      Vector4f vlwLast;
+      Vector4f vrwLast;
+
+      float texvi, texviLast, texvo, texvoLast;
+
+      int bFirst = !b_closed ? 2 : 0; // skip first 2 segments if polyline is not closed
+
+      bb_min.init( 999999,  999999,  999999);
+      bb_max.init(-999999, -999999, -999999);
+
+      loop((p.numElements/2))
+      {
+         // note: routine uses x/y axis for plane and z for height but
+         //       the vertices are stored in x/z + y order !
+
+         float cx = p[i];
+         float cy = p[i+1];
+         float nx = n[i];
+         float ny = n[i+1];
+
+         float pathRel = (pathOffset / totalPathLen);
+
+         env_twist.time = pathRel;
+         env_width.time = pathRel;
+         env_height.time = pathRel;
+         env_borderh.time = pathRel;
+         //trace "pathOffset="+pathOffset+" totalPathLen="+totalPathLen+" pathRel="+pathRel;
+
+         float twist = env_twist.get();
+         float width = (1.0 + 0.5*4 + env_width.get()*4);
+
+         float is = (16 * 1.3 * width) * 0.01;
+         float os = (24 * 1.3 * width) * 0.01;
+         float osColl = (28 * 1.3 * width) * 0.01;
+
+         float borderH = (env_borderh.get()*4 + 1);
+         float iy = (0.3 * borderH) * 0.01;
+         float oy = (3.0 * 1.13 * borderH) * 0.01;
+         float oyColl = (3.4 * 1.13 * borderH) * 0.01;
+
+         float cOy = (oy * width * 1.5);
+         float cOyColl = (oyColl * width * 1.5);
+
+         float z = env_height.get() * hs + hsOff;
+
+         Matrix4f m;
+         Vector3f unitDir; // direction of path
+         unitDir.init( 100*(cx - lastX), 100*(z - lastZ), 100*(cy - lastY) );
+         if(unitDir.abs)
+         {
+            unitDir.unit();
+         }
+         m.initRotate(twist, unitDir);
+
+         Vector4f vc;
+         Vector4f vli; 
+         Vector4f vri; 
+         Vector4f vlo; 
+         Vector4f vro; 
+         Vector4f vloColl; 
+         Vector4f vroColl; 
+         Vector4f t;
+
+         vc.init(cx, z, cy, 1);
+
+         t.init(-is*nx, iy, -is*ny, 1); 
+         m.mulv(t) => vli;
+
+         t.init( is*nx, iy,  is*ny, 1); 
+         m.mulv(t) => vri;
+
+         t.init(-os*nx, cOy, -os*ny, 1); 
+         m.mulv(t) => vlo;
+
+         t.init( os*nx, cOy,  os*ny, 1); 
+         m.mulv(t) => vro;
+
+         t.init(-osColl*nx, cOyColl, -osColl*ny, 1); 
+         m.mulv(t) => vloColl;
+
+         t.init( osColl*nx, cOyColl,  osColl*ny, 1); 
+         m.mulv(t) => vroColl;
+
+         vli.add(vc);
+         vri.add(vc);
+         vlo.add(vc);
+         vro.add(vc);
+         vloColl.add(vc);
+         vroColl.add(vc);
+
+         vc.rotate(rotation);
+         vli.rotate(rotation);
+         vri.rotate(rotation);
+         vlo.rotate(rotation);
+         vro.rotate(rotation);
+         vloColl.rotate(rotation);
+         vroColl.rotate(rotation);
+
+         vc.add(center_pos);
+         vli.add(center_pos);
+         vri.add(center_pos);
+         vlo.add(center_pos);
+         vro.add(center_pos);
+         vloColl.add(center_pos);
+         vroColl.add(center_pos);
+
+         texvi = pathRel * (totalPathLen / (256*0.01));
+         texvo = pathRel * (totalPathLen / (128*0.01));
+         float texui = 1.0;
+         float texuo = 1.0;
+
+         if(bFirst)
+         {
+            bFirst--;
+         }
+         else 
+         {
+            TrackSegment seg <= new TrackSegment();
+            seg.allocVertices();
+
+            updateBBox(vc);
+            updateBBox(vli);
+            updateBBox(vri);
+            updateBBox(vlo);
+            updateBBox(vro);
+
+            ////trace "n["+i+"]=("+nx+";"+ny+")";
+
+            // #0  inner: 1 left
+            seg.addVertex(vliLast);
+            seg.addVertex(vli);
+            seg.addVertex(vri);
+            seg.addCollVertex(vliLast);
+            seg.addCollVertex(vli);
+            seg.addCollVertex(vri);
+            seg.addUVCoord(-texui, texviLast);
+            seg.addUVCoord(-texui, texvi);
+            seg.addUVCoord(texui, texvi);
+
+            // #1  inner: 2
+            seg.addVertex(vliLast);
+            seg.addVertex(vri);
+            seg.addVertex(vriLast);
+            seg.addCollVertex(vliLast);
+            seg.addCollVertex(vri);
+            seg.addCollVertex(vriLast);
+            seg.addUVCoord(-texui, texviLast);
+            seg.addUVCoord(texui, texvi);
+            seg.addUVCoord(texui, texviLast);
+
+            // #2  outer: 3 (BORDER LEFT)
+            seg.addVertex(vloLast);
+            seg.addVertex(vlo);
+            seg.addVertex(vli);
+            seg.addCollVertex(vloCollLast);
+            seg.addCollVertex(vloColl);
+            seg.addCollVertex(vli);
+            seg.addUVCoord(-texuo, texvoLast);
+            seg.addUVCoord(-texuo, texvo);
+            seg.addUVCoord(0, texvo);
+
+            // #3  outer: 4
+            seg.addVertex(vloLast);
+            seg.addVertex(vli);
+            seg.addVertex(vliLast);
+            seg.addCollVertex(vloCollLast);
+            seg.addCollVertex(vli);
+            seg.addCollVertex(vliLast);
+            seg.addUVCoord(-texuo, texvoLast);
+            seg.addUVCoord(0, texvo);
+            seg.addUVCoord(0, texvoLast);
+
+            // #4  5 (BORDER RIGHT)
+            seg.addVertex(vriLast);
+            seg.addVertex(vri);
+            seg.addVertex(vro);
+            seg.addCollVertex(vriLast);
+            seg.addCollVertex(vri);
+            seg.addCollVertex(vroColl);
+            seg.addUVCoord(0, texvoLast);
+            seg.addUVCoord(0, texvo);
+            seg.addUVCoord(texuo, texvo);
+
+            // #5  6
+            seg.addVertex(vriLast);
+            seg.addVertex(vro);
+            seg.addVertex(vroLast);
+            seg.addCollVertex(vriLast);
+            seg.addCollVertex(vroColl);
+            seg.addCollVertex(vroCollLast);
+            seg.addUVCoord(0, texvoLast);
+            seg.addUVCoord(texuo, texvo);
+            seg.addUVCoord(texuo, texvoLast);
+
+            _track.addTrackSegment(deref seg);
+         }
+
+         // next segment
+         i = i + 2;
+         lastX = cx;
+         lastY = cy;
+         lastZ = z;
+         vcLast = vc;
+         vliLast = vli;
+         vriLast = vri;
+         vloLast = vlo;
+         vroLast = vro;
+         vloCollLast = vloColl;
+         vroCollLast = vroColl;
+         texviLast = texvi;
+         texvoLast = texvo;
+         angh += angspeedh;
+         pathOffset = lens[pathIdx++];
+      }
+
+      if(b_closed)
+      {
+         trace "xxx b_closed";
+
+         // Fix "Last" vertices of first segment (initially (0,0,0) !)
+         seg <= _track.track_segments[0];
+         seg.fixVertices(3*0+0, vliLast, vliLast); // inner 1 left
+         
+         seg.fixVertices(3*1+0, vliLast, vliLast);  // inner 3 right
+         seg.fixVertices(3*1+2, vriLast, vriLast); //
+         
+         // // seg.fixVertices(3*2+0, vliLast, vliLast); // inner 2 left
+         // // seg.fixVertices(3*2+2, vcLast,  vcLast);  // 
+         
+         // // seg.fixVertices(3*3+0, vriLast, vriLast); // 4 right
+         
+         seg.fixVertices(3*2+0, vloLast, vloCollLast); // outer 5
+         seg.fixVertices(3*2+2, vliLast, vliLast);     // 
+         
+         seg.fixVertices(3*3+0, vliLast, vliLast);     // 7
+         ////seg.fixVertices(3*3+2, vroLast, vroCollLast); //
+         
+         seg.fixVertices(3*4+0, vriLast, vriLast);     // 6
+         seg.fixVertices(3*4+2, vroLast, vroCollLast);     // 6
+         
+         seg.fixVertices(3*5+0, vroLast, vroCollLast); //
+         
+         // xxx TODO: fix UV coords
+      }  
+
+      // Calc bbox center
+      bb_center.x = (bb_min.x + bb_max.x) * 0.5;
+      bb_center.y = (bb_min.y + bb_max.y) * 0.5;
+      bb_center.z = (bb_min.z + bb_max.z) * 0.5;
+
+      ////trace "[dbg] TrackPolyLineEntity: bb_min="+bb_min+" bb_max="+bb_max;
+   }
+
+   public method recalcEnvelopes() {
+      if(null != bpl_twist)
+      {
+         bpl_twist.calcEnv(env_twist, 1.0, 0.0005, 0.001);
+      }
+
+      if(null != bpl_width)
+      {
+         bpl_width.calcEnv(env_width, 1.0, 0.0005, 0.001);
+      }
+
+      if(null != bpl_height)
+      {
+         bpl_height.calcEnv(env_height, 1.0, 0.0005, 0.001);
+      }
+
+      if(null != bpl_borderh)
+      {
+         bpl_borderh.calcEnv(env_borderh, 1.0, 0.0005, 0.001);
+      }
+   }
+
+
+   public method initPolyLineSVG(String _svgPolyLine, boolean _bClosed, 
+                                 Vector3f _centerPos, _scale, 
+                                 BezierPolyLine _bplTwist, _bplWidth, _bplHeight, _bplBorderH) 
+   {
+      bpl <= new BezierPolyLine;
+      bpl.initFromSVG(_svgPolyLine);
+      initPolyLine(bpl, _bClosed, _centerPos, _scale, deref _bplTwist, deref _bplWidth, deref _bplHeight, deref _bplBorderH);
+   }
+
+   public method initPolyLine(BezierPolyLine _bpl, boolean _bClosed, 
+                              Vector3f _centerPos, _scale, 
+                              BezierPolyLine _bplTwist, _bplWidth, _bplHeight, _bplBorderH) 
+   {
+      bpl <= deref _bpl;
+
+      b_closed = _bClosed;
+      center_pos = _centerPos;
+      scale = _scale;
+      
+//       points.alloc(2*65536);
+//       points.numElements = 0;
+     
+      if(null != _bplTwist)
+      {
+         bpl_twist <= deref _bplTwist;
+      }
+      else
+      {
+         bpl_twist <= new BezierPolyLine;
+         bpl_twist.addSimpleCtlPoint(0,0);
+         bpl_twist.addSimpleCtlPoint(0.5,0);
+         bpl_twist.addSimpleCtlPoint(1,0);
+      }
+
+      if(null != _bplWidth)
+      {
+         bpl_width <= deref _bplWidth;
+      }
+      else
+      {
+         bpl_width <= new BezierPolyLine;
+         bpl_width.addSimpleCtlPoint(0,0);
+         bpl_width.addSimpleCtlPoint(0.5,0);
+         bpl_width.addSimpleCtlPoint(1,0);
+      }
+
+      if(null != _bplHeight)
+      {
+         bpl_height <= deref _bplHeight;
+      }
+      else
+      {
+         bpl_height <= new BezierPolyLine;
+         bpl_height.addSimpleCtlPoint(0,0);
+         bpl_height.addSimpleCtlPoint(0.5,0);
+         bpl_height.addSimpleCtlPoint(1,0);
+      }
+
+      if(null != _bplBorderH)
+      {
+         bpl_borderh <= deref _bplBorderH;
+      }
+      else
+      {
+         bpl_borderh <= new BezierPolyLine;
+         bpl_borderh.addSimpleCtlPoint(0,0);
+         bpl_borderh.addSimpleCtlPoint(0.5,0);
+         bpl_borderh.addSimpleCtlPoint(1,0);
+      }
+
+      recalcEnvelopes();
+   }
+
+   public method saveToStream(Stream os) {
+      // Save entity type
+      os.i32 = TrackEntity.TYPE_POLYLINE;
+
+      // Save path
+      bpl.saveToStream(os);
+
+      // Save "b_closed"
+      os.i32 = b_closed;
+
+      // Save "center_pos" and "scale"
+      os << center_pos;
+      os << scale;
+
+      // Save rotation (ver 3+)
+      //  (note) column-major up to (including) v06
+      //  (note) row-major in v07+
+      os << rotation;
+
+      // Save "twist", "width" and "height" envelopes
+      bpl_twist .saveToStream(os);
+      bpl_width .saveToStream(os);
+      bpl_height.saveToStream(os);
+      bpl_borderh.saveToStream(os);
+   }
+
+   public method loadFromStream(Stream is, int ver) {
+      // Entity type has already been loaded by caller
+
+      // Load path
+      BezierPolyLine path <= new BezierPolyLine;
+      path.loadFromStream(is, ver);
+      if(ver < 5)
+      {
+         path.scaleAfterLoad(1.0 / RacerConfiguration.PREV5_SCALE);
+      }
+
+
+      // Load "b_closed"
+      b_closed = is.i32;
+
+      // Load "center_pos" and "scale"
+      center_pos << is;
+      scale      << is; // always 0.5, 1, 0.5 ?
+      
+      if(ver < 5)
+      {
+         center_pos.mulf(1.0 / RacerConfiguration.PREV5_SCALE);
+      }
+
+      if(ver >= 3)
+      {
+         // Load rotation (ver 3+)
+         rotation << is;
+         if(ver <= 6)
+            rotation.transpose();  // [16Dec2024] fix old column-major order to row-major
+      }
+      else
+      {
+         rotation.initIdentity();
+      }
+
+      // Load "twist", "width" and "height" envelopes
+      BezierPolyLine bplTwist <= new BezierPolyLine;
+      bplTwist.loadFromStream(is, ver);
+      BezierPolyLine bplWidth <= new BezierPolyLine;
+      bplWidth.loadFromStream(is, ver);
+      BezierPolyLine bplHeight <= new BezierPolyLine;
+      bplHeight.loadFromStream(is, ver);
+      BezierPolyLine bplBorderH <= null;
+      if(ver >= 4)
+      {
+         // Load border height bezier envelope
+         bplBorderH <= new BezierPolyLine;
+         bplBorderH.loadFromStream(is, ver);
+      }
+
+      initPolyLine(deref path, b_closed, center_pos, scale, 
+                   deref bplTwist, deref bplWidth, deref bplHeight, deref bplBorderH
+                   );
+   }
+
+   public method highlightPoint(float _pathRelOffset) {
+      if(points.numElements)
+      {
+         float idxF = _pathRelOffset * (points.numElements/2);
+         int idx = int(idxF)*2;
+         Vector4f p;
+         if(idx < (points.numElements-2))
+         {
+            float frac = frac(idxF);
+            p.init(points[idx+0] * (1-frac) + points[idx+2] * frac,
+                   0,
+                   points[idx+1] * (1-frac) + points[idx+3] * frac,
+                   1);
+         }
+         else
+         {
+            p.init(points[idx+0],
+                   0,
+                   points[idx+1],
+                   1);
+         }
+         p.rotate(rotation);
+         p.x += center_pos.x;
+         p.y += center_pos.y;
+         p.z += center_pos.z;
+         Editor.edit_highlight_point_x = p.x;
+         Editor.edit_highlight_point_z = p.z;
+      }
+      else
+      {
+         Editor.edit_highlight_point_x = 0;
+         Editor.edit_highlight_point_z = 0;
+      }
+   }
+
+}

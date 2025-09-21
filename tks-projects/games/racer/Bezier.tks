@@ -1,0 +1,239 @@
+
+module MBezier;
+
+
+//float f_threshold = 0.05; // bezier flattness recursion threshold (0.15=detailed, 5.0=coarse)
+//float f_threshold = 0.15;
+boolean i_maxrecursion = 9; // ORIGINAL
+// boolean i_maxrecursion = 6; // MOBILE
+
+
+class Bezier {
+
+   static CalcDistancePointPlane(float px, py, float qx, qy, float nx, ny) : float {
+      //
+      // Return distance of point p to infinite plane. q is a point on the plane
+      // and n is the plane normal.
+      //
+      float vx, vy;
+      vx = px - qx; 
+      vy = py - qy;
+      float vdotn = vx * nx + vy * ny;
+      float nlen = sqrt(nx*nx + ny*ny);
+      //return (v.Dot(*n)/n->Abs());   
+      return vdotn / nlen;
+   }
+
+   static CalcCubicBezierCurve_Casteljau_Rec(local float a1x, a1y, a2x, a2y, a3x, a3y, a4x, a4y, local int _rec, 
+                                             FloatArray _points, float _fThreshold, float _fThresholdP) : int {
+      // Recursively divide bezier curve
+      // for diagram see http://www.math.washington.edu/~king/coursedir/m445w01/lab/lab04/lab04.html
+      //
+      //      a2___      
+      //      /    b2------- a3
+      //     /   /   \      /
+      //    /__c1--d--c2   /
+      //   b1          \  / 
+      //  /             b3
+      // a1             /
+      //               /  
+      //              a4
+
+
+      // Find midpoint between (a1x, a1y) and (a2x, a2y) ("b1")
+      local float b1x, b1y;
+      b1x = (a1x + a2x) * 0.5;
+      b1y = (a1y + a2y) * 0.5;
+      
+      // Find midpoint between (a2x, a2y) and (a3x, a3y) ("b2")
+      local float b2x, b2y;
+      b2x = (a2x + a3x) * 0.5;
+      b2y = (a2y + a3y) * 0.5;
+      
+      // Find midpoint between (a3x, a3y) and (a4x, a4y) ("b3")
+      local float b3x, b3y;
+      b3x = (a3x + a4x) * 0.5;
+      b3y = (a3y + a4y) * 0.5;
+      
+      // Find midpoint between (b1x, b1y) and (b2x, b2y) ("c1")
+      local float c1x = (b1x + b2x) * 0.5;
+      local float c1y = (b1y + b2y) * 0.5;
+      
+      // Find midpoint between (b2x, b2y) and (b3x, b3y) ("c2")
+      local float c2x = (b2x + b3x) * 0.5;
+      local float c2y = (b2y + b3y) * 0.5;
+      
+      // Find (bezier) midpoint d between (c1x, c1y) and (c2x, c2y)
+      local float d1x = (c1x + c2x) * 0.5;
+      local float d1y = (c1y + c2y) * 0.5;
+
+      boolean bDistP = (sqrt( (c2x-c1x)*(c2x-c1x) + (c2y-c1y)*(c2y-c1y) ) > _fThresholdP);
+
+      if(!bDistP)
+      {
+         // Calc normal vector for (a1, a4)
+         local float nx = -(a4y - a1y);
+         local float ny = (a4x - a1x);
+         
+         // Calc distance of bezier point to (a1, a4) line
+         local float dist = abs(CalcDistancePointPlane(d1x, d1y, a1x, a1y, nx, ny));
+      }
+
+/*
+      // Draw line normal
+      if(b_drawlinenormals)
+      {
+         if(b_drawdots)
+         {
+            glEnd();
+         }
+         zglColorARGB(debug_palette[debug_palette_offset]);
+         glLineWidth(1.0f);
+         glBegin(GL_LINES);
+         glVertex2f(a1x, a1y);
+         glVertex2f(a4x, a4y);
+         glEnd();
+         glBegin(GL_LINES);
+         glVertex2f(a1x, a1y);
+         glVertex2f(a1x+nx, a1y+ny);
+         glEnd();
+         //debug_palette_offset = (debug_palette_offset + 1) % debug_palette.maxElements;
+
+         if(b_drawdots)
+         {
+            zglColorARGB(#ffc0c0c0);
+            glBegin(GL_POINTS);
+         }
+      }
+*/
+
+    
+      if( ((_rec < 1) || (dist > _fThreshold) || bDistP) && (_rec < i_maxrecursion) )
+      {
+//          trace "xxx dist="+dist;
+
+         // Left bezier curve (a1, b1, c1, d1)
+         return = CalcCubicBezierCurve_Casteljau_Rec(a1x, a1y, b1x, b1y, c1x, c1y, d1x, d1y, _rec+1, _points, _fThreshold, _fThresholdP);
+
+         // Output bezier midpoint
+/*         if(b_drawdots)
+         {
+            glVertex2f(d1x, d1y);
+         }
+*/
+         _points.add(d1x);
+         _points.add(d1y);
+
+         // Right bezier curve (d1, c2, b3, a4)
+         return = CalcCubicBezierCurve_Casteljau_Rec(d1x, d1y, c2x, c2y, b3x, b3y, a4x, a4y, _rec+1, _points, _fThreshold, _fThresholdP);
+      }
+      else
+      {
+         return _rec;
+      }
+   }
+
+   static CalcCubicBezierCurve_Casteljau(local float x0, y0, x1, y1, x2, y2, x3, y3, FloatArray points, float _fThreshold, float _fThresholdP) {
+
+/*
+      // Draw control points
+      if(b_drawctlpoints)
+      {
+         zglColorARGB(#ff008877);
+         glLineWidth(1.0);
+         glBegin(GL_LINES);
+         glVertex2f(x0, y0);
+         glVertex2f(x1, y1);
+         glEnd();
+         zglColorARGB(#ff00cc99);
+         glBegin(GL_LINES);
+         glVertex2f(x2, y2);
+         glVertex2f(x3, y3);
+         glEnd();
+      }
+*/
+      
+      //points.add(x0);
+      //points.add(y0);
+
+/*      if(b_drawdots)
+      {
+         zglColorARGB(#ffc0c0c0);
+         glPointSize(3.0);
+         glBegin(GL_POINTS);
+         }*/
+
+      points.add(x0);
+      points.add(y0);
+
+
+      /*print */
+      CalcCubicBezierCurve_Casteljau_Rec(x0, y0, x1, y1, x2, y2, x3, y3, 0, points, _fThreshold, _fThresholdP);
+
+      // points.add(x0 + (x3-x0)*0.125*1);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*1);
+
+      // points.add(x0 + (x3-x0)*0.125*2);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*2);
+
+      // points.add(x0 + (x3-x0)*0.125*3);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*3);
+
+      // points.add(x0 + (x3-x0)*0.125*4);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*4);
+
+      // points.add(x0 + (x3-x0)*0.125*5);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*5);
+
+      // points.add(x0 + (x3-x0)*0.125*6);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*6);
+
+      // points.add(x0 + (x3-x0)*0.125*7);//xxxxxx
+      // points.add(y0 + (y3-y0)*0.125*7);
+
+      // // points.add(x0 + (x3-x0)*0.75);//xxxxxx
+      // // points.add(y0 + (y3-y0)*0.75);
+
+      // points.add(x3);//xxxxxx
+      // points.add(y3);
+
+      //ints.add(x3);//xxxxxx
+      //ints.add(y3);
+
+
+/*
+      if(b_countvertices)
+      {
+         total_num_vertices += (points.numElements/2);
+      }
+*/
+
+
+/*      if(b_drawdots)
+      {
+         glEnd();
+         }*/
+
+      //points.add(x3);
+      //points.add(y3);
+
+      //trace "numPoints="+(points.numElements/2);
+
+/*
+      // Draw lines
+      int i = 0;
+      zglColorARGB(#ff0080f0);
+      glLineWidth(3.0);
+      glBegin(GL_LINES);
+      loop((points.numElements/2)-1)
+      {
+         glVertex3f(points[i], 0, points[i+1]);
+         glVertex3f(points[i+2], 0, points[i+3]);
+         i = i + 2;
+      }
+      glEnd();
+*/
+   }
+
+
+}

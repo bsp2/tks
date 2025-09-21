@@ -1,0 +1,335 @@
+/// ---- file   : camera4_simple3ds.tks
+/// ---- author : bastian spiegel <bs@tkscript.de>
+/// ---- date   : 04-02-2003, 01-09-2003, 8-12-2003, 27-Dec-2004, 03Jun2024(col=>row-major)
+/// ----
+/// ----
+/// ---- a simple camera that is controllable via cursor keys+mouse
+/// ---- new: uses Vector for eye position
+/// ---- new: "1st person shooter" like freelook camera with "strafing" (cursor keys)
+/// ---- new: mousegrab
+/// ---- new: mouse filter
+
+module MCamera;
+
+use tksdl;
+use tkopengl;
+use tkmath;
+
+namespace racer;
+
+class Camera {
+   Vector4f eye;
+   Vector4f center;
+   float roty;
+   float rotx;
+   int   b_rot;
+   int   b_rotx;
+   int   b_zoom;
+   int   b_strafex;
+   int   b_interpol;
+   float xrotmin;
+   float xrotmax;
+   int   xrotclamp;
+   float yrotmin;
+   float yrotmax;
+   int   yrotclamp;
+   float f_avgx;
+   float f_avgy;
+   float f_iavgx;
+   float f_iavgy;
+   float f_avgdecay;
+   float f_smoothamount;
+   float f_ismoothamount;
+   int   b_mousegrab;
+   float f_mousespeedx;
+   float f_mousespeedy;
+   float f_mousespeedx_nointerpol;
+   float f_mousespeedy_nointerpol;
+   float f_strafespeed;
+   float f_strafespeed2;
+   float f_strafetimedecay;
+   float f_strafetime;
+   float f_zoomspeed;
+   float f_zoomspeed2;
+   float f_zoomtimedecay;
+   float f_zoomtime;
+   int   b_sprint;
+   float f_sprinttime;
+   float f_sprintdrain;
+   float f_sprintregen;
+   Matrix4f cached_rot_matrix;
+
+
+   init();
+   load();
+   loadTransform();
+   onMouse(int _dx, int _dy, int _cbs, int _nbs);
+   /** int **/ onKey(Key _key);
+   tickPrecise(float _dt);
+   setEnableInterpolation(int _b);
+
+   initEuler(Matrix4f m, float ry, rx, rz) {
+      float cx,cy,cz;
+      float sx,sy,sz;
+
+      cx = cos(rx);
+      cy = cos(ry);
+      cz = cos(rz);
+      sx = sin(rx);
+      sy = sin(ry);
+      sz = sin(rz);
+      m = [cx*cz - sx*sy*sz , -cy*sz, sx*cz + cx*sy*sz, 0,
+           cx*sz + sx*sy*cz , cy*cz , sx*sz - cx*sy*cz, 0,
+           -sx*cy           , sy    , cx*cy           , 0,
+           0                , 0     , 0               , 1
+      ];
+   }
+}
+
+Camera::init() {
+   eye.init(0.097,0.12,0.022, 1);
+   roty=0;
+   rotx=0;
+   b_rot=false;
+   b_rotx=false;
+   b_zoom=false;
+   b_strafex=false;
+   b_mousegrab=false;
+   b_interpol=false;
+   f_smoothamount=0.51015;
+   f_ismoothamount=0.89;
+   f_mousespeedx=0.75;
+   f_mousespeedy=0.75;
+   f_mousespeedx_nointerpol=0.23;
+   f_mousespeedy_nointerpol=0.23;
+   f_avgx=0;
+   f_avgy=0;
+   f_avgdecay=0.85;
+   f_iavgx=0;
+   f_iavgy=0;
+   f_strafetime=0;
+   f_zoomtime=0;
+   f_zoomspeed=0.00731*1;
+   f_zoomspeed2=0.25*1;
+   f_zoomtimedecay=0.76;
+   f_strafespeed=0.00731*1;
+   f_strafespeed2=0.15*4;
+   f_strafetimedecay=0.86;
+   f_sprinttime=0.5;
+   f_sprintdrain=0.0;///0.0025;
+   f_sprintregen=0.0014;
+   b_sprint=false;
+   xrotmin=-89.0;
+   xrotmax=89.0;
+   xrotclamp=true;
+   yrotmin=-359.0;
+   yrotmax=359.0;
+   yrotclamp=false;
+}
+
+Camera::load() {
+   //Viewport.initPerspective(1.3, 65.0, 0.1, 2000.0);
+   glLoadIdentity();
+   loadTransform();
+}
+
+Camera::setEnableInterpolation {
+   b_interpol=(_b!=0);
+}
+
+Camera::loadTransform() {
+   Vector4f tv; tv.init(0, 0, 400,1);
+   Vector4f tvRot;
+   Matrix4f m;
+   // // //m.init((rotx/360.0)*2PI, (roty/360.0)*2PI, 0 );
+   m.initEulerXYZ((rotx/360.0)*-2PI, (roty/360.0)*-2PI, 0);
+   // // m1.transpose();
+   // // m1.invert() => m;
+   // // m.mulvRev(tv) => tvRot;
+   m.mulv(tv) => tvRot;
+   center = eye;
+   center.add(tvRot);
+   //trace "eye="+eye.string;
+   //trace "center="+center.string;
+
+   glLoadIdentity();
+   zgluLookAt(eye, center, vector3f(0,1,0));
+}
+
+Camera::tickPrecise {
+   //trace "dt="+_dt;
+
+   rotx+=_dt*1.5*b_rotx;
+   roty+=_dt*1.5*b_rot;
+   float fsprint=(1+b_sprint*(int(f_sprinttime*1024)!=0));
+   float fstzoom=(f_zoomtime*f_zoomspeed)*fsprint;
+
+   Vector4f tv; tv.init(0, 0, fstzoom, 1);
+   Vector4f tvRot;
+   Matrix4f m;
+   m.initEulerXYZ((rotx/360.0)*-2PI, (roty/360.0)*-2PI, 0);
+   m.mulv(tv) => tvRot;
+   tvRot.mulf(_dt);
+   eye.add(tvRot);
+
+   // Remember rotation matrix:
+   cached_rot_matrix = m;
+
+   //Vector tv; tv.init(0, 0, fstzoom);
+   //Matrix m; m.init((rotx/360.0)*2PI, (roty/360.0)*2PI, 0 );
+   //tv.rotateInv(m);
+   //eye.addScale(tv, _dt);
+
+   float fststrafe=f_strafetime*f_strafespeed;
+   Vector4f tvs, tvsRot;
+   tvs.init(-fststrafe,0,0, 1);
+   m.mulv(tvs) => tvsRot; // Rev
+   tvsRot.mulf(_dt);
+   eye.add(tvsRot);
+   //Vector tvs;
+   //tvs.init(-fststrafe,0,0);
+   //tvs.rotateInv(m);
+   //eye.addScale(tvs, _dt);
+
+
+
+   float dt2;
+   if(b_interpol)
+	{
+      ////dt2=mathPowerf(f_ismoothamount, _dt); // ORIGINAL
+      dt2 = f_ismoothamount * _dt;
+      f_iavgx += (f_avgx - f_iavgx) * dt2;
+      f_iavgy += (f_avgy - f_iavgy) * dt2;
+	    
+      dt2=mathPowerf(f_avgdecay, _dt);
+      f_avgx *= dt2;
+      f_avgy *= dt2;
+	    
+      rotx -= f_mousespeedx *_dt * f_iavgx;
+      roty += f_mousespeedy *_dt * f_iavgy;
+	}
+   if(xrotclamp)
+	{
+      if(rotx>xrotmax) rotx=xrotmax;
+      else if(rotx<xrotmin) rotx=xrotmin;
+   }
+   if(yrotclamp)
+   {
+      if(roty>yrotmax) roty=yrotmax;
+      else if(roty<yrotmin) roty=yrotmin;
+   }
+   if(rotx>=360.0) rotx-=360.0;
+   else if(rotx<=-360.0) rotx+=360.0;
+   if(roty>=360.0) roty-=360.0;
+   else if(roty<=-360.0) roty+=360.0;
+
+   dt2=f_zoomspeed2* _dt;
+   clamp dt2 0 1;
+   if(b_zoom)
+      f_zoomtime+=(b_zoom-f_zoomtime)*dt2;
+   else
+      f_zoomtime*=mathPowerf(f_zoomtimedecay, _dt);
+
+   dt2=f_strafespeed2* _dt;
+   clamp dt2 0 1;
+   if(b_strafex)
+      f_strafetime+=(b_strafex*(1 + b_sprint)-f_strafetime)*dt2;
+   else
+      f_strafetime*=mathPowerf(f_strafetimedecay, _dt);
+
+   //trace "f_zoomtime="+f_zoomtime;
+   //trace "f_strafetime="+f_strafetime;
+
+   if(b_sprint)
+	{
+      f_sprinttime-=f_sprintdrain*_dt;
+      if(f_sprinttime<0.00001) f_sprinttime=0;
+	}
+   else
+	{
+      f_sprinttime+=f_sprintregen*_dt;
+      if(f_sprinttime>=1) f_sprinttime=1;
+	}
+}
+
+/*
+center=(-14.8204, -29.4358, -392.302, 3793.76)
+eye=(-8.00015, 1.0427, 6.47691, 3794.68)
+*/
+
+Camera::onMouse {
+   _dx=Mouse.dx;
+   _dy=Mouse.dy;
+//       trace "_dx="+_dx+" _dy="+_dy;
+   clamp _dx -20 20;
+   clamp _dy -20 20;
+
+   if(b_interpol)
+	{
+      f_avgx+=(_dy-f_avgx)*f_smoothamount;
+      f_avgy+=(_dx-f_avgy)*f_smoothamount;
+	}
+   else
+	{
+      rotx-=_dy*f_mousespeedx_nointerpol;
+      roty+=_dx*f_mousespeedy_nointerpol;
+	}
+
+   if(1)
+   {
+      if( (_cbs & MOUSE_LBUTTON) && (_nbs & MOUSE_LBUTTON) ) {
+         if(!b_mousegrab) { Mouse.grab(); b_mousegrab=true; }
+      else { Mouse.ungrab(); b_mousegrab=false; }
+      }
+   }
+}
+
+Camera::onKey {
+    // trace "xxx cam _key.name="+_key.name;
+   switch(_key.pressed)
+   {
+      case 'w':
+      case VKEY_UP   : b_zoom=1;  return true;
+      case 's':
+      case VKEY_DOWN : b_zoom=-1; return true;
+      case 'a':
+      case VKEY_LEFT : b_strafex=-1;  return true;
+      case 'd':
+      case VKEY_RIGHT: b_strafex=1; return true;
+      case VKEY_LSHIFT: 
+      case VKEY_PAGEDOWN : b_sprint=true; return true;
+
+         
+      case 'i'       : b_rotx=-1; return true;
+      case 'o'       : b_rotx=1;  return true;
+      case 'k'       : b_rot=-1;  return true;
+      case 'l'       : b_rot=1;   return true;
+      case 'p'       : b_interpol=1-b_interpol; print "b_interpol set to "+b_interpol; return true;
+         
+   }
+   switch(_key.released)
+   {
+      case 'k'       : b_rot=(b_rot==1)?1:0;     return true;
+      case 'l'       : b_rot=(b_rot==-1)?-1:0;   return true;
+      case 'w':
+      case VKEY_UP   : b_zoom=(b_zoom==-1)?-1:0; return true;
+      case 's':
+      case VKEY_DOWN : b_zoom=(b_zoom==1)?1:0;   return true;
+      case 'a':
+      case VKEY_LEFT : b_strafex=(b_strafex==1)?1:0;   return true;
+      case 'd':
+      case VKEY_RIGHT: b_strafex=(b_strafex==-1)?-1:0; return true;
+      case 'i'       : b_rotx=(b_rotx==1)?1:0;   return true;
+      case 'o'       : b_rotx=(b_rotx==-1)?-1:0; return true;
+      case VKEY_LSHIFT: 
+      case VKEY_PAGEDOWN : b_sprint=false; return true;
+   }
+
+   return false;
+}
+
+
+Camera cam;
+cam.init();
+cam.eye.init(-2.93253+0.4, 0.544166+0.2, 1.14866-0.9 ,1);
+cam.roty = 200;

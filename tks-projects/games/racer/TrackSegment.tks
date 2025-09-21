@@ -1,0 +1,227 @@
+
+module MTrackSegment;
+
+namespace racer;
+
+
+class TrackSegment {
+   //  old: (2008)
+   //  x----x----x----x----x----x----x
+   //  |\ 10|\ 6 |\ 2 |\ 4 |\  8|\ 12|
+   //  | \  | \  | \  | \  | \  | \  |
+   //  |  \ |  \ |  \ |  \ |  \ |  \ |
+   //  | 9 \| 5 \| 1 \| 3 \| 7 \|11 \|
+   //  x----x----x----x----x----x----x
+   //
+   //  new: (2014) opt.step1 (nowalls)
+   //  x----x----x----x----x
+   //  |\ 6 |\ 2 |\ 4 |\  8|
+   //  | \  | \  | \  | \  |
+   //  |  \ |  \ |  \ |  \ |
+   //  | 5 \| 1 \| 3 \| 7 \|
+   //  x----x----x----x----x
+   //
+   //  new: (2014) opt.step2 (merge center triangles)
+   //  x----x----x----x
+   //  |\ 4 |\ 2 |\  6|
+   //  | \  | \  | \  |
+   //  |  \ |  \ |  \ |
+   //  | 3 \| 1 \| 5 \|
+   //  x----x----x----x
+   //
+   FloatArray vertices; // 18 vertices, 6 triangles, for collision detection
+   FloatArray face_normals; // 6 triangles
+   FloatArray edge_normals; // 6*3 normals , for collision test
+   FloatArray orig_vertices;
+
+   FloatArray uv_coords; // 18 uv coords, 6 triangles
+
+   Vector2f bb_minxz;
+   Vector2f bb_maxxz;
+   boolean b_bb_valid;
+
+   public method allocVertices() {
+      vertices.alloc((18)*3);
+      orig_vertices.alloc((18)*3);
+
+      uv_coords.alloc(6*3*2);
+      b_bb_valid = false;
+   }
+
+   method addVertex(Vector4f v) {
+      orig_vertices.add(v.x);
+      orig_vertices.add(v.y);
+      orig_vertices.add(v.z);
+   }
+
+   method addCollVertex(Vector4f v) {
+      vertices.add(v.x);
+      vertices.add(v.y);
+      vertices.add(v.z);
+   }
+
+   method addUVCoord(float u, v) {
+      uv_coords.add(u);
+      uv_coords.add(v);
+   }
+
+   method fixVertices(int vtxIdx, Vector4f draw, Vector4f coll) {
+      int off = vtxIdx*3;
+      orig_vertices[off+0] = draw.x;
+      orig_vertices[off+1] = draw.y;
+      orig_vertices[off+2] = draw.z;
+
+      vertices[off+0] = coll.x;
+      vertices[off+1] = coll.y;
+      vertices[off+2] = coll.z;
+   }
+
+   public method getXZBoundingBox(Vector2f minxz, maxxz) {
+      if(!b_bb_valid)
+      {
+         // for collision detection
+         // iterate vertices in segment and return 
+         float minx = 999999;
+         float minz = 999999;
+         float maxx = -999999;
+         float maxz = -999999;
+         int idx = 0;
+
+         compile loop((6)*3)
+         {
+            float cx = vertices[idx+0];
+            float cz = vertices[idx+2];
+            if(cx < minx)
+            {
+               minx = cx;
+            }
+            if(cx > maxx)
+            {
+               maxx = cx;
+            }
+            if(cz < minz)
+            {
+               minz = cz;
+            }
+            if(cz > maxz)
+            {
+               maxz = cz;
+            }
+            idx += 3;
+         }
+
+         bb_minxz.init(minx, minz);
+         bb_maxxz.init(maxx, maxz);
+         b_bb_valid = true;
+      }
+      minxz = bb_minxz;
+      maxxz = bb_maxxz;
+   }
+
+   method enlargeTriangles() compile {
+      // prepare vertices for collision test, slightly enlarge triangles to
+      // make them overlap and thus get rid of "edge bugs"
+      int vidx = 0;
+      loop(6)
+      {
+         float ctx = (vertices[vidx+3*0+0] + vertices[vidx+3*1+0] + vertices[vidx+3*2+0]) * 0.333;
+         float cty = (vertices[vidx+3*0+1] + vertices[vidx+3*1+1] + vertices[vidx+3*2+1]) * 0.333;
+         float ctz = (vertices[vidx+3*0+2] + vertices[vidx+3*1+2] + vertices[vidx+3*2+2]) * 0.333;
+
+         loop(3)
+         {
+            float nx = (vertices[vidx+0] - ctx);
+            float ny = (vertices[vidx+1] - cty);
+            float nz = (vertices[vidx+2] - ctz);
+            vertices[vidx+0] = vertices[vidx+0] + nx*1.13;
+            vertices[vidx+1] = vertices[vidx+1] + ny*1.13;
+            vertices[vidx+2] = vertices[vidx+2] + nz*1.13;
+            vidx += 3;
+         }
+      }
+   }
+
+   method calcFaceNormals() {
+      face_normals.alloc((6)*3);
+
+      int vidx = 0;
+      int nidx = 0;
+      compile loop(6)
+      {
+         // Calc cross product and store surface normal
+         float bax = vertices[vidx+3*1+0]  - vertices[vidx+3*2+0];
+         float bay = vertices[vidx+3*1+1]  - vertices[vidx+3*2+1];
+         float baz = vertices[vidx+3*1+2]  - vertices[vidx+3*2+2];
+
+         float cax = vertices[vidx+3*1+0]  - vertices[vidx+3*0+0];
+         float cay = vertices[vidx+3*1+1]  - vertices[vidx+3*0+1];
+         float caz = vertices[vidx+3*1+2]  - vertices[vidx+3*0+2];
+
+         float nx = ( bay*caz - baz*cay );
+         float ny = ( baz*cax - bax*caz );
+         float nz = ( bax*cay - bay*cax );
+         float l = sqrt(nx*nx + ny*ny + nz*nz);
+         face_normals.add(-nx / l);
+         face_normals.add(-ny / l);
+         face_normals.add(-nz / l);
+         vidx += 3*3;
+      }
+   }
+
+   method calcEdgeNormals() {
+      edge_normals.alloc((6)*3*3);
+      int idx = 0;
+      int faceIdx = 0;
+
+      // x = z
+      // z = x
+
+      compile loop(6) 
+      {
+         float nx = face_normals[idx+0];
+         float ny = face_normals[idx+1];
+         float nz = face_normals[idx+2];
+         float tx, ty, tz;
+         float l;
+
+         // B-A
+         float bax = vertices[faceIdx + 3*1 + 0] - vertices[faceIdx + 3*0 + 0];
+         float bay = vertices[faceIdx + 3*1 + 1] - vertices[faceIdx + 3*0 + 1];
+         float baz = vertices[faceIdx + 3*1 + 2] - vertices[faceIdx + 3*0 + 2];
+         tx = ny*baz - nz*bay;
+         ty = nz*bax - nx*baz;
+         tz = nx*bay - ny*bax;
+         l = 1.0 / sqrt(tx*tx + ty*ty + tz*tz);
+         edge_normals.add(-tx*l);
+         edge_normals.add(-ty*l);
+         edge_normals.add(-tz*l);
+
+         // C-B
+         float cbx = vertices[faceIdx + 3*2 + 0] - vertices[faceIdx + 3*1 + 0];
+         float cby = vertices[faceIdx + 3*2 + 1] - vertices[faceIdx + 3*1 + 1];
+         float cbz = vertices[faceIdx + 3*2 + 2] - vertices[faceIdx + 3*1 + 2];
+         tx = ny*cbz - nz*cby;
+         ty = nz*cbx - nx*cbz;
+         tz = nx*cby - ny*cbx;
+         l = 1.0 / sqrt(tx*tx + ty*ty + tz*tz);
+         edge_normals.add(-tx*l);
+         edge_normals.add(-ty*l);
+         edge_normals.add(-tz*l);
+
+         // A-C
+         float acx = vertices[faceIdx + 3*0 + 0] - vertices[faceIdx + 3*2 + 0];
+         float acy = vertices[faceIdx + 3*0 + 1] - vertices[faceIdx + 3*2 + 1];
+         float acz = vertices[faceIdx + 3*0 + 2] - vertices[faceIdx + 3*2 + 2];
+         tx = ny*acz - nz*acy;
+         ty = nz*acx - nx*acz;
+         tz = nx*acy - ny*acx;
+         l = 1.0 / sqrt(tx*tx + ty*ty + tz*tz);
+         edge_normals.add(-tx*l);
+         edge_normals.add(-ty*l);
+         edge_normals.add(-tz*l);
+
+         faceIdx += 3*3;
+         idx += 3;
+      }
+   }
+}

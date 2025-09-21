@@ -1,0 +1,170 @@
+
+module MReplay;
+
+namespace racer;
+
+
+float current_replay_millisec;
+
+class Replay {
+
+   define float RESOLUTION = (1000.0 / 60);
+
+   int ver;
+   String map_name; // Unencrypted
+   String ply_name; // Unencrypted
+
+   // Encrypted data following..
+   //float best_lap_time;
+   float total_map_time;
+   PointerArray samples; // ReplaySample
+
+   public method startReplay() {
+      RacerConfiguration.b_replay = true;
+      current_replay_millisec = 0;
+      trace "[dbg] Replay::startReplay.";
+   }
+
+   public method replayFrame(float dt) : boolean {
+      current_replay_millisec += (dt * (1000.0/60));
+      float ct = 0;
+      int replayIdx = 0;
+      while(ct < current_replay_millisec)
+      {
+         if(replayIdx >= (samples.numElements-1))
+         {
+            stopReplay();
+            return false;
+         }
+         else
+         {
+            replayIdx++;
+            ct = samples[replayIdx].abs_time;
+         }
+      }
+      ReplaySample rsl <= samples[replayIdx];
+      ReplaySample rsr <= samples[replayIdx + 1];
+      float relDt = (current_replay_millisec - rsl.abs_time) / (rsr.abs_time - rsl.abs_time);
+         
+      //trace "relDt="+relDt+" idx="+current_replay_idx;
+      lerpPlayer(relDt, rsl, rsr);
+      
+      return true;
+   }
+
+   protected method lerpPlayer(float relDt, ReplaySample rsl, ReplaySample rsr) {
+      // lerp player to new frame
+      player.replayLerpCL(relDt, rsl.clx, rsl.cly, rsl.clz, rsr.clx, rsr.cly, rsr.clz);
+      player.replayLerpCR(relDt, rsl.crx, rsl.cry, rsl.crz, rsr.crx, rsr.cry, rsr.crz);
+      player.replayLerpCF(relDt, rsl.cfx, rsl.cfy, rsl.cfz, rsr.cfx, rsr.cfy, rsr.cfz);
+      player.replayLerpSL(relDt, rsl.slx, rsl.sly, rsl.slz, rsr.slx, rsr.sly, rsr.slz);
+      player.replayLerpSR(relDt, rsl.srx, rsl.sry, rsl.srz, rsr.srx, rsr.sry, rsr.srz);
+      player.replayLerpSF(relDt, rsl.sfx, rsl.sfy, rsl.sfz, rsr.sfx, rsr.sfy, rsr.sfz);
+      player.replayLerpCamEye(relDt, 
+                              rsl.cam_eyex, rsl.cam_eyey, rsl.cam_eyez, 
+                              rsr.cam_eyex, rsr.cam_eyey, rsr.cam_eyez);
+      player.replayLerpCamCenter(relDt, 
+                                 rsl.cam_centerx, rsl.cam_centery, rsl.cam_centerz, 
+                                 rsr.cam_centerx, rsr.cam_centery, rsr.cam_centerz);
+      player.replayLerpCamUp(relDt, 
+                             rsl.cam_upx, rsl.cam_upy, rsl.cam_upz,
+                             rsr.cam_upx, rsr.cam_upy, rsr.cam_upz);
+      player.replayLerpSpeed(relDt, rsl.speed, rsr.speed);
+      player.replayLerpShipRot(relDt, rsl.ship_rot, rsr.ship_rot);
+      track.replaySelectCheckpointById(rsl.checkpoint_id);
+   }
+
+   public method stopReplay() {
+      RacerConfiguration.b_replay = false;
+      RacerConfiguration.race_millisec = total_map_time;
+      //RacerConfiguration.race_bestlap_millisec = replay.best_lap_time;
+      trace "[dbg] Replay::stopReplay: stopped.";
+   }
+
+   public method startRecord() {
+      RacerConfiguration.b_replay_fail = maybe;
+      current_replay_millisec = 0;
+      samples.free();
+      map_name = RacerConfiguration.current_map_name;
+      ply_name = "???"; // TODO
+      ver = 1;
+      RacerConfiguration.b_record = true;
+   }
+
+   public method continueRecord(float dt, boolean bForceSample) {
+      current_replay_millisec += dt* (1000.0 / 60);
+
+      //trace "[dbg] Replay::continueRecord: dt="+deltaTime+" numFrames="+samples.numElements;
+      ReplaySample rs <= new ReplaySample;
+      rs.abs_time = current_replay_millisec;
+      rs.clx = player.coll_left.x;
+      rs.cly = player.coll_left.y;
+      rs.clz = player.coll_left.z;
+      rs.crx = player.coll_right.x;
+      rs.cry = player.coll_right.y;
+      rs.crz = player.coll_right.z;
+      rs.cfx = player.coll_front.x;
+      rs.cfy = player.coll_front.y;
+      rs.cfz = player.coll_front.z;
+      rs.slx = player.clx;
+      rs.sly = player.cly;
+      rs.slz = player.clz;
+      rs.srx = player.crx;
+      rs.sry = player.cry;
+      rs.srz = player.crz;
+      rs.sfx = player.cfx;
+      rs.sfy = player.cfy;
+      rs.sfz = player.cfz;
+      rs.cam_eyex = player.cam_eye.x;
+      rs.cam_eyey = player.cam_eye.y;
+      rs.cam_eyez = player.cam_eye.z;
+      rs.cam_centerx = player.cam_center.x;
+      rs.cam_centery = player.cam_center.y;
+      rs.cam_centerz = player.cam_center.z;
+      rs.cam_upx = player.cam_up.x;
+      rs.cam_upy = player.cam_up.y;
+      rs.cam_upz = player.cam_up.z;
+      rs.speed = player.speed;
+      rs.ship_rot = player.ship_rot;
+      rs.checkpoint_id = track.replayGetCurrentCheckpointId();
+      samples.add(#(deref rs));
+   }
+
+   public method stopRecord() {
+      if(RacerConfiguration.b_record)
+      {
+         continueRecord(0, true);
+         //best_lap_time = RacerConfiguration.race_bestlap_millisec;
+         total_map_time = RacerConfiguration.race_millisec;
+         trace "[dbg] Replay::stopRecord: replay has #"+samples.numElements+" frames.";
+         RacerConfiguration.b_record = false;
+      }
+   }
+
+   public method loadFromStream(Stream is, int ver) : boolean {
+   }
+
+   public method loadLocal(String filename) : boolean {
+      File f;
+      if(f.open(filename, IOS_IN))
+      {
+         f.close();
+      }
+      return false;
+   }
+
+   public method saveToStream(Stream os) : boolean {
+   }
+
+   public method saveLocal(String filename) : boolean {
+      return = false;
+      File f;
+      if(f.open(filename, IOS_OUT))
+      {
+         return = saveToStream(f);
+         f.close();
+      }
+   }
+}
+
+Replay replay;

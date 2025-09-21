@@ -1,0 +1,724 @@
+
+module MScrIngame;
+
+namespace racer;
+
+
+int current_hat0state = 0;
+boolean b_accel = false; // xxx hack
+boolean b_boost = false; // xxx hack
+
+
+class ScrIngame extends OSDScreen {
+
+
+   public method onKey(Key _k) : boolean  { 
+      switch(_k.pressed)
+      {
+         case 'q':
+         case VKEY_ESCAPE:
+//             if(VMOD_LALT == _k.mod)
+//             {
+//                OSD.ShowScreen(scr_editor);
+//                return true;
+//             }
+            if(VMOD_LSHIFT != _k.mod)
+            {
+               if(track.medal_himode)
+               {
+                  RacerConfiguration.race_millisec = RacerConfiguration.race_millisec_hiscore;
+                  OSD.ShowScreen(scr_map_finish);
+               }
+               else
+               {
+                  OSD.ShowScreen(scr_ingame_menu);
+               }
+               return true;
+            }
+            return false;
+
+         case 302:
+         case '5':
+            RacerConfiguration.ToggleDebugKeys();
+            return true;
+            
+         case 'e':
+            OSD.ShowScreen(scr_editor);
+            return true;
+
+         case VKEY_PAUSE:
+            if(RacerConfiguration.b_debug_keys)
+            {
+               RacerConfiguration.ToggleSlomo();
+            }
+            return true;
+
+         case VKEY_TAB: // enter editor and set cursor to ply position
+            if(!RacerConfiguration.b_edit)
+            {
+               RacerConfiguration.b_edit = true;
+               trace "[...] edit mode is now active, cursor set to player position";
+               OSD.ShowScreen(scr_editor);
+               Editor.SetEnabled(RacerConfiguration.b_edit, true);
+            }
+            else
+            {
+               Editor.OnKey(_k);
+            }
+            break;
+
+         case VKEY_RETURN:
+            restartRace();
+            return true;
+            return Editor.OnKey(_k);
+
+         case 'c':
+            if(VMOD_LCTRL==_k.mod)
+            {
+               if(!RacerConfiguration.b_edit)
+               {
+                  RacerConfiguration.b_debug_cam = ! RacerConfiguration.b_debug_cam;
+                  cam.eye.init(player.coll_front.x, (player.coll_front.y+0.1), player.coll_front.z, 1);
+                  trace "[dbg] cam.eye set to "+(cam.eye);
+               }
+            }
+            break;
+
+         case 's':
+            if(VMOD_LCTRL==_k.mod)
+            {
+               if(RacerConfiguration.b_debug_cam)
+               {
+                  return cam.onKey(_k);
+               }
+            }
+            // else
+            // {
+            //    Main.ToggleSkyBox();
+            //    return true;
+            // }
+            // return false;
+            break;
+
+         case '8':
+            RacerConfiguration.ToggleAllowBoost();
+            return true;
+
+         case 't':
+            RacerConfiguration.b_debug_collision = ! RacerConfiguration.b_debug_collision; // step collision
+            return true;
+
+         case 'h':
+            RacerConfiguration.b_halt_collision = false;
+            return true;
+
+         case 'b':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               RacerConfiguration.b_draw_coll = ! RacerConfiguration.b_draw_coll;
+               RacerConfiguration.b_draw_colltris = ! RacerConfiguration.b_draw_colltris;
+            }
+            return true;
+
+         case 'x':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               RacerConfiguration.b_draw_forces = ! RacerConfiguration.b_draw_forces;
+            }
+            return true;
+
+         case 'z':
+            if(RacerConfiguration.b_debug_keys)
+            {
+               RacerConfiguration.b_draw_debug_sphere = ! RacerConfiguration.b_draw_debug_sphere;
+            }
+            return true;
+      }
+
+      if(!player.onKey(_k))
+      {
+         if(RacerConfiguration.b_debug_cam)
+         {
+            return cam.onKey(_k);
+         }
+         return false;
+      }
+      else
+      {
+         return true;
+      }
+   }
+
+   public method onMouse(int _x, _y, _cbs, _nbs) : boolean  { 
+      if(RacerConfiguration.b_debug_cam)
+      {
+         return cam.onMouse(_x, _y, _cbs, _nbs);
+      }
+      return false;
+   }
+
+   public method onDraw(float dt) {
+
+      dt *= (1-RacerConfiguration.b_slomo*0.9);
+
+      ///trace "xxx dt="+dt;
+
+      //glClearColor(0x7a/255.0, 0x8a/255.0, 0xa4/255.0,1); //7a88a4
+      //glClearColor(0xa2/255.0, 0xa9/255.0, 0xb6/255.0,1); //7a88a4
+      glClearColor(0x6d/255.0, 0x6c/255.0, 0x7a/255.0,1); //6d6c7a
+
+      if(RacerConfiguration.b_stencil_shadows)
+      {
+         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+      }
+      else
+      {
+         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      }
+      if( !(++numframesrendered&255) )
+         trace "FPS.real="+FPS.real;
+
+      glDisable(GL_DEPTH_TEST);
+
+      //glFrontFace(GL_CW);
+      //glEnable(GL_CULL_FACE);
+      glFrontFace(GL_CW);
+      glCullFace(GL_BACK);
+
+      float viewSx = Viewport.width;
+      float viewSy = Viewport.height;
+      if(RacerConfiguration.b_edit)
+      {
+         if(RacerConfiguration.b_edit_env)
+         {
+            viewSy -= EnvEdit.bezier_edit.size_y;
+         }
+      }
+      glViewport(0, (Viewport.height - viewSy), viewSx, viewSy);
+      
+      float plySpeed = player.speed * 0.15;
+      if(plySpeed > 1) plySpeed = 1;
+      zglInitPerspective(float(viewSx)/viewSy, 70.0+(15*plySpeed), 0.001, 60.0);
+
+      if(RacerConfiguration.b_replay)
+      {
+         if(!replay.replayFrame(dt))
+         {
+            if(RacerConfiguration.b_replay_fail != false)
+            {
+               OSD.ShowScreen(scr_map_failed);
+            }
+            else
+            {
+               OSD.ShowScreen(scr_map_finish);
+            }
+         }
+      }
+      
+      if(RacerConfiguration.b_debug_cam)
+      {
+         cam.loadTransform();
+      }
+      else
+      {
+         player.loadTransform();
+      }
+      
+      
+      glTranslatef(0,0,3*0.01);
+      
+      glLineWidth(1.0);
+      
+      glEnable(GL_DEPTH_TEST);
+      
+      track.draw(dt);
+
+      if(RacerConfiguration.b_draw_skybox)
+      {
+         SkyBox.Draw(dt);
+      }
+      
+      if(RacerConfiguration.b_replay)
+      {
+         player.draw();
+      }
+      else
+      {
+         if( (!RacerConfiguration.b_edit) && RacerConfiguration.b_ingame)
+         {
+            player.draw();
+
+            if(!RacerConfiguration.b_halt_collision)
+            {
+               player.tickCamera(dt);
+               player.tickUp(dt);
+               player.b_reset_cam_interpol = false;
+               
+               //int tDelta = milliSeconds();
+
+               //int NUMITERATIONS = 8;//8;//4 + int(player.speed * 4); // ORIGINAL
+               int NUMITERATIONS = 6;
+               float dtx = dt * (1.0/NUMITERATIONS);
+               loop(NUMITERATIONS)
+               {
+                  player.b_collision = false;
+                  track.checkPlayerCollision(dtx, player.coll_left);
+                  track.checkPlayerCollision(dtx, player.coll_right);
+                  track.checkPlayerCollision(dtx, player.coll_front);
+                  if(1 != RacerConfiguration.b_halt_collision)
+                  {
+                     player.tick(dtx);
+                  }
+               }
+
+               // tDelta = milliSeconds() - tDelta;
+               // if(tDelta > 3)
+               // {
+               //    trace "xxx tDelta="+tDelta;
+               // }
+
+               if(2 == RacerConfiguration.b_halt_collision)
+               {
+                  RacerConfiguration.b_halt_collision = true;
+               }
+            } // !replay
+         }
+      }
+      
+      if(RacerConfiguration.b_motion_blur && !RacerConfiguration.b_edit)
+      {
+         MotionBlur.OnDraw();
+      }
+      
+      if(RacerConfiguration.b_edit)
+      {
+         Editor.OnDraw(dt);
+      }
+      
+      if(RacerConfiguration.b_debug_cam)
+      {
+         cam.tickPrecise(dt);
+      }
+
+      if(!RacerConfiguration.b_edit)
+      {
+         // Draw speed
+         zglInitOrtho(1, -1);
+         glLoadIdentity();
+         glLineWidth(8);
+         glDisable(GL_DEPTH_TEST);
+         zglColorARGB(#ff00ff00);
+         glBegin(GL_LINES);
+         glVertex2f(-1, 0.94);
+         glVertex2f(-1+player.speed*Player.SPEEDVIEWSCL, 0.94);
+         glEnd();
+      }
+
+      // Draw text overlays
+      glEnable(GL_TEXTURE_2D);
+      tex_font.bind();
+      zglInit2D(Viewport.width, Viewport.height);
+      glLoadIdentity();
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_CULL_FACE);
+      glDisable(GL_TEXTURE_3D);
+      glDisable(GL_STENCIL_TEST);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+     
+      if(!RacerConfiguration.b_edit)
+      {
+      
+         // Draw race time
+         String txt = "hi : ";
+         RacerConfiguration.AppendTimeString(txt, RacerConfiguration.race_millisec_hiscore);
+         float txtW = (txt.length-1) * 8;
+         zglColorARGB(#ffffffaf);
+         RenderUtils.DrawFixedText((Viewport.width - txtW)*0.5, 10, tex_font.sx, tex_font.sy, txt);
+         txt = "     ";
+         RacerConfiguration.AppendTimeString(txt, RacerConfiguration.race_millisec);
+         zglColorARGB(#ffafffaf);
+         RenderUtils.DrawFixedText((Viewport.width - txtW)*0.5, 23, tex_font.sx, tex_font.sy, txt);
+         
+         if(RacerConfiguration.b_ingame)
+         {
+            RacerConfiguration.race_millisec += dt * (1000.0 / 60.0f);
+         }
+
+      }
+
+      // Draw mapname
+      zglColorARGB(#5f000000);
+
+      RenderUtils.DrawFixedText(2, 2, tex_font.sx, tex_font.sy, RacerConfiguration.current_map_name);
+
+      // Draw hiscores
+      drawHiscores();
+
+      glDisable(GL_TEXTURE_2D);
+      glDisable(GL_BLEND);
+
+      // Replay recording
+      if(RacerConfiguration.b_record)
+      {
+         replay.continueRecord(dt, false);
+      }
+   }
+
+   public method drawHiscores() {
+      String txt;
+      txt = "Author : ";
+      if(RacerConfiguration.hiscore_mode == RacerConfiguration.HIMODE_AUTHOR)
+      {
+         RacerConfiguration.AppendTimeString(txt, RacerConfiguration.race_millisec);
+      }
+      else
+      {
+         RacerConfiguration.AppendTimeString(txt, track.hiscore_author);
+      }
+      zglColorARGB(#6f400000);
+      RenderUtils.DrawFixedText(Viewport.width - 20*8, 10, tex_font.sx, tex_font.sy, txt);
+
+      txt = "  Gold : ";
+      if(RacerConfiguration.hiscore_mode == RacerConfiguration.HIMODE_GOLD)
+      {
+         RacerConfiguration.AppendTimeString(txt, RacerConfiguration.race_millisec);
+      }
+      else
+      {
+         RacerConfiguration.AppendTimeString(txt, track.hiscore_gold);
+      }
+      zglColorARGB(#efaaaa00);
+      RenderUtils.DrawFixedText(Viewport.width - 20*8, 20, tex_font.sx, tex_font.sy, txt);
+
+      txt = "Silver : ";
+      if(RacerConfiguration.hiscore_mode == RacerConfiguration.HIMODE_SILVER)
+      {
+         RacerConfiguration.AppendTimeString(txt, RacerConfiguration.race_millisec);
+      }
+      else
+      {
+         RacerConfiguration.AppendTimeString(txt, track.hiscore_silver);
+      }
+      zglColorARGB(#efaaaaaa);
+      RenderUtils.DrawFixedText(Viewport.width - 20*8, 30, tex_font.sx, tex_font.sy, txt);
+
+      txt = "Bronze : ";
+      if(RacerConfiguration.hiscore_mode == RacerConfiguration.HIMODE_BRONZE)
+      {
+         RacerConfiguration.AppendTimeString(txt, RacerConfiguration.race_millisec);
+      }
+      else
+      {
+         RacerConfiguration.AppendTimeString(txt, track.hiscore_bronze);
+      }
+      zglColorARGB(#efad7d7d);
+      RenderUtils.DrawFixedText(Viewport.width - 20*8, 40, tex_font.sx, tex_font.sy, txt);
+   }
+
+   static float wii_pitch;
+   static float wii_roll;
+   
+   public method onJoyAxisMotion(int dev, axis, val) : boolean  { 
+
+      if(RacerConfiguration.b_wiimote)
+      {
+         float n = (val / -32767.0);
+
+         switch(axis)
+         {
+            case 0: // pitch
+               wii_pitch = n;
+               if(n > 0.3)
+               {
+                  player.nose_y = -1;
+               }
+               else if(n < -0.3)
+               {
+                  player.nose_y = 1;
+               }
+               else
+               {
+                  player.nose_y = 0;
+               }
+               break;
+
+            case 1: // roll
+               if(abs(wii_pitch) < 0.75)
+               {
+                  if!(
+                     ( (wii_roll < -0.8) && (n >  0.8)) &&
+                     ( (wii_roll >  0.8) && (n < -0.8)) 
+                      )
+                  {
+                     player.dir_x = mathClampf((-n+0.0819117)*2, -1, 1);
+
+                     if(player.dir_x > 0.5)
+                     {
+                        player.strafe_l = (player.dir_x-0.5) * 2;
+                        player.strafe_r = 0;
+                     }
+                     else if(player.dir_x < -0.5)
+                     {
+                        player.strafe_r = (player.dir_x+0.5) * 2;
+                        player.strafe_l = 0;
+                     }
+                     else
+                     {
+                        player.strafe_l = 0;
+                        player.strafe_r = 0;
+                     }
+
+
+                     ////////float r = mathClampf(wii_roll  + 0.1142,    -1, 1);
+                     ////trace player.dir_x;
+                  }
+               }
+               break;
+         }
+         
+      }
+      else
+      {
+         // PSX
+      
+         float absVal = abs(val);
+      
+         if(0 == axis) 
+         {
+            // ps2 left analog stick, horizontal axis
+            // (turn left/right)
+            if(absVal > 4000)
+            {
+               //player.dir_x = (player.dir_x*0.2) + ((val/(32768.0*0.75)) * 0.8);
+               player.dir_x = (val / 32768.0);
+               if(abs(player.dir_x) > 1)
+               {
+                  player.dir_x *= 1.0 / abs(player.dir_x);
+               }
+               player.dir_x = player.dir_x * abs(player.dir_x);
+            }
+            else// if(absVal < 1000)
+            {
+               player.dir_x = 0;
+            }
+         }
+         else if(1 == axis) 
+         {
+            // ps2 left analog stick, vertical axis
+            // (nose up/down)
+            if(absVal > 8000)
+            {
+               ////player.nose_y = (player.nose_y*0.9) + ((val/32768.0) * 0.1);
+               //player.nose_y = (player.nose_y*0.05) + ((val/32768.0) * 0.8);
+               player.nose_y = (val / 32768.0);
+               if(abs(player.nose_y) > 1)
+               {
+                  player.nose_y *= 1.0 / abs(player.nose_y);
+               }
+            }
+            else// if(absVal < 1000)
+            {
+               player.nose_y = 0;
+            }
+         }
+         else if(2 == axis) 
+         {
+            // ps2 right analog stick, vertical axis
+            // (accelerate/brake)
+            if(RacerConfiguration.b_joy_axis_accel)
+            {
+               if(absVal > 1000)
+               {
+                  //player.dir_z = (player.dir_z*0.2) + ((val/(32768.0*0.75)) * 0.8);
+                  player.dir_z = (val / 32768.0);
+                  if(abs(player.dir_z) > 1.0)
+                  {
+                     player.dir_z *= 1.0 / abs(player.dir_z);
+                  }
+               }
+               else// if(absVal < 1000)
+               {
+                  player.dir_z = 0;
+               }
+            }
+         }
+      }
+   }
+   
+   public method onJoyButton(int dev, button, pressed) : boolean { 
+
+      if(RacerConfiguration.b_wiimote)
+      {
+         if(0 == button)
+         {
+            // 'A'
+            ////player.dir_z = pressed ? 1 : (player.dir_z>0) ? 0 : player.dir_z;
+            player.dir_z = pressed ? -1 : 0;
+            player.b_boost = pressed;
+         }
+         else if(1 == button)
+         {
+            // 'B'
+            player.dir_z = pressed ? 1 : player.b_boost ? -1 : 0;
+         }
+         else if(2 == button)
+         {
+            // 'Home'
+            if(pressed) restartRace();
+         }
+      }
+      else
+      {
+         if(2 == button) // ps2 'X'
+         {
+            if(pressed)
+            {
+               player.dir_z = -1;
+            }
+            else if(!b_boost)
+            {
+               if(player.dir_z <0) player.dir_z = 0;
+            }
+            b_accel = pressed ? true : false;
+         }
+         else if(3 == button) // ps2 '[]'
+         {
+            player.dir_z = pressed ? 1 : (player.dir_z>0) ? 0 : player.dir_z;
+         }
+         else if(6 == button) // ps2 'L1'
+         {
+            // // player.b_walls = pressed ? 1 : 0;
+         }
+         else if(4 == button) // ps2 'L2'
+         {
+            player.strafe_l = pressed ? 1 : 0;
+         }
+         else if(5 == button) // ps2 'R2'
+         {
+            player.strafe_r = pressed ? 1 : 0;
+         }
+         else if(11 == button) // ps2 'start'
+         {
+            if(pressed) restartRace();
+         }
+         else if(8 == button) // ps2 'select'
+         {
+            if(pressed) player.flip();
+         }
+         else if( (1 == button) || (7 == button) || (10 == button) )// ps2 'O' || 'R1' || 'right analog stick' (9='left analog stick')
+         {
+            if(pressed)
+            {
+               player.dir_z = -1;
+               b_boost = true;
+            }
+            else 
+            {
+               b_boost = false;
+               if(!b_accel)
+               {
+                  if(player.dir_z <0) player.dir_z = 0;
+               }
+            }
+            player.b_boost = pressed ? 1 : 0;
+         }
+      }
+   }
+
+   public method onJoyHatMotion(int dev, int hat, int state) : boolean {
+      int mod = current_hat0state ^ state;
+      
+      if(0 == hat) // digital arrow buttons on PS2 pad
+      {
+         // left
+         if(mod & 8)
+         {
+            if(state & 8)
+            {
+               player.dir_x = -1;
+            }
+            else
+            {
+               if(player.dir_x < 0)
+               {
+                  player.dir_x = 0;
+               }
+            }
+         }
+         
+         // right
+         if(mod & 2)
+         {
+            if(state & 2)
+            {
+               player.dir_x = 1;
+            }
+            else
+            {
+               if(player.dir_x > 0)
+               {
+                  player.dir_x = 0;
+               }
+            }
+         }
+         
+         // up
+         if(mod & 4)
+         {
+            if(state & 4)
+            {
+               player.nose_y = -1;
+            }
+            else
+            {
+               if(player.nose_y < 0)
+               {
+                  player.nose_y = 0;
+               }
+            }
+         }
+         
+         // down
+         if(mod & 1)
+         {
+            if(state & 1)
+            {
+               player.nose_y = 1;
+            }
+            else
+            {
+               if(player.nose_y > 0)
+               {
+                  player.nose_y = 0;
+               }
+            }
+         }
+      }
+     
+      current_hat0state = mod;
+   }
+
+
+   public method restartRace() {
+      player.setPositionAndDirection(track.player_start_pos, track.player_start_dir);
+      
+      player.reset();
+      
+      track.resetTrack();
+      
+      RacerConfiguration.b_ingame = true;
+      RacerConfiguration.b_replay = false;
+      RacerConfiguration.race_millisec = 0;
+      //RacerConfiguration.race_bestlap_millisec = 0;
+
+      replay.startRecord();
+
+   }
+
+   public method onActivate() { 
+      restartRace();
+   }
+}
+
+ScrIngame scr_ingame;
