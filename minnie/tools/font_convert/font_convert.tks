@@ -33,11 +33,11 @@ int numGlyphs  = 128 - firstGlyph;
 
 String outPrefix = "out/";
 
-String fontName = "default_30";
+String ttfPathName;
+int styleFlags;
+int fontSize;
 
-String pngOut = outPrefix+fontName+".png";
-String cppOut = outPrefix+fontName+".cpp";  // glyph c structs
-String binOut = outPrefix+fontName+".bin";  // font_info followed by glyph binary array (c struct formats)
+String fontName = "default_30";
 
 /*
 struct sdvg_font_t {
@@ -59,15 +59,131 @@ struct sdvg_glyph_t {
 };
 */
 
+function Usage() {
+   trace "Usage: trks font_convert <font.ttf> <fontName> <normal|bold> <size>";
+   exit(10);
+}
+
 // UI.ConfigureHiDPI();
 UI.SetEnableFontSmoothing(true);
 UI.Initialize(Arguments);
 
-UI.AddFontResource(FT2PakFileFontResource.New("tkui:fonts/default.ttf", "default", Font.STYLE_NORMAL, 30));
+if(Arguments.numElements >= 1)
+{
+   ttfPathName = Arguments[0];
+   if(ttfPathName >= ".ttf")
+   {
+      if(Arguments.numElements >= 2)
+      {
+         fontName = Arguments[1];
 
-Font font <= UI.GetFontByName("default 30");
+         if(1)
+         {
+            if(Arguments.numElements >= 3)
+            {
+               switch(Arguments[2])
+               {
+                  default:
+                     trace "[---] invalid style flag \""+Arguments[1]+"\" (expect normal | bold | italic | bold_italic)";
+                     Usage();
+                     break;
+
+                  case "normal":
+                     styleFlags = Font.STYLE_NORMAL;
+                     break;
+
+                  case "bold":
+                     styleFlags = Font.STYLE_BOLD;
+                     break;
+
+                  case "italic":
+                     styleFlags = Font.STYLE_ITALIC;
+                     break;
+
+                  case "bold_italic":
+                     styleFlags = Font.STYLE_BOLD_ITALIC;
+                     break;
+               }
+
+               if(Arguments.numElements >= 4)
+               {
+                  fontSize = Arguments[3];
+                  if(4 <= fontSize <= 120)
+                  {
+                     // ok
+                  }
+                  else
+                  {
+                     trace "[---] font size out of range (expect=4..120, have="+fontSize+")";
+                     Usage();
+                  }
+               }
+               else
+               {
+                  trace "[---] missing font size";
+                  Usage();
+               }
+            }
+            else
+            {
+               trace "[---] missing style flags (normal | bold | italic | bold_italic)";
+               Usage();
+            }
+         } // if 1 (fontName)
+      }
+      else
+      {
+         trace "[---] missing font name";
+         Usage();
+      }
+   }
+   else
+   {
+      trace "[---] TTF pathname does not have .ttf suffix";
+      Usage();
+   }
+}
+else
+{
+   trace "[---] missing TTF pathname";
+   Usage();
+}
+
+String styleName = Font.GetStyleFlagsStringFor(styleFlags);
+if("normal" == styleName) styleName="";
+String fullFontName <= fontName+" "+styleName+" "+fontSize;
+fullFontName.replace("  ", " ");
+String cFontName <= fullFontName.replace(" ","_");
+
+String pngOut = outPrefix+cFontName+".png";
+String cppOut = outPrefix+cFontName+".cpp";  // glyph c structs
+String binOut = outPrefix+cFontName+".bin";  // font_info followed by glyph binary array (c struct formats)
+
+if(b_debug) trace "[dbg] fullFontName=\""+fullFontName+"\"";
+if(b_debug) trace "[dbg] cFontName=\""+cFontName+"\"";
+
+Font font <= UI.GetFontByNameEx(fullFontName, true/*bExactSizeMatch*/);
+if(null == font)
+{
+   trace "[...] adding font resource \""+fullFontName+"\" (fontName=\""+fontName+"\" ttfPathName=\""+ttfPathName+"\" styleFlags="+styleFlags+" fontSize="+fontSize+")";
+   if(UI.AddFontResource(FT2LocalFileFontResource.New(ttfPathName, fontName, styleFlags, fontSize)))
+   {
+      font <= UI.GetFontByNameEx(fullFontName, true/*bExactSizeMatch*/);
+      if(null == font)
+      {
+         die "failed to resolve font \""+fullFontName+"\"";
+      }
+   }
+   else
+   {
+      die "UI.AddFontResource() failed";
+   }
+}
 
 FT2FontResource fontRes <= font.getFontResource();
+if(null == fontRes)
+   die "failed to resolve fontRes";
+
 FT2Face face <= fontRes.getFT2Face();
 
 if(b_debug) trace "[dbg] fontRes="+#(fontRes);
@@ -105,7 +221,7 @@ if(!fBin.openLocal(binOut, IOS_OUT))
    die "failed to open \""+binOut+"\" for writing";
 
 String bufFontInfo;
-bufFontInfo.append("static const sdvg_font_info_t font_info_"+fontName+" = {\n");  // 18 bytes
+bufFontInfo.append("static const sdvg_font_info_t font_info_"+cFontName+" = {\n");  // 18 bytes
 bufFontInfo.append("  "+int(height)+"/*height*/,\n");
 bufFontInfo.append("  "+int(ascender)+"/*ascender*/,\n");
 bufFontInfo.append("  "+int(descender)+"/*descender*/\n");
@@ -124,7 +240,7 @@ fBin.i16 = int(firstGlyph);
 fBin.i16 = int(numGlyphs);
 
 String bufGlyph;
-bufGlyph.append("static const sdvg_glyph_t glyphs_"+fontName+"["+numGlyphs+"] = {\n");  // 14 bytes
+bufGlyph.append("static const sdvg_glyph_t glyphs_"+cFontName+"["+numGlyphs+"] = {\n");  // 14 bytes
 
 int glyphIdx = firstGlyph;
 loop(numGlyphs)
@@ -155,9 +271,9 @@ loop(numGlyphs)
 bufGlyph.append("};\n");
 
 String bufFont;
-bufFont.append("sdvg_font_t font_"+fontName+" = {\n");
-bufFont.append("  &font_info_"+fontName+";\n");
-bufFont.append("  &glyphs_"+fontName+";\n");
+bufFont.append("sdvg_font_t font_"+cFontName+" = {\n");
+bufFont.append("  &font_info_"+cFontName+";\n");
+bufFont.append("  &glyphs_"+cFontName+";\n");
 bufFont.append("  sUI tex_id;\n");
 bufFont.append("};\n");
 
