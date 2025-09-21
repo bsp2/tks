@@ -1,0 +1,3885 @@
+// ----
+// ---- file   : md.tks
+// ---- author : bsp
+// ---- legal  : (c) 2018-2025 by bsp
+// ----
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   :
+// ----
+// ---- created: 25Sep2018
+// ---- changed: 26Sep2018, 27Sep2018, 28Sep2018, 29Sep2018, 30Sep2018, 01Oct2018, 02Oct2018
+// ----          03Oct2018, 04Oct2018, 05Oct2018, 06Oct2018, 06Mar2019, 04Nov2019, 28Dec2019
+// ----          04Jan2020, 05Jan2020, 22Jan2020, 23Jan2020, 02Feb2020, 31Dec2021, 08Feb2023
+// ----          29May2023, 09Oct2023, 10Oct2023, 13Oct2023, 03Apr2024, 09Apr2024, 18Dec2024
+// ----          19Dec2024, 06Jul2025, 13Jul2025
+// ----
+// ----
+// ----
+module Main;
+
+int g_ms_start = milliSeconds();
+
+MD md;
+md.init();
+
+// (note) vars/links/buffers are shared between all MD instances
+HashTable vars;       // pre-processor vars
+HashTable link_defs;  // LinkDef instances
+HashTable buffers;    // String instances (output buffers)
+
+int htmlpre_buf_idx = 1;   // for parametrized HTML includes
+
+vars     .alloc(4000);
+link_defs.alloc(4000);
+buffers  .alloc(4000);
+
+StringArray unique_anchors;
+
+boolean b_stdin  = false;
+boolean b_stdout = false;
+boolean b_debug  = false;
+boolean b_info   = true;  // will be set to false in stdout mode
+boolean b_warn   = true;
+
+int next_foot_note_nr = 1;
+
+String icon_prefix = "icons/";
+
+boolean b_ascii_entities = false;  // true=skip unusual entities which may confuse html-to-pdf tools
+
+boolean b_enum_headers = true;
+int header_enum_start = 1;
+PHeader *[] toc_entries;  // PHeader refs. temporary while building TOC.
+boolean b_toc_build = false;  // temporary while building TOC
+int toc_entry_idx;  // temporary while building TOC
+
+boolean b_inline_data = false;
+String input_dir;  // not empty when invoked from other dir (e.g. via emacs markdown-mode C-c C-c v)
+
+String s_extra_css;
+
+String CACHE_PATH = "md_cache/";
+
+vars["header"] =
+   "|noheader\n"
+   "| Document\: :|:$(buf!title)\n"
+   "| Author\:   :|:$(buf!author)\n"
+   "| Date\:     :|:$(buf!date)\n"
+   "].header\n";
+
+
+// <class.png>
+class LinkDef {
+   String link_name;
+   String link_target;
+   String link_caption;
+   String link_title;
+   String img_w;
+   String img_h;
+   SpanLink *[] refs;  // SpanLink refs (for redefined refs)
+   boolean b_foot_note_emitted;
+   int    foot_note_nr; // 1..n
+
+   public method addRef(SpanLink _link) {
+      refs.add(_link);
+   }
+}
+
+// <class.png>
+class Utils {
+
+   static AppendURLOrData(String _buf, String _url, boolean _bPakFile) : boolean {
+      if(b_inline_data || _bPakFile)
+      {
+         local File fLocal;
+         local PakFile fLogic;
+         local Stream *f;
+         boolean bOk = false;
+         if(false != _bPakFile)
+         {
+            bOk = fLogic.open(_url);
+            f <= fLogic;
+         }
+         if(!bOk && (true != _bPakFile))
+         {
+            // trace "xxx is abs url=\""+_url+"\" ?";
+            if(Utils.IsAbsolutePath(_url))
+            {
+               //trace "xxx abs url=\""+_url+"\"";
+               bOk = fLocal.openLocal(_url, IOS_IN);
+            }
+            else
+            {
+               // trace "xxx rel url=\""+_url+"\" input_dir=\""+input_dir+"\"";
+               bOk = fLocal.openLocal(input_dir+"/"+_url, IOS_IN);
+               // trace "xxx bOk="+bOk;
+            }
+            f <= fLocal;
+         }
+         if(bOk)
+         {
+            local Buffer b;
+            local String sEnc;
+
+            if(f.size == f.readBuffer(b, 0, f.size, true/*bResize*/))
+            {
+               b.offset = f.size;
+               b.base64Encode(sEnc);
+               _buf.append("data:");
+
+               // Guess the MIME type
+               //  (note) the media type field is optional
+               if(1)
+               {
+                  if(_url >= ".png")
+                     _buf.append("image/png");
+                  else if(_url >= ".css")
+                     _buf.append("text/css");
+                  else if((_url >= ".jpg") || (_url >= ".jpeg"))
+                     _buf.append("image/jpeg");
+                  else if(_url >= ".gif")
+                     _buf.append("image/gif");
+                  else if(_url >= ".svg")
+                     _buf.append("image/svg+xml");
+                  else if(_url >= ".svgz")
+                     _buf.append("image/svg+xml");
+                  else
+                  {
+                     trace "[---] Utils.AppendURLOrData<base64>: failed to guess MIME type from URL suffix (\""+_url+"\")";
+                     return false;
+                  }
+               }
+               _buf.append(";base64,");
+               _buf.append(sEnc);
+            }
+
+            fLocal.close();
+            fLogic.close();
+            return true;
+         }
+         if(b_warn)
+            trace "[~~~] md: failed to inline URL=\""+_url+"\" (bPakFile="+_bPakFile+")";
+         return false;
+      }
+      _buf.append(_url);
+      return true;
+   }
+
+   // see <https://daringfireball.net/projects/markdown/syntax#misc>
+   static SubstCtlChars(String _s) {
+      _s.replace("\\", "§bslash" );
+      _s.replace("`",  "§btick"  );
+      _s.replace("*",  "§aster"  );
+      _s.replace("_",  "§under"  );
+      _s.replace("{",  "§curlyo" );
+      _s.replace("}",  "§curlyc" );
+      _s.replace("[",  "§sqro"   );
+      _s.replace("]",  "§sqrc"   );
+      _s.replace("(",  "§paro"   );
+      _s.replace(")",  "§parc"   );
+      _s.replace("#",  "§hash"   );
+      _s.replace("+",  "§plus"   );
+      _s.replace("-",  "§minus"  );
+      _s.replace(".",  "§dot"    );
+      _s.replace("!",  "§excl"   );
+      _s.replace("~",  "§tilde"  );
+      _s.replace("|",  "§pipe"   );
+      _s.replace("<",  "§lt"     );
+      _s.replace(">",  "§gt"     );
+      _s.replace("%",  "§percent");
+      _s.replace("^",  "§circum" );
+      _s.replace(":",  "§colon"  );
+   }
+
+   static SubstEscapedCtlChars(String _s) {
+      _s.replace("\\\\", "§bslash" );
+      _s.replace("\\\§", "§para"   );
+      _s.replace("\\`",  "§btick"  );
+      _s.replace("\\*",  "§aster"  );
+      _s.replace("\\_",  "§under"  );
+      _s.replace("\\{",  "§curlyo" );
+      _s.replace("\\}",  "§curlyc" );
+      _s.replace("\\[",  "§sqro"   );
+      _s.replace("\\]",  "§sqrc"   );
+      _s.replace("\\(",  "§paro"   );
+      _s.replace("\\)",  "§parc"   );
+      _s.replace("\\#",  "§hash"   );
+      _s.replace("\\+",  "§plus"   );
+      _s.replace("\\-",  "§minus"  );
+      _s.replace("\\.",  "§dot"    );
+      _s.replace("\\!",  "§excl"   );
+      _s.replace("\\~",  "§tilde"  );
+      _s.replace("\\|",  "§pipe"   );
+      _s.replace("\\<",  "§lt"     );
+      _s.replace("\\>",  "§gt"     );
+      _s.replace("\\$",  "§dollar" );
+      _s.replace("\\%",  "§percent");
+      _s.replace("\\^",  "§circum" );
+      _s.replace("\\:",  "§colon"  );
+      _s.replace("\\\n", "$lf"     );
+   }
+
+   static ASCIIToHTML(String _s, boolean _bEntities) {
+
+      _s.replace("&", "&amp;" );
+
+      if(_bEntities)
+      {
+         if(b_ascii_entities)
+         {
+            _s.replace("%:)%",     ":)"); // &#128522
+            _s.replace("%;)%",     ";)"); // &#128521
+            _s.replace("%:|%",     ":|");
+            _s.replace("%:§pipe%", ":|");  // in table
+            _s.replace("%;(%",     ";(");
+            _s.replace("%:D%",     ":D"); // &#128513
+            _s.replace("%:P%",     ":P");
+            _s.replace("%:O%",     ":O"); // &#128558
+            _s.replace("%>(%",     ">(");
+            _s.replace("%:'(%",    ":'(");
+            _s.replace("%8)%",     "8)");
+            _s.replace("%.)%",     ".)");
+
+            _s.replace("%<3%",     "<3");
+            _s.replace("%*%",      "*");  // large asterisk
+         }
+         else
+         {
+            _s.replace("(C)",  "&#169;" );
+            _s.replace("(R)",  "&#174;" );
+            _s.replace("(TM)", "&#8482;");
+            _s.replace("--",   "&#8212;");
+            _s.replace("...",  "&#8230;");
+            _s.replace("->",   "&#8594;");
+            _s.replace("<=>",  "&#8596;");
+            _s.replace("=>",   "&#8658;");
+            _s.replace("<-",   "&#8592;");
+            _s.replace("<=",   "&#8656;");
+            _s.replace("<!=>", "&nequiv;");
+
+            _s.replace("%:)%",     "&#128522;"); // &#128522
+            _s.replace("%;)%",     "&#128527;"); // &#128521
+            _s.replace("%:|%",     "&#128528;");
+            _s.replace("%:§pipe%", "&#128528;");  // in table
+            _s.replace("%;(%",     "&#128533;");
+            _s.replace("%:D%",     "&#128516;"); // &#128513
+            _s.replace("%:P%",     "&#128523;");
+            _s.replace("%:O%",     "&#128550;"); // &#128558
+            _s.replace("%>(%",     "&#128544;");
+            _s.replace("%:'(%",    "&#128549;");
+            _s.replace("%8)%",     "&#128562;");
+            _s.replace("%.)%",     "&#128540;");
+
+            _s.replace("%<3%",     "&#x2764;");
+            _s.replace("%*%",      "&#x273d;");  // large asterisk
+         }
+      } // if _bEntities
+
+      _s.replace("<", "&lt;");
+      _s.replace(">", "&gt;");
+   }
+
+   static ReSubstCtlCharsToHTML(String _s) {
+      _s.replace("§bslash", "\\");
+      _s.replace("§para",   "§");
+      _s.replace("§btick",  "`" );
+      _s.replace("§aster",  "*" );
+      _s.replace("§under",  "_" );
+      _s.replace("§curlyo", "{" );
+      _s.replace("§curlyc", "}" );
+      _s.replace("§sqro",   "[" );
+      _s.replace("§sqrc",   "]" );
+      _s.replace("§paro",   "(" );
+      _s.replace("§parc",   ")" );
+      _s.replace("§hash",   "#" );
+      _s.replace("§plus",   "+" );
+      _s.replace("§minus",  "-" );
+      _s.replace("§dot",    "." );
+      _s.replace("§excl",   "!" );
+      _s.replace("§tilde",  "~" );
+      _s.replace("§pipe",   "|" );
+      _s.replace("§lt",     "&lt;");
+      _s.replace("§gt",     "&gt;");
+      _s.replace("§dollar", "$" );
+      _s.replace("§percent","%" );
+      _s.replace("§circum", "^" );
+      _s.replace("§colon",  ":" );
+      _s.replace("§lf",     "\n");
+   }
+
+   static ReSubstCtlCharsToASCII(String _s) {
+      _s.replace("§bslash",  "\\");
+      _s.replace("§para",    "§");
+      _s.replace("§btick",   "`" );
+      _s.replace("§aster",   "*" );
+      _s.replace("§under",   "_" );
+      _s.replace("§curlyo",  "{" );
+      _s.replace("§curlyc",  "}" );
+      _s.replace("§sqro",    "[" );
+      _s.replace("§sqrc",    "]" );
+      _s.replace("§paro",    "(" );
+      _s.replace("§parc",    ")" );
+      _s.replace("§hash",    "#" );
+      _s.replace("§plus",    "+" );
+      _s.replace("§minus",   "-" );
+      _s.replace("§dot",     "." );
+      _s.replace("§excl",    "!" );
+      _s.replace("§tilde",   "~" );
+      _s.replace("§pipe",    "|" );
+      _s.replace("§lt",      "<" );
+      _s.replace("§gt",      ">" );
+      _s.replace("§dollar",  "$" );
+      _s.replace("§percent", "%" );
+      _s.replace("§circum",  "^" );
+      _s.replace("§colon",   ":" );
+      _s.replace("§lf",      "\n");
+   }
+
+   static StartsWithOrderedListItem(String _ltrim, String _retListStartSeq, Integer _retNumber) : boolean {
+      // trace "xxx StartsWithOrderedListItem: ltrim=\""+_ltrim+"\"";
+      int idx = _ltrim.indexOfChar(' ', 0);
+      if(-1 != idx)
+      {
+         String s;
+         _ltrim.substring(0, idx) => s;
+         idx = s.indexOfChar('.', 0);
+         if(-1 == idx)
+            idx = s.indexOfChar(')', 0);
+         if(-1 != idx)
+         {
+            String sInt;
+            s.substring(0, idx) => sInt;
+            if(YAC_TYPE_INT == sInt.checkConversions())
+            {
+               // e.g. "117. "
+               _retNumber = int(sInt);
+               // // _retListStartSeq = s.substring(0, idx+1) + " ";
+               _retListStartSeq = s.substring(idx, 1) + " ";  // ") " or ". "
+               // trace "xxx  => startSeq=\""+_retListStartSeq+"\"";
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   static BuildAnchor(String _s) : String {
+      String s <= _s.toLower();
+      Utils.ReSubstCtlCharsToASCII(s);
+      s.replace(":",  "");
+      s.replace("/",  "_");
+      s.replace("(",  "");
+      s.replace(")",  "");
+      s.replace("{",  "");
+      s.replace("}",  "");
+      s.replace("[",  "");
+      s.replace("]",  "");
+      s.replace("<",  "");
+      s.replace(">",  "");
+      s.replace("&",  "");
+      s.replace("+",  "");
+      s.replace("#",  "");
+      s.replace("~",  "");
+      s.replace("\\", "");
+      s.replace("?",  "");
+      s.replace("!",  "");
+      s.replace("=",  "");
+      s.replace("\"", "");
+      s.replace("\'", "");
+      s.replace("^",  "");
+      s.replace("`",  "");
+      s.replace("*",  "");
+      s.replace("%",  "");
+      s.replace(";",  "");
+      s.replace(",",  "");
+      s.replace(".",  "");
+      s.replace(" ",  "-");
+      if(0 == s.charsetIndexOf("0123456789-",0))
+         s.insert(0, "id_");                        
+      return s;
+   }
+
+   static BuildAnchorUnique(String _s) : String {
+      String s <= BuildAnchor(_s);
+      int count = 1;
+      String us <= s;
+      while(unique_anchors.containsObject(us))
+      {
+         count++;
+         us <= s + "-"+count;
+      }
+      if(count > 1)
+         s <= us;
+      unique_anchors.add(s);
+      return s;
+   }
+
+   static ReplaceFileSuffix(String _s, String _newSuffix) {
+      int idx = _s.lastIndexOf(".");
+      if(-1 != idx)
+         return _s.substring(0, idx) + _newSuffix;
+      else
+         return _s + _newSuffix;
+   }
+
+   static IsAbsolutePath(String _path) : boolean {
+      return (_path <= "/") || (_path & ":");
+   }
+
+   static SplitPathname(String name, String path, String file) {
+      // Split last used file name into directory/file components
+
+      int idx = name.lastIndexOf("/");
+      int idxDos = name.lastIndexOf("\\");
+      if(idxDos > idx)
+         idx = idxDos;
+
+      if(-1 != idx)
+      {
+         if(null != path)
+            name.substring(0, idx) => path;
+         if(null != file)
+            name.substring(idx+1, -1) => file;
+      }
+      else
+      {
+         if(null != path)
+            path = null;
+         if(null != file)
+            file = name;
+      }
+
+      ////trace "xxx SplitPathname: name=\""+name+"\" path=\""+path+"\" file=\""+file+"\".";
+   }
+
+   static ParseKeyVal(String _keyval, String _retKey, String _retVal) : boolean {
+      int idxSet = _keyval.indexOfChar('=', 0);
+      if(-1 != idxSet)
+      {
+         _keyval.substring(0, idxSet) => _retKey;
+         _keyval.substring(idxSet+1, -1) => _retVal;
+         return true;
+      }
+      return false;
+   }
+
+   static HTMLClass(String _name) : String {
+      return " class=\""+md.html_class_prefix+_name+"\"";
+   }
+
+   static HTMLTag(String _buf, String _tag, String _cssName, String _addCssNameOrNull) {
+      _buf.append("<");
+      _buf.append(_tag);
+      _buf.append(" class=\"");
+      _buf.append(md.html_class_prefix);
+      _buf.append(_cssName);
+      // (note) the class order is irrelevant, what matters is the declaration order in the .css file
+      if(null != _addCssNameOrNull)
+         if(!_addCssNameOrNull.isBlank())
+            _buf.append(" "+_addCssNameOrNull);
+      _buf.append("\">");
+   }
+
+   static HTMLTagOpen(String _buf, String _tag, String _cssName, String _addCssNameOrNull) {
+      _buf.append("<");
+      _buf.append(_tag);
+      _buf.append(" class=\"");
+      _buf.append(md.html_class_prefix);
+      _buf.append(_cssName);
+      // (note) the class order is irrelevant, what matters is the declaration order in the .css file
+      if(null != _addCssNameOrNull)
+         if(!_addCssNameOrNull.isBlank())
+            _buf.append(" "+_addCssNameOrNull);
+      _buf.append("\" ");
+   }
+
+   static GetCurrentDateString() : String {
+      Time t; t.now();
+      Integer io = t.monthday;
+      return
+         io.printf("%02d")+"-"+
+         ((["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])[t.month])+"-"+t.year;
+   }
+
+   static GetCurrentYearString() : String {
+      Time t; t.now();
+      return t.year;
+   }
+
+   static GetCurrentMonthString() : String {
+      Time t; t.now();
+      return t.month + 1;
+   }
+
+   static GetCurrentMonthNameShortString() : String {
+      Time t; t.now();
+      return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][t.month];
+   }
+
+   static GetCurrentMonthNameLongString() : String {
+      Time t; t.now();
+      return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][t.month];
+   }
+
+   static GetCurrentDayOfMonth() : int {
+      Time t; t.now();
+      return t.monthday;
+   }
+
+   static GetCurrentDayOfMonthString() : String {
+      Time t; t.now();
+      if(1 == t.monthday)
+         return "1st";
+      else if(2 == t.monthday)
+         return "2nd";
+      else if(3 == t.monthday)
+         return "3rd";
+      else if(21 == t.monthday)
+         return "21st";
+      else if(22 == t.monthday)
+         return "22nd";
+      else if(23 == t.monthday)
+         return "23rd";
+      else if(31 == t.monthday)
+         return "31st";
+      else
+         return t.monthday+"th";
+   }
+
+   static GetCurrentDayOfWeekNameShortString() : String {
+      Time t; t.now();
+      return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.weekday];
+   }
+
+   static GetCurrentDayOfWeekNameLongString() : String {
+      Time t; t.now();
+      return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][t.weekday];
+   }
+
+   static GetCurrentTimeString() : String {
+      Time t;
+      Integer io_h;
+      Integer io_m;
+      Integer io_s;
+      t.now();
+      io_h.value=t.hour;
+      io_m.value=t.min;
+      io_s.value=t.sec;
+      return io_h.printf("%02i")+":"+io_m.printf("%02i")+":"+io_s.printf("%02i");
+   }
+
+   static Backtrace() {
+      try { throw UncriticalError("debug/backtrace"); } catch(UncriticalError e) { trace e.stackTrace; }
+   }
+
+   public static CanFileBeRead(String _pathName) : boolean {
+      File f;
+      if(f.openLocal(_pathName, IOS_IN))
+      {
+         f.close();
+         return true;
+      }
+      return false;
+   }
+}
+
+// <class.png>
+class Paragraph {
+   String sub_title;
+   boolean b_sub_title;
+   int block_quote_level;
+   String block_quote_footer;
+   String custom_css_class;  // or blank
+
+   public method parsePArr(StringArray _lines) {
+      // Called when EOF or newline terminates current paragraph
+   }
+
+   public method emitParagraphBegin(String _buf) {
+   }
+
+   public method emitParagraphBeginWithin(String _buf) {
+      if(!block_quote_footer.isBlank())
+      {
+         Utils.HTMLTag(_buf, "span", "blockquote_cite_begin", custom_css_class);
+         _buf.append("</span>");
+      }
+   }
+
+   public method emitParagraphEndWithin(String _buf) {
+      if(!block_quote_footer.isBlank())
+      {
+         Utils.HTMLTag(_buf, "span", "blockquote_cite_end", custom_css_class);
+         _buf.append("</span>");
+      }
+   }
+
+   public method emitParagraphEnd(String _buf) {
+      if(!block_quote_footer.isBlank())
+      {
+         _buf.append("\n");
+         Utils.HTMLTag(_buf, "footer", "footer_cite", custom_css_class);
+         local PSpan pspan;
+         pspan.parseSpans(block_quote_footer);
+         pspan.emit(_buf);
+         _buf.append("</footer>\n");
+         _buf.replace("§last_blockquote_css", md.html_class_prefix + "blockquote_cite");
+      }
+   }
+
+   public method emitSubTitleBegin(String _buf, String _innerAddCSSClass) {
+      if(b_sub_title)
+      {
+         _buf.append("\n");
+         Utils.HTMLTag(_buf, "div", "subdiv_outer", custom_css_class/*addCssName*/);
+         Utils.HTMLTag(_buf, "div", "subdiv_inner", custom_css_class+" "+_innerAddCSSClass);
+      }
+   }
+
+   public method emitSubTitleEnd(String _buf) {
+      if(b_sub_title)
+      {
+         _buf.append("</div><!--subdiv_inner-->");
+         Utils.HTMLTag(_buf, "div", "subdiv_title", null/*addCssName*/);
+         Utils.ASCIIToHTML(sub_title, true/*bEntities*/);
+         _buf.append(sub_title);
+         _buf.append("</div><!--/subdiv_title-->");
+         _buf.append("</div><!--/subdiv_outer-->");
+         _buf.append("\n");
+      }
+   }
+
+   public abstract emit(local String _buf) {
+   }
+
+   public method emitParagraph(String _buf) {
+      emitSubTitleBegin(_buf, ""/*innerAddClassClass*/);
+      emitParagraphBegin(_buf);
+      emit(_buf);
+      emitParagraphEnd(_buf);
+      emitSubTitleEnd(_buf);
+   }
+
+}
+
+// <class.png>
+class Span {
+   public method emit(local String _buf) {
+   }
+
+}
+
+// <class.png>
+class SpanLinefeed : Span {
+   public virtual emit(local String _buf) {
+      Utils.HTMLTag(_buf, "br", "br", null/*addCssName*/);
+      _buf.append("\n");
+   }
+}
+
+// <class.png>
+class SpanText : Span {
+   define int STYLE_NORMAL        = 0;
+   define int STYLE_EMPHASIS      = 1;  // *Italic text*
+   define int STYLE_EMPHASIS2     = 2;  // _Italic text_
+   define int STYLE_STRONG        = 3;  // **bold text**
+   define int STYLE_STRONG2       = 4;  // __bold text__
+   define int STYLE_STRIKETHROUGH = 5;  // ~~strikethrough~~
+   define int STYLE_FIXED         = 6;  // `courier`
+   define int STYLE_FIXED2        = 7;  // ``courier``
+   define int STYLE_SUBSCRIPT     = 8;  // ~subscript~
+   define int STYLE_SUPERSCRIPT   = 9;  // ^subscript^
+   // (todo) <mark> extension via "^^" ?
+   int style;
+   String text;
+
+   public virtual emit(local String _buf) {
+
+      Utils.ASCIIToHTML(text, true/*bEntities*/);
+
+      switch(style)
+      {
+         default:
+         case STYLE_NORMAL:
+            _buf.append(text);
+            break;
+
+         case STYLE_EMPHASIS:
+            Utils.HTMLTag(_buf, "em", "em", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</em>");
+            break;
+
+         case STYLE_EMPHASIS2:
+            Utils.HTMLTag(_buf, "em", "em2", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</em>");
+            break;
+
+         case STYLE_STRONG:
+            Utils.HTMLTag(_buf, "strong", "strong", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</strong>");
+            break;
+
+         case STYLE_STRONG2:
+            Utils.HTMLTag(_buf, "strong", "strong2", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</strong>");
+            break;
+
+         case STYLE_STRIKETHROUGH:
+            Utils.HTMLTag(_buf, "s", "s", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</s>");
+            break;
+
+         case STYLE_FIXED:
+            Utils.HTMLTag(_buf, "code", "code", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</code>");
+            break;
+
+         case STYLE_FIXED2:
+            Utils.HTMLTag(_buf, "code", "code2", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</code>");
+            break;
+
+         case STYLE_SUBSCRIPT:
+            Utils.HTMLTag(_buf, "sub", "sub", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</sub>");
+            break;
+
+         case STYLE_SUPERSCRIPT:
+            Utils.HTMLTag(_buf, "sup", "sup", null/*addCssName*/);
+            _buf.append(text);
+            _buf.append("</sup>");
+            break;
+      }
+
+   }
+}
+
+// <class.png>
+class SpanLink : Span {
+   // Links and Images
+
+   String link_id;      // or empty (=> use link_target)
+   String link_target;  // or empty (=> use link_id)
+   String link_caption; // or empty (=> use link_target/id
+   String link_title;   // or empty (link tooltip or image title)
+   boolean b_img;
+   String img_w;        // or empty
+   String img_h;        // or empty
+   int    foot_note_nr;
+   int    gallery_idx;
+
+   static int next_gallery_idx;
+
+   public method init(String _id, String _target, String _caption, String _title, boolean _bImg, String _w, String _h) {
+      link_id      = _id;
+      link_target  = _target;
+      link_caption = _caption;
+      link_title   = _title;
+      b_img        = _bImg;
+      img_w        = _w;
+      img_h        = _h;
+
+      if(!link_id.isBlank())
+         md.addLinkRef(link_id, this);
+   }
+
+   public method resolveLinkTo(String _target, String _title, String _imgW, String _imgH, int _footNoteNr) {
+      // Called when forward-referenced link is declared
+      //  (note) this allows for redeclarations of link ids (e.g. [1],  [2], ..)
+      // trace "xxx resolve link to \""+_target+"\"";
+      if(link_caption.isBlank())
+      {
+         if(link_id <= "^")
+            link_caption = link_id.substring(1,-1);
+         else
+            link_caption = link_id;  // don't display full URL for [mylink][] style links
+      }
+
+      link_id     = "";
+      link_target = _target;
+      link_title  = _title;
+      img_w = _imgW;
+      img_h = _imgH;
+      foot_note_nr = _footNoteNr;
+   }
+
+   protected method obfuscateEMail(String _url) : String {
+      String s = "";
+      int idx = 0;
+      loop(_url.length - 1)
+      {
+         char c = _url.getc(idx++);
+         s.append("&#");
+         s.append(c);
+         s.append(";");
+      }
+      return s;
+   }
+
+   public virtual emit(local String _buf) {
+
+      String sURL;
+      String sCaption = "";
+
+      // trace "xxx SpankLink::emit: b_img="+b_img;
+
+      if(link_target.isBlank())
+      {
+         if(link_id <= "#")
+         {
+            sURL = link_id;  // document internal link
+            Utils.BuildAnchor(sURL);
+            if(link_caption.isBlank())
+               link_caption = link_id.substring(1,-1);
+         }
+         else if(link_id <= "^")
+         {
+            sURL = md.resolveLinkTarget(link_id);
+            if(link_caption.isBlank())
+               link_caption = link_id.substring(1,-1);  // don't display full URL for [^mylink][] style footnote links
+            foot_note_nr = md.resolveLinkFootNoteNr(link_id);
+         }
+         else
+         {
+            sURL = md.resolveLinkTarget(link_id);
+            if(link_caption.isBlank())
+               link_caption = link_id;  // don't display full URL for [mylink][] style links
+         }
+      }
+      else
+      {
+         sURL = link_target;
+      }
+
+      if(sURL & "@")
+      {
+         if((sURL <= "mailto:") || (sURL & ":"))
+            sURL = obfuscateEMail(sURL);
+         else
+            sURL = obfuscateEMail("mailto:"+sURL);
+      }
+
+      // trace "xxx link_caption="+link_caption;
+      if(link_caption.isBlank() && !b_img)
+         sCaption = sURL;
+      else
+         sCaption = link_caption;
+
+      Utils.ReSubstCtlCharsToASCII(sURL);
+
+      if(link_title.isBlank())
+         link_title = md.resolveLinkTitle(link_id);
+
+      if(!link_title.isBlank())
+         Utils.ASCIIToHTML(link_title, true/*bEntities*/);
+
+      if(b_img)
+      {
+         // // trace "xxx sURL=\""+sURL+"\"";
+         int idxGallery = sURL.indexOf("gallery:", 0);
+         if(idxGallery >= 0)
+         {
+            // based on <https://codepen.io/paulsenon/pen/wvzbXLN>
+            //  (todo) support multiple galleries on the same page
+            //          - currently works but does not validate (duplicate ids)
+            //          - create unique ids
+            //          - create CSS
+            local String sGalleryCSS;
+            sGalleryCSS.load("gallery.css.templ", true/*bRemoveCR*/);
+            sGalleryCSS.replace("$(ID)", String(gallery_idx));
+            s_extra_css.append(sGalleryCSS);
+
+            local StringArray aGalleryImages <= sURL.substring(idxGallery+8, 9999).splitChar('|');
+            // // trace "xxx aGalleryImages="+#(aGalleryImages);
+            _buf.append("<!-- based on <https://codepen.io/paulsenon/pen/wvzbXLN> -->\n");
+            // // _buf.append("<input type=\"checkbox\" id=\"gallery"+gallery_idx+"-toggleFullscreen\">\n");
+            _buf.append("<div id=\"gallery"+gallery_idx+"-main\">\n");
+            _buf.append("<div id=\"gallery"+gallery_idx+"\"><!-- gallery start -->\n");
+            _buf.append("<div id=\"gallery"+gallery_idx+"-container\"><!-- gallery-container start -->\n");
+            // // _buf.append("<label id=\"gallery"+gallery_idx+"-toggleFullscreenVisual\" for=\"gallery"+gallery_idx+"-toggleFullscreen\">F</label>\n");
+            // // _buf.append("\n");
+            _buf.append("<!-- gallery"+gallery_idx+"-content start -->\n");
+            _buf.append("<div id=\"gallery"+gallery_idx+"-content\">\n");
+
+            int galleryImgIdx = 0;
+            String *sGalleryImgURL;
+            int galleryImgIdxLast = aGalleryImages.numElements-1;
+            foreach sGalleryImgURL in aGalleryImages
+            {
+               _buf.append("<div id=\"gallery"+gallery_idx+"-pic_"+(galleryImgIdx+1)+"\" class=\"gallery__item\">\n");
+
+               if(galleryImgIdx > 0)
+               {
+                  _buf.append("<a href=\"#gallery"+gallery_idx+"-pic_"+galleryImgIdx+"\" class=\"gallery-click-zone gallery-click-zone-prev\">");
+                  _buf.append("<span class=\"gallery-arrow gallery-arrow-prev\">&lt;</span>");
+                  _buf.append("</a>\n");
+               }
+
+               if(galleryImgIdx < galleryImgIdxLast)
+               {
+                  _buf.append("<a href=\"#gallery"+gallery_idx+"-pic_"+(galleryImgIdx+2)+"\" class=\"gallery-click-zone gallery-click-zone-next\">");
+                  _buf.append("<span class=\"gallery-arrow gallery-arrow-next\">&gt;</span>");
+                  // // ((galleryImgIdxLast == galleryImgIdx)?"gallery-arrow-disabled ":""
+                  _buf.append("</a>\n");
+               }
+
+               _buf.append("<img src=\""+sGalleryImgURL+"\" alt=\"Gallery Image "+(galleryImgIdx+1)+"\">\n");
+               _buf.append("</div>");
+
+               // Next gallery image
+               galleryImgIdx++;
+            }
+            _buf.append("</div><!-- /gallery"+gallery_idx+"-content -->\n");
+            // // _buf.append("\n");
+
+            _buf.append("<!-- gallery"+gallery_idx+"-controls start -->\n");
+            _buf.append("<div id=\"gallery"+gallery_idx+"-controls\">\n");
+
+            galleryImgIdx = 0;
+            loop(aGalleryImages.numElements)
+            {
+               _buf.append("<a href=\"#gallery"+gallery_idx+"-pic_"+(galleryImgIdx+1)+"\" class=\"gallery-controls__dot\">");
+               // // _buf.append("<span class=\"gallery-hidden\">pic "+(galleryImgIdx+1)+"</span>");
+               // // _buf.append("<span class=\"gallery-hidden\"></span>");
+               _buf.append("</a>\n");
+
+               // Next gallery image
+               galleryImgIdx++;
+            }
+
+            _buf.append("</div><!-- /gallery"+gallery_idx+"-controls -->\n");
+            _buf.append("</div><!-- /gallery"+gallery_idx+"-container -->\n");
+            _buf.append("</div><!-- /gallery"+gallery_idx+" -->\n");
+            _buf.append("</div><!-- /gallery"+gallery_idx+"-main -->\n\n");
+         }
+         else
+         {
+            // Single Image
+            if(img_w.isBlank())
+               img_w = md.resolveLinkImgW(link_id);
+
+            if(img_h.isBlank())
+               img_h = md.resolveLinkImgH(link_id);
+
+            boolean bScaled = (!img_w.isBlank() || !img_h.isBlank());
+
+            String sURLOrData; sURLOrData.empty();
+            Utils.AppendURLOrData(sURLOrData, sURL, false/*bPakFile*/);
+            boolean bBase64 = (sURLOrData & ";base64,");
+
+            if(bScaled && !bBase64)
+            {
+               Utils.HTMLTagOpen(_buf, "a", "oimg", null/*addCssName*/);
+               _buf.append(" href=\"");
+               _buf.append(sURL);
+               _buf.append("\">");
+            }
+
+            Utils.HTMLTagOpen(_buf, "img", "img", null/*addCssName*/);
+            _buf.append(" src=\"");
+            _buf.append(sURLOrData);
+            _buf.append("\"");
+
+            if(!img_w.isBlank())
+               _buf.append(" width=\""+img_w+"\"");
+
+            if(!img_h.isBlank())
+               _buf.append(" height=\""+img_h+"\"");
+
+            if(!sCaption.isBlank())
+            {
+               _buf.append(" alt=\"");
+               _buf.append(sCaption);
+               _buf.append("\"");
+            }
+            if(!link_title.isBlank())
+            {
+               _buf.append(" title=\"");
+               _buf.append(link_title);
+               _buf.append("\"");
+            }
+            _buf.append(">");
+
+            if(bScaled && !bBase64)
+               _buf.append("</a>");
+         }
+      }
+      else
+      {
+         // Link to URL
+         if("-" != sCaption)
+         {
+            Utils.HTMLTagOpen(_buf, "a", "a", null/*addCssName*/);
+            _buf.append(" href=\"");
+            _buf.append(sURL);
+            if(!link_title.isBlank())
+            {
+               _buf.append("\" title=\"");
+               _buf.append(link_title);
+            }
+            _buf.append("\">");
+            Utils.ASCIIToHTML(sCaption, true/*bEntities*/);
+            _buf.append(sCaption);
+            _buf.append("</a>");
+         }
+
+         // trace "xxx link_id="+link_id;
+         if(foot_note_nr > 0)
+         {
+            Utils.HTMLTagOpen(_buf, "a", "footnote_nr", null/*addCssName*/);
+            _buf.append(" href=\"#footnote_");
+            _buf.append(String(foot_note_nr));
+            _buf.append("\">");
+            _buf.append(String(foot_note_nr));
+            _buf.append("</a>");
+         }
+
+      }
+   }
+}
+
+// <class.png>
+class PPre : Paragraph {
+   String text;
+   String attribs;  // or empty  (remaining content of closing ~~~ line)
+
+   public virtual parsePArr(StringArray _lines) {
+      String *line;
+      boolean bLastBlank = true;
+      foreach line in _lines
+      {
+         if(!bLastBlank)
+            text.append("\n");
+
+         text.append(line);
+         bLastBlank = false;
+      }
+   }
+
+   public virtual emit(local String _buf) {
+      String sText <= text;
+      if(attribs & "lang=cycle")
+      {
+         if(0)
+         {
+            String sHash;
+            sHash = Utils.BuildAnchor(sub_title)+"_"+text.checksum;
+            trace "xxx lang=cycle text=\""+text+"\" sHash=\""+sHash+"\"";
+            String sCache;
+            if(sCache.loadLocal(CACHE_PATH + sHash, true/*bRemoveCR*/))
+            {
+               sText <= sCache;
+            }
+            else
+            {
+               // (todo) highlight
+               text = "(todo)";
+               text.saveLocal(CACHE_PATH + sHash);
+            }
+         }
+
+         // Utils.HTMLTag(_buf, "pre", "pre", custom_css_class);
+         Utils.HTMLTag(_buf, "pre", "pre", "cy_b");
+
+         // _buf.append("<p class=\"cy_b\">");
+         sText <= CycleSyntaxHighlighter_HTML.ColorizeText(text);
+         _buf.append(sText);
+         // _buf.append("</p>\n");
+
+         _buf.append("</pre>\n");
+      }
+      else if(attribs & "lang=min")
+      {
+         Utils.HTMLTag(_buf, "pre", "pre", "cy_b");
+         sText <= MinSyntaxHighlighter_HTML.ColorizeText(text);
+         _buf.append(sText);
+         _buf.append("</pre>\n");
+      }
+      else
+      {
+         Utils.HTMLTag(_buf, "pre", "pre", custom_css_class);
+         Utils.ASCIIToHTML(sText, false/*bEntities*/);
+         _buf.append(sText);
+         _buf.append("</pre>\n");
+      }
+   }
+}
+
+// <class.png>
+class PSpan : Paragraph {
+   PointerArray spans;  // Span instances
+
+   define String CTL_CHARS = "`*^~_[(<!";
+
+   StringArray cell_parr;  // used by PTable
+   int list_start_or_value;  // used by PList
+
+   public method parseSpans(String _t) {
+      SpanText *spanText;
+      SpanLink *spanLink;
+
+      int idx = _t.charsetIndexOf(CTL_CHARS, 0);
+      int plainStartIdx = 0;
+      int plainEndIdx;
+      int tagStartIdx;  // first char within tag
+      String stag;
+      int style;
+      String lastLinkName = "";
+      String linkIdOrTarget = "";
+      boolean bImgLink;
+      StringArray *words;
+      int wordIdx;
+      String wordKey;
+      String wordVal;
+
+      if(-1 != idx)
+      {
+         // Parse multi-span line
+         while((-1 != idx) && (idx < (_t.length-1)))
+         {
+            // trace "xxx span: parse multi-span t=\""+_t+"\" idx="+idx;
+
+            stag = "";
+
+            if(' ' != _t.getc(idx+1))
+            {
+               plainEndIdx = idx;
+               switch(_t[idx])
+               {
+                  case '`':
+                     if('`' == _t.getc(idx+1))
+                     {
+                        stag = "``";
+                        idx++;
+                        style = SpanText.STYLE_FIXED2;
+                     }
+                     else
+                     {
+                        stag = "`";
+                        style = SpanText.STYLE_FIXED;
+                     }
+                     break;
+
+                  case '*':
+                     if('*' == _t.getc(idx+1))
+                     {
+                        stag = "**";
+                        idx++;
+                        style = SpanText.STYLE_STRONG;
+                     }
+                     else
+                     {
+                        stag = "*";
+                        style = SpanText.STYLE_EMPHASIS;
+                     }
+                     break;
+
+                  case '^':
+                     if('^' == _t.getc(idx+1))
+                     {
+                        stag = "";
+                        idx++;
+                     }
+                     else
+                     {
+                        stag = "^";
+                        style = SpanText.STYLE_SUPERSCRIPT;
+                     }
+                     break;
+
+                  case '~':
+                     if('~' == _t.getc(idx+1))
+                     {
+                        stag = "~~";
+                        idx++;
+                        style = SpanText.STYLE_STRIKETHROUGH;
+                     }
+                     else
+                     {
+                        stag = "~";
+                        style = SpanText.STYLE_SUBSCRIPT;
+                     }
+                     break;
+
+                  case '_':
+                     if('_' == _t.getc(idx+1))
+                     {
+                        stag = "__";
+                        idx++;
+                        style = SpanText.STYLE_STRONG2;
+                     }
+                     else
+                     {
+                        stag = "_";
+                        style = SpanText.STYLE_EMPHASIS2;
+                     }
+                     break;
+
+                  case '[':
+                     stag = "]";
+                     if(lastLinkName.isBlank())
+                        bImgLink = false;
+                     break;
+
+                  case '!':
+                     if('[' == _t.getc(idx+1))  // ![image]
+                     {
+                        stag = "]";
+                        idx++;
+                        bImgLink = true;
+                     }
+                     else
+                     {
+                        stag = "";
+                     }
+                     break;
+
+                  case '(':
+                     if(!lastLinkName.isBlank())
+                     {
+                        // [some link](http://example.com)
+                        stag = ")";
+                     }
+                     else
+                     {
+                        stag = "";
+                     }
+                     break;
+
+                  case '<':
+                     int autoLinkIdxE = _t.indexOfChar('>', idx);
+                     // trace "xxx autoLinkIdxE="+autoLinkIdxE;
+                     if(-1 != autoLinkIdxE)
+                     {
+                        String autoLinkURL;
+                        _t.substring(idx+1, autoLinkIdxE-idx-1) => autoLinkURL;
+                        if(-1 == autoLinkURL.indexOfChar(' ', 0))
+                        {
+                           if(plainEndIdx > plainStartIdx)
+                           {
+                              spanText <= new SpanText;
+                              spanText.text = _t.substring(plainStartIdx, plainEndIdx-plainStartIdx);
+                              spans.add(#(deref spanText));
+                           }
+                           spanLink <= new SpanLink;
+                           spanLink.init(""/*id*/, autoLinkURL/*target*/, autoLinkURL/*caption*/, ""/*title*/, false/*bImg*/, ""/*w*/, ""/*h*/);
+                           spans.add(#(deref spanLink));
+                           idx = autoLinkIdxE;
+                           plainStartIdx = idx + 1;
+                           lastLinkName = "";
+                        }
+                     }
+                     else
+                     {
+                        idx++;
+                     }
+                     stag = "";
+                     break;
+               }
+            }
+
+            // trace "xxx stag=\""+stag+"\"";
+
+            if(!stag.isBlank())
+            {
+               // Find end of tag
+               tagStartIdx = ++idx;
+
+               idx = _t.indexOf(stag, idx);
+               // trace "xxx find \""+stag+"\" idx="+idx+" tagStartIdx="+tagStartIdx+" strstart="+_t.substring(idx, 10);
+
+               if(-1 != idx)
+               {
+                  if('\\' == _t.getc(idx-1))
+                  {
+                     // Escaped, continue searching for end of tag
+                     idx = idx + 1;
+                  }
+                  else
+                  {
+                     // Found end of tag
+                     if(plainEndIdx > plainStartIdx)
+                     {
+                        spanText <= new SpanText;
+                        spanText.text = _t.substring(plainStartIdx, plainEndIdx-plainStartIdx);
+                        spans.add(#(deref spanText));
+                        lastLinkName = "";
+                     }
+
+                     if("]" == stag)
+                     {
+                        // trace "xxx lastLinkName=\""+lastLinkName+"\"";
+                        if(lastLinkName.isBlank())
+                        {
+                           // [link]
+                           _t.substring(tagStartIdx, idx-tagStartIdx) => lastLinkName;
+                           // trace "xxx link: lastLinkName=\""+lastLinkName+"\"";
+                           if(bImgLink)
+                              lastLinkName="alt"; // no alt text, set default
+                           // [id] or (url) follows
+                        }
+                        else
+                        {
+                           // [link][id]
+                           _t.substring(tagStartIdx, idx-tagStartIdx) => linkIdOrTarget;
+                           // trace "xxx link: ["+lastLinkName+"]["+linkIdOrTarget+"]";
+                           spanLink <= new SpanLink;
+                           if(linkIdOrTarget.isBlank())
+                              spanLink.init(lastLinkName/*id*/, ""/*target*/, ""/*caption*/, ""/*title*/, bImgLink/*bImg*/, ""/*w*/, ""/*h*/);
+                           else
+                              spanLink.init(linkIdOrTarget/*id*/, ""/*target*/, lastLinkName/*caption*/, ""/*title*/, bImgLink/*bImg*/, ""/*w*/, ""/*h*/);
+                           spans.add(#(deref spanLink));
+                           lastLinkName = "";
+                        }
+                     }
+                     else if(")" == stag)
+                     {
+                        // [link](url)
+                        // [alt text](gallery:img1.png:img2.png:img3.png)
+                        _t.substring(tagStartIdx, idx-tagStartIdx) => linkIdOrTarget;
+                        words <= linkIdOrTarget.splitSpace(true/*bConsiderQuotes*/);
+                        if(words.numElements >= 1)
+                        {
+                           String directLinkTarget <= words.get(0);
+                           String directLinkTitle = words.get(1);
+                           wordIdx = 2;
+                           String imgW = "";
+                           String imgH = "";
+                           while(wordIdx < words.numElements)
+                           {
+                              if(Utils.ParseKeyVal(words.get(wordIdx), wordKey, wordVal))
+                              {
+                                 switch(wordKey)
+                                 {
+                                    case "w":
+                                       imgW = wordVal;
+                                       break;
+
+                                    case "h":
+                                       imgH = wordVal;
+                                       break;
+                                 }
+                              }
+                              wordIdx++;
+                           }
+                           // trace "xxx link: ["+lastLinkName+"]["+linkIdOrTarget+"]";
+                           spanLink <= new SpanLink;
+                           // trace "xxx directLinkTarget=\""+directLinkTarget+"\"";
+                           if(directLinkTarget <= "gallery:")
+                              spanLink.gallery_idx = SpanLink.next_gallery_idx++;
+                           spanLink.init(""/*id*/, directLinkTarget, lastLinkName/*caption*/, directLinkTitle, bImgLink/*bImg*/, imgW, imgH);
+                           spans.add(#(deref spanLink));
+                        }
+                        lastLinkName = "";
+                     }
+                     else
+                     {
+                        spanText <= new SpanText;
+                        spanText.text = _t.substring(tagStartIdx, idx-tagStartIdx);
+                        spanText.style = style;
+                        spans.add(#(deref spanText));
+                        lastLinkName = "";
+                     }
+                     plainStartIdx = idx + (stag.length-1);
+                     idx = plainStartIdx;
+                  }
+               }
+               else
+               {
+                  // End of tag not found, treat as plain text
+                  idx = tagStartIdx;
+               }
+            }
+            else
+            {
+               // Invalid tag, treat as plain text
+               idx++;
+            }
+
+            // Find next start
+            idx = _t.charsetIndexOf(CTL_CHARS, idx);
+         } // loop
+
+         // Append trailing plain text
+         String trail = _t.substring(plainStartIdx, -1);
+         // trace "xxx span: trail=\""+trail+"\"";
+         if(!trail.isBlank())
+         {
+            spanText <= new SpanText;
+            spanText.text = trail;
+            spans.add(#(deref spanText));
+         }
+      }
+      else
+      {
+         // No special chars, add plain text line span
+         spanText <= new SpanText;
+         spanText.text = _t;
+         spans.add(#(deref spanText));
+      }
+   }
+
+   public virtual parsePArr(StringArray _lines) {
+      String *line;
+      boolean bLastBlank = true;
+      foreach line in _lines
+      {
+         if(!bLastBlank)
+            spans.add(#(new SpanLinefeed));
+
+         parseSpans(line.trim());
+         bLastBlank = false;
+      }
+   }
+
+   public virtual emit(local String _buf) {
+      local Span *span;
+      foreach span in spans
+         span.emit(_buf);
+   }
+
+   public virtual emitParagraph(String _buf) {
+      String addCSSClass = "";
+
+      // Workaround for "white space below image" issue
+      //  (browser always adds white space for text descender, even if the div does not contain any text)
+      // trace "xxx spans="+#(spans);
+      if(1 == spans.numElements)
+      {
+         SpanLink spanLink <= spans.get(0);
+         if(spanLink instanceof SpanLink)
+         {
+            if(spanLink.b_img)
+               addCSSClass.append(" imgnowhitespace");
+         }
+      }
+
+      emitSubTitleBegin(_buf, addCSSClass);
+      emitParagraphBegin(_buf);
+      Span *span;
+      boolean bP = false;
+      foreach span in spans
+      {
+         if(!bP)
+         {
+            // (note) <div> inside of <p> is forbidden but <div> inside of <div> is ok. oh dear.
+            bP = true;
+            _buf.append("\n");
+            Utils.HTMLTag(_buf, "div", "p", custom_css_class);
+            emitParagraphBeginWithin(_buf); // "<<" start cite
+         }
+         span.emit(_buf);
+      }
+      if(bP)
+      {
+         emitParagraphEndWithin(_buf);  // ">>" end cite
+         _buf.append("</div>");
+      }
+      emitParagraphEnd(_buf); // cite footer
+      emitSubTitleEnd(_buf);
+   }
+
+
+}
+
+// <class.png>
+class PLinefeed : Paragraph {
+   boolean b_html;
+
+   public virtual emit(local String _buf) {
+      if(b_html)
+      {
+         Utils.HTMLTag(_buf, "div", "lf", custom_css_class);
+         _buf.append("</div><!--forced lf-->");
+      }
+      _buf.append("\n");
+   }
+}
+
+// <class.png>
+class PMultiCol : Paragraph {
+   boolean b_begin;
+
+   public virtual emit(local String _buf) {
+      if(b_begin)
+      {
+         _buf.append("\n");
+         Utils.HTMLTag(_buf, "div", "col", custom_css_class);
+         _buf.append("<!--begin multicol-->");
+      }
+      else
+      {
+         _buf.append("</div><!--end multicol-->\n");
+      }
+      _buf.append("\n");
+   }
+}
+
+// <class.png>
+class PHorizontalRule : Paragraph {
+
+   define int STYLE_DEFAULT         = 0;
+   define int STYLE_ASTERISK        = 1;
+   define int STYLE_SPACED_ASTERISK = 2;
+   define int STYLE_PAGEBREAK       = 3; // print-only
+
+   StringArray css_classes = [ "hr", "hr_asterisk", "hr_spaced_asterisk", "hr_pagebreak" ];
+
+   int style;
+
+   public virtual emit(local String _buf) {
+      _buf.append("\n");
+      if(STYLE_SPACED_ASTERISK == style)
+      {
+         Utils.HTMLTag(_buf, "div", css_classes.get(style), custom_css_class);
+         Utils.HTMLTag(_buf, "div", css_classes.get(style)+"_inner", null);
+         _buf.append("&#x273d;&nbsp;&#x273d;&nbsp;&#x273d;");
+         _buf.append("</div></div>\n");
+      }
+      else
+      {
+         Utils.HTMLTag(_buf, "hr", css_classes.get(style), custom_css_class);
+         _buf.append("\n");
+      }
+   }
+}
+
+// <class.png>
+class PList : Paragraph {
+   int col_idx;
+   int start_or_value; // -1=unordered, -2=ordered (auto-enum), 1..n: explicit enum
+   PointerArray items;  // Paragraph instances (PSpan or PList)
+   PointerArray all_lists;  // PList refs (including root)
+   int cur_item_start_or_value;  // temporary
+
+   public virtual parsePArr(StringArray _lines) {
+      // Add text item
+      local PSpan pspan;
+      pspan.parsePArr(_lines);
+      items.add(#(deref pspan));
+      pspan.list_start_or_value = cur_item_start_or_value;
+      // trace "xxx parr cur_item_start_or_value="+cur_item_start_or_value;
+   }
+
+   public method addSubList(int _colIdx, int _startOrValue) : PList {
+      local PList plist;
+      plist.col_idx = _colIdx;
+      plist.start_or_value = _startOrValue;
+      items.add(#(deref plist));
+      // item content is parsed when parr is complete
+      return plist;
+   }
+
+   public method addList(PList _plist) {
+      all_lists.add(_plist);
+   }
+
+   public method findSubList(int _colIdx) : PList {
+      if(all_lists.numElements > 0)
+      {
+         int idx = all_lists.numElements - 1;
+         while(idx >= 0)
+         {
+            PList pl <= all_lists[idx];
+            if(pl.col_idx <= _colIdx)
+               return pl;
+            idx--;
+         }
+      }
+      return null;
+   }
+
+   public method emitList(local String _buf, local String _enumPath, local int _enum) {
+      local Paragraph *p;
+      local boolean bRoot = (@(all_lists.get(0)) == @(this));
+      local int listItemNr;
+
+      if(-1 != start_or_value)
+      {
+         _buf.append("\n");
+         Utils.HTMLTagOpen(_buf, "ol", "ol"+(bRoot?"root":"sub"), bRoot?custom_css_class:null);
+         if(-2 != start_or_value)
+         {
+            if(1 != start_or_value)
+            {
+               _buf.append(" start=\"");
+               _buf.append(String(start_or_value));
+               _buf.append("\"");
+               listItemNr = start_or_value;
+            }
+            else
+            {
+               listItemNr = 1;
+            }
+         }
+         else
+         {
+            listItemNr = -1; // auto-enum
+         }
+         _buf.append(">");
+      }
+      else
+      {
+         _buf.append("\n");
+         Utils.HTMLTag(_buf, "ul", "ul"+(bRoot?"root":"sub"), bRoot?custom_css_class:null);
+         listItemNr = -1;
+      }
+
+      local int itemIdx = 0;
+      local boolean bLI = false;
+      foreach p in items
+      {
+         // trace "xxx emit list item="+#(p);
+         if(p instanceof PList)
+         {
+            local String enumPath = _enumPath + (_enum-1) + ".";
+            local PList plist <= p;
+            plist.emitList(_buf, enumPath, 1);
+
+            _buf.append("</li>\n");
+            bLI = false;
+         }
+         else
+         {
+            PSpan pspan <= p;
+            if(bLI)
+               _buf.append("</li>\n");
+            else
+               bLI = true;
+
+            String cssName = "li"+(bRoot?"root":"sub");
+            if(items.get(itemIdx+1) instanceof PList)
+               cssName.append("withsub");
+            else if(null == items.get(itemIdx+1))
+               cssName.append("last");
+
+            Utils.HTMLTagOpen(_buf, "li", cssName, null/*addCssName*/);
+
+            if(-1 != listItemNr)
+            {
+               if(pspan.list_start_or_value != listItemNr)
+               {
+                  listItemNr = pspan.list_start_or_value;
+                  _buf.append(" value=\"");
+                  _buf.append(String(listItemNr));
+                  _buf.append("\"");
+               }
+
+               listItemNr++;
+            }
+
+            _buf.append(">");
+
+            if(b_toc_build)
+            {
+               Utils.HTMLTag(_buf, "div", "enum", custom_css_class);
+               _buf.append(_enumPath);
+               _buf.append(String(_enum));
+               PHeader ph <= toc_entries.get(toc_entry_idx++);
+               // trace "xxx toc ph.sub_title=\""+ph.sub_title+"\"";
+               ph.toc_enum_path = _enumPath + _enum;
+               _buf.append("</div>");
+               _enum++;
+            }
+
+            p.emit(_buf);  // emit PSpan
+
+            // (note) <li> is closed later (<ul>/<ol> may only be followed by <li>)
+         }
+         itemIdx++;
+      }
+      if(bLI)
+         _buf.append("</li>\n");
+      if(-1 != start_or_value)
+         _buf.append("</ol>\n");
+      else
+         _buf.append("</ul>\n");
+   }
+
+   public virtual emit(local String _buf) {
+      local String enumPath = "";
+      emitList(_buf, enumPath, header_enum_start/*enum*/);
+   }
+}
+
+// <class.png>
+class PHeader : Paragraph {
+   int level;             // 1(major)..9(minor)
+   String caption;
+   String toc_enum_path;  // e.g. "1.2.4"
+   String anchor;         // derived from title or set via {my-id}
+   boolean b_no_tok;
+
+   public method parse(String _s) {
+      if(_s & "#-#")
+      {
+         _s.replace("#-#", "##");
+         b_no_tok = true;
+      }
+
+      level = _s.numIndicesOf("#");
+
+      boolean bAutoAnchor = true;
+      int idxS = _s.indexOfChar('{', 0);
+      int idxE = _s.indexOfChar('}', 0);
+      if((-1 != idxS) && (-1 != idxE) && (idxE > idxS))
+      {
+         int idxW = _s.revIndexOfChar(' ', idxE);
+         if( (-1 == idxW) || (idxW < idxS) )
+         {
+            caption = _s.substring(0, idxS).replace("#","").trim();
+            anchor = Utils.BuildAnchorUnique(_s.substring(idxS+1, idxE-idxS-1)); // should already be an anchor
+            bAutoAnchor = false;
+         }
+      }
+
+      if(bAutoAnchor)
+      {
+         caption = _s.replace("#","").trim();
+         anchor = Utils.BuildAnchorUnique(caption);
+      }
+   }
+
+   public virtual emitParagraph(String _buf) {
+      // (note) subtitle is only used in TOC
+      emitParagraphBegin(_buf);
+      emit(_buf);
+      emitParagraphEnd(_buf);
+   }
+
+   public virtual emit(local String _buf) {
+      int hLevel = level;
+      if(hLevel > 6)
+         hLevel = 6;
+      _buf.append("\n");
+      Utils.HTMLTagOpen(_buf, "h"+hLevel, "h"+hLevel, custom_css_class);
+      _buf.append(" id=\"");
+      _buf.append(anchor);
+      _buf.append("\">");
+      String s = caption;
+      Utils.ASCIIToHTML(s, true/*bEntities*/);
+      if(!toc_enum_path.isBlank())
+      {
+         Utils.HTMLTag(_buf, "span", "h"+hLevel+"_enum", custom_css_class);
+         _buf.append(toc_enum_path);
+         _buf.append(" ");
+         _buf.append("</span>");
+      }
+      _buf.append(s);
+      _buf.append("</h"+hLevel+">\n");
+   }
+}
+
+// <class.png>
+class PTable : Paragraph {
+
+   int num_cols;
+   int num_rows;  // including header
+
+   PointerArray rows;  // PointerArray instances (PSpan instances)
+   StringArray cell_align;
+   StringArray cell_width;
+
+   boolean b_noheader;
+
+   public virtual parsePArr(StringArray _lines) {
+      // trace "xxx lines="+#(_lines);
+      String *line;
+      boolean bFirstRow = true;
+      int lineIdx;
+      PointerArray *rowSpans;
+      int cellIdx;
+      PSpan *pspan;
+      StringArray *cellPArr;
+      StringArray *cells;
+      String *cellS;
+      int colIdx;
+
+      lineIdx = 0;
+      while(lineIdx < _lines.numElements)
+      {
+         line <= _lines.get(lineIdx);
+         // trace "xxx line="+line;
+         if!(line & "---")
+         {
+            if(line <= "|noheader")
+            {
+               b_noheader = true;
+            }
+            else if(line <= "|cols=")
+            {
+               String colS;
+               line.substring(6, -1) => colS;
+               IntArray colW; colW.empty();
+               StringArray colA <= colS.splitChar(',');
+               // trace "xxx colA="+#(colA);
+               int colSum = 0;
+               foreach colS in colA
+               {
+                  colSum += int(colS);
+               }
+               colIdx = 0;
+               foreach colS in colA
+               {
+                  int colRel = 100 * int(colS) / float(colSum);
+                  // int colRel = int(colS);
+                  cell_width[colIdx] = " style=\"width: "+colRel+"%\"";
+                  colIdx++;
+               }
+            }
+            else if(line & "|+")
+            {
+               // Multi-line continuation
+               // trace "xxx multiline line="+line;
+               if(lineIdx > 0)
+               {
+                  cells <= line.splitChar('|');
+                  cells.delete(0); // first one's always empty ?!
+                  cellIdx = 0;
+                  loop(num_cols)
+                  {
+                     cellS <= cells.get(cellIdx);
+                     if(cellS <= "+")
+                     {
+                        pspan <= rowSpans.get(cellIdx);
+                        cellPArr <= pspan.cell_parr;
+                        cellPArr.add(cellS.substring(1, -1).trim());
+                     }
+                     cellIdx++;
+                  }
+               }
+               else
+               {
+                  if(b_warn)
+                     trace "[~~~] md: trying to multi-line-continue non-existing table row (near line "+md.line_nr+")";
+               }
+            }
+            else
+            {
+               if(bFirstRow)
+               {
+                  bFirstRow = false;
+                  num_cols = line.numIndicesOf("|");
+                  if(line >= "|")
+                     num_cols--;
+                  cell_align.alloc(num_cols);
+                  loop(num_cols)
+                     cell_align.add("align=\"center\"");
+               }
+
+               // New row
+               rowSpans <= new PointerArray;
+               rows.add(#(deref rowSpans));
+               cells <= line.splitChar('|');
+               cells.delete(0); // first one's always empty ?!
+               if(cells.numElements != num_cols)
+                  cells.add(" ");  // when last column is empty
+               // trace "xxx cells="+#(cells);
+               cellIdx = 0;
+               loop(num_cols)
+               {
+                  pspan <= new PSpan;
+                  cellPArr <= pspan.cell_parr;
+                  cellS <= cells.get(cellIdx);
+                  if(cellS <= ":")
+                  {
+                     if!(cellS >= ":")
+                        cell_align[cellIdx] = "align=\"left\"";
+
+                     cellS.replace(":","");
+                  }
+                  else if(cellS >= ":")
+                  {
+                     cell_align[cellIdx] = "align=\"right\"";
+                     cellS.replace(":","");
+                  }
+                  cellPArr.add(cellS.trim());
+                  // trace "xxx "+#(cells.get(cellIdx));
+                  rowSpans.add(#(deref pspan));
+                  cellIdx++;
+               }
+               num_rows++;
+            }
+         }
+         else
+         {
+            // Parse alignment only
+            cells <= line.splitChar('|');
+            cells.delete(0); // first one's always empty ?!
+            // trace "xxx cells="+#(cells);
+            cellIdx = 0;
+            loop(num_cols)
+            {
+               cellS <= cells.get(cellIdx);
+               if(cellS <= ":")
+               {
+                  if!(cellS >= ":")
+                     cell_align[cellIdx] = "align=\"left\"";
+               }
+               else if(cellS >= ":")
+               {
+                  cell_align[cellIdx] = "align=\"right\"";
+               }
+               // else CENTER
+               cellIdx++;
+            }
+         }
+         lineIdx++;
+      }
+
+      // trace "xxx found "+num_rows+" table rows";
+      // trace "xxx rows="+#(rows);
+      foreach rowSpans in rows
+      {
+         foreach pspan in rowSpans
+         {
+            cellPArr <= pspan.cell_parr;
+            // trace "xxx pspan="+#(pspan);
+            // trace "xxx pspan cell_parr="+#(cellPArr);
+            pspan.parsePArr(pspan.cell_parr);
+         }
+      }
+   }
+
+   public virtual emit(local String _buf) {
+      // (note) place the table in a div to prevent unintented (non-overridable) inheritance, e.g. margin-left
+      //         (setting the table margin instead of the div will cause all tds to inherit the margin)
+      Utils.HTMLTag(_buf, "div",   "table_div", custom_css_class);
+      Utils.HTMLTag(_buf, "table", "table",     null/*addCssName*/);
+
+      PointerArray *rowSpans;
+      PSpan *pspan;
+      int colIdx;
+      int rowIdx;
+
+      // Emit table header
+      if(!b_noheader)
+      {
+         rowSpans <= rows.get(0);
+         Utils.HTMLTag(_buf, "tr", "thtr", null/*addCssName*/);
+         colIdx = 0;
+         foreach pspan in rowSpans
+         {
+            Utils.HTMLTagOpen(_buf, "th", "thtd", null/*addCssName*/);
+            _buf.append(cell_align.get(colIdx));
+            _buf.append(cell_width.get(colIdx));
+            _buf.append(">");
+            pspan.emit(_buf);
+            _buf.append("</th>");
+            colIdx++;
+         }
+         _buf.append("</tr>\n");
+
+         rowIdx = 1;
+      }
+      else
+      {
+         rowIdx = 0;
+      }
+
+      // Emit table rows
+      while(rowIdx < num_rows)
+      {
+         rowSpans <= rows.get(rowIdx);
+         Utils.HTMLTag(_buf, "tr", "tr", null/*addCssName*/);
+         colIdx = 0;
+         foreach pspan in rowSpans
+         {
+            Utils.HTMLTagOpen(_buf, "td", "td", null/*addCssName*/);
+            _buf.append(cell_align.get(colIdx));
+            if(b_noheader && (0 == rowIdx))
+               _buf.append(cell_width.get(colIdx));
+            _buf.append(">");
+            pspan.emit(_buf);
+            _buf.append("</td>");
+            colIdx++;
+         }
+         _buf.append("</tr>\n");
+         rowIdx++;
+      }
+
+      _buf.append("</table></div>\n");
+   }
+}
+
+// <class.png>
+class PBuffer : Paragraph {
+   String src;
+   String buf_id;
+
+   public virtual parsePArr(StringArray _lines) {
+      String *line;
+      foreach line in _lines
+      {
+         src.append(line);
+         src.append("\n");
+      }
+   }
+
+   public virtual emit(local String _bufIgnored) {
+      local String buf;
+      local MD mdNested;
+      mdNested.setEnablePartial(true);
+      mdNested.parse(src, false/*bSubstEsc*/);
+      mdNested.emit(buf, null/*templatePathName*/, false/*bPost*/);
+      buffers[buf_id] = deref buf;
+   }
+}
+
+// <class.png>
+class PInfoDiv : Paragraph {
+   define int TYPE_NOTE_S      =  0;
+   define int TYPE_NOTE_L      =  1;
+   define int TYPE_IMPORTANT_S =  2;
+   define int TYPE_IMPORTANT_L =  3;
+   define int TYPE_TIP_S       =  4;
+   define int TYPE_TIP_L       =  5;
+   define int TYPE_CAUTION_S   =  6;
+   define int TYPE_CAUTION_L   =  7;
+   define int TYPE_WARNING_S   =  8;
+   define int TYPE_WARNING_L   =  9;
+   define int TYPE_TODO_S      = 10;
+   define int TYPE_TODO_L      = 11;
+   int info_type;
+   static StringArray info_type_names = [
+      "note_s", "note_l", "important_s", "important_l", "tip_s", "tip_l",
+      "caution_s", "caution_l", "warning_s", "warning_l", "todo_s", "todo_l"
+                                  ];
+   static StringArray info_type_strings = [
+      "note", "NOTE", "important", "IMPORTANT", "tip", "TIP",
+      "caution", "CAUTION", "warning", "WARNING", "todo", "TODO"
+                                    ];
+   String src;
+
+   public virtual parsePArr(StringArray _lines) {
+      String *line;
+      foreach line in _lines
+      {
+         src.append(line);
+         src.append("\n");
+      }
+   }
+
+   public virtual emitSubTitleBegin(String _buf, String _innerAddCSSClass) {
+      Paragraph::emitSubTitleBegin(_buf, _innerAddCSSClass);
+
+      String infoTypeName <= info_type_names.get(info_type);
+
+      Utils.HTMLTag(_buf, "div", infoTypeName+"_div_outer", custom_css_class);
+      Utils.HTMLTag(_buf, "table", infoTypeName+"_div_table", null/*addCssName*/);
+      Utils.HTMLTag(_buf, "tr", infoTypeName+"_div_tr", null/*addCssName*/);
+      Utils.HTMLTag(_buf, "td", infoTypeName+"_div_td_icon", null/*addCssName*/);
+      Utils.HTMLTagOpen(_buf, "img", "infoimg", null/*addCssName*/);
+      _buf.append(" src=\"");
+      Utils.AppendURLOrData(_buf, icon_prefix+infoTypeName+".png", maybe/*bPakFile*/);
+      _buf.append("\" alt=\""+infoTypeName+"\">");
+      _buf.append("\n");
+      Utils.HTMLTag(_buf, "td", infoTypeName+"_div_td_text", null/*addCssName*/);
+      Utils.HTMLTag(_buf, "div", infoTypeName+"_div_inner", null/*addCssName*/);
+   }
+
+   public virtual emitSubTitleEnd(String _buf) {
+      _buf.append("</div></td></tr></table>");
+      String infoTypeName <= info_type_names.get(info_type);
+      // trace "xxx info_type="+info_type+" infoTypeName="+#(infoTypeName)+" buf="+#(_buf);
+      _buf.append("</div><!--"+infoTypeName+"_div_outer-->\n");
+
+      Paragraph::emitSubTitleEnd(_buf);
+   }
+
+   public virtual emit(local String _buf) {
+      local MD mdNested;
+      mdNested.setEnablePartial(true);
+      mdNested.parse(src, false/*bSubstEsc*/);
+      mdNested.emit(_buf, null/*templatePathName*/, false/*bPost*/);
+   }
+}
+
+// <class.png>
+class PFootNotes : Paragraph {
+   String buf;
+   PointerArray footnotes;  // LinkDef refs
+
+   public virtual emit(local String _buf) {
+      MD.GenFootNotes(footnotes, _buf, true/*bLocal*/);
+   }
+}
+
+// <class.png>
+class MD {
+   define int ST_HDR_DONE   = 0;
+   define int ST_HDR_TITLE  = 1;
+   define int ST_HDR_AUTHOR = 2;
+   define int ST_HDR_DATE   = 3;
+   int hdr_state;
+   String s_title;
+   String s_author;
+   String s_date;
+
+   StringArray parr;  // current paragraph lines
+
+   PointerArray paragraphs;
+
+   Paragraph *cur_p;
+
+   PList *cur_list_root;
+   PList *last_list;
+
+   String css_url;
+   boolean b_partial;  // true=skip HTML header + body
+   String html_class_prefix;
+
+   int line_nr;
+
+   int cur_list_textidx;
+   int cur_block_quote_level;
+   String next_block_quote_footer;
+
+   PointerArray local_footnotes;  // LinkDef refs
+
+   public method init() {
+   }
+
+   protected method endP() {
+      // trace "xxx endP: cur_p="+#(cur_p);
+
+      hdr_state = ST_HDR_DONE;
+
+      if(null != cur_p)
+      {
+         cur_p.parsePArr(parr);
+         cur_p <= null;
+      }
+      parr.empty();
+
+      local_footnotes.empty();
+   }
+
+   protected method endPAndListRoot() {
+      endP();
+
+      cur_list_root <= null;
+      last_list <= null;
+   }
+
+   protected method handleEndOfParagraph() {
+      if(null != cur_p)
+      {
+         // Paragraph started with keyword (e.g. list)
+         endP();
+      }
+      else
+      {
+         // Flow text
+         if(parr.numElements > 0)
+         {
+            cur_p <= new PSpan;
+            cur_p.block_quote_level = cur_block_quote_level;
+            cur_p.block_quote_footer = next_block_quote_footer;
+            next_block_quote_footer = "";
+            paragraphs.add(#(deref cur_p));
+            endP();
+         }
+         // else: ignore multiple empty lines
+      }
+
+      parr.empty();
+      cur_p <= null;
+      cur_list_root <= null;
+      last_list <= null;
+   }
+
+   protected method handleEndOfTextParagraph() {
+      if(null == cur_p)
+      {
+         // Flow text
+         if(parr.numElements > 0)
+         {
+            cur_p <= new PSpan;
+            cur_p.block_quote_level = cur_block_quote_level;
+            paragraphs.add(#(deref cur_p));
+            endP();
+         }
+         // else: ignore multiple empty lines
+      }
+   }
+
+   protected method handleEndOfNonTextParagraph() {
+      if(null != cur_p)
+         endPAndListRoot();
+   }
+
+   protected method parsePre(String _lastLine) {
+      local PPre ppre;
+      ppre.block_quote_level = cur_block_quote_level;
+      ppre.parsePArr(parr);
+      int idxE = _lastLine.lastIndexOf("~");
+      ppre.attribs = _lastLine.substring(idxE + 1, -1).trim();  // e.g. '~~~ cycle'
+      paragraphs.add(#(deref ppre));
+   }
+
+   protected method parseHeader(String _s) {
+      // "#### Some header"
+      local PHeader ph;
+      ph.block_quote_level = cur_block_quote_level;
+      ph.parse(_s);
+      paragraphs.add(#(deref ph));
+   }
+
+   protected method addHeader(int _level, String _s) {
+      // ======, -------
+      local PHeader ph;
+      ph.block_quote_level = cur_block_quote_level;
+      ph.level = _level;
+      ph.caption = _s;
+      ph.anchor = Utils.BuildAnchorUnique(_s.trim());
+      paragraphs.add(#(deref ph));
+   }
+
+   protected method beginListOrAddItem(String _s, String _startSeq, int _startOrValue) {
+
+      // New list start, next item, or new sub-list
+      // trace "xxx beginListOrAddItem: s=\""+_s+"\" startSeq=\""+_startSeq+"\" startOrValue="+_startOrValue;
+      int colIdx = _s.indexOf(_startSeq, 0);
+
+      cur_list_textidx = colIdx + 2;
+
+      String itemS;
+      _s.substring(colIdx+(_startSeq.length - 1), -1) => itemS;
+
+      // trace "xxx list: beginList colIdx="+colIdx+" itemS=\""+itemS+"\"";
+      PList *pl;
+
+      if(null != last_list)
+      {
+         // trace "xxx list: beginList last_list.col_idx="+last_list.col_idx;
+
+         if(colIdx == last_list.col_idx)
+         {
+            // Add item to last list (root or sub)
+            parr.add(itemS);
+            last_list.cur_item_start_or_value = _startOrValue;
+            // trace "xxx list: add item to last list parr="+#(parr);
+            cur_p <= last_list;
+         }
+         else if(colIdx > last_list.col_idx)
+         {
+            // New sub list
+            last_list <= last_list.addSubList(colIdx, _startOrValue);
+            cur_list_root.addList(last_list);
+            cur_p <= last_list;
+            last_list.start_or_value = _startOrValue;
+            last_list.cur_item_start_or_value = _startOrValue;
+            parr.add(itemS);
+            // trace "xxx new sub list="+#(last_list)+" last_list.col_idx="+last_list.col_idx;
+            // trace "xxx list: new sub list="+#(last_list);
+         }
+         else
+         {
+            // Find sub list
+            pl <= cur_list_root.findSubList(colIdx);
+            if(null != pl)
+            {
+               if(colIdx == pl.col_idx)
+               {
+                  // Add item to last list (root or sub)
+                  last_list <= pl;
+                  cur_p <= last_list;
+                  parr.add(itemS);
+                  last_list.cur_item_start_or_value = _startOrValue;
+               }
+               else
+               {
+                  // New sub list
+                  last_list <= last_list.addSubList(colIdx, _startOrValue);
+                  cur_list_root.addList(last_list);
+                  last_list.start_or_value = _startOrValue;
+                  last_list.cur_item_start_or_value = _startOrValue;
+                  cur_p <= last_list;
+                  parr.add(itemS);
+               }
+            }
+            else
+            {
+               // Start new root list
+               // e.g.:
+               //    - my list
+               //   - my next list
+               // trace "xxx list: new list 2 root itemS=\""+itemS+"\"";
+               cur_list_root <= new PList;
+               cur_list_root.block_quote_level = cur_block_quote_level;
+               cur_list_root.col_idx = colIdx;
+               last_list <= cur_list_root;
+               cur_list_root.addList(last_list);
+               cur_p <= last_list;
+               cur_list_root.start_or_value = _startOrValue;
+               cur_list_root.cur_item_start_or_value = _startOrValue;
+               paragraphs.add(#(deref cur_list_root));
+               parr.add(itemS);
+            }
+         }
+      }
+      else
+      {
+         // New list root
+         // trace "xxx list: new list root itemS=\""+itemS+"\"";
+         cur_list_root <= new PList;
+         cur_list_root.block_quote_level = cur_block_quote_level;
+         cur_list_root.col_idx = colIdx;
+         cur_list_root.start_or_value = _startOrValue;
+         cur_list_root.cur_item_start_or_value = _startOrValue;
+         last_list <= cur_list_root;
+         cur_list_root.addList(last_list);
+         cur_p <= last_list;
+         paragraphs.add(#(deref cur_list_root));
+         parr.add(itemS);
+      }
+   }
+
+   protected method addHR(int _style) {
+      local PHorizontalRule phr;
+      phr.block_quote_level = cur_block_quote_level;
+      phr.style = _style;
+      paragraphs.add(#(deref phr));
+   }
+
+   public method getLinkDef(String _linkName) : LinkDef {
+      return link_defs.get(_linkName);
+   }
+
+   public method getOrCreateLinkDef(String _linkName) : LinkDef {
+      LinkDef ldef <= link_defs.get(_linkName);
+      if(null == ldef)
+      {
+         ldef <= new LinkDef;
+         ldef.link_name = _linkName;
+         link_defs[_linkName] = deref ldef;
+      }
+      return ldef;
+   }
+
+   protected method parseLinkDef(String _s) {
+      // "[1]: http://b.org"
+      // "[1]: http://b.org "optional title""
+      // "[1]: http://b.org "optional title" key1=val1 key2=val2 .."
+      int idxE = _s.indexOf("]:", 0);
+      String linkName;
+      _s.substring(1, idxE-1) => linkName;
+      StringArray words <= _s.splitSpace(true/*bConsiderQuotes*/);
+      if(words.numElements >= 1)
+      {
+         LinkDef ldef <= getOrCreateLinkDef(linkName);
+
+         if(linkName <= "^")
+         {
+            ldef.foot_note_nr = next_foot_note_nr++;
+            local_footnotes.add(ldef);
+         }
+
+         String linkTarget <= words.get(1);
+         String linkTitle <= words.get(2);
+         int wordIdx = 3;
+         while(wordIdx < words.numElements)
+         {
+            String wordKey;
+            String wordVal;
+            if(Utils.ParseKeyVal(words.get(wordIdx), wordKey, wordVal))
+            {
+               switch(wordKey)
+               {
+                  case "w":
+                     ldef.img_w = Object(wordVal);
+                     break;
+
+                  case "h":
+                     ldef.img_h = Object(wordVal);
+                     break;
+               }
+            }
+            wordIdx++;
+         }
+
+         ldef.link_target = Object(linkTarget);
+         // trace "xxx ldef linkTarget="+ldef.link_target;
+
+         if(null != linkTitle)
+            ldef.link_title = Object(linkTitle);
+
+         SpanLink *spanLink;
+         foreach spanLink in ldef.refs
+         {
+            spanLink.resolveLinkTo(linkTarget,
+                                   ldef.link_title,
+                                   ldef.img_w,
+                                   ldef.img_h,
+                                   ldef.foot_note_nr
+                                   );
+         }
+         ldef.refs.free();
+
+         if(b_debug)
+            trace "[dbg] md: add link \""+linkName+"\" => \""+linkTarget+"\" (title=\""+linkTitle+"\")";
+      }
+      else
+      {
+         if(b_warn)
+            trace "[~~~] md: malformed link def: \'"+_s+"\' (near line "+line_nr+")";
+      }
+   }
+
+   protected method setLastParagraphTitle(String _ltrim) {
+      Paragraph p <= paragraphs.last;
+      if(null != p)
+      {
+         if('.' == _ltrim.getc(0))
+         {
+            String cssClass;
+            int idx = _ltrim.indexOfChar(' ', 0);
+            if(-1 != idx)
+            {
+               _ltrim.substring(1, idx-1) => p.custom_css_class;
+               _ltrim.substring(idx+1,-1) => p.sub_title;
+            }
+            else
+            {
+               // No title
+               _ltrim.substring(1, -1) => p.custom_css_class;
+            }
+         }
+         else
+         {
+            p.sub_title = _ltrim;
+         }
+         p.b_sub_title = !(p.sub_title.isBlank());
+      }
+   }
+
+   public method setVar(String _name, String _val) {
+      // trace "xxx setVar(name=\""+_name+"\" val=\""+_val+"\")";
+      vars[_name] = Object(_val);
+   }
+
+   public method setBuffer(String _name, String _val) {
+      // trace "xxx setBuffer(name=\""+_name+"\" val=\""+_val+"\")";
+      buffers[_name] = Object(_val);
+   }
+
+   public method addLinkRef(String _id, SpanLink _link) {
+      LinkDef ldef <= getOrCreateLinkDef(_id);
+      ldef.addRef(_link);
+   }
+
+   public method resolveLinkTarget(String _id) : String {
+      if(link_defs.exists(_id))
+         return link_defs[_id].link_target;
+      else
+         return "";
+   }
+
+   public method resolveLinkTitle(String _id) : String {
+      if(link_defs.exists(_id))
+         return link_defs[_id].link_title;
+      else
+         return "";
+   }
+
+   public method resolveLinkImgW(String _id) : String {
+      if(link_defs.exists(_id))
+         return link_defs[_id].img_w;
+      else
+         return "";
+   }
+
+   public method resolveLinkImgH(String _id) : String {
+      if(link_defs.exists(_id))
+         return link_defs[_id].img_h;
+      else
+         return "";
+   }
+
+   public method resolveLinkFootNoteNr(String _id) : int {
+      if(link_defs.exists(_id))
+         return link_defs[_id].foot_note_nr;
+      else
+         return 0;
+   }
+
+   public method setCSS(String _css) {
+      css_url = _css;
+   }
+
+   public method setEnablePartial(boolean _bPartial) {
+      b_partial = _bPartial;
+   }
+
+   public method setHTMLClassPrefix(String _prefix) {
+      html_class_prefix = _prefix;
+   }
+
+   protected method preprocess(String _s) {
+      boolean bRestart;
+      do
+      {
+         bRestart = false;
+         StringArray lines <= _s.splitChar('\n');
+         String *line;
+         String newS = "";
+
+         foreach line in lines
+         {
+            // trace "xxx line=\""+line+"\"";
+            int idx = 0;
+            boolean bBlankAfterVarSet = false;
+
+            while(idx < line.length)
+            {
+               idx = line.indexOf("$(", idx);
+               if(-1 != idx)
+               {
+                  int idxOpStart = idx;
+                  idx += 2;
+                  int idxE = line.indexOfChar(':', idx);
+                  int idxEHtml = line.indexOfChar('?', idx);
+                  int idxEPost = line.indexOfChar('!', idx);
+                  boolean bHTMLVars = (-1 != idxEHtml) && ((idxEHtml < idxE) || (-1 == idxE));
+                  if(bHTMLVars)
+                     idxE = idxEHtml;
+                  if((-1 != idxEPost) && (idxEPost < idxE))
+                  {
+                     // $(buf!mybuf)  (skipped)
+                     idxE = idxEPost;
+                  }
+                  if(-1 != idxE)
+                  {
+                     int cmdLen = idxE - idx;
+                     // trace "xxx pp: cmdLen="+cmdLen;
+                     int cmdIdx = idx;
+                     idx = idxE + 1;
+                     int idxEP = line.indexOfChar(')', idx);
+                     if(-1 != idxEP)
+                     {
+                        if(3 == cmdLen)
+                        {
+                           String cmd;
+                           String args;
+                           line.substring(cmdIdx, 3) => cmd;
+                           line.substring(cmdIdx+3+1, idxEP-cmdIdx-3-1) => args;
+                           idx = ++idxEP;
+                           // trace "xxx pp: cmd=\""+cmd+"\" cmdIdx="+cmdIdx+" args=\""+args+"\"";
+                           switch(cmd)
+                           {
+                              case "inc":
+                                 if(bHTMLVars || !(args.toLower().endsWith(".html")))
+                                 {
+                                    String data;
+                                    if(data.loadLocal(args, true/*bRemoveCR*/))
+                                    {
+                                       if(bHTMLVars)
+                                       {
+                                          if(b_info)
+                                             trace "[...] md: ["+htmlpre_buf_idx+"] loaded HTML preprocessor include file \""+args+"\"";
+                                          String bufName <= "htmlprebuf"+htmlpre_buf_idx;
+                                          replaceHTMLVars(data);
+                                          setBuffer(bufName, data);
+                                          // trace "xxx htmlpre_buf["+htmlpre_buf_idx+"]=\""+data+"\"";
+                                          data <= "$(buf!"+bufName+")";
+                                          htmlpre_buf_idx++;
+                                       }
+                                       else
+                                       {
+                                          if(b_info)
+                                             trace "[...] md: loaded markdown from include file \""+args+"\"";
+                                          bRestart = true;
+                                       }
+                                    }
+                                    else
+                                    {
+                                       if(bHTMLVars)
+                                       {
+                                          trace "[---] HTML preprocessor include file \""+args+"\" not found";
+                                          data = "(include file \""+args+"\" not found)";
+                                       }
+                                       else
+                                       {
+                                          trace "[---] markdown include file \""+args+"\" not found";
+                                          data = "(include file \""+args+"\" not found)";
+                                       }
+                                    }
+                                    line.replaceRegion(idxOpStart, idxEP, data);
+                                    // trace "xxx line=\""+line+"\"";
+                                    idx = 0;
+                                 }
+                                 break;
+
+                              case "var":
+                                 int idxSet = args.indexOfChar('=', 0);
+                                 String varName;
+                                 String varValue;
+                                 if(-1 != idxSet)
+                                 {
+                                    // myvar=value
+                                    args.substring(0, idxSet) => varName;
+                                    args.substring(idxSet+1, -1) => varValue;
+                                    if(varValue <= "<")
+                                    {
+                                       // Read content from file
+                                       String varFileName;
+                                       varValue.substring(1, -1) => varFileName;
+                                       if(varValue.loadLocal(varFileName, true/*bRemoveCR*/))
+                                       {
+                                          if(b_info)
+                                             trace "[...] md: loaded var \""+varName+"\" content from file \""+varFileName+"\"";
+                                          vars[varName] = Object(varValue);
+                                       }
+                                       else
+                                       {
+                                          trace "[---] var content file \""+varFileName+"\" not found";
+                                          Utils.SubstCtlChars(varFileName);
+                                          varValue = "(var file \""+varFileName+"\" not found)";
+                                       }
+                                    }
+                                    else
+                                    {
+                                       // trace "xxx pp: set var \""+varName+"\" to \""+varValue+"\"";
+                                       vars[varName] = Object(varValue);
+                                    }
+                                    line.replaceRegion(idxOpStart, idxEP, "");
+                                    // trace "xxx after set var line=\""+line+"\"";
+                                    bBlankAfterVarSet = line.isBlank();
+                                    idx = 0;
+                                 }
+                                 else
+                                 {
+                                    varValue = getVar(args);
+                                    // trace "xxx pp: read var \""+args+"\" ==> \""+varValue+"\"";
+                                    line.replaceRegion(idxOpStart, idxEP, varValue);
+                                    idx = 0;  // Restart line
+                                 }
+                                 break;
+                           }
+                        }
+                        else
+                        {
+                           // trace "[---] preprocess: invalid cmdLen="+cmdLen+" (\""+line.substring(cmdIdx, cmdLen)+"\")";
+                           // break;
+                        }
+                     }
+                     else
+                        break;
+                  }
+                  else
+                     break;
+               }
+               else
+                  break;
+            }
+
+            if(!bBlankAfterVarSet)
+            {
+               newS.append(line);
+               newS.append("\n");
+            }
+         }
+
+         _s = newS;
+         newS.free();
+
+         // _s.saveLocal("debug_md_pre.txt");
+      }
+      while(bRestart);
+   }
+
+   public method getVar(String _var) : String {
+      switch(_var)
+      {
+         default:
+            if(vars.exists(_var))
+            {
+               return vars.get(_var);
+            }
+            else
+            {
+               // trace "xxx var=\""+_var+"\" vars"+#(vars);
+               return "(VAR \""+_var+"\" IS UNDEFINED)";
+            }
+            break;
+
+         case "localdate":
+            // "01Jan2019"
+            return Utils.GetCurrentDateString();
+
+         case "localtime":
+            // "19:23:42"
+            return Utils.GetCurrentTimeString();
+
+         case "localdatetime":
+            // "01Jan2019 19:23:42"
+            return Utils.GetCurrentDateString() + " " + Utils.GetCurrentTimeString();
+
+         case "localyear":
+            // "01Jan2019 19:23:42"
+            return Utils.GetCurrentYearString();
+
+         case "localmonth":
+            // "07"
+            return Utils.GetCurrentMonthString();
+
+         case "localmonthnameshort":
+            // "Jan"
+            return Utils.GetCurrentMonthNameShortString();
+
+         case "localmonthnamelong":
+            // "January"
+            return Utils.GetCurrentMonthNameLongString();
+
+         case "localdayofmonth":
+            // "31"
+            return Utils.GetCurrentDayOfMonth();
+
+         case "localdayofmonthname":
+            // "31st"
+            return Utils.GetCurrentDayOfMonthString();
+
+         case "localdayofweeknameshort":
+            return Utils.GetCurrentDayOfWeekNameShortString();
+
+         case "localdayofweeknamelong":
+            return Utils.GetCurrentDayOfWeekNameLongString();
+
+         case "gen_ms":
+            return "....md.GEN.MS....";
+      }
+
+   }
+
+   public method getBuffer(String _bufId) {
+      // trace "xxx md: getBuffer(id="+_bufId+")";
+      String buf <= buffers.get(_bufId);
+
+      switch(_bufId)
+      {
+         case "toc":
+            buf <= buffers.get("toc");
+            break;
+
+         case "footnote":
+            // Dynamically generated
+            genBufferFootNote();
+            buf <= buffers.get("footnote");
+            break;
+
+         case "w3validator":
+            genBufferW3Validator();
+            buf <= buffers.get("w3validator");
+            break;
+
+         case "title":
+            String sTitle = s_title;
+            Utils.ASCIIToHTML(sTitle, true/*bEntities*/);
+            buffers["title"] = sTitle;
+            return buffers["title"];
+
+         case "author":
+            String sAuthor = s_author;
+            Utils.ASCIIToHTML(sAuthor, true/*bEntities*/);
+            buffers["author"] = sAuthor;
+            return buffers["author"];
+
+         case "date":
+            String sDate = s_date;
+            Utils.ASCIIToHTML(sDate, true/*bEntities*/);
+            buffers["date"] = sDate;
+            return buffers["date"];
+      }
+
+      return buf;
+   }
+
+   protected method replaceHTMLVars(String _s) {
+      String *key;
+      foreach key in vars
+      {
+         // trace "xxx replace var \""+key+"\" with \""+vars[key]+"\"";
+         _s.replace("<var:"+key+">", vars[key]);
+      }
+   }
+
+   protected method postprocess(String _s) {
+      int debugCount = 0;
+      int idx = 0;
+
+       // trace "xxx postprocess s="+_s;
+       // _s.saveLocal("debug_post.txt");
+
+      while(idx < _s.length)
+      {
+         // if(++debugCount > 20)
+         // {
+         //    trace "[!!!] md: postprocess internal error, debugCount="+debugCount;
+         //    exit(10);
+         // }
+
+         idx = _s.indexOf("$(", idx);
+          // trace "xxx $( idx="+idx;
+         if(-1 != idx)
+         {
+            // trace "xxx md: postprocess idx="+idx+" _s="+_s;
+            // trace "xxx s cand = "+_s.substring(idx, -1);
+            int idxOpStart = idx;
+            idx += 2;
+            int idxLF = _s.indexOfChar('\n', idx);
+            int idxE = _s.indexOfChar('!', idx);
+             // trace "xxx idx="+idx+" idxE="+idxE+" idxLF="+idxLF;
+            if(-1 != idxE)
+            {
+               if((idxE < idxLF) || (-1 == idxLF))
+               {
+                  int cmdLen = idxE - idx;
+                  // trace "xxx pp: cmdLen="+cmdLen;
+                  int cmdIdx = idx;
+                  idx = idxE + 1;
+                  int idxEP = _s.indexOfChar(')', idx);
+                  if(-1 != idxEP)
+                  {
+                     if(3 == cmdLen)
+                     {
+                        String cmd;
+                        String args;
+                        _s.substring(cmdIdx, 3) => cmd;
+                        _s.substring(cmdIdx+3+1, idxEP-cmdIdx-3-1) => args;
+                        idx = ++idxEP;
+                        // trace "xxx pp: cmd=\""+cmd+"\" args=\""+args+"\"";
+                        switch(cmd)
+                        {
+                           case "inc":
+                              // $(inc!myfile.html)
+                              if(1)////if(args.toLower().endsWith(".html"))
+                              {
+                                 String data;
+                                 Utils.ReSubstCtlCharsToASCII(args);
+                                 if(data.loadLocal(args, true/*bRemoveCR*/))
+                                 {
+                                    if(b_info)
+                                       trace "[...] md: loaded HTML content from file \""+args+"\"";
+                                 }
+                                 else
+                                 {
+                                    trace "[---] HTML content file \""+args+"\" not found";
+                                    data = "(HTML include file \""+args+"\" not found)";
+                                 }
+                                 // trace "xxx data=\""+data+"\" idxOpStart="+idxOpStart+" idxEP="+idxEP;
+                                 _s.replaceRegion(idxOpStart, idxEP, data);
+                                 // trace "xxx s is now "+_s;
+                              }
+                              break;
+
+                           case "var":
+                              // $(var!args)
+                              break;
+
+                           case "buf":
+                              // $(buf!mybuffer)
+                              String buf <= getBuffer(args);
+                              if(null != buf)
+                                 _s.replaceRegion(idxOpStart, idxEP, buf);
+                              else
+                                 _s.replaceRegion(idxOpStart, idxEP, "(BUFFER \""+args+"\" IS UNDEFINED)");
+                              break;
+                        }
+                     }
+                     else
+                     {
+                        // not an error
+                        // // trace "[~~~] postprocess: invalid cmdLen="+cmdLen+" (near char offset "+idx+")";
+                        // // break;
+                     }
+                  }
+                  // // else
+                  // //    break;
+               }
+               else
+                  idx++; // linefeed before closing parenthesis
+            }
+            else
+               break; // end of cmd not found (in remaining buffer)
+         }
+         else
+            break;  // start of cmd not found
+      }
+
+   }
+
+   protected method consumeBlockQuoteLine(String _line, String _ltrim) : int {
+      int level = 0;
+      String quotStart = "";
+      while(_ltrim <= "> ")
+      {
+         _ltrim = _ltrim.substring(2, -1);
+         quotStart.append("> ");
+         level++;
+      }
+      if(level > 0)
+      {
+         if(_ltrim <= "--")
+         {
+            next_block_quote_footer = _ltrim;
+            _ltrim = "";
+            _line = "";
+         }
+      }
+      _line.replace(quotStart, "");
+      return level;
+   }
+
+   protected method beginInfoDiv(String _ltrim) : boolean {
+      // returns true if this is a multi-line div
+      handleEndOfParagraph();
+
+      local PInfoDiv pinfo;
+      cur_block_quote_level = 0;
+      pinfo.block_quote_level = 0;
+
+      String infoTypeString <= _ltrim.substring(0, _ltrim.indexOfChar(':', 0));
+      int idx = PInfoDiv.info_type_strings.indexOfObject(infoTypeString, 0);
+
+      pinfo.info_type = idx;
+      _ltrim.replace(infoTypeString+":", "");
+
+      paragraphs.add(#(deref pinfo));
+      cur_p <= pinfo;
+
+      if(!_ltrim.isBlank())
+      {
+         if!(_ltrim <= "===")
+            parr.add(_ltrim);
+      }
+      else
+      {
+         // Multi-line div follows (closed with ===)
+         return true;
+      }
+   }
+
+   protected method genBufferTOC() {
+      local String buf;
+      PHeader *p;
+
+      String mdBuf; mdBuf.empty();
+      toc_entries.empty();
+      foreach p in paragraphs
+      {
+         if(p instanceof PHeader)
+         {
+            if(!p.b_no_tok)
+            {
+               loop(p.level)
+                  mdBuf.append("  ");
+
+               mdBuf.append(" - [");
+               mdBuf.append(p.caption);
+               mdBuf.append("](#");
+               mdBuf.append(p.anchor);
+               mdBuf.append(")");
+
+               if(p.b_sub_title)
+                  mdBuf.append(" - _"+p.sub_title+"_");
+
+               mdBuf.append("\n");
+
+               toc_entries.add(p);
+            }
+         }
+      } // foreach paragraph
+
+      local MD mdNested;
+      mdNested.html_class_prefix = md.html_class_prefix + "toc_";
+      local MD mdBack <= deref md;
+      md <= mdNested;
+      mdNested.setEnablePartial(true);
+      b_toc_build = true;
+      toc_entry_idx = 0;
+      mdNested.parse(mdBuf, false/*bSubstEsc*/);
+      buf.append("\n<!-- TOC -->");
+      Utils.HTMLTag(buf, "div", "div", null/*addCssName*/);
+      mdNested.emit(buf, null/*templatePathName*/, false/*bPost*/);
+      b_toc_build = false;
+      buf.append("</div>\n");
+      md <= deref mdBack;
+
+      buffers["toc"] = deref buf;
+   }
+
+   protected method genBufferW3Validator() {
+      local String buf;
+      buf.append("<p>\n");
+      buf.append("  <a href=\"http://validator.w3.org/check?uri=referer\"><img src=\"http://www.w3.org/Icons/valid-html401\" alt=\"Valid HTML 4.01 Transitional\" height=\"31\" width=\"88\"></a>\n");
+      buf.append("</p>\n");
+      buffers["w3validator"] = deref buf;
+   }
+
+   protected method insertLocalFootNotes() {
+      if(local_footnotes.numElements > 0)
+      {
+         local PFootNotes pf;
+         pf.block_quote_level = cur_block_quote_level;
+         pf.footnotes = local_footnotes;
+         LinkDef *ldef;
+         foreach ldef in local_footnotes
+            ldef.b_foot_note_emitted = true;
+         local_footnotes.empty();
+         paragraphs.add(#(deref pf));
+      }
+   }
+
+   public static GenFootNotes(PointerArray _footnotes, String _buf, boolean _bLocal) {
+      LinkDef *ldef;
+      boolean bTable = false;
+
+      // Sort foot notes by number
+      IntArray indexTbl;
+      IntArray footNoteNrs; footNoteNrs.empty();
+      foreach ldef in _footnotes
+         footNoteNrs.add(ldef.foot_note_nr);
+
+      footNoteNrs.sortByValue(indexTbl);
+      _footnotes.rearrange(indexTbl);
+
+      foreach ldef in _footnotes
+      {
+         if(!bTable)
+         {
+            _buf.append("\n<!-- foot note(s) -->");
+            Utils.HTMLTag(_buf, "table", "footnote_table"+(_bLocal?"_local":"_global"), null/*addCssName*/);
+            _buf.append("\n");
+            bTable = true;
+         }
+
+         Utils.HTMLTag(_buf, "tr", "footnote_tr", null/*addCssName*/);
+         _buf.append("\n  ");
+         Utils.HTMLTag(_buf, "td", "footnote_td_nr", null/*addCssName*/);
+         _buf.append("<a name=\"footnote_");
+         _buf.append(String(ldef.foot_note_nr));
+         _buf.append("\"></a>");
+         _buf.append(String(ldef.foot_note_nr));
+         _buf.append("</td>");
+         _buf.append("\n  ");
+         Utils.HTMLTag(_buf, "td", "footnote_td_link", null/*addCssName*/);
+         String sURL = ldef.link_target;
+         Utils.ReSubstCtlCharsToASCII(sURL);
+         if("-" != ldef.link_target)
+         {
+            Utils.HTMLTagOpen(_buf, "a", "footnote_a", null/*addCssName*/);
+            _buf.append(" href=\"");
+            _buf.append(sURL);
+            _buf.append("\">");
+            _buf.append(ldef.link_target);
+            _buf.append("</a>");
+         }
+         if!(ldef.link_title.isBlank())
+         {
+            Utils.HTMLTag(_buf, "span", "footnote_title", null/*addCssName*/);
+            local PSpan titleSpan <= new PSpan;
+            titleSpan.parseSpans(ldef.link_title);
+            titleSpan.emit(_buf);
+            _buf.append("</span>");
+         }
+         _buf.append("</td>\n</tr>\n");
+      } // foreach ldef
+
+      if(bTable)
+         _buf.append("</table>\n");
+   }
+
+   protected method genBufferFootNote() {
+      local String buf;
+      LinkDef *ldef;
+      boolean bTable = false;
+      String *linkId;
+      PointerArray footNotes;
+      footNotes.empty();
+
+      foreach linkId in link_defs
+      {
+         ldef <= link_defs[linkId];
+         if(!ldef.b_foot_note_emitted)
+         {
+            if(ldef.link_name <= "^")
+            {
+               ldef.b_foot_note_emitted = true;
+               footNotes.add(ldef);
+            }
+         }
+      }
+
+      GenFootNotes(footNotes, buf, false/*bLocal*/);
+      buffers["footnote"] = deref buf;
+   }
+
+   protected method insertLinefeed(boolean _bHTML) {
+      local PLinefeed plf;
+      plf.b_html = _bHTML;
+      paragraphs.add(#(deref plf));
+   }
+
+   protected method insertMultiCol(boolean _bBegin) {
+      local PMultiCol pmc;
+      pmc.b_begin = _bBegin;
+      paragraphs.add(#(deref pmc));
+   }
+
+   protected method isInfoDivString(String _ltrim) : boolean {
+      String *s;
+      foreach s in PInfoDiv.info_type_strings
+      {
+         if(_ltrim <= s+":")
+            return true;
+      }
+      return false;
+   }
+
+   public method parse(String _s, boolean _bSubstEsc) : boolean {
+      hdr_state = ST_HDR_TITLE;
+      s_title  = "";
+      s_author = "";
+      s_date   = "";
+      parr.free();
+      cur_p <= null;
+      cur_list_root <= null;
+      last_list <= null;
+      cur_list_textidx = -1;
+      Integer listStartOrValue;
+      int newBlockQuoteLevel;
+      cur_block_quote_level = 0;
+      next_block_quote_footer = "";
+      paragraphs.free();
+      local_footnotes.empty();
+
+      _s.replace("\r", "");
+      _s.replaceChar('\t', ' ');
+
+      if((_s & "$(inc:") || (_s & "$(inc?") || (_s & "$(var:"))
+         preprocess(_s);
+
+      // see <https://daringfireball.net/projects/markdown/syntax#misc>
+      if(_bSubstEsc)
+      {
+         Utils.SubstEscapedCtlChars(_s);
+         // _s.saveLocal("debug_esc.txt");
+      }
+
+      StringArray lines <= _s.splitChar('\n');
+      String *line;
+
+      String listStartSeq;
+      line_nr = 1;
+
+      boolean bPre = false;
+      boolean bMultiCol = false;
+      int preColIdx;
+
+      foreach line in lines
+      {
+         String ltrim;
+         line.trim() => ltrim;
+
+         boolean bSkipLine = false;
+
+         if(!bPre || (cur_p instanceof PBuffer))
+         {
+            if(ltrim <= ">>>")
+            {
+               // Redirect to memory buffer (or discard, when buf_id is empty)
+               handleEndOfParagraph();
+               ltrim.replace(">", "");
+               ltrim.trim();
+               PBuffer pbuf <= new PBuffer;
+               pbuf.buf_id = ltrim;
+               if(!ltrim.isBlank())
+                  paragraphs.add(#(deref pbuf));
+
+               cur_p <= deref pbuf;
+            }
+            else if(ltrim <= "<<<")
+            {
+               handleEndOfParagraph();
+               bSkipLine = true;
+            }
+            else if(cur_p instanceof PBuffer)
+            {
+               parr.add(line);
+            }
+         }
+
+         if(!bSkipLine)
+         {
+            if(cur_p instanceof PInfoDiv)
+            {
+               // trace "xxx infodiv: ltrim="+ltrim;
+               if(ltrim <= "===")
+                  handleEndOfParagraph();
+               else
+                  parr.add(line);
+
+               bSkipLine = true;
+            }
+         }
+
+         if !(cur_p instanceof PBuffer) && !bSkipLine
+         {
+            if(ltrim <= "> ")
+               newBlockQuoteLevel = consumeBlockQuoteLine(line, ltrim);
+            else
+               newBlockQuoteLevel = 0;
+
+            if(newBlockQuoteLevel != cur_block_quote_level)
+            {
+               handleEndOfParagraph();
+
+               if(0 == newBlockQuoteLevel)
+               {
+                  if(line.isBlank())
+                  {
+                     if(cur_block_quote_level > 0)
+                     {
+                        paragraphs.add(#(new PLinefeed));
+                        parr.empty();
+                     }
+                  }
+               }
+
+               cur_block_quote_level = newBlockQuoteLevel;
+            }
+
+            if(ltrim <= "~~~")
+            {
+               bPre = !bPre;
+               if(!bPre)
+               {
+                  // End of preformatted block
+                  parsePre(ltrim);
+                  parr.empty();
+               }
+               else
+               {
+                  // Start new preformatted block
+                  handleEndOfParagraph();
+                  preColIdx = line.indexOfChar('~', 0);
+               }
+            }
+            else if(bPre)
+            {
+               // trace "xxx pre line=\""+line+"\" preColIdx="+preColIdx;
+               parr.add(line.substring(preColIdx, -1));
+            }
+            else
+            {
+               if(ltrim.isBlank())
+               {
+                  if(cur_p instanceof PList)
+                  {
+                     // Continue last list item
+                     parr.add(line);
+                  }
+                  else if(line <= "  ")
+                  {
+                     // Forced line break
+                     handleEndOfNonTextParagraph();
+                     parr.add(line);
+                  }
+                  else
+                  {
+                     handleEndOfParagraph();
+                  }
+               }
+               else if(ltrim <= "% ")
+               {
+                  if(ST_HDR_DONE != hdr_state)
+                  {
+                     switch(hdr_state)
+                     {
+                        case ST_HDR_TITLE:
+                           s_title = ltrim.replace("% ", "").trim();
+                           hdr_state = ST_HDR_AUTHOR;
+                           break;
+
+                        case ST_HDR_AUTHOR:
+                           s_author = ltrim.replace("% ", "").trim();
+                           hdr_state = ST_HDR_DATE;
+                           break;
+
+                        case ST_HDR_DATE:
+                           s_date = ltrim.replace("% ", "").trim();
+                           hdr_state = ST_HDR_DONE;
+                           break;
+                     }
+                  }
+               }
+               else if(ltrim <= "#")
+               {
+                  handleEndOfParagraph();
+                  parseHeader(ltrim);
+               }
+               else if(ltrim <= "]")
+               {
+                  handleEndOfParagraph();
+                  setLastParagraphTitle(ltrim.substring(1, -1).trim());
+               }
+               else if(ltrim <= "|")
+               {
+                  if!(cur_p instanceof PTable)
+                  {
+                     handleEndOfParagraph();
+                     cur_p <= new PTable;
+                     cur_p.block_quote_level = cur_block_quote_level;
+                     paragraphs.add(#(deref cur_p));
+                     parr.add(ltrim);
+                  }
+                  else
+                  {
+                     parr.add(ltrim);
+                  }
+               }
+               else if(ltrim <= "----")
+               {
+                  handleEndOfNonTextParagraph();
+                  if(1 == parr.numElements)
+                  {
+                     addHeader(2, parr[0]);
+                     parr.empty();
+                  }
+               }
+               else if(ltrim <= "---")
+               {
+                  handleEndOfParagraph();
+                  addHR(PHorizontalRule.STYLE_DEFAULT);
+               }
+               else if(ltrim <= "***")
+               {
+                  handleEndOfParagraph();
+                  addHR(PHorizontalRule.STYLE_ASTERISK);
+               }
+               else if(ltrim <= "* * *")
+               {
+                  handleEndOfParagraph();
+                  addHR(PHorizontalRule.STYLE_SPACED_ASTERISK);
+               }
+               else if(ltrim == "+++col")
+               {
+                  if(!bMultiCol)
+                  {
+                     handleEndOfParagraph();
+                     insertMultiCol(true/*bBegin*/);
+                     bMultiCol = true;
+                  }
+                  else if(b_warn)
+                     trace "[~~~] md: multi-column mode already active (near line "+line_nr+")";
+               }
+               else if(ltrim == "+++/col")
+               {
+                  if(bMultiCol)
+                  {
+                     handleEndOfParagraph();
+                     insertMultiCol(false/*bBegin*/);
+                     bMultiCol = false;
+                  }
+                  else if(b_warn)
+                     trace "[~~~] md: multi-column mode already inactive (near line "+line_nr+")";
+               }
+               else if(ltrim <= "+++")
+               {
+                  handleEndOfParagraph();
+                  addHR(PHorizontalRule.STYLE_PAGEBREAK);
+               }
+               else if(ltrim <= "====")
+               {
+                  handleEndOfNonTextParagraph();
+                  if(1 == parr.numElements)
+                  {
+                     addHeader(1, parr[0]);
+                     parr.empty();
+                  }
+               }
+               else if(ltrim <= "- ")
+               {
+                  handleEndOfTextParagraph();
+                  endP();
+                  beginListOrAddItem(line, "- ", -1/*startOrValue=unordered*/);
+               }
+               else if(ltrim <= "* ")
+               {
+                  handleEndOfTextParagraph();
+                  endP();
+                  beginListOrAddItem(line, "* ", -1/*startOrValue=unordered*/);
+               }
+               else if(Utils.StartsWithOrderedListItem(ltrim, listStartSeq, listStartOrValue))
+               {
+                  handleEndOfTextParagraph();
+                  endP();
+                  beginListOrAddItem(line, listStartSeq, listStartOrValue);
+               }
+               else if(ltrim <= ". ")
+               {
+                  handleEndOfTextParagraph();
+                  endP();
+                  beginListOrAddItem(line, "- ", -2/*startOrValue=ordered,auto-enumerate*/);
+               }
+               else if((ltrim <= "[") && (ltrim & "]:"))
+               {
+                  parseLinkDef(ltrim);
+               }
+               else if(isInfoDivString(ltrim))
+               {
+                  if(!beginInfoDiv(ltrim))
+                     handleEndOfParagraph();  // Single line note
+               }
+               else if(ltrim <= "[^^]")
+               {
+                  handleEndOfParagraph();
+                  insertLocalFootNotes();
+               }
+               else if(ltrim >= "\\")
+               {
+                  handleEndOfParagraph();
+                  insertLinefeed(true/*bHTML*/);
+               }
+               else
+               {
+                  // Arbitrary char sequence, add to current paragraph lines
+                  boolean bListItemCont = false;
+                  if(cur_p instanceof PList)
+                  {
+                     // trace "xxx cur_list_textidx="+cur_list_textidx;
+                     if(line.numCharsAt(' ', 0) >= cur_list_textidx)
+                     {
+                        // Continue last list item as long as indent matches
+                        parr.add(line);
+                        bListItemCont = true;
+                     }
+                  }
+                  if(!bListItemCont)
+                  {
+                     handleEndOfNonTextParagraph();
+                     parr.add(line);
+                  }
+               }
+            }
+         }
+
+         line_nr++;
+
+      } // foreach line
+
+      handleEndOfParagraph();
+      parr.free();
+
+      if(bMultiCol)
+         insertMultiCol(false/*bBegin*/);
+
+      if(b_debug)
+      {
+         trace "[dbg] found "+paragraphs.numElements+" paragraphs.";
+         debugPrintParagraphs();
+      }
+
+      return true;
+   }
+
+   public method parseFile(String _pathName) {
+      String s;
+
+      // Load markdown and parse it
+      if(s.loadLocal(_pathName, true/*bRemoveCR*/))
+         return parse(s, true/*bSubstEsc*/);
+      else
+         trace "[---] md: failed to open markdown input file \""+_pathName+"\"";
+
+      return false;
+   }
+
+   public method debugPrintParagraphs() {
+      Paragraph *p;
+      int pIdx = 0;
+      foreach p in paragraphs
+      {
+         trace "p["+pIdx+"] = "+#(p)+" blockQuoteLevel="+p.block_quote_level;
+         pIdx++;
+      }
+   }
+
+   public method emit(local String _buf, local String _templatePathNameOrNull, local boolean _bPost) : boolean {
+      local String sTempl <= null;
+      local String buf <= _buf;
+
+      // Load template
+      if(null != _templatePathNameOrNull)
+      {
+         sTempl <= new String;
+         if(!sTempl.loadLocal(_templatePathNameOrNull, true/*bRemoveCR*/))
+         {
+            trace "[---] md: failed to open HTML template file \""+_templatePathNameOrNull+"\"";
+            return false;
+         }
+         setEnablePartial(true);
+      }
+
+      if(_bPost)
+      {
+         // (note) the TOC must be generated before the headers are emitted
+         genBufferTOC();
+      }
+
+      if(!b_partial)
+      {
+         buf.append("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">\n");
+         buf.append("<html><head>\n");
+         buf.append("<link rel=\"stylesheet\" href=\"");
+         if(Utils.CanFileBeRead(css_url))
+            Utils.AppendURLOrData(buf, css_url, false/*bPakFile*/);
+         else
+            Utils.AppendURLOrData(buf, "builtin.css", true/*bPakFile*/);
+         buf.append("\" type=\"text/css\">\n");
+
+         buf.append("$(EXTRA_CSS)");
+
+         buf.append("<meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\">\n");
+
+         // <title> is mandatory in <head>
+         buf.append("<title>");
+         buf.append(s_title);
+         buf.append("</title>\n");
+
+         buf.append("</head>\n");
+         buf.append("<body>");
+      }
+
+      if(_bPost)
+         Utils.HTMLTag(buf, "div", "body", null/*addCssName*/);
+
+      local Paragraph *p;
+      local int lastBlockQuoteLevel = 0;
+      foreach p in paragraphs
+      {
+         if(p.block_quote_level != lastBlockQuoteLevel)
+         {
+            if(p.block_quote_level > lastBlockQuoteLevel)
+            {
+               loop(p.block_quote_level - lastBlockQuoteLevel)
+               {
+                  buf.replace("§last_blockquote_css", ""); // hack for citations
+                  Utils.HTMLTag(buf, "blockquote", "blockquote", "§last_blockquote_css"/*addCssName*/);
+               }
+            }
+            else
+            {
+               loop(lastBlockQuoteLevel - p.block_quote_level)
+                  buf.append("</blockquote>");
+               buf.replace("$(last_blockquote_css)", ""); // hack for citations
+            }
+            lastBlockQuoteLevel = p.block_quote_level;
+         }
+
+         p.emitParagraph(buf);
+      }
+
+      loop(lastBlockQuoteLevel)
+         buf.append("</blockquote>");
+      buf.replace("§last_blockquote_css", ""); // hack for citations
+
+      if(_bPost)
+         buf.append("</div><!--end body-->"); // end body
+
+      if(!s_extra_css.isBlank())
+         buf.replace("$(EXTRA_CSS)", "<style type=\"text/css\">\n"+s_extra_css+"</style>\n");
+      else
+         buf.replace("$(EXTRA_CSS)", "");
+
+      if(null != sTempl)
+      {
+         buffers["body"] = buf;
+         buf <= sTempl;
+      }
+
+      if(_bPost)
+      {
+         postprocess(buf);
+
+         Utils.ReSubstCtlCharsToHTML(buf);
+      }
+
+      if(!b_partial)
+         buf.append("\n</body>");
+
+      return true;
+   }
+}
+
+
+function Usage() {
+   trace "Usage: md [-o <output.html>] [-stdin] [-stdout] [-css <style.css>] [-D<var>=<content>] [-B<buf>=<content>] [-p,--partial] [-cp <html_class_prefix>] [-x <template.html>] [-ae,--ascii-entities] [-ne,--no-enumeration] [-eo,--enumeration-offset <nr>] [-il,--inline-data] [-d,--debug] <input.md>";
+}
+
+function main() {
+
+   if(Arguments.numElements > 0)
+   {
+      int argIdx = 0;
+      String inputPathName = "";
+      String outputPathName = "";
+      String cssPathName = "";
+      String templatePathName <= null;
+
+      while(argIdx < Arguments.numElements)
+      {
+         String arg <= Arguments[argIdx];
+         String varName;
+         String varVal;
+         int idxSet = arg.indexOfChar('=', 0);
+         String varFileName;
+         if((arg <= "-D") && (-1 != idxSet))
+         {
+            // -Dmyvar=value
+            arg.substring(2, idxSet-2) => varName;
+            arg.substring(idxSet+1, -1) => varVal;
+            if(b_info)
+               trace "[...] set var \""+varName+"\" to \""+varVal+"\"";
+            if(varVal <= "<")
+            {
+               varVal.substring(1, -1) => varFileName;
+               if(varVal.loadLocal(varFileName, true/*bRemoveCR*/))
+               {
+                  if(b_info)
+                     trace "[...] set var \""+varName+"\" to content of file \""+varFileName+"\"";
+               }
+               else
+               {
+                  trace "[---] failed to load var \""+varName+"\" content file \""+varFileName+"\"";
+                  Utils.SubstCtlChars(varFileName);
+                  varVal = "(var file \""+varFileName+"\" not found)";
+               }
+               md.setVar(varName, varVal);
+            }
+            else
+            {
+               md.setVar(varName, varVal);
+            }
+         }
+         if((arg <= "-B") && (-1 != idxSet))
+         {
+            // -Dmybuf=value
+            arg.substring(2, idxSet-2) => varName;
+            arg.substring(idxSet+1, -1) => varVal;
+            if(b_info)
+               trace "[...] set buffer \""+varName+"\" to \""+varVal+"\"";
+            if(varVal <= "<")
+            {
+               varVal.substring(1, -1) => varFileName;
+               if(varVal.loadLocal(varFileName, true/*bRemoveCR*/))
+               {
+                  if(b_info)
+                     trace "[...] set buffer \""+varName+"\" to content of file \""+varFileName+"\"";
+               }
+               else
+               {
+                  trace "[---] failed to load buffer \""+varName+"\" content file \""+varFileName+"\"";
+                  varVal = "(buffer file \""+varFileName+"\" not found)";
+               }
+               md.setBuffer(varName, varVal);
+            }
+            else
+            {
+               md.setBuffer(varName, varVal);
+            }
+         }
+         else if("-o" == arg)
+         {
+            argIdx++;
+            if(argIdx < Arguments.numElements)
+               outputPathName = Arguments[argIdx];
+         }
+         else if("-stdout" == arg)
+         {
+            // for emacs markdown-mode live preview
+            b_stdout = true;
+            b_debug  = false;
+            b_info   = false;
+            b_warn   = false;
+         }
+         else if("-stdin" == arg)
+         {
+            b_stdin = true;
+         }
+         else if("-css" == arg)
+         {
+            argIdx++;
+            if(argIdx < Arguments.numElements)
+               cssPathName = Arguments[argIdx];
+         }
+         else if(("-h" == arg) || ("--help" == arg))
+         {
+            Usage();
+            exit(0);
+         }
+         else if(("-p" == arg) || ("--partial" == arg))
+         {
+            md.setEnablePartial(true);
+         }
+         else if(("-ae" == arg) || ("--ascii-entities" == arg))
+         {
+            b_ascii_entities = true;
+         }
+         else if(("-ne" == arg) || ("--no-enumeration" == arg))
+         {
+            b_enum_headers = false;
+         }
+         else if(("-il" == arg) || ("--inline-data" == arg))
+         {
+            b_inline_data = true;
+         }
+         else if(("-eo" == arg) || ("--enumeration-offset" == arg))
+         {
+            argIdx++;
+            if(argIdx < Arguments.numElements)
+            {
+               header_enum_start = int(Arguments[argIdx]);
+               if(header_enum_start < 1)
+                  header_enum_start = 1;
+            }
+         }
+         else if("-cp" == arg)
+         {
+            argIdx++;
+            if(argIdx < Arguments.numElements)
+               md.setHTMLClassPrefix(Arguments[argIdx]);
+         }
+         else if("-ip" == arg)
+         {
+            argIdx++;
+            if(argIdx < Arguments.numElements)
+               icon_prefix = Arguments[argIdx];
+         }
+         else if(("-d" == arg) || ("--debug" == arg))
+         {
+            b_debug = true;
+         }
+         else if("-x" == arg)
+         {
+            argIdx++;
+            if(argIdx < Arguments.numElements)
+               templatePathName <= Arguments[argIdx];
+         }
+         else
+         {
+            inputPathName = arg;
+         }
+
+         argIdx++;
+      }
+
+      if(!inputPathName.isBlank())
+      {
+         if(outputPathName.isBlank())
+            outputPathName = Utils.ReplaceFileSuffix(inputPathName, ".html");
+
+         // Remember input_dir (for finding inlined source files)
+         Utils.SplitPathname(inputPathName, input_dir, null/*file*/);
+
+         if(input_dir.isBlank())
+            input_dir = "./";
+
+         if(cssPathName.isBlank())
+            cssPathName = Utils.ReplaceFileSuffix(inputPathName, ".css");
+
+         boolean bParseOk;
+
+         if(b_stdin)
+         {
+            String inBuf;
+            String inLine;
+            Stream ifs <= StdInStream;
+            // trace "xxx stdin eof="+ifs.eof();
+            int lineNr = 0;
+            while(!ifs.eof())
+            {
+               int inNumRead = ifs.readLine(inLine, 4095);
+               if(inNumRead > 0)
+               {
+                  // trace "xxx md: inLine["+(++lineNr)+"]=\""+inLine+"\" (read "+inNumRead+" chars)";
+                  inBuf.append(inLine);
+                  inBuf.append("\n");
+               }
+            }
+            // trace "xxx md: read "+lineNr+" line(s) from stdin";
+            // trace "xxx md: stdin buf=<<<\""+inBuf+"\">>>";
+            exit(10);
+            bParseOk = md.parse(inBuf, true/*bSubstEsc*/);
+            // trace "xxx md: bParseOk="+bParseOk;
+         }
+         else
+         {
+            bParseOk = md.parseFile(inputPathName);
+         }
+
+         if(bParseOk)
+         {
+            String buf;
+            md.setCSS(cssPathName);
+
+            if(b_info)
+               trace "[...] md: using CSS file \""+cssPathName+"\"";
+
+            if(null != templatePathName && b_info)
+               trace "[...] md: using HTML template file \""+templatePathName+"\"";
+
+            if(md.emit(buf, templatePathName, true/*bPost*/))
+            {
+               if(b_stdout)
+               {
+                  trace buf;
+               }
+               else
+               {
+                  int tDelta = milliSeconds() - g_ms_start;
+                  buf.replace("&#8230;.md.GEN.MS&#8230;."/*"....md.GEN.MS...."*/, tDelta+"ms");
+                  if(b_info)
+                     trace "[...] md: writing HTML output to \""+outputPathName+"\" (ms="+tDelta+")";
+
+                  buf.saveLocal(outputPathName);
+               }
+            }
+             // trace buf;
+         }
+      }
+      else
+      {
+         trace "[---] md: missing input file name.";
+         Usage();
+      }
+   }
+   else
+   {
+      Usage();
+   }
+}
+
+// trace "md: exiting";

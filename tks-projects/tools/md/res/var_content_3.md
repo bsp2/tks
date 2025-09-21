@@ -1,0 +1,1 @@
+Content of *external* __markdown__ file.
