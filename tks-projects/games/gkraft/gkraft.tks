@@ -1,0 +1,2121 @@
+//
+// file   : gkraft.tks
+// info   : a thrust/spacetaxi like game :>
+// author : (C) 2004 by Bastian Spiegel.
+//          with some help from Carsten Busse (wall normals, map-"radar")
+// created: 5-Oct-2004
+// changed: 17-Oct-2004, 25-Mar-2014
+//
+// license: distributed under terms of the GNU General Public License. 
+// 
+//
+
+use tksdl;
+use tkopengl;
+
+int b_fullscreen=0;
+boolean b_vsync = true;
+int b_realtime=0;
+int ply_hmove;
+int ply_vmove;
+float ply_vmove_time;
+float ply_vmove_time2;
+int ply_vmove_released;
+Vector ply_pos;
+Vector ply_force;
+float ply_rot;
+float ply_rotspd;
+float ply_spin;
+int ply_boost;
+int ply_coll;
+int ply_last_coll=false;
+int ply_score;
+float ply_coll_timeout;
+float ply_fish_timeout;
+float ply_energy;
+int have_passenger;
+float last_coll_x=0;
+float last_coll_y=0;
+Vector last_coll_pos;
+Vector last_coll_force;
+Vector last_coll_dir;
+int map_startpad;
+int draw_coll_debug=false;
+#define PLY_ROTSPEED 6.0
+#define PLY_ROTSPDDAMP 0.58
+#define PLY_SIZE 0.04
+#define PLY_ENGPWR 0.00057
+#define PLY_SPIN 500
+#define PLY_MINSPIN 0.3
+#define PLY_SPINDAMPCTL 0.875
+#define PLY_SPINDAMP 0.989
+#define PLY_SPINCOLLDAMP 0.76
+#define PLY_COLLTEXSIZE 24
+Texture ply_coll_tex;
+float ply_coll_sz=-(PLY_SIZE*256*0.5)*0.9;
+FloatArray ply_coll_polyf<=[ -ply_coll_sz*1.35, ply_coll_sz,
+                             0, -ply_coll_sz,
+                             ply_coll_sz*1.35, ply_coll_sz
+                             ];
+int ply_coll_poly[6];
+//  Vector ply_coll_poly_v[3]; // current rotated points
+
+
+//--- map
+#define WORLD_GRAV 0.00016
+#define AIR_FRICTIONX 0.99
+#define AIR_FRICTIONY 0.999
+#define WATER_FRICTIONX 0.95
+#define WATER_FRICTIONY 0.935
+Texture world_tex;
+Texture world_tex_pattern[1];
+float world_density_field[]; 
+int b_world_tex_pattern;
+int i_world_tex_pattern;
+String world_tex_name="";
+int b_radar=true;
+int b_parallax=true;
+int b_scores=true;
+int b_wateranim=true;
+int b_particles=true;
+int b_move_particles=true;
+Texture parallax_tex;
+Vector mapviewtransl;
+String mapcycle[64];
+String mapname="";
+int mapnr=0;
+int mappassengers=0;
+float map_water_phase=0;
+int ply_inwater;
+
+//--- particles
+Texture tex_particle;
+class Particle {
+   float posx;
+   float posy;
+   float accx;
+   float accy;
+   float ttl;
+   float decay;
+   float alpha;
+   float size;
+   ParticleSystem parent; // xxxx
+   int id_in_parent;
+
+   calcState(float _dt) {
+      ttl-=_dt*decay;
+      if(ttl<=0)
+      {
+         Pool p<=parent.particles;
+         p.qFree(id_in_parent); // with pools this is ok
+      }
+      else
+         compile {
+            posx+=accx*_dt;
+            posy+=accy*_dt;
+            int px=2*(512+(posx*128));
+            int py=(1024- (512+(posy*128)))<<11;
+            float cdx=world_density_field[py+px];
+            cdx=mathPowerf(cdx, _dt);
+            accx=accx*cdx;
+            float cdy=world_density_field[py+px+1];
+            cdy=mathPowerf(cdy, _dt);
+            accy=accy*cdy;
+            if(b_move_particles)
+            {
+               float dx=(posx-(ply_pos.x+PLY_SIZE)), dy=(posy-(ply_pos.y+PLY_SIZE)),
+                  d=sqrt(dx*dx+dy*dy);
+               if(d<0.5)
+               {
+                  Vector v; v.init(dx, dy, 0);
+                  v.unit(); Vector w=ply_force; w.unit();
+                  float a=asin(w.dot(v));
+                  if(a>0)
+                  {
+                     Matrix m; m.init(0,0,a);
+                     v.rotate(m);
+                     float pf=ply_force.getAbs();
+                     if(pf>0.01)pf=0.01;
+                     d=(1-(2*d));
+                     v.scalef(d*0.075*pf);
+                     float cvx;
+                     if( (posx<ply_pos.x)&&(ply_force.y<0))
+                        cvx=-v.x;
+                     else
+                        cvx=v.x; 
+                     accx+=cvx*_dt;
+                     accy+=v.y*0.4*_dt;
+                  }
+               }
+            }
+         }
+   }
+}
+
+class ParticleSystem {
+   Pool particles;
+   float spawn_to;
+
+   allocParticles() {
+      particles.template=Particle;
+      particles.alloc(64);//128);//256);
+      spawn_to=0;
+   }
+    
+   spawnParticle(float _x, float _y, float _decay, float _ax, float _ay, float _alpha, float _size) {
+      if(spawn_to<=0)
+      {
+         //spawn_to=1;
+         Particle p;
+         int id=particles.qAlloc();
+         if(id>=0)
+         {
+            p<=particles[id];
+            p.parent<=this;
+            p.id_in_parent=id;
+            p.posx=_x;
+            p.posy=_y;
+            p.accx=_ax;
+            p.accy=_ay;
+            p.decay=_decay*2.95;
+            p.ttl=1;
+            p.alpha=_alpha*6;
+            p.size=_size*0.5;
+         }
+      }
+   }
+
+   calcState(float _dt) {
+      Particle p;
+      int id;
+      foreach id in particles {
+         p<=particles[id];
+         p.calcState(_dt);
+      }
+      spawn_to-=0.75*_dt;
+      if(spawn_to<0)spawn_to=0;
+   }
+
+   draw() {
+      if(particles.numElements)
+      {
+         glEnable(GL_TEXTURE_2D);
+         tex_particle.bind();
+         glEnable(GL_BLEND);
+         //glBlendFunc(GL_ONE,GL_ONE_MINUS_SRC_COLOR);
+         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+         glBegin(GL_QUADS);
+         Particle p;
+         int id;
+         foreach id in particles compile {
+            p<=particles[id];
+            float ttl=p.ttl;
+            zglColor1f(ttl*p.alpha);
+            ttl=p.size+(1-ttl)*p.size*40;
+            glTexCoord2f(0,0);
+            glVertex2f(p.posx-ttl, p.posy-ttl);
+            glTexCoord2f(1,0);
+            glVertex2f(p.posx+ttl, p.posy-ttl);
+            glTexCoord2f(1,1);
+            glVertex2f(p.posx+ttl, p.posy+ttl);
+            glTexCoord2f(0,1);
+            glVertex2f(p.posx-ttl, p.posy+ttl);
+         }
+         glEnd();
+         glDisable(GL_BLEND);
+      }
+   }
+}
+
+
+ParticleSystem rocket_particles;
+
+rocket_particles.allocParticles();
+
+function CalcParticles(float _dt) {
+   rocket_particles.calcState(_dt);
+}
+
+function DrawParticles() {
+   rocket_particles.draw();
+}
+
+
+//--- messages/events
+String s_msg="";
+List msglist;
+
+class MessageListEntry {
+   String message;
+   float timeout;
+}
+
+
+function AddImmediateMessage(String _s, float _to) {
+   local MessageListEntry e;
+   e.message=_s; e.timeout=_to;
+   msglist.removeAll();
+   msglist.addFirst(#(deref e));
+}
+
+
+function AddHeadMessage(String _s, float _to) {
+   local MessageListEntry e;
+   e.message=_s; e.timeout=_to;
+   msglist.addFirst(#(deref e));
+}
+
+function AddMessage(String _s, float _to) {
+   local MessageListEntry e;
+   e.message=_s; e.timeout=_to;
+   msglist.addLast(#(deref e));
+}
+
+function ProcessMessages(float _dt) {
+   ListNode l<=msglist.head;
+   if(l)
+   {
+      MessageListEntry e<=l.objectValue;
+      s_msg=e.message;
+      if(e.timeout>0)
+         e.timeout-=_dt;
+      else
+         msglist.removeFirst();
+   }
+   else
+      s_msg="";
+}
+
+
+PixelFont font;
+
+
+class Entity {
+   Vector pos; // left-top
+   float sx,sy;
+   Vector coll_pos;
+   Vector coll_pos2;
+
+   checkPlayerCollision() {}
+   calcState(float _dt) {}
+   draw() {}
+}
+
+enum {
+   EN_NONE,
+   EN_DOOR_HL,
+   EN_DOOR_HR,
+   EN_DOOR_HC,
+   EN_DOOR_VT,
+   EN_DOOR_VB,
+   EN_DOOR_VM,
+   EN_PLATFORM
+};
+
+class EntityDoor : Entity {
+   Vector def_pos;
+   float def_sx,def_sy;
+   float act_min, act_max;
+
+   float open_time;
+   float open_speed;
+   float close_speed;
+   int open_h;
+   int open_v;
+
+   float cola,colb;
+
+
+   init(float _px, float _py, float _sx, float _sy, int _oh, int _ov, float _amin, float _amax, float _os, float _cs) {
+      def_pos.init(_px,_py,0);
+      act_min=_amin;
+      act_max=_amax;
+      open_h=_oh;
+      open_v=_ov;
+      def_sx=_sx;
+      def_sy=_sy;
+      open_speed=_os;//0.00555
+      close_speed=_cs;//0.975
+      if((open_v>0)||(open_h>0))
+      {  cola=0.7; colb=0.34; }
+      else 
+      {  cola=0.34; colb=0.7; }
+   }
+
+   calcState(float _dt) compile {
+      Vector cpos;
+      int b_open=false;
+      
+      if(open_h>0) {
+         sx=def_sx*(1-open_time);
+         pos.x=def_pos.x;
+      } else if(open_h<0) {
+         sx=def_sx*(1-open_time);
+         pos.x=def_pos.x+def_sx-sx;
+      } else {
+         sx=def_sx;
+         pos.x=def_pos.x;
+      }
+
+      if(open_v>0) {
+         sy=def_sy*(1-open_time);
+         pos.y=def_pos.y;
+      } else if(open_v<0) {
+         sy=def_sy*(1-open_time);
+         pos.y=def_pos.y+def_sy-sy;
+      } else {
+         sy=def_sy;
+         pos.y=def_pos.y;
+      }
+
+      coll_pos.init(pos.x-PLY_SIZE*0.5, pos.y-PLY_SIZE*0.5,0);
+      coll_pos2.init(coll_pos.x+sx+PLY_SIZE, coll_pos.y+sy+PLY_SIZE, 0);
+
+      float dist=10000;
+      if(open_v)
+      {
+         if(ply_pos.y>=act_min)
+            if(ply_pos.y<=act_max)
+            {
+               if(ply_pos.x>coll_pos.x)
+                  dist=abs(ply_pos.x-coll_pos2.x);
+               else
+                  dist=coll_pos.x-ply_pos.x;
+               b_open=(dist<0.5);
+            }
+      }
+      else if(open_h)
+      {
+         if(ply_pos.x>=act_min)
+            if(ply_pos.x<=act_max)
+            {
+               if(ply_pos.y>coll_pos.y)
+                  dist=abs(ply_pos.y-coll_pos2.y);
+               else
+                  dist=coll_pos.y-ply_pos.y;
+               b_open=(dist<0.5);
+            }
+      }
+
+   
+      if(b_open) {
+         open_time=open_time+open_speed*_dt;
+         if(open_time>0.85)open_time=0.85;
+      } else
+         open_time*=mathPowerf(close_speed,_dt);
+   
+      // check player collision
+      if(ply_pos.x>=coll_pos.x)
+         if(ply_pos.x<=coll_pos2.x)
+            if(ply_pos.y>=coll_pos.y)
+               if(ply_pos.y<=coll_pos2.y)
+               {
+                  ply_coll=true;
+                  float tx=(ply_pos.x-coll_pos.x)/sx;
+                  float ty=(ply_pos.y-coll_pos.y)/sy;
+                  Vector n,v;
+                  if(tx<0.5)
+                     if(ty<0.5)
+                        if(tx<ty)
+                           n.init(-1,0,0);
+                        else
+                           n.init(0,-1,0);
+                     else
+                        if(tx<(1.0-ty))
+                           n.init(-1,0,0);
+                        else
+                           n.init(0,1,0);
+                  else
+                     if(ty<0.5)
+                        if((1.0-tx)<ty)
+                           n.init(1,0,0);
+                        else
+                           n.init(0,-1,0);
+                     else
+                        if((1-tx)<(1.0-ty))
+                           n.init(1,0,0);
+                        else
+                           n.init(0,1,0);
+                  if(!ply_last_coll)
+                  {
+                     last_coll_x=-n.x; last_coll_y=-n.y;
+                     //n.neg();
+                     ply_pos.addScale(n,PLY_SIZE*0.1);
+                     last_coll_pos=ply_pos;
+                     float pf=ply_force.getAbs();
+                     ply_force.unit();
+                     last_coll_dir=ply_force;
+                     mathReflect(ply_force, n, v);
+                     last_coll_force=v;
+                     v.unitScale(-0.75*pf);
+                     ply_force=v;
+                     n.neg();
+                     ply_spin*=mathPowerf(PLY_SPINCOLLDAMP, _dt);
+                     CalcPlayerSpin(last_coll_dir, n);
+                     HurtPlayer(ply_force.getAbs()*8);
+                  }
+               }
+   
+   }
+
+   draw() compile {
+      glShadeModel(GL_SMOOTH);
+      glBegin(GL_QUADS);
+      if(open_v)
+      {
+         glColor3f(colb,colb,0);
+         glVertex2f(pos.x, pos.y);
+         glVertex2f(pos.x+sx, pos.y);
+         glColor3f(cola,cola,0);
+         glVertex2f(pos.x+sx, pos.y+sy);
+         glVertex2f(pos.x, pos.y+sy);
+      }
+      else
+      {
+         glColor3f(colb,colb,0);
+         glVertex2f(pos.x, pos.y+sy);
+         glVertex2f(pos.x, pos.y);
+         glColor3f(cola,cola,0);
+         glVertex2f(pos.x+sx, pos.y);
+         glVertex2f(pos.x+sx, pos.y+sy);
+      }
+      glEnd();
+      ////glShadeModel(GL_FLAT);
+
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      glLineWidth(3.0);
+      glColor3f(0.9,0.47,0);
+      glBegin(GL_QUADS);
+      glVertex2f(pos.x, pos.y);
+      glVertex2f(pos.x+sx, pos.y);
+      glVertex2f(pos.x+sx, pos.y+sy);
+      glVertex2f(pos.x, pos.y+sy);
+      glEnd();
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      glLineWidth(2.0);
+   }
+}
+
+
+PointerArray platform_names<=["ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "EIGHTEEN", "NINETEEN", "TWENTY", "TWENTYONE", "TWENTYTWO", "TWENTYTHREE"];
+
+
+class EntityPlatform : Entity {
+   int b_passenger;
+   int id;
+   String padname;
+
+   init2(float _px, float _py) {
+      padname="PAD "+platform_names[next_platform_id];
+      float t=font.getWidth(padname)/220.0+0.01;
+      if(t<0.4)
+         t=0.4;
+      init(_px-t*0.5, _py, t, 0.1);
+   }
+
+   init(float _px, float _py, float _sx, float _sy) {
+      pos.init(_px,_py,0);
+      sx=_sx;
+      sy=_sy;
+      coll_pos.init(pos.x-PLY_SIZE*0.5, pos.y+PLY_SIZE*0.3,0);
+      coll_pos2.init(coll_pos.x+sx+PLY_SIZE, coll_pos.y+sy+PLY_SIZE*0.5, 0);
+      id=next_platform_id++;
+      padname="PAD "+platform_names[id];
+   }
+
+   calcState(float _dt) compile {
+      // check player collision
+      if(ply_pos.x>=coll_pos.x)
+         if(ply_pos.x<=coll_pos2.x)
+            if(ply_pos.y>=coll_pos.y)
+               if(ply_pos.y<=coll_pos2.y)
+               {
+                  float tx=(ply_pos.x-coll_pos.x)/sx;
+                  float ty=(ply_pos.y-coll_pos.y)/sy;
+                  Vector n,v;
+                  if(tx<0.5)
+                     if(ty<0.5)
+                        if(tx<ty)
+                           n.init(-1,0,0);
+                        else
+                           n.init(0,-1,0);
+                     else
+                        if(tx<(1.0-ty))
+                           n.init(-1,0,0);
+                        else
+                           n.init(0,1,0);
+                  else
+                     if(ty<0.5)
+                        if((1.0-tx)<ty)
+                           n.init(1,0,0);
+                        else
+                           n.init(0,-1,0);
+                     else
+                        if((1-tx)<(1.0-ty))
+                           n.init(1,0,0);
+                        else
+                           n.init(0,1,0);
+                  float pf=ply_force.getAbs();
+                  if( (pf<0.009) && ((ply_rot>345)||(ply_rot<15)))
+                  {
+                     // landing
+                     if(ply_force.y<0)
+                     {
+                        ply_force.y=0;
+                        ply_pos.y=pos.y+sy+PLY_SIZE*0.75;
+                     }
+                     ply_force.x=0;
+                     ply_spin=0;
+                     ply_rotspd=0;
+                     ply_rot=0;
+                     ply_coll=false;
+                     if(dest_platform<0)
+                        NextPlatform();
+                     else
+                        if(id==dest_platform)
+                        {
+                           if(have_passenger)
+                           {
+                              mappassengers--;
+                              if(mappassengers<=0)
+                              {
+                                 msglist.removeFirst();
+                                 AddMessage("Well done!", 240);
+                                 AddMessage("Hey, taxi!", 160);
+                                 LoadNextMap();
+                              }
+                              else
+                              {
+                                 msglist.removeFirst();
+                                 AddImmediateMessage((rnd(3)&1)?"Thanks.":"Thank you.", 120);
+                                 AddMessage("Hey, taxi!", 120);
+                                 ply_score++;
+                                 ply_energy+=0.5;
+                                 if (ply_energy>1.6) ply_energy=1.6;
+                              }
+                           }
+                           else
+                              have_passenger=true;
+                           NextPlatform();
+                        }
+                  }
+                  else if(!ply_last_coll)
+                  {
+                     ply_coll=true;
+                     last_coll_x=-n.x; last_coll_y=-n.y;
+                     ply_pos.addScale(n,PLY_SIZE*0.1);
+                     last_coll_pos=ply_pos;
+                     ply_force.unit();
+                     last_coll_dir=ply_force;
+                     mathReflect(ply_force, n, v);
+                     last_coll_force=v;
+                     v.unitScale(-0.75*pf);
+                     ply_force=v;
+                     n.neg();
+                     ply_spin*=mathPowerf(PLY_SPINCOLLDAMP, _dt);
+                     CalcPlayerSpin(last_coll_dir, n);
+                     ply_rotspd*=-mathPowerf(0.2, _dt);
+                     ply_spin*=mathPowerf(PLY_SPINCOLLDAMP, _dt);
+                     if(ply_rot>270)
+                     {
+                        ply_rot+=15*_dt;
+                        if(ply_rot>=360)ply_rot=0;
+                        if(pf<0.01)
+                           ply_spin=0;
+                     }
+                     else
+                        if(ply_rot<90)
+                        {
+                           ply_rot-=15*_dt;
+                           if(ply_rot<=0) ply_rot=0;
+                           if(pf<0.01)
+                              ply_spin=0;
+                        }
+                     HurtPlayer(ply_force.getAbs()*8);
+                  }
+               }
+   
+   }
+
+   draw() compile {
+      glDisable(GL_BLEND);
+      glColor3f(0.9,0.65,0.23);
+      glBegin(GL_QUADS);
+      glVertex2f(pos.x, pos.y);
+      glVertex2f(pos.x+sx, pos.y);
+      glVertex2f(pos.x+sx, pos.y+sy);
+      glVertex2f(pos.x, pos.y+sy);
+      glEnd();
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      glLineWidth(3.0);
+      glColor3f(0.6,0.4,0.1);
+      glBegin(GL_QUADS);
+      glVertex2f(pos.x, pos.y);
+      glVertex2f(pos.x+sx, pos.y);
+      glVertex2f(pos.x+sx, pos.y+sy);
+      glVertex2f(pos.x, pos.y+sy);
+      glEnd();
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      glLineWidth(2.0);
+
+      if(id==dest_platform)
+      {
+         glColor3f(1,1,0.1);
+         glBegin(GL_QUADS);
+         glVertex2f(pos.x+0.025, pos.y+sy+0.05);
+         glVertex2f(pos.x+0.05, pos.y+sy+0.05);
+         glVertex2f(pos.x+0.05, pos.y+sy+0.025);
+         glVertex2f(pos.x+0.025, pos.y+sy+0.025);
+         glEnd();
+      }
+
+      DrawSingleText(pos.x+(sx-font.getWidth(padname)*(1.0/256))*0.5, pos.y+0.07, 1.0/256, (-3/4.0)/256, padname);
+   }
+}
+
+int dest_platform;
+int next_platform_id;
+EntityPlatform platforms[64];
+
+
+Texture tex_fish;
+Texture tex_numbers;
+
+class EntityWater : Entity {
+   float fishx;
+   float fishy;
+   float def_fishy;
+   float fishdir;
+   float fishsiny;
+   float fishsinyspd;
+
+   init(float _x, float _y, float _sx, float _sy) {
+      pos.init(_x, _y, 0);
+      sx=_sx; 
+      sy=_sy;
+      coll_pos=pos;
+      coll_pos2.init(pos.x+sx, pos.y+sy, 0);
+      fishx=0.3*sx+rnd(sx*0.3);
+      def_fishy=0.3*sy+rnd(sy*0.3);
+      fishdir=rnd(2)*2-1;
+      fishsiny=rnd(2PI);
+      fishsinyspd=0.01+rnd(0.01);
+   }
+
+   draw() compile {
+
+      glEnable(GL_TEXTURE_2D);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+      tex_fish.bind();
+      glColor4f(1,1,1,1);
+      float fw=0.2;
+      float fh=0.16;
+      float ul,ur; if(fishdir>0) { ul=0; ur=1; } else { ul=1; ur=0; }
+      glBegin(GL_QUADS);
+      glTexCoord2f(ul,0);
+      glVertex2f(pos.x+fishx-fw*0.5, pos.y+fishy+fh*0.5);
+      glTexCoord2f(ur,0);
+      glVertex2f(pos.x+fishx+fw*0.5, pos.y+fishy+fh*0.5);
+      glTexCoord2f(ur,0.6);
+      glVertex2f(pos.x+fishx+fw*0.5, pos.y+fishy-fh*0.5);
+      glTexCoord2f(ul,0.6);
+      glVertex2f(pos.x+fishx-fw*0.5, pos.y+fishy-fh*0.5);
+      glEnd();
+   
+
+      float cwl;
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+
+      glDisable(GL_TEXTURE_2D);
+      glColor4f(0,0,0.4,0.35);
+      if(b_wateranim) // draw animated surface waves
+      {
+         float dwl=pos.y+sy-0.05;
+         cwl=dwl+0.025*(1+sin(map_water_phase));
+         float x=pos.x;
+         float xp1=pos.x+(8/128.0);
+         float cwp=map_water_phase;
+         glBegin(GL_TRIANGLES);
+         float lwl=cwl;
+         ////loop( (sx/(8/128.0)) )
+         loop( (sx/(16/128.0)) + 1 )
+         {
+            cwl=(pos.y+sy-0.05+1.5*0.025*(1+sin(cwp)));
+            glVertex2f(x, dwl);
+            glVertex2f(x, lwl);
+            glVertex2f(xp1, dwl);
+         
+            glVertex2f(xp1, cwl);
+            glVertex2f(xp1, dwl);
+            glVertex2f(x, lwl);
+            ////cwp+=0.23;
+            cwp+=0.23*2;
+            x=xp1;
+            ////xp1+=8/128.0;
+            xp1+=16/128.0;
+            lwl=cwl;
+         }
+         glEnd();
+         cwl=dwl;
+      }
+      else
+         cwl=pos.y+sy-0.025;
+      glBegin(GL_QUADS);
+      glVertex2f(pos.x, cwl); 
+      glVertex2f(pos.x+sx, cwl);
+      glVertex2f(pos.x+sx, pos.y);
+      glVertex2f(pos.x, pos.y);
+      glEnd();
+      glDisable(GL_BLEND);
+   }
+
+
+   calcState(float _dt) {
+      ply_inwater|= (
+         (ply_pos.x>=coll_pos.x)&&(ply_pos.x<coll_pos2.x)&&
+         (ply_pos.y>=coll_pos.y)&&(ply_pos.y<coll_pos2.y)
+                     );
+
+      fishsiny+=fishsinyspd*_dt;
+      if(fishsiny>=2PI)fishsiny-=2PI;
+      fishy=def_fishy+0.1*sin(fishsiny);
+
+      float fdist;
+      if(fishdir>0)
+      {
+         fdist=1-((fishx-0.1*sx)/(0.8*sx));
+         fishx+=(0.005+0.005*fdist)*_dt;
+         if(fishx>=(sx*0.9))
+         {
+            fishx=sx*0.9;
+            fishdir=-1;
+         }
+      }
+      else
+      {
+         fdist=((fishx-0.1*sx)/(0.8*sx));
+         fishx-=(0.005+0.005*fdist)*_dt;
+         if(fishx<=(sx*0.1))
+         {
+            fishx=sx*0.1;
+            fishdir=1;
+         }
+      }
+
+      if(ply_fish_timeout<0.01)
+         if(ply_pos.x>=(pos.x+fishx-0.1))
+            if(ply_pos.x<=(pos.x+fishx+0.1))
+               if(ply_pos.y>=(pos.y+fishy-0.08))
+                  if(ply_pos.y<=(pos.y+fishy+0.08))
+                  {
+                     {
+                        AddHeadMessage("You\'ve been bitten by a fish.", 30);
+                        HurtPlayer(0.1);
+                        ply_fish_timeout=1;
+                     }
+                  }
+
+   }
+}
+
+EntityWater waters[64];
+
+function AddWater(float _x, float _y, float _sx, float _sy) {
+   EntityWater w;
+   w<=waters.nextFree;
+   w.init(_x, _y, _sx, _sy);
+}
+
+EntityDoor doors[64];
+
+function AddDoor(float _x, float _y, int _type, float _os, float _cs) {
+
+   EntityDoor e;
+   e<=doors.nextFree;
+   float a,b;
+   ////trace "xxx AddDoor(x="+_x+" y="+_y+" type="+_type+" os="+_os+" cs="+_cs;
+   switch(_type)
+   {
+      default:
+         doors.numElements--;
+         break;
+      case EN_DOOR_HL:
+         a=FindMapPixelXL(_x, _y);
+         b=FindMapPixelXR(_x, _y);
+         e.init(a-0.005, _y-0.005, (b-a)+0.01, 0.1, -1, 0, a, b, _os, _cs);
+         break;
+      case EN_DOOR_HR:
+         a=FindMapPixelXL(_x, _y);
+         b=FindMapPixelXR(_x, _y);
+         e.init(a-0.005, _y-0.005, (b-a)+0.01, 0.1, 1, 0, a, b, _os, _cs);
+         break;
+      case EN_DOOR_HC:
+         a=FindMapPixelXL(_x, _y);
+         b=FindMapPixelXR(_x, _y);
+         e.init(a-0.005, _y-0.005, ((b-a)+0.01)*0.5, 0.1, 1, 0, a, b, _os, _cs);
+         e<=doors.nextFree;
+         e.init(a+(b-a)*0.5, _y-0.005, ((b-a)+0.01)*0.5, 0.1, -1, 0, a, b, _os, _cs);
+         break;
+      case EN_DOOR_VB:
+         a=FindMapPixelYU(_x, _y);
+         b=FindMapPixelYD(_x, _y);
+         b-=0.04;
+         e.init(_x-0.0625, b, 0.125, (a-b)+0.04, 0, -1, b, a, _os, _cs);
+         break;
+      case EN_DOOR_VT:
+         a=FindMapPixelYU(_x, _y);
+         b=FindMapPixelYD(_x, _y);
+         b-=0.0001;
+         e.init(_x-0.0625, b, 0.125, (a-b)+0.0002, 0, 1, b, a, _os, _cs);
+         break;
+      case EN_DOOR_VM:
+         a=FindMapPixelYU(_x, _y);
+         b=FindMapPixelYD(_x, _y);
+         e.init(_x-0.0625, b-0.005, 0.125, (a-b)*0.5, 0, 1, b, a, _os, _cs);
+         e<=doors.nextFree;
+         e.init(_x-0.0625, b+(a-b)*0.5, 0.125, (a-b)*0.5+0.01, 0, -1, b, a, _os, _cs);
+         break;
+   }
+}
+
+function CalcWorldDensityField() {
+   print "CalcWorldDensityField:";
+   if(!world_density_field.alloc(1024*1024*2))
+      die "CalcWorldDensityField: outofmem.";
+   world_density_field.numElements=world_density_field.maxElements;
+   world_density_field.fill(0);
+   float y=0;
+   int i=0;
+   int x,xl=-1,xr=-1;
+   compile loop(1024)
+   {
+      x=0;
+      while(x<1024)
+      {
+         if((world_tex[i++]&0xffffff)==0) // found space
+         {
+            xl=x++;
+            loop(1024-x)
+            {
+               if( (world_tex[i++]&0xffffff)!=0)
+               {
+                  xr=x++;
+                  // now draw color spread from xl to xr
+                  float rstep=PI/(xr-xl);
+                  float r=0;
+                  float cval;
+                  /*compile*/ loop(xr-xl)
+                  {
+                     cval=0.89+0.11*sin(r);
+                     cval=cval*cval;
+                     world_density_field[y+(xl<<1)]=cval;
+                     r+=rstep;
+                     xl++;
+                  }
+                  xl=-1;
+                  break;
+               }
+               else
+                  x++;
+            }
+         }
+         else
+            x++;
+      }
+      y+=1024*2;
+   }
+
+
+   // loop vertical
+   i=0;
+   xl=-1;
+   xr=-1;
+   x=0;
+   compile loop(1024)
+   {
+      y=0;
+      i=x;
+      while(y<1024)
+      {
+         if((world_tex[i]&0xffffff)==0) // found space
+         {
+            i+=1024;
+            xl=y++;
+            loop(1024-y)
+            {
+               if( (world_tex[i]&0xffffff)!=0)
+               {
+                  i+=1024;
+                  xr=y++;
+                  // now draw color spread from ut to ub
+                  rstep=PI/(xr-xl);
+                  r=0;
+                  int idx=(x<<1)+(xl<<11)+1;
+                  /*compile*/ loop(xr-xl)
+                  {
+                     cval=0.89+0.11*sin(r);
+                     cval=cval*cval;
+                     world_density_field[idx]=cval;//*world_density_field[idx];
+                     r+=rstep;
+                     idx+=1024*2;
+                  }
+                  xl=-1;
+                  break;
+               }
+               else
+               {
+                  y++; i+=1024;
+               }
+            }
+         }
+         else
+         {
+            y++; i+=1024;
+         }
+      }
+      x++;
+   }
+
+}
+
+function LoadFillPatterns() {
+   int i=0;
+   loop(world_tex_pattern.maxElements)
+   {
+      Texture t; t<=world_tex_pattern[i++];
+      t.loadImage("fgfillpattern"+i+".png",0,0,4);
+   }
+}
+
+function PatternFillWorldTex() {
+   int j=0;
+   int x2,x3;
+   Texture t<=world_tex_pattern[i_world_tex_pattern];
+   int psx=t.sx;
+   int psy=t.sy;
+   compile loop(1024/psy)
+   {
+      x3=0;
+      loop(psy)
+      {
+         x2=x3;
+         loop(1024/psx)
+         {
+            int x=x2;
+            loop(psx)
+            {
+               if( (world_tex[j]&0xffffff)==0xffffff )
+                  world_tex[j++]=t[x++];
+               else
+               {
+                  x++; j++;
+               }
+            }
+         }
+         x3+=psx;
+      }
+   }
+   world_tex.unload();
+}
+
+function LoadWorldTex(String _name) {
+   print "LoadWorldTex("+_name+")";
+   world_tex.unload();
+   world_tex.loadImage(_name,1024,1024,4);
+   world_tex.colorKeyToAlpha(0);
+   if(b_particles)
+      CalcWorldDensityField();
+   world_tex.flags=TEX_ALPHA|TEX_MODULATE|TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+   int v,i=0;
+   compile loop(1024*1024)
+   {
+      v=world_tex[i];
+      if( ((v&0xff)<10) &&
+          (((v>>8)&0xff)<10) &&
+          (((v>>16)&0xff)<10)
+          )
+         world_tex[i++]=0;
+      else
+         i++;
+   }
+   if(b_world_tex_pattern)
+      PatternFillWorldTex();
+}
+
+function LoadMapList() {
+   String smc;
+   if(!smc.load("mapcycle.txt", true))
+      die "[---] LoadMapList: cannot open \"mapcycle.txt\".";
+   smc.split('\n');
+   mapcycle.empty();
+   String s; foreach s in smc {
+      if(!s.isBlank())
+      {
+         if(s[0]!='#')
+         {
+            s.trim();
+            mapcycle.add(s);
+            print "[...] LoadMapList: \""+s+"\" added to map cycle.";
+         }
+      }
+   }
+   mapnr=0;
+}
+
+function LoadNextMap() {
+   mapnr=(mapnr+1)%mapcycle.numElements;
+   LoadMap(mapnr);
+   LoadRandomParallaxTexture();
+}
+
+function LoadMap(int _nr) {
+   String sloadmapnr="LoadMap("+_nr+")";
+   print sloadmapnr;
+   if(_nr>=mapcycle.numElements)
+      die sloadmapnr+": map "+_nr+" does not exist.";
+
+   mapnr=_nr;
+
+   String sxml; 
+   if(!sxml.load(mapcycle[_nr]+".xml", 1))
+      die("[---] LoadMap("+_nr+"): cannot find XML map data.");
+
+   doors.empty();
+   platforms.empty();
+   waters.empty();
+   map_startpad=0;
+
+   TreeNode xmlroot<=sxml.parseXML();
+   if(!xmlroot)
+      die("[---] LoadMap("+_nr+"): parseXML failed.");
+   int b_ok=false;
+   TreeNode t,mt,et;
+   t<=xmlroot;
+   while(t)
+   {
+      if(t.name=="map")
+      {
+         print "found '<map>'";
+         HashTable ht<=t.objectValue;
+         if(ht.exists("image"))
+         {
+            world_tex_name=ht["image"];
+            b_world_tex_pattern=ht.exists("pattern");
+            i_world_tex_pattern=0; //rnd(2);
+            LoadWorldTex(world_tex_name);
+         }
+         else
+            die "LoadMap("+_nr+"): missing map.image property.";
+       
+         if(ht.exists("name"))
+         {
+            mapname=ht["name"];
+            mapname.toUpper();
+         }
+         else
+            mapname="n/a";
+
+         if(ht.exists("passengers"))
+            mappassengers=ht["passengers"];
+         else
+            mappassengers=10;
+
+   
+         mt<=t.right;
+         while(mt)
+         {
+            if(mt.name=="entities")
+            {
+               print "found '<entities>'";
+               et<=mt.right;
+               while(et)
+               {
+                  print "found entity '<"+et.name+">'";
+                  switch(et.name)
+                  {
+                     case "door":
+                        ht<=et.objectValue;
+                        if(ht.exists("x"))
+                           if(ht.exists("y"))
+                              if(ht.exists("type"))
+                                 if(ht.exists("openSpeed"))
+                                    if(ht.exists("closeSpeed"))
+                                    {
+                                       print "---adding door.";
+                                       AddDoor(ht["x"],ht["y"],
+                                               TKS.stringToConstant(ht["type"]),
+                                               ht["openSpeed"],
+                                               ht["closeSpeed"]);
+                                    }
+                                    else
+                                       die sloadmapnr+": missing door.closeSpeed property.";
+                                 else
+                                    die sloadmapnr+": missing door.openSpeed property.";
+                              else
+                                 die sloadmapnr+": missing door.type property.";
+                           else
+                              die sloadmapnr+": missing door.y property.";
+                        else
+                           die sloadmapnr+": missing door.x property.";
+                        break;
+                     case "pad":
+                        ht<=et.objectValue;
+                        if(ht.exists("x"))
+                           if(ht.exists("y"))
+                           {
+                              if(ht.exists("start"))
+                                 map_startpad=next_platform_id;
+                              print "---adding platform.";
+                              AddPlatform2(ht["x"],ht["y"]);
+                           }
+                           else
+                              die sloadmapnr+": missing pad.y property.";
+                        else
+                           die sloadmapnr+": missing pad.x property.";
+                        break;
+                     case "water":
+                        ht<=et.objectValue;
+                        if(ht.exists("x"))
+                           if(ht.exists("y"))
+                              if(ht.exists("sx"))
+                                 if(ht.exists("sy"))
+                                 {
+                                    print "---adding water basin.";
+                                    AddWater(ht["x"], ht["y"], ht["sx"], ht["sy"]);
+                                 }
+                                 else
+                                    die sloadmapnr+": missing pad.sy property.";
+                              else
+                                 die sloadmapnr+": missing pad.sx property.";
+                           else
+                              die sloadmapnr+": missing pad.y property.";
+                        else
+                           die sloadmapnr+": missing pad.x property.";
+                        break;
+                  }
+                  et<=et.left;
+               }
+               b_ok=true;
+            }
+            mt<=mt.left;
+         }
+      }
+      t<=t.left;
+   }
+   if(!b_ok)
+      die "[---] LoadMap("+_nr+"): parseXML2 failed.";
+
+   print "[...] map has "+doors.numElements+" doors.";
+
+   next_platform_id=0;
+   print "[...] map has "+platforms.numElements+" pads.";
+
+   InitPlayer();
+
+   FPS.reset();
+}
+
+function AddPlatform2(float _x, float _y) {
+   EntityPlatform e<=platforms.nextFree;
+   _y=FindMapPixelYD(_x,_y)-0.02;
+   e.init2(_x,_y);
+}
+
+function AddPlatform(float _x, float _y, float _sx, float _sy) {
+   EntityPlatform e<=platforms.nextFree;
+   e.init(_x,_y,_sx,_sy);
+}
+function NextPlatform() {
+   int lp=dest_platform;
+   while(lp==dest_platform)
+      dest_platform=rnd(platforms.numElements);
+   String s="PAD "+platform_names[dest_platform]+", please!";
+   AddMessage(s, 480);
+}
+
+   
+function CalcEntities(float _dt) {
+   ply_inwater=0;
+
+   EntityDoor d; foreach d in doors 
+                    d.calcState(_dt);
+
+   EntityPlatform e; foreach e in platforms 
+                        e.calcState(_dt);
+    
+   EntityWater w; foreach w in waters
+                     w.calcState(_dt);
+
+   map_water_phase+=0.05*_dt;
+   wrap map_water_phase 0 2PI;
+}
+
+function DrawEntities() {
+   glDisable(GL_BLEND);
+   glDisable(GL_TEXTURE_2D);
+
+   EntityDoor d; foreach d in doors 
+                    d.draw();
+
+   EntityPlatform e; foreach e in platforms 
+                        e.draw();
+
+   EntityWater w; foreach w in waters
+                     w.draw();
+}
+
+function StartGame() {
+   ply_score=0;
+   LoadMap(0);
+}
+
+function InitPlayer() {
+   have_passenger=false;
+   ply_hmove=0;
+   ply_vmove=0;
+   ply_vmove_released=false;
+   ply_vmove_time=0;
+   ply_vmove_time2=0;
+   ply_rot=0;
+   ply_rotspd=0;
+   ply_spin=0;
+   ply_boost=0;
+   ply_force.init(0,0,0);
+   ply_coll_tex.alloc(PLY_COLLTEXSIZE,PLY_COLLTEXSIZE,1);
+   ply_coll=false;
+   ply_coll_timeout=0;
+   ply_fish_timeout=0;
+   ply_boost=false;
+   ply_energy=1;
+   ply_pos.init(0,0,0);
+   ply_inwater=false;
+   mapviewtransl.init(0,0,0);
+   EntityPlatform pf<=platforms[map_startpad];
+   ply_pos.init(pf.pos.x+pf.sx*0.5, pf.pos.y+pf.sy+0.01, 0);
+   dest_platform=pf.id;
+   print "InitPlayer() finished.";
+}
+
+function CalcGameStep(float _dt) {
+   ProcessMessages(_dt);
+   CalcPlayer2(_dt);
+   CalcEntities(_dt);
+   if(b_particles)
+      CalcParticles(_dt);
+}
+
+function CalcGame(float _dt) { 
+   int nsteps=_dt;
+   loop(nsteps) // numerical integration, constant timesteps
+      CalcGameStep(1.0);
+   _dt=frac(_dt);
+   if(_dt > 0)
+   {
+      CalcGameStep(_dt);
+   }
+}
+
+function CalcPlayer2(float _dt) compile {
+   ply_rot+=_dt*ply_rotspd;
+
+   if(ply_hmove>0)
+   {
+      ply_rotspd-=_dt*PLY_ROTSPEED;
+      ply_spin*=mathPowerf(PLY_SPINDAMPCTL,_dt);
+   }
+   else
+      if(ply_hmove<0)
+      {
+         ply_rotspd+=_dt*PLY_ROTSPEED;
+         ply_spin*=mathPowerf(PLY_SPINDAMPCTL,_dt);
+      }
+    
+   ply_rotspd+=ply_spin*_dt;
+   ply_spin*=mathPowerf(PLY_SPINDAMP,_dt);
+   ply_rotspd*=mathPowerf(PLY_ROTSPDDAMP, _dt);
+
+   wrap ply_rot 0 360;
+   ply_force.y=ply_force.y-WORLD_GRAV*_dt;
+   ply_pos.addScale(ply_force, _dt);
+   clamp ply_pos vector(-4,-4,0) vector(4,4,0);
+
+   // ---add rotated thrust force
+   Vector v; v.init(0,ply_vmove*PLY_ENGPWR+ply_boost*PLY_ENGPWR*24,0);
+   Matrix m; m.init(0,0,rad(ply_rot));
+   v.rotate(m);
+   ply_force.addScale(v, _dt);
+
+   if(ply_vmove)
+   {
+      ply_vmove_time+=0.075*_dt;
+      ply_vmove_time2+=0.06*_dt;
+      if(ply_vmove_time>1)
+         ply_vmove_time=1;
+      if(ply_vmove_time2>1)
+         ply_vmove_time2=1;
+      if(ply_vmove_released)
+      {
+         ply_spin*=mathPowerf(PLY_SPINDAMPCTL,_dt);
+         ply_vmove_released=false;
+      }
+   }
+   else
+   {
+      ply_vmove_time*=mathPowerf(0.87,_dt);
+      ply_vmove_time2*=mathPowerf(0.90,_dt);
+   }
+   if(ply_vmove_time>0)
+   {
+      // ---- chemtrails left/right
+      if(rocket_particles.spawn_to<=0)
+      {
+         v.init(0,PLY_ENGPWR,0);
+         m.init(0,0,rad(ply_rot-25));
+         v.rotate(m);
+          
+         Vector vpart=ply_pos; vpart.addScale(v, -54.0);
+         float accx=v.x*-11.75+(rnd(0.002)-0.001);
+         float accy=v.y*-11.75+(rnd(0.002)-0.001);
+         rocket_particles.spawnParticle(vpart.x, vpart.y, 0.007, accx, accy, ply_vmove_time*0.07,
+                                        ply_vmove_time2*0.005);
+          
+         v.init(0,PLY_ENGPWR,0);
+         m.init(0,0,rad(ply_rot+25));
+         v.rotate(m);
+          
+         vpart=ply_pos; vpart.addScale(v, -54.0);
+         accx=v.x*-11.75+(rnd(0.002)-0.001);
+         accy=v.y*-11.75+(rnd(0.002)-0.001);
+         rocket_particles.spawnParticle(vpart.x, vpart.y, 0.007, accx, accy, ply_vmove_time*0.07,
+                                        ply_vmove_time2*0.005);
+
+         rocket_particles.spawn_to=1;
+      }
+   }
+    
+   if(ply_inwater)
+   {
+      ply_force.x=ply_force.x*mathPowerf(WATER_FRICTIONX,_dt);
+      ply_force.y=ply_force.y*mathPowerf(WATER_FRICTIONY,_dt);
+   }
+   else
+   {
+      ply_force.x=ply_force.x*mathPowerf(AIR_FRICTIONX,_dt);
+      ply_force.y=ply_force.y*mathPowerf(AIR_FRICTIONY,_dt);
+   }
+   clamp ply_force vector(-0.05,-0.05,0) vector(0.05,0.05,0);
+   CalcCollision(_dt);
+   if(draw_coll_debug)
+   {
+      int px=512+(ply_pos.x*128);
+      int py=(1024- (512+(ply_pos.y*128)));
+      print ply_pos.string+"  density="+world_density_field[(py*2048)+px];
+   }
+   ply_boost=false;
+}
+
+function CalcCollision(float _dt) compile {
+   int i=0;
+   Vector v,w,a,b;
+   int x;
+   int y;
+   float gx=0.0;
+   float gy=0.0;
+   Vector coll_norm;
+   Vector new_direction;
+   float force_len;
+
+   Matrix m; 
+   int j=0;
+   m.init(0,0,rad(ply_rot));
+   loop(3)
+   {
+      v.init(ply_coll_polyf[i], ply_coll_polyf[i+1],0);
+      v.rotate(m);
+      ply_coll_poly[i]=PLY_COLLTEXSIZE*0.5+v.x+1;
+      ply_coll_poly[i+1]=PLY_COLLTEXSIZE*0.5-v.y;
+//        w<=ply_coll_poly_v[j++];
+//        w.init(v.x/256.0, v.y/256.0, v.z/256.0); // store for later use (entity coll)
+      i+=2;
+   }
+   ply_coll_tex.clear(0);
+   /*
+     ply_coll_tex.drawLine( ivector(ply_coll_poly[0], ply_coll_poly[1]), 
+     ivector(ply_coll_poly[2], ply_coll_poly[3]),
+     0xffffffff);
+     ply_coll_tex.drawLine( ivector(ply_coll_poly[2], ply_coll_poly[3]), 
+     ivector(ply_coll_poly[4], ply_coll_poly[5]),
+     0xffffffff);
+     ply_coll_tex.drawLine( ivector(ply_coll_poly[4], ply_coll_poly[5]), 
+     ivector(ply_coll_poly[0], ply_coll_poly[1]),
+     0xffffffff);
+   */
+   ply_coll_tex.drawLine( ply_coll_poly[0], ply_coll_poly[1], 
+                          ply_coll_poly[2], ply_coll_poly[3],
+                          0xffffffff);
+   ply_coll_tex.drawLine( ply_coll_poly[2], ply_coll_poly[3],
+                          ply_coll_poly[4], ply_coll_poly[5],
+                          0xffffffff);
+   ply_coll_tex.drawLine( ply_coll_poly[4], ply_coll_poly[5], 
+                          ply_coll_poly[0], ply_coll_poly[1],
+                          0xffffffff);
+
+   int px=512+(ply_pos.x*0.5*256-(PLY_COLLTEXSIZE/2));
+   int py=1024-(512+ply_pos.y*0.5*256-(PLY_COLLTEXSIZE/2))-PLY_COLLTEXSIZE;
+   i=py*1024+px;
+   j=0;
+   ply_coll=false;
+   y=PLY_COLLTEXSIZE/2;
+   gx=0;
+   gy=0;
+   loop(PLY_COLLTEXSIZE)
+   {
+      x=-PLY_COLLTEXSIZE/2;
+      loop(PLY_COLLTEXSIZE)
+      {
+         if (world_tex[i]&0xffffff) {
+            gx+=x;
+            gy+=y;
+         }
+         ply_coll|= world_tex[i++] & ply_coll_tex[j++];
+         x++;
+         if !x x++;
+      }
+      y--;
+      if !y y--;
+
+      i+=(1024-PLY_COLLTEXSIZE);
+   }
+   
+   if ((ply_coll)&&(!ply_last_coll)&&(ply_coll_timeout<0.01)) {
+      gx=gx/PLY_COLLTEXSIZE;
+      gy=gy/PLY_COLLTEXSIZE;
+      last_coll_x=gx;
+      last_coll_y=gy;
+      last_coll_pos=ply_pos;
+      force_len=ply_force.getAbs();
+      coll_norm=vector(-gx,-gy,0);
+      coll_norm.unit();
+      last_coll_dir=ply_force;
+      last_coll_dir.unit();
+      mathReflect(last_coll_dir,coll_norm,new_direction);
+      b=last_coll_dir;
+      last_coll_force=new_direction;
+      new_direction.unitScale(-0.7*force_len);
+      ply_force=new_direction;
+
+      a.initScale(coll_norm, -1);
+      ply_spin*=mathPowerf(PLY_SPINCOLLDAMP, _dt);
+      CalcPlayerSpin(b, a);
+      coll_norm.scalef(0.001);
+      Vector vpa; vpa.initScale(a, -0.45*force_len);
+      vpa.y=-vpa.y;
+      ply_pos.add(vpa);
+   }
+   if(ply_coll)
+   {
+      if(ply_last_coll)
+         ply_force.addScale(coll_norm, _dt);
+      if(ply_coll_timeout<0.01)
+         HurtPlayer(ply_force.getAbs()*8);
+      ply_coll_timeout=1;
+   }
+   else
+      ply_coll_timeout-=_dt*0.23;
+
+   ply_fish_timeout-=_dt*0.05;
+   if(ply_fish_timeout<0)
+      ply_fish_timeout=0;
+   
+   ply_last_coll=ply_coll;
+}
+
+function HurtPlayer(float _f) {
+   ply_energy-=_f;
+   if(ply_energy<=0)
+      GameOver();
+}
+
+function GameOver() {
+   AddImmediateMessage("Game Over! ..try again!", 140);
+   StartGame();
+}
+
+function CalcPlayerSpin(Vector b, Vector a) compile { // b=forcevector, a=normal 
+   float pf=ply_force.getAbs();
+   float dotab=a.dot(b);
+   clamp dotab -1 1;
+   float sp;
+
+//      if(b_oldspin)
+//    {
+//        if ((((a.x)>(b.x))&&(a.y<0))||(((a.x)<(b.x))&&(a.y>0)))
+//       sp=PLY_MINSPIN+pf*PLY_SPIN*acos(dotab);
+//        else sp=-(PLY_MINSPIN+pf*PLY_SPIN*acos(dotab));
+//    }
+//      else
+//    {
+
+   sp=(PLY_MINSPIN+pf*PLY_SPIN*acos(dotab));
+//      print "a.x="+a.x+" a.y="+a.y+" b.x="+b.x+" b.y="+b.y+" ply_rot="+ply_rot+" sp1="+sp;
+   Vector t;
+   t=b; 
+   if(pf<0.002) 
+      t.x=0;
+   t.unitScale(0.8); a.sub(t);
+//      print "a2.x="+a.x+" a2.y="+a.y;
+
+    
+   if( a.x<0)
+   {
+      if(a.x==0)
+      {
+         if(a.y>=0)
+         {
+            if(ply_rot<180)//<180
+               sp=-sp;
+         }
+         else
+            if(ply_rot>=180)
+               sp=-sp;
+      }
+      else
+         sp=-sp;
+   }
+   else
+   {
+      if(a.x==0)
+      {
+         if(a.y<0)
+         {
+            if(ply_rot>=180)
+               sp=-sp;
+         }
+         else
+            if(ply_rot<180)
+               sp=-sp;
+      }
+   }
+
+//    }
+   ply_spin+=sp;
+   clamp ply_spin -5 5;
+}
+
+
+function DrawPlayer() compile {
+   glDisable(GL_BLEND);
+   if(ply_coll)
+      glColor3f(0.9,0.2,0.1);
+   else
+      glColor3f(0.1,0.4,0.1);
+
+   glPushMatrix();
+   zglTranslatev(ply_pos);
+   glRotatef(ply_rot, 0,0,1);
+   glBegin(GL_TRIANGLES);
+   glVertex2f(0.75*PLY_SIZE, -0.5*PLY_SIZE);
+   glVertex2f(-0.75*PLY_SIZE, -0.5*PLY_SIZE);
+   glVertex2f(0, 0.5*PLY_SIZE);
+   glEnd();
+
+   glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+   glColor3f(0.2,0.8,0.2);
+   glBegin(GL_TRIANGLES);
+   glVertex2f(0.75*PLY_SIZE, -0.5*PLY_SIZE);
+   glVertex2f(-0.75*PLY_SIZE, -0.5*PLY_SIZE);
+   glVertex2f(0, 0.5*PLY_SIZE);
+   glEnd();
+   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+   glLineWidth(1.0);
+   glBegin(GL_LINES);
+   glVertex2f(0.75*PLY_SIZE, 0.075*PLY_SIZE);
+   glVertex2f(0.75*PLY_SIZE, -0.5*PLY_SIZE);
+   glVertex2f(-0.75*PLY_SIZE, 0.075*PLY_SIZE);
+   glVertex2f(-0.75*PLY_SIZE, -0.5*PLY_SIZE);
+   glEnd();
+
+   if(ply_vmove)
+   {
+      glColor3f(0.8,0.6,0.1);
+      glBegin(GL_QUADS);
+      glVertex2f(-0.5*PLY_SIZE, -0.5*PLY_SIZE);
+      glVertex2f( 0.5*PLY_SIZE, -0.5*PLY_SIZE);
+      glVertex2f( 0.5*PLY_SIZE, -0.7*PLY_SIZE);
+      glVertex2f(-0.5*PLY_SIZE, -0.7*PLY_SIZE);
+      glEnd();
+   }
+   glPopMatrix();
+
+   if(draw_coll_debug)
+   {
+      Vector helper;
+      glBegin(GL_LINES);
+      glColor3f(0.75,0.75,0.75);
+      zglVertexv(last_coll_pos);
+      helper=vector(last_coll_x,last_coll_y,0);
+      helper.neg();
+      helper.unit();
+      helper.add(last_coll_pos);
+      zglVertexv(helper);
+      glEnd();
+      glBegin(GL_LINES);
+      glColor3f(0.1,0.75,0.1);
+      zglVertexv(last_coll_pos);
+      helper=last_coll_force;
+      helper.neg();
+      helper.unit();
+      helper.add(last_coll_pos);
+      zglVertexv(helper);
+      glEnd();
+      glBegin(GL_LINES);
+      glColor3f(0.75,0.1,0.1);
+      zglVertexv(last_coll_pos);
+      helper=last_coll_dir;
+      helper.neg();
+      helper.unit();
+      helper.add(last_coll_pos);
+      zglVertexv(helper);
+      glEnd();
+       
+      glBegin(GL_LINES);
+      glColor3f(1.0,0,0);
+      zglVertexv(ply_pos);
+      helper.initScale(ply_force, 1000000);
+      helper.add(ply_pos);
+      zglVertexv(helper);
+      glEnd();
+   }
+}
+
+function FindMapPixelXL(float _px, float _py) {
+   compile
+   {
+      int px=512+(_px*0.5*256);
+      int py=1024-(512+_py*0.5*256);
+      int i=py*1024+px;
+      int j=px;
+      float ret = 0.0f;
+      while((j--)>=0)
+      {
+         if(world_tex[i--]&0xffffff)
+         {
+            ////return (j/1024.0)*8.0-4;
+            ret = (j/1024.0)*8.0-4;
+            break;
+         }
+      }
+   }
+   return ret;
+}
+
+function FindMapPixelXR(float _px, float _py) {
+   compile
+   {
+      int px=512+(_px*0.5*256);
+      int py=1024-(512+_py*0.5*256);
+      int i=py*1024+px;
+      int j=px;
+      float ret = 0.0f;
+      while((j++)<1024)
+      {
+         if(world_tex[i++]&0xffffff)
+         {
+            ////return (j/1024.0)*8.0-4;
+            ret = (j/1024.0)*8.0-4;
+            break;
+         }
+      }
+   }
+   return ret;
+}
+
+function FindMapPixelYU(float _px, float _py) {
+   compile {
+      int px=512+(_px*0.5*256);
+      int py=1024-(512+_py*0.5*256);
+      int i=py*1024+px;
+      float ret = 0.0f;
+      while(i>=0)
+      {
+         if(world_tex[i]&0xffffff)
+         {
+            ret = -(((i/1024)/1024.0)*8.0-4);
+            break;
+         }
+         i-=1024;
+      }
+   }
+   return ret;
+}
+
+function FindMapPixelYD(float _px, float _py) {
+   compile
+   {
+      int px=512+(_px*0.5*256);
+      int py=1024-(512+_py*0.5*256);
+      int i=py*1024+px;
+      float ret = 0.0f;
+      
+      while(i<(1024*1024))
+      {
+         if(world_tex[i]&0xffffff)
+         {
+            ////return -(((i/1024)/1024.0)*8.0-4);
+            ret = -(((i/1024)/1024.0)*8.0-4);
+            break;
+         }
+         i+=1024;
+      }
+   }
+   return ret;
+}
+
+function DrawMap() compile {
+   world_tex.bind(); // draw cavern
+   glColor4f(1,1,1,1);
+   glEnable(GL_TEXTURE_2D);
+   glBegin(GL_QUADS);
+   glTexCoord2f(0,0);
+   glVertex2f(-4, 4);
+   glTexCoord2f(1,0);
+   glVertex2f( 4, 4);
+   glTexCoord2f(1,1);
+   glVertex2f( 4, -4);
+   glTexCoord2f(0,1);
+   glVertex2f(-4, -4);
+   glEnd();
+   glDisable(GL_TEXTURE_2D);
+
+}
+
+function LoadRandomParallaxTexture() {
+   parallax_tex.unload();
+   int r=(1+rnd(3));
+   print "LoadRandomParallaxTexture("+r+")";
+   parallax_tex.loadImage("parallax"+r+".png",128,128,4);
+   parallax_tex.flags=TEX_MODULATE|TEX_REPEAT_T|TEX_REPEAT_S;//|TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+}
+
+function DrawParallax() compile {
+   parallax_tex.bind();
+   glColor4f(0.3246,0.3246,0.3246,1);
+   glEnable(GL_TEXTURE_2D);
+   glBegin(GL_QUADS);
+   glTexCoord2f(0,0);
+   glVertex2f(-16, 16);
+   glTexCoord2f(16,0);
+   glVertex2f( 16, 16);
+   glTexCoord2f(16,16);
+   glVertex2f( 16, -16);
+   glTexCoord2f(0,16);
+   glVertex2f(-16, -16);
+   glEnd();
+   glDisable(GL_TEXTURE_2D);
+}
+
+function DrawRadar() compile {
+   Vector spos;
+   glEnable(GL_BLEND);
+
+   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+   glColor4f(0,0,0,0.3);
+   glBegin(GL_QUADS);
+   glVertex2f(0.45,-0.45);
+   glVertex2f(0.95,-0.45);
+   glVertex2f(0.95,-0.95);
+   glVertex2f(0.45,-0.95);
+   glEnd();
+   glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+   glLineWidth(2.0);
+   glBegin(GL_QUADS);
+   glVertex2f(0.45,-0.45);
+   glVertex2f(0.95,-0.45);
+   glVertex2f(0.95,-0.95);
+   glVertex2f(0.45,-0.95);
+   glEnd();
+   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+   glLineWidth(1.0);
+
+   glEnable(GL_TEXTURE_2D);
+   world_tex.bind();
+
+   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR );
+   glBegin(GL_QUADS);
+   glColor4f(0.1,0.47,0.1,1);
+   glTexCoord2f(0,0);
+   glVertex2f(0.45,-0.45);
+   glTexCoord2f(1,0);
+   glVertex2f(0.95,-0.45);
+   glTexCoord2f(1,1);
+   glVertex2f(0.95,-0.95);
+   glTexCoord2f(0,1);
+   glVertex2f(0.45,-0.95);
+   glEnd();
+
+   glDisable(GL_BLEND);
+   glDisable(GL_TEXTURE_2D);
+
+   glColor4f(1.0,0,0,0.35);
+   spos.initScale(ply_pos, 0.0625);
+   spos.add(vector(0.7,-0.7,10));
+   glRectf(spos.x-0.01,spos.y-0.01,spos.x+0.01,spos.y+0.01);
+
+   if(dest_platform>=0)
+   {
+      glColor4f(0,1,1,0.35);
+      Entity e<=platforms[dest_platform];
+      spos=e.pos;
+      spos.x+=(e.sx*0.5);
+      spos.y+=(e.sy*0.5);
+      spos.scalef(0.0625);
+      spos.add(vector(0.7,-0.7,10));
+      glRectf(spos.x-0.01,spos.y-0.01,spos.x+0.01,spos.y+0.01);
+   }
+
+}
+
+function DrawSingleText(float _x, float _y, float _sx, float _sy, String _s) {
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+   glColor4f(1,1,1,1);
+   glEnable(GL_TEXTURE_2D);
+   font.output(_x, _y, 0, _s, _sx, _sy);
+   glDisable(GL_TEXTURE_2D);
+   glDisable(GL_BLEND);
+}
+
+function DrawNumberText(float _x, float _y, String _text) {
+   glEnable(GL_TEXTURE_2D);
+   glColor3f(1,1,1);
+   tex_numbers.bind();
+   int i=0;
+   int l=_text.length;
+   l=l>0?(l-1):0;
+   glBegin(GL_QUADS);
+   compile loop(l)
+   {
+      int c=_text[i++];
+      float u= (c-'0')* (24.0/256.0) + (1.0/256.0);
+      float uw= (21.0/256.0);
+      float v=(1.0/256.0);
+      float vh=(22.0/256.0);
+      glTexCoord2f(u,v);
+      glVertex2f(_x, _y);
+      glTexCoord2f(u+uw,v);
+      glVertex2f(_x+24, _y);
+      glTexCoord2f(u+uw,v+vh);
+      glVertex2f(_x+24, _y+22);
+      glTexCoord2f(u,v+vh);
+      glVertex2f(_x, _y+22);
+      _x=_x+24;
+   }
+   glEnd();
+}
+
+
+function DrawOverlays()  {
+   zglInit2D(Viewport.width, Viewport.height); 
+
+   String s="score: "+ply_score;
+   if(!s_msg.isBlank())
+      s.append("  >\""+s_msg+"\"");
+   int scmsgw=font.getWidth(s);
+
+   compile {
+
+      glDisable(GL_TEXTURE_2D);
+      int vy=Viewport.height;
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+      glColor4f(0,0,0,0.7);
+      glBegin(GL_QUADS);
+      glVertex2f(10,vy-(600-(478+88)));
+      glVertex2f(55+scmsgw,vy-(600-(478+88)));
+      glVertex2f(55+scmsgw,vy-(600-(500+88)));
+      glVertex2f(10,vy-(600-(500+88)));
+      glEnd();
+
+      glEnable(GL_TEXTURE_2D);
+
+      // --- draw score ----
+      glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+      glColor4f(1,1,1,1);
+      font.output(20,vy-(600-(485+88)), 0, s, 1, 1);
+
+      // draw mapname
+      float tw=font.getWidth(mapname)+10;
+      font.output( (Viewport.width-tw*2), 11, 0, mapname, 2, 1);
+      glColor4f(0.6,0.6,0.6,1);
+      font.output( (Viewport.width-tw*2)-40, 11, 0, "MAP:", 1, 1);
+
+      // draw # of passengers left
+      glColor4f(0.8,0.8,0.1,1);
+      DrawNumberText(10, 11, String(mappassengers));
+
+
+      glDisable(GL_TEXTURE_2D);
+
+      // --- draw remaining player energy ----
+      glBlendFunc(GL_ONE, GL_SRC_ALPHA);
+      glColor4f(0,0.75,0.2,0.25);
+      glBegin(GL_QUADS);
+      glVertex2f(10,vy-(600-(478+88)));
+      glVertex2f((240*ply_energy)+10,vy-(600-(478+88)));
+      glVertex2f((240*ply_energy)+10,vy-(600-(475+88)));
+      glVertex2f(10,vy-(600-(475+88)));
+      glEnd();
+
+      glDisable(GL_BLEND);
+   }
+}
+
+function onDraw() compile {
+   glDisable(GL_DEPTH_TEST);
+   glClearColor(0.1,0.1,0.1,0);
+   glClear(GL_COLOR_BUFFER_BIT);
+   zglInitOrtho( (4/3.0), 1 * (1.33/1.66));
+   glLoadIdentity();
+
+   float dt=FPS.precision;
+   if(dt>4)dt=4;
+
+   CalcGame(dt);
+
+   mapviewtransl.blend(ply_pos, 0.1*dt);
+   Vector ppos=mapviewtransl;
+   //clamp ppos vector(-4+((4/3.0)*(1.33/1.66)),-3*(1.66/1.33),0) vector(4-(4.0/3)*(1.33/1.66),3*(1.66/1.33),0);
+   clamp ppos vector(-4+((4/3.0)),-3*1.06,0) vector(4-(4.0/3),3*1.06,0);
+
+   if(b_parallax)
+   {
+      glPushMatrix();
+      glScalef(-0.25,-0.25,0);
+      zglTranslatev(ppos);
+      DrawParallax();
+      glPopMatrix();
+   }
+
+   ppos.neg();
+   zglTranslatev(ppos);
+
+   if(b_particles)
+      DrawParticles();
+   DrawEntities();
+   DrawPlayer();
+
+   // (note) GL_ALPHA_TEST is extremely slow on SGX533 (Pandora)
+   // glEnable(GL_ALPHA_TEST);
+   // glAlphaFunc(GL_GREATER, 0);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glEnable(GL_BLEND);
+   DrawMap();
+   glDisable(GL_BLEND);
+   // glDisable(GL_ALPHA_TEST);
+
+
+   glLoadIdentity();
+   if(b_scores)
+      DrawOverlays();
+   zglInitOrtho(1, 1);
+   if(b_radar)
+      DrawRadar();
+
+   // // if(b_fullscreen)
+   // //    Viewport.waitVBlank();
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed) {
+      case 'w': b_wateranim=1-b_wateranim; print "b_wateranim="+b_wateranim; break;
+      case 'b': LoadRandomParallaxTexture(); break;
+      case 'z': LoadNextMap(); break;
+      case 'd': draw_coll_debug=1-draw_coll_debug; print "draw_coll_debug="+draw_coll_debug; break;
+      case '1': b_parallax=1-b_parallax; print "b_parallax="+b_parallax; break;
+      case '2': b_radar=1-b_radar; print "b_radar="+b_radar; break;
+      case '3': b_scores=1-b_scores; print "b_scores="+b_scores; break;
+      case '4': b_particles=1-b_particles; print "b_particles="+b_particles; break;
+      case '5': b_move_particles=1-b_move_particles; print "b_move_particles="+b_move_particles; break;
+      case 'f': Viewport.toggleFullScreen(); b_fullscreen=1-b_fullscreen; break;
+      case 'v': b_vsync = !b_vsync; Viewport.swapInterval(b_vsync); break;
+      case 'n': NextPlatform(); print "nextplatform()"; break;
+      case 'r': b_realtime=1-b_realtime; if(b_realtime) {
+         FPS.limit=0;
+      }
+      else
+         FPS.limit=62;
+         FPS.reset();
+         print "b_realtime="+b_realtime;
+         break;
+      case VKEY_SPACE: ply_boost=1; break;
+      case VKEY_LEFT:  ply_hmove=-1; break;
+      case VKEY_RIGHT: ply_hmove=1;  break;
+      case VKEY_UP:
+      case VKEY_PAGEDOWN: // 'X' button on Pandora
+         ply_vmove=1;
+         break;
+      case VKEY_DOWN:  ply_vmove=0;/*-1;*/ break;
+      case VKEY_ESCAPE: 
+      case 'q':
+         SDL.exitEventLoop();
+         break;
+   }
+   switch(_k.released){
+      case VKEY_LEFT:  ply_hmove=(ply_hmove==-1)?0:ply_hmove; break;
+      case VKEY_RIGHT: ply_hmove=(ply_hmove==1)?0:ply_hmove; break;
+      case VKEY_UP:
+      case VKEY_PAGEDOWN: // 'X' button on Pandora
+         ply_vmove=(ply_vmove==1)?0:ply_vmove; ply_vmove_released=true;
+         break;
+      case VKEY_DOWN:  ply_vmove=(ply_vmove==-1)?0:ply_vmove; break;
+   }
+}
+
+function onOpen() {
+   FPS.reset();
+   if(!world_tex_name.isBlank())
+      LoadWorldTex(world_tex_name);
+   int i=0;
+   font.loadPixelFont("arial14");
+   LoadRandomParallaxTexture();
+
+   tex_particle.unload();
+   tex_particle.loadImage("particle.png",64,64,4);
+   tex_particle.flags=TEX_MODULATE|TEX_MAGFILTERLINEAR;
+
+   tex_fish.unload();
+   tex_fish.loadImage("fish.png",64,64,4);
+   tex_fish.flags=TEX_MODULATE|TEX_MAGFILTERLINEAR|TEX_MINFILTERLINEAR;
+
+   tex_numbers.unload();
+   tex_numbers.loadImage("numbers.png",256,256,4);
+   tex_numbers.flags=TEX_MODULATE;
+}
+
+function main() {
+   use callbacks;
+
+   FPS.max=200;
+   FPS.limit=62;
+   FPS.tickInterval=1000.0/50;
+
+   Time t; t.now();
+   srand(t.sec*10000+t.min*10000+t.sec*2000+t.yearday*100);
+
+   AddMessage("Welcome to Gravity Taxi!", 240);
+   AddMessage("Hey, Taxi!", 200);
+
+   LoadMapList();
+   LoadFillPatterns();
+   StartGame();
+   ply_score=0;
+
+   //Viewport.openWindow(640,480);
+   Viewport.openWindow(800, 480);
+   Viewport.swapInterval(b_vsync);
+   SDL.eventLoop();
+}
