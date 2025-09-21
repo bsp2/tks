@@ -1,0 +1,2174 @@
+// ----
+// ---- file   : main.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : DiaGraph main module
+// ----
+// ---- created: 02Mar2024
+// ---- changed: 03Mar2024, 04Mar2024, 05Mar2024, 06Mar2024, 10Mar2024, 11Mar2024, 12Mar2024
+// ----          13Mar2024, 14Mar2024, 15Mar2024, 16Mar2024, 17Mar2024, 18Mar2024, 19Mar2024
+// ----          20Mar2024, 21Mar2024, 22Mar2024, 23Mar2024, 24Mar2024, 25Mar2024, 26Mar2024
+// ----          28Mar2024, 29Mar2024, 02Apr2024, 03Apr2024, 04Apr2024, 05Apr2024, 08Apr2024
+// ----          18Feb2025, 20Feb2025, 21Feb2025, 22Feb2025, 23Feb2025, 12Sep2025
+// ----
+// ----
+// ----
+
+// cmdline args:
+//   xxxxxxxxxxxxxxxx all        **deprecated** run all hard-coded tests (setupTest*()) (superceded by *.gr files)
+//   -cli
+//   -headless   CLI mode (don't open window)
+//   -v          verbose output
+//   -q          quiet
+//   -nomsaa     turn off multi-sampling
+//   -svg        export to .svg
+//   -html       export to .html (embed svg)
+//   -s <factor> graphics scaling factor (1.0 .. 4.0)
+//   -wb         OpenGL preview: set surrounding background color to white (e.g. for PNG export)
+//   -d <level>  enable debug output (debug level 1)
+//               enable Graph/GraphForm debug output (debug level 2)
+//               enable Graph/GraphForm debug output (debug level 3)
+//               enable Graph/GraphForm debug output (debug level 4)
+//   -pro        enable profiling
+//   -pro2       enable GraphForm profiling
+//   -lodpi      enable Low DPI mode
+//   -spc        debug-print empty cells as ' ' instead of '.'
+//   -i <path>
+//   -I <path>   add include path
+//   -o <path>   set output directory
+//   -t          test mode: ignore output directory and write "test_svg.html" to current dir
+//   xxxxxxxxxxxxxxxx grall      run all gr/*.gr tests
+//   <file.gr>  run single .gr test
+//
+
+// keyboard shortcuts:
+//          ESCAPE: quit
+//   lalt - RETURN: toggle fullscreen
+//               h: debug-print layer hierarchy
+//               n: debug-print main graph nodes and edges (verbose)
+//               m: debug-print main graph nodes and edges
+//               r: redraw all
+//              UP: select next .gr file
+//            DOWN: select previous .gr file
+//      SPACE / F5: reload current .gr file
+//
+
+module Main;
+
+use namespace ui;
+use namespace graph;
+
+RootForm *root_form;
+
+boolean b_verbose = 1;
+
+boolean b_debug  = 0;
+boolean b_debug2 = 0;  // Graph/GraphForm debug
+boolean b_debug4 = 0;  // printHierarchy()
+
+boolean b_profile = 0;
+
+boolean b_export_svg  = 0;
+boolean b_export_html = 0;
+
+boolean b_lodpi;
+boolean b_nomsaa;
+
+int debug_level;
+
+int input_file_idx = 0;
+StringArray input_files;
+
+StringArray inc_paths;
+
+String  output_dir;
+boolean b_test_mode;
+
+float ui_scaling_factor = -1.0f;
+
+boolean b_white_bg = false;
+
+
+StringArray all_tests = [
+   "gr/test0.gr",    // node decl
+   "gr/test1.gr",    // a->b->c
+   "gr/test2.gr",    // comments
+   "gr/test2b.gr",   // node_spacing
+   "gr/test2c.gr",   // node_spacing
+   "gr/test2d.gr",   // node_spacing, flip_x_opt
+   "gr/test3.gr",    // bgtint and anonymous/default style class
+   "gr/test4.gr",    // a;b;c
+   "gr/test5.gr",    //
+   "gr/test6.gr",    //
+   "gr/test7.gr",    // named main graph
+   "gr/test8.gr",    // anonymous main graph
+   "gr/test9.gr",    // swap dir
+   "gr/test10.gr",   // swap dir
+   "gr/test11.gr",   // two separate branches
+   "gr/test12.gr",   //
+   "gr/test13.gr",   // collision helper nodes
+   "gr/test13b.gr",  // collision helper nodes. edge_shape=rcurve
+   "gr/test14.gr",   // ipl subtree test
+   "gr/test14b.gr",  // ipl subtree test
+   "gr/test14c.gr",  // ipl subtree test
+   "gr/test15.gr",   // ipl subtree test
+   "gr/test16.gr",   // sub graph test (rotate)
+   "gr/test17.gr",   // sub graph test (rotate)
+   "gr/test18.gr",   // sub graph test (flip_x_opt, reverse edge)
+   "gr/test18b.gr",  // sub graph test (implicit anchor)
+   "gr/test18c.gr",  // sub graph test (explicit anchor)
+   "gr/test18d.gr",  // sub graph test (no unfolding. inherit node bgtint from parent graph)
+   "gr/test19.gr",   // style classes
+   "gr/test20.gr",   // style classes
+   "gr/test21.gr",   // node and edge labels
+   "gr/test22.gr",   // sub graph short form, vertical leaf subtree optimization
+   "gr/test23.gr",   // table layout
+   "gr/test23b.gr",  // table layout (| syntax)
+   "gr/test23c.gr",  // table layout (nested sub graph)
+   // "gr/test23c2.gr", // table layout (nested sub graph) (DEBUG)
+   // "gr/test23c3.gr", // table layout (nested sub graph) (DEBUG)
+   "gr/test23d.gr",  // table layout (nested sub graph with nested table subgraph)
+   "gr/test23e.gr",  // table layout (simplified debug version of test23d.gr)
+   "gr/test23f.gr",  // table layout (even more simplified debug version of test23d.gr)
+   "gr/test24.gr",   // fixed layout
+   "gr/test25.gr",   // mixed grid+fixed layouts, vertical leaf subtree optimization
+   "gr/test25b.gr",  // mixed grid+fixed layouts, vertical leaf subtree optimization. don't unfold table subgraph.
+   "gr/test26.gr",   // edge styles (normal ->, dotted .>, dashed =>, bold >>, invisible ~>
+   "gr/test27a.gr",  // test17/23d debug (simple node)
+   "gr/test27b.gr",  // test17/23d debug (table node)
+   "gr/test28.gr",   // palette test
+   "gr/test28b.gr",  // palette test (palette selection)
+   "gr/test29.gr",   // "pad", "align" and "border*" node attribute test
+   "gr/test30.gr",   // "bgfill" node attribute and round shape test
+   "gr/test31.gr",   // "tint" and "border_blend" attribute test
+   "gr/test32.gr",   // "pixel_layout=grid" row span test.
+   "gr/test32b.gr",  // "pixel_layout=grid" row+col span and bg_pattern test.
+   "gr/test32c.gr",  // "pixel_layout=grid" row+col span and layout weights test.
+   "gr/test32d.gr",  // "pixel_layout=grid" row+col span and layout weights test. auto-find spans. invisible layout-helper nodes.
+   "gr/test32e.gr",  // "pixel_layout=grid" row+col span and layout weights test. invisible connection "port" nodes.
+   "gr/test32f.gr",  // "pixel_layout=grid" row+col span and layout weights test. invisible connection "port" nodes. edge_shape=rcurve
+   "gr/test33.gr",   // XFM widget class + attrib test
+   "gr/test34.gr",   // auto col/row spans and id-renaming
+   "gr/test35.gr",   // gradients
+   "gr/test36.gr",   // shader_toplevel diagram test
+   "gr/test37.gr",   // stacks
+   // "gr/test38.gr",   // hw_toplevel diagram test (v0.1 / invis helper nodes)
+   "gr/test38b.gr",  // hw_toplevel diagram debug 1
+   "gr/test38c.gr",  // hw_toplevel diagram debug 2
+   "gr/test38d.gr",  // hw_toplevel diagram. uses ports instead of invisible helper nodes.
+   "gr/test38e.gr",  // layout hspan test
+   "gr/test39.gr",   // port margins
+   "gr/test40.gr",   // inheritance example
+   "gr/test41a.gr",  // solid, dotted, dashed and stacked rect shapes
+   "gr/test41b.gr",  // solid, dotted, dashed and stacked round shapes
+   "gr/test41.gr",   // solid, dotted, dashed and stacked rhomb shapes
+   "gr/test42.gr",   // solid, dotted, dashed and stacked ellipse shapes
+   "gr/test42b.gr",  // tinted, dashed and stacked ellipse shapes
+   "gr/test43.gr",   // solid, dotted, dashed and stacked diamond shapes
+   "gr/test44.gr",   // solid, dotted, dashed and stacked hexagon shapes
+   "gr/test45.gr",   // solid, dotted, dashed and stacked tri shapes
+   "gr/test46.gr",   // UI test
+   "gr/test46b.gr",  // UI test absolute positioning (experimental)
+   "gr/test46c.gr",  // UI test debug ports layer
+   "gr/test47.gr",   // 'fixed' layout test + ports decl within graph {}
+                         ];
+
+
+// <class.png>
+class MyGraphPortButton : GraphPortButton {
+   public virtual initGraphPortButton() {
+      GraphPortButton::initGraphPortButton();
+      b_ignore_mouse_events = true;
+   }
+}
+
+
+// <class.png>
+class MyGraphForm : GraphForm {
+   int t_process_start;
+
+   int test_idx;
+
+   protected boolean b_alt;
+
+   protected Node *drag_node;
+   protected Port *drag_port;
+   protected Point2f drag_start_rel;    // relative to toplevel node/subgraph
+   protected Point2f drag_start_mouse;  // relative to (this) GraphForm
+   protected Point2f drag_mouse;        // last seen mouse pos, relative to (this) GraphForm
+   protected Port *drag_port_under_mouse;
+   protected Port *ctxmenu_port;
+
+   protected Node *[] a_new_connection_nodes;  // first=ref to source node
+   protected Edge *[] a_new_connection_edges;
+   protected Vector2f[] a_new_connection_points;  // first=srcport, .. conn nodes .., last=dstport
+
+   protected PopupMenu *pm_context;
+   protected PopupMenu *pm_port;
+
+   protected boolean b_snap_to_grid;
+
+
+   public method processGRFile(String _pathname) : boolean {
+      t_process_start = milliSeconds();
+
+      drag_node <= null;
+      drag_port <= null;
+      drag_port_under_mouse <= null;
+      a_new_connection_nodes.free();
+      a_new_connection_edges.free();
+      a_new_connection_points.free();
+
+      if(b_debug)
+         trace "[...] =================================================================== MyGraphForm::processGRFile(\""+_pathname+"\")";
+      test_idx = mathMaxi(0, all_tests.indexOfObject(_pathname, 0));
+      local String buf;
+      if(buf.loadLocal(_pathname, true/*bRemoveCR*/))
+      {
+         last_gr_pathname = _pathname;
+
+         if(!UI.b_headless)
+            Viewport.caption = _pathname+" ("+(test_idx+1)+"/"+all_tests.numElements+")";
+
+         boolean r = parseGraphForm(buf, _pathname);
+         UI.SetKeyboardFocus(root_form);
+         return r;
+      }
+      else
+         trace "[---] MyGraphForm::processGRFile: failed to open \""+_pathname+"\" for reading";
+      return false;
+   }
+
+   public method processGRSingle(String _pathName) {
+      if(_pathName >= ".gr")
+      {
+         if(processGRFile(_pathName))
+         {
+            if(b_debug) trace "[+++] graph_form.processGRFile(\""+_pathName+"\") succeeded";
+         }
+         else
+         {
+            trace "[---] graph_form.processGRFile(\""+_pathName+"\") failed";
+            exit(10);
+         }
+      }
+   }
+
+   public method processGR() {
+      if(input_files.numElements > 0)
+      {
+         local String grPathname;
+
+         grPathname = input_files.get(input_file_idx);
+         input_files.remove(grPathname);
+
+         if("grall" == grPathname)
+         {
+            int numFailed = 0;
+            int numTests = 0;
+            foreach grPathname in all_tests
+            {
+               numTests++;
+               trace "------------------------------------------------ "+grPathname;
+               if(!processGRFile(grPathname))
+                  numFailed++;
+            }
+
+            if(0 == numFailed)
+            {
+               trace "[+++] "+numTests+"/"+numTests+" tests succeeded :-)";
+               exit(0);
+            }
+            else
+            {
+               trace "[---] "+numFailed+"/"+numTests+" tests failed :-(";
+               exit(10);
+            }
+         }
+         else
+         {
+            processGRSingle(grPathname);
+         }
+      }
+   }
+
+   public method wantKeyRepeat(Key _k) : boolean {
+      return false;
+   }
+
+   public method nextFile() {
+      processGRFile(all_tests.get(mathWrapi(test_idx + 1, 0, all_tests.numElements)));
+      UI.LayoutRootLayer();
+      UI.RedrawAll();
+   }
+
+   public method previousFile() {
+      processGRFile(all_tests.get(mathWrapi(test_idx - 1, 0, all_tests.numElements)));
+      UI.LayoutRootLayer();
+      UI.RedrawAll();
+   }
+
+   public method reloadFile() {
+      float tStart = milliSeconds();
+      float t = tStart;
+      // // processGRFile(all_tests.get(mathWrapi(test_idx, 0, all_tests.numElements)));
+      processGRFile(last_gr_pathname);
+      if(b_profile) trace "[pro] MyGraphForm::reloadFile: processGRFile() took "+(milliSeconds()-t)+" ms";
+      t = milliSeconds();
+      UI.LayoutRootLayer();
+      if(b_profile) trace "[pro] MyGraphForm::reloadFile: LayoutRootLayer() took "+(milliSeconds()-t)+" ms";
+      UI.RedrawAll();
+      if(b_profile) trace "[pro] MyGraphForm::reloadFile: LEAVE. total = "+(milliSeconds() - tStart)+" ms";
+      if(b_debug4) printHierarchy();
+   }
+
+   // <method_get.png>
+   protected method allowConnect(Node _nSrc, Port _pSrc, Node _nDst, Port _pDst) : boolean {
+      // may be overwritten by derived classes
+      return true;
+   }
+
+   // <method_get.png>
+   protected method allowDisconnect(Node _nSrc, Port _pSrc, Node _nDst, Port _pDst) : boolean {
+      // may be overwritten by derived classes
+      return true;
+   }
+
+   // <ui_focus.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <method_find.png>
+   protected method traverseEdgeChain(Edge _e,
+                                      PointerArray _aRemoveEdges,  // edges done
+                                      PointerArray _aRemoveNodes   // helper nodes done
+                                      ) : Edge {
+      // returns last edge in chain
+      Node *n;
+      Edge *e;
+      Edge eCur <= _e;
+      Node nSrc <= eCur.tail;
+      Node nDst <= eCur.head;
+      Edge eLast <= _e;
+
+      Node *nPrev;
+      if(nSrc.b_multi_helper)
+      {
+         _aRemoveNodes.add(nSrc);
+         nPrev <= nSrc;
+      }
+      else if(nDst.b_multi_helper)
+      {
+         _aRemoveNodes.add(nDst);
+         nPrev <= nDst;
+      }
+      else
+         nPrev <= null;  // direct connection
+
+      while(null != eCur)
+      {
+         // trace "xxx eCur="+#(eCur);
+         // trace "xxx   eCur.string="+eCur.getString();
+         _aRemoveEdges.add(eCur);
+         eLast <= eCur;
+         eCur <= null;
+         if(null != nPrev)
+         {
+            foreach e in graph.edges
+            {
+               if(!_aRemoveEdges.containsPointer(e))
+               {
+                  if(e.connectsTo(nPrev))
+                  {
+                     n <= e.getOtherNode(nPrev);
+                     if(n.b_multi_helper)
+                     {
+                        nPrev <= n;
+                        _aRemoveNodes.add(nPrev);
+                        eCur <= e;
+                        break;
+                     }
+                     else
+                     {
+                        // last helper node to dst
+                        eCur <= e;
+                        break;
+                     }
+                  }
+               }
+            }
+         }
+         else
+            break;
+      }
+
+      return eLast;
+   }
+
+   // <method_find.png>
+   protected method findEdgeChainEnd(Edge _e) : Edge {
+      local PointerArray aEdgesDone;
+      local PointerArray aNodesDone;
+      Edge eLast <= traverseEdgeChain(_e, aEdgesDone, aNodesDone);
+      return eLast;
+   }
+
+   // <method.png>
+   protected method removeEdgeChain(Edge _e) {
+      local PointerArray aRemoveEdges;
+      local PointerArray aRemoveNodes;
+      traverseEdgeChain(_e, aRemoveEdges, aRemoveNodes);
+
+      Edge *e;
+      foreach e in aRemoveEdges
+         graph.removeEdge(e);
+
+      Node *n;
+      foreach n in aRemoveNodes
+         graph.removeNode(n);
+   }
+
+   // <method.png>
+   protected method handleDisconnectByIdx(int _idx) : boolean {
+      if(null != ctxmenu_port)
+      {
+         Node nPort <= ctxmenu_port.parent_node;
+         Edge *e;
+         Edge eDisconnect <= null;
+         int disconnectIdx = 0;
+         foreach e in graph.edges
+         {
+            if(e.connectsTo(nPort))
+            {
+               if(@(e.head_port) == @(ctxmenu_port))
+               {
+                  if(disconnectIdx == _idx)
+                  {
+                     eDisconnect <= e;
+                     break;
+                  }
+                  disconnectIdx++;
+               }
+               else if(@(e.tail_port) == @(ctxmenu_port))
+               {
+                  if(disconnectIdx == _idx)
+                  {
+                     eDisconnect <= e;
+                     break;
+                  }
+                  disconnectIdx++;
+               }
+            }
+         }
+
+         if(null != eDisconnect)
+         {
+            removeEdgeChain(eDisconnect);
+            // // graph.removeEdge(eDisconnect);
+            updateGraphAfterEdit();
+            return true;
+         }
+
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method toggleSnapToGrid() {
+      b_snap_to_grid = !b_snap_to_grid;
+      trace "[...] MyGraphForm::onKey: b_snap_to_grid="+b_snap_to_grid;
+   }
+
+   // <method.png>
+   protected method snapPointToGrid(Point2f p, Layer _lSkipParent) {
+      float maxDistX = 24;
+      float maxDistY = 18;
+      float bestDistX = 999999;
+      float bestDistY = 999999;
+      float bestDistX2 = 999999;
+      float bestDistY2 = 999999;
+      float bestX;
+      float bestY;
+      Layer lNearestX <= null;
+      Layer lNearestY <= null;
+
+      Layer l <= first_child;
+      while(null != l)
+      {
+         if(!l.hasParentOrIs(_lSkipParent))
+         {
+            Point2f pCtr; pCtr.init( (l.position_x + l.size_x*0.5) / UI.font_scaling,
+                                     (l.position_y + l.size_y*0.5) / UI.font_scaling
+                                     );
+
+            float d2 = (pCtr-p).abs;
+
+            if(d2 < bestDistX2)
+            {
+               float dx = abs(pCtr.x - p.x);
+               if(dx < maxDistX && dx < bestDistX)
+               {
+                  lNearestX <= l;
+                  bestDistX = dx;
+                  bestX = pCtr.x;
+                  bestDistX2 = d2;
+               }
+            }
+
+            if(d2 < bestDistY2)
+            {
+               float dy = abs(pCtr.y - p.y);
+               if(dy < maxDistY && dy < bestDistY)
+               {
+                  lNearestY <= l;
+                  bestDistY = dy;
+                  bestY = pCtr.y;
+                  bestDistY2 = d2;
+               }
+            }
+         }
+
+         l <= l.next;
+      }
+
+      if(null != lNearestX)
+      {
+         p.x = bestX;
+      }
+
+      if(null != lNearestY)
+      {
+         p.y = bestY;
+      }
+
+   }
+
+   // <method.png>
+   protected method snapPixelToGrid(Point2f _p) {
+      if(b_snap_to_grid)
+      {
+         _p.mulf(1.0f / UI.font_scaling);
+         snapPointToGrid(_p, null/*lSkipParent*/);
+         _p.mulf(UI.font_scaling);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNewNodeTest() {
+      trace "[dbg] handleNewNodeTest";
+      Node n <= graph.addNode("test");
+      n.setGRAttrib("border_width", "4.0");
+      n.setGRAttrib("p", "0;0");
+      n.setGRAttrib("s", "32;32");
+      trace "xxx handleNewNodeTest: n="+#(n);
+      updateGraphAfterEdit();
+   }
+
+   // <ui_handle.png>
+   protected method handleNewNodeConn() {
+      trace "[dbg] handleNewNodeConn";
+      Node n <= graph.addNode(" ");
+      // n.initHelper();
+      n.setGRAttrib("border_width", "1.0");
+      n.setGRAttrib("p", "0;0");
+      n.setGRAttrib("s", "8;8");
+      trace "xxx handleNewNodeConn: n="+#(n);
+      updateGraphAfterEdit();
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addCheckButton("Snap to grid", b_snap_to_grid, "snap_to_grid");
+      pmb.setAccelerators("", "s");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("New test node",
+                                 "node_new_test"
+                                 );
+      pmb <= pm.addDefaultButton("New conn node",
+                                 "node_new_conn"
+                                 );
+      pmb.setActive(true);
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-20,-20);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      trace "[dbg] MyGraphForm::showContextMenu";
+   }
+
+   // <method.png>
+   protected method getEdgeChainStringUI(Edge _eTail, Edge _eHead) : String {
+      return _eTail.getTailStringUI()+" -> "+_eHead.getHeadStringUI();
+   }
+
+   // <ui_show.png>
+   protected method showPortContextMenu(boolean _bFocusFirst) {
+      if(null != ctxmenu_port)
+      {
+         pm_port <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_port;
+
+         // pm.addSeparator();
+
+         Node nPort <= ctxmenu_port.parent_node;
+         Edge *e;
+         Edge *eLast;
+         int disconnectIdx = 0;
+         foreach e in graph.edges
+         {
+            if(e.connectsTo(nPort))
+            {
+               trace "[trc] MyGraphForm::showPortContextMenu:  candidate e="+#(e);
+               if(@(e.head_port) == @(ctxmenu_port))
+               {
+                  eLast <= findEdgeChainEnd(e);
+                  // trace "xxx 1 eLast="+#(eLast);
+
+                  pmb <= pm.addDefaultButton("Disconnect \""+getEdgeChainStringUI(eLast, e)+"\"",
+                                             "disconnect_"+disconnectIdx
+                                             );
+                  pmb.setActive( allowDisconnect(e.tail, e.tail_port, e.head, e.head_port) );
+                  disconnectIdx++;
+               }
+               else if(@(e.tail_port) == @(ctxmenu_port))
+               {
+                  eLast <= findEdgeChainEnd(e);
+                  // trace "xxx 2 eLast="+#(eLast);
+
+                  pmb <= pm.addDefaultButton("Disconnect \""+getEdgeChainStringUI(e, eLast)+"\"",
+                                             "disconnect_"+disconnectIdx
+                                             );
+                  pmb.setActive( allowDisconnect(e.tail, e.tail_port, e.head, e.head_port) );
+                  disconnectIdx++;
+               }
+            }
+         }
+
+         if(disconnectIdx > 0)
+         {
+            pm.resizeToMinimum();
+            pm.showNearMouse(-20,-20);
+            if(_bFocusFirst)
+               pm.focusNextMenuItem();
+
+            trace "[dbg] MyGraphForm::showPortContextMenu";
+         }
+         else
+         {
+            // No connections
+         }
+      }
+   }
+
+   protected method updateGraphAfterEdit() {
+      t_process_start = milliSeconds();
+      handleResize();
+      UI.SetMouseFocus(this);
+      UI.RedrawAll();
+   }
+
+   protected method handleDragPortEnd() {
+      if(null != drag_port &&
+         null != drag_port_under_mouse &&
+         @(drag_port) != @(drag_port_under_mouse)
+         )
+      {
+         trace "[trc] MyGraphForm::handleDragPortEnd: drag_port_under_mouse.parent_node="+#(drag_port_under_mouse.parent_node);
+         if(@(drag_port_under_mouse.parent_node) != @(drag_node) &&
+            @(drag_port_under_mouse.parent_node) != @(drag_port.parent_node)
+            )
+         {
+            Node nSrc <= a_new_connection_nodes.last;
+            Node nDst <= drag_port_under_mouse.parent_node;
+            // // trace "xxx   nSrc.parent_subgraph="+#(nSrc.parent_subgraph);
+            // // trace "xxx   nDst.parent_subgraph="+#(nDst.parent_subgraph);
+            // // if(@(nSrc.parent_subgraph) == @(nDst.parent_subgraph))
+            if(1)
+            {
+               // trace "xxx a_new_connection_nodes="+#(a_new_connection_nodes);
+               Port pSrc <= (1 == a_new_connection_nodes.numElements) ? drag_port : null;
+               Port pDst <= drag_port_under_mouse;
+
+               if(allowConnect(nSrc, pSrc, nDst, pDst))
+               {
+                  trace "[trc] MyGraphForm::handleDragPortEnd: connect "+nSrc.id+((null != pSrc)?(":"+pSrc.id):"")+" to "+nDst.id+":"+pDst.id;
+
+                  Edge e <= graph.addEdge(nSrc/*tail*/, nDst/*head*/);
+                  e.b_force_placed = true;
+                  e.tail_port <= pSrc;
+                  e.head_port <= pDst;
+
+                  if(null != pSrc && null != pDst)
+                  {
+                     // Direct connection with no helper nodes in between
+                     e.setGRAttrib("edge_width_start", 0.5f);
+                     e.setGRAttrib("edge_width_end",   2.0f);
+                  }
+
+                  a_new_connection_edges.add(e);
+                  a_new_connection_points.add(drag_mouse);
+                  if(!b_snap_to_grid)
+                     updateNewConnectionEdgeDirs();
+
+                  updateGraphAfterEdit();
+               }
+            }
+         }
+      }
+   }
+
+   protected method createNewConnectionHelperNodeAtDragMouse() {
+      Node nSrc <= a_new_connection_nodes.last;
+      trace "[dbg] createNewConnectionHelperNodeAtDragMouse: nSrc.id="+nSrc.id;
+      Node nDst <= graph.addNode("");
+      nDst.b_multi_helper = true;
+      nDst.setGRAttrib("border_width", "1.0");
+      nDst.setGRAttrib("p", "0;0");
+      nDst.setGRAttrib("s", "3;3");
+      nDst.setGRAttrib("bgcolor", "#ff000000");
+      Point2f dst;
+      dst.x = drag_mouse.x / UI.font_scaling;
+      dst.y = drag_mouse.y / UI.font_scaling;
+      if(b_snap_to_grid)
+         snapPointToGrid(dst, null/*lSkipParent*/);
+      dst.add2f(-1.5f, -1.5f);
+      if(dst.x < 0.0f) dst.x = 0.0f;
+      if(dst.y < 0.0f) dst.y = 0.0f;
+      nDst.moveNode(dst.x, dst.y);
+      // trace "xxx a_new_connection_nodes="+#(a_new_connection_nodes);
+      Port pSrc <= (1 == a_new_connection_nodes.numElements) ? drag_port : null;
+
+      trace "[trc] MyGraphForm::createNewConnectionHelperNodeAtDragMouse: connect "+nSrc.id+((null != pSrc)?(":"+pSrc.id):"")+" to helper";
+
+      // nDst <= drag_port_under_mouse.parent_node;
+      Edge e <= graph.addEdge(nSrc/*tail*/, nDst/*head*/);
+      e.b_force_placed = true;
+      e.tail_port <= pSrc;
+      e.head_port <= null;
+      // // e.setGRAttrib("edge_width_start", 0.5f);
+      // // e.setGRAttrib("edge_width_end",   2.0f);
+      e.setGRAttrib("arrow_len", 5.0f);   // def=6.0
+
+      a_new_connection_nodes.add(nDst);
+      a_new_connection_edges.add(e);
+
+      dst.add2f(1.5f, 1.5f);
+      dst.mulf(UI.font_scaling);
+      drag_start_mouse = dst;
+
+      a_new_connection_points.add(drag_start_mouse);
+
+      updateGraphAfterEdit();
+   }
+
+   protected method endDragNodeOrPort() {
+      if(null != drag_node || null != drag_port)
+      {
+         trace "[dbg] MyGraphForm::endDragNodeOrPort";
+         drag_node <= null;
+         drag_port <= null;
+         selectDragPortUnderMouse(null);
+         a_new_connection_nodes.free();
+         redraw();
+      }
+   }
+
+   protected method selectDragPortUnderMouse(Port _port) {
+      Panel *p;
+      Button *bt;
+
+      if(null != drag_port_under_mouse)
+      {
+         p <= drag_port_under_mouse.getUIPanelLayer();
+         if(p instanceof Panel)
+            p.setPanelHighlightTint(0);
+
+         bt <= drag_port_under_mouse.getUIContentLayer();
+         if(bt instanceof Button)
+            bt.setTint3(0);
+
+         p.redraw();
+      }
+
+      drag_port_under_mouse <= _port;
+
+      if(null != drag_port_under_mouse &&
+         @(drag_port_under_mouse) != @(drag_port) &&
+         @(drag_port_under_mouse.parent_node) != @(drag_node) &&
+         @(drag_port_under_mouse.parent_node) != @(drag_port.parent_node)
+         )
+      {
+         p <= drag_port_under_mouse.getUIPanelLayer();
+         if(p instanceof Panel)
+         {
+            int c32 = #30000000;
+            p.setPanelHighlightTint(c32);
+
+            bt <= drag_port_under_mouse.getUIContentLayer();
+            if(bt instanceof Button)
+               bt.setTint3(c32);
+
+            p.redraw();
+         }
+      }
+
+   }
+
+   protected method findPortAtPointRel(Point2f _pMouse) {
+
+      snapPixelToGrid(_pMouse);
+
+      Point2f pMouse;
+      calcAbsolutePosition(pMouse);
+      pMouse.add(_pMouse);
+      // trace "[trc] MyGraphForm::findPortAtPointRel: pMouse="+pMouse;
+
+      Layer *lChild;
+      Layer *lPanel;
+
+      lChild <= first_child;
+      while(null != lChild)
+      {
+         Port port <= lChild.getGraphData();
+         if(port instanceof Port)
+         {
+            lPanel <= port.getUIPanelLayer();
+            if(lPanel instanceof Layer)
+            {
+               Point2f pPort;
+               lPanel.calcAbsolutePosition(pPort);
+               Rectangle2f rPort;
+               rPort.init(pPort.x,
+                          pPort.y,
+                          pPort.x + lPanel.size_x,
+                          pPort.y + lPanel.size_y
+                          );
+               // trace "[trc] MyGraphForm::findPortAtPointRel: lChild="+#(lChild)+" pPort="+pPort;
+               if(rPort.pointIntersectionTest2f(pMouse.x, pMouse.y))
+               {
+                  trace "[trc] MyGraphForm::findPortAtPointRel: intersect port.id="+port.id;
+                  return port;
+               }
+            }
+         }
+         lChild <= lChild.next;
+      }
+      return null;
+   }
+
+   protected method findDragNodeOrPortAtXY(float _x, float _y, boolean _bAllowPort) {
+      Point2f pThis;
+      calcAbsolutePosition(pThis);
+
+      Point2f pMouse;
+      pMouse = pThis;
+      pMouse.add2f(_x, _y);
+      // trace "[trc] MyGraphForm::findDragNodeOrPortAtXY: pGraph="+pGraph+" pMouse="+pMouse;
+
+      Layer lNodePanel <= null;
+      Layer *lChild;
+      Layer *lPanel;
+
+      if(_bAllowPort)
+      {
+         lChild <= first_child;
+         while(null != lChild)
+         {
+            Port port <= lChild.getGraphData();
+            if(port instanceof Port)
+            {
+               lPanel <= port.getUIPanelLayer();
+               if(lPanel instanceof Layer)
+               {
+                  Point2f pPort;
+                  lPanel.calcAbsolutePosition(pPort);
+                  Rectangle2f rPort;
+                  rPort.init(pPort.x,
+                             pPort.y,
+                             pPort.x + lPanel.size_x,
+                             pPort.y + lPanel.size_y
+                             );
+                  // trace "[trc] MyGraphForm::findDragNodeOrPortAtXY: lChild="+#(lChild)+" pPort="+pPort;
+                  if(rPort.pointIntersectionTest2f(pMouse.x, pMouse.y))
+                  {
+                     trace "[trc] MyGraphForm::findDragNodeOrPortAtXY: intersect port.id="+port.id;
+                     drag_port <= port;
+                     selectDragPortUnderMouse(null);
+                     drag_start_mouse.init(_x, _y);
+                     return;
+                  }
+               }
+            }
+            lChild <= lChild.next;
+         }
+      }
+
+      lChild <= first_child;
+      while(null != lChild)
+      {
+         // // StringArray aPath; aPath[0] = lChild.getLayerId();
+         // // Node n <= graph.recursiveFindNodeByPathRel(aPath);
+         // // // trace "[trc] MyGraphForm::findDragNodeOrPortAtXY: recursiveFindNodeByPathRel([\""+lChild.getLayerId()+"\"]) returned n="+#(n);
+         Node n <= lChild.getGraphData();
+         if(n instanceof Node)
+         {
+            lPanel <= n.getUIPanelLayer();
+            if(lPanel instanceof Layer)
+            {
+               Point2f pNode;
+               lPanel.calcAbsolutePosition(pNode);
+               Rectangle2f rNode;
+               rNode.init(pNode.x,
+                          pNode.y,
+                          pNode.x + lPanel.size_x,
+                          pNode.y + lPanel.size_y
+                          );
+               // trace "[trc] MyGraphForm::findDragNodeOrPortAtXY: lChild="+#(lChild)+" pNode="+pNode;
+               if(rNode.pointIntersectionTest2f(pMouse.x, pMouse.y))
+               {
+                  lNodePanel <= lPanel;
+                  // trace "[dbg] MyGraphForm::findDragNodeOrPortAtXY: ===> pMouse intersect  lChild.id="+lChild.getLayerId();
+                  break;
+               }
+            }
+         }
+         lChild <= lChild.next;
+      }
+
+      if(null != lNodePanel)
+      {
+         // // Node n <= graph.recursiveFindNodeByPathRel(["A"]);
+         // // trace "[trc] MyGraphForm::testMoveSubGraphToXY: recursiveFindNodeByPathRel([\"A\"]) returned n="+#(n);
+
+         // // StringArray aPath; aPath[0] = gfMouse.getLayerId();
+         // // Node n <= graph.recursiveFindNodeByPathRel(aPath);
+         // // trace "[trc] MyGraphForm::findDragNodeOrPortAtXY: recursiveFindNodeByPathRel([\""+gfMouse.getLayerId()+"\"]) returned n="+#(n);
+
+         Point2f pLayer; lNodePanel.calcAbsolutePosition(pLayer);
+         drag_start_rel = pMouse - pLayer;
+         drag_start_mouse.init(_x, _y);
+         drag_node <= n;
+         trace "[dbg] MyGraphForm::findDragNodeOrPortAtXY: new drag_node="+#(n)+" n.id="+n.id+" lNodePanel="+#(lNodePanel)+" rel="+drag_start_rel;
+      }
+   }
+
+   public method moveDragNodeToXY(float _x, float _y) {
+      Node n <= drag_node;
+      if(null != n)
+      {
+         float x = n.getNodeAttrib("x");
+         float y = n.getNodeAttrib("y");
+         Layer lNodePanel <= n.getUIPanelLayer();
+         if(lNodePanel instanceof Layer)
+         {
+            trace "[trc] MyGraphForm::moveDragNodeToXY: curP=("+x+";"+y+") n.id="+n.id+" n.b_helper="+n.b_helper+" lNodePanel.position="+lNodePanel.getPositionString();
+            Point2f dst;
+            dst.x = (_x - drag_start_rel.x) / UI.font_scaling;
+            dst.y = (_y - drag_start_rel.y) / UI.font_scaling;
+            if(dst.x < 0.0f) dst.x = 0.0f;
+            if(dst.y < 0.0f) dst.y = 0.0f;
+            if(b_snap_to_grid)
+            {
+               dst.x += lNodePanel.size_x*0.5 / UI.font_scaling;
+               dst.y += lNodePanel.size_y*0.5 / UI.font_scaling;
+               snapPointToGrid(dst, lNodePanel/*lSkipParent*/);
+               dst.x -= lNodePanel.size_x*0.5 / UI.font_scaling;
+               dst.y -= lNodePanel.size_y*0.5 / UI.font_scaling;
+            }
+            n.moveNode(dst.x, dst.y);
+            updateGraphAfterEdit();
+         }
+      }
+   }
+
+   // // public method testMoveNode46b() {
+   // //    if("gr/test46b.gr" == last_gr_pathname)
+   // //    {
+   // //       Node n <= graph.recursiveFindNodeByPathRel(["A"]);
+   // //       trace "[trc] MyGraphForm::testMoveNode46b: recursiveFindNodeByPathRel([\"A\"]) returned n="+#(n);
+   // //       if(null != n)
+   // //       {
+   // //          float x = n.getNodeAttrib("x");
+   // //          float y = n.getNodeAttrib("y");
+   // //          trace "[dbg] MyGraphForm::testMoveNode46b: curP=("+x+";"+y+") n.id="+n.id+" n.b_helper="+n.b_helper;
+   // //          n.moveNode(x+3, y+1);
+   // //          t_process_start = milliSeconds();
+   // //          handleResize();
+   // //       }
+   // //    }
+   // // }
+
+   protected method startNewConnection() {
+      a_new_connection_nodes.free();
+      a_new_connection_nodes.add(drag_port.parent_node);  // source node
+      a_new_connection_edges.free();
+      a_new_connection_points.free();
+      a_new_connection_points.add(drag_mouse);
+      trace "[dbg] MyGraphForm::startNewConnection: a_new_connection_nodes="+#(a_new_connection_nodes);
+   }
+
+   protected method cancelNewConnection() {
+      trace "[dbg] MyGraphForm::cancelNewConnection: a_new_connection_nodes="+#(a_new_connection_nodes);
+      if(a_new_connection_nodes.numElements > 1)
+      {
+         // Remove multi-segment helper nodes
+         int nodeIdx = 1;
+         loop(a_new_connection_nodes.numElements - 1)
+         {
+            Node nHelper <= a_new_connection_nodes.get(nodeIdx++);
+            // Remove edges that connect to nHelper
+            int edgeIdx = 0;
+            while(edgeIdx < graph.edges.numElements)
+            {
+               Edge e <= graph.edges.get(edgeIdx++);
+               if(e.connectsTo(nHelper))
+               {
+                  graph.removeEdge(e);
+                  edgeIdx = 0;
+               }
+            }
+            graph.removeNode(nHelper);
+            updateGraphAfterEdit();
+            redraw();
+         }
+      }
+      a_new_connection_nodes.free();
+      a_new_connection_edges.free();
+      a_new_connection_points.free();
+      endDragNodeOrPort();
+   }
+
+   protected method updateNewConnectionEdgeDirs() {
+      // ** unfinished, remove?? **
+      if(a_new_connection_edges.numElements > 1)
+      {
+         Edge eNext <= a_new_connection_edges.get(0);
+         int edgeIdx = 0;
+         Vector2f pCur  <= a_new_connection_points.get(0);
+         Vector2f pNext <= a_new_connection_points.get(1);
+         int pIdx = 1;
+         while(pIdx+1 < a_new_connection_points.numElements)
+         {
+            Edge ePrev <= eNext;
+            eNext <= a_new_connection_edges.get(++edgeIdx);
+
+            Vector2f pPrev <= pCur;
+            pCur <= pNext;
+            pNext <= a_new_connection_points.get(pIdx + 1);
+
+            int dxPrev = pCur.x - pPrev.x;
+            int dyPrev = pCur.y - pPrev.y;
+            boolean bXMajorPrev = abs(dxPrev) > abs(dyPrev);
+
+            int dxNext = pNext.x - pCur.x;
+            int dyNext = pNext.y - pCur.y;
+            boolean bXMajorNext = abs(dxNext) > abs(dyNext);
+
+            trace "xxx pIdx="+pIdx+" dPrev=("+dxPrev+","+dyPrev+") dNext=("+dxNext+","+dyNext+") bXMajorPrev="+bXMajorPrev+" bXMajorNext="+bXMajorNext;
+
+            if(bXMajorPrev)
+            {
+               // dPrev=(82,-36) dNext=(-126,404)
+               if(dyPrev < 0 && dyNext > 0 && dxPrev > 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.LEFT;
+                  eNext.tail_dir = Layout.BOTTOM;
+               }
+               else if(dyPrev < 0 && dyNext > 0 && dxPrev < 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.RIGHT;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               else if(dyPrev > 0 && dyNext < 0 && dxPrev < 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.RIGHT;
+                  eNext.tail_dir = Layout.TOP;
+               }
+               else if(dyPrev > 0 && dyNext > 0 && dxPrev > 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.TOP;
+                  eNext.tail_dir = Layout.BOTTOM;
+               }
+               else if(dyPrev < 0 && dyNext > 0 && dxPrev < 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.RIGHT;
+                  eNext.tail_dir = Layout.BOTTOM;
+               }
+               else if(dyPrev < 0 && dyNext < 0 && dxPrev > 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.BOTTOM;
+                  eNext.tail_dir = Layout.TOP;
+               }
+               else if(dxPrev > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.LEFT;
+                  eNext.tail_dir = Layout.RIGHT;
+               }
+               else if(dxPrev < 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.RIGHT;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               else
+               {
+                  // x-major prev, y-major next
+                  if(dxPrev > 0)
+                  {
+                     if(dyNext > 0)
+                     {
+                        // eNext.tail_dir = Layout.RIGHT;
+                        if(dyPrev > 0)
+                           ePrev.head_dir = Layout.TOP;
+                     }
+                     else
+                     {
+                        if(dyPrev < 0)
+                           ePrev.head_dir = Layout.BOTTOM;
+                     }
+                  }
+                  else
+                  {
+                     if(dyPrev > 0 && dyNext < 0)
+                     {
+                        ePrev.head_dir = Layout.RIGHT;
+                        eNext.tail_dir = Layout.LEFT;
+                     }
+                  }
+
+                  if(dxPrev > 0)
+                  {
+                     if(dxNext > 0)
+                     {
+                     }
+                     else
+                     {
+                     }
+                  }
+               }
+            }
+            else
+            {
+               // dPrev=(56,90) dNext=(250,-45)
+               if(bXMajorNext && dyPrev > 0 && dyNext < 0 && dxNext > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.LEFT;
+                  eNext.tail_dir = Layout.RIGHT;
+               }
+               else if(bXMajorNext && dyPrev > 0 && dyNext < 0 && dxNext > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.TOP;
+                  eNext.tail_dir = Layout.BOTTOM;
+               }
+               else if(bXMajorNext && dyPrev < 0 && dyNext > 0 && dxNext > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.LEFT;
+                  eNext.tail_dir = Layout.RIGHT;
+               }
+               else if(bXMajorNext && dyPrev < 0 && dyNext > 0 && dxNext > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.BOTTOM;
+                  eNext.tail_dir = Layout.TOP;
+               }
+               else if(bXMajorNext && dyPrev > 0 && dyNext < 0 && dxPrev > 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.TOP;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               // dPrev=(45,-466) dNext=(-80,100)
+               else if(dyPrev < 0 && dyNext > 0 && dxPrev > 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.BOTTOM;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               else if(dyPrev < 0 && dyNext > 0 && dxPrev > 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.BOTTOM;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               else if(dyPrev < 0 && dyNext > 0 && dxPrev > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.LEFT;
+                  eNext.tail_dir = Layout.RIGHT;
+               }
+               else if(dyPrev < 0 && dyNext > 0 && dxPrev < 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.RIGHT;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               else if(dyPrev > 0 && dyNext < 0 && dxPrev < 0 && dxNext < 0)
+               {
+                  ePrev.head_dir = Layout.RIGHT;
+                  eNext.tail_dir = Layout.LEFT;
+               }
+               else if(dyPrev > 0 && dyNext < 0 && dxPrev > 0 && dxNext > 0)
+               {
+                  ePrev.head_dir = Layout.LEFT;
+                  eNext.tail_dir = Layout.RIGHT;
+               }
+               else if(dyPrev < 0 && dyNext < 0)
+               {
+                  ePrev.head_dir = Layout.BOTTOM;
+                  eNext.tail_dir = Layout.TOP;
+               }
+               else if(dyPrev > 0 && dyNext > 0)
+               {
+                  ePrev.head_dir = Layout.TOP;
+                  eNext.tail_dir = Layout.BOTTOM;
+               }
+            }
+
+            // if(bXMajorPrev)
+            // {
+            //    if(bXMajorNext)
+            //    {
+            //       if(dxPrev > 0)
+            //       {
+            //          ePrev.head_dir = Layout.LEFT;
+            //          eNext.tail_dir = Layout.RIGHT;
+            //       }
+            //       else
+            //       {
+            //          ePrev.head_dir = Layout.RIGHT;
+            //          eNext.tail_dir = Layout.LEFT;
+            //       }
+            //    }
+            //    else
+            //    {
+            //       // x-major prev, y-major next
+            //       if(dxPrev > 0)
+            //       {
+            //          if(dyNext > 0)
+            //          {
+            //             // eNext.tail_dir = Layout.RIGHT;
+            //             if(dyPrev > 0)
+            //                ePrev.head_dir = Layout.TOP;
+            //          }
+            //          else
+            //          {
+            //             if(dyPrev < 0)
+            //                ePrev.head_dir = Layout.BOTTOM;
+            //          }
+            //       }
+            //       else
+            //       {
+            //          if(dyPrev > 0 && dyNext < 0)
+            //          {
+            //             ePrev.head_dir = Layout.RIGHT;
+            //             eNext.tail_dir = Layout.LEFT;
+            //          }
+            //       }
+
+            //       if(dxPrev > 0)
+            //       {
+            //          if(dxNext > 0)
+            //          {
+            //          }
+            //          else
+            //          {
+            //          }
+            //       }
+            //    }
+            // }
+            // else
+            // {
+            //    if(bXMajorNext)
+            //    {
+            //       if(dxNext > 0)
+            //       {
+            //          ePrev.head_dir = Layout.LEFT;
+            //          eNext.tail_dir = Layout.RIGHT;
+            //       }
+            //       else
+            //       {
+            //          ePrev.head_dir = Layout.RIGHT;
+            //          eNext.tail_dir = Layout.LEFT;
+            //       }
+            //    }
+            //    else
+            //    {
+            //       if(dyPrev > 0 && dyNext > 0)
+            //       {
+            //          trace "xxx vert pIdx="+pIdx;
+            //          ePrev.head_dir = Layout.TOP;
+            //          eNext.tail_dir = Layout.BOTTOM;
+            //       }
+            //       else if(dyPrev < 0 && dyNext < 0)
+            //       {
+            //          ePrev.head_dir = Layout.BOTTOM;
+            //          eNext.tail_dir = Layout.TOP;
+            //       }
+            //       else if(dyPrev < 0 && dyNext > 0 && dxPrev < 0 && dxNext < 0)
+            //       {
+            //          ePrev.head_dir = Layout.RIGHT;
+            //          eNext.tail_dir = Layout.LEFT;
+            //       }
+            //       else if(dyPrev > 0 && dyNext < 0 && dxPrev < 0 && dxNext < 0)
+            //       {
+            //          ePrev.head_dir = Layout.RIGHT;
+            //          eNext.tail_dir = Layout.LEFT;
+            //       }
+            //    }
+            // }
+
+            trace "xxx pCur["+pIdx+"] = "+pCur.string;
+            pIdx++;
+         }
+      }
+   }
+
+   public method finishNewConnection() {
+      handleDragPortEnd();
+      endDragNodeOrPort();
+   }
+
+   protected method rotateMultiHelperEdgeDir(Node _n, boolean _bUp, boolean _bTailOnly) {
+      Edge *e;
+      loop(1)
+      {
+         int connectIdx = 0;
+         int dir = 0;
+         boolean bTail;
+         foreach e in graph.edges
+         {
+            if(0 == connectIdx)
+            {
+               if(@(e.head) == @(_n))
+               {
+                  Layer lTail <= (null != e.tail_port) ? (e.tail_port.getUIPanelLayer()) : e.tail.getUIPanelLayer();
+
+                  if(!_bTailOnly)
+                  {
+                     loop(4)
+                     {
+                        e.head_dir = Layout.CycleDir(e.head_dir, _bUp);
+                        dir = e.head_dir;
+
+                        if(!_n.nodeEdgeOverlap(lTail, e.head_dir))
+                           break;
+                     }
+                  }
+                  else
+                  {
+                     dir = e.head_dir;
+                  }
+
+                  connectIdx++;
+               }
+            }
+            else if(1 == connectIdx)
+            {
+               if(@(e.tail) == @(_n))
+               {
+                  int headDir = dir;
+
+                  if(_bTailOnly)
+                  {
+                     dir = Layout.CycleDir(e.tail_dir, _bUp);
+                  }
+                  else
+                  {
+                     dir = Layout.OppositeDir(dir);
+                  }
+
+                  Layer lHead <= (null != e.head_port) ? (e.head_port.getUIPanelLayer()) : e.head.getUIPanelLayer();
+
+                  loop(4)
+                  {
+                     e.tail_dir = dir;
+
+                     // trace "xxx try tail_dir="+e.tail_dir;
+                     if( (dir != headDir) && !_n.nodeEdgeOverlap(lHead, e.tail_dir))
+                        break;
+
+                     dir = Layout.CycleDir(dir, _bUp);
+                  }
+
+                  connectIdx++;
+                  return;
+               }
+            }
+         }
+      }
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // trace "...........................................................";
+      if(_ev.isLeftButtonDown())
+         trace "[>>>] MyGraphForm::onMouse: graph.id='"+graph.id+"' rel="+_ev.getRelString()+" abs="+_ev.getAbsString()+" drag_node="+#(drag_node);
+
+      drag_mouse.init(_ev.mouse_rel_x, _ev.mouse_rel_y);
+
+      if(b_alt)
+      {
+         if(0 == _ev.changed_state && 0 == _ev.current_state)
+         {
+            if(null == drag_node && null == drag_port)
+            {
+               findDragNodeOrPortAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, false/*bAllowPort*/);
+               trace "[trc] MyGraphForm::onMouse: findDragNodeOrPortAtXY returned drag_node="+#(drag_node);
+            }
+            if(null != drag_node)
+            {
+               moveDragNodeToXY(_ev.mouse_rel_x, _ev.mouse_rel_y);
+            }
+            else if(null != drag_port)
+            {
+               selectDragPortUnderMouse( findPortAtPointRel(drag_mouse) );
+               trace "[trc] MyGraphForm::onMouse: LALT findPortAtPointRel => "+#(drag_port_under_mouse);
+               redraw();
+            }
+         }
+         return true;
+      }
+      else if(_ev.leftButtonDown())
+      {
+         if(null != drag_port)
+         {
+            selectDragPortUnderMouse( findPortAtPointRel(drag_mouse) );
+            trace "[trc] MyGraphForm::onMouse: findPortAtPointRel => "+#(drag_port_under_mouse);
+            redraw();
+
+            if(null != drag_port_under_mouse)
+            {
+               trace "[dbg] MyGraphForm::onMouse: LMB down, connect to target port id="+drag_port_under_mouse.id;
+               finishNewConnection();
+            }
+            else
+            {
+               // (todo) create helper node
+               createNewConnectionHelperNodeAtDragMouse();
+               // cancelNewConnection();
+            }
+         }
+         else
+         {
+            if(null == drag_node && null == drag_port)
+            {
+               findDragNodeOrPortAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, true/*bAllowPort*/);
+               trace "[trc] MyGraphForm::onMouse: LMB down, findDragNodeOrPortAtXY returned drag_node="+#(drag_node);
+            }
+            if(null != drag_port)
+            {
+               selectDragPortUnderMouse( findPortAtPointRel(drag_mouse) );
+               trace "[trc] MyGraphForm::onMouse: findPortAtPointRel => "+#(drag_port_under_mouse);
+               startNewConnection();
+               redraw();
+            }
+         }
+         return true;
+      }
+      else if(_ev.leftButtonUp())
+      {
+         if(null == drag_port)
+         {
+            trace "[dbg] MyGraphForm::onMouse: LMB released, unset drag_node";
+            // // handleEndDragNodeOrPort();
+            endDragNodeOrPort();
+         }
+         // else: ignore LMB release after starting new connection
+         return true;
+      }
+
+      if(null == drag_node && null == drag_port)
+      {
+         if(!UI.KeyModCtrl())
+         {
+            if(_ev.wheelUp() || _ev.wheelDown())
+            {
+               findDragNodeOrPortAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, false/*bAllowPort*/);
+               if(null != drag_node)
+               {
+                  if(drag_node.b_multi_helper)
+                  {
+                     // // rotateMultiHelperEdgeDir(drag_node,
+                     // //                          _ev.wheelUp(),
+                     // //                          (_ev.isRightButtonDown() || UI.KeyModShift())/*bTailOnly*/
+                     // //                          );
+                     rotateMultiHelperEdgeDir(drag_node,
+                                              true/*bUp*/,
+                                              _ev.wheelDown()/*bTailOnly*/
+                                              );
+                     updateGraphAfterEdit();
+                  }
+                  drag_node <= null;
+               }
+               return true;
+            }
+         }
+      }
+
+      if(null != drag_port)
+      {
+         // if(_ev.rightButtonUp())
+         // {
+         //    // // endDragNodeOrPort();
+         //    cancelNewConnection();
+         //    return true;
+         // }
+
+         if(null != drag_port)
+         {
+            selectDragPortUnderMouse( findPortAtPointRel(drag_mouse) );
+            // trace "[trc] MyGraphForm::onMouse: LMB findPortAtPointRel => "+#(drag_port_under_mouse);
+            redraw();
+         }
+      }
+      else if(_ev.isLeftButtonDown())
+      {
+         if(null != drag_node)
+         {
+            moveDragNodeToXY(_ev.mouse_rel_x, _ev.mouse_rel_y);
+         }
+         return true;
+      }
+
+      return false;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      // trace "xxx MyGraphForm::onMouseClick";
+      if(_ev.rightButtonUp())
+      {
+         if(null != drag_port)
+         {
+            // // endDragNodeOrPort();
+            cancelNewConnection();
+            return true;
+         }
+
+         ctxmenu_port <= findPortAtPointRel(drag_mouse);
+         trace "[dbg] MyGraphForm::onMouseClick: ctxmenu_port="+#(ctxmenu_port);
+         if(null != ctxmenu_port)
+         {
+            showPortContextMenu(false/*bFocusFirst*/);
+         }
+         else
+         {
+            showContextMenu(false/*bFocusFirst*/);
+         }
+         return true;
+      }
+      return false;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      // // trace "xxx MyGraphForm::isMouseFocusLocked: drag_node="+#(drag_node);
+      return (null != drag_node) || (null != drag_port);
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      trace "[trc] MyGraphForm::onKey: pressed="+_k.pressed+" released="+_k.released;
+      switch(_k.pressed)
+      {
+         case VKEY_LALT:
+         case VKEY_LMETA:
+            b_alt = true;
+            return true;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_LALT:
+         case VKEY_LMETA:
+            b_alt = false;
+            endDragNodeOrPort();
+            return true;
+      }
+      return GraphForm::onKey(_k);
+   }
+
+   public virtual onResizeFormPost() {
+
+      // findLayerByPath() test:
+      if("gr/test23d.gr" == last_gr_pathname)
+      {
+         Layer *l;
+
+         l <= findLayerByPath("T.nodeG.b.3.k");
+         trace "[trc] MyGraphForm::onResizeFormPost: findLayerByPath()<abs> returned l="+#(l);
+
+         l <= findLayerByPath("3.k");
+         trace "[trc] MyGraphForm::onResizeFormPost: findLayerByPath()<rel,2elem> returned l="+#(l);
+
+         l <= findLayerByPath("k");
+         trace "[trc] MyGraphForm::onResizeFormPost: findLayerByPath()<rel,1elem> returned l="+#(l);
+
+         l <= findLayerByPath("nodeG.b.3.k");
+         trace "[trc] MyGraphForm::onResizeFormPost: findLayerByPath()<rel,4elem> returned l="+#(l);
+      }
+
+      // Export .html or .svg
+      if(b_export_html || b_export_svg)
+      {
+         String svgPathname <= b_test_mode ? "test_svg.html" : last_gr_pathname.replace(".gr", b_export_html ? ".html" : ".svg");
+         if(!b_test_mode && !output_dir.isBlank())
+         {
+            local String outDir;
+            local String outFile;
+            GR.SplitPathname(svgPathname, outDir, outFile);
+            svgPathname <= output_dir+"/"+outFile;
+            svgPathname.replace("//", "/");
+         }
+         if(exportSVG(svgPathname, b_export_html) && b_verbose)
+            trace "[+++] exportSVG: wrote \""+svgPathname+"\""; // MyGraphForm::onResizeFormPost:
+      }
+
+      if(b_profile && t_process_start > 0)
+         trace "[pro] MyGraphForm::onResizeFormPost: graph processing (load gr, parse, layout"+(b_export_svg?", export svg":"")+") took "+(milliSeconds()-t_process_start)+"ms";
+
+   }
+
+   public virtual onDrawPost() {
+      GraphForm::onDrawPost();
+
+      if(null != drag_port)
+      {
+         Point2f abspos;
+         calcAbsolutePositionFBO(abspos);
+
+         sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+         glEnable(GL_SCISSOR_TEST);
+
+         int c32 = #ff000050;
+         UIRenderer.SetLineWidth(3.0);
+         Point2f pCtr = drag_mouse;
+         snapPixelToGrid(pCtr);
+         UIRenderer.DrawLine(drag_start_mouse.x,
+                             drag_start_mouse.y,
+                             pCtr.x,
+                             pCtr.y,
+                             c32
+                             );
+         UIRenderer.SetLineWidth(1.0);
+
+         glDisable(GL_SCISSOR_TEST);
+         sdvg_PopScissor();
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      local String acName = _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            trace "[trc] pm_context acName="+acName;
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  trace "[trc] MyGraphForm::consumeAction: close context menu.";
+                  refocusDefault();
+                  return true;
+
+               case "snap_to_grid":
+                  toggleSnapToGrid();
+                  refocusDefault();
+                  return true;
+
+               case "node_new_test":
+                  handleNewNodeTest();
+                  refocusDefault();
+                  return true;
+
+               case "node_new_conn":
+                  handleNewNodeConn();
+                  refocusDefault();
+                  return true;
+            }
+            break;
+
+         case @(pm_port):
+            trace "[trc] pm_port acName="+acName;
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  trace "[trc] MyGraphForm::consumeAction: close port context menu.";
+                  refocusDefault();
+                  return true;
+
+               default:
+                  if(acName <= "disconnect_")
+                  {
+                     handleDisconnectByIdx(acName.replace("disconnect_",""));
+                  }
+                  return true;
+            }
+            break;
+      }
+
+      return GraphForm::consumeAction(_ac);
+   }
+}
+
+
+// <class.png>
+class RootForm : XMLForm {
+
+   Button      *bt_quit;
+   Panel       *p_bg;
+   Panel       *p_round;
+   MyGraphForm *graph_form;
+   GraphForm   *gf_ctl;
+
+   boolean b_queued_export_png;
+
+
+   public method initRootForm() : boolean {
+      initForm();
+
+      if(!initPakFile("main.xfm"))
+      {
+         trace "[---] RootForm::initRootForm() failed";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      if(b_white_bg)
+         p_bg.setPanelTint(#FFffffff);
+
+      // // graph_form.processGR();  // must be called after RootForm has been set
+      if(b_debug) trace "[trc] RootForm::initRootForm: graph_form.graph="+#(graph_form.graph);
+
+      graph_form.setIncludePaths(inc_paths);
+      graph_form.setPortButtonClass(MyGraphPortButton);
+
+      return true;
+   }
+
+   public virtual onResize() {
+      XMLForm::onResize();
+
+      bt_quit <= gf_ctl.findLayerByPath("bt_quit");
+      bt_quit.setEnableMouseEvents(true);
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      UI.SetKeyboardFocus(this);
+      return true;
+   }
+
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      // trace "xxx wantKeyRepeat: k.name="+_k.name;
+      switch(_k.code)
+      {
+         case VKEY_UP:
+         case VKEY_DOWN:
+         case VKEY_LEFT:
+         case VKEY_RIGHT:
+         case 'p':
+         case VKEY_LALT:
+            return false;
+
+         case VKEY_RETURN:
+            return (0 == _k.mod);
+      }
+      return Layer::wantKeyRepeat(_k);
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // if(0 == UI.GetKeyMod())
+      // // if(UI.KeyModCtrl())
+      {
+         if(_ev.wheelUp())
+         {
+            graph_form.nextFile();
+            return true;
+         }
+         else if(_ev.wheelDown())
+         {
+            graph_form.previousFile();
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   public method batchProcessNext() : boolean {
+      if(input_files.numElements > 0)
+      {
+         graph_form.processGR();  // next input file
+         UI.LayoutRootLayer();
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx RootForm::onKey: size="+getSizeString();
+      switch(_k.released)
+      {
+         case VKEY_LALT:
+            trace "[dbg] RootForm::onKey: LALT released, unset drag_node / drag_port";
+            graph_form.onKey(_k);
+            return true;
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            UI.Stop();
+            return true;
+
+         case VKEY_LALT:
+            graph_form.onKey(_k);
+            return true;
+
+         case 'h':
+            printHierarchy();
+            return true;
+
+         case 'n':
+            if(null != graph_form.graph) graph_form.graph.debugPrintNodesAndEdges();
+            return true;
+
+         case 'm':
+            if(null != graph_form.graph) graph_form.graph.debugPrintNodesAndEdgesNoAttribs();
+            return true;
+
+         case 'p':
+            // post-pone until GL context is current
+            b_queued_export_png = true;
+            UI.RedrawAll();
+            return true;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               trace "[dbg] RootForm::onKey: resize / layout";
+               graph_form.t_process_start = milliSeconds();
+               handleResize();
+               return true;
+            }
+            else
+            {
+               trace "[dbg] RootForm::onKey: call UI.RedrawAll()";
+               UI.RedrawAll();
+            }
+            return true;
+
+         case 's':
+            graph_form.toggleSnapToGrid();
+            return true;
+
+         // // case 't':
+         // //    graph_form.testMoveNode46b();
+         // //    return true;
+
+         case VKEY_UP:
+            trace "[dbg] call graph_form.nextFile()";
+            graph_form.nextFile();
+            return true;
+
+         case VKEY_DOWN:
+            trace "[dbg] call graph_form.previousFile()";
+            graph_form.previousFile();
+            return true;
+
+         case VKEY_SPACE:
+         case VKEY_F5:
+            trace "[dbg] call graph_form.reloadFile()";
+            graph_form.reloadFile();
+            return true;
+
+         case VKEY_RETURN:
+            if(0 != _k.mod)
+            {
+               UI.QueueToggleFullscreen();
+               return true;
+            }
+            break;
+
+      }
+      return Layer::onKey(_k);
+   }
+
+   public virtual onDraw() {
+      Layer::onDraw();
+      if(b_debug)
+         trace "[>>>] RootForm::onDraw: geo="+getGeometryString()+" graph_form.geo="+graph_form.getGeometryString();
+      // // UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), #ffff0000);
+      UIRenderer.DrawDefaultBackground(0, 0, getSizeX(), getSizeY());
+   }
+
+   public virtual onDrawPost() {
+      // Save screenshot of previous frame ?
+      if(b_queued_export_png)
+      {
+         b_queued_export_png = false;
+         if(graph_form.last_gr_pathname >= ".gr")
+         {
+            local String pathNamePNG <= graph_form.last_gr_pathname.replace(".gr", "_tkui.png");
+            if(!output_dir.isBlank())
+               pathNamePNG.insert(0, output_dir+"/");
+            p_round.exportPNG(pathNamePNG);
+         }
+      }
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName <= _ac.getActionName();
+
+      switch(@(ap))
+      {
+         case @(bt_quit):
+            UI.Stop();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}
+
+function AddLogicFontResource(String _ttfPathname, String _basename, int _sz, StringArray _aliases) {
+   FontResource fr <= FT2PakFileFontResource.New(_ttfPathname, "default", Font.FONT_STYLE_NORMAL, _sz);
+   fr.setEnableMonochrome(false);
+   UI.AddFontResource(deref fr);
+   local String sNameSz <= _basename+" "+_sz;  // e.g. "default 14"
+   String *sAlias;
+   foreach sAlias in _aliases
+      UI.AddFontAlias(sNameSz, sAlias);
+}
+
+// (todo) AddLocalFontResource
+// (todo) font declarations in .gr file
+
+function InitLNF(LookAndFeel lnf) {
+   lnf.b_popupmenu_bevel_border   = false;
+   lnf.b_textfield_bevel_border   = false;
+   lnf.b_button_bevel_border      = false;
+   lnf.b_tabswitch_bevel_border   = false;
+   lnf.b_tableviewdata_border     = false;
+   lnf.b_window_border_flat       = true;
+   lnf.combobox_popup_table_style = LookAndFeel.STYLE_FLAT;
+   lnf.combobox_poup_table_flathighcontrast = true;
+   lnf.slider_layer_style         = LookAndFeel.STYLE_FLAT;
+   lnf.checkbox_icon_suffix       = "_dark";
+}
+
+function Usage() {
+   trace "usage: "+TKS.tksExePath+" app:diagraph [-cli,-headless] [-nosvg] [-pro] [-pro2] [-d<level>] [-spc] [-nomsaa] [-lodpi] [-o <output_dir>} {<inputfile.gr>}";
+   exit(10);
+}
+
+function ParseCmdLineArgs() {
+   int argIdx = 0;
+   int numArgs = Arguments.numElements;
+   while(argIdx < numArgs)
+   {
+      switch(Arguments[argIdx])
+      {
+         default:
+            String grPathname <= Arguments[argIdx];
+            if(grPathname.numChars <= 3)
+               grPathname <= "gr/test"+grPathname+".gr";  // e.g. 14c => gr/test14c.gr
+            if( (-1 == grPathname.indexOfChar('.', 0)) || grPathname >= ".gr" )
+            {
+               input_files.add(grPathname);
+            }
+            else
+            {
+               trace "[---] input file suffix must be '.gr' (pathname is \""+Arguments[argIdx]+"\")";
+               Usage();
+            }
+            break;
+
+         case "-cli":
+         case "-headless":
+            UI.SetEnableHeadless(true);
+            break;
+
+         case "-v":
+            b_verbose = true;
+            break;
+
+         case "-q":
+            b_verbose = false;
+            debug_level = 0;
+            break;
+
+         case "-svg":
+            b_export_svg = true;
+            break;
+
+         case "-html":
+            b_export_html = true;
+            break;
+
+         case "-d":
+            if(++argIdx < numArgs)
+               debug_level = mathClampi(int(Arguments[argIdx]), 0, 4);
+            else
+               Usage();
+            break;
+
+         case "-wb":
+            // for PNG export (markdown docs)
+            b_white_bg = true;
+            break;
+
+         case "-pro":
+            b_profile = true;
+            break;
+
+         case "-pro2":
+            MGraphForm.SetEnableProfiling(true);
+            break;
+
+         case "-s":
+            if(++argIdx < numArgs)
+               ui_scaling_factor = mathClampf(float(Arguments[argIdx]), 1.0f, 4.0f);
+            else
+               Usage();
+            break;
+
+         case "-lodpi":
+            b_lodpi = true;
+            break;
+
+         case "-spc":
+            Cell.c_empty = ' ';
+            break;
+
+         case "-nomsaa":
+            b_nomsaa = true;
+            break;
+
+         case "-i":
+         case "-I":
+            if(++argIdx < numArgs)
+               inc_paths.add(Arguments[argIdx]);
+            else
+               Usage();
+            break;
+
+         case "-o":
+            if(++argIdx < numArgs)
+               output_dir = Arguments[argIdx];
+            else
+               Usage();
+            break;
+
+         case "-t":
+            b_test_mode   = true;
+            b_export_svg  = false;
+            b_export_html = true;
+            break;
+      }
+      argIdx++;
+   }
+}
+
+function main() {
+
+   ParseCmdLineArgs();
+
+   if(0 == debug_level)
+   {
+      b_debug   = false;
+      b_debug4  = false;
+   }
+
+   MGraph.SetDebugLevel(debug_level);
+   MGraphForm.SetDebugLevel(debug_level);
+
+   if(!b_lodpi)
+      UI.ConfigureHiDPI();
+
+   if(ui_scaling_factor > 0.49f)
+      UI.ConfigureScaling(ui_scaling_factor);
+
+   UI.Initialize(Arguments);
+   if(0) UI.SetLookAndFeel(LookAndFeel.DARK);
+   else UI.SetLookAndFeel(LookAndFeel.LIGHT);
+   // // UI.b_skip_bevel_border = true;
+   UI.LookAndFeelForceFlat();
+   UI.SetWindowBorderScaling(0.5);
+
+   if(0)
+   {
+      UI.b_debug_lnf_changed_reset_custom_color_flags = true;  // update widget colors after LnF change
+      LookAndFeel lnf <= UI.GetLookAndFeel(LookAndFeel.LIGHT);
+      InitLNF(lnf);
+      lnf.setColor(LookAndFeel.COLOR_COMBOBOX_KBDFOCUS_BG, #ffe0e0e4);
+      lnf.setColor(LookAndFeel.COLOR_TEXT_EDITING_SELECT_FG, #ff222222);
+      lnf <= UI.GetLookAndFeel(LookAndFeel.DARK);
+      InitLNF(lnf);
+      UI.b_skip_bevel_border = true;
+   }
+
+   int t = milliSeconds();
+
+   AddLogicFontResource("tkui:fonts/default.ttf", "default",  7, ["tiny", "big12"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default",  9, ["smaller", "big11"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 11, ["small", "big10"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 14, ["graph_node", "default", "big9"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 16, ["big8"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 20, ["big7"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 24, ["big6"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 32, ["big5"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 48, ["big4"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 64, ["big3"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 74, ["big2"]);
+   AddLogicFontResource("tkui:fonts/default.ttf", "default", 84, ["big1"]);
+
+   if(b_profile) trace "[pro] Add*FontResource() took "+(milliSeconds()-t)+" ms";
+
+   t = milliSeconds();
+
+   root_form <= new RootForm;
+   if(root_form.initRootForm())
+   {
+      if(b_debug4) root_form.printHierarchy();
+
+      if(!b_nomsaa)
+      {
+         // UI.SetEnableFBO(false);
+         UI.ConfigureMultisampling(4, 1);
+      }
+
+      if(0)
+         UI.ConfigureSupersampling(2);
+
+      if(1 && UI.IsMacOS())
+         UI.OpenWindow(1600, 1200);
+      else
+         UI.OpenWindow(1600, 1080);
+      UI.SetRootForm(root_form);
+      UI.LayoutRootLayer();
+      root_form.graph_form.processGR();
+      UI.LayoutRootLayer();
+
+      if(UI.b_headless)
+      {
+         while(root_form.batchProcessNext())
+            ;
+      }
+      else
+      {
+         UI.Run();
+         UI.Exit();
+      }
+   }
+
+   if(b_profile && UI.b_headless) trace "[pro] UI Init+Run took "+(milliSeconds()-t)+" ms";
+}

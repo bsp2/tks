@@ -1,0 +1,125 @@
+// hw_toplevel diagram. uses ports instead of invisible helper nodes.
+
+include diagram.gi
+
+grid        = 32,32
+zero_margin = true
+col_padding = 0
+ipad        = 8,12,8,12
+
+graph m {
+  layout       = fixed
+  unfold       = false
+  border_width = 0
+  row_padding  = 8
+  col_padding  = 32
+  pad          = 0
+  ipad         = 0
+  align        = left
+  border_shape = none
+  bgcolor      = #f9f9f9
+
+  style=def
+  row="a b c";
+  row="a b d";
+
+  a "SBI"         [id=sbi  align=left,expandy s=48,144]
+  b "Register"    [id=reg  align=centerx,expandy]
+  c "Control"     [id=ctl  align=expandx,top]
+  d "Scratch DMA" [id=dma  align=expandx,bottom]
+
+  sbi <> reg
+  ctl <> reg
+  dma <> reg
+}
+
+graph l {
+  layout       = fixed
+  unfold       = false
+  row_padding  = 0
+  col_padding  = 0
+  border_width = 0
+  ipad         = 0
+
+  row="STUV"
+
+  S "Shader Core 0" [sgx=shcore font=small]
+  T "Shader Core 1" [sgx=shcore font=small]
+  U "Shader Core 2" [sgx=shcore font=small]
+  V "..."           [sgx=shcore font=small]
+}
+
+style=def  // (already selected)
+row="mmmmm pppp  "
+row="mmmmm oooo  "
+row="mmmmm nnnn  "
+row="a  b  cccc  "
+row="a     dddd  "
+row="a     eeee g"
+row="a  h  ffff  "
+row="a i   ffff  "
+row="a  j  ffff  "
+row="a k   4444  "
+row="a     llll  "
+row="a#          "  // (note) '#' is spacer helper node (uses spacer_class=spacer, see diagram.gi)
+
+4 [class=helper]
+
+style=def
+a "MBI"                  [id=mbi       align=left,expandy w=48 pad=0] ports {
+  zs     : e 6%
+  vtx    : e 38%
+  shcore : e 92%
+}
+b "ZSCache"              [id=zscache   align=right,centery]
+c "ZSUnit"               [id=zsunit    sgx=zs]
+d "Multisample Assembly" [id=msasm     sgx=zs]
+e "Address Encoder"      [id=addrenc   sgx=zs]
+f "Dispatcher"           [id=dispatch  h=75% ipad_l=6 ipad_r=6 bg_pattern=zigzag_4 bg_pattern_intensity=8%]
+g "Fast Clear"           [id=fastclear]
+h "Vertex Assembly"      [id=vtxasm]
+i "Index Cache"          [id=idxcache]
+j "Primitive Assembly"   [id=primasm]
+k "Scratch\nRAM"         [id=scram     pad_b=16]
+l                        [id=shcore    align=top] ports {
+  margin = 25%
+  0 : t
+  1 : t
+  2 : t
+  3 : t
+}
+style=none  // select empty style class so that 'm' bgcolor won't be overwritten in next line
+m                        [id=topgraph  align=left,centery pad_r=60]
+style=def
+n "ZSFIFO"               [id=zsfifo    pad_b=24]
+o "ZSScheduler"          [id=zssched   pad_b=24]
+p "Rasterizer"           [id=raster    pad_b=24]
+
+raster  -> zssched "Stamp" [pad_r=20]
+zssched -> zsfifo  "Stamp" [pad_r=20]
+zsfifo  -> zsunit  "Stamp" [pad_r=20]
+
+zssched:w -> zscache  "Prefetch" [class=rcurve pad_b=59]
+
+mbi:zs  <> zscache
+zscache <> zsunit
+
+zsunit -> msasm -> addrenc -> dispatch "Stamp"
+addrenc -> fastclear "Tile" [pad_t=12]
+
+dispatch--4 "Coordinate Data\nContext Data\nMemory Write" [pad_l=50]
+4:l->shcore:0 [class=rcurve]
+4:l->shcore:1 [class=rcurve]
+4:r->shcore:2 [class=rcurve]
+4:r.>shcore:3 [class=rcurve]
+
+fastclear:s -> shcore:e "Tile" [class=rcurve pad_l=6]
+
+mbi:vtx    <> vtxasm
+vtxasm     -> dispatch "Vertex Stamp"
+idxcache:t <> vtxasm
+idxcache:b -> primasm
+primasm    -> dispatch "Primitive Stamp"
+scram      <> shcore:w
+
+mbi:shcore <> shcore:w "Attribute Fetch\nTexture Fetch\nFB read/write"
