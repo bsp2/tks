@@ -1,0 +1,5193 @@
+// ----
+// ---- file   : org.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : org-mode/todo style text file parser
+// ----           see [[tests_org/plan.org]]
+// ----
+// ---- created: 06Jan2020
+// ---- changed: 07Jan2020, 08Jan2020, 09Jan2020, 10Jan2020, 11Jan2020, 12Jan2020, 14Jan2020
+// ----          14Jan2020, 15Jan2020, 16Jan2020, 17Jan2020, 18Jan2020, 19Jan2020, 20Jan2020
+// ----          21Jan2020, 22Jan2020, 23Jan2020, 24Jan2020, 26Jan2020, 27Jan2020, 28Jan2020
+// ----          29Jan2020, 30Jan2020, 31Jan2020, 01Feb2020, 02Feb2020, 03Feb2020, 11Feb2020
+// ----          12Feb2020, 26Jun2025
+// ----
+// ----
+// ----
+
+module MOrg;
+
+use tkzip;
+
+namespace org;
+
+boolean b_debug  = false;  // stats
+boolean b_debug2 = 0;  // verbose (add node, add tag)
+boolean b_debug3 = 0;  // very verbose
+
+int num_linefeeds_before_separator            = 2;
+
+int num_linefeeds_inc_org_style_node          = 1;  // when indent is incremented (after tree header)
+int num_linefeeds_inc_org_style_node_tree     = 1;  // when indent is incremented (after subtree)
+int num_linefeeds_dec_org_style_node          = 1;  // when indent is decremented
+int num_linefeeds_eq_org_style_node           = 0;  // when indent remains the same
+int num_linefeeds_eq_org_style_node_with_text = 1;  // when indent remains the same but node has additional lines
+
+int num_linefeeds_inc_todo_style_node          = 0;  // when indent is incremented (after tree header)
+int num_linefeeds_inc_todo_style_node_tree     = 0;  // when indent is incremented (after subtree)
+int num_linefeeds_inc_todo_style_node_tree_level1 = 0;  // when indent is incremented (after subtree)
+int num_linefeeds_dec_todo_style_node          = 0;  // when indent is decremented
+int num_linefeeds_eq_todo_style_node           = 0;  // when indent remains the same
+int num_linefeeds_eq_todo_style_node_with_text = 0;  // when indent remains the same but node has additional lines
+int num_linefeeds_eq_todo_style_node_with_text_level1 = 1;  // when indent remains the same but node has additional lines
+
+int num_linefeeds_before_level1_list_node = 1;  // when prev node had children
+
+// true=org-mode style tags "* mytopic :tag1:tag2:"
+// false=todo-list style tags "* :tag1:tag2: mytopic "
+boolean b_show_tags_after_topic = true;
+
+// (note) default org-tags-column is -77
+int tags_column = -79;
+
+String preferred_date = "scheduled";  // "create", "scheduled", "deadline", "finish"
+
+// true=add info nodes as org-style note (e.g. for exchange with external editors like iaWriter on iOS)
+// false=add info nodes as collapsed tree
+boolean b_smmx_info_as_org = true;
+
+// true=look at child nodes (todo.txt style trees) when calculating progress
+// false=only look at sub nodes (org-mode style trees)
+boolean b_child_progress = false;
+
+// true=force todo.txt style list output (+-o...) starting at level <n>
+boolean force_list_level = -1;
+
+// true=force org-mode style output (*, **, ***) up to (including) level <n>
+boolean force_org_level = 2;
+
+int last_node_level;
+int last_sub_level;
+int last_child_level;
+int last_num_linefeeds;
+boolean last_level1_node_had_children;
+
+String include_path = "./";
+
+// true=write emacs org-mode headers (-*-mode and #+TODO lines)
+//  (note) see -neh,--no-emacs-header command line option
+boolean b_emacs_header = false;
+
+// true=keep/re-export task 'clock' properties
+// false=re-export them to resource
+boolean b_keep_task_clock_properties = false;
+
+// true=first colon in tag list can be skipped (tags before title)
+boolean b_allow_skip_tag_start_colon = true;
+
+// true=allocate default resource+effort to all working state tasks (todo, actv, test, done)
+//  (note) useful for converting plain todo.txt style files to HTML plans
+//  (note) see -sde command line switch
+boolean b_set_default_effort_for_all_working_state_tasks = false;
+
+// true=auto-fold all taskgroups
+//  (note) useful for converting plain todo.txt style files to HTML plans
+//  (note) see -afg command line switch
+boolean b_autofold_task_groups = false;
+
+// true=create default resource ("def"), default effort (1h), and derive project title from input filename
+boolean b_create_plaintodo_defaults = false;
+
+// last loaded file name
+String input_path_name;
+
+
+StringArray simplified_property_names = [
+   "fold", "private", "ignore",
+   "id",
+   "effort", "effortrisk",
+   "duration", "durationrisk", "risk",
+   "allocate", "assign",
+   "depends", "for", "after", "ordered",
+   "milestone",
+   "workinghours", "vacation", "other-project", "sickness",
+   "status"
+                                                ];
+
+
+
+// <class.png>
+class Defs : StateDefs {
+
+   // roll-up progress styles
+   define int PROGRESS_NONE    = 0;
+   define int PROGRESS_PERCENT = 1;  // [100%]
+   define int PROGRESS_COUNT   = 2;  // [2/3]
+
+   // node separators
+   define int SEPARATOR_NONE       =  0;
+   define int SEPARATOR_MINUS      =  1;  // --------------
+   define int SEPARATOR_EQUAL      =  2;  // ==============
+   define int SEPARATOR_ASTERISK   =  3;  // **************
+   define int SEPARATOR_UNDERSCORE =  4;  // ______________
+   define int SEPARATOR_PLUS       =  5;  // ++++++++++++++
+   define int SEPARATOR_TILDE      =  6;  // ~~~~~~~~~~~~~~
+   define int SEPARATOR_DOT        =  7;  // ..............
+   define int SEPARATOR_HASH       =  8;  // ##############
+   define int SEPARATOR_COLON      =  9;  // ::::::::::::::
+   define int SEPARATOR_CIRCUMFLEX =  9;  // ^^^^^^^^^^^^^^
+   define int SEPARATOR_ARIGHT     = 10;  // >>>>>>>>>>>>>>
+   define int SEPARATOR_ALEFT      = 11;  // <<<<<<<<<<<<<<
+   define int SEPARATOR_DEGREE     = 12;  // °°°°°°°°°°°°°°
+
+}
+
+
+// <class.png>
+class ResourceTimeEntry {
+   explain "Time tracking entry";
+   Time    date;
+   String  task_id;   // may be unknown / belong to another project
+   float   num_hours;
+   boolean b_was_task_property;  // true=was 'clock' entry in task node
+
+   public method isDay(Time _t) : boolean {
+      boolean bRet = (0 == Utils.CompareDays(date, _t));
+      // trace "xxx isDay: date="+Utils.TimeToOrgString(date)+" task_id="+task_id+" num_hours="+num_hours+", t="+Utils.TimeToOrgString(_t)+" => ret="+bRet;
+      return bRet;
+   }
+
+   public method toOrg(String _buf, int _level) {
+
+      if( (shared::time_tracking_project.isBlank()) ||
+          (task_id <= shared::time_tracking_project)
+          )
+      {
+         _buf.appendRepeat(" ", _level);
+
+         if(1)
+         {
+            // v2 "clock" day
+            _buf.append("clock: "+task_id+" "+Utils.TimeToOrgStringWeekday(date)+" "+num_hours+"\n");
+         }
+         else
+         {
+            // v1 "week" day
+            _buf.append("week "+Utils.TimeToOrgStringWeekday(date)+":\n");
+            _buf.appendRepeat(" ", _level+2);
+            _buf.append(task_id+" "+num_hours+"\n");
+         }
+      }
+   }
+
+}
+
+// <class.png>
+class Resource {
+   explain "Preliminary resource info, used for time tracking";
+
+   // (note) the time entries will be mapped to project days in the scheduler
+   PointerArray time_entries;  // ResourceTimeEntry instances
+
+   public method addTimeEntry(Time _date, String _taskId, float _numHours, boolean _bWasTaskProperty) {
+      local ResourceTimeEntry te;
+      te.date                = _date;
+      te.task_id             = _taskId;
+      te.num_hours           = _numHours;
+      te.b_was_task_property = _bWasTaskProperty;
+      time_entries.add(#(deref te));
+      if(b_debug2)
+         trace "[trc] addTimeEntry: date="+Utils.TimeToOrgStringWeekday(_date)+" taskId=\""+_taskId+"\" numHours="+_numHours+" bWasTaskProperty="+_bWasTaskProperty;
+   }
+
+   public method findTimeEntries(PointerArray _ret, Time _t) {
+      _ret.empty();
+      if(!shared::b_ignore_time_tracking)
+      {
+         ResourceTimeEntry *rte;
+         foreach rte in time_entries
+         {
+            if(rte.isDay(_t))
+            {
+               if(b_debug2)
+                  trace "xxx org::Resource::findTimeEntries: task_id="+rte.task_id+" t="+Utils.TimeToOrgString(_t);
+               _ret.add(rte);
+            }
+         }
+      }
+   }
+
+   public method toOrg(String _buf, int _level) {
+      // called when re-exporting resource-type node to org
+      ResourceTimeEntry *te;
+      foreach te in time_entries
+      {
+         if(!b_keep_task_clock_properties || !te.b_was_task_property)
+            te.toOrg(_buf, _level);
+      }
+   }
+}
+
+// <class.png>
+class Node : Defs {
+   Org *org;
+   Node *parent;
+   PointerArray child_nodes;  // Node instances (.!-toxXw+%? simplified subtree)
+   PointerArray sub_nodes;    // Node subtree instances (org-style *, **, ***, .. subtree)
+
+   int line_nr;
+
+   smmx::Node *n_smmx;  // valid after toSMMX()
+
+   boolean b_fold;      // true=don't schedule sub-tasks as separate tasks / accumulate sub-tasks effort and store in this task
+   boolean b_private;   // true=don't export sub/child nodes (when -p,--private cmdline option is used) but add to effort
+   boolean b_ignore;    // true=export to .org but ignore child/sub nodes when scheduling tasks
+
+   int    separator_style;
+   String separator_caption;
+
+   int         state;  // ST_xxx  (todo, done, ..)
+   int         prio;   // 0=none, 1=A, 2=B, 3=C  "[#A]"
+   StringArray tags;   // :docs:tutorial:  (no spaces)
+   String      title;
+   String      task_id;      // derived from title or set by :PROPERTIES: :task_id:
+   String      doc_id;       // unique, generated when converting to HTML docs (e.g. project plan with --docs switch)
+   String      resource_id;  // set by :PROPERTIES: :resource_id:
+   Resource   *resource;
+   String      scheduled;  // SCHEDULED: <2020-24-12 Thu>
+   String      deadline;   // DEADLINE: <2020-24-31 Thu>
+
+   StringArray callout_lines;  // "> my description"
+
+   StringArray text_lines;  // including first line
+   boolean     b_escaped_text_lines;  // enclose in <<..>> tags when re-exporting to org
+
+   int     num_spaces;     // num leading spaces (indent). 0 when using org-mode style headers
+   int     num_asterisks;  // 0 (simplified sub-tree), or 1..n when using org-mode style "**** headers" (num asterisks)
+
+   boolean b_empty_line_after_node_hdr;  // directly after node (before sub/child nodes)
+   boolean b_empty_line_after_node;  // tree
+
+   boolean b_was_main_node;  // true=was free-floating main node in mindmap
+   boolean b_was_info_node;  // true=was info node (before first task node)
+
+   // :ordered:     t
+   // :blocker:     previous-sibling   OR  <topic_id>
+   // :priority:    1000
+   // :resource_id: bsp
+   // :allocate:    <resource_id>
+   // :limits:      { dailymax 6.4h }
+   // :cookie_data: todo recursive   (for progress calculation)
+   // ...
+   StringArray property_keys;   // w/o surrounding ":" same key may appear multiple times
+   StringArray property_values;
+
+   int progress_mode;  // PROGRESS_xxx
+
+   String      create_date;  // via "! 03Jan2020"
+   StringArray mod_dates;    // via "! C:04Jan2020", "! C:05Jan2020"
+   String      finish_date;  // via "! F:03Jan2020"
+
+   // // boolean b_new_child_as_list;   // used by smmx-to-org to restore todolist-style child hierarchies
+
+   boolean b_have_alloc;  // true=first explicit allocation done (for new node)
+
+
+   public method addChild(Node _n) {
+      _n.parent <= this;
+      _n.b_was_info_node |= b_was_info_node;
+      child_nodes.add(#(deref _n));
+   }
+
+   public method newChild() : Node {
+      local Node n;
+      n.org <= org;
+      addChild(deref n);
+      return n;
+   }
+
+   public method addSub(Node _n) {
+      _n.parent <= this;
+      _n.b_was_info_node |= b_was_info_node;
+      sub_nodes.add(#(deref _n));
+   }
+
+   public method newSub() : Node {
+      local Node n;
+      n.org <= org;
+      addSub(deref n);
+      return n;
+   }
+
+   public method getFolderParent() : Node {
+      Node p <= parent;
+      while(null != p)
+      {
+         if(p.b_fold)
+            return p;
+         else
+            p <= p.parent;
+      }
+      return null;
+   }
+
+   public method isFolded() : boolean {
+      return (null != getFolderParent());
+   }
+
+   public method getTaskFolderParentOrSelf() : Node {
+      Node *r;
+      if(null != resource)
+         r <= this;
+      else
+      {
+         r <= getFolderParent();
+         if(null == r)
+            r <= this;
+      }
+      return r;
+   }
+
+   public method finalizeInit() {
+
+      // Remove leading empty text lines
+      String *s;
+      while(text_lines.numElements > 0)
+      {
+         s <= text_lines.get(0);
+         if(s.isBlank())
+            text_lines.delete(0);
+         else
+            break;
+      }
+
+      // Remove trailing empty text lines
+      while(text_lines.numElements > 0)
+      {
+         s <= text_lines.last;
+         if(s.isBlank())
+         {
+            text_lines.delete(text_lines.numElements -1);
+         }
+         else
+            break;
+      }
+   }
+
+   public method recursiveFindNodeById(String _id) : Node {
+      local Node *n;
+      local Node *r;
+      if(getOrCreateTaskId() == _id)
+         return this;
+
+      foreach n in child_nodes
+      {
+         r <= n.recursiveFindNodeById(_id);
+         if(null != r)
+            return r;
+      }
+      foreach n in sub_nodes
+      {
+         r <= n.recursiveFindNodeById(_id);
+         if(null != r)
+            return r;
+      }
+      return r;
+   }
+
+   public method recursiveReparentInfoNodeTo(local Org _org) {
+      local Node *c;
+      if(b_debug3)
+         trace "xxx reparent title=\""+title+"\"";
+
+      b_was_info_node = true;
+
+      org <= _org;
+      foreach c in child_nodes
+      {
+         c.recursiveReparentInfoNodeTo(_org);
+      }
+      foreach c in sub_nodes
+      {
+         c.recursiveReparentInfoNodeTo(_org);
+      }
+   }
+
+   public method hasChildren() : boolean {
+      return (0 != child_nodes.numElements) || (0 != sub_nodes.numElements);
+   }
+
+   public method recursiveSetDefaultEffortAndAutoFold() {
+      // see b_set_default_effort_for_all_working_state_tasks
+      if(!child_nodes.isEmpty() || !sub_nodes.isEmpty())
+      {
+         if(null == getPropertyByName("effort"))
+         {
+            if(b_autofold_task_groups)
+            {
+               setPropertyByName("fold", "t");
+               b_fold = true;
+               if(b_debug)
+                  trace "[dbg] auto-fold task \""+getOrCreateTaskId()+"\"";
+            }
+         }
+
+         local Node *c;
+         foreach c in child_nodes
+            c.recursiveSetDefaultEffortAndAutoFold();
+
+         foreach c in sub_nodes
+            c.recursiveSetDefaultEffortAndAutoFold();
+      }
+      else
+      {
+         if(hasWorkingState())
+            lazyDefaults();
+      }
+   }
+
+   public method hasCalloutTextOrPropertyLines() : boolean {
+      return
+         !scheduled.isBlank()     ||
+         !deadline.isBlank()      ||
+         !property_keys.isEmpty() ||
+         !create_date.isBlank()   ||
+         !mod_dates.isEmpty()     ||
+         !finish_date.isBlank()   ||
+         !callout_lines.isEmpty() ||
+         !text_lines.isEmpty()    ||
+         0
+         ;
+   }
+
+   public method initFromNoteString(String _note) {
+      // called by SMMX-to-org
+      extractPropertiesFromString(_note);
+      addTextLinesFromNoteString(_note);
+   }
+
+   module static DetectSeparator(String _line, String _retCaption) : int {
+      char c = _line.getc(0);
+      int ret = SEPARATOR_NONE;
+      switch(c)
+      {
+         case '-': ret = (_line <= "----------------") ? SEPARATOR_MINUS      : SEPARATOR_NONE; break;
+         case '=': ret = (_line <= "================") ? SEPARATOR_EQUAL      : SEPARATOR_NONE; break;
+         case '*': ret = (_line <= "****************") ? SEPARATOR_ASTERISK   : SEPARATOR_NONE; break;
+         case '_': ret = (_line <= "________________") ? SEPARATOR_UNDERSCORE : SEPARATOR_NONE; break;
+         case '+': ret = (_line <= "++++++++++++++++") ? SEPARATOR_PLUS       : SEPARATOR_NONE; break;
+         case '~': ret = (_line <= "~~~~~~~~~~~~~~~~") ? SEPARATOR_TILDE      : SEPARATOR_NONE; break;
+         case '.': ret = (_line <= "................") ? SEPARATOR_DOT        : SEPARATOR_NONE; break;
+         case '#': ret = (_line <= "################") ? SEPARATOR_HASH       : SEPARATOR_NONE; break;
+         case ':': ret = (_line <= "::::::::::::::::") ? SEPARATOR_COLON      : SEPARATOR_NONE; break;
+         case '^': ret = (_line <= "^^^^^^^^^^^^^^^^") ? SEPARATOR_CIRCUMFLEX : SEPARATOR_NONE; break;
+         case '>': ret = (_line <= ">>>>>>>>>>>>>>>>") ? SEPARATOR_ARIGHT     : SEPARATOR_NONE; break;
+         case '<': ret = (_line <= "<<<<<<<<<<<<<<<<") ? SEPARATOR_ALEFT      : SEPARATOR_NONE; break;
+      }
+      if(SEPARATOR_NONE != ret)
+      {
+         int numChars = _line.numIndicesOf(tcchar(c));
+         _line.substring(numChars, -1) => _retCaption;
+         _retCaption.trim();
+      }
+      return ret;
+   }
+
+   protected method getSeparatorStyleAttribValue() : String {
+      local String r = TKS.scriptClassConstantToString(#(separator_style), Defs, "SEPARATOR_");
+      return r.replace("SEPARATOR_", "").toLower();  // => "minus, plus, dot, .."
+   }
+
+   protected method parseSeparatorStyleAttribValue(String _s) : int {
+      int r = SEPARATOR_NONE;
+      switch(_s)
+      {
+         case "minus":      r = SEPARATOR_MINUS;       break;
+         case "equal":      r = SEPARATOR_EQUAL;       break;
+         case "asterisk":   r = SEPARATOR_ASTERISK;    break;
+         case "underscore": r = SEPARATOR_UNDERSCORE;  break;
+         case "plus":       r = SEPARATOR_PLUS;        break;
+         case "tilde":      r = SEPARATOR_TILDE;       break;
+         case "dot":        r = SEPARATOR_DOT;         break;
+         case "hash":       r = SEPARATOR_HASH;        break;
+         case "colon":      r = SEPARATOR_COLON;       break;
+         case "circumflex": r = SEPARATOR_CIRCUMFLEX;  break;
+         case "aright":     r = SEPARATOR_ARIGHT;      break;
+         case "aleft":      r = SEPARATOR_ALEFT;       break;
+      }
+      return r;
+   }
+
+   protected method appendSeparator(String _buf) {
+      char c = 0;
+      // (note) use LUT ?
+      switch(separator_style)
+      {
+         case SEPARATOR_NONE:                break;
+         case SEPARATOR_MINUS:      c = '-'; break;
+         case SEPARATOR_EQUAL:      c = '='; break;
+         case SEPARATOR_ASTERISK:   c = '*'; break;
+         case SEPARATOR_UNDERSCORE: c = '_'; break;
+         case SEPARATOR_PLUS:       c = '+'; break;
+         case SEPARATOR_TILDE:      c = '~'; break;
+         case SEPARATOR_DOT:        c = '.'; break;
+         case SEPARATOR_HASH:       c = '#'; break;
+         case SEPARATOR_COLON:      c = ':'; break;
+         case SEPARATOR_CIRCUMFLEX: c = '^'; break;
+         case SEPARATOR_ARIGHT:     c = '>'; break;
+         case SEPARATOR_ALEFT:      c = '<'; break;
+      }
+      if(0 != c)
+      {
+         _buf.appendRepeat("\n", num_linefeeds_before_separator);
+         _buf.appendRepeat(tcchar(c), shared::num_separator_chars);
+
+         if(!separator_caption.isBlank())
+         {
+            _buf.append(" ");
+            _buf.append(separator_caption);
+         }
+
+         _buf.append("\n");
+      }
+   }
+
+   public method getStateStringOrg() : String {
+      switch(state)
+      {
+         default:
+         case ST_NONE:  return ".";
+         case ST_IDEA:  return "IDEA";
+         case ST_NOTE:  return "NOTE";
+         case ST_TODO:  return "TODO";
+         case ST_ACTV:  return "ACTV";
+         case ST_TEST:  return "TEST";
+         case ST_DONT:  return "DONT";
+         case ST_IGNR:  return "IGNR";
+         case ST_DONE:  return "DONE";
+         case ST_QUES:  return "QUES";
+         case ST_WAIT:  return "WAIT";
+      }
+   }
+
+   public method hasWorkingState() : boolean {
+      return [ST_TODO, ST_ACTV, ST_TEST, ST_DONE].contains(state);
+   }
+
+   public method getStateStringSimple() : String {
+      switch(state)
+      {
+         default:
+         case ST_NONE:  return ".";
+         case ST_IDEA:  return "%";
+         case ST_NOTE:  return "!";
+         case ST_TODO:  return "-";
+         case ST_ACTV:  return "o";
+         case ST_TEST:  return "t";
+         case ST_DONT:  return "x";
+         case ST_IGNR:  return "X";
+         case ST_DONE:  return "+";
+         case ST_QUES:  return "?";
+         case ST_WAIT:  return "w";
+      }
+   }
+
+   public static StateStringToEnum(String _s) : int {
+      int r = ST_NONE;
+
+      switch(_s)
+      {
+         default:
+            // trace "[~~~] unknown org-mode style state \""+orgState+"\" in line "+line_nr;
+            r = ST_NONE;
+            break;
+
+         case "IDEA":
+            r = ST_IDEA;
+            break;
+
+         case "TODO":
+            r = ST_TODO;
+            break;
+
+         case "ACTV":
+         case "NEXT":
+            r = ST_ACTV;
+            break;
+
+         case "TEST":
+            r = ST_TEST;
+            break;
+
+         case "DONT":
+            r = ST_DONT;
+            break;
+
+         case "IGNR":
+            r = ST_IGNR;
+            break;
+
+         case "NOTE":
+            r = ST_NOTE;
+            break;
+
+         case "DONE":
+            r = ST_DONE;
+            break;
+
+         case "QUES":
+            r = ST_QUES;
+            break;
+
+         case "WAIT":
+            r = ST_WAIT;
+            break;
+      }
+
+      return r;
+   }
+
+   public method getStateIconSMMXSub(boolean _bFinish) : String {
+      // bFinish: true when finish date is set
+      switch(state)
+      {
+         default:
+         case ST_NONE:
+            return "";
+         case ST_IDEA:
+            return "ic8_48_light_on";
+         case ST_NOTE:
+            // return "ic8_48_note";
+            return "ic8_48_information";
+         case ST_TODO:
+            switch(prio)
+            {
+               default:
+                  return "ic8_48_roadworks";
+               case 2:
+                  return "ic8_48_owl";
+               case 3:
+                  return "ic8_48_snail";
+            }
+         case ST_ACTV:
+            if(1 == prio)
+               return "ic8_48_high_priority";
+            else
+               return "ic8_48_hammer";
+         case ST_TEST:
+            return "ic8_48_running";
+         case ST_DONT:
+            return "ic8_48_delete";
+         case ST_IGNR:
+            return "ic8_48_winter";
+         case ST_DONE:
+            if(_bFinish)
+               return "ic8_48_finish_flag";
+            else
+               return "ic8_48_ok";
+         case ST_QUES:
+            return "ic8_48_question";
+         case ST_WAIT:
+            return "ic8_48_time";
+      }
+   }
+
+   public method getStateIconSMMXChild(boolean _bFinish) : String {
+      // bFinish: true when finish date is set
+      switch(state)
+      {
+         default:
+         case ST_NONE:
+            return "";
+         case ST_IDEA:
+            return "ic8_48_light_on";
+         case ST_NOTE:
+            // return "ic8_48_light_off";
+            return "ic8_48_information";
+         case ST_TODO:
+            switch(prio)
+            {
+               default:
+                  return "ic8_48_red_flag";
+               case 2:
+                  return "ic8_48_owl";
+               case 3:
+                  return "ic8_48_snail";
+            }
+         case ST_ACTV:
+            if(1 == prio)
+               return "ic8_48_high_priority";
+            else
+               return "ic8_48_yellow_flag";
+         case ST_TEST:
+            return "ic8_48_running";
+         case ST_DONT:
+            return "ic8_48_delete";
+         case ST_IGNR:
+            return "ic8_48_winter";
+         case ST_DONE:
+            if(_bFinish)
+               return "ic8_48_finish_flag";
+            else
+               return "ic8_48_green_flag";
+         case ST_QUES:
+            return "ic8_48_question";
+         case ST_WAIT:
+            return "ic8_48_time";
+      }
+   }
+
+   public static GetStateBySMMXIcon(String _icon, Integer _retPrio) : int {
+      // trace "xxx getstatebysmmxicon: icon=\""+_icon+"\"";
+      switch(_icon)
+      {
+         default:
+            return ST_NONE;
+
+         case "ic8_48_light_on":
+            return ST_IDEA;
+
+         case "ic8_48_information":
+         case "ic8_48_note":
+         case "ic8_48_light_off";
+            return ST_NOTE;
+
+         case "ic8_48_roadworks":
+         case "ic8_48_red_flag":
+            return ST_TODO;
+
+         case "ic8_48_owl":
+            _retPrio = 2;  // "[#B]"
+            return ST_TODO;
+
+         case "ic8_48_snail":
+            _retPrio = 3;  // "[#C]"
+            return ST_TODO;
+
+         case "ic8_48_hammer":
+         case "ic8_48_yellow_flag":
+            // trace "xxx ACTV state";
+            return ST_ACTV;
+
+         case "ic8_48_high_priority":
+            _retPrio = 1;  // "[#A]"
+            return ST_ACTV;
+
+         case "ic8_48_running":
+            return ST_TEST;
+
+         case "ic8_48_delete":
+            return ST_DONT;
+
+         case "ic8_48_winter":
+            return ST_IGNR;
+
+         case "ic8_48_finish_flag":
+         case "ic8_48_ok":
+         case "ic8_48_green_flag":
+               return ST_DONE;
+
+         case "ic8_48_question":
+            return ST_QUES;
+
+         case "ic8_48_time":
+            return ST_WAIT;
+      }
+   }
+
+   public method setStateBySMMXIcon(String _icon) {
+      Integer newPrio = -1;
+      state = GetStateBySMMXIcon(_icon, newPrio);
+      if(1 <= newPrio <= 3)
+      {
+         prio = newPrio;
+      }
+   }
+
+   public method getSMMXIconByResource() : String {
+      if(null != getPropertyByName("resource_id"))
+      {
+         // trace "xxx has resource_id, type=\""+getPropertyByName("resource_type")+"\"";
+         switch(getPropertyByName("resource_type"))
+         {
+            case "male":
+            case "m":
+               return "ic8_48_user_male";
+
+            case "female":
+            case "f":
+               return "ic8_48_user_female";
+
+               // case "robot": // no icon for this :-)
+
+            case "group":
+            case "g":
+            case "grp":
+               return "ic8_48_children";   // male/female icon
+
+            case "manager":
+            case "boss":
+            case "mgr":
+            case "pm":
+               return "ic8_48_alligator";
+
+            case "dev":
+               return "ic8_48_bumblebee";
+
+            default:
+               return "ic8_48_todo";  // cogwheel
+         }
+      }
+   }
+
+   public method getPrioString() : String {
+      switch(prio)
+      {
+         default:
+         case 0:
+            return "";
+
+         case 1:
+            return "[#A]";
+
+         case 2:
+            return "[#B]";
+
+         case 3:
+            return "[#C]";
+      }
+   }
+
+   public method addTagsFromString(String _sTags) : boolean {
+      // "docs:tutorial" style format
+      if(_sTags <= ":")
+         _sTags = _sTags.substring(1, -1);
+      if(_sTags >= ":")
+         _sTags = _sTags.substring(0, _sTags.length-2);
+
+      tags <= _sTags.splitChar(':');
+
+      // Add to "all_tags" (unique)
+      String *cTag;
+      foreach cTag in tags
+      {
+         cTag.trim();
+
+         if(!isTagAllowed(cTag))
+            return false;
+
+         if!(org.all_tags.exists(cTag))
+         {
+            if(b_debug2)
+               trace "[dbg] add tag \""+cTag+"\"";
+            org.all_tags.setString(cTag, "*");
+         }
+      }
+
+      return true;
+   }
+
+   public method isTagAllowed(String _tag) : boolean {
+      if(0 != (org.allowed_tags.numElements))
+      {
+         if!(org.allowed_tags.exists(_tag))
+         {
+            trace "[---] node.id=\""+getOrCreateTaskId()+"\" tag \""+_tag+"\" is not in allowed-tags list ("+org.getGlobalPropertyByName("allowed-tags")+")";
+            return false;
+         }
+      }
+      return true;
+   }
+
+   public method addHashTagsFromString(String _s) : boolean {
+      local StringArray a <= _s.splitChar('#');
+      String *cTag;
+      foreach cTag in a
+      {
+         cTag.trim();
+         if(!cTag.isBlank())
+         {
+            if(!isTagAllowed(cTag))
+               return false;
+
+            org.all_tags.setString(cTag, "*");
+         }
+      }
+      return true;
+   }
+
+   public method getTagsString() : String {
+      local String r;
+      if(tags.numElements > 0)
+      {
+         r.append(":");
+         String *cTag;
+         foreach cTag in tags
+         {
+            r.append(cTag);
+            r.append(":");
+         }
+      }
+      return deref r;
+   }
+
+   public method doRecursiveProgress() : boolean {
+      int idxCookieData = property_keys.indexOfObject("cookie_data", 0);
+      if(-1 != idxCookieData)
+      {
+         if(property_values[idxCookieData] & "recursive")
+            return true;
+      }
+      return false;
+   }
+
+   protected method recursiveGetNumState(local int _state) : int {
+      local Node *c;
+      local int r = 0;
+      if(b_child_progress)
+      {
+         foreach c in child_nodes
+         {
+            // trace "xxx recursiveGetNumState: title=\""+c.title+"\" _state="+_state+" c.state="+c.state;
+            r += (_state == c.state) ? 1 : 0;
+            r += c.recursiveGetNumState(_state);
+         }
+      }
+      foreach c in sub_nodes
+      {
+         // trace "xxx recursiveGetNumState: title=\""+c.title+"\" _state="+_state+" c.state="+c.state;
+         r += (_state == c.state) ? 1 : 0;
+         r += c.recursiveGetNumState(_state);
+      }
+      return r;
+   }
+
+   protected method getProgressNumState(int _state) : int {
+      int r = 0;
+      if(doRecursiveProgress())
+      {
+         r = recursiveGetNumState(_state);
+      }
+      else
+      {
+         Node *c;
+         // trace "xxx getProgressNumState: title=\""+title+"\" sub_nodes="+#(sub_nodes);
+         if(b_child_progress)
+         {
+            foreach c in child_nodes
+            {
+               // trace "xxx c.title=\""+c.title+"\" state="+_state+" c.state="+c.state;
+               r += (_state == c.state) ? 1 : 0;
+            }
+         }
+         foreach c in sub_nodes
+         {
+            // trace "xxx c.title=\""+c.title+"\" state="+_state+" c.state="+c.state;
+            r += (_state == c.state) ? 1 : 0;
+         }
+      }
+      return r;
+   }
+
+   public method getProgressNumUndone() : int {
+      int r = 0;
+      r += getProgressNumState(ST_TODO);
+      r += getProgressNumState(ST_ACTV);
+      r += getProgressNumState(ST_TEST);
+      return r;
+   }
+
+   public method getProgressNumDone() : int {
+      return getProgressNumState(ST_DONE);
+   }
+
+   public method getProgressNumUndoneOrDone() : int {
+      return getProgressNumUndone() + getProgressNumDone();
+   }
+
+   public method getProgressPercent() : int {
+      // trace "xxx getProgressPercent: title=\""+title+"\"";
+      int numUndone = getProgressNumUndone();
+      int numDone = getProgressNumDone();
+      if((numUndone + numDone) > 0)
+      {
+         if(b_debug2)
+            trace "xxx task_id="+task_id+" numUndone="+numUndone+" numDone="+numDone;
+         int r = int(((100.0 * numDone) / (numUndone + numDone))+0.5);
+         if((100 == r) && (numUndone > 0))
+            r = 99;
+         // trace "    => r="+r;
+      }
+      else
+         r = 100;
+      return r;
+   }
+
+   public method addModDateDMY(String _s) {
+      mod_dates.add(_s);
+   }
+
+   public method setCreateDateDMY(String _s) {
+      // trace "xxx setCreateDateDMY("+_s+")";
+      create_date = _s;
+   }
+
+   public method setFinishDateDMY(String _s) {
+      // trace "xxx setFinishDateDMY("+_s+")";
+      finish_date = _s;
+   }
+
+   public method isFilteredOut() : boolean {
+      // trace "xxx isFilteredOut: org.export_filter_tags="+#(org.export_filter_tags)+" this.tags="+#(tags);
+      if(null != org.export_filter_tags)
+      {
+         if(org.b_export_filter_tags_all)
+         {
+            if(!hasTagsAll(org.export_filter_tags))
+               return true;
+         }
+         else
+         {
+            if(!hasTagsAny(org.export_filter_tags))
+            {
+               return true;
+            }
+         }
+      }
+
+      // blacklist
+      if(null != org.export_inverse_filter_tags)
+         if(hasTagsAny(org.export_inverse_filter_tags))
+            return true;
+
+      if(org.export_state_filter.numElements > 0)
+      {
+         if!(org.export_state_filter.contains(state))
+            return true;
+      }
+
+      // property filter(s)
+      if(property_keys.numElements > 0)
+      {
+         int numPropFilters = (org.export_property_filters.numElements) / 2;
+         if(numPropFilters > 0)
+         {
+            boolean bPropFltMatch = false;
+            int pfIdx = 0;
+            loop(numPropFilters)
+            {
+               String sPropFltName <= org.export_property_filters.get(pfIdx + 0);
+               String sPropFltPat <= org.export_property_filters.get(pfIdx + 1);
+               String *sPropKey;
+               int propIdx = 0;
+               foreach sPropKey in property_keys
+               {
+                  if(sPropKey == sPropFltName)
+                  {
+                     String sPropVal <= property_values.get(propIdx);
+                     if(sPropVal.patternMatch(sPropFltPat))
+                     {
+                        bPropFltMatch = true;
+                        break;
+                     }
+                  }
+                  propIdx++;
+               }
+
+               if(bPropFltMatch)
+                  break;
+
+               pfIdx += 2;
+            }
+            if(!bPropFltMatch)
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   public method getDirectChildOrSubNodeNumUndoneTasks() : int {
+      local Node *c;
+      int num = 0;
+      foreach c in child_nodes
+      {
+         if([ST_TODO, ST_ACTV, ST_TEST].contains(c.state))
+            num++;
+      }
+      foreach c in sub_nodes
+      {
+         if([ST_TODO, ST_ACTV, ST_TEST].contains(c.state))
+            num++;
+      }
+      return num;
+   }
+
+   public method getDirectChildOrSubNodeNumDoneTasks() : int {
+      local Node *c;
+      int num = 0;
+      foreach c in child_nodes
+      {
+         if(ST_DONE == c.state)
+            num++;
+      }
+      foreach c in sub_nodes
+      {
+         if(ST_DONE == c.state)
+            num++;
+      }
+      return num;
+   }
+
+   public method directChildOrSubNodesHaveDoneAndUndoneTasks() : boolean {
+      return
+         (0 != getDirectChildOrSubNodeNumUndoneTasks()) &&
+         (0 != getDirectChildOrSubNodeNumDoneTasks())   ;
+   }
+
+   public method recursiveFixProgress() {
+      // fix ACTV/DONE/TODO state depending on sub/child nodes
+      if(hasChildren())
+      {
+         local Node *c;
+         foreach c in child_nodes
+         {
+            c.recursiveFixProgress();
+         }
+         foreach c in sub_nodes
+         {
+            c.recursiveFixProgress();
+         }
+
+         if([ST_TODO, ST_ACTV, ST_DONE].contains(state))
+         {
+            if(directChildOrSubNodesHaveDoneAndUndoneTasks())
+            {
+               state = ST_ACTV;
+            }
+            else if(0 == getDirectChildOrSubNodeNumUndoneTasks())
+            {
+               state = ST_DONE;
+            }
+            else
+            {
+               state = ST_TODO;
+            }
+         }
+
+         if(PROGRESS_NONE == progress_mode)
+         {
+            if([ST_TODO, ST_ACTV, ST_TEST, ST_DONE].contains(state))
+            {
+               progress_mode = PROGRESS_COUNT;
+            }
+         }
+      }
+   }
+
+   public method doAllNonListSubNodesHavePositions() : boolean {
+      local Node *c;
+      // (note) child_nodes are always shown as lists
+      // foreach c in child_nodes
+      // {
+      //    if(!c.b_list && !c.b_topdown)
+      //    {
+      //       if(null == c.getPropertyByName("smmx-position"))
+      //          return false;
+
+      //       if(!c.doAllNonListChildNodesHavePositions())
+      //          return false;
+      //    }
+      // }
+
+      foreach c in sub_nodes
+      {
+         if(null == c.getPropertyByName("smmx-list"))
+         {
+            if(null == c.getPropertyByName("smmx-position"))
+               return false;
+
+            if(!c.doAllNonListSubNodesHavePositions())
+               return false;
+         }
+      }
+
+      return true;
+   }
+
+   public method toOrg(local String _buf, local int _subLevel, local int _childLevel) {
+
+      if(b_debug2 && b_was_main_node)
+      {
+         trace "xxx toOrg: main title=\""+title+"\" b_was_main="+b_was_main_node;
+         trace "xxx   propKeys="+#(property_keys);
+      }
+
+      // Export filter tags
+      if(isFilteredOut())
+         return;
+
+      last_num_linefeeds = 0;
+
+      boolean bHasChildren = hasChildren();
+
+      if(SEPARATOR_NONE != separator_style)
+      {
+         // "------------------------------------------------------------------------------- my header"
+         appendSeparator(_buf);
+      }
+
+      int bufLineStartIdx = mathMaxi(_buf.length - 1, 0);
+
+      // // local int numSpacesAfterNodeHdr = 0;  // after tree hdr
+      local int numSpacesAfterNode = 0;   // after subtree
+      local boolean bEmptyLineAfterNode = b_empty_line_after_node;
+      // trace "xxx title=\""+title+"\" b_empty_line_after_node="+b_empty_line_after_node;
+
+      // Force todo.txt style list or org-mode style output ?
+      boolean bSpacesDone = false;
+      if(!b_was_info_node)
+      {
+         int totalLevel = _subLevel + _childLevel;
+
+         if(-1 != force_list_level)
+         {
+            // // if(num_asterisks >= force_list_level)
+            // // {
+            // //    num_spaces = (num_asterisks - 1) * NUM_SPACES;
+            // //    num_asterisks = 0;
+            // // }
+
+            // if(_subLevel >= force_list_level)
+            if(totalLevel >= force_list_level)
+            {
+               num_spaces = Utils.OrgSubAndChildLevelToSpaces(_subLevel, _childLevel-1);
+               num_asterisks = 0;
+               bSpacesDone = true;
+               // trace "xxx force_list_level: topic=\""+title+"\" subLevel="+_subLevel+" childLevel="+_childLevel+" => numSpaces="+num_spaces;
+            }
+         }
+
+         if(-1 != force_org_level)
+         {
+            // // if( (0 == num_asterisks) && ( (1 + (num_spaces / NUM_SPACES)) <= force_org_level) )
+            // // {
+            // //    num_asterisks = (num_spaces / NUM_SPACES) + 1;
+            // //    num_spaces = 0;
+            // // }
+            // // else if(num_asterisks > force_org_level)
+            // // {
+            // //    num_spaces = (num_asterisks - 1) * NUM_SPACES;
+            // //    num_asterisks = 0;
+            // // }
+
+            // if( (_subLevel <= force_org_level) ) //(0 == _childLevel) &&
+            if(totalLevel <= force_org_level)
+            {
+               num_asterisks = totalLevel;
+               num_spaces = 0;
+               bSpacesDone = true;
+            }
+            // else if(_subLevel > force_org_level)
+            else if(totalLevel > force_org_level)
+            {
+               // num_spaces = Utils.OrgSubAndChildLevelToSpaces(_subLevel, _childLevel);
+               num_spaces = Utils.OrgSubAndChildLevelToSpaces(force_org_level, (totalLevel - force_org_level)-1);
+               // trace "xxx num_spaces="+num_spaces;
+               num_asterisks = 0;
+               bSpacesDone = true;
+            }
+         }
+      }
+
+      // if(!bSpacesDone)
+      // {
+      // }
+
+      // if(title & "creation date")
+      //    trace "xxx title=\""+title+"\" hasCalloutTextOrPropertyLines()="+hasCalloutTextOrPropertyLines()+" num*="+num_asterisks+" totalLevel="+totalLevel+" last_node_level="+last_node_level;
+
+      if(sub_nodes.numElements > 0)
+      {
+         if(num_asterisks > 0)
+         {
+            _buf.appendRepeat("\n", num_linefeeds_inc_org_style_node);
+            bufLineStartIdx += num_linefeeds_inc_org_style_node;
+            numSpacesAfterNode = num_linefeeds_inc_org_style_node_tree;
+         }
+         else
+         {
+            _buf.appendRepeat("\n", num_linefeeds_inc_todo_style_node);
+            bufLineStartIdx += num_linefeeds_inc_todo_style_node;
+            numSpacesAfterNode = (_subLevel > 0) ? num_linefeeds_inc_todo_style_node_tree : num_linefeeds_inc_todo_style_node_tree_level1;
+         }
+      }
+      else if( (num_asterisks > 0) && (totalLevel < last_node_level) )
+      {
+         _buf.appendRepeat("\n", num_linefeeds_dec_org_style_node);
+         bufLineStartIdx += num_linefeeds_dec_org_style_node;
+      }
+      else
+      {
+      }
+
+      if(hasCalloutTextOrPropertyLines() || bHasChildren)
+      {
+         numSpacesAfterNode = (num_asterisks > 0) ? num_linefeeds_eq_org_style_node_with_text : (_subLevel > 0) ? num_linefeeds_eq_todo_style_node_with_text : num_linefeeds_eq_todo_style_node_with_text_level1;
+         if(numSpacesAfterNode > 0)
+            bEmptyLineAfterNode = false;
+      }
+      else
+      {
+         int numLFEQ = (num_asterisks > 0) ? num_linefeeds_eq_org_style_node : num_linefeeds_eq_todo_style_node;
+         _buf.appendRepeat("\n", numLFEQ);
+         bufLineStartIdx += numLFEQ;
+      }
+
+      last_sub_level   = _subLevel;
+      last_child_level = _childLevel;
+      last_node_level  = totalLevel;
+
+      // State
+      if(num_asterisks > 0)
+      {
+         // trace "xxx last_node_level="+last_node_level+" num_asterisks="+num_asterisks;
+
+         if(1)
+         {
+            _buf.appendRepeat("*", num_asterisks);
+         }
+         else
+         {
+            _buf.appendRepeat("*", _subLevel);
+         }
+
+         if(ST_NONE != state)
+         {
+            _buf.append(" ");
+            _buf.append(getStateStringOrg());
+            // trace "xxx getStateStringOrg()=\""+getStateStringOrg()+"\"";
+         }
+      }
+      else
+      {
+         if(1 == _subLevel && 0 == _childLevel)
+         {
+            if(last_level1_node_had_children)
+            {
+               _buf.appendRepeat("\n", num_linefeeds_before_level1_list_node);
+               bufLineStartIdx += num_linefeeds_before_level1_list_node;
+            }
+            last_level1_node_had_children = bHasChildren;
+         }
+
+         // preserving original .org/.txt spaces:
+         if(1)
+         {
+            _buf.appendRepeat(" ", num_spaces);
+         }
+         else
+         {
+            // forcing re-indentation:
+            int autoIndentLevel = Utils.OrgSubAndChildLevelToSpaces((0 != num_asterisks) ? _subLevel : 0, _childLevel);
+            _buf.appendRepeat(" ", autoIndentLevel);
+         }
+
+         _buf.append(getStateStringSimple());
+      }
+
+      _buf.append(" ");
+
+      // Prio
+      if(prio > 0)
+      {
+         _buf.append(getPrioString());
+         _buf.append(" ");
+      }
+
+      // Tags (pre topic)
+      if(!b_show_tags_after_topic)
+      {
+         if(tags.numElements > 0)
+         {
+            _buf.append(getTagsString());
+            _buf.append(" ");
+         }
+      }
+
+      // Title
+      // trace "xxx title=\""+title+"\"";
+      _buf.append(title);
+
+      String sEff <= getPropertyByName("effort");
+      if(shared::b_prefer_simplified_properties && (null != sEff))
+      {
+         _buf.append(" ("+sEff+")");
+      }
+
+      // Tags (post topic, org-mode default)
+      if(b_show_tags_after_topic)
+      {
+         if(tags.numElements > 0)
+         {
+            int tagsColumn = abs(tags_column);
+            local String sTags <= getTagsString();
+            if(tags_column < 0)
+            {
+               // right-align
+               tagsColumn = tagsColumn - sTags.length + 1/*asciiz*/;
+            }
+            // trace "xxx tagsColumn="+tagsColumn+" sTags=\""+sTags+"\" sTags.length="+(sTags.length-1);
+            int tagIndentSpaces = (1 + tagsColumn - (_buf.length - bufLineStartIdx));
+            _buf.append(" ");
+            if(tagIndentSpaces > 1)
+            {
+               _buf.appendRepeat(" ", tagIndentSpaces - 1);
+            }
+            _buf.append(sTags);
+         }
+      }
+
+      // Progress
+      int numUndoneOrDone = getProgressNumUndoneOrDone();
+      if(numUndoneOrDone > 0)
+      {
+         switch(progress_mode)
+         {
+            case PROGRESS_PERCENT:
+               if(b_debug2)
+                  trace "xxx progress_percent title=\""+title+"\"";
+               _buf.append(" [");
+               _buf.append(getProgressPercent());
+               _buf.append("%] ");
+               break;
+
+            case PROGRESS_COUNT:
+               if(b_debug2)
+                  trace "xxx progress_count title=\""+title+"\"";
+               // trace "xxx title=\""+title+"\" getProgressNumDone()="+getProgressNumDone();
+               _buf.append(" [");
+               _buf.append(getProgressNumDone());
+               _buf.append("/");
+               _buf.append(getProgressNumUndoneOrDone());
+               _buf.append("] ");
+               break;
+         }
+      }
+
+      _buf.append("\n");
+
+      int propSpaces = num_spaces + 3 + (num_asterisks ? (num_asterisks-1):0) ;
+      String *line;
+
+      // Scheduled
+      if(!scheduled.isBlank())
+      {
+         // trace "xxx emit scheduled=\""+scheduled+"\"";
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append("SCHEDULED: ");
+         _buf.append(Utils.ToOrgCalendarDate(scheduled));
+         _buf.append("\n");
+      }
+
+      // Deadline
+      if(!deadline.isBlank())
+      {
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append("DEADLINE: ");
+         _buf.append(Utils.ToOrgCalendarDate(deadline));
+         _buf.append("\n");
+      }
+
+      // Properties
+      int numPropsLeft = property_keys.numElements;
+      String *key;
+      String *val;
+      int keyIdx;
+      if(shared::b_prefer_simplified_properties && (numPropsLeft > 0))
+      {
+         // Simplified properties
+         if(b_fold)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append("fold\n");
+         }
+
+         if(b_private)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append("private\n");
+         }
+
+         if(b_ignore)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append("ignore\n");
+         }
+
+         keyIdx = 0;
+         foreach key in property_keys
+         {
+            val <= property_values.get(keyIdx);
+            // trace "xxx topic=\""+title+"\" prop["+keyIdx+"] name=\""+key+"\" val=\""+val+"\"";
+            switch(key)
+            {
+               default:
+                  // trace "xxx is_simplified_prop("+key+")="+simplified_property_names.containsObject(key);
+                  if(simplified_property_names.containsObject(key))
+                  {
+                     _buf.appendRepeat(" ", propSpaces);
+                     _buf.append(key);
+                     _buf.append(": ");
+                     _buf.append(val);
+                     _buf.append("\n");
+                     numPropsLeft--;
+                  }
+                  break;
+
+               case "effort":
+               case "fold":
+               case "private":
+               case "ignore":
+               case "org-fold":
+               case "org-private":
+               case "org-ignore":
+                  // intentionally left blank
+                  numPropsLeft--;
+                  break;
+
+               case "task_id":
+                  if((val == genTaskId()) || (null != getPropertyByName("resource_id")))
+                  {
+                     // auto-generated task id or a resource, don't export "id:"
+                  }
+                  else
+                  {
+                     _buf.appendRepeat(" ", propSpaces);
+                     _buf.append("id: "+val+"\n");
+                  }
+                  numPropsLeft--;
+                  break;
+
+               case "resource_id":
+                  if(val == genTaskId())
+                  {
+                     // auto-generated resource name
+                     _buf.appendRepeat(" ", propSpaces);
+                     _buf.append("resource\n");
+                  }
+                  else
+                  {
+                     // custom resource name
+                     _buf.appendRepeat(" ", propSpaces);
+                     _buf.append("resource: "+val+"\n");
+                  }
+                  numPropsLeft--;
+                  break;
+
+               case "cookie_data":
+                  if(val == "todo recursive")
+                  {
+                     _buf.appendRepeat(" ", propSpaces);
+                     _buf.append("recursive\n");
+                     numPropsLeft--;
+                  }
+                  break;
+            }
+
+            keyIdx++;
+         }
+      }
+      if(numPropsLeft > 0)
+      {
+         // trace "xxx title=\""+title+"\" numPropsLeft="+numPropsLeft;
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append(":PROPERTIES:\n");
+
+         if(b_fold)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append(":fold: t\n");
+         }
+
+         if(b_private)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append(":private: t\n");
+         }
+
+         if(b_ignore)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append(":ignore: t\n");
+         }
+
+         keyIdx = 0;
+         foreach key in property_keys
+         {
+            val <= property_values.get(keyIdx);
+            if(!(shared::b_prefer_simplified_properties &&
+                 (simplified_property_names.containsObject(key) ||
+                  ("effort" == key) ||
+                  (("cookie_data" == key) && ("todo recursive" == val))
+                  )
+                 )
+               )
+            {
+               _buf.appendRepeat(" ", propSpaces);
+               _buf.append(":"+key+": ");
+               _buf.append(val);
+               _buf.append("\n");
+            }
+            keyIdx++;
+         }
+
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append(":END:\n");
+      }
+
+      // Create date
+      if(!create_date.isBlank())
+      {
+         // trace "xxx emit create_date=\""+create_date+"\"";
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append("! ");
+         _buf.append(create_date);
+         _buf.append("\n");
+      }
+
+      // Mod dates
+      if(mod_dates.numElements > 0)
+      {
+         String *sModDate;
+         foreach sModDate in mod_dates
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append("! C:");
+            _buf.append(sModDate);
+            _buf.append("\n");
+         }
+      }
+
+      // Finish date
+      if(!finish_date.isBlank())
+      {
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append("! F:");
+         _buf.append(finish_date);
+         _buf.append("\n");
+      }
+
+      // Callout text lines
+      foreach line in callout_lines
+      {
+         _buf.appendRepeat(" ", propSpaces);
+         _buf.append("> ");
+         if(b_debug3)
+            trace "xxx callout line=\""+line+"\"";
+         _buf.append(Utils.ResubstOrgTextFormatting(line));
+         _buf.append("\n");
+      }
+
+      // Resource time tracking
+      if(null != resource)
+      {
+         resource.toOrg(_buf, propSpaces);
+      }
+
+      // Text lines
+      // trace "xxx text_lines="+#(text_lines);
+      if(!text_lines.isEmpty())
+      {
+         if(b_escaped_text_lines)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append("<<\n");
+         }
+
+         foreach line in text_lines
+         {
+            // trace "xxx line=\""+line+"\"";
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append(line);
+            _buf.append("\n");
+         }
+
+         if(b_escaped_text_lines)
+         {
+            _buf.appendRepeat(" ", propSpaces);
+            _buf.append(">>\n");
+         }
+      }
+
+      // // // loop(numSpacesAfterNodeHdr)
+      // // //    _buf.append("\n");
+      if(b_empty_line_after_node_hdr)
+      {
+         if(bHasChildren)
+         {
+            _buf.append("\n");
+         }
+         else
+         {
+            bEmptyLineAfterNode = true;
+         }
+      }
+
+      if(doExportChildren())
+      {
+         // Child nodes
+         local Node *c;
+         foreach c in child_nodes
+         {
+            c.toOrg(_buf, _subLevel, _childLevel + 1);
+         }
+
+         // Sub trees  (** sub)
+         foreach c in sub_nodes
+         {
+            c.toOrg(_buf, _subLevel + 1, 0/*childLevel*/);
+         }
+      }
+
+      if(0 == last_num_linefeeds)
+      {
+         _buf.appendRepeat("\n", numSpacesAfterNode);
+
+         if(bEmptyLineAfterNode)
+            _buf.append("\n");
+
+         last_num_linefeeds = (numSpacesAfterNode + bEmptyLineAfterNode);
+      }
+   }
+
+   public method toMarkdown(local String _buf, local int _level) {
+      // called when generating HTML plan and '-docs,--docs' command line switch is used
+
+      if(!resource_id.isBlank())
+         return;
+
+      if(!_buf.isBlank())
+         _buf.append("\n\n");
+
+      // Title
+      _buf.appendRepeat("#", _level);
+      _buf.append(" ");
+      _buf.append(title);
+      if(doc_id != genTaskId())  // derived from title ?
+         _buf.append(" {"+doc_id+"}");  // app:md extension: explicit anchor id
+      _buf.append("\n");
+
+      String *s;
+      foreach s in text_lines
+      {
+         _buf.append(Utils.ResubstMarkdownTextFormatting(s));
+         _buf.append("\n");
+      }
+
+      // (todo) priority ?
+      // (todo) tags
+      // (todo) link
+      // (todo) callout lines
+      // (todo) status/effort/allocate/depends properties
+      // (todo) cross-references (smmx relations)
+
+      // Child nodes
+      local Node *c;
+      foreach c in child_nodes
+      {
+         c.toMarkdown(_buf, _level + 1);
+      }
+
+      // Sub trees  (** sub)
+      foreach c in sub_nodes
+      {
+         c.toMarkdown(_buf, _level + 1);
+      }
+   }
+
+   public method doExportChildren() : boolean {
+      return
+         !(b_private && shared::b_honor_private_flag)
+         ;
+   }
+
+   public method hasTags() : boolean {
+      return (tags.numElements > 0);
+   }
+
+   public method hasTag(String _s) : boolean {
+      return tags.containsObject(_s);
+   }
+
+   public method hasTagsAny(StringArray _tags) : boolean {
+      String *sTag;
+      foreach sTag in _tags
+      {
+         if(tags.containsObject(sTag))
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public method hasTagsAll(StringArray _tags) : boolean {
+      String *sTag;
+      foreach sTag in _tags
+      {
+         if!(tags.containsObject(sTag))
+            return false;
+      }
+      return true;
+   }
+
+   public method genTaskId() : String {
+      return Utils.CreateAnchor(title.trim());
+      // trace "xxx genTaskId: task_id=\""+task_id+"\"";
+   }
+
+   public method getOrCreateTaskId() : String {
+      if(task_id.isBlank())
+         task_id = genTaskId();
+      return task_id;
+   }
+
+   public method addProperty(String _key, String _val) : boolean {
+      if(b_debug2)
+         trace "[dbg] addProperty: key=\""+_key+"\" val=\""+_val+"\"";
+
+      // (note) key must be lower case
+      switch(_key)
+      {
+         case "properties":
+         case "end":
+            break;
+
+         // Pseudo-property restored from SMMX note properties:
+         case "org-separator-style":
+            separator_style = parseSeparatorStyleAttribValue(_val.trim());
+            break;
+
+         case "org-separator-caption":
+            separator_caption = _val.trim();
+            break;
+
+         case "org-layout":
+            // "list" or "top-down"
+            if("list" == (_val.trim().toLower()))
+            {
+               // // trace "xxx newchildaslist";
+               // // b_new_child_as_list = true;
+            }
+            break;
+
+         case "org-prio":
+            prio = int(_val);  // 1..3 => A..C
+            break;
+
+         case "org-tags":
+            if(!addTagsFromString(_val))
+               return false;
+            break;
+
+         // // case "org-scheduled":
+         // //    scheduled = _val;
+         // //    break;
+
+         // // case "org-deadline":
+         // //    deadline = _val;
+         // //    break;
+
+         // // case "org-num-spaces":
+         // //    num_spaces = int(_val);
+         // //    break;
+
+         // // case "org-num-asterisks":
+         // //    num_asterisks = int(_val);
+         // //    trace "xxx num_asterisks="+num_asterisks;
+         // //    break;
+
+         case "org-empty-line-after-node-hdr":
+            b_empty_line_after_node_hdr = Utils.ParsePropertyBool(_val);
+            if(b_debug3)
+               trace "xxx b_empty_line_after_node_hdr="+b_empty_line_after_node_hdr;
+            break;
+
+         case "org-empty-line-after-node":
+            b_empty_line_after_node = Utils.ParsePropertyBool(_val);
+            if(b_debug3)
+               trace "xxx b_empty_line_after_node="+b_empty_line_after_node;
+            break;
+
+         case "start":
+            if(scheduled.isBlank())
+               scheduled = _val;
+            else
+            {
+               trace "[~~~] SCHEDULED: and start property used at the same time (in line nr "+org.line_nr+"), ignoring 'start'..";
+            }
+            break;
+
+         default:
+            // Generic property
+            property_keys.add(_key.toLower());
+            property_values.add(_val);
+
+            if(_key == "resource_id")
+            {
+               resource_id = _val;
+               if(null == resource)
+               {
+                  resource <= new Resource;
+               }
+            }
+            else if(_key == "task_id")
+               task_id = _val;
+            else if(_key == "id")
+               task_id = _val;
+            else if(_key == "was-main")
+               b_was_main_node = true;////Utils.ParsePropertyBool(_val);
+            else if((_key == "fold") || (_key == "org-fold"))
+            {
+               b_fold = true;
+            }
+            else if((_key == "private") || (_key == "org-private"))
+               b_private = true;
+            else if((_key == "ignore") || (_key == "org-ignore"))
+               b_ignore = true;
+            else if(_key == "clock")
+            {
+               lazyDefaults();
+               if(!org.addClockTimeEntry(_val, getTaskFolderParentOrSelf(), true/*bWasTaskProperty*/))
+                  return false;
+            }
+            break;
+      }
+      return true;
+   }
+
+   public method addPropertyRGB24(String _key, int _val) {
+      local Integer io = _val & 0xFFffFF;
+      addProperty(_key, io.printf("#%06x"));
+   }
+
+   public method addPropertyFromString(String _line) : boolean {
+      // called by smmx-to-org
+      // trace "xxx addPropertyFromString: line=\""+_line+"\"";
+      local String lineLC <= _line.toLower();
+
+      int idxS = lineLC.indexOfChar(':', 0);
+      int idxE = lineLC.indexOfChar(':', idxS+1);
+      if((-1 != idxS) && (-1 != idxE))
+      {
+         String key;
+         lineLC.substring(idxS+1, idxE-idxS-1) => key;
+         String val;
+         _line.substring(idxE+1, -1) => val;
+         Utils.ResubstOrgTextInPlace(val);
+         key.toLower();
+
+         // // if(("for" == key) || ("effort" == key))
+         if("effort" == key)
+         {
+            lazyDefaults();
+         }
+         else if("allocate" == key)
+         {
+            if(b_have_alloc)
+            {
+               addToPropertyList(key, val.trim());
+            }
+            else
+            {
+               // override default allocation (if any)
+               setPropertyByName("allocate", val.trim());
+               b_have_alloc = true;
+            }
+            lazyDefaults();
+            return true;
+         }
+         if(addProperty(key, val.trim()))
+            return true;
+      }
+      return false;
+   }
+
+   public method extractPropertiesFromString(String _s) {
+      // trace "xxx extractPropertiesFromString: s=\""+_s+"\"";
+      boolean bProperties = false;
+      local StringArray lines <= _s.splitChar('\n');
+      // trace "xxx extractPropertiesFromString: lines="+#(lines);
+      local String *line;
+      local String lineLC;
+      foreach line in lines
+      {
+         line.trim();
+         line.toLower() => lineLC;
+
+         // trace "xxx extractPropertiesFromString: line=\""+line+"\"";
+         if(":properties:" == lineLC)
+         {
+            if(bProperties)
+               trace "[~~~] extractPropertiesFromString: duplicate :PROPERTIES: start";
+            bProperties = true;
+         }
+         else if(":end:" == lineLC)
+         {
+            if(bProperties)
+            {
+               bProperties = false;
+            }
+            else
+            {
+               trace "[~~~] extractPropertiesFromString: :END: outside of :PROPERTIES:";
+            }
+         }
+         else if(bProperties)
+         {
+            if(line <= ":")
+            {
+               addPropertyFromString(line);
+            }
+         }
+      }
+
+      // // int idxPropS = _s.indexOf(":PROPERTIES:", 0);
+      // // if(-1 != idxPropS)
+      // // {
+      // //    int idxPropE = _s.indexOf(":END:", idxPropS+12);
+      // //    if(-1 != idxPropE)
+      // //    {
+      // //       local String t;
+      // //       _s.substring(idxPropS, idxPropE+5) => t;
+      // //       // trace "xxx extractPropertiesFromString: t=\""+t+"\"";
+      // //    }
+      // // }
+   }
+
+   public method getPropertyByName(String _name) : String {
+      int idx = property_keys.indexOfObject(_name, 0);
+      if(-1 != idx)
+      {
+         return property_values.get(idx);
+      }
+      return null;
+   }
+
+   public method hasProperty(String _name) : boolean {
+      return property_keys.containsObject(_name);
+   }
+
+   public method setPropertyByName(String _name, String _val) : boolean {
+      int idx = property_keys.indexOfObject(_name, 0);
+
+      if(b_debug3)
+         trace "xxx setPropertyByName(name=\""+_name+"\" val=\""+_val+"\")";
+
+      if("resource_id" == _name)
+      {
+         if(null == resource)
+         {
+            resource <= new Resource;
+         }
+      }
+
+      if(-1 != idx)
+      {
+         // Replace
+         property_keys[idx] = _name;
+         property_values[idx] = _val;
+         return true;
+      }
+      else
+      {
+         // Create
+         return addProperty(_name, _val);
+      }
+   }
+
+   public method lazyAllocateDefault() {
+      if!(org.allocate_default.isBlank())
+      {
+         if(null == getPropertyByName("allocate"))
+         {
+            setPropertyByName("allocate", org.allocate_default);
+         }
+      }
+   }
+
+   public method lazyEffortDefault() {
+      if!(org.effort_default.isBlank())
+      {
+         if(null == getPropertyByName("effort"))
+         {
+            setPropertyByName("effort", org.effort_default);
+         }
+      }
+   }
+
+   public method lazyDefaults() {
+      //trace "xxx lazyDefaults: this.id=\""+getOrCreateTaskId()+"\" ";
+      lazyAllocateDefault();
+      lazyEffortDefault();
+   }
+
+   public method addToPropertyList(String _name, String _valList) : boolean {
+      String val <= getPropertyByName(_name);
+      if(null != val)
+      {
+         return setPropertyByName(_name, val+","+_valList);
+      }
+      else
+      {
+         return setPropertyByName(_name, _valList);
+      }
+   }
+
+   public method addUniqueValueToPropertyList(String _name, String _val) : boolean {
+      String val <= getPropertyByName(_name);
+      if(null != val)
+      {
+         local StringArray a <= val.splitChar(',');
+         if(!a.containsObject(_val))
+            setPropertyByName(_name, val+","+_val);
+      }
+      else
+      {
+         return setPropertyByName(_name, _val);
+      }
+   }
+
+   public method deletePropertyByName(String _name) {
+      int idx = property_keys.indexOfObject(_name, 0);
+      if(-1 != idx)
+      {
+         property_keys.delete(idx);
+         property_values.delete(idx);
+      }
+   }
+
+   public static DurationStringToFloat(String _sDuration) : float {
+      float r;
+      if(_sDuration >= "h")
+         r = float(_sDuration.replace("h",""));
+      else if(_sDuration >= "d")
+         r = float(_sDuration.replace("d","")) * 24;
+      else if(_sDuration >= "w")
+         r = float(_sDuration.replace("w","")) * 24 * 7;
+      else if(_sDuration >= "m")
+         r = float(_sDuration.replace("m","")) * 24 * 30;
+      else if(_sDuration >= "mo")
+         r = float(_sDuration.replace("mo","")) * 24 * 20;
+      else if(_sDuration >= "y")
+         r = float(_sDuration.replace("y","")) * 365 * 24;
+      else
+         r = float(_sDuration);  // assume hours
+      return r;
+   }
+
+   public method getDurationRiskFactor() : float {
+
+      if(shared::b_no_risk)
+         return 1.0;
+
+      float r = 1.0;
+      String sRisk <= getPropertyByName("durationrisk");
+      if(null == sRisk)
+         sRisk <= getPropertyByName("risk");
+      if(null != sRisk)
+      {
+         // Percent
+         // if(sRisk & "%")
+         if(1)
+         {
+            r = float(sRisk.replace("%", "")) / 100.0;
+            r += 1.0;
+         }
+         else
+         {
+            // Factor
+            r = float(sRisk);
+         }
+         if!(1 <= r <= 10)
+         {
+            trace "[---] invalid durationrisk (\""+sRisk+"\")";
+            exit(10);
+         }
+      }
+      return r;
+   }
+
+   public method getDurationInHours() : float {
+      float r = -1;
+      String sDur <= getPropertyByName("duration");
+      if(null != sDur)
+      {
+         r = DurationStringToFloat(sDur);
+         float risk = getDurationRiskFactor();
+         r *= risk;
+      }
+      return r;
+   }
+
+   public method deleteOrgProperties() {
+      int idx = 0;
+      while(idx < property_keys.numElements)
+      {
+         if(property_keys[idx].startsWith("org-"))
+         {
+            property_keys.delete(idx);
+            property_values.delete(idx);
+         }
+         else
+            idx++;
+      }
+   }
+
+   public method getUniqueAllocatedResourceId() : String {
+      // fail when multiple resources are allocate
+      String val <= getPropertyByName("allocate");
+      if(null != val)
+      {
+         local StringArray a <= val.replace(":", ",").splitChar(',');
+         if(1 == a.numElements)
+         {
+            local String r <= a.get(0).trim();
+            int idx = r.indexOfChar('(', 0);
+            if(-1 != idx)
+               return r.substring(0, idx).trim();
+            else
+               return deref r;
+         }
+      }
+      return null;
+   }
+
+   public static EffortStringToFloat(String _sEffort) : float {
+      float r;
+      if(_sEffort >= "h")
+         r = float(_sEffort.replace("h",""));
+      else if(_sEffort >= "d")
+         r = float(_sEffort.replace("d","")) * 8;
+      else if(_sEffort >= "w")
+         r = float(_sEffort.replace("w","")) * 8 * 5;
+      else if(_sEffort >= "m")
+         r = float(_sEffort.replace("m","")) * 8 * 20;
+      else if(_sEffort >= "mo")
+         r = float(_sEffort.replace("mo","")) * 8 * 20;
+      else if(_sEffort >= "y")
+         r = float(_sEffort.replace("y","")) * 8 * 260;
+      else
+         r = float(_sEffort);  // assume hours
+      return r;
+   }
+
+   public method getEffortRiskFactor() : float {
+
+      if(shared::b_no_risk)
+         return 1.0;
+
+      float r = 1.0;
+      String sRisk <= getPropertyByName("effortrisk");
+      if(null == sRisk)
+         sRisk <= getPropertyByName("risk");
+      if(null != sRisk)
+      {
+         // Percent
+         // if(sRisk & "%")
+         if(1)
+         {
+            r = float(sRisk.replace("%", "")) / 100.0;
+            r += 1.0;
+         }
+         else
+         {
+            // Factor
+            r = float(sRisk);
+         }
+         if!(1 <= r <= 10)
+         {
+            trace "[---] invalid effortrisk (\""+sRisk+"\")";
+            exit(10);
+         }
+      }
+      return r;
+   }
+
+   public method getEffortLeftInHours() : float {
+      float eLeft = -1;
+      String sEffortLeft <= getPropertyByName("effortleft");
+      if(null != sEffortLeft)
+      {
+         eLeft = EffortStringToFloat(sEffortLeft);
+
+         float riskFactor = getEffortRiskFactor();
+         eLeft *= riskFactor;
+      }
+      return eLeft;
+   }
+
+   public method getEffortInHours() : float {
+      // called once per task during Schedule.recursiveScan()
+      float r = -1;
+
+      float eTotal = -1;
+      String sEffort <= getPropertyByName("effort");
+      if(null != sEffort)
+      {
+         eTotal = EffortStringToFloat(sEffort);
+         // trace "xxx eTotal="+eTotal+" sEffort="+sEffort;
+      }
+
+      float eLeft = -1;
+      String sEffortLeft <= getPropertyByName("effortleft");
+      if(null != sEffortLeft)
+      {
+         eLeft = EffortStringToFloat(sEffortLeft);
+      }
+
+      float eDone = -1;
+      String sEffortDone <= getPropertyByName("effortdone");
+      if(null != sEffortDone)
+      {
+         eDone = EffortStringToFloat(sEffortDone);
+      }
+
+      float riskFactor = getEffortRiskFactor();
+
+      if(-1 != eTotal)
+      {
+         eTotal *= riskFactor;
+
+         r = eTotal;
+
+         if(-1 != eLeft)
+         {
+            eLeft *= riskFactor;
+
+            if(-1 != eDone)
+            {
+               if( (eLeft+eDone) > eTotal )
+               {
+                  trace "[~~~] task.id=\""+getOrCreateTaskId()+"\" effortleft+effortdone ("+eLeft+"+"+eDone+"="+(eLeft+eDone)+") exceed effort="+eTotal;
+               }
+            }
+            else
+            {
+               if(eLeft > eTotal)
+               {
+                  trace "[~~~] task.id=\""+getOrCreateTaskId()+"\" effortleft ("+eLeft+") exceeds effort="+eTotal;
+               }
+            }
+         }
+         else if(-1 != eDone)
+         {
+            if(eDone > eTotal)
+            {
+               trace "[~~~] task.id=\""+getOrCreateTaskId()+"\" effortdone ("+eDone+") exceeds effort="+eTotal;
+            }
+         }
+      }
+      else if(-1 != eLeft)
+      {
+         trace "[~~~] task.id=\""+getOrCreateTaskId()+"\" has effortleft ("+eLeft+") but is missing effort property";
+
+         eLeft *= riskFactor;
+
+         if(-1 != eDone)
+         {
+            r = eLeft + eDone;
+         }
+         else
+         {
+            r = eLeft;
+         }
+      }
+      else if(-1 != eDone)
+      {
+         trace "[~~~] task.id=\""+getOrCreateTaskId()+"\" has effortdone="+eDone+"h but no effort or effortleft properties";
+      }
+
+      // trace "xxx task.id=\""+getOrCreateTaskId()+"\" effort="+r+"h"+ ((1.0 != riskFactor) ? (" (risk="+((riskFactor-1)*100)+"%)") : "");
+
+      return r;
+   }
+
+   public method recursiveFoldSubTaskAllocations(Node _parent) {
+      if(null != _parent)
+      {
+         String sAllocate <= getPropertyByName("allocate");
+         if(null != sAllocate)
+         {
+            local StringArray a <= sAllocate.splitChar(',');
+            String *sRes;
+            foreach sRes in a
+            {
+               sRes.trim();
+               _parent.addUniqueValueToPropertyList("allocate", sRes);
+            }
+         }
+      }
+      else
+         _parent <= this;
+
+      local Node *c;
+      foreach c in child_nodes
+      {
+         c.recursiveFoldSubTaskAllocations(_parent);
+      }
+
+      foreach c in sub_nodes
+      {
+         c.recursiveFoldSubTaskAllocations(_parent);
+      }
+   }
+
+   public method calcAccumulatedChildEffortInHours() : float {
+      local float r = 0;
+      float eff;
+
+      // Child nodes
+      local Node *c;
+      foreach c in child_nodes
+      {
+         if([ST_NONE,ST_TODO, ST_ACTV, ST_TEST, ST_DONE].contains(c.state))
+         {
+            eff = c.getEffortInHours();
+            if(eff > 0)
+               r += eff;
+            if(!c.b_ignore)
+               r += c.calcAccumulatedChildEffortInHours();
+         }
+      }
+
+      // Sub trees  (** sub)
+      foreach c in sub_nodes
+      {
+         if([ST_NONE,ST_TODO, ST_ACTV, ST_TEST, ST_DONE].contains(c.state))
+         {
+            eff = c.getEffortInHours();
+            if(eff > 0)
+               r += eff;
+            if(!c.b_ignore)
+               r += c.calcAccumulatedChildEffortInHours();
+         }
+      }
+
+      return r;
+   }
+
+   protected method addTextLinesFromNoteString(String _note) {
+      boolean bAllowCreateMod = true;
+
+      local StringArray lines <= _note.splitChar('\n');
+      String *line;
+      // trace "xxx lines="+#(lines);
+      // // if(0 == text_lines.numElements)
+      // //    text_lines.add("dummy line, will be skipped");
+
+      foreach line in lines
+      {
+         local String lineTrim;
+         line.trim() => lineTrim;
+         if!(lineTrim <= ":")
+         {
+            if(bAllowCreateMod)
+            {
+               local String sDMY;
+               boolean bDMY = false;
+
+               if(lineTrim <= "! C:")
+               {
+                  // mod date, "! C:02Jan2020"
+                  lineTrim.substring(4, 12) => sDMY;
+                  sDMY.trim();
+                  // trace "xxx sDMYmod=\""+sDMY+"\"";
+                  if(Utils.IsDateStringDMY(sDMY))
+                  {
+                     addModDateDMY(sDMY);
+                     bDMY = true;
+                  }
+               }
+               else if(lineTrim <= "! F:")
+               {
+                  // finish date, "! F:02Jan2020"
+                  lineTrim.substring(4, 12) => sDMY;
+                  sDMY.trim();
+                  // trace "xxx sDMYmod=\""+sDMY+"\"";
+                  if(Utils.IsDateStringDMY(sDMY))
+                  {
+                     if!(finish_date.isBlank())
+                     {
+                        trace "[~~~] duplicate finish date, sDMY=\""+sDMY+"\"";
+                     }
+                     setFinishDateDMY(sDMY);
+                     bDMY = true;
+                  }
+               }
+               else
+               {
+                  // "! 01Jan2020" create date
+                  lineTrim.substring(2, 12) => sDMY;
+                  sDMY.trim();
+                  // trace "xxx sDMYcreate=\""+sDMY+"\"";
+                  if(Utils.IsDateStringDMY(sDMY))
+                  {
+                     // trace "xxx is create date sDMY=\""+sDMY+"\"";
+                     if(create_date.isBlank())
+                     {
+                        setCreateDateDMY(sDMY);
+                     }
+                     else
+                     {
+                        addModDateDMY(sDMY);
+                     }
+                     // trace "xxx  new cur_node.create_date="+cur_node.create_date;
+                     bDMY = true;
+                  }
+               }
+            }
+
+            if(!bDMY)
+            {
+               bAllowCreateMod = false;
+
+               local String lineTrimLC;
+               lineTrim.toLower() => lineTrimLC;
+               if( !(lineTrimLC <= "scheduled:") &&
+                   !(lineTrimLC <= "deadline:") &&
+                   !(lineTrimLC <= "#+")
+                   )
+               {
+                  if(b_debug3)
+                     trace "xxx extracted textline=\""+line+"\"";
+                  text_lines.add(line);
+               }
+            }
+         }
+      }
+   }
+
+   public method debugPrintSubOutline(local String _buf, local int _level) {
+
+      // Export filter tags
+      if(isFilteredOut())
+         return;
+
+      _buf.appendRepeat(" ", _level * shared::NUM_SPACES);
+      _buf.append(title); // task_id
+      _buf.append("\n");
+
+      local Node *c;
+      foreach c in sub_nodes
+      {
+         c.debugPrintSubOutline(_buf, _level+1);
+      }
+   }
+
+   public method toSMMX(local smmx::SMMX _smmx, local smmx::Node _parentOrNull, boolean _bSub) {
+
+      // Create new node and set parent / addChild
+      local smmx::Node *nSMMX;
+      nSMMX <= _smmx.newNodeWithAutoId(_parentOrNull);
+
+      n_smmx <= nSMMX;  // remember for relations
+
+      boolean bDateScheduled = !scheduled.isBlank();
+      boolean bDateDeadline  = !deadline.isBlank();
+      boolean bDateCreate    = !create_date.isBlank();
+      boolean bDateFinish    = !finish_date.isBlank();
+
+      // Topic title (abbreviated)
+      nSMMX.text = Utils.ResubstSMMXTextFormatting(title);
+      // trace "xxx title=\""+title+"\"";
+      if(title & "§txtfmt")
+         nSMMX.textfmt = "rtf1";
+      else
+         nSMMX.textfmt = "plain";
+
+      nSMMX.anchor = Utils.CreateAnchor(title);  // for relations
+
+      // State to icon
+      nSMMX.org_state = state;
+      nSMMX.icon = _bSub ? getStateIconSMMXSub(bDateFinish) : getStateIconSMMXChild(bDateFinish);
+      nSMMX.b_auto_icon = !(nSMMX.icon.isBlank());
+
+      // Resource to icon
+      if(nSMMX.icon.isBlank())
+      {
+         nSMMX.icon = getSMMXIconByResource();
+         nSMMX.b_auto_icon = !(nSMMX.icon.isBlank());
+      }
+
+      // Rollup progress
+      if(PROGRESS_NONE != progress_mode)
+      {
+         // trace "xxx progress_mode="+progress_mode;
+         nSMMX.checkbox_mode = smmx::Node.CHECKBOX_ROLLUP_PROGRESS;
+         nSMMX.progress = getProgressPercent();
+      }
+
+      // Remember date target (used when converting back to org later on)
+      //  (note) will be removed during smmx-to-org conversion when topic has no date
+      String sDateType = preferred_date;
+      switch(preferred_date)
+      {
+         case "scheduled":
+            if(!bDateScheduled)
+            {
+               if(bDateFinish)
+                  sDateType = "finish";
+               else if(bDateDeadline)
+                  sDateType = "deadline";
+               else if(bDateCreate)
+                  sDateType = "create";
+            }
+            break;
+
+         case "deadline":
+            if(!bDateDeadline)
+            {
+               if(bDateFinish)
+                  sDateType = "finish";
+               else if(bDateScheduled)
+                  sDateType = "scheduled";
+               else if(bDateCreate)
+                  sDateType = "create";
+            }
+            break;
+
+         case "create":
+            if(!bDateCreate)
+            {
+               if(bDateFinish)
+                  sDateType = "finish";
+               else if(bDateScheduled)
+                  sDateType = "scheduled";
+               else if(bDateCreate)
+                  sDateType = "create";
+            }
+            break;
+
+         case "finish":
+            if(!bDateFinish)
+            {
+               if(bDateScheduled)
+                  sDateType = "scheduled";
+               else if(bDateDeadline)
+                  sDateType = "deadline";
+               else if(bDateCreate)
+                  sDateType = "create";
+            }
+            break;
+      }
+
+      // Create date
+      if(bDateCreate)
+      {
+         nSMMX.appendLineToNote("! "+create_date);
+         if("create" == sDateType)
+            nSMMX.calendar_date = Utils.ToSMMXCalendarDate(create_date);
+      }
+
+      // Modification dates
+      if(mod_dates.numElements > 0)
+      {
+         String *sModDMY;
+         foreach sModDMY in mod_dates
+         {
+            nSMMX.appendLineToNote("! C:"+sModDMY);
+         }
+      }
+
+      // Finish date
+      if(bDateFinish)
+      {
+         nSMMX.appendLineToNote("! F:"+finish_date);
+         if("finish" == sDateType)
+            nSMMX.calendar_date = Utils.ToSMMXCalendarDate(finish_date);
+      }
+
+      // SCHEDULED:
+      if(bDateScheduled)
+      {
+         nSMMX.appendLineToNote("SCHEDULED: "+scheduled);
+         if("scheduled" == sDateType)
+         {
+            nSMMX.calendar_date = Utils.ToSMMXCalendarDate(scheduled);
+            // trace "xxx scheduled=\""+scheduled+"\" calendar_date=\""+nSMMX.calendar_date+"\"";
+         }
+      }
+
+      // DEADLINE:
+      if(bDateDeadline)
+      {
+         nSMMX.appendLineToNote("DEADLINE: "+deadline);
+         if("deadline" == sDateType)
+            nSMMX.calendar_date = Utils.ToSMMXCalendarDate(deadline);
+      }
+
+      // Add properties to note
+      nSMMX.appendLineToNote(":PROPERTIES:");
+
+      // // if([ST_IDEA, ST_NOTE, ST_DONT, ST_IGNR].contains(state))
+
+      // Pseudo properties
+      if(SEPARATOR_NONE != separator_style)
+      {
+         nSMMX.appendLineToNote(":org-separator-style: "+getSeparatorStyleAttribValue());
+
+         if(!separator_caption.isBlank())
+         {
+            nSMMX.appendLineToNote(":org-separator-caption: "+separator_caption);
+         }
+      }
+      if(0 == num_asterisks)
+      {
+         nSMMX.appendLineToNote(":org-layout: list");
+      }
+      if(prio > 0)
+      {
+         nSMMX.appendLineToNote(":org-prio: "+prio);
+      }
+      if(b_fold)
+         nSMMX.appendLineToNote(":org-fold: t");
+      if(b_private)
+         nSMMX.appendLineToNote(":org-private: t");
+      if(b_ignore)
+         nSMMX.appendLineToNote(":org-ignore: t");
+      String sTags <= getTagsString();
+      if(!sTags.isBlank())
+      {
+         nSMMX.appendLineToNote(":org-tags: "+sTags);
+      }
+      if(!scheduled.isBlank())
+      {
+         if("scheduled" != sDateType)
+            nSMMX.appendLineToNote(":org-scheduled: "+scheduled);
+      }
+      if(!deadline.isBlank())
+      {
+         if("deadline" != sDateType)
+            nSMMX.appendLineToNote(":org-deadline: "+deadline);
+      }
+      // // if(num_asterisks > 0)
+      // // {
+      // //    nSMMX.appendLineToNote(":org-num-asterisks: "+num_asterisks);
+      // // }
+      // // if(num_spaces > 0)
+      // // {
+      // //    nSMMX.appendLineToNote(":org-num-spaces: "+num_spaces);
+      // // }
+      if(shared::b_smmx_export_empty_line_after_node_hdr_property)
+      {
+         if(b_empty_line_after_node_hdr)
+         {
+            nSMMX.appendLineToNote(":org-empty-line-after-node-hdr: t");
+         }
+      }
+      if(b_empty_line_after_node)
+      {
+         nSMMX.appendLineToNote(":org-empty-line-after-node: t");
+      }
+      if(b_was_main_node)
+      {
+         if(null == getPropertyByName("was-main"))
+            nSMMX.appendLineToNote(":was-main: t");
+      }
+      // // if(!resource_id.isBlank())
+      // // {
+      // //    // (note) will be removed in smmx-to-org when it's equal to anchorfied topic caption
+      // //    nSMMX.appendLineToNote(":resource_id: "+resource_id);
+      // // }
+      // // else if(!task_id.isBlank())
+      // // {
+      // //    // (note) will be removed in smmx-to-org when it's equal to anchorfied topic caption
+      // //    nSMMX.appendLineToNote(":task_id: "+task_id);
+      // // }
+
+      if(!scheduled.isBlank() || !deadline.isBlank() || (resource_id.isBlank() && !([ST_NONE, ST_NOTE].contains(state))) )
+         nSMMX.appendLineToNote(":smmx-calendar-date-type: "+sDateType);
+
+      boolean bImage = false;
+
+      // Generic properties (blocker, depends, limits, allocate, ..)
+      String *sPropKey;
+      int propIdx = 0;
+      foreach sPropKey in property_keys
+      {
+         String sPropVal <= property_values.get(propIdx);
+         switch(sPropKey)
+         {
+            default:
+               // Generic property
+               if!(sPropKey <= "smmx-")
+               {
+                  nSMMX.appendLineToNote(":"+sPropKey+": "+sPropVal);
+               }
+               break;
+
+               // Restore SMMX specific attributes (and don't add to generic properties)
+            case "smmx-position":
+               nSMMX.setPositionFromString(sPropVal.trim());
+               break;
+
+            case "smmx-palette":
+               nSMMX.palette = sPropVal;
+               break;
+
+            case "smmx-colorinfo":
+               nSMMX.colorinfo = sPropVal;
+               break;
+
+            case "smmx-icon":
+               if(nSMMX.icon.isBlank())
+                  nSMMX.icon = sPropVal;
+               break;
+
+            case "smmx-text-style":
+               if(sPropVal & "b")
+                  nSMMX.text_style |= smmx::Node.TEXTSTYLE_BOLD;
+               if(sPropVal & "i")
+                  nSMMX.text_style |= smmx::Node.TEXTSTYLE_ITALIC;
+               if(sPropVal & "u")
+                  nSMMX.text_style |= smmx::Node.TEXTSTYLE_UNDERLINE;
+               if(sPropVal & "s")
+                  nSMMX.text_style |= smmx::Node.TEXTSTYLE_STRIKETHROUGH;
+               break;
+
+            case "smmx-font-scale":
+               nSMMX.font_scale = float(sPropVal);
+               break;
+
+            case "smmx-list":
+               nSMMX.b_list = Utils.ParsePropertyBool(sPropVal);
+               break;
+
+            case "smmx-list-md":
+               nSMMX.b_list_md = Utils.ParsePropertyBool(sPropVal);
+               break;
+
+            case "smmx-hull-visible":
+               nSMMX.b_hull_visible = Utils.ParsePropertyBool(sPropVal);
+               break;
+
+            case "smmx-collapsed":
+               nSMMX.b_collapsed = Utils.ParsePropertyBool(sPropVal);
+               // trace "xxx parse smmx-collapsed="+nSMMX.b_collapsed+" (sPropVal=\""+sPropVal+"\")";
+               break;
+
+            case "hide":
+               // shortcut for "smmx-collapsed"
+               nSMMX.b_collapsed = true;
+               break;
+
+            case "smmx-fill-color":
+               nSMMX.fill_color = int(sPropVal);
+               break;
+
+            case "smmx-border-style":
+               nSMMX.border_style = sPropVal;
+               break;
+
+            case "smmx-border-width":
+               nSMMX.border_style = sPropVal;
+               break;
+
+            case "smmx-stroke-style":
+               nSMMX.stroke_style = sPropVal;
+               break;
+
+            case "smmx-stroke-color":
+               nSMMX.stroke_color = int(sPropVal);
+               break;
+
+            case "smmx-embedded-image-name":
+               // within topic box
+               nSMMX.embedded_image = sPropVal;
+               _smmx.findAndAddLocalImage(nSMMX.embedded_image);
+               break;
+
+            case "smmx-embedded-image-scale":
+               nSMMX.embedded_image_scale = float(sPropVal);
+               break;
+
+            case "smmx-image-name":
+               // embedded in .smmx file, also used as preview for external image
+               break;
+
+            case "smmx-image-thumbnail":
+            case "smmx-image-url":
+               // callout image
+               bImage = true;
+               break;
+
+            // // case "smmx-calendar-date":
+            // //    nSMMX.calendar_date = Utils.ToSMMXCalendarDate(sPropVal.trim());
+            // //    trace "xxx smmx calendar_date=\""+nSMMX.calendar_date+"\"";
+            // //    break;
+
+         }
+
+         // Next topic property
+         propIdx++;
+      }
+      nSMMX.appendLineToNote(":END:");
+
+
+      // Image
+      if(bImage)
+      {
+         nSMMX.image <= smmx::Image.New(_smmx);
+         nSMMX.image.restoreFromOrgNode(this);  // also adds previously extracted image
+      }
+
+
+      String *sLine;
+      local Node *c;
+      local boolean bSkipFirstChild = false;  // links
+
+      // Callout text lines
+      foreach sLine in callout_lines
+      {
+         nSMMX.appendLineToTextCallout(sLine, this);
+      }
+
+      // Link
+      //  - in topic
+      //  - or in first none/info state child topic
+      boolean bLinkDone = false;
+      if(child_nodes.numElements > 0)
+      {
+         // ! my parent topic
+         //    ! http://example.com   (add as parent link)
+         c <= child_nodes.get(0);
+         if([ST_NONE, ST_NOTE].contains(c.state))
+         {
+            boolean bLinkList = false;
+            Node cLinkNext <= child_nodes.get(1);
+            if(null != cLinkNext)
+            {
+               local smmx::Link tLink;
+               bLinkList = tLink.extractFromText(cLinkNext.title);
+            }
+            if(!bLinkList)
+            {
+               // trace "xxx c.title=\""+c.title+"\" hasChildren="+c.hasChildren();
+               if(!c.hasChildren())
+               {
+                  bLinkDone = nSMMX.createLinkFromOrgText(c.title);
+                  if(bLinkDone)
+                  {
+                     bSkipFirstChild = true;
+                     if(nSMMX.icon.isBlank())
+                     {
+                        // // nSMMX.icon = "ic8_48_globe";
+                        nSMMX.icon = "ic8_48_arrow_right";
+                     }
+                  }
+               }
+            }
+         }
+      }
+      if(!bLinkDone)
+      {
+         bLinkDone = nSMMX.createLinkFromOrgText(title);
+      }
+         // //       if(c.
+         // // trace "xxx note line=\""+sLine+"\"";
+         // // boolean bDone = false;
+         // // if(!bLinkDone && (
+         // //       (sLine & "http://") ||
+         // //       (sLine & "https://") ||
+         // //       (sLine & "ftp://") ||
+         // //       (sLine & "file://") ||
+         // //       ((sLine & "[[") && (sLine & "]]")) ||
+         // //       ((sLine & "<") && (sLine & ">"))
+         // //                   )
+         // //    )
+         // // {
+         // //    bDone = nSMMX.createLinkFromText(sLine);
+         // //    bLinkDone = bDone;
+         // // }
+         // // if(!bDone)
+         // //    }
+         // // }
+
+      // Note
+      foreach sLine in text_lines
+      {
+         nSMMX.appendLineToNote(sLine);
+      }
+
+      // Child notes (todo.txt lists/trees)
+      foreach c in child_nodes
+      {
+         if(!bSkipFirstChild)
+            c.toSMMX(_smmx, nSMMX, false/*bSub*/);
+         else
+            bSkipFirstChild = false;
+      }
+
+      // Sub nodes (** org-style)
+      foreach c in sub_nodes
+      {
+         c.toSMMX(_smmx, nSMMX, true/*bSub*/);
+      }
+   }
+
+   public method recursiveAddRelationsToSMMX(smmx::SMMX _smmx) {
+      if(b_debug2)
+         trace "xxx recursiveAddRelationsToSMMX: this="+#(this)+" topic=\""+title+"\" n_smmx="+#(n_smmx);
+
+      // Target Relations
+      int propIdx = 0;
+      String *sPropKey;
+      foreach sPropKey in property_keys
+      {
+         String sPropVal <= property_values.get(propIdx);
+         if("smmx-relation" == sPropKey)
+         {
+            _smmx.newRelationFromOrgAttribs(n_smmx/*source*/, sPropVal);
+         }
+         else if("smmx-parent-relation" == sPropKey)
+         {
+            n_smmx.parent_relation <= new smmx::Relation;
+            if!(n_smmx.parent_relation.initFromOrgAttribs(this, null/*sourceId*/, sPropVal))
+            {
+               trace "[---] failed to init parent_relation from org attribs (sPropVal=\""+sPropVal+"\")";
+               n_smmx.parent_relation <= null;
+            }
+         }
+
+         // Next property
+         propIdx++;
+      }
+
+      local Node *c;
+      foreach c in sub_nodes
+      {
+         if(null != c.n_smmx)
+         {
+            c.recursiveAddRelationsToSMMX(_smmx);
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class Org : Defs {
+   define int MAX_NODES = 10000;
+   define int MAX_TAGS  =  1000;
+
+   PointerArray info_nodes;  // info node instances, "! my info text", before items
+   PointerArray nodes;       // main node instances
+
+   PointerArray all_nodes;  // Node refs
+
+   Node *cur_main;  // cur main node ref
+   Node *cur_node;  // cur main or sub node ref
+   Node *cur_sub;
+
+   HashTable all_tags;
+
+   int line_nr;
+
+   int total_num_sub_nodes;
+   int total_num_child_nodes;
+
+   boolean b_properties;  // true while parsing :PROPERTIES:
+   boolean b_allow_simple_global_properties;  // allow simplified properties (allocate:, effort:, ..)
+   int     force_text_lines_col_idx; // >=0 while in escaped text line block (<<...>>)
+
+   int      res_week_num_spaces;    // >0 while parsing 'week' time tracking info
+   Time    *res_week_start;         // valid while parsing week time tracking
+   boolean  b_allow_res_week_line;
+
+   // "#+myproperty:mypropertyvalue"
+   //                 "todo" : org-mode task state configuration
+   //              "startup" : org-mode startup options (e.g. "showeverything", "showall")
+   //                "title" : document title
+   //       "smmx-style-key" : see smmx::SMMX.style_key
+   //   "smmx-info-position" : position of info node
+   //   "smmx-root-position" : position of root node
+   //           "start-date" : project start org-mode calendar date (for scheduler)
+   //      "org-tags-column" : where to place tags. <0: left-align, >0: right align, 0=right after headline
+   StringArray global_property_keys;
+   StringArray global_property_values;
+
+   HashTable allowed_tags;  // cached from "allowed-tags" global property
+
+   StringArray *export_filter_tags;   // null = no filter
+   boolean b_export_filter_tags_all;  // true=match all, false=match any
+
+   StringArray *export_inverse_filter_tags;   // null = no filter, !null = blacklist topics
+
+   IntArray export_state_filter;
+
+   StringArray export_property_filters;  // name,valuepattern pairs
+
+   StringArray export_group_filters;  // task(-group) filters
+
+   boolean b_no_info_nodes;
+
+   protected int    next_node_separator_style;     // tmp parser state
+   protected String next_node_separator_caption;   // tmp parser state
+
+   String allocate_default;  // default 'allocate' property value when not blank
+   String effort_default;    // default 'effort' property value when not blank
+
+   String project_id;  // cache (anchorfied 'title' global property)
+
+
+   public method setExportFilterTagsByString(String _s, boolean _bAll) {
+      export_filter_tags <= _s.replace(",", ":").splitChar(':');
+      b_export_filter_tags_all = _bAll;
+   }
+
+   public method setExportInverseFilterTagsByString(String _s) {
+      export_inverse_filter_tags <= _s.replace(",", ":").splitChar(':');
+   }
+
+   public method setExportStateFilterByString(String _s) {
+      local StringArray a <= _s.replace(",", ":").splitChar(':');
+      local String *s;
+      foreach s in a
+      {
+         int st = Node.StateStringToEnum(s.trim().toUpper());
+         if(!export_state_filter.contains(st))
+            export_state_filter.add(st);
+      }
+   }
+
+   public method addExportPropertyFilterByString(String _s) {
+      int idx = _s.indexOfChar('=', 0);
+      if(-1 != idx)
+      {
+         local String sPropName <= _s.substring(0, idx).trim();
+         local String sPropPat <= _s.substring(idx+1, -1).trim();
+         export_property_filters.add(deref sPropName);
+         export_property_filters.add(deref sPropPat);
+      }
+   }
+
+   public method addExportGroupFilter(String _s) {
+      export_group_filters.add(deref _s.toLower());
+   }
+
+   public method newInfoNode() : Node {
+      // called by smmx-to-org
+      local Node n;
+      n.org <= this;
+      n.b_was_info_node = true;
+      info_nodes.add(#(deref n));
+      return n;
+   }
+
+   public method newTopicNode() : Node {
+      // called by smmx-to-org
+      local Node n;
+      n.org <= this;
+      nodes.add(#(deref n));
+      return n;
+   }
+
+   public method findNodeById(String _id) : Node {
+      Node *n;
+      local Node *r;
+      foreach n in nodes
+      {
+         r <= n.recursiveFindNodeById(_id);
+         if(null != r)
+            return r;
+      }
+      return r;
+   }
+
+   public method addAndReparentInfoNodesFromArray(PointerArray _a) {
+      int idx = 0;
+      loop(_a.numElements)
+      {
+         Node o <= _a.getDeref(idx++);
+         o.recursiveReparentInfoNodeTo(this);
+         info_nodes.add(#(deref o));
+      }
+
+      // // Force empty line after last info node
+      // // Node nLast <= info_nodes.last;
+      // // if(null != nLast)
+      // // {
+      // //    nLast.b_empty_line_after_node = true;
+      // // }
+   }
+
+   public method setGlobalPropertyFromString(String _s) {
+      int idxCol = _s.indexOfChar(':', 0);
+      if(-1 != idxCol)
+      {
+         setGlobalProperty(_s.substring(2, idxCol-2).toLower(),  // skip "#+"
+                           _s.substring(idxCol+1, -1).trim()
+                           );
+      }
+   }
+
+   public method addGlobalProperty(String _key, String _value) {
+      global_property_keys.add(_key);
+      global_property_values.add(_value);
+   }
+
+   public method addToGlobalPropertyList(String _name, String _valList) : boolean {
+      String val <= getGlobalPropertyByName(_name);
+      if(null != val)
+      {
+         setGlobalProperty(_name, val+","+_valList);
+      }
+      else
+      {
+         setGlobalProperty(_name, _valList);
+      }
+   }
+
+   public method setGlobalProperty(String _key, String _value) {
+      if(b_debug)
+         trace "[dbg] set global property \""+_key+"\" value=\""+_value+"\"";
+      int idx = global_property_keys.indexOfObject(_key, 0);
+
+      boolean bUpdateAllowedTags = ("allowed-tags" == _key);
+
+      if(-1 != idx)
+      {
+         global_property_values[idx] = deref _value;
+      }
+      else
+      {
+         addGlobalProperty(deref _key, deref _value);
+      }
+
+      if("title" == _key)
+      {
+         project_id <= Utils.CreateAnchor(_value);
+         if(b_debug)
+            trace "[dbg] org::setGlobalProperty: project id is \""+project_id+"\"";
+      }
+      else if("org-tags-column" == _key)
+      {
+         tags_column = int(_value);
+         if(b_debug)
+            trace "[dbg] org::setGlobalProperty: org-tags-column is "+tags_column;
+      }
+
+      if(bUpdateAllowedTags)
+      {
+         updateAllowedTags();
+      }
+   }
+
+   protected method updateAllowedTags() {
+      String s <= getGlobalPropertyByName("allowed-tags");
+      if(null != s)
+      {
+         StringArray a <= s.replace(":", ",").splitChar(',');
+         foreach s in a
+         {
+            s.trim();
+            // trace "xxx allow tag \""+s+"\"";
+            allowed_tags[s] = true;
+         }
+         return true;
+      }
+      allowed_tags.free();
+   }
+
+   public method getGlobalPropertyByName(String _name) : String {
+      int idx = global_property_keys.indexOfObject(_name, 0);
+      if(-1 != idx)
+      {
+         return global_property_values.get(idx);
+      }
+      return null;
+   }
+
+   public method extractGlobalPropertiesFromString(String _s) {
+      // called by smmx toOrg()
+      local StringArray lines <= _s.splitChar('\n');
+      local String *line;
+      foreach line in lines
+      {
+         line.trim();
+         if(line <= "#+allowed-tags:")
+         {
+            String s <= getGlobalPropertyByName("allowed-tags");
+            if(null != s)
+               setGlobalPropertyFromString(line+","+s);
+            else
+               setGlobalPropertyFromString(line);
+         }
+         else if(line <= "#+")
+            setGlobalPropertyFromString(line);
+      }
+   }
+
+   public method unlinkInfoNodes() : PointerArray {
+      return deref info_nodes;
+   }
+
+   public method toOrg(String _buf) {
+      Node *c;
+
+      last_node_level = -1;
+      last_sub_level = -1;
+      last_child_level = -1;
+      last_num_linefeeds = 0;
+      last_level1_node_had_children = false;
+
+      if(b_emacs_header)
+      {
+         _buf.append("-*-mode: org-*-\n\n");
+
+         // Lazy-add task states property
+         if(null == getGlobalPropertyByName("todo"))
+            setGlobalProperty("todo", "IDEA TODO ACTV TEST DONT IGNR NOTE QUES WAIT | DONE");
+      }
+
+      // Global Properties
+      String *sPropKey;
+      int propIdx = 0;
+      foreach sPropKey in global_property_keys
+      {
+         String sPropVal <= global_property_values.get(propIdx);
+         if(sPropKey <= "smmx-")
+            _buf.append("#+"+sPropKey.toLower()+": "+sPropVal+"\n");
+         else
+            _buf.append("#+"+sPropKey.toUpper()+": "+sPropVal+"\n");
+
+         // Next global property
+         propIdx++;
+      }
+      if(propIdx > 0)
+         _buf.append("\n");
+
+      // Info nodes
+      foreach c in info_nodes
+      {
+         if(b_debug2)
+            trace "xxx info node topic=\""+c.title+"\" b_was_main="+c.b_was_main_node;
+         c.toOrg(_buf, 1/*subLevel*/, 0/*childLevel*/);
+      }
+      if(info_nodes.numElements > 0)
+         _buf.append("\n\n\n");
+
+      // Topic/Item/Task nodes
+      foreach c in nodes
+      {
+         c.toOrg(_buf, 1/*subLevel*/, 0/*childLevel*/);
+      }
+
+      if(0)
+      {
+         trace "[dbg] ================================================== outline";
+         trace _buf;
+      }
+
+      // Text formatting
+      _buf = Utils.ResubstOrgTextFormatting(_buf);
+
+      if(shared::b_raw_utf8)
+      {
+         // Prepend UTF-8 BOM
+         local String bom; bom.alloc(3+1);
+         bom[0] = 0xEF;
+         bom[1] = 0xBB;
+         bom[2] = 0xBF;
+         _buf = bom + _buf;
+      }
+      // else: ASCII / CP1252
+   }
+
+   public method toMarkdown(String _buf) {
+      Node *c;
+
+      // Generate unique ids (task-ids may not be unique)
+      createUniqueDocIds();
+
+      // Document header
+      if(!shared::b_schedule)
+      {
+         String docTitle <= getGlobalPropertyByName("title");
+         if(null != docTitle)
+         {
+            _buf.append("% "+Utils.ResubstOrgTextFormatting(docTitle)+"\n");
+            _buf.append("\n");
+         }
+      }
+
+      // Info nodes
+      foreach c in info_nodes
+      {
+         c.toMarkdown(_buf, 1/*level*/);
+      }
+
+      // Main nodes
+      foreach c in nodes
+      {
+         c.toMarkdown(_buf, 1/*level*/);
+      }
+
+      // Footer
+      if(shared::b_docs_footer)
+      {
+         _buf.append("\n");
+         _buf.append("$(buf!toc)\n");
+         _buf.append("$(buf!footnote)\n");
+         _buf.append("$(buf!w3validator)\n");
+         _buf.append("Document created on $(var:localdatetime)\n");
+      }
+   }
+
+   public method toSMMX(smmx::SMMX _smmx) {
+      Float x;
+      Float y;
+      smmx::Node *nSMMX;
+
+      // Create new root node (id="0")
+      nSMMX <= _smmx.newNodeWithAutoId(null);
+      _smmx.root_node <= nSMMX;
+
+      String docTitle <= getGlobalPropertyByName("title");
+      if(null != docTitle)
+      {
+         nSMMX.text = docTitle;
+         _smmx.title_text = docTitle;
+      }
+      else
+      {
+         nSMMX.text = "root";
+      }
+
+      String styleKey <= getGlobalPropertyByName("smmx-style-key");
+      if(null != styleKey)
+      {
+         _smmx.style_key = styleKey;
+         _smmx.b_force_style_key = true;
+      }
+
+      String rootPos <= getGlobalPropertyByName("smmx-root-position");
+      if(b_debug3)
+         trace "xxx rootPos="+#(rootPos);
+      if(null != rootPos)
+      {
+         if(Utils.ParsePositionString(rootPos, x, y))
+         {
+            nSMMX.x = float(x);
+            nSMMX.y = float(y);
+            if(b_debug)
+               trace "[dbg] root pos=("+x+"; "+y+")";
+         }
+      }
+
+      // Attach other global properties to root node
+      String *sPropKey;
+      int propIdx = 0;
+      foreach sPropKey in global_property_keys
+      {
+         // trace "xxx sPropKey=\""+sPropKey+"\"";
+         if(!(sPropKey <= "smmx-") || (_smmx.b_force_style_key && ("smmx-style-key" == sPropKey)))
+         {
+            if!(sPropKey == "title")
+            {
+               String sPropVal <= global_property_values.get(propIdx);
+               if(sPropKey & "smmx-")
+                  nSMMX.appendLineToNote("#+"+sPropKey+": "+sPropVal);
+               else
+                  nSMMX.appendLineToNote("#+"+sPropKey.toUpper()+": "+sPropVal);
+            }
+         }
+
+         // Next global property
+         propIdx++;
+      }
+
+      nSMMX.appendLineToNote("");
+
+
+      // Main nodes
+      Node *c;
+      foreach c in nodes
+      {
+         c.toSMMX(_smmx, c.b_was_main_node ? null : nSMMX/*parent*/, true/*bSub*/);
+      }
+
+      // Info nodes
+      nSMMX <= _smmx.newNodeWithAutoId(null);
+      nSMMX.text = "info";
+
+      String infoPos <= getGlobalPropertyByName("smmx-info-position");
+      // trace "xxx infoPos=\""+infoPos+"\"";
+      if(null != infoPos)
+      {
+         if(Utils.ParsePositionString(infoPos, x, y))
+         {
+            if(b_debug3)
+               trace "xxx infoPos=("+x+";"+y+")";
+            nSMMX.x = float(x);
+            nSMMX.y = float(y);
+         }
+      }
+
+      _smmx.b_allow_freeform = doAllNonListMainNodesHavePositions();
+
+      // Pass 1: topic and info nodes
+      local String buf;
+      if(b_smmx_info_as_org)
+      {
+         foreach c in info_nodes
+         {
+            if(c.b_was_main_node)
+            {
+               c.toSMMX(_smmx, null/*parent*/, false/*bSub*/);  // restore free-floating main nodes
+            }
+            else
+            {
+               // trace "xxx to encapsulated info org";
+               boolean bForceListLevel = org::force_list_level;
+               boolean bForceOrgLevel = org::force_org_level;
+               org::force_list_level = -1;
+               org::force_org_level = -1;
+
+               c.toOrg(buf, 1/*subLevel*/, 0/*childLevel*/);  // encapsulate in "info" node note (org format)
+
+               org::force_list_level = bForceListLevel;
+               org::force_org_level = bForceOrgLevel;
+
+               // trace "xxx buf=\""+buf+"\"";
+            }
+         }
+         ////Utils.ResubstSMMXTextFormatting_Note(
+         nSMMX.note = buf.replaceChar('\n', '\r');
+      }
+      else
+      {
+         nSMMX.b_collapsed = true;
+         nSMMX.b_list = true;
+         nSMMX.b_list_md = true;
+         foreach c in info_nodes
+         {
+            c.toSMMX(_smmx, nSMMX, false/*bSub*/);
+         }
+      }
+
+      // Pass 2: relations
+      foreach c in nodes
+      {
+         c.recursiveAddRelationsToSMMX(_smmx);
+      }
+
+      foreach c in info_nodes
+      {
+         c.recursiveAddRelationsToSMMX(_smmx);
+      }
+   }
+
+   public method debugPrintSubOutline() {
+      local String buf;
+      trace "[dbg] ================================================= sub-outline";
+      Node *c;
+      foreach c in nodes
+         c.debugPrintSubOutline(buf, 0/*level*/);
+      trace buf;
+   }
+
+   protected method setCurrentNode(Node _n) {
+      if(null != cur_node)
+      {
+         cur_node.finalizeInit();
+      }
+      cur_node <= _n;
+   }
+
+   protected method newNode(String _firstLine, int _numSpaces, boolean _bForceInfoNode) : Node {
+
+      if(b_debug3)
+         trace "xxx line=\""+_firstLine+"\"";
+
+      local Node n;
+      n.org <= this;
+      n.num_spaces = _numSpaces;
+      n.line_nr = line_nr;
+
+      all_nodes.add(n);
+
+      n.separator_style   = next_node_separator_style;
+      n.separator_caption = next_node_separator_caption;
+
+      next_node_separator_style = SEPARATOR_NONE;
+      next_node_separator_caption.empty();
+
+      int nextIdx = 0;
+
+      boolean bInfoNode = _bForceInfoNode;
+
+      b_properties = false;
+      force_text_lines_col_idx = -1;
+
+      // Parse state
+      _firstLine.trim();
+      switch(_firstLine.getc(0))
+      {
+         case '*':  // org-mode item
+            String orgState;
+            n.num_asterisks = _firstLine.numCharsAt('*', 0);
+            if(b_debug3)
+               trace "xxx n.num_asterisks="+n.num_asterisks;
+            nextIdx += n.num_asterisks + 1;
+            _firstLine.substring(nextIdx, 4) => orgState;
+            n.state = Node.StateStringToEnum(orgState);
+            if(ST_NONE != n.state)
+               nextIdx += 5;  // skip "TYPE "
+            break;
+
+         case '.':  // none  (can have arbitrary icon)
+            n.state = ST_NONE;
+            nextIdx += 2;
+            bInfoNode = true;
+            break;
+
+         case '!':  // note / info / comment
+            n.state = ST_NOTE;
+            nextIdx += 2;
+            bInfoNode = true;
+            break;
+
+         case '%':  // idea
+            n.state = ST_IDEA;
+            nextIdx += 2;
+            break;
+
+         case '-':  // todo
+            n.state = ST_TODO;
+            nextIdx += 2;
+            break;
+
+         case 'o':  // actv
+            n.state = ST_ACTV;
+            nextIdx += 2;
+            break;
+
+         case 't':  // test
+            n.state = ST_TEST;
+            nextIdx += 2;
+            break;
+
+         case 'x':  // dont
+            n.state = ST_DONT;
+            nextIdx += 2;
+            break;
+
+         case 'X':  // ignr
+            n.state = ST_IGNR;
+            nextIdx += 2;
+            break;
+
+         case '+':  // done
+            n.state = ST_DONE;
+            nextIdx += 2;
+            break;
+
+         case '?':  // question / to-be-discussed
+            n.state = ST_QUES;
+            nextIdx += 2;
+            break;
+
+         case 'w':  // wait
+            n.state = ST_WAIT;
+            nextIdx += 2;
+            break;
+      }
+
+      if(('[' == _firstLine.getc(nextIdx)) &&
+         (']' == _firstLine.getc(nextIdx+3))
+         )
+      {
+         // Parse prio [#A]
+         String sPrio;
+         _firstLine.substring(nextIdx, 4) => sPrio;
+         switch(sPrio.getc(2))
+         {
+            case 'A':
+               n.prio = 1;
+               break;
+
+            case 'B':
+               n.prio = 2;
+               break;
+
+            case 'C':
+               n.prio = 3;
+               break;
+         }
+         nextIdx += 4;
+      }
+
+
+      // Parse tags
+      //  - always after prio
+      //  - before topic title (personal preference) OR after topic title (org-mode default)
+      int idxTagS = _firstLine.indexOfChar(':', nextIdx);
+      int idxTagEndCol;
+      int idxTagEndSpc;
+      String sTags;
+      // // if(':' == _firstLine.getc(nextIdx))
+      // trace "xxx idxTagS="+idxTagS;
+      boolean bTagsDone = false;
+      if( (-1 != idxTagS) && (' ' == _firstLine.getc(idxTagS-1)) )
+      {
+         idxTagEndCol = _firstLine.revIndexOfChar(':', _firstLine.length-1);
+         idxTagEndSpc = _firstLine.indexOfChar(' ', idxTagS+1);
+         if( (-1 != idxTagEndCol) && (idxTagEndCol != idxTagS) && ((idxTagEndCol < idxTagEndSpc) || (-1 == idxTagEndSpc)) )
+         {
+            _firstLine.substring(idxTagS + 1, (idxTagEndCol - idxTagS)-1) => sTags;  // :docs:tutorials: => docs:tutorials
+            if(b_debug3)
+               trace "xxx idxTagS="+idxTagS+" idxTagEndCol="+idxTagEndCol+" sTags=\""+sTags+"\"";
+
+            n.addTagsFromString(sTags);
+
+            // Delete from string
+            // // _firstLine = _firstLine.substring(0, idxTagS) + _firstLine.substring(idxTagEndCol, 99999);
+            _firstLine.deleteRegion(idxTagS, idxTagEndCol + 1 - idxTagS);
+            // trace "xxx firstLine after tags is \""+_firstLine+"\" nextIdx="+nextIdx+" idxTagS="+idxTagS;
+            if(idxTagS < nextIdx)
+               nextIdx -= (idxTagEndCol + 1 - idxTagS);
+
+            bTagsDone = true;
+         }
+      }
+
+      if(!bTagsDone && b_allow_skip_tag_start_colon)
+      {
+         // trace "xxx firstLine=\""+_firstLine+"\"";
+         // "- tag1:tag2: title" style header  (skipping first colon)
+         idxTagEndCol = _firstLine.revIndexOfChar(':', _firstLine.numChars);
+         if(-1 != idxTagEndCol)
+         {
+            if(idxTagEndCol > nextIdx)
+            {
+               _firstLine.substring(nextIdx, idxTagEndCol-nextIdx) => sTags;
+               if(b_debug3)
+                  trace "xxx nextIdx="+nextIdx+" idxTagEndCol="+idxTagEndCol+" sTags=\""+sTags+"\"";
+               if(-1 == sTags.indexOfChar(' ', 0))
+               {
+                  n.addTagsFromString(sTags);
+                  _firstLine.deleteRegion(nextIdx, idxTagEndCol + 1 - nextIdx);
+               }
+            }
+         }
+      }
+
+      // Parse effort and allocated resources ("(5d)")
+      int effIdxE = _firstLine.revIndexOfChar(')', _firstLine.length);
+      if(-1 != effIdxE)
+      {
+         int effIdxS = _firstLine.revIndexOfChar('(', effIdxE-1);
+         if(-1 != effIdxS)
+         {
+            int effIdxSpc = _firstLine.revIndexOfChar(' ', effIdxE-1);
+            if(effIdxS > effIdxSpc)
+            {
+               String sEff;
+               _firstLine.substring(effIdxS+1, effIdxE-1-effIdxS) => sEff;
+               // trace "xxx sEff=\""+sEff+"\"";
+               if(Utils.IsEffortOrDurationString(sEff))
+               {
+                  n.setPropertyByName("effort", sEff);
+                  _firstLine.deleteRegion(effIdxS, effIdxE+1-effIdxS);
+                  n.lazyDefaults();
+                  // trace "xxx eff firstLine=\""+_firstLine+"\"";
+               }
+            }
+         }
+      }
+
+      // Parse inlined id ("{my-id}")
+      int idIdxE = _firstLine.revIndexOfChar('}', _firstLine.length);
+      if(-1 != idIdxE)
+      {
+         int idIdxS = _firstLine.revIndexOfChar('{', idIdxE-1);
+         if(-1 != idIdxS)
+         {
+            int idIdxSpc = _firstLine.revIndexOfChar(' ', idIdxE-1);
+            if(idIdxS > idIdxSpc)
+            {
+               String sId;
+               _firstLine.substring(idIdxS+1, idIdxE-1-idIdxS) => sId;
+               // trace "xxx sId=\""+sId+"\"";
+               n.task_id = sId;
+               n.setPropertyByName("id", sId);
+               _firstLine.deleteRegion(idIdxS, idIdxE+1-idIdxS);
+            }
+         }
+      }
+
+      // Parse progress ("[2/3]" or "[67%]")
+      int proIdxE = _firstLine.revIndexOfChar(']', _firstLine.length);
+      if(-1 != proIdxE)
+      {
+         int proIdxS = _firstLine.revIndexOfChar('[', proIdxE-1);
+         if(-1 != proIdxS)
+         {
+            int proIdxSpc = _firstLine.revIndexOfChar(' ', proIdxE-1);
+            if(proIdxS > proIdxSpc)
+            {
+               String sPro;
+               _firstLine.substring(proIdxS+1, proIdxE-1-proIdxS) => sPro;
+               // trace "xxx sPro=\""+sPro+"\"";
+               if(sPro & "%")
+               {
+                  n.progress_mode = PROGRESS_PERCENT;
+               }
+               else if(sPro & "/")
+               {
+                  n.progress_mode = PROGRESS_COUNT;
+               }
+               else
+               {
+                  // (note) consider "[x]" a valid string, don't show warning/error
+                  // // trace "[~~~] malformed progress string in line "+line_nr;
+               }
+               if(PROGRESS_NONE != n.progress_mode)
+               {
+                  _firstLine.deleteRegion(proIdxS, proIdxE+1-proIdxS);
+               }
+            }
+         }
+      }
+
+      //  e.g. "* TODO [#A] :docs:tutorials:"
+      //  e.g. "* TODO [#A]"
+
+
+      // Parse title
+      //  (note) do NOT abbreviate title, it will be needed for smmx-to-org export later on
+      //          (and it may have been edited in mindmap UI)
+      _firstLine.substring(nextIdx, -1) => n.title;
+      n.title = n.title.trim();
+      // trace "xxx n.title=\""+n.title+"\"";
+      n.title = Utils.SubstOrgTextFormatting(n.title);
+
+      // Create default task_id
+      Utils.ResubstOrgTextInPlace(n.title);
+      if(n.task_id.isBlank())
+         n.task_id = Utils.CreateAnchor(n.title);
+
+
+      // trace "xxx add node line_nr="+line_nr+" firstLine=\""+_firstLine+"\" numSpaces="+_numSpaces;
+
+      // Add node
+      Node *p;
+
+      if(0 == _numSpaces)
+      {
+         // New main node
+         if(n.num_asterisks <= 1)
+         {
+            if(bInfoNode && !b_no_info_nodes)
+            {
+               if(b_debug2)
+                  trace "xxx new info node n="+#(n)+" line_nr="+line_nr+" firstLine=\""+_firstLine+"\"";
+               n.b_was_info_node = true;
+               info_nodes.add(#(deref n));
+            }
+            else
+            {
+               if(b_debug2)
+                  trace "xxx new main node n="+#(n)+" line_nr="+line_nr+" firstLine=\""+_firstLine+"\"";
+               nodes.add(#(deref n));
+            }
+            cur_main <= n;
+            setCurrentNode(n);
+            if(n.num_asterisks > 0)
+            {
+               cur_sub <= n;
+            }
+         }
+         else
+         {
+            // New sub node
+            total_num_sub_nodes++;
+
+            if(null != cur_sub)
+            {
+               // trace "xxx cur_sub.num_asterisks="+cur_sub.num_asterisks+" ("+cur_sub.task_id+") n.num_asterisks="+n.num_asterisks+" ("+n.task_id+")";
+               if(n.num_asterisks > cur_sub.num_asterisks)
+               {
+                  // New sub-node
+                  // if(b_debug2)
+                     // trace "xxx new sub node with numAsterisks="+n.num_asterisks+" firstLine=\""+_firstLine+"\""; //n="+#(n);
+                  cur_sub.addSub(deref n);
+                  setCurrentNode(n);
+                  cur_sub <= n;
+                  if(b_debug3)
+                     trace "xxx   n.parent="+#(n.parent);
+               }
+               else if(n.num_asterisks == cur_sub.num_asterisks)
+               {
+                  // New node on same level as current node (but not a new main node)
+                  // if(b_debug2)
+                     // trace "xxx new parent sub node with numAsterisks="+n.num_asterisks+" firstLine=\""+_firstLine+"\""; //+" n="+#(n);
+                  cur_sub.parent.addSub(deref n);
+                  setCurrentNode(n);
+                  cur_sub <= n;
+               }
+               else  // < cur_sub.num_asterisks
+               {
+                  // New sub-node of previous node (find by indent)
+                  p <= cur_sub.parent;
+                  while(null != p)
+                  {
+                     if(p.num_asterisks == n.num_asterisks)
+                     {
+                        p <= p.parent;
+                        break;
+                     }
+                     else
+                        p <= p.parent;
+                  }
+                  if(null != p)
+                  {
+                     // trace "xxx p.addSub: p.title=\""+p.title+"\" n.title=\""+n.title+"\"";
+                     p.addSub(deref n);
+                     setCurrentNode(n);
+                     cur_sub <= n;
+                  }
+                  else
+                  {
+                     trace "[~~~] bogus sub-node indent in line "+line_nr+", adding as main sub instead..";
+                     cur_main.addChild(deref n);
+                     setCurrentNode(n);
+                     cur_sub <= n;
+                  }
+               }
+            }
+            else
+            {
+               trace "[~~~] orphaned sub-node in line "+line_nr+", skipping..";
+               n <= null;
+            }
+         }
+      }
+      else
+      {
+         // Simplified tree child-node
+         total_num_child_nodes++;
+
+         if(null != cur_node)
+         {
+            if(_numSpaces > cur_node.num_spaces)
+            {
+               // New sub-node
+               if(b_debug2)
+                  trace "xxx new child node with numSpaces="+_numSpaces+" firstLine=\""+_firstLine+"\""; //n="+#(n);
+               if(b_debug2)
+                  trace "xxx new child parent node title=\""+cur_node.title+"\"";
+               cur_node.addChild(deref n);
+               setCurrentNode(n);
+               if(b_debug3)
+                  trace "xxx   n.parent="+#(n.parent);
+            }
+            else if(_numSpaces == cur_node.num_spaces)
+            {
+               // New node on same level as current node (but not a new main node)
+               if(b_debug2)
+                  trace "xxx new parent child node with numSpaces="+_numSpaces+" firstLine=\""+_firstLine+"\""; //+" n="+#(n);
+               // trace "xxx cur_node="+#(cur_node);
+               // trace "xxx cur_node.num_spaces="+cur_node.num_spaces;
+               // trace "xxx cur_node.parent="+#(cur_node.parent);
+               cur_node.parent.addChild(deref n);
+               setCurrentNode(n);
+            }
+            else  // < cur_node.num_spaces
+            {
+               // New child-node of previous node (find by indent)
+               p <= cur_node.parent;
+               while(null != p)
+               {
+                  if(p.num_spaces == _numSpaces)
+                  {
+                     p <= p.parent;
+                     break;
+                  }
+                  else
+                     p <= p.parent;
+               }
+               if(null != p)
+               {
+                  p.addChild(deref n);
+                  setCurrentNode(n);
+               }
+               else
+               {
+                  // try previous org-style parent first
+                  p <= cur_node.parent;
+                  while(null != p)
+                  {
+                     if(p.num_asterisks > 0)
+                        break;
+                     else
+                        p <= p.parent;
+                  }
+                  if(null != p)
+                  {
+                     trace "[~~~] bogus child-node indent in line "+line_nr+", adding as prev org-node child instead..";
+                     p.addChild(deref n);
+                  }
+                  else
+                  {
+                     trace "[~~~] bogus child-node indent in line "+line_nr+", adding as main child instead..";
+                     cur_main.addChild(deref n);
+                  }
+                  setCurrentNode(n);
+               }
+            }
+         }
+         else
+         {
+            trace "[~~~] orphaned child-node in line "+line_nr+", skipping..";
+            n <= null;
+         }
+      }
+
+      return deref n;
+   }
+
+   protected method addTextLine(String _line) : boolean {
+      String line <= _line.trim();
+      String lineLC <= line.toLower();
+      String t;
+      Node *n;
+
+      boolean bEndWeekMode = true;
+      if(b_debug2)
+         trace "xxx b_allow_res_week_line="+b_allow_res_week_line+" line=\""+_line+"\"";
+
+      if(b_debug3)
+         trace "xxx addTextLine: lineLC=\""+lineLC+"\"";
+
+      if(line <= "> ")
+      {
+         // "> my callout description"
+         cur_node.callout_lines.add(line.substring(2, line.length-2).trim());
+      }
+      else if(lineLC <= ":properties:")
+      {
+         b_properties = true;
+         b_allow_simple_global_properties = false;
+         // trace "xxx begin properties";
+      }
+      else if(lineLC <= ":end:")
+      {
+         b_properties = false;
+      }
+      else if(lineLC <= "scheduled:")
+      {
+         line.substring(10, -1) => t;
+         cur_node.scheduled = t.trim();
+         Utils.ResubstOrgTextInPlace(cur_node.scheduled);
+      }
+      else if(lineLC <= "deadline:")
+      {
+         line.substring(9, -1) => t;
+         cur_node.deadline = t.trim();
+         Utils.ResubstOrgTextInPlace(cur_node.deadline);
+      }
+      else if(lineLC <= "created:")
+      {
+         line.substring(9, -1) => t;
+         cur_node.create_date = t.trim();
+         Utils.ResubstOrgTextInPlace(cur_node.create_date);
+      }
+      else if(lineLC <= "clock:")
+      {
+         line.substring(6, -1) => t;
+         t.trim();
+         n <= cur_node.getTaskFolderParentOrSelf();
+          // trace "xxx n.id="+n.getOrCreateTaskId();
+         if(b_keep_task_clock_properties)
+         {
+            // Add to resource but re-export as task property
+            if(!n.addProperty("clock", t))
+               return false;
+         }
+         else
+         {
+            // Just add to resource
+            cur_node.lazyDefaults();
+            if(!addClockTimeEntry(t, n, (null == cur_node.resource)/*bWasTaskProperty*/))
+               return false;
+         }
+      }
+      else if(lineLC <= "finished:")
+      {
+         line.substring(9, -1) => t;
+         cur_node.finish_date = t.trim();
+         // trace "xxx cur_node.finish_date=\""+cur_node.finish_date+"\"";
+         Utils.ResubstOrgTextInPlace(cur_node.finish_date);
+      }
+      else if(lineLC <= "id:")
+      {
+         lineLC.substring(3, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            cur_node.task_id = t;
+            // trace "xxx set id: "+t;
+            cur_node.setPropertyByName("id", t);
+         }
+      }
+      else if(lineLC <= "effort:")
+      {
+         lineLC.substring(7, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            cur_node.setPropertyByName("effort", t);
+            cur_node.lazyDefaults();
+         }
+      }
+      else if(lineLC <= "effortrisk:")
+      {
+         lineLC.substring(11, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            if(!cur_node.setPropertyByName("effortrisk", t))
+               return false;
+         }
+      }
+      else if(lineLC <= "duration:")
+      {
+         lineLC.substring(9, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            if(!cur_node.setPropertyByName("duration", t))
+               return false;
+         }
+      }
+      else if(lineLC <= "durationrisk:")
+      {
+         lineLC.substring(13, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            if(!cur_node.setPropertyByName("durationrisk", t))
+               return false;
+         }
+      }
+      else if(lineLC <= "risk:")
+      {
+         lineLC.substring(5, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            if(!cur_node.setPropertyByName("risk", t))
+               return false;
+         }
+      }
+      else if((lineLC <= "allocate:")/* || (lineLC <= "assign:")*/)
+      {
+         lineLC.substring(9, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            cur_node.lazyEffortDefault();
+
+            if(cur_node.b_have_alloc)
+            {
+               if(!cur_node.addToPropertyList("allocate", t))
+                  return false;
+            }
+            else
+            {
+               // override default allocation (if any)
+               if(!cur_node.setPropertyByName("allocate", t))
+                  return false;
+               cur_node.b_have_alloc = true;
+            }
+         }
+      }
+      else if(lineLC <= "depends:")
+      {
+         lineLC.substring(8, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            if(!cur_node.addToPropertyList("depends", t))
+               return false;
+         }
+         // // cur_node.lazyDefaults();
+      }
+      else if(lineLC <= "for:")
+      {
+         lineLC.substring(4, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            // trace "xxx for \""+t+"\"";
+            if(!cur_node.addToPropertyList("for", t))
+               return false;
+            // // cur_node.lazyDefaults();
+         }
+      }
+      else if(lineLC <= "after:")
+      {
+         lineLC.substring(6, -1) => t;
+         t.trim();
+         if(!t.isBlank())
+         {
+            if(!cur_node.addToPropertyList("after", t))
+               return false;
+            // // cur_node.lazyDefaults();
+         }
+      }
+      else if(lineLC <= "ordered")
+      {
+         cur_node.setPropertyByName("ordered", "t");
+      }
+      else if(lineLC <= "recursive")
+      {
+         if(!cur_node.setPropertyByName("cookie_data", "todo recursive"))  // emacs org-mode compatibility
+            return false;
+      }
+      else if(lineLC <= "status:")
+      {
+         lineLC.substring(7, -1) => t;
+         t.trim();
+         if(!cur_node.addToPropertyList("status", t))
+            return false;
+      }
+      else if(lineLC == "milestone")
+      {
+         if(!cur_node.setPropertyByName("milestone", "t"))
+            return false;
+      }
+      else if(lineLC <= "id:")
+      {
+         lineLC.substring(9, -1) => t;
+         t.trim();
+         if(!cur_node.setPropertyByName("task_id", t))
+            return false;
+      }
+      else if(lineLC <= "resource:")
+      {
+         lineLC.substring(9, -1) => t;
+         t.trim();
+         if(!cur_node.setPropertyByName("resource_id", t))
+            return false;
+      }
+      else if(lineLC == "resource")
+      {
+         if(null == cur_node.getPropertyByName("resource_id"))
+         {
+            // trace "xxx id="+cur_node.getOrCreateTaskId();
+            if(!cur_node.setPropertyByName("resource_id", cur_node.getOrCreateTaskId()))
+               return false;
+         }
+      }
+      else if(lineLC == "default resource")
+      {
+         if(null == cur_node.getPropertyByName("resource_id"))
+         {
+            if(!cur_node.setPropertyByName("resource_id", cur_node.getOrCreateTaskId()))
+               return false;
+         }
+         allocate_default = cur_node.getOrCreateTaskId();
+      }
+      else if(lineLC <= "workinghours:")
+      {
+         lineLC.substring(13, -1) => t;
+         t.trim();
+         if(!cur_node.setPropertyByName("workinghours", t))
+            return false;
+
+         if(null == cur_node.getPropertyByName("resource_id"))
+         {
+            if(!cur_node.setPropertyByName("resource_id", cur_node.getOrCreateTaskId()))
+               return false;
+         }
+      }
+      else if(lineLC <= "vacation:")
+      {
+         line.substring(9, -1) => t;
+         t.trim();
+         if(!cur_node.addProperty("vacation", t))
+            return false;
+
+         if(null == cur_node.getPropertyByName("resource_id"))
+         {
+            if(!cur_node.setPropertyByName("resource_id", cur_node.getOrCreateTaskId()))
+               return false;
+         }
+      }
+      else if(lineLC <= "other-project:")
+      {
+         line.substring(14, -1) => t;
+         t.trim();
+         if(!cur_node.addProperty("other-project", t))
+            return false;
+
+         if(null == cur_node.getPropertyByName("resource_id"))
+         {
+            if(!cur_node.setPropertyByName("resource_id", cur_node.getOrCreateTaskId()))
+               return false;
+         }
+      }
+      else if(lineLC <= "sickness:")
+      {
+         line.substring(9, -1) => t;
+         t.trim();
+
+         if(!cur_node.addProperty("sickness", t))
+            return false;
+
+         if(null == cur_node.getPropertyByName("resource_id"))
+         {
+            if(!cur_node.setPropertyByName("resource_id", cur_node.getOrCreateTaskId()))
+               return false;
+         }
+      }
+      else if(lineLC == "fold")
+      {
+         // trace "xxx fold in line "+line_nr;
+         if(!cur_node.setPropertyByName("fold", "t"))
+            return false;
+         cur_node.b_fold = true;
+         cur_node.lazyDefaults();
+      }
+      else if(lineLC == "private")
+      {
+         // trace "xxx private in line "+line_nr;
+         if(!cur_node.setPropertyByName("private", "t"))
+            return false;
+         cur_node.b_private = true;
+         cur_node.lazyDefaults();
+      }
+      else if(lineLC == "ignore")
+      {
+         // trace "xxx ignore in line "+line_nr;
+         if(!cur_node.setPropertyByName("ignore", "t"))
+            return false;
+         cur_node.b_ignore = true;
+      }
+      else if(lineLC <= "#")
+      {
+         if(!cur_node.addHashTagsFromString(lineLC))
+            return false;
+      }
+      else if(b_properties)
+      {
+         // trace "xxx try add property from line=\""+line+"\"";
+         if(!cur_node.addPropertyFromString(line))
+         {
+            trace "[~~~] malformed property in line "+line_nr;
+         }
+      }
+      else
+      {
+         if(b_allow_res_week_line)
+         {
+            if(b_debug2)
+               trace "xxx week line=\""+line+"\"";
+            bEndWeekMode = false;
+            if(!addWeekTimeEntry(line))
+            {
+               trace "[---] failed to add week timeentry (line_nr="+line_nr+", line=\""+line+"\")";
+               return false;
+            }
+         }
+         else
+         {
+            // Arbitrary text line
+            local String reLine <= Utils.ResubstOrgText(line);
+            if(!reLine.isBlank())
+            {
+               cur_node.text_lines.add(deref reLine);
+            }
+         }
+      }
+
+      if(bEndWeekMode)
+      {
+         b_allow_res_week_line = false;
+         res_week_num_spaces = -1;
+      }
+
+      return true;
+   }
+
+   public method getProjectIdOrFail() : String {
+      if(!project_id.isBlank())
+         return project_id;
+      else
+      {
+         trace "[---] missing project-id (in line "+line_nr+")";
+         exit(10);
+      }
+   }
+
+   public method addClockTimeEntry(String _lineTrim, Node _n, boolean _bWasTaskProperty) : boolean {
+      // task nodes:
+      //   clock: <res> <date> <h>
+      //   or <date> <h>
+      //
+      // resource nodes:
+      //   clock: <project-id.task-id> <date> <h>
+
+      local StringArray a <= _lineTrim.splitSpace(true);
+      // trace "xxx a="+#(a);
+      if(a.numElements >= 2)
+      {
+         Time t <= Utils.ToTimeObjectCalendarDate(a.get(0));
+         String *sRes;
+         String *sTask;
+         float numHours = 0;
+         // trace "xxx t="+Utils.TimeToOrgString(t);
+         if(null == t)
+         {
+            if(a.numElements >= 3)
+            {
+               if(_bWasTaskProperty)
+               {
+                  // <res> <date> <h>
+                  sRes <= a.get(0);
+                  sTask <= getProjectIdOrFail()+"."+_n.getOrCreateTaskId();
+               }
+               else
+               {
+                  // <project-id.task-id> <date> <h>
+                  sRes <= _n.getOrCreateTaskId();
+                  sTask <= a.get(0).trim();
+                  if!(sTask & ".")
+                  {
+                     if(shared::b_warn)
+                        trace "[~~~] warning: ambiguous task-id in line "+line_nr+" (should be <project-id>.<task-id>)";
+                  }
+               }
+
+               t <= Utils.ToTimeObjectCalendarDate(a.get(1));
+               if(null != t)
+               {
+                  numHours = Node.EffortStringToFloat(a.get(2));
+               }
+               else
+               {
+                  trace "[---] malformed clock entry in line "+line_nr+" (\""+_lineTrim+"\") (failed to parse date \""+a.get(1)+"\")";
+                  return false;
+               }
+            }
+            else
+            {
+               trace "[---] malformed clock entry in line "+line_nr+" (\""+_lineTrim+"\") (#words("+a.numElements+") < 3)";
+               return false;
+            }
+         }
+         else
+         {
+            // <date> <h>
+            if(_bWasTaskProperty)
+            {
+               sRes <= _n.getUniqueAllocatedResourceId();
+               if(null != sRes)
+               {
+                  sTask <= getProjectIdOrFail()+"."+_n.getOrCreateTaskId();
+                  numHours = Node.EffortStringToFloat(a.get(1));
+               }
+               else
+               {
+                  trace "[---] clock: no unique resource allocated to task.id=\""+_n.getOrCreateTaskId()+"\" (in line "+line_nr+", \""+_lineTrim+"\")";
+                  return false;
+               }
+            }
+            else
+            {
+               trace "[---] clock: malformed resource clock entry in line "+line_nr+" (\""+_lineTrim+"\") (#words < 3)";
+            }
+         }
+
+         if(null != sRes)
+         {
+            Node nRes <= _bWasTaskProperty ? findNodeById(sRes.trim()) : _n;
+            if(null != nRes)
+            {
+               if(null != nRes.resource)
+               {
+                  if(numHours > 0)
+                  {
+                     if(b_debug2)
+                        trace "[trc] add clock entry for task.id="+sTask+" res.id="+nRes.getOrCreateTaskId()+" numHours="+numHours;
+                     nRes.resource.addTimeEntry(t, sTask, numHours, _bWasTaskProperty);
+                     return true;
+                  }
+                  else
+                  {
+                     trace "[~~~] clock entry for task.id="+_n.getOrCreateTaskId()+" res.id="+nRes.getOrCreateTaskId()+" numHours == 0 (in line "+line_nr+"), skipping..";
+                     return true;
+                  }
+               }
+               else
+               {
+                  trace "[---] clock: resource.id=\""+sRes+"\" is not a resource (task.id=\""+_n.getOrCreateTaskId()+"\", in line "+line_nr+")";
+                  return false;
+               }
+            }
+            else
+            {
+               trace "[---] clock: unknown resource.id=\""+sRes+"\" (task.id=\""+_n.getOrCreateTaskId()+"\", in line "+line_nr+")";
+               return false;
+            }
+         }
+      }
+      return false;
+   }
+
+   protected method addWeekTimeEntry(String _lineTrim) : boolean {
+      // <task> <dailyhours>
+      local StringArray a <= _lineTrim.splitSpace(true);
+      if(a.numElements >= 2)
+      {
+         local Time tCur = res_week_start;
+         local String taskId <= a.get(0);
+         int idx = 1;
+         int numDays = 0;
+         loop(a.numElements - 1)
+         {
+            local String sHour <= a.get(idx);
+            if((sHour <= "-") || (sHour <= "x"))
+            {
+               // same as 0, ignore
+            }
+            else if(1 <= sHour.checkConversions() <= 2)  // int or float ?
+            {
+               if(++numDays > 7)
+               {
+                  trace "[---] addWeekTimeEntry: more than 7 days in line "+line_nr+" line=\""+_lineTrim+"\"";
+                  return false;
+               }
+               float fHour = sHour;
+               if(fHour > 0)
+               {
+                  cur_node.resource.addTimeEntry(tCur, taskId, float(sHour), false/*bWasTaskProperty*/);
+               }
+               Utils.NextDay(tCur);
+               idx++;
+            }
+            else
+            {
+               // must be comment
+               if(b_debug2)
+                  trace "xxx end task week with comment=\""+sHour+"\"";
+               break;
+            }
+         }
+         return true;
+      }
+      else
+      {
+         trace "[---] addWeekTimeEntry: malformed line_nr="+line_nr+" line=\""+_lineTrim+"\"";
+      }
+      return false;
+   }
+
+   protected method beginWeekTimeTracking(String _lineTrim) : boolean {
+      // "week <date>:"
+      local StringArray a <= _lineTrim.splitCharset(" :");
+      local String sDate <= a.get(1);
+      res_week_start <= Utils.ToTimeObjectCalendarDate(sDate);
+      if(null != res_week_start)
+      {
+         res_week_start.hour = 8;
+         res_week_start.min  = 0;
+         res_week_start.sec  = 0;
+         if(b_debug)
+            trace "[dbg] beginWeekTimeTracking: line="+line_nr+" date="+Utils.TimeToOrgStringWeekday(res_week_start);
+         return true;
+      }
+      else
+      {
+         trace "[---] invalid week start date string \""+sDate+"\" in line "+line_nr;
+         return false;
+      }
+   }
+
+   protected method setDefaultEffortAndAutoFold() {
+      Node *c;
+      foreach c in nodes
+      {
+         c.recursiveSetDefaultEffortAndAutoFold();
+      }
+   }
+
+   public method parseString(String _buf) : boolean {
+
+      // // // (note) replace all chars with code >= 128 (SimpleMind expects UTF8 files, this is ASCII)
+      // // Utils.ReplaceNonASCIICharsInPlace(_buf);
+      local String buf;
+
+      if(!shared::b_raw_utf8)
+      {
+         if(_buf.isUTF8())
+            _buf.utf8ToCP1252() => buf;
+         else
+            buf = _buf;  // ASCII or CP1252
+      }
+      else
+      {
+         if(_buf.hasUTF8BOM())
+         {
+            // skip BOM
+            _buf.substring(3, -1) => buf;
+         }
+         else
+            buf = _buf;
+      }
+
+      // Tabs to spaces
+      buf.replace("\t", shared::TABS_TO_SPACES);
+
+      // Protocol escape
+      Utils.SubstOrgTextInPlace(buf);
+
+      // Allocate tags
+      all_tags.alloc(MAX_TAGS);
+
+      // Iterate lines
+      local StringArray lines <= buf.splitChar('\n');
+      String *line;
+      line_nr = 1;
+
+      // buf.saveLocal("debug.txt");
+
+      // // boolean bProperties = false;
+      boolean bAnyCtlLine = false;  // becomes true after first "! " ctl line, false after new node
+      boolean bAllowCreateMod = false;  // becomes true after new node ("! 11Jan2020", "! C:11Jan2020", "! F:11Jan2020" lines)
+
+      next_node_separator_style = SEPARATOR_NONE;
+      next_node_separator_caption.empty();
+
+      boolean bEmptyLine = false;
+      b_allow_simple_global_properties = true;
+      force_text_lines_col_idx = -1;
+      String t;
+
+      if(b_create_plaintodo_defaults)
+      {
+         Node nDefRes <= newTopicNode();
+         nDefRes.setPropertyByName("resource_id", "default");
+         nDefRes.setPropertyByName("workinghours", "mo-su");
+
+         allocate_default = "default";
+         effort_default   = "1h";
+
+         setGlobalProperty("title", Utils.BaseName(input_path_name));
+      }
+
+
+      foreach line in lines
+      {
+         boolean bSimplePropDone = false;  // (todo) rename this to bLineDone ?
+         String lineTrim <= line.trim();
+         // trace "xxx lineTrim="+lineTrim;
+
+         if(-1 != force_text_lines_col_idx)
+         {
+            // Escaped text block (<<..>>)
+            if(lineTrim == ">>")
+            {
+               force_text_lines_col_idx = -1;
+            }
+            else
+            {
+               // trace "xxx escaped line=\""+line+"\" cur_node="+#(cur_node);
+               if(line.numCharsAt(' ', 0) >= force_text_lines_col_idx)
+               {
+                  // Remove indentation
+                  cur_node.text_lines.add(Utils.ResubstOrgText(line.substring(force_text_lines_col_idx, -1)));
+               }
+               else if(line.isBlank())
+               {
+                  cur_node.text_lines.add("");
+               }
+               else
+               {
+                  if(shared::b_warn)
+                     trace "[~~~] warning: wrong indentation of escaped line "+line_nr;
+                  cur_node.text_lines.add(Utils.ResubstOrgText(line));
+               }
+            }
+            bSimplePropDone = true;
+         }
+
+         if(!line.isBlank() && !bSimplePropDone)
+         {
+            String lineLC <= lineTrim.toLower();
+
+            if(lineTrim <= ";")
+            {
+               // comment line, ignore
+               // trace "xxx is comment: line="+line;
+               bSimplePropDone = true;
+            }
+            else if(lineLC == "<<")
+            {
+               if(null == cur_node)
+               {
+                  trace "[---] '<<' before first node (in line "+line_nr+")";
+                  return false;
+               }
+               force_text_lines_col_idx = line.numCharsAt(' ', 0);
+               cur_node.b_escaped_text_lines = true;
+               bSimplePropDone = true;
+            }
+            else if(lineLC <= "#+allocate-default:")
+            {
+               line.substring(19, -1) => t;
+               t.trim();
+               allocate_default = t;
+               bSimplePropDone = true;
+            }
+            else if(lineLC <= "#+effort-default:")
+            {
+               line.substring(17, -1) => t;
+               t.trim();
+               effort_default = t;
+               bSimplePropDone = true;
+            }
+            else if(b_allow_simple_global_properties)
+            {
+               if(lineLC <= "title:")
+               {
+                  lineTrim.substring(6, -1) => t;
+                  t.trim();
+                  setGlobalProperty("title", t);
+                  // trace "xxx set title to \""+t+"\"";
+                  bSimplePropDone = true;
+               }
+               else if(lineLC <= "start-date:")
+               {
+                  lineTrim.substring(11, -1) => t;
+                  t.trim();
+                  setGlobalProperty("start-date", t);
+                  bSimplePropDone = true;
+               }
+               else if(lineLC <= "allowed-tags:")
+               {
+                  lineTrim.substring(13, -1) => t;
+                  t.trim();
+                  addToGlobalPropertyList("allowed-tags", t);
+                  bSimplePropDone = true;
+               }
+               else if(lineLC <= "schedule-tags:")
+               {
+                  lineTrim.substring(14, -1) => t;
+                  t.trim();
+                  addToGlobalPropertyList("schedule-tags", t);
+                  bSimplePropDone = true;
+               }
+               else if(lineLC <= "public-holiday:")
+               {
+                  lineTrim.substring(15, -1) => t;
+                  t.trim();
+                  addGlobalProperty("public-holiday", t);
+                  bSimplePropDone = true;
+               }
+               else if(lineLC <= "allocate-default:")
+               {
+                  line.substring(17, -1) => t;
+                  t.trim();
+                  allocate_default = t;
+                  bSimplePropDone = true;
+               }
+            }
+            if(bSimplePropDone)
+            {
+               // intentionally left blank
+            }
+            else if(line <= "-*-mode")
+            {
+               // skip (emacs mode line)
+               bEmptyLine = false;
+            }
+            else if(line <= "#+")
+            {
+               // global property (org mode configuration, document title, info position, root position, ..)
+               // trace "xxx set global property "+line.trim();
+               setGlobalPropertyFromString(line.trim());
+               bEmptyLine = false;
+            }
+            else
+            {
+               // trace "xxx line=\""+line+"\" res_week_num_spaces="+res_week_num_spaces;
+               b_allow_simple_global_properties = false;
+               int numSpaces = line.numCharsAt(' ', 0);
+
+               boolean bNewNode = false;
+               boolean bLineCtl = false;
+
+               if((null != cur_node) && (lineTrim <= "week ") && (null != cur_node.resource)) ////!(cur_node.resource_id.isBlank()))
+               {
+                  if(b_debug)
+                     trace "[dbg] start timetracking week in line "+line_nr+": line=\""+line+"\" numSpaces="+numSpaces;
+                  if(beginWeekTimeTracking(lineTrim))
+                  {
+                     res_week_num_spaces = numSpaces;
+                     bLineCtl = true;
+                  }
+                  else
+                  {
+                     trace "[---] malformed week timetracking header in line "+line_nr+", resource.id=\""+cur_node.resource_id+"\" line=\""+line+"\"";
+                     return false;
+                  }
+               }
+               else if(res_week_num_spaces > 0)
+               {
+                  if(b_debug2)
+                     trace "xxx res_week_num_spaces="+res_week_num_spaces+" numSpaces="+numSpaces;
+                  b_allow_res_week_line = (numSpaces > res_week_num_spaces);
+               }
+
+               int sepStyle = Node.DetectSeparator(line, next_node_separator_caption);
+               if(SEPARATOR_NONE != sepStyle)
+               {
+                  next_node_separator_style = sepStyle;
+                  bEmptyLine = false;
+               }
+               else
+               {
+                  // org-mode style node start ?
+                  if((0 == numSpaces) && ('*' == line.getc(numSpaces)))  // "* TODO" style node start  (or "** subtree header")
+                  {
+                     newNode(line, numSpaces, false/*bForceInfoNode*/);
+                     bNewNode = true;
+                     bAllowCreateMod = true;
+                     bEmptyLine = maybe;
+                     res_week_num_spaces = -1;
+                  }
+
+                  // todo-list or sub-item style node start ?
+                  if(!bNewNode)
+                  {
+                     if(' ' == line.getc(numSpaces+1))
+                     {
+                        if(-1 != ".!-toxXw+%?".indexOfChar(line.getc(numSpaces), 0))
+                        {
+                           if(bAllowCreateMod && ('!' == line.getc(numSpaces)))
+                           {
+                              String sDMY;
+                              if(line & "! C:")
+                              {
+                                 // mod date, "! C:02Jan2020"
+                                 line.substring(numSpaces+4, 12) => sDMY;
+                                 sDMY.trim();
+                                 // trace "xxx sDMYmod=\""+sDMY+"\"";
+                                 if(Utils.IsDateStringDMY(sDMY))
+                                 {
+                                    cur_node.addModDateDMY(sDMY);
+                                    bLineCtl = true;
+                                 }
+                              }
+                              else if(line & "! F:")
+                              {
+                                 // finish date, "! F:02Jan2020"
+                                 line.substring(numSpaces+4, 12) => sDMY;
+                                 sDMY.trim();
+                                 // trace "xxx sDMYmod=\""+sDMY+"\"";
+                                 if(Utils.IsDateStringDMY(sDMY))
+                                 {
+                                    if!(cur_node.finish_date.isBlank())
+                                    {
+                                       trace "[~~~] duplicate finish date in line "+line_nr;
+                                    }
+                                    cur_node.setFinishDateDMY(sDMY);
+                                    bLineCtl = true;
+                                 }
+                              }
+                              else
+                              {
+                                 // "! 01Jan2020" create date
+                                 line.substring(numSpaces+2, 12) => sDMY;
+                                 sDMY.trim();
+                                 // trace "xxx sDMYcreate=\""+sDMY+"\"";
+                                 if(Utils.IsDateStringDMY(sDMY))
+                                 {
+                                    // trace "xxx is create date sDMY=\""+sDMY+"\"";
+                                    // trace "xxx   prev cur_node.create_date="+cur_node.create_date;
+                                    if(cur_node.create_date.isBlank())
+                                    {
+                                       cur_node.setCreateDateDMY(sDMY);
+                                    }
+                                    else
+                                    {
+                                       cur_node.addModDateDMY(sDMY);
+                                    }
+                                    // trace "xxx  new cur_node.create_date="+cur_node.create_date;
+                                    bLineCtl = true;
+                                 }
+                              }
+                           }
+
+                           if(!bLineCtl)
+                           {
+                              if(b_debug2)
+                                 trace "xxx newNode numSpaces="+numSpaces+" line=\""+line+"\"";
+                              newNode(line, numSpaces, false/*bForceInfoNode*/);
+                              bNewNode = true;
+                              bAllowCreateMod = true;
+                              bAnyCtlLine = false;
+                              bEmptyLine = maybe;
+                              res_week_num_spaces = -1;
+                           }
+                           else
+                              bEmptyLine = false;
+                        }
+                     }
+                  } // if!bNewNode
+
+                  if(null != cur_node)
+                     bAnyCtlLine |= bLineCtl;
+
+                  if(!bNewNode && !bLineCtl)
+                  {
+                     // add text line to previous node
+                     if(bAnyCtlLine)
+                        bAllowCreateMod = false;  // first regular text after ctl lines
+                     if(null != cur_node)
+                     {
+                        if(b_debug2)
+                           trace "xxx textLine=\""+line+"\"";
+                        if(!addTextLine(Utils.SubstOrgTextFormatting(line)))
+                           return false;
+                     }
+                     else
+                     {
+                        // should not be reachable, e.g. "##+my_removed_property"
+                        trace "[~~~] stray text in line "+line_nr+", creating info node.. (numSpaces="+numSpaces+")";
+                        trace "         line=\""+line+"\"";
+                        newNode(line, numSpaces, true/*bForceInfoNode*/);
+                        bNewNode = true;
+                        bAllowCreateMod = false;
+                        bEmptyLine = maybe;
+                     }
+                  }
+               } // separator style/caption
+            }
+         }
+         else if(!bSimplePropDone)
+         {
+            if(maybe == bEmptyLine)  // only allowed after new node start
+            {
+               cur_node.b_empty_line_after_node_hdr = true;
+               bEmptyLine = false;
+            }
+            else if(null != cur_node)
+            {
+               if(cur_node.text_lines.isEmpty())
+               {
+                  // // cur_node.b_empty_line_after_node = true;
+                  cur_node.b_empty_line_after_node_hdr = true;
+               }
+               else
+               {
+                  cur_node.text_lines.add("");
+               }
+            }
+         }
+
+         // Next line
+         line_nr++;
+
+      } // foreach line
+
+      // Finalize last added node
+      setCurrentNode(null);
+
+      if(b_set_default_effort_for_all_working_state_tasks)
+      {
+         setDefaultEffortAndAutoFold();
+      }
+
+      if(b_debug)
+         trace "[dbg] parsed "+line_nr+" lines, found "+nodes.numElements+" main node(s), "+total_num_sub_nodes+" sub node(s) and "+total_num_child_nodes+" child nodes (total="+(nodes.numElements + total_num_sub_nodes + total_num_child_nodes)+")";
+
+      return true;
+   }
+
+   public method fixProgress() {
+      Node *c;
+      foreach c in nodes
+      {
+         c.recursiveFixProgress();
+      }
+   }
+
+   public method doAllNonListMainNodesHavePositions() : boolean {
+      Node *c;
+      foreach c in nodes
+      {
+         if(null == c.getPropertyByName("smmx-position"))
+            return false;
+         if(!c.doAllNonListSubNodesHavePositions())
+            return false;
+      }
+      return true;
+   }
+
+   protected method createUniqueDocIds() {
+      Node *c;
+      local HashTable ht;
+      ht.alloc(MAX_NODES);
+      foreach c in all_nodes
+      {
+         int suffix = 0;
+         for(;;)
+         {
+            String id = c.task_id;
+            if(suffix > 0)
+               id.append("-"+suffix);
+            if(!ht.exists(id))
+            {
+               c.doc_id = id;
+               ht[id] = 1;
+               break;
+            }
+            else
+               suffix++;
+         }
+      }
+   }
+
+   public method replaceIncludes(String _buf) : boolean {
+      int idx = 0;
+      do
+      {
+         // #+include: file1 fallback_file2 fallback_file3 ..
+         idx = _buf.indexOf("#+include:", idx);
+         if(-1 != idx)
+         {
+            local String fname;
+            int idxE = _buf.indexOfChar('\n', idx+1);
+            if(-1 != idxE)
+            {
+               _buf.substring(idx+10, idxE-idx-10) => fname;
+               fname.trim();
+               local StringArray fNames <= fname.splitSpace(true);
+               // trace "xxx include fNames="+#(fNames);
+               int fNameIdx = 0;
+               loop(fNames.numElements)
+               {
+                  String cName <= fNames.get(fNameIdx);
+                  // trace "xxx include cName=\""+cName+"\"";
+                  local String incBuf;
+                  if(incBuf.loadLocal(include_path+"/"+cName, false/*bRemoveCR*/))
+                  {
+                     // trace "xxx include ok";
+                     int idxPrevLF = _buf.revIndexOfChar('\n', idx);
+                     int idxPrevCR = _buf.revIndexOfChar('\r', idx);
+                     int idxPrevNL = idxPrevLF;
+                     if((-1 != idxPrevLF) && (-1 != idxPrevCR))
+                        idxPrevNL = mathMaxi(idxPrevLF, idxPrevCR);
+                     if(-1 != idxPrevNL)
+                        incBuf <= Utils.IndentLines(deref incBuf, idx - idxPrevLF - 1);
+                     incBuf.replace("\r", "");
+
+                     _buf.replaceRegion(idx, idxE + (incBuf >= "\n"), incBuf);  // keep at least one LF
+                     idx = idxE;
+                     break;
+                  }
+                  else
+                  {
+                     if(++fNameIdx == fNames.numElements)
+                     {
+                        trace "[---] failed to include file \""+include_path+"/"+cName+"\"";
+                        if(fNames.numElements > 1)
+                        {
+                           trace "[---]   tried "+fNames.numElements+" files:";
+                           fNameIdx = 1;
+                           foreach cName in fNames
+                           {
+                              trace "[---]    "+fNameIdx+". \""+include_path+"/"+cName+"\"";
+                              fNameIdx++;
+                           }
+                        }
+                        return false;
+                     }
+                     // else: try fallback file
+                  }
+               }
+            }
+            else
+               idx = idxE + 1;
+         }
+      }
+      while(-1 != idx);
+      // trace "xxx after replaceIncludes: buf=\""+_buf+"\"";
+      return true;
+   }
+
+   public method setIncludePath(String _path) {
+      if!(_path.isBlank())
+      {
+         include_path = _path;
+      }
+      else
+      {
+         include_path = "./";
+      }
+   }
+
+   public method loadFile(String _pathName) : boolean {
+      local String buf;
+      if(buf.loadLocal(_pathName, true/*bRemoveCR*/))
+      {
+         input_path_name = _pathName;
+         if(replaceIncludes(buf))
+         {
+            if(parseString(buf))
+            {
+               // Succeeded
+               return true;
+            }
+            else
+            {
+               trace "[---] failed to parse org file \""+_pathName+"\"";
+            }
+         }
+         else
+         {
+            trace "[---] loadIncludes() failed";
+            return false;
+         }
+      }
+      else
+      {
+         trace "[---] failed to load org file \""+_pathName+"\"";
+      }
+      return false;
+   }
+
+}

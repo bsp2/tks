@@ -1,0 +1,280 @@
+// ----
+// ---- file   : mdtable.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----           
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : generic markdown table generator
+// ----
+// ---- created: 30Jan2020
+// ---- changed: 31Jan2020
+// ----
+// ----
+// ----
+
+module MMDTable;
+
+
+// <class.png>
+class MDTable {
+   protected int num_cols;
+   protected PointerArray rows;  // array of StringArray instances (cols). first row is header.
+
+   protected IntArray col_extents;  // string widths (w/o asciiz)
+
+   protected String caption;
+
+   protected String css_class;
+
+   protected boolean b_update_extents;
+
+   protected boolean b_header = true;
+
+   // (todo) column widths
+   // (todo) column alignments
+
+   protected int current_row_idx;
+   protected int current_col_idx;
+   
+   public method init(int _numCols) {
+      num_cols = _numCols;
+      rows.free();
+      b_update_extents = true;
+      resetLocator();
+   }
+
+   public method setCaption(String _s) {
+      caption = _s;
+   }
+
+   public method setCSSClass(String _s) {
+      css_class = _s;
+   }
+
+   public method setEnableHeader(boolean _bEnable) {
+      b_header = _bEnable;
+   }
+
+   protected method getOrCreateRowCols(int _rowIdx) : StringArray {
+      StringArray *cols;
+      if(_rowIdx >= rows.numElements)
+      {
+         rows.realloc(_rowIdx + 10);
+         rows.numElements = _rowIdx + 1;
+      }
+      cols <= rows.get(_rowIdx);
+      if(null == cols)
+      {
+         cols <= new StringArray;
+         cols.alloc(num_cols);
+         cols.useAll();
+         rows[_rowIdx] = deref cols;
+      }
+      return cols;
+   }
+
+   public method setCell(int _colIdx, int _rowIdx, String _value) {
+      if(_colIdx < num_cols)
+      {
+         StringArray cols <= getOrCreateRowCols(_rowIdx);
+         cols[_colIdx] = deref _value;
+         b_update_extents = true;
+      }
+      else
+      {
+         die "[---] MDTable::setCell: colIdx out of bounds ("+_colIdx+">="+num_cols+")";
+      }
+   }
+
+   public method setRow(int _rowIdx, Object _array) {
+      int ne = _array.yacArrayGetNumElements();
+      int idx = 0;
+      loop(ne)
+      {
+         var v = _array.yacArrayGet(idx);
+         setCell(idx++, _rowIdx, String(v));
+      }
+   }
+
+   public method setHeader(Object _array) {
+      setRow(0, deref _array);
+   }
+
+   public method setRowCell(int _colIdx, String _value) {
+      setCell(_colIdx, current_row_idx, deref _value);
+   }
+
+   public method addCell(String _value) {
+      setCell(current_col_idx++, current_row_idx, deref _value);
+   }
+
+   public method addRow() {
+      current_row_idx++;
+      current_col_idx = 0;
+      getOrCreateRowCols(current_row_idx);
+   }
+
+   public method resetLocator() {
+      current_col_idx = 0;
+      current_row_idx = 0;
+   }
+
+   protected method lazyCalcMaxColExtents() {
+      if(b_update_extents)
+      {
+         b_update_extents = false;
+
+         col_extents.allocAndFill(num_cols, 0);
+
+         StringArray *cols;
+         foreach cols in rows
+         {
+            int colIdx = 0;
+            String *sCol;
+            // trace "xxx cols="+#(cols);
+            foreach sCol in cols
+            {
+               int colLen = sCol.numChars;
+               if(colLen > col_extents[colIdx])
+                  col_extents[colIdx] = colLen;
+               colIdx++;
+            }
+         }
+      }
+   }
+
+   protected method dashRowToMarkdown(String _buf, int _indent) {
+      _buf.appendRepeat(" ", _indent);
+      int colIdx = 0;
+      int colW;
+      foreach colW in col_extents
+      {
+         _buf.append("|-");
+         _buf.appendRepeat("-", colW);
+         _buf.append("-");
+      }
+      _buf.append("-|");
+      _buf.append("\n");
+   }
+
+   protected method rowToMarkdown(String _buf, int _indent, StringArray _cols, int _align) {
+      int linesLeft = 0;
+      int lineIdx = 0;
+      do
+      {
+         String *s;
+         _buf.appendRepeat(" ", _indent);
+         int colIdx = 0;
+         foreach s in _cols
+         {
+            local String sCellTmp;
+            String *sCell;
+            boolean bContLine;
+            StringArray *lines;
+            if(lineIdx > 0)
+            {
+               lines <= s.splitChar('\n');
+               sCellTmp = lines.get(lineIdx);
+               sCell <= sCellTmp;
+               bContLine = (lines.numElements > 1);
+            }
+            else
+            {
+               bContLine = false;
+               linesLeft = s.numIndicesOf("\n");
+               if(linesLeft > 0)
+               {
+                  lines <= s.splitChar('\n');
+                  sCellTmp = lines.getCopy(0);
+                  // trace "xxx sCellTmp=\""+sCellTmp+"\"";
+                  sCell <= sCellTmp;
+               }
+               else
+               {
+                  // Single line
+                  sCell <= s;
+               }
+            }
+            _buf.append("|");
+            if(bContLine)
+               _buf.append("+");
+            else
+            {
+               if(_align < 0)
+                  _buf.append(":");
+               else
+                  _buf.append(" ");
+            }
+            _buf.append(sCell);
+            _buf.appendRepeat(" ", col_extents[colIdx] - sCell.numChars);
+            if(_align > 0)
+               _buf.append(":");
+            else 
+               _buf.append(" ");
+            colIdx++;
+         }
+         lineIdx++;
+         _buf.append(" |\n");
+      }
+      while(--linesLeft >= 0);
+   }
+
+   public method toMarkdown(String _buf, int _indent) {
+      int numRows = rows.numElements;
+      if(numRows > 0)
+      {
+         lazyCalcMaxColExtents();
+
+         int rowIdx = 0;
+
+         // Header
+         if(b_header)
+         {
+            rowToMarkdown(_buf, _indent, rows.get(0), -1/*align*/);
+            numRows--;
+            rowIdx++;
+            dashRowToMarkdown(_buf, _indent);
+         }
+         else
+         {
+            _buf.appendRepeat(" ", _indent);
+            _buf.append("|noheader\n");
+         }
+
+         // Data rows
+         loop(numRows)
+         {
+            rowToMarkdown(_buf, _indent, rows.get(rowIdx++), 0/*align*/);
+         }
+
+         if(numRows > 0)
+            dashRowToMarkdown(_buf, _indent);
+
+         // Caption and CSS class
+         local String sCap;
+         if(!css_class.isBlank())
+            sCap.append("."+css_class);
+         if(!caption.isBlank())
+            sCap.append(" "+caption);
+         if(!sCap.isBlank())
+         {
+            _buf.appendRepeat(" ", _indent);
+            _buf.append("]"+sCap);
+         }
+      }
+   }
+  
+}

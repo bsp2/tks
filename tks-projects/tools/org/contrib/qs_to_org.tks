@@ -1,0 +1,254 @@
+// ----
+// ---- file   : org.tks
+// ---- author : bsp
+// ---- info   : Quotation Sheet to Org Converter
+// ----
+// ---- created: 13Feb2020
+// ---- changed: 
+// ----
+// ----
+// ----
+
+class Utils {
+   static AppendMergedLinesForHeader(String _buf, String _text) {
+      // "my topic \nheader" => "my topic header"
+      local StringArray lines <= _text.splitChar('\n');
+      local String *s;
+      int lineIdx = 0;
+      foreach s in lines
+      {
+         if(lineIdx > 0)
+            _buf.append(" ");
+         _buf.append(s.trim());
+         lineIdx++;
+      }
+   }
+
+   static CreateAnchor(String _text) : String {
+      // "  My {topic}\ncaption 34 !!  " => "my-topic-caption-34"
+      local String s;
+      AppendMergedLinesForHeader(s, _text);
+      int idx = 0;
+      local String d;
+      s.toLower();
+      loop(s.length)
+      {
+         char c = s[idx];
+         if(' ' == c)
+            d.append(" ");
+         else if( ('a' <= c <= 'z') || ('0' <= c <= '9') || ('-' == c) )
+         {
+            d.append(tcchar(c));
+         }
+         idx++;
+      }
+      d.trim();
+      d.replace(" ", "-");
+      return deref d;
+   }
+
+   static SplitPathname(String name, path, file) {
+      // Split last used file name into directory/file components
+      
+      int idx = name.lastIndexOf("/");
+      int idxDos = name.lastIndexOf("\\");
+      if(idxDos > idx)
+      {
+         idx = idxDos;
+      }
+
+      if(-1 != idx)
+      {
+         if(null != path)
+            name.substring(0, idx) => path;
+         if(null != file)
+            name.substring(idx+1, -1) => file;
+      }
+      else
+      {
+         if(null != path)
+            path = null;
+         if(null != file)
+            file = name;
+      }
+
+      ////trace "xxx SplitPathname: name=\""+name+"\" path=\""+path+"\" file=\""+file+"\".";
+   }
+
+   static BaseName(String _pathName) : String {
+      local String path;
+      local String file;
+      SplitPathname(_pathName, path, file);
+      return deref file;
+   }
+
+   static FileExists(String _pathName) : boolean {
+      local File f;
+      return f.openLocal(_pathName, IOS_IN);
+   }
+}
+
+class Convert {
+
+   define int COL_WP       = 0;
+   define int COL_WP_SUB   = 1;
+   define int COL_RESP     = 3;
+   define int COL_EFFORT_H = 5;
+   define int COL_RISK     = 7;
+   define int COL_DESC     = 15;
+   define int COL_COMMENT  = 16;
+
+   String out;
+   String project_name;
+
+   protected method parseLines(String _buf) {
+
+      boolean bWP = false;
+      local StringArray lines <= _buf.splitChar('\r');
+      String *line;
+      local String sCurMainWP;
+      local StringArray allMainWPIds;
+
+      out.append("\n\n=============================================================================== Project \""+project_name+"\"\n");
+      out.append("* "+project_name+"\n");
+      out.append("   id: "+Utils.CreateAnchor(project_name)+"\n");
+
+      foreach line in lines
+      {
+         if(!line.isBlank())
+         {
+            // line.replace("\n", " ");
+            local StringArray cels <= line.splitChar(';');
+            // trace "xxx cels="+#(cels);
+            local String sWP <= cels.get(COL_WP).trim();
+            sWP.replace("\n", " ");
+            if(!bWP)
+            {
+               if((sWP != "WPs") && (sWP <= "WP"))
+               {
+                  bWP = true;
+               }
+            }
+
+            if(bWP)
+            {
+               if(!sWP.isBlank())
+               {
+                  local String sWPSub <= cels.get(COL_WP_SUB).trim();
+                  local String sWPName <= cels.get(COL_DESC).trim();
+
+                  if(!sWPName.isBlank())
+                  {
+                     if(sWPSub.isBlank())
+                     {
+                        // New Main-WP
+                        sCurMainWP = sWP;
+                        out.append("\n\n...............................................................................\n");
+                        out.append("** "+sWPName+"\n");
+                        out.append("    ; "+sWP+"\n");
+                        out.append("    id: "+Utils.CreateAnchor(sWPName)+"\n");
+                        // out.append("    ordered\n");
+                        allMainWPIds.add(Utils.CreateAnchor(sWPName));
+                     }
+                     else
+                     {
+                        // New Sub-WP
+                        out.append("\n");
+                        out.append("*** "+sWPName+"\n");
+                        out.append("     ; "+sWPSub+"\n");
+                        out.append("     id: "+Utils.CreateAnchor(sWPName)+"\n");
+
+                        // effort
+                        local String sEffort <= cels.get(COL_EFFORT_H).trim();
+                        out.append("     effort: "+sEffort+"\n");
+
+                        // risk
+                        local String sRisk <= cels.get(COL_RISK).trim();
+                        out.append("     risk: "+sRisk+"\n");
+
+                        // depends
+                        out.append("     depends: \n");
+                  
+                        // allocate / responsible
+                        local String sResp <= cels.get(COL_RESP).trim();
+                        if(!sResp.isBlank())
+                        {
+                           out.append("     allocate: "+sResp.toLower()+"\n");
+                        }
+
+                        // comment
+                        local String sComment <= cels.get(COL_COMMENT).trim();
+                        if(!sComment.isBlank())
+                        {
+                           local StringArray aComment <= sComment.splitChar('\n');
+                           local String *sCommentLine;
+                           foreach sCommentLine in aComment
+                           {
+                              loop(5) sCommentLine.replace("  ", " ");
+                              out.append("     > "+sCommentLine+"\n");
+                           }
+                        }
+
+                     }
+                  } // !sWPName.isBlank()
+               } // !sWP.isBlank()
+            } // if bWP
+         } // !line.isBlank()
+      }      
+
+      // Milestone
+      out.append("\n\n------------------------------------------------------------------------------- Milestones\n");
+      out.append("** Milestones\n");
+      out.append("\n");
+      out.append("*** Release\n");
+      out.append("     milestone\n");
+      local String sDepends;
+      local String *sMainId;
+      int mainIdIdx = 0;
+      foreach sMainId in allMainWPIds
+      {
+         if(mainIdIdx > 0)
+            sDepends.append(", ");
+         out.append("     depends: "+sMainId+"\n");
+         mainIdIdx++;
+      }
+   }
+
+   public method processCSV(String _pathName, String _outPathName) : boolean {
+
+      local String buf;
+      if(buf.loadLocal(_pathName, false/*bRemoveCR*/))
+      {
+         project_name = Utils.BaseName(_outPathName).replace(".org", "");
+
+         parseLines(buf);
+
+         if(_outPathName >= ".org")
+         {
+            if(Utils.FileExists(_outPathName))
+               _outPathName.append(".gen");
+            out.saveLocal(_outPathName);
+            trace "[...] wrote \""+_outPathName+"\"";
+            return true;
+         }
+         else
+         {
+            trace "[---] output file \""+_outPathName+"\" is missing \".org\" suffix";
+         }
+      }
+
+      return false;
+   }
+}
+
+function Usage() {
+   trace "Usage: tks qs_to_org <sheet.csv> <output.org>";
+}
+
+if(Arguments.numElements < 2)
+{
+   Usage();
+}
+
+Convert c;
+c.processCSV(Arguments.get(0), Arguments.get(1));

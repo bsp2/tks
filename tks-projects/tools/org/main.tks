@@ -1,0 +1,968 @@
+// ----
+// ---- file   : main.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----           
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : main
+// ----
+// ---- created: 06Jan2020
+// ---- changed: 07Jan2020, 08Jan2020, 09Jan2020, 10Jan2020, 13Jan2020, 15Jan2020, 17Jan2020
+// ----          18Jan2020, 20Jan2020, 21Jan2020, 22Jan2020, 24Jan2020, 25Jan2020, 26Jan2020
+// ----          27Jan2020, 29Jan2020, 30Jan2020, 31Jan2020, 01Feb2020, 02Feb2020, 03Feb2020
+// ----          11Feb2020, 12Feb2020
+// ----
+// ----
+// ----
+
+module Main;
+
+
+// function TestTextFmt() {
+//    // String s = "some org *bold* text";
+//    String s = "some org *bold* text and /italic/ text and _underlined_ text and +strike-through+ text";
+//    s = Utils.SubstOrgTextFormatting(s);
+//    trace "xxx s=\""+s+"\"";
+//    exit(10);
+// }
+//TestTextFmt();
+
+
+boolean b_debug_print_sub_outline = false;
+
+// String in_path_name = "todo.txt";
+String in_path_name = "";
+
+String out_path_prefix = "";
+
+String outFmt = "md";  // "org", "smmx", "txt"
+
+org::Org org;
+smmx::SMMX smmx;
+
+boolean bStdOut = false;
+
+
+function Usage(int _code) {
+   // [-mtl,--maxtitlelength] 
+   trace "tks app:org [-q,--quiet] [-w,--warnings] [-n,--dry-run] [-d,--debug] [-p,--private] [-raw,--rawutf8] [-tf,--tagsfirst] [-tl,--tagslast] [-dpso,--debugprintsuboutline] [-pd,--preferred-date create|finish|scheduled|deadline] [-txf,--textformatting] [-siao,--smmx-info-as-org] [-siat,--smmx-info-as-topics] [--todo,-t <level1..n>] [--org,-g <level1..n>] [-psp,--prefer-simplified-properties] [-fa,--filterall <tags>] [-f,--filter <tags>] [-sf,--state-filter <states>] [-pf,--property-filter <prop=val_pattern>] [-gf,--group-filter,-prj,--project <name>] [-s,--schedule] [-sc,--schedule-compact] [-sy,--schedule-years <max>] [-now,--now <datestr>] [-mp,--multi-project] [-tsgp,--time-sheet-grace-period] [-ssg,--schedule-skip-gantt] [-ssgo,--schedule-skip-gantt-overview] [-scw,--schedule-calendar-weeks] [-ssdnr,--schedule-skip-day-nr] [-ssptg,--schedule-skip-parent-task-groups] [-stl,--schedule-traffic-lights] [-stls,--schedule-traffic-lights-state] [-stt,--schedule-task-titles] [-har,--html-auto-refresh] [-ms,--milestone] [-nr,--norisk] [-itt,--ignore-time-tracking] [-ttp,--time-tracking-project <project-id>] [-ktcp,--keep-task-clock-properties] [-neh,--no-emacs-header] [-docs,--docs] [-dnf,--docs-no-footer] [-ht,--html-template <pathname>] [-o,--output <output.org>|<output.txt>|<output.md>|<output.smmx>|<output.csv>|<output.html>] [-so,--stdout <outfmt>] <input.org>|<input.txt>|<input.smmx>";
+   exit(_code);
+}
+
+
+
+shared::b_schedule = false;
+
+if(0 == Arguments.numElements)
+   Usage(5);
+
+int argIdx = 0;
+int numArgs = Arguments.numElements;
+while(argIdx < numArgs)
+{
+   switch(Arguments[argIdx])
+   {
+      default:
+         in_path_name = Arguments[argIdx];
+         break;
+
+      case "-d":
+      case "--debug":
+         shared::b_debug = true;
+         break;
+
+      case "-n":
+      case "--dry-run":
+         shared::b_dry_run = true;
+         break;
+
+      case "-w":
+      case "--warnings":
+         shared::b_warn = true;
+         break;
+
+      case "-q":
+      case "--quiet":
+         shared::b_verbose = false;
+         break;
+
+      case "-pt":
+      case "--plain-todo":
+         // shortcut for generating HTML report from plain todo.txt files
+         //  -s -sde -afg -stt -ssg -ssgo -stls
+         shared::b_schedule = true;
+         org::b_create_plaintodo_defaults                      = true;
+         org::b_set_default_effort_for_all_working_state_tasks = true;
+         org::b_autofold_task_groups                           = true;
+         scheduler::b_task_titles          = true;
+         scheduler::b_traffic_lights       = true;
+         scheduler::b_traffic_lights_state = true;
+         scheduler::b_skip_gantt           = true;
+         scheduler::b_skip_gantt_overview  = true;
+         break;
+
+      case "-neh":
+      case "--no-emacs-header":
+         org::b_emacs_header = false;
+         break;
+
+      case "-p":
+      case "--private":
+         shared::b_honor_private_flag = true;
+         break;
+
+      case "--rawutf8":
+      case "-raw":
+         // for non-west-european languages (leave UTF8 text as-is)
+         //  (note) w/o this option, all text is converted to CP1252 (and back to UTF8 when writing .smmx files)
+         shared::b_raw_utf8 = true;
+         break;
+
+      case "--todo":
+      case "-t":
+         if((argIdx + 1) < numArgs)
+         {
+            org::force_list_level = mathMaxi(1, int(Arguments[argIdx+1]));
+            org::force_org_level = -1;
+            trace "[dbg] org::force_list_level is "+org::force_list_level;
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "--org":
+      case "-g":
+         if((argIdx + 1) < numArgs)
+         {
+            org::force_org_level = mathMaxi(1, int(Arguments[argIdx+1]));
+            org::force_list_level = -1;
+            trace "[dbg] force_org_level is "+org::force_org_level;
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-psp":
+      case "--prefer-simplified-properties":
+         shared::b_prefer_simplified_properties = true;
+         break;
+
+      case "-txf":
+      case "--textformatting":
+         // experimental
+         //  - converts "/my/path/" to italic text (bad)
+         //  - wrong formatting in info node embedded org note (org to smmx)
+         //  (note) when false (default), keep text format as-is
+         //  (note) converting .smmx to .org usually works fine
+         shared::b_text_formatting = true;
+         break;
+
+      case "-tf":
+      case "--tagsfirst":
+         org::b_show_tags_after_topic = false;
+         break;
+
+      case "-tl":
+      case "--tagslast":
+         org::b_show_tags_after_topic = true;
+         break;
+
+      case "-tarsc":
+      case "--tags-always-require-start-colon":
+         org::b_allow_skip_tag_start_colon = false;
+         break;
+
+      case "-dpso":
+      case "--debugprintsuboutline":
+         b_debug_print_sub_outline = true;
+         break;
+
+      // // case "--maxtitlelength":
+      // // case "-mtl":
+      // //    if((argIdx + 1) < numArgs)
+      // //    {
+      // //       org.max_title_len = Arguments[argIdx + 1];
+      // //       if!(10 <= org.max_title_len <= 120)
+      // //       {
+      // //          trace "[---] app:org: invalid max_title_len="+org.max_title_len+" (must be in range 10..120)";
+      // //          Usage(10);
+      // //       }
+      // //       argIdx++;
+      // //    }
+      // //    else
+      // //    {
+      // //       Usage(10);
+      // //    }
+      // //    break;
+
+      case "-pd":
+      case "--preferred-date":
+         if((argIdx + 1) < numArgs)
+         {
+            org::preferred_date = Arguments[argIdx + 1];
+            switch(org::preferred_date)
+            {
+               case "create":
+               case "finish":
+               case "scheduled":
+               case "deadline":
+                  break;
+               default:
+                  trace "[---] app:org: invalid preferred-date type \""+org::preferred_date+"\"";
+               Usage(10);
+            }
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-siao":
+      case "--smmx-info-as-org":
+         org::b_smmx_info_as_org = true;
+         break;
+
+      case "-siat":
+      case "--smmx-info-as-topics":
+         org::b_smmx_info_as_org = false;
+         break;
+
+      case "-fa":
+      case "--filterall":
+         if((argIdx + 1) < numArgs)
+         {
+            // e.g. "ui" or "ui,io" or "docs:tutorials", match all tags
+            org.setExportFilterTagsByString(Arguments[argIdx + 1], true/*bAll*/);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-f":
+      case "--filter":
+         if((argIdx + 1) < numArgs)
+         {
+            // e.g. "ui" or "ui,io" or "docs:tutorials", match any tag
+            org.setExportFilterTagsByString(Arguments[argIdx + 1], false/*bAll*/);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-if":
+      case "--inversefilter":
+         if((argIdx + 1) < numArgs)
+         {
+            // blacklist topics
+            org.setExportInverseFilterTagsByString(Arguments[argIdx + 1]);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-sf":
+      case "--state-filter":
+         if((argIdx + 1) < numArgs)
+         {
+            org.setExportStateFilterByString(Arguments[argIdx + 1]);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-pf":
+      case "--property-filter":
+         if((argIdx + 1) < numArgs)
+         {
+            org.addExportPropertyFilterByString(Arguments[argIdx + 1]);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-gf":
+      case "--group-filter":
+      case "-prj":
+      case "--project":
+         if((argIdx + 1) < numArgs)
+         {
+            org.addExportGroupFilter(Arguments[argIdx + 1]);
+            shared::b_filter_recursive = true;
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-s":
+      case "--schedule":
+         shared::b_schedule = true;
+         break;
+
+      case "-sc":
+      case "--schedule-compact":
+         shared::b_schedule = true;
+         scheduler::b_html_cw = true;
+         scheduler::b_html_taskgroups = false;
+         scheduler::b_html_day_idx = false;
+         break;
+
+      case "-scw":
+      case "--schedule-calendar-weeks":
+         scheduler::b_html_cw = true;
+         break;
+
+      case "-ssdnr":
+      case "--schedule-skip-day-nr":
+         scheduler::b_html_day_idx = false;
+         break;
+
+      case "-ssptg":
+      case "--schedule-skip-parent-task-groups":
+         scheduler::b_html_taskgroups = false;
+         break;
+
+      case "-sy":
+      case "--schedule-years":
+         if((argIdx + 1) < numArgs)
+         {
+            int scheduleYears = Arguments[argIdx + 1];
+            scheduler::max_project_days = 365 * mathMini(scheduleYears, 1);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-now":
+      case "--now":
+         if((argIdx + 1) < numArgs)
+         {
+            scheduler::now_override = Arguments[argIdx + 1];
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-mp":
+      case "--multi-project":
+         scheduler::b_multi_project = true;
+         break;
+
+      case "-tsgp":
+      case "--time-sheet-grace-period":
+         if((argIdx + 1) < numArgs)
+         {
+            scheduler::timesheet_submit_grace_period_in_days = mathClampi(Arguments[argIdx + 1], 0, 35);
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-sbsd":
+      case "--sort-by-start-date":
+         scheduler::b_sort_by_start_date = true;
+         break;
+
+      case "-ssg":
+      case "--schedule-skip-gantt":
+         scheduler::b_skip_gantt = true;
+         break;
+
+      case "-ssgo":
+      case "--schedule-skip-gantt-overview":
+         scheduler::b_skip_gantt_overview = true;
+         break;
+
+      case "-stl":
+      case "--schedule-traffic-lights":
+         scheduler::b_traffic_lights = true;
+         break;
+
+      case "-stls":
+      case "--schedule-traffic-lights-state":
+         scheduler::b_traffic_lights = true;
+         scheduler::b_traffic_lights_state = true;
+         break;
+
+      case "-stt":
+      case "--schedule-task-titles":
+         scheduler::b_task_titles = true;
+         break;
+
+      case "-srv":
+      case "--schedule-resource-view":
+         scheduler::b_resource_view = true;
+         break;
+
+      case "-ms":
+      case "--milestone":
+         if((argIdx + 1) < numArgs)
+         {
+            scheduler::selected_milestone = Arguments[argIdx + 1].toLower();
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-sde":
+      case "--set-default-effort-for-all-working-state-tasks":
+         org::b_set_default_effort_for_all_working_state_tasks = true;
+         break;
+
+      case "-afg":
+      case "--autofold-task-groups":
+         org::b_autofold_task_groups = true;
+         break;
+
+      case "-nr":
+      case "--norisk":
+         shared::b_no_risk = true;
+         break;
+
+      case "-docs":
+      case "--docs":
+         shared::b_docs = true;
+         break;
+
+      case "-dnf":
+      case "--docs-no-footer":
+         shared::b_docs_footer = false;
+         break;
+
+      case "-har":
+      case "--html-auto-refresh":
+         shared::b_html_auto_refresh = true;
+         break;
+
+      case "-ht":
+      case "--html-template":
+         if((argIdx + 1) < numArgs)
+         {
+            shared::html_template_pathname = Arguments[argIdx + 1];
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-itt":
+      case "--ignore-time-tracking":
+         shared::b_ignore_time_tracking = true;
+         break;
+
+      case "-ttp":
+      case "--time-tracking-project":
+         if((argIdx + 1) < numArgs)
+         {
+            shared::time_tracking_project = Arguments[argIdx + 1].toLower();
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-ktcp":
+      case "--keep-task-clock-properties":
+         org::b_keep_task_clock_properties = true;
+         break;
+         
+      case "-o":
+      case "--output":
+         if((argIdx + 1) < numArgs)
+         {
+            out_path_prefix = Arguments[argIdx + 1];
+
+            if(out_path_prefix >= ".md")
+               outFmt = "md";
+            else if(out_path_prefix >= ".smmx")
+               outFmt = "smmx";
+            else if(out_path_prefix >= ".org")
+               outFmt = "org";
+            else if(out_path_prefix >= ".txt")
+               outFmt = "txt";
+            else if(out_path_prefix >= ".csv")
+               outFmt = "csv";
+            else if(out_path_prefix >= ".html")
+               outFmt = "html";
+            else
+               die "unsupported output format (out_path=\""+out_path_prefix+"\")";
+
+            out_path_prefix.replace(".md", "");
+            out_path_prefix.replace(".smmx", "");
+            out_path_prefix.replace(".org", "");
+            out_path_prefix.replace(".txt", "");
+            out_path_prefix.replace(".csv", "");
+            out_path_prefix.replace(".html", "");
+
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+
+      case "-so":
+      case "-stdout":
+      case "--stdout":
+         if((argIdx + 1) < numArgs)
+         {
+            outFmt = Arguments[argIdx + 1];
+            if!(["md", "smmx", "org", "txt", "csv", "html"].containsObject(outFmt))
+            {
+               trace "[---] invalid output format \""+outFmt+"\"";
+               exit(10);
+            }
+            bStdOut = true;
+            argIdx++;
+         }
+         else
+         {
+            Usage(10);
+         }
+         break;
+   }
+
+   argIdx++;
+}
+
+org::b_debug = shared::b_debug;
+smmx::b_debug = shared::b_debug;
+scheduler::b_debug = shared::b_debug;
+
+if(in_path_name.isBlank())
+{
+   trace "[---] app:org: missing input path name (.md, .smmx, .org, .txt)";
+   Usage(10);
+}
+
+String buf;
+
+String in_path_dir;
+Utils.SplitPathname(in_path_name, in_path_dir, null);
+
+if(in_path_name >= ".smmx")
+{
+   if(maybe == shared::b_text_formatting)
+      shared::b_text_formatting = true;
+
+   // From SMMX
+   if(out_path_prefix.isBlank())
+   {
+      out_path_prefix <= in_path_name.replace(".smmx", "");
+   }
+
+   if(smmx.loadSMMX(in_path_name))
+   {
+      if(b_debug_print_sub_outline)
+         smmx.debugPrintOutline();
+
+      switch(outFmt)
+      {
+         case "org":
+         case "txt":
+            smmx.setOutputPath(out_path_prefix);
+            smmx.setImagePath(out_path_prefix);
+            smmx.toOrg(org);
+            if(b_debug_print_sub_outline)
+               org.debugPrintSubOutline();
+            org.toOrg(buf);
+            if(bStdOut)
+            {
+               if(shared::b_verbose)
+                  trace "[...] org: output:\n";
+               trace buf;
+            }
+            else if(!shared::b_dry_run)
+            {
+               buf.saveLocal(out_path_prefix+"."+outFmt);
+               if(shared::b_verbose)
+                  trace "[...] org: wrote \""+out_path_prefix+"."+outFmt+"\"";
+            }
+            else
+            {
+               if(shared::b_verbose)
+                  trace "[...] org: would write \""+out_path_prefix+"."+outFmt+"\"";
+            }
+            break;
+
+         case "md":
+            smmx.setOutputPath(out_path_prefix);
+            smmx.setImagePath(out_path_prefix);
+            smmx.toMarkdown(buf);
+            if(bStdOut)
+            {
+               if(shared::b_verbose)
+                  trace "[...] org: output:\n";
+               trace buf;
+            }
+            else if(!shared::b_dry_run)
+            {
+               buf.saveLocal(out_path_prefix+".md");
+               if(shared::b_verbose)
+                  trace "[...] org: wrote \""+out_path_prefix+".md\"";
+            }
+            else
+            {
+               if(shared::b_verbose)
+                  trace "[...] org: would write \""+out_path_prefix+".md\"";
+            }
+            break;
+           
+         case "smmx":
+            smmx.setOutputPath(out_path_prefix);
+            smmx.setImagePath(out_path_prefix);
+            if(!bStdOut)
+               smmx.saveLocal(out_path_prefix);  // save to <out_path_prefix>/document/mindmap.xml and <out_path_prefix>.smmx
+            break;
+      }
+   }
+   else
+   {
+      trace "[---] failed to load smmx file \""+in_path_name+"\"";
+      exit(10);
+   }
+}
+else if( (in_path_name >= ".org") || (in_path_name >= ".txt") )
+{
+   if(maybe == shared::b_text_formatting)
+      shared::b_text_formatting = false;
+
+   // (note) keep default org::force_list_level / force_org_level
+
+
+   // From ORG or todo.txt
+   // trace "xxx out_path_prefix="+out_path_prefix;
+   if(out_path_prefix.isBlank())
+   {
+      if(shared::b_schedule)
+         outFmt = "csv";
+      out_path_prefix <= in_path_name.replace(".org", "");
+      out_path_prefix.replace(".txt", "");
+   }
+
+   org.setIncludePath(in_path_dir);
+
+   if(org.loadFile(in_path_name))
+   {
+      if(b_debug_print_sub_outline)
+         org.debugPrintSubOutline();
+
+      scheduler::Schedule sched;
+
+      if(shared::b_schedule)
+      {
+         // trace "xxx schedule";
+         if(!sched.initFromOrg(org))
+         {
+            exit(5);
+         }
+         sched.setOutputPathPrefix(out_path_prefix);  // e.g. "out_html/my_project_plan"  (w/o suffix)
+      }
+      switch(outFmt)
+      {
+         case "org":
+         case "txt":
+            org.toOrg(buf);
+            if(bStdOut)
+            {
+               if(shared::b_verbose)
+                  trace "[...] org: output:\n";
+               trace buf;
+            }
+            else if(!shared::b_dry_run)
+            {
+               buf.saveLocal(out_path_prefix+"."+outFmt);
+               if(shared::b_verbose)
+                  trace "[...] org: wrote \""+out_path_prefix+"."+outFmt+"\"";
+            }
+            else
+            {
+               if(shared::b_verbose)
+                  trace "[...] org: would write \""+out_path_prefix+"."+outFmt+"\"";
+            }
+            break;
+
+         case "md":
+            if(shared::b_schedule)
+            {
+               String mdScheduleBuf;
+               if(sched.saveMarkdownToString(mdScheduleBuf))
+               {
+                  if(bStdOut)
+                  {
+                     if(shared::b_verbose)
+                        trace "[...] org: output:\n";
+                     trace mdScheduleBuf;
+                  }
+                  else if(!shared::b_dry_run)
+                  {
+                     mdScheduleBuf.saveLocal(out_path_prefix+".md");
+                     if(shared::b_verbose)
+                        trace "[...] org: wrote \""+out_path_prefix+".md"+"\"";
+                  }
+                  else
+                  {
+                     if(shared::b_verbose)
+                        trace "[...] org: would write \""+out_path_prefix+".md"+"\"";
+                  }
+               }
+               else
+               {
+                  trace "[---] saveMarkdownToString() failed.";
+                  exit(10);
+               }
+            }
+            else if(shared::b_docs)
+            {
+               // org to md
+               org.toMarkdown(buf);
+               if(bStdOut)
+               {
+                  if(shared::b_verbose)
+                     trace "[...] org: output:\n";
+                  trace buf;
+               }
+               else if(!shared::b_dry_run)
+               {
+                  buf.saveLocal(out_path_prefix+".md");
+                  if(shared::b_verbose)
+                     trace "[...] org: wrote \""+out_path_prefix+".md\"";
+               }
+               else
+               {
+                  if(shared::b_verbose)
+                     trace "[...] would write \""+out_path_prefix+".md\"";
+               }
+            }
+            else
+            {
+               trace "[~~~] ORG-to-MD: WIP";
+               smmx.initNew(Utils.BaseName(out_path_prefix)/*default title*/);
+               smmx.setOutputPath(out_path_prefix);  // not used, remove ?!
+               smmx.setImagePath(out_path_prefix);
+               org.toSMMX(smmx);
+               smmx.toMarkdown(buf);
+               if(bStdOut)
+               {
+                  if(shared::b_verbose)
+                     trace "[...] org: output:\n";
+                  trace buf;
+               }
+               else if(!shared::b_dry_run)
+               {
+                  buf.saveLocal(out_path_prefix+".md");
+                  if(shared::b_verbose)
+                     trace "[...] org: wrote \""+out_path_prefix+".md\"";
+               }
+               else
+               {
+                  if(shared::b_verbose)
+                     trace "[...] org: would write \""+out_path_prefix+".md\"";
+               }
+            }
+            break;
+
+         case "smmx":
+            smmx.initNew(Utils.BaseName(out_path_prefix)/*default title*/);
+            smmx.setOutputPath(out_path_prefix);  // not used, remove ?!
+            smmx.setImagePath(in_path_name);
+            org.toSMMX(smmx);
+            if(!bStdOut)
+            {
+               smmx.saveLocal(out_path_prefix);  // save to <out_path_prefix>/document/mindmap.xml (debug) and <out_path_prefix>.smmx
+            }
+            break;
+
+         case "csv":
+            if(shared::b_schedule)
+            {
+               String csvBuf;
+               if(sched.saveCSVToString(csvBuf))
+               {
+                  if(bStdOut)
+                  {
+                     if(shared::b_verbose)
+                        trace "[...] org: output:\n";
+                     trace csvBuf;
+                  }
+                  else if(!shared::b_dry_run)
+                  {
+                     csvBuf.saveLocal(out_path_prefix+".csv");
+                     if(shared::b_verbose)
+                        trace "[...] org: wrote \""+out_path_prefix+".csv"+"\"";
+                  }
+                  else
+                  {
+                     if(shared::b_verbose)
+                        trace "[...] org: would write \""+out_path_prefix+".csv"+"\"";
+                  }
+               }
+               else
+               {
+                  trace "[---] saveCSVToString() failed.";
+                  exit(10);
+               }
+            }
+            break;
+
+         case "html":
+            if(shared::b_schedule)
+            {
+               String htmlBuf;
+               if(sched.saveHTMLToString(htmlBuf))
+               {
+                  if(bStdOut)
+                  {
+                     if(shared::b_verbose)
+                        trace "[...] org: output:\n";
+                     trace htmlBuf;
+                  }
+                  else if(!shared::b_dry_run)
+                  {
+                     htmlBuf.saveLocal(out_path_prefix+".html");
+                     if(shared::b_verbose)
+                        trace "[...] org: wrote \""+out_path_prefix+".html"+"\"";
+                  }
+                  else
+                  {
+                     if(shared::b_verbose)
+                        trace "[...] org: would write \""+out_path_prefix+".html"+"\"";
+                  }
+               }
+               else
+               {
+                  trace "[---] saveHTMLToString() failed.";
+                  exit(10);
+               }
+            }
+            else if(shared::b_docs)
+            {
+               // org to md to html
+               org.toMarkdown(buf);
+               if(bStdOut)
+               {
+                  if(org::b_debug)
+                  {
+                     trace "[dbg] org: output<md>:\n";
+                     trace buf;
+                  }
+
+                  // Convert .md to .html                
+                  //  (note) the file name is set so its dirname part can be used to locate include files etc
+                  // trace "xxx org: stdout buf=\""+buf+"\"";
+                  Utils.ExecTKS_PipeWrite("app:md -il -stdin \""+in_path_dir+"/.unused\" -stdout ", buf);
+                  StdOutStream.flush();
+               }
+               else if(!shared::b_dry_run)
+               {
+                  buf.saveLocal(out_path_prefix+".md");
+                  if(shared::b_verbose)
+                     trace "[...] org: wrote \""+out_path_prefix+".md\"";
+
+                  // Convert .md to .html
+                  Utils.ExecTKS("app:md -il \""+out_path_prefix+".md\"");
+               }
+               else
+               {
+                  if(shared::b_verbose)
+                     trace "[...] would write \""+out_path_prefix+".md\"";
+               }
+            }
+            else
+            {
+               // org to smmx to md to html
+               smmx.initNew(Utils.BaseName(out_path_prefix)/*default title*/);
+               smmx.setOutputPath(out_path_prefix);  // not used, remove ?!
+               smmx.setImagePath(out_path_prefix);
+               org.toSMMX(smmx);
+               smmx.toMarkdown(buf);
+               if(bStdOut)
+               {
+                  if(shared::b_verbose)
+                     trace "[...] org: output:\n";
+                  trace buf;
+               }
+               else if(!shared::b_dry_run)
+               {
+                  buf.saveLocal(out_path_prefix+".md");
+                  if(shared::b_verbose)
+                     trace "[...] org: wrote \""+out_path_prefix+".md\"";
+
+                  // Convert .md to .html
+                  Utils.ExecTKS("app:md -il \""+out_path_prefix+".md\"");
+               }
+               else
+               {
+                  if(shared::b_verbose)
+                     trace "[...] org: would write \""+out_path_prefix+".md\"";
+               }
+            }
+            break;
+      }
+   }
+   else
+   {
+      // (note) org load/parse failed, error has already been printed
+      exit(10);
+   }
+}
+else
+{
+   trace "[---] unsupported input file format (in_path=\""+in_path_name+"\")";
+   exit(10);
+}

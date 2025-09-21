@@ -1,0 +1,987 @@
+// ----
+// ---- file   : utils.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----           
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : utility functions used by smmx (simplemind) mindmap.xml and org parsers
+// ----
+// ---- created: 03Jan2020
+// ---- changed: 04Jan2020, 05Jan2020, 06Jan2020, 07Jan2020, 08Jan2020, 09Jan2020, 11Jan2020
+// ----          12Jan2020, 13Jan2020, 14Jan2020, 15Jan2020, 16Jan2020, 17Jan2020, 19Jan2020
+// ----          20Jan2020, 21Jan2020, 22Jan2020, 23Jan2020, 24Jan2020, 25Jan2020, 26Jan2020
+// ----          29Jan2020, 30Jan2020, 31Jan2020, 01Feb2020, 11Feb2020, 12Feb2020
+// ----
+// ----
+// ----
+
+module MUtils;
+
+
+// <class.png>
+class Utils {
+
+   static StringArray month_names_short = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+                                           ];
+
+   // ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+   static StringArray weekday_names_short = 
+      ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+   static Backtrace() {
+      try { throw UncriticalError("debug/backtrace"); } catch(UncriticalError e) { trace e.stackTrace; } 
+   }
+
+   public static SubstText(String _s) : String {
+      local String r = _s;
+      // // r.replace("\\\\_", "_");  // underlined text in topic title
+      // // r.replace("\\\\*", "**");  // bold text in topic title
+      // // r.replace("\\:", "§colon;");
+      r.replace("\\", "§backslash;");
+      r.replace(0xD, 0xA);     // notes
+      return deref r;
+   }
+
+   public static ResubstLink(String _s) : String {
+      local String r;
+      _s.replace("§backslash;", "\\") => r;
+      return deref r;
+   }
+
+   public static ResubstText(String _s) : String {
+      local String r;
+      _s.replace("§backslash;", "\\") => r;
+      // // r.replace("§colon;", "\\:");
+      r.replace("\\N", "\n");  // topic captions
+      // // r.replace("\r", "\n");  // notes  (CR replacement done when file is loaded)
+      r.replace("&apos;", "\'");
+      r.replace("&quot;", "\"");
+      r.replace("&lt;", "<");
+      r.replace("&gt;", ">");
+      r.replace("&amp;", "&");
+      return deref r;
+   }
+
+   static GetCurrentDateString() : String {
+      local Time t; t.now();
+      local Integer monthday = t.monthday;
+      return 
+         monthday.printf("%02d")+"-"+
+         ((["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])[t.month])+"-"+t.year;
+   }
+
+   static AppendMergedLinesForHeader(String _buf, String _text) {
+      // "my topic \nheader" => "my topic header"
+      local StringArray lines <= _text.splitChar('\n');
+      local String *s;
+      int lineIdx = 0;
+      foreach s in lines
+      {
+         if(lineIdx > 0)
+            _buf.append(" ");
+         _buf.append(s.trim());
+         lineIdx++;
+      }
+   }
+
+   static AppendMarkdownHeader(String _buf, int _level, String _text) {
+      if(0 == _level)
+      {
+         // setext header
+         local String t;
+         AppendMergedLinesForHeader(t, _text);
+         _buf.append(t);
+         _buf.append("\n");
+         _buf.appendRepeat("=", t.numChars);
+         _buf.append("\n");
+      }
+      else
+      {
+         _buf.appendRepeat("#", _level+1);
+         _buf.append(" ");
+         AppendMergedLinesForHeader(_buf, _text);
+         _buf.append("\n");
+      }
+   }
+
+   static AppendIndentedLines(String _buf, String _src, int _numSpaces) {
+      local StringArray lines <= _src.splitChar('\n');
+      local String *s;
+      // trace "xxx lines="+#(lines);
+      foreach s in lines
+      {
+         _buf.appendRepeat(" ", _numSpaces);
+         _buf.append(s);
+         _buf.append("\n");
+      }
+   }
+
+   static AppendListIndent(String _buf, int _level) : int {
+      int numSpaces = (_level+1) * 3;
+      _buf.appendRepeat(" ", numSpaces);
+      return numSpaces;
+   }
+
+   static StartMarkdownList(String _buf, int _level) : int {
+      int numSpaces = AppendListIndent(_buf, _level);
+      _buf.append("- ");
+      return numSpaces;
+   }
+
+   static CreateAnchor(String _text) : String {
+      // "  My {topic}\ncaption 34 !!  " => "my-topic-caption-34"
+      local String s;
+      AppendMergedLinesForHeader(s, _text);
+      int idx = 0;
+      local String d;
+      s.toLower();
+      loop(s.length)
+      {
+         char c = s[idx];
+         if(' ' == c)
+            d.append(" ");
+         else if( ('a' <= c <= 'z') || ('0' <= c <= '9') || ('-' == c) )
+         {
+            d.append(tcchar(c));
+         }
+         idx++;
+      }
+      d.trim();
+      d.replace(" ", "-");
+      return deref d;
+   }
+
+   static AppendMarkdownAnchor(String _buf, String _text) {
+      local String d <= CreateAnchor(_text);
+      _buf.append("#");
+      _buf += deref d;
+   }
+
+   static SplitPathname(String name, path, file) {
+      // Split last used file name into directory/file components
+      
+      int idx = name.lastIndexOf("/");
+      int idxDos = name.lastIndexOf("\\");
+      if(idxDos > idx)
+      {
+         idx = idxDos;
+      }
+
+      if(-1 != idx)
+      {
+         if(null != path)
+            name.substring(0, idx) => path;
+         if(null != file)
+            name.substring(idx+1, -1) => file;
+      }
+      else
+      {
+         if(null != path)
+            path = null;
+         if(null != file)
+            file = name;
+      }
+
+      ////trace "xxx SplitPathname: name=\""+name+"\" path=\""+path+"\" file=\""+file+"\".";
+   }
+
+   static IndexOfNonWhitespace(String _s) : int {
+      int idx = 0;
+      loop(_s.length)
+      {
+         if(_s[idx] > ' ')
+            return idx;
+         idx++;
+      }
+      return -1;
+   }
+
+   static LastIndexOfNonWhitespace(String _s) : int {
+      int idx = _s.length -1;
+      while(idx >= 0)
+      {
+         if(_s[idx] > ' ')
+            return idx;
+         idx--;
+      }
+      return -1;
+   }
+
+   // static RemoveLeadingWhitespace(String _s) : String {
+   //    local String r;
+   //    int idx = IndexOfNonWhitespace(_s);
+   //    // trace "xxx RemoveLeadingWhitespace: idx="+idx+" s=\""+_s+"\"";
+   //    if(-1 != idx)
+   //       _s.substring(idx, _s.length - idx) => r;
+   //    else
+   //       r = _s;
+   //    return deref r;
+   // }
+
+   // static RemoveTrailingWhitespace(String _s) : String {
+   //    local String r;
+   //    int idx = IndexOfNonWhitespace(_s);
+   //    // trace "xxx RemoveTrailingWhitespace: idx="+idx+" s=\""+_s+"\"";
+   //    if(-1 != idx)
+   //       _s.substring(idx, _s.length - idx) => r;
+   //    else
+   //       r = _s;
+   //    return deref r;
+   // }
+
+   // static RemoveSurroundingWhitespace(String _s) : String {
+   //    // (todo) isn't this the same as trim() ????!!!
+   //    return RemoveTrailingWhitespace(RemoveLeadingWhitespace(_s));
+   // }
+
+   static AddMarkdownImage(String _buf, String _pathName, String _alt) {
+      _buf.append("!["+_alt+"]("+_pathName+")");
+   }
+
+   static SubstOrgTextInPlace(String _text) {
+      _text.replace("://", "§protocol_hdr");  // don't parse URLs as tags
+      _text.replace("\\", "§backslash;");
+   }
+
+   static ResubstOrgTextInPlace(String _text) {
+      _text.replace("§protocol_hdr", "://");
+      _text.replace("§backslash;", "\\");
+   }
+
+   static ResubstOrgText(String _text) : String {
+      local String r = _text;
+      ResubstOrgTextInPlace(r);
+      return deref r;
+   }
+
+   static BaseName(String _pathName) : String {
+      local String path;
+      local String file;
+      SplitPathname(_pathName, path, file);
+      return deref file;
+   }
+
+   static DirName(String _pathName) : String {
+      local String path;
+      local String file;
+      SplitPathname(_pathName, path, file);
+      return deref path;
+   }
+   
+   static TextToXML(String _text) : String {
+      local String r = _text;
+      r.replace("\n", "\r");
+      r.replace("&", "&amp;");
+      r.replace("\'", "&apos;");
+      r.replace("\"", "&quot;");
+      r.replace("<", "&lt;");
+      r.replace(">", "&gt;");
+      // r.replace("<", "&lt;");
+      // r.replace(">", "&gt;");
+      return deref r;
+   }
+
+   static ParsePropertyBool(String _s) : boolean {
+      switch(_s.toLower())
+      {
+         default:
+         case "0":
+         case "n":
+         case "nil":
+         case "false":
+            return false;
+
+         case "1":
+         case "y":
+         case "t":
+         case "true":
+            return true;
+      }
+   }
+
+   static IsIntString(String _s) : boolean {
+      // trace "xxx isintstring s=\""+_s+"\"";
+      if(_s <= "0")
+         return (1 == (_s.substring(1,-1).checkConversions()));
+      else
+         return (1 == _s.checkConversions());
+   }
+
+   static AppendSMMXRGBAttribs(String _buf, int _rgb) {
+      _buf.append(" r=\""+((_rgb>>16)&255)+"\"");
+      _buf.append(" g=\""+((_rgb>> 8)&255)+"\"");
+      _buf.append(" b=\""+((_rgb    )&255)+"\"");
+   }
+
+   static IsDateStringDMY(String _s) : boolean {
+      // 01Jan2020
+      local String sDay;
+      local String sMon;
+      local String sYear;
+      _s.substring(0, 2) => sDay;
+      _s.substring(2, 3) => sMon;
+      _s.substring(5, 4) => sYear;
+      return 
+         (1 <= int(sDay) <= 31) &&
+         (month_names_short.containsObject(sMon)) &&
+         (1 <= int(sYear) <= 9999)
+         ;
+   }
+
+   static ToSMMXCalendarDate(String _s) : String {
+      local String r;
+      int t;
+      if( (_s <= "<") && (_s >= ">") )
+      {
+         // <2020-12-24>
+         // or <2020-12-24 Thu>
+         // (org-mode format)
+         r = _s.substring(9, 2)+"-"+_s.substring(6,2)+"-"+_s.substring(1, 4);
+      }
+      else if(2 == _s.numIndicesOf("-"))
+      {
+         // 24-12-2020 or 31-1-2020  (SMMX native dd-mm-yyyy format)
+         local StringArray aSMMX <= _s.splitChar('-');
+         if((1 == (aSMMX[0].checkConversions())) &&
+            (1 == (aSMMX[1].checkConversions())) &&
+            (1 == (aSMMX[2].checkConversions())) 
+            )
+         {
+            r = _s;
+         }
+      }
+      else if((9 == _s.length) && (1/*int*/ == _s.checkConversions()))
+      {
+         // 20201224  (shortened yyyymmdd format)
+         t = int(_s);
+         r = ((t%100))+"-"+((t/100)%100)+"-"+(t / 10000);
+      }
+      else if((10 == _s.length) && (-1 != _s.charsetIndexOf("AEOUaeou", 0)))
+      {
+         // 24Dec2019 format  (verbose ddmmyyyy format)
+         r.append(_s.substring(0, 2));
+         r.append("-");
+         r.append(1 + month_names_short.indexOfObject(_s.substring(2, 3), 0));
+         r.append("-");
+         r.append(_s.substring(5, 4));
+      }
+      else if( (11 == _s.length) && (2 == _s.numIndicesOf(".")) )
+      {
+         // 24.12.2019 format
+         r.append(_s.substring(0, 2));
+         r.append("-");
+         r.append(_s.substring(3, 2));
+         r.append("-");
+         r.append(_s.substring(6, 4));
+      }
+      else if( (12 == _s.length) && (2 == _s.numIndicesOf(".")) )
+      {
+         // 24.Dec.2019 format
+         r.append(_s.substring(0, 2));
+         r.append("-");
+         r.append(1 + month_names_short.indexOfObject(_s.substring(3, 3), 0));
+         r.append("-");
+         r.append(_s.substring(7, 4));
+      }
+
+      return deref r;
+   }
+
+   static ToIntCalendarDate(String _s) : String {
+      // to yyyymmdd format, e.g. 20202412
+      local String r;
+      local Integer ioD;
+      local Integer ioM;
+      local Integer ioY;
+      String *sD;
+      String *sM;
+      String *sY;
+      int t;
+      // trace "xxx ToIntCalendarDate: s=\""+_s+"\" length="+_s.length;
+      if( (_s <= "<") && (_s >= ">") )
+      {
+         // <2020-12-24>
+         // or <2020-12-24 Thu>
+         // (org-mode format)
+         sD <= _s.substring(9, 2);
+         sM <= _s.substring(6, 2);
+         sY <= _s.substring(1, 4);
+         if(Utils.IsIntString(sD) &&
+            Utils.IsIntString(sM) &&
+            Utils.IsIntString(sY)
+            )
+         {
+            ioD = sD;
+            ioM = sM;
+            ioY = sY;
+            r = ioY.printf("%04d")+ioM.printf("%02d")+ioD.printf("%02d");
+         }
+      }
+      else if((_s.length <= 11) && (2 == _s.numIndicesOf("-")))
+      {
+         // 24-12-2020 or 31-1-2020  (SMMX native dd-mm-yyyy format)
+         local StringArray aSMMX <= _s.splitChar('-');
+         if(Utils.IsIntString(aSMMX[0]) &&
+            Utils.IsIntString(aSMMX[1]) &&
+            Utils.IsIntString(aSMMX[2])
+            )
+         {
+            ioD = aSMMX[0];
+            ioM = aSMMX[1];
+            ioY = aSMMX[2];
+            r = ioY.printf("%04d")+ioM.printf("%02d")+ioD.printf("%02d");
+         }
+      }
+      else if((9 == _s.length) && (1/*int*/ == _s.checkConversions()))
+      {
+         // 20201224  (shortened yyyymmdd int format)
+         if(1 == _s.checkConversions())
+         {
+            r = _s;
+         }
+      }
+      else if((10 == _s.length) && (-1 != _s.charsetIndexOf("AEOUaeou", 0)))
+      {
+         // 24Dec2019 format  (verbose ddmmyyyy format)
+         sD <= _s.substring(0, 2);
+         sY <= _s.substring(5, 4);
+         if(Utils.IsIntString(sD) &&
+            Utils.IsIntString(sY)
+            )
+         {
+            // trace "xxx toint: s=\""+_s+"\"";
+            ioD = sD;
+            ioM = 1 + month_names_short.indexOfObject(_s.substring(2, 3), 0);
+            ioY = sY;
+            r = ioY.printf("%04d")+ioM.printf("%02d")+ioD.printf("%02d");
+         }
+      }
+      else if( (11 == _s.length) && (2 == _s.numIndicesOf(".")) )
+      {
+         // 24.12.2019 format
+         sD <= _s.substring(0, 2);
+         sM <= _s.substring(3, 2);
+         sY <= _s.substring(6, 4);
+         if(Utils.IsIntString(sD) &&
+            Utils.IsIntString(sM) &&
+            Utils.IsIntString(sY)
+            )
+         {
+            ioD = sD;
+            ioM = sM;
+            ioY = sY;
+            r = ioY.printf("%04d")+ioM.printf("%02d")+ioD.printf("%02d");
+         }
+      }
+      else if( (12 == _s.length) && (2 == _s.numIndicesOf(".")) )
+      {
+         // 24.Dec.2019 format
+         sD <= _s.substring(0, 2);
+         sY <= _s.substring(7, 4);
+         if(Utils.IsIntString(sD) &&
+            Utils.IsIntString(sY)
+            )
+         {
+            ioD = sD;
+            ioM = 1 + month_names_short.indexOfObject(_s.substring(3, 3), 0);
+            ioY = sY;
+            r = ioY.printf("%04d")+ioM.printf("%02d")+ioD.printf("%02d");
+         }
+      }
+
+      return deref r;
+   }
+
+   static ToOrgCalendarDate(String _s) : String {
+      local String t <= ToIntCalendarDate(_s);  // => 20201224
+      // trace "xxx intdate=\""+t+"\"";
+      local Time d;
+      d.now();
+      d.monthday = int(t.substring(6, 2));     // 01..31 => 1..31
+      d.month    = int(t.substring(4, 2))-1;   // 01..12 => 0..11
+      d.year     = int(t.substring(0, 4));     // 1970..
+      d.calc();
+      // => "<2020-12-24 Thu>"
+      return "<"+t.substring(0, 4)+"-"+t.substring(4, 2)+"-"+t.substring(6, 2)+" "+weekday_names_short.get(d.weekday)+">";
+   }
+
+   static ToVerboseCalendarDate(String _s) : String {
+      local String t <= ToIntCalendarDate(_s);  // => 20201224
+      int monIdx = int(t.substring(4, 2)) - 1;
+      return t.substring(6, 2)+month_names_short.get(monIdx)+t.substring(0, 4);  // => 31Dec2020
+   }
+
+   static ToTimeObjectCalendarDate(String _s) : Time {
+      local String s <= ToIntCalendarDate(_s);
+      if(!s.isBlank())
+      {
+         Time t <= new Time;
+         t.now();
+         t.monthday = int(s.substring(6, 2));     // 01..31 => 1..31
+         t.month    = int(s.substring(4, 2))-1;   // 01..12 => 0..11
+         t.year     = int(s.substring(0, 4));     // 1970..
+         t.calc();
+         return deref t;
+      }
+      return null;
+   }
+
+   static TimeToVerboseString(Time _t) : String {
+      // e.g. "24Dec2020"
+      local Integer io = _t.monthday;
+      return 
+         io.printf("%02d") +
+         ((["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])[_t.month])+_t.year;
+   }
+
+   static TimeToVerboseStringWithDots(Time _t) : String {
+      // e.g. "24.Dec.2020"
+      local Integer io = _t.monthday;
+      return 
+         io.printf("%02d")+"."+
+         ((["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])[_t.month])+"."+_t.year;
+   }
+
+   static TimeToOrgString(Time _t) : String {
+      // e.g. "<2020-12-24>"
+      local Integer ioD = _t.monthday;
+      local Integer ioM = _t.month + 1;
+      return
+         "<" + _t.year + "-"+
+         ioM.printf("%02d") + "-" +
+         ioD.printf("%02d") + ">" ;
+   }
+
+   static TimeToOrgStringWeekday(Time _t) : String {
+      // e.g. "<2020-12-24 Thu>"
+      local Integer ioD = _t.monthday;
+      local Integer ioM = _t.month + 1;
+      return
+         "<" + _t.year + "-"+
+         ioM.printf("%02d") + "-" +
+         ioD.printf("%02d") + " " + weekday_names_short.get(_t.weekday)+">" ;
+   }
+
+   static TimeToOrgStringWeekdayTOD(Time _t) : String {
+      // e.g. "<2020-12-24 Thu 16:00>"
+      local Integer ioD = _t.monthday;
+      local Integer ioM = _t.month + 1;
+      local Integer ioH = _t.hour;
+      local Integer ioMin = _t.min;
+      return
+         "<" + _t.year + "-"+
+         ioM.printf("%02d") + "-" +
+         ioD.printf("%02d") + " " + weekday_names_short.get(_t.weekday)+" "+
+         ioH.printf("%02d") + ":" + ioMin.printf("%02d") +
+         ">" ;
+   }
+
+   static TimeToCSVString(Time _t) : String {
+      // e.g. "31.12.2020"
+      local Integer ioD = _t.monthday;
+      local Integer ioM = _t.month + 1;
+      return
+         ioD.printf("%02d") + "." +
+         ioM.printf("%02d") + "." +
+         _t.year
+         ;
+   }
+
+   static TimeToWeekdayName(Time _t) : String {
+      return weekday_names_short.get(_t.weekday);
+   }
+
+   static TimeToCalendarWeek(Time _t) : int {
+      local Time tf = _t;
+      tf.month = 0;
+      tf.monthday = 1;
+      tf.calc();
+      int yd = _t.yearday;
+      if(0 == tf.weekday)
+         yd += 1;
+      else
+         yd += tf.weekday -1;
+      int cw = (yd / 7);
+      return cw + 1;
+   }
+
+   static TimeGetCalendarDaysUntilMonday(Time _t) : int {
+      // (note) sunday = 0, monday = 1, .., friday = 5, saturday = 6
+      int wd = _t.weekday;
+      if(0 == wd)
+         return 1;
+      else
+         return 7 - wd + 1;
+   }
+
+   static ParsePositionString(String _s, Float _retX, Float _retY) : boolean {
+      if(null != _s)
+      {
+         local String s = _s;
+         s.replace(";", " ");
+         s.replace(",", " ");
+         local StringArray a <= s.splitChar(' ');
+         if(null != a)
+         {
+            if(a.numElements >= 2)
+            {
+               _retX = float(a.get(0));
+               _retY = float(a.get(1));
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   static IsBooleanAttribTrue(String _attrib) : boolean {
+      if(null != _attrib)
+      {
+         switch(_attrib.toLower())
+         {
+            case "true":
+            case "t":
+            case "y":
+            case "1":
+               return true;
+         }
+      }
+      return false;
+   }
+
+   static URLify(String _s) : String {
+      local String r = _s;
+      r.replace(" ", "%20");
+      r.replace("\"", "%22");
+      r.replace("(", "%28");
+      r.replace(")", "%29");
+      r.replace("[", "%5B");
+      r.replace("]", "%5D");
+      r.replace("<", "%3C");
+      r.replace(">", "%3E");
+      r.replace("`", "%60");
+      return deref r;
+   }
+
+   public static CanFileBeRead(String _pathName) : boolean {
+      local File f;
+      if(f.openLocal(_pathName, IOS_IN))
+      {
+         f.close();
+         return true;
+      }
+      return false;
+   }
+
+   static SubstSMMXTextFormatting(String _s) : String {
+      if(!shared::b_text_formatting)
+         return Object(_s);
+      // (note) SMMX text formatting can be nested, e.g. "\\_underline and \\/italic\\/\\_ text"
+      // (note) ORG text formatting may NOT be nested, e.g. "_underline and /italic/_ text" is not allowed
+      local String s = _s;
+      s.replace("\\\\*", "§txtfmt_b§");  // bold
+      s.replace("\\\\_", "§txtfmt_u§");  // underline
+      s.replace("\\\\/", "§txtfmt_i§");  // italic
+      s.replace("\\\\~", "§txtfmt_s§");  // strike-through
+      s.replace("\\\\^", "§txtfmt_r§");  // superscript
+      s.replace("\\\\`", "§txtfmt_p§");  // subscript
+      return deref s;
+   }
+
+   static SubstSMMXTextFormatting_Note(String _s) : String {
+      if(!shared::b_text_formatting)
+         return Object(_s);
+      // (note) for some reason RTF1 notes use "\*", "\/", "\~", "\_" instead of "\\*", .. 
+      // (note) this is called after SubstText() which replaces \\ with §backslash;
+      local String s = _s;
+      s.replace("\\*", "§txtfmt_b§");  // bold
+      s.replace("\\_", "§txtfmt_u§");  // underline
+      s.replace("\\/", "§txtfmt_i§");  // italic
+      s.replace("\\~", "§txtfmt_s§");  // strike-through
+      s.replace("\\^", "§txtfmt_r§");  // superscript
+      s.replace("\\`", "§txtfmt_p§");  // subscript
+      return deref s;
+   }
+
+   static ResubstSMMXTextFormatting(String _s) : String {
+      local String s = _s;
+      s.replace("§txtfmt_b§", "\\\\*");  // bold
+      s.replace("§txtfmt_u§", "\\\\_");  // underline
+      s.replace("§txtfmt_i§", "\\\\/");  // italic
+      s.replace("§txtfmt_s§", "\\\\~");  // strike-through
+      s.replace("§txtfmt_r§", "\\\\^");  // superscript
+      s.replace("§txtfmt_p§", "\\\\`");  // subscript
+      return deref s;
+   }
+
+   static ResubstSMMXTextFormatting_Note(String _s) : String {
+      local String s = _s;
+      s.replace("§txtfmt_b§", "\\*");  // bold
+      s.replace("§txtfmt_u§", "\\_");  // underline
+      s.replace("§txtfmt_i§", "\\/");  // italic
+      s.replace("§txtfmt_s§", "\\~");  // strike-through
+      s.replace("§txtfmt_r§", "\\^");  // superscript
+      s.replace("§txtfmt_p§", "\\`");  // subscript
+      return deref s;
+   }
+
+   static SubstOrgTextFormatting(String _s) : String {
+      if(!shared::b_text_formatting)
+         return Object(_s);
+      // (note) org also supports =verbatim= and ~code~ formatting (not supported by SMMX)
+      // (note) text formatting may NOT be nested, e.g. "_underline and /italic/_ text" is not allowed
+      local String s = _s;
+      local String t;
+      String *sTxtFmt;
+      int idxS = 0;
+      while(-1 != idxS)
+      {
+         idxS = s.charsetIndexOf("*_/+", idxS);
+         if(-1 != idxS)
+         {
+            int idxE = s.charsetIndexOf("\n\r*_/+", idxS + 1);
+            if(-1 != idxE)
+            {
+               if(s[idxE] == s[idxS])
+               {
+                  switch(s[idxS])
+                  {
+                     case '*': sTxtFmt <= "§txtfmt_b§"; break;
+                     case '_': sTxtFmt <= "§txtfmt_u§"; break;
+                     case '/': sTxtFmt <= "§txtfmt_i§"; break;
+                     case '+': sTxtFmt <= "§txtfmt_s§"; break;
+                  }
+                  t <= sTxtFmt + s.substring(idxS+1, idxE-idxS-1) + sTxtFmt;
+                  s.replaceRegion(idxS, idxE+1, t);
+                  idxS = idxS + t.length - 1;
+               }
+               else
+               {
+                  // stray formatting (or just a regular *_/+ char) => skip
+                  idxS = idxE + 1;
+               }
+            }
+            else
+            {
+               // no more formatting chars => end
+               idxS = -1;
+            }
+         }
+      }
+      return deref s;
+   }
+
+   static ResubstOrgTextFormatting(String _s) : String {
+      local String s = _s;
+      s.replace("§txtfmt_b§", "*");  // bold
+      s.replace("§txtfmt_u§", "_");  // underline
+      s.replace("§txtfmt_i§", "/");  // italic
+      s.replace("§txtfmt_s§", "+");  // strike-through
+      s.replace("§txtfmt_r§", "");   // (todo) superscript. should be "regular text ^{superscript text}"
+      s.replace("§txtfmt_p§", "");   // (todo) subscript. should be "regular text _{subscript text}
+      return deref s;
+   }
+
+   static ResubstMarkdownTextFormatting(String _s) : String {
+      local String s = _s;
+      s.replace("§txtfmt_b§", "**");  // bold (emphasized)
+      s.replace("§txtfmt_u§", "_");  // underline
+      s.replace("§txtfmt_i§", "*");  // italic
+      s.replace("§txtfmt_s§", "~~");  // strike-through
+      s.replace("§txtfmt_r§", "^");   // superscript.
+      s.replace("§txtfmt_p§", "~");   // subscript.
+      return deref s;
+   }
+
+   static ToHTML(String _s) : String {
+      local String s = _s;
+      s.replace("&", "&amp;");
+      s.replace("<", "&lt;");
+      s.replace(">", "&gt;");
+      s.replace("ö", "&ouml;");
+      s.replace("Ö", "&Ouml;");
+      s.replace("ä", "&auml;");
+      s.replace("ä", "&Auml;");
+      s.replace("ü", "&uuml;");
+      s.replace("ü", "&Uuml;");
+      s.replace("-", "&#8209;");
+      for(int c = 128; c < 256; c++)
+         s.replace(tcchar(c), "&#"+c+";");
+      // trace "xxx tohtml("+_s+")";
+      // s.replace(tcchar(0xB0), "**ARG**");
+      return deref s;
+   }
+
+   static OrgSubAndChildLevelToSpaces(int _subLevel, int _childLevel) : int {
+      return ((_childLevel+1) * shared::NUM_SPACES) + ((_subLevel > 0)?(_subLevel-1):0);
+   }
+
+   static IsEffortOrDurationString(String _s) : boolean {
+      if( (_s >= "h")  || 
+          (_s >= "d")  || 
+          (_s >= "w")  || 
+          (_s >= "m")  || 
+          (_s >= "mo") || 
+          (_s >= "y")
+          )
+      {
+         local String s = _s;
+         s.replace("h", "");
+         s.replace("d", "");
+         s.replace("w", "");
+         s.replace("m", "");
+         s.replace("mo", "");
+         s.replace("y", "");
+         int conv = s.checkConversions();
+         if(1 <= conv <= 2)  // can convert to int or float ?
+         {
+            return (0 < float(s) < 9999);
+         }
+      }
+      return false;
+   }
+
+   static NextDay(Time _t) {
+      _t.hour = 8;
+      _t.min  = 0;
+      _t.sec  = 0;
+      _t.calc();
+      _t.utime = (_t.utime + (24*60*60)/*86400 seconds per day*/);
+      _t.localtime();
+   }
+
+   static CompareDays(Time _a, Time _b) : int {
+      int aDay = _a.year * 365 + _a.yearday;
+      int bDay = _b.year * 365 + _b.yearday;
+      if(aDay < bDay)
+         return -1;
+      else if(aDay > bDay)
+         return 1;
+      else if(aDay == bDay)
+         return 0;
+   }
+
+   static TimeSubtractHours(Time _t, float _h) {
+      _t.utime = _t.utime - (60*60*_h);
+      _t.localtime();
+   }
+
+   static TimeAddHours(Time _t, float _h, Integer _dayIdx) {
+      _t.calc();
+      int oldDayIdx = _t.weekday;
+      _t.utime = _t.utime + (60*60*_h);
+      _t.localtime();
+      if(_t.weekday != oldDayIdx)
+      {
+         trace "xxx TimeAddHours: oldDayIdx="+oldDayIdx+" newDayIdx="+_t.weekday;
+         _t.hour = 8;
+         _t.min = 0;
+         _t.sec = 0;
+         _t.calc();
+         _dayIdx++;
+      }
+   }
+
+   static CalcNumCalendarDaysDuration(Time _tStart, Time _tEnd) : int {
+      local Time t = _tStart;
+      t.hour = 8;
+      t.min = 0;
+      t.sec = 0;
+      t.calc();
+
+      local Time tEnd = _tEnd;
+      tEnd.hour = 8;
+      tEnd.min = 0;
+      tEnd.sec = 0;
+      tEnd.calc();
+
+      int r = 0;
+      while(t <= tEnd)
+      {
+         Utils.NextDay(t);
+         r++;
+      }
+
+      // trace "xxx CalcNumCalendarDaysDuration: tStart="+Utils.TimeToOrgString(_tStart)+" tEnd="+Utils.TimeToOrgString(_tEnd)+" => r="+r;
+
+      return r;
+   }
+
+   static CalcNumCalendarDaysDifference(Time _tStart, Time _tEnd) : int {
+      local Time t = _tStart;
+      t.hour = 8;
+      t.min = 0;
+      t.sec = 0;
+      t.calc();
+
+      local Time tEnd = _tEnd;
+      tEnd.hour = 8;
+      tEnd.min = 0;
+      tEnd.sec = 0;
+      tEnd.calc();
+
+      int r = 0;
+      while(t < tEnd)
+      {
+         // trace "xxx t="+Utils.TimeToOrgStringWeekdayTOD(t);
+         // trace "xxx tEnd="+Utils.TimeToOrgStringWeekdayTOD(tEnd);
+         Utils.NextDay(t);
+         r++;
+      }
+
+      // trace "xxx CalcNumCalendarDaysDifference: tStart="+Utils.TimeToOrgString(_tStart)+" tEnd="+Utils.TimeToOrgString(_tEnd)+" => r="+r;
+
+      return r;
+   }
+
+   static IndentLines(String _buf, int _indent) : String {
+      if(_indent >= 1)
+      {
+         local String r;
+         local String sSpace;
+         sSpace.appendRepeat(" ", _indent);
+         local String *s;
+         local StringArray a <= _buf.splitChar('\n');
+         foreach s in a
+         {
+            r.append(sSpace);
+            r.append(s);
+            r.append("\n");
+         }
+         return deref r;
+      }
+      else
+         return deref _buf;
+   }
+
+   static ExecTKS(String _args) {
+      local String cmdLine <= "tks -pp \""+TKS.tksPluginPath+"\" -ap \""+TKS.tksApplicationPath+"\" "+_args;
+      if(!shared::b_dry_run)
+         system(cmdLine);
+      else if(shared::b_verbose)
+         trace "[...] would exec \'"+cmdLine+"\'";
+   }
+
+   static ExecTKS_PipeWrite(String _args, String _buf) {
+      local String cmdLine <= "tks -pp \""+TKS.tksPluginPath+"\" -ap \""+TKS.tksApplicationPath+"\" "+_args;
+      // trace "xxx cmdLine=\""+cmdLine+"\" stdout buf=\""+_buf+"\"";
+      if(!shared::b_dry_run)
+         psystem(cmdLine, 'w', _buf);
+      else if(shared::b_verbose)
+         trace "[...] would exec pwrite \'"+cmdLine+"\'";
+   }
+}

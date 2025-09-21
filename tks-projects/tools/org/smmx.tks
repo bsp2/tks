@@ -1,0 +1,3355 @@
+// ----
+// ---- file   : smmx.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----           
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : smmx (simplemind) mindmap.xml parser
+// ----
+// ---- created: 03Jan2020
+// ---- changed: 04Jan2020, 05Jan2020, 08Jan2020, 09Jan2020, 10Jan2020, 11Jan2020, 12Jan2020
+// ----          13Jan2020, 14Jan2020, 15Jan2020, 16Jan2020, 17Jan2020, 19Jan2020, 22Jan2020
+// ----
+// ----
+// ----
+
+module MSMMX;
+
+use tkzip;
+
+namespace smmx;
+use namespace shared;
+
+boolean b_debug = false;
+boolean b_debug2 = 0;  // excessive debug output for development purposes
+
+// iOS pen keyboard (mazec) auto-appends space after last word resulting in e.g. "my topic "
+boolean b_trim_topic_text = true;
+
+// convert suffix of cloud links to smmx files to html or md
+//  e.g.  "../index.smmx" => "../index.html" or "../index.md"
+//  (note) 
+String cloud_link_smmx_replace = "html";
+// String cloud_link_smmx_replace = "md";
+
+int next_node_id = 0;
+
+
+// <debug.png>
+function Debug(String _msg) {
+   if(b_debug)
+      trace "[dbg] "+_msg;
+}
+
+
+// <class.png>
+class Link {
+   define int TYPE_NONE  = 0;
+   define int TYPE_URL   = 1;
+   define int TYPE_FILE  = 2;
+   define int TYPE_CLOUD = 3;
+
+   int    type;  // TYPE_xxx
+   String path;  // url: http://, ftp://, ..  file: f:\tmp\myfile.txt  cloud: ./myfile.smmx
+
+
+   public method parseLink(TreeNode _t) {
+      TreeNode t <= _t;
+      HashTable attrib <= t.objectValue;
+
+      if(attrib.exists("urllink"))
+      {
+         path = Utils.ResubstLink(attrib["urllink"]); // <link urllink="http://www.google.de"/>
+
+         // (note) <image><link> uses "cloud://" syntax instead of cloudmapref (inconsistency)
+         if(path & "cloud://")
+         {
+            path.substring(8, 9999);
+            type = TYPE_CLOUD;
+         }
+         else
+         {
+            if(path & "://")
+               type = TYPE_URL;
+            else
+            {
+               type = TYPE_FILE;  // <link urllink="F:\tmp\bla.txt"/>
+            }
+         }
+      }
+      else if(attrib.exists("cloudmapref"))
+      {
+         path = attrib["cloudmapref"];  // <link cloudmapref="./relations.smmx"/>
+         type = TYPE_CLOUD;
+      }
+      Debug("  link=\""+path+"\" type="+TKS.scriptClassConstantToString(#(type), Link, "TYPE_"));
+   }
+
+   public method toMarkdown(String _buf) {
+      switch(type)
+      {
+         case TYPE_CLOUD:
+            if(!cloud_link_smmx_replace.isBlank())
+            {
+               local String p <= path.replace(".smmx", "."+cloud_link_smmx_replace);
+               _buf.append("["+p+"]("+p+")");
+               _buf.append(" *(cloud smmx)*");
+            }
+            else
+            {
+               _buf.append("["+path+"]("+path+")");
+               _buf.append(" *(cloud)*");
+            }
+            break;
+
+         case TYPE_URL:
+            _buf.append("["+path+"]("+Utils.URLify(path)+")");
+            _buf.append(" *(url)*");
+            break;
+
+         case TYPE_FILE:
+            _buf.append("["+path+"]("+path+")");
+            _buf.append(" *(file)*");
+            break;
+      }
+   }
+
+   public method extractFromText(String _s) : boolean {
+      boolean ret = false;
+      // trace "xxx Link.extractFromText("+_s+")";
+
+      local String sURL;
+      boolean bProto = false;
+      boolean bFile = false;
+
+      // Try [[wikilink]]
+      if(sURL.isBlank())
+      {
+         int idxWikiS = _s.indexOf("[[", 0);
+         if(-1 != idxWikiS)
+         {
+            idxWikiS += 2;
+            int idxWikiE = _s.indexOf("]]", idxWikiS);
+            if((-1 != idxWikiE) && (idxWikiS != idxWikiE))
+            {
+               _s.substring(idxWikiS, (idxWikiE-idxWikiS)) => sURL;
+            }
+         }
+      }
+
+      // Try <link>
+      if(sURL.isBlank())
+      {
+         int idxTagS = _s.indexOf("<", 0);
+         if(-1 != idxTagS)
+         {
+            idxTagS += 1;
+            int idxTagE = _s.indexOf(">", idxTagS);
+            if((-1 != idxTagE) && (idxTagS != idxTagE))
+            {
+               // // _s.substring(idxTagS, (idxTagE-idxTagS)) => sURL;
+               _s <= _s.substring(idxTagS, (idxTagE-idxTagS));
+            }
+         }
+      }
+
+      // Try local file link
+      //  "./myfile"    (preferred)
+      //  "../myfile"
+      //  "..\myfile"   (not recommended)
+      //  "/myfile"     (not recommended)
+      //  "~/myfile"    (not recommended)
+      //  "c:/myfile"   (not recommended)
+      //  "z:\myfile"   (not recommended)
+      if((_s <= "./") ||
+         (_s <= "../") ||
+         (_s <= "..\\") ||
+         (_s <= "/") ||
+         (_s <= "~/") ||
+         ( (_s.getc(1) == ':') && ((_s.getc(2) == '\\')||(_s.getc(2) == '/')) )
+         )
+      {
+         sURL = _s;
+         bFile = true;
+      }
+
+      if(sURL.isBlank())
+      {
+         int idxProtoS = _s.indexOf("://", 0);
+         if(-1 != idxProtoS)
+         {
+            int idxURLS = _s.revIndexOfChar(' ', idxProtoS);
+            if(-1 == idxURLS)
+               idxURLS = 0;
+            else
+               idxURLS++;
+
+            int idxURLSQD = _s.revIndexOfChar('\"', idxProtoS);
+            int idxURLSQS = _s.revIndexOfChar('\'', idxProtoS);
+            if( (-1 != idxURLSQD) && ((idxURLSQD+1) > idxURLS) )
+               idxURLS = idxURLSQD+1;
+            if( (-1 != idxURLSQS) && ((idxURLSQS+1) > idxURLS) )
+               idxURLS = idxURLSQS+1;
+            
+            int idxURLE = _s.indexOfChar(' ', idxProtoS+1);
+            if(-1 == idxURLE)
+               idxURLE = 999;
+
+            int idxURLEQD = _s.indexOfChar('\"', idxProtoS+1);
+            int idxURLEQS = _s.indexOfChar('\'', idxProtoS+1);
+            if( (-1 != idxURLEQD) && (idxURLEQD < idxURLS) )
+               idxURLE = idxURLEQD;
+            if( (-1 != idxURLEQS) && (idxURLEQS < idxURLS) )
+               idxURLE = idxURLEQS;
+
+            if(idxURLS != idxProtoS)
+            {
+               _s.substring(idxURLS, (idxURLE-idxURLS)) => sURL;
+               bProto = true;
+            }
+         }
+      }
+
+      if(!sURL.isBlank())
+      {
+         // trace "xxx sURL=\""+sURL+"\"";
+         if(bProto || (sURL & "://"))
+         {
+            type = TYPE_URL;
+            ret = true;
+         }
+         else if(bFile || (sURL & "."))
+         {
+            type = TYPE_FILE;
+            ret = true;
+         }
+         path = deref sURL;
+      }
+      if(ret)
+         if(b_debug2)
+            trace "xxx link path=\""+path+"\"";
+      return ret;
+   }
+
+   public method toXML(String _buf) {
+      switch(type)
+      {
+         case TYPE_URL:
+         case TYPE_FILE:
+            // trace "xxx toXML: link path=\""+path+"\"";
+            _buf.append("<link urllink=\""+Utils.URLify(path)+"\"/>\n");
+            break;
+
+         case TYPE_CLOUD:
+            _buf.append("<link cloudmapref=\""+Utils.URLify(path)+"\"/>\n");
+            break;            
+      }
+   }
+
+   public method addToOrgTextLines(StringArray _lines) {
+      if(shared::b_smmx_to_org_convert_smmx_links && (path >= ".smmx"))
+         _lines.add("! [["+path.replace(".smmx", ".org")+"]]");
+      else
+         _lines.add("! [["+path+"]]");
+   }
+}
+
+
+// <class.png>
+class Image {
+
+   SMMX *smmx;
+
+   String  guid;       // "0XdeoV8J8EaLgiKLfF8Y0w"
+   String  name;       // "3d6d5f9bb409d574bce32895d14009ee82f96783"  (no suffix, simplemind uses .png files)
+   String  thumbnail;  // "bc84724e36ec2e03b48869efea12f13d1245773a"
+   Value   x;          // -11.0
+   Value   y;          // -57.53
+   Value   scale;      // 1.00
+   Value   angle;      // rad? deg?
+   Link   *link;       // cloud and local files, null for smmx embedded images
+
+   
+   public static New(SMMX _smmx) : Image {
+      local Image r;
+      r.smmx <= _smmx;
+      return deref r;
+   }
+
+   protected method parseImage(SMMX _smmx, TreeNode _t) {
+      smmx <= _smmx;
+      TreeNode t <= _t;
+      HashTable attrib <= t.objectValue;
+
+      if(attrib.exists("guid"))
+         guid = attrib["guid"];
+
+      if(attrib.exists("name"))  // mandatory (used as preview when linking to external images)
+         name = attrib["name"];
+
+      if(attrib.exists("thumbnail"))
+         thumbnail = attrib["thumbnail"];
+
+      if(attrib.exists("x"))
+         x = float(attrib["x"]);
+
+      if(attrib.exists("y"))
+         y = float(attrib["y"]);
+
+      if(attrib.exists("scale"))
+         scale = float(attrib["scale"]);
+
+      if(attrib.exists("angle"))
+         angle = float(attrib["angle"]);
+
+      Debug("  image guid="+guid+" name="+name+" x="+x+" y="+y+" scale="+scale+" angle="+angle);
+
+      // parse <link>
+      //  - occurs for cloud links and local files, not for images embedded in smmx files (in images/ dir)
+      t <= t.right;
+      if(null != t)
+      {
+         if("link" == t.name)
+         {
+            link <= new Link;
+            link.parseLink(t);
+         }
+      }
+   }
+
+   public method toXML(String _buf, int _level) {
+
+      // Open <image> tag
+      loop(_level)
+         _buf.append(" ");
+
+      _buf.append("<image");
+
+      if(!name.isBlank())
+         _buf.append(" name=\""+name+"\"");
+
+      if(!thumbnail.isBlank())
+         _buf.append(" thumbnail=\""+thumbnail+"\"");
+
+      if(x.isFloat())
+      {
+         _buf.append(" x=\""+x.value+"\"");
+      }
+
+      if(y.isFloat())
+      {
+         _buf.append(" y=\""+y.value+"\"");
+      }
+
+      if(scale.isFloat())//// && (1.0 != scale.value))
+      {
+         _buf.append(" scale=\""+scale.value+"\"");
+      }
+
+      if(angle.isFloat() && (0.0 != angle.value))
+      {
+         _buf.append(" angle=\""+angle.value+"\"");
+      }
+
+      if(null != link)
+      {
+         _buf.append(">\n");
+
+         loop(_level + 1)
+            _buf.append(" ");
+         link.toXML(_buf);
+         
+         loop(_level)
+            _buf.append(" ");
+         _buf.append("</image>\n");
+      }
+      else
+      {
+         _buf.append("/>\n");
+      }
+
+   }
+
+   public method toMarkdown(Buffer _buf) {
+      if(null != link)
+      {
+         // External
+         Utils.AddMarkdownImage(_buf, link.path, "");
+      }
+      else
+      {
+         // Internal
+         local String imgPath <= smmx.extractImage(name);
+         if(null != imgPath)
+         {
+            Utils.AddMarkdownImage(_buf, imgPath, name/*alt*/);
+         }
+      }
+   }
+
+   public method createLinkFromString(String _s) {
+      link <= new Link;
+      link.extractFromText(_s);
+   }
+
+   public method getPositionPropertyString() : String {
+      if(x.isFloat() && y.isFloat())
+      {
+         // // if((0 != x.value) && (-50 != y.value))  // don't save default position
+         // // {
+            return x.value+";"+y.value;
+         // // }
+      }
+      return "";
+   }
+
+   public method setPositionFromString(String _s) {
+      // x;y or x,y or x y
+      local Float tx;
+      local Float ty;
+      if(Utils.ParsePositionString(_s, tx, ty))
+      {
+         x = float(tx);
+         y = float(ty);
+      }
+   }
+
+   public method addPropertiesToOrgNode(org::Node _nOrg) {
+      local String t;
+
+      // Image name
+      //  (note) used as preview when linking to external image
+      if(!name.isBlank())
+      {
+         // included in mindmap-file (=> will extract to images/<name>.png when converting to org or md)
+         _nOrg.addProperty("smmx-image-name", name);
+
+         // Lazy-Write to images/<name>.png
+         smmx.extractImage(name);
+      }
+
+      // External image URL
+      if(null != link)
+      {
+         // external image (http://, ..)
+         _nOrg.addProperty("smmx-image-url", link.path);
+      }
+
+      if(!thumbnail.isBlank())
+      {
+         _nOrg.addProperty("smmx-image-thumbnail", thumbnail);
+
+         // Lazy-Write to images/<thumbnail>.png
+         smmx.extractImage(thumbnail);
+      }
+
+      // Position
+      t = getPositionPropertyString();
+      if(!t.isBlank())
+      {
+         _nOrg.addProperty("smmx-image-callout-position", t);
+      }
+
+      // Scale
+      if(scale.isFloat() && (scale.value != 1.0))
+      {
+         _nOrg.addProperty("smmx-image-scale", scale.value);
+      }
+
+      // Angle
+      if(angle.isFloat() && (angle.value != 0.0))
+      {
+         _nOrg.addProperty("smmx-image-angle", angle.value);
+      }
+
+   }
+
+   public method restoreFromOrgNode(org::Node _nOrg) {
+      String *val;
+
+      // Name
+      val <= _nOrg.getPropertyByName("smmx-image-name");
+      if(null != val)
+      {
+         link <= null;
+         name = val;
+         smmx.findAndAddLocalImage(name);
+      }
+
+      // URL
+      val <= _nOrg.getPropertyByName("smmx-image-url");
+      if(null != val)
+      {
+         link <= new Link;
+         link.extractFromText(val);
+      }
+
+      // Thumbnail
+      val <= _nOrg.getPropertyByName("smmx-image-thumbnail");
+      if(null != val)
+      {
+         link <= null;
+         thumbnail = val;
+         smmx.findAndAddLocalImage(thumbnail);
+      }
+
+      // Callout position
+      val <= _nOrg.getPropertyByName("smmx-image-callout-position");
+      if(null != val)
+      {
+         setPositionFromString(val);
+      }
+
+      // Scale
+      val <= _nOrg.getPropertyByName("smmx-image-scale");
+      if(null != val)
+      {
+         scale = mathMaxf(0.01f, float(val));
+      }
+
+      // Angle
+      val <= _nOrg.getPropertyByName("smmx-image-angle");
+      if(null != val)
+      {
+         angle = float(val);
+      }
+   }
+
+}
+
+
+// <class.png>
+class Text {
+   String guid;
+   Value  x;
+   Value  y;
+   String style;       // "" (unconnected), "line", "tapered" (speech bubble)
+   String text;        // newline = carriage return (0xD)
+   Value  font_scale;
+   String textfmt;     // always "plain"
+   Value  text_color;  // void or rgb24
+   Value  fill_color;  // void or rgb24
+
+   protected method parseTextNote(TreeNode _t) {
+      TreeNode t <= _t;
+      HashTable attrib <= t.objectValue;
+
+      guid  = attrib["guid"];
+
+      if(attrib.exists("x"))
+         x = float(attrib["x"]);
+
+      if(attrib.exists("y"))
+         y = float(attrib["y"]);
+
+      // parse <note> and <style>
+      //  - <note> should always be present
+      //  - <style> is optional (default=unconnected)
+      t <= t.right;
+      while(null != t)
+      {
+         attrib <= t.objectValue;
+
+         switch(t.name)
+         {
+            case "note":
+               // text = Utils.RemoveSurroundingWhitespace(Utils.ResubstText(attrib["<>"]));
+               text = Utils.ResubstText(attrib["<>"].trim());
+               textfmt = attrib["textfmt"];
+               if("rtf1" == attrib["textfmt"])
+               {
+                  if(b_debug2)
+                     trace "xxx rtf1 text note=\""+text+"\"";
+                  // (note) for some reason RTF1 notes use "\*", "\/", "\~", "\_" instead of "\\*", .. 
+                  text = Utils.SubstSMMXTextFormatting_Note(text);
+                  // trace "xxx    => rtf1 text=\""+text+"\"";
+               }
+               break;
+
+            case "style":
+               style = attrib["callout"];
+               if(null != t.right)
+               {
+                  // (note) used by relation text callouts
+                  TreeNode tStyle <= t.right;
+
+                  while(null != tStyle)
+                  {
+                     attrib <= tStyle.objectValue;
+
+                     switch(tStyle.name)
+                     {
+                        case "textcolor":
+                           text_color = (rgb(attrib["r"], attrib["g"], attrib["b"]) & 0xFFFFFF);
+                           break;
+
+                        case "fillcolor":
+                           fill_color = (rgb(attrib["r"], attrib["g"], attrib["b"]) & 0xFFFFFF);
+                           break;
+
+                        case "font":
+                           font_scale = float(attrib["scale"]);
+                           break;
+                     }
+                     tStyle <= tStyle.left;
+                  }
+               }
+               break;
+         }
+
+         t <= t.left;
+      }
+
+      Debug("  text guid="+guid+" x="+x.value+" y="+y.value+" note=\""+text+"\" style=\""+style+"\"");
+   }
+
+   public method appendLine(String _line) {
+      if(!text.isBlank())
+         text.append("\r");
+      text.append(_line);
+      if(_line & "§textfmt")
+         textfmt = "rtf1";
+   }
+
+   // // public method prependToOrgTextLines(StringArray _textLines) {
+   // //    local StringArray lines <= text.replaceChar('\r', '\n').splitChar('\n');
+   // //    int lineIdx = lines.numElements - 1;
+   // //    while(lineIdx >= 0)
+   // //    {
+   // //       _textLines.insert(0, "> "+lines.get(lineIdx--));
+   // //    }
+   // // }
+
+   public method appendToOrgCalloutLines(StringArray _calloutLines) {
+      local StringArray lines <= text.replaceChar('\r', '\n').splitChar('\n');
+      if(b_debug2)
+         trace "xxx calloutLines="+#(lines);
+      _calloutLines.join(_calloutLines, lines);
+   }
+
+   public method getPositionPropertyString() : String {
+      if(x.isFloat() && y.isFloat())
+      {
+         if((0 != x.value) && (-50 != y.value))  // don't save default position
+         {
+            return x.value+";"+y.value;
+         }
+      }
+      return "";
+   }
+
+   public method setPositionFromString(String _s) {
+      // x;y or x,y or x y
+      local Float tx;
+      local Float ty;
+      if(Utils.ParsePositionString(_s, tx, ty))
+      {
+         x = float(tx);
+         y = float(ty);
+      }
+   }
+
+   public method addPropertiesToOrgNode(org::Node _nOrg) {
+      local String t;
+
+      // Position
+      t = getPositionPropertyString();
+      if(!t.isBlank())
+      {
+         _nOrg.addProperty("smmx-text-callout-position", t);
+      }
+
+      // Style
+      if(!style.isBlank() && ("tapered" != style))
+      {
+         _nOrg.addProperty("smmx-text-callout-style", style);
+      }
+
+      // Text color
+      if(text_color.isInt())
+      {
+         _nOrg.addPropertyRGB24("smmx-text-callout-text-color", text_color.value);
+      }
+
+      // Font scale
+      if(font_scale.isFloat())
+      {
+         _nOrg.addProperty("smmx-text-callout-font-scale", font_scale.value);
+      }
+
+      // Fill color
+      if(fill_color.isInt())
+      {
+         _nOrg.addPropertyRGB24("smmx-text-callout-fill-color", fill_color.value);
+      }
+   }
+
+   public method toXML(String _buf, int _level) {
+
+      // Open <text> tag
+      loop(_level)
+         _buf.append(" ");
+      _buf.append("<text");
+
+      // text position
+      if(x.isFloat())
+         _buf.append(" x=\""+x.value+"\"");
+      if(y.isFloat())
+         _buf.append(" y=\""+y.value+"\"");
+      else
+         _buf.append(" y=\"-50\"");  // for iPad (else callout will overlay topic rect)
+
+      _buf.append(">\n");
+
+      // Text note
+      loop(_level + 1)
+         _buf.append(" ");
+      _buf.append("<note textfmt=\""+textfmt+"\">");
+      local String sTextNote <= Utils.TextToXML(Utils.ResubstSMMXTextFormatting_Note(text));
+      _buf.append(sTextNote);
+      _buf.append("</note>\n");
+
+      // Open <style> tag
+      loop(_level + 1)
+         _buf.append(" ");
+      _buf.append("<style callout=\""+style+"\">\n");
+
+      // Text color
+      if(text_color.isInt())
+      {
+         loop(_level + 2)
+            _buf.append(" ");
+         _buf.append("<textcolor ");
+         Utils.AppendSMMXRGBAttribs(_buf, text_color.value);
+         _buf.append("/>\n");
+      }
+
+      // Fill color
+      if(fill_color.isInt())
+      {
+         loop(_level + 2)
+            _buf.append(" ");
+         _buf.append("<fillcolor ");
+         Utils.AppendSMMXRGBAttribs(_buf, fill_color.value);
+         _buf.append("/>\n");
+      }
+
+      // Font scale
+      if(font_scale.isFloat())
+      {
+         loop(_level + 2)
+            _buf.append(" ");
+         _buf.append("<font scale=\""+font_scale.value+"\"/>\n");
+      }
+
+      // Close <style> tag
+      loop(_level + 1)
+         _buf.append(" ");
+      _buf.append("</style>\n");
+
+      // Close <text> tag
+      loop(_level)
+         _buf.append(" ");
+      _buf.append("</text>\n");
+   }
+
+}
+
+
+// <class.png>
+class Node : StateDefs {
+
+   define int CHECKBOX_NONE            = 0;
+   define int CHECKBOX_BOOL            = 1;
+   define int CHECKBOX_PROGRESS        = 2;
+   define int CHECKBOX_ROLLUP_PROGRESS = 3;
+
+   define int TEXTSTYLE_BOLD          = (1 << 0);
+   define int TEXTSTYLE_ITALIC        = (1 << 1);
+   define int TEXTSTYLE_UNDERLINE     = (1 << 2);
+   define int TEXTSTYLE_STRIKETHROUGH = (1 << 3);
+
+   SMMX *smmx;
+
+   String  id;         // "1"  (is this always an integer?)
+   String  guid;       // "6ONABU8Nh0m8jEkZDsvkZg"
+   String  parent;     // id ("-1" == no parent)
+   Value   x;          // void (unset) or float, e.g. 655.5
+   Value   y;          // void (unset) or float, e.g. 879.0
+   String  anchor;     // globally unique anchor. lazy-created by getOrCreateAnchor()
+
+   String  palette;     // "" (default), "1", "2", ..  (is this always an integer?)
+   String  colorinfo;   // "" (default), "1", "2", ..  (is this always an integer?)
+   String  icon;        // "ic8_48_roadworks"
+   boolean b_auto_icon; // auto-generated icon, don't save to :smmx-icon: org property
+   String  text;        // newline = "\N"    (topic title)
+   String  textfmt;     // "plain"
+   int     text_style;  // 0=default, TEXTSTYLE_xxx mask
+   Value   font_scale;  // void (10pt), 0.6=6pt, .., 1.6=16pt, .., 2.4=24pt, .., 3.0=30pt
+
+   String  note;       // newline = carriage return (0xD) (no LF)
+
+   String  embedded_image;  // name (w/o .png suffix)
+   float   embedded_image_scale;  // 1.00
+
+   String  calendar_date;  // "24-12-2020"
+
+   int     checkbox_mode;  // CHECKBOX_xxx
+   int     progress;       // 0..100  (bool: 0=false, 100=true)
+
+   int org_state;  // see StateDefs.ST_xxx. valid during org-to-smmx export
+
+   Link   *link;       // or null
+   Image  *image;      // callout or null
+   Text   *text_note;  // callout or null
+
+   boolean b_list;     // layout="list", layout="top-down"  (don't save child node positions)
+   boolean b_list_md;  // force markdown list (first note line contains "!list")
+   
+   boolean b_topdown;  // true=don't save child node positions when exporting to org (auto-layouted)
+
+   boolean b_hull_visible;  // show branch border
+
+   boolean b_collapsed;     // collapsed="True" (fold)
+
+   Value   fill_color;     // void (def), argb24 int otherwise
+   String  border_style;   // "" (def), "sbsNone", "sbsHalfRound", "sbsDropRoundRect", "sbsRoundRect"
+   Value   border_width;   // void (def), "0.00".."7.00"
+   String  stroke_style;   // "" (def), "solid", "dash-s", "dash-m", "dash-l"
+   Value   stroke_color;   // void (def), argb24 int otherwise
+
+   PointerArray child_nodes;   // Node refs
+
+   PointerArray source_nodes;  // Node refs (xref/relation)
+   PointerArray source_rel;    // Relations refs (same index as source_nodes)
+
+   PointerArray target_nodes;  // Node refs
+   PointerArray target_rel;    // Relations refs (same index as target_nodes)
+
+   Node *parent_node;
+
+   Relation *parent_relation;  // !null when relation has callout text
+
+
+   public method addChild(Node _n) {
+      child_nodes.add(_n);
+   }
+
+   public method hasChildren() : boolean {
+      return (child_nodes.numElements > 0);
+   }
+
+   public method addSource(Node _n, Relation _rel) {
+      source_nodes.add(_n);
+      source_rel.add(_rel);
+   }
+
+   public method addTarget(Node _n, Relation _rel) {
+      target_nodes.add(_n);
+      target_rel.add(_rel);
+   }
+
+   public method setPositionFromString(String _s) {
+      // x;y or x,y or x y
+      local Float tx;
+      local Float ty;
+      if(Utils.ParsePositionString(_s, tx, ty))
+      {
+         x = float(tx);
+         y = float(ty);
+      }
+   }
+
+   public method getPositionPropertyString() : String {
+      if(x.isFloat() && y.isFloat())
+      {
+         return x.value+";"+y.value;
+      }
+      return "";
+   }
+
+   public method hasPosition() : boolean {
+      return (x.isFloat() && y.isFloat());
+   }
+
+   public method getTextStylePropertyString() : String {
+      local String r;
+      if(text_style & TEXTSTYLE_BOLD)
+         r.append("b");
+      if(text_style & TEXTSTYLE_ITALIC)
+         r.append("i");
+      if(text_style & TEXTSTYLE_UNDERLINE)
+         r.append("u");
+      if(text_style & TEXTSTYLE_STRIKETHROUGH)
+         r.append("s");
+      return deref r;
+   }
+
+   public method getOrCreateAnchor() : String {
+      if(anchor.isBlank())
+      {
+         // topic title to anchor
+         local String tBase = Utils.CreateAnchor(text);
+         local String t <= tBase;
+         
+         local int nr = 1;
+         // check if it's unique
+         for(;;)
+         {
+            local Node n <= smmx.findNodeByAnchor(t);
+            if((null != n) && (@(n) != @(this)))
+               t <= tBase + "-" + nr;   // myanchor-2, myanchor-3, ..
+            else
+               break;
+         }
+         anchor = t;
+      }
+      return anchor;
+   }
+
+   public method addRelationPropertiesToOrgNode(org::Node _nOrg) {
+
+      local String sRel;  // source=<sourceAnchor>|target=<targetAnchor> [position=x;y] [line-style=<style>] [line-width=<width>] [path-style=<style>] [source-arrow=<arrowstyle>] [target-arrow=<arrowStyle>] [color=<#rgb24>] [text=<caption>] [text-style=<line|tapered>] [text-position=<x;y>] [text-font-scale=<scale>] [text-color=<#rgb24>] [fill-color=<#rgb24>]"
+
+      if(null != parent_relation)
+      {
+         // // if(null == parent)
+         // // {
+         // //    // when free-floating 
+         // // }
+
+         sRel.empty();
+         parent_relation.appendToOrgAttribs(sRel);
+         if(!sRel.isBlank())
+            _nOrg.addProperty("smmx-parent-relation", sRel);
+      }
+
+      if(!source_nodes.isEmpty() || !target_nodes.isEmpty())
+      {
+         // Update/create anchor
+         getOrCreateAnchor();
+
+         Node *c;
+         Relation *rel;
+         int relIdx = 0;
+         
+         // // foreach c in source_nodes
+         // // {
+         // //    String aSrc <= c.getOrCreateAnchor();
+         // //    rel <= source_rel[relIdx];
+         // //    sRel.empty();
+         // //    sRel.append("source=\""+aSrc+"\"");
+         // //    rel.appendToOrgAttribs(sRel);
+         // //    _nOrg.addProperty("smmx-relation", sRel);
+
+         // //    // Next source relation
+         // //    relIdx++;
+         // // }
+
+         // trace "xxx addRelationPropertiesToOrgNode";
+
+         relIdx = 0;
+         foreach c in target_nodes
+         {
+            String aDst <= c.getOrCreateAnchor();
+            rel <= target_rel[relIdx];
+            sRel.empty();
+            sRel.append("target=\""+aDst+"\"");
+            rel.appendToOrgAttribs(sRel);
+            _nOrg.addProperty("smmx-relation", sRel);
+
+            // Next target relation
+            relIdx++;
+         }
+      }
+   }
+
+   public method debugPrintOutline(String _buf, local int _indent) {
+      loop(_indent)
+         _buf.append(" ");
+
+      _buf.append("\""+text.replace("\n", "\N")+"\"\n");
+
+      local Node *c;
+      foreach c in child_nodes
+      {
+         c.debugPrintOutline(_buf, _indent + 2);
+      }
+   }
+
+   public method hasUndoneChildren() : boolean {
+      local Node *c;
+      foreach c in child_nodes
+      {
+         if(ST_TODO == c.org_state)
+            return true;
+
+         if(ST_ACTV == c.org_state)
+            return true;
+
+         if(ST_TEST == c.org_state)
+            return true;
+
+         if(c.hasUndoneChildren())
+            return true;
+      }
+      return false;
+   }
+
+   public method hasDoneChildren() : boolean {
+      local Node *c;
+      foreach c in child_nodes
+      {
+         if(ST_DONE == c.org_state)
+            return true;
+      }
+      return false;
+   }
+
+   public method hasUndoneOrDoneChildren() : boolean {
+      local Node *c;
+      foreach c in child_nodes
+      {
+         if(ST_TODO == c.org_state)
+            return true;
+
+         if(ST_ACTV == c.org_state)
+            return true;
+
+         if(ST_TEST == c.org_state)
+            return true;
+
+         if(ST_DONE == c.org_state)
+            return true;
+
+         if(c.hasUndoneOrDoneChildren())
+            return true;
+      }
+      return false;
+   }
+
+   public method toMarkdownXRefList(local String _buf, 
+                                    local int    _level,
+                                    local String _title,
+                                    PointerArray _nodes,
+                                    PointerArray _relations
+                                    ) {
+      _buf.append(_title);
+      Node *c;
+      int xrefIdx = 0;
+      foreach c in _nodes
+      {
+         if(xrefIdx > 0)
+            _buf.append(", ");
+
+         if(null != _relations)
+         {
+            Relation rel <= _relations.get(xrefIdx);
+            if(null != rel.text_note)
+            {
+               // "is-a", "has", ..
+               _buf.append("*");
+               Utils.AppendMergedLinesForHeader(_buf, rel.text_note.text);
+               _buf.append("* ");
+            }
+         }
+
+         _buf.append("[");
+         Utils.AppendMergedLinesForHeader(_buf, c.text);
+         _buf.append("]");
+         _buf.append("(");
+         Utils.AppendMarkdownAnchor(_buf, c.getOrCreateAnchor());
+         _buf.append(")");
+
+         xrefIdx++;
+      }
+      _buf.append("\n");
+   }
+
+   public method toMarkdownList(local String _buf, local int _level) {
+
+      // Header
+      int numSpaces = Utils.StartMarkdownList(_buf, _level);
+      Utils.AppendMergedLinesForHeader(_buf, text);
+      _buf.append("\n");
+
+      // xrefs
+      if(source_nodes.numElements)
+      {
+         Utils.AppendListIndent(_buf, _level);
+         toMarkdownXRefList(_buf, _level, "  **from**: ", source_nodes, null/*relations*/);
+      }
+
+      if(target_nodes.numElements)
+      {
+         Utils.AppendListIndent(_buf, _level);
+         toMarkdownXRefList(_buf, _level, "  **to**: ", target_nodes, target_rel);
+      }
+
+      // date
+      if(!calendar_date.isBlank())
+      {
+         Utils.AppendListIndent(_buf, _level);
+         _buf.append("  Date: ");
+         _buf.append(calendar_date);
+         _buf.append("\n");
+      }
+
+      // image
+      if(!embedded_image.isBlank())
+      {
+         // embedded in topic
+         local String imgPath <= smmx.extractImage(embedded_image);
+         if(null != imgPath)
+         {
+            Utils.AppendListIndent(_buf, _level);
+            _buf.append("  ");
+            Utils.AddMarkdownImage(_buf, imgPath, embedded_image/*alt*/);
+            _buf.append("\n");
+         }
+      }
+      else if(null != image)
+      {
+         // callout
+         Utils.AppendListIndent(_buf, _level);
+         _buf.append("  ");
+         image.toMarkdown(_buf);
+         _buf.append("\n");
+      }
+
+      // Link
+      if(null != link)
+      {
+         Utils.AppendListIndent(_buf, _level);
+         _buf.append("  **Link**: ");
+         link.toMarkdown(_buf);
+         _buf.append("\n");
+      }
+
+      local String para;
+
+      // Add paragraph from text_note callout
+      if(null != text_note)
+      {
+         if(!(text_note.text.isBlank()))
+         {
+            // // Utils.AppendIndentedLines(para, Utils.RemoveSurroundingWhitespace(text_note.text), numSpaces + 2);
+            Utils.AppendIndentedLines(para, text_note.text.trim(), numSpaces + 2);
+            // // // para.append("\n\n");
+         }
+      }
+
+      // Add paragraph text from note
+      // // Utils.AppendIndentedLines(para, Utils.RemoveSurroundingWhitespace(note), numSpaces + 2);
+      Utils.AppendIndentedLines(para, note.trim(), numSpaces + 2);
+
+      if(!para.isBlank())
+      {
+         _buf.append(para);
+         // // _buf.append("\n\n");
+      }
+
+      local Node *c;
+
+      // Present child nodes as nested list(s)
+      foreach c in child_nodes
+      {
+         c.toMarkdownList(_buf, _level + 1);
+      }
+      
+      // // _buf.append("\n\n");
+   }
+
+   public method toMarkdownHeader(local String _buf, local int _level) {
+      local Node *c;
+
+      _buf.append("\n\n");
+
+      // Header
+      Utils.AppendMarkdownHeader(_buf, _level, text);
+
+      // Child relations
+      int numChildRel = 0;
+      foreach c in child_nodes
+      {
+         if(null != c.parent_relation)
+         {
+            Relation rel <= c.parent_relation;
+            if(null != rel.text_note)
+            {
+               if(0 == numChildRel)
+               {
+                  Utils.StartMarkdownList(_buf, 0/*level*/);
+               }
+               else
+                  _buf.append(", ");
+
+               // "is-a", "has", "creates", ..
+               _buf.append("*");
+               Utils.AppendMergedLinesForHeader(_buf, rel.text_note.text);
+               _buf.append("* ");
+
+               _buf.append("[");
+               Utils.AppendMergedLinesForHeader(_buf, c.text);
+               _buf.append("]");
+               _buf.append("(");
+               Utils.AppendMarkdownAnchor(_buf, c.getOrCreateAnchor());
+               _buf.append(")");
+
+               numChildRel++;
+            }
+         }
+      }
+      if(numChildRel > 0)
+         _buf.append("\n");
+
+      // xrefs
+      if(source_nodes.numElements)
+      {
+         Utils.StartMarkdownList(_buf, 0/*level*/);
+         toMarkdownXRefList(_buf, 0/*level*/, "**from**: ", source_nodes, null/*relations*/);
+      }
+
+      if(target_nodes.numElements)
+      {
+         Utils.StartMarkdownList(_buf, 0/*level*/);
+         toMarkdownXRefList(_buf, 0/*level*/, "**to**: ", target_nodes, target_rel);
+      }
+
+      // date
+      if(!calendar_date.isBlank())
+      {
+         _buf.append("Date: ");
+         _buf.append(calendar_date);
+         _buf.append("\n\n");
+      }
+
+      // image
+      if(!embedded_image.isBlank())
+      {
+         // embedded in topic
+         local String imgPath <= smmx.extractImage(embedded_image);
+         if(null != imgPath)
+         {
+            Utils.AddMarkdownImage(_buf, imgPath, embedded_image/*alt*/);
+            _buf.append("\n");
+         }
+      }
+      else if(null != image)
+      {
+         // callout
+         image.toMarkdown(_buf);
+         _buf.append("\n");
+      }
+
+      // Link
+      if(null != link)
+      {
+         _buf.append("**Link**: ");
+         link.toMarkdown(_buf);
+         _buf.append("\n\n");
+      }
+
+      local String para;
+
+      // Add paragraph block quote from text_note callout
+      if(null != text_note)
+      {
+         if(!(text_note.text.isBlank()))
+         {
+            // // Utils.AppendIndentedLines(para, Utils.RemoveSurroundingWhitespace(text_note.text), 4/*numSpaces*/);
+            Utils.AppendIndentedLines(para, text_note.text.trim(), 4/*numSpaces*/);
+            para.append("\n\n");
+         }
+      }
+
+      // Add paragraph text from note
+      if(!note.isBlank())
+      {
+         // // para.append(Utils.RemoveSurroundingWhitespace(note));
+         para.append(note.trim());
+         // // // _buf.append(note.replace("\n", "\n\n");
+         para.append("\n\n");
+      }
+
+      if(!para.isBlank())
+         _buf.append(para);
+
+      if(b_list || b_list_md)
+      {
+         // Present child nodes as list
+         foreach c in child_nodes
+         {
+            c.toMarkdownList(_buf, 0/*level*/);
+         }
+      }
+      else
+      {
+         // Present child nodes as sub-headers
+         foreach c in child_nodes
+         {
+            c.toMarkdownHeader(_buf, _level+1);
+         }
+      }
+      
+   }
+
+   public method appendLineToNote(String _line) {
+      if(!note.isBlank())
+         note.append("\r");
+      note.append(_line);
+   }
+
+   public method appendLineToTextCallout(String _line, org::Node _nOrg) {
+      if(null == text_note)
+      {
+         text_note <= new Text;
+         text_note.style = "tapered";  // speech bubble
+         text_note.textfmt = "plain";  // becomes "rtf1" when text formatting is used
+
+         if(null != _nOrg)
+         {
+            local String *t;
+
+            // Restore callout position
+            t <= _nOrg.getPropertyByName("smmx-text-callout-position");
+            // trace "xxx t=\""+t+"\"";
+            local Float tx;
+            local Float ty;
+            if(Utils.ParsePositionString(t, tx, ty))
+            {
+               // trace "xxx tx="+tx+" ty="+ty;
+               text_note.x = float(tx);
+               text_note.y = float(ty);
+            }
+
+            // Restore callout text style
+            t <= _nOrg.getPropertyByName("smmx-text-callout-style");
+            if(null != t)
+            {
+               text_note.style = t;
+            }
+
+            // Restore callout font scale
+            t <= _nOrg.getPropertyByName("smmx-text-callout-font-scale");
+            if(null != t)
+            {
+               text_note.font_scale = float(t);
+            }
+
+            // Restore callout text color
+            t <= _nOrg.getPropertyByName("smmx-text-callout-text-color");
+            if(null != t)
+            {
+               text_note.text_color = int(t);
+            }
+
+            // Restore callout fill color
+            t <= _nOrg.getPropertyByName("smmx-text-callout-fill-color");
+            if(null != t)
+            {
+               text_note.fill_color = int(t);
+            }
+         }
+      }
+
+      if(_line & "§txtfmt")
+         text_note.textfmt = "rtf1";
+
+      text_note.appendLine(_line);
+   }
+
+   public method toXML(local String _buf, local int _level, float _offY) {
+      // trace "xxx toXML id=\""+id+"\"";
+      loop(_level)
+         _buf.append(" ");
+
+      // topic id
+      _buf.append("<topic id=\""+id+"\"");
+
+      // position.x
+      if(x.isFloat())
+      {
+         _buf.append(" x=\""+x.value+"\"");
+      }
+
+      // position.y     
+      if(y.isFloat())
+      {
+         _buf.append(" y=\""+y.value+"\"");
+      }
+      else
+      {
+         if(0 != _offY)
+            _buf.append(" y=\""+_offY+"\"");
+      }
+
+      // icon
+      if(!icon.isBlank())
+         _buf.append(" icon=\""+icon+"\"");
+
+      // caption/title/text
+      _buf.append(" text=\""+(Utils.TextToXML(text).replace("\r", "\\N"))+"\"");
+      _buf.append(" textfmt=\""+textfmt+"\"");
+
+      // parent and layout
+      if(null == parent_node)
+      {
+         _buf.append(" parent=\"-1\"");
+         if(b_list || (child_nodes.numElements > SMMX.MAX_HNODES))
+            _buf.append(" layout=\"list\"");
+         else if(!smmx.b_allow_freeform)
+            _buf.append(" layout=\"top-down\"");
+      }
+      else
+      {
+         if(b_list)
+            _buf.append(" layout=\"list\"");
+
+         _buf.append(" parent=\""+parent+"\"");
+      }
+
+      // checkbox/progress
+      // // if(CHECKBOX_NONE != checkbox_mode)
+      // // {
+      // //    _buf.append(" checkbox=\""+checkbox_mode
+      // // }
+      // trace "xxx org_state="+org_state;
+      if( [ST_TODO, ST_ACTV, ST_TEST, ST_DONE].contains(org_state) )
+      {
+         if(hasUndoneOrDoneChildren())
+         {
+            _buf.append(" checkbox=\"true\" checkbox-mode=\"roll-up-progress\" ");
+         }
+         else
+         {
+            _buf.append(" checkbox=\"true\" checkbox-mode=\"checkbox\" progress=\"");
+            if(ST_DONE == org_state)
+               _buf.append("100");
+            else
+               _buf.append("0");
+            _buf.append("\"");
+         }
+      }
+
+      // // palette
+      // if(!palette.isBlank())
+      //    _buf.append(" palette=\""+palette+"\"");
+
+      // // colorinfo
+      // if(!colorinfo.isBlank())
+      //    _buf.append(" colorinfo=\""+colorinfo+"\"");
+
+      // calendar date
+      if(!calendar_date.isBlank())
+      {
+         _buf.append(" date=\""+calendar_date+"\"");
+      }
+
+      if(b_collapsed)
+         _buf.append(" collapsed=\"True\"");
+
+      _buf.append(">\n");  // end <topic>
+
+      if(!embedded_image.isBlank())
+      {
+         loop(_level+1)
+            _buf.append(" ");
+         _buf.append("<embedded-image name=\""+embedded_image+"\"");
+         // // if(1.0 != embedded_image_scale)
+         _buf.append(" scale=\""+embedded_image_scale+"\"");
+         _buf.append("/>\n");
+      }
+
+      local String sStyle;
+      // text_style
+      if(text_style & TEXTSTYLE_BOLD)
+      {
+         sStyle.append(" bold=\"True\"");
+      }
+      if(text_style & TEXTSTYLE_ITALIC)
+      {
+         sStyle.append(" italic=\"True\"");
+      }
+      if(text_style & TEXTSTYLE_UNDERLINE)
+      {
+         sStyle.append(" underline=\"True\"");
+      }
+      if(text_style & TEXTSTYLE_STRIKETHROUGH)
+      {
+         sStyle.append(" strikethrough=\"True\"");
+      }
+
+      // font_scale
+      if(font_scale.isFloat())
+      {
+         sStyle.append(" scale=\""+font_scale.value+"\"");
+      }
+
+      if(border_width.isFloat())
+      {
+         sStyle.append(" borderwidth=\""+border_width.value+"\"");
+      }
+
+      if(!border_style.isBlank())
+      {
+         sStyle.append(" borderstyle=\""+border_style+"\"");
+      }
+
+      if(!stroke_style.isBlank())
+      {
+         sStyle.append(" strokestyle=\""+stroke_style+"\"");
+      }
+
+      if(!sStyle.isBlank())
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("<style"+sStyle+"/>\n");
+      }
+
+      if(fill_color.isInt())
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("<fillcolor ");
+         Utils.AppendSMMXRGBAttribs(_buf, int(fill_color.value));
+         _buf.append("/>\n");
+      }
+
+      if(stroke_color.isInt())
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("<strokecolor ");
+         Utils.AppendSMMXRGBAttribs(_buf, int(stroke_color.value));
+         _buf.append("/>\n");
+      }
+
+      if(b_hull_visible)
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("<hull visible=\"True\"/>\n");
+      }
+
+
+      // note
+      if(!note.isBlank())
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("<note>");
+         // trace "xxx note=\""+#(note)+"\"";
+         local String sNote <= Utils.TextToXML(Utils.ResubstSMMXTextFormatting_Note(note));
+         _buf.append(sNote);
+         _buf.append("</note>\n");
+      }
+
+      // link
+      if(null != link)
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+
+         link.toXML(_buf);
+      }
+
+      // Callouts
+      if((null != text_note) || (null != image))
+      {
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("<children>\n");
+
+         // Callout text
+         if(null != text_note)
+         {
+            text_note.toXML(_buf, _level + 2);
+         }
+
+         // Callout image
+         if(null != image)
+         {
+            image.toXML(_buf, _level + 2);
+         }
+
+         loop(_level + 1)
+            _buf.append(" ");
+         _buf.append("</children>\n");
+      }
+
+      // Parent relation
+      if(null != parent_relation)
+      {
+         parent_relation.toXML(_buf, _level + 1/*indent*/);
+      }
+
+      loop(_level)
+         _buf.append(" ");
+      _buf.append("</topic>\n");
+
+      // Child nodes
+      local Node *c;
+      foreach c in child_nodes
+      {
+         c.toXML(_buf, _level + 1, 0.0f/*offY*/);
+      }
+
+   }
+
+   public method createLinkFromOrgText(String _s) : boolean {
+      link <= new Link;
+      if(link.extractFromText(_s))
+      {
+         // trace "xxx createLinkFromOrgText: s=\""+_s+"\"";
+         if(shared::b_org_to_smmx_convert_org_links && (link.path >= ".org"))
+         {
+            link.path = link.path.replace(".org", ".smmx");
+         }
+
+         // (note) SimpleMind Pro does not find smmx files in dropbox folder 
+         //         unless cloudmapref="" syntax is used (instead of urllink)
+         if(shared::b_org_to_smmx_convert_org_links_cloudmapref && (link.path >= ".smmx"))
+            link.type = Link.TYPE_CLOUD;
+
+         return true;
+      }
+      link <= null;
+      return false;
+   }
+
+   public method appendNoteToOrg(String _buf) {
+      if(!note.isBlank())
+      {
+         local String t = note;
+         // trace "xxx t=\""+t+"\"";
+         _buf.append(t);
+      }
+   }
+
+   public method toOrgAsList() : boolean {
+      int idx = note.indexOf(":org-layout: list", 0);
+      if(-1 == idx)
+         idx = note.indexOf(":org-layout: top-down", 0);
+      if(-1 != idx)
+         if('\n' == note.getc(idx-1))
+            return true;
+      return false;
+   }
+
+   public method toOrgNode(local org::Node _nOrg, 
+                           local int       _subLevel, 
+                           local int       _childLevel,
+                           local boolean   _bTopDown
+                           ) {
+
+      if(b_debug2)
+         trace "xxx toOrgNode: title=\""+text+"\" icon=\""+icon+"\"";
+
+      // State from icon
+      _nOrg.setStateBySMMXIcon(icon);
+      b_auto_icon = (ST_NONE != _nOrg.state);
+
+      // State from checkbox/progress (override)
+      switch(checkbox_mode)
+      {
+         case CHECKBOX_BOOL:
+         case CHECKBOX_PROGRESS:
+         case CHECKBOX_ROLLUP_PROGRESS:
+            if(100 == progress)
+            {
+               _nOrg.state = ST_DONE;
+            }
+            else
+            {
+               // trace "xxx progress="+progress+" org.state="+_nOrg.state;
+               if(0 == progress)
+               {
+                  if!([ST_TODO, ST_ACTV, ST_TEST].contains(_nOrg.state)) 
+                     _nOrg.state = ST_TODO;
+               }
+               else
+               {
+                  _nOrg.state = ST_ACTV;
+               }
+               // trace "xxx    new org.state="+_nOrg.state;
+            }
+            break;
+      }
+
+      // Extract 
+      //  - create, mod, finish dates
+      //  - properties
+      //     - restore org-node specific attribs (e.g. tags, prio, scheduled, deadline, ..)
+      //  - regular text lines
+      _nOrg.initFromNoteString(note);
+      // trace "xxx toOrgNode: b_new_child_as_list="+_nOrg.b_new_child_as_list;
+
+      // Link
+      if(null != link)
+      {
+         if(b_debug2)
+            trace "xxx link.path=\""+link.path+"\" text=\""+text+"\"";
+         if(link.path != text)
+         {
+            link.addToOrgTextLines(_nOrg.text_lines);  // "! http://..."
+            if(b_debug2)
+               trace "xxx added link="+(_nOrg.text_lines.last);
+         }
+      }
+
+      // Don't save resource icon when it's auto-generated
+      if(!b_auto_icon)
+      {
+         b_auto_icon = (icon == _nOrg.getSMMXIconByResource());
+      }
+
+      _nOrg.title = text.trim().replace("\n", " ");
+
+      _nOrg.num_asterisks = _subLevel;
+      _nOrg.num_spaces    = _childLevel;//// + ((_subLevel > 0) ? (_subLevel-1) : 0);
+
+      // Preserve topic position
+      if(!_bTopDown)
+      {
+         local String t = getPositionPropertyString();
+         if(!t.isBlank())
+         {
+            _nOrg.addProperty("smmx-position", t);
+         }
+      }
+
+      // Preserve palette
+      if(!palette.isBlank())
+         _nOrg.addProperty("smmx-palette", palette);
+
+      // Preserve colorinfo
+      if(!colorinfo.isBlank())
+         _nOrg.addProperty("smmx-colorinfo", colorinfo);
+      
+      // Preserve icon
+      if(!b_auto_icon && !icon.isBlank())
+         _nOrg.addProperty("smmx-icon", icon);
+      
+      // Preserve text style flags
+      if(0 != text_style)
+         _nOrg.addProperty("smmx-text-style", getTextStylePropertyString());
+
+      // Preserve font_scale
+      if(font_scale.isFloat())
+         _nOrg.addProperty("smmx-font-scale", font_scale.value);
+
+      // Preserve list layout change
+      if(b_list)
+         _nOrg.addProperty("smmx-list", "t");
+      if(b_list_md)
+         _nOrg.addProperty("smmx-list-md", "t");
+
+      // Preserve hull visibility
+      if(b_hull_visible)
+         _nOrg.addProperty("smmx-hull-visible", "t");
+
+      // Preserve collapsed state
+      if(b_collapsed)
+      {
+         // (note) prefer :hide: shortcut
+         // _nOrg.addProperty("smmx-collapsed", "t");
+         _nOrg.addProperty("hide", "");
+      }
+
+      // Preserve fill color
+      if(fill_color.isInt())
+      {
+         _nOrg.addPropertyRGB24("smmx-fill-color", fill_color.value);
+      }
+
+      // Preserve border style
+      if(!border_style.isBlank())
+      {
+         _nOrg.addProperty("smmx-border-style", border_style);
+      }
+
+      // Preserve border width
+      if(border_width.isFloat())
+      {
+         _nOrg.addProperty("smmx-border-width", border_width.value);
+      }
+
+      // Preserve stroke style
+      if(!stroke_style.isBlank())
+      {
+         _nOrg.addProperty("smmx-stroke-style", stroke_style);
+      }
+
+      // Preserve stroke color
+      if(stroke_color.isInt())
+      {
+         _nOrg.addPropertyRGB24("smmx-stroke-color", stroke_color.value);
+      }
+
+      if(null != text_note)
+      {
+         // trace "xxx append text_note: _nOrg.callout_lines="+#(_nOrg.callout_lines);
+         text_note.appendToOrgCalloutLines(_nOrg.callout_lines);
+
+         // add ":smmx-text-callout-*" properties
+         text_note.addPropertiesToOrgNode(_nOrg);
+      }
+
+      // Override org-preferred-date-type by calendar_date
+      if!(calendar_date.isBlank())
+      {
+         // trace "xxx calendar_date=\""+calendar_date+"\" date-type=\""+_nOrg.getPropertyByName("smmx-calendar-date-type")+"\"";
+         switch(_nOrg.getPropertyByName("smmx-calendar-date-type"))
+         {
+            default:
+               trace "[~~~] missing smmx-calendar-date-type property (calendar_date=\""+calendar_date+"\", topic=\""+text+"\")";
+               break;
+
+            case "s":
+            case "scheduled":
+               _nOrg.scheduled = Utils.ToOrgCalendarDate(calendar_date);
+               // trace "xxx to scheduled org date: \""+_nOrg.scheduled+"\"";
+               break;
+
+            case "d":
+            case "deadline":
+               _nOrg.deadline = Utils.ToOrgCalendarDate(calendar_date);
+               break;
+
+            case "c":
+            case "create":
+               _nOrg.create_date = Utils.ToVerboseCalendarDate(calendar_date);
+               // trace "xxx set _nOrg.create_date=\""+_nOrg.create_date+"\"";
+               break;
+
+            case "f":
+            case "finish":
+               _nOrg.finish_date = Utils.ToVerboseCalendarDate(calendar_date);
+               break;
+         }
+      }
+
+      // Embedded image (in topic box)
+      if(!embedded_image.isBlank())
+      {
+         _nOrg.addProperty("smmx-embedded-image-name", embedded_image);
+
+         // Lazy-Write to images/<name>.png
+         smmx.extractImage(embedded_image);
+
+         // // if(1.0 != embedded_image_scale)
+         // // {
+            _nOrg.addProperty("smmx-embedded-image-scale", String(embedded_image_scale));
+         // // }
+      }
+      else
+      {
+         // Image
+         //  (note) embedded and callout images cannot be used simultaneously
+         if(null != image)
+         {
+            image.addPropertiesToOrgNode(_nOrg);
+         }
+      }
+
+      // Relations
+      addRelationPropertiesToOrgNode(_nOrg);
+
+      _nOrg.deletePropertyByName("smmx-calendar-date-type");
+      _nOrg.deleteOrgProperties();
+
+      // Child nodes
+      local Node *c;
+      local org::Node *nOrgChild;
+
+      foreach c in child_nodes
+      {
+         local boolean bAsList = b_list || b_list_md || c.toOrgAsList() || (_childLevel > 0);
+
+         // trace "xxx toOrgNode: this=\""+text+"\" subLevel="+_subLevel+" id=\""+id+"\" c.title=\""+c.text+"\" c.id="+c.id+" bAsList="+bAsList;
+
+         if(bAsList)
+         {
+            nOrgChild <= _nOrg.newChild();
+            c.toOrgNode(nOrgChild, 
+                        0/*subLevel*/,
+                        Utils.OrgSubAndChildLevelToSpaces(_subLevel, _childLevel), ////_childLevel + org::NUM_SPACES + ((_subLevel > 0)?(_subLevel-1):0),
+                        true/*bTopDown (don't save position)*/
+                        );
+         }
+         else
+         {
+            nOrgChild <= _nOrg.newSub();
+            c.toOrgNode(nOrgChild, 
+                        _subLevel + 1,
+                        0/*childLevel*/,
+                        _bTopDown || b_topdown
+                        );
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class Relation {
+   String  guid;
+
+   String  source_id;
+   // // Node   *source_node;
+
+   String  target_id;
+   // // Node   *target_node;
+
+   float   x;  // custom-point.x  (relative coord) (def=(0;0))
+   float   y;  // custom-point.y
+
+   String  line_style;    // "" (def), "penCable", "penSolidThin", "penDouble", "penDashedDouble",
+                          //           "penTapered", "penReverseTapered", "penAutoTapered"
+   Value   line_width;    // "" (def), "1.00".."12.00"
+   String  path_style;    // "" (def, curved), "straight", "ortho" (angled)
+   String  source_arrow;  // "" (def, none), "filledArrow", "singleArrow"
+   String  target_arrow;  // "" (def, none), "filledArrow", "singleArrow"
+   Value   color;         // void (def) or rgb24 int
+
+   Text   *text_note;  // callout or null
+
+
+   public method setPositionFromString(String _s) {
+      // x;y or x,y or x y
+      local Float tx;
+      local Float ty;
+      if(Utils.ParsePositionString(_s, tx, ty))
+      {
+         x = float(tx);
+         y = float(ty);
+      }
+   }
+
+   public method appendToOrgAttribs(String _buf) {
+      // trace "xxx Relation::appendToOrgAttribs";
+
+      local Integer io;
+
+      if((0 != x) && (0 != y))
+         _buf.append(" position="+x+";"+y);
+
+      if(!line_style.isBlank())
+         _buf.append(" line-style="+line_style);
+
+      if(line_width.isFloat())
+         _buf.append(" line-width="+line_width.value);
+
+      if(!path_style.isBlank())
+         _buf.append(" path-style="+path_style);
+
+      if(!source_arrow.isBlank())
+         _buf.append(" source-arrow="+source_arrow);
+
+      if(!target_arrow.isBlank())
+         _buf.append(" target-arrow="+target_arrow);
+
+      if(color.isInt())
+      {
+         io = color.value;
+         _buf.append(" color=#"+io.printf("%06x"));
+      }
+
+      if(null != text_note)
+      {
+         _buf.append(" text=\""+text_note.text+"\"");
+
+         if!(text_note.style.isBlank())
+            _buf.append(" text-style="+text_note.style);
+
+         if( (text_note.x.isFloat()) && (text_note.y.isFloat()) )
+            _buf.append(" text-position="+(text_note.x.value)+";"+(text_note.y.value));
+
+         if(text_note.font_scale.isFloat())
+            _buf.append(" text-font-scale="+(text_note.font_scale.value));
+
+         if(text_note.text_color.isInt())
+         {
+            io = text_note.text_color.value;
+            _buf.append(" text-color=#"+io.printf("%06x"));
+         }
+
+         if(text_note.fill_color.isInt())
+         {
+            io = text_note.fill_color.value;
+            _buf.append(" text-fill-color=#"+io.printf("%06x"));
+         }
+      }
+   }
+
+   public method initFromOrgAttribs(SMMX _smmx, String _sourceId, String _orgAttribs) : boolean {
+      boolean ret = false;
+
+      boolean bParentRel = (null == _sourceId);
+
+      if(!bParentRel)
+         source_id = _sourceId;   
+      // else
+      //    trace "xxx parent-relation: orgAttribs="+#(_orgAttribs);
+
+      local StringArray a <= _orgAttribs.replace("=", " ").splitSpace(true/*bQuot*/);  // "key=\"some value\"" => [key,"some value"]
+      // trace "xxx pairs="+#(a);
+      int numPairs = a.numElements / 2;
+      int idx = 0;
+
+      local String sTarget        <= null;
+      local String sPosition      <= null;
+      local String sLineStyle     <= null;
+      local String sLineWidth     <= null;
+      local String sPathStyle     <= null;
+      local String sSourceArrow   <= null;
+      local String sTargetArrow   <= null;
+      local String sColor         <= null;
+      local String sText          <= null;
+      local String sTextStyle     <= null;
+      local String sTextPosition  <= null;
+      local String sTextFontScale <= null;
+      local String sTextColor     <= null;
+      local String sTextFillColor <= null;
+
+      loop(numPairs)
+      {
+         String key <= a[idx++].trim();
+         String val <= a[idx++].trim();
+         if(b_debug2)
+            trace "xxx rel attrib key=\""+key+"\" val=\""+val+"\"";
+
+         switch(key)
+         {
+            case "target":
+               sTarget <= deref val;
+               break;
+
+            case "position":
+               sPosition <= deref val;
+               break;
+
+            case "line-style":
+               sLineStyle <= deref val;
+               break;
+
+            case "line-width":
+               sLineWidth <= deref val;
+               break;
+
+            case "path-style":
+               sPathStyle <= deref val;
+               break;
+
+            case "source-arrow":
+               sSourceArrow <= deref val;
+               break;
+
+            case "target-arrow":
+               sTargetArrow <= deref val;
+               break;
+
+            case "color":
+               sColor <= deref val;
+               break;
+
+            case "text":
+               sText <= deref val;
+               break;
+
+            case "text-style":
+               sTextStyle <= deref val;
+               break;
+
+            case "text-position":
+               sTextPosition <= deref val;
+               break;
+
+            case "text-font-scale":
+               sTextFontScale <= deref val;
+               break;
+
+            case "text-color":
+               sTextColor <= deref val;
+               break;
+
+            case "text-fill-color":
+               sTextFillColor <= deref val;
+               break;
+         }
+
+         if(bParentRel || (null != sTarget))
+         {
+            Node *nTarget;
+            if(!bParentRel)
+               nTarget <= _smmx.findNodeByAnchor(sTarget);
+
+            if(bParentRel || (null != nTarget))
+            {
+               ret = true;
+
+               if(!bParentRel)
+                  target_id = nTarget.id;
+
+               if(null != sPosition)
+               {
+                  setPositionFromString(sPosition);
+               }
+
+               if(null != sLineStyle)
+                  line_style <= deref sLineStyle;
+
+               if(null != sLineWidth)
+                  line_width = mathClampf(float(sLineWidth), 1.0f, 12.0f);
+
+               if(null != sPathStyle)
+                  path_style <= deref sPathStyle;
+
+               if(null != sSourceArrow)
+                  source_arrow <= deref sSourceArrow;
+
+               if(null != sTargetArrow)
+                  target_arrow <= deref sTargetArrow;
+
+               if(null != sColor)
+                  color = int(sColor);
+
+               if(null != sText)
+               {
+                  text_note <= new Text;
+                  text_note.text = sText;
+
+                  if(null != sTextStyle)
+                     text_note.style = sTextStyle;
+
+                  if(null != sTextPosition)
+                  {
+                     text_note.setPositionFromString(sTextPosition);
+                  }
+
+                  if(null != sTextFontScale)
+                     text_note.font_scale = float(sTextFontScale);
+
+                  if(null != sTextColor)
+                     text_note.text_color = int(sTextColor);
+
+                  if(null != sTextFillColor)
+                     text_note.fill_color = int(sTextFillColor);
+               }
+            }
+            else
+            {
+               trace "[~~~] smmx::Relation::initFromOrgAttribs: findNodeByAnchor("+sTarget+") failed";
+            }
+         } // if sTarget
+         else
+         {
+            trace "[~~~] smmx::Relation::initFromOrgAttribs: missing \"target\" attribute";
+         }
+      } // loop pairs
+
+      return ret;
+   }
+
+   public method toXML(String _buf, int _indent) {
+
+      loop(_indent)
+         _buf.append(" ");
+
+      boolean bParentRel = source_id.isBlank();
+      
+      if(bParentRel)
+         _buf.append("<parent-relation");
+      else
+         _buf.append("<relation source=\""+source_id+"\" target=\""+target_id+"\"");
+
+      _buf.append(">\n");
+
+      if((0 != x) && (0 != y))
+      {
+         loop(_indent+1)
+            _buf.append(" ");
+         _buf.append("<path>\n");
+         loop(_indent+2)
+            _buf.append(" ");
+         _buf.append("<custom-point x=\""+x+"\" y=\""+y+"\"/>\n");
+         loop(_indent+1)
+            _buf.append(" ");
+         _buf.append("</path>\n");
+      }
+
+      loop(_indent+1)
+         _buf.append(" ");
+      _buf.append("<style");
+
+      if(!path_style.isBlank())
+         _buf.append(" path-style=\""+path_style+"\"");
+
+      if(!line_style.isBlank())
+         _buf.append(" line-style=\""+line_style+"\"");
+
+      if(line_width.isFloat())
+         _buf.append(" line-width=\""+line_width.value+"\"");
+
+      if(!source_arrow.isBlank())
+         _buf.append(" source-arrow=\""+source_arrow+"\"");
+
+      if(!target_arrow.isBlank())
+         _buf.append(" target-arrow=\""+target_arrow+"\"");
+
+      _buf.append(">\n");
+
+      if(color.isInt())
+      {
+         // style.color
+         loop(_indent+2)
+            _buf.append(" ");
+         _buf.append("<color");
+         Utils.AppendSMMXRGBAttribs(_buf, color.value);
+         _buf.append("/>\n");
+      }
+
+      loop(_indent+1)
+         _buf.append(" ");
+      _buf.append("</style>\n");
+
+      if(null != text_note)
+      {
+         loop(_indent+1)
+            _buf.append(" ");
+         _buf.append("<children>\n");
+
+         text_note.toXML(_buf, _indent+2);
+
+         loop(_indent+1)
+            _buf.append(" ");
+         _buf.append("</children>\n");
+      }
+
+      loop(_indent)
+         _buf.append(" ");
+      if(bParentRel)
+         _buf.append("</parent-relation>\n");
+      else
+         _buf.append("</relation>\n");
+   }
+}
+
+
+// <class.png>
+class SMMX : StateDefs {
+
+   define int MAX_HNODES = 20;  // maximum number of horizontal nodes in top-down layout
+   define String DEFAULT_STYLE_KEY = "system.gray-scale";
+
+   define exception ParseError : Error;
+   define exception NodeNotFound : Error;
+
+   define int MAX_NODES = 10000;
+   define int MAX_IMAGES = 1000;
+
+   Zip *zip;  // !null when loading from .smmx file
+   String output_path;  // e.g. "md_out"
+   String image_path;   // same as output_path when reading SMMX file. same as input_path when create new SMMX file.
+
+   PointerArray node_array;  // Node instances (in order of occurence)
+   HashTable    node_hash;   // refs
+
+   PointerArray relations;   // Relation instances
+
+   String  guid;         // "FFC052A279954B0AA1228D4805AE2872"
+   int     doc_version;  // 3
+   String  generator;    // "SimpleMindWin32" or "SimpleMindTouch" (iOS)
+   String  gen_version;  // "1.25.0" (win), "1.25.1" (iOS)
+   String  device_type;  // "ipad" or unset
+
+   String  title_text;
+
+   boolean b_images;    // true when any topic uses images (note: this seems redundant)
+
+   String  style_key;   // "system.colors-on-black-palette", "system.gray-scale", ..
+   boolean b_force_style_key;  // true when "#+smmx-style-key" global property was present in input.org
+   String  autonumbering_style;  // "disabled"
+
+   float   scrollstate_zoom;  // "80"
+   float   scrollstate_x;     // "295"
+   float   scrollstate_y;     // "234"
+
+   String  selection_guid;  // only set when there is a selection
+   String  selection_type;  // "node"
+   String  selection_id;
+
+   String  main_centraltheme_id;  // usually "0"
+   Node   *root_node;
+
+   // Markdown output options:
+   public boolean b_md_title_header = true;
+   public boolean b_md_toc = true;
+   public String  md_author_str = "smmx_to_markdown";
+
+   boolean b_allow_freeform;  // true when all non-list org nodes have "smmx-position" properties
+
+   HashTable extracted_images;  // used during export to avoid double-extract, maps name to local pathname
+
+
+   protected method getNodeById(String _id) : Node {
+      if(node_hash.exists(_id))
+         return node_hash[_id];
+      else
+         throw NodeNotFound("failed to resolve node id="+_id);
+   }
+
+   protected method getNodeByIdOrNull(String _id) : Node {
+      if(node_hash.exists(_id))
+         return node_hash[_id];
+      else
+         return null;
+   }
+
+   public method findNodeByAnchor(local String _anchor) : Node {
+      local Node *c;
+      foreach c in node_array
+      {
+         if(c.anchor == _anchor)   // not getOrCreateAnchor() (don't recurse)
+            return c;
+      }
+      return null;
+   }
+
+   public method extractImage(String _name) : String {
+      // Returns local file path
+      if(null != zip)
+      {
+         if(extracted_images.exists(_name))
+         {
+            // already extracted
+            return extracted_images[_name];
+         }
+
+         if(image_path.isBlank())
+         {
+            trace "[---] extractImage: image_path is \"\", failed to extract";
+            return null;
+         }
+
+         local String pathName <= "images/"+_name+".png";
+         local Buffer b = zip.loadBufferByName(pathName);
+         if(null != b)
+         {
+            local File f;
+            pathName <= image_path+"/"+pathName;
+            boolean bOk = f.openLocal(pathName, IOS_OUT);  // try images/ subdir first
+            if(!bOk)
+            {
+               trace "[~~~] SMMX::extractImage: images subdir \""+pathName+"\" does not exist,\n[~~~] SMMX::extractImage:   extracting to \""+image_path+"/"+_name+".png\" instead";
+               pathName <= image_path+"/"+_name+".png";
+               bOk = f.openLocal(pathName, IOS_OUT);
+            }
+            if(bOk)
+            {
+               extracted_images[_name] = Object(pathName);
+
+               if(!shared::b_dry_run)
+               {
+                  f.writeBuffer(b, 0,0);
+                  Debug("extract image to \""+pathName+"\"");
+               }
+               else
+               {
+                  trace "[...] would extract image to \""+pathName+"\"";
+               }
+               f.close();
+               pathName.replace(image_path+"/", ""); // make relative to document
+               return deref pathName;
+            }
+            else
+            {
+               trace "[---] SMMX::extractImage: failed to open \""+pathName+"\" for writing";
+            }
+         }
+         else
+         {
+            trace "[---] SMMX::extractImage: failed to extract \"images/"+_name+".png\"";
+         }
+
+      }
+      return null;
+   }
+
+   public method findAndAddLocalImage(String _name) {
+      // called when creating new SMMX files
+      //  - first try "<image_pathimages/<name>.png"
+      //  - fall back to "<name>.png"
+      if(b_debug)
+         trace "[dbg] SMMX::findAndAddLocalImage("+_name+")";
+      if(!extracted_images.exists(_name))
+      {
+         local String pathName <= image_path+"/images/"+_name+".png";
+         if(Utils.CanFileBeRead(pathName))
+         {
+            extracted_images[_name] = deref pathName;
+            if(b_debug)
+               trace "[dbg]    => \""+pathName+"\"";
+         }
+         else 
+         {
+            pathName <= image_path+"/"+_name+".png";
+            if(Utils.CanFileBeRead(pathName))
+            {
+               extracted_images[_name] = deref pathName;
+               if(b_debug)
+                  trace "[dbg]    => \""+pathName+"\"";
+            }
+            else
+            {
+               trace "[---] SMMX::findAndAddLocalImage: failed to find name=\""+_name+"\"";
+               trace "[---]   tried: \""+image_path+"/images/"+_name+".png\"";
+               trace "[---]   tried: \""+image_path+"/"+_name+".png\"";
+            }
+         }
+      }
+   }
+
+   protected method parseTopicChildren(Node _topic, TreeNode _t) {
+      Node n <= _topic;
+      TreeNode t <= _t;
+
+      while(null != t)
+      {
+         HashTable attrib <= t.objectValue;
+
+         switch(t.name)
+         {
+            case "image":  // has <link> child
+               n.image <= new Image;
+               n.image.parseImage(this, t);
+               break;
+
+            case "text":   // has <note> child
+               n.text_note <= new Text;
+               n.text_note.parseTextNote(t);
+               break;
+         }
+
+         t <= t.left;
+      }
+   }
+
+   public method newNodeWithAutoId(Node _parentOrNull) : Node {
+      local Node n;
+
+      n.smmx <= this;
+      n.id = String(next_node_id++);
+
+      node_hash[n.id] = n;
+      node_array.add(#(deref n));
+
+      if(null != _parentOrNull)
+      {
+         n.parent_node <= _parentOrNull;
+         n.parent = _parentOrNull.id;
+         _parentOrNull.addChild(n);
+      }
+      else
+      {
+         n.parent_node <= null;
+         n.parent = "-1";
+      }
+
+      return n;
+   }
+
+   protected method parseTopicNode(TreeNode _t) {
+      TreeNode t <= _t;
+
+      // Debug("parse topic=\""+t.name+"\"");
+
+      HashTable attrib <= t.objectValue;
+
+      // Add new node
+      local Node n;
+      n.smmx <= this;
+      n.id = t.id;///attrib["id"];
+      if(int(n.id) >= next_node_id)
+         next_node_id = int(n.id) + 1;
+      node_hash[n.id] = n;
+      node_array.add(#(deref n));
+
+      // Parse basic attribs
+      n.parent  = attrib["parent"];
+      n.guid    = attrib["guid"];
+
+      if(attrib.exists("x"))
+         n.x = float(attrib["x"]);
+
+      if(attrib.exists("y"))
+         n.y = float(attrib["y"]);
+
+      n.icon    = attrib["icon"];
+      local String s <= Utils.ResubstText(attrib["text"]);
+      s.replace("://", "§protocol§");
+      s.replace(":", "");  // remove tag special char
+      s.replace("[", "");  // remove prio special chars
+      s.replace("]", "");
+      s.replace("§protocol§", "://");
+      if(b_trim_topic_text)
+      {
+         n.text <= s.trim();
+      }
+      else
+      {
+         n.text <= deref s;
+      }
+      // trace "xxx topic text=\""+n.text+"\"";
+      n.textfmt = attrib["textfmt"];  // always "plain" (simplemind v1.25.0)
+
+      // Calendar date (24-12-2020 format)
+      n.calendar_date = attrib["date"];
+
+      // layout (of sub-trees)
+      if(attrib.exists("layout"))
+      {
+         n.b_list = ("list" == attrib["layout"]);
+         n.b_topdown = ("top-down" == attrib["layout"]);
+      }
+
+      // Checkboxes and progress
+      switch(attrib["checkbox-mode"])
+      {
+         case "checkbox":
+            n.checkbox_mode = Node.CHECKBOX_BOOL;
+            break;
+
+         case "progress":
+            n.checkbox_mode = Node.CHECKBOX_PROGRESS;
+            break;
+
+         case "roll-up-progress":
+            n.checkbox_mode = Node.CHECKBOX_ROLLUP_PROGRESS;
+            break;
+      }
+      n.progress = attrib["progress"];
+
+      if(attrib.exists("collapsed"))
+         n.b_collapsed = ("true" == (attrib["collapsed"].toLower()));
+
+      Debug("topic id="+n.id+" parent="+n.parent+" guid="+n.guid+" x="+n.x+" y="+n.y+" icon="+n.icon+" text=\""+n.text+"\" checkbox_mode="+n.checkbox_mode+" progress="+n.progress+" b_list="+n.b_list);
+
+      // Parse <topic> child elements
+      if(null != t.right)
+      {
+         t <= t.right;
+
+         while(null != t)
+         {
+            attrib <= t.objectValue;
+            // trace "xxx attrib="+#(attrib);
+
+            switch(t.name)
+            {
+               case "link":
+                  n.link <= new Link;
+                  n.link.parseLink(t);
+                  break;
+
+               case "children":
+                  // text and image callouts
+                  parseTopicChildren(n, t.right);
+                  break;
+
+               case "images":
+                  // skip, same data as <children><image> except for additional "thumbnail" attrib
+                  // (todo) one of these methods seems obsolete/deprecated ?!
+                  break;
+
+               case "style":
+                  if(Utils.IsBooleanAttribTrue(attrib["bold"]))
+                     n.text_style |= Node.TEXTSTYLE_BOLD;
+                  if(Utils.IsBooleanAttribTrue(attrib["italic"]))
+                     n.text_style |= Node.TEXTSTYLE_ITALIC;
+                  if(Utils.IsBooleanAttribTrue(attrib["underline"]))
+                     n.text_style |= Node.TEXTSTYLE_UNDERLINE;
+                  if(Utils.IsBooleanAttribTrue(attrib["strikethrough"]))
+                     n.text_style |= Node.TEXTSTYLE_STRIKETHROUGH;
+                     
+                  if(attrib.exists("scale"))
+                     n.font_scale = float(attrib["scale"]);
+
+                  if(attrib.exists("borderwidth"))
+                     n.border_width = float(attrib["border-width"]);
+
+                  n.border_style = attrib["borderstyle"];
+                  n.stroke_style = attrib["strokestyle"];
+
+                  // (note) may have <fillcolor> sub-element but this also occurs on the same level as <style> (with same attribs)
+                  // if(null != t.right)
+                  // {
+                  // }
+                  break;
+
+               case "fillcolor":
+                  n.fill_color = (rgb(attrib["r"], attrib["g"], attrib["b"]) & 0xFFFFFF);
+                  break;
+
+               case "strokecolor":
+                  n.stroke_color = (rgb(attrib["r"], attrib["g"], attrib["b"]) & 0xFFFFFF);
+                  break;
+
+               case "hull":
+                  n.b_hull_visible = ("true" == (attrib["visible"].toLower()));
+                  break;
+
+               case "embedded-image":
+                  n.embedded_image       = attrib["name"];
+                  n.embedded_image_scale = attrib["scale"];
+                  Debug("   embedded-image name=\""+n.embedded_image+"\" scale="+n.embedded_image_scale);
+                  break;
+
+               case "note":
+                  // // String note = Utils.RemoveSurroundingWhitespace(Utils.ResubstText(attrib["<>"]));
+                  // String xxx <= attrib["<>"];
+                  String note = Utils.ResubstText(attrib["<>"].trim());
+                  if("rtf1" == attrib["textfmt"])
+                  {
+                     if(b_debug2)
+                        trace "xxx rtf1 note=\""+note+"\"";
+                     // (note) for some reason RTF1 notes use "\*", "\/", "\~", "\_" instead of "\\*", .. 
+                     note = Utils.SubstSMMXTextFormatting_Note(note);
+                  }
+                  // trace "xxx note=\""+note+"\"";
+                  if(note <= "!list")
+                  {
+                     n.b_list_md = true;
+                     int noteIdxLF = note.indexOfChar('\n', 0);
+                     if(-1 != noteIdxLF)
+                     {
+                        n.note = note.substring(noteIdxLF+1, note.length - noteIdxLF - 1);
+                     }
+                  }
+                  else
+                  {
+                     n.note = note;
+                  }
+                  Debug("  topic note=\""+n.note+"\"");
+                  break;
+                  
+               case "parent-relation":
+                  // when text callout is attached to connection/edge
+                  n.parent_relation <= new Relation;
+                  parseRelation(n.parent_relation, t);
+                  break;
+            }
+               
+            t <= t.left;
+         }
+      }
+   }
+
+   protected method parseTopics(TreeNode _t) {
+      TreeNode t <= _t;
+
+      while(null != t)
+      {
+         HashTable attrib <= t.objectValue;
+
+         switch(t.name)
+         {
+            case "topic":
+               parseTopicNode(t);
+               break;
+         }
+
+         t <= t.left;
+      }
+   }
+
+   protected method parseRelation(Relation rel, TreeNode _t) {
+      TreeNode t <= _t;
+      HashTable attrib <= t.objectValue;
+
+      rel.guid = attrib["guid"];
+
+      // (note) not used by <parent-relation> elements
+      if("relation" == t.name)
+      {
+         rel.source_id = attrib["source"];
+         rel.target_id = attrib["target"];
+      }
+
+      // // rel.source_node <= getNodeById(rel.source_id);
+      // // rel.target_node <= getNodeById(rel.target_id);
+
+      t <= t.right;
+      while(null != t)
+      {
+         switch(t.name)
+         {
+            case "path":
+               TreeNode tp <= t.right;
+               if((null != tp) && ("custom-point" == tp.name))
+               {
+                  attrib <= tp.objectValue;
+                  rel.x = attrib["x"];
+                  rel.y = attrib["y"];
+               }
+               break;
+
+            case "style":
+               attrib <= t.objectValue;
+               rel.line_style   = attrib["line-style"];
+               rel.line_width   = attrib["line-width"];
+               rel.path_style   = attrib["path-style"];
+               rel.source_arrow = attrib["source-arrow"];
+               rel.target_arrow = attrib["target-arrow"];
+               if(null != t.right)
+               {
+                  TreeNode ts <= t.right;
+                  while(null != ts)
+                  {
+                     attrib <= ts.objectValue;
+                     switch(ts.name)
+                     {
+                        case "color":
+                           rel.color = (rgb(attrib["r"], attrib["g"], attrib["b"]) & 0xFFFFFF);
+                           break;
+                     }
+                     ts <= ts.left;
+                  }
+               }
+               break;
+
+            case "children":
+               TreeNode tc <= t.right;
+               while(null != tc)
+               {
+                  switch(tc.name)
+                  {
+                     case "text":
+                        rel.text_note <= new Text;
+                        rel.text_note.parseTextNote(tc);
+                        break;
+                  }
+                  tc <= tc.left;
+               }
+               break;
+         }
+         t <= t.left;
+      }
+
+      Debug("relation guid="+rel.guid+" x="+rel.x+" y="+rel.y+" source_id="+rel.source_id+" target_id="+rel.target_id);
+      Debug("         line_style="+rel.line_style+" line_width="+rel.line_width+" path_style="+rel.path_style+" source_arrow="+rel.source_arrow+" target_arrow="+rel.target_arrow);
+   }
+
+   protected method parseRelations(TreeNode _t) {
+      TreeNode t <= _t;
+
+      while(null != t)
+      {
+         HashTable attrib <= t.objectValue;
+
+         switch(t.name)
+         {
+            case "relation":
+               Relation rel <= new Relation;
+               relations.add(#(deref rel));
+               parseRelation(rel, t);
+               break;
+         }
+
+         t <= t.left;
+      }
+   }
+
+   protected method parseMeta(TreeNode _t) {
+      TreeNode t <= _t;
+
+      while(null != t)
+      {
+         HashTable attrib <= t.objectValue;
+
+         switch(t.name)
+         {
+            case "guid":
+               guid = attrib["guid"];
+               Debug("guid=\""+guid+"\"");
+               break;
+
+            case "title":
+               title_text = Utils.AppendMergedLinesForHeader(title_text, Utils.ResubstText(attrib["text"]));
+               Debug("title_text=\""+title_text+"\"");
+               break;
+
+            case "images":
+               b_images = ("true" == (attrib["containsImages"].toLower()));
+               break;
+
+            case "style":
+               style_key = attrib["key"];
+               Debug("style_key=\""+style_key+"\"");
+               break;
+
+            case "auto-numbering":
+               autonumbering_style = attrib["style"];
+               Debug("autonumbering_style=\""+autonumbering_style+"\"");
+               break;
+
+            case "scrollstate":
+               scrollstate_zoom = attrib["zoom"];
+               scrollstate_x    = attrib["x"];
+               scrollstate_y    = attrib["y"];
+               Debug("scrollstate zoom="+scrollstate_zoom+" x="+scrollstate_x+" y="+scrollstate_y);
+               break;
+
+            case "selection":
+               selection_guid = attrib["guid"];
+               selection_type = attrib["type"];
+               selection_id   = attrib["id"];
+               Debug("selection guid="+selection_guid+" type="+selection_type+" id="+selection_id);
+               break;
+
+            case "main-centraltheme":
+               main_centraltheme_id = attrib["id"];
+               Debug("main_centraltheme_id=\""+main_centraltheme_id+"\"");
+               break;
+         }
+
+         t <= t.left;
+      }
+   }
+
+   protected method buildNodeRefs() {
+
+      // Root node
+      root_node <= getNodeById(main_centraltheme_id);
+
+      // Build child_nodes arrays
+      Node *c;
+      Node *p;
+      foreach c in node_array
+      {
+         if(c.parent >= 0)
+         {
+            p <= getNodeById(c.parent);
+            // trace "xxx title=\""+c.text+"\" c.id="+c.id+" c.parent="+c.parent+" => "+#(p);
+            c.parent_node <= p;
+            p.addChild(c);
+         }
+         else
+         {
+            c.parent_node <= null;
+         }
+      }
+
+      // Build xref source_nodes+target_nodes arrays
+      Relation *rel;
+      Node *s;
+      Node *t;
+      foreach rel in relations
+      {
+         s <= getNodeById(rel.source_id);
+         t <= getNodeById(rel.target_id);
+         s.addTarget(t, rel);
+         t.addSource(s, rel);
+      }
+   }
+
+   protected method parseMindMap(TreeNode _t) {
+      TreeNode t <= _t;
+
+      while(null != t)
+      {
+         switch(t.name)
+         {
+            case "meta":
+               parseMeta(t.right);
+               break;
+
+            case "topics":
+               parseTopics(t.right);
+               break;
+
+            case "relations":
+               parseRelations(t.right);
+               break;
+         }
+
+         t <= t.left;
+      }
+
+      buildNodeRefs();
+   }
+
+   protected method parseRoot(TreeNode _t) {
+      local TreeNode t <= _t;
+      switch(t.name)
+      {
+         case "mindmap":
+            parseMindMap(t.right);
+            break;
+      }
+   }
+
+   public method debugPrintOutline() {
+      local String buf;
+
+      // Root node (main central theme)
+      root_node.debugPrintOutline(buf, 0/*indent*/);
+
+      // Other free-floating nodes that have no parent
+      Node *c;
+      foreach c in node_array
+      {
+         if((null == c.parent_node) && (@(c) != @(root_node)))
+         {
+            c.debugPrintOutline(buf, 0/*indent*/);
+         }
+      }
+
+      trace "-------------- outline --------------";
+      trace buf;
+   }
+
+   public method toMarkdown(String _buf) {
+
+      if(b_md_title_header)
+      {
+         _buf.append("% ");
+         Utils.AppendMergedLinesForHeader(_buf, title_text);
+         _buf.append("\n");
+         _buf.append("% "+md_author_str+"\n");
+         _buf.append("% "+Utils.GetCurrentDateString()+"\n");
+         _buf.append("\n");
+         _buf.append("$(var:header)\n");
+         _buf.append("\n");
+      }
+
+      if(b_md_toc)
+      {
+         _buf.append("# Table of Contents\n");
+         _buf.append("$(buf!toc)\n\n");
+      }
+
+      // Iterate nodes in order of occurence
+      root_node.toMarkdownHeader(_buf, 0/*level*/);
+
+      // Other free-floating nodes that have no parent
+      Node *c;
+      foreach c in node_array
+      {
+         if((null == c.parent_node) && (@(c) != @(root_node)))
+         {
+            c.toMarkdownHeader(_buf, 0/*level*/);
+         }
+      }
+      
+      // Footer
+      _buf.append("\n\n");
+      _buf.append("$(buf!footnote)\n");
+      _buf.append("$(buf!w3validator)\n");
+      _buf.append("\n");
+      _buf.append("Document created on $(var:localdatetime)\n");
+      _buf.append("].create\n");
+   }
+
+   public method toOrg(org::Org _org) {
+
+      if(null != root_node)
+      {
+         Node *c;
+         org::Node *nOrg;
+         String t;
+
+         // Document title
+         _org.setGlobalProperty("title", title_text);
+
+         // SMMX root node position
+         t = root_node.getPositionPropertyString();
+         if(!t.isBlank())
+         {
+            _org.addGlobalProperty("smmx-root-position", t);
+         }
+
+         // SMMX Style key
+         if(b_force_style_key || (style_key != DEFAULT_STYLE_KEY))
+            _org.setGlobalProperty("smmx-style-key", style_key);
+
+         // Info node children
+         foreach c in node_array
+         {
+            // trace "xxx c="+#(c)+" c.parent="+#(c.parent_node)+" topic=\""+c.text+"\"";
+            if((null == c.parent_node) && (@(c) != @(root_node)))
+            {
+               // trace "xxx c.text=\""+c.text+"\"";
+               if("info" == c.text)
+               {
+                  // Info node position
+                  t = c.getPositionPropertyString();
+                  // trace "xxx infoposstr=\""+t+"\"";
+                  if(!t.isBlank())
+                  {
+                     _org.addGlobalProperty("smmx-info-position", t);
+                  }
+
+                  // (note) see "--smmx-info-as-topics" and "--smmx-info-as-org" cmdline options
+                  if(c.hasChildren())
+                  {
+                     Node *cInfo;
+                     foreach cInfo in c.child_nodes
+                     {
+                        nOrg <= _org.newInfoNode();
+                        cInfo.toOrgNode(nOrg, 0/*sublevel*/, 0/*childLevel*/, c.b_topdown);
+                        nOrg.b_was_info_node = true;
+                     }
+                  }
+                  else
+                  {
+                     // Try to add info nodes from org-style note
+                     local org::Org orgInfo;
+                     // trace "xxx org-style info note=\""+c.note+"\"";
+                     orgInfo.parseString(c.note);
+                     // trace "xxx try add info nodes";
+                     if((orgInfo.info_nodes.numElements) > 0)
+                     {
+                        _org.addAndReparentInfoNodesFromArray(orgInfo.info_nodes);
+                        // trace "xxx info_nodes="+#(_org.info_nodes);
+                     }
+                  }
+               }
+               // // else
+               // // {
+               // //    // Free-floating main node, add to info-nodes
+               // //    nOrg <= _org.newInfoNode();
+               // //    c.toOrgNode(nOrg, c.hasPosition() ? 1 : 0/*subLevel*/, 0/*childLevel*/, false/*bTopDown*/);
+               // //    // if(b_debug)
+               // //       trace "[dbg] freefloat main topic=\""+nOrg.title+"\"";
+               // //    nOrg.setPropertyByName("org-empty-line-after-node", "t");
+               // //    nOrg.b_empty_line_after_node = true;
+               // //    nOrg.setPropertyByName("was-main", "t");
+               // //    // trace "xxx get after set: was-main=\""+nOrg.getPropertyByName("was-main")+"\"";
+               // //    nOrg.b_was_main_node = true;
+               // // }
+            }
+         }
+
+         // Free-floating main nodes
+         foreach c in node_array
+         {
+            // trace "xxx c="+#(c)+" c.parent="+#(c.parent_node)+" topic=\""+c.text+"\"";
+            if((null == c.parent_node) && (@(c) != @(root_node)) && ("info" != c.text))
+            {
+               // Free-floating main node, add to info-nodes
+               nOrg <= _org.newInfoNode();
+               c.toOrgNode(nOrg, c.hasPosition() ? 1 : 0/*subLevel*/, 0/*childLevel*/, false/*bTopDown*/);
+               if(b_debug)
+                  trace "[dbg] freefloat main topic=\""+nOrg.title+"\"";
+               nOrg.setPropertyByName("org-empty-line-after-node", "t");
+               nOrg.b_empty_line_after_node = true;
+               nOrg.setPropertyByName("was-main", "t");
+               // trace "xxx get after set: was-main=\""+nOrg.getPropertyByName("was-main")+"\"";
+               nOrg.b_was_main_node = true;
+            }
+         }
+
+         // Root node
+         //  (note) global properties are attached to this
+         _org.extractGlobalPropertiesFromString(root_node.note);
+         if(root_node.hasChildren())
+         {
+            foreach c in root_node.child_nodes
+            {
+               nOrg <= _org.newTopicNode();
+               if(!c.toOrgAsList() && (ST_NONE == c.org_state))
+                  c.toOrgNode(nOrg, 1/*subLevel*/, 0/*childLevel*/, root_node.b_topdown);
+               else
+                  c.toOrgNode(nOrg, 0/*subLevel*/, 0/*childLevel*/, root_node.b_topdown);
+            }
+         }
+
+         // Other free-floating nodes that have no parent
+         // foreach c in node_array
+         // {
+         //    if((null == c.parent_node) && (@(c) != @(root_node)) && ("info" != c.text))
+         //    {
+         //       nOrg <= _org.newTopicNode();
+         //       c.toOrgNode(nOrg, 0/*sublevel*/, 0/*childLevel*/, false/*bTopDown*/);
+         //    }
+         // }
+
+         _org.fixProgress();
+      }
+   }
+
+   protected method initInt() {
+      node_hash.alloc(MAX_NODES);
+      node_array.alloc(MAX_NODES);
+      extracted_images.alloc(MAX_IMAGES);
+   }
+
+   public method parseString(String _s) : boolean {
+
+      initInt();
+
+      local String s;
+
+      if(shared::b_raw_utf8)
+      {
+         // Leave UTF8 data unchanged (chinese, japanese, russian, ..)
+         if(_s.hasUTF8BOM())
+         {
+            _s.substring(3, -1) => s;
+         }
+         else
+            s = _s;
+      }
+      else
+      {
+         // western-european languages, convert to CP1252
+         if(_s.isUTF8())
+            _s.utf8ToCP1252() => s;
+         else
+            s = _s;  // ASCII or CP1252
+      }
+
+      s.replace("\r\n", "\n");
+      s.replace("\r", "\n");
+
+      // // s.replaceChar(222, '\'');
+
+      if(b_debug)
+         trace s;
+
+      s <= Utils.SubstSMMXTextFormatting(s);
+      s <= Utils.SubstText(deref s);
+
+      local TreeNode troot <= s.parseXML(); 
+      if(null != troot)
+      {
+         String rootName = troot.name;
+         rootName.toLower();
+
+         if("simplemind-mindmaps" == rootName)
+         {
+            HashTable attribs <= troot.objectValue;
+            doc_version = attribs["doc-version"];
+            generator   = attribs["generator"];
+            gen_version = attribs["gen-version"];
+            device_type = attribs["device-type"];
+            
+            Debug("doc_version="+doc_version+" generator=\""+generator+"\" gen_version=\""+gen_version+"\" device_type=\""+device_type+"\"");
+
+            parseRoot(troot.right);
+            return true;
+         }
+         else
+         {
+            trace "[---] SMMX::parseString: expected root element <simplemind-mindmaps>, have <"+rootName+">";
+         }
+      }
+      else
+      {
+         trace "[---] SMMX::parseString: parseXML() failed.\n";
+      }
+      
+      return false;
+   }
+
+   public method newRelationFromOrgAttribs(Node _source, String _orgAttribs) {
+      local Relation rel;
+      if(b_debug2)
+         trace "xxx newRelationFromOrgAttribs: source="+#(_source)+" orgAttribs=\""+_orgAttribs+"\"";
+      if(rel.initFromOrgAttribs(this, _source.id, _orgAttribs))
+      {
+         relations.add(#(deref rel));
+      }
+      else
+      {
+         trace "[---] newRelationFromOrgAttribs failed (orgAttribs=\""+_orgAttribs+"\")";
+      }
+   }
+
+   public method loadXML(String _pathName) : boolean {
+      local String buf;
+      if(buf.loadLocal(_pathName, false/*bRemoveCR*/))
+      {
+         parseString(buf);
+         return true;
+      }
+      else
+      {
+         trace "[---] SMMX::loadFile: failed to open local XML file \""+_pathName+"\"";
+      }
+      return false;
+   }
+
+   public method loadSMMX(String _pathName) : boolean {
+
+      zip <= new Zip;
+      if(zip.openLocalReadOnly(_pathName))
+      {
+         int zfIdx = zip.getIndexByName("document/mindmap.xml");
+         if(zfIdx >= 0)
+         {
+            local String buf <= zip.loadStringByIndex(zfIdx);
+            if(null != buf)
+            {
+               parseString(buf);
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] SMMX::loadFile: SMMX does not contain \"document/mindmap.xml\" !!";
+         }
+         zip.close();
+      }
+      else
+      {
+         trace "[---] SMMX::loadFile: failed to open local SMMX file \""+_pathName+"\"";
+      }
+      return false;
+   }
+
+   public method initNew(String _title) {
+      zip <= new Zip;
+
+      initInt();
+
+      title_text           = _title;  // default title, may be overridden by org "#+title" property
+      style_key            = DEFAULT_STYLE_KEY;
+      main_centraltheme_id = "0";
+
+      next_node_id = 0;
+   }
+
+   public method setOutputPath(String _name) {
+      local String file;
+      Utils.SplitPathname(_name, output_path, file);
+      if(output_path.isBlank())
+         output_path = "./";
+   }
+
+   public method setImagePath(String _name) {
+      local String file;
+      Utils.SplitPathname(_name, image_path, file);
+      if(image_path.isBlank())
+         image_path = "./";
+   }
+
+   public method saveLocal(String _outPathPrefix) : boolean {
+      local String buf;    // document.xml
+      if(buf.load("smmx_output.templ", true/*bRemoveCR*/))
+      {
+         local String bufTopics;
+         local String bufRelations;
+
+         // Root node (main central theme)
+         root_node.toXML(bufTopics, 0/*indent*/, 0.0f/*offY*/);
+
+         // Other free-floating nodes that have no parent
+         Node *c;
+         foreach c in node_array
+         {
+            float offY = -70;
+            if((null == c.parent_node) && (@(c) != @(root_node)))
+            {
+               c.toXML(bufTopics, 0/*indent*/, offY);
+               offY -= 70;
+            }
+         }
+
+         // Relations
+         Relation *rel;
+         foreach rel in relations
+         {
+            rel.toXML(bufRelations, 1/*indent*/);
+         }
+
+         buf.replace("$(TOPICS)", bufTopics);
+         buf.replace("$(RELATIONS)", bufRelations);
+         buf.replace("$(TITLE)", Utils.TextToXML(title_text));
+
+         if(style_key.isBlank())
+         {
+            style_key = DEFAULT_STYLE_KEY;
+         }
+         buf.replace("$(STYLE_KEY)", style_key);
+
+         // Text formatting
+         buf = Utils.ResubstSMMXTextFormatting(buf);
+
+         // UTF-8 conversion
+         if(!shared::b_raw_utf8)
+         {
+            buf.cp1252ToUTF8(true/*bBOM*/);
+         }
+         else
+         {
+            // Prepend UTF-8 BOM
+            local String bom; bom.alloc(3+1);
+            bom[0] = 0xEF;
+            bom[1] = 0xBB;
+            bom[2] = 0xBF;
+            buf = bom + buf;
+         }
+
+         if(!shared::b_dry_run)
+         {
+            if(buf.saveLocal(_outPathPrefix+"/document/mindmap.xml"))  // may fail, just for debugging purposes
+               trace "[...] wrote \""+_outPathPrefix+"/document/mindmap.xml\"";
+       
+            zip <= new Zip;
+            if(zip.createLocal(_outPathPrefix+".smmx"))
+            {
+               // (note) MUST create dir first or file content will be corrupt
+               zip.addDir("document/");
+               zip.addFile("document/mindmap.xml", buf);
+
+               // Add images
+               if(extracted_images.numElements > 0)
+               {
+                  zip.addDir("images/");
+
+                  String *imgName;
+                  foreach imgName in extracted_images
+                  {
+                     String imgLocalPath <= extracted_images[imgName];
+                     // trace "xxx imgLocalPath="+#(imgLocalPath);
+                     local File fh;
+                     if(fh.openLocal(imgLocalPath, IOS_IN))
+                        zip.addFile("images/"+imgName+".png", fh);
+                  }
+               }
+               zip.close();
+               trace "[...] wrote \""+_outPathPrefix+".smmx\"";
+            }
+            zip <= null;
+         }
+         else
+         {
+            trace "[...] would try to write \""+_outPathPrefix+"/document/mindmap.xml\"";
+            trace "[...] would write \""+_outPathPrefix+".smmx\"";
+         }
+         return true;
+      }
+      else
+      {
+         trace "[---] failed to read \"smmx_output.templ\"";
+      }
+      return false;
+   }
+}

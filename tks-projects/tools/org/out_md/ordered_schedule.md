@@ -1,0 +1,18 @@
+# Milestone 'Move in'
+
+  |:Task                    |:Effort |:Done |:Allocate |:Start      |:End        |:Comment                            |
+  |-------------------------|--------|------|----------|------------|------------|------------------------------------|
+  | buy-property            | 8      |      | peter    | 17.02.2020 | 18.02.2020 | tear down old building             |
+  |                         |        |      |          |            |            |+taxes                              |
+  | foundation              | 16     |      | paul     | 18.02.2020 | 20.02.2020 |                                    |
+  | rough-framing           | 24     |      | mary     | 20.02.2020 | 25.02.2020 |                                    |
+  | plumbing                | 32     |      | paul     | 16.03.2020 | 19.03.2020 |                                    |
+  | electrical-installation | 40     |      | mary     | 23.03.2020 | 31.03.2020 | dont do this yourself              |
+  |                         |        |      |          |            |            |+(insurance)                        |
+  | insulate-walls          | 24     |      | peter    | 31.03.2020 | 07.04.2020 |                                    |
+  | insulate-roof           | 24     |      | mary     | 31.03.2020 | 07.04.2020 |                                    |
+  | finish-interior         | 56     |      | paul     | 07.04.2020 | 16.04.2020 |                                    |
+  | move-in                 |        |      |          | 16.04.2020 | 16.04.2020 |                                    |
+  |-------------------------|--------|------|----------|------------|------------|------------------------------------|
+  ] Schedule for milestone 'Move in'
+

@@ -1,0 +1,4848 @@
+// ----
+// ---- file   : scheduler.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----           
+// ----           This software is provided 'as-is', without any express or implied
+// ----           warranty.  In no event will the authors be held liable for any damages
+// ----           arising from the use of this software.
+// ----           Permission is granted to anyone to use this software for any purpose,
+// ----           including commercial applications, and to alter it and redistribute it
+// ----           freely, subject to the following restrictions:
+// ----           1. The origin of this software must not be misrepresented; you must not
+// ----              claim that you wrote the original software. If you use this software
+// ----              in a product, an acknowledgment in the product documentation would be
+// ----              appreciated but is not required.
+// ----           2. Altered source versions must be plainly marked as such, and must not be
+// ----              misrepresented as being the original software.
+// ----           3. This notice may not be removed or altered from any source distribution.
+// ----
+// ---- info   : task scheduler
+// ----           see [[doc/scheduler.org]], [[tests_org/sim_city.org]]
+// ----
+// ---- created: 17Jan2020
+// ---- changed: 18Jan2020, 19Jan2020, 20Jan2020, 21Jan2020, 22Jan2020, 23Jan2020, 24Jan2020
+// ----          25Jan2020, 26Jan2020, 28Jan2020, 29Jan2020, 30Jan2020, 31Jan2020, 01Feb2020
+// ----          02Feb2020, 03Feb2020, 11Feb2020, 12Feb2020, 25Mar2025, 26Mar2025
+// ----
+// ----
+// ----
+
+/*
+  Scheduler specific task properties:
+
+        "task_id"*: sets (explicit) task id
+                     (note) task ids must be globally unique
+                     (note) the default task id is the markdown-anchorfied task title,
+                             e.g. "Build a house" => "build-a-house"
+        "depends"*: task depend on other task(s)
+                     (note) parent tasks always implicitely depend on their child tasks
+             "for": add this task to target task dependencies ("for: milestone-xyz..")
+           "after": task and all sub-tasks depend on other task(s)
+         "effort"*: 8h, 3d, 5m, 5mo, 7y, ..
+                     (note) 
+     "effortrisk" : 1.5, 50%, ..
+     "effortdone"*: when tracking progress, amount of work already done
+     "effortleft"*: when tracking progress, amount of work left to do
+       "allocate"*: assign resources to task, e.g. "peter" or "peter, paul, mary"
+       "duration"*: when task depends on (unspecified) external factors (e.g. "grow a tree")
+           "risk" : scales effort+duration, e.g. "1.2" or "20%"
+     "effortrisk" : scales effort
+    "resource_id"*: when item describes not a task but a (human) resource
+xxxxxxxxxxxxxxxxxxxxxx         "limits"*: specifies resource limits (daily/weekly/monthly working hours)
+xxxxxxxxxxxxxxxxxxxxxx                     e.g. "dailymax 2h weeklymax 6h monthlymax 2.5d"
+   "workinghours"*: specifies resource limits, e.g.
+                     "mon,tue,wed,thu" or
+                     "mon-thu, fri off" or
+                     "mon 8:00-12:00, tue 8:00-16:00, wed off, thu 8:00-15:00, fr 10:00-16:00"
+                     "mon 4h, tue 8h, wed off, thu 7h, fr 6h"
+                     (note) default is 8h per day
+       "vacation"*: specifies resource limits, e.g. "<2020-12-31> - <2021-01-07>"
+   "other-project": similar to vacation, specifies period where resource is busy with other projects
+        "sickness": similar to vacation, specifies period where resource is unavailable due to sickness
+       "recursive": enable recursive progress calculation
+            "fold": see doc/org_manual.html
+         "private": see doc/org_manual.html
+          "ignore": see doc/org_manual.html
+
+       *= borrowed from TaskJuggler syntax
+
+       ===> see doc/org_manual.html
+ */
+
+module MScheduler;
+
+namespace scheduler;
+
+boolean b_debug = shared::b_debug;
+
+boolean b_debug2 = 0;
+
+boolean b_debug3 = 0;
+
+
+
+// see -ms,--milestone command line option
+String selected_milestone;
+
+// Create (invisible) final milestone and add other milestones as dependencies
+boolean b_multi_project = false;
+
+// see -ssg command line switch
+boolean b_skip_gantt = false;
+
+// see -ssgo command line switch
+boolean b_skip_gantt_overview = false;
+
+// see -stl command line switch
+boolean b_traffic_lights = false;
+
+// see -stls command line switch
+boolean b_traffic_lights_state = false;
+
+// see -stt command line switch
+boolean b_task_titles = false;
+
+// maximum project duration, can be overriden via "-sy,--schedule-years"
+int max_project_days = 365 * 5;
+
+// can be enabled via "-sbsd,--sort-by-start-date"
+boolean b_sort_by_start_date = false;
+
+// assume that resource was completely unavailable when project day is older than
+//  <n> days and no time sheet entry exists for that day
+// (i.e. setting this to 10 means that a resource has 10 days to submit a timesheet before
+//  the scheduler assumes 0 availability. Within those 10 days, it will assume that all
+//  available working hours will be spent on the assigned tasks)
+//  (note) see -tsgp,--time-sheet-grace-period command line option
+int timesheet_submit_grace_period_in_days = 10;
+
+// see -srv command line switch
+boolean b_resource_view = false;
+
+// true=show calendar weeks instead of per-day dates in HTML plan task cell headers
+boolean b_html_cw = false;
+
+// true=show parent taskgroups in HTML plan task cells
+boolean b_html_taskgroups = true;
+
+// true=show day idx HTML plan task cells
+boolean b_html_day_idx = true;
+
+// can be overridden via "-now,--now"
+String now_override;
+Time t_now;
+
+
+// //
+// // assign 6 devs to a 48h job and they'll complete it in one day...right ?
+// //
+// //  (note) it's usually better to create separate sub-tasks for each additional resource
+// //
+// FloatArray multi_resource_duration_scale_tbl = [
+//    1.0,   // one resource
+//    0.7,   // two resources (factor 0.5 in theory)
+//    0.5,   // 3 resources (factor 0.33 in theory)
+//    0.4,   // 4 resources (factor 0.25 in theory)
+//    0.35,  // 5 resources (factor 0.2 in theory)
+//    0.32,  // 6 resources (factor 0.1666 in theory)
+//    0.31,  // 7 resources (factor 0.143 in theory)
+//    0.3    // 8 resources (factor 0.125 in theory)
+//                                                 ];
+
+
+// not null while generating HTML schedule and global "schedule-tags" property is present and not blank
+StringArray *schedule_tags;
+
+String html_img_flag <= "<img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAfCAYAAACGVs+MAAAABmJLR0QAAAAAAAD5Q7t/AAAACXBIWXMAAC4jAAAuIwF4pT92AAAAB3RJTUUH5AEYERkb5U0MRwAAABl0RVh0Q29tbWVudABDcmVhdGVkIHdpdGggR0lNUFeBDhcAAARGSURBVEjH7ZZdiJRVGMd/z/sxszP74c7uqlv74VZQGGiJoaYmeKEuUepFQmFd1EWGkBhEFwkGEnQTFkEQ3QdBRGkEGRSuuaWItqO2boLamruu29ruuLu6M/O+5+niPb4zu7paYOuNLxwY5jfnPf/n/5z/OSOqyt18PABJ1W0jf2XrDK5bINOyVS+fO+gBYIIGNHzEwrDsh27ZZwXMHWIFTJCKHYgfcX4lVfc+IiFqfK4Nv42a+RFzj5LK7EbEYEwFE8M7UfMgAI7XSSrzMaCYMM3E8DuozrOsg1TmEwCC4hzyuV2g6UktKBNwiYWr95BpDBg4m6Truy1l7CKL1uyhpiGk92QVpw5sKzHvPE9u/Bq/QjnXVcPvndujwgHH62XFc3twPSX7Qxv9uR1ALMC58+2V/74JS93S2Zw80I5IgKqH451GZcw60MfxH9eBGNQkcNzfUBmMmFzm8DftgKImieNlUdNvaxzhl68iFhTmAokpayokqneVbZaiHaPMalrHsk2VLNtUSeXsF4CJiMkImZZVMUs3vALkLRuivm1pzFJ1rwGFsvcqkKe2eY2qTnEg8u/6dz4iIZnGwFZpLHNBPcQpsUi4b+f7k1k8T27fguhFBTsxjzE+F89UWKtcW6UDMoEJE1PYhF1kMkMdO+96gcnpBYh7hJrGnXEMx4ZeJLtvh93N3cxq2og4ISZMMjr4Ktl9LVGy/Sy1zetBDCZIMdL/BsMX7otY8gi1zc8AUMw3Mj70EWjVNAJkmPnLO6MYnqmga98ONFxhC/mLhas7qcqEnO+upHv/LjR8ImLeeRa3HySRUs521XD60nuoWWAd6GHJs51xDMeHiuVLOtzlZ2oM53Ji/4ayGJ5CncuRVPcCx75fj2BQ9aOoOX02ooMc3rshOglNEsc/ipqzsas/fxmxoDhn6h64WQwDO8aZ1bSWlZvTrNycpnLO83YzBSA5Mq1PxSzd8LKNWADyN/UPLIlZqm5LiRH8mxi68aUhElJdF1qilrmgLiImZsRM7LwyJuXstjEMgaulGIYp/jheHQXUJEBGQV2QccKgxFR9ywRhdBJDvZhFIqpuFcNDZJrfQpwAEybIDbxOz8F3AcXxstS1Po04hjCo4MrAdnoG2iKvEoepn7cORAmLaXIX32SkrxUQ3EQn9W1rASV/tYmxwU9Ba6aL4SgPL8mWbsO++9HwMRvDP5m/PBvfhrn+VjR83DrQzaI1XfgVUQxz/W2oWWgd6GJxe9bGMMfYYHirFoAxQlAU1NzYMxNapjdegWEgSBFr9ZTGFkFV0NvGMHyUY9/ujs5vdVHzUIkFCziydzeIouqjpqUkrLCYnz7/wLqRQLWptHhhKR2ffRgxU11u/81iOFNjmhiK9OEkOoD/96+ySEAyfelmKTihwcTmmTyK7/pdcE/APQGRAC/Zi+N34CZPzLQAUVVk1UtwbQxcDz30xYwK+AeI1Bty5Kv8bgAAAABJRU5ErkJggg==\" alt=\"flag\"><br>";
+
+String html_img_flag_inv <= "<img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAfCAYAAACGVs+MAAAABmJLR0QAAAAAAAD5Q7t/AAAACXBIWXMAAC4jAAAuIwF4pT92AAAAB3RJTUUH5AEYESQdZsbhzAAAABl0RVh0Q29tbWVudABDcmVhdGVkIHdpdGggR0lNUFeBDhcAAARiSURBVEjH7ZZNbFRVFMd/5743M/2YttSU6dAKVEj4Cv2waIiiiBJoFRwkmmCCbDUhkWBiXEiCCTFxY9CYmBh3GhM/FxA3JCyQSAtCGigIVUwMpa0CWoa2SDvTee+4uJeZKZQSDCkuuKt587v33f895/zPfaKq3MvhAzCW3kascus07psl3beVBxoOWQHGr0G8hQ4GRRO9ot8KhHeJZTF+aSEC+anhcUYvv49qgJgIpdVvI2axZUEXo+ndqIYYU0JJ9U7EzAMgzHUwmv4YUIxXRkn1O4jMdewgo+lPbLwjCWJVu0DKJqagIOAiJw/sJX0hR3JejJb214rYnxzfv5fhvwPmLo2zeOW2Asud5/CePYyPKQ+1VLJwxXYQnIBeOr7bS5BTmlc3UFe1A8gLMHc/vfofivD6EJnJ0pXtqOYQ8QlzZxG96iIwQNMzbaAhYqKEwWlEL1mmgyx/vh1QxMQIc92I+cOF4AqPbbTMj9YC0SkEeK3Ea79yT2MMDbxET+chABpXpaio/dIWkf5Duj/Fr0e6AGh6ehMVya9tRHWIwd51/HbsZwCaV2+hIvkN+ZzgA9nJBdhJ1/+LoBqQvpBzpwwd80B8NCwwW+URtz4ykeXXye1TYF/k1GkGYyLMml/i0uMBGXfKMYwXvYGNuU0mMsS4ddcPGLu1AA2OMXxhZ96G8ZpXaG7b4ar5DEMDL6BhgPFiVCRepblttu0c491c6U+Bhhi/lBl1b1D94CzLMse40r/exjSWpLzmI5D4LQRomp7ODmvD+SW0tO1AvBVWe/gXJw90cDUdMGdJOUtW7UK8RyzLnadr3yGyo8q8lkoW1L6HmEZ36F84+n1H3oblNePFWxru8bjRhrU0rtpQZMMeJBy0KQj6aV2bQgkRiVirhQOuzi6xPLXBdkITIxzvQszv+ag+/qJlfiQxdQ2I10L5zM/dU4ahgY2c+sHa8OE1KcoTnxVs2Lee0z9aG7a2bSKe+MIWmQ4zeK6dnk5rw2XPbimwortgCht6+YmqASOXA9fg1DEPxEM1zDPyTNy6IqbF7LY2DIBrBRt6pTQ0VdhqMVHQERAbAc8vMJGIY4IyMoEhfp5ZEfGpbHiEdP9baJjDeFGqkq+z6Il3ASXMdXP5/HNoGOL5JVQmt7Mo2WBlZ39isLcNVPEiZVTNepMZ9XMAIch2MHhuLaDEyuqJJz4FqbyVDUc4e7S7cBvW1yFes7NhHz2d3fnbsKpuDuK1uAic4fj+E4yPWRtW1TUgpslF4ARd+7qdDYeIJ4KpUgDGCH5EEHNzzozn2E1I8HxBIzAJxIuAiExWBTe6YAmt63bb/i0eYuYXmN/Io6ndoIpIBDGzC8Kiy3jy5Q9cNKKI1Bc2jy7nqc0fuq5cURx+F3VFM8O7dHpHRtN9a1T1phoYIMwevOOvijv+ZtEcmWsXJ3PBKbzY5mnpwbUL/h93wX0B9wVYAblML+H4QYLMqekWIKqKrNwCo1fB89Ej306rgH8B4x496iOcAfQAAAAASUVORK5CYII=\" alt=\"flag\"><br>";
+
+String html_img_traffic_red <= "<img src=\"data:image/png;base64,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\" alt=\"Red\"><br>";
+
+String html_img_traffic_green <= "<img src=\"data:image/png;base64,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\" alt=\"Green\"><br>";
+
+String html_img_traffic_yellow <= "<img src=\"data:image/png;base64,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\" alt=\"Yellow\"><br>";
+
+
+// <class.png>
+class Base {
+   Schedule  *schedule;
+   org::Node *org_node;
+   String     id;
+}
+
+
+// <class.png>
+class TimeEntry {
+   Schedule *schedule;
+   Resource *resource;
+   // (note) time tracking entry. overrides avail_day_hours (actual work done)
+   String *task_str; 
+   Task   *task;     // null==unknown task ("other") / other project task
+   float   num_hours;
+   Time   *date;
+
+   protected method resolveToUniqueTaskByPathPattern(StringArray _path) : boolean {
+      local PointerArray tasks;
+      schedule.findTasksByPathPattern(null/*thisHint*/, _path, tasks);
+      if(b_debug3)
+         trace "xxx resolveToUniqueTaskByPathPattern: ret tasks="+#(tasks);
+      if(tasks.numElements > 1)
+      {
+         trace "[~~~] time sheet task pattern \""+task_str+"\" matches multiple tasks, please assign a unique task id.";
+         return false;
+      }
+      else if(1 == tasks.numElements)
+      {
+         task <= tasks[0];
+         if(b_debug)
+            trace "[dbg] task pattern \""+task_str+"\" matched to unique task.id="+task.id;
+         return true;
+      }
+      // else: not found, could be other project task (otherproject.sometask)
+   }
+
+   public method tryToResolveTask() {
+      // (note) may fail, e.g. when task belongs to another project
+      local StringArray a <= task_str.splitChar('.');
+      if(a.numElements > 0)
+      {
+         String sPjt <= a.get(0);
+         if(b_debug2)
+            trace "[dbg] resolveTask: time sheet resource.id="+resource.id+"\" pjt=\""+sPjt+"\" (task_str=\""+task_str+"\")";
+         // (todo) match task path pattern, e.g. "ui.iconbutton.test"
+         // if(b_debug3)
+         //    trace "xxx a="+#(a)+" sPjt="+sPjt;
+         if(sPjt == schedule.project_id)
+         {
+            sPjt <= Object(sPjt);
+            a.delete(0);
+         }
+         else
+         {
+            if(1 == a.numElements)
+            {
+               // (note) e.g. "admin"
+               if(shared::b_warn)
+                  trace "[~~~] warning: time sheet task \""+sPjt+"\" is missing project-id prefix, assuming current project..";
+               sPjt <= schedule.project_id;
+            }
+            else
+            {
+               // Could be a reference to another project's task or a path pattern within the current project
+               if(b_debug)
+                  trace "[~~~] potentially ambiguous time sheet task path \""+task_str+"\" (resource.id="+resource.id+")";
+               if(!resolveToUniqueTaskByPathPattern(a))
+                  return false;
+               sPjt <= schedule.project_id;
+            }
+         }
+         if(sPjt == schedule.project_id)
+         {
+            if(null == task)
+            {
+               if(1 == a.numElements)
+                  task <= schedule.findTaskById(a.get(0));
+               else
+               {
+                  if(!resolveToUniqueTaskByPathPattern(a))
+                     return false;
+               }
+            }
+            if(null != task)
+            {
+               if(b_debug)
+                  trace "[dbg] map time sheet task_str=\""+task_str+"\" to task \""+task.id+"\"";
+
+               task.tracked_effort += num_hours;
+
+               if(b_debug2)
+                  trace "xxx task.tracked_effort="+task.tracked_effort+" task.effort="+task.effort+" (added "+num_hours+"h)";
+
+               if(shared::b_warn && (task.tracked_effort > task.effort))
+               {
+                  trace "[~~~] warning: task.id=\""+task.id+"\" tracked_effort exceeds estimated effort ("+task.tracked_effort+">"+task.effort+")";
+                  // // task.effort = task.tracked_effort;
+               }
+            }
+            else
+            {
+               // (note) could be another project's task
+               if(shared::b_warn)
+                  trace "[~~~] warning: failed to resolve time sheet task \""+task_str+"\" (resource.id="+resource.id+")";
+            }
+         }
+      }
+
+      if(shared::b_warn && (null != task))
+      {
+         if!(task.resources.containsPointer(resource))
+         {
+            trace "[~~~] warning: resource.id="+resource.id+" was not allocated to task.id="+task.id+" ("+num_hours+"h on "+Utils.TimeToOrgStringWeekday(date)+")";
+         }
+      }
+   }
+}
+
+// <class.png>
+class PlannedDayTask {
+   Task *task;
+   float num_hours;
+}
+
+
+// <class.png>
+class Resource : Base {
+   Resource     *parent;
+   PointerArray  members;  // Resource refs
+
+   FloatArray working_hours;  // Sun, Mon, Tue, ..
+   
+   static boolean b_self_test_done = false;
+
+   // (note) alternative names: 
+   //         - "sun,mon,tue,wed,thu,fri,sat"
+   //         - "son,mon,die,mit,don,fre,sam"  (.de)
+   //         - "so,mo,di,mi,do,fr,sa"         (.de)
+   static StringArray daynames_lc = [
+      "su", "mo", "tu", "we", "th", "fr", "sa"
+                                     ];
+
+   PointerArray vacations;   // start/end pairs (Time instances)  (vacation, other-project, sickness)
+
+   float utilization;  // temporary
+   float utilization_day;
+
+   FloatArray   avail_day_hours;   // all days since project start, including weekends
+   PointerArray day_time_entries;  // actual (tracked) time. array of PointerArray instances (TimeEntry)
+
+   FloatArray tracked_day_hours;  // filled out by scheduler. read by report generator. indexed by day.
+   FloatArray planned_day_hours;  // filled out by scheduler. read by report generator. indexed by day.
+   PointerArray planned_day_tasks;  // filled out by scheduler. read by report generator. indexed by day.
+
+
+   public method initResource() {
+
+      if(!b_self_test_done)
+      {
+         runSelfTest();
+         b_self_test_done = true;
+      }
+
+      working_hours = [0, 8, 8, 8, 8, 8, 0];  // 40h / week
+      // weekday_hours = [0, 8, 8, 8, 8, 0, 0];  // 32h / week
+      // weekday_hours = [0, 6, 6, 6, 6, 6, 0];  // 30h / week
+
+      String sWH <= org_node.getPropertyByName("workinghours");
+      if(null != sWH)
+         parseWorkingHours(sWH);
+
+      String *propKey;
+      int propIdx = 0;
+      String *propVal;
+      foreach propKey in org_node.property_keys
+      {
+         if(("vacation"      == propKey) ||
+            ("other-project" == propKey) ||
+            ("sickness"      == propKey)
+            )
+         {
+            propVal <= org_node.property_values.get(propIdx);
+            if(!addVacationFromString(propVal))
+            {
+               trace "[---] initResource: addVacationFromString() failed, resource.id=\""+id+"\" str=\""+propVal+"\"";
+               exit(10);
+            }
+         }
+         propIdx++;
+      }
+
+      // Add public holidays
+      if(null == org_node.getPropertyByName("no-public-holidays"))
+      {
+         propIdx = 0;
+         foreach propKey in (org_node.org.global_property_keys)
+         {
+            if("public-holiday" == propKey)
+            {
+               propVal <= (org_node.org.global_property_values.get(propIdx));
+               if(!addVacationFromString(propVal))
+               {
+                  trace "[---] initResource: public holidays: addVacationFromString() failed, resource.id=\""+id+"\" str=\""+propVal+"\"";
+                  exit(10);
+               }
+            }
+            propIdx++;
+         }
+      }
+
+      if(0 && b_debug)
+      {
+         debugPrintVacations();
+      }
+   }
+
+   public method addMember(Resource _res) {
+      members.add(_res);
+   }
+
+   public method isGroup() : boolean {
+      return !members.isEmpty();
+   }
+
+   public method addPlannedDayTask(int _dayIdx, Task _task, float _numH) {
+      PointerArray a <= planned_day_tasks.get(_dayIdx);
+      if(null == a)
+      {
+         a <= new PointerArray;
+         planned_day_tasks[_dayIdx] = deref a;
+      }
+      PlannedDayTask *pdt;
+      boolean bDone = false;
+      foreach pdt in a
+      {
+         if(@(pdt.task) == @(_task))
+         {
+            pdt.num_hours += _numH;
+            bDone = true;
+            break;
+         }
+      }
+      if(!bDone)
+      {
+         pdt <= new PlannedDayTask;
+         pdt.task <= _task;
+         pdt.num_hours = _numH;
+         a.add(#(deref pdt));
+      }
+
+   }
+
+   public method resetAvailDayHours() {
+      // trace "xxx resetAvailDayHours: max_project_days="+max_project_days;
+      avail_day_hours.alloc(max_project_days);
+      day_time_entries.alloc(max_project_days);
+      day_time_entries.useAll();
+      planned_day_hours.allocAndFill(max_project_days, 0.0f);
+      tracked_day_hours.allocAndFill(max_project_days, 0.0f);
+      planned_day_tasks.alloc(max_project_days);
+      planned_day_tasks.useAll();
+
+      local Time tCur = schedule.start_date;
+      int dayIdx = 0;
+      PointerArray tea;
+      org::ResourceTimeEntry *rte;
+      // if(b_debug2)
+      //    trace "xxx resetAvailDayHours:";
+      loop(max_project_days)
+      {
+         float availH = 0;
+         if(null == org_node.resource)
+         {
+            trace "[---] resetAvailDayHours: unresolved resource.id=\""+id+"\"";
+            exit(10);
+         }
+         // trace "xxx id="+id+" org_node="+#(org_node);
+         // trace "xxx org_node.resource="+#(org_node.resource);
+         org_node.resource.findTimeEntries(tea/*ret*/, tCur);
+         if(tea.numElements > 0)
+         {
+            // Use actual hours (past date, one or many time sheet entries)
+            foreach rte in tea
+            {
+               // (todo) abort search if rte.date > tCur ? (i.e. assume that time sheet is ordered ?)
+               PointerArray stea <= day_time_entries.get(dayIdx);
+               if(null == stea)
+               {
+                  // lazy alloc TimeEntry array for current day
+                  stea <= new PointerArray;
+                  day_time_entries[dayIdx] = deref stea;
+               }
+               TimeEntry te <= new TimeEntry;
+               te.schedule <= schedule;
+               te.resource <= this;
+               te.task_str <= rte.task_id;
+               te.num_hours = rte.num_hours;
+               te.date     <= rte.date;
+               if(te.date > t_now)
+               {
+                  trace "[~~~] time sheet entry resource.id="+id+" task=\""+te.task_str+"\" date="+Utils.TimeToOrgStringWeekday(te.date)+" is in the future";
+               }
+               te.tryToResolveTask();
+               stea.add(#(deref te));
+               if(b_debug2)
+                  trace "[dbg] res=\""+id+"\" add time entry: dayIdx="+dayIdx+" date="+Utils.TimeToOrgStringWeekday(tCur)+" task_str=\""+te.task_str+"\" task="+#(te.task)+" num_hours="+te.num_hours;
+            }
+         }
+         else
+         {
+            // No time sheet entry for current day, 
+            //  assume ideal allocation according to workinghours / vacation / public holidays
+            availH = getWorkingHoursOnDay(tCur);
+            // trace "xxx tCur="+Utils.TimeToOrgString(tCur)+" availH="+availH;
+            if(tCur >= t_now)
+            {
+               // future date
+            }
+            else
+            {
+               // past date
+               if(1)
+               {
+                  if(Utils.CalcNumCalendarDaysDifference(tCur, t_now) > timesheet_submit_grace_period_in_days)
+                  {
+                     // Past date (and past grace period), no time sheet entry => zero hours spent on any tasks
+                     availH = 0;
+                  }
+               }
+            }
+         }
+         // trace "xxx add to avail_day_hours tCur="+tCur+" dayIdx="+dayIdx+" availH="+availH;
+         avail_day_hours.add(availH);
+         Utils.NextDay(tCur);
+         dayIdx++;
+      }
+      if(b_debug2)
+         trace "xxx res="+id+" avail_day_hours="+#(avail_day_hours);
+   }
+
+   public method addToTrackedDayHours(int _dayIdx, float _numHours) {
+      tracked_day_hours[_dayIdx] += _numHours;
+   }
+
+   public method addToPlannedDayHours(int _dayIdx, float _numHours) {
+      planned_day_hours[_dayIdx] += _numHours;
+   }
+
+   public method calcNumOtherProjectHoursOnDay(int _dayIdx) : float {
+      PointerArray stea <= day_time_entries.get(_dayIdx);
+      float r = 0;
+      if(null != stea)
+      {
+         TimeEntry *te;
+         foreach te in stea
+         {
+            if(null == te.task)
+            {
+               if(b_debug)
+                  trace "[dbg] res="+id+": "+te.num_hours+"h spent on other-project task=\""+te.task_str+"\" on "+Utils.TimeToOrgString(te.date);
+               r += te.num_hours;
+            }
+         }
+      }
+      return r;
+   }
+
+   public method findTimeSheetHoursOnDay(int _dayIdx, Task _task) : float {
+      PointerArray stea <= day_time_entries.get(_dayIdx);
+      // trace "xxx day_time_entries["+_dayIdx+"]="+#(stea);
+      if(null != stea)
+      {
+         TimeEntry *te;
+         foreach te in stea
+         {
+            if(@(te.task) == @(_task))
+            {
+               if(@(te.resource) == @(this))
+               {
+                  return te.num_hours;
+               }
+            }
+         }
+      }
+      return 0;
+   }
+
+   public method processTimeSheetHoursBefore(Time _tCur, Task _task, Time _retFirst, Integer _retFirstDay) : float {
+      // (todo) to speed this up we'd need another array (similar to org::Node.resource.time_entries but with Task*)
+      int dayIdx = 0;
+      int firstDayIdx = -1;
+      float retTotalNumHours = 0;
+      loop(day_time_entries.numElements)
+      {
+         PointerArray stea <= day_time_entries[dayIdx];
+         if(null != stea)
+         {
+            TimeEntry *te;
+            foreach te in stea
+            {
+               if(@(te.task) == @(_task))
+               {
+                  if(@(te.resource) == @(this))
+                  {
+                     // // if(te.date < _tCur)
+                     if(Utils.CompareDays(te.date, _tCur) < 0)
+                     {
+                        if(-1 == firstDayIdx)
+                        {
+                           _retFirst = te.date;
+                           firstDayIdx = dayIdx;
+                           _retFirstDay = dayIdx;
+                        }
+                        retTotalNumHours += te.num_hours;
+                        addToTrackedDayHours(dayIdx, te.num_hours);
+                     }
+                  }
+               }
+               // Next time entry
+            }
+         } // if stea
+
+         // Next day
+         dayIdx++;
+      }
+      return retTotalNumHours;
+   }
+
+   static ParseWeekDay(String _s) : int {
+      int r = daynames_lc.indexOfObject(_s, 0);
+      // trace "xxx ParseWeekDay(\""+_s+"\") => "+r;
+      return r;
+   }
+
+   static ParseHourInterval(String _s, Float _retStart, Float _retEnd, Float _retDur) : boolean {
+      // 8:00-12:00 => [8.0, 12.0]
+      //        9-5 => [9.0, 17.0]
+      //       23-5 => [23.0, 5.0]
+      //     10..16 => [10.0, 16.0]
+      //         8h => [8.0, 16.0]
+      //        8.5 => [8.0, 16.5]
+      local String s = _s;
+      s.replace("h", "");
+      // (todo) parse exact minutes (or at least round to next quarter)
+      s.replace(":00", "");
+      s.replace(":15", ".25");
+      s.replace(":30", ".5");
+      s.replace(":45", ".75");
+      s.replace("-", " ");
+      s.replace("..", " ");
+      local StringArray a <= s.splitSpace(false);
+      float h;
+      if(1 == a.numElements)
+      {
+         // Number of hours
+         h = float(a.get(0));
+         if(1 <= 10)
+         {
+            _retStart = 8;
+            _retEnd = 8 + h; 
+            _retDur = h;
+            return true;
+         }
+         else
+            trace "[~~~] ParseHourInterval: illegal number of working hours ("+h+")";
+      }
+      else if(2 == a.numElements)
+      {
+         float hStart = float(a.get(0));
+         if(0 <= hStart < 24)
+         {
+            float hEnd = float(a.get(1));
+            if(0 <= hEnd < 24)
+            {
+               float hDur = 0;
+               if(hEnd < hStart)
+               {
+                  if(hStart > 12)
+                  {
+                     // 23-5
+                     hDur = (hEnd+24)-hStart;
+                  }
+                  else
+                  {
+                     // 9-5
+                     hDur = (hEnd + 12 - hStart);
+                  }
+               }
+               else
+               {
+                  // 8-16
+                  hDur = hEnd - hStart;
+               }
+               if(1 <= hDur <= 10)
+               {
+                  _retDur = hDur;
+                  return true;
+               }
+               else
+               {
+                  trace "[~~~] ParseHourInterval: illegal number of working hours ("+hDur+")";
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   protected method parseWorkingHours(String _s) {
+      working_hours.fill(0);
+      // // trace "xxx working_hours="+#(working_hours)+" ne="+working_hours.numElements;
+      local StringArray aIntervals <= _s.toLower().splitChar(',');
+      String *sInterval;
+      foreach sInterval in aIntervals
+      {
+         sInterval.trim();
+         int wday;
+         int wdayEnd;
+         local String w2;
+         Float hStart;
+         Float hEnd;
+         Float hDur;
+         int wdayIdx;
+
+         // Extract weekday
+         //  (note) lazy-convert from alternative names
+         sInterval.replace("..", "-");
+         sInterval.replace("sun", "su");
+         sInterval.replace("son", "su");  // .de
+         sInterval.replace("mon", "mo");
+         sInterval.replace("die", "tu");  // .de
+         sInterval.replace("di",  "tu");  // .de
+         sInterval.replace("tue", "tu");
+         sInterval.replace("wed", "we");
+         sInterval.replace("mit", "we");  // .de
+         sInterval.replace("mi",  "we");  // .de
+         sInterval.replace("thu", "th");
+         sInterval.replace("don", "th");  // .de
+         sInterval.replace("do",  "th");  // .de
+         sInterval.replace("fri", "fr");
+         sInterval.replace("fre", "fr");  // .de
+         sInterval.replace("sat", "sa");
+         sInterval.replace("sam", "sa");  // .de
+
+         // trace "xxx sInterval=\""+sInterval+"\"";
+
+         int idx = sInterval.charsetIndexOf(" -", 0);
+         if(-1 != idx)
+         {
+            // "mon 9-5"
+            wday = ParseWeekDay(sInterval.substring(0,2));
+            // trace "xxx wday="+wday;
+            if(-1 == wday)
+            {
+               trace "[---] parseWorkingHours: ParseWeekDay() failed, resource.id=\""+id+"\", sInterval=\""+sInterval+"\"";
+               exit(10);
+            }
+            sInterval.substring(idx+1, -1) => w2;
+            w2.trim();
+            if(w2.isBlank())
+            {
+               // "mo"
+               working_hours[wday] = shared::default_resource_workinghours_per_day;
+            }
+            else if("off" == w2)
+            {
+               // "fr off"
+               working_hours[wday] = 0;
+            }
+            else
+            {
+               if('-' == sInterval.getc(idx))
+               {
+                  // "mo-fr"
+                  wdayEnd = ParseWeekDay(sInterval.substring(idx+1, 2));
+                  if(-1 != wdayEnd)
+                  {
+                     if(wdayEnd == wday)
+                     {
+                        working_hours[wday] = shared::default_resource_workinghours_per_day;
+                     }
+                     else
+                     {
+                        // e.g. sat-sun (indices 6..0), or mon-fri (indices 1..5)
+                        wdayIdx = wday;
+                        for(;;)
+                        {
+                           working_hours[wdayIdx] = shared::default_resource_workinghours_per_day;
+                           if(wdayIdx == wdayEnd)
+                              break;
+                           wdayIdx = (wdayIdx + 1) % 7;
+                        }
+                     }
+                     sInterval.substring(2+1+2, -1) => w2;
+                     w2.trim();
+                  }
+                  else
+                  {
+                     // "mo 8:00-16:30"
+                     wdayEnd = wday;
+                     sInterval.substring(2+1, -1) => w2;
+                     w2.trim();
+                  }
+               }
+               else
+               {
+                  // "mo 8h"
+                  wdayEnd = wday;
+                  sInterval.substring(2+1, -1) => w2;
+                  w2.trim();
+               }
+
+               // hour interval follows ?
+               if(!w2.isBlank())
+               {
+                  if(ParseHourInterval(w2, hStart, hEnd, hDur))
+                  {
+                     // trace "xxx ParseHourInterval: hStart="+hStart+" hEnd="+hEnd+" hDur="+hDur;
+                     // trace "xxx wday="+wday+" wdayEnd="+wdayEnd;
+                     for(wdayIdx = wday; wdayIdx <= wdayEnd; wdayIdx++)
+                     {
+                        working_hours[wdayIdx] = hDur;
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] parseWorkingHours: ParseHourInterval() failed, resource.id=\""+id+"\", w2=\""+w2+"\", sInterval=\""+sInterval+"\"";
+                     exit(10);
+                  }
+               }
+            }
+         }
+         else
+         {
+            // weekday, e.g. "mon"
+            if(1 <= (sInterval.replace("h","").checkConversions()) <= 2)
+            {
+               // "8h", "7.2"  (hours a day, 5 days a week)
+               for(wdayIdx = 1; wdayIdx <= 5; wdayIdx++)
+                  working_hours[wdayIdx] = float(sInterval.replace("h",""));
+            }
+            else
+            {
+               wday = ParseWeekDay(sInterval);
+               if(-1 != wday)
+               {
+                  working_hours[wday] = shared::default_resource_workinghours_per_day;
+               }
+               else
+               {
+                  trace "[---] parseWorkingHours: ParseWeekDay() failed, resource.id=\""+id+"\", sInterval=\""+sInterval+"\"";
+                  exit(10);
+               }
+            }
+         }
+      }
+   }
+
+   protected method addVacationInterval(Time _tStart, Time _tEnd) {
+      // trace "xxx addVacationInterval(tStart="+#(_tStart)+" tEnd="+#(_tEnd)+")";
+      if(b_debug)
+      {
+         trace "[dbg] addVacationInterval: resource.id=\""+id+"\" tStart="+Utils.TimeToOrgStringWeekday(_tStart)+" tEnd="+Utils.TimeToOrgStringWeekday(_tEnd);
+      }
+      _tStart.hour = 0;
+      _tStart.min  = 0;
+      _tStart.sec  = 0;
+      _tStart.calc();
+
+      _tEnd.hour = 23;
+      _tEnd.min  = 59;
+      _tEnd.sec  = 59;
+      _tEnd.calc();
+
+      vacations.add(#(Object(_tStart)));
+      vacations.add(#(Object(_tEnd)));
+   }
+
+   protected method addVacationFromString(String _s) : boolean {
+      int idx = _s.indexOf(" -", 0);
+      local Time *tStart;
+      local Time *tEnd;
+      if(-1 != idx)
+      {
+         // Vacation interval, e.g. "<2020-01-28> - <2020-02-14>"
+         tStart <= Utils.ToTimeObjectCalendarDate(_s.substring(0, idx).trim());
+         if(null != tStart)
+         {
+            tEnd <= Utils.ToTimeObjectCalendarDate(_s.substring(idx+2, -1).trim());
+            if(null != tEnd)
+            {
+               addVacationInterval(tStart, tEnd);
+               return true;
+            }
+            else
+            {
+               trace "[---] addVacationFromString: invalid end date \""+_s+"\", resource.id=\""+id+"\"";
+            }
+         }
+         else
+         {
+            trace "[---] addVacationFromString: invalid start date \""+_s+"\", resource.id=\""+id+"\"";
+         }
+      }
+      else
+      {
+         // Single day vacation
+         // trace "xxx s=\""+_s+"\"";
+         tStart <= Utils.ToTimeObjectCalendarDate(_s.trim());
+         if(null != tStart)
+         {
+            tEnd <= Object(tStart);
+            addVacationInterval(tStart, tEnd);
+            return true;
+         }
+         else
+         {
+            trace "[---] addVacationFromString: invalid date \""+_s+"\", resource.id=\""+id+"\"";
+         }
+      }
+      return false;
+   }
+
+   public method debugPrintVacations() : String {
+      if(vacations.numElements > 0)
+      {
+         int numVac = vacations.numElements / 2;
+         int vacIdx = 0;
+         loop(numVac)
+         {
+            Time tStart <= vacations.get(vacIdx*2 + 0);
+            Time tEnd   <= vacations.get(vacIdx*2 + 1);
+
+            // trace "xxx tStart.mday="+tStart.monthday;
+            // trace "xxx tStart.month="+tStart.month;
+
+            trace "[dbg] resource.id=\""+id+"\" vacation["+(vacIdx+1)+"/"+numVac+"] = "+Utils.TimeToOrgStringWeekday(tStart)+" - "+Utils.TimeToOrgStringWeekday(tEnd);
+            vacIdx++;
+         }
+      }
+   }
+
+   protected method runSelfTest() {
+      float defH = shared::default_resource_workinghours_per_day;
+
+      working_hours = [0, 8, 8, 8, 8, 8, 0];  // 40h / week
+
+      parseWorkingHours("mon-fri");
+      if(working_hours != [0, defH, defH, defH, defH, defH, 0])
+         die "[---] self test 'mon-fri' failed, res="+#(working_hours);
+
+      parseWorkingHours("mo-fr");
+      if(working_hours != [0, defH, defH, defH, defH, defH, 0])
+         die "[---] self test 'mo-fr' failed, res="+#(working_hours);
+
+      parseWorkingHours("mo-do, fri off");
+      if(working_hours != [0, defH, defH, defH, defH, 0, 0])
+         die "[---] self test 'mo-do, fri off' failed, res="+#(working_hours);
+
+      parseWorkingHours("mo,tu,th,fr");
+      if(working_hours != [0, defH, defH, 0, defH, defH, 0])
+         die "[---] self test 'mo,tu,th,fr' failed, res="+#(working_hours);
+
+      parseWorkingHours("mo,di,do,fr");
+      if(working_hours != [0, defH, defH, 0, defH, defH, 0])
+         die "[---] self test 'mo,di,do,fr' failed, res="+#(working_hours);
+
+      parseWorkingHours("mon-wed 6h, thu-sat 9h");
+      if(working_hours != [0, 6, 6, 6, 9, 9, 9])
+         die "[---] self test 'mon-wed 6h, thu-sat 9h' failed, res="+#(working_hours);
+
+      parseWorkingHours("mon 8:00-16:30,tue 8:00-14:00,wed 9:00-17:00,thu 9:30-17:00,fr 8:00-15:00");
+      if(working_hours != [0, 8.5, 6.0, 8.0, 7.5, 7.0, 0])
+         die "[---] self test 'mon 8:00-16:30,tue 8:00-14:00,wed 9:00-17:00,thu 9:30-17:00,fr 8:00-15:00' failed, res="+#(working_hours);
+
+      parseWorkingHours("mo-fr 9-5");
+      if(working_hours != [0, 8, 8, 8, 8, 8, 0])
+         die "[---] self test 'mo-fr 9-5' failed, res="+#(working_hours);
+
+      parseWorkingHours("mo-fr 23-5");
+      if(working_hours != [0, 6, 6, 6, 6, 6, 0])
+         die "[---] self test 'mo-fr 23-5' failed, res="+#(working_hours);
+
+      parseWorkingHours("mon-wed 8..3, thu-fri 5h");
+      if(working_hours != [0, 7, 7, 7, 5, 5, 0])
+         die "[---] self test 'mon-wed 8..3, thu-fri 5h' failed, res="+#(working_hours);
+   }
+
+   public method isVacation(Time _t) : boolean {
+      int vacIdx = 0;
+      loop(vacations.numElements / 2)
+      {
+         Time vacStart <= vacations.get(vacIdx+0);
+         Time vacEnd   <= vacations.get(vacIdx+1);
+         if(b_debug2&&0)
+            trace "xxx isVacation: vac["+(vacIdx/2)+"] start="+Utils.TimeToOrgStringWeekday(vacStart)+" end="+Utils.TimeToOrgString(vacEnd)+" t="+Utils.TimeToOrgStringWeekday(_t);
+         if(_t.liesBetween(vacStart, vacEnd))
+         {
+            return true;
+         }
+
+         vacIdx += 2;
+      }
+      return false;
+   }
+
+   public method getWorkingHoursOnDay(Time _t) : float {
+      float r = 0;
+
+      // Vacation
+      if(isVacation(_t))
+         return 0;
+
+      // Working hours
+      int wday = _t.weekday;
+      r = working_hours.get(wday);
+      // trace "xxx getWorkingHoursOnDay t="+_t+" r="+r;
+
+      // (todo) check exact time, e.g. when t is 15:00 and shift ends at 16:00, remaining hours should be "1"
+      // (note) just assume 8:00 - (8:00 + <workhours>) for now (+project start at 8:00)
+      // (note) for a calendar day schedule, the exact time is irrelevant
+
+      // trace "xxx    _t.hour="+_t.hour+" (_t.min/60)="+(_t.min/60.0)+"  delta="+( (float(_t.hour) + (_t.min/60.0)) - 8.00 );
+      // r = r - ( (float(_t.hour) + (_t.min/60.0)) - 8.00 );
+      // if(r < 0)
+      //    r = 0;
+
+      return r;
+   }
+
+   public method getAvailableHoursLeftOnDay(int _dayIdx, Time _tCur) : float {
+
+      // trace "xxx res="+id+" avail_day_hours="+#(avail_day_hours); 
+      float availH = avail_day_hours.get(_dayIdx);
+      if(availH > 0)
+      {
+         // (todo) look at actual working hours
+         // (note) this currently assumes that everybody's starting at 8 o'clock
+         float tUsed = int(_tCur.hour + _tCur.min/60.0 + 0.5) - 8;
+         availH -= tUsed;
+         if(availH > 0)
+            return availH;
+      }
+      return 0;
+   }
+
+   public method consumeWorkHoursAt(int _dayIdx, float _num) : float {
+      // sanity check
+      if(b_debug2)
+         trace "[trc] consumeWorkHoursAt: res.id=\""+id+"\" availH["+_dayIdx+"]="+avail_day_hours[_dayIdx]+" num="+_num+" => left="+(avail_day_hours[_dayIdx] - _num);
+      if(avail_day_hours.get(_dayIdx) >= _num)
+      {
+         avail_day_hours[_dayIdx] = avail_day_hours[_dayIdx] - _num;
+         return _num;
+      }
+      else
+      {
+         trace "[~~~] consumeWorkHoursAt(dayIdx="+_dayIdx+"): avail="+avail_day_hours.get(_dayIdx)+" num="+_num+", clipping..";
+         // // exit(20);
+         return avail_day_hours.get(_dayIdx);
+      }
+   }
+
+   public method sumTotalEffort() : float {
+      float numH = 0;
+
+      Task *task;
+      foreach task in schedule.all_tasks
+      {
+         int resIdx = task.resources.indexOfPointer(this, 0);
+         if(-1 != resIdx)
+         {
+            numH += (task.org_node.getEffortInHours()) * task.resource_amounts[resIdx];
+         }
+      }
+
+      return numH;
+   }
+
+   public method sumTotalPlannedEffort() : float {
+      return planned_day_hours.sum(0, planned_day_hours.numElements);
+   }
+
+   public method sumTotalWorkDone() : float {
+      float numH = tracked_day_hours.sum(0, tracked_day_hours.numElements);
+      return numH;
+   }
+
+   public method appendRowToResourceViewHTML(String _buf, Time _tStart, int _numDays, int _resNr) {
+
+      _buf.append("<tr class=\"");
+      if(_resNr & 1)
+         _buf.append("g_tr_o");
+      else
+         _buf.append("g_tr_e");
+      _buf.append("\">");
+
+
+      // Resource
+      _buf.append("<td class=\"g_td_base g_td_res\">");
+      _buf.append(Utils.ToHTML(id));
+      _buf.append("</td>");
+
+      // Total Effort
+      // float totalEffort = sumTotalEffort();
+      float totalWorkDone = sumTotalWorkDone();
+      float totalEffort = sumTotalPlannedEffort() + totalWorkDone;
+      Float pct = (100*totalWorkDone)/totalEffort;
+      _buf.append("<td class=\"g_td_base g_td_effort\">");
+      _buf.append(totalEffort);
+      _buf.append("</td>");
+      
+      // Total Work Done
+      _buf.append("<td class=\"g_td_base g_td_done\">");
+      _buf.append(totalWorkDone);
+      if(pct > 0)
+         _buf.append("&nbsp;<span class=\"r_pct\">("+pct.printf("%3.2f")+"%)</span>");
+      _buf.append("</td>");
+
+      // Days
+      int dayIdx = 0;
+      local Time tCur = _tStart;
+      String sGP <= "gp"+((_resNr&1)?"o":"e");
+      String *sToolTip;
+      loop(_numDays)
+      {
+         if(schedule.isWeekend(tCur))
+            _buf.append("<td class=\"rb "+sGP+"_w\"");
+         else if(schedule.isPublicHoliday(tCur))
+            _buf.append("<td class=\"rb "+sGP+"_p\"");
+         else if(isVacation(tCur))
+            _buf.append("<td class=\"rb "+sGP+"_h\"");
+         else
+            _buf.append("<td class=\"rb "+sGP+"\"");
+
+         sToolTip <= Utils.ToHTML(Utils.TimeToOrgStringWeekday(tCur))+" (day "+(dayIdx+1)+")";
+         schedule.appendDailyResourceUsageToToolTip(sToolTip, dayIdx);
+         _buf.append(" title=\""+sToolTip+"\">");
+
+         // Tracked tasks
+         PointerArray stea <= day_time_entries.get(dayIdx);
+         if(null != stea)
+         {
+            TimeEntry *te;
+            int taskIdx = 0;
+            foreach te in stea
+            {
+               if(taskIdx > 0)
+                  _buf.append("<br>");
+               _buf.append("<span class=\"r_t\">");
+               if(null != te.task)
+                  _buf.append(Utils.ToHTML(te.task.getReportCaption()));
+               else
+                  _buf.append(Utils.ToHTML(te.task_str));
+               _buf.append("</span>:&nbsp;<span class=\"r_h\">"+te.num_hours+"h</span>");
+               taskIdx++;
+            }
+         }
+
+         // Planned tasks
+         PointerArray pdta <= planned_day_tasks.get(dayIdx);
+         if(null != pdta)
+         {
+            taskIdx = 0;
+            PlannedDayTask *pdt;
+            // trace "xxx dayIdx="+dayIdx+" pdta="+#(pdta);
+            foreach pdt in pdta
+            {
+               if(taskIdx > 0)
+                  _buf.append("<br>");
+               _buf.append("<span class=\"r_p\">");
+               _buf.append(pdt.task.getReportCaption());
+               _buf.append("</span>");
+               _buf.append(":&nbsp;<span class=\"r_h\">"+pdt.num_hours+"h</span>");
+               taskIdx++;
+            }
+         }
+
+         _buf.append("</td>");
+
+         // Next day
+         Utils.NextDay(tCur);
+         dayIdx++;
+      }
+
+      _buf.append("</tr>\n");
+   }
+
+}
+
+
+// <class.png>
+class Task : Base {
+   Task   *parent;
+   float   effort;
+   float   tracked_effort;
+   float   planned_effort;  // calculated by scheduler (future days)
+   float   duration = -1;   // usually calc'd via effort+assigned resource but can be overridden with 'duration' property
+
+   boolean b_milestone;  // true=has 'milestone' property
+   boolean b_invisible;
+
+   PointerArray sub_tasks;  // direct child/sub tasks
+
+   PointerArray non_unique_dependencies;  // Task refs (may appear in multiple tasks)
+   boolean b_dep_done;  // true=all (non-unique) dependencies have been added
+
+   String *resource_id_str; // comma separated list of resource_ids (resolved in 2nd pass)
+   PointerArray resources;         // Resource refs (allocated resources)
+   PointerArray resources_used;    // Resource refs (actually used resources)
+   FloatArray   resource_amounts;  // 1=100%  (todo) add AllocatedResource class in case we need yet another field
+
+   PointerArray parallel_deps;  // Tasks that don't share a common dependency
+   boolean b_parallel_dep_done;
+
+   PointerArray serial_deps;
+
+   Time *finish_date;  // !null if task was finished before project start-date
+
+   float start_time;   // in h (relative to project start, i.e. 0 = project start date)
+
+   Time scheduled_start;
+   Time scheduled_end;
+
+   int scheduled_start_day_idx;  // for validation purposes
+
+   FloatArray resource_utilization;  // indexed by 'resources' index
+
+   int num_parents; // cache, for findTasksByPathPattern()
+
+   
+   public method initTask() {
+      if(null != parent)
+      {
+         parent.addSubTask(this);
+
+         Task p <= parent;
+         while(null != p)
+         {
+            num_parents++;
+            p <= p.parent;
+         }
+      }
+   }
+
+   protected method addSubTask(Task _task) {
+      sub_tasks.add(_task);
+   }
+
+   public method isDependency() : boolean {
+      return b_dep_done;
+   }
+
+   public method isMilestone() : boolean {
+      return b_milestone;
+   }
+
+   public method isTaskGroup() : boolean {
+      return /*b_milestone || */(effort <= 0);
+   }
+
+   public method hasParent(Task _task) : boolean {
+      Task task <= parent;
+      while(null != task)
+      {
+         if(@(task) == @(_task))
+            return true;
+         task <= task.parent;
+      }
+      return false;
+   }
+
+   public method getRoot() : Task {
+      Task c <= this;
+      while(null != c.parent)
+      {
+         c <= c.parent;
+      }
+      return c;      
+   }
+
+   public method hasChild(local Task _task) : boolean {
+      local Task *c;
+      foreach c in sub_tasks
+      {
+         if(@(c) == @(_task))
+            return true;
+         else
+            if(c.hasChild(_task))
+               return true;
+      }
+      return false;
+   }
+
+   public method getIdPath() : String {
+      // "myproject.mytaskgroup.mytask.mysubtask"
+      local String r;
+      Task c <= this;
+      while(null != c)
+      {
+         if(!r.isBlank())
+            r.insert(0, c.id+".");
+         else
+            r.insert(0, c.id);
+         c <= c.parent;
+      }
+      return deref r;
+   }
+
+   public method getScheduledStartDate() : Time {
+      // "scheduled" is inherited
+      Task c <= this;
+      while(null != c)
+      {
+         if!(c.org_node.scheduled.isBlank())
+         {
+            Time t <= Utils.ToTimeObjectCalendarDate(c.org_node.scheduled);
+            return deref t;         
+         }
+         c <= c.parent;
+      }
+      return null;
+   }
+
+   public method getReportCaption() : String {
+      if(b_task_titles)
+         return org_node.title;
+      else
+         return id;
+   }
+
+   public method getReportCaptionLong() : String {
+      if(b_task_titles)
+         return getMultiProjectIdPrefix()+org_node.title;
+      else
+         return getMultiProjectId();
+   }
+
+   public method getReportCaptionLongHTML() : String {
+      local String r <= "<span class=\"g_task_multiprefix\">"+Utils.ToHTML(getMultiProjectIdPrefix())+"</span>";
+      if(b_task_titles)
+         return r + Utils.ToHTML(org_node.title);
+      else
+         return r + Utils.ToHTML(id);
+   }
+
+   public method hasNonUniqueDependency(Task _o) : boolean {
+      return non_unique_dependencies.containsPointer(_o);
+   }
+
+   static int xxx_num_recurse;
+
+   public method recursivelyAddDependencies(local Task _targetTask, local PointerArray _dependentTasks) : boolean {
+      local Task *task;
+      // if("citizens" == id)
+      //    trace "xxx non_unique_dependencies="+#(non_unique_dependencies);
+
+
+      if(b_dep_done)
+      {
+         foreach task in non_unique_dependencies
+         {
+            _targetTask.addNonUniqueDependency(task);
+         }
+         return true;
+      }
+
+      // // if(_targetTask.hasParent(task))
+      // if(task.hasNonUniqueDependency(_targetTask))
+      xxx_num_recurse++;
+
+      if(_dependentTasks.containsPointer(this))
+      {
+         trace "[---] circular dependency detected: dependentTasks contains dependency.id=\""+id+"\" (targetTask.id=\""+_targetTask.id+"\")";
+         return false;
+      }
+      
+      local PointerArray depTasks = _dependentTasks;
+      depTasks.add(this);
+
+      foreach task in non_unique_dependencies
+      {
+         // trace "xxx targetTask="+_targetTask.id+" task.id="+task.id;
+         // (todo) detect circular dependencies
+         if(@(task) == @(_targetTask))
+         {
+            trace "[---] circular dependency detected: dependent_task.id=\""+task.id+"\" targetTask.id=\""+_targetTask.id+"\"";
+            return false;
+         }
+
+         if(task.effort > 0)
+         {
+            _targetTask.addNonUniqueDependency(task);
+         }
+
+         if(!task.recursivelyAddDependencies(_targetTask, depTasks))
+            return false;
+
+         if(!task.recursivelyAddDependencies(this, depTasks))
+            return false;
+      }
+
+      b_dep_done = true;
+
+      return true;
+   }
+
+   public method addNonUniqueDependency(Task _task) {
+      // trace "xxx _task="+#(_task)+" id=\""+_task.id+" this.id=\""+id+"\";
+      if(!non_unique_dependencies.containsPointer(_task))
+         non_unique_dependencies.add(_task);
+   }
+
+   public method recursivelyAddNonUniqueDependency(local Task _depTask) {
+      local Task *task;
+      addNonUniqueDependency(_depTask);
+      foreach task in sub_tasks
+      {
+         task.recursivelyAddNonUniqueDependency(_depTask);
+      }
+   }
+
+   public method addSerialDep(Task _task) {
+      serial_deps.add(_task);
+   }
+
+   public method prependSerialDepBefore(Task _where, Task _task) {
+      int idx = serial_deps.indexOfPointer(_where, 0);
+      if(-1 != idx)
+      {
+         serial_deps.insert(idx, _task);
+      }
+      else
+      {
+         trace "[!!!] prependSerialDepBefore: task \""+_where.id+"\" was not found in serial_deps";
+         exit(10);
+      }
+   }
+
+   public method removeSerialDep(Task _task) {
+      serial_deps.remove(_task);
+   }
+
+   public method hasSerialDepRec(Task _task) : boolean {
+      Task *task;
+      foreach task in serial_deps
+      {
+         if(@(task) == @(_task))
+            return true;
+         else if(task.hasNonUniqueDependency(_task))
+            return true;
+      }
+      return false;
+   }
+
+   public method hasSerialDep(Task _task) : boolean {
+      return serial_deps.containsPointer(_task);
+   }
+
+   public method resolveDependencies() : boolean {
+
+      if(null != parent)
+      {
+         parent.addNonUniqueDependency(this);
+      }
+
+      boolean bOrdered = (null != org_node.getPropertyByName("ordered"));
+      Task *task;
+
+      if(bOrdered)
+      {
+         // Each child/sub node depends on the previous one
+         Task prevTask <= null;
+         foreach task in sub_tasks
+         {
+            if(null != prevTask)
+               task.recursivelyAddNonUniqueDependency(prevTask);
+
+            prevTask <= task;
+         }
+      }
+
+      String *sDep;
+      local StringArray *a;
+      local String *s;
+      Task *subTask;
+
+      // Add dependent tasks
+      sDep <= org_node.getPropertyByName("depends");
+      boolean bInheritDep = false;
+      loop(2)
+      {
+         if(null != sDep)
+         {
+            a <= sDep.splitChar(',');
+            foreach s in a
+            {
+               s.trim();
+               task <= schedule.findTaskByIdPathOrFail(this/*thisHint*/, s);
+               if(null != task)
+               {
+                  if(@(task) != @(this))
+                  {
+                     addNonUniqueDependency(task);
+
+                     if(bInheritDep)
+                     {
+                        foreach subTask in sub_tasks
+                        {
+                           subTask.recursivelyAddNonUniqueDependency(task);
+                        }
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] circular dependency detected: task.id=\""+task.id+"\" this.id=\""+id+"\"";
+                     return false;
+                  }
+               }
+               else
+               {
+                  trace "[---] failed to resolve dependency=\""+s+"\" for task id=\""+id+"\"";
+                  return false;
+               }
+            }
+         }
+         sDep <= org_node.getPropertyByName("after");
+         bInheritDep = true;
+      }
+
+      // Add as dependency to task(s)
+      sDep <= org_node.getPropertyByName("for");
+      if(null != sDep)
+      {
+         a <= sDep.splitChar(',');
+         foreach s in a
+         {
+            s.trim();
+            task <= schedule.findTaskByIdPathOrFail(this/*thisHint*/, s);
+            if(null != task)
+            {
+               if(@(task) != @(this))
+               {
+                  task.addNonUniqueDependency(this);
+               }
+               else
+               {
+                  trace "[---] circular dependency detected: task.id=\""+task.id+"\" this.id=\""+id+"\"";
+                  return false;
+               }
+            }
+            else
+            {
+               trace "[---] failed to resolve dependency target=\""+s+"\" of task id=\""+id+"\"";
+               return false;
+            }
+         }
+      }
+
+      return true;
+   }
+
+   public method getTrafficLightStatus() : boolean {
+      if(b_traffic_lights_state)
+      {
+         switch(org_node.state)
+         {
+            case org::Defs.ST_TODO:
+               return false;
+
+            case org::Defs.ST_ACTV:
+            case org::Defs.ST_TEST:
+               return maybe;
+
+            default:
+            case org::Defs.ST_DONE:
+               return true;
+         }
+      }
+
+      String sVal <= org_node.getPropertyByName("status");
+      if(null == sVal)
+         return true;
+
+      int idxComment = sVal.charsetIndexOf(".,:-", 0);
+      if(-1 != idxComment)
+      {
+         sVal <= sVal.substring(0, idxComment);
+      }
+
+      sVal <= sVal.trim().toLower();
+
+      // (todo) these should be placed in a (customizable) config file
+      switch(sVal)
+      {
+         default:
+         case "g":
+         case "a":
+         case "ok":
+         case "a-ok":
+         case "green":
+         case "good":
+         case "fine":
+         case "on time":
+         case "super":
+         case "excellent":
+         case "done":
+         case "all done":
+         case "complete":
+         case "completed":
+            return true;
+
+         case "y":
+         case "b":
+         case "yellow":
+         case "warn":
+         case "warning":
+         case "issues":
+         case "problem":
+         case "problems":
+         case "debug":
+         case "debugging":
+         case "bug":
+         case "bugs":
+         case "minor bug":
+         case "minor bugs":
+         case "delay":
+         case "delayed":
+         case "delays":
+         case "iceberg ahead":
+         case "not as expected":
+         case "not good":
+            return maybe;
+
+         case "r":
+         case "f":
+         case "c":
+         case "red":
+         case "stuck":
+         case "crash":
+         case "crashes":
+         case "crashing":
+         case "bad":
+         case "critical":
+         case "snafu":
+         case "sinking":
+         case "awful":
+         case "disaster":
+         case "disastrous":
+         case "fail":
+         case "failed":
+         case "failure":
+         case "really not good":
+         case "major bug":
+         case "major bugs":
+            return false;
+      }
+   }
+
+   public method getTrafficLightStatusComment() : String {
+      // e.g. "status: not good. found some major bugs."
+      local String r;
+
+      String sVal <= org_node.getPropertyByName("status");
+      if(null == sVal)
+         return "";
+
+      int idxComment = sVal.charsetIndexOf(".,:-", 0);
+      if(-1 != idxComment)
+      {
+         sVal.substring(idxComment+1, -1) => r;
+         r.trim();
+      }
+      
+      return deref r;
+   }
+
+   public method getCSSClassPrefix(Time _tCur) : String {
+      if(b_milestone)
+         return "gm";
+
+      if(duration > 0)
+         return "gu";
+
+      boolean tfStatus = getTrafficLightStatus();
+
+      int state = org_node.state;
+
+      if( (tracked_effort > 0) && ([org::Defs.ST_TODO, org::Defs.ST_NONE].contains(state)) )
+         state = org::Defs.ST_ACTV;
+
+      switch(state)
+      {
+         case org::Defs.ST_DONE:
+            if(tracked_effort > effort)
+               return "gx";
+            else
+               return "gd";
+
+         default:
+         case org::Defs.ST_TODO:
+            if(_tCur < t_now)
+            {
+               // (note) without the grace period check, tasks that are supposed to start "today" will turn orange. looks nicer.
+               // if((0 == tracked_effort) && (Utils.CalcNumCalendarDaysDifference(_tCur, t_now) > timesheet_submit_grace_period_in_days))
+               if(0 == tracked_effort)
+                  return "gn";
+               else
+                  return "gw";
+            }
+            else
+               return "gf";
+
+         case org::Defs.ST_ACTV:
+         case org::Defs.ST_TEST:
+            if(tracked_effort > 0)
+            {
+               if(true == tfStatus)
+                  return "gw";
+               else if(maybe == tfStatus)
+                  return "gy";
+               else if(false == tfStatus)
+                  return "gr";
+            }
+            else
+               return "gn";         
+      }
+   }
+
+   public method resolveResources() : boolean {
+      if(null != resource_id_str)
+      {
+         local StringArray a <= resource_id_str.splitChar(',');
+         local String *s;
+         foreach s in a
+         {
+            String *sRes;
+            String *sAmt;
+            
+            // Parse (optional) allocation amount, e.g. "peter (20%)"
+            float fAmt = 1.0;
+            int idxPS = s.indexOfChar('(', 0);
+            int idxPE = s.indexOfChar(')', 0);
+            if(-1 != idxPS)
+            {
+               if(idxPE > idxPS)
+               {
+                  sAmt <= s.substring(idxPS+1, idxPE-1-idxPS);
+                  sAmt.trim();
+                  if(sAmt >= "%")
+                     sAmt.substring(0, sAmt.length-1-1);
+                  if(1 <= sAmt.checkConversions() <= 2)
+                  {
+                     fAmt = float(sAmt);
+                     if(1 <= fAmt <= 100)
+                     {
+                        fAmt *= 0.01;
+                        sRes <= s.substring(0, idxPS);
+                        if(b_debug2)
+                           trace "[trc] resolveResources: task.id="+id+" resource.id=\""+sRes.trim()+"\" limit="+int(fAmt*100+0.5)+"%";
+                     }
+                     else
+                     {
+                        trace "[---] task.id=\""+id+"\": resource \""+sRes+"\" allocation amount out of range (amt="+fAmt+")";
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] task.id=\""+id+"\": malformed resource \""+sRes+"\" allocation amount (amt="+fAmt+")";
+                     return false;
+                  }
+               }
+               else
+               {
+                  trace "[---] task.id=\""+id+"\": malformed 'allocate' string \""+resource_id_str+"\" (\""+s+"\") (missing closing parenthesis)";
+                  return false;
+               }
+            }
+            else
+            {
+               // Allocate 100% of the resource's time (default)
+               sRes <= s;
+            }
+
+            // Resolve resource
+            sRes.trim();
+            Resource res <= schedule.findResourceByIdOrFail(sRes);
+            if(null != res)
+            {
+               if(!resources.containsPointer(res))
+               {
+                  resources.add(res);
+                  resource_amounts.add(fAmt);
+               }
+               else
+                  trace "[~~~] resource.id=\""+sRes+"\" is already assigned to task.id=\""+id+"\"";
+            }
+            else
+            {
+               trace "[---] failed to resolve resource.id=\""+sRes+"\" for task id=\""+id+"\"";
+               return false;
+            }
+         }
+      }
+      return true;
+   }
+
+   public method getResourcesString() : String {
+      local String r;
+      Resource *res;
+      int resIdx = 0;
+      foreach res in resources
+      {
+         if(resIdx++ > 0)
+            r.append(", ");
+         r.append(res.id);         
+      }
+      return deref r;
+   }
+
+   public method getUsedResourcesHTMLString() : String {
+      local String r;
+      Resource *res;
+      int resIdx = 0;
+      local Float fo;
+      float totalUse = resource_utilization.sum(0, resource_utilization.numElements);
+      foreach res in resources_used
+      {
+         if(resIdx > 0)
+            r.append(", ");
+         int utilIdx = resources.indexOfPointer(res, 0);
+         fo = (resource_utilization.get(utilIdx) * 100) / totalUse;
+         if(0 == fo)
+         {
+            r.append("<del>"+res.id+"</del>");
+         }
+         else
+         {
+            r.append(res.id);
+            if(fo < 100)
+               r.append(" ("+fo.printf("%3.2f")+"%)");
+         }
+         resIdx++;
+      }
+      return deref r;
+   }
+
+   public method recursiveSortDependencies() {
+      if(b_parallel_dep_done)
+         return;
+      b_parallel_dep_done = true;
+      local Task *task;
+
+      foreach task in non_unique_dependencies
+      {
+         // // if(task.isTaskGroup())
+         // //    die "taskgroup";//xxxxxxxxxxxxxxxxxxxxxxxxxx
+         local Task *taskO;
+         boolean bUnique = true;
+         foreach taskO in non_unique_dependencies
+         {
+            if(taskO.hasNonUniqueDependency(task))
+            {
+               bUnique = false;
+               break;
+            }
+         }
+         if(bUnique)
+         {
+            // trace "xxx add parallel dep id=\""+task.id+"\"";
+            // // if(bOrdered && 
+            // //    (
+            // //       (org_node.child_nodes.containsPointer(task)) ||
+            // //       (org_node.sub_nodes.containsPointer(task))
+            // //     )
+            // //    )
+            // //    addSerialDep(task);
+            // // else
+               addParallelDep(task);
+         }
+
+         task.recursiveSortDependencies();
+      }
+   }
+
+   public method addParallelDep(Task _task) {
+      parallel_deps.add(_task);
+   }
+
+   public method removeParallelDep(Task _task) {
+      parallel_deps.remove(_task);
+   }
+
+   public method recursiveRebuildNonUniqueDependenciesAfterSort(local Task _targetTask) {
+      local Task *task;    
+      if(b_dep_done)
+      {
+         foreach task in non_unique_dependencies
+         {
+            _targetTask.addNonUniqueDependency(task);
+         }
+         return true;
+      }
+      b_dep_done = true;
+      // foreach task in parallel_deps
+      // {
+      //    _targetTask.addNonUniqueDependency(task);
+      // }
+      foreach task in parallel_deps
+      {
+         // trace "xxx this=\""+id+"\" task.id=\""+task.id+"\"";
+         // trace "xxx target=\""+_targetTask.id+"\" task.id=\""+task.id+"\"";
+         _targetTask.addNonUniqueDependency(task);
+         addNonUniqueDependency(task);
+
+         task.recursiveRebuildNonUniqueDependenciesAfterSort(_targetTask);
+         task.recursiveRebuildNonUniqueDependenciesAfterSort(this);
+      }
+      return true;
+   }
+
+   public method recursiveDebugPrintSortedDependencies(local String  _buf, 
+                                                       local int     _level, 
+                                                       local int     _serialIdx,
+                                                       local boolean _bTime,
+                                                       local boolean _bSchedule
+                                                       ) {
+      local Task *task;
+      local String line;
+
+      local boolean bFilteredOut = isFilteredOut();
+      // // if(isTaskGroup())
+      // //    bFilteredOut = bFilteredOut && org_node.hasTags();
+
+      if(!bFilteredOut)
+      {
+         line.appendRepeat(" ", _level);
+         if(-1 != _serialIdx)
+         {
+            line.append(_serialIdx);
+            line.append(" ");
+         }
+         else
+         {
+            line.append("- ");
+         }
+         line.append(id);
+         if(!parallel_deps.isEmpty() || !serial_deps.isEmpty())
+            line.append(":");
+
+         if(_bTime)
+         {
+            int numPad;
+
+            if(effort > 0)
+            {
+               numPad = (50 - line.length-1);
+               line.appendRepeat(" ", numPad);
+               // // line.append("e:="+effort+"h");
+               line.append(effort);
+            }
+
+            if(duration > 0)
+            {
+               numPad = (60 - line.length-1);
+               line.appendRepeat(" ", numPad);
+               // line.append("d:="+duration+"h");
+               Float dur = duration / 24.0;
+               line.append((dur.printf("%4.2f")+"d").replace(".00",""));
+            }
+
+            numPad = (70 - line.length-1);
+            line.appendRepeat(" ", numPad);
+            line.append(getResourcesString());
+
+            if(_bSchedule && !isTaskGroup())
+            {
+               numPad = (100 - line.length-1);
+               line.appendRepeat(" ", numPad);
+               line.append(Utils.TimeToOrgStringWeekday(scheduled_start));
+
+               numPad = (120 - line.length-1);
+               line.appendRepeat(" ", numPad);
+               line.append(Utils.TimeToOrgStringWeekday(scheduled_end));
+            }
+         }
+
+         line.append("\n");
+         _buf.append(line);
+      }
+
+      local int serialIdx = 1;
+      foreach task in serial_deps
+      {
+         // trace "xxx print parallel_dep task.id=\""+task.id+"\"";
+         task.recursiveDebugPrintSortedDependencies(_buf, _level+1, serialIdx, _bTime, _bSchedule);
+         serialIdx++;
+      }
+
+      if(!bFilteredOut || shared::b_filter_recursive)
+      {
+         foreach task in parallel_deps
+         {
+            // trace "xxx print parallel_dep task.id=\""+task.id+"\"";
+            task.recursiveDebugPrintSortedDependencies(_buf, _level+1, -1/*serialIdx*/, _bTime, _bSchedule);
+         }
+      }
+   }
+
+   // protected method findNumParallelDepsWithEffort() : int {
+   //    Task *task;
+   //    int num = 0;
+   //    foreach task in parallel_deps
+   //    {
+   //       num += (-1 != task.effort);
+   //    }
+   //    return num;
+   // }
+
+   public method recursiveRemoveFromParallelDeps(local Task _task) {
+      local Task *task;
+      foreach task in parallel_deps
+      {
+         task.recursiveRemoveFromParallelDeps(_task);
+      }
+      parallel_deps.remove(_task);
+   }
+
+   public method recursiveSerializeDeps() : boolean {
+
+      local boolean bMore = false;
+
+      local Task *task;
+
+      // // foreach task in parallel_deps
+      // // {
+      // //    task.recursiveSerializeDeps();
+      // // }
+
+      boolean bAgain;
+      local Task *taskO;
+      local Task *taskDep;
+
+      // trace "xxx recursiveSerializeDeps: this.id=\""+id+"\"";
+
+      do
+      {
+         bAgain = false;
+
+         foreach task in serial_deps
+         {
+            foreach taskO in parallel_deps
+            {
+               if(@(task) != @(taskO))
+               {
+                  foreach taskDep in task.non_unique_dependencies
+                  {
+                     if(taskO.hasNonUniqueDependency(taskDep))
+                     {
+                        if(b_debug2)
+                           trace "xxx this.id=\""+id+"\" shared_dep.id=\""+taskDep.id+"\"  task.id=\""+task.id+"\" taskO.id=\""+taskO.id+"\"";
+                        recursiveRemoveFromParallelDeps(taskDep);
+                        task.recursiveRemoveFromParallelDeps(taskDep);
+                        if(!hasSerialDep(taskDep))
+                        {
+                           prependSerialDepBefore(task, taskDep);
+                        }
+                        return true;
+                        bAgain = true;
+                        bMore = true;
+                     }
+                  }
+               }
+               else
+               {
+                  removeParallelDep(taskO);
+                  return true;
+                  bAgain = true;
+                  bMore = true;
+               }
+
+               if(bAgain)
+                  break;
+            }
+            if(bAgain)
+               break;
+         }
+      }
+      while(bAgain);
+
+      do
+      {
+         bAgain = false;
+
+         foreach task in parallel_deps
+         {
+            foreach taskO in parallel_deps
+            {
+               if(@(task) != @(taskO))
+               {
+                  foreach taskDep in task.non_unique_dependencies
+                  {
+                     if(taskO.hasNonUniqueDependency(taskDep))
+                     {
+                        // trace "xxx shared_dep.id=\""+taskDep.id+"\"  task.id=\""+task.id+"\" taskO.id=\""+taskO.id+"\"";
+                        if(!hasSerialDepRec(taskDep))
+                        {
+                           recursiveRemoveFromParallelDeps(taskDep);
+                           addSerialDep(taskDep);
+                           return true;
+                           bAgain = true;
+                           bMore = true;
+                        }
+                     }
+                  }
+               }
+               if(bAgain)
+                  break;
+            }
+            if(bAgain)
+               break;
+         }
+      }
+      while(bAgain);
+
+      foreach task in serial_deps
+      {
+         if(task.recursiveSerializeDeps())
+            return true;
+      }
+
+      foreach task in parallel_deps
+      {
+         if(task.recursiveSerializeDeps())
+            return true;
+      }
+
+      // // local Task *taskDep;
+      // // foreach taskDep in non_unique_dependencies
+      // // {
+      // //    int numDeps = 1;
+
+      // //    local Task *task;
+      // //    foreach task in parallel_deps
+      // //    {
+      // //       if(task.hasNonUniqueDependency(taskDep))
+      // //          numDeps++;
+      // //    }
+
+      // //    // if(numDeps > 1)
+      // //    // {
+      // //       trace "xxx this=\""+id+"\" taskDep.id=\""+taskDep.id+"\" is ref'd "+numDeps+" time(s)";
+      // //    // }
+      // // }
+
+      // // //    task.recursiveSerializeDeps();
+      // // // }
+      return false;
+   }
+
+   protected method recursiveAddParallelTasks(local PointerArray _d) {
+      if(!_d.containsPointer(this))
+      {
+         _d.add(this);
+         local Task *task;
+         foreach task in parallel_deps
+            task.recursiveAddParallelTasks(_d);
+      }
+   }
+
+   public static DebugGetTaskIds(PointerArray _tasks) : String {
+      local String r;
+      Task *task;
+      int taskIdx = 0;
+      foreach task in _tasks
+      {
+         if(taskIdx > 0)
+            r.append(",");
+         r.append(task.id);
+         taskIdx++;
+      }
+      return deref r;
+   }
+
+   public method recursiveRemoveDuplicateSerialDeps(local PointerArray _doneSerialDeps) {
+      // 
+      local boolean bAgain;
+      local Task *task;
+
+      // local PointerArray doneSerialDeps = _doneSerialDeps;
+
+      do
+      {
+         bAgain = false;
+         foreach task in serial_deps
+         {
+            if(_doneSerialDeps.containsPointer(task))
+            {
+               removeSerialDep(task);
+               bAgain = true;
+            }
+            if(bAgain)
+               break;
+         }
+      }
+      while(bAgain);
+
+      foreach task in serial_deps
+      {
+         task.recursiveAddParallelTasks(_doneSerialDeps);
+         if("water" == task.id)
+         {
+            trace "xxx water doneSerialDeps="+DebugGetTaskIds(_doneSerialDeps);
+            // exit(10);
+         }
+         // // doneSerialDeps.joinRR(doneSerialDeps, non_unique_dependencies);
+         // // doneSerialDeps.joinRR(doneSerialDeps, serial_deps);
+      }
+
+      do
+      {
+         bAgain = false;
+         foreach task in parallel_deps
+         {
+            if(_doneSerialDeps.containsPointer(task))
+            {
+               removeParallelDep(task);
+               bAgain = true;
+            }
+            if(bAgain)
+               break;
+         }
+      }
+      while(bAgain);
+
+      foreach task in parallel_deps
+      {
+         task.recursiveRemoveDuplicateSerialDeps(_doneSerialDeps);
+      }
+
+
+      if(0)
+      {
+         do
+         {
+            bAgain = false;
+
+            foreach task in _doneSerialDeps {
+
+               local Task *taskP;
+               foreach taskP in parallel_deps
+               {
+                  if(taskP.hasSerialDep(task))
+                  {
+                     taskP.removeSerialDep(task);
+                     // // doneSerialDeps.add(task);
+                     bAgain = true;
+                  }
+                  if(bAgain)
+                     break;
+               }
+               if(bAgain)
+                  break;
+
+               // // task.recursiveRemoveDuplicateSerialDeps();
+            }
+         }
+         while(bAgain);
+      }
+
+   }
+
+   public method recursiveRebuildNonUniqueDependenciesSerialAndParallel(local Task _targetTask) {
+      local Task *task;    
+      if(b_dep_done)
+      {
+         foreach task in non_unique_dependencies
+         {
+            _targetTask.addNonUniqueDependency(task);
+         }
+         return true;
+      }
+      b_dep_done = true;
+      // // foreach task in parallel_deps
+      // // {
+      // //    _targetTask.addNonUniqueDependency(task);
+      // // }
+      foreach task in serial_deps
+      {
+         // trace "xxx this=\""+id+"\" task.id=\""+task.id+"\"";
+         // trace "xxx target=\""+_targetTask.id+"\" task.id=\""+task.id+"\"";
+         _targetTask.addNonUniqueDependency(task);
+         addNonUniqueDependency(task);
+
+         task.recursiveRebuildNonUniqueDependenciesSerialAndParallel(_targetTask);
+         task.recursiveRebuildNonUniqueDependenciesSerialAndParallel(this);
+      }
+
+      foreach task in parallel_deps
+      {
+         _targetTask.addNonUniqueDependency(task);
+         addNonUniqueDependency(task);
+
+         task.recursiveRebuildNonUniqueDependenciesSerialAndParallel(_targetTask);
+         task.recursiveRebuildNonUniqueDependenciesSerialAndParallel(this);
+      }
+      return true;
+   }
+
+   // public method recursiveCalcTaskDurations() : boolean {
+
+   //    local Task *task;
+   //    foreach task in serial_deps
+   //    {
+   //       if(!task.recursiveCalcTaskDurations())
+   //          return false;
+   //    }
+
+   //    float numHours = 0;
+
+   //    if(!isTaskGroup())
+   //    {
+   //       if(resources.numElements > 0)
+   //       {
+   //          if(resources.numElements > Schedule.MAX_RESOURCES_PER_TASK)
+   //          {
+   //             trace "[---] task.id=\""+id+"\": max resources per task exceeded ("+resources.numElements+">"+Schedule.MAX_RESOURCES_PER_TASK+")";
+   //             return false;
+   //          }
+
+   //          float effortScl = multi_resource_duration_scale_tbl.get(resources.numElements - 1);
+   //          if(effortScl > 0.0)
+   //          {
+   //             if(b_debug)
+   //             {
+   //                if(resources.numElements > 1)
+   //                   trace "[dbg] task="+id+" #res="+resources.numElements+" => effortScl="+effortScl;
+   //             }
+   //             numHours = effort * effortScl;
+
+   //             if(numHours > duration)
+   //             {
+   //                if(duration > 0)
+   //                   trace "[~~~] calculated duration exceeds explicitely set 'duration' property ("+numHours+">"+duration+")";
+   //                duration = numHours;
+   //             }
+   //          }
+   //          else
+   //          {
+   //             trace "[!!!] configuration error: effortScl <= 0 (#res="+resources.numElements+")";
+   //             return false;
+   //          }
+   //       }
+   //       else
+   //       {
+   //          trace "xxx b_milestone="+b_milestone+" effort="+effort+" isTaskGroup="+isTaskGroup();
+   //          trace "[---] unable to calculate duration: no resources allocated to task \""+id+"\" (effort="+effort+"h)";
+   //          return false;
+   //       }
+   //    }
+   //    else
+   //       duration = 0;
+
+
+   //    // Parallel dependencies
+   //    // local FloatArray parDurations;
+   //    foreach task in parallel_deps
+   //    {
+   //       if(!task.recursiveCalcTaskDurations())
+   //          return false;
+   //       // parDurations.add(task.duration);
+   //    }
+
+   //    // float parMax = parDurations.max;
+   //    // duration += parMax;
+
+   //    return true;
+   // }
+
+   public method recursiveCalcTotalEffort() : float {
+      local float r = 0;
+
+      if(effort > 0)
+         r += effort;
+
+      local Task *task;
+      foreach task in serial_deps
+      {
+         r += task.recursiveCalcTotalEffort();
+      }
+
+      foreach task in parallel_deps
+      {
+         r += task.recursiveCalcTotalEffort();
+      }
+
+      return r;
+   }
+
+   // public method recursiveCalcTotalDuration() : float {
+   //    local float r = 0;
+
+   //    if(duration > 0)
+   //       r += duration;
+
+   //    local Task *task;
+   //    foreach task in serial_deps
+   //    {
+   //       r += task.recursiveCalcTotalDuration();
+   //    }
+
+   //    // Parallel dependencies
+   //    local FloatArray parDurations;
+   //    foreach task in parallel_deps
+   //    {
+   //       float parDur = task.recursiveCalcTotalDuration();
+   //       parDurations.add(parDur);
+   //    }
+
+   //    float parMax = parDurations.max;
+   //    // if(parallel_deps.numElements > 1)
+   //    //    trace "xxx task="+id+" parMax="+parMax;
+   //    r += parMax;
+
+   //    return r;
+   // }
+
+   // // protected method getLastScheduleEnd(Time _ret) {
+   // //    if(effort > 0)
+   // //    {
+   // //       _ret = scheduled_end;
+   // //    }
+   // //    else
+   // //    {
+   // //       // Task-group
+   // //       local PointerArray parTimesEnd;
+   // //       foreach task in parallel_deps
+   // //       {
+   // //          local Time tPar <= Object(_tCur);
+   // //          parTimes.add(#(deref tPar));
+   // //          if(!task.recursiveScheduleTasks(tPar))  // advances tPar
+   // //             return false;
+   // //          local Time tParEnd;
+   // //          task.getLastScheduleEnd(tParEnd);
+   // //          parTimesEnd.add(tParEnd);
+   // //       }
+
+   // //       // This task can not start until the last of the parallel task dependencies is completed
+   // //       if(parTimesEnd.numElements > 0)
+   // //       {
+   // //          local Time *t;
+   // //          local Time *tMax;
+   // //          foreach t in parTimesEnd
+   // //          {
+   // //             if(null == tMax)
+   // //                tMax <= t;
+   // //             else if(t > tMax)
+   // //                tMax <= t;
+   // //          }
+   // //          _tCur = tMax;
+   // //       }
+   // //    }
+   // // }
+
+   public method recursiveScheduleTasks(local Time _tCur, local Integer _dayIdx) : boolean {
+
+      // trace "..............................................................";
+      // trace "xxx recursiveScheduleTasks: tCur="+_tCur+" dayIdx="+_dayIdx;
+
+      if(b_debug2)
+         trace "xxx recursiveScheduleTasks: ENTER this="+id;
+
+      if(null != finish_date)  // already done ?
+      {
+         scheduled_start = finish_date;
+         Utils.TimeSubtractHours(scheduled_start, duration);
+         scheduled_end = finish_date;
+         return true;
+      }
+
+      // trace "xxx this="+id+" org.scheduled="+org_node.scheduled;
+      Time tForceStart <= getScheduledStartDate();
+      if(null != tForceStart)
+      {
+         if(tForceStart > _tCur)
+         {
+            if(b_debug)
+               trace "[dbg] tForceStart="+Utils.TimeToOrgString(tForceStart)+" dayIdx="+_dayIdx;
+            // Don't start task until SCHEDULED: date
+            scheduled_start = _tCur;
+            scheduled_end   = _tCur;
+            _tCur = tForceStart;
+            _tCur.hour = 8;
+            _tCur.min = 0;
+            _tCur.sec = 0;
+            int forceDiff = Utils.CalcNumCalendarDaysDifference(scheduled_start, tForceStart);
+            // trace "xxx forceDiff="+forceDiff;
+            _dayIdx = _dayIdx + forceDiff;
+            scheduled_start_day_idx = _dayIdx;
+            // trace "xxx force dayIdx is now "+_dayIdx;
+         }
+         else
+         {
+            if(shared::b_warn && (Utils.CalcNumCalendarDaysDifference(tForceStart, _tCur) > 0))
+               trace "[~~~] warning: task.id="+id+" preferred start date ("+Utils.TimeToOrgString(tForceStart)+") moved to "+Utils.TimeToOrgString(_tCur);
+         }
+      }
+
+      // Serial task dependencies
+      local Task *task;
+      foreach task in serial_deps
+      {
+         if(b_debug2)
+            trace "xxx serial: BEGIN  tCur="+Utils.TimeToOrgString(_tCur);
+         if(!task.recursiveScheduleTasks(_tCur, _dayIdx))    // advances tCur
+            return false;
+         if(b_debug2)
+            trace "xxx serial: END    tCur="+Utils.TimeToOrgString(_tCur);
+      }
+
+      // May later be moved when first resource becomes available
+      // trace "xxx id=\""+id+"\" set scheduled_start="+_tCur;
+      scheduled_start = _tCur;
+      scheduled_start_day_idx = _dayIdx;
+
+      // Parallel task dependencies
+      local PointerArray parTimes;
+      local PointerArray parTimesEnd;
+      local PointerArray parDays;
+      foreach task in parallel_deps
+      {
+         local Time tPar <= Object(_tCur);
+         // trace "xxx tPar="+Utils.TimeToOrgString(tPar);
+         parTimes.add(#(deref tPar));
+         local Integer tDayIdx <= Object(_dayIdx);
+         parDays.add(#(deref tDayIdx));
+         // trace "xxx 2 tPar="+tPar+" tDayIdx="+tDayIdx;
+         if(!task.recursiveScheduleTasks(tPar, tDayIdx))  // advances tPar (copy)
+            return false;
+         // trace "xxx add to parTImeEnd task.effort="+task.effort+" task.scheduled_start="+task.scheduled_start+" task.scheduled_end="+task.scheduled_end;
+         parTimesEnd.add(task.scheduled_end);
+         if(b_debug2)
+            trace "xxx this="+id+" task.id="+task.id+" tParEnd="+Utils.TimeToOrgString(task.scheduled_end);
+      }
+
+      // This task can not start until the last of the parallel task dependencies is completed
+      // (todo) loop parallel_deps instead, don't need another array
+      if(parTimesEnd.numElements > 0)
+      {
+         local Time *t;
+         local Time *tMax;
+         local Integer *dayIdxMax;
+         int parIdx = 0;
+         foreach t in parTimesEnd
+         {
+            // trace "xxx parTimesEnd["+parIdx+"]="+t;
+            if((null == tMax) || (t > tMax))
+            {
+               tMax <= t;
+               dayIdxMax <= parDays.get(parIdx);
+            }
+            parIdx++;
+         }
+         if(tMax >= schedule.start_date)
+         {
+            // trace "xxx tmax="+tMax+" schedule.start_date="+schedule.start_date;
+            _tCur = tMax;
+            _dayIdx = dayIdxMax;
+            if(b_debug2)
+               trace "xxx this="+id+" parTimesEnd.max="+Utils.TimeToOrgString(_tCur);
+         }
+      }
+
+      scheduled_start = _tCur;
+      // trace "xxx id=\""+id+"\" set scheduled_start+end="+_tCur;
+      scheduled_end = _tCur;
+      // trace "xxx set scheduled_end="+scheduled_end;
+
+      scheduled_start_day_idx = _dayIdx;
+
+      if(b_debug2)
+         trace "xxx recursiveScheduleTasks: SER/PAR done, this="+id+" scheduled_start+end="+Utils.TimeToOrgStringWeekdayTOD(scheduled_end);
+
+      // Schedule 'this'
+
+      if(effort > 0)
+      {
+         if(b_debug)
+            trace "[dbg] schedule task \""+id+"\": start="+Utils.TimeToOrgStringWeekdayTOD(scheduled_start)+" effort="+effort+"h";
+
+         if(0 == resources.numElements)
+         {
+            trace "[---] no resources allocated to task \""+id+"\" (effort="+effort+")";
+            return false;
+         }
+
+         // becomes true when first resource starts working on task
+         //  (actually or at least according to the calculated plan)
+         boolean bFirstAvail = false;
+
+         local Resource *res;
+         float effortLeft;
+
+         foreach res in schedule.resources
+         {
+            res.utilization = 0;
+            res.utilization_day = 0;
+         }
+         resource_utilization.empty();
+
+         if(shared::b_ignore_time_tracking)
+         {
+            effortLeft = effort;
+         }
+         else if(org::Defs.ST_DONE == org_node.state)
+         {
+            if(b_debug)
+               trace "[dbg] task.id="+id+" finished with tracked_effort="+tracked_effort;
+            if(tracked_effort > 0)
+            {
+               effortLeft = tracked_effort;
+            }
+            else
+            {
+               // should not be necessary but when converting plain todo.txt files (w/o effort estimations or time sheet entries),
+               //  tasks may be marked done and we don't want all of them to be completed on day 1
+               effortLeft = effort;
+            }
+         }
+         else
+         {
+            effortLeft = mathMaxf(effort, tracked_effort);
+
+            float estimatedEffortLeft = org_node.getEffortLeftInHours();
+            if(estimatedEffortLeft > 0)
+               effortLeft += estimatedEffortLeft;           
+         }
+
+         if(!shared::b_ignore_time_tracking)  // (note) tracked_effort should/is 0 when time tracking is disabled..
+         {
+            if(tracked_effort > 0)
+            {
+               // Handle case where a resource starts working on a task even if 
+               //  it depends on another task which has not been completed, yet
+               local Time tEarliest = _tCur;
+               local Integer tEarliestDay;
+               float totalNumDoneBeforeStart = 0;
+               foreach res in resources
+               {
+                  local Time tFirst;
+                  local Integer tFirstDay;
+                  float hDoneBeforeStart = res.processTimeSheetHoursBefore(_tCur, this, tFirst, tFirstDay);
+                  // trace "xxx hDoneBeforeStart: task.id="+id+" resource.id="+res.id+" numH="+hDoneBeforeStart;
+                  if(hDoneBeforeStart > 0)
+                  {
+                     // if(b_debug2)
+                     trace "[trc] task.id="+id+" resource.id="+res.id+" hDoneBeforeStart="+hDoneBeforeStart+" (planned start is "+Utils.TimeToOrgStringWeekday(_tCur)+") tFirst="+Utils.TimeToOrgString(tFirst);
+                     effortLeft -= hDoneBeforeStart;
+                     totalNumDoneBeforeStart += hDoneBeforeStart;
+                     if(tFirst < tEarliest)
+                     {
+                        tEarliest = tFirst;
+                        tEarliestDay = tFirstDay;
+                        scheduled_start = tEarliest;
+                        // trace "xxx id=\""+id+"\" set earliest scheduled_start+end="+tEarliest;
+                        scheduled_end   = tEarliest;
+                        scheduled_start_day_idx = tEarliestDay;
+                     }
+                     bFirstAvail = true;
+                  }
+                  // Next allocated resource
+               }
+               if(b_debug)
+                  trace "[dbg] task.id="+id+" totalNumHoursDoneBeforeStart="+totalNumDoneBeforeStart+" => start moved to "+Utils.TimeToOrgString(scheduled_start)+" (day "+(scheduled_start_day_idx+1)+")";
+
+               // (note) any remaining hours will be consumed when task is supposed to start
+            }
+         }
+
+         while(effortLeft > 0)
+         {
+            // trace "xxx ------------ schedule dayIdx="+_dayIdx+" effortLeft="+effortLeft+" _tCur="+_tCur;
+
+            // Work for one day
+            int numDaysPassed = 0;
+            do
+            {
+               float totalResAvail = 0;
+               boolean bTimeEntryDone = false;
+               float maxDayAvail = 0;
+               float maxDayUsed = 0;
+               // trace "xxx task.id="+id+" resources="+#(resources);
+               int resIdx = 0;
+               foreach res in resources
+               {
+                  float resDone = res.findTimeSheetHoursOnDay(_dayIdx, this);
+                  if(b_debug2)
+                     trace "xxx task.id="+id+" res.id="+res.id+" dayIdx="+_dayIdx+" resDone="+resDone+" tCur="+Utils.TimeToOrgStringWeekdayTOD(_tCur);
+                  if(resDone > 0)
+                  {
+                     // Actual work done (tracked_effort)
+                     bTimeEntryDone = true;
+
+                     if(resDone > maxDayAvail)
+                        maxDayAvail = resDone;
+
+                     maxDayUsed = mathMaxf(resDone, maxDayUsed);
+
+                     totalResAvail += resDone;
+
+                     if(!resources_used.containsPointer(res))
+                        resources_used.add(res);
+
+                     res.utilization += resDone;
+                     if(b_debug2)
+                        trace "xxx this="+id+" dayIdx="+_dayIdx+" resDone="+resDone+" tCur="+Utils.TimeToOrgStringWeekdayTOD(_tCur);
+
+                     res.addToTrackedDayHours(_dayIdx, resDone);
+
+                     if(!bFirstAvail)
+                     {
+                        // Move actual task start (first resource starts working on it)
+                        bFirstAvail = true;
+                        scheduled_start = _tCur;
+                        // trace "xxx id=\""+id+"\" set firstavail scheduled_start="+_tCur;
+                        scheduled_start_day_idx = _dayIdx;
+                     }
+                     
+                     effortLeft -= resDone;  // effortLeft may become negative (more work done than estimated)
+                  }
+                  else
+                  {
+                     // Estimate (planned_effort)
+                     float resAvail = res.getAvailableHoursLeftOnDay(_dayIdx, _tCur);
+                     // trace "xxx dayIdx="+_dayIdx+" tCur="+_tCur+" resAvail="+resAvail;
+                     if(b_debug2)
+                     {
+                        trace "\nxxx query this="+id+"\" res.id="+res.id+" dayIdx="+_dayIdx+" resAvail="+resAvail+" tCur="+Utils.TimeToOrgStringWeekdayTOD(_tCur);
+                        // trace "xxx    avail_hours="+res.avail_day_hours;
+                     }
+                     if((resAvail > 0) && (-1 != resIdx) && (resource_amounts[resIdx] < 1.0))
+                     {
+                        // Limit resource utilization for this task to x% per day
+                        if(0 == res.utilization_day)
+                        {
+                           float resWHD = res.getWorkingHoursOnDay(_tCur) * resource_amounts[resIdx];
+                           float resAvailTmp = mathMinf(resAvail, resWHD);
+                           // (todo) round to next quarter-hour ??
+                           if(b_debug2)
+                              trace "[trc] limit res.id="+res.id+" utilization for task.id="+id+" on dayIdx="+_dayIdx+" (tCur="+Utils.TimeToOrgStringWeekday(_tCur)+") to "+resAvailTmp+" hours (avail="+resAvail+", whdLimit="+resWHD+", amt="+resource_amounts[resIdx]+")";
+                           resAvail = resAvailTmp;
+                           res.utilization_day = resAvail;
+                        }
+                        else
+                           resAvail = 0;
+                     }
+
+                     if(resAvail > 0)
+                     {
+                        if(resAvail > maxDayAvail)
+                           maxDayAvail = resAvail;
+
+                        totalResAvail += resAvail;
+
+                        if(!resources_used.containsPointer(res))
+                           resources_used.add(res);
+
+                        float resUsed = mathMinf(effortLeft, resAvail);
+
+                        maxDayUsed = mathMaxf(resUsed, maxDayUsed);
+
+                        planned_effort += resUsed;
+                        res.utilization += resUsed;
+                        res.addToPlannedDayHours(_dayIdx, resUsed);
+                        resUsed = res.consumeWorkHoursAt(_dayIdx, resUsed);
+                        if(b_debug2)
+                           trace "xxx this="+id+" after consumeWorkHoursAt(dayIdx="+_dayIdx+" resUsed="+resUsed+") tCur="+Utils.TimeToOrgStringWeekdayTOD(_tCur);//+" scheduled_end="+Utils.TimeToOrgStringWeekday(scheduled_end);
+
+                        if(!bFirstAvail)
+                        {
+                           // Move actual task start (first resource starts working on it)
+                           bFirstAvail = true;
+                           scheduled_start = _tCur;
+                           // trace "xxx id=\""+id+"\" firstavail  set scheduled_start="+scheduled_start;
+                           scheduled_start_day_idx = _dayIdx;
+                        }
+                     
+                        effortLeft -= resUsed;
+
+                        // // if(0 == (effortLeft - resUsed))
+                        // // {
+                        // //    Utils.NextDay(_tCur);
+                        // //    numDaysPassed++;
+                        // //    _dayIdx++;
+                        // // }
+
+                        if(b_resource_view)
+                           res.addPlannedDayTask(_dayIdx, this, resUsed);
+                     }
+                  }
+
+                  // Next resource
+                  resIdx++;
+               } // loop res
+
+               // if(b_debug2)
+               //    trace "xxx tasK="+id+" effortLeft="+effortLeft+" totalResAvail="+totalResAvail;
+
+               if(0 == totalResAvail)
+               {
+                  // No resources available => Start next day and try again
+                  if(b_debug2)
+                     trace "xxx this="+id+" start next day: "+Utils.TimeToOrgStringWeekday(_tCur);
+
+                  Utils.NextDay(_tCur);
+                  numDaysPassed++;
+                  _dayIdx++;
+
+                  Resource *resDay;
+                  foreach resDay in schedule.resources
+                     resDay.utilization_day = 0;
+
+                  if(numDaysPassed > 999)
+                  {
+                     trace "[---] task=\""+id+"\": no resource has been available for over 999 days, aborting..";
+                     return false;
+                  }
+               }
+               else
+               {
+                  if(b_debug2)
+                     trace "xxx PRE TimeAddHours: this="+id+" maxDayAvail="+maxDayAvail+" maxDayUsed="+maxDayUsed+" tCur="+Utils.TimeToOrgStringWeekdayTOD(_tCur);
+                  // Utils.TimeAddHours(_tCur, maxDayAvail, _dayIdx);
+                  Utils.TimeAddHours(_tCur, maxDayUsed, _dayIdx);
+
+                  if(b_debug2)
+                     trace "xxx     POST TimeAddHours: this="+id+" tCur="+Utils.TimeToOrgStringWeekdayTOD(_tCur);
+               }
+
+               // trace "xxx tCur="+_tCur+" scheduled_end="+scheduled_end;
+               if(_tCur > scheduled_end)
+                  scheduled_end = _tCur;
+
+               if(bTimeEntryDone)
+               {
+                  if(effortLeft > 0)
+                  {
+                     Utils.NextDay(_tCur);
+                     _dayIdx++;
+                     
+                     if(b_debug2)
+                        trace "xxx this="+id+" start next day: "+Utils.TimeToOrgStringWeekday(_tCur)+" (after time sheet entry)";
+                  }
+               }
+
+            }
+            while(0 == totalResAvail);
+
+            // // effortLeft -= totalResAvail;
+
+            // // // (todo) use remaining hours for next task
+            // // // (note) although: immediately switching to next task is unrealistic, anyway (especially at 3pm on a friday)
+            // // if(effortLeft < 0)
+            // //    effortLeft = 0;
+
+            if(b_debug2)
+               trace "xxx task="+id+" effortLeft="+effortLeft;
+
+         } // while effortLeft
+
+         resIdx = 0;
+         foreach res in resources
+         {
+            // (note) don't count unallocated resources
+            resource_utilization.add(res.utilization);
+            resIdx++;
+         }
+
+         if(b_debug2)
+            trace "[dbg]    => schedule task \""+id+"\": end="+Utils.TimeToOrgString(scheduled_end);
+
+      } // if effort > 0
+
+      if(duration > 0)
+      {
+         // Forced duration
+         scheduled_end.utime = scheduled_start.utime + (60*60*duration);
+         scheduled_end.localtime();
+         // trace "xxx this="+id+" forced scheduled_end="+Utils.TimeToOrgString(scheduled_end);
+         _tCur = scheduled_end;
+         _dayIdx = scheduled_start_day_idx + Utils.CalcNumCalendarDaysDifference(scheduled_start, scheduled_end);
+      }
+
+      if(isMilestone())
+      {
+         if(b_debug)
+            trace "[dbg] milestone \""+id+"\" reached on "+Utils.TimeToOrgString(scheduled_end);
+      }
+
+      return true;
+   }
+
+   public method isAnyAllocatedResourceHoliday(Time _t) : boolean {
+      Resource *res;
+      foreach res in resources_used
+      {
+         if(res.isVacation(_t))
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public method isNoAllocatedResourceAvailable(int _dayIdx, Time _t) : boolean {
+      // called by HTML Gantt graph.
+      Resource *res;
+      float totalAvailH = 0;
+      foreach res in resources_used
+      {
+         totalAvailH += res.getAvailableHoursLeftOnDay(_dayIdx, _t);
+         // // totalAvailH += res.getWorkingHoursOnDay(_t);
+      }
+      return (0 == totalAvailH);
+   }
+
+   public method recursiveAppendToCSV(local String  _buf) : boolean {
+      local Task *task;
+      local String line;
+
+      local boolean bFilteredOut = isFilteredOut();
+      // // if(isTaskGroup())
+      // //    bFilteredOut = bFilteredOut && org_node.hasTags();
+
+      foreach task in serial_deps
+      {
+         if(!task.recursiveAppendToCSV(_buf))
+            return false;
+      }
+
+      if(!bFilteredOut)
+      {
+         foreach task in parallel_deps
+         {
+            if(!task.recursiveAppendToCSV(_buf))
+               return false;
+         }
+
+         if((effort > 0) || b_milestone)
+         {
+            // Task
+            line.append(org_node.title);
+
+            // Effort
+            line.append(";");
+            if(effort > 0)
+            {
+               line.append(effort);
+            }
+
+            // Resources
+            line.append(";");
+            if(resources.numElements > 0)
+            {
+               line.append(getResourcesString());
+            }
+
+            // Start
+            line.append(";");
+            line.append(Utils.TimeToCSVString(scheduled_start));
+      
+            line.append(";");
+            line.append(Utils.TimeToCSVString(scheduled_end));
+
+            // Notes
+            line.append(";");
+            String *s;
+            int lineIdx = 0;
+            if((org_node.callout_lines.numElements) > 1)
+            {
+               // Multi-line
+               line.append("\"");
+               foreach s in org_node.callout_lines
+               {
+                  if(lineIdx > 0)
+                     line.append("\n");
+                  line.append(s);
+                  lineIdx++;
+               }
+               line.append("\"");
+            }
+            else
+            {
+               line.append(org_node.callout_lines.get(0));
+            }
+
+            line.append("\n");
+            _buf.append(line);
+         }
+      }
+
+      return true;
+   }
+
+   protected method appendParentTaskGroupsToHTML(local String _buf) {
+      Task p <= parent;
+      if(null != p)
+      {
+         _buf.append("<TABLE class=\"task_parents_table\">\n");
+         while(null != p)
+         {
+            _buf.append("<TR><TD class=\"task_parents_td\">&bull;&nbsp;"+Utils.ToHTML(p.id)+"</TD></TR>\n");
+            p <= p.parent;
+         }
+         _buf.append("</TABLE>\n");
+      }
+   }
+
+   public method getMultiProjectIdPrefix() : String {
+      Task p <= getRoot();
+      if(@(p) != @(this))
+         return p.id+".";
+      else
+         return "";
+   }
+
+   public method getMultiProjectId() : String {
+      return getMultiProjectIdPrefix()+id;
+   }
+
+   protected method appendDependenciesToHTML(local String _buf) {
+      Task *c;
+      if(non_unique_dependencies.numElements > 0)
+      {
+         _buf.append("\n");
+         _buf.append("\nDependencies:\n");
+         foreach c in non_unique_dependencies
+         {
+            _buf.append("&bull;&nbsp;"+Utils.ToHTML(c.getMultiProjectId())+"\n");
+         }
+      }
+   }
+
+   public method recursiveFindReportTasks(PointerArray _d) {
+
+      local boolean bFilteredOut = isFilteredOut();
+      // trace "xxx bFilteredOut="+bFilteredOut+" id="+id;
+      // // if(isTaskGroup())
+      // //    bFilteredOut = bFilteredOut && org_node.hasTags();
+
+      local Task *task;
+      foreach task in serial_deps
+      {
+         task.recursiveFindReportTasks(_d);
+      }
+
+      if(!bFilteredOut || shared::b_filter_recursive)
+      {
+         foreach task in parallel_deps
+         {
+            task.recursiveFindReportTasks(_d);
+         }
+      }
+
+      if((effort > 0) || b_milestone)
+      {
+         if(!bFilteredOut)
+         {
+            if!( (null == parent) && ("all" == id) )
+               _d.add(this);
+         }
+      }
+   }
+
+   public method appendTaskResourceUsageToToolTip(String _buf) {
+      if(tracked_effort > 0)
+      {
+         _buf.append("\n\nTracked (task): "+tracked_effort+"h");
+      }
+      if(planned_effort > 0)
+      {
+         if(tracked_effort <= 0)
+            _buf.append("\n");
+         _buf.append("\nPlanned (task): "+planned_effort+"h");
+      }
+   }
+
+   public method appendTableRowsToHTML(local String  _buf, 
+                                       local int     _numCells, 
+                                       local int     _taskNr,
+                                       local boolean _bOverview
+                                       ) : boolean {
+      local Task *task;
+      local String line;
+
+      line.append("<tr>");
+
+      // Task
+      String cssEO = "g_tr_"+((_taskNr&1)?"o":"e");
+
+      // String sTask <= (org_node.title.replace(" ", "&nbsp;"));
+      String *sTaskId;
+      String *sTaskIdLong;
+      if(shared::b_docs)
+      {
+         sTaskId <= "<a class=\"a_doc\" href=\"#"+getReportCaption()+"\">"+Utils.ToHTML(id)+"</a>";
+
+         if(b_multi_project)
+            sTaskIdLong <= "<a class=\"a_doc\" href=\"#"+getReportCaption()+"\">"+getReportCaptionLongHTML()+"</a>";
+         else
+            sTaskIdLong <= sTaskId;
+      }
+      else
+      {
+         sTaskId <= Utils.ToHTML(getReportCaption());  // replace by non-breaking hyphen
+
+         if(b_multi_project)
+            sTaskIdLong <= getReportCaptionLongHTML();
+         else
+            sTaskIdLong <= sTaskId;
+      }
+
+      String sTask = sTaskId;
+      String sTaskLong = sTaskIdLong;
+      String sTaskGantt <= sTask;
+      String sTaskGroups = "";
+      appendParentTaskGroupsToHTML(sTaskGroups);
+      if(b_milestone)
+      {
+         sTaskGantt <= html_img_flag_inv + "<strong>"+sTask+"</strong>"+sTaskGroups;
+         sTask = html_img_flag + sTask + sTaskGroups;
+         sTaskLong = html_img_flag + sTaskLong + sTaskGroups;
+      }
+      else
+      {
+         if(b_html_taskgroups)
+         {
+            sTask += sTaskGroups;
+            sTaskLong += sTaskGroups;
+         }
+      }
+      local String sTaskDeps;
+      appendDependenciesToHTML(sTaskDeps);
+
+      line.append("<td class=\""+cssEO+" g_td_base g_task\">");
+      if(_bOverview)
+      {
+         sTaskIdLong <= _taskNr+".&nbsp;"+sTaskIdLong;
+         if(b_milestone)
+            sTaskIdLong.append("&nbsp;(MS)");
+         sTaskId <= _taskNr+".&nbsp;"+sTaskId;
+         if(b_milestone)
+            sTaskId.append("&nbsp;(MS)");
+         line.append(sTaskIdLong);
+      }
+      else
+         line.append(sTaskLong);
+      line.append("</td>");
+
+      if(b_traffic_lights)
+      {
+         line.append("<td class=\""+cssEO+" g_td_base g_status"+(_bOverview?"_overview":"")+"\">");
+         if(!b_traffic_lights_state && (b_milestone || ((0 == tracked_effort) && (scheduled_start > t_now))))
+         {
+         }
+         else
+         {
+            boolean tlStatus = getTrafficLightStatus();
+            switch(tlStatus)
+            {
+               case true:
+                  line.append(html_img_traffic_green);
+                  break;
+               case maybe:
+                  line.append(html_img_traffic_yellow);
+                  break;
+               case false:
+                  line.append(html_img_traffic_red);
+                  break;
+            }
+         }
+         line.append("</td>");
+      }
+
+      // Effort
+      line.append("<td class=\""+cssEO+" g_td_base g_effort\">");
+      if(effort > 0)
+      {
+         line.append(effort);
+      }
+      line.append("</td>");
+
+      // Done
+      line.append("<td class=\""+cssEO+" g_td_base g_done\">");
+      if(tracked_effort > 0)
+      {
+         if(org::Defs.ST_DONE == org_node.state)
+            line.append("<b>"+tracked_effort+"</b>");
+         else
+            line.append(tracked_effort);
+      }
+      line.append("</td>");
+
+      // Resources
+      line.append("<td class=\""+cssEO+" g_td_base g_res\">");
+      local String sRes <= getResourcesString();
+      sRes.replace(" ", "&nbsp;");
+      if(resources.numElements > 0)
+      {
+         line.append(sRes);
+      }
+      line.append("</td>");
+
+      // Start
+      line.append("<td class=\""+cssEO+" g_td_base g_start\">");
+      line.append(Utils.TimeToCSVString(scheduled_start));
+      line.append("</td>");
+
+      // End
+      line.append("<td class=\""+cssEO+" g_td_base g_end\">");
+      line.append(Utils.TimeToCSVString(scheduled_end));
+      line.append("</td>");
+
+      // Tags
+      line.append("<td class=\""+cssEO+" g_td_base g_tags\">");
+      if((org_node.tags.numElements) > 0)
+      {
+         String *sTag;
+         int numTags = 0;
+         foreach sTag in org_node.tags
+         {
+            if(null != schedule_tags)
+            {
+               if(schedule_tags.containsObject(sTag))
+               {
+                  if(numTags++ > 0)
+                     if(_bOverview)
+                        line.append(", ");
+                     else
+                        line.append("<br>");
+                  line.append(Utils.ToHTML(Utils.ResubstText(sTag)));
+               }
+            }
+            else
+            {
+               if(numTags++ > 0)
+                  line.append("<br>");
+               line.append(Utils.ToHTML(Utils.ResubstText(sTag)));
+            }
+         }
+      }
+      line.append("</td>");
+
+      if(!b_skip_gantt)
+      {
+         Time tCur = schedule.start_date;
+
+         // trace "xxx 1 scheduled_start="+scheduled_start;
+
+         // Gantt cells
+         int numTaskCells = Utils.CalcNumCalendarDaysDuration(scheduled_start, scheduled_end);
+         if(numTaskCells >= 1)
+         {
+            // if(scheduled_start == scheduled_end)
+            //    trace "xxx task="+id+" numTaskCells="+numTaskCells;
+            String *sToolTip;
+
+            int cellIdx = 0;
+            int numTaskCellsUntilStart = Utils.CalcNumCalendarDaysDifference(schedule.start_date, scheduled_start);
+            // trace "xxx task.id=\""+id+"\" schedule.start_date="+Utils.TimeToOrgStringWeekday(schedule.start_date)+" scheduled_start="+Utils.TimeToOrgStringWeekday(scheduled_start)+" numTaskCellsUntilStart="+numTaskCellsUntilStart;
+            local String sResUsed <= getUsedResourcesHTMLString();
+            String sResTask <= sResUsed+"<br>"+sTaskGantt;
+            if(b_html_day_idx)
+               sResTask.append(" (day "+(numTaskCellsUntilStart+1)+")");
+            if(numTaskCellsUntilStart != scheduled_start_day_idx)
+            {
+               trace "[!!!] internal error: task=\""+id+"\" numTaskCellsUntilStart="+numTaskCellsUntilStart+" scheduled_start_day_idx="+scheduled_start_day_idx;
+               exit(20);
+            }
+            // trace "xxx task.id=\""+id+"\" #pre="+numTaskCellsUntilStart+" num="+numTaskCells+" #post="+(_numCells-numTaskCells-numTaskCellsUntilStart);
+            String sGP <= "gp"+((_taskNr&1)?"o":"e");
+            String *startWorM;
+            loop(numTaskCellsUntilStart)
+            {
+               if(1 == tCur.weekday) // monday ?
+               {
+                  if(tCur.monthday < 7)
+                     startWorM <= " g_start_month";
+                  else 
+                     startWorM <= " g_start_week";
+               }
+               else
+                  startWorM <= "";
+
+               if(schedule.isWeekend(tCur))
+                  line.append("<td class=\"gb "+sGP+"_w");
+               else if(schedule.isPublicHoliday(tCur))
+                  line.append("<td class=\"gb "+sGP+"_p");
+               else if(isAnyAllocatedResourceHoliday(tCur))
+                  line.append("<td class=\"gb "+sGP+"_h");
+               else if(isNoAllocatedResourceAvailable(cellIdx, tCur))
+                  line.append("<td class=\"gb "+sGP+"_v");
+               else
+                  line.append("<td class=\"gb "+sGP+"");
+               line.append(startWorM);
+               line.append("\"");
+               sToolTip <= Utils.ToHTML(Utils.TimeToOrgStringWeekday(tCur))+" (day "+(cellIdx+1)+")";
+               schedule.appendDailyResourceUsageToToolTip(sToolTip, cellIdx);
+               line.append(" title=\""+sToolTip+"\">");
+               if(_bOverview)
+                  line.append(_taskNr);
+               else
+                  line.append(".");
+               line.append("</td>");
+               cellIdx++;
+               Utils.NextDay(tCur);
+            }
+            if(numTaskCells >= 1)
+            {
+               if(1 == tCur.weekday) // monday ?
+               {
+                  if(tCur.monthday < 7)
+                     startWorM <= " g_start_month";
+                  else 
+                     startWorM <= " g_start_week";
+               }
+               else
+                  startWorM <= "";
+
+               // // line.append("<td class=\"gb "+((duration > 0) ? "gd" : "g")+((_taskNr&1)?"o":"e")+"\" colspan=\""+numTaskCells+"\"");
+               line.append("<td class=\"gb "+getCSSClassPrefix(tCur)+((_taskNr&1)?"o":"e")+startWorM+"\" colspan=\""+numTaskCells+"\"");
+
+               sToolTip <= Utils.ToHTML(Utils.TimeToOrgStringWeekday(tCur))+" (day "+(cellIdx+1)+")\n"+sResUsed;
+               appendTaskResourceUsageToToolTip(sToolTip);
+               if(1 == numTaskCells)
+                  schedule.appendDailyResourceUsageToToolTip(sToolTip, cellIdx);
+               sToolTip.append(sTaskDeps);
+               sToolTip.replace("\n\n\n", "\n\n");
+               line.append(" title=\""+sToolTip+"\"");
+               line.append(">");
+               if(_bOverview)
+                  line.append(sTaskId);
+               else
+                  line.append(sResTask);
+               line.append("</td>");
+               cellIdx += numTaskCells;
+               loop(numTaskCells)
+                  Utils.NextDay(tCur);
+            }
+            loop(_numCells - cellIdx)
+            {
+               if(1 == tCur.weekday) // monday ?
+               {
+                  if(tCur.monthday < 7)
+                     startWorM <= " g_start_month";
+                  else 
+                     startWorM <= " g_start_week";
+               }
+               else
+                  startWorM <= "";
+
+               if(schedule.isWeekend(tCur))
+                  line.append("<td class=\"gb "+sGP+"_w");
+               else if(schedule.isPublicHoliday(tCur))
+                  line.append("<td class=\"gb "+sGP+"_p");
+               // // else if(isAnyAllocatedResourceHoliday(tCur))
+               // //    line.append("<td class=\"gb "+sGP+"_h\">.</td>");
+               else
+                  line.append("<td class=\"gb "+sGP+"");
+               line.append(startWorM);
+               line.append("\"");
+               sToolTip <= Utils.ToHTML(Utils.TimeToOrgStringWeekday(tCur))+" (day "+(cellIdx+1)+")";
+               schedule.appendDailyResourceUsageToToolTip(sToolTip, cellIdx);
+               line.append(" title=\""+sToolTip+"\"");
+               line.append(">.</td>");
+               cellIdx++;
+               Utils.NextDay(tCur);
+            }
+            if(cellIdx != _numCells)
+               die "cellIdx!=numCells ("+cellIdx+"!="+_numCells+")";
+         }
+         else
+         {
+            // No schedule (should not be reachable)
+            loop(_numCells)
+            {
+               line.append("<td class=\"gb gn\">.</td>");
+            }
+         }
+      }
+
+      // Comment
+      line.append("<td class=\""+cssEO+" g_td_base g_note\">");
+      if(!_bOverview)
+      {
+         String *s;
+         int lineIdx = 0;
+         if((org_node.callout_lines.numElements) > 1)
+         {
+            // Multi-line
+            foreach s in org_node.callout_lines
+            {
+               if(lineIdx > 0)
+                  line.append("<br>\n");
+               line.append(Utils.ToHTML(s));
+               lineIdx++;
+            }
+         }
+         else
+         {
+            line.append(Utils.ToHTML(org_node.callout_lines.get(0)));
+         }
+
+         String sStatus <= getTrafficLightStatusComment();
+         if(!sStatus.isBlank())
+         {
+            line.append("<br><strong>Status</strong>:<br>&nbsp;"+Utils.ToHTML(sStatus));
+         }
+      }
+      line.append("</td>");
+
+      line.append("</tr>\n");
+      _buf.append(line);
+            
+      return true;
+   }
+
+   public method recursiveAppendToMarkdownTable(MDTable _tbl) : boolean {
+      local Task *task;
+      local String line;
+
+      local boolean bFilteredOut = isFilteredOut();
+      // // if(isTaskGroup())
+      // //    bFilteredOut = bFilteredOut && org_node.hasTags();
+
+      foreach task in serial_deps
+      {
+         if(!task.recursiveAppendToMarkdownTable(_tbl))
+            return false;
+      }
+
+      if(!bFilteredOut || shared::b_filter_recursive)
+      {
+         foreach task in parallel_deps
+         {
+            if(!task.recursiveAppendToMarkdownTable(_tbl))
+               return false;
+         }
+      }
+
+      if(!bFilteredOut)
+      {
+         if((effort > 0) || b_milestone)
+         {
+            _tbl.addRow();
+
+            // Task
+            _tbl.addCell(Utils.ResubstMarkdownTextFormatting(getReportCaption()));
+
+            if(b_traffic_lights)
+            {
+               boolean tlStatus = getTrafficLightStatus();
+               switch(tlStatus)
+               {
+                  case true:
+                     _tbl.addCell("+");
+                     break;
+                  case false:
+                     _tbl.addCell("-");
+                     break;
+                  case maybe:
+                     _tbl.addCell("o");
+                     break;
+               }
+            }
+
+            // Effort
+            if(effort > 0)
+               _tbl.addCell(String(effort));
+            else
+               _tbl.addCell("");
+
+            // Done
+            if(tracked_effort > 0)
+               _tbl.addCell(String(tracked_effort));
+            else
+               _tbl.addCell("");
+
+            // Resources
+            if(resources.numElements > 0)
+            {
+               _tbl.addCell(getResourcesString());
+            }
+            else
+            {
+               _tbl.addCell("");
+            }
+
+            // Start
+            _tbl.addCell(Utils.TimeToCSVString(scheduled_start));
+
+            // End
+            _tbl.addCell(Utils.TimeToCSVString(scheduled_end));
+
+            // Notes
+            _tbl.addCell(Utils.ResubstMarkdownTextFormatting(org_node.callout_lines.mergeToString("\n")));
+         }
+      }
+
+      return true;
+   }
+
+   public method doScheduleMilestone() : boolean {
+      if(b_milestone)
+      {
+         return
+            ((selected_milestone.isBlank()) && (@(this) == @(schedule.milestones.last))) ||
+            (selected_milestone == id) ||
+            (selected_milestone == (org_node.title.toLower()))
+            ;
+      }
+      return false;
+   }
+
+   public method isFilteredOut() : boolean {
+      if(org_node.isFilteredOut())
+         return true;
+
+      if!(org_node.org.export_group_filters.isEmpty())
+      {
+         String *idPath;
+         boolean bFiltered = true;
+         foreach idPath in org_node.org.export_group_filters
+         {
+            Task tg <= schedule.findTaskByIdPath(this/*thisHint*/, idPath);
+            // trace "xxx tg="+#(tg);
+            if(null != tg)
+            {
+               if((@(tg) == @(this)) || hasParent(tg))
+               {
+                  bFiltered = false;
+                  break;
+               }
+            }
+         }
+         return bFiltered;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class Schedule : org::Defs {
+   define int MAX_TASKS     = 10000;
+   define int MAX_RESOURCES = 1000;
+
+   define int MAX_RESOURCES_PER_TASK = 8;
+
+   org::Org *org;
+
+   String project_id;  // derived from title (anchorfied), e.g. "Test Project" => "test-project"
+
+   PointerArray all_tasks;   // Task instances
+   PointerArray milestones;  // Task refs
+   PointerArray resources;   // Resource instances
+
+   HashTable task_hash;
+   HashTable resource_hash;
+
+   Time *start_date;
+
+   Resource res_public_holidays;  // pseudo resource, holds public holidays
+
+   String in_path_prefix;
+   String out_path_prefix;
+
+   protected method addTask(org::Node _nOrg,
+                            Task      _parentTask, 
+                            float     _effortHours,
+                            String    _resourceIdStr
+                            ) : Task {
+      Task task <= new Task;
+      task.schedule <= this;
+      task.parent   <= _parentTask;
+      task.id        = _nOrg.getOrCreateTaskId();
+      // trace "xxx add task.id=\""+task.id+"\"";
+      task.org_node <= deref _nOrg;  // (note) usually just a reference, except for synthetic milestone
+      task.effort    = _effortHours;
+      task.duration = _nOrg.getDurationInHours();  // -1 when unknown
+      task.resource_id_str <= deref _resourceIdStr;
+      task.initTask();
+
+      all_tasks.add(#(deref task));
+         
+      if!(task_hash.exists(task.id))
+      {
+         task_hash[task.id] = task;
+      }
+      else
+      {
+         if(b_debug && shared::b_warn)
+            trace "[~~~] warning: duplicate task.id=\""+task.id+"\"";
+      }
+
+      return task;
+   }
+
+   protected method addTaskGroup(org::Node _nOrg,
+                                 Task      _parentTask
+                                 ) : Task {
+      return addTask(_nOrg, _parentTask, -1/*effortHours*/, ""/*resourceIdStr*/);
+   }
+
+   protected method addMilestone(org::Node _nOrg,
+                                 Task      _parentTask
+                                 ) : Task {
+      Task r <= addTask(_nOrg, _parentTask, -1/*effortHours*/, ""/*resourceIdStr*/);
+      if(null != r)
+      {
+         r.b_milestone = true;
+         milestones.add(r);
+      }
+      return r;
+   }
+
+   protected method addResource(org::Node _nOrg,
+                                Resource  _parentRes
+                                ) : Resource {
+      Resource res <= new Resource;
+      res.org_node <= _nOrg;
+      res.schedule <= this;
+      res.parent   <= _parentRes;
+      res.id        = _nOrg.resource_id;
+      res.initResource();
+
+      if(null != _parentRes)
+      {
+         _parentRes.addMember(this);
+      }
+
+      if!(resource_hash.exists(res.id))
+      {
+         resources.add(#(deref res));
+         resource_hash[res.id] = res;
+         resource_hash[res.id] = res;
+      }
+      else
+      {
+         trace "[---] duplicate resource.id=\""+res.id+"\"";
+         res <= null;
+      }
+
+      return res;
+   }
+
+   public method findTaskById(String _id) : Task {
+      return task_hash.get(_id);
+   }
+
+   public method findTaskByIdOrFail(String _id) : Task {
+      Task r <= findTaskById(_id);
+      if(null != r)
+         return r;
+      else
+      {
+         trace "[---] scheduler: failed to resolve task \""+_id+"\"";
+         exit(10);
+      }
+   }
+
+   public method findTaskByIdPathOrFail(Task _thisHint, String _idPath) : Task {
+      local PointerArray tasks;
+      local String idPath = Utils.CreateAnchor(_idPath);
+      local StringArray path <= idPath.splitChar('.');
+      findTasksByPathPattern(_thisHint, path, tasks);
+      if(0 == tasks.numElements)
+      {
+         path <= _idPath.splitChar('.');
+         findTasksByPathPattern(_thisHint, path, tasks);
+      }
+      if(1 == tasks.numElements)
+      {
+         return tasks.get(0);
+      }
+      else if(tasks.numElements > 1)
+      {
+         trace "[~~~] scheduler: task id path \""+_idPath+"\" is not unique (matches "+tasks.numElements+" nodes)";
+         // exit(10);
+         return tasks.get(0);
+      }
+      else
+      {
+         trace "[---] scheduler: failed to resolve task path \""+_idPath+"\""+(b_debug?(" (path="+path+")"):"");
+         exit(10);
+      }
+   }
+
+   public method findTaskByIdPath(Task _thisHint, String _idPath) : Task {
+      local PointerArray tasks;
+      local String idPath = Utils.CreateAnchor(_idPath);
+      local StringArray path <= idPath.splitChar('.');
+      findTasksByPathPattern(_thisHint, path, tasks);
+      if(1 == tasks.numElements)
+      {
+         return tasks.get(0);
+      }
+      else if(tasks.numElements > 1)
+      {
+         // Not unique
+      }
+      else
+      {
+         // Failed to resolve
+      }
+      return null;
+   }
+
+   public method findResourceByIdOrFail(String _id) : Resource {
+      Resource r <= resource_hash.get(_id);
+      if(null != r)
+         return r;
+      else
+      {
+         trace "[---] failed to resolve resource \""+_id+"\"";
+         exit(10);
+      }
+   }
+
+   public method findTasksByExactPathPattern(Task _thisHint, Task _groupOrNull, StringArray _path, PointerArray _retTasks) {
+      // e.g. regression.test would match
+      //  backend.module1.regression.test.fuzz
+      //  backend.module2.regression.test.unit
+      // or
+      //  ui.spec could be a unique match
+      local String path = Utils.CreateAnchor(_path);
+      if(b_debug2)
+         trace "xxx findTasksByPathPattern(path="+_path+"("+path+"))";
+      if(_path.numElements < 1)
+         return;
+      Task *t;
+      Task thisHint <= _thisHint;
+      for(;;)
+      {
+         int reqNumParents = _path.numElements - 1;
+         String lastId <= _path.last;
+         foreach t in all_tasks
+         {
+            // trace "xxx search t.id="+t.id;
+            if(t.num_parents >= reqNumParents)
+            {
+               bool bSubMatch = (null == _groupOrNull) || ((@(t) != @(_groupOrNull)) && t.hasParent(_groupOrNull));
+
+               if(bSubMatch && (null != thisHint))
+               {
+                  // Prefer "local" ids (near 'thisHint')
+                  if(b_debug3)
+                     trace "xxx findTasksByExactPathPattern: t.id="+t.id+" thisHint.id="+thisHint.id+" groupOrNull="+((null != _groupOrNull)?_groupOrNull.id:"-")+" findpath="+_path;
+                  bSubMatch = t.hasParent(thisHint) || t.hasChild(thisHint);
+               }
+
+               if(bSubMatch)
+               {
+                  if(t.id == lastId)
+                  {
+                     int pathIdx = _path.numElements - 1;
+                     Task p <= t.parent;
+                     loop(reqNumParents)
+                     {
+                        if(b_debug3)
+                           trace "xxx findTasksByPathPattern: try match p.id="+p.id;
+                        if(_path[pathIdx - 1] != p.id)
+                           break;
+                        pathIdx--;
+                     }
+                     if(0 == pathIdx)
+                     {
+                        if(b_debug2)
+                           trace "xxx findTasksByPathPattern: MATCH t.id="+t.id+" reqNumParents="+reqNumParents;
+                        _retTasks.add(t);
+                     }
+                  }
+               }
+            }
+         }
+
+         if((null != thisHint) && _retTasks.isEmpty())
+         {
+            // trace "xxx thisHint.parent="+#(thisHint.parent);
+            thisHint <= thisHint.parent; // broaden search range
+         }
+         else
+            break;
+
+         // trace "xxx continue with thisHint="+((null != thisHint)?thisHint.id:"-");
+
+      } // loop
+   }
+
+   public method findTasksByPathPattern(Task _thisHint, StringArray _path, PointerArray _retTasks) {
+
+      findTasksByExactPathPattern(_thisHint, null/*groupOrNull*/, _path, _retTasks);
+
+      if(_retTasks.numElements < 1)
+      {
+         if(_path.numElements > 1)
+         {
+            // Try <subproject>.<subpath>
+            Task taskGroup <= findTaskById(_path.get(0));
+            if(null != taskGroup)
+            {
+               local StringArray path = _path;
+               path.delete(0);
+               findTasksByExactPathPattern(_thisHint, taskGroup, path, _retTasks);
+            }
+         }
+      }
+   }
+
+   protected method resolveResources() : boolean {
+      local Task *task;
+      foreach task in all_tasks
+      {
+         if(!task.resolveResources())
+            return false;
+      }
+      return true;
+   }
+
+   protected method resolveDependencies() : boolean {
+      local Task *task;
+      foreach task in all_tasks
+      {
+         if(!task.resolveDependencies())
+            return false;
+      }
+      return true;
+   }
+
+   protected method recursiveScan(local org::Node _nOrg,
+                                  local Task      _parentTask,
+                                  local Resource  _parentRes
+                                  ) : boolean {
+
+      local Task *task;
+      local Resource *res;
+
+      if!([ST_NONE,ST_TODO, ST_ACTV, ST_TEST, ST_DONE].contains(_nOrg.state))
+         return true;
+
+      // Already finished ?
+      Time tFinish <= null;
+
+      if!(_nOrg.finish_date.isBlank())
+      {
+         tFinish <= Utils.ToTimeObjectCalendarDate(_nOrg.finish_date);
+         // trace "xxx finish_date="+_nOrg.finish_date+" tFinish="+#(tFinish)+" start_date="+#(start_date);
+         if(null != tFinish)
+         {
+            // trace "[dbg] task.id=\""+_nOrg.getOrCreateTaskId()+"\" finish_date="+Utils.TimeToOrgString(tFinish)+" project start_date="+Utils.TimeToOrgString(start_date);
+            if(tFinish < start_date)
+            {
+               if(b_debug)
+                  trace "[dbg] task.id=\""+_nOrg.getOrCreateTaskId()+"\" was finished before start date ("+Utils.TimeToOrgString(tFinish)+" < "+Utils.TimeToOrgString(start_date);
+               task <= addTask(_nOrg, _parentTask, 0/*effort*/, ""/*allocate*/);
+               task.finish_date <= deref tFinish;
+               return true;
+            }
+         }
+      }
+
+      float effortHours = _nOrg.getEffortInHours();
+
+      if((_nOrg.b_fold || _nOrg.b_private) && !_nOrg.b_ignore)
+      {
+         _nOrg.recursiveFoldSubTaskAllocations(null);
+         float eff = _nOrg.calcAccumulatedChildEffortInHours();
+         if(effortHours > 0)
+            effortHours += eff;
+         else
+            effortHours = eff;
+      }
+
+      if(effortHours > 0)
+      {
+         String sAllocate <= _nOrg.getPropertyByName("allocate");
+         if(null != sAllocate)
+         {
+            if(b_debug)
+               trace "[dbg] add task \""+_nOrg.title+"\" (id="+_nOrg.getOrCreateTaskId()+") parent="+((null != _parentTask)?_parentTask.id:"none");
+            task <= addTask(_nOrg, _parentTask, effortHours, deref sAllocate);
+            if(null == task)
+               return false;
+         }
+         else
+         {
+            trace "[~~~] task \""+_nOrg.getOrCreateTaskId()+"\" is unassigned (effort="+effortHours+"h)";
+            task <= addTask(_nOrg, _parentTask, effortHours, null/*resourceIdStr*/);
+            if(null == task)
+               return false;
+         }
+         // // task.finish_date <= deref tFinish;
+      }
+      else if!(_nOrg.resource_id.isBlank())
+      {
+         if(null != _nOrg.getPropertyByName("allocate"))
+         {
+            trace "[---] task \""+_nOrg.getOrCreateTaskId()+"\" has 'allocate' but no 'effort' property";
+            return false;
+         }
+         res <= addResource(_nOrg, _parentRes);
+         if(null == res)
+            return false;
+      }
+      else 
+      {
+         // Task group
+         if(null != _nOrg.getPropertyByName("allocate"))
+         {
+            trace "[---] task \""+_nOrg.getOrCreateTaskId()+"\" has 'allocate' but no 'effort' property";
+            return false;
+         }
+         if(null != _nOrg.getPropertyByName("milestone"))
+         {
+            if(b_debug)
+               trace "[dbg] add milestone \""+_nOrg.title+"\" (id="+_nOrg.getOrCreateTaskId()+")";
+            task <= addMilestone(_nOrg, _parentTask);
+            if(null == task)
+               return false;
+         }
+         else
+         {
+            if(b_debug)
+               trace "[dbg] add taskgroup \""+_nOrg.title+"\" (id="+_nOrg.getOrCreateTaskId()+")";
+            task <= addTaskGroup(_nOrg, _parentTask);
+            if(null == task)
+               return false;
+         }
+      }
+
+      // Recurse
+      if!(_nOrg.b_fold || _nOrg.b_private || _nOrg.b_ignore)
+      {
+         local org::Node *nOrg;
+         foreach nOrg in _nOrg.child_nodes
+         {
+            if(!recursiveScan(nOrg,
+                              (null != task) ? task : _parentTask,
+                              (null != res) ? res : _parentRes
+                              )
+               )
+               return false;
+         }
+
+         foreach nOrg in _nOrg.sub_nodes
+         {
+            if(!recursiveScan(nOrg,
+                              (null != task) ? task : _parentTask,
+                              (null != res) ? res : _parentRes
+                              )
+               )
+               return false;
+         }
+      }
+      
+      return true;
+   }
+
+   protected method findMilestoneDependencies(local Task ms) : boolean {
+      // // local Task *ms;
+      // // foreach ms in milestones
+      {
+         // trace "xxx ms="+#(ms);
+         if(b_debug)
+            trace "[dbg] findMilestoneDependencies: milestone=\""+ms.id+"\"";
+         local Task *task;
+         local PointerArray dependentTasks;
+         dependentTasks.empty();
+         dependentTasks.add(ms);
+         foreach task in ms.non_unique_dependencies
+         {
+            if(!task.recursivelyAddDependencies(ms, dependentTasks))
+               return false;
+         }
+
+         if(b_debug)
+            trace "[dbg]   => milestone \""+ms.id+"\" has "+(ms.non_unique_dependencies.numElements)+" dependencies";
+         // break;
+      }
+
+      return true;
+   }
+
+   protected method orderTasksByDependencies(local Task ms) : boolean {
+      // local Task *ms;
+      // foreach ms in milestones
+      {
+         // trace "xxx ms="+#(ms);
+         if(b_debug2)
+            trace "xxx orderTasksByDependencies: milestone=\""+ms.id+"\"";
+
+         ms.recursiveSortDependencies();
+      }
+
+      return true;
+   }
+
+   protected method debugPrintTaskDependencies() {
+      Task *task;
+      local String buf;
+      foreach task in all_tasks
+      {
+         if( (task.isDependency() && !task.isTaskGroup()) || task.isMilestone() )
+         {
+            Task *depTask;
+            int depIdx = 0;
+            buf.empty();
+            foreach depTask in task.non_unique_dependencies
+            {
+               // if(-1 != depTask.effort)
+               // {
+                  if(depIdx > 0)
+                     buf.append(", ");
+                  buf.append(depTask.id);
+                  // buf.append(#(depTask));
+                  depIdx++;
+               // }
+            }
+            if(b_debug)
+               trace "[trc] task.id=\""+task.id+"\" dependencies=["+buf+"]";
+            // trace "[trc] task.id=\""+task.id+"\" dependencies="+#(task.non_unique_dependencies);
+         }
+      }
+   }
+
+   protected method debugPrintMilestoneDependencies(local Task ms, boolean _bTime, boolean _bSchedule) {
+      local String buf;
+      // trace "debugPrintMilestoneDependencies:\n";
+      // foreach ms in milestones
+      if(1)
+      {
+         int sLen = ms.id.numChars;
+         int padT = 66;
+         int padL = mathMaxi(0, (padT - sLen)/2);
+         int padR = padT - sLen - padL;
+         trace "##################"+"="*padL+"~~~~~~~ milestone: \""+ms.id+"\" ~~~~~~~~~~"+"="*padR+"##################";
+         buf.empty();
+         ms.recursiveDebugPrintSortedDependencies(buf, 0/*level*/, -1/*serialIdx*/, _bTime, _bSchedule);
+         trace buf;
+      }
+   }
+
+   protected method resetNonUniqueDependencies() {
+      Task *task;
+      foreach task in all_tasks
+      {
+         task.b_dep_done = false;
+         task.non_unique_dependencies.empty();
+      }
+   }
+
+   protected method resetAllDependencies() {
+      Task *task;
+      foreach task in all_tasks
+      {
+         task.b_dep_done = false;
+         task.non_unique_dependencies.empty();
+         task.b_parallel_dep_done = false;
+         task.parallel_deps.empty();
+         task.serial_deps.empty();
+         task.resources_used.empty();
+      }
+   }
+
+   protected method rebuildNonUniqueMilestoneDependenciesAfterSort(local Task ms) {
+      // foreach ms in milestones
+      {
+         ms.recursiveRebuildNonUniqueDependenciesAfterSort(ms);
+      }
+   }
+
+   protected method removeMilestoneDuplicateSerialDeps() {
+      local Task *ms;
+      local PointerArray doneSerialDeps;
+      foreach ms in milestones
+      {
+         ms.recursiveRemoveDuplicateSerialDeps(doneSerialDeps);
+      }
+   }
+
+   protected method serializeMilestoneDeps(local Task ms) {
+      // // Task *ms;
+      boolean bMore;
+      int numPasses = 1;
+      int tStart = milliSeconds();
+      do
+      {
+         bMore = false;
+
+         // // foreach ms in milestones
+         {
+            bMore |= ms.recursiveSerializeDeps();
+         }
+
+         // // trace "[dbg] -------- task dependencies after 3rd pass:";
+         if(0)
+            debugPrintMilestoneDependencies(ms, false/*bTime*/, false/*bSchedule*/);
+
+         if(bMore)
+         {
+            numPasses++;
+            // trace "-------------- MORE--------------";
+
+            resetNonUniqueDependencies();
+            rebuildNonUniqueMilestoneDependenciesSerialAndParallel(ms);
+         }
+      }
+      while(bMore);
+      int tDelta = milliSeconds() - tStart;
+      if(b_debug)
+         trace "[dbg] serializeMilestoneDeps: "+numPasses+" pass(es) in "+tDelta+" millisecond(s)";
+   }
+
+   protected method rebuildNonUniqueMilestoneDependenciesSerialAndParallel(local Task ms) {
+      // foreach ms in milestones
+      {
+         ms.recursiveRebuildNonUniqueDependenciesSerialAndParallel(ms);
+      }
+   }
+
+   // // protected method calcMilestoneTaskDurations(local Task ms) : boolean {
+   // //    // foreach ms in milestones
+   // //    if(!ms.recursiveCalcTaskDurations())
+   // //       return false;
+   // //    return true;
+   // // }
+
+   protected method makeAllResourcesAvailable() {
+      Resource *res;
+      foreach res in resources
+      {
+         res.resetAvailDayHours();
+      }
+   }
+
+   protected method createPublicHolidayResource() {
+      Resource res <= new Resource;
+      local org::Node nOrg;
+      nOrg.org <= org;
+      res.org_node <= deref nOrg;
+      res.schedule <= this;
+      res.parent   <= null;
+      res.id        = "+ public-holidays +";
+      res.initResource();
+      res_public_holidays <= deref res;
+   }
+
+   public method isWeekend(Time _t) : boolean {
+      if((0 == _t.weekday)/*sun*/ || (6 == _t.weekday)/*sat*/)
+         return true;
+
+      return false;
+   }
+
+   public method isPublicHoliday(Time _t) : boolean {
+
+      if(res_public_holidays.isVacation(_t))
+         return true;
+
+      return false;
+   }
+
+   protected method createMilestoneAndAddAllTasks() {
+      // Synthetic milestone, e.g. for todo.txt files
+      local org::Node nOrg;
+      nOrg.org <= org;
+      nOrg.title = "All";
+      nOrg.setPropertyByName("milestone", "t");
+      local String sDepends;
+      Task *task;
+      foreach task in all_tasks
+      {
+         if(!sDepends.isBlank())
+            sDepends.append(",");
+         sDepends.append(task.getIdPath());
+      }
+      // trace "xxx sDepends=\""+sDepends+"\"";
+      nOrg.setPropertyByName("depends", deref sDepends);
+      addMilestone(deref nOrg, null/*parentTask*/);
+   }
+
+   protected method createMilestoneAndAddAllMilestones() {
+      // Synthetic milestone, for multi-project scheduling
+      local org::Node nOrg;
+      nOrg.org <= org;
+      nOrg.title = "All";
+      nOrg.setPropertyByName("milestone", "t");
+      local String sDepends;
+      Task *task;
+      foreach task in milestones
+      {
+         if(!sDepends.isBlank())
+            sDepends.append(",");
+         sDepends.append(task.getIdPath());
+      }
+      // trace "xxx sDepends=\""+sDepends+"\"";
+      nOrg.setPropertyByName("depends", deref sDepends);
+      Task ms <= addMilestone(deref nOrg, null/*parentTask*/);
+      ms.b_invisible = true;
+   }
+
+   public method initFromOrg(org::Org _org) : boolean {
+
+      org <= _org;
+
+      String sTitle <= org.getGlobalPropertyByName("title");
+      if(null != sTitle)
+      {
+         project_id <= Utils.CreateAnchor(sTitle);
+         if(b_debug)
+            trace "[dbg] project id is \""+project_id+"\"";
+      }
+      else
+      {
+         trace "[---] project is missing global 'title' property";
+         return false;
+      }
+
+      if(now_override.isBlank())
+         t_now.now();
+      else
+      {
+         t_now <= Utils.ToTimeObjectCalendarDate(now_override);
+         if(null == t_now)
+         {
+            trace "[---] invalid 'now_override' string \""+now_override+"\"";
+            return false;
+         }
+         t_now.min = 0;
+         t_now.sec = 0;
+         t_now.calc();
+         if(b_debug)
+            trace "[dbg] 'now' override is "+Utils.TimeToOrgString(t_now);
+      }
+
+      task_hash.alloc(MAX_TASKS);
+      resource_hash.alloc(MAX_RESOURCES);
+
+      all_tasks.empty();
+      milestones.empty();
+      resources.empty();
+
+      createPublicHolidayResource();
+
+      start_date <= null;
+      String sProjectStart <= _org.getGlobalPropertyByName("start-date");
+      if(null != sProjectStart)
+      {
+         start_date <= Utils.ToTimeObjectCalendarDate(sProjectStart);
+      }
+
+      // Add milestones and tasks/taskgroups
+      org::Node *nOrg;
+      foreach nOrg in _org.nodes
+      {
+         if(!recursiveScan(nOrg, null/*parentTask*/, null/*parentRes*/))
+            return false;
+      }
+
+      if(milestones.isEmpty())
+      {
+         createMilestoneAndAddAllTasks();
+      }
+      else if(b_multi_project)
+      {
+         createMilestoneAndAddAllMilestones();
+      }
+
+      if(!resolveResources())
+      {
+         trace "[---] Schedule::resolveResources: failed.";
+         return false;
+      }
+
+      // (todo) must process each milestone separately (may result in different sub-task dependencies)
+      local Task *ms;
+      foreach ms in milestones
+      {
+         if(ms.doScheduleMilestone())
+         {
+            // resetNonUniqueDependencies();
+            resetAllDependencies();
+
+            if(!resolveDependencies())
+            {
+               trace "[---] Schedule::resolveDependencies: failed.";
+               return false;
+            }
+
+            if(!findMilestoneDependencies(ms))
+               return false;
+
+            if(b_debug)
+            {
+               trace "[dbg] -------- task dependencies after first pass:";
+               debugPrintTaskDependencies();
+            }
+
+            if(!orderTasksByDependencies(ms))
+               return false;
+
+            if(0)
+               debugPrintMilestoneDependencies(ms, false/*bTime*/, false/*bSchedule*/);
+
+            // exit(10);//xxxxxxxxxxxxxxxxxxx
+
+            resetNonUniqueDependencies();
+            rebuildNonUniqueMilestoneDependenciesAfterSort(ms);
+
+            if(b_debug)
+            {
+               trace "[dbg] -------- task dependencies after 2nd pass:";
+               debugPrintTaskDependencies();
+            }
+
+            serializeMilestoneDeps(ms);
+
+            // debugPrintMilestoneDependencies(ms, false/*bTime*/, false/*bSchedule*/);
+
+            if(b_debug)
+               debugPrintMilestoneDependencies(ms, true/*bTime*/, false/*bSchedule*/);
+
+            if(b_debug)
+               trace "xxx num_recurse="+Task.xxx_num_recurse;
+
+            // // if(0)
+            // // {
+            // //    // (note) does not consider blocked resources (=> just a rough estimate, wildly differs from actual, scheduled duration)
+            // //    Float totalDuration = ms.recursiveCalcTotalDuration();
+            // //    trace "[dbg] total duration: ~"+totalDuration+"h ("+int((totalDuration/8)+0.5)+"d, ~"+((totalDuration/160.0).printf("%4.2f"))+" man months)";
+            // // }
+
+            if(null == start_date)
+            {
+               start_date <= t_now;
+
+               if(shared::b_warn)
+                  trace "[~~~] warning: 'start-date' global property not set, assuming 'now' ("+Utils.TimeToOrgStringWeekday(t_now)+")";
+            }
+
+            if(null != start_date)
+            {
+               // Start at 8:00
+               start_date.hour = 8;
+               start_date.min  = 0;
+               start_date.sec  = 0;
+
+               makeAllResourcesAvailable();
+
+               if(b_debug)
+                  trace "[dbg] scheduled start-date: "+Utils.TimeToOrgString(start_date);
+
+               local Time tCur = start_date;
+               local Integer dayIdx = 0;
+
+               if(ms.recursiveScheduleTasks(tCur, dayIdx))
+               {
+                  if(shared::b_verbose)
+                     debugPrintMilestoneDependencies(ms, true/*bTime*/, true/*bSchedule*/);
+
+                  if(shared::b_verbose)
+                     trace "[...] org: milestone \""+ms.id+"\" reached on "+Utils.TimeToOrgString(ms.scheduled_end);
+
+                  if(shared::b_verbose)
+                  {
+                     Float totalEffort = ms.recursiveCalcTotalEffort();
+                     trace "[...] org: total effort: "+totalEffort+"h ("+int((totalEffort/8)+0.5)+"d, ~"+((totalEffort/160.0).printf("%4.2f"))+" man months)";
+                  }
+               }
+               else
+               {
+                  trace "[---] Schedule: recursiveScheduleTasks() failed.";
+                  return false;
+               }
+            }
+
+         }
+      } // foreach ms
+
+      return true;
+   }
+
+   public method saveCSVToString(String _buf) : boolean {
+      _buf.append("Task;Effort;Allocate;Start;End;Comment\n");
+
+      local Task *ms;
+      foreach ms in milestones
+      {
+         if(!ms.recursiveAppendToCSV(_buf))
+            return false;
+      }
+
+      return true;
+   }
+
+   public static SortTasksByStartDate(PointerArray _tasks) {
+      int numTasks = _tasks.numElements;
+      if(numTasks > 1)
+      {
+         boolean bSwapped;
+         do
+         {
+            bSwapped = false;
+            int idx = 0;
+            loop(numTasks -1)
+            {
+               Task c <= _tasks.get(idx);
+               Task n <= _tasks.get(idx + 1);
+
+               if(n.scheduled_start < c.scheduled_start)
+               {
+                  _tasks.swap(idx, idx+1);
+                  bSwapped = true;
+               }
+
+               idx++;
+            }
+         }
+         while(bSwapped);
+      }
+   }
+
+   public method appendDailyResourceUsageToToolTip(String _buf, int _dayIdx) {
+      local String sTracked;
+      local String sPlanned;
+
+      Resource *res;
+      foreach res in resources
+      {
+         float numH = res.tracked_day_hours.get(_dayIdx);
+         boolean bLF = false;
+         if(numH > 0)
+         {
+            sTracked.append(res.id+": "+numH+"h");
+            bLF = true;
+         }
+
+         float numOther = res.calcNumOtherProjectHoursOnDay(_dayIdx);
+         if(numOther > 0)
+         {
+            sTracked.append(" (+ "+numOther+"h on other projects)");
+            bLF = true;
+         }
+         if(bLF)
+            sTracked.append("\n");
+
+         numH = res.planned_day_hours.get(_dayIdx);
+         if(numH > 0)
+         {
+            sPlanned.append(res.id+": "+numH+"h\n");
+         }
+      }
+
+      if(!sTracked.isBlank())
+      {
+         _buf.append("\n\nTracked:\n");
+         _buf.append(sTracked);
+      }
+
+      if(!sPlanned.isBlank())
+      {
+         if(sTracked.isBlank())
+            _buf.append("\n");
+         _buf.append("\nPlanned:\n");
+         _buf.append(sPlanned);
+      }
+   }
+
+   public method saveHTMLToString(String _buf) : boolean {
+
+      local String sTemplate;
+
+      if(!shared::html_template_pathname.isBlank())
+      {
+         if(!sTemplate.loadLocal(shared::html_template_pathname, true/*bRemoveCR*/))
+         {
+            trace "[---] failed to load HTML template \""+shared::html_template_pathname+"\"";
+            return false;
+         }
+         if(shared::b_verbose)
+            trace "[...] org: loaded HTML template \""+shared::html_template_pathname+"\"";
+      }
+      else
+      {
+         sTemplate.load("builtin_template.html", true/*bRemoveCR*/);
+      }
+
+      local String sMeta;
+
+      if(shared::b_html_auto_refresh)
+         sMeta.append("<meta http-equiv=\"refresh\" content=\"1\">\n");
+
+      String sTitle <= org.getGlobalPropertyByName("title");
+      if(null != sTitle)
+      {
+         sTitle <= Utils.ToHTML(sTitle);
+      }
+      else
+      {
+         sTitle <= Utils.ToHTML(in_path_prefix);
+      }
+
+      String sScheduleTags <= org.getGlobalPropertyByName("schedule-tags");
+      schedule_tags <= null;
+      if(null != sScheduleTags)
+      {
+         if(!sScheduleTags.isBlank())
+         {
+            schedule_tags <= sScheduleTags.replace(":",",").splitChar(',');
+            String *sTag;
+            foreach sTag in schedule_tags
+               sTag.trim();
+         }
+      }
+
+      // Load CSS file
+      //  - either from local file system (customization) (input or output dir)
+      //  - or the built-in fallback file
+      local String sCSS;
+      local String cssSrc;
+      boolean bCSSLoaded;
+      boolean bCSSLocal = true;
+      bCSSLoaded = cssSrc.loadLocal(in_path_prefix+".css", true/*bRemoveCR*/);  // local file overrides pak files
+      if(!bCSSLoaded)
+         bCSSLoaded = cssSrc.loadLocal(out_path_prefix+".css", true/*bRemoveCR*/);  // local file overrides pak files
+      // // if(!bCSSLoaded)
+      // //    bCSSLoaded = cssSrc.loadLocal("html_plan.css", true/*bRemoveCR*/);  // local file overrides pak files
+      if(!bCSSLoaded)
+      {
+         bCSSLocal = false;
+         bCSSLoaded = cssSrc.load("html_plan.css", true/*bRemoveCR*/);
+      }
+      if(bCSSLoaded)
+      {
+         sCSS.append(cssSrc);
+
+         // // trace "xxx b_docs="+shared::b_docs+" bCSSLocal="+bCSSLocal;
+
+         if(shared::b_docs && !bCSSLocal)
+         {
+            bCSSLoaded = cssSrc.load("markdown.css", true/*bRemoveCR*/);
+            if(bCSSLoaded)
+            {
+               // trace "xxx cssSrc=\""+cssSrc+"\"";
+               sCSS.append(cssSrc);
+            }
+            else
+            {
+               trace "[!!!] scheduler: internal error: failed to load built-in \"markdown.css\" fallback file !!";
+            }
+         }
+      }
+      else
+      {
+         trace "[!!!] scheduler: internal error: failed to load _any_ HTML plan CSS file !!";
+         return false;
+      }
+
+      local String sPlan;
+      local String sRV;
+
+      // // if(shared::b_docs)
+      sPlan.append("<div class=\"base plan\">\n");
+
+      int cwNrCur = Utils.TimeToCalendarWeek(t_now);
+      if(b_debug2)
+         trace "xxx cwNrCur="+cwNrCur+" t_now.yearday="+t_now.yearday;
+
+      local Task *ms;
+      foreach ms in milestones
+      {
+         if(ms.doScheduleMilestone())
+         {
+            sPlan.append("\n<!-- milestone: "+ms.id+" -->\n");
+
+            int numDays = 0;
+            Time tCur = start_date;
+
+            // Project plan table
+            sPlan.append("<table class=\"g_table\"><thead><tr class=\"g_hdr_tr\"><th class=\"g_hdr_base g_hdr_task\">Task</th>");
+
+            if(b_traffic_lights)
+            {
+               sPlan.append("<th class=\"g_hdr_base g_hdr_status\">St.</th>");
+            }
+            sPlan.append("<th class=\"g_hdr_base g_hdr_effort\">Effort</th><th class=\"g_hdr_base g_hdr_done\">Done</th><th class=\"g_hdr_base g_hdr_res\">Resource</th><th class=\"g_hdr_base g_hdr_start\">Start</th><th class=\"g_hdr_base g_hdr_end\">End</th><th class=\"g_hdr_base g_hdr_tags\">Tags</th>");
+            if(b_debug)
+            {
+               trace "[dbg] start_date="+Utils.TimeToOrgString(tCur);
+               trace "[dbg] ms.scheduled_end="+Utils.TimeToOrgString(ms.scheduled_end);
+            }
+
+            // Append day headers
+            int cwLeft = 0;  // on sunday 1 day is left, on monday it's 7
+            while(tCur <= ms.scheduled_end)
+            {
+               if(!b_skip_gantt)
+               {
+                  if(b_html_cw)
+                  {
+                     if(0 == cwLeft)
+                     {
+                        cwLeft = Utils.TimeGetCalendarDaysUntilMonday(tCur);
+                        // trace "xxx cwLeft="+cwLeft;
+                        int cwNr = Utils.TimeToCalendarWeek(tCur);
+                        if(cwNr == cwNrCur)
+                           sPlan.append("<th class=\"g_hdr_day_cw_cur");
+                        else if(tCur < t_now)
+                           sPlan.append("<th class=\"g_hdr_day_cw_past");
+                        else
+                           sPlan.append("<th class=\"g_hdr_day_cw");
+                        if(tCur.monthday < 7)
+                           sPlan.append(" g_start_month");
+                        else
+                           sPlan.append(" g_start_week");
+                        sPlan.append("\" colspan=\""+cwLeft+"\">");
+                        numDays += cwLeft;
+
+                        if(1 == tCur.weekday)  // monday ?
+                        {
+                           sPlan.append("CW"+cwNr+"<br>");
+                           sPlan.append("<span class=\"g_hdr_cw_date\">"+Utils.TimeToCSVString(tCur)+"</span>");
+                           /////sPlan.append("<small class=\"g_hdr_wday\">"+Utils.TimeToWeekdayName(tCur)+"</small>");
+                        }
+                        sPlan.append("</th>");
+                     }
+                  }
+                  else
+                  {
+                     boolean bToday = (0 == Utils.CompareDays(tCur, t_now));
+                     if(bToday)
+                        sPlan.append("<th class=\"g_hdr_today\">");
+                     else
+                        sPlan.append("<th class=\"g_hdr_day\">");
+
+                     sPlan.append("&nbsp;"+Utils.TimeToCSVString(tCur));
+                     sPlan.append("&nbsp;<br>");
+                     sPlan.append("<small class=\"g_hdr_wday\">"+Utils.TimeToWeekdayName(tCur)+"</small>");
+
+                     sPlan.append("</th>");
+
+                     // Next day
+                     numDays++;
+                  }
+               }
+               else
+               {
+                  // Next day
+                  numDays++;
+               }
+               Utils.NextDay(tCur);
+               cwLeft--;
+            }
+
+            if(0 == numDays)
+            {
+               trace "[---] saveHTMLToString: milestone.id=\""+ms.id+"\" numDays=0";
+               return false;
+            }
+            
+            if(b_debug)
+            {
+               trace "[dbg] numDays="+numDays;
+            }
+
+            sPlan.append("<th class=\"g_hdr_base g_hdr_note\">Comment</th>");
+            sPlan.append("</tr></thead>\n");
+
+            tCur = start_date;
+
+            // Verbose
+            local Integer taskNr = 1;
+
+            local PointerArray reportTasks;
+            ms.recursiveFindReportTasks(reportTasks);
+            Task *cTask;
+
+            if(b_sort_by_start_date)
+               SortTasksByStartDate(reportTasks);
+
+            foreach cTask in reportTasks
+            {
+               if(!cTask.b_invisible)
+               {
+                  if(!cTask.appendTableRowsToHTML(sPlan, numDays, taskNr, false/*bOverview*/))
+                     return false;
+                  taskNr++;
+               }
+            }
+
+            // Overview
+            taskNr = 1;
+            if(!b_skip_gantt_overview)
+            {
+               // Separator
+               sPlan.append("<tr>");
+               loop(7 + b_traffic_lights)
+                  sPlan.append("<td class=\"g_overview_seperator\"></td>");
+               sPlan.append("</tr>\n");
+
+               foreach cTask in reportTasks
+               {
+                  if(!cTask.b_invisible)
+                  {
+                     if(!cTask.appendTableRowsToHTML(sPlan, numDays, taskNr, true/*bOverview*/))
+                        return false;
+                     taskNr++;
+                  }
+               }
+            }
+
+            sPlan.append("</table><!--/plan-->\n");
+
+
+            // Resource view table
+            if(b_resource_view)
+            {
+               sRV.append("<div class=\"base rv\">\n");
+
+               // Header
+               sRV.append("\n\n<!-- resource view -->\n<table class=\"r_table\"><thead><tr class=\"g_hdr_tr\"><th class=\"g_hdr_base g_hdr_res\">Resource</th>");
+               sRV.append("<th class=\"g_hdr_base g_hdr_effort\">Total</th><th class=\"g_hdr_base g_hdr_done\">Done</th>");
+
+               tCur = start_date;
+               numDays = 0;
+               while(tCur <= ms.scheduled_end)
+               {
+                  if(0 == Utils.CompareDays(tCur, t_now))
+                     sRV.append("<th class=\"g_hdr_today\">");
+                  else
+                     sRV.append("<th class=\"g_hdr_day\">");
+                  sRV.append("&nbsp;"+Utils.TimeToCSVString(tCur));
+                  sRV.append("&nbsp;<br>");
+                  sRV.append("<small class=\"g_hdr_wday\">"+Utils.TimeToWeekdayName(tCur)+"</small>");
+                  sRV.append("</th>");
+
+                  // Next day
+                  Utils.NextDay(tCur);
+                  numDays++;
+               }
+
+               sRV.append("</tr></thead>\n");
+
+               Resource *res;
+               int resIdx = 0;
+               foreach res in resources
+               {
+                  res.appendRowToResourceViewHTML(sRV, start_date, numDays, resIdx++);
+               }
+
+               sRV.append("</table><!--resource view-->\n");
+
+               sRV.append("</div><!--/rv-->\n");
+
+            } // if b_resource_view
+         }
+
+      } // foreach ms
+
+      sPlan.append("</div><!--/plan-->\n");
+
+      local String sDocs;
+      local String sW3;
+
+      if(shared::b_docs)
+      {
+         sDocs.append("<div class=\"base docs\">\n");
+
+         local String mdBuf;
+         org.toMarkdown(mdBuf);
+
+         // // local String outDir <= Utils.DirName(out_path_prefix);
+         local String tmpName = out_path_prefix+".html";  // same as output name
+
+         if(!shared::b_dry_run)
+         {
+            mdBuf.saveLocal(tmpName);
+            Utils.ExecTKS("app:md -il -p \""+tmpName+"\" -o \""+tmpName+"\"");
+
+            if(mdBuf.loadLocal(tmpName, true/*bRemoveCR*/))
+            {
+               sDocs.append(mdBuf);
+            }
+            else
+            {
+               trace "[---] failed to read auto-generated markdown tmp file \""+tmpName+"\"";
+               return false;
+            }
+         }
+         else
+         {
+            trace "[...] org: would save markdown tmp file \""+tmpName+"\"";
+         }
+
+         sDocs.append("</div><!--/docs-->\n");
+      }
+      else
+      {
+         if(shared::b_docs_footer)
+         {
+            // w3 validator
+            sW3.append("<div class=\"base w3\">\n");
+            sW3.append("\n<p><a href=\"http://validator.w3.org/check?uri=referer\"><img src=\"http://www.w3.org/Icons/valid-html401\" alt=\"Valid HTML 4.01 Transitional\" height=\"31\" width=\"88\"></a></p>\n");
+            sW3.append("</div><!--/w3validator-->\n");
+         }
+      }
+
+ 
+      sTemplate.replace("$(TITLE)", sTitle);
+      sTemplate.replace("$(META)", sMeta);
+      sTemplate.replace("$(CSS)", sCSS);
+      sTemplate.replace("$(PLAN)", sPlan);
+      sTemplate.replace("$(RV)", sRV);
+      sTemplate.replace("$(DOCS)", sDocs);
+      sTemplate.replace("$(W3VALIDATOR)", sW3);
+
+      _buf.append(sTemplate);
+
+      return true;
+   }
+
+   public method saveMarkdownToString(String _buf) : boolean {
+
+      local Task *ms;
+      local MDTable mdtable;
+
+      foreach ms in milestones
+      {
+         if(ms.doScheduleMilestone())
+         {
+            mdtable.init(7 + b_traffic_lights);
+
+            if(b_traffic_lights)
+               mdtable.setHeader(["Task", "Status", "Effort", "Done", "Allocate", "Start", "End", "Comment"]);
+            else
+               mdtable.setHeader(["Task", "Effort", "Done", "Allocate", "Start", "End", "Comment"]);
+
+            mdtable.setCaption("Schedule for milestone \'"+(ms.org_node.title)+"\'");
+
+            _buf.append("# Milestone \'"+(ms.org_node.title)+"\'\n\n");
+
+            if(!ms.recursiveAppendToMarkdownTable(mdtable))
+               return false;
+
+            mdtable.toMarkdown(_buf, 2/*indent*/);
+
+            _buf.append("\n\n");
+         }
+      }
+
+      return true;
+   }
+
+   public method setInputPathPrefix(String _path) {
+      // w/o suffix, e.g. "tests_org/my_project_plan"
+      in_path_prefix = _path;
+      if(in_path_prefix.isBlank())
+         in_path_prefix = "./";
+   }
+
+   public method setOutputPathPrefix(String _path) {
+      // w/o suffix, e.g. "out_html/my_project_plan"
+      out_path_prefix = _path;
+      if(out_path_prefix.isBlank())
+         out_path_prefix = "./";
+   }
+
+}
