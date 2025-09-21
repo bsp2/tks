@@ -1,0 +1,548 @@
+// ----
+// ---- file   : CurveImageImportDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 07Jul2020
+// ---- changed: 08Jul2020, 04Feb2025
+// ----
+// ----
+// ----
+
+module MCurveImageImportDialog;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class CurveImageColorPreview extends Layer {
+   IntArray *colors;
+
+   public virtual onDraw() {
+      int numColors = colors.numElements;
+      float availW = getSizeX() - (numColors-1)*2;
+      float w = (availW / numColors);
+      float cx = 0;
+      float cy = 2;
+      float h = getSizeY()-4;
+      int idx = 0;
+
+      loop(numColors)
+      {
+         UIRenderer.DrawFilledRectangle(cx, cy, w, h, colors.get(idx++)|0xFF000000);
+         cx += w;
+
+         if(idx != numColors)
+         {
+            UIRenderer.DrawFilledRectangle(cx, cy, 2, h, #ff000000);
+            cx += 2.0;
+         }
+      }
+
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, getSizeX(), getSizeY());
+   }
+}
+
+
+// <class.png>
+class CurveImageImportDialog extends Dialog {
+
+   protected XMLForm *xfm;
+
+   protected Curve4Dialog                  *curve4dlg;
+   protected GTexture                      *gtexture;
+   protected GProceduralTextureStateCurve4 *state;
+
+   protected Button     *bt_tex;
+   protected PNGIcon    *icon_tex;
+   protected FloatParam *fp_max_colors;
+   protected FloatParam *fp_hue_spread;
+   protected FloatParam *fp_h_min;
+   protected FloatParam *fp_h_max;
+   protected FloatParam *fp_s_min;
+   protected FloatParam *fp_s_max;
+   protected FloatParam *fp_v_min;
+   protected FloatParam *fp_v_max;
+   protected CurveImageColorPreview *color_preview;
+   protected CheckBox   *cb_sort_lum;
+   protected Button     *bt_apply;
+   protected Button     *bt_cancel;
+
+   protected String last_pathname;
+   protected Texture tex_import;
+   protected IntArray cur_colors;
+
+
+
+   // <ui_init.png>
+   public method initCurveImageImportDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("CurveImageImportDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initCurveImageImportDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      icon_tex <= new PNGIcon;
+      icon_tex.visitIconTexture(tex_import);
+      bt_tex.setIcon(icon_tex);
+
+      color_preview.initLayer();
+      color_preview.colors <= cur_colors;
+
+      initWindow(xfm, "Curve Image Color Import", 263, 82,
+                 770,
+                 450
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // // <ui_mouse.png>
+   // public virtual onMouseClick(MouseEvent _ev) {
+   //    if(_ev.isRightButton())
+   //    {
+   //       return true;
+   //    }
+   //    return Dialog::onMouseClick(_ev);
+   // }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showCurveImageImportDialog(Curve4Dialog                  _curve4dlg,
+                                            GTexture                      _gtexture,
+                                            GProceduralTextureStateCurve4 _state
+                                            ) {
+
+      curve4dlg <= _curve4dlg;
+      gtexture  <= _gtexture;
+      state     <= _state;
+
+      showNearMouse(-10, -10);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      resizeAtLeastToMinimum();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+      handleBrowse();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <method.png>
+   public method importHistogramFromFile(String _pathname) {
+      // 64*64 => 4096 colors max
+      if(tex_import.loadLocalImage(_pathname, 64, 64, 4))
+      {
+         // tex_import.clear(#FFff0000);
+         tex_import.unload();
+         tex_import.flags = TEX_MODULATE;
+         icon_tex.visitIconTexture(tex_import);
+         calcColors();
+         redraw();
+      }
+      else
+      {
+         Global.Error("Failed to load image \""+_pathname+"\"");
+      }
+   }
+
+   // <method.png>
+   public method calcColors() {
+
+      if(0 == tex_import.sx)
+         return;
+
+      int maxColors = fp_max_colors.getFloatValue();
+      int numHueSlots = fp_hue_spread.getFloatValue();
+      float hMin = fp_h_min.getFloatValue();
+      float hMax = fp_h_max.getFloatValue();
+      float sMin = fp_s_min.getFloatValue();
+      float sMax = fp_s_max.getFloatValue();
+      float vMin = fp_v_min.getFloatValue();
+      float vMax = fp_v_max.getFloatValue();
+
+      local PointerArray hueSlots;  // array of IntArrays
+      local IntArray *colors;
+      local IntArray uniqueColors;
+      local IntArray colorFreq;
+      int c32;
+      int x;
+      int y;
+      local Float h;
+      local Float s;
+      local Float v;
+      int hueSlotIdx;
+      int idx;
+      local IntArray ia;
+
+      cur_colors.empty();
+
+      hueSlotIdx = 0;
+      loop(numHueSlots)
+         hueSlots.add(#(new IntArray));
+
+      // Build histogram
+      y = 0;
+      loop(tex_import.sy)
+      {
+         x = 0;
+         loop(tex_import.sx)
+         {
+            c32 = tex_import.getXY32(x, y) & 0x00FFFFFF;
+            UI.RGB32TOHSV(c32, h, s, v);
+            if((hMin <= h <= hMax) &&
+               (sMin <= s <= sMax) &&
+               (vMin <= v <= vMax)
+               )
+            {
+               idx = uniqueColors.indexOf(c32, 0);
+               if(-1 == idx)
+               {
+                  idx = uniqueColors.numElements;
+                  uniqueColors.add(c32);
+               }
+               colorFreq[idx] = colorFreq.get(idx) + 1;
+            }
+            x++;
+         }
+         y++;
+      }
+      colorFreq.sortByValue(ia);
+      ia.reverse();
+      colorFreq.rearrange(ia); // debug
+      // trace "xxx colorFreq="+#(colorFreq);
+      uniqueColors.rearrange(ia);
+      // uniqueColors.reverse();
+      trace "xxx #uniqueColors="+uniqueColors.numElements;
+
+      if(0)
+      {
+         idx = 0;
+         loop(mathMini(10, uniqueColors.numElements))
+         {
+            local Integer io = uniqueColors.get(idx);
+            trace "xxx uniqueColors["+idx+"]=#"+io.printf("%08x");
+            idx++;
+         }
+      }
+
+      // Sort unique colors into hueSlots
+      foreach c32 in uniqueColors
+      {
+         UI.RGB32TOHSV(c32, h, s, v);
+         hueSlotIdx = h / (360.0 / numHueSlots);
+         colors <= hueSlots[hueSlotIdx];
+         colors.add(c32);
+      }
+
+      // Pick 'maxColors' from hue slots
+      int hueSubIdx = 0;
+      int numLeft = maxColors;
+      while(numLeft > 0)
+      {
+         hueSlotIdx = 0;
+         int oldNumLeft = numLeft;
+         loop(hueSlots.numElements)
+         {
+            if(numLeft > 0)
+            {
+               colors <= hueSlots[hueSlotIdx];
+               if(hueSubIdx < colors.numElements)
+               {
+                  cur_colors.add(colors[hueSubIdx]);
+                  numLeft--;
+               }
+            }
+            else
+               break;
+            hueSlotIdx++;
+         }
+         if(numLeft == oldNumLeft)
+            break;
+         hueSubIdx++;
+      }
+
+      // Sort cur_colors by hue, saturation, and value
+      if(cur_colors.numElements > 1)
+      {
+         boolean bSortLum = cb_sort_lum.isSelected();
+         boolean bSwapped;
+         do
+         {
+            bSwapped = false;
+            c32 = cur_colors[0];
+            UI.RGB32TOHSV(c32, h, s, v);
+            int hPrev = h;
+            int sPrev = s * 100;
+            int vPrev = v * 100;
+            int lumPrev =
+               ((c32 >> 16)&255) * 0.2126 +
+               ((c32 >>  8)&255) * 0.7152 +
+               ((c32      )&255) * 0.0722 ;
+            idx = 1;
+            loop(cur_colors.numElements-1)
+            {
+               c32 = cur_colors.get(idx);
+
+               UI.RGB32TOHSV(c32, h, s, v);
+
+               boolean bSortHue = false;
+
+               if(bSortLum)
+               {
+                  int lum =
+                     ((c32 >> 16)&255) * 0.2126 +
+                     ((c32 >>  8)&255) * 0.7152 +
+                     ((c32      )&255) * 0.0722 ;
+
+                  if(lum < lumPrev)
+                     bSwapped = true;
+                  else if(lum == lumPrev)
+                     bSortHue = true;
+               }
+               else
+               {
+                  bSortHue = true;
+               }
+
+               if(bSortHue)
+               {
+                  if(int(h) < hPrev)
+                  {
+                     bSwapped = true;
+                  }
+                  else if(int(h*100) == hPrev)
+                  {
+                     if(int(v*100) < vPrev)
+                     {
+                        bSwapped = true;
+                     }
+                     else if(int(v*100) == vPrev)
+                     {
+                        if(int(s*100) < sPrev)
+                           bSwapped = true;
+                     }
+                  }
+               }
+
+               if(bSwapped)
+               {
+                  cur_colors.swap(idx-1, idx);
+                  break;
+               }
+               hPrev = h;
+               sPrev = s;
+               vPrev = v;
+               lumPrev = lum;
+               idx++;
+            }
+         }
+         while(bSwapped);
+      }
+
+      // trace "xxx cur_colors num="+cur_colors.numElements+" values="+#(cur_colors);
+
+      color_preview.setToolTipCaption(uniqueColors.numElements+" unique colors, "+cur_colors.numElements+" colors selected");
+
+      handleColorsChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleColorsChanged() {
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleApply() {
+      Global.SuccessShort("Apply selection ("+cur_colors.numElements+" colors)");
+      hide();
+      state.importColors(curve4dlg, gtexture, cur_colors);
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+   }
+
+   // <ui_handle.png>
+   protected method handleBrowse() {
+
+      local String suggestedDir;
+      local String suggestedFile;
+
+      if(Utils.CanFileBeRead(last_pathname))  // (note) win32 dialog does not open when file does not exist
+      {
+         Utils.SplitPathname(last_pathname, suggestedDir, suggestedFile);
+      }
+      else
+      {
+         suggestedDir <= current_project.getColorPresetDirectory();
+         suggestedFile <= null;
+      }
+
+      trace "[dbg] CurveImageImportDialog::handleBrowse: suggestedDir=\""+suggestedDir+"\"";
+
+      local String file <= TKUI_OpenFileDialog(suggestedDir,
+                                               suggestedFile,
+                                               "Select image file",
+                                               ["PNG Images (*.png)"],
+                                               ["*.png"],
+                                               false/*bMultipleSelection*/,
+                                               false/*bDirectoriesOnly*/
+                                               );
+      if(null != file)
+      {
+         last_pathname = file;
+         importHistogramFromFile(file);
+      }
+
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx CurveImageImportDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageStart pgStart <= root_form.pg_start;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(bt_apply):
+            handleApply();
+            return true;
+
+         case @(bt_cancel):
+            handleCancel();
+            return true;
+
+         case @(bt_tex):
+            handleBrowse();
+            return true;
+
+         case @(fp_max_colors):
+            Global.Print("Max Colors is "+fp_max_colors.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_hue_spread):
+            Global.Print("Hue Spread is "+fp_hue_spread.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_h_min):
+            Global.Print("Min Hue is "+fp_h_min.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_h_max):
+            Global.Print("Max Hue is "+fp_h_max.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_s_min):
+            Global.Print("Min Saturation is "+fp_s_min.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_s_max):
+            Global.Print("Max Saturation is "+fp_s_max.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_v_min):
+            Global.Print("Min Value is "+fp_v_min.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(fp_v_max):
+            Global.Print("Max Value is "+fp_v_max.getFloatValue());
+            calcColors();
+            return true;
+
+         case @(cb_sort_lum):
+            Global.Print("Sort-by-luminosity is "+Utils.GetEnableString(cb_sort_lum.isSelected()));
+            calcColors();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

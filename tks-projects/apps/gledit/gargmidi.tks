@@ -1,0 +1,241 @@
+// ----
+// ---- file   : gargmidi.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 03Jul2020
+// ---- changed: 14Aug2020
+// ----
+// ----
+// ----
+module MGArgMIDI;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GArgFloatMIDI : GArg {
+
+   define int MSG_CC           = 0;
+   define int MSG_NRPN         = 1;
+   define int MSG_LASTNOTENR   = 2;
+   define int MSG_NOTEACTIVE   = 3;
+   define int MSG_NOTEONVEL    = 4;
+   define int MSG_NOTEOFFVEL   = 5;
+   define int MSG_NOTEPRESSURE = 6;
+   define int MSG_CHPRESSURE   = 7;
+   define int MSG_PITCHBEND    = 8;
+   define int MSG_PRGCHG       = 9;
+
+   static StringArray msg_type_names = [
+      /* 0 */ "CC",
+      /* 1 */ "NRPN",
+      /* 2 */ "Last Note Nr",
+      /* 3 */ "Note Active",
+      /* 4 */ "Note On Velocity",
+      /* 5 */ "Note Off Velocity",
+      /* 6 */ "Note Pressure",
+      /* 7 */ "Ch Pressure",
+      /* 8 */ "Pitchbend",
+      /* 9 */ "Program Change",
+                                        ];
+
+   // <method.png>
+   public virtual initIO() {
+      inputs.free();
+      outputs.free();
+
+      addParamChoice("msg_type", "MIDI Msg Type", 0/*def*/, msg_type_names);
+      addParamChoice("channel", "MIDI Channel", 0/*def*/, ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"]);
+      addParamInt("cc_nr",   "CC#",   1/*def*/, 0/*min*/, 0/*minLimit*/,   127/*max*/,   127/*maxLimit*/,   64/*ctr*/);
+      addParamInt("nrpn_nr", "NRPN#", 0/*def*/, 0/*min*/, 0/*minLimit*/, 16383/*max*/, 16383/*maxLimit*/, 8192/*ctr*/);
+      addParamInt("note_nr", "Note#", 0/*def*/, 0/*min*/, 0/*minLimit*/,   127/*max*/,   127/*maxLimit*/,   60/*ctr=C-5*/);
+
+      addParamBool("signed", "Signed", false);
+      addParamBool("normalize", "Normalize", true);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getInitialArgType() : int {
+      return TYPE_FLOAT;
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "midi_";
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId, 
+                       local GModule      _module, 
+                       local GProgram     _program, 
+                       local String       _out, 
+                       local String       _dstVar, 
+                       local boolean      _bGLSL,
+                       local PointerArray _objDone
+                       ) {
+
+      local String varName <= getVarName();
+
+      int     msgType    = getChoiceParamById("msg_type");
+      int     ch         = getChoiceParamById("channel");
+      int     ccNr       = getIntParamById("cc_nr");
+      int     nrpnNr     = getIntParamById("nrpn_nr");
+      int     noteNr     = getIntParamById("note_nr");
+      boolean bSigned    = getBoolParamById("signed");
+      boolean bNormalize = getBoolParamById("normalize");
+
+      local String sVal;
+
+      switch(msgType)
+      {
+         case MSG_CC:
+            sVal = "(gledit::midi_ccs[("+ch+"*128)+"+ccNr+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-64.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/63.0f)) : ("+sVal+"*(1.0f/64.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+
+         case MSG_NRPN:
+            sVal = "(gledit::midi_nrpns[("+ch+"*16384)+"+nrpnNr+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-8192.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/8191.0f)) : ("+sVal+"*(1.0f/8192.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/8191.0f))";
+            }
+            break;
+
+         case MSG_LASTNOTENR:
+            sVal = "(gledit::midi_last_notes["+ch+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-60.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/67.0f)) : ("+sVal+"*(1.0f/60.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+
+         case MSG_NOTEACTIVE:
+            sVal = "(gledit::midi_note_active[("+ch+"*128)+"+noteNr+"] ? 1.0f : 0.0f)";
+            break;
+
+         case MSG_NOTEONVEL:
+            sVal = "(gledit::midi_noteon_vel[("+ch+"*128)+"+noteNr+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-64.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/63.0f)) : ("+sVal+"*(1.0f/64.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+
+         case MSG_NOTEOFFVEL:
+            sVal = "(gledit::midi_noteoff_vel[("+ch+"*128)+"+noteNr+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-64.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/63.0f)) : ("+sVal+"*(1.0f/64.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+
+         case MSG_NOTEPRESSURE:
+            sVal = "(gledit::midi_note_pressure[("+ch+"*128)+"+noteNr+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-64.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/63.0f)) : ("+sVal+"*(1.0f/64.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+
+         case MSG_CHPRESSURE:
+            sVal = "(gledit::midi_ch_pressure["+ch+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-64.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/63.0f)) : ("+sVal+"*(1.0f/64.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+
+         case MSG_PITCHBEND:
+            sVal = "(gledit::midi_pitchbend["+ch+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-8192.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/8191.0f)) : ("+sVal+"*(1.0f/8192.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/16383.0f))";
+            }
+            break;
+
+         case MSG_PRGCHG:
+            sVal = "(gledit::midi_prgchg["+ch+"])";
+            if(bSigned)
+            {
+               sVal <= "("+sVal+"-64.0)";
+               if(bNormalize)
+                  sVal <= "("+sVal+" >= 0) ? ("+sVal+"*(1.0f/63.0f)) : ("+sVal+"*(1.0f/64.0f))";
+            }
+            else
+            {
+               if(bNormalize)
+                  sVal <= "("+sVal+"*(1.0f/127.0f))";
+            }
+            break;
+      }
+      
+      _out.append(_dstVar+" = "+sVal+";\n");
+   }
+}

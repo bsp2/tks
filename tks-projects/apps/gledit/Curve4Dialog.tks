@@ -1,0 +1,593 @@
+// ----
+// ---- file   : Curve4Dialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 07Jul2020
+// ---- changed: 08Jul2020, 25Jul2020, 26Jul2020, 01Aug2020, 02Aug2020, 07Aug2020, 08Aug2020
+// ----          15Aug2020, 04Feb2025, 05Feb2025, 07Feb2025, 18Jul2025
+// ----
+// ----
+// ----
+
+module MCurve4Dialog;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class Curve4Ticks extends Control {
+
+   Texture *tex;
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      Control::onMouseEnter(_ev);
+      UI.SetMouseFocus(this);
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(isMouseFocusWithin())
+      {
+         float w = getSizeX();
+         float relX = _ev.mouse_rel_x / w;
+         int texX = tex.sx * relX;
+         int c32 = tex.getXY32(texX, 0);
+         Integer r,g,b,a;
+         r = (c32 >> 16) & 255;
+         g = (c32 >>  8) & 255;
+         b = (c32      ) & 255;
+         a = (c32 >> 24) & 255;
+         setToolTipCaption("x="+relX+" c32=#"+a.printf("%02x")+r.printf("%02x")+g.printf("%02x")+b.printf("%02x"));
+         if(_ev.leftButtonDown())
+         {
+            UI.SetClipboard(getToolTipCaption());
+            Global.Print("Copy position and color to clipboard");
+         }
+         hideToolTip();
+         showToolTip(false/*bStage2*/);
+      }
+   }
+
+   public virtual wantToolTipNearMouse() : boolean {
+      return true;
+   }
+
+   // public virtual getToolTipCaption() : String {
+   //    return s_tooltip;
+   // }
+
+   public virtual onDrawPost() {
+      float w = getSizeX();
+      float h = 4;//getSizeY();
+      int numTicks = 20;
+
+      // // UIRenderer.DrawFilledRectangle(0,0,w,h,#ff4f0000);
+
+      float xStep = w / numTicks;
+      float cx = xStep;
+      int c32 = UI.IsDarkOrMono() ? #7fffffff : #7f000000;
+      loop(numTicks-1)
+      {
+         UIRenderer.DrawLine(cx, 0, cx, h, c32);
+         cx += xStep;
+      }
+   }
+}
+
+
+// <class.png>
+class Curve4Dialog extends Dialog {
+
+   protected XMLForm *xfm;
+
+   protected GTexture                      *gtexture;  // null when env is != null
+   protected GProceduralTextureStateCurve4 *state;     // null when env is != null
+   protected GEnvelopeCurve4               *env;       // !null when gtexture is null
+
+   // Texture mode
+   protected LayerSwitch  *ls_import;
+   protected Button       *bt_import;
+   protected Curve4Ticks  *c_ticks;
+   protected ColorModForm *f_colormod;
+   protected Label        *lb_tex;
+   protected PNGIcon      *icon_tex;
+
+   // Curves
+   protected Panel *p_curves;
+   public    BezierCurveForm *[] f_curves;   // refs
+   protected LayerSwitch *[]     ls_curves;  // refs
+
+   protected PopupMenu *pm_tools;
+
+   protected static CurveImageImportDialog *dlg_import;
+
+
+   // <ui_init.png>
+   public method initCurve4Dialog(boolean _bTex) : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile(GConfig.b_curve4_vertical ? "Curve4Dialog.xfm" : "Curve4Dialog_2x2.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initCurve4Dialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      // Curves:
+      int curveIdx = 0;
+      loop(GProceduralTextureStateCurve4.NUM_CURVES)
+      {
+         BezierCurveForm curveForm <= xfm.findLayerById("f_curve_"+curveIdx);
+         if(!curveForm.initBezierCurveForm(0.0f/*reqLabelW*/,
+                                           false/*bScaleOff*/,
+                                           false/*bImport*/,
+                                           null/*importToolTip*/
+                                           )
+            )
+         {
+            trace "[---] Curve4Dialog::init: initBezierCurveForm() failed";
+            return false;
+         }
+         curveForm.setEnableCopyPasteKeys(false);  // leave lctrl-c/v to parent editor
+         f_curves.add(curveForm);
+         LayerSwitch lsCurve <= xfm.findLayerById("ls_curve_"+curveIdx);
+         ls_curves.add(lsCurve);
+         curveIdx++;
+      }
+
+      f_colormod.initColorModForm();
+
+      initWindow(xfm, "Texture Curves", 263*UI.font_scaling, 42*UI.font_scaling,
+                 (GConfig.b_curve4_vertical ? _bTex ? 586 : 622 : 970)*UI.font_scaling,
+                 (GConfig.b_curve4_vertical ? _bTex ? 425 : 520 : 564)*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      if(_ev.isRightButton())
+      {
+         showToolsMenu();
+         return true;
+      }
+      return Dialog::onMouseClick(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      if(null != gtexture)
+         f_colormod.addTabCycleOverrides(layers);
+
+      layers.joinRR(layers,
+                    [
+                       f_curves[0],
+                       f_curves[1],
+                       f_curves[2],
+                       f_curves[3]
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showCurve4DialogTexture(GTexture _texture, GProceduralTextureStateCurve4 _state) {
+      // texture curves
+      gtexture <= _texture;
+      state    <= _state;
+      env      <= null;
+
+      // Show "Import" button
+      ls_import.switchToLayerNr(1);
+      f_colormod.showColorMod(state.color_mod);
+
+      icon_tex <= new PNGIcon;
+      icon_tex.visitIconTexture(gtexture.tex);
+      lb_tex.setIcon(icon_tex);
+      updateTexIconScaling(true/*bReset*/);
+
+      c_ticks.tex <= gtexture.tex;
+
+      int curveIdx = 0;
+      BezierCurveForm *curveForm;
+      LayerSwitch *lsCurve;
+      BezierEditState *beState;
+      Envelope *beEnv;
+
+      StringArray curveLabels <= _state.getCurveLabels();
+
+      loop(GProceduralTextureStateCurve4.NUM_CURVES)
+      {
+         curveForm <= f_curves.get(curveIdx);
+         lsCurve <= ls_curves.get(curveIdx);
+         lsCurve.switchToLayerNr(1);
+         beState <= state.curve_states.get(curveIdx);
+         beEnv <= state.curve_envs.get(curveIdx);
+         curveForm.showCurve(curveLabels.get(curveIdx)+":", beState, beEnv, null/*mtxNamedRecalc*/);
+
+         curveIdx++;
+      }
+
+      setWindowTitle("Texture Curves");
+      show();
+   }
+
+   // <ui_show.png>
+   public method showCurve4DialogEnvelope(GEnvelopeCurve4 _env) {
+
+      gtexture <= null;
+      state    <= null;
+      env      <= _env;
+
+      // Hide "Import" button
+      ls_import.switchToLayerNr(0);
+
+      int curveIdx = 0;
+      BezierCurveForm *curveForm;
+      LayerSwitch *lsCurve;
+      BezierEditState *beState;
+      Envelope *beEnv;
+
+      loop(GProceduralTextureStateCurve4.NUM_CURVES)
+      {
+         curveForm <= f_curves.get(curveIdx);
+         lsCurve <= ls_curves.get(curveIdx);
+         lsCurve.switchToLayerNr(1);
+         beState <= _env.curve_states.get(curveIdx);
+         beEnv <= _env.curve_envs.get(curveIdx);
+         curveForm.showCurve(curveIdx+":", beState, beEnv, null/*mtxNamedRecalc*/);
+
+         curveIdx++;
+      }
+
+      setWindowTitle("Envelope Curves");
+      show();
+   }
+
+   // <method.png>
+   protected method updateTexIconScaling(boolean _bReset) {
+      if(null != gtexture)
+      {
+         // Calculate icon scaling
+         float iconW = gtexture.tex.getSx();
+         float iconH = gtexture.tex.getSy();
+         iconW = (_bReset?256:(getSizeX() - 14)) / iconW;
+         iconH = 12.0 / iconH;
+         lb_tex.setIconScale2f(iconW, iconH);
+         // lb_tex.setRequiredSizeX(mathMaxi(gtexture.tex.getSx(), getSizeX()));
+      }
+   }
+
+   // <ui.png>
+   public virtual handleResize() {
+      updateTexIconScaling(true/*bReset*/);
+      Dialog::handleResize();
+      updateTexIconScaling(false/*bReset*/);
+      Dialog::relayout();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      trace "[dbg] Curve4Dialog::postShow";
+      Dialog::postShow();
+
+      updateOverlays();
+
+      restoreCurveDialogGeometry();
+
+      updateTexIconScaling(false/*bReset*/);
+      resizeAtLeastToMinimum();
+      relayout();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <method.png>
+   protected method saveCurveDialogGeometry() {
+      if(isAnyCurveZoomed())
+         Utils.SaveGeometry(this, GConfig.curve4_zoomed_geo);
+      else
+         Utils.SaveGeometry(this, GConfig.curve4_geo);
+   }
+
+   // <method.png>
+   protected method restoreCurveDialogGeometry() {
+      if(isAnyCurveZoomed())
+         restoreGeometryIfValid(GConfig.curve4_zoomed_geo);
+      else
+         restoreGeometryIfValid(GConfig.curve4_geo);
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      // // UI.SetKeyboardFocus(cm_mode);
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      saveCurveDialogGeometry();
+
+      removeOverlays();
+
+      lb_tex.setIcon(null);
+
+      int curveIdx = 0;
+      loop(GProceduralTextureStateCurve4.NUM_CURVES)
+      {
+         BezierCurveForm curveForm <= f_curves.get(curveIdx++);
+         curveForm.stopEditing();
+      }
+
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected method updateOverlays() {
+      removeOverlays();
+
+      BezierCurveForm *curveForm;
+      int curveIdx = 0;
+      foreach curveForm in f_curves
+      {
+         LayerSwitch lsCurve <= ls_curves.get(curveIdx);
+         if(1 == lsCurve.getCurrentChildNr())
+            curveForm.addBezierOverlay(this);
+         curveIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method removeOverlays() {
+      BezierCurveForm *curveForm;
+      foreach curveForm in f_curves
+      {
+         curveForm.removeBezierOverlay(this);
+      }
+   }
+
+   // <method_get.png>
+   protected method isAnyCurveZoomed() : boolean {
+      LayerSwitch *lsCurve;
+      foreach lsCurve in ls_curves
+      {
+         if(0 == lsCurve.getCurrentChildNr())
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveZoom(int _curveIdx, boolean _bMaximize) {
+
+      saveCurveDialogGeometry();
+
+      BezierCurveForm *curveForm;
+
+      for(int hideCurveIdx = 0; hideCurveIdx < 4; hideCurveIdx++)
+      {
+         LayerSwitch lsCurve <= ls_curves.get(hideCurveIdx);
+         lsCurve.switchToLayerNr(!_bMaximize || (_curveIdx == hideCurveIdx));
+      }
+
+      restoreCurveDialogGeometry();
+
+      relayout();
+      curveForm <= f_curves.get(_curveIdx);
+      curveForm.focusBezierEdit();
+      updateOverlays();
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleImportHistogram() {
+
+      if(null != gtexture)
+      {
+         if(null == dlg_import)
+         {
+            dlg_import <= new CurveImageImportDialog;
+            dlg_import.initCurveImageImportDialog();
+         }
+
+         dlg_import.showCurveImageImportDialog(this,
+                                               gtexture,
+                                               state
+                                               );
+      }
+   }
+
+   // <ui_show.png>
+   protected method showToolsMenu() {
+
+      pm_tools <= PopupMenu.New(this);
+      pm_tools.b_ext_focus_hack = true;
+
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      if(null != gtexture)
+      {
+         pmb <= pm.addDefaultButton("Import Image (Histogram)..",
+                                    "import_histogram"
+                                    );
+         // pmb.setActive(null != obj);
+         pmb.setAccelerators("lctrl-l", "");
+      }
+
+      // pm.addSeparator();
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      Global.Print("Show tools menu.");
+   }
+
+//    // <ui_kbd.png>
+//    public virtual onTriadKeyTimeout() {
+//       Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+// "
+//           c  :  Close dialog
+// "
+//                                     ,
+//                                     this);
+//       return true;
+//    }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx Curve4Dialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageStart pgStart <= root_form.pg_start;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'v':
+            if(isAnyCurveZoomed())
+               handleCurveZoom(0, false/*bMaximize*/);
+            else
+               hide();
+            return true;
+
+         case '1':
+            handleCurveZoom(0, true/*bMaximize*/);
+            return true;
+
+         case '2':
+            handleCurveZoom(1, true/*bMaximize*/);
+            return true;
+
+         case '3':
+            handleCurveZoom(2, true/*bMaximize*/);
+            return true;
+
+         case '4':
+            handleCurveZoom(3, true/*bMaximize*/);
+            return true;
+
+      }
+
+      if(root_form.tryHandleTransportKey(_k))
+         return true;
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int curveIdx;
+      BezierCurveForm *curveForm;
+
+      if(BezierCurveForm.ACTION_CURVE_EDITED == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         if(-1 != curveIdx)
+         {
+            if(null != gtexture)
+            {
+               // trace "xxx ACTION_CURVE_EDITED, curveIdx="+curveIdx;
+               state.recalcTexture(gtexture);
+               lb_tex.redraw();
+            }
+            return true;
+         }
+      }
+      else if(BezierCurveForm.ACTION_CURVE_SAVED == acName)
+      {
+         foreach curveForm in f_curves
+         {
+            curveForm.scanCurvePresets();
+         }
+         return true;
+      }
+      else if((BezierCurveForm.ACTION_CURVE_MAXIMIZE == acName) || (BezierCurveForm.ACTION_CURVE_MINIMIZE == acName))
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveZoom(curveIdx, (BezierCurveForm.ACTION_CURVE_MAXIMIZE == acName)/*bMaximize*/);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_tools):
+            Global.Debug("pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  UI.SetKeyboardFocus(this);
+                  return true;
+
+               case "import_histogram":
+                  UI.SetKeyboardFocus(this);
+                  handleImportHistogram();
+                  return true;
+            }
+            return true;
+
+         case @(bt_import):
+            handleImportHistogram();
+            return true;
+
+         case @(f_colormod):
+            if(ColorModForm.ACTION_EDITED == acName)
+            {
+               state.recalcTexture(gtexture);
+               lb_tex.redraw();
+               return true;
+            }
+            break;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

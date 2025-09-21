@@ -1,0 +1,1895 @@
+// ----
+// ---- file   : gsource.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 16Jun2020
+// ---- changed: 18Jun2020, 19Jun2020, 20Jun2020, 21Jun2020, 25Jun2020, 26Jun2020, 28Jun2020
+// ----          01Jul2020, 02Jul2020, 03Jul2020, 06Jul2020, 11Jul2020, 17Jul2020, 19Jul2020
+// ----          22Jul2020, 23Jul2020, 26Jul2020, 30Jul2020, 08Aug2020, 14Aug2020, 15Aug2020
+// ----          04Feb2025, 05Feb2025, 09Feb2025, 16Feb2025
+// ----
+// ----
+// ----
+module MGSource;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GSource : GObject, GParamProvider, ActionConsumer, TextEditPlugin {
+   GObject *parent_object;   // [04Feb2025] (note) null=script
+
+   // moved to param "source" in v3:
+   // // String path_name;
+
+   String cached_file_content;
+
+   define int ST_NONE     = 0;
+   define int ST_INPUT    = 1;
+   define int ST_OUTPUT   = 2;
+   define int ST_GLOBAL   = 3;
+   define int ST_PARAMS   = 4;
+   define int ST_FUNCTION = 5;
+   define int ST_MAIN     = 6;
+
+   String s_global;
+   String s_functions;
+   String s_main;
+
+   protected boolean b_emit_main_done;
+   protected StringArray emit_input_var_names;  // valid during emit()
+   protected StringArray emit_output_var_names;
+   protected String *emit_fxn_name;
+
+   protected HashTable used_params;  // valid during parse()
+
+   static TextEditDialog *dlg_textedit;
+   protected Geometry4f textedit_geo;
+   protected int        textedit_cursor_x;
+   protected int        textedit_cursor_y;
+   static TKSSyntaxHighlighter  syntax_hl_tks;
+   static GLSLSyntaxHighlighter syntax_hl_glsl;
+
+   // during emit
+   protected String namespace_prefix;
+   protected String namespace_prefix_sub;
+
+   protected GModel *[] post_models;  // list of models ref'd by model_draw<path>
+
+   protected String *cur_transform_arg;  // for script function call
+
+
+
+   // <method_new.png>
+   public static New() : GSource {
+      local GSource r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = TYPE_FLOAT;
+
+      addParamFile("source", "Source", ""/*def*/, null/*fileFilters*/, null/*fileFilterNames*/);
+
+      // // setPathName("$(PROJECT)"+"/sources/test_half_color_simple.glsl");
+
+      // // // addParamFloat("value", "value", 0.0f, -100.0f, FLT_MIN, 100.0f, FLT_MAX, 0.0f);
+      // // // addOutput("out", type);
+
+      if(sourceHasDefaultOutput())
+      {
+         addOutput("out_stub", TYPE_FLOAT);  // updated by sourceUpdateDefaultOutput()
+         sourceUpdateDefaultOutput();
+      }
+   }
+
+   // <method_get.png>
+   public virtual getParent() : GNamespaceObject {
+      return parent_object;
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_GLSL;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      return DOMAIN_GLSL;
+   }
+
+   // <method.png>
+   public virtual moveFrom(GSource _o) {
+      GObject::moveFrom(_o);
+
+      params <= _o.unlinkParams();
+
+      cached_file_content = _o.cached_file_content;
+
+      s_global    = _o.s_global;
+      s_functions = _o.s_functions;
+      s_main      = _o.s_main;
+
+      textedit_geo = _o.textedit_geo;
+      textedit_cursor_x = _o.textedit_cursor_x;
+      textedit_cursor_y = _o.textedit_cursor_y;
+   }
+
+   // <method.png>
+   public method configureSourceParam(String      _suggestedDirectory,
+                                      StringArray _fileFilters,
+                                      StringArray _fileFilterNames
+                                      ) {
+      GParamFile p <= getParamById("source");
+      p.suggested_directory = _suggestedDirectory;
+      p.file_filters        = _fileFilters;
+      p.file_filter_names   = _fileFilterNames;
+      Global.Debug("GSource::configureSourceParam: suggested_directory=\""+p.suggested_directory+"\" filters="+#(p.file_filters));
+   }
+
+   // <method_init.png>
+   public virtual postInit() {
+      Global.Debug("GSource::postInit: parent_object="+#(parent_object));
+
+      if(null == parent_object)
+      {
+         // Script
+         configureSourceParam(Utils.ToProjectPathName(current_project.getSuggestedScriptDirectory()),
+                              ["*.tks", "*"],
+                              ["TkScript sources (*.tks)", "All Files (*)"]
+                              );
+      }
+      else if(parent_object instanceof GVertexShader)
+      {
+         configureSourceParam(Utils.ToProjectPathName(current_project.getSuggestedSourceDirectory()),
+                              ["*.vert", "*"],
+                              ["Vertex Shader sources (*.vert)", "All Files (*)"]
+                              );
+      }
+      else if(parent_object instanceof GFragmentShader)
+      {
+         configureSourceParam(Utils.ToProjectPathName(current_project.getSuggestedSourceDirectory()),
+                              ["*.frag", "*"],
+                              ["Fragment Shader sources (*.frag)", "All Files (*)"]
+                              );
+      }
+   }
+
+   // <method_get.png>
+   public virtual getOpAuto() : int {
+      return OP_MUL;
+   }
+
+   // <method_get.png>
+   public virtual getDefaultOutputId() : String {
+      if(outputs.numElements > 0)
+         return outputs[0].getId();
+      return "out";
+   }
+
+   // <method_get.png>
+   public virtual getNamespace() : GNamespace {
+      // trace "xxx GSource::getNamespace: parent_object="+#(parent_object);
+      if(null != parent_object)  // [04Feb2025] fix 'test3ds.gpr' crash
+         return parent_object.getNamespace();
+      else
+         trace "xxx GSource::getNamespace: ................ parent_object="+#(parent_object);
+      return null;
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathDir() : String {
+      if(null != parent_object)
+      {
+         local String r <= parent_object.getObjectPath();
+         local String virtFolder <= getObjectPathVirtFolder();
+         if(!virtFolder.isBlank())
+         {
+            r.append(".");
+            r.append(virtFolder);
+         }
+         return deref r;
+      }
+      return "";
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "";
+   }
+
+   // <method_set.png>
+   public method setPathName(String _pathName) {
+      GParamFile p <= getParamById("source");
+      p.value = _pathName;
+   }
+
+   // <ui_handle.png>
+   public virtual handleRename(String _oldId, String _newId) {
+      // source path name follows initial id
+      local String pathName = getFileParamById("source");
+      if(pathName.isBlank())
+      {
+         pathName = Utils.ToProjectPathName("$(PROJECT)/sources/"+_newId+((parent_object instanceof GFragmentShader)?".frag":".vert"));
+         current_project.addSourceFileToWatchList(pathName);
+         setFileParamById("source", pathName);
+      }
+   }
+
+   // <load.png>
+   public method reloadSource() {
+
+      local String pathName = getFileParamById("source");
+
+      trace "[dbg] GSource::reloadSource: id="+getObjectPath()+" pathName=\""+pathName+"\"";
+
+      if(!pathName.isBlank())
+      {
+         local String nativePathName <= Utils.ToNativePathName(pathName);
+         if(Utils.CanFileBeRead(nativePathName))
+         {
+            local String buf;
+            if(buf.loadLocal(nativePathName, true/*bRemoveCR*/))
+            {
+               cached_file_content = buf;
+               parseString(buf);
+            }
+            else
+            {
+               trace "[---] GSource::reloadSource: failed to load source file \""+pathName+"\"";
+               cached_file_content.empty();
+               parseString("");
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public virtual handleWatchFileChanged(local String _pathName) {
+      trace "[dbg] GSource::handleWatchFileChanged: pathName=\""+_pathName+"\" this.pathName=\""+getFileParamById("source")+"\"";
+      if(_pathName == getFileParamById("source"))
+      {
+         reloadSource();
+         PageStart pgStart <= root_form.pg_start;
+         pgStart.reshowParamsFor(this);
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseInput(String _s) {
+      // in <type> <name>
+      boolean bGLSL = !(this instanceof GScript);
+      // // trace "xxx GSource::parseInput(\""+_s+"\") bGLSL="+bGLSL;
+      local StringArray words <= _s.splitCharset(" \t=");
+      String *w;
+      w <= words.get(0);
+      int iType = bGLSL ? GDefs.ParseGLSLType(w) : GDefs.ParseScriptType(w);
+      if(TYPE_NONE != iType)
+      {
+         // Lazy-add input
+         w <= words.get(1);
+         w.replace(";", "");
+         GInput input <= getInputById(w);
+         if(null != input)
+            input.type = iType;  // update type
+         else
+            input <= addInput(w/*id*/, iType);
+
+         // (todo) Parse optional attributes
+         // int wordIdx = 2;
+         // while(wordIdx < words.numElements)
+         // {
+         // }
+      }
+      else
+      {
+         trace "[---] GSource::parseInput: invalid "+(bGLSL?"GLSL":"script")+" type in input definition \""+_s+"\"";
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseOutput(String _s) {
+      // out <type> <name>
+      boolean bGLSL = !(this instanceof GScript);
+      local StringArray words <= _s.splitCharset(" \t=");
+      String *w;
+      w <= words.get(0);
+      int iType = bGLSL ? GDefs.ParseGLSLType(w) : GDefs.ParseScriptType(w);
+      if(TYPE_NONE != iType)
+      {
+         // Lazy-add output
+         w <= words.get(1);
+         w.replace(";", "");
+         GOutput output <= getOutputById(w);
+         if(null != output)
+            output.type = iType;  // update type
+         else
+            output <= addOutput(w/*id*/, iType);
+
+         // (todo) Parse optional attributes
+         // int wordIdx = 2;
+         // while(wordIdx < words.numElements)
+         // {
+         // }
+      }
+      else
+      {
+         trace "[---] GSource::parseOutput: invalid "+(bGLSL?"GLSL":"script")+" type in output definition \""+_s+"\"";
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseArgs(StringArray _words, HashTable _ht) {
+      // (note) word 2..  (0=type, 1=name)
+      if(_words.numElements > 2)
+      {
+         int wordIdx = 2;
+         loop(_words.numElements -2)
+         {
+            String w <= _words.get(wordIdx);
+            // trace "xxx param args[wordIdx="+wordIdx+"] w=\""+w+"\"";
+            int idx = w.indexOfChar('=', 0);
+            if(idx > 0)
+            {
+               String key; w.substring(0, idx) => key;
+               String val; w.substring(idx+1, -1) => val;
+               _ht[key] = Object(val);
+               // trace "xxxx key=\""+key+"\" val=\""+val+"\"";
+            }
+            else
+            {
+               // param int p = 42
+               // param int p 42
+               _ht["def"] = Object(w);
+            }
+
+            wordIdx++;
+         }
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseParam(String _s) {
+      // param <type> <name> [def=<def>] [min=<min>] [minLimit=<minLimit>] [max=<max>] [maxLimit=<maxLimit>] [ctr=<ctr>] [step=<step>]
+      if(_s >= ";")
+         _s.substring(0, _s.numChars-1);
+      // trace "\n\n\n\n\n\n\nxxx GSource::parseParam(\""+_s+"\")";
+      boolean bGLSL = !(this instanceof GScript);
+      local StringArray words <= _s.splitSpace(true);
+      String w <= words.get(0);
+      Class paramClass <= GDefs.ParseParamClass(w);
+
+      // trace "xxx paramClass="+#(paramClass);
+      // trace "xxx paramClass.name="+paramClass.yacMetaClassName();
+
+      if(null != paramClass)
+      {
+         // Lazy-add param
+         w <= words.get(1);
+         w.replace(";", "");
+         if("source" != w)
+         {
+            GParam param <= getParamById(w);
+            GParam oldParam <= null;
+            if(null != param)
+            {
+               if!(param instanceof paramClass)
+               {
+                  // Param class changed
+                  params.remove(param);
+                  param <= null;
+               }
+               else
+               {
+                  // Remember old param (copy value later)
+                  oldParam <= params.getDeref(params.indexOfPointer(param, 0));
+                  params.remove(param);
+                  param <= null;
+               }
+            }
+            if(null == param)
+            {
+               // New param
+               param <= paramClass.yacNew();
+
+               local String caption = w;  // default=id
+               local HashTable args; args.alloc(100);
+               parseArgs(words, args);
+               // trace "xxx param args="+#(args);
+
+               if(args.exists("caption")) caption = args["caption"];
+
+               // Initialize
+               switch(@(paramClass))
+               {
+                  default:
+                     trace "[~~~] GSource::parseString: unhandled paramClass="+#(paramClass);
+                     param <= null;
+                     break;
+
+                  case @(GParamBool):
+                     // param bool <name> [def=<def>]
+                     GParamBool paramBool <= param;
+                     boolean boolDef = true;
+                     if(args.exists("def"))      boolDef      = args["def"];
+                     paramBool.init(w, caption, boolDef);
+                     break;
+
+                  case @(GParamInt):
+                     // param int <name> [def=<def>] [min=<min>] [minLimit=<minLimit>] [max=<max>] [maxLimit=<maxLimit>] [ctr=<ctr>]
+                     GParamInt paramInt <= param;
+                     int intDef = 0;
+                     int intMin = 0;
+                     int intMinLimit = 0;//-1073741824;
+                     int intMax = 1000;
+                     int intMaxLimit =  0;//1073741823;
+                     int intCtr = 500;
+                     if(args.exists("def"))      intDef      = args["def"];
+                     if(args.exists("min"))      { intMin      = args["min"]; intMinLimit = intMin; }
+                     if(args.exists("minLimit")) intMinLimit = args["minLimit"];
+                     if(args.exists("max"))      { intMax      = args["max"]; intMaxLimit = intMax; }
+                     if(args.exists("maxLimit")) intMaxLimit = args["maxLimit"];
+                     if(args.exists("ctr"))      intCtr      = args["ctr"];
+                     if(intMinLimit == intMaxLimit)
+                     {
+                        intMinLimit = intMin;
+                        intMaxLimit = intMax;
+                     }
+                     paramInt.init(w, caption, intDef, intMin, intMinLimit, intMax, intMaxLimit, intCtr);
+                     if(args.exists("step"))
+                        paramInt.step = args["step"];
+                     break;
+
+                  case @(GParamChoice):
+                     // param int <name> [def=<def>] [options=<option;list>]
+                     GParamChoice paramChoice <= param;
+                     int choiceDef = -1;
+                     StringArray choiceOptions; choiceOptions.empty();
+                     if(args.exists("def"))      choiceDef      = args["def"];
+                     if(args.exists("options"))  choiceOptions  = Utils.ParseParamStringArray(args["options"]);
+                     paramChoice.init(w, caption, choiceDef, choiceOptions);
+                     break;
+
+                  case @(GParamFloat):
+                     // param float <name> [def=<def>] [min=<min>] [minLimit=<minLimit>] [max=<max>] [maxLimit=<maxLimit>] [ctr=<ctr>]
+                     GParamFloat paramFloat <= param;
+                     float floatDef = 0;
+                     float floatMin = 0;
+                     float floatMinLimit = 0;//-1073741824;
+                     float floatMax = 1000;
+                     float floatMaxLimit =  0;//1073741823;
+                     float floatCtr = 500;
+                     if(args.exists("def"))      floatDef      = args["def"];
+                     if(args.exists("min"))      { floatMin      = args["min"]; floatMinLimit = floatMin; }
+                     if(args.exists("minLimit")) floatMinLimit = args["minLimit"];
+                     if(args.exists("max"))      { floatMax      = args["max"]; floatMaxLimit = floatMax; }
+                     if(args.exists("maxLimit")) floatMaxLimit = args["maxLimit"];
+                     if(args.exists("ctr"))      floatCtr      = args["ctr"];
+                     if(floatMinLimit == floatMaxLimit)
+                     {
+                        floatMinLimit = floatMin;
+                        floatMaxLimit = floatMax;
+                     }
+                     paramFloat.init(w, caption, floatDef, floatMin, floatMinLimit, floatMax, floatMaxLimit, floatCtr);
+                     if(args.exists("step"))
+                        paramFloat.step = args["step"];
+                     // trace "xxx paramFloat def="+floatDef+" min="+floatMin+" max="+floatMax;
+                     break;
+
+                  case @(GParamAlpha):
+                     // param alpha <name> [def=<#ff>]
+                     int alphaDef = 255;
+                     GParamAlpha paramAlpha <= param;
+                     if(args.exists("def"))      alphaDef      = args["def"];
+                     paramAlpha.init(w, caption, alphaDef);
+                     break;
+
+                  case @(GParamRGB):
+                     // param alpha <name> [def=<#ffFFff>]
+                     int rgbDef = #FFffFF;
+                     GParamRGB paramRGB <= param;
+                     if(args.exists("def"))      rgbDef      = args["def"];
+                     paramRGB.init(w, caption, int(rgbDef) & 0x00FFffFF);
+                     break;
+
+                  case @(GParamRGBA):
+                     // param rgba <name> [def=<#FFffFFff>]
+                     int rgbaDef = #ffFFffFF;
+                     GParamRGBA paramRGBA <= param;
+                     if(args.exists("def"))      rgbaDef      = args["def"];
+                     paramRGBA.init(w, caption, rgbaDef);
+                     break;
+
+                  case @(GParamFile):
+                     // param file <name> [def=<pathname>] [filters=*.txt;*.png] [filterNames=Text Files (*.txt);PNG Images (*.png)]
+                     GParamFile paramFile <= param;
+                     String fileDef = "";
+                     StringArray fileFilters; fileFilters.empty();
+                     StringArray fileFilterNames; fileFilterNames.empty();
+                     if(args.exists("def"))         fileDef         = args["def"];
+                     if(args.exists("filters"))     fileFilters     = Utils.ParseParamStringArray(args["filters"]);
+                     if(args.exists("filterNames")) fileFilterNames = Utils.ParseParamStringArray(args["filterNames"]);
+                     // (note) win10 file dialog seems to ignore fileFilters (nowadays) and just shows fileFilterNames
+                     if(fileFilterNames.isEmpty())
+                        fileFilterNames = fileFilters;  // (todo) extract filters from filterNames
+                     paramFile.init(w, caption, fileDef, fileFilters, fileFilterNames);
+                     break;
+               }
+
+               if(null != param)
+               {
+                  // trace "xxx param="+#(param)+" oldParam="+#(oldParam);
+                  param.copyParamValueFrom(oldParam);
+                  // trace "xxx param.string="+param.getString();
+                  addParam(deref param);
+                  used_params[w] = true;
+                  oldParam <= null;
+               }
+            }
+
+            // (todo) Parse optional attributes
+            // int wordIdx = 2;
+            // while(wordIdx < words.numElements)
+            // {
+            // }
+         } // if id != "source"
+      }
+      else
+      {
+         trace "[---] GSource::parseParam: invalid param type in input definition \""+_s+"\"";
+      }
+   }
+
+   // <method_remove.png>
+   protected method removeUnconnectedInputs() {
+      GInput *input;
+      int inputIdx = 0;
+      while(inputIdx < inputs.numElements)
+      {
+         input <= inputs.get(inputIdx);
+         if(!input.isConnected())
+         {
+            inputs.delete(inputIdx);
+         }
+         else
+            inputIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method sourceHasDefaultOutput() : boolean {
+      return false;
+   }
+
+   // <method_update.png>
+   protected method sourceUpdateDefaultOutput() {
+   }
+
+   // <method_remove.png>
+   protected method removeUnconnectedOutputs() {
+      GOutput *output;
+      int outputIdx = 0;
+      while(outputIdx < outputs.numElements)
+      {
+         output <= outputs.get(outputIdx);
+         Global.Debug2("GSource::removeUnconnectedOutputs: outputIdx="+outputIdx+" output.id="+output.id);
+         boolean bDelete = !output.isConnected();
+         if(bDelete)
+         {
+            // // if(this instanceof GScriptRender)
+            if(sourceHasDefaultOutput())
+               bDelete = (outputIdx > 0);  // don't delete default out (TYPE_REF)
+
+            if(bDelete)
+               outputs.delete(outputIdx);
+            else
+               outputIdx++;
+         }
+         else
+            outputIdx++;
+      }
+   }
+
+   // <method_parse.png>
+   public method parseString(String _s) : boolean {
+
+      boolean bGLSL = !(this instanceof GScript);
+
+      removeUnconnectedInputs();
+      removeUnconnectedOutputs();
+
+      used_params.free();
+
+      s_global.empty();
+      s_functions.empty();
+      s_main.empty();
+      int state = ST_NONE;
+      local StringArray lines <= _s.splitChar('\n');
+      String *line;
+      local String lineTrim;
+      boolean bAllowSimple = true;
+      boolean bFirstNonEmptyMainLine = false;
+      // trace "xxx #lines="+lines.numElements;
+      foreach line in lines
+      {
+         line.trim() => lineTrim;
+         // trace "xxx lineTrim=\""+lineTrim+"\"";
+         if(lineTrim.isBlank() || (lineTrim <= "//"))
+         {
+            // skip comment or empty line
+         }
+         // if(line <= "#version")
+         // {
+         //    s_global.append(line);
+         // }
+         // else if(line <= "#define")
+         // {
+         //    s_global.append(line);
+         // }
+         // else if((line <= "#ifdef") || (line <= "#endif"))
+         // {
+         //    // (todo) support #ifdef..#endif within function when [section]s are used
+         //    if(outputs.numElements > 0)
+         //       s_main.append(line);
+         //    else
+         //       s_global.append(line);
+         // }
+         else if((lineTrim <= "[in]") || (lineTrim <= "[inputs]"))
+         {
+            state = ST_INPUT;
+            bAllowSimple = false;
+         }
+         else if((lineTrim <= "[out]") || (lineTrim <= "[outputs]"))
+         {
+            state = ST_OUTPUT;
+            bAllowSimple = false;
+         }
+         else if((lineTrim <= "[fun]") || (lineTrim <= "[functions]"))
+         {
+            state = ST_FUNCTION;
+            bAllowSimple = false;
+         }
+         else if((lineTrim <= "[glob]") || (lineTrim <= "[global]"))
+         {
+            state = ST_GLOBAL;
+            bAllowSimple = false;
+         }
+         else if(lineTrim <= "[params]")
+         {
+            state = ST_PARAMS;
+            bAllowSimple = false;
+         }
+         else if(lineTrim <= "[main]")
+         {
+            state = ST_MAIN;
+            bAllowSimple = false;
+         }
+         else if(bAllowSimple)
+         {
+            if(lineTrim <= "in ")
+            {
+               // "in vec4 i_position;"
+               lineTrim.substring(3, -1);
+               parseInput(lineTrim.trim());
+            }
+            else if(lineTrim <= "out ")
+            {
+               // "out vec4 o_color;"
+               lineTrim.substring(4, -1);
+               parseOutput(lineTrim.trim());
+            }
+            else if(!bGLSL && (lineTrim <= "global "))
+            {
+               // "global float g_angle;"
+               lineTrim.substring(7, -1);
+               s_global.append(lineTrim.trim());
+            }
+            else if(lineTrim <= "param ")
+            {
+               // "param float p_angle;"
+               lineTrim.substring(6, -1);
+               parseParam(lineTrim.trim());
+            }
+            else
+            {
+               state = ST_MAIN;
+               if(bFirstNonEmptyMainLine || !lineTrim.isBlank())
+               {
+                  bFirstNonEmptyMainLine = true;
+                  s_main.append(line);
+                  s_main.append("\n");
+               }
+            }
+         }
+         else
+         {
+            switch(state)
+            {
+               case ST_NONE:
+                  // waiting for [section] start
+                  break;
+
+               case ST_INPUT:
+                  // <type> <name> [def=<def>] [min=<min>] [minLimit=<minLimit>] [max=<max>] [maxLimit=<maxLimit>] [ctr=<ctr>]
+                  parseInput(lineTrim);
+                  break;
+
+               case ST_OUTPUT:
+                  // <type> <name> [def=<def>] [min=<min>] [minLimit=<minLimit>] [max=<max>] [maxLimit=<maxLimit>] [ctr=<ctr>]
+                  parseOutput(lineTrim);
+                  break;
+
+               case ST_FUNCTION:
+                  s_functions.append(line);
+                  s_functions.append("\n");
+                  break;
+
+               case ST_GLOBAL:
+                  // trace "xxx append global=\""+line+"\"";
+                  s_global.append(line);
+                  s_global.append("\n");
+                  break;
+
+               case ST_PARAMS:
+                  parseParam(lineTrim);
+                  break;
+
+               case ST_MAIN:
+                  if(bFirstNonEmptyMainLine || !lineTrim.isBlank())
+                  {
+                     trace "xxx append line=\""+line+"\"";
+                     s_main.append(line);
+                     s_main.append("\n");
+                  }
+                  break;
+            }
+         }
+      } // foreach line
+
+      // Remove unused params
+      int paramIdx = 0;
+      while(paramIdx < params.numElements)
+      {
+         GParam p <= params.get(paramIdx);
+         // trace "xxx param["+paramIdx+"]="+#(p);
+
+         if(p.id != "source")
+         {
+            if(!used_params.exists(p.id))
+            {
+               params.delete(paramIdx);
+            }
+            else
+               paramIdx++;
+         }
+         else
+            paramIdx++;
+      }
+
+      sourceUpdateDefaultOutput();
+
+      // Update existing connections to new i/o types
+      GOutput *output;
+      foreach output in outputs
+      {
+         handleOutputTypeChanged(output);
+      }
+
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 5;
+
+      // // // Path name (pre v3)
+      // // Utils.WriteString(ofs, path_name);
+
+      // Geometry and cursor pos (v4+)
+      ofs.i16 = textedit_geo.px;
+      ofs.i16 = textedit_geo.py;
+      ofs.i16 = textedit_geo.sx;
+      ofs.i16 = textedit_geo.sy;
+      ofs.i16 = textedit_cursor_x;
+      ofs.i16 = textedit_cursor_y;
+
+      // // Params (v3+)
+      // //  (note) moved to post cached_file_content in v5
+      // // GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+
+      // Cached File Content (v2+)
+      Utils.WriteString(ofs, cached_file_content);
+
+      // Params (v5+)
+      //  (note) moved to post cached_file_content in v5
+      GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 5)
+      {
+         if(ver <= 2)
+         {
+            // Path name (pre v3)
+            local String pathName;
+            Utils.ReadString(ifs, pathName);
+            GParamFile pFile <= getParamById("source");
+            pFile.value = pathName;
+         }
+         else
+         {
+            if(ver >= 4)
+            {
+               // Geometry and cursor pos (v4+)
+               textedit_geo.px   = ifs.i16;
+               textedit_geo.py   = ifs.i16;
+               textedit_geo.sx   = ifs.i16;
+               textedit_geo.sy   = ifs.i16;
+               textedit_cursor_x = ifs.i16;
+               textedit_cursor_y = ifs.i16;
+            }
+
+            if(ver < 5)
+            {
+               if(!GParamProvider::loadStateParamProvider(ifs))
+               {
+                  trace "[---] GSource::loadStateObject: failed to load params";
+                  return false;
+               }
+               current_project.addSourceFileToWatchList(getFileParamById("source"));
+            }
+         }
+
+         if(ver >= 2)
+         {
+            // (note) use cached_file_content until external file changes
+            Utils.ReadString(ifs, cached_file_content);
+            parseString(cached_file_content);
+         }
+         else
+         {
+            reloadSource();
+         }
+
+         if(ver >= 5)
+         {
+            // Params (v5+)
+            //  (note) moved to post cached_file_content in v5 (so that source (re-)load does not overwrite loaded params)
+            if(!GParamProvider::loadStateParamProvider(ifs))
+            {
+               trace "[---] GSource::loadStateObject: failed to load params";
+               return false;
+            }
+            current_project.addSourceFileToWatchList(getFileParamById("source"));
+         }
+
+         postInit();  // (note) called again later when 'this' is a shader source (=> configure file param)
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GSource::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method openInEditorExternal() {
+      local String pathName = getFileParamById("source");
+      local String nativePathName <= Utils.ToNativePathName(pathName);
+      if(!Utils.CanFileBeRead(nativePathName))
+      {
+         // Lazy-create file
+         cached_file_content.saveLocal(nativePathName);
+         // // TKS.sleep(1000);
+      }
+      else
+      {
+         local String dirName;
+         local String fileName;
+         Utils.SplitPathname(pathName, dirName, fileName);
+         local String *fileBaseName;
+         local String fileSuffix;
+         fileBaseName <= Utils.BaseName(fileName, fileSuffix);
+         trace "[trc] GSource::openInEditor: baseName=\""+fileBaseName+"\" fileSuffix=\""+fileSuffix+"\"";
+         local String sNr = "";
+         int nr = 1;
+
+         local String extFileContent;
+         local String origPathName = pathName;
+         for(;;)
+         {
+            pathName = Utils.ToProjectPathName(dirName+"/"+fileBaseName+sNr+fileSuffix);
+            trace "[trc] GSource::openInEditor: try pathName=\""+pathName+"\"";
+            nativePathName <= Utils.ToNativePathName(pathName);
+            if(extFileContent.loadLocal(nativePathName, true/*bRemoveCR*/))
+            {
+               if(!extFileContent.isBlank() && (extFileContent != cached_file_content))
+               {
+                  trace "[~~~] GSource::openInEditor: file \""+nativePathName+"\" differs from cached_file_content, creating new file..";
+                  sNr <= "_"+(++nr);
+               }
+               else
+               {
+                  // Use existing file
+                  break;
+               }
+            }
+            else
+            {
+               // Create new file
+               cached_file_content.saveLocal(nativePathName);
+               break;
+            }
+         }
+
+         if(pathName != origPathName)
+         {
+            current_project.removeSourceFileFromWatchList(origPathName);
+            current_project.addSourceFileToWatchList(pathName);
+            setFileParamById("source", pathName);
+         }
+      }
+
+      system(GConfig.external_editor_cmd.replace("$(FILE)", nativePathName));
+   }
+
+   // <method.png>
+   public method openInEditorDialog() {
+      local String caption <= "Edit "+((this instanceof GScript)?"Script":"Shader Source")+" "+getObjectPath();
+      local String message <= "Edit "+((this instanceof GScript)?"Script":"Shader Source")+" (press lctrl-s"+(GConfig.b_textedit_always_save ? " or ESCAPE":"")+" to save changes)";
+      dlg_textedit <= TextEditDialog.NewOkCancel(caption,
+                                                 message,
+                                                 !GConfig.b_textedit_always_save/*bOkCancel*/,
+                                                 "Save",
+                                                 "Cancel",
+                                                 cached_file_content,
+                                                 this/*recipient*/
+                                                 );
+      if(textedit_geo.sx <= 0)
+         textedit_geo = GConfig.textedit_geo;
+      dlg_textedit.restoreGeometryIfValid(textedit_geo);
+      dlg_textedit.setEnableAlwaysSave(GConfig.b_textedit_always_save);
+      dlg_textedit.setEnableModal(true);
+      if(this instanceof GScript)
+         dlg_textedit.setSyntaxHighlighter(syntax_hl_tks);
+      else
+         dlg_textedit.setSyntaxHighlighter(syntax_hl_glsl);
+      dlg_textedit.setEnableQuietHandleEsc(true);
+      dlg_textedit.setTextEditPlugin(this);
+      dlg_textedit.setEnableEditNumber(true);
+
+      Global.Debug("GSource::openInEditorDialog: restore cursor=("+textedit_cursor_x+";"+textedit_cursor_y+")");
+
+      dlg_textedit.show();
+      dlg_textedit.resizeAtLeastToMinimum();
+
+      // // trace "xxx GSource: restore textedit_cursor=("+textedit_cursor_x+","+textedit_cursor_y+")";
+      dlg_textedit.textedit.gotoXY(textedit_cursor_x, textedit_cursor_y);
+      // // trace "xxx GSource: restored textedit.cursor=("+dlg_textedit.textedit.getCursorX()+","+dlg_textedit.textedit.getCursorY()+")";
+
+      dlg_textedit.textedit.centerY();
+   }
+
+   // <method.png>
+   public virtual textEditParseFloatParamHint(FloatParam _fp, String _s, int _startX, int _endX) {
+      // TextEditPlugin
+      //  (note) '0.123 // <min> <max> <prec>'
+      int idxRem = _s.indexOf("//", _endX+1);
+      if(idxRem >= 0)
+      {
+         local StringArray a <= _s.substring(idxRem+2, -1).splitSpace(true);
+         String *s;
+
+         // min
+         s <= a.get(0);
+         if(null != s)
+         {
+            if(s.checkFloatConversion())
+            {
+               Global.Debug2("GSource:textEditParseFloatParamHint: min=\""+s+"\"");
+               _fp.setEnableMinEditable(false);
+               _fp.setMinValue(s);
+
+               // max
+               s <= a.get(1);
+               if(null != s)
+               {
+                  if(s.checkFloatConversion())
+                  {
+                     Global.Debug2("GSource:textEditParseFloatParamHint: max=\""+s+"\"");
+                     _fp.setEnableMaxEditable(false);
+                     _fp.setMaxValue(s);
+
+                     boolean bStepDef = true;
+
+                     // precision
+                     s <= a.get(2);
+                     if(null != s)
+                     {
+                        if(s.checkIntConversion())
+                        {
+                           Global.Debug2("GSource:textEditParseFloatParamHint: prec=\""+s+"\"");
+                           _fp.setPrecision(mathClampi(s, 0, 5));
+
+                           // stepCoarse
+                           s <= a.get(3);
+                           if(null != s)
+                           {
+                              if(s.checkFloatConversion())
+                              {
+                                 _fp.setStepCoarse(s);
+                                 bStepDef = false;
+
+                                 // stepFine
+                                 s <= a.get(4);
+                                 if(null != s)
+                                 {
+                                    if(s.checkFloatConversion())
+                                    {
+                                       _fp.setStepFine(s);
+                                    }
+                                 }
+
+                              }
+                           }
+                        }
+                     }
+
+                     if(bStepDef)
+                     {
+                        float fStep = (_fp.getMaxValue() - _fp.getMinValue()) / 200.0;
+                        _fp.setStepCoarse(fStep);
+                        _fp.setStepFine(fStep / 100.0);
+                        _fp.clipStepToPrecision();
+                     }
+
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual textEditHandleNumberEdit() : boolean {
+      cached_file_content = dlg_textedit.getText();
+      parseString(cached_file_content);
+      current_project.queueUpdate();
+      // (note) number edit never changes i/o config => no need to rebuildInputs()
+      return true;
+   }
+
+   // <method.png>
+   public method openInEditor() {
+      if(GConfig.b_external_editor)
+      {
+         openInEditorExternal();
+      }
+      else
+      {
+         openInEditorDialog();
+      }
+   }
+
+   // <method_get.png>
+   public virtual hasDefaultAction() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual execDefaultAction() {
+      openInEditor();
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      StringAction sac <= _ac;
+
+      switch(@(ap))
+      {
+         case @(dlg_textedit):
+            // // if(TextEditDialog.ACTION_SAVE == acName)
+            {
+               cached_file_content = sac.getStringValue();
+               parseString(cached_file_content);
+               current_project.queueUpdate();
+               // (note) i/o or params may have changed
+               root_form.pg_start.rebuildInputs(root_form.pg_start.current_input_object,
+                                                true/*bReselectParams*/,
+                                                false/*bPreselectLastInputConn*/
+                                                );
+               // save geometry and cursor position
+               textedit_geo = dlg_textedit.getGeometry4f();
+               textedit_cursor_x = dlg_textedit.getCursorX();
+               textedit_cursor_y = dlg_textedit.getCursorY();
+               // // trace "xxx update textedit_cursor=("+textedit_cursor_x+","+textedit_cursor_y+")";
+            }
+            return true;
+      }
+
+      return true;
+   }
+
+   // <method_find.png>
+   protected method findObject(String _path) : GObject {
+      GObject *r;
+      local String path;
+
+      if(_path <= "..")
+      {
+         // Relative path, e.g. "../" or "..../"
+         int idx = 0;
+         while(_path.getc(idx++) == '.')
+            ;
+         int idxRelPath = idx; // skip '/'
+         local String thisPath <= getObjectPath();
+         int idxDot = thisPath.numChars;
+         while(--idx > 0)
+         {
+            idxDot = thisPath.revIndexOfChar('.', --idxDot);
+            if(-1 == idxDot)
+            {
+               // should not happen
+               break;
+            }
+         }
+         if(-1 != idxDot)
+         {
+            thisPath.substring(0, idxDot) => path;
+            // trace "xxx relpath: prefix=\""+path+"\"";
+            path.append(".");
+            path.append(_path.substring(idxRelPath,-1));
+            // trace "xxx from relpath=\""+path+"\"";
+
+            r <= current_project.findObjectByPath(path);
+            if(r instanceof GObject)
+               return r;
+         }
+      }
+      else
+      {
+         // Try absolute path
+         r <= current_project.findObjectByPath(_path);
+         if(r instanceof GObject)
+            return r;
+
+         // Try path relative to selected namespace
+         // trace "xxx namespace_prefix=\""+namespace_prefix+"\"";
+         path = namespace_prefix;
+         if(!namespace_prefix_sub.isBlank())
+            path.append("." + namespace_prefix_sub);
+         path.append(".");
+         path.append(_path);
+         // trace "xxx find fallback path=\""+path+"\"";
+         r <= current_project.findObjectByPath(path);
+         if(r instanceof GObject)
+            return r;
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   protected method findUniform(String _path) : GUniform {
+      GUniform r <= findObject(_path);
+      if(r instanceof GUniform)
+         return r;
+      return null;
+   }
+
+   // <method_find.png>
+   protected method findModel(String _path) : GModel {
+      GModel r <= findObject(_path);
+      if(r instanceof GModel)
+         return r;
+      return null;
+   }
+
+   // <method_find.png>
+   protected method findArg(String _path) : GArg {
+      GArg r <= findObject(_path);
+      if(r instanceof GArg)
+         return r;
+      return null;
+   }
+
+   // <method_find.png>
+   protected method findEnvelopeCurve4(String _path) : GEnvelopeCurve4 {
+      GEnvelopeCurve4 r <= findObject(_path);
+      // trace "xxx findEnv: curve r="+#(r);
+      if(r instanceof GEnvelopeCurve4)
+         return r;
+      return null;
+   }
+
+   // <method.png>
+   protected method replaceSelectors(local GModule _module, local String _src) {
+      local StringArray lines <= _src.splitChar('\n');
+      // trace "xxx replaceSelectors: #lines="+lines.numElements;
+      // trace "xxx input src=\""+_src+"\"";
+      _src.empty();
+
+      namespace_prefix = getObjectPathDir();
+      namespace_prefix_sub = "";
+
+      local String *line;
+      foreach line in lines
+      {
+         // trace "xxx replaceSelectors: line=>>"+line+"<<";
+         local String path;
+         local GModel model <= null;
+         local String sModelDraw;
+         local GEnvelopeCurve4 curve <= null;
+         local StringArray args;
+         local String sInit;
+         local PointerArray parents;
+
+         for(;;)
+         {
+            local int idxS = -1;
+            local int idxE = -1;
+
+            if(-1 == idxS)
+            {
+               idxS = line.indexOf("namespace<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+10, idxE-idxS-10) => namespace_prefix;
+                     line.deleteRegion(idxS, idxE+1-idxS);
+                     // trace "xxx set new namespace_prefix=\""+namespace_prefix+"\"";
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               idxS = line.indexOf("namespace_sub<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+14, idxE-idxS-14) => namespace_prefix_sub;
+                     line.deleteRegion(idxS, idxE+1-idxS);
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               idxS = line.indexOf("uniform_id<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+11, idxE-idxS-11) => path;
+                     local GUniform uni <= findUniform(path);
+                     if(null != uni)
+                     {
+                        line.replaceRegion(idxS, idxE+1, uni.getVarName());
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve uniform_id<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "uniform_id_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               idxS = line.indexOf("arg<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+4, idxE-idxS-4) => path;
+                     // trace "xxx arg path=\""+path+"\"";
+                     local GArg arg <= findArg(path);
+                     if(null != arg)
+                     {
+                        line.replaceRegion(idxS, idxE+1, arg.getVarName());
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve arg<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "arg_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               // model_draw<model_path>
+               idxS = line.indexOf("model_draw<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+11, idxE-idxS-11) => path;
+                     // trace "xxx model path=\""+path+"\"";
+                     model <= findModel(path);
+                     if(null != model)
+                     {
+                        sModelDraw.empty();
+
+                        if(model.isEnabled())
+                        {
+                           model.emitModule(_module);  // lazy-gen init+drawfxn code
+                           post_models.add(model);
+                           model.emitCallDrawString(_module, sModelDraw, "_transform");////null/*transformArgOrNull*/);
+                        }
+
+                        line.replaceRegion(idxS, idxE+1, sModelDraw);
+
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve model_draw<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "model_draw_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               // model_draw_mat<model_path,mat4_transform_var>
+               idxS = line.indexOf("model_draw_mat<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+15, idxE-idxS-15) => path;
+                     args <= path.splitChar(',');
+                     path = args.get(0);
+                     path.trim();
+                     // trace "xxx model path=\""+path+"\"";
+                     model <= findModel(path);
+                     if(null != model)
+                     {
+                        sModelDraw.empty();
+
+                        if(model.isEnabled())
+                        {
+                           model.emitModule(_module);  // lazy-gen init+drawfxn code
+                           post_models.add(model);
+                           model.emitCallDrawString(_module, sModelDraw, args.get(1).trim()/*transformArgOrNull*/);
+                        }
+
+                        line.replaceRegion(idxS, idxE+1, sModelDraw);
+
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve model_draw_mat<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "model_draw_mat_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               // curve_x<path,t>
+               idxS = line.indexOf("curve_x<", 0);
+               // trace "xxx idxS curve_x="+idxS+" line="+line;
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+8, idxE-idxS-8) => path;
+                     args <= path.splitChar(',');
+                     path = args.get(0);
+                     path.trim();
+                     // trace "xxx curve_x path=\""+path+"\"";
+                     curve <= findEnvelopeCurve4(path);
+                     if(null != curve)
+                     {
+                        parents.add(this);
+                        sInit.empty();
+                        curve.emit("init",
+                                   _module,
+                                   null/*program*/,
+                                   sInit, // not used, pass null ?!
+                                   null/*dstVar*/,
+                                   false/*bGLSL*/,
+                                   parents
+                                   );
+                        parents.remove(this);
+
+                        line.replaceRegion(idxS, idxE+1, curve.getVarName()+"_x.valueAtTime("+args.get(1)+")");
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve curve_x<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "curve_x_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               // curve_y<path,t>
+               idxS = line.indexOf("curve_y<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+8, idxE-idxS-8) => path;
+                     args <= path.splitChar(',');
+                     path = args.get(0);
+                     path.trim();
+                     curve <= findEnvelopeCurve4(path);
+                     if(null != curve)
+                     {
+                        parents.add(this);
+                        sInit.empty();
+                        curve.emit("init",
+                                   _module,
+                                   null/*program*/,
+                                   sInit, // not used, pass null ?!
+                                   null/*dstVar*/,
+                                   false/*bGLSL*/,
+                                   parents
+                                   );
+                        parents.remove(this);
+
+                        line.replaceRegion(idxS, idxE+1, curve.getVarName()+"_y.valueAtTime("+args.get(1)+")");
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve curve_y<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "curve_y_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               // curve_z<path,t>
+               idxS = line.indexOf("curve_z<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+8, idxE-idxS-8) => path;
+                     args <= path.splitChar(',');
+                     path = args.get(0);
+                     path.trim();
+                     curve <= findEnvelopeCurve4(path);
+                     if(null != curve)
+                     {
+                        parents.add(this);
+                        sInit.empty();
+                        curve.emit("init",
+                                   _module,
+                                   null/*program*/,
+                                   sInit, // not used, pass null ?!
+                                   null/*dstVar*/,
+                                   false/*bGLSL*/,
+                                   parents
+                                   );
+                        parents.remove(this);
+
+                        line.replaceRegion(idxS, idxE+1, curve.getVarName()+"_z.valueAtTime("+args.get(1)+")");
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve curve_z<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "curve_z_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            if(-1 == idxS)
+            {
+               // curve_w<path,t>
+               idxS = line.indexOf("curve_w<", 0);
+               if(-1 != idxS)
+               {
+                  idxE = line.indexOfChar('>', idxS+1);
+                  if(-1 != idxE)
+                  {
+                     line.substring(idxS+8, idxE-idxS-8) => path;
+                     args <= path.splitChar(',');
+                     path = args.get(0);
+                     path.trim();
+                     curve <= findEnvelopeCurve4(path);
+                     if(null != curve)
+                     {
+                        parents.add(this);
+                        sInit.empty();
+                        curve.emit("init",
+                                   _module,
+                                   null/*program*/,
+                                   sInit, // not used, pass null ?!
+                                   null/*dstVar*/,
+                                   false/*bGLSL*/,
+                                   parents
+                                   );
+                        parents.remove(this);
+
+                        line.replaceRegion(idxS, idxE+1, curve.getVarName()+"_w.valueAtTime("+args.get(1)+")");
+                     }
+                     else
+                     {
+                        trace "[---] GSource: failed to resolve curve_w<"+path+">";
+                        line.replaceRegion(idxS, idxE+1, "curve_w_ERROR<"+path+">");
+                     }
+                  }
+               }
+            }
+
+            // trace "xxx new line=<<"+line+">>";
+
+            // trace "xxx idxS="+idxS;
+
+            if((-1 == idxS) || (-1 == idxE))
+            {
+               _src.append(line);
+               _src.append("\n");
+               break;
+            }
+         } // loop
+      }
+
+      // trace "xxx new src=\""+_src+"\"";
+   }
+
+   // <method.png>
+   public method emitBegin() {
+      b_emit_main_done = false;
+      post_models.empty();
+   }
+
+   // <method.png>
+   public method emitEnd() {
+      b_emit_main_done = false;
+   }
+
+   // <method.png>
+   public method setTransformArg(String _arg) {
+      if(null != _arg)
+         cur_transform_arg <= Object(_arg);
+      else
+         cur_transform_arg <= null;
+   }
+
+   // <method.png>
+   public method getTransformArg() : String {
+      if(null != cur_transform_arg)
+         return cur_transform_arg;
+      return "null";
+   }
+
+   // <method.png>
+   public virtual emit(local String        _outputId,
+                       local GModule       _module,
+                       local GProgram      _program,
+                       local String        _out,
+                       local String        _dstVar,
+                       local boolean       _bGLSL,
+                       local PointerArray  _parents
+                       ) {
+
+      local GInput *input;
+      local GOutput *output;
+      local String *inVarName;
+      local String *outVarName;
+      local int inputIdx;
+      local int outputIdx;
+      local int fxnArgIdx;
+      local GParam *p;
+      local String *pIdUC;
+
+      local boolean bGLSL = !(this instanceof GScript);
+
+      local String sMain;
+
+      local boolean bHasDefaultOutput = sourceHasDefaultOutput();
+
+      if(!b_emit_main_done)
+      {
+         b_emit_main_done = true;
+
+         local boolean bFrag = parent_object instanceof GFragmentShader;
+
+         local String sGlobal = s_global;
+         local String sFunctions = s_functions;
+
+         // Replace params
+         foreach p in params
+         {
+            if("source" != p.id)
+            {
+               pIdUC <= p.id.toUpper();
+               sGlobal.replace("$("+pIdUC+")", p.getString());
+               sFunctions.replace("$("+pIdUC+")", p.getString());
+            }
+         }
+
+         if(bGLSL)
+         {
+            _program.appendShaderSourceGlobal(sGlobal);
+            _program.appendShaderSourceFunctions(sFunctions);
+         }
+         else
+         {
+            replaceSelectors(_module, sGlobal);  // namespace<path>, uniform_id<path>, model_draw<path>, ..
+            replaceSelectors(_module, sFunctions);
+
+            _module.appendGlobal(sGlobal);
+            _module.appendGlobal(sFunctions);
+         }
+
+         // src_main(in input1, in input2, .., out out1, out out2)
+         //  (note) place main code in function namespace to avoid name clash with other source modules
+         local String sSrcMain;
+         emit_fxn_name <= _module.allocTmpFxn(getId());
+         if(_bGLSL)
+            sSrcMain.append("\nvoid "+emit_fxn_name+"(");
+         else
+            sSrcMain.append("\nfunction "+emit_fxn_name+"(");
+         fxnArgIdx = 0;
+
+         if(this instanceof GScriptRender)
+         {
+            sSrcMain.append("int _fbW, int _fbH, Matrix4f _transform");
+            fxnArgIdx += 3;
+         }
+
+         // // local StringArray scriptOutObjectVarNames;
+
+         // Add input params
+         foreach input in inputs
+         {
+            if(fxnArgIdx++ > 0)
+               sSrcMain.append(", ");
+            if(_bGLSL)
+               sSrcMain.append("in "+input.getGLSLTypeName()+" "+input.id);
+            else
+               sSrcMain.append(input.getScriptTypeName()+" "+input.id);
+         }
+
+         // Add output params
+         outputIdx = 0;
+         foreach output in outputs
+         {
+            ////if(!(this instanceof GScriptRender) || (outputIdx > 0))
+            if(!bHasDefaultOutput || (outputIdx > 0))
+            {
+               // trace "xxx output="+#(output);
+               // trace "xxx gsource fxn output.id="+#(output.id);
+               // trace "xxx _module="+#(_module);
+               if(fxnArgIdx++ > 0)
+                  sSrcMain.append(", ");
+               if(_bGLSL)
+                  sSrcMain.append("out "+output.getGLSLTypeName()+" "+output.id);
+               else
+                  sSrcMain.append("/*out*/"+output.getScriptTypeNameAsObject()+" "+output.id);
+            }
+            outputIdx++;
+         }
+
+         if(bFrag)
+         {
+            if(fxnArgIdx > 0)
+               sSrcMain.append(", ");
+            sSrcMain.append("in vec4 g_FragCoord, in vec2 g_NormCoord");
+         }
+
+         sSrcMain.append(") {\n");
+         // trace "xxx s_main=\""+s_main+"\"";
+         Utils.AppendIndentedLines(sSrcMain, s_main, 3);
+         sSrcMain.append("}\n");
+
+         // trace "[trc] GSource: this="+#(this)+" sSrcMain="+sSrcMain;
+
+         // Replace params
+         foreach p in params
+         {
+            if("source" != p.id)
+            {
+               pIdUC <= p.id.toUpper();
+               // trace "xxx replace pIdUC=\""+pIdUC+"\"";
+               sSrcMain.replace("$("+pIdUC+")", p.getString());
+               // // sMain.replace("$("+pIdUC+")", p.getString());
+            }
+         }
+
+         // Replace "instance" name (global vars)
+         sSrcMain.replace("$(this)", getVarName());
+
+         if(bGLSL)
+         {
+            // trace "xxx sSrcMain=\""+sSrcMain+"\"";
+            _program.appendShaderSourceFunctions(sSrcMain);
+            // // _program.appendShaderSourceMain(sMain);
+         }
+         else
+         {
+            replaceSelectors(_module, sSrcMain);
+            // // replaceSelectors(_module, sMain);
+
+            _module.appendFunction(sSrcMain);
+            // // _module.appendDrawPre(sMain);
+         }
+
+      } // if !b_main_init_done
+
+
+
+      // Alloc input vars
+      emit_input_var_names.empty();
+      foreach input in inputs
+      {
+         inVarName <= _module.allocTmpVar(sMain, input.type, "fxnIn_"+input.id);
+         emit_input_var_names.add(inVarName);
+      }
+
+      // Alloc output vars
+      emit_output_var_names.empty();
+      outputIdx = 0;
+      foreach output in outputs
+      {
+         /////if(!(this instanceof GScriptRender) || (outputIdx > 0))
+         if(!bHasDefaultOutput || (outputIdx > 0))
+         {
+            // trace "xxx output="+#(output);
+            // trace "xxx output.id="+#(output.id);
+            // trace "xxx _module="+#(_module);
+            int scriptType = output.type;
+            if(_bGLSL)
+               outVarName <= _module.allocTmpVar(sMain, output.type, "fxnOut_"+output.id);
+            else
+               outVarName <= _module.allocTmpVarScriptByStringType(sMain, output.getScriptTypeNameAsObject(), "fxnOut_"+output.id);
+            emit_output_var_names.add(outVarName);
+         }
+         outputIdx++;
+      }
+
+      _parents.add(this);
+
+      // Emit the code that assigns the input variables
+      inputIdx = 0;
+      foreach input in inputs
+      {
+         inVarName <= emit_input_var_names.get(inputIdx);
+         input.emit(_module, _program, sMain, inVarName, _bGLSL, _parents);
+
+         // Next input
+         inputIdx++;
+      }
+
+      // Emit function call
+      sMain.append(emit_fxn_name+"(");
+      fxnArgIdx = 0;
+      if(this instanceof GScriptRender)
+      {
+         sMain.append("_fbW, _fbH, "+getTransformArg()+"/*transform*/");
+         fxnArgIdx += 3;
+      }
+      inputIdx = 0;
+      foreach input in inputs
+      {
+         inVarName <= emit_input_var_names.get(inputIdx);
+         if(fxnArgIdx++ > 0)
+            sMain.append(", ");
+         sMain.append(inVarName);
+         inputIdx++;
+      }
+      outputIdx = 0;
+      foreach output in outputs
+      {
+         // // if(!(this instanceof GScriptRender) || (outputIdx > 0))
+         if(!bHasDefaultOutput || (outputIdx > 0))
+         {
+            outVarName <= emit_output_var_names.get(bHasDefaultOutput ? (outputIdx-1) : outputIdx);
+            if(fxnArgIdx++ > 0)
+               sMain.append(", ");
+            sMain.append(outVarName);
+         }
+         outputIdx++;
+      }
+
+      if(bFrag)
+      {
+         if(fxnArgIdx > 0)
+            sMain.append(", ");
+         sMain.append("g_FragCoord, g_NormCoord");
+      }
+
+      sMain.append(");\n");
+
+      _out.append(sMain);
+
+
+      if(bHasDefaultOutput && (_outputId == getOutputByIndex(0).id))
+      {
+         // Forward default output (index 0) to first actual output (index 1)
+         output <= getOutputByIndex(1);
+      }
+      else
+      {
+         output <= getOutputById(_outputId);
+      }
+
+      if(null != output)
+      {
+         outputIdx = outputs.indexOfPointer(output, 0);
+         // // if(!(this instanceof GScriptRender) || (outputIdx > 0))
+         if(!bHasDefaultOutput || (outputIdx > 0))
+         {
+            outVarName <= emit_output_var_names.get(bHasDefaultOutput ? (outputIdx - 1) : outputIdx);
+            // emit "move"
+            _out.append(_dstVar+" = "+outVarName+"; // read "+(bGLSL?"GSource":"GScript")+" id="+id+" output="+_outputId+"\n");
+         }
+      }
+      else
+      {
+         // (note) silently ignore default forward when actual first output does not exist, yet
+         // if!((this instanceof GScriptRender) && (GOutput.OUT_DEF_OBJ == _outputId))
+         if!(bHasDefaultOutput && (_outputId == getOutputByIndex(0).id))
+         {
+            // should not be reachable
+            // throw GNotFoundError "GSource output \'"+_outputId+"\' does not exist (this="+getObjectPath()+")";
+            trace "[!!!] GSource::emit: output \'"+_outputId+"\' does not exist (this="+getObjectPath()+")";
+         }
+      }
+
+      _parents.remove(this);
+
+   }
+
+   // <method.png>
+   public method emitPost(local GModule      _module,
+                          local GProgram     _program,
+                          local PointerArray _parents
+                          ) {
+      GObject::emitPost(_module, _program, _parents);
+      GModel *model;
+      foreach model in post_models
+      {
+         model.emitModulePost(_module);
+      }
+   }
+
+}

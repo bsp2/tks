@@ -1,0 +1,553 @@
+// ----
+// ---- file   : ObjectListWindow.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 13Jul2020
+// ---- changed: 19Jul2020, 29Jul2020, 30Jul2020, 03Aug2020, 04Feb2025, 06Feb2025
+// ----
+// ----
+// ----
+
+module MObjectListWindow;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class ObjectListWindow extends Window, ActionProvider {
+
+   define String ACTION_SELECT;
+
+   protected XMLForm   *xfm;
+
+   protected ActionConsumer *recipient;
+
+   protected ObjectListTM  tm_objects;
+   public    TableView    *tv_objects;
+   protected PopupMenu    *pm_objects;
+
+   protected TextField *tf_find;
+   protected ComboBox  *cm_type;
+
+   protected PointerArray all_objects;
+   protected StringArray  all_object_paths;
+
+   protected PointerArray flt_objects;
+   protected PointerArray flt_object_paths;
+
+   static PointerArray obj_types = [
+      GObject,
+      GArg,
+      GArgFloatMIDI,
+      GAttribute,
+      GConstant,
+      GEnvelope,
+      GFBO,
+      GMesh,
+      GMod,
+      GModCombine,
+      GModSwitch,
+      GModTween,
+      GModel,  // must appear before GComposite since GComposite has precedence over GModel
+      GComposite,
+      GProgram,
+      GRenderPass,
+      GScene,
+      GVertexSource,
+      GFragmentSource,
+      GVertexShader,
+      GFragmentShader,
+      GScript,
+      GTexture,
+      GUniform,
+      GVarying,
+                                    ];
+
+   protected GObject *preferred_object;
+
+
+   // <ui_init.png>
+   public method initObjectListWindow() : boolean {
+
+      initWindowInt();
+      setDockable(false);
+
+      xfm <= XMLForm.New_PakFile("ObjectListWindow.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_objects.flt_objects <= flt_objects;
+      tm_objects.flt_object_paths <= flt_object_paths;
+      tm_objects.initTableModel();
+      tv_objects.setTableModel(tm_objects);
+
+      local StringArray typeOpt;
+      GObject *obj;
+      foreach obj in obj_types
+      {
+         typeOpt.add(obj.yacMetaClassName().substring(1,-1));
+      }
+      cm_type.setOptions(typeOpt);
+
+      recursiveBuildTabCycleLists();
+
+      initWindow(xfm, "Finder", 100, 100,
+                 850,
+                 500
+                 );
+
+      // recursiveSetLookAndFeel(LookAndFeel.LIGHT);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [tv_objects,
+                    tf_find,
+                    cm_type
+                    ];
+   }
+
+   // <method_set.png>
+   public method setRecipient(ActionConsumer _ac) {
+      recipient <= _ac;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_SELECT];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showObjectListWindow(ActionConsumer _recipient,
+                                      GObject        _preferredObject
+                                      ) {
+      recipient <= _recipient;
+      preferred_object <= _preferredObject;
+
+      trace "[trc] ObjectListWindow: preferredObject is "+#(_preferredObject);
+
+      all_objects.empty();
+      current_project.enumerateObjects(all_objects, 99/*_recurseDepthLeft*/);
+
+      all_object_paths.empty();
+      GObject *obj;
+      foreach obj in all_objects
+      {
+         all_object_paths.add(obj.getObjectPath());
+      }
+
+      // Find initial object type by preferred object
+      int selTypeIdx = -1;
+      int typeIdx = 0;
+      foreach obj in obj_types
+      {
+         if(_preferredObject instanceof obj)
+         {
+            // trace "xxx "+#(_preferredObject)+" instanceof "+#(obj);
+            selTypeIdx = typeIdx;
+         }
+         typeIdx++;
+      }
+      cm_type.setSelectedOption(selTypeIdx);
+      tf_find.setText("");
+      filterObjects();
+      tm_objects.selectNone();  // clear multiple selection
+
+      setGeometry4f(GConfig.finder_geo);
+      // showNearMouse(-100,-50);
+      show();
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      Window::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Window::postShow();
+
+      UI.SetKeyboardFocus(tv_objects);
+   }
+
+   // <method.png>
+   protected method filterObjectsInt(GObject objType, StringArray fltWords) {
+
+      flt_objects.empty();
+      flt_object_paths.empty();    
+
+      GObject *obj;
+      int objIdx = 0;
+      foreach obj in all_objects
+      {
+         boolean bAdd = false;
+         String objPath <= all_object_paths.get(objIdx);
+
+         bAdd = (obj instanceof objType);
+         if(bAdd && !fltWords.isEmpty())
+         {
+            String *w;
+            foreach w in fltWords
+            {
+               if!(objPath & w)
+               {
+                  bAdd = false;
+                  break;
+               }
+            }
+         }
+         if(bAdd)
+         {
+            flt_objects.add(obj);
+            flt_object_paths.add(objPath);
+         }
+         objIdx++;
+      }
+
+      tv_objects.tableModelChanged();
+      int rowIdx = flt_objects.indexOfPointer(preferred_object, 0);
+      tv_objects.setLeadSelection(rowIdx);
+      if(-1 != rowIdx)
+      {
+         tv_objects.moveCursorToRow(rowIdx);
+         tv_objects.autoScrollAhead(4/*numObjects*/);
+      }
+      else
+      {
+         tv_objects.moveCursorToFirstRow();
+      }
+
+   }
+
+   // <method.png>
+   protected method filterObjects() {
+      String fltPath <= tf_find.getText();
+      GObject *objType;
+      if(fltPath <= " ")
+      {
+         objType <= GObject;
+      }
+      else
+         objType <= obj_types.get(cm_type.getSelectedOption());
+
+      fltPath.trim();
+      local StringArray fltWords <= fltPath.splitSpace(false);
+
+      filterObjectsInt(objType, fltWords);
+
+      if(flt_objects.isEmpty() && (objType != GObject))
+      {
+         objType <= GObject;
+         filterObjectsInt(objType, fltWords);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTypeChanged() {
+      filterObjects();
+      Global.Print("Type is "+cm_type.getSelectedOptionName());
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Window::hide();
+      GConfig.finder_geo = getGeometry4f();
+      UI.SetKeyboardFocus(root_form.pg_start.tv_objects);
+   }
+
+   // <ui_handle.png>
+   protected method handleSelect(boolean _bHide) {
+      if(_bHide)
+         hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_SELECT), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedObject() : GObject {
+      return flt_objects.get(tm_objects.getCursorIndex());
+   }
+
+   // <method.png>
+   protected method handleSetLinkSources() {
+      PageStart pgStart <= root_form.pg_start;
+      IntArray rows <= tm_objects.getSelectedRowsIncludingCursor();
+      int rowIdx;
+      pgStart.unsetLinkSources();
+      int numAdded = 0;
+      local String *uniqueLinkStr;
+      foreach rowIdx in rows
+      {
+         GObject gobj <= flt_objects.get(rowIdx);
+         String outputId <= gobj.getDefaultOutputId();
+         pgStart.addLinkSource(gobj, outputId);
+         if(1 == rows.numElements)
+            uniqueLinkStr <= gobj.getObjectPath()+":"+outputId;
+         numAdded++;
+      }
+      if(null != uniqueLinkStr)
+         Global.Print("Set link source to "+uniqueLinkStr);
+      else
+         Global.Print("Set "+numAdded+" link source"+Utils.GetPluralString(numAdded));
+   }
+
+   // <method.png>
+   protected method handleCopyPath() {
+      GObject *obj <= getSelectedObject();
+      if(null != obj)
+      {
+         local String objPath <= obj.getObjectPath();
+
+         if(null != objPath)
+         {
+            UI.SetClipboard(objPath);
+            Global.Print("Copy path \""+objPath+"\" to clipboard");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showObjectsMenu() {
+
+      pm_objects <= PopupMenu.New(this);
+      pm_objects.b_ext_focus_hack = true;
+
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_objects;
+
+      GObject *obj <= getSelectedObject();
+
+      pmb <= pm.addDefaultButton("Copy path",
+                                 "copypath"
+                                 );
+      pmb.setToolTipCaption("Copy namespace or object path to clipboard");
+      pmb.setAccelerators("lctrl-l", "");
+      pmb.setActive(null != obj);        
+
+      pm.resizeToMinimum();
+      pm.showAtXY(tv_objects.contextmenu_suggested_abs_x,
+                  tv_objects.contextmenu_suggested_abs_y
+                  );
+
+      Global.Print("Show ObjectList context menu.");
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      Window::onDraw();
+
+      if(current_project.b_animate)
+      {
+         if(["Texture", "FBO"].containsObject(cm_type.getSelectedOptionName()))
+         {
+            redraw();
+         }
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx ObjectListWindow::onKey: k="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod+" unicode="+_k.unicode;
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case VKEY_RETURN:
+         // case VKEY_SPACE:
+            handleSelect(true/*bHide*/);
+            return true;
+
+         case VKEY_KP_ENTER:
+            redraw();
+            return root_form.pg_start.onKey(_k);
+
+         default:
+            break;
+      }
+
+      if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case 'f':
+            case 'r':  // renderpasses
+            case 'o':  // models
+               hide();
+               return true;
+
+            case '1':
+               cm_type.setSelectedOptionByName("Scene");
+               handleTypeChanged();
+               return true;
+
+            case '2':
+               cm_type.setSelectedOptionByName("Model");
+               handleTypeChanged();
+               return true;
+
+            case '3':
+               cm_type.setSelectedOptionByName("RenderPass");
+               handleTypeChanged();
+               return true;
+
+            case '4':
+               if("Program" == cm_type.getSelectedOptionName())
+                  cm_type.setSelectedOptionByName("VertexSource");
+               else if("VertexSource" == cm_type.getSelectedOptionName())
+                  cm_type.setSelectedOptionByName("FragmentSource");
+               else
+                  cm_type.setSelectedOptionByName("Program");
+               handleTypeChanged();
+               return true;
+
+            case '5':
+               cm_type.setSelectedOptionByName("Constant");
+               handleTypeChanged();
+               return true;
+
+            case '6':
+               cm_type.setSelectedOptionByName("Mod");
+               handleTypeChanged();
+               return true;
+
+            case '7':
+               cm_type.setSelectedOptionByName("Arg");
+               handleTypeChanged();
+               return true;
+
+            case '8':
+               cm_type.setSelectedOptionByName("Texture");
+               handleTypeChanged();
+               return true;
+
+            case '9':
+               cm_type.setSelectedOptionByName("Uniform");
+               handleTypeChanged();
+               return true;
+
+            case '0':
+            case '*':
+            case ']':
+               cm_type.setSelectedOptionByName("Object");
+               handleTypeChanged();
+               return true;
+
+            case 'c':
+               handleCopyPath();  // copy first selected object or namespace path to clipboard
+               handleSetLinkSources();
+               return true;
+
+            case 'l':
+               handleCopyPath();
+               return true;
+         }
+      }
+
+      if( ('a' <= _k.unicode <= 'z') ||
+          ('A' <= _k.unicode <= 'Z') ||
+          ('0' <= _k.unicode <= '9') ||
+          ('_' == _k.unicode)        ||
+          (' ' == _k.unicode)
+          )
+      {
+         // trace "xxx autofocus tf_find";
+         UI.SetKeyboardFocus(tf_find);
+         tf_find.selectAll();
+         return tf_find.onKey(_k);
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+
+      ////trace "xxx ObjectTypeWindow: got action name="+name;
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(tv_objects):
+            if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleSelect(false/*bHide*/);
+            }
+            else if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               handleSelect(true/*bHide*/);
+            }
+            return true;
+
+         case @(pm_objects):
+            Global.Debug("pm_objects acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close objectlist context menu.");
+                  UI.SetKeyboardFocus(tv_objects);
+                  return true;
+
+               case "copypath":
+                  handleCopyPath();
+                  return true;
+
+            }
+            return true;
+
+         case @(tf_find):
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               UI.SetKeyboardFocus(tv_objects);
+               redraw();
+            }
+            else if(TextField.ACTION_TEXTEDITED == acName)
+            {
+               filterObjects();
+            }
+            return true;
+
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+      }
+
+      return true;
+   }
+
+}

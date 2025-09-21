@@ -1,0 +1,293 @@
+// ----
+// ---- file   : ObjectTypeDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 15Jun2020
+// ---- changed: 21Jun2020, 22Jun2020, 01Aug2020, 04Feb2025, 05Feb2025
+// ----
+// ----
+// ----
+
+module MObjectTypeDialog;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class ObjectTypeDialog extends Dialog, ActionProvider {
+
+   define String ACTION_OBJECT_TYPE_SELECT;
+   define String ACTION_OBJECT_TYPE_CANCEL;
+
+   protected XMLForm   *xfm;
+
+   protected ActionConsumer *recipient;
+
+   protected ObjectTypesTM  tm_types;
+   public    TableView     *tv_types;
+
+   protected Button *bt_select;
+   protected Button *bt_cancel;
+
+   protected ObjectTypesTMEntry *entries[];
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ObjectTypeDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_types.entries <= entries;
+      tm_types.initTableModel();
+      tv_types.setTableModel(tm_types);
+
+      recursiveBuildTabCycleLists();
+
+      initWindow(xfm, "Select Object Type",
+                 100 * UI.font_scaling, 100 * UI.font_scaling,
+                 280 * UI.font_scaling, 340 * UI.font_scaling
+                 );
+
+      // recursiveSetLookAndFeel(LookAndFeel.LIGHT);
+
+      return true;
+   }
+
+   // <method_set.png>
+   public method setRecipient(ActionConsumer _ac) {
+      recipient <= _ac;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OBJECT_TYPE_SELECT, ACTION_OBJECT_TYPE_CANCEL];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showObjectTypeDialog(ActionConsumer _recipient,
+                                      String         _selectCaption,
+                                      PointerArray   _classWhiteList,
+                                      PointerArray   _classWhiteListBase,
+                                      PointerArray   _classBlackList,
+                                      PointerArray   _classBlackListBase,
+                                      Class          _preferredClass
+                                      ) {
+      recipient <= _recipient;
+
+      trace "[trc] ObjectTypeDialog: preferredClass is "+#(_preferredClass);
+
+      local PointerArray allClasses <= TKS.findClassesByBaseClass(null/*nsp*/, GObject);
+      entries.free();
+      GObject *clazz;
+      // trace "xxx allClasses="+#(allClasses);
+      int preselRowIdx = 0;
+
+      foreach clazz in allClasses
+      {
+         boolean bAdd = true;
+         Object *oClass;
+         if(null != _classWhiteList)
+         {
+            bAdd = _classWhiteList.containsPointer(clazz);
+         }
+         if(bAdd)
+         {
+            if(null != _classWhiteListBase)
+            {
+               bAdd = false;
+               foreach oClass in _classWhiteListBase
+               {
+                  if(clazz instanceof oClass)
+                  {
+                     bAdd = true;
+                     break;
+                  }
+               }
+            }
+         }
+         if(bAdd)
+         {
+            if(null != _classBlackList)
+            {
+               if(_classBlackList.containsPointer(clazz))
+                  bAdd = false;
+            }
+         }
+         if(bAdd)
+         {
+            if(null != _classBlackListBase)
+            {
+               foreach oClass in _classBlackListBase
+               {
+                  if(clazz instanceof oClass)
+                  {
+                     bAdd = false;
+                     break;
+                  }
+               }
+            }
+         }
+         if(bAdd)
+         {
+            ObjectTypesTMEntry en <= new ObjectTypesTMEntry;
+            en.name  = clazz.yacMetaClassName();
+            en.clazz <= clazz;
+            if(clazz instanceof _preferredClass)
+               preselRowIdx = entries.numElements;
+            entries.add(#(deref en));
+         }
+      }
+
+      tv_types.tableModelChanged();
+      tv_types.moveCursorToRow(preselRowIdx);
+      tv_types.setLeadSelection(preselRowIdx);
+      tv_types.autoScrollAhead(3/*numRows*/);
+
+      bt_select.setCaption(_selectCaption);
+
+      showNearMouse(-100 * UI.font_scaling,
+                    -50 * UI.font_scaling
+                    );
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      // // setWindowTitle("Select Object Type");
+
+      if(!b_layer_postinit_done)
+      {
+         if(1 == entries.numElements)
+            resizeToMinimum();
+      }
+
+      resizeAtLeastToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+
+      if(1 == tm_types.getNumRows())
+         tv_types.setLeadSelection(0);
+      UI.SetKeyboardFocus(tv_types);
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_OBJECT_TYPE_CANCEL), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelect() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_OBJECT_TYPE_SELECT), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedObjectType() : Object {
+      return entries.get(tm_types.getCursorIndex()).clazz;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleSelect();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+
+      ////trace "xxx ObjectTypeDialog: got action name="+name;
+
+      switch(acName)
+      {
+         case "ok":
+            handleSelect();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(bt_select):
+             handleSelect();
+             return true;
+
+         case @(bt_cancel):
+             handleCancel();
+             return true;
+
+         case @(tv_types):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               handleSelect();
+            }
+            return true;
+      }
+
+      return true;
+   }
+
+}

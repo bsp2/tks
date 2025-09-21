@@ -1,0 +1,272 @@
+// ----
+// ---- file   : gmesh_ring.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----          - generates stencil-like texture coordinates (linear projection onto ring)
+// ----
+// ---- created: 24Jul2020
+// ---- changed: 25Jul2020, 14Aug2020
+// ----
+// ----
+// ----
+module MGMesh_Ring;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMesh_Ring : GMesh {
+
+   // <method_new.png>
+   static New() : GMesh_Ring {
+      local GMesh_Ring r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GMesh::init();
+
+      GParam *p;
+      GParamFloat *pf;
+
+      addParamFloat("radius_x",  "radius_x",  1.0, 0.00001, 0.0001, 10.0, 1000.0, 1.0);
+      addParamFloat("radius_y", "radius_y", 1.0, 0.00001, 0.0001, 10.0, 1000.0, 1.0);
+
+      p <= addParamFloat("min_a",  "min_a",  0.0,   -360, -360, 360.0, 360.0, 0.0);
+      p.setToolTipCaption("Min Angle");
+
+      p <= addParamFloat("max_a",  "max_a",  360.0, -360, -360, 360.0, 360.0, 0.0);
+      p.setToolTipCaption("Max Angle");
+
+      pf <= addParamFloat("min_d",  "min_d",  0.5, 0.00001, 0.0001, 1.0, 1.0, -1);
+      pf.setToolTipCaption("Min Distance");
+      pf.setEnablePercent(true);
+
+      pf <= addParamFloat("max_d",  "max_d",  1.0, 0.00001, 0.0001, 1.0, 1.0, -1);
+      pf.setToolTipCaption("Max Distance");
+      pf.setEnablePercent(true);
+
+      p <= addParamIntSimple("subdiv_a", 20, 4, 99);
+      p.setToolTipCaption("Angular subdivision");
+
+      p <= addParamIntSimple("subdiv_d", 1, 1, 99);
+      p.setToolTipCaption("Radial Distance subdivision");
+
+      p <= addParamChoice("tex_mode", "Tex Mode", 0, ["Project", "Circular"]);
+
+      addParamFloat("off_x", "Offset X", 0.0, -10.0, -1000.0, 10.0, 1000.0, 0.0);
+      addParamFloat("off_y", "Offset Y", 0.0, -10.0, -1000.0, 10.0, 1000.0, 0.0);
+
+      addOutput("position", TYPE_VEC2);
+      addOutput("normal",   TYPE_VEC3);
+      addOutput("uv",       TYPE_VEC2);
+      addOutput("color",    TYPE_VEC4);
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "ring";
+   }
+
+   // <method_get.png>
+   public virtual getNumVertices() : int {
+      int subdivA = getIntParamById("subdiv_a");
+      int subdivD = getIntParamById("subdiv_d");
+      int r = (1+subdivA) * (1+subdivD);
+      // trace "xxx GMesh_Ring: getNumVertices="+r;
+      return r;
+   }
+
+   // <method_get.png>
+   public method isClosed() : boolean {
+      float minA = getFloatParamById("min_a");
+      float maxA = getFloatParamById("max_a");
+      return (int((minA%360.0f)*10) == int((maxA%360.0f)*10));
+   }
+
+   // <method_get.png>
+   public method getNumIndices() : int {
+      int subdivA = getIntParamById("subdiv_a");
+      int subdivD = getIntParamById("subdiv_d");
+      int r = ( (3*2*subdivA) * subdivD );
+      if(isClosed())
+         r += (3*2*subdivD);
+      // trace "xxx GMesh_Ring: getNumIndices="+r;
+      return r;
+   }
+
+   // <method_get.png>
+   public method getGLMode() : int {
+      return GL_TRIANGLES;
+   }
+
+   // <method.png>
+   public virtual emitPrepareAttribBuffer(GModule  _module, 
+                                          GModel   _model, 
+                                          GProgram _program,
+                                          String   _sInit, 
+                                          GBuffer  _buffer, 
+                                          int      _pitch
+                                          ) {
+      Integer offPosition = _model.getAttributeOffsetById("position");
+
+      boolean bNormal = /*getBoolParamById("emit_normal") && */_program.hasAttribute("normal");
+      boolean bColor  = /*getBoolParamById("emit_color")  && */_program.hasAttribute("color");
+      boolean bUV     = /*getBoolParamById("emit_uv")     && */_program.hasAttribute("uv");
+
+      Integer offNormal = bNormal ? _model.getAttributeOffsetById("normal") : -1;
+      Integer offColor  = bColor ? _model.getAttributeOffsetById("color") : -1;
+      Integer offUV     = bUV ? _model.getAttributeOffsetById("uv") : -1;
+
+      int texMode = getChoiceParamById("tex_mode");
+
+      float offX = getFloatParamById("off_x");
+      float offY = getFloatParamById("off_y");
+
+      // trace "xxx mesh bUV="+bUV+" offUV="+offUV;
+      float t;
+
+      float radiusX = getFloatParamById("radius_x");
+      float radiusY = getFloatParamById("radius_y");
+
+      float minA = getFloatParamById("min_a");
+      float maxA = getFloatParamById("max_a");
+      if(minA > maxA)
+      {
+         t = minA;
+         minA = maxA;
+         maxA = t;
+      }
+
+      // deg to rad
+      minA *= 2PI/360.0;
+      maxA *= 2PI/360.0;
+
+      float minD = getFloatParamById("min_d");
+      float maxD = getFloatParamById("max_d");
+      if(minD > maxD)
+      {
+         t = minD;
+         minD = maxD;
+         maxD = t;
+      }
+
+      int subdivA = getIntParamById("subdiv_a");
+      int subdivD = getIntParamById("subdiv_d");
+
+      float dStep = (maxD - minD) / subdivD;
+      float aStep = (maxA - minA) / subdivA;
+
+      emitBeginAttribData(_sInit, _buffer, _pitch);
+
+      float d = minD;
+      float cv = 0.0f;
+      float uStep = 1.0f / (subdivA);
+      float vStep = 1.0f / (subdivD);
+      loop(1+subdivD)
+      {
+         float a = minA;
+         float cu = 0.0f;
+         loop(1+subdivA)
+         {
+            float cx = cos(-a) * d;
+            float cy = sin(-a) * d;
+
+            float u, v;
+
+            if(0 == texMode)
+            {
+               // Project
+               u = 0.5 + cx * 0.5;
+               v = 0.5 + cy * 0.5;
+            }
+            else
+            {
+               u = cu;
+               v = cv;
+            }
+
+            float px = cx * radiusX + offX;
+            float py = cy * radiusY + offY;
+
+            // trace "xxx p=("+px+";"+py+")";
+
+            emitVec2(offPosition, px, py);
+            if(bNormal)
+               emitVec3(offNormal, 0,0,1);
+            if(bColor)
+               emitVec4(offColor, 1,1,1,1);
+            if(bUV)
+               emitVec2(offUV, u, v);
+
+            a += aStep;
+            cu += uStep;
+         }
+         d += dStep;
+         cv += vStep;
+      }
+
+      emitEndAttribData();
+   }
+
+   // <method.png>
+   public virtual emitPrepareIndexBuffer(GModule _module, GModel _model, String _sInit, GBuffer _buffer) {
+
+      int subdivA = getIntParamById("subdiv_a");
+      int subdivD = getIntParamById("subdiv_d");
+
+      boolean bClosed = isClosed();
+
+      emitBeginIndexData(_sInit, _buffer);
+
+      int cy = 0;
+      int w = (1 + subdivA);
+      // _sInit.append(_aBufVarData+".offset = 0;\n");
+      _buffer.data.setOffset(0);
+      loop(subdivD)
+      {
+         int cx = 0;
+         loop(subdivA)
+         {
+            // tri 1
+            emitIndex32(cy + cx + 0);
+            emitIndex32(cy + cx + w + 0);
+            emitIndex32(cy + cx + w + 1 + 0);
+
+            // tri 2
+            emitIndex32(cy + cx + 0);
+            emitIndex32(cy + cx + w + 1);
+            emitIndex32(cy + cx + 1);
+
+            cx++;
+         }
+
+         if(bClosed)
+         {
+            // cx--;
+
+            // tri 1
+            emitIndex32(cy + cx);
+            emitIndex32(cy + cx + w);
+            emitIndex32(cy + w);
+
+            // tri 2
+            emitIndex32(cy + cx);
+            emitIndex32(cy + w);
+            emitIndex32(cy);
+         }
+
+         cy += w;
+      }
+
+      emitEndIndexData();
+   }
+
+}

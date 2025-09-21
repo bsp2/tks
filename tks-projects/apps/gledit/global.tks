@@ -1,0 +1,1174 @@
+// ----
+// ---- file   : global.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL Edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 15Jun2020, 20Jun2020, 21Jun2020, 28Jun2020, 03Jul2020, 07Jul2020, 13Jul2020
+// ----          28Jul2020, 01Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGlobal;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <callback.png>
+function onMIDITimer(MIDITimer _timer) {
+
+   int numEv = midi_in.numEvents;
+   //trace "xxx midi_in numEvents="+numEv;
+   loop(numEv)
+   {
+      RecordedMIDIEvent recEv <= midi_in.nextEvent;
+
+      if(!recEv.isLongMessage())
+      {
+         int shortMsg = recEv.shortMessage;
+         int extType;
+         int arg1;
+         int arg2;
+         byte ch = shortMsg & 15;
+
+         switch(recEv.midiMapEventType)
+         {
+            case MIDIMapDefs.TYPE_CC:
+               extType = (shortMsg>> 8) & 127;  // CC#
+               arg1    = (shortMsg>>16) & 127;  // CC value
+               midi_ccs[ch*128 + extType] = arg1;
+               break;
+
+            case MIDIMapDefs.TYPE_NRPN:
+               extType = recEv.nrpnId;
+               arg1    = recEv.dataEntry; // (N)RPN value (14bit)
+               midi_nrpns[ch*16384 + extType] = arg1;
+               break;
+
+            case MIDIMapDefs.TYPE_NOTE_OFF:
+               arg1    = (shortMsg>> 8) & 127;  // note number
+               arg2    = (shortMsg>>16) & 127;  // velocity
+               midi_note_active[ch*128 + arg1] = false;
+               midi_noteoff_vel[ch*128 + arg1] = arg2;
+               midi_noteon_vel [ch*128 + arg1] = 0;
+               break;
+
+            case MIDIMapDefs.TYPE_NOTE_ON:
+               arg1 = (shortMsg>> 8) & 127;  // note number
+               arg2 = (shortMsg>>16) & 127;  // velocity
+
+               if(0 == arg2)
+               {
+                  // note off
+                  midi_note_active[ch*128 + arg1] = false;
+                  midi_noteoff_vel[ch*128 + arg1] = 64;
+                  midi_noteon_vel [ch*128 + arg1] = 0;
+               }
+               else
+               {
+                  midi_note_active[ch*128 + arg1] = true;
+                  midi_noteon_vel [ch*128 + arg1] = arg2;
+                  midi_last_notes[ch] = arg2;
+               }
+               break;
+
+            case MIDIMapDefs.TYPE_POLY_PRESSURE:
+               arg1 = (shortMsg>> 8) & 127;  // note number
+               arg2 = (shortMsg>>16) & 127;  // pressure
+               midi_note_pressure[16*128 + arg1] = arg2;
+               break;
+
+            case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+               arg1 = (shortMsg>> 8) & 127;
+               midi_ch_pressure[ch] = arg1;
+               break;
+
+            case MIDIMapDefs.TYPE_PITCHBEND:
+               arg1 = ((shortMsg>> 8) & 127) | ( ( (shortMsg>>16) & 127) << 7);  // build 14bit val
+               midi_pitchbend[ch] = arg1;
+               break;
+
+            case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+               arg1 = (shortMsg>> 8) & 127;
+               midi_prgchg[ch] = arg1;
+               break;
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class Global {
+
+   // define String DATE_STRING = "v2020.08.01";
+   define String DATE_STRING = "v2025.02.09";
+   define String VERSION_STRING = "GL Edit "+DATE_STRING;
+
+   define String PROJECT_FILE_SUFFIX            = ".gpr";
+   define String MODEL_PRESET_FILE_SUFFIX       = ".gmp";
+   define String RENDERPASS_PRESET_FILE_SUFFIX  = ".grp";
+   define String SCENE_PRESET_FILE_SUFFIX       = ".gsp";
+   define String TEXTURE_PRESET_FILE_SUFFIX     = ".gtp";  // palettes
+   define String CURVE_FILE_SUFFIX              = ".curve";
+
+   define String AUTOSAVE_CURRENT_FILENR_FILE = "gledit_autosave_current_filenr.dat";
+   define String AUTOSAVE_FILENAME_PREFIX = "gledit_autosave_";
+
+   static boolean b_initializing;
+
+   static boolean b_loading; // true=skip some UI messages while loading a song
+
+   static int last_autosave_timestamp = 0;
+
+   static AppLookAndFeel_Light *app_lnf_light;
+   static AppLookAndFeel_Dark  *app_lnf_dark;
+   static AppLookAndFeel_Mono  *app_lnf_mono;
+
+   // static Mutex mtx_print_replay;
+   // static StringArray print_replay_queue_strings;
+   // static IntArray print_replay_queue_timeouts;
+
+   static Dialog_Quit dialog_quit;
+
+   static gledit::StatusBarLogger logger;
+
+
+   // <init.png>
+   static Init() : boolean {
+      Integer io;
+
+      MGConfig.GlobalInit();
+
+      // // trace "\n\n\nxxx Global::Init: GConfig.lnf_idx="+GConfig.lnf_idx;
+      UI.SetLookAndFeelByIdx(mathMaxi(0, GConfig.lnf_idx) % 3);
+      UI.LookAndFeelForceFlat();
+
+      app_lnf_light <= new AppLookAndFeel_Light;
+      app_lnf_light.initAppLookAndFeel();
+
+      app_lnf_dark  <= new AppLookAndFeel_Dark;
+      app_lnf_dark.initAppLookAndFeel();
+
+      app_lnf_mono <= new AppLookAndFeel_Mono;
+      app_lnf_mono.initAppLookAndFeel();
+
+      switch(GConfig.lnf_idx)
+      {
+         default:
+         case LookAndFeel.IDX_LIGHT:
+            app_lnf <= app_lnf_light;
+            break;
+
+         case LookAndFeel.IDX_DARK:
+            app_lnf <= app_lnf_dark;
+            break;
+
+         case LookAndFeel.IDX_MONO:
+            app_lnf <= app_lnf_mono;
+            break;
+      }
+
+      Global.Debug("Global::Init: lnf theme is \""+app_lnf.getName()+"\"");
+
+      // if(0 != GConfig.process_affinity_mask)
+      // {
+      //    io = GConfig.process_affinity_mask;
+      //    Debug("Setting process affinity mask to "+io.printf("0x%08x"));
+      //    Thread.SetProcessAffinityMask32(GConfig.process_affinity_mask);
+      // }
+
+      // if(GConfig.ui_thread_core >= 0)
+      // {
+      //    Thread uiThread <= GetCurrentThread();
+      //    uiThread.setCPUCore(GConfig.ui_thread_core);
+      // }
+
+      b_initializing = true;
+
+      // Set dummy song to prevent crashes during startup.
+      //  (todo) should be fixed properly, though
+      //          current_project is usually just a pointer into the all_songs array
+      current_project <= new Project;
+      current_project.init();
+
+      // if(!MIDI.OpenMIDITimer())
+      // {
+      //    trace "[---] failed to open MIDI timer.";
+      //    return false;
+      // }
+
+      // Initialize waveforms/samples
+      // Parse main screen form
+      root_form <= new RootForm;
+      if(!root_form.initPakFile("RootForm.xfm"))
+      {
+         die "failed to parse RootForm.xfm";
+      }
+
+      // Load/parse XFMs
+      if(!root_form.init())
+      {
+         trace "[---] RootForm::init() failed\n";
+         return false;
+      }
+
+      // Initialize song (also clears all sub-songs)
+      InitProject();
+
+      // Dialogs.Init();
+
+      ////Main.RenderTest(); // xxxxxxxxxxxxxxxxxx
+
+      // root_form.updateSongWidgets();
+
+      last_autosave_timestamp = milliSeconds();
+
+      PrintMS("All right.", 2000);
+
+      return true;
+   }
+
+   // <method.png>
+   static PreRun() {
+
+      Debug("Global::PreRun: ENTER");
+
+      b_initializing = false;
+
+      if(GConfig.b_midi)
+      {
+         if(midi_in.openByName(GConfig.midi_input_device))
+         {
+            b_midi = true;
+
+            if(!midi_timer.setMutexOverrideByName("midi"))
+            {
+               die "[---] failed to override MIDI timer mutex.";
+            }
+
+            // (note) 16 MIDI channels
+            midi_ccs          .allocAndFill(16*128, 0);
+            midi_nrpns        .allocAndFill(16*16384, 0);
+            midi_last_notes   .allocAndFill(16, -1);
+            midi_note_active  .allocAndFill(16*128, false);
+            midi_noteon_vel   .allocAndFill(16*128, 0);
+            midi_noteoff_vel  .allocAndFill(16*128, 0);
+            midi_note_pressure.allocAndFill(16*128, 0);
+            midi_ch_pressure  .allocAndFill(16, 0);
+            midi_pitchbend    .allocAndFill(16, 0);
+            midi_prgchg       .allocAndFill(16, 0);
+
+            midi_timer.start(1/*delay*/, 1.0f/*interval*/, onMIDITimer);
+            midi_in.start();
+
+            trace "[+++] MIDI device \""+GConfig.midi_input_device+"\" started";
+         }
+         else
+         {
+            trace "[~~~] failed to open MIDI input device \""+GConfig.midi_input_device+"\", disabling MIDI support..";
+         }
+      }
+
+      // // UI thread has least priority, audio+midi threads have default priority (e.g. "nice -10 tks flux")
+      // //Thread cThread <= GetCurrentThread();
+      // //cThread.priority = THREAD_PRIORITY_BELOW_NORMAL;//LOWEST;
+
+      root_form.showPage(GConfig.start_page, true);
+
+      UpdateWindowTitle("test");
+
+      LoadIcon();
+
+      root_form.pg_start.handleLoad(GConfig.autoload_filename);
+
+      Debug("Global::PreRun: LEAVE");
+   }
+
+   // <method.png>
+   static LoadIcon() {
+      local PakFile f;
+      if(f.open("gledit_icon.bmp"))
+      {
+         local Buffer b;
+         f.readBuffer(b, 0, f.size, true/*bResize*/);
+         f.close();
+         if(SDL.setIconFromBMP(b))
+            Debug2("Global::LoadIcon: loaded icon from \"gledit_icon.bmp\"");
+         else
+            Debug2("Global::LoadIcon: failed to load icon from \"gledit_icon.bmp\"");
+      }
+      else
+      {
+         trace "[---] Global::LoadIcon: failed to open \"gledit_icon.bmp\"";
+      }
+   }
+
+   // <ui_handle.png>
+   static HandleOnClose() {
+      int numModal = UI.GetNumModalFloatingLayers();
+
+      if(0 == numModal)
+      {
+         // OK, quit it
+         Global.cmd_file_quit();
+      }
+      else
+      {
+         // Do not exit as long as there are modal dialogs
+         trace "[~~~] SDL_onClose: cannot exit since there are "+numModal+" modal windows";
+      }
+   }
+
+   // <exit.png>
+   static Exit() {
+      trace "[...] Global::Exit() called.";
+
+      // MIDI.CloseMIDITimer();
+
+      current_project.exit();
+
+      if(GConfig.b_midi)
+      {
+         midi_timer.stop();
+         midi_in.close();
+      }
+
+      UI.Exit();
+
+      trace "[...] Global::Exit() finished.";
+   }
+
+   // <log.png>
+   static Error(String _text) {
+      int fg = #ffffffff;
+      int bg = UI.MixColor32(#ffff0000, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.4);
+
+      root_form.pushStatusMessage("Error: "+_text, 500, fg, bg, false/*bHead*/);
+
+      trace "[---] Global.Error: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static FatalError(String _text) {
+      int fg = #ffffffff;
+      int bg = UI.MixColor32(#ffff0000, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.2);
+
+      root_form.pushStatusMessage("FatalError: "+_text, 1000*60*60*24, fg, bg, true/*bHead*/); // show for 24 hours
+
+      trace "[---] Global.FatalError: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static Warning(String _text) {
+      if(null != root_form)
+      {
+         int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_FG);
+         // // int bg = UI.MixColor32(#ffeeee00, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.2);
+         int bg = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), #ffeeee00, 0.2);
+
+         root_form.pushStatusMessage("Warning: "+_text, 300, fg, bg, false/*bHead*/);
+      }
+
+      trace "[~~~] Global.Warning: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static Success(String _text) {
+      int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_FG);
+      int bg = UI.MixColor32(#ff00aa00, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.90);
+
+      if(!b_initializing)
+      {
+         root_form.pushStatusMessage("OK: "+_text, 500, fg, bg, false/*bHead*/);
+      }
+
+      trace "[+++] Global.Success: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static SuccessShort(String _text) {
+      int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_FG);
+      int bg = UI.MixColor32(#ff00ff00, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.95);
+
+      root_form.pushStatusMessage("OK: "+_text, 10, fg, bg, false/*bHead*/);
+
+      trace "[+++] Global.Success: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static PrintMS(String _text, int _timeout) {
+      int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_FG);
+      int bg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG);
+
+      root_form.pushStatusMessage(_text, _timeout, fg, bg, false/*bHead*/);
+
+      //trace "[dbg] Global.Print: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static PrintHead(String _text) {
+      if(!b_loading)
+      {
+         int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_FG);
+         int bg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG);
+
+         root_form.pushStatusMessage(_text, 150/*350*/, fg, bg, true/*bHead*/);
+      }
+      //trace "[dbg] Global.Print: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static Info(String _text) {
+      logger.logInfo(_text);
+   }
+
+   // <debug.png>
+   static Debug(local String _text) {
+      if(GConfig.b_debug_lofreq)
+      {
+         logger.logDebug(_text);
+      }
+   }
+
+   // <debug.png>
+   static Debug2(local String _text) {
+      if(GConfig.b_debug_hifreq)
+      {
+         logger.logTrace(_text);
+      }
+   }
+
+   // <debug.png>
+   static Debug3(local String _text) {
+      if(GConfig.b_debug_rt)
+      {
+         logger.logVerbose(_text);
+      }
+   }
+
+   // <debug.png>
+   static Debug4(local String _text) {
+      // work-in-progress very-verbose debug messages (should be commented out when done)
+      // // if(GConfig.b_debug_rt)
+      // // {
+         logger.logVerbose(_text);
+      //    // trace "[xxx] "+_text;
+      // // }
+   }
+
+   // <debug.png>
+   static Profile(local String _text) {
+      if(GConfig.b_debug_profile)
+      {
+         logger.logProfile(_text);
+      }
+   }
+
+   // <log.png>
+   static Print(String _text) {
+      logger.logInfo(_text);
+   }
+
+   // // // <log.png>
+   // // static PrintLong(String _text) {
+   // //    PrintMS(_text, 1000);
+   // // }
+
+   // // // <log.png>
+   // // static PrintShort(String _text) {
+   // //    PrintMS(_text, 500);
+   // // }
+
+   // <log.png>
+   static PrintFast(String _text) {
+      // (todo) should actually be called PrintSlow() (..)
+      logger.logInfoFast(_text);
+   }
+
+   // <log.png>
+   static PrintInteractive(String _text) {
+      int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_FG);
+      int bg = UI.MixColor32(#ff00ffff, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.95);
+
+      root_form.pushStatusMessage("$: "+_text, 10, fg, bg, false/*bHead*/);
+
+      trace "[...] Global.PrintShortInteractive: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static PrintShortInteractive(String _text) {
+      int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_FG);
+      int bg = UI.MixColor32(#ff00ffff, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.95);
+
+      root_form.pushStatusMessage("$: "+_text, 500, fg, bg, false/*bHead*/);
+
+      trace "[...] Global.PrintShortInteractive: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static PrintBegin(String _text) {
+      int fg = #ffffffff;
+      int bg = UI.MixColor32(#ffff9b00, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.1);
+
+      root_form.pushStatusMessage("Begin: "+_text, -1, fg, bg, false/*bHead*/);
+
+      trace "[...] Global.Begin: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static PrintEndOK(String _text) {
+
+      root_form.endStatusMessageLock();
+
+      int fg = #ff000000;
+      int bg = UI.MixColor32(#ff00ff00, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.8);
+
+      root_form.pushStatusMessage("End: "+_text, 10, fg, bg, false/*bHead*/);
+
+      trace "[...] Global.End<OK>: \""+_text+"\".";
+   }
+
+   // <log.png>
+   static PrintEndNOK(String _text) {
+
+      root_form.endStatusMessageLock();
+
+      int fg = #ff000000;
+      int bg = UI.MixColor32(#ffff9b00, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG), 0.8);
+
+      root_form.pushStatusMessage("End: "+_text, 10, fg, bg, false/*bHead*/);
+
+      trace "[...] Global.End<NOK>: \""+_text+"\".";
+   }
+
+   // // <log.png>
+   // static PrintFromReplay(String _text) {
+   //    mtx_print_replay.lock();
+   //    print_replay_queue_strings.add(_text);
+   //    print_replay_queue_timeouts.add(10);
+   //    mtx_print_replay.unlock();
+   //    Events.SendNodeEditorReplayTick();
+   // }
+
+   // // <log.png>
+   // static PrintLongFromReplay(String _text) {
+   //    mtx_print_replay.lock();
+   //    print_replay_queue_strings.add(_text);
+   //    print_replay_queue_timeouts.add(1000);
+   //    mtx_print_replay.unlock();
+   //    Events.SendNodeEditorReplayTick();
+   // }
+
+   // // <log.png>
+   // static HandleQueuedReplayPrints() {
+   //    if(print_replay_queue_strings.numElements > 0)
+   //    {
+   //       mtx_print_replay.lock();
+   //       int idx = 0;
+   //       loop(print_replay_queue_strings.numElements)
+   //       {
+   //          PrintMS(print_replay_queue_strings.get(idx),
+   //                  print_replay_queue_timeouts.get(idx)
+   //                  );
+   //          idx++;
+   //       }
+   //       print_replay_queue_strings.empty();
+   //       print_replay_queue_timeouts.empty();
+   //       mtx_print_replay.unlock();
+   //    }
+   // }
+
+   // <method.png>
+   static ConfigureVSync() {
+
+      UI.SetEnableForceHighFramerate(GConfig.b_force_high_framerate);
+
+      Viewport.swapInterval(GConfig.b_vsync ? 1 : 0);
+
+      // If vsync is enabled, disable timer-based framerate limiter
+      if(GConfig.b_vsync && GConfig.b_force_high_framerate)
+      {
+         FPS.limit = 0;
+      }
+   }
+
+   // <method.png>
+   static ConfigureFullscreenDisplaySize() {
+      if(GConfig.b_fullscreen_displaysize)
+      {
+         // 0= auto-detect screen resolution
+         Viewport.setScreenResolution(0, 0, GConfig.fullscreen_bits);
+      }
+      else
+      {
+         Debug("Global::ConfigureFullscreenDisplaySize: non-native size=("+GConfig.fullscreen_sx+"; "+GConfig.fullscreen_sy+")");
+         Viewport.setScreenResolution(GConfig.fullscreen_sx, GConfig.fullscreen_sy, GConfig.fullscreen_bits);
+      }
+   }
+
+   // <method.png>
+   static GetAutosaveDirPrefix() : String {
+      String ret = "";
+
+      if(!(GConfig.autosave_dir.isBlank()))
+      {
+         ret = Utils.ToNativePathName(GConfig.autosave_dir);
+         ret.append("/");
+      }
+
+      return ret;
+   }
+
+   // <save.png>
+   static CrashAutosave(boolean _bHard) {
+      trace "\n\n\n[---] ooops. a ("+(_bHard?"hard":"soft")+") crash has occured, crash_autosave is currently "+Utils.GetEnableString(GConfig.b_crash_autosave);
+
+      if(GConfig.b_crash_autosave)
+      {
+         String crashAutosaveName = GetAutosaveDirPrefix() + "crash_autosave-"+Utils.GetCurrentDateString()+"-"+Utils.GetCurrentTimeString()+".flx";
+
+         trace "\n\n[...] writing crash autosave to file \""+crashAutosaveName+"\"";
+         TKS.sleep(1000);
+         cmd_file_saveas_2(crashAutosaveName, true/*bAutosave*/);
+      }
+
+      trace "\n\n\n";
+      trace "[dbg] please consider sending the console log to bs@tkscript.de\n[dbg]  so I can try to fix the problem.";
+      trace "[dbg]  If you do so, please try to describe how to reproduce the crash!";
+      TKS.sleep(5000);
+      trace "[dbg] please press return (in the console) window to continue..";
+      String buf;
+      StdInStream.readLine(buf, 10);
+   }
+
+   // <exit.png>
+   static ExitProject() {
+      // ST_Song *s;
+      // foreach s in all_songs
+      // {
+      //    if(null != s)
+      //    {
+      //       s.exit();
+      //    }
+      // }
+      // all_songs.free();
+
+      // Waveforms.FreeAll();
+   }
+
+   // <init.png>
+   static InitProject() {
+      // Global.Debug("InitProject: 1");
+      // ExitSong();
+
+      // Global.Debug("InitProject: 2");
+      // Waveforms.FreeAll();
+
+      // // Init MIDI morph scenes
+      // Global.Debug("InitProject: 3");
+      // MIDIMorphScene.AllocScenes();
+
+      // // Create sub-song #0
+      // Global.Debug("InitProject: 4");
+      // NewSubSong();
+      // Global.Debug("InitProject: 5");
+      // SelectSubSongByIdx(0, true/*bSaveUI*/, false/*bViaUI*/);
+
+      // Global.Debug("InitProject: 6");
+      // // // current_project.init();
+      // current_project.reset();
+
+      // NodeArrangerTimeline.current_rec_node_gid = -1;
+
+      // Global.Debug("InitProject: 8");
+      // MIDI.ResetDevs(); // Reset UnvailUseCount, aliases and profile ids, and b_project flag for each in/out device
+
+      // Global.Debug("InitProject: 9");
+      // MIDI.UpdateMIDIPipeDevFlags(current_pipe_root);
+
+      // Global.Debug("InitProject: 10");
+      // root_form.pg_node.deleteLastEditor(); // xxx unnecessary, just unset last node..?!
+      // Global.Debug("InitProject: 11");
+      // root_form.updatePipePages(); // make sure deleted nodes are not ref'd
+   }
+
+   // <method.png>
+   static RefocusDefault() {
+      root_form.handlePageFocusDefault();
+   }
+
+   // <method.png>
+   static RefocusDefaultOrFloatingLayer() {
+      FloatingLayer fl <= UI.GetFrontMostFloatingLayer();
+      if(null != fl)
+      {
+         UI.SetKeyboardFocus(fl);
+      }
+      else
+      {
+         RefocusDefault();
+      }
+   }
+
+   // <api.png>
+   static UpdateWindowTitle(String _fileName) {
+      Debug("UpdateWindowTitle to \""+(_fileName + " -- " + Global.VERSION_STRING)+"\".");
+      Viewport.caption = _fileName + " -- " + Global.VERSION_STRING;
+   }
+
+
+   // --------------------------------------------------------------------------
+   // - cmd_file_xxx
+   // --------------------------------------------------------------------------
+   static String file_open_suggested_file = "";
+   static String file_save_suggested_file = "";
+   static StringArray file_filter_names = [ "GL Edit poject (*.gpr)" ];
+   static StringArray file_filter_strings = [ "*.gpr" ];
+
+
+
+   // <method.png>
+   static cmd_file_quit() {
+      trace "[dbg] cmd_file_quit";
+
+      // debug: force soft crash
+      //String s <= null;
+      //trace s.length;
+
+      // debug: force hard crash
+      //  (note) hard crash code needs to be compiled into _Debug() method
+      //_Debug();
+
+      dialog_quit.run();
+   }
+
+   // <method.png>
+   static cmd_file_quit_2() {
+
+      root_form.beginExit();////////SDL.exitEventLoop();
+   }
+
+   // <method.png>
+   static cmd_file_new_dlg() {
+      // dialog_newsong.run();
+   }
+
+   // <method.png>
+   static cmd_file_new() {
+      // // Called by dialog_newsong
+      // local File f;
+      // local String templPathName = GConfig.project_rootpath + "/" + GConfig.newproject_template_filename;
+      // templPathName <= Utils.ToNativePathName(templPathName);
+      // if(f.openLocal(templPathName, IOS_IN))
+      // {
+      //    // Template file exists, use it
+      //    f.close();
+      //    cmd_file_load(templPathName);
+      //    return;
+      // }
+
+      // cmd_file_new_2();
+
+      // current_project.song_markers.add(384);
+      // current_project.song_markers.add(0);
+      // current_project.song_length = current_project.ppq * 4;
+      // // current_project.repeat_length = 384;
+
+      // // (virtual) device aliases may have changed
+      // MIDI.UpdateOutDeviceNames();
+
+      // MIDI.RebuildAllCtlNames();
+
+      // root_form.updateSongWidgets();
+
+      // MIDI.StartMIDITimer();
+
+      // if(!b_initializing)
+      // {
+      //    // if(GConfig.b_enable_audio)
+      //    // {
+      //    //    Audio.StartDefaultDevice();
+      //    // }
+      // }
+
+      // UpdateWindowTitle("[new song]");
+
+      // RedrawAll();
+   }
+
+   // <method.png>
+   static cmd_file_new_2() {
+      // Debug("cmd_file_new_2: ENTER");
+
+      // MIDI.ClearErrorList();
+
+      // Debug("cmd_file_new_2: StopMIDITimer");
+
+      // if(!b_initializing)
+      // {
+      //    MIDI.StopMIDITimer();
+      // }
+
+      // replay.stopReplay(false, true/*bAllowPanic*/);
+
+      // cmd_file_new_2b();
+   }
+
+   // <method.png>
+   static =replay= cmd_file_new_2b() {
+      // cmd_file_new_2b_audiomtx();
+   }
+
+   static =audio= cmd_file_new_2b_audiomtx() {
+      // // (note) replay/audio processing must have been stopped at this point
+
+      // file_save_suggested_file = "";
+
+      // // Re-initialize song
+      // InitProject();
+
+      // root_form.handleInitNewProject();
+
+      // Debug("cmd_file_new_2b: 3");
+      // replay.resetNodes(false/*bSoft*/);
+
+      // // (note) do NOT restart MIDI timer because this fxn is also called by LoadSong
+   }
+
+   // <method.png>
+   static LoadSong(String fileName) : boolean {
+
+      // // (note) MIDI timer + Audio devices must be stopped before calling this
+      // fileName = Utils.ToNativePathName(fileName);
+
+      // Debug("LoadSong(fileName=\""+fileName+"\")");
+
+      // boolean ret = false;
+
+      // if(SongFileReader.Load(fileName))
+      // {
+      //    file_open_suggested_file = fileName;
+
+      //    Success("Project loaded from file \""+fileName+"\".");
+
+      //    UpdateWindowTitle(fileName);
+
+      //    replay.resetNodes(false/*bSoft*/);
+
+      //    // Update/Restore BPM in case Remote ignored song load request due to unsaved changed
+      //    SysEx.QueueSendSeqBPMSet(current_project.bpm);
+
+      //    ret = true;
+      // }
+      // else
+      // {
+      //    // Failed
+      //    cmd_file_new_2();
+      //    MIDI.RestartMIDITimer();
+      //    ret = false;
+      // }
+
+      // // Update widgets
+      // root_form.updateSongWidgets();
+
+      // // Update keyjazz instr. from new first track
+      // // pattern_view.gotoSongOffset(0);
+
+      // RedrawAll();
+
+      // UI.ActivateFloatingLayer(null);
+
+      // // Show song comment if not empty
+      // if(GConfig.b_autoshowcomment)
+      // {
+      //    if(!current_project.author_comment.isBlank())
+      //    {
+      //       dialog_songcomment.run();
+      //    }
+      // }
+
+      // // MIDI device errors (if any)
+      // MIDI.ShowErrorDialog();
+
+      // return ret;
+   }
+
+   // <method.png>
+   static cmd_file_load(String _forceFilename) {
+
+      // Debug("cmd_file_load: fileName=\""+_forceFilename+"\".");
+
+      // String *fileName;
+      // if(null == _forceFilename)
+      // {
+      //    String suggestedPath, suggestedFile;
+      //    Utils.SplitPathname(file_open_suggested_file, suggestedPath, suggestedFile);
+
+      //    fileName <= TKUI_OpenFileDialog(suggestedPath,
+      //                                    suggestedFile,
+      //                                    "Load song",
+      //                                    file_filter_names, file_filter_strings,
+      //                                    false, false
+      //                                    );
+      // }
+      // else
+      // {
+      //    // // if(!(_forceFilename & ":") && !_forceFilename.startsWith("/") && !gledit::program_directory.isBlank())
+      //    if(Utils.IsRelativePath(_forceFilename) && !gledit::program_directory.isBlank())
+      //    {
+      //       fileName <= gledit::program_directory + "/" + _forceFilename;
+      //    }
+      //    else
+      //    {
+      //       fileName <= _forceFilename;
+      //    }
+
+      // }
+
+      // Debug("cmd_file_load: trying to load file \""+fileName+"\".");
+
+      // if(fileName != null)
+      // {
+      //    b_loading = true;
+
+      //    cmd_file_new_2(); // stops MIDI timer
+
+      //    if(!LoadSong(fileName))
+      //    {
+      //       // Show error dialog
+      //       InfoDialog d;
+      //       d <= InfoDialog.NewError("Load Error",
+      //                                "Failed to load song from file \""+fileName+"\".",
+      //                                null);
+      //       d.showCentered();
+      //    }
+      //    else
+      //    {
+      //       // OK, song loaded
+      //       file_open_suggested_file = fileName;
+      //       file_save_suggested_file = fileName;
+
+      //       // Notify audio process
+      //       SysEx.QueueSendProjectLoad(current_project.song_name);
+      //    }
+
+      //    // pattern_view.selectChannel(0, false);
+
+      //    MIDI.StartMIDITimer();
+
+      //    if(!b_initializing)
+      //    {
+      //       // if(GConfig.b_enable_audio)
+      //       // {
+      //       //    Audio.StartDefaultDevice();
+      //       // }
+      //    }
+
+      //    // ? select first node
+      //    //  (note) currently needed to get rid of some stale node ptrs
+      //    root_form.updatePipePages();
+
+      //    // (virtual) device aliases may have changed
+      //    MIDI.UpdateOutDeviceNames();
+
+      //    MIDI.RebuildAllCtlNames();
+
+      //    MIDI.UpdateMIDIInEnableParam();  // Enable/disable (N)RPN parser according to MIDI synth profile(s)
+      //    MIDI.UpdateMIDIParamMode();      // configure (N)RPN MSB/LSB I/O mode according to MIDI synth profile(s)
+
+      //    if(GConfig.b_enable_midi)
+      //    {
+      //       MIDI.UpdateMIDIPipeDevFlags(current_pipe_root);  // for param mode
+      //    }
+
+      //    root_form.updateReplayTimeLabel(false/*bForceUpdate*/); // update songpos
+
+      //    b_loading = false;
+
+      //    // Render waveforms
+      //    // dlg_manage_subsongs.handleRenderAll(all_songs.indexOfPointer(current_project, 0));
+      // }
+   }
+
+   // <method.png>
+   static cmd_file_save_nodlg(String _forceFileName) {
+
+      // // // if(!(_forceFileName & ":") && !_forceFileName.startsWith("/") && !gledit::program_directory.isBlank())
+      // if(Utils.IsRelativePath(_forceFileName) && !gledit::program_directory.isBlank())
+      // {
+      //    file_save_suggested_file = gledit::program_directory + "/" + _forceFileName;
+      // }
+      // else
+      // {
+      //    file_save_suggested_file = _forceFileName;
+      // }
+
+      // cmd_file_save();
+   }
+
+   // <method.png>
+   static cmd_file_save() {
+
+      // Debug("cmd_file_save: suggestedFile=\""+file_save_suggested_file+"\".");
+
+      // local File f;
+      // if(f.openLocal(file_save_suggested_file, IOS_IN))
+      // {
+      //    f.close();
+
+      //    dialog_overwritesong.run(file_save_suggested_file);
+      // }
+      // else
+      // {
+      //    cmd_file_saveas_2(file_save_suggested_file, false/*bAutosave*/);
+      // }
+   }
+
+   // <method.png>
+   static cmd_file_saveas_2(String _fileName, boolean _bAutosave) {
+
+      // // SaveSubSongUISettings();
+      // local String fileName = Utils.ToNativePathName(_fileName);
+      // if(SongFileWriter.Save(fileName))
+      // {
+      //    if(!_bAutosave)
+      //    {
+      //       file_save_suggested_file = fileName;
+      //    }
+
+      //    trace "[...] Project saved to file \""+fileName+"\".";
+
+      //    Success("Saved project to file \""+fileName+"\".");
+      //    //PrintLong
+
+      //    if(!_bAutosave)
+      //    {
+      //       UpdateWindowTitle(fileName);
+
+      //       // Notify audio process
+      //       SysEx.QueueSendProjectNameSet(current_project.song_name);
+      //       SysEx.QueueSendProjectSave(current_project.song_name);
+      //    }
+
+      // }
+      // else
+      // {
+      //    Error("Failed to save song to file \""+fileName+"\".");
+      // }
+   }
+
+   // <method.png>
+   static cmd_file_saveas_1() {
+      // Debug("Global::cmd_file_saveas_1");
+      // if(true)////if(NotPlaying("file_saveas"))
+      // {
+      //    String dlgFileName;
+      //    if(file_save_suggested_file.isBlank())
+      //    {
+      //       dlgFileName <= "unknown.flx";
+      //    }
+      //    else
+      //    {
+      //       dlgFileName <= file_save_suggested_file;
+      //    }
+
+      //    local String suggestedPath, suggestedFile;
+      //    Utils.SplitPathname(dlgFileName, suggestedPath, suggestedFile);
+
+      //    local String fileName <= UI.SaveFileDialog(suggestedPath,
+      //                                               suggestedFile,
+      //                                               "Save song",
+      //                                               file_filter_names, file_filter_strings,
+      //                                               false
+      //                                               );
+
+      //    trace "[...] cmd_file_saveas: saving song to selected file \""+#(fileName)+"\".";
+
+      //    if(fileName != null)
+      //    {
+      //       if(!fileName.endsWith(".flx"))
+      //       {
+      //          fileName.append(".flx");
+      //       }
+
+      //       local File f;
+      //       fileName <= Utils.ToNativePathName(fileName);
+      //       if(f.openLocal(fileName, IOS_IN))
+      //       {
+      //          f.close();
+
+      //          dialog_overwritesong.run(fileName);
+      //       }
+      //       else
+      //       {
+      //          cmd_file_saveas_2(fileName, false/*bAutosave*/);
+      //       }
+      //    }
+      // }
+   }
+
+
+   // <method.png>
+   static cmd_config_save() {
+      // ConfigIO.Save();
+   }
+
+
+   // last CMD tag (do not remove)
+
+   // <method.png>
+   static call_cmd_delegate(String _cmdName)  {
+      Debug("calling cmd delegate \""+_cmdName+"\".");
+      delegate (_cmdName) ();
+   }
+
+   // <method.png>
+   static HandleAutosave() {
+
+      // // trace "xxx HandleAutosave";
+
+      // if((true == GConfig.b_autosave) || ((maybe == GConfig.b_autosave) && !replay.b_playing))
+      // {
+      //    int ms = milliSeconds();
+
+      //    int secDelta = (ms - last_autosave_timestamp) / 1000;
+
+      //    if(secDelta >= (60 * mathClampi(GConfig.autosave_interval, 1, 30)))
+      //    {
+      //       Debug("Global::HandleAutosave");
+
+      //       last_autosave_timestamp = ms;
+
+      //       int saveFileNr = 0;
+
+      //       local String currentFileNrStr;
+      //       local String fileNrFile = GetAutosaveDirPrefix() + AUTOSAVE_CURRENT_FILENR_FILE;
+
+      //       if(currentFileNrStr.loadLocal(fileNrFile, true/*bRemoveCR*/))
+      //       {
+      //          currentFileNrStr.trim();
+      //          saveFileNr = currentFileNrStr;
+      //          saveFileNr = mathWrapi(saveFileNr + 1, 0, mathClampi(GConfig.num_autosave_files, 1, 100));
+      //       }
+
+      //       currentFileNrStr = saveFileNr;
+      //       currentFileNrStr.saveLocal(fileNrFile);
+
+      //       local String autosaveFilename = GetAutosaveDirPrefix() + AUTOSAVE_FILENAME_PREFIX + currentFileNrStr + ".flx";
+
+      //       Debug("auto-saving to \""+autosaveFilename+"\"");
+
+      //       cmd_file_saveas_2(autosaveFilename, true/*bAutosave*/);
+      //    }
+      // }
+
+   }
+
+}

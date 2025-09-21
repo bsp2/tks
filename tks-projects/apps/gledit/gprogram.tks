@@ -1,0 +1,906 @@
+// ----
+// ---- file   : gprogram.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 15Jun2020, 16Jun2020, 18Jun2020, 19Jun2020, 20Jun2020, 22Jun2020, 26Jun2020
+// ----          12Jul2020, 13Jul2020, 20Jul2020, 22Jul2020, 26Jul2020, 31Jul2020, 01Aug2020
+// ----          02Aug2020, 03Aug2020, 14Aug2020, 05Feb2025, 16Sep2025, 18Sep2025
+// ----
+// ----
+// ----
+module MGProgram;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GProgram : GObject {
+
+   define String ACTION_DRAW;
+   define String ACTION_PREBIND;
+
+   GAttribute *attributes[];
+   GUniform   *uniforms[];
+   GVarying   *varyings[];
+
+   GShader *vertex_shader;
+   GShader *fragment_shader;
+
+   int                  vertex_attrib_size;  // temporary during emit()
+   GShaderSource       *emit_shader_source;  // temporarily valid during emit()
+   protected HashTable  emit_shader_source_fxns_once;
+   int                  program_id;  // valid during emit()
+   protected boolean    b_init_done;  // during emit
+
+
+   // <method_new.png>
+   static New() : GProgram {
+      local GProgram r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      GVertexShader vtx <= GVertexShader.New();
+      vtx.setId("vs");
+      setVertexShader(deref vtx);
+
+      GFragmentShader frg <= GFragmentShader.New();
+      frg.setId("fs");
+      setFragmentShader(deref frg);
+
+      addOutput(GOutput.OUT_DEF_OBJ, TYPE_REF);
+   }
+
+   // <method_init.png>
+   public virtual postInitNew() {
+      // Called after adding object to parent container
+      GAttributeVec4 aPosition <= GAttributeVec4.New(this, "position", TYPE_VEC4);
+      addAttribute(deref aPosition);
+      vertex_shader.connect("position", aPosition, GOutput.OUT_DEF, OP_AUTO);
+
+      GUniformMat4 uTransform <= GUniformMat4.New(this, "transform", TYPE_MAT4);
+      addUniform(deref uTransform);
+      vertex_shader.connect("transform", uTransform, GOutput.OUT_DEF, OP_AUTO);
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "programs";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "prg";
+   }
+
+   // <method_get.png>
+   public virtual getDefaultOutputId() : String {
+      return GOutput.OUT_DEF_OBJ;
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return getNamespacePrefix()+"_prg_"+id;
+   }
+
+   // <method_add.png>
+   public method addAttribute(GAttribute _attribute) : GAttribute {
+      attributes.add(#(deref _attribute));
+      _attribute.parent_program <= this;
+      _attribute.parent_namespace <= parent_namespace;
+      return _attribute;
+   }
+
+   // <method_add.png>
+   public method addAttributeAutoId(GAttribute _attribute, String _prefIdOrNull) : GAttribute {
+      addAttribute(deref _attribute);
+      _attribute.setId(Utils.CreateAutoId((null != _prefIdOrNull) ? _prefIdOrNull : "attrib", attributes));
+      return _attribute;
+   }
+
+   // <method_add.png>
+   public method lazyAddAttribute(String _id, int _type) : GAttribute {
+      GAttribute *a;
+      foreach a in attributes
+      {
+         if(a.id == _id)
+            return a; // already added
+      }
+      a <= GAttribute.New(this, _id, _type);
+      addAttribute(deref a);
+      return a;
+   }
+
+   // <method_get.png>
+   public method getNumAttributes() : int {
+      return attributes.numElements;
+   }
+
+   // <method_get.png>
+   public method getAttributeById(String _id) : GAttribute {
+      GAttribute *a;
+      foreach a in attributes
+      {
+         if(a.id == _id)
+            return a;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method hasAttribute(String _id) : boolean {
+      return (null != getAttributeById(_id));
+   }
+
+   // <method_get.png>
+   public method getAttributeIndexById(String _id) : int {
+      GAttribute *a;
+      int idx = 0;
+      foreach a in attributes
+      {
+         if(a.id == _id)
+            return idx;
+         idx++;
+      }
+      return -1;
+   }
+
+   // <method_remove.png>
+   public method removeAttribute(GAttribute _attribute) : boolean {
+      // (note) attribute connections must be removed by caller
+      boolean bLast = attributes.isLast(_attribute);
+      attributes.remove(_attribute);
+      return bLast;
+   }
+
+   // <method_add.png>
+   public method addUniform(GUniform _uniform) : GUniform {
+      trace "[dbg] Program::addUniform: uniform="+#(_uniform);
+      uniforms.add(#(deref _uniform));
+      _uniform.parent_program <= this;
+      // // _uniform.parent_namespace <= parent_namespace;  // for UI
+      return _uniform;
+   }
+
+   // <method_add.png>
+   public method addUniformAutoId(GUniform _uniform, String _preferredPrefixOrNull) : GUniform {
+      addUniform(deref _uniform);
+      String *preferredPrefix;
+      if(_uniform instanceof GUniformSampler)
+      {
+         preferredPrefix <= (null != _preferredPrefixOrNull) ? _preferredPrefixOrNull : "tex";
+         GUniform *u;
+         int nr = 1;
+         for(;;)
+         {
+            local String newId <= preferredPrefix+nr;
+            if(null == getUniformById(newId))
+               break;
+            nr++;
+         }
+         _uniform.setId(newId);
+      }
+      else
+      {
+         preferredPrefix <= (null != _preferredPrefixOrNull) ? _preferredPrefixOrNull : "uniform";
+         _uniform.setId(Utils.CreateAutoId(preferredPrefix, uniforms));
+      }
+      return _uniform;
+   }
+
+   // <method_add.png>
+   public method lazyAddUniform(String _id, int _type) : GUniform {
+      GUniform *u;
+      foreach u in uniforms
+      {
+         if(u.id == _id)
+            return u; // already added
+      }
+      u <= GUniform.New(this, _id, _type);
+      addUniform(deref u);
+      return u;
+   }
+
+   // <method_get.png>
+   public method getUniformById(String _id) : GUniform {
+      GUniform *u;
+      foreach u in uniforms
+      {
+         if(u.id == _id)
+            return u;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNumUniforms() : int {
+      return uniforms.numElements;
+   }
+
+   // <method_get.png>
+   public method getNumSamplerUniforms() : int {
+      // used by auto-connect
+      int r = 0;
+      GUniform *u;
+      foreach u in uniforms
+      {
+         if(u instanceof GUniformSampler)
+            r++;
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   public method getSamplerUniformByIndex(int _idx) : GUniformSampler {
+      // used by auto-connect
+      int idx = 0;
+      GUniform *u;
+      foreach u in uniforms
+      {
+         if(u instanceof GUniformSampler)
+         {
+            if(idx == _idx)
+               return u;
+            idx++;
+         }
+      }
+      return null;
+   }
+
+   // <method_remove.png>
+   public method removeUniform(GUniform _uniform) : boolean {
+      // (note) uniform connections must be removed by caller
+      boolean bLast = uniforms.isLast(_uniform);
+      uniforms.remove(_uniform);
+      return bLast;
+   }
+
+   // <method_add.png>
+   public method addVarying(GVarying _varying) : GVarying {
+      varyings.add(#(deref _varying));
+      _varying.parent_program <= this;
+      // // _varying.parent_namespace <= parent_namespace;  // for UI
+      return _varying;
+   }
+
+   // <method_add.png>
+   public method addVaryingAutoId(GVarying _varying, String _prefIdOrNull) : GVarying {
+      addVarying(deref _varying);
+      _varying.parent_program <= this;
+      _varying.setId(Utils.CreateAutoId((null != _prefIdOrNull) ? _prefIdOrNull : "varying", varyings));
+      return _varying;
+   }
+
+   // <method_add.png>
+   public method lazyAddVarying(String _id, int _type) : GUniform {
+      GVarying *v;
+      foreach v in varyings
+      {
+         if(v.id == _id)
+            return v; // already added
+      }
+      v <= GVarying.New(_id, _type);
+      addVarying(deref v);
+      return v;
+   }
+
+   // <method_get.png>
+   public method getNumVaryings() : int {
+      return varyings.numElements;
+   }
+
+   // <method_remove.png>
+   public method removeVarying(GVarying _varying) : boolean {
+      // (note) varying connections must be removed by caller
+      boolean bLast = varyings.isLast(_varying);
+      varyings.remove(_varying);
+      return bLast;
+   }
+
+   // <method_set.png>
+   public method setVertexShader(GShader _vertexShader) {
+      vertex_shader <= deref _vertexShader;
+      vertex_shader.parent_program <= this;
+      // // vertex_shader.parent_namespace <= parent_namespace;  // for UI
+   }
+
+   // <method_set.png>
+   public method getVertexShader() : GVertexShader {
+      return vertex_shader;
+   }
+
+   // <method_set.png>
+   public method setFragmentShader(GShader _fragmentShader) {
+      fragment_shader <= deref _fragmentShader;
+      fragment_shader.parent_program <= this;
+      // // fragment_shader.parent_namespace <= parent_namespace;  // for UI
+   }
+
+   // <method_set.png>
+   public method getFragmentShader() : GFragmentShader {
+      return fragment_shader;
+   }
+
+   // <method.png>
+   protected method clearUniformInitFlags() {
+      GUniform *u;
+      foreach u in uniforms
+      {
+         u.resetInit();
+      }
+   }
+
+   // <method_remove.png>
+   protected method prepareRemoveObjectsInt(local PointerArray _a) {
+      local GObject *o;
+      foreach o in _a
+      {
+         o.prepareRemove();
+      }
+   }
+
+   // <method.png>
+   public virtual prepareRemove() {
+      GObject::prepareRemove();
+      prepareRemoveObjectsInt(attributes);
+      prepareRemoveObjectsInt(uniforms);
+      prepareRemoveObjectsInt(varyings);
+      vertex_shader.prepareRemove();
+      fragment_shader.prepareRemove();
+   }
+
+   // <method_remove.png>
+   protected method removeConnectionsToObjectArr(local PointerArray _a, local GObject _obj) {
+      local GObject *o;
+      foreach o in _a
+      {
+         o.removeConnectionsToObject(_obj);
+      }
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+
+      GObject::removeConnectionsToObject(_obj);
+
+      removeConnectionsToObjectArr(attributes, _obj);
+      removeConnectionsToObjectArr(uniforms,   _obj);
+      removeConnectionsToObjectArr(varyings,   _obj);
+
+      vertex_shader  .removeConnectionsToObject(_obj);
+      fragment_shader.removeConnectionsToObject(_obj);
+   }
+
+   // <method.png>
+   public method appendShaderSourceGlobal(String _s) {
+      emit_shader_source.appendGlobal(deref _s);
+   }
+
+   // <method.png>
+   public method appendShaderSourceFunctions(String _s) {
+      emit_shader_source.appendFunctions(deref _s);
+   }
+
+   // <method.png>
+   public method appendShaderSourceFunctionsOnce(String _key, String _s) {
+      if(!emit_shader_source_fxns_once.exists(_key))
+      {
+         emit_shader_source_fxns_once[_key] = true;
+         emit_shader_source.appendFunctions(deref _s);
+      }
+   }
+
+   // <method.png>
+   public method appendShaderSourceMain(String _s) {
+      emit_shader_source.appendMain(deref _s);
+   }
+
+   // <method.png>
+   public virtual handleWatchFileChanged(local String _pathName) {
+      vertex_shader  .handleWatchFileChanged(_pathName);
+      fragment_shader.handleWatchFileChanged(_pathName);
+   }
+
+   // <save.png>
+   protected method saveStateProgramObjects(local Stream            ofs,
+                                            local PointerArray      _a,
+                                            local GConnectionWriter connectionWriter
+                                            ) {
+      // Version
+      ofs.i16 = 1;
+
+      // Num objects
+      ofs.i16 = _a.numElements;
+
+      local GObject *o;
+      foreach o in _a
+      {
+         o.saveStateObject(ofs, connectionWriter);
+      }
+   }
+
+  // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // Vertex shader
+      vertex_shader.saveStateObject(ofs, connectionWriter);
+
+      // Fragment shader
+      fragment_shader.saveStateObject(ofs, connectionWriter);
+
+      // Attributes
+      saveStateProgramObjects(ofs, attributes, connectionWriter);
+
+      // Uniforms
+      saveStateProgramObjects(ofs, uniforms, connectionWriter);
+
+      // Varyings
+      saveStateProgramObjects(ofs, varyings, connectionWriter);
+   }
+
+   // <load.png>
+   protected method loadStateProgramObjectsInt(local Stream        ifs,
+                                               local PointerArray _a
+                                               ) : boolean {
+      // Version
+      local short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Num objects
+         local int numObjects = ifs.u16;
+
+         local int objIdx = 0;
+         loop(numObjects)
+         {
+            local GProgramSubObject o <= GObject.LoadStateObject(ifs);
+            if(null == o)
+            {
+               trace "[----] GProgram::loadStateProgramObjectsInt: failed to load object "+(objIdx+1)+"/"+numObjects;
+               return false;
+            }
+            _a.add(#(deref o));
+            o.parent_program <= this;
+
+            objIdx++;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[----] GProgram::loadStateProgramObjectsInt: invalid version "+ver;
+         return false;
+      }
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Vertex shader
+         vertex_shader <= GObject.LoadStateObject(ifs);
+         if!(vertex_shader instanceof GVertexShader)
+         {
+            trace "[---] GProgram::loadStateObject: failed to load vertex_shader, this="+#(this)+" path="+getObjectPath();
+            return false;
+         }
+         vertex_shader.parent_program <= this;
+
+         // Fragment shader
+         fragment_shader <= GObject.LoadStateObject(ifs);
+         if!(fragment_shader instanceof GFragmentShader)
+         {
+            trace "[---] GProgram::loadStateObject: failed to load fragment_shader, this="+#(this)+" path="+getObjectPath();
+            return false;
+         }
+         fragment_shader.parent_program <= this;
+
+         // Attributes
+         if(!loadStateProgramObjectsInt(ifs, attributes))
+         {
+            trace "[---] GProgram::loadStateObject: failed to load attributes, this="+#(this)+" path="+getObjectPath();
+            return false;
+         }
+
+         // Uniforms
+         if(!loadStateProgramObjectsInt(ifs, uniforms))
+         {
+            trace "[---] GProgram::loadStateObject: failed to load uniforms, this="+#(this)+" path="+getObjectPath();
+            return false;
+         }
+
+         // Varyings
+         if(!loadStateProgramObjectsInt(ifs, varyings))
+         {
+            trace "[---] GProgram::loadStateObject: failed to load varyings, this="+#(this)+" path="+getObjectPath();
+            return false;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GProgram::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   protected method findProgramObjectByPathInt(local PointerArray _a,
+                                               local String       _path,
+                                               local boolean      _bUnfold
+                                               ) : GObject {
+      // (note) attributes, uniforms, varyings
+      local String *objectId;
+      local String *subpath;
+      local int idx = _path.indexOfChar('.', 0);
+      if(-1 != idx)
+      {
+         objectId <= _path.substring(0, idx);
+         subpath <= _path.substring(idx+1, -1);
+      }
+      else
+      {
+         objectId <= _path;
+      }
+
+      local GObject *o;
+      foreach o in _a
+      {
+         if(o.getId() == objectId)
+         {
+            if(null != subpath)
+               return o.findObjectByPathUnfold(subpath, _bUnfold);
+            else
+               return o;
+         }
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+
+      if(_bUnfold)
+         setFoldStatus(false);
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      local int idx = _path.indexOfChar('.', 0);
+      local String *folderId;
+      if(-1 != idx)
+      {
+         folderId <= _path.substring(0, idx);
+      }
+      else
+      {
+         folderId <= _path;
+         idx = 99999;
+      }
+
+      // trace "xxx GProgram::findObjectByPath: path=\""+_path+"\" folderId=\""+folderId+"\"";
+      idx++;
+
+      if(_bUnfold)
+         setVirtFolderFoldStatus(folderId, false);
+
+      switch(folderId)
+      {
+         case "vs":
+            if(_path.numChars > idx)
+            {
+               if(_bUnfold)
+                  vertex_shader.setFoldStatus(false);
+               return vertex_shader.findObjectByPathUnfold(_path.substring(idx, -1), _bUnfold);
+            }
+            else
+               return vertex_shader;
+
+         case "fs":
+            if(_path.numChars > idx)
+            {
+               if(_bUnfold)
+                  fragment_shader.setFoldStatus(false);
+               return fragment_shader.findObjectByPathUnfold(_path.substring(idx, -1), _bUnfold);
+            }
+            else
+               return fragment_shader;
+
+         case "attributes":
+            return findProgramObjectByPathInt(attributes, _path.substring(idx, -1), _bUnfold);
+
+         case "uniforms":
+            return findProgramObjectByPathInt(uniforms, _path.substring(idx, -1), _bUnfold);
+
+         case "varyings":
+            return findProgramObjectByPathInt(varyings, _path.substring(idx, -1), _bUnfold);
+      }
+      return null;
+   }
+
+   // <method_remove.png>
+   protected method emitBeginRecursiveInt(PointerArray _a) {
+      local GObject *o;
+      foreach o in _a
+      {
+         o.emitBeginRecursive();
+      }
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GProgram::emitBegin";
+      b_init_done = false;
+      emit_shader_source_fxns_once.free();
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      emitBegin();
+      emitBeginRecursiveInt(attributes);
+      emitBeginRecursiveInt(uniforms);
+      emitBeginRecursiveInt(varyings);
+      vertex_shader.emitBeginRecursive();
+      fragment_shader.emitBeginRecursive();
+   }
+
+   // <method_find.png>
+   public virtual enumerateObjects(local PointerArray _ret, local int _recurseDepthLeft) {
+      _ret.joinRR(_ret, attributes);
+      _ret.joinRR(_ret, uniforms);
+      _ret.joinRR(_ret, varyings);
+
+      _ret.add(vertex_shader);
+      if(_recurseDepthLeft > 0)
+         vertex_shader.enumerateObjects(_ret, _recurseDepthLeft - 1);
+      _ret.add(fragment_shader);
+      if(_recurseDepthLeft > 0)
+         fragment_shader.enumerateObjects(_ret, _recurseDepthLeft - 1);
+   }
+
+   // <method.png>
+   public method emitModuleProgram(GModule _module, GModel _model, GMesh _mesh, String _action, HashTable _extUniforms) {
+
+      local GAttribute *attrib;
+      local GUniform *uni;
+      local String *sAVar;
+      local String *sUVar;
+      local String *sUVar_fragcoord;
+      local String *sUVar_normcoord;
+
+      local String sPrgVar <= getVarName();
+
+      if(!b_init_done)
+      {
+         b_init_done = true;
+
+         local String sGlobal;
+         local String sInit;
+         local String sExit;
+
+         _module.beginSection(getNamespacePrefix()+"_prg_"+getId());
+         _module.setSectionEnableDraw(false);
+
+         program_id = current_project.allocProgramId();
+
+         clearUniformInitFlags();
+
+         local GShaderSource vertexSrc;
+         local PointerArray objDone;
+         emit_shader_source <= vertexSrc;
+         vertex_shader.emitShader(_module, this, vertexSrc, objDone);
+
+         local GShaderSource fragmentSrc;
+         objDone.empty();
+         emit_shader_source <= fragmentSrc;
+         fragment_shader.emitShader(_module, this, fragmentSrc, objDone);
+
+         // vertexSrc.s_src.saveLocal("debug_vtx.tmp");
+         // fragmentSrc.s_src.saveLocal("debug_frag.tmp");
+
+         // Program
+         sGlobal.append("ZGLShader "+sPrgVar+";\n");
+
+         boolean b120 = (Utils.IsMacOS() && !UIRenderer.b_glcore) || GConfig.b_glsl_1;
+
+         local String sShSrc <= vertexSrc.s_src.escapeControlChars();
+         if(!b120)
+         {
+            sShSrc.replace("texture2D", "texture");
+            sShSrc.replace("texture3D", "texture");
+            sShSrc.replace("textureCube", "texture");
+         }
+         sGlobal.append("String "+sPrgVar+"_vtx_src = \""+sShSrc+"\";\n");
+
+         sShSrc <= fragmentSrc.s_src.escapeControlChars();
+         if(!b120)
+         {
+            sShSrc.replace("texture2D", "texture");
+            sShSrc.replace("texture3D", "texture");
+            sShSrc.replace("textureCube", "texture");
+         }
+         sGlobal.append("String "+sPrgVar+"_frag_src = \""+sShSrc+"\";\n");
+         sInit.append(sPrgVar+".setVertexSource("+sPrgVar+"_vtx_src);\n");
+
+         // sInit.append("trace \"xxx set vtxSource(\"+"+sPrgVar+"_vtx_src+\")\";\n");
+         sInit.append(sPrgVar+".setFragmentSource("+sPrgVar+"_frag_src);\n");
+
+         sInit.append("if(!"+sPrgVar+".create()) return false;\n");
+
+         // Attributes
+         foreach attrib in attributes
+         {
+            if(attrib.isEnabled())
+            {
+               sAVar <= attrib.getVarName();
+               sGlobal.append("int "+sAVar+";\n");
+               sInit.append(sAVar+" = glGetAttribLocation("+sPrgVar+".programId, \""+attrib.getGLSLVarName()+"\");\n");
+            }
+         }
+
+         // Uniforms
+         foreach uni in uniforms
+         {
+            if(uni.isEnabled())
+            {
+               sUVar <= uni.getVarName();
+               sGlobal.append("int "+sUVar+";\n");
+               sInit.append(sUVar+" = glGetUniformLocation("+sPrgVar+".programId, \""+uni.getGLSLVarName()+"\");\n");
+            }
+         }
+
+         sUVar_fragcoord <= getVarName()+"_u_fragcoord_off_scl";
+         sGlobal.append("int "+sUVar_fragcoord+";\n");
+         sInit.append(sUVar_fragcoord+" = glGetUniformLocation("+sPrgVar+".programId, \"u_fragcoord_off_scl\");\n");
+
+         sUVar_normcoord <= getVarName()+"_u_normcoord_scl";
+         sGlobal.append("int "+sUVar_normcoord+";\n");
+         sInit.append(sUVar_normcoord+" = glGetUniformLocation("+sPrgVar+".programId, \"u_normcoord_scl\");\n");
+
+         sExit.append(sPrgVar+".destroy();\n");
+
+         _module.appendGlobal(sGlobal);
+         _module.appendInit(sInit);
+         _module.appendExit(sExit);
+
+         _module.endSection();
+      }
+
+      local String sDrawPre;
+      local String sDrawPost;
+
+      if(ACTION_PREBIND == _action)
+      {
+        // for ModelUniform bindings
+         sDrawPre.append("if("+program_id+" != last_program_id)\n{\n");
+         sDrawPre.append("   "+sPrgVar+".bind();\n");
+         /////sDrawPre.append("   last_program_id = "+program_id+";\n");
+         sDrawPre.append("} // "+program_id+" != last_program_id\n");
+        _module.appendDrawPre(sDrawPre);
+      }
+
+      if(ACTION_DRAW == _action)
+      {
+         sDrawPre.append("if("+program_id+" != last_program_id)\n{\n");
+
+         sDrawPre.append("   "+sPrgVar+".bind();\n");
+         if(0) sDrawPost.append(sPrgVar+".unbind();\n");
+
+         // Attributes
+         foreach attrib in attributes
+         {
+            if(attrib.isEnabled())
+            {
+               sAVar <= attrib.getVarName();
+               sDrawPre.append("   if("+sAVar+" >= 0)\n");  // -1 if not connected / actually used in shader
+               sDrawPre.append("   {\n");
+               sDrawPre.append("     glEnableVertexAttribArray("+sAVar+");\n");
+               sDrawPre.append("     zglVertexAttribOffset("+sAVar+", "+attrib.getGLAttribTypeSize(_mesh)+", "+attrib.getGLAttribTypeName(_mesh)+", "+(attrib.getGLAttribNormalize(_mesh)?"GL_TRUE":"GL_FALSE")+"/*normalize*/, "+vertex_attrib_size+"/*stride*/, "+attrib.offset+");\n");
+               sDrawPre.append("   }\n");
+               if(0)
+               {
+                  // (note) breaks e.g. test_dial_18e (=> leave enabled)
+                  sDrawPost.append("if("+sAVar+" >= 0)\n");
+                  sDrawPost.append("{\n");
+                  sDrawPost.append("   glDisableVertexAttribArray("+sAVar+");\n");
+                  sDrawPost.append("}\n");
+               }
+            }
+         }
+
+         sDrawPre.append("   last_program_id = "+program_id+";\n");
+         sDrawPre.append("} // "+program_id+" != last_program_id\n");
+
+         // Uniforms
+         //  (note) always updated (i.e. even when program binding has not changed)
+         foreach uni in uniforms
+         {
+            if(uni.isEnabled())
+            {
+               // (note) use external uniform value (var) when 'extUniforms' hash contains the uniform's id (key=id, value=var name)
+               if((null != _extUniforms) && _extUniforms.exists(uni.getId()))
+               {
+                  uni.emitSetUniformFromVar(_module, sDrawPre/*out*/, uni.getVarName(), _extUniforms[uni.getId()]);
+               }
+               else
+               {
+                  //////sDrawPre.append(uni.s_script_set);
+                  local PointerArray parents;
+                  parents.add(this);
+                  uni.emit("bind", // == bind new value to uniform and don't write GLSL outputvar
+                           _module,
+                           this/*program*/,
+                           sDrawPre,
+                           null/*dstVar*/, // unused
+                           false/*bGLSL*/,
+                           parents
+                           );
+                  parents.remove(this);
+               }
+            }
+         }
+
+         sUVar_fragcoord <= getVarName()+"_u_fragcoord_off_scl";
+         sDrawPre.append("if(0 == _fbW) glUniform4f("+sUVar_fragcoord+", $(g_fragcoord_off_x), $(g_fragcoord_off_y), $(g_fragcoord_scl_x), $(g_fragcoord_scl_x));\n");
+         sDrawPre.append("else glUniform4f("+sUVar_fragcoord+", 0.0f, 0.0f, 1.0f, 1.0f);\n");
+
+         sUVar_normcoord <= getVarName()+"_u_normcoord_scl";
+         // (note) set u_normcoord_scl is (2.0 / cur_viewport_sz)
+         sDrawPre.append("if(0 == _fbW) glUniform2f("+sUVar_normcoord+", $(g_normcoord_scl_x), $(g_normcoord_scl_y));\n");
+         sDrawPre.append("else glUniform2f("+sUVar_normcoord+", 1.0f / (0.5f * _fbW), 1.0f / (0.5f * _fbH));\n");
+
+         _module.appendDrawPre(sDrawPre);
+         _module.appendDrawPost(sDrawPost);
+
+      } // if "draw"
+
+   }
+
+   // <method.png>
+   public virtual emitModulePost(GModule _module) {
+
+      local PointerArray objDone;
+      vertex_shader.emitShaderPost(_module, this, objDone);
+
+      objDone.empty();
+      fragment_shader.emitShaderPost(_module, this, objDone);
+   }
+
+   // <method_set.png>
+   public virtual setAllVirtFolderFoldStatus(boolean _bFolded) {
+      setVirtFolderFoldStatus("attributes", _bFolded);
+      setVirtFolderFoldStatus("uniforms",   _bFolded);
+      setVirtFolderFoldStatus("varyings",   _bFolded);
+
+      vertex_shader  .setFoldStatus(_bFolded);
+      // // vertex_shader  .setVirtFolderFoldStatus("_bFolded);
+      fragment_shader.setFoldStatus(_bFolded);
+   }
+}

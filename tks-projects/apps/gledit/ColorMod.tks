@@ -1,0 +1,179 @@
+// ----
+// ---- file   : ColorMod.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 26Jul2020
+// ---- changed:
+// ----
+// ----
+// ----
+module MColorMod;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class ColorMod {
+   boolean b_enable;
+   float   mod_hue_mul;         // 0..50
+   float   mod_hue_add;         // -360..360
+   float   mod_saturation_mul;  // 0..10
+   float   mod_saturation_add;  // -1..1
+   float   mod_value_mul;       // 0..10
+   float   mod_value_add;       // -1..1
+   float   mod_brightness;      // -1..1
+   float   mod_contrast;        // -1..1
+   float   mod_r;               // 0..10
+   float   mod_g;               // 0..10
+   float   mod_b;               // 0..10
+
+
+   // <method_init.png>
+   public method initColorMod() {
+      b_enable           = false;
+      mod_hue_mul        = 1.0;
+      mod_hue_add        = 0.0;
+      mod_saturation_mul = 1.0;
+      mod_saturation_add = 0.0;
+      mod_value_mul      = 1.0;
+      mod_value_add      = 0.0;
+      mod_brightness     = 0.0;
+      mod_contrast       = 0.0;
+      mod_r              = 1.0;
+      mod_g              = 1.0;
+      mod_b              = 1.0;
+   }
+
+   // <method.png>
+   public method applyColorMods(Texture tex) {
+      if(!b_enable)
+         return;
+
+      // called by recalcTexture()
+      int cy = 0;
+      Float hi,si,vi;
+      float h,s,v;
+      float r,g,b;
+      float l;
+      byte a;
+      int c32;
+      float c = mod_contrast * 255.0;
+      float cf = (259.0*(255.0+c)) / (255.0*(259.0-c)); // <https://ie.nitk.ac.in/blog/2020/01/19/algorithms-for-adjusting-brightness-and-contrast-of-an-image/>
+
+      loop(tex.sy)
+      {
+         int cx = 0;
+         loop(tex.sx)
+         {
+            c32 = tex.getXY32(cx, cy);
+            a = (c32 >> 24) & 255;
+            UI.RGB32TOHSV(c32, hi, si, vi);
+            h = hi;
+            s = si;
+            v = vi;
+
+            h = (h * mod_hue_mul)        + mod_hue_add;
+            h = h % 360.0;
+
+            s = (s * mod_saturation_mul) + mod_saturation_add;
+            s = mathClampf(s, 0.0, 1.0);
+
+            v = (v * mod_value_mul)      + mod_value_add;
+            v = mathClampf(v, 0.0, 1.0);
+
+            c32 = UI.HSVTOARGB32(h, s, v, a);
+            r = ((c32 >> 16) & 255) * (1.0f / 255);
+            g = ((c32 >>  8) & 255) * (1.0f / 255);
+            b = ((c32      ) & 255) * (1.0f / 255);
+
+            if(1)
+            {
+               // brightness
+               r = r+mod_brightness;
+               g = g+mod_brightness;
+               b = b+mod_brightness;
+
+               // contrast
+               r = cf*(r-0.5)+0.5;
+               g = cf*(g-0.5)+0.5;
+               b = cf*(b-0.5)+0.5;
+            }
+
+            c32 = argb(a,
+                       mathClampi(r*255*mod_r, 0, 255),
+                       mathClampi(g*255*mod_g, 0, 255),
+                       mathClampi(b*255*mod_b, 0, 255)
+                       );
+
+            tex.setXY32(cx, cy, c32);
+
+            cx++;
+         }
+         cy++;
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 2;
+
+      ofs.i8  = b_enable;
+      ofs.f32 = mod_hue_mul;
+      ofs.f32 = mod_hue_add;
+      ofs.f32 = mod_saturation_mul;
+      ofs.f32 = mod_saturation_add;
+      ofs.f32 = mod_value_mul;
+      ofs.f32 = mod_value_add;
+      ofs.f32 = mod_brightness;
+      ofs.f32 = mod_contrast;
+
+      // RGB (v2+)
+      ofs.f32 = mod_r;
+      ofs.f32 = mod_g;
+      ofs.f32 = mod_b;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 2)
+      {
+         b_enable            = ifs.b8;
+         mod_hue_mul         = ifs.f32;
+         mod_hue_add         = ifs.f32;
+         mod_saturation_mul  = ifs.f32;
+         mod_saturation_add  = ifs.f32;
+         mod_value_mul       = ifs.f32;
+         mod_value_add       = ifs.f32;
+         mod_brightness      = ifs.f32;
+         mod_contrast        = ifs.f32;
+
+         if(ver >= 2)
+         {
+            // RGB (v2+)
+            mod_r = ifs.f32;
+            mod_g = ifs.f32;
+            mod_b = ifs.f32;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] ColorMod::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+
+}

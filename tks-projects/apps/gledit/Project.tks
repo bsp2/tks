@@ -1,0 +1,1328 @@
+// ----
+// ---- file   : Project.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL Edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 14Jun2020, 15Jun2020, 18Jun2020, 20Jun2020, 21Jun2020, 22Jun2020
+// ----          24Jun2020, 25Jun2020, 26Jun2020, 27Jun2020, 28Jun2020, 08Jul2020, 09Jul2020
+// ----          10Jul2020, 11Jul2020, 13Jul2020, 22Jul2020, 24Jul2020, 28Jul2020, 29Jul2020
+// ----          01Aug2020, 02Aug2020, 09Aug2020, 12Aug2020, 13Aug2020, 16Aug2020, 08Feb2025
+// ----          10Feb2025
+// ----
+// ----
+// ----
+module MProject;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class Project : GNamespaceProvider {
+
+   define int NUM_BOOKMARKS = 10;
+
+   define float SLOW_MOTION_SPEED_SCL = 0.1f;
+   define float FREEZE_SPD_THRESHOLD  = 0.01f;
+
+   String project_name;
+   String author_name;
+
+   GScreen screen;
+
+   boolean b_animate;
+   float   anim_offset;
+   float   anim_speed;   // time factor
+   boolean b_slow_motion;
+
+   float   last_anim_t;         // last animation time (updated each frame when effective spd > 0)
+   Double  last_frame_time_ms;  // updated each frame when effective spd > 0
+   float   last_effective_spd;  // updated in PreviewWidget::onDraw() (when effective spd > 0)
+
+   Double anim_start_ms;
+   int num_frames_rendered;
+
+   Script *script;
+   boolean b_script_init_state;  // maybe=pending, true=OK, false=Init() failed
+   boolean b_script_valid;       // becomes false after exception (e.g. in Draw())
+
+   float cur_viewport_x;
+   float cur_viewport_y;
+   float cur_viewport_w;
+   float cur_viewport_h;
+   boolean b_emit_uses_mouse_pos;
+   boolean b_emit_uses_mouse_delta;
+   boolean b_emit_uses_mouse_norm;
+   boolean b_emit_uses_mouse_buttons;
+   float last_vp_mouse_x;
+   float last_vp_mouse_y;
+   float last_vp_mouse_delta_x;
+   float last_vp_mouse_delta_y;
+   float last_mouse_buttons_x;  // -1=LMB release, 1=LMB press, 0=unchanged
+   float last_mouse_buttons_y;  // -1=RMB release, 1=RMB press, 0=unchanged
+   float last_mouse_buttons_z;  // -1=MMB release, 1=MMB press, 0=unchanged
+   float last_mouse_buttons_w;  // -1=wheel down, 1=wheel up, 0=unchanged
+   int cur_emit_fb_w;  // 0=default fb(o), >0: set g_fragcoord_off_x/y to (0;0) and _scl_x/y to (1;1)
+   int cur_emit_fb_h;
+   int next_emit_model_id;
+   int next_emit_program_id;
+
+   WatchFileList source_file_watch_list;
+
+   String last_object_path_global;
+   String last_object_path_nsp;
+
+   String bookmarks[NUM_BOOKMARKS];
+
+   short project_file_version;  // valid during loadStream()
+
+   String last_nsp_proj;
+   String last_nsp_scene;
+   String last_nsp_model;
+
+   GOrbitCamView *edit_cam;
+   String last_edit_cam_path;
+   float cam_strafe_speed;   // wasd / cursor strafe speed
+   float cam_rot_speed;      // LMB-drag rotate speed
+
+   // temporary during export:
+   boolean  b_export;
+   String  *s_export_module_src;
+   Zip     *zip;
+
+
+   // <method_init.png>
+   public method init() {
+      project_name = "test";
+      screen.init();
+
+      lazyInitGlobalNamespace();
+
+      GNamespace nsp <= createNamespace("default");
+      GScene scene <= nsp.addScene(GScene.New());  // test scene
+
+      updateScript();
+      bookmarks.useAll();
+
+      last_nsp_proj = "default";
+      last_nsp_scene = "*";
+      last_nsp_model = "-";
+
+      anim_speed = 1.0;
+
+      cam_strafe_speed = 0.05;
+      cam_rot_speed    = 0.5;
+   }
+
+   // <method_exit.png>
+   public method exit() {
+   }
+
+   // <method.png>
+   protected method lazyInitGlobalNamespace() {
+      if(null == getNamespaceById(GNamespace.GLOBAL_ID))
+      {
+         GNamespace nsp <= createNamespaceHead(GNamespace.GLOBAL_ID);
+         local GModSceneSelect sceneSelect;
+         sceneSelect.init();
+         sceneSelect.setId("scene_select"); ////GModSceneSelect.SCENE_SELECT_ID);
+         nsp.addMod(deref sceneSelect);
+         nsp.setVirtFolderFoldStatus("mods", false);
+      }
+   }
+
+   // <method_set.png>
+   public method setProjectName(String _s) {
+      project_name = Utils.ConvertToFileName(_s.trim());
+   }
+
+   // <method_set.png>
+   public method setBookmark(int _idx, String _path) {
+      bookmarks[_idx] = _path;
+   }
+
+   // <method_get.png>
+   public method getBookmark(int _idx) : String {
+      return bookmarks[_idx];
+   }
+
+   // <method_get.png>
+   public method emitUsesMouse() : boolean {
+      return
+         b_emit_uses_mouse_pos     ||
+         b_emit_uses_mouse_delta   ||
+         b_emit_uses_mouse_norm    ||
+         b_emit_uses_mouse_buttons ;
+   }
+
+   // <method.png>
+   public method changeEditCam(GOrbitCamView _cam, boolean _bAllowLast) {
+      if(@(_cam) != @(edit_cam))
+      {
+         trace "[dbg] Project::changeEditCam: cam="+#(_cam);
+         GOrbitCamView camView <= findObjectByPath(last_edit_cam_path);
+         if(camView instanceof GOrbitCamView)
+         {
+            if(null == _cam && _bAllowLast && @(edit_cam) == @(camView))
+            {
+               // keep current edit cam
+               return;
+            }
+         }
+         edit_cam <= _cam;
+         if(null != edit_cam)
+         {
+            last_edit_cam_path = edit_cam.getObjectPath();
+            trace "[dbg] Project::changeEditCam:  last_edit_cam_path="+last_edit_cam_path;
+         }
+         queueUpdate();
+      }
+   }
+
+   // <method.png>
+   public method changeEditCamToLastUsed() : boolean {
+      if(null == edit_cam)
+      {
+         GOrbitCamView camView <= findObjectByPath(last_edit_cam_path);
+         if(camView instanceof GOrbitCamView)
+         {
+            edit_cam <= camView;
+            queueUpdate();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method isEditCamActive() : boolean {
+      // GConnectionContainer container <= root_form.pg_start.current_input_object;
+      // if(container instanceof GConnectionContainer)
+      //    return container.containerIsForcedConnectionObject(current_project.edit_cam);
+      // // // return false;
+      // // trace "xxx isEditCamActive: current_param_object="+#();
+      // return (root_form.pg_start.current_param_object instanceof GOrbitCamView);
+      return (null != edit_cam); // 07Feb2025
+   }
+
+   // <method_get.png>
+   public method getEditCamWhenActive() : GOrbitCamView {
+      if(isEditCamActive())
+         return edit_cam;
+      return null;
+   }
+
+   // <method.png>
+   public method startAnimation() {
+      // called by PageStart::handleAnimateChanged() / toggleAnimation()
+
+      if(GConfig.b_reset_vars_when_anim_starts)
+         runGlobalInitializers();
+
+      num_frames_rendered = 0;
+      milliSecondsDouble(current_project.anim_start_ms);
+      last_frame_time_ms = 0;
+      last_anim_t = 0.0f;
+   }
+
+   // <method.png>
+   namespace method handleAnimSpeedChange(float _newEffectiveSpeed, float _oldEffectiveSpeed) {
+      if(b_animate)
+      {
+         // Shift replay start time so anim continues at current position
+         // trace "xxx handleAnimSpeedChange: new="+_newEffectiveSpeed+" old="+_oldEffectiveSpeed;
+         if(_newEffectiveSpeed < FREEZE_SPD_THRESHOLD)
+            _newEffectiveSpeed = last_effective_spd;
+
+         if(_oldEffectiveSpeed < FREEZE_SPD_THRESHOLD)
+            _oldEffectiveSpeed = last_effective_spd;
+
+         Double scl = _newEffectiveSpeed;
+         scl /= _oldEffectiveSpeed;
+         Double frameTimeMS;
+         milliSecondsDouble(frameTimeMS);
+         Double deltaTimeMS = frameTimeMS - current_project.anim_start_ms;
+         current_project.anim_start_ms = frameTimeMS - deltaTimeMS / scl;
+         // trace "xxx    => current_project.anim_start_ms="+current_project.anim_start_ms;
+      }
+   }
+
+   // <method_get.png>
+   public method calcEffectiveAnimSpeed(float _speed, boolean _bSlowMotion) : float {
+      float r = _speed;
+      if(maybe == _bSlowMotion)
+         r *= SLOW_MOTION_SPEED_SCL;
+      else if(true == _bSlowMotion)
+         r = 0.0f;
+      return r;
+   }
+
+   // <method_get.png>
+   protected method calcCurrentAnimTime(float _tSec) : float {
+      float animSpeed = calcEffectiveAnimSpeed(anim_speed, b_slow_motion);
+      if(animSpeed >= FREEZE_SPD_THRESHOLD)
+         last_anim_t = _tSec * animSpeed;
+      return last_anim_t + anim_offset;
+   }
+
+   // <method.png>
+   public method runScriptInit() : boolean {
+      boolean ret = false;
+
+      if(null != script)
+      {
+         Function f <= script.findFunction("Init");
+         if(null != f)
+         {
+            try
+            {
+               if(f.eval({}))
+               {
+                  // Succeeded
+                  ret = true;
+               }
+               else
+               {
+                  trace "[---] Project::runScriptInit: Init() failed (returned false)";
+               }
+            }
+            catch(Error e)
+            {
+               trace "[---] Project::runScriptInit: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+               b_script_valid = false;
+            }
+         }
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   public method runScriptExit() {
+      boolean ret = false;
+
+      if((null != script) && b_script_valid)
+      {
+         Function f <= script.findFunction("Exit");
+         if(null != f)
+         {
+            try
+            {
+               f.eval({});
+
+               ret = true;
+            }
+            catch(Error e)
+            {
+               trace "[---] Project::runScriptExit: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+            }
+         }
+
+         script <= null;
+      }
+
+      return ret;
+   }
+
+   // <method_set.png>
+   public method setScriptFloatVar(String _name, float _f) {
+      Variable v <= script.findVariable(_name);
+      if(null != v)
+      {
+         v.assign(#(_f));
+         v.store();
+      }
+   }
+
+   // <method_set.png>
+   public method setScriptIntVar(String _name, int _i) {
+      Variable v <= script.findVariable(_name);
+      if(null != v)
+      {
+         v.assign(#(_i));
+         v.store();
+      }
+   }
+
+   // <method_set.png>
+   public method getScriptIntVar(String _name) : int {
+      Variable v <= script.findVariable(_name);
+      if(null != v)
+      {
+         v.query();
+         return v.intValue;
+      }
+      return 0;
+   }
+
+   // <method_set.png>
+   public method setScriptObjectVar(String _name, Object _o) {
+      Variable v <= script.findVariable(_name);
+      if(null != v)
+      {
+         v.pointerAssign(_o);
+         v.store();
+      }
+   }
+
+   // <method_update.png>
+   protected method updateVars(float _tSec, float _dt) {
+      local Variable *v;
+
+      // Update default fb
+      setScriptIntVar("g_default_fb", UI.GetGLFramebufferId_RootFBO());
+      // trace "xxx updateVars: cur_viewport="+cur_viewport_x+";"+cur_viewport_y+";"+cur_viewport_w+";"+cur_viewport_h;
+      setScriptIntVar("g_default_vp_x", cur_viewport_x);
+      setScriptIntVar("g_default_vp_y", cur_viewport_y);
+      setScriptIntVar("g_default_vp_w", cur_viewport_w);
+      setScriptIntVar("g_default_vp_h", cur_viewport_h);
+
+      float tAbs = calcCurrentAnimTime(_tSec);
+
+      // Update default.global_time arg when available
+      //  (note) for default.args.global_time (GArgFloat)
+      setScriptFloatVar("ext_default_global_time", tAbs);
+
+      // Update global time (seconds)
+      //  (note) for use in custom scripts
+      setScriptFloatVar("g_time", tAbs);
+      // trace "xxx tAbs="+tAbs;
+
+      // Update frame accuracy when available (1.0=60 fps, 0.5=30 fps, ..)
+      setScriptFloatVar("g_dt", _dt);
+
+      setScriptIntVar("g_init", (0 == num_frames_rendered));
+
+      // Update g_mouse_pos_x/y when required
+      if(b_emit_uses_mouse_pos)
+      {
+         setScriptFloatVar("g_mouse_pos_x", last_vp_mouse_x);
+         setScriptFloatVar("g_mouse_pos_y", last_vp_mouse_y);
+      }
+
+      // Update g_mouse_delta_x/y when required
+      if(b_emit_uses_mouse_delta)
+      {
+         setScriptFloatVar("g_mouse_delta_x", last_vp_mouse_delta_x);
+         setScriptFloatVar("g_mouse_delta_y", last_vp_mouse_delta_y);
+      }
+
+      // Update normalize (-1..1) g_mouse_norm_x/y when required
+      if(b_emit_uses_mouse_norm)
+      {
+         setScriptFloatVar("g_mouse_norm_x", (last_vp_mouse_x / (0.5 * cur_viewport_w)) - 1.0);
+         setScriptFloatVar("g_mouse_norm_y", (last_vp_mouse_y / (0.5 * cur_viewport_h)) - 1.0);
+      }
+
+      // Update g_mouse_buttons_x/y/z/w when required
+      if(b_emit_uses_mouse_buttons)
+      {
+         // trace "xxx last_mouse_buttons("+last_mouse_buttons_x+";"+last_mouse_buttons_y+";"+last_mouse_buttons_z+";"+last_mouse_buttons_w+")";
+         setScriptFloatVar("g_mouse_buttons_x", last_mouse_buttons_x);  // LMB
+         setScriptFloatVar("g_mouse_buttons_y", last_mouse_buttons_y);  // RMB
+         setScriptFloatVar("g_mouse_buttons_z", last_mouse_buttons_z);  // MMB
+         setScriptFloatVar("g_mouse_buttons_w", last_mouse_buttons_w);  // Wheel
+      }
+
+      if(null != edit_cam)
+      {
+         setScriptObjectVar("g_edit_cam", edit_cam.getUpdatedEditCamView());
+      }
+      else
+      {
+         setScriptObjectVar("g_edit_cam", null);
+      }
+   }
+
+   // <method.png>
+   public method runScriptDraw(float _tSec) {
+      // called by PreviewWidget::onDraw()
+      boolean ret = false;
+
+      if((null != script) && b_script_valid)
+      {
+         if(maybe == b_script_init_state)
+         {
+            b_script_init_state = runScriptInit();
+         }
+
+         boolean bRedrawAfterError = false;
+
+         if(true == b_script_init_state)
+         {
+            updateVars(_tSec, 1.0f/*dt*/);
+
+            Function f <= script.findFunction("Draw");
+            if(null != f)
+            {
+               try
+               {
+                  f.eval(null);
+
+                  if(GConfig.b_debug_tri_count)
+                  {
+                     String sMsg <= "draw "+getScriptIntVar("g_tri_count")+" triangles";
+                     trace "[trc] "+sMsg;
+                     Global.Print(sMsg);
+                  }
+
+                  ret = true;
+               }
+               catch(Error e)
+               {
+                  trace "[---] Project::runScriptDraw: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+                  b_script_valid = false;
+                  bRedrawAfterError = true;
+               }
+            }
+         }
+
+         last_mouse_buttons_w = 0.0f;  // reset wheel 'pulse'
+
+         if(b_midi)
+         {
+            // Turn off note-on "pulses"
+            midi_noteon_vel.fill(0);
+
+            // Turn off note-off "pulses"
+            midi_noteoff_vel.fill(0);
+
+            // Turn off prgchg "pulses"
+            midi_prgchg.fill(0);
+         }
+
+         num_frames_rendered++;
+
+         if(bRedrawAfterError)
+         {
+            UI.RedrawAll();
+         }
+
+         // Paranoia: restore GL state for UI (e.g. when crash occured in the middle of Draw())
+         glUseProgram(0);
+         glBindBuffer(GL_ARRAY_BUFFER, 0);
+         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+         glDisable(GL_DEPTH_TEST);
+         glDisable(GL_STENCIL_TEST);
+         glBindFramebuffer(GL_FRAMEBUFFER, UI.GetGLFramebufferId_RootFBO());
+         int vaIdx = 0;
+         loop(16)
+            glDisableVertexAttribArray(vaIdx);
+      }
+      else
+      {
+         trace "[!!!] Project::runScriptDraw: skipping redraw due to errors";
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   public method allocModelId() : int {
+      return next_emit_model_id++;
+   }
+
+   // <method.png>
+   public method allocProgramId() : int {
+      return next_emit_program_id++;
+   }
+
+   // <method.png>
+   public method getSCPCmdLine() : String {
+      local String scpCmd = GConfig.scp_cmdline;
+      if!(GConfig.scp_pwd.isBlank())
+      {
+         scpCmd = GConfig.sshpass_cmdline+" "+scpCmd;
+      }
+      scpCmd.replace("$(USER)", GConfig.scp_user);
+      scpCmd.replace("$(PWD)",  GConfig.scp_pwd);
+      scpCmd.replace("$(HOST)", GConfig.scp_host);
+      scpCmd.replace("$(PATH)", GConfig.scp_path);
+      return deref scpCmd;
+   }
+
+   // <method.png>
+   protected method execSCP(String _cmd) {
+      Global.Debug2("execSCP: scpCmd=\""+_cmd+"\"");
+      // // local String cwd <= tkfileutils_getcwd();
+      tkfileutils_setcwd(getExportDir());
+      system(_cmd);
+      tkfileutils_setcwd(gledit::program_directory);
+   }
+
+   // <save.png>
+   public method exportToZip(int     _fpsLimit,
+                             boolean _bVSync,
+                             boolean _bDeployHelper,
+                             boolean _bSCP
+                             ) {
+
+      Global.Debug("Project:.exportToZip: ENTER");
+
+      local String zipPathName <= getExportZipPathName();
+      local String srcPathName <= getExportSrcPathName();
+      Global.Debug("Project:.exportToZip:\n\t\t\tzipPathname=\""+zipPathName+"\"\n\t\t\tsrcPathname=\""+srcPathName+"\"");
+      if((zipPathName >= ".zip") && (srcPathName >= ".tks")) // paranoia
+      {
+         zip <= new Zip;
+         if(zip.createLocal(zipPathName))
+         {
+            // Re-emit script
+            //  - adds assets to zip (textures, attrib buffers, ..)
+            b_export = true;
+            updateScript();
+
+            // zip.addFile("module.tks", );
+            zip.close();
+
+            // Write main module
+            s_export_module_src.saveLocal(srcPathName);
+
+            // Write example integration code
+            local String sExample;
+            sExample.load("main.tks_templ", true/*bRemoveCR*/);
+            sExample.replace("$(PROJECT)",       project_name);
+            sExample.replace("$(SCREEN_W)",      String(screen.width));
+            sExample.replace("$(SCREEN_H)",      String(screen.height));
+            sExample.replace("$(FPSLIMIT)",      String(_fpsLimit));
+            sExample.replace("$(VSYNC)",         String(_bVSync));
+            sExample.replace("$(GLES2)",         String( (b_export && GConfig.b_apply_shader_version_during_export && !(GConfig.shader_version.isBlank())) ));
+            sExample.replace("$(GLSL_VERSION)",  String( (GConfig.shader_version.replace("\n","\\n")) ));
+
+            sExample.replace("$(DEPLOY_HELPER)", String(_bDeployHelper));
+            sExample.saveLocal(getExportDir()+"main.tks");
+
+            if(_bDeployHelper)
+            {
+               local String sDeployKey = Utils.GetCurrentDateTimeStringNumeric();
+               sDeployKey.saveLocal(getExportDir()+"gledit_deploy_key");
+            }
+
+            sExample.empty();
+            sExample.append("main.tks\n");
+            sExample.append(project_name+".tks\n");
+            sExample.saveLocal(getExportDir()+"main.tkp");
+
+            if(_bSCP)
+            {
+               local String scpCmd <= getSCPCmdLine();
+
+               Global.Debug2("scpCmd=\""+scpCmd+"\"");
+
+               // Upload files
+               execSCP(scpCmd.replace("$(FILE)", "main.tks"));
+               execSCP(scpCmd.replace("$(FILE)", "main.tkp"));
+               execSCP(scpCmd.replace("$(FILE)", project_name+".tks"));
+               execSCP(scpCmd.replace("$(FILE)", project_name+".zip"));
+               if(_bDeployHelper)
+                  execSCP(scpCmd.replace("$(FILE)", "gledit_deploy_key"));
+            }
+
+            Global.Print("Export to \""+zipPathName+"\"");
+         }
+      }
+
+      b_export = false;
+      updateScript();
+      UI.RedrawAll();
+
+      Global.Debug("Project:.exportToZip: LEAVE");
+   }
+
+   // <save.png>
+   public method exportAddBuffer(GModule _module, String _varName, Buffer _buffer) {
+      // trace "xxx varName="+#(_varName)+" buffer="+#(_buffer);
+      Global.Debug("export: adding buffer \""+_varName+"\" raw size="+_buffer.size);
+
+      // Add file to zip
+      zip.addFile(_varName+".dat", _buffer);
+
+      // Loader: Load file from zip
+      local String sLoad;
+      sLoad.append(_varName+" <= zip.loadBufferByName(\""+_varName+".dat\");\n");
+      _module.appendLoad(sLoad);
+   }
+
+   // <save.png>
+   public method exportAddTexture(GModule _module,
+                                  String  _varName,
+                                  Texture _tex,
+                                  String  _glTarget,
+                                  String  _texFlags,
+                                  boolean _bEmpty
+                                  ) {
+      local String sLoad;
+      int sy = _tex.sy;
+
+      // Create Texture object
+      sLoad.append("\n");
+      sLoad.append("// Texture "+_varName+"\n");
+      sLoad.append(_varName+" <= new Texture;\n");
+
+      if(_bEmpty)
+      {
+         sLoad.append(_varName+".alloc("+_tex.sx+", "+sy+", "+_tex.z+"/*bpp*/);\n");
+         if(_tex.sz > 1)
+            sLoad.append(_varName+".sz = "+_tex.sz+";\n");  // 3d / 2d array textures
+      }
+      else
+      {
+         // Export PNG
+         local Buffer b;
+         b.size = _tex.sx * (_tex.sy * _tex.z) * _tex.z;
+         b.offset = 0;
+         _tex.saveImageStream(b);
+         Global.Debug("Project::exportAddTexture: varName=\""+_varName+"\" PNG_size="+b.offset);
+         b.truncate(b.offset);  // (note) addFile() stores (b.size - b.offset) bytes => adjust to actual size
+         b.offset = 0;
+         zip.addFile(_varName+".png", b);
+
+         // Loader: Load PNG from zip
+         sLoad.append("b <= zip.loadBufferByName(\""+_varName+".png\");\n");
+         sLoad.append("b.offset = 0;\n");
+         sLoad.append(_varName+".loadImageStream(b, "+_tex.sx+", "+_tex.sy+", "+_tex.z+"/*bpp*/);\n");
+      }
+
+      sLoad.append(_varName+".target = "+_glTarget+";\n");
+      sLoad.append(_varName+".flags  = "+_texFlags+";\n");
+
+      // trace "\n\n\n\nsLoad=\""+sLoad+"\n\n\n\n";
+
+      _module.appendLoad(sLoad);
+   }
+
+   // <save.png>
+   public method exportAddEnvelope(GModule  _module,
+                                   String   _varName,
+                                   Envelope _env
+                                   ) {
+      local String sLoad;
+
+      // Create Envelope object
+      sLoad.append("\n");
+      sLoad.append("// Envelope "+_varName+"\n");
+      sLoad.append(_varName+" <= new Envelope;\n");
+
+      // Export data
+      local Buffer b;
+      b.size = _env.numElements * 4 + 128;
+      b.offset = 0;
+      b << _env;
+      Global.Debug("Project::exportAddEnvelope: varName=\""+_varName+"\" data_size="+b.offset);
+      b.truncate(b.offset);  // (note) addFile() stores (b.size - b.offset) bytes => adjust to actual size
+      b.offset = 0;
+      zip.addFile(_varName+".env", b);
+
+      // Loader: Load Envelope from zip
+      sLoad.append("b <= zip.loadBufferByName(\""+_varName+".env\");\n");
+      sLoad.append("b.offset = 0;\n");
+      sLoad.append(_varName+" << b;\n");
+
+      _module.appendLoad(sLoad);
+   }
+
+   // <method_update.png>
+   public method updateScript() : boolean {
+      boolean ret = false;
+      if(Global.b_initializing)
+         return false;
+
+      // trace "xxx root_form.pg_start.preview="+#(root_form.pg_start.preview);
+
+      runScriptExit();
+
+      b_script_init_state = false;
+      b_script_valid = true;
+
+      cur_emit_fb_w = 0;
+      cur_emit_fb_h = 0;
+      next_emit_model_id = 1;
+      next_emit_program_id = 1;
+
+      try
+      {
+         trace "----------- BEGIN EMIT "+(b_export?"(export)":"")+" ---------------";
+
+         b_emit_uses_mouse_pos     = false;
+         b_emit_uses_mouse_delta   = false;
+         b_emit_uses_mouse_norm    = false;
+         b_emit_uses_mouse_buttons = false;
+
+         GNamespaceProvider::emitBeginRecursive();
+         local GModule gmodule;
+         gmodule.emitBegin();
+
+         screen.emitModule(gmodule);
+
+         local GNamespace *nsp;
+         local GScene *scene;
+         foreach nsp in namespaces
+         {
+            nsp.emitBeginRecursive();
+         }
+
+         foreach nsp in namespaces
+         {
+            foreach scene in nsp.scenes
+            {
+               if(scene.isEnabled())
+               {
+                  scene.emitModule(gmodule);
+               }
+            }
+         }
+
+         // Draw selected scenes
+         int numSceneSelects = 0;
+         GModSceneSelect *sceneSelect;
+         GNamespace nspGlobal <= getNamespaceById(GNamespace.GLOBAL_ID);
+         foreach sceneSelect in nspGlobal.mods
+         {
+            if(sceneSelect instanceof GModSceneSelect)
+            {
+               if(sceneSelect.isEnabled() && sceneSelect.isSceneConnected())
+               {
+                  sceneSelect.emitCallDraw(gmodule);
+                  numSceneSelects++;
+               }
+            }
+         }
+         // Fallback: draw all scenes when no scene selects are configured
+         if(0 == numSceneSelects)
+         {
+            foreach nsp in namespaces
+            {
+               foreach scene in nsp.scenes
+               {
+                  if(scene.isEnabled())
+                  {
+                     scene.emitCallDraw(gmodule);
+                  }
+               }
+            }
+         }
+
+         if(!b_export)
+            gmodule.emitEnd();
+
+         trace "----------- END EMIT "+(b_export?"(export)":"")+"---------------";
+         String sSrc <= gmodule.s_src;
+
+         if(b_export)
+         {
+            // Recursively call emitModulePost()
+            foreach nsp in namespaces
+            {
+               nsp.emitModulePost(gmodule);
+            }
+
+            gmodule.emitEnd();
+         }
+
+         if(!b_export)
+         {
+            sSrc.replace("$(g_fragcoord_off_x)", String(-cur_viewport_x));
+            sSrc.replace("$(g_fragcoord_off_y)", String(-cur_viewport_y));
+            sSrc.replace("$(g_fragcoord_scl_x)", String(screen.width  / cur_viewport_w));
+            sSrc.replace("$(g_fragcoord_scl_y)", String(screen.height / cur_viewport_h));
+
+            sSrc.replace("$(g_normcoord_scl_x)", String(2.0f / cur_viewport_w));
+            sSrc.replace("$(g_normcoord_scl_y)", String(2.0f / cur_viewport_h));
+         }
+         else
+         {
+            sSrc.replace("$(g_fragcoord_off_x)", "0");
+            sSrc.replace("$(g_fragcoord_off_y)", "0");
+            sSrc.replace("$(g_fragcoord_scl_x)", "1.0");
+            sSrc.replace("$(g_fragcoord_scl_y)", "1.0");
+
+            sSrc.replace("$(g_normcoord_scl_x)", String(2.0f / cur_viewport_w));
+            sSrc.replace("$(g_normcoord_scl_y)", String(2.0f / cur_viewport_h));
+
+            s_export_module_src <= Object(sSrc);  // save a copy for later
+         }
+
+         // trace "\n\nxxx script=\""+gmodule.s_src+"\"";
+         sSrc.saveLocal(Utils.SubstitutePathVars("$(PROGRAM_DIR)/debug_script"+(b_export?"_export":"")+".tks"));
+
+         script <= new Script;
+
+         if(!b_export && script.load(sSrc))
+         {
+            trace "[...] Project::updateScript: OK, script loaded";
+            b_script_init_state = maybe;
+
+            // // foreach nsp in namespaces
+            // // {
+            // //    foreach scene in nsp.scenes
+            // //    {
+            // //       scene.emitModulePost(gmodule);
+            // //    }
+            // // }
+
+            // Recursively call emitModulePost()
+            foreach nsp in namespaces
+            {
+               nsp.emitModulePost(gmodule);
+            }
+
+            runGlobalInitializers();
+
+            num_frames_rendered = 0;
+            ret = true;
+         }
+      }
+      catch(Error e)
+      {
+         trace "[---] Project::updateScript: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+         trace e.stackTrace;
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   public method runGlobalInitializers() {
+      try
+      {
+         script.eval();  // static initializers (e.g. shader sources)
+      }
+      catch(Error e)
+      {
+         trace "[---] Project::runGlobalInitializers: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+         trace e.stackTrace;
+      }
+   }
+
+   // <method_find.png>
+   public method findSceneByPath(String _path) : GScene {
+      // <namespace>.<scene>
+      local StringArray a <= _path.splitChar('.');
+      local String nspId <= a.get(0);
+      GNamespace nsp <= getNamespaceById(nspId);
+      if(null != nsp)
+      {
+         local String sceneId <= a.get(1);
+         return nsp.findSceneById(sceneId);
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findModelByPath(String _path) : GModel {
+      GModel model <= findObjectByPath(_path);
+      if(model instanceof GModel)
+         return model;
+      else
+         return null;
+   }
+
+   // <method_add.png>
+   public method addSourceFileToWatchList(String _pathName) {
+      if((null != _pathName) && !_pathName.isBlank())
+         source_file_watch_list.addToWatchList(_pathName);
+   }
+
+   // <method_remove.png>
+   public method removeSourceFileFromWatchList(String _pathName) {
+      if((null != _pathName) && !_pathName.isBlank())
+         source_file_watch_list.removeFromWatchList(_pathName);
+   }
+
+   // <method_add.png>
+   public method addImageFileToWatchList(String _pathName) {
+      // image_file_watch_list.addToWatchList(_pathName);
+      // (todo)
+   }
+
+   // <method_add.png>
+   public method removeImageFileFromWatchList(String _pathName) {
+      // image_file_watch_list.removeFromWatchList(_pathName);
+      // (todo)
+   }
+
+   // <method_get.png>
+   public method getProjectRootPath() : String {
+      return Utils.FixFileName(Utils.SubstitutePathVarsNoProject(GConfig.project_rootpath));
+   }
+
+   // <method_get.png>
+   public method getProjectPath() : String {
+      return Utils.FixFileName(Utils.SubstitutePathVarsNoProject(GConfig.project_rootpath)+"/"+project_name);
+   }
+
+   // <method_get.png>
+   public method getModelPresetDirectory() : String {
+      return Utils.FixFileName(Utils.ToNativePathName(GConfig.rootpath)+"/presets/models/");
+   }
+
+   // <method_get.png>
+   public method getRenderpassPresetDirectory() : String {
+      return Utils.FixFileName(Utils.ToNativePathName(GConfig.rootpath)+"/presets/renderpasses/");
+   }
+
+   // <method_get.png>
+   public method getScenePresetDirectory() : String {
+      return Utils.FixFileName(Utils.ToNativePathName(GConfig.rootpath)+"/presets/scenes/");
+   }
+
+   // <method_get.png>
+   public method getTexturePresetDirectory() : String {
+      return Utils.FixFileName(Utils.ToNativePathName(GConfig.rootpath)+"/presets/textures/");
+   }
+
+   // <method_get.png>
+   public method getColorPresetDirectory() : String {
+      return Utils.FixFileName(Utils.ToNativePathName(GConfig.rootpath)+"/presets/colors/");
+   }
+
+   // <method_get.png>
+   public method getSuggestedSourceDirectory() : String {
+      return Utils.FixFileName(getProjectPath()+"/sources/");
+   }
+
+   // <method_get.png>
+   public method getSuggestedScriptDirectory() : String {
+      return getProjectPath()+"/scripts/";
+   }
+
+   // <method_get.png>
+   public method getSuggestedTextureDirectory() : String {
+      return getProjectPath()+"/textures/";
+   }
+
+   // <method_get.png>
+   public method getSuggestedMeshDirectory() : String {
+      return getProjectPath()+"/meshes/";
+   }
+
+   // <method_get.png>
+   public method getExportDir() : String {
+      return getProjectPath()+"/export/";
+   }
+
+   // <method_get.png>
+   public method getExportZipPathName() : String {
+      return getExportDir()+project_name+".zip";
+   }
+
+   // <method_get.png>
+   public method getExportSrcPathName() : String {
+      return getExportDir()+project_name+".tks";
+   }
+
+   // <method.png>
+   public method createProjectDirs() {
+      local String projectDir <= getProjectPath();
+      trace "[dbg] Project::createProjectDirs: mkdir \""+projectDir+"\"";
+      tkfileutils_mkdir(projectDir);
+      tkfileutils_mkdir(projectDir+"/meshes");
+      tkfileutils_mkdir(projectDir+"/sources");
+      tkfileutils_mkdir(projectDir+"/scripts");
+      tkfileutils_mkdir(projectDir+"/textures");
+      tkfileutils_mkdir(projectDir+"/export");
+   }
+
+   // <method.png>
+   public method checkWatchFileLists() {
+      String *pathName;
+      boolean bAnyChanged = false;
+      do
+      {
+         pathName <= source_file_watch_list.checkNext();
+         if(null != pathName)
+         {
+            bAnyChanged = true;
+            GNamespace *nsp;
+            foreach nsp in namespaces
+            {
+               nsp.handleWatchFileChanged(pathName);
+            }
+         }
+      }
+      while(null != pathName);
+      if(bAnyChanged)
+         queueUpdate();
+   }
+
+   // <method.png>
+   public method queueUpdate() {
+      root_form.pg_start.preview.queueUpdate();
+   }
+
+   // <method.png>
+   public method queueRedraw() {
+      root_form.pg_start.preview.queueRedraw();
+   }
+
+   // <method.png>
+   public method getPreviewWidth() : float {
+      return root_form.pg_start.preview.getSizeX();
+   }
+
+   // <method.png>
+   public method getPreviewHeight() : float {
+      return root_form.pg_start.preview.getSizeY();
+   }
+
+   // <method.png>
+   public method getScreenWidth() : float {
+      return screen.width;
+   }
+
+   // <method.png>
+   public method getScreenHeight() : float {
+      return screen.height;
+   }
+
+   // // <method_get.png>
+   // public method getAspectRatio() : float {
+   //    return screen.aspect_ratio;
+   // }
+
+   // // <method_get.png>
+   // public method getAspectScaleX() : float {
+   //    float w = getWidth();
+   //    float h = getHeight();
+   //    float curAspect = w / h;
+   //    return curAspect / screen.aspect_ratio;
+   // }
+
+   // // // <method_get.png>
+   // // public method getAspectScaleY() : float {
+   // //    float w = root_form.pg_start.preview.getWidth();
+   // //    float h = root_form.pg_start.preview.getHeight();
+   // //    float curAspect = h / w;
+   // //    return screen.aspect_ratio / curAspect;
+   // // }
+
+   // <save.png>
+   public method saveStream(local Stream ofs) {
+      // Version
+      ofs.i16 = 9;
+
+      // (note) fixed GUniformSampler ParamProvider state in v3+
+
+      local GConnectionWriter connectionWriter;
+
+      // Project name
+      Utils.WriteString(ofs, project_name);
+
+      // Author
+      Utils.WriteString(ofs, author_name);
+
+      // Screen
+      screen.saveStateObject(ofs, connectionWriter);
+
+      // Global namespaces
+      GNamespaceProvider::saveStateNamespaceProvider(ofs, connectionWriter);
+
+      // Connections
+      connectionWriter.saveStream(ofs);
+
+      // Last selected object path (v2)
+      Utils.WriteString(ofs, last_object_path_nsp);
+
+      // Last selected global object path (v6)
+      Utils.WriteString(ofs, last_object_path_global);
+
+      // Last select namespace, scene, model (v4+)
+      Utils.WriteString(ofs, last_nsp_proj);
+      Utils.WriteString(ofs, last_nsp_scene);
+      Utils.WriteString(ofs, last_nsp_model);
+
+      // Last edited camera (v9+)
+      Utils.WriteString(ofs, last_edit_cam_path);
+
+      // Anim offset and speed (v7+)
+      ofs.f32 = anim_offset;
+      ofs.f32 = anim_speed;
+      ofs.i8  = b_slow_motion; // v8+
+
+      // Bookmarks (v5+)
+      ofs.i8 = bookmarks.numElements;
+      String *bm;
+      foreach bm in bookmarks
+      {
+         Utils.WriteString(ofs, bm);
+      }
+   }
+
+   // <save.png>
+   public method saveToFile(String _pathName) {
+      local File f;
+      local String nativePathName <= Utils.ToNativePathName(_pathName);
+      if(nativePathName >= Global.PROJECT_FILE_SUFFIX)
+      {
+         // Create project dir
+         createProjectDirs();
+
+         if(f.openLocal(nativePathName, IOS_OUT))
+         {
+            saveStream(f);
+            f.close();
+
+            Global.Success("Project saved to \""+nativePathName+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to open project file \""+nativePathName+"\" for writing");
+         }
+      }
+      else
+      {
+         Global.Error("save: project file name must have "+Global.PROJECT_FILE_SUFFIX+" suffix");
+      }
+   }
+
+   // <load.png>
+   public method loadStream(local Stream ifs) : boolean {
+
+      runScriptExit();
+
+      freeNamespaces();
+      source_file_watch_list.unwatchAll();
+
+      last_object_path_global.empty();
+      last_object_path_nsp.empty();
+
+      // // trace "xxx Project::loadStream: namespaces="+#(namespaces);
+
+      // Version
+      short ver = ifs.u16;
+
+      project_file_version = ver;
+
+      if(1 <= ver <= 9)
+      {
+         // Project name
+         Utils.ReadString(ifs, project_name);
+
+         // Author
+         Utils.ReadString(ifs, author_name);
+
+         // Screen
+         screen <= GObject.LoadStateObject(ifs);
+         if!(screen instanceof GScreen)
+         {
+            trace "[---] Project::loadStream: failed to load screen (obj="+#(screen)+")";
+            return false;
+         }
+
+         // Global namespaces
+         if(GNamespaceProvider::loadStateNamespaceProvider(ifs))
+         {
+            lazyInitGlobalNamespace();
+
+            // Connections
+            local GConnectionReader connectionReader;
+            if(!connectionReader.loadStream(ifs))
+            {
+               trace "[---] Project::loadStream: failed to load connections";
+               return false;
+            }
+         }
+         else
+         {
+            trace "[---] Project::loadStream: failed to load global namespaces";
+            return false;
+         }
+
+         // Last selected object path (v2)
+         if(ver >= 2)
+         {
+            Utils.ReadString(ifs, last_object_path_nsp);
+         }
+
+         // Last selected global object path (v6)
+         if(ver >= 6)
+         {
+            Utils.ReadString(ifs, last_object_path_global);
+         }
+
+         // Last select namespace, scene, model (v4+)
+         if(ver >= 4)
+         {
+            Utils.ReadString(ifs, last_nsp_proj);
+            Utils.ReadString(ifs, last_nsp_scene);
+            Utils.ReadString(ifs, last_nsp_model);
+         }
+
+         // Last edited camera (v9+)
+         if(ver >= 9)
+         {
+            Utils.ReadString(ifs, last_edit_cam_path);
+         }
+
+         if(ver >= 7)
+         {
+            // Anim offset and speed (v7+)
+            anim_offset = ifs.f32;
+            anim_speed  = ifs.f32;
+
+            if(ver >= 8)
+               b_slow_motion = ifs.s8; // v8+
+         }
+
+         // Bookmarks (v5+)
+         if(ver >= 5)
+         {
+            int numBookmarks = ifs.u8;
+            int bookmarkIdx = 0;
+            loop(numBookmarks)
+            {
+               bookmarks[bookmarkIdx] = "";
+               Utils.ReadString(ifs, bookmarks[bookmarkIdx++]);
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] Project::loadStream: invalid version "+ver;
+         return false;
+      }
+   }
+
+   // <load.png>
+   public method loadFromFile(String _pathName) : boolean {
+      local File f;
+      local String nativePathName <= Utils.ToNativePathName(_pathName);
+      Global.Debug("Project::loadFromFile: nativePathName=\""+nativePathName+"\"");
+      return = false;
+      if(nativePathName >= Global.PROJECT_FILE_SUFFIX)
+      {
+         if(f.openLocal(nativePathName, IOS_IN))
+         {
+            if(loadStream(f))
+            {
+               Global.Success("Project loaded from \""+nativePathName+"\"");
+               return = true;
+            }
+            else
+            {
+               Global.Error("Failed to load project from \""+nativePathName+"\"");
+            }
+
+            f.close();
+         }
+         else
+         {
+            Global.Error("Failed to open project file \""+nativePathName+"\" for reading");
+         }
+      }
+      else
+      {
+         Global.Error("load: project file name must have "+Global.PROJECT_FILE_SUFFIX+" suffix");
+      }
+      return;
+   }
+
+}

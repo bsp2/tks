@@ -1,0 +1,288 @@
+// ----
+// ---- file   : gconnection.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 13Jun2020
+// ---- changed: 14Jun2020, 15Jun2020, 16Jun2020, 19Jun2020, 20Jun2020, 24Jun2020, 27Jun2020
+// ----          30Jun2020, 04Jul2020, 10Jul2020, 11Jul2020, 02Aug2020, 14Aug2020, 07Feb2025
+// ----
+// ----
+// ----
+module MGConnection;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GConnection : GDefs {
+
+   // (note) null = use default value
+   GObject *object;
+   String   port_id;
+   String   port_id_rev;  // link back / reverse connection
+   int      op;           // see GDefs.OP_xxx
+   int      type;         // copied during connect()
+   float    scale;
+   float    offset;
+   boolean  b_enable;
+
+
+   // <method_new.png>
+   public static New(GObject _object, String _portId, String _portIdRev, int _op) {
+      local GConnection r;
+      r.init(deref _object, deref _portId, deref _portIdRev, _op);
+      return deref r;
+   }
+
+   // <method_init.png>
+   public method init(GObject _object, String _portId, String _portIdRev, int _op) {
+      object      <= deref _object;
+      port_id      = _portId;
+      port_id_rev  = _portIdRev;
+      op           = _op;
+
+      scale  = 1.0f;
+      offset = 0.0f;
+
+      b_enable = true;
+   }
+
+   // <method_set.png>
+   public method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+   }
+
+   // <method_set.png>
+   public method isEnabled() : boolean {
+      return b_enable;
+   }
+
+   // <method_set.png>
+   public method setObject(GObject _obj) {
+      object <= deref _obj;
+   }
+
+   // <method_get.png>
+   public method unlinkObject() : GObject {
+      return deref object;
+   }
+
+   // <method_get.png>
+   public method getObjectString(GNamespace _parentNspOrObject) : String {
+      local String r;
+      // trace "xxx connection::getObjectString: object="+#(object);
+      String objId <= object.getId();
+      // trace "xxx r=\""+r+"\" object="+#(object);
+      // trace "xxx r=\""+r+"\" objId=\""+objId+"\"";
+      // trace "xxx ..............getObjectString ENTER: _parentNspOrObject="+#(_parentNspOrObject);
+      r.append("<"+(object.yacMetaClassName().substring(1,-1))+">");
+      if(objId.isBlank())
+      {
+         r.append(":<anon>");
+      }
+      else
+      {
+         local String *nspPrefix;
+         // trace "xxx getObjectString: object.id="+object.getId()+" object.getNamespace()="+#(object.getNamespace())+" parentNspOrObject="+#(_parentNspOrObject);
+         // nspPrefix <= object.getNamespacePrefixDot();
+         nspPrefix <= object.getObjectPathDir();
+         // trace "xxx object="+#(object)+" start nspPrefix="+nspPrefix;
+         // if(object instanceof GNamespace)
+         //    nspPrefix.append("."+object.getId());
+         if(null != _parentNspOrObject)
+         {
+            local String *nspPrefixParent;
+
+            GObject *parentObj;
+            if(_parentNspOrObject instanceof GObject)
+            {
+               parentObj <= _parentNspOrObject;
+               nspPrefixParent <= parentObj.getObjectPath();
+            }
+            else if(_parentNspOrObject instanceof GNamespace)
+            {
+               nspPrefixParent <= _parentNspOrObject.getNamespacePrefixDot()+"."+_parentNspOrObject.getNamespaceId();
+            }
+
+            // trace "xxx nspPrefixParent=\""+nspPrefixParent+"\"";
+            // trace "xxx nspPrefix=\""+nspPrefix+"\"";
+
+            int idxDiff = nspPrefix.indexOfFirstDifference(nspPrefixParent);
+            if(-1 != idxDiff)
+            {
+               int idxDiffThis = nspPrefix.revIndexOfChar('.', idxDiff);
+               if(-1 == idxDiffThis)
+                  idxDiffThis = 0;
+               nspPrefix.substring(idxDiffThis, -1);
+
+               int idxDiffParent = nspPrefixParent.revIndexOfChar('.', idxDiff);
+               if(-1 == idxDiffParent)
+                  idxDiffParent = 0;
+               nspPrefixParent.substring(idxDiffParent, -1);
+            }
+            else
+            {
+               nspPrefix="";
+               nspPrefixParent="";
+            }
+
+            if(nspPrefix <= ".")
+               nspPrefix.substring(1,-1);
+
+            if(nspPrefixParent <= ".")
+               nspPrefixParent.substring(1,-1);
+
+            // trace "xxx delcommon nspPrefixParent=\""+nspPrefixParent+"\"";
+            // trace "xxx delcommon nspPrefix=\""+nspPrefix+"\"";
+
+            int numDiff;
+            // if(0 != nspPrefix.numIndicesOf("."))
+            numDiff = nspPrefixParent.numIndicesOf(".") - nspPrefix.numIndicesOf(".");
+            // trace "xxx numDiff="+numDiff;
+            // numDiff = abs(numDiff);
+            if((0 == numDiff) && (nspPrefixParent != nspPrefix) && (!nspPrefixParent.isBlank()))
+               numDiff += 1;
+
+            if(numDiff > 0)
+            {
+               local String sParent; sParent.appendRepeat(".", numDiff+1);
+               sParent.append("/");
+               nspPrefix.insert(0, sParent);
+            }
+
+            // trace "xxx => nspPrefix=\""+nspPrefix+"\"";
+         }
+
+         if(nspPrefix.isBlank())
+            r.append(object.getId());
+         else if(nspPrefix >= "/")
+            r.append(nspPrefix+object.getId());
+         else
+            r.append(nspPrefix+"."+object.getId());
+      }
+      // trace "xxx ======= getObjectString r=\""+r+"\"";
+      return deref r;
+   }
+
+   // <method_get.png>
+   public method getOpPortString() : String {
+      local String r;
+      local String *opName;
+      if(OP_AUTO == op)
+         opName <= "<auto:"+GDefs.GetOpNameShort(object.getOpAuto())+">";
+      else
+         opName <= GDefs.GetOpNameShort(op);
+      r.append(opName+" "+GDefs.GetGLSLTypeName(type)+" "+port_id);
+      // trace "xxx r=\""+r+"\"";
+      local String valStr <= object.getString();
+      if(null != valStr && !valStr.isBlank())
+         r.append(" v="+valStr);
+      return deref r;
+   }
+
+   // <method_get.png>
+   public method usesScalingOrOffset() : boolean {
+      return (1.0 != scale) || (0.0 != offset);
+   }
+
+   // <save.png>
+   public method saveStateConnection(local GConnectionWriter _connectionWriter, local GObject _parent) {
+
+      // trace "xxx saveStateConnection: parent="+#(_parent)+" path="+_parent.getObjectPath()+" source="+#(object)+" port_id="+port_id;
+
+      _connectionWriter.writeConnection(_parent.getObjectPath()/*target*/,
+                                        port_id_rev/*inputId*/,
+                                        object/*source*/,
+                                        port_id/*outputId*/,
+                                        op,
+                                        scale,
+                                        offset,
+                                        b_enable
+                                        );
+   }
+
+   // <method_get.png>
+   public method canInsertObject(GObject _object) : boolean {
+      if(TYPE_REF != type)
+      {
+         //
+         if(!object.isInputObject(_object) && !_object.isInputObject(object))
+         {
+            GInput input <= _object.getInputByIndex(0);
+            GOutput output <= _object.getOutputByIndex(0);
+            // trace "xxx input="+#(input)+" output="+#(output);
+            // trace "xxx input.type="+input.type;
+            // trace "xxx output.type="+output.type;
+            if((null != input) && (null != output) && (TYPE_REF != input.type) && (TYPE_REF != output.type))
+            {
+               if((input.parent_object.getInputDomain(port_id_rev)) &
+                  _object.getOutputDomain(output.id) &
+                  _object.getInputDomain(input.id)
+                  )
+               {
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method canRemoveAndConnectNext() : boolean {
+      if(TYPE_REF != type)
+      {
+         GInput input <= object.getInputByIndex(0);
+         GOutput output <= object.getOutputById(port_id);
+         if(null != input)
+         {
+            if(object.getInputDomain(input.id) & object.getOutputDomain(output.id))
+            {
+               if(TYPE_REF != input.type && TYPE_REF != output.type)
+               {
+                  if!(input.connections.isEmpty())
+                  {
+                     return true;
+                  }
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method removeAndConnectNext() : boolean {
+      if(TYPE_REF != type)
+      {
+         GInput input <= object.getInputByIndex(0);
+         GOutput output <= object.getOutputById(port_id);
+         if(null != input)
+         {
+            if(object.getInputDomain(input.id) & object.getOutputDomain(output.id))
+            {
+               if(TYPE_REF != input.type && TYPE_REF != output.type)
+               {
+                  GConnection conn <= input.connections.get(0);
+                  if(null != conn)
+                  {
+                     GObject obj <= deref object;
+                     setObject(conn.unlinkObject());
+                     port_id = conn.port_id;
+                     obj.disconnect(conn);
+                     return true;
+                  }
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+}

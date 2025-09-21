@@ -1,0 +1,1218 @@
+// ----
+// ---- file   : gobject.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 14Jun2020, 15Jun2020, 16Jun2020, 18Jun2020, 20Jun2020, 22Jun2020
+// ----          24Jun2020, 27Jun2020, 28Jun2020, 30Jun2020, 01Jul2020, 03Jul2020, 04Jul2020
+// ----          07Jul2020, 09Jul2020, 10Jul2020, 11Jul2020, 30Jul2020, 31Jul2020, 02Aug2020
+// ----          03Aug2020, 09Aug2020, 12Aug2020, 14Aug2020, 15Aug2020, 07Feb2025
+// ----
+// ----
+// ----
+module MGObject;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GObject : GBase, GNamespaceObject {
+   define int MAX_CLONE_SZ = (1024 * 1024);
+
+   GInput  *inputs  [];
+   GOutput *outputs [];
+
+   // <anon> objects:
+   GObject     *anon_parent;  // e.g. GConstantTexelRGBA
+   GConnection *anon_parent_conn;
+
+   int last_selected_input_idx;
+   int last_selected_input_row_idx;  // fallback when no input was selected
+
+   boolean b_enable;
+
+   static ColorPickerDialog *dlg_color;
+
+
+   // <method_init.png>
+   public virtual init() {
+      // derived classes can add ports here
+      b_enable = true;
+   }
+
+   // <method_init.png>
+   public method postInit() {
+      // Called after adding object to parent container
+      //  e.g. GSceneGraph, GSGNode, GShader, GSource
+   }
+
+   // <method_init.png>
+   public method postInitNew() {
+      // Called after postInit() when adding new object via UI
+      //  (note) e.g. setup default sub-objects (GProgram)
+   }
+
+   // <method_init.png>
+   public method postInitNewAnon(int _parentInputType) {
+      // Called after postInitNew() when adding new <anon> object via UI (e.g. GScript)
+   }
+
+   // <method_get.png>
+   public method getDefaultInputId() : String {
+      return GInput.IN_DEF; // "in"
+   }
+
+   // <method_get.png>
+   public method getDefaultOutputId() : String {
+      return GOutput.OUT_DEF; // "out"
+   }
+
+   // <method_get.png>
+   public method getHelp() : String {
+      return "in space, nobody can hear you scream.";
+   }
+
+   // <method_get.png>
+   public method getString() : String {
+      return null;//"<"+yacMetaClassName()+">";
+   }
+
+   // <method_get.png>
+   public method isAnon() : boolean {
+      // returns true when object is not allocated in a namespace or parent object (e.g. GProgram uniform)
+      return (null == getNamespace());
+   }
+
+   // <method.png>
+   public method getIdDebugString() : String {
+      return getObjectPathDir();///isAnon() ? "<anon>" : 
+   }
+
+   // <method_get.png>
+   public method getInputDomain(String _inputId) : int {
+      return DOMAIN_ANY;
+   }
+
+   // <method_get.png>
+   public method getOutputDomain(String _outputId) : int {
+      return DOMAIN_ANY;
+   }
+
+   // <method_get.png>
+   public method canRename() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public method canDelete() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public method canClone() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public method canCloneToAnon() : boolean {
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleRename(String _oldId, String _newId) {
+      // Called immediately before setId()
+   }
+
+   // <method_get.png>
+   public method unlinkInputs() : PointerArray {
+      return deref inputs;
+   }
+
+   // <method_get.png>
+   public method unlinkOutputs() : PointerArray {
+      return deref outputs;
+   }
+
+   // <method.png>
+   public method moveFrom(GObject _o) {
+      // (note) [30Jul2020] currently used for converting GSource objects to GVertexSource / GFragmentSource (old project import)
+      last_selected_input_idx     = _o.last_selected_input_idx;
+      last_selected_input_row_idx = _o.last_selected_input_row_idx;
+      b_enable                    = _o.b_enable;
+
+      // GNamespaceObject
+      b_ui_folded           = _o.b_ui_folded;
+      ui_virt_folder_folded = _o.ui_virt_folder_folded;
+
+      // GBase
+      id   = _o.id;
+      type = _o.type;
+
+      GPort *port;
+
+      // I/O
+      inputs  <= _o.unlinkInputs();
+      foreach port in inputs
+         port.parent_object <= this;
+
+      outputs <= _o.unlinkOutputs();
+      foreach port in outputs
+         port.parent_object <= this;
+   }
+
+   // <method_get.png>
+   public method getObjectPathDir() : String {
+      local String r;
+      local String *virtFolder;
+      // // r.append(getNamespacePrefixDot());
+      GNamespace *nsp <= getNamespace();//parent_namespace;
+      // trace "xxx start nsp="+#(nsp);
+      while(null != nsp)
+      {
+         if(nsp instanceof GObject)
+         {
+            GObject nspObj <= nsp;
+            r.insert(0, "."+nspObj.getId());
+            virtFolder <= nspObj.getObjectPathVirtFolder();
+            if(!virtFolder.isBlank())
+               r.insert(0, "."+virtFolder);
+         }
+         else
+         {
+            // trace "xxx nsp="+#(nsp);
+            r.insert(0, "."+nsp.getNamespaceId());
+         }
+         nsp <= nsp.parent_namespace;
+      }
+
+      if(!r.isBlank())
+      {
+         virtFolder <= getObjectPathVirtFolder();
+         if(!virtFolder.isBlank())
+         {
+            r.append(".");
+            r.append(virtFolder);
+         }
+      }
+      else
+         r.append("<anon>");
+
+      if(r <= ".")
+         r.substring(1, -1);
+      return deref r;
+   }
+
+   // <method_get.png>
+   public method getObjectPath() : String {
+      local String *r;
+
+      if(isAnon())
+      {
+         // trace "xxx getObjectPath: this="+#(this)+" anon_parent="+#(anon_parent);
+         if(null != anon_parent)
+         {
+            // e.g. "default.models.test_model.model_uniforms.color.inputs.tex.0"
+            r <= anon_parent.getObjectPath();
+            r.append(".inputs.");
+            r.append(anon_parent_conn.port_id_rev);
+            r.append(".");
+            r.append(anon_parent.findInputConnectionIndex(anon_parent_conn.port_id_rev/*inputId*/,
+                                                          anon_parent_conn
+                                                          )
+                     );
+            return deref r;
+         }
+      }
+
+      r <= getObjectPathDir();
+      if(("<anon>" != r) && !r.isBlank())
+         r.append(".");
+      r.append(getId());
+      return deref r;
+   }
+
+   // <method_get.png>
+   public method getObjectPathVirtFolder() : String {
+      return "";
+   }
+
+   // <method_get.png>
+   public method getVarNamePrefix() : String {
+      // called by objects that can directly be attached to inputs (<anon>)
+      if(isAnon())
+      {
+         return getObjectPath().replace(".", "_");
+      }
+      else
+         return getNamespacePrefix();
+   }
+
+   // <method_get.png>
+   public method getVarName() : String {
+      return "ill_"+id;
+   }
+
+   // <method_get.png>
+   public method getGLSLVarName() : String {
+      return getVarName();
+   }
+
+   // <method_get.png>
+   public method getScriptDefaultValue() : String {
+      return GDefs.GetScriptDefaultTypeValue(type);
+   }
+
+   // <method_add.png>
+   protected method addInput(String _id, int _type) : GInput {
+      local GInput p;
+      p.initIdType(_id, _type);
+      inputs.add(#(deref p));
+      p.parent_object <= this;
+      return p;
+   }
+
+   // <method_add.png>
+   protected method addOutput(String _id, int _type) : GOutput {
+      local GOutput p;
+      p.initIdType(_id, _type);
+      outputs.add(#(deref p));
+      p.parent_object <= this;
+      return p;
+   }
+
+   // <method_get.png>
+   public method getNumInputs() : int {
+      return inputs.numElements;
+   }
+
+   // <method_get.png>
+   public method getNumOutputs() : int {
+      return outputs.numElements;
+   }
+
+   // <method_get.png>
+   public method getInputByIndex(int _index) : GInput {
+      return inputs.get(_index);
+   }
+
+   // <method_get.png>
+   public method getInputById(String _id) : GInput {
+      GInput *p;
+      foreach p in inputs
+      {
+         if(p.id == _id)
+            return p;
+      }
+      return null;
+   }
+
+   // // // <method_get.png>
+   // // public method getInputObjectById(String _id) : GObject {
+   // //    GInput *p;
+   // //    foreach p in inputs
+   // //    {
+   // //       if(p.id == _id)
+   // //          return p.obj;
+   // //    }
+   // //    return null;
+   // // }
+
+   // <method_get.png>
+   public method getOutputByIndex(int _index) : GOutput {
+      return outputs.get(_index);
+   }
+
+   // <method_get.png>
+   public method getOutputById(String _id) : GOutput {
+      GOutput *p;
+      foreach p in outputs
+      {
+         if(p.id == _id)
+            return p;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getDefaultOutput() : GOutput {
+      GOutput output <= getOutputById(getDefaultOutputId());
+      if(null == output)
+         output <= getOutputByIndex(0);
+      return output;
+   }
+
+   // <method_get.png>
+   public method getOpAuto() : int {
+      return OP_MUL;
+   }
+
+   // <method_set.png>
+   public method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+   }
+
+   // <method_set.png>
+   public method isEnabled() : boolean {
+      return b_enable;
+   }
+
+   // <method.png>
+   public method connect(String _inputId, GObject _o, String _oOutputId, int _op) : GConnection {
+      boolean ret = false;
+      GInput pIn <= getInputById(_inputId);
+      local GConnection *retConn;
+      // trace "[dbg] connect: this="+#(this)+" inputId="+_inputId+" pIn="+#(pIn)+" o="+#(_o)+" outputId="+_oOutputId+" op="+_op;
+      trace "[dbg] connect: this="+getObjectPath()+" inputId="+_inputId+"\n\t\t\to="+_o.getObjectPath()+" outputId="+_oOutputId+" op="+_op;
+      if(null != pIn)
+      {
+         if(null != _o)
+         {
+            GOutput pOut <= _o.getOutputById(_oOutputId);
+            // trace "[dbg] connect: outputId="+_oOutputId+" pOut="+#(pOut);
+            if(null != pOut)
+            {
+               // // if(pIn.matchType(pOut))
+               {
+                  GConnection conn <= GConnection.New(deref _o, _oOutputId, _inputId/*rev*/, _op);
+                  conn.type = pOut.type;
+                  pIn.addConnection(deref conn);
+                  retConn <= conn;
+
+                  // link back (for UI)
+                  conn <= GConnection.New(this, _inputId, _oOutputId/*rev*/, _op);
+                  conn.type = pIn.type;
+                  pOut.addConnection(deref conn);
+               }
+               // // else
+               // // {
+               // //    trace "[---] GObject::connect: type mismatch (inputId="+_inputId+" o="+#(_o)+" outputId="+_oOutputId+")";
+               // // }
+            }
+            else
+            {
+               trace "[---] GObject::connect: object o.id="+_o.getId()+" has no output named \""+_oOutputId+"\"";
+            }
+         } // if _o
+      } // if pIn
+      else
+      {
+         trace "[---] GObject::connect: this object id="+getId()+" has no input named \""+_inputId+"\"";
+      }
+      return retConn;
+   }
+
+   // <method.png>
+   protected method handleOutputTypeChanged(GOutput _output) {
+      GConnection *connOut;
+      foreach connOut in _output.connections
+      {
+         GObject obj <= connOut.object;
+         GInput input <= obj.getInputById(connOut.port_id);
+         GConnection *connIn;
+         foreach connIn in input.connections
+         {
+            if( (@(connIn.object) == @(this)) && (connIn.port_id == _output.id) )
+            {
+               trace "[dbg] GObject::handleOutputTypeChanged: update conn type obj="+#(obj)+" port="+_output.id;
+               connIn.type = _output.type;
+            }
+         }
+      }
+   }
+
+   // // // <method.png>
+   // // protected method handleInputTypeChanged(GInput _input) {
+   // //    GConnection *connIn;
+   // //    foreach connIn in _input.connections
+   // //    {
+   // //       if(connIn.port_id_rev == _input.id)
+   // //       {
+   // //          GObject obj <= connIn.object;
+   // //          trace "[dbg] GObject::handleInputTypeChanged: update conn type obj="+#(obj)+" port="+_input.id;
+   // //          connIn.type = _input.type;
+   // //       }
+   // //    }
+   // // }
+
+   // <method.png>
+   public method connectObject(String _inputId, GObject _o) : GConnection {
+      return connect(deref _inputId, deref _o, GOutput.OUT_DEF_OBJ, OP_REP);
+   }
+
+   // <method_get.png>
+   public method isInputObject(GObject _o) : boolean {
+      // check if 'o' can be connected to 'this' (!this and !input_dependency)
+      if(@(_o) == @(this))
+         return true;
+      local GInput *input;
+      foreach input in inputs
+      {
+         if(input.isInputObject(_o))
+            return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getSupportedAnonInputObjectTypes(String _inputId) : PointerArray {
+      // inputId null=any input (possibly the only input)
+      // return null=allow all
+
+      GInput input <= getInputById(_inputId);
+      if(null != input)
+         return GDefs.GetAnonObjectTypesByIOType(input.type);
+
+      return null;
+   }
+
+   // <method.png>
+   public method disconnect(local GConnection _conn) {
+      local GObject outObj <= _conn.object;
+
+      if(outObj.isAnon())
+      {
+         trace "xxx recursive disconnect start outObj="+#(outObj);
+         // Recursively disconnect <anon> object connections
+         local GInput *objInput;
+         foreach objInput in outObj.inputs
+         {
+            local GConnection *objInputConn;
+            loop(objInput.connections.numElements)
+            {
+               objInputConn <= objInput.connections.get(0);
+               trace "xxx recursive disconnect objInput.id="+objInput.id+" objInputConn="+#(objInputConn);
+               outObj.disconnect(objInputConn);
+            }
+         }
+      }
+
+      // remove link back
+      local GConnection *connRev;
+      local GOutput outPort <= outObj.getOutputById(_conn.port_id);
+      foreach connRev in outPort.connections
+      {
+         if(@(connRev.object) == @(this))
+         {
+            // trace "xxx search linkback: connRev.object="+#(connRev.object)+" this="+#(this)+" connRev.port_id="+connRev.port_id+" _conn.port_id_rev="+_conn.port_id_rev;
+            if(connRev.port_id == _conn.port_id_rev)
+            {
+               // trace "xxx removing linkback connection";
+               outPort.connections.remove(connRev);
+               break;
+            }
+         }
+      }
+
+      local GInput inPort <= getInputById(_conn.port_id_rev);
+      // if(_conn.object.isAnon())
+      // {
+      //    current_project.removeConnectionsToObject(_conn.object);
+      // }
+      // else
+      {
+         inPort.connections.remove(_conn);
+      }
+   }
+
+   // <method.png>
+   public method moveConnectionsTo(int _inputIdx, GObject _objectDst, GInput _inputDst) : int {
+      int numMoved = 0;
+      GInput inputSrc <= getInputByIndex(_inputIdx);
+      if(null != inputSrc)
+      {
+         // Move connections to destination object
+         while!(inputSrc.connections.isEmpty())
+         {
+            GConnection connIn <= inputSrc.connections.get(0);
+            connIn <= inputSrc.connections.unlink(connIn);
+            _inputDst.connections.add(#(deref connIn));
+
+            // Update link-back connection
+            GObject connObj <= connIn.object;
+            GOutput outputSrc <= connObj.getOutputById(connIn.port_id);
+            GConnection *connOut;
+            foreach connOut in outputSrc.connections
+            {
+               if(@(connOut.object) == @(this))
+               {
+                  connOut.object <= _objectDst;
+                  connOut.port_id = _inputDst.id;  // (note) usually the same id
+                  break;
+               }
+            }
+
+            // Next connection
+            numMoved++;
+         }
+      }
+      return numMoved;
+   }
+
+   // <method_get.png>
+   public method isInputConnected(String _inputId) : boolean {
+      GInput input <= getInputById(_inputId);
+      if(null != input)
+         return input.isConnected();
+      return false;
+   }
+
+   // <method_get.png>
+   public method isAnyInputConnected() : boolean {
+      GInput *input;
+      foreach input in inputs
+      {
+         if(input.isConnected())
+            return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method isAnyOutputConnected() : boolean {
+      GOutput *output;
+      foreach output in outputs
+      {
+         if(output.isConnected())
+            return true;
+      }
+      return false;
+   }
+
+   // // // <method_get.png>
+   // // public method getFirstConnectedInputObject(String _inputId) : GObject {
+   // //    GInput input <= getInputById(_inputId);
+   // //    if(null != input)
+   // //    {
+   // //       GObject r <= input.getFirstConnectedObject();
+   // //       if((null != r) && r.isEnabled())
+   // //          return r;
+   // //    }
+   // //    return null;
+   // // }
+
+   // <method_get.png>
+   public method getFirstConnectedInputObjectByType(String _inputId, GObject _type) : GObject {
+      GInput input <= getInputById(_inputId);
+      if(null != input)
+      {
+         GObject r <= input.getFirstConnectedObjectByType(_type);
+         if(null != r && r.isEnabled())
+            return r;
+      }
+      return null;
+   }
+
+   // <method_remove.png>
+   public method removeConnectionsToObjectPorts(PointerArray _ports, local GObject _obj) {
+      local GPort *port;
+      foreach port in _ports
+      {
+         local GConnection *conn;
+         boolean bFound;
+         do
+         {
+            bFound = false;
+            foreach conn in port.connections
+            {
+               if(@(conn.object) == @(_obj))
+               {
+                  bFound = true;
+                  port.connections.remove(conn);
+                  break;
+               }
+            }
+         }
+         while(bFound);
+      }
+   }
+
+   // <method.png>
+   public method prepareRemove() {
+      current_project.removeConnectionsToObject(this);
+   }
+
+   // // <method_find.png>
+   // public method findFirstConnectionToObject(GObject _obj) : GConnection {
+   //    local GInput *input;
+   //    foreach input in inputs
+   //    {
+   //       local GConnection *conn;
+   //       foreach conn in input.connections
+   //       {
+   //          if(@(conn.object) == @(_obj))
+   //             return conn;
+   //       }
+   //    }
+   //    return null;
+   // }
+
+   // <method_find.png>
+   public method isConnectedToAnyObject() : boolean {
+      local GOutput *output;
+      foreach output in outputs
+      {
+         if(output.isConnected())
+            return true;
+      }
+      return false;
+   }
+
+   // <method_remove.png>
+   public method removeConnectionsToObject(local GObject _obj) {
+      // trace "xxx removeConnectionsToObject: this="+#(this)+" obj="+#(_obj);
+      removeConnectionsToObjectPorts(inputs, _obj);
+      removeConnectionsToObjectPorts(outputs, _obj);
+   }
+
+   // <method_set.png>
+   public method setLastSelectedConnection(GConnection _conn) {
+      // trace "xxx setLastSelectedConnection: conn="+#(_conn);
+      if(null != _conn)
+      {
+         // trace "xxx setLastSelectedConnection: conn.object="+#(_conn.object)+" this="+#(this);
+         if(@(_conn.object) != @(this))  // not output connection ? ("rev" / link back)
+         {
+            // trace "xxx setLastSelectedConnection: conn.port_id_rev="+_conn.port_id_rev;
+            GInput input <= getInputById(_conn.port_id_rev);
+            if(null != input)
+            {
+               last_selected_input_idx = inputs.indexOfPointer(input, 0);
+               // trace "xxx set last_selected_input_idx="+last_selected_input_idx;
+               input.last_selected_connection_idx = input.connections.indexOfPointer(_conn, 0);
+               // trace "xxx set last_selected_connection_idx="+input.last_selected_connection_idx;
+               return;
+            }
+         }
+      }
+      last_selected_input_idx = -1;
+   }
+
+   // <method_set.png>
+   public method setLastSelectedInputRowIdx(int _rowIdx) {
+      // trace "xxx setLastSelectedInputRowIdx: this="+#(this)+" rowIdx="+_rowIdx;
+      last_selected_input_row_idx = _rowIdx;
+   }
+
+   // <method_set.png>
+   public method getLastSelectedInputRowIdx() : int {
+      return last_selected_input_row_idx;
+   }
+
+   // <method_set.png>
+   public method getLastSelectedInput() : GInput {
+      // trace "xxx getLastSelectedInput: last_selected_input_idx="+last_selected_input_idx;
+      return getInputByIndex(last_selected_input_idx);
+   }
+
+   // <method_set.png>
+   public method getLastSelectedInputConnection() : GConnection {
+      GInput input <= getLastSelectedInput();
+      if(null != input)
+      {
+         // trace "xxx getLastSelectedConnection: input.last_selected_connection_idx="+input.last_selected_connection_idx;
+         return input.getLastSelectedConnection();
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findInputConnection(String _inputPortId, GObject _obj, String _outputPortId) : GConnection {
+      // trace "xxx findInputConnection: inputPortId="+_inputPortId+" obj="+#(_obj)+" outputPortId="+_outputPortId;
+      GInput input <= getInputById(_inputPortId);
+      if(null != input)
+      {
+         return input.findConnection(_obj, _outputPortId);
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findInputConnectionIndex(String _inputPortId, GConnection _conn) : int {
+      GInput input <= getInputById(_inputPortId);
+      if(null != input)
+      {
+         return input.connections.indexOfPointer(_conn, 0);
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findOutputConnection(String _outputPortId, GObject _obj, String _inputPortId) : GConnection {
+      // trace "xxx findOutputConnection: outputPortId="+_outputPortId+" obj="+#(_obj)+" inputPortId="+_inputPortId;
+      GOutput output <= getOutputById(_outputPortId);
+      if(null != output)
+      {
+         return output.findConnection(_obj, _inputPortId);
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method cloneToObject(GObject _o) : boolean {
+
+      if(_o instanceof this)
+      {
+         local Buffer b;
+         b.size = MAX_CLONE_SZ;
+
+         // Save
+         local GConnectionWriter connectionWriter;
+         connectionWriter.setObjectPathPrefixFilter(getObjectPath());
+         saveStateObject(b, connectionWriter);
+         connectionWriter.saveStream(b);
+         trace "[trc] GObject::cloneToObject: state size is "+b.offset+" pathPrefixFilter="+getObjectPath();
+
+         // Restore to other object
+         b.offset = 0;
+         if(null != LoadStateObjectInt(b, _o))
+         {
+            local GConnectionReader connectionReader;
+            connectionReader.setObjectPathPrefixFilter(_o.getObjectPath());
+            connectionReader.setAnonTargetObject(_o);
+            if(connectionReader.loadStream(b))
+            {
+               // Succeeded
+               return true;
+            }
+         }
+      }
+      else
+      {
+         trace "[---] GObject::cloneToObject: o="+#(_o)+" is not an instance of "+this.yacMetaClassName();
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   public method isCamContainer() : boolean {
+      if(TYPE_ORBITCAMVIEW == type)
+         return (this instanceof GConnectionContainer);
+      return false;
+   }
+
+   // <method.png>
+   public method emitPost(local GModule      _module,
+                          local GProgram     _program,
+                          local PointerArray _parents
+                          ) {
+      GInput *input;
+      foreach input in inputs
+      {
+         input.emitPost(_module, _program, _parents);
+      }
+   }
+
+   // <save.png>
+   public method saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      // Version
+      ofs.i16 = 6;
+
+      // Class name
+      Utils.WriteString(ofs, yacMetaClassName());
+
+      // Id
+      Utils.WriteString(ofs, getId());
+
+      // Type
+      ofs.i8 = getType();
+
+      // Fold status (v2+)
+      ofs.i8 = b_ui_folded;
+
+      // Virtual folder fold status (v3+)
+      ofs << getVirtFolderFoldedHashTable();///ui_virt_folder_folded;
+
+      // Enable (v4+)
+      ofs.i8 = b_enable;
+
+      // Last selected input_idx / input_row_idx (v5+)
+      ofs.i8 = last_selected_input_idx;
+      ofs.i16 = last_selected_input_row_idx;
+
+      // Connections
+      if(null != connectionWriter)
+      {
+         local GInput *input;
+         // // if(!isAnon())
+         // // {
+         foreach input in inputs
+         {
+            // trace "xxx saveStateConnection: write input.id="+input.id+" this="+#(this);
+            connectionWriter.writeInput(this, input);
+         }
+         // // }
+      }
+
+      // Last selected connection table rows (v6+)
+      ofs.i16 = inputs.numElements;
+      foreach input in inputs
+      {
+         ofs.i16 = input.last_selected_connection_idx;
+      }
+
+   }
+
+   // <load.png>
+   public method loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+      return true;
+   }
+
+   // <load.png>
+   public static LoadObjectHeader(local Stream ifs) : String {
+      // Returns class name
+      //  (note) used by Model preset I/O
+      // Version
+      local short ver = ifs.u16;
+
+      if(1 <= ver <= 6)
+      {
+         // Class name
+         local String classNameDummy;
+         Utils.ReadString(ifs, classNameDummy);
+
+         // Id
+         local String objectIdDummy;
+         Utils.ReadString(ifs, objectIdDummy);
+
+         // Type
+         local int objectTypeDummy = ifs.u8;
+
+         trace "[trc] LoadStateObject: className=\""+classNameDummy+"\" id=\""+objectIdDummy+"\" type="+objectTypeDummy;
+
+         if(ver >= 2)
+         {
+            // Fold status (v2+)
+            boolean bFoldDummy = ifs.b8;
+         }
+
+         if(ver >= 3)
+         {
+            // Virtual folder fold status (v3+)
+            local HashTable virtFolderDummy; virtFolderDummy << ifs;
+         }
+
+         if(ver >= 4)
+         {
+            // Enable (v4+)
+            boolean bEnableDummy = ifs.b8;
+         }
+
+         if(ver >= 5)
+         {
+            // Last selected input_idx / input_row_idx (v5+)
+            int dummyLastSelectedInputIdx = ifs.s8;
+            int dummyLastSelectedInputRowIdx = ifs.s16;
+         }
+
+         if(ver >= 6)
+         {
+            int numInputs = ifs.u16;
+            loop(numInputs)
+               int dummyLastSelectedConnectionIdx = ifs.u16;
+         }
+
+         return deref classNameDummy;
+      }
+      else
+      {
+         trace "[---] GObject::LoadObjectHeader: invalid version "+ver;
+      }
+      return null;
+   }
+
+   // <load.png>
+   public static LoadStateObjectInt(local Stream ifs, GObject _oOrNull) : GObject {
+      local GObject *r;
+
+      // Version
+      local short ver = ifs.u16;
+
+      if(1 <= ver <= 6)
+      {
+         // Class name
+         local String className;
+         Utils.ReadString(ifs, className);
+
+         // Id
+         local String objectId;
+         Utils.ReadString(ifs, objectId);
+
+         // Type
+         local int objectType = ifs.u8;
+
+         trace "[trc] LoadStateObject: className=\""+className+"\" id=\""+objectId+"\" type="+objectType;
+
+         // Fold status
+         local boolean bFolded;
+         if(ver >= 2)
+         {
+            // Fold status (v2+)
+            bFolded = ifs.b8;
+         }
+
+         // Virtual folder fold status
+         local HashTable uiVirtFolderFolded;
+         if(ver >= 3)
+         {
+            uiVirtFolderFolded << ifs;
+         }
+
+         local boolean bEnable = true;
+         if(ver >= 4)
+         {
+            // Enable (v4+)
+            bEnable = ifs.b8;
+         }
+
+         int lastSelectedInputIdx = 0;
+         int lastSelectedInputRowIdx = 0;
+         if(ver >= 5)
+         {
+            // Last selected input_idx / input_row_idx (v5+)
+            lastSelectedInputIdx = ifs.s8;
+            lastSelectedInputRowIdx = ifs.s16;
+         }
+
+         local IntArray lastSelectedConnectionIndices;
+         if(ver >= 6)
+         {
+            int numInputs = ifs.u16;
+            loop(numInputs)
+            {
+               lastSelectedConnectionIndices.add(ifs.u16);
+            }
+         }
+
+         if(null == _oOrNull)
+            r <= TKS.newObjectByName(null/*nsp*/, className);
+         else
+            r <= deref _oOrNull;
+
+         if(null != r)
+         {
+            // trace "xxx gobject::LoadStateObject: call initIdType oOrNull="+#(_oOrNull);
+            if(null == _oOrNull)
+               r.initIdType(objectId, objectType);
+            else
+               r.type = objectType;  // just init type (id is already set)
+
+            r.setFoldStatus(bFolded);
+            r.setEnable(bEnable);
+            r.last_selected_input_idx = lastSelectedInputIdx;
+            r.last_selected_input_row_idx = lastSelectedInputRowIdx;
+            local HashTable ht <= r.getVirtFolderFoldedHashTable(); ht = uiVirtFolderFolded;
+
+            if(r.loadStateObject(ifs))
+            {
+               GInput *input;
+               int inputIdx = 0;
+               foreach input in r.inputs
+               {
+                  input.last_selected_connection_idx = lastSelectedConnectionIndices.get(inputIdx++);
+               }
+
+               // Succeeded
+               return deref r;
+            }
+            else
+            {
+               trace "[---] GObject::LoadStateObject: failed to load state, className="+className+" id=\""+objectId+"\" type="+GDefs.GetGLSLTypeName(objectType);
+               r <= null;
+            }
+         }
+         else
+         {
+            trace "[---] GObject::LoadStateObject: failed to instantiate class \""+className+"\"";
+            r <= null;
+         }
+      }
+      else
+      {
+         trace "[---] GObject::LoadStateObject: invalid version "+ver;
+         r <= null;
+      }
+
+      return r;
+   }
+
+   // <load.png>
+   public static LoadStateObject(local Stream ifs) : GObject {
+      return LoadStateObjectInt(ifs, null/*oOrNull*/);
+   }
+
+   // <method_find.png>
+   public method findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+      // trace "xxx GObject::findObjectByPathUnfold: this="+#(this)+" path=\""+_path+"\"";
+      if(_path <= "inputs.")
+      {
+         // Resolve link to anon input connection object
+         //  e.g. inputs.in.0
+         local StringArray anonPathArr <= _path.splitChar('.');
+         // // trace "xxx GObject::findObjectByPath: anonPathArr="+#(anonPathArr);
+         if(anonPathArr.numElements >= 3)
+         {
+            local GInput input <= getInputById(anonPathArr.get(1));
+            // // trace "xxx GObject::findObjectByPath: anon input="+#(input);
+            if(null != input)
+            {
+               local GConnection conn <= input.getConnectionByIndex(anonPathArr.get(2));
+               // // trace "xxx GObject::findObjectByPath: anon conn="+#(conn);
+               if(null != conn)
+               {
+                  local GObject connObj <= conn.object;
+                  anonPathArr.delete(0); // "inputs"
+                  anonPathArr.delete(0); // inputId
+                  anonPathArr.delete(0); // connId
+                  local String path <= anonPathArr.mergeToString(".");
+                  if(path.isBlank())
+                  {
+                     return connObj;
+                  }
+                  else
+                  {
+                     return connObj.findObjectByPath(path);
+                  }
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findObjectByPath(local String _path) : GObject {
+      return findObjectByPathUnfold(_path, false/*bUnfold*/);
+   }
+
+   // <method_get.png>
+   public method hasDefaultAction() : boolean {
+      return false;
+   }
+
+   // <method.png>
+   public method execDefaultAction() {
+   }
+
+   // <method.png>
+   public static ToRelativeObjectPath(String _pathInOut, String _prefix) : boolean {
+      if(null != _prefix)
+      {
+         // (note) when saving e.g. Model Preset (skip out-of-tree connections)
+         if!(_pathInOut <= _prefix)
+            return false;
+         _pathInOut.replace(_prefix, "");
+         if(_pathInOut <= ".")
+            _pathInOut.substring(1, -1);
+      }
+      return true;
+   }
+
+   // <method.png>
+   public method getRelativeObjectPath(String _prefix) : String {
+      local String objectPath <= getObjectPath();
+      if(ToRelativeObjectPath(objectPath, _prefix))
+         return deref objectPath;
+      else
+         return null;
+   }
+
+   // <method.png>
+   public method appendScriptInputCond(GModule _module, String _inputId, String _out) {
+      GInput input <= getInputById("visible");
+      if(null != input)
+      {
+         local String *condVarName;
+         local PointerArray parents;
+         if(input.isConnected())
+         {
+            parents.add(this);
+            condVarName <= _module.allocTmpVarScript(_out, TYPE_BOOL, id+"_cond"+_inputId);
+            input.emit(_module,
+                       null/*program*/,
+                       _out,
+                       condVarName,
+                       false/*bGLSL*/,
+                       parents
+                       );
+            _out.append("if("+condVarName+") ");
+            parents.remove(this);
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected static ShowColorPickerDialog(int _c32, Object _listenerOrConsumer) {
+      // used by GConstantRGB, GConstantRGBA
+      if(null == dlg_color)
+      {
+         dlg_color <= new ColorPickerDialog;
+         dlg_color.init();
+      }
+      dlg_color.showColor(_c32, _listenerOrConsumer);
+   }
+
+   // <method.png>
+   public method emitModule(GModule _module) {
+   }
+
+   // // // <method.png>
+   // // public method emitModuleProgram(GModule _module, GModel _model, GMesh _mesh) {
+   // //    // implemented by GProgram
+   // // }
+
+   // <method.png>
+   public method emitModulePost(GModule _module) {
+      // after loading script but before evaluating global statements (e.g. resolve vars)
+   }
+
+   // <method.png>
+   public method emitBegin() {
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      // trace "xxx GObject:.emitBeginRecursive: this="+#(this)+" id="+getId();
+      emitBegin();
+
+      local GInput *input;
+      foreach input in inputs
+      {
+         local GConnection *conn;
+         foreach conn in input.connections
+         {
+            local GObject connObj <= conn.object;
+            // // trace "xxx GObject::emitBeginRecursive: connObj="+#(connObj);
+            if(connObj.isAnon())
+            {
+               connObj.emitBeginRecursive();
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method emitEnd() {
+   }
+
+   // <method.png>
+   public method emit(local String       _outputId,
+                      local GModule      _module,
+                      local GProgram     _program,
+                      local String       _out,
+                      local String       _dstVar,
+                      local boolean      _bGLSL,
+                      local PointerArray _parents
+                      ) {
+      // should not be reachable
+      _out.append(_dstVar+" = <emitGLSL: missing implemention, this="+#(this)+" id="+id+" outputId="+_outputId+">;\n");
+   }
+
+}

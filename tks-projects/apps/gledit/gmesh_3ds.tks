@@ -1,0 +1,249 @@
+// ----
+// ---- file   : gmesh_3ds.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 21Jun2020
+// ---- changed: 27Jun2020, 14Aug2020
+// ----
+// ----
+// ----
+module MGMesh_3DS;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMesh_3DS : GMesh {
+
+   CGLScene3DS *glscene_3ds;
+
+   // <method_new.png>
+   static New() : GMesh_3DS {
+      local GMesh_3DS r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GMesh::init();
+
+      addOutput("position", TYPE_VEC3);
+      addOutput("normal",   TYPE_VEC3);
+      addOutput("uv",       TYPE_VEC2);
+      addOutput("color",    TYPE_UBYTE_VEC4);
+
+      // (todo) string param for path
+      addParamFile("file", "File", "$(PROJECT)/meshes/3ds/oiltank.3ds", ["*.3ds", "*"], ["3DS Files", "All Files"]);
+
+      reload3DS();
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "mesh3ds";
+   }
+
+   // <ui_handle.png>
+   public virtual handleParamChanged(String _paramId) {
+      if("file" == _paramId)
+      {
+         reload3DS();
+      }
+   }
+
+   // <method.png>
+   public method reload3DS() {
+      glscene_3ds <= null;
+
+      local C3DS c3ds;
+      // // C3DSMesh *mesh3DS;
+      CGLMesh3DS *mesh3DSGL;
+
+      if(c3ds.loadLocal3DS(Utils.ToNativePathName(getFileParamById("file"))))
+      {
+         c3ds.normalize(1.0/1);
+         c3ds.calcNormals();
+
+         glscene_3ds <= c3ds.getGLScene();
+         trace "[dbg] GMesh_3DS::reload3DS: scene.#obj="+(glscene_3ds.objects.numElements);
+      }
+      else
+      {
+         trace "[---] GMesh_3DS: failed to load 3DS file.";
+      }
+   }
+
+   // <method_get.png>
+   public virtual getNumVertices() : int {
+      int r = 0;
+      // trace "xxx getNumVertices: glscene_3ds="+#(glscene_3ds);
+      if(null != glscene_3ds)
+      {
+         CGLObject3DS *obj;
+         foreach obj in glscene_3ds.objects
+         {
+            // trace "xxx getNumVertices: #meshes="+(obj.meshes.numElements);
+            CGLMesh3DS *mesh;
+            foreach mesh in obj.meshes
+            {
+               r += (mesh.vertices.numElements) / 3;
+            }
+         }
+      }
+      // trace "xxx GMesh_3DS: numVertices="+r;
+      return r;
+   }
+
+   // <method_get.png>
+   public method getNumIndices() : int {
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getGLMode() : int {
+      return GL_TRIANGLES;
+   }
+
+   // <method.png>
+   public virtual emitPrepareAttribBuffer(GModule  _module,
+                                          GModel   _model,
+                                          GProgram _program,
+                                          String   _sInit,
+                                          GBuffer  _buffer,
+                                          int      _pitch
+                                          ) {
+
+      if(null != glscene_3ds)
+      {
+         int numVertices = getNumVertices();
+         int numTriangles = numVertices / 3;
+
+         trace "[dbg] GMesh_3DS: numVertices="+numVertices+" numTriangles="+numTriangles;
+
+         if(numTriangles > 0)
+         {
+            Integer offPosition = _model.getAttributeOffsetById("position");
+
+            boolean bNormal = /*getBoolParamById("emit_normal") && */_program.hasAttribute("normal");
+            boolean bColor  = /*getBoolParamById("emit_color")  && */_program.hasAttribute("color");
+            boolean bUV     = /*getBoolParamById("emit_uv")     && */_program.hasAttribute("uv");
+
+            Integer offNormal = bNormal ? _model.getAttributeOffsetById("normal") : -1;
+            Integer offColor  = bColor ? _model.getAttributeOffsetById("color") : -1;
+            Integer offUV     = bUV ? _model.getAttributeOffsetById("uv") : -1;
+
+            // true=flip from CCW frontface to CW
+            boolean bFlip = true;
+
+            emitBeginAttribData(_sInit, _buffer, _pitch);
+
+            // Concatenate all objects/meshes
+            CGLObject3DS *obj;
+            foreach obj in glscene_3ds.objects
+            {
+               CGLMesh3DS *mesh;
+               foreach mesh in obj.meshes
+               {
+                  FloatArray verts3DS   <= mesh.vertices;
+                  FloatArray normals3DS <= mesh.normals;
+                  IntArray   colors3DS  <= mesh.colors;
+                  FloatArray uv3DS      <= mesh.uvcoords;
+
+                  int triIdx  = 0;
+                  loop(numTriangles)
+                  {
+                     int subIdx = 0;
+                     loop(3)
+                     {
+                        int vtxIdx;
+                        int vtxIdx2;
+                        int vtxIdx3;
+
+                        if(bFlip)
+                        {
+                           vtxIdx = triIdx*3 + (2 - subIdx);
+                           vtxIdx2 = vtxIdx*2;
+                           vtxIdx3 = vtxIdx*3;
+                        }
+                        else
+                        {
+                           vtxIdx = triIdx*3 + subIdx;
+                           vtxIdx2 = vtxIdx*2;
+                           vtxIdx3 = vtxIdx*3;
+                        }
+
+                        emitVec3(offPosition,
+                                 verts3DS.get(vtxIdx3),
+                                 verts3DS.get(vtxIdx3+1),
+                                 verts3DS.get(vtxIdx3+2)
+                                 );
+                        if(bNormal)
+                        {
+                           if(bFlip)
+                           {
+                              emitVec3(offNormal,
+                                       normals3DS.get(vtxIdx3),
+                                       normals3DS.get(vtxIdx3+1),
+                                       normals3DS.get(vtxIdx3+2)
+                                       );
+                           }
+                           else
+                           {
+                              emitVec3(offNormal,
+                                       -normals3DS.get(vtxIdx3),
+                                       -normals3DS.get(vtxIdx3+1),
+                                       -normals3DS.get(vtxIdx3+2)
+                                       );
+                           }
+                        }
+                        if(bColor)
+                           emitUByteVec4(offColor,
+                                         colors3DS.get(vtxIdx)
+                                         );
+                        if(bUV)
+                           emitVec2(offUV,
+                                    uv3DS.get(vtxIdx2),
+                                    uv3DS.get(vtxIdx2+1)
+                                    );
+
+                        // vtxIdx++;
+                        // vtxIdx2 += 2;
+                        // vtxIdx3 += 3;
+                        subIdx++;
+                     } // loop tri verts
+                     triIdx++;
+                  } // loop triangles
+               } // foreach mesh
+            } // foreach obj
+
+            emitEndAttribData();
+
+         } // if numTriangles
+      } // if glscene_3ds
+   }
+
+   // // <method.png>
+   // public virtual emitPrepareIndexBuffer(GModule _module, GModel _model, String _sInit, String _aBufVarData) {
+
+   //    emitBeginIndexData(_sInit, _aBufVarData);
+   //    emitEndIndexData();
+   // }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      if(GMesh::loadStateObject(ifs))
+      {
+         reload3DS();
+         return true;
+      }
+      return false;
+   }
+
+}

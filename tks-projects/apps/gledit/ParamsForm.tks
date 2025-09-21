@@ -1,0 +1,493 @@
+// ----
+// ---- file   : ParamsForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL Edit" application.
+// ----
+// ---- created: 15Jun2020
+// ---- changed: 16Jun2020, 20Jun2020, 21Jun2020, 27Jun2020, 29Jun2020, 20Jul2020, 25Jul2020
+// ----          01Aug2020, 08Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+
+module MParamsForm;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class ParamsForm : XMLForm, ActionProvider {
+
+   define int NUM_PARAMS_PER_ROW = 4;
+
+   define String ACTION_PARAM_EDITED;
+
+   GParamProvider *param_provider;
+
+   protected ScrollPane  *sp_params;
+   protected TitledPanel *tp_params;
+   protected Panel       *pn_params;
+
+   protected Panel *pn_sgx;
+   protected SizeGroupX *[] sgx_lb;
+   protected SizeGroupX *[] sgx_c;
+
+   protected PointerArray param_widgets;  // FloatParam, CheckBox, FileForm, or ComboBox refs
+
+   static ColorPickerDialog *dlg_color;
+   GParamRGBA *color_param;
+   Button     *color_bt;
+
+
+   // <ui_init.png>
+   public method initParamsForm() : boolean {
+
+      if(!initPakFile("ParamsForm.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      int sgxIdx = 0;
+      loop(NUM_PARAMS_PER_ROW)
+      {
+         sgx_lb[sgxIdx] = pn_sgx.getSizeGroupByName("sgx_lb"+(sgxIdx+1));
+         sgx_c [sgxIdx] = pn_sgx.getSizeGroupByName("sgx_c" +(sgxIdx+1));
+         sgxIdx++;
+      }
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_PARAM_EDITED];
+   }
+
+   // <method.png>
+   protected method provideEdited(String _paramId) {
+      provideAction(StringAction.New(getProvidedActionAlias(ACTION_PARAM_EDITED), this, _paramId));
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      // trace "xxx ParamsForm::addTabCycleOverrides";
+      _retLayers.joinRR(_retLayers, param_widgets);
+   }
+
+   // <ui_show.png>
+   public method showParamProvider(GParamProvider _p) {
+      trace "[trc] ParamsForm::showParamProvider("+#(_p)+")";
+      param_provider <= _p;
+      // if(null == _p)
+      //    Utils.Backtrace();
+
+      boolean bEditable = (null != param_provider);
+
+      if(bEditable)
+      {
+         if(_p instanceof GObject)
+         {
+            GObject paramObj <= _p;
+            local String sPath <= paramObj.getObjectPath();
+            int maxLen = 90;
+            if(sPath.numChars > maxLen)
+               sPath = sPath.substring(0,maxLen/2)+".."+sPath.substring(sPath.numChars-maxLen/2,-1);
+            tp_params.setCaption("Params for "+paramObj.yacMetaClassName()+" path="+sPath);
+         }
+         else
+         {
+            tp_params.setCaption("Params for "+_p.yacMetaClassName());
+         }
+      }
+      else
+      {
+         tp_params.setCaption("(no params)");
+      }
+
+      createWidgets();
+   }
+
+   // <method.png>
+   protected method createWidgetIntOrBool(GParam _param) {
+   }
+
+   // <ui_update.png>
+   protected method createWidgets() {
+      UI.LoseKeyboardFocusIfWithin(pn_params, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(pn_params);
+      pn_params.removeChildHierarchy();
+      param_widgets.free();
+
+      if(null != param_provider)
+      {
+         local boolean bForceLineBreak = false;
+         int numParams = param_provider.getNumParams();
+         if(numParams > 0)
+         {
+            local Panel *pnRow;
+            int paramIdx = 0;
+            loop(numParams)
+            {
+               int colIdx = (paramIdx % NUM_PARAMS_PER_ROW);
+               if((0 == colIdx) || bForceLineBreak)
+               {
+                  if(null != pnRow)
+                     pn_params.addLayer(deref pnRow, Layout.BOTTOM);
+
+                  pnRow <= Panel.New();
+                  pnRow.setAlignment(Layout.EXPANDX);
+                  pnRow.setLayoutWeightX(0.5f);                    
+                  pnRow.setPadTopUnscaled(4);
+                  bForceLineBreak = false;
+               }
+
+               GParam param <= param_provider.getParamByIndex(paramIdx);
+               FloatParam *fp;
+               CheckBox *cb;
+               FileForm *ff;
+               ComboBox *cm;
+               Button *bt;
+               Spacer *spc;
+
+               Panel pn <= Panel.New();
+               pn.setAlignment(Layout.EXPANDX|Layout.BASELINEY);
+
+               boolean bAddLabel = true;
+              
+               if(param instanceof GParamFloat)
+               {
+                  GParamFloat paramFloat <= param;
+                  fp <= new FloatParam;
+                  fp.initFloatParam();
+                  fp.setAlignment(Layout.BASELINEY);
+                  if(paramFloat.b_percent)
+                     fp.setDisplayType(FloatParam.DISPLAY_PERCENT);
+                  if(paramFloat.b_cyclic)
+                     fp.setEnableCyclic(true);
+                  fp.setMinValueLimit(paramFloat.min_limit);
+                  fp.setMaxValueLimit(paramFloat.max_limit);
+                  fp.setEnableMinMaxEditable(true);
+                  // trace "xxx show paramfloat id="+param.id+" val="+paramFloat.value+" min="+paramFloat.min_value+" max="+paramFloat.max_value;
+                  fp.setMinMaxValues(paramFloat.min_value, paramFloat.max_value);
+                  fp.setValue(paramFloat.value);
+                  fp.setResetValue(paramFloat.def_value);
+                  fp.setCenterValue(paramFloat.ctr_value);
+                  fp.setPrecision(5);
+                  fp.setVisibleTextLength(6);
+                  if(0.0 != paramFloat.step)
+                     fp.setStep(paramFloat.step);
+                  else
+                  {
+                     fp.setStepCoarse(0.01);
+                     fp.setStepFine(0.001);
+                  }
+                  fp.setSizeGroup(sgx_c.get(colIdx));
+                  fp.setToolTipCaption(paramFloat.tooltip_caption);
+
+                  pn.addLayer(deref fp, Layout.RIGHT);
+                  param_widgets.add(fp);
+               }
+               else if(param instanceof GParamInt)
+               {
+                  GParamInt paramInt <= param;
+                  // trace "xxx paramInt.min_limit="+paramInt.min_limit;
+                  // trace "xxx paramInt.max_limit="+paramInt.max_limit;
+
+                  if(0 == paramInt.min_limit && 1 == paramInt.max_limit)
+                  {
+                     // e.g. pseudo-boolean for GLSL #if (must be emitted as int)
+                     spc <= new Spacer;
+                     spc.initSpacer();
+                     spc.setSizeGroup(sgx_lb.get(colIdx));
+                     spc.setPadLeft(10);
+                     cb <= CheckBox.New(paramInt.value, paramInt.getCaption());
+                     cb.setAlignment(Layout.BASELINEY);
+                     cb.setEnableKbdFocusOnMouse(false);
+                     cb.setSizeGroup(sgx_c.get(colIdx));
+                     cb.setPadding4f(0,0,0,0);
+                     cb.setToolTipCaption(paramInt.tooltip_caption);
+                     pn.addLayer(deref spc, Layout.RIGHT);
+                     pn.addLayer(deref cb, Layout.RIGHT);
+                     param_widgets.add(cb);
+                     bAddLabel = false;
+                  }
+                  else
+                  {
+                     fp <= new FloatParam;
+                     fp.initFloatParam();
+                     fp.setAlignment(Layout.BASELINEY);
+                     fp.setMinValueLimit(paramInt.min_limit);
+                     fp.setMaxValueLimit(paramInt.max_limit);
+                     fp.setEnableMinMaxEditable(true);
+                     fp.setMinMaxValues(paramInt.min_value, paramInt.max_value);
+                     fp.setValue(paramInt.value);
+                     fp.setResetValue(paramInt.def_value);
+                     if(paramInt.min_value <= paramInt.ctr_value <= paramInt.max_value)
+                        fp.setCenterValue(paramInt.ctr_value);
+                     fp.setPrecision(0);
+                     if(0.0 != paramInt.step)
+                        fp.setStep(paramInt.step);
+                     else
+                        fp.setStep(1);
+                     fp.setVisibleTextLength(6);
+                     fp.setSizeGroup(sgx_c.get(colIdx));
+                     fp.setToolTipCaption(paramInt.tooltip_caption);
+                     pn.addLayer(deref fp, Layout.RIGHT);
+                     param_widgets.add(fp);
+                  }
+               }
+               else if(param instanceof GParamBool)
+               {
+                  GParamBool paramBool <= param;
+                  spc <= new Spacer;
+                  spc.initSpacer();
+                  spc.setSizeGroup(sgx_lb.get(colIdx));
+                  spc.setPadLeft(10);
+                  cb <= CheckBox.New(paramBool.value, paramBool.getCaption());
+                  cb.setAlignment(Layout.BASELINEY);
+                  cb.setEnableKbdFocusOnMouse(false);
+                  cb.setSizeGroup(sgx_c.get(colIdx));
+                  cb.setPadding4f(0,0,0,0);
+                  cb.setToolTipCaption(paramBool.tooltip_caption);
+                  pn.addLayer(deref spc, Layout.RIGHT);
+                  pn.addLayer(deref cb, Layout.RIGHT);
+                  param_widgets.add(cb);
+                  bAddLabel = false;
+               }
+               else if(param instanceof GParamFile)
+               {
+                  GParamFile paramFile <= param;
+                  ff <= FileForm.New(paramFile.value,
+                                     paramFile.getSuggestedDirectory(),
+                                     paramFile.getFileFilters(),
+                                     paramFile.getFileFilterNames(),
+                                     param_provider/*parent_object*/
+                                     );
+                  ff.setToolTipCaption(paramFile.tooltip_caption);
+                  param_widgets.add(ff);
+                  // note) file params span the entire row
+                  if(pnRow.getNumChildLayers() > 0)
+                  {
+                     pn_params.addLayer(deref pnRow, Layout.BOTTOM);
+                     pnRow <= Panel.New();
+                     pnRow.setAlignment(Layout.EXPANDX|Layout.BASELINEY);
+                     pnRow.setLayoutWeightX(0.5f);
+                     pnRow.setPadTop(4);
+                  }
+                  pn.setAlignment(Layout.EXPANDX);
+                  pn.addLayer(deref ff, Layout.RIGHT);
+                  bForceLineBreak = true;
+               }
+               else if(param instanceof GParamChoice)
+               {
+                  GParamChoice paramChoice <= param;
+                  cm <= ComboBox.New();
+                  cm.setAlignment(Layout.BASELINEY);
+                  cm.setOptions(paramChoice.options);
+                  cm.setSelectedOption(paramChoice.value);
+                  cm.setSizeGroup(sgx_c.get(colIdx));
+                  cm.setToolTipCaption(paramChoice.tooltip_caption);
+                  pn.addLayer(deref cm, Layout.RIGHT);
+                  param_widgets.add(cm);
+               }
+               else if(param instanceof GParamRGBA)
+               {
+                  GParamRGBA paramRGBA <= param;
+                  bt <= Button.New();
+                  bt.setAlignment(Layout.BASELINEY);
+                  bt.setCaption("   ");
+                  bt.setSizeGroup(sgx_c.get(colIdx));
+                  // bt.setTint(paramRGBA.value);
+                  bt.setBackgroundTint(paramRGBA.value);
+                  bt.setEnableKbdFocusOnMouse(false);
+                  bt.setToolTipCaption(paramRGBA.tooltip_caption);
+                  pn.addLayer(deref bt, Layout.RIGHT);
+                  param_widgets.add(bt);
+               }
+               // (todo) param RGB
+               // (todo) param RGBA
+               // (todo) param Alpha
+
+               // // if!(param instanceof GParamBool)
+               if(bAddLabel)
+               {
+                  Label lb <= new Label;
+                  lb.initLabel();
+                  lb.setAlignment(Layout.BASELINEY);
+                  lb.setCaption(param.getCaption());
+                  lb.setTextPlacement(Layout.RIGHT);
+                  lb.setSizeGroup(sgx_lb.get(colIdx));
+                  lb.setPadLeft(10);
+                  pn.addLayer(deref lb, Layout.CENTER);
+               }
+
+               pnRow.addLayer(deref pn, Layout.RIGHT);
+
+               // Next param
+               paramIdx++;
+
+            } // loop params
+
+            if(null != pnRow)
+            {
+               pn_params.addLayer(deref pnRow, Layout.BOTTOM);
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFloatParamChanged(GParamFloat _param, float _value, float _minValue, float _maxValue) {
+      _param.value     = _value;
+      _param.min_value = _minValue;
+      _param.max_value = _maxValue;
+      if(_param.getId() != _param.getCaption())
+         Global.Print("Param \""+_param.getCaption()+"\" (id="+_param.getId()+") is "+_value);
+      else
+         Global.Print("Param \""+_param.getId()+"\" is "+_value);
+      provideEdited(_param.id);
+   }
+
+   // <ui_handle.png>
+   protected method handleIntParamChanged(GParamInt _param, int _value, float _minValue, float _maxValue) {
+      _param.value     = _value;
+      _param.min_value = _minValue;
+      _param.max_value = _maxValue;
+      if(_param.getId() != _param.getCaption())
+         Global.Print("Param \""+_param.getCaption()+"\" (id="+_param.getId()+") is "+_value);
+      else
+         Global.Print("Param \""+_param.getId()+"\" is "+_value);
+      provideEdited(_param.id);
+   }
+
+   // <ui_handle.png>
+   protected method handleBoolParamChanged(GParamBool _param, boolean _value) {
+      _param.value = _value;
+      if(_param.getId() != _param.getCaption())
+         Global.Print("Param \""+_param.getCaption()+"\" (id="+_param.getId()+") is "+Utils.GetEnableString(_value));
+      else
+         Global.Print("Param \""+_param.getId()+"\" is "+Utils.GetEnableString(_value));
+      provideEdited(_param.id);
+   }
+
+   // <ui_handle.png>
+   protected method handleFileParamChanged(GParamFile _param, String _pathName) {
+      _param.value = _pathName;
+      if(_param.getId() != _param.getCaption())
+         Global.Print("Param \""+_param.getCaption()+"\" (id="+_param.getId()+") is \""+_param.value+"\"");
+      else
+         Global.Print("Param \""+_param.getId()+"\" is \""+_param.value+"\"");
+      provideEdited(_param.id);
+   }
+
+   // <ui_handle.png>
+   protected method handleChoiceParamChanged(GParamChoice _param, int _value) {
+      _param.value = _value;
+      if(_param.getId() != _param.getCaption())
+         Global.Print("Param \""+_param.getCaption()+"\" (id="+_param.getId()+") is "+(_param.options.get(_value)));
+      else
+         Global.Print("Param \""+_param.getId()+"\" is "+(_param.options.get(_value)));
+      provideEdited(_param.id);
+   }
+
+   // <ui_show.png>
+   protected method showColorPickerDialog(GParamRGBA _param, Button _bt) {
+      color_param <= _param;
+      color_bt    <= _bt;
+      if(null == dlg_color)
+      {
+         dlg_color <= new ColorPickerDialog;
+         dlg_color.init();
+      }
+      dlg_color.showColor(_param.value, this);
+   }
+
+   // <ui_handle.png>
+   protected method handleRGBAParamChanged(GParamRGBA _param, int _c32) {
+      _param.value = _c32;
+      local Integer io = _c32;
+      if(_param.getId() != _param.getCaption())
+         Global.Print("Param \""+_param.getCaption()+"\" (id="+_param.getId()+") is "+io.printf("#%08x"));
+      else
+         Global.Print("Param \""+_param.getId()+"\" is "+io.printf("#%08x"));
+      provideEdited(_param.id);
+      // color_bt.setTint(_c32);
+      color_bt.setBackgroundTint(_c32);
+      color_bt.redraw();
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      local String acName = _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      // trace "xxx ParamsForm::consumeAction: acName=\""+acName+"\" ap="+#(ap);
+
+      if(null != param_provider)
+      {
+         int idxFP = param_widgets.indexOfPointer(ap, 0);
+         // trace "xxx ParamsForm::consumeAction: idxFP="+idxFP;
+         if(-1 != idxFP)
+         {
+            GParam param <= param_provider.getParamByIndex(idxFP);
+            local FloatParam fp <= ap;
+            CheckBox   cb <= ap;
+            FileForm   ff <= ap;
+            ComboBox   cm <= ap;
+            Button     bt <= ap;
+            if(param instanceof GParamFloat)
+               handleFloatParamChanged(param, fp.getFloatValue(), fp.getMinValue(), fp.getMaxValue());
+            else if(param instanceof GParamInt)
+            {
+               if(ap instanceof FloatParam)
+                  handleIntParamChanged(param, fp.getFloatValue(), fp.getMinValue(), fp.getMaxValue());
+               else
+                  handleIntParamChanged(param, cb.isSelected(), 0/*min*/, 1/*max*/);
+            }
+            else if(param instanceof GParamBool)
+               handleBoolParamChanged(param, cb.isSelected());
+            else if(param instanceof GParamFile)
+               handleFileParamChanged(param, ff.getPathName());
+            else if(param instanceof GParamChoice)
+               handleChoiceParamChanged(param, cm.getSelectedOption());
+            else if(param instanceof GParamRGBA)
+               showColorPickerDialog(param, bt);
+
+            if(fp instanceof FloatParam)
+            {
+               // trace "xxx fp acName="+acName;
+               if(FloatParam.ACTION_VALUECHANGED == acName)
+               {
+                  // trace "xxx return kbdfocus";
+                  if(root_form.pg_start.current_param_object.isAnon())
+                  {
+                     UI.SetKeyboardFocus(root_form.pg_start.tv_inputs);
+                  }
+                  else
+                     root_form.pg_start.pageFocusDefault();
+               }
+            }
+
+            return true;
+         }
+      }
+
+      switch(@(ap))
+      {
+         case @(dlg_color):
+            handleRGBAParamChanged(color_param, dlg_color.getColor());
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

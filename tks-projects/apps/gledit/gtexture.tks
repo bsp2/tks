@@ -1,0 +1,754 @@
+// ----
+// ---- file   : gtexture.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 15Jun2020, 17Jun2020, 18Jun2020, 19Jun2020, 20Jun2020, 27Jun2020, 07Jul2020
+// ----          28Jul2020, 01Aug2020, 02Aug2020, 06Feb2025
+// ----
+// ----
+// ----
+module MGTexture;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GTexture : GObject {
+   define String ACTION_INIT = "init";
+
+   define int PROC_NONE        = 0;
+   define int PROC_CURVE4_RGBA = 1;
+   define int PROC_CURVE4_HSVA = 2;
+   int proc_type;
+
+   static StringArray proc_names = [
+      "static",
+      "Curve RGBA",
+      "Curve HSVA"
+                                    ];
+
+   GProceduralTextureState *proc_state;  // editor info
+   GProceduralTextureStateCurve4RGBA *cached_curve4_rgba;  // previous editor info (before type change), or null
+   GProceduralTextureStateCurve4HSVA *cached_curve4_hsva;  // previous editor info (before type change), or null
+
+
+   define int FMT_AUTO   = 0;
+   define int FMT_A8     = 1;
+   define int FMT_L8     = 2;
+   define int FMT_RGB565 = 3;
+   define int FMT_RGB8   = 4;
+   define int FMT_RGBA8  = 5;
+
+   static StringArray fmt_names = [
+      "<auto>",
+      "A8",
+      "L8",
+      "RGB565",
+      "RGB8",
+      "RGBA8"
+                                   ];
+
+   define int FLT_NEAREST   = 0;
+   define int FLT_LINEAR    = 1;
+   define int FLT_TRILINEAR = 2;
+   
+   static StringArray flt_names = [
+      "Nearest",
+      "Linear",
+      "Tri-Linear"
+      ];
+
+   define int WRAP_REPEAT = 0;
+   define int WRAP_CLAMP  = 1;
+
+   static StringArray wrap_names = [
+      "Repeat",
+      "Clamp"
+                                    ];
+
+   define int TARGET_2D       = 0;
+   define int TARGET_2D_ARRAY = 1;
+   define int TARGET_3D       = 2;
+   define int TARGET_CUBE_PX  = 3;
+   define int TARGET_CUBE_NX  = 4;
+   define int TARGET_CUBE_PY  = 5;
+   define int TARGET_CUBE_NY  = 6;
+   define int TARGET_CUBE_PZ  = 7;
+   define int TARGET_CUBE_NZ  = 8;
+
+   Texture tex;
+   String  path_name;
+   int     tex_width;    // 0=auto
+   int     tex_height;   // 0=auto
+   int     tex_depth;    // 0=auto, >1=create 2D_ARRAY or 3D texture
+   int     tex_target;   // 0=auto (texture 2D), GL_TEXTURE_xxx otherwise (2D, 2D_ARRAY, 3D, CUBE_MAP_POSITIVE_X, CUBE_MAP_NEGATIVE_X, ..)
+   int     tex_format;   // 0=auto
+   int     tex_flt_min;  // see FLT_xxx
+   int     tex_flt_mag;  //
+   int     tex_wrap_s;   // see WRAP_xxx
+   int     tex_wrap_t;   //
+
+   static StringArray target_names= [
+      "2D",
+      "2D ARR",
+      "3D",
+      "CUBE PX",
+      "CUBE NX",
+      "CUBE PY",
+      "CUBE NY",
+      "CUBE PZ",
+      "CUBE NZ"
+                                     ];
+
+
+   public boolean b_constant_texel_ref;  // true=texture is referenced by GConstantTexelRGBA => must recompile script when texture changes
+
+   protected boolean b_init_done;
+   protected boolean b_post_done;
+
+
+   // <method_new.png>
+   public static New() : GTexture {
+      local GTexture tex;
+      tex.init();
+      return deref tex;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      addOutput(GOutput.OUT_DEF_OBJ, TYPE_REF);
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return getNamespacePrefix()+"_tex_"+id;
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "textures";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "tex";
+   }
+
+   // <method_set.png>
+   public method setPathName(String _pathName) {
+      path_name = _pathName;
+   }
+
+   // <method_set.png>
+   public method setTextureTarget(int _target) {
+      tex_target = _target;
+   }
+
+   // <method_set.png>
+   public method setTextureWidth(int _w) {
+      tex_width = _w;
+   }
+
+   // <method_get.png>
+   public method getTextureWidth() : int {
+      return tex_width;
+   }
+
+   // <method_set.png>
+   public method setTextureHeight(int _h) {
+      tex_height = _h;
+   }
+
+   // <method_get.png>
+   public method getTextureHeight() : int {
+      return tex_height;
+   }
+
+   // <method_set.png>
+   public method setTextureDepth(int _d) {
+      tex_depth = _d;
+   }
+
+   // <method_get.png>
+   public method getTextureDepth() : int {
+      return tex_depth;
+   }
+
+   // <method_set.png>
+   public method setTextureFilterMin(int _flt) {
+      tex_flt_min = _flt;
+   }
+
+   // <method_set.png>
+   public method setTextureFilterMag(int _flt) {
+      tex_flt_mag = _flt;
+   }
+
+   // <method_set.png>
+   public method setTextureWrapS(int _wrap) {
+      tex_wrap_s = _wrap;
+   }
+
+   // <method_set.png>
+   public method setTextureWrapT(int _wrap) {
+      tex_wrap_t = _wrap;
+   }
+
+   // <method_set.png>
+   public method setTextureFormat(int _fmt) {
+      tex_format = _fmt;
+   }
+
+   // <method_get.png>
+   public method getTextureBytesPerPixel() : int {
+      switch(tex_format)
+      {
+         default:
+         case FMT_AUTO:   return 0;
+         case FMT_A8:     return 1;
+         case FMT_L8:     return 1;
+         case FMT_RGB565: return 2;
+         case FMT_RGB8:   return 3;
+         case FMT_RGBA8:  return 4;
+      }
+   }
+
+   // <method_get.png>
+   public method getGLTextureTarget() : int {
+      switch(tex_target)
+      {
+         default:
+         case TARGET_2D:        return GL_TEXTURE_2D;
+         case TARGET_2D_ARRAY:  return GL_TEXTURE_2D_ARRAY;
+         case TARGET_3D:        return GL_TEXTURE_2D;
+         case TARGET_CUBE_PX:   return GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+         case TARGET_CUBE_NX:   return GL_TEXTURE_CUBE_MAP_NEGATIVE_X;
+         case TARGET_CUBE_PY:   return GL_TEXTURE_CUBE_MAP_POSITIVE_Y;
+         case TARGET_CUBE_NY:   return GL_TEXTURE_CUBE_MAP_NEGATIVE_Y;
+         case TARGET_CUBE_PZ:   return GL_TEXTURE_CUBE_MAP_POSITIVE_Z;
+         case TARGET_CUBE_NZ:   return GL_TEXTURE_CUBE_MAP_NEGATIVE_Z;
+      }
+   }
+
+   // <method_get.png>
+   public method getGLTextureTargetAsString() : String {
+      // for export
+      switch(tex_target)
+      {
+         default:
+         case TARGET_2D:        return "GL_TEXTURE_2D";
+         case TARGET_2D_ARRAY:  return "GL_TEXTURE_2D_ARRAY";
+         case TARGET_3D:        return "GL_TEXTURE_2D";
+         case TARGET_CUBE_PX:   return "GL_TEXTURE_CUBE_MAP_POSITIVE_X";
+         case TARGET_CUBE_NX:   return "GL_TEXTURE_CUBE_MAP_NEGATIVE_X";
+         case TARGET_CUBE_PY:   return "GL_TEXTURE_CUBE_MAP_POSITIVE_Y";
+         case TARGET_CUBE_NY:   return "GL_TEXTURE_CUBE_MAP_NEGATIVE_Y";
+         case TARGET_CUBE_PZ:   return "GL_TEXTURE_CUBE_MAP_POSITIVE_Z";
+         case TARGET_CUBE_NZ:   return "GL_TEXTURE_CUBE_MAP_NEGATIVE_Z";
+      }
+   }
+
+   // <method_get.png>
+   public method getTKSTextureFlags() : int {
+      int flags = TEX_MODULATE;
+
+      switch(tex_format)
+      {
+         default:
+         case FMT_AUTO:   break;
+         case FMT_A8:     flags |= TEX_ALPHA; break;
+         case FMT_L8:     flags |= TEX_INTENSITY; break;
+         case FMT_RGB565: flags |= TEX_16BIT; break;
+         case FMT_RGB8:   break;
+         case FMT_RGBA8:  flags |= TEX_ALPHA; break;
+      }
+
+      switch(tex_flt_min)
+      {
+         default:
+         case FLT_NEAREST:   break;
+         case FLT_LINEAR:    flags |= TEX_MINFILTERLINEAR; break;
+         case FLT_TRILINEAR: flags |= TEX_MINFILTERTRILINEAR; break;
+      }
+
+      switch(tex_flt_mag)
+      {
+         default:
+         case FLT_NEAREST:   break;
+         case FLT_LINEAR:    flags |= TEX_MAGFILTERLINEAR; break;
+         case FLT_TRILINEAR: flags |= TEX_MAGFILTERTRILINEAR; break;
+      }
+
+      switch(tex_wrap_s)
+      {
+         default:
+         case WRAP_REPEAT: flags |= TEX_REPEAT_S; break;
+         case WRAP_CLAMP:  flags |= TEX_CLAMPTOEDGE_S; break;
+      }
+
+      switch(tex_wrap_t)
+      {
+         default:
+         case WRAP_REPEAT: flags |= TEX_REPEAT_T; break;
+         case WRAP_CLAMP:  flags |= TEX_CLAMPTOEDGE_T; break;
+      }     
+
+      return flags;
+   }
+
+   // <method_get.png>
+   public method getTKSTextureFlagsAsString() : String {
+      // for export
+      local String flags = "TEX_MODULATE";
+
+      switch(tex_format)
+      {
+         default:
+         case FMT_AUTO:   break;
+         case FMT_A8:     flags.append(" | TEX_ALPHA"); break;
+         case FMT_L8:     flags.append(" | TEX_INTENSITY"); break;
+         case FMT_RGB565: flags.append(" | TEX_16BIT"); break;
+         case FMT_RGB8:   break;
+         case FMT_RGBA8:  flags.append(" | TEX_ALPHA"); break;
+      }
+
+      switch(tex_flt_min)
+      {
+         default:
+         case FLT_NEAREST:   break;
+         case FLT_LINEAR:    flags.append(" | TEX_MINFILTERLINEAR"); break;
+         case FLT_TRILINEAR: flags.append(" | TEX_MINFILTERTRILINEAR"); break;  // (todo) nonsensical flag
+      }
+
+      switch(tex_flt_mag)
+      {
+         default:
+         case FLT_NEAREST:   break;
+         case FLT_LINEAR:    flags.append(" | TEX_MAGFILTERLINEAR"); break;
+         case FLT_TRILINEAR: flags.append(" | TEX_MAGFILTERTRILINEAR"); break;
+      }
+
+      switch(tex_wrap_s)
+      {
+         default:
+         case WRAP_REPEAT: flags.append(" | TEX_REPEAT_S"); break;
+         case WRAP_CLAMP:  flags.append(" | TEX_CLAMPTOEDGE_S"); break;
+      }
+
+      switch(tex_wrap_t)
+      {
+         default:
+         case WRAP_REPEAT: flags.append(" | TEX_REPEAT_T"); break;
+         case WRAP_CLAMP:  flags.append(" | TEX_CLAMPTOEDGE_T"); break;
+      }     
+
+      return deref flags;
+   }
+
+   // <load.png>
+   public method reloadTexture() {
+      int bpp = getTextureBytesPerPixel();
+      trace "[trc] GTexture::reloadTexture: bpp="+bpp;
+      tex.unload();
+      tex.target = getGLTextureTarget();
+      trace "[dbg] GTexture::reloadTexture: path_name=\""+path_name+"\" forceSz=("+tex_width+","+tex_height+")";
+      int sz = tex_depth > 1 ? tex_depth : 1;
+      if(!path_name.isBlank())
+      {
+         local String nativePathName <= Utils.ToNativePathName(path_name);
+         if(!tex.loadLocalImage(nativePathName, tex_width, tex_height, bpp))
+         {
+            trace "[~~~] GTexture::reloadTexture: failed to load image \""+nativePathName+"\"";
+
+            // Fallback / Dummy texture
+            tex.alloc(16, 16 * sz, 4);
+            tex.sz = sz;
+         }
+      }
+      else if((tex_width > 0) && (tex_width > 0) && (bpp > 0))
+      {
+         if( (tex.sx != tex_width) || (tex.sy != (tex_height * sz)) || (tex.z != bpp) )
+         {
+            tex.alloc(tex_width, tex_height * sz, bpp);
+            tex.sz = sz;
+         }
+      }
+      else
+      {
+         // Fallback / Dummy texture
+         tex.alloc(16, 16 * sz, 4);
+         tex.sz = sz;
+      }
+
+      tex.flags = getTKSTextureFlags();
+      local Integer io = tex.flags;
+      trace "[trc] GTexture::reloadTexture: tex.flags="+io.printf("0x%08x");
+
+      lazyRecalcTexture();
+   }
+
+   // <method.png>
+   public method createProceduralTextureState(int _procType) : GProceduralTextureState {
+      switch(_procType)
+      {
+         default:
+         case PROC_NONE:
+            return null;
+
+         case PROC_CURVE4_RGBA:
+            local GProceduralTextureStateCurve4RGBA c4rgba;
+            c4rgba.init();
+            return deref c4rgba;
+
+         case PROC_CURVE4_HSVA:
+            local GProceduralTextureStateCurve4HSVA c4hsva;
+            c4hsva.init();
+            return deref c4hsva;
+      }
+   }
+
+   // <method.png>
+   public method changeProcType(int _procType) {
+      // called from UI only
+      Global.Debug("GTexture: change proc_type from "+proc_type+" to "+_procType);
+      if(_procType != proc_type)
+      {
+         // Save previous proc type edit state
+         switch(proc_type)
+         {
+            default:
+            case PROC_NONE:
+               break;
+
+            case PROC_CURVE4_RGBA:
+               cached_curve4_rgba <= deref proc_state;
+               break;
+
+            case PROC_CURVE4_HSVA:
+               cached_curve4_hsva <= deref proc_state;
+               break;
+         }
+
+         proc_state <= null;
+         proc_type = _procType;
+
+         switch(_procType)
+         {
+            default:
+            case PROC_NONE:
+               return null;
+
+            case PROC_CURVE4_RGBA:
+               proc_state <= deref cached_curve4_rgba;
+               break;
+
+            case PROC_CURVE4_HSVA:
+               proc_state <= deref cached_curve4_hsva;
+               break;
+         }
+
+         if(null == proc_state)
+         {
+            proc_state <= createProceduralTextureState(_procType);
+         }
+
+         proc_state.recalcTexture(this);
+      }
+   }
+
+   // <method.png>
+   public method lazyRecalcTexture() {
+      if(PROC_NONE != proc_type)
+         proc_state.recalcTexture(this);
+   }
+
+   // <method_get.png>
+   public virtual hasDefaultAction() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual execDefaultAction() {
+      if(PROC_NONE != proc_type)
+      {
+         proc_state.showEditor(this);
+      }
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 2;
+
+      // Path name
+      Utils.WriteString(ofs, path_name);
+
+      // Size (w/h/d)
+      ofs.i16 = tex_width;
+      ofs.i16 = tex_height;
+      ofs.i16 = tex_depth;
+
+      // Target
+      ofs.i8 = tex_target;
+
+      // Format
+      ofs.i8 = tex_format;
+
+      // Filter
+      ofs.i8 = tex_flt_min;
+      ofs.i8 = tex_flt_mag;
+
+      // Wrap mode
+      ofs.i8 = tex_wrap_s;
+      ofs.i8 = tex_wrap_t;
+
+      // Procedural texture type+state (v2+)
+      ofs.i32 = proc_type;
+      local int offProcSize = ofs.offset;
+      ofs.i32 = 0;  // sz placeholder
+      if(null != proc_state)
+      {
+         proc_state.saveStateProc(ofs);
+      }
+      int offThis = ofs.offset;
+      ofs.seek(offProcSize, SEEK_SET);
+      ofs.i32 = offThis - offProcSize - 4/*sizeof(i32)*/;
+      ofs.seek(offThis, SEEK_SET);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      proc_state  = PROC_NONE;
+      proc_state <= null;
+
+      if(1 <= ver <= 2)
+      {
+         // Path name
+         Utils.ReadString(ifs, path_name);
+
+         // Size (w/h/d)
+         tex_width  = ifs.i16;
+         tex_height = ifs.i16;
+         tex_depth  = ifs.i16;
+         
+         // Target
+         tex_target = ifs.i8;
+
+         // Format
+         tex_format = ifs.i8;
+
+         // Filter
+         tex_flt_min = ifs.i8;
+         tex_flt_mag = ifs.i8;
+
+         // Wrap mode
+         tex_wrap_s = ifs.i8;
+         tex_wrap_t = ifs.i8;
+
+         // Reload / Allocate texture
+         reloadTexture();
+
+         // Procedural texture type+state
+         if(ver >= 2)
+         {
+            int procType = ifs.i32;
+            int procSz = ifs.i32;
+            int procOffset = ifs.offset;
+            if(procSz > 0)
+            {
+               proc_state <= createProceduralTextureState(procType);
+               if(null != proc_state)
+               {
+                  if(!proc_state.loadStateProc(ifs, this))
+                  {
+                     trace "[---] GTexture::loadStateObject: failed to load procedural texture state (type="+procType+")";
+                     return false;
+                  }
+                  proc_type = procType;
+                  int procSzRead = (ifs.offset - procOffset);
+                  if(procSzRead != procSz)
+                  {
+                     trace "[---] GTexture::loadStateObject: invalid procedural texture state size (expect="+procSz+" have="+procSzRead+")";
+                     return false;
+                  }
+               }
+               else
+               {
+                  // *Should* not be reachable
+                  trace "[~~~] GTexture::loadStateObject: failed to create procedural texture state (type="+procType+"), skipping "+procSz+" bytes..";
+                  ifs.seek(procSz, SEEK_CUR);
+               }
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GTexture::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method saveTexturePresetStream(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      local GConnectionWriter connectionWriter;
+      connectionWriter.setObjectPathPrefixFilter(getObjectPath());
+
+      saveStateObject(ofs, connectionWriter);
+
+      // Connections
+      connectionWriter.saveStream(ofs);
+   }
+   
+   // <load.png>
+   public method loadTexturePresetStream(Stream ifs) : boolean {
+
+      current_project.runScriptExit();
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Load object base info (see GObject.LoadStateObject())
+         local String className <= GObject.LoadObjectHeader(ifs);
+
+         if(className == yacMetaClassName())
+         {
+            if(loadStateObject(ifs))
+            {
+               // Connections
+               local GConnectionReader connectionReader;
+               connectionReader.setObjectPathPrefixFilter(getObjectPath());
+
+               if!(connectionReader.loadStream(ifs))
+               {
+                  trace "[---] GTexture::loadTexturePresetStream: failed to load connections";
+                  return false;
+               }
+
+               // Succeeded
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] GTexture::loadTexturePresetStream: class name mismatch (expect GModel, have \""+className+"\")";
+         }
+      }
+      else
+      {
+         trace "[---] GTexture::loadTexturePresetStream: invalid version "+ver;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GTexture::emitBegin";
+      b_init_done = false;
+      b_post_done = false;
+   }
+
+   // <method.png>
+   public method emitTexture(local int          _unitIdx,
+                             local String       _outputId, 
+                             local GModule      _module, 
+                             local String       _out, 
+                             local String       _dstVar, 
+                             local boolean      _bGLSL,
+                             local PointerArray _objDone
+                             ) {
+
+      // trace "[trc] GTexture::emit: unitIdx="+_unitIdx+" b_init_done="+b_init_done+" path=\""+path_name+"\" outputId=\""+_outputId+"\"";
+
+      local String sGlobal;
+      local String sInit;
+      local String sDrawPre;
+      local String sDrawPost;
+      local String sExit;
+
+      local String sTexVar <= getVarName();
+
+      if(!b_init_done)
+      {
+         sGlobal.append("Texture *"+sTexVar+";\n");
+         sExit.append(sTexVar+".unload();\n");
+      }
+
+      if("init" != _outputId)
+      {
+         // trace "\n\n\n\n emit tex bind";
+         // sDrawPre.append("trace \"xxx "+sTexVar+"=\"+#("+sTexVar+");\n");
+         sDrawPre.append("glActiveTexture(GL_TEXTURE0+"+_unitIdx+");\n");
+         sDrawPre.append(sTexVar+".bind();\n");
+         sDrawPost.append(sTexVar+".unbind();\n");
+      }
+
+      _module.appendGlobal(sGlobal);
+      _module.appendInit(sInit);
+      _module.appendDrawPre(sDrawPre);
+      _module.appendDrawPost(sDrawPost);
+      _module.appendExit(sExit);
+
+      b_init_done = true;
+   }
+
+   // <method.png>
+   public virtual emitPost(local GModule      _module,
+                           local GProgram     _program,
+                           local PointerArray _parents
+                           ) {
+         // trace "\n\n\n\n\n\nxxx Texture::emitPost\n\n\n\n\n";
+
+      if(b_init_done && !b_post_done)
+      {
+         b_post_done = true;
+         GObject::emitPost(_module, _program, _parents);
+
+         local String sTexVar <= getVarName();
+
+         if(current_project.b_export)
+         {
+            // Procedural texture. Export current state as PNG file.
+            current_project.exportAddTexture(_module,
+                                             sTexVar,
+                                             tex, 
+                                             getGLTextureTargetAsString(),
+                                             getTKSTextureFlagsAsString(),
+                                             (PROC_NONE == proc_type && path_name.isBlank())/*bEmpty*/
+                                             );
+         }
+         else
+         {
+            // trace "[trc] GTexture::emitPost: set var "+sTexVar;
+            local Variable v <= current_project.script.findVariable(sTexVar);
+            // trace "xxx v.name="+v.name;
+            v.pointerAssign(tex);
+            v.store();
+         }
+      }
+   }
+
+}

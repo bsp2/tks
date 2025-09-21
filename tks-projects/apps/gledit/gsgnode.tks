@@ -1,0 +1,513 @@
+// ----
+// ---- file   : gsgnode.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 22Jul2020
+// ---- changed: 23Jul2020, 24Jul2020, 02Aug2020, 14Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGSGNode;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GSGNode : GObject, GParamProvider {
+   // a SceneGraph node
+   GSGNode *parent_node;
+
+   GSGNode *[] child_nodes;
+
+   protected boolean b_init_done;
+   protected boolean b_post_done;
+
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      initGSGNode();
+   }
+
+   // <method_init.png>
+   public method initGSGNode() {
+      // called either by GSGNode::init() or by GSceneGraph::init()
+
+      addInput("transform", TYPE_MAT4);
+      addInput("visible",   TYPE_BOOL);
+
+      addInput("model",  TYPE_REF);
+      addInput("script", TYPE_REF);
+
+      GParam *p;
+
+      p <= addParamBool("draw_post", "Post", false);
+      p.setToolTipCaption("When checked, draw this node after all child nodes have been drawn\n\nWhen unchecked, draw before child nodes");
+   }
+
+   // <method_init.png>
+   public virtual postInit() {
+      // Called after adding object to parent container
+      postInitGSGNode();
+   }
+
+   // <method_init.png>
+   public method postInitGSGNode() {
+      // Called after adding object to parent container
+      //  - called either by GSGNode::postInit() or by GSceneGraph::postInit()
+   }
+
+   // <method_get.png>
+   public virtual isAnon() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNamespace() : GNamespace {
+      if(null == parent_node)
+         return parent_namespace;  // 'this' is a GSceneGraph
+      else
+      {
+         GSGNode n <= parent_node;
+         while(!(n instanceof GSceneGraph))
+         {
+            n <= n.parent_node;
+         }
+         return n;  // (note) GSceneGraph is also a GNamespace
+      }
+   }
+
+   // <method_get.png>
+   public virtual getParent() : GNamespaceObject {
+      return (null == parent_node) ? getNamespace() : parent_node;
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "node";
+   }
+
+   // <method_add.png>
+   public method addChildNode(GSGNode _n) : GSGNode {
+      child_nodes.add(#(deref _n));
+      _n.parent_node <= this;
+      return _n;
+   }
+
+   // <method_add.png>
+   public method addChildNodeAutoId(GSGNode _n, String _prefIdOrNull) : GSGNode {
+      addChildNode(deref _n);
+      _n.setId(Utils.CreateAutoId((null != _prefIdOrNull) ? _prefIdOrNull : "node", child_nodes));
+      return _n;
+   }
+
+   // <method_get.png>
+   public method hasChildNode(GSGNode _n) : boolean {
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         if(@(n) == @(_n))
+            return true;
+         if(n.hasChildNode(_n))
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method hasChildren() : boolean {
+      return !child_nodes.isEmpty();
+   }
+
+   // <method_get.png>
+   public unlinkChildNode(GSGNode _n) : GSGNode {
+      int idx = child_nodes.indexOfPointer(_n, 0);
+      if(-1 != idx)
+      {
+         GSGNode r <= child_nodes.getDeref(idx);
+         child_nodes.delete(idx);
+         return deref r;
+      }
+      return null;
+   }
+
+   // <method_remove.png>
+   public method removeChildNode(GSGNode _n) : boolean {
+      boolean bLast = child_nodes.isLast(_n);
+      child_nodes.remove(_n);
+      return bLast;
+   }
+
+   // <method.png>
+   public method moveChildNodeUp(GSGNode _n) : boolean {
+      int idx = child_nodes.indexOfPointer(_n, 0);
+      if(-1 != idx)
+      {
+         if(idx > 0)
+         {
+            child_nodes.swap(idx, idx-1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method moveChildNodeDown(GSGNode _n) : boolean {
+      int idx = child_nodes.indexOfPointer(_n, 0);
+      if(-1 != idx)
+      {
+         if(idx != (child_nodes.numElements-1))
+         {
+            child_nodes.swap(idx, idx+1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // // // <method_get.png>
+   // // public virtual getObjectPathVirtFolder() : String {
+   // //    if(null == parent_node)
+   // //       return "nodes";
+   // // }
+
+   // <method_get.png>
+   public virtual getObjectPath() : String {
+      GSGNode n <= this;
+      GSGNode *p;
+      local String r;
+      for(;;)
+      {
+         if(!r.isBlank())
+            r.insert(0, ".");
+         r.insert(0, n.getId());
+         p <= n.parent_node;
+         if(null != p)
+         {
+            n <= p;
+         }
+         else
+            break;
+      }
+      local String sgPathDir <= n.getObjectPathDir();
+      if(!r.isBlank())
+         r.insert(0, ".");
+      r.insert(0, sgPathDir);
+      return deref r;
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedModel() : GModel {
+      return getFirstConnectedInputObjectByType("model", GModel);
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedScript() : GScriptRender {
+      return getFirstConnectedInputObjectByType("script", GScriptRender);
+   }
+
+   // <save.png>
+   public method saveStateGSGNode(local Stream ofs, local GConnectionWriter connectionWriter) {
+
+      // (note) save w/o object header (already saved in case of derived GSceneGraph class)
+
+      // Version
+      ofs.i16 = 1;
+
+      // Params
+      GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+
+      // Num child nodes
+      ofs.i16 = child_nodes.numElements;
+
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         n.saveStateObject(ofs, connectionWriter);
+      }
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      saveStateGSGNode(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      local short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         if(GParamProvider::loadStateParamProvider(ifs))
+         {
+            // Num child nodes
+            local int numChildNodes = ifs.u16;
+
+            local int nodeIdx = 0;
+            loop(numChildNodes)
+            {
+               local GSGNode n <= GObject.LoadStateObject(ifs);
+               if(null == n)
+               {
+                  trace "[----] GSGNode::loadStateObject: failed to load child node "+(nodeIdx+1)+"/"+numChildNodes;
+                  return false;
+               }
+               addChildNode(deref n);
+
+               nodeIdx++;
+            }
+
+            // Succeeded
+            return true;
+         }
+         else
+         {
+            trace "[---] GSGNode::loadStateObject: failed to load params, this="+#(this)+" path="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[---] GSGNode::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual prepareRemove() {
+      GObject::prepareRemove();
+
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         n.prepareRemove();
+      }
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+
+      GObject::removeConnectionsToObject(_obj);
+
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         n.removeConnectionsToObject(_obj);
+      }
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      local int idx = _path.indexOfChar('.', 0);
+      local String *folderId;
+      if(-1 != idx)
+      {
+         folderId <= _path.substring(0, idx);
+      }
+      else
+      {
+         folderId <= _path;
+         idx = 99999;
+      }
+
+      // trace "xxx GSGNode::findObjectByPath: path=\""+_path+"\" folderId=\""+folderId+"\"";
+      idx++;
+
+      if(_bUnfold)
+         setVirtFolderFoldStatus(folderId, false);
+
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         if(n.id == folderId)
+         {
+            if(_path.numChars > idx)
+            {
+               if(_bUnfold)
+                  n.setFoldStatus(false);
+               return n.findObjectByPathUnfold(_path.substring(idx, -1), _bUnfold);
+            }
+            else
+               return n;
+         }
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GSGNode::emitBegin";
+      b_init_done = false;
+      b_post_done = false;
+
+      GObject::emitBegin();
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      // trace "\n\n\n GSGNode::emitBeginRecursive: this="+getObjectPath();
+      emitBegin();
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         n.emitBeginRecursive();
+      }
+   }
+
+   // <method.png>
+   public method emitSGNode(GModule _module, local String _out, local String _sParentTransformVar, local PointerArray _parents) {
+
+      // trace "xxx GSGNode::emitSGNode: b_init_done="+b_init_done;
+
+      if(b_init_done)
+         return;
+
+      _parents.add(this);
+
+      b_init_done = true;
+
+      local GModel model <= getFirstConnectedModel();
+      local GScriptRender script <= getFirstConnectedScript();
+
+      // // // (todo) skip model_id ? it's (currently) only useful for actual GModel instances (for avoiding redundant state changes)
+      // // model_id = current_project.allocModelId();
+
+      local String sDraw;
+
+      sDraw.append("// Scenegraph node \""+getObjectPath()+"\"\n");
+
+      // Transform
+      //  (note) each node creates a new transform matrix that also serves as the parent matrix for the child nodes
+      local String sTransformVar <= _module.allocTmpVarScript(sDraw, TYPE_MAT4, "_transform_"+getId()/*suffix*/);
+      local GInput inTransform <= getInputById("transform");
+      if(inTransform.isConnected())
+      {
+         local String sTransformVarIn <= _module.allocTmpVarScript(sDraw, TYPE_MAT4, "_transformIn"/*suffix*/);
+         inTransform.emit(_module, null/*program*/, sDraw, sTransformVarIn, false/*bGLSL*/, _parents);
+         sDraw.append(_sParentTransformVar+".mul("+sTransformVarIn+") => "+sTransformVar+";\n");
+         // sDraw.append(_sParentTransformVar+".mulRev("+sTransformVarIn+") => "+sTransformVar+";\n");
+      }
+      else
+      {
+         sDraw.append(sTransformVar+" = "+_sParentTransformVar+";\n");
+      }
+
+      // (todo) draw_post param  (draw parent model after child nodes)
+      local String sDrawThis;
+
+      if((null != model) && model.isEnabled())
+      {
+         // lazy-init model
+         model.emitModule(_module);
+
+         // draw model (or nested scenegraph)
+         if(null != model)
+            model.emitCallDrawString(_module, sDrawThis, sTransformVar);
+      }
+
+      if((null != script) && script.isEnabled())
+      {
+         // lazy-init + exec script
+         script.setTransformArg(sTransformVar);
+         script.emit(GOutput.OUT_DEF_OBJ,  // "dummy" output, just eval the draw fxn
+                     _module,
+                     null/*program*/,
+                     sDrawThis/*out*/,
+                     null/*dstVar*/,
+                     false/*bGLSL*/,
+                     _parents
+                     );
+      }
+
+      // (todo) script
+      // (todo)   - pass transform to script fxn
+
+      local boolean bDrawPost = getBoolParamById("draw_post");
+
+      if(!bDrawPost)
+         sDraw.append(sDrawThis);
+
+      // Traverse child nodes
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         if(n.isEnabled())
+         {
+            // trace "xxx traverse child node n="+#(n);
+            n.emitSGNode(_module, sDraw, sTransformVar/*sParentTransformVar*/, _parents);
+            // trace "xxx END traverse child node n="+#(n);
+         }
+      }
+
+      if(bDrawPost)
+         sDraw.append(sDrawThis);
+
+      // trace "xxx this="+getObjectPath()+" sDraw="+sDraw;
+
+      // (Runtime) Visibility switch
+      appendScriptInputCond(_module, "visible", _out);
+      _out.append("\n{\n");
+      Utils.AppendIndentedLines(_out, sDraw, 3);
+      _out.append("}\n");
+
+      _parents.remove(this);
+   }
+
+   // <method.png>
+   public method emitSGNodePost(GModule _module) {
+
+      if(b_post_done)
+         return;
+
+      b_post_done = true;
+
+      local GModel model <= getFirstConnectedModel();
+      if(null != model)
+      {
+         model.emitModulePost(_module);
+      }
+
+      local PointerArray parents;
+      parents.add(this);
+
+      GObject::emitPost(_module, null/*program*/, parents);
+
+      local GScriptRender script <= getFirstConnectedScript();
+      if(null != script)
+      {
+         script.emitPost(_module,
+                         null/*program*/,
+                         parents
+                         );
+      }
+
+      local GSGNode *n;
+      foreach n in child_nodes
+      {
+         // (todo) parents ?
+         n.emitSGNodePost(_module);
+      }
+
+      parents.remove(this);
+   }
+
+}

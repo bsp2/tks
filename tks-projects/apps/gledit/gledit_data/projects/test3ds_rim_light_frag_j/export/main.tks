@@ -1,0 +1,194 @@
+//
+// example integration code for GL Edit project "test3ds_rim_light_frag_j"
+//
+
+use tksdl;
+use tkopengl;
+
+boolean b_dump_fb = Arguments & "png";
+
+Double anim_start_ms;
+
+int numframesrendered=0;
+
+boolean b_glcore = getenv("TKSDL_GLCORE");
+if(b_glcore)
+   ZGLShader.SetDefaultVersion("410 core\nprecision mediump float;\n");
+
+boolean b_running = true;
+
+String last_deploy_key = "";
+function deploy_helper_thread_entry(local Thread _th) {
+   while(b_running)
+   {
+      String newKey;
+      newKey.loadLocal("gledit_deploy_key", true/*bRemoveCR*/);
+      if(newKey != last_deploy_key)
+      {
+         b_running = false;
+         break;
+      }
+      TKS.sleep(500);
+   }
+}
+
+
+class FBDump {
+   public static SaveScreenShotPNG(String _pathName, int _offX, int _offY, int _w, int _h) : boolean {
+      trace "[dbg] SaveScreenShotPNG: pathName=\""+_pathName+"\" off=("+_offX+","+_offY+") s=("+_w+","+_h+")";
+      _w = mathClampi(_w, 0, Viewport.width);
+      _h = mathClampi(_h, 0, Viewport.height);
+      if(0 == _w)
+         _w = Viewport.width;
+      if(0 == _h)
+         _h = Viewport.height;
+
+      local Texture tex;
+      boolean ret = false;
+      if(tex.alloc(_w, _h, 4))
+      {
+         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+         // glReadBuffer(GL_BACK);
+         glReadBuffer(GL_FRONT);
+         glFinish();
+         int off = 0;
+         int y = (Viewport.height - 1 - _offY);
+         int texY = 0;
+         // trace "xxx vph="+Viewport.height+" vpy="+y;
+         loop(_h)
+         {
+            if(1)
+            {
+               // (todo) does not seem to always work on macOS ??
+               // (note) it does work in another test, though (e.g. plot.tks)
+               zglReadColorPixelsX(tex, off, _offX, y, _w);
+               tex.clearAlpha(#ff);
+            }
+            else
+            {
+               // work on macOS but is _very_ slow (resolves whole FB per pixel ??!)
+               int x = _offX;
+               int texX = 0;
+               loop(_w)
+               {
+                  int c32 = zglReadColorPixel(x++, y);
+                  c32 |= #ff000000;
+                  tex.setXY32(texX++, texY, c32);
+               }
+               texY++;
+            }
+
+            y--;
+            off += _w;
+         }
+         ret = tex.saveImage(_pathName);
+      }
+      return ret;
+   }
+}
+
+
+function onDraw() {
+
+   float dt = FPS.precision;
+
+   Double frameTime;
+   milliSecondsDouble(frameTime);
+   frameTime -= anim_start_ms;
+
+   float tAbs = frameTime / 1000.0;
+   if(b_dump_fb)
+   {
+      dt = 1.0;
+      tAbs = numframesrendered * (1.0/30);
+   }
+
+   Mtest3ds_rim_light_frag_j.ext_default_global_time = tAbs;
+   Mtest3ds_rim_light_frag_j.g_time = tAbs;
+   Mtest3ds_rim_light_frag_j.g_dt = dt;
+
+   Mtest3ds_rim_light_frag_j.Draw();
+
+   if(b_dump_fb && numframesrendered > 0)
+   {
+      Integer io = numframesrendered - 1;
+      FBDump.SaveScreenShotPNG("fb/v"+io.printf("%04d")+".png", 0,0,0,0);
+   }
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   if(!b_running)
+      SDL.exitEventLoop();
+}
+
+// function onMouse(int _x, int _y, int _cbs, int _nbs) {
+//    print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+// }
+
+function onKeyboard(Key _k) {
+   trace "[trc] onKeyboard: k.code="+_k.code+" mod="+_k.mod+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         b_running = false;
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onOpen() {
+   trace "[...] onOpen";
+   zglLoadExtensions();
+
+   if(0 && TKS.dllSuffix != ".dylib")
+      ZGLShader.SetDefaultVersion("100\n");
+
+   trace "[...] call Init()";
+   Mtest3ds_rim_light_frag_j.Init();
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=0;
+
+   SDL.eventPolling = true; // tksdl default is "true" (do not block while waiting for an SDL event)
+   // SDL.timerInterval = 20;
+   SDL.dpiAwareness = true;  // no OS scaling
+   // SDL.dpiAwareness = false;  // assume 96dpi and let OS scale window to actual DPI
+   SDL.touchInput = true;  // enable WM_POINTER* messages
+
+   Mtest3ds_rim_light_frag_j.Load(""/*zipPathNamePrefix*/);
+
+   Viewport.multisampleSamples = 0;
+   Viewport.multisampleBuffers = 1;
+   Viewport.stencilBits = 8;
+   Viewport.openWindow(800, 600);
+   //Viewport.openScreen(640, 480, 32);
+   Viewport.swapInterval(1);
+
+   // SDL.enableUNICODE(true);
+
+   Thread th;
+   if(0)
+   {
+      last_deploy_key.loadLocal("gledit_deploy_key", true/*bRemoveCR*/);
+      th.create(deploy_helper_thread_entry);
+   }
+
+   milliSecondsDouble(anim_start_ms);
+
+   trace "[dbg] entering eventloop";
+
+   SDL.eventLoop();
+
+   if(0)
+   {
+      b_running = false;
+      th.wait();
+   }
+
+   Mtest3ds_rim_light_frag_j.Exit();
+}

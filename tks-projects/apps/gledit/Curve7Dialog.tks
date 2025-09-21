@@ -1,0 +1,740 @@
+// ----
+// ---- file   : Curve7Dialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 13Aug2020
+// ---- changed: 14Aug2020, 04Feb2025, 05Feb2025
+// ----
+// ----
+// ----
+
+module MCurve7Dialog;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class Curve7Dialog extends Dialog, GDefs {
+
+   protected XMLForm *xfm;
+
+   protected GEnvelopeOrbitCam *env;
+
+   // Curves
+   protected Panel *p_curves;
+   public    BezierCurveForm *[] f_curves;   // refs
+   protected LayerSwitch *[]     ls_curves;  // refs
+
+   protected PopupMenu *pm_tools;
+
+   static StringArray curve_labels = ["CtrX", "CtrY", "CtrZ", "RotX", "RotY", "RotZ", "Dist"];
+   static StringArray scl_param_names = ["scl_ctr_x", "scl_ctr_y", "scl_ctr_z", "scl_rot_x", "scl_rot_y", "scl_rot_z", "scl_dist"];
+   static StringArray off_param_names = ["off_ctr_x", "off_ctr_y", "off_ctr_z", "off_rot_x", "off_rot_y", "off_rot_z", "off_dist"];
+
+
+   // <ui_init.png>
+   public method initCurve7Dialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("Curve7Dialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initCurve7Dialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      // Curves:
+      int curveIdx = 0;
+      loop(7)
+      {
+         BezierCurveForm curveForm <= xfm.findLayerById("f_curve_"+curveIdx);
+         if(!curveForm.initBezierCurveForm(32.0f/*reqLabelW*/,
+                                           true/*bScaleOff*/,
+                                           (0 == curveIdx)/*bImport*/,
+                                           "Import OrbitCamView keyframes from container object"
+                                           )
+            )
+         {
+            trace "[---] Curve7Dialog::init: initBezierCurveForm() failed";
+            return false;
+         }
+         curveForm.setEnableCopyPasteKeys(false);  // leave lctrl-c/v to parent editor
+         f_curves.add(curveForm);
+         if(3 <= curveIdx <= 5) // rot x/y/z
+            curveForm.be_env.setAlignLastCyclic(360.0);
+         LayerSwitch lsCurve <= xfm.findLayerById("ls_curve_"+curveIdx);
+         ls_curves.add(lsCurve);
+         curveIdx++;
+      }
+
+      initWindow(xfm, "OrbitCamView Curves", 163*UI.font_scaling, 0*UI.font_scaling,
+                 706*UI.font_scaling,
+                 882*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      if(_ev.isRightButton())
+      {
+         // showToolsMenu();
+         return true;
+      }
+      return Dialog::onMouseClick(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       f_curves[0],
+                       f_curves[1],
+                       f_curves[2],
+                       f_curves[3],
+                       f_curves[4],
+                       f_curves[5],
+                       f_curves[6],
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showCurve7Dialog(GEnvelopeOrbitCam _env) {
+
+      env <= _env;
+
+      int curveIdx = 0;
+      BezierCurveForm *curveForm;
+      LayerSwitch *lsCurve;
+      BezierEditState *beState;
+      Envelope *beEnv;
+
+      loop(7)
+      {
+         curveForm <= f_curves.get(curveIdx);
+         lsCurve <= ls_curves.get(curveIdx);
+         lsCurve.switchToLayerNr(1);
+         beState <= _env.curve_states.get(curveIdx);
+         beEnv <= _env.curve_envs.get(curveIdx);
+         curveForm.showCurve(curve_labels.get(curveIdx)+":", beState, beEnv, null/*mtxNamedRecalc*/);
+         curveForm.setScaleFromParam(env.getParamById(scl_param_names[curveIdx]));
+         curveForm.setOffsetFromParam(env.getParamById(off_param_names[curveIdx]));
+         curveForm.updateScaleOffsetHints();
+
+         curveIdx++;
+      }
+
+      setWindowTitle("OrbitCamView Curves");
+      show();
+   }
+
+   // // // <ui.png>
+   // // public virtual handleResize() {
+   // //    Dialog::handleResize();
+   // //    Dialog::relayout();
+   // // }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      updateOverlays();
+
+      resizeAtLeastToMinimum();
+      relayout();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      // // UI.SetKeyboardFocus(cm_mode);
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      removeOverlays();
+
+      BezierCurveForm *curveForm;
+      foreach curveForm in f_curves
+         curveForm.stopEditing();
+
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected method updateOverlays() {
+      removeOverlays();
+
+      BezierCurveForm *curveForm;
+      int curveIdx = 0;
+      foreach curveForm in f_curves
+      {
+         LayerSwitch lsCurve <= ls_curves.get(curveIdx);
+         if(1 == lsCurve.getCurrentChildNr())
+            curveForm.addBezierOverlay(this);
+         curveIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method removeOverlays() {
+      BezierCurveForm *curveForm;
+      foreach curveForm in f_curves
+      {
+         curveForm.removeBezierOverlay(this);
+      }
+   }
+
+   // <method_get.png>
+   protected method isAnyCurveZoomed() : boolean {
+      LayerSwitch *lsCurve;
+      foreach lsCurve in ls_curves
+      {
+         if(0 == lsCurve.getCurrentChildNr())
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveZoom(int _curveIdx, boolean _bMaximize) {
+
+      BezierCurveForm *curveForm;
+
+      for(int hideCurveIdx = 0; hideCurveIdx < 7; hideCurveIdx++)
+      {
+         LayerSwitch lsCurve <= ls_curves.get(hideCurveIdx);
+         lsCurve.switchToLayerNr(!_bMaximize || (_curveIdx == hideCurveIdx));
+      }
+      relayout();
+      curveForm <= f_curves.get(_curveIdx);
+      curveForm.focusBezierEdit();
+      updateOverlays();
+      redraw();
+   }
+
+   // <method.png>
+   protected method updateEnvFloatParam(String _id, FloatParam _fp) {
+      GParamFloat pf <= env.getParamById(_id);
+      pf.updateFromFloatParam(_fp);
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveScaleChanged(int _curveIdx) {
+      BezierCurveForm curveForm <= f_curves.get(_curveIdx);
+      FloatParam fp <= curveForm.getScaleFP();
+      switch(_curveIdx)
+      {
+         case 0: // ctr_x
+            updateEnvFloatParam("scl_ctr_x", fp);
+            break;
+
+         case 1: // ctr_y
+            updateEnvFloatParam("scl_ctr_y", fp);
+            break;
+
+         case 2: // ctr_z
+            updateEnvFloatParam("scl_ctr_z", fp);
+            break;
+
+         case 3: // rot_x
+            updateEnvFloatParam("scl_rot_x", fp);
+            break;
+
+         case 4: // rot_y
+            updateEnvFloatParam("scl_rot_y", fp);
+            break;
+
+         case 5: // rot_z
+            updateEnvFloatParam("scl_rot_z", fp);
+            break;
+
+         case 6: // dist
+            updateEnvFloatParam("scl_dist", fp);
+            break;
+      }
+      curveForm.updateScaleOffsetHints();
+      current_project.queueUpdate();
+      root_form.pg_start.queueReshowParams();
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveOffsetChanged(int _curveIdx) {
+      BezierCurveForm curveForm <= f_curves.get(_curveIdx);
+      FloatParam fp <= curveForm.getOffsetFP();
+      switch(_curveIdx)
+      {
+         case 0: // ctr_x
+            updateEnvFloatParam("off_ctr_x", fp);
+            break;
+
+         case 1: // ctr_y
+            updateEnvFloatParam("off_ctr_y", fp);
+            break;
+
+         case 2: // ctr_z
+            updateEnvFloatParam("off_ctr_z", fp);
+            break;
+
+         case 3: // rot_x
+            updateEnvFloatParam("off_rot_x", fp);
+            break;
+
+         case 4: // rot_y
+            updateEnvFloatParam("off_rot_y", fp);
+            break;
+
+         case 5: // rot_z
+            updateEnvFloatParam("off_rot_z", fp);
+            break;
+
+         case 6: // dist
+            updateEnvFloatParam("off_dist", fp);
+            break;
+      }
+      curveForm.updateScaleOffsetHints();
+      current_project.queueUpdate();
+      root_form.pg_start.queueReshowParams();
+   }
+
+   // // // <method.png>
+   // // protected method calcNextRot(float _angC, float _angN) : float {
+   // //    trace "xxx angC="+_angC+" angN="+_angN+" dist="+abs(_angN - _angC);
+   // //    if(abs(_angN - _angC) > 180.0f)
+   // //    {
+   // //       if(_angN > _angC)
+   // //          return _angN - 360.0f;
+   // //       else
+   // //          return _angN + 360.0f;
+   // //    }
+   // //    else
+   // //       return _angN;
+   // //    // if(_angN > _angC)
+   // //    // {
+   // //    //    if(abs(_angN - _angC) > abs(_angN - (_angC+360.0f)))
+   // //    //       return _angN - 360.0f;
+   // //    //    else
+   // //    //       return _angN;
+   // //    // }
+   // //    // else
+   // //    // {
+   // //    //    if(abs(_angN - _angC) > abs((_angN+360.0f) - _angC))
+   // //    //       return _angN + 360.0f;
+   // //    //    else
+   // //    //       return _angN;
+   // //    // }
+   // // }
+
+   // <ui_handle.png>
+   protected method handleImportKeyFrames() {
+      PageStart pgStart <= root_form.pg_start;
+      GObject obj <= pgStart.getFirstLinkSourceObject();
+      if(null != obj)
+      {
+         Global.Debug("Curve7Dialog::handleImportKeyFrames: link_source_obj="+#(obj)+" type="+obj.type);
+         if(TYPE_ORBITCAMVIEW == obj.type)
+         {
+            if(obj instanceof GConnectionContainer)
+            {
+               GConnectionContainer container <= obj;
+               int numKeyFrames = container.containerGetNumActiveConnections();
+               if(numKeyFrames > 0)
+               {
+                  BezierEdit beCtrX <= f_curves.get(0).be_env;
+                  BezierEdit beCtrY <= f_curves.get(1).be_env;
+                  BezierEdit beCtrZ <= f_curves.get(2).be_env;
+                  BezierEdit beRotX <= f_curves.get(3).be_env;
+                  BezierEdit beRotY <= f_curves.get(4).be_env;
+                  BezierEdit beRotZ <= f_curves.get(5).be_env;
+                  BezierEdit beDist <= f_curves.get(6).be_env;
+
+                  beCtrX.clearCtlPoints();
+                  beCtrY.clearCtlPoints();
+                  beCtrZ.clearCtlPoints();
+                  beRotX.clearCtlPoints();
+                  beRotY.clearCtlPoints();
+                  beRotZ.clearCtlPoints();
+                  beDist.clearCtlPoints();
+
+                  GConnection *conn;
+                  GOrbitCamView *gcamC;
+                  GOrbitCamView *gcamN;
+                  local OrbitCamView camC;
+                  local OrbitCamView camN;
+                  local OrbitCamView *camT;
+                  float fc;
+                  float fn;
+
+                  float sclCtrX = env.getFloatParamById("scl_ctr_x");
+                  float offCtrX = env.getFloatParamById("off_ctr_x");
+
+                  float sclCtrY = env.getFloatParamById("scl_ctr_y");
+                  float offCtrY = env.getFloatParamById("off_ctr_y");
+
+                  float sclCtrZ = env.getFloatParamById("scl_ctr_z");
+                  float offCtrZ = env.getFloatParamById("off_ctr_z");
+
+                  float sclRotX = env.getFloatParamById("scl_rot_x");
+                  float offRotX = env.getFloatParamById("off_rot_x");
+
+                  float sclRotY = env.getFloatParamById("scl_rot_y");
+                  float offRotY = env.getFloatParamById("off_rot_y");
+
+                  float sclRotZ = env.getFloatParamById("scl_rot_z");
+                  float offRotZ = env.getFloatParamById("off_rot_z");
+
+                  float sclDist = env.getFloatParamById("scl_dist");
+                  float offDist = env.getFloatParamById("off_dist");
+
+
+                  conn <= container.containerGetActiveConnectionByIndex(0);
+                  gcamC <= conn.object;
+                  gcamC.copyToOrbitCamView(camC);
+
+                  if(numKeyFrames > 1)
+                  {
+                     float tStep = 1.0 / (numKeyFrames-1);
+                     float t = 0.0;
+                     int idx = 1;
+                     loop(numKeyFrames - 1)
+                     {
+                        conn <= container.containerGetActiveConnectionByIndex(idx);
+                        gcamN <= conn.object;
+                        gcamN.copyToOrbitCamView(camN);
+
+                        camN.rot_x = mathNextCyclicf(camC.rot_x, camN.rot_x, 360.0);
+                        camN.rot_y = mathNextCyclicf(camC.rot_y, camN.rot_y, 360.0);
+                        camN.rot_z = mathNextCyclicf(camC.rot_z, camN.rot_z, 360.0);
+
+                        // CtrX
+                        fc = (camC.ctr_x - offCtrX) / sclCtrX;
+                        fn = (camN.ctr_x - offCtrX) / sclCtrX;
+                        beCtrX.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // CtrY
+                        fc = (camC.ctr_y - offCtrY) / sclCtrY;
+                        fn = (camN.ctr_y - offCtrY) / sclCtrY;
+                        beCtrY.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // CtrZ
+                        fc = (camC.ctr_z - offCtrZ) / sclCtrZ;
+                        fn = (camN.ctr_z - offCtrZ) / sclCtrZ;
+                        beCtrZ.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // RotX
+                        fc = (camC.rot_x - offRotX) / sclRotX;
+                        fn = (camN.rot_x - offRotX) / sclRotX;
+                        beRotX.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // RotY
+                        fc = (camC.rot_y - offRotY) / sclRotY;
+                        fn = (camN.rot_y - offRotY) / sclRotY;
+                        beRotY.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // RotZ
+                        fc = (camC.rot_z - offRotZ) / sclRotZ;
+                        fn = (camN.rot_z - offRotZ) / sclRotZ;
+                        beRotZ.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // Eye Dist
+                        fc = (camC.eye_dist - offDist) / sclDist;
+                        fn = (camN.eye_dist - offDist) / sclDist;
+                        beDist.addCtlPoint(t, fc,
+                                           (t+tStep*0.5), (fc+fn)*0.5,
+                                           (t+tStep*0.5), (fc+fn)*0.5
+                                           );
+
+                        // Next key frame
+                        camT <= deref camN;
+                        camN <= deref camC;
+                        camC <= deref camT;
+                        idx++;
+                        t += tStep;
+                     }
+                  }
+                  // else
+                  //    camN <= camC;
+
+                  // Last key frame
+                  fn = (camC.ctr_x - offCtrX) / sclCtrX;
+                  beCtrX.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  fn = (camC.ctr_y - offCtrY) / sclCtrY;
+                  beCtrY.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  fn = (camC.ctr_z - offCtrZ) / sclCtrZ;
+                  beCtrZ.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  fn = (camC.rot_x - offRotX) / sclRotX;
+                  beRotX.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  fn = (camC.rot_y - offRotY) / sclRotY;
+                  beRotY.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  fn = (camC.rot_z - offRotZ) / sclRotZ;
+                  beRotZ.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  fn = (camC.eye_dist - offDist) / sclDist;
+                  beDist.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+                  BezierEdit *be;
+                  foreach be in [beCtrX, beCtrY, beCtrZ, beRotX, beRotY, beRotZ, beDist]
+                  {
+                     be.recalc(true/*bAction*/);
+                     be.resetZoom();
+                     be.redraw();
+
+                     if(GConfig.b_curve7_autosmooth)
+                     {
+                        be.makeSymmetrical(45.0f*(2PI/360)/*maxAngle*/);
+                        be.alignLastToFirst();
+                     }
+                  }
+
+                  Global.Success("Import "+numKeyFrames+" key frame"+Utils.GetPluralString(numKeyFrames));
+
+                  current_project.queueRedraw();
+               }
+               else
+                  Global.Warning("Import: link source object has no active connections");
+            }
+            else
+               Global.Warning("Import: link source object is not a connection container");
+         }
+         else
+            Global.Warning("Import: link source object does not output OrbitCamView");
+      }
+      else
+         Global.Warning("Import: No link source object selected");
+   }
+
+   // // // <ui_show.png>
+   // // protected method showToolsMenu() {
+
+   // //    pm_tools <= PopupMenu.New(this);
+   // //    pm_tools.b_ext_focus_hack = true;
+
+   // //    PopupMenuButton *pmb;
+   // //    PopupMenu pm <= pm_tools;
+
+   // //    if(null != gtexture)
+   // //    {
+   // //       pmb <= pm.addDefaultButton("Import Image (Histogram)..",
+   // //                                  "import_histogram"
+   // //                                  );
+   // //       // pmb.setActive(null != obj);
+   // //       pmb.setAccelerators("lctrl-l", "");
+   // //    }
+
+   // //    // pm.addSeparator();
+
+   // //    pm.resizeToMinimum();
+   // //    pm.showNearMouse(-10, -10);
+
+   // //    Global.Print("Show tools menu.");
+   // // }
+
+//    // <ui_kbd.png>
+//    public virtual onTriadKeyTimeout() {
+//       Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+// "
+//           c  :  Close dialog
+// "
+//                                     ,
+//                                     this);
+//       return true;
+//    }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx Curve7Dialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageStart pgStart <= root_form.pg_start;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'v':
+            if(isAnyCurveZoomed())
+               handleCurveZoom(0, false/*bMaximize*/);
+            else
+               hide();
+            return true;
+
+         case '1':
+            handleCurveZoom(0, true/*bMaximize*/);
+            return true;
+
+         case '2':
+            handleCurveZoom(1, true/*bMaximize*/);
+            return true;
+
+         case '3':
+            handleCurveZoom(2, true/*bMaximize*/);
+            return true;
+
+         case '4':
+            handleCurveZoom(3, true/*bMaximize*/);
+            return true;
+
+         case '5':
+            handleCurveZoom(4, true/*bMaximize*/);
+            return true;
+
+         case '6':
+            handleCurveZoom(5, true/*bMaximize*/);
+            return true;
+
+         case '7':
+            handleCurveZoom(6, true/*bMaximize*/);
+            return true;
+      }
+
+      if(root_form.tryHandleTransportKey(_k))
+         return true;
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int curveIdx;
+      BezierCurveForm *curveForm;
+
+      if(BezierCurveForm.ACTION_CURVE_EDITED == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         if(-1 != curveIdx)
+         {
+            current_project.queueRedraw();
+            return true;
+         }
+      }
+      else if(BezierCurveForm.ACTION_CURVE_SAVED == acName)
+      {
+         foreach curveForm in f_curves
+         {
+            curveForm.scanCurvePresets();
+         }
+         return true;
+      }
+      else if((BezierCurveForm.ACTION_CURVE_MAXIMIZE == acName) || (BezierCurveForm.ACTION_CURVE_MINIMIZE == acName))
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveZoom(curveIdx, (BezierCurveForm.ACTION_CURVE_MAXIMIZE == acName)/*bMaximize*/);
+         return true;
+      }
+      else if(BezierCurveForm.ACTION_CURVE_SCL == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveScaleChanged(curveIdx);
+         return true;
+      }
+      else if(BezierCurveForm.ACTION_CURVE_OFF == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveOffsetChanged(curveIdx);
+         return true;
+      }
+      else if(BezierCurveForm.ACTION_CURVE_IMPORT == acName)
+      {
+         handleImportKeyFrames();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         // case @(pm_tools):
+         //    Global.Debug("pm_tools acName="+acName);
+         //    switch(acName)
+         //    {
+         //       case PopupMenu.ACTION_CANCEL:
+         //       case "":
+         //          Global.Print("Close tools menu.");
+         //          UI.SetKeyboardFocus(this);
+         //          return true;
+
+         //       case "import_histogram":
+         //          UI.SetKeyboardFocus(this);
+         //          handleImportHistogram();
+         //          return true;
+         //    }
+         //    return true;
+
+         // case @(bt_import):
+         //    // handleImportHistogram();
+         //    return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

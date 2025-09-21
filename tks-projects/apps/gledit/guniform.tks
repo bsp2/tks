@@ -1,0 +1,230 @@
+// ----
+// ---- file   : guniform.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 15Jun2020, 17Jun2020, 20Jun2020, 25Jun2020, 19Jul2020, 22Jul2020
+// ----          31Jul2020, 01Aug2020, 03Aug2020, 14Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGUniform;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GUniform : GProgramSubObject {
+   // // boolean b_init_done;
+   // // String  s_script_set;  // set uniform value script (called in Draw())
+   String *s_in_var_name;  // script init value (for glUniform*() call and when re-using uniform output)
+
+
+   // <method_new.png>
+   static New(GProgram _program, String _id, int _type) : GUniform {
+      local GUniform r;
+      r.initIdType(_id, _type);
+      r.parent_program <= _program;
+      return deref r;
+   }
+
+   // <method_get.png>
+   public method getInitialUniformType() : int {
+      return TYPE_FLOAT;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = getInitialUniformType();
+      initIO();
+   }
+
+   // <method.png>
+   public virtual initIO() {
+      inputs.free();
+      outputs.free();
+      addInput(GInput.IN_DEF, type);
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method.png>
+   public virtual initIdType(String _id, int _type) {
+      GObject::initIdType(_id, _type);  // calls init()
+      initIO();
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      return DOMAIN_GLSL;
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "uniforms";
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return getNamespacePrefix()+"_u_"+id;
+   }
+
+   // <method.png>
+   public virtual getGLSLVarName() : String {
+      return "u_"+id;
+   }
+
+   // <method_get.png>
+   public method getNumBytes() : int {
+      return GDefs.GetTypeSize(type);
+   }
+
+   // <method.png>
+   public method resetInit() {
+      // called by Program::clearUniformInitFlags() via Program::emitModule()
+      // // b_init_done = false;
+      // // s_script_set.empty();
+   }
+
+   // <method_new.png>
+   public method createModelUniform() : GModelUniform {
+      return GModelUniform.New(getId(),
+                               getType()
+                               );
+   }
+
+   // <method.png>
+   public method emitSetUniformFromVar(GModule _module,
+                                       local String _out,
+                                       local String _uniVarName,
+                                       local String _sInVar
+                                       ) {
+      switch(type)
+      {
+         default:
+            throw GUnsupportedUniformType "id="+id+" type="+getGLSLTypeName();
+
+         case TYPE_INT:
+            _out.append("glUniform1i("+_uniVarName+", "+_sInVar+");\n");
+            break;
+
+         case TYPE_FLOAT:
+            _out.append("glUniform1f("+_uniVarName+", "+_sInVar+");\n");
+            break;
+
+         case TYPE_VEC2:
+            _out.append("glUniform2f("+_uniVarName+", "+_sInVar+".x, "+_sInVar+".y);\n");
+            break;
+
+         case TYPE_VEC3:
+            _out.append("glUniform3f("+_uniVarName+", "+_sInVar+".x, "+_sInVar+".y, "+_sInVar+".z);\n");
+            break;
+
+         case TYPE_VEC4:
+            _out.append("glUniform4f("+_uniVarName+", "+_sInVar+".x, "+_sInVar+".y, "+_sInVar+".z, "+_sInVar+".w);\n");
+            break;
+
+         case TYPE_MAT2:
+            _out.append("glUniformMatrix2fv("+_uniVarName+", 1/*count*/, GL_TRUE/*transpose*/, "+_sInVar+");\n");
+            break;
+
+         case TYPE_MAT3:
+            _out.append("glUniformMatrix3fv("+_uniVarName+", 1/*count*/, GL_TRUE/*transpose*/, "+_sInVar+");\n");
+            break;
+
+         case TYPE_MAT4:
+            if("transform" == id)
+            {
+               // for scenegraph and/or GScriptRender model_draw_mat<>: multiply parent '_transform' matrix by uniform input
+               _out.append("if(null != _transform)\n{\n   ");
+               local String sTransformVar <= _module.allocTmpVarScript(_out, TYPE_MAT4, "_transform_mat"/*suffix*/);
+               _out.append("   _transform.mul("+_sInVar+") => "+sTransformVar+";\n");
+               // _out.append("   _transform.mulRev("+_sInVar+") => "+sTransformVar+";\n");
+               // // // _out.append("   "+sInVar+".mul(_transform) => "+sTransformVar+";\n");
+               _out.append("   glUniformMatrix4fv("+_uniVarName+", 1/*count*/, GL_TRUE/*transpose*/, "+sTransformVar+");\n");
+               _out.append("}\n");
+               _out.append("else\n{\n");
+               _out.append("   glUniformMatrix4fv("+_uniVarName+", 1/*count*/, GL_TRUE/*transpose*/, "+_sInVar+");\n");
+               _out.append("}\n");
+            }
+            else
+            {
+               _out.append("glUniformMatrix4fv("+_uniVarName+", 1/*count*/, GL_TRUE/*transpose*/, "+_sInVar+");\n");
+            }
+            break;
+
+         case TYPE_SAMPLER2D:
+         case TYPE_SAMPLER2DARRAY:
+         case TYPE_SAMPLER3D:
+         case TYPE_SAMPLERCUBE:
+            // already handled by GModelUniformSampler
+            break;
+
+
+      } // switch type
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId,
+                       local GModule      _module,
+                       local GProgram     _program,
+                       local String       _out,
+                       local String       _dstVar,
+                       local boolean      _bGLSL,
+                       local PointerArray _parents
+                       ) {
+      if("bind" == _outputId)
+      {
+         local String uniVarName <= getVarName();
+
+         s_in_var_name <= _module.allocTmpVarScript(_out, type, "init");
+         local GInput inVal <= getInputById("in");
+         if(inVal.isConnected())
+         {
+            // trace "xxx guniform::emit: id="+id+" parents="+Utils.GetParentsDebugString(_parents);
+            _parents.add(this);
+            String *sInVar <= s_in_var_name;
+            inVal.emit(_module, _program, _out, sInVar, false/*bGLSL*/, _parents);
+            _parents.remove(this);
+
+            emitSetUniformFromVar(_module, _out/*out*/, uniVarName, sInVar);
+         }
+         else
+         {
+            if(("transform" == id) && (TYPE_MAT4 == type))
+            {
+               // for scenegraph
+               _out.append("if(null != _transform)\n{\n");
+               _out.append("   glUniformMatrix4fv("+uniVarName+", 1/*count*/, GL_TRUE/*transpose*/, _transform);\n");
+               _out.append("}\n");
+            }
+            else
+            {
+               // (note) not necessarily an error, GScriptRender may be used to set uniforms instead
+               trace "[~~~] GUniform::emit: input path="+getObjectPath()+" is not connected, skipping initialization..";
+               // trace "[~~~]                  this="+getObjectPath();
+            }
+         }
+      }
+
+      if("bind" != _outputId)
+      {
+         if(_bGLSL)
+            _out.append(_dstVar+" = "+getGLSLVarName()+";\n");
+         else
+            _out.append(_dstVar+" = "+s_in_var_name+";\n");
+      }
+   }
+
+}

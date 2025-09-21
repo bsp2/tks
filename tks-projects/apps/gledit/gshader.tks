@@ -1,0 +1,258 @@
+// ----
+// ---- file   : gshader.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 14Jun2020, 16Jun2020, 18Jun2020, 19Jun2020, 20Jun2020, 22Jun2020
+// ----          30Jun2020, 25Jul2020, 26Jul2020, 30Jul2020, 09Feb2025, 12Feb2025
+// ----
+// ----
+// ----
+module MGShader;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GShader : GProgramSubObject {
+
+   GSource *sources[];
+
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+   }
+
+   // <method_get.png>
+   public virtual getId() : String {
+   }
+
+   // <method_get.png>
+   public virtual getNamespace() : GNamespace {
+      return parent_program.getNamespace();
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      // not called
+      return "";
+   }
+
+   // <method_find.png>
+   public virtual isConnectedToAnyObject() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual canRename() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual canDelete() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual canClone() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public method getNumSources() : int {
+      return sources.numElements;
+   }
+
+   // <method.png>
+   public method addSource(GSource _src) : GSource {
+      sources.add(#(deref _src));
+      _src.parent_object <= this;
+      // // _src.parent_namespace <= parent_namespace;
+      return _src;
+   }
+
+   // <method.png>
+   public method addSourceAutoId(GSource _src, String _prefIdOrNull) : GSource {
+      addSource(deref _src);
+      _src.id = Utils.CreateAutoId((null != _prefIdOrNull) ? _prefIdOrNull : "src", sources);
+      return _src;
+   }
+
+   // <method_remove.png>
+   public method removeSource(GSource _obj) : boolean {
+      boolean bLast = sources.isLast(_obj);
+      sources.remove(_obj);
+      return bLast;
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+      removeConnectionsToObjectPorts(inputs, _obj);
+      removeConnectionsToObjectPorts(outputs, _obj);
+
+      local GSource *source;
+      foreach source in sources
+      {
+         source.removeConnectionsToObject(_obj);
+      }
+   }
+
+   // <method_find.png>
+   public virtual enumerateObjects(local PointerArray _ret, local int _recurseDepthLeft) {
+      _ret.joinRR(_ret, sources);
+   }
+
+   // <method.png>
+   public virtual handleWatchFileChanged(local String _pathName) {
+      GSource *src;
+      foreach src in sources
+      {
+         src.handleWatchFileChanged(_pathName);
+      }
+   }
+
+   // <method_get.png>
+   public virtual hasDefaultAction() : boolean {
+      return !sources.isEmpty();
+   }
+
+   // <method.png>
+   public virtual execDefaultAction() {
+      GSource src <= sources.first;
+      if(null != src)
+         src.openInEditor();
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // Sources
+      ofs.i8 = sources.numElements;
+      local GSource *src;
+      foreach src in sources
+      {
+         src.saveStateObject(ofs, connectionWriter);
+      }
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Sources
+         int numSources = ifs.u8;
+         int srcIdx = 0;
+         loop(numSources)
+         {
+            local GSource src <= GObject.LoadStateObject(ifs);
+            if!(src instanceof GSource)
+            {
+               trace "[---] GShader::loadStateObject: failed to load source "+(srcIdx+1)+"/"+numSources+", src="+#(src)+" this="+#(this)+" path="+getObjectPath();
+               return false;
+            }
+
+            // Migrate old project format GSource to GVertexSource / GFragmentSource
+            if(this instanceof GVertexShader)
+            {
+               // Vertex Shader
+               if!(src instanceof GVertexSource)
+               {
+                  // Convert old project format type
+                  local GVertexSource vsrc <= new GVertexSource;
+                  vsrc.init();
+                  vsrc.moveFrom(src);
+                  vsrc.postInit();
+                  src <= deref vsrc;
+               }
+            }
+            else
+            {
+               // Fragment Shader
+               if!(src instanceof GFragmentSource)
+               {
+                  // Convert old project format type
+                  local GFragmentSource fsrc <= new GFragmentSource;
+                  fsrc.init();
+                  fsrc.moveFrom(src);
+                  fsrc.postInit();
+                  src <= deref fsrc;
+               }
+            }
+
+            // trace "xxx add src="+#(src);
+
+            sources.add(#(deref src));
+            src.parent_object <= this;
+
+            src.postInit(); // configure fileparam
+
+            srcIdx++;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GShader::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      local String srcId <= _path;
+
+      local GSource *src;
+      foreach src in sources
+      {
+         if(src.getId() == srcId)
+            return src;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public method emitShader(local GModule       _module,
+                            local GProgram      _program,
+                            local GShaderSource _src,
+                            local PointerArray  _objDone
+                            ) {
+   }
+
+   // <method.png>
+   public method emitShaderPost(local GModule       _module,
+                                local GProgram      _program,
+                                local PointerArray  _objDone
+                                ) {
+      // GInput *input;
+      // foreach input in inputs
+      // {
+      //    input.emitPost(
+      // }
+   }
+
+}

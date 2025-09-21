@@ -1,0 +1,142 @@
+// ----
+// ---- file   : gfragmentshader.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 14Jun2020, 15Jun2020, 26Jun2020, 30Jun2020, 03Jul2020, 09Jul2020
+// ----          14Aug2020, 04Feb2025, 16Sep2025
+// ----
+// ----
+// ----
+module MGFragmentShader;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GFragmentShader : GShader {
+
+   // <method_new.png>
+   static New() : GFragmentShader {
+      local GFragmentShader r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GShader::init();
+
+      addInput("color", TYPE_VEC4);
+   }
+
+   // <method.png>
+   public virtual getId() : String {
+      return "fs";
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return "frag_"+id;
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_GLSL;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      // no outputs
+      return DOMAIN_GLSL;
+   }
+
+   // <method.png>
+   public virtual emitShader(local GModule       _module,
+                             local GProgram      _program,
+                             local GShaderSource _src,
+                             local PointerArray  _parents
+                             ) {
+
+      GSource *gsrc;
+      foreach gsrc in sources
+      {
+         if(gsrc.isEnabled())
+         {
+            gsrc.emitBegin();
+         }
+      }
+
+      _src.emitBegin();
+
+      local String sGlobal;
+      local String sMain;
+
+      _src.appendMain("vec4 g_FragCoord = vec4((xxx_FragCoord.xy + u_fragcoord_off_scl.xy) * u_fragcoord_off_scl.zw, xxx_FragCoord.zw);\n");
+      _src.appendMain("vec2 g_NormCoord = g_FragCoord.xy * u_normcoord_scl - 1.0;\n");
+
+      // Declare uniforms
+      GUniform *uni;
+      foreach uni in _program.uniforms
+      {
+         if(uni.isEnabled())
+         {
+            _src.appendGlobal("uniform "+uni.getGLSLTypeName()+" "+uni.getGLSLVarName()+";\n");
+         }
+      }
+
+      _src.appendGlobal("uniform vec4 u_fragcoord_off_scl;\n");
+      _src.appendGlobal("uniform vec2 u_normcoord_scl;\n");
+
+      _src.appendGlobal("\n");
+
+      boolean b120 = (Utils.IsMacOS() && !UIRenderer.b_glcore) || GConfig.b_glsl_1;
+      String sIn  <= b120 ? "varying " : "in ";
+
+      // Declare Varyings
+      GVarying *v;
+      foreach v in _program.varyings
+      {
+         if(v.isEnabled())
+         {
+            _src.appendGlobal(sIn+v.getGLSLTypeName()+" "+v.getGLSLVarName()+";\n");
+         }
+      }
+
+      if!(_program.varyings.isEmpty())
+         _src.appendGlobal("\n");
+
+      // // local String sOutColor <= "gl_FragColor";
+      // // local String sOutColor <= _module.allocTmpVar(sGlobal, TYPE_VEC4, "gl_FragColor");
+      local String *sOutColor;
+      if(b120)
+      {
+         // GLES2
+         sOutColor <= "gl_FragColor";
+      }
+      else
+      {
+         // GLES3
+         sOutColor <= "o_FragColor";
+         _src.appendGlobal("out vec4 "+sOutColor+";\n");
+      }
+
+      _src.appendGlobal("\n");
+
+      GInput inColor <= getInputById("color");
+      inColor.emit(_module, _program, sMain, sOutColor, true/*bGLSL*/, _parents);
+
+      // // sMain.append("gl_FragColor = "+sOutColor+";\n");
+
+      _src.appendGlobal(sGlobal);
+      _src.appendMain(sMain);
+
+      _src.emitEnd();
+   }
+}

@@ -1,0 +1,329 @@
+// ----
+// ---- file   : gscene.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 14Jun2020, 15Jun2020, 27Jun2020, 28Jun2020, 01Jul2020, 10Jul2020, 13Jul2020
+// ----          01Aug2020, 02Aug2020, 15Aug2020
+// ----
+// ----
+// ----
+module MGScene;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GScene : GObject, GNamespace/*, GNamespaceProvider*/ {
+
+
+   // <method_new.png>
+   static New() : GScene {
+      local GScene r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      addInput("visible", TYPE_BOOL);
+
+      addOutput(GOutput.OUT_DEF, TYPE_FUNCTION);  // for scene_select, outputs Draw fxn name
+
+      // setNamespaceId("scene1");
+
+      // GModel model <= addModel(GModel_Test.New());
+      // model.setId("quadmodel");
+   }
+
+   // <method_get.png>
+   public virtual hasRenderPasses() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "scenes";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "scene";
+   }
+
+   // <method.png>
+   public virtual setNamespaceId(String _id) {
+      id = _id;
+   }
+
+   // <method.png>
+   public virtual getNamespaceId() : String {
+      return id;
+   }
+
+   // <method.png>
+   public virtual prepareRemove() {
+      GObject::prepareRemove();
+      GNamespace::prepareRemoveNamespaceObjects();
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+      GObject::removeConnectionsToObject(_obj);
+      GNamespace::removeConnectionsToObject(_obj);
+   }
+
+  // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // Namespace
+      GNamespace::saveStateNamespace(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Namespace
+         if(GNamespace::loadStateNamespace(ifs))
+         {
+            // Succeeded
+            return true;
+         }
+      }
+      else
+      {
+         trace "[---] GScene::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method saveScenePresetStream(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      // (todo) make all connections links relative to 'this'
+      local GConnectionWriter connectionWriter;
+      connectionWriter.setObjectPathPrefixFilter(getObjectPath());
+
+      saveStateObject(ofs, connectionWriter);
+
+      // Connections
+      connectionWriter.saveStream(ofs);
+   }
+
+   // <load.png>
+   public method loadScenePresetStream(Stream ifs) : boolean {
+
+      current_project.runScriptExit();
+      removeNamespaceObjects();
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Load object base info (see GObject.LoadStateObject())
+         local String className <= GObject.LoadObjectHeader(ifs);
+
+         if(className == yacMetaClassName())
+         {
+            if(loadStateObject(ifs))
+            {
+               // Connections
+               local GConnectionReader connectionReader;
+               connectionReader.setObjectPathPrefixFilter(getObjectPath());
+
+               if!(connectionReader.loadStream(ifs))
+               {
+                  trace "[---] GScene::loadScenePresetStream: failed to load connections";
+                  return false;
+               }
+
+               // Succeeded
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] GScene::loadScenePresetStream: class name mismatch (expect GScene, have \""+className+"\")";
+         }
+      }
+      else
+      {
+         trace "[---] GScene::loadScenePresetStream: invalid version "+ver;
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+      if(_bUnfold)
+         setFoldStatus(false);
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      return GNamespace::findObjectByPathUnfold(_path, _bUnfold);
+   }
+
+   // <method_find.png>
+   public virtual isConnectedToAnyObject() : boolean {
+      // auto-connected: all scenes in all namespaces are rendered if there is no "scene_select" mod in global namespace
+      return true;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GScene::emitBegin";
+      GObject::emitBegin();
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      GObject::emitBeginRecursive();
+      GNamespace::emitBeginRecursive();
+   }
+
+   // <method.png>
+   public virtual emitModule(GModule _module) {
+      // _module.appendDrawPre("zglInitOrtho(1,1);\n");
+      // _module.appendDrawPre("glLoadIdentity();\n");
+
+      _module.beginSection(getNamespacePrefix()+"_scene_"+getId());
+
+      int numRenderPasses = getNumRenderPasses();
+
+      local PointerArray parents;
+
+      // // local GFBO *fbo;
+      // // foreach fbo in fbos
+      // // {
+      // //    fbo.emitFBO("init", _module, parents);
+      // // }
+
+      if(0 == numRenderPasses)
+      {
+         // Implicit renderpass: render all models to back buffer
+
+         local GModel *model;
+         foreach model in models
+         {
+            if(model.isEnabled())
+            {
+               model.emitModule(_module);
+            }
+         }
+
+         foreach model in models
+         {
+            if(model.isEnabled())
+            {
+               model.emitCallDraw(_module);
+            }
+         }
+      }
+      else
+      {
+         local GRenderPass *renderpass;
+         foreach renderpass in renderpasses
+         {
+            if(renderpass.isEnabled())
+            {
+               // Also calls fbo.emitFBO("init")
+               renderpass.emitRenderPass("init", _module, parents);
+            }
+         }
+
+         foreach renderpass in renderpasses
+         {
+            if(renderpass.isEnabled())
+            {
+               // Also calls fbo.emitFBO("bind")
+               renderpass.emitRenderPass("draw", _module, parents);
+            }
+         }
+      }
+
+      _module.endSection();
+   }
+
+   // <method.png>
+   public method getDrawCallName() : String {
+      return "Draw_"+getNamespacePrefix()+"_scene_"+getId();
+   }
+
+   // <method.png>
+   public method emitCallDraw(GModule _module) {
+      local String sDrawPre;
+      appendScriptInputCond(_module, "visible", sDrawPre);
+      sDrawPre.append(getDrawCallName()+"("+current_project.cur_emit_fb_w+", "+current_project.cur_emit_fb_h+");\n");
+      _module.appendDrawPre(sDrawPre);
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId,
+                       local GModule      _module,
+                       local GProgram     _program,
+                       local String       _out,
+                       local String       _dstVar,
+                       local boolean      _bGLSL,
+                       local PointerArray _parents
+                       ) {
+      if(GOutput.OUT_DEF == _outputId)
+      {
+         _out.append(_dstVar+" <= "+getDrawCallName()+";\n");
+      }
+      else
+      {
+         // should not be reachable
+         _out.append(_dstVar+" = <emitGLSL: missing implemention, this="+#(this)+" id="+id+" outputId="+_outputId+">;\n");
+      }
+   }
+
+   // <method.png>
+   public virtual emitModulePost(GModule _module) {
+
+      // trace "xxx gscene: emitModulePost";
+
+      local PointerArray parents;
+      parents.add(this);
+
+      GObject::emitPost(_module, null/*program*/, parents);
+
+      // // local GModel *model;
+      // // foreach model in models
+      // // {
+      // //    model.emitModulePost(_module);
+      // // }
+
+      local GRenderPass *renderpass;
+      foreach renderpass in renderpasses
+      {
+         renderpass.emitPost(_module, null/*program*/, parents);
+      }
+      parents.remove(this);
+
+      GNamespace::emitModulePost(_module);
+   }
+}

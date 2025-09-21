@@ -1,0 +1,205 @@
+param float threshold_min = 0.1 min=0 max=1
+param float threshold_max = 0.8 min=0 max=1
+param float lum_scl = 0.7 min=0 max=1
+param bool enable = true
+param bool scharr = true
+param bool show_lum = true
+param bool show_lum_both = true
+
+out vec4 o_color;
+
+[global]
+float lum_from_rgb(vec3 rgb) {
+   return dot(rgb, vec3(0.333, 0.333, 0.333));
+   // return rgb.y;
+}
+
+[main]
+vec2 uv = g_NormCoord*0.5+0.5;
+vec2 texSz = vec2(textureSize(u_tex, 0/*lod*/));
+vec2 uvStep = vec2(1,1) / texSz;
+// uv += -uvStep*0.5;
+vec2 uvPix = uv * texSz;
+vec2 uvFrac = fract(uvPix);
+
+// (todo) separate
+
+vec4 cIn[5];
+
+cIn[0] = texture2D(u_tex, uv+vec2(0,         uvStep.y));
+cIn[1] = texture2D(u_tex, uv+vec2(uvStep.x,  uvStep.y));
+cIn[2] = texture2D(u_tex, uv+vec2(0,         0));
+cIn[3] = texture2D(u_tex, uv+vec2(uvStep.x,  0));
+
+
+// vec4 cblur = 
+//    (cIn[0] + cIn[1] + cIn[2] +
+//     cIn[3] + cIn[4] + cIn[5] +
+//     cIn[6] + cIn[7] + cIn[8]
+//     ) * (1.0 / 9.0);
+
+float lumIn[5];
+lumIn[0] = lum_from_rgb(cIn[0].rgb);  // lt
+lumIn[1] = lum_from_rgb(cIn[1].rgb);  // rt
+lumIn[2] = lum_from_rgb(cIn[2].rgb);  // lb
+lumIn[3] = lum_from_rgb(cIn[3].rgb);  // rb
+
+float lum = 0.0;
+vec4 c = vec4(0);
+vec4 cxt = vec4(0);
+vec4 cxb = vec4(0);
+vec4 cx = vec4(0);
+vec4 cyl = vec4(0);
+vec4 cyr = vec4(0);
+vec4 cy = vec4(0);
+float lumt;
+
+float lumxt = lumIn[1] - lumIn[0];
+float lumxb = lumIn[3] - lumIn[2];
+
+float lumyl = lumIn[2] - lumIn[0];
+float lumyr = lumIn[3] - lumIn[1];
+
+
+// lumx -= 1.0;
+// lumy -= 1.0;
+
+// lumxt *= $(LUM_SCL);
+// lumxb *= $(LUM_SCL);
+// lumyl *= $(LUM_SCL);
+// lumyr *= $(LUM_SCL);
+
+lumxt = sign(lumxt) * smoothstep($(THRESHOLD_MIN), $(THRESHOLD_MAX), abs(lumxt)) * $(LUM_SCL);
+lumxb = sign(lumxb) * smoothstep($(THRESHOLD_MIN), $(THRESHOLD_MAX), abs(lumxb)) * $(LUM_SCL);
+lumyl = sign(lumyl) * smoothstep($(THRESHOLD_MIN), $(THRESHOLD_MAX), abs(lumyl)) * $(LUM_SCL);
+lumyr = sign(lumyr) * smoothstep($(THRESHOLD_MIN), $(THRESHOLD_MAX), abs(lumyr)) * $(LUM_SCL);
+
+vec4 ct = (cIn[0] + cIn[1])*0.5;
+vec4 cb = (cIn[2] + cIn[3])*0.5;
+
+if(lumxt > 0.0)
+{
+   // cxt = cIn[0] + (ct - cIn[0]) * lumxt;
+   cxt = ct + (cIn[0] - ct) * lumxt;
+   // cxt = vec4(1,0,0,1);
+}
+else if(lumxt < 0.0)
+{
+   cxt = cIn[0] + (ct - cIn[0]) * -lumxt;
+   // cxt = vec4(1,0,0,1);
+}
+else
+   cxt = cIn[0];
+
+if(lumxb > 0.0)
+{
+   cxb = cIn[2] + (cb - cIn[2]) * lumxb;
+}
+else if(lumxb < 0.0)
+{
+   cxb = cIn[2] + (cb - cIn[2]) * -lumxb;
+}
+else
+   cxb = cIn[2];
+
+
+if(lumyl > 0.0)
+{
+   // cyl = cxb + (cxt - cxb) * lumyl;
+   // cyl = cxt + (cxb - cxt) * lumyl;
+   cyl = cxb + (cxt - cxb) * lumyl;
+   // cyl = vec4(lumyl,0,0,1);
+   // cyl = vec4(1,0,0,1);
+}
+else if(lumyl < 0.0)
+{
+   cyl = cxb + (cxt - cxb) * -lumyl;
+}
+else
+   cyl = cxb;
+
+
+// if(lumyr > 0.0)
+// {
+//    cyl = cxb + (cxt - cxb) * lumyr;
+// }
+// else if(lumyl < 0.0)
+// {
+//    cyl = cxb + (cxt - cxb) * -lumyr;
+// }
+// else
+//    cyl = cIn[2];
+
+c = cyl;
+
+
+
+// if(lumx < 0.0)
+// {
+//    cx = cIn[4] + (cIn[1] - cIn[4]) * -lumx;
+//    cx = vec4(-lumx,0,0,1);
+// }
+// else if(lumx > 0.0)
+// {
+//    cx = cIn[4] + (cIn[7] - cIn[4]) * lumx;
+//    cx = vec4(0,lumx*1.0,0,1);
+//    // cx = vec4(0,0,1,1);
+// }
+
+// m = mgy;
+// lumy =
+//   m[0][0] + m[1][0] + m[2][0] +
+//   m[0][1] + m[1][1] + m[2][1] +
+//   m[0][2] + m[1][2] + m[2][2] ;
+
+// if(!$(SCHARR))
+//   lumy *= 2000.0;
+
+// /* lum = (lum * 1.0) + 0.5; */
+//  lumy  = (lumy * 1.0) + 0.075;
+
+// if(lumy < 0.0)
+// {
+//    cy = vec4(-lumy,0,0,1);
+//    cy = cIn[4] + (cIn[3] - cIn[4]) * -lumy;
+// }
+// else if(lumy > 0.0)
+// {
+//     // cy = vec4(0,lum*1.0,0,1);
+//     cy = cIn[4] + (cIn[5] - cIn[4]) * lumy;
+// }
+
+// lum = 1.0 - lum;
+// c = cIn[4] + (cblur - cIn[4]) * lum;
+
+
+// c = cx;
+
+//c = vec4(1,1,1,1);
+
+
+/* lum3 = smoothstep($(THRESHOLD_MIN), $(THRESHOLD_MAX), lum3); */
+
+if($(ENABLE))
+{
+   if($(SHOW_LUM))
+   {
+      if($(SHOW_LUM_BOTH))
+      {
+         o_color = vec4(lum,lum,lum,1);
+      }
+      else
+      {
+         lumxt = 0.5*lumxt + 0.5;
+         lumxb = 0.5*lumxb + 0.5;
+         o_color = vec4(lumxt,lumxb,0,1);
+      }
+   }
+   else
+      o_color = vec4(c);
+}
+else
+{
+   o_color = cIn[2];
+}
+

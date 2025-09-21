@@ -1,0 +1,457 @@
+// ----
+// ---- file   : genvelopeorbitcam.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 13Aug2020
+// ---- changed: 14Aug2020
+// ----
+// ----
+// ----
+module MGEnvelopeOrbitCam;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GEnvelopeOrbitCam : GEnvelope, GParamProvider {
+
+   define int NUM_CURVES = 7;
+
+   BezierEditState *[] curve_states;
+   Envelope *[]        curve_envs;
+
+   static Curve7Dialog *dlg_curve;
+
+   protected boolean b_init_done;
+   protected boolean b_post_done;
+
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = TYPE_ORBITCAMVIEW;
+
+      GParamFloat *pf;
+
+      addParamFloat("scl_ctr_x", "scl_ctr_x", 10.0f, -10.0f, FLT_MIN, 10.0f, FLT_MAX, 10.0f);
+      addParamFloat("off_ctr_x", "off_ctr_x", 0.0f, -10, FLT_MIN, 10, FLT_MAX, 0);
+
+      addParamFloat("scl_ctr_y", "scl_ctr_y", 10.0f, -10.0f, FLT_MIN, 10.0f, FLT_MAX, 10.0f);
+      addParamFloat("off_ctr_y", "off_ctr_y", 0.0f, -10, FLT_MIN, 10, FLT_MAX, 0);
+
+      addParamFloat("scl_ctr_z", "scl_ctr_z", 10.0f, -10.0f, FLT_MIN, 10.0f, FLT_MAX, 10.0f);
+      addParamFloat("off_ctr_z", "off_ctr_z", 0.0f, -10, FLT_MIN, 10, FLT_MAX, 0);
+
+      addParamFloat("scl_rot_x", "scl_rot_x", 90.0f, -90.0f, -90, 90.0f, 90.0, 90.0f);
+      pf <= addParamFloat("off_rot_x", "off_rot_x", 0.0f, 0.0f, 0, 360.0f, 360.0, 0);
+      pf.setEnableCyclic(true);
+
+      addParamFloat("scl_rot_y", "scl_rot_y", 360.0f, -360.0f, -3600, 360.0f, 3600.0, 360.0f);
+      pf <= addParamFloat("off_rot_y", "off_rot_y", 0.0f, 0.0f, 0, 360.0f, 360.0, 0);
+      pf.setEnableCyclic(true);
+
+      addParamFloat("scl_rot_z", "scl_rot_z", 360.0f, -360.0f, -3600, 360.0f, 3600.0, 360.0f);
+      pf <= addParamFloat("off_rot_z", "off_rot_z", 0.0f, 0.0f, 0, 360.0f, 360.0, 0);
+      pf.setEnableCyclic(true);
+
+      addParamFloat("scl_dist", "scl_dist", 10.0f, -10.0f, FLT_MIN, 10.0f, FLT_MAX, 10.0f);
+      addParamFloat("off_dist", "off_dist", 0.0f, -10, FLT_MIN, 10, FLT_MAX, 0);
+
+      addParamBool("repeat", "Repeat", true);
+
+      addInput("t",    TYPE_FLOAT);
+      addInput("ctr",  TYPE_VEC3);
+      addInput("rot",  TYPE_VEC3);
+      addInput("dist", TYPE_FLOAT);
+
+      addOutput(GOutput.OUT_DEF, TYPE_ORBITCAMVIEW);
+
+      loop(NUM_CURVES)
+      {
+         BezierEditState beState <= new BezierEditState;
+         Envelope beEnv <= new Envelope;
+         BezierCurveForm.InitLinearEnv(beState, beEnv);
+         curve_states.add(#(deref beState));
+         curve_envs.add(#(deref beEnv));
+         // trace "xxx beEnv="+#(beEnv);
+      }
+
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "env_orbitcam";
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return getNamespacePrefix()+"_envorbitcam_"+id;
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <ui_show.png>
+   public method showEditor() {
+      if(null == dlg_curve)
+      {
+         dlg_curve <= new Curve7Dialog;
+         dlg_curve.initCurve7Dialog();
+      }
+      dlg_curve.showCurve7Dialog(this);
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // Params
+      GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+
+      // Save curves
+      int curveIdx = 0;
+      loop(NUM_CURVES)
+      {
+         BezierEditState beState <= curve_states.get(curveIdx);
+         ofs << beState;
+         curveIdx++;
+      }
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         if(GParamProvider::loadStateParamProvider(ifs))
+         {
+            // Read Curves
+            int curveIdx = 0;
+            local BezierEditState beStateTmp;
+            loop(NUM_CURVES)
+            {
+               BezierEditState beState <= curve_states.get(curveIdx);
+               Envelope beEnv <= curve_envs.get(curveIdx);
+               beState << ifs;
+               BezierCurveForm.CalcEnv(beState, beEnv);
+               curveIdx++;
+            }
+
+            // Succeeded
+            return true;
+         }
+         else
+         {
+            trace "[---] GEnvelopeOrbitCam::loadStateObject: failed to load params, this="+#(this)+" path="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[---] GEnvelopeOrbitCam::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual hasDefaultAction() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   public virtual execDefaultAction() {
+      showEditor();
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GEnvelopeOrbitCam::emitBegin";
+      b_init_done = false;
+      b_post_done = false;
+   }
+
+   // <method.png>
+   protected method emitEnv(local String       _sEnvVar,
+                            local String       _sVarT,
+                            local float        _scl,
+                            local float        _off,
+                            local GModule      _module, 
+                            local String       _out, 
+                            local String       _dstVar,
+                            local PointerArray _parents
+                            ) {
+
+      _out.append(_dstVar+" = "+_sEnvVar+".valueAtTime("+_sVarT+") * "+_scl+" + "+_off+";\n");
+      // _out.append("trace \""+_dstVar+"=\"+"+_dstVar+";\n");
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId, 
+                       local GModule      _module, 
+                       local GProgram     _program, 
+                       local String       _out, 
+                       local String       _dstVar, 
+                       local boolean      _bGLSL,
+                       local PointerArray _parents
+                       ) {
+
+      // trace "xxx GEnvelopeOrbitCam::emit: outputId="+_outputId+" b_init_done="+b_init_done;
+
+      local String sEnvVar <= getVarName();
+      
+      boolean bRepeat = getBoolParamById("repeat");
+
+      if(!b_init_done)
+      {
+         b_init_done = true;
+
+         local String sGlobal;
+
+         sGlobal.append("Envelope *"+sEnvVar+"_ctrx;\n");
+         sGlobal.append("Envelope *"+sEnvVar+"_ctry;\n");
+         sGlobal.append("Envelope *"+sEnvVar+"_ctrz;\n");
+         sGlobal.append("Envelope *"+sEnvVar+"_rotx;\n");
+         sGlobal.append("Envelope *"+sEnvVar+"_roty;\n");
+         sGlobal.append("Envelope *"+sEnvVar+"_rotz;\n");
+         sGlobal.append("Envelope *"+sEnvVar+"_eyedist;\n");
+
+         _module.appendGlobal(sGlobal);
+      }
+
+      _parents.add(this);
+
+      // trace "xxx GEnvelopeOrbitCam::emit: outputId=\""+_outputId+"\"";
+
+      local GInput *input;
+
+      _parents.add(this);
+
+      // Time
+      input <= getInputById("t");
+      local String *sVarT;
+      if(input.isConnected())
+      {
+         sVarT <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_t");
+         input.emit(_module, null/*program*/, _out, sVarT, false/*bGLSL*/, _parents);
+         if(bRepeat)
+            _out.append(sVarT+" = "+sVarT+" % 1.0f;\n");
+         else
+            _out.append(sVarT+" = mathClampf("+sVarT+", 0.0f, 1.0f);\n");
+      }
+      else
+         sVarT <= "0/*no in_t input*/";
+
+      // Envelopes
+      emitEnv(sEnvVar+"_ctrx",
+              sVarT,
+              getFloatParamById("scl_ctr_x"), getFloatParamById("off_ctr_x"), 
+              _module,
+              _out,
+              _dstVar+".ctr_x",
+              _parents
+              );
+
+      emitEnv(sEnvVar+"_ctry",
+              sVarT,
+              getFloatParamById("scl_ctr_y"), getFloatParamById("off_ctr_y"), 
+              _module,
+              _out,
+              _dstVar+".ctr_y",
+              _parents
+              );
+
+      emitEnv(sEnvVar+"_ctrz",
+              sVarT,
+              getFloatParamById("scl_ctr_z"), getFloatParamById("off_ctr_z"), 
+              _module,
+              _out,
+              _dstVar+".ctr_z",
+              _parents
+              );
+
+      emitEnv(sEnvVar+"_rotx",
+              sVarT,
+              getFloatParamById("scl_rot_x"), getFloatParamById("off_rot_x"), 
+              _module,
+              _out,
+              _dstVar+".rot_x",
+              _parents
+              );
+
+      emitEnv(sEnvVar+"_roty",
+              sVarT,
+              getFloatParamById("scl_rot_y"), getFloatParamById("off_rot_y"), 
+              _module,
+              _out,
+              _dstVar+".rot_y",
+              _parents
+              );
+
+      emitEnv(sEnvVar+"_rotz",
+              sVarT,
+              getFloatParamById("scl_rot_z"), getFloatParamById("off_rot_z"), 
+              _module,
+              _out,
+              _dstVar+".rot_z",
+              _parents
+              );
+
+      emitEnv(sEnvVar+"_eyedist",
+              sVarT,
+              getFloatParamById("scl_dist"), getFloatParamById("off_dist"), 
+              _module,
+              _out,
+              _dstVar+".eye_dist",
+              _parents
+              );
+
+      // _out.append("// ---- BEGIN GEnvelopeOrbitCam "+getObjectPath()+"\n");
+
+      // ctr (modulation)
+      input <= getInputById("ctr");
+      if(input.isConnected())
+      {
+         local String sCtr <= _module.allocTmpVarScript(_out, TYPE_VEC3, "in_ctr");
+         input.emit(_module, _program, _out, sCtr, false/*bGLSL*/, _parents);
+         _out.append(_dstVar+".ctr_x = "+_dstVar+".ctr_x + "+sCtr+".x;\n");
+         _out.append(_dstVar+".ctr_y = "+_dstVar+".ctr_y + "+sCtr+".y;\n");
+         _out.append(_dstVar+".ctr_z = "+_dstVar+".ctr_z + "+sCtr+".z;\n");
+      }
+
+      // rot (modulation)
+      input <= getInputById("rot");
+      if(input.isConnected())
+      {
+         local String sRot <= _module.allocTmpVarScript(_out, TYPE_VEC3, "in_rot");
+         input.emit(_module, _program, _out, sRot, false/*bGLSL*/, _parents);
+         _out.append(_dstVar+".rot_x = "+_dstVar+".rot_x + "+sRot+".x;\n");
+         _out.append(_dstVar+".rot_y = "+_dstVar+".rot_y + "+sRot+".y;\n");
+         _out.append(_dstVar+".rot_z = "+_dstVar+".rot_z + "+sRot+".z;\n");
+      }
+
+      // dist (modulation)
+      input <= getInputById("dist");
+      if(input.isConnected())
+      {
+         local String sDist <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_dist");
+         input.emit(_module, _program, _out, sDist, false/*bGLSL*/, _parents);
+         _out.append(_dstVar+".eye_dist = "+_dstVar+".eye_dist + "+sDist+";\n");
+      }
+
+      // _out.append("// ---- END GEnvelopeOrbitCam "+getObjectPath()+"\n");
+
+      _parents.remove(this);
+
+   }
+
+   // <method.png>
+   protected method updateEnvVars() {
+      local String sEnvVar <= getVarName();
+      local Variable *v;
+
+      v <= current_project.script.findVariable(sEnvVar+"_ctrx");
+      v.pointerAssign(curve_envs.get(0));
+      v.store();
+
+      v <= current_project.script.findVariable(sEnvVar+"_ctry");
+      v.pointerAssign(curve_envs.get(1));
+      v.store();
+
+      v <= current_project.script.findVariable(sEnvVar+"_ctrz");
+      v.pointerAssign(curve_envs.get(2));
+      v.store();
+
+      v <= current_project.script.findVariable(sEnvVar+"_rotx");
+      v.pointerAssign(curve_envs.get(3));
+      v.store();
+
+      v <= current_project.script.findVariable(sEnvVar+"_roty");
+      v.pointerAssign(curve_envs.get(4));
+      v.store();
+
+      v <= current_project.script.findVariable(sEnvVar+"_rotz");
+      v.pointerAssign(curve_envs.get(5));
+      v.store();
+
+      v <= current_project.script.findVariable(sEnvVar+"_eyedist");
+      v.pointerAssign(curve_envs.get(6));
+      v.store();
+   }
+
+   // <method.png>
+   public virtual emitModulePost(GModule _module) {
+      if(b_init_done && !b_post_done)
+      {
+         b_post_done = true;
+
+         local PointerArray parents;
+         parents.add(this);
+         GObject::emitPost(_module, null/*_program*/, parents);
+         parents.remove(this);
+
+         if(current_project.b_export)
+         {
+            local String sEnvVar <= getVarName();
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_ctrx",
+                                              curve_envs.get(0)
+                                              );
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_ctry",
+                                              curve_envs.get(1)
+                                              );
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_ctrz",
+                                              curve_envs.get(2)
+                                              );
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_rotx",
+                                              curve_envs.get(3)
+                                              );
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_roty",
+                                              curve_envs.get(4)
+                                              );
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_rotz",
+                                              curve_envs.get(5)
+                                              );
+
+            current_project.exportAddEnvelope(_module,
+                                              sEnvVar+"_eyedist",
+                                              curve_envs.get(6)
+                                              );
+         }
+         else
+         {
+            updateEnvVars();
+         }
+      }
+   }
+
+}

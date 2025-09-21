@@ -1,0 +1,196 @@
+// ----
+// ---- file   : gmat42d.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 16Jun2020
+// ---- changed: 20Jun2020, 21Jun2020, 24Jun2020, 09Jul2020, 31Jul2020, 09Aug2020, 14Aug2020
+// ----          04Feb2025
+// ----
+// ----
+// ----
+module MGMat42D;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMat42D : GConstant {
+   protected boolean b_fxn_done;
+
+   // <method_new.png>
+   public static New() : GMat42D {
+      local GMat42D r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_new.png>
+   public static New2(float _w, float _h, float _d) : GMat42D {
+      local GMat42D r;
+      r.init();
+      r.setFloatParamById("width",  _w);
+      r.setFloatParamById("height", _h);
+      r.setFloatParamById("depth",  _d);
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = TYPE_MAT4;
+
+      addParamFloat("width",  "width",  1.0, 0.01, 0.01, 10.0, 10000.0, 1.0);
+      addParamFloat("height", "height", 1.0, 0.01, 0.01, 10.0, 10000.0, 1.0);
+      addParamFloat("depth",  "depth",  1.0, 0.01, 0.01, 10.0, 10000.0, 1.0);
+      // addOutput(GOutput.OUT_DEF, type);
+
+      addInput("width",  TYPE_FLOAT);
+      addInput("height", TYPE_FLOAT);
+      addInput("depth",  TYPE_FLOAT);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getString() : String {
+      float w = getFloatParamById("width");
+      float h = getFloatParamById("height");
+      float d = getFloatParamById("depth");
+      return "w="+w+" h="+h+" d="+d;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      b_fxn_done = false;
+   }
+
+   // <method.png>
+   public method emit(local String       _outputId,
+                      local GModule      _module,
+                      local GProgram     _program,
+                      local String       _out,
+                      local String       _dstVar,
+                      local boolean      _bGLSL,
+                      local PointerArray _objDone
+                      ) {
+      float w = getFloatParamById("width");
+      float h = getFloatParamById("height");
+      float d = getFloatParamById("depth");
+
+      float left   =  0.0;
+      float right  =  w;
+      float bottom =  h;
+      float top    =  0.0;
+      float znear  = -d;
+      float zfar   =  d;
+
+      float tx = (right + left) / (right - left);
+      float ty = (top + bottom) / (top - bottom);
+      float tz = (zfar + znear) / (zfar - znear);
+
+      float sx = 2.0f / (right - left);
+      float sy = 2.0f / (top - bottom);
+      float sz = -2.0f / (zfar - znear);
+
+      _out.append("// GMat42D id="+id+" id="+getObjectPath()+"\n");
+
+      if(_bGLSL)
+      {
+         // (note) column-major
+         _out.append(_dstVar+" = mat4(vec4("+sx+", 0,0,0), vec4(0, "+sy+", 0,0), vec4(0,0, "+sz+", 0), vec4("+tx+", "+ty+", "+tz+", 1));\n");
+      }
+      else
+      {
+         GInput *input;
+         local String *sW;
+         local String *sH;
+         local String *sD;
+         local String *sX;
+         local String *sY;
+         local String *sZ;
+
+         if(!b_fxn_done)
+         {
+            b_fxn_done = true;
+
+            local String sFunction;
+
+            // (note) row-major ("C-Array")
+            sFunction.append("\nfunction CalcMat42D(Matrix4f _d, float w, float h, float d) {\n");
+            sFunction.append(
+               "   float left   =  0;\n"
+               "   float right  =  w;\n"
+               "   float bottom =  h;\n"
+               "   float top    =  0.0;\n"
+               "   float znear  = -d;\n"
+               "   float zfar   =  d;\n"
+               "\n"
+               "   float tx = -(right + left) / (right - left);\n"
+               "   float ty = -(top + bottom) / (top - bottom);\n"
+               "   float tz = -(zfar + znear) / (zfar - znear);\n"
+               // "   trace \"xxx mat42d: t=(\"+tx+\";\"+ty+\";\"+tz+\")\";\n"
+               "\n"
+               "   float sx = 2.0f / (right - left);\n"
+               "   float sy = 2.0f / (top - bottom);\n"
+               "   float sz = -2.0f / (zfar - znear);\n"
+               // "   trace \"xxx mat42d: s=(\"+sx+\";\"+sy+\";\"+sz+\")\";\n"
+               "\n"
+               // // // "    _d = [sx,0,0,0, 0,sy,0,0, 0,0,sz,0, tx, ty, tz, 1];\n"
+               // "    _d = [sx,0,0,0,\n"
+               // "          0,sy,0,0,\n"
+               // "          0,0,sz,0,\n"
+               // "          tx,ty,tz,1\n"
+               // "          ];\n"
+               "    _d = [sx,0,0,tx,\n"
+               "          0,sy,0,ty,\n"
+               "          0,0,sz,tz,\n"
+               "          0,0,0,1\n"
+               "          ];\n"
+               "}\n"
+                             );
+            _module.appendGlobalOnce("CalcMat42D", sFunction);
+         }
+
+         // width
+         input <= getInputById("width");
+         if(input.isConnected())
+         {
+            sW <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_width");
+            input.emit(_module, _program, _out, sW, false/*bGLSL*/, _objDone);
+            _out.append(sW+" += "+w+";\n");
+         }
+         else
+            sW <= String(w);
+
+         // height
+         input <= getInputById("height");
+         if(input.isConnected())
+         {
+            sH <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_height");
+            input.emit(_module, _program, _out, sH, false/*bGLSL*/, _objDone);
+            _out.append(sH+" += "+h+";\n");
+         }
+         else
+            sH <= String(h);
+
+         // depth
+         input <= getInputById("depth");
+         if(input.isConnected())
+         {
+            sD <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_depth");
+            input.emit(_module, _program, _out, sD, false/*bGLSL*/, _objDone);
+            _out.append(sD+" += "+d+";\n");
+         }
+         else
+            sD <= String(d);
+
+         _out.append("CalcMat42D("+_dstVar+", "+sW+", "+sH+", "+sD+");\n");
+      }
+   }
+}

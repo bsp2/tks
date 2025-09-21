@@ -1,0 +1,183 @@
+// ----
+// ---- file   : gconnectionwriter.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 20Jun2020
+// ---- changed: 21Jun2020, 22Jun2020, 26Jun2020, 27Jun2020, 30Jun2020, 07Feb2025
+// ----
+// ----
+// ----
+module MGConnectionWriter;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GConnectionWriterState {
+   String   target_path;  // target object path (e.g. "default.scenes.scene1")
+   String   input_id;
+   boolean  b_rel_source;  // true=source_path is relative
+   String  *source_path;  // null == use anon_source_object_state
+   String   output_id;
+   int      op;
+   float    scale;
+   float    offset;
+   boolean  b_enable;
+   Buffer  *anon_source_object_state;
+
+
+   // <save.png>
+   public method saveStream(local Stream ofs) {
+      // Version
+      ofs.i16 = 5;
+
+      // trace "xxx GConnectionWriterState: save stream target=\""+target_path+"\"";
+      // trace "xxx GConnectionWriterState: save stream source=\""+source_path+"\"";
+
+      // Target path
+      Utils.WriteString(ofs, target_path);
+
+      // Input Id
+      Utils.WriteString(ofs, input_id);
+
+      // Relative source path (v2+)
+      ofs.i8 = b_rel_source;
+
+      // Source path
+      //  (note) writes i32=0 if <anon>
+      Utils.WriteString(ofs, source_path);
+
+      // Output Id
+      Utils.WriteString(ofs, output_id);
+
+      // Op
+      ofs.i8 = op;
+
+      // Scale+Offset (v3+)
+      ofs.f32 = scale;
+      ofs.f32 = offset;
+
+      // Enable (v4+)
+      ofs.i8 = b_enable;
+
+      // <anon>
+      if(null == source_path)
+      {
+         // <anon> size
+         Buffer b <= anon_source_object_state;
+         ofs.i32 = b.offset;
+         ofs.writeBuffer(b, 0, b.offset);
+      }
+   }
+}
+
+
+// <class.png>
+class GConnectionWriter {
+   define int MAX_ANON_DATA_SIZE = 65536;
+
+   GConnectionState *states[];
+
+   String *object_path_prefix_filter;  // for out-of-subtree checks
+
+
+   // <method_set.png>
+   public method setObjectPathPrefixFilter(local String _path) {
+      trace "[dbg] GConnectionWriter::setObjectPathPrefixFilter("+_path+")";
+      object_path_prefix_filter <= Object(_path);
+   }
+
+   // <save.png>
+   public method writeInput(local GObject _this, local GInput _input) {
+      // // if(_input.isConnected())  // (note) also save disabled connections
+      {
+         local GConnection *conn;
+         foreach conn in _input.connections
+         {
+            // calls writeConnection()
+            conn.saveStateConnection(this/*writer*/, _this/*parent*/);
+         }
+      }
+   }
+
+   // <save.png>
+   method writeConnection(local String  _targetPath,
+                          local String  _inputId,
+                          local GObject _sourceObject,
+                          local String  _outputId,
+                          local int     _op,
+                          local float   _scale,
+                          local float   _offset,
+                          local boolean _bEnable
+                          ) {
+      // trace "xxx writeConnection: targetPath=\""+_targetPath+"\"";
+
+      if(!GObject.ToRelativeObjectPath(_targetPath, object_path_prefix_filter))
+         return; // out-of-tree
+
+      // trace "xxx writeConnection: rel targetPath=\""+_targetPath+"\"";
+
+      Global.Debug2("GConnectionWriter::writeConnection: targetPath=\""+_targetPath+"\"");
+
+      local GConnectionWriterState st;
+
+      st.target_path  = _targetPath;
+      st.input_id     = _inputId;
+      st.output_id    = _outputId;
+      st.op           = _op;
+      st.scale        = _scale;
+      st.offset       = _offset;
+      st.b_rel_source = false;
+      st.b_enable     = _bEnable;
+
+      states.add(#(deref st));
+
+      if(_sourceObject.isAnon())
+      {
+         // "inline" anonymous object save state
+         //  (note) <anon> objects cannot have input ports
+         st.anon_source_object_state <= new Buffer;
+         local Buffer b <= st.anon_source_object_state;
+         b.size = MAX_ANON_DATA_SIZE;
+         _sourceObject.saveStateObject(b, this);  // (note) b.offset now stores save state size
+         if(b.offset == b.size)
+         {
+            trace "[~~~] GConnectionWriter::writeConnection: object exceeds MAX_ANON_DATA_SIZE="+MAX_ANON_DATA_SIZE+" ??";
+            // (note) could fallback to DummyStream to determine the actual object size but this is just for constants anyway
+         }
+      }
+      else
+      {
+         local String srcPath <= _sourceObject.getObjectPath();
+         // (note) when saving e.g. Model Preset
+         // (note) keep out of tree refs, e.g. to ext arg "global_time"
+         st.b_rel_source = GObject.ToRelativeObjectPath(srcPath, object_path_prefix_filter);
+         // trace "[trc] GConnectionWriter::writeConnection: sourcePath=\""+srcPath+"\" bRel="+st.b_rel_source;
+         st.source_path <= deref srcPath;
+      }
+
+   }
+
+   // <save.png>
+   public method saveStream(local Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      // Num connections
+      ofs.i16 = states.numElements;
+
+      GConnectionWriterState st;
+      foreach st in states
+      {
+         st.saveStream(ofs);
+      }
+
+      trace "[trc] GConnectionWriter::saveStream: wrote "+states.numElements+" connection(s)";
+   }
+}

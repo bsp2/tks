@@ -1,0 +1,165 @@
+// ----
+// ---- file   : gmat4scale.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 15Jun2020, 16Jun2020, 18Jun2020, 19Jun2020, 24Jun2020, 08Aug2020
+// ----          09Aug2020, 14Aug2020, 04Feb2025, 07Feb2025
+// ----
+// ----
+// ----
+module MGMat4Scale;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMat4Scale : GConstant {
+
+   // <method_new.png>
+   public static New() : GMat4Scale {
+      local GMat4Scale r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_new.png>
+   public static New4(float _x, float _y, float _z, float _w) : GMat4Scale {
+      local GMat4Scale r;
+      r.init();
+      r.setFloatParamById("xyz", 1.0);
+      r.setFloatParamById("x", _x);
+      r.setFloatParamById("y", _y);
+      r.setFloatParamById("z", _z);
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = TYPE_MAT4;
+
+      addParamFloat("xyz", "xyz", 1.0, 0.0, 0.0, 10.0, 100.0, 1.0);
+      addParamFloat("x",   "x",   1.0, 0.0, 0.0, 10.0, 100.0, 1.0);
+      addParamFloat("y",   "y",   1.0, 0.0, 0.0, 10.0, 100.0, 1.0);
+      addParamFloat("z",   "z",   1.0, 0.0, 0.0, 10.0, 100.0, 1.0);
+
+      addInput("xyz", TYPE_FLOAT);
+      addInput("x",   TYPE_FLOAT);
+      addInput("y",   TYPE_FLOAT);
+      addInput("z",   TYPE_FLOAT);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getString() : String {
+      float xyz = getFloatParamById("xyz");
+      float x   = getFloatParamById("x");
+      float y   = getFloatParamById("y");
+      float z   = getFloatParamById("z");
+      return "scale "+xyz+"*("+x+", "+y+", "+z+")";
+   }
+
+   // <method.png>
+   public method emit(local String       _outputId,
+                      local GModule      _module,
+                      local GProgram     _program,
+                      local String       _out,
+                      local String       _dstVar,
+                      local boolean      _bGLSL,
+                      local PointerArray _objDone
+                      ) {
+      float xyz = getFloatParamById("xyz");
+      float x   = getFloatParamById("x");
+      float y   = getFloatParamById("y");
+      float z   = getFloatParamById("z");
+
+      _out.append("// GMat4Scale id="+id+" id="+getObjectPath()+"\n");
+
+      if(_bGLSL)
+      {
+         // (todo) input modulation
+         x *= xyz;
+         y *= xyz;
+         z *= xyz;
+         // (note) column-major (OpenGL)
+         _out.append(_dstVar+" = mat4(vec4("+x+", 0,0,0), vec4(0, "+y+", 0,0), vec4(0,0, "+z+", 0), vec4(0,0,0,1));\n");
+      }
+      else
+      {
+         // (note) row-major
+         local GInput *input;
+         local String *sXYZ;
+         local String *sX;
+         local String *sY;
+         local String *sZ;
+
+         // xyz
+         input <= getInputById("xyz");
+         if(input.isConnected())
+         {
+            sXYZ <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_xyz");
+            input.emit(_module, _program, _out, sXYZ, false/*bGLSL*/, _objDone);
+            _out.append(sXYZ+" *= "+xyz+";\n");
+         }
+         else
+            sXYZ <= String(xyz);
+
+         // x
+         sX <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_x");
+         input <= getInputById("x");
+         if(input.isConnected())
+         {
+            input.emit(_module, _program, _out, sX, false/*bGLSL*/, _objDone);
+            _out.append(sX+" = ("+sX+" * "+x+") * "+sXYZ+";\n");
+         }
+         else
+         {
+            _out.append(sX+" = "+String(x)+" * "+sXYZ+";\n");
+         }
+
+         // y
+         sY <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_y");
+         input <= getInputById("y");
+         if(input.isConnected())
+         {
+            input.emit(_module, _program, _out, sY, false/*bGLSL*/, _objDone);
+            _out.append(sY+" = ("+sY+" * "+y+") * "+sXYZ+";\n");
+         }
+         else
+         {
+            _out.append(sY+" = "+String(y)+" * "+sXYZ+";\n");
+         }
+
+         // z
+         sZ <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_z");
+         input <= getInputById("z");
+         if(input.isConnected())
+         {
+            input.emit(_module, _program, _out, sZ, false/*bGLSL*/, _objDone);
+            _out.append(sZ+" = ("+sZ+" * "+z+") * "+sXYZ+";\n");
+         }
+         else
+         {
+            _out.append(sZ+" = "+String(z)+" * "+sXYZ+";\n");
+         }
+
+         // // _out.append(_dstVar+" = ["+sX+",0,0,0, 0,"+sY+",0,0, 0,0,"+sZ+",0, 0,0,0,1];\n");
+         // _out.append(_dstVar+
+         //             " = ["+sX+",0,0,0,\n"
+         //             "    0,"+sY+",0,0,\n"
+         //             "    0,0,"+sZ+",0,\n"
+         //             "    0,0,0,1\n"
+         //             "    ];\n"
+         //             );
+         _out.append(_dstVar+".initScalef("+sX+", "+sY+", "+sZ+");\n");
+      }
+   }
+}

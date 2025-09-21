@@ -1,0 +1,127 @@
+// ----
+// ---- file   : gmodeluniformsampler.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 03Aug2020
+// ---- changed: 14Aug2020
+// ----
+// ----
+// ----
+module MGModelUniformSampler;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GModelUniformSampler : GModelUniform {
+   // stored in GModel, output overrides GProgram uniform input
+   int sampler_type;
+
+   // <method_new.png>
+   static New(String _id, int _samplerType) : GModelUniformSampler {
+      local GModelUniformSampler r;
+      r.initIdType(_id, _samplerType);
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      initIO();
+   }
+
+   // <method.png>
+   public method initIO() {
+      inputs.free();
+      outputs.free();
+      addInput("tex", TYPE_REF);
+   }
+
+   // <method.png>
+   public virtual initIdType(String _id, int _samplerType) {
+      // trace "xxx GModelUniformSampler::initIdType: id="+_id+" samplerType="+_samplerType;
+      GObject::initIdType(_id, _samplerType);  // calls init()
+      initIO();
+   }
+
+   // <method_get.png>
+   public virtual getDefaultInputId() : String {
+      return "tex";
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+      if(GObject::loadStateObject(ifs))
+      {
+         // trace "xxx GModelUniform::loadStateObject: type="+type;
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual needDstVar() : boolean {
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitModelUniform(local GModule      _module,
+                                   local GProgram     _program,
+                                   local String       _out,
+                                   local String       _dstVar,
+                                   local PointerArray _parents
+                                   ) {
+
+      local GUniformSampler uni <= _program.getUniformById(id);
+      if(uni instanceof GUniformSampler)
+      {
+         // // local String sInVar <= _module.allocTmpVarScript(_out, type, "mu_init");
+         local GInput inVal <= getInputById("tex");
+         if(inVal.isConnected())
+         {
+            int texUnit = uni.getIntParamById("tex_unit");
+
+            GTexture tex <= getFirstConnectedInputObjectByType("tex", GTexture);
+            // trace "xxx tex="+#(tex);
+            if(null != tex)
+            {
+               // emit texture init + draw(bind/unbind)
+               tex.emitTexture(texUnit,
+                               "bind",
+                               _module,
+                               _out,
+                               _dstVar,
+                               false/*bGLSL*/,
+                               _parents
+                               );
+            }
+
+            local String uniVarName <= uni.getVarName();
+            _out.append("glUniform1i("+uniVarName+", "+texUnit+");  // bind texture unit "+texUnit+" to "+GDefs.GetGLSLTypeName(type)+"\n");
+
+            // // _parents.add(this);
+            // // inVal.emit(_module, _program, _out, _dstVar, false/*bGLSL*/, _parents);
+            // // _parents.remove(this);
+
+            // // uni.emitSetUniformFromVar(_module, _out/*out*/, uniVarName, _dstVar);
+         }
+         else
+         {
+            trace "[~~~] GModelUniform::emit: id="+id+" input is not connected, skipping initialization..";
+            trace "[~~~]                      this="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[~~~] GModelUniform::emit: id="+id+" does not map to a program uniform, skipping..";
+         trace "[~~~]                      this="+getObjectPath();
+      }
+   }
+}

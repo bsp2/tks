@@ -1,0 +1,179 @@
+// ----
+// ---- file   : gconstanttexelrgba.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 02Aug2020
+// ---- changed: 14Aug2020, 15Aug2020
+// ----
+// ----
+// ----
+module MGConstantTexelRGBA;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GConstantTexelRGBA : GConstant {
+
+   // <method_new.png>
+   public static New() : GConstantTexelRGBA {
+      local GConstantTexelRGBA r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GConstant::init();
+      type = TYPE_VEC4;
+
+      GParamFloat *p;
+
+      p <= addParamFloat("u", "u", 0.0f, 0.0f, 0.0f, 1.0f, 1.0, -1);
+      p.b_percent = true;
+
+      p <= addParamFloat("v", "v", 0.0f, 0.0f, 0.0f, 1.0f, 1.0, -1);
+      p.b_percent = true;
+
+      addParamBool("filter", "Filter", true);
+      addParamBool("repeat", "Repeat", false);
+
+      addInput("u", TYPE_FLOAT);
+      addInput("v", TYPE_FLOAT);
+
+      addInput("tex", TYPE_REF);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <method_get.png>
+   public virtual getOpAuto() : int {
+      return OP_RGBA_SRC_OVER;
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId, 
+                       local GModule      _module, 
+                       local GProgram     _program, 
+                       local String       _out, 
+                       local String       _dstVar, 
+                       local boolean      _bGLSL,
+                       local PointerArray _parents
+                       ) {
+
+      GTexture tex <= getFirstConnectedInputObjectByType("tex", GTexture);
+
+      if(null != tex)
+      {
+         // Set editor hint (=> recompile script when texture changes)
+         tex.b_constant_texel_ref = true;
+
+         _parents.add(this);
+
+         tex.emitTexture(0/*unitIdx,ignored*/,
+                         GTexture.ACTION_INIT,
+                         _module,
+                         _out/*ignored*/,
+                         null/*dstVar,ignored*/,
+                         false/*bGLSL*/,
+                         _parents
+                         );                   
+                         
+
+         float u = getFloatParamById("u");
+         float v = getFloatParamById("v");
+
+         boolean bFilter = getBoolParamById("filter");
+         boolean bRepeat = getBoolParamById("repeat");
+
+         local GInput *input;
+
+         // u
+         local String *sU;
+         input <= getInputById("u");
+         if(input.isConnected())
+         {
+            sU <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_u");
+            input.emit(_module, _program, _out, sU, _bGLSL, _parents);
+            _out.append(sU+" += "+u+";\n");
+         }
+         else
+            sU <= String(u);
+
+         // v
+         local String *sV;
+         input <= getInputById("v");
+         if(input.isConnected())
+         {
+            sV <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_v");
+            input.emit(_module, _program, _out, sV, _bGLSL, _parents);
+            _out.append(sV+" += "+v+";\n");
+         }
+         else
+            sV <= String(v);
+
+         local String sTexVar <= tex.getVarName();
+         if(bRepeat)
+         {
+            if(bFilter)
+            {
+               _out.append(sTexVar+".getUVFilterRepeatVec4("+sU+", "+sV+", "+_dstVar+");\n");
+            }
+            else
+            {
+               _out.append(sTexVar+".getUVRepeatVec4("+sU+", "+sV+", "+_dstVar+");\n");
+            }
+         }
+         else
+         {
+            if(bFilter)
+            {
+               _out.append(sTexVar+".getUVFilterVec4("+sU+", "+sV+", "+_dstVar+");\n");
+            }
+            else
+            {
+               _out.append(sTexVar+".getUVVec4("+sU+", "+sV+", "+_dstVar+");\n");
+            }
+         }
+
+         _parents.remove(this);
+      }
+      else
+      {
+         trace "[~~~] GConstantTexelRGBA: this="+getObjectPath()+": no texture connected, skipping..";
+      }
+   }
+
+   // <method.png>
+   public virtual emitPost(local GModule      _module,
+                           local GProgram     _program,
+                           local PointerArray _parents
+                           ) {
+      GObject::emitPost(_module, _program, _parents);
+      GTexture tex <= getFirstConnectedInputObjectByType("tex", GTexture);
+      // trace "xxx GConstantTexelRGBA: POST tex="+#(tex);
+      if(null != tex)
+      {
+         tex.emitPost(_module,
+                      _program,
+                      _parents
+                      );
+      }
+   }
+}

@@ -1,0 +1,564 @@
+// ----
+// ---- file   : Curve1Dialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 15Aug2020
+// ---- changed: 04Feb2025, 05Feb2025, 18Jul2025
+// ----
+// ----
+// ----
+
+module MCurve1Dialog;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class Curve1Dialog extends Dialog, GDefs {
+
+   protected XMLForm *xfm;
+
+   protected GEnvelopeCurve1 *env;
+
+   // Curves
+   protected Panel *p_curves;
+   public    BezierCurveForm *[] f_curves;   // refs
+   protected LayerSwitch *[]     ls_curves;  // refs
+
+   protected PopupMenu *pm_tools;
+
+   static StringArray curve_labels = ["Val"];
+   static StringArray scl_param_names = ["scl"];
+   static StringArray off_param_names = ["off"];
+
+
+   // <ui_init.png>
+   public method initCurve1Dialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("Curve1Dialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initCurve1Dialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      // Curves:
+      int curveIdx = 0;
+      loop(1)
+      {
+         BezierCurveForm curveForm <= xfm.findLayerById("f_curve_"+curveIdx);
+         if(!curveForm.initBezierCurveForm(32.0f/*reqLabelW*/,
+                                           true/*bScaleOff*/,
+                                           (0 == curveIdx)/*bImport*/,
+                                           "Import X or X/Y values from clipboard (ASCII)\n\n (note) either one y value per line (autox=0..1), or \"x y\" pairs"
+                                           )
+            )
+         {
+            trace "[---] Curve1Dialog::init: initBezierCurveForm() failed";
+            return false;
+         }
+         curveForm.setEnableCopyPasteKeys(false);  // leave lctrl-c/v to parent editor
+         f_curves.add(curveForm);
+         LayerSwitch lsCurve <= xfm.findLayerById("ls_curve_"+curveIdx);
+         ls_curves.add(lsCurve);
+         curveIdx++;
+      }
+
+      initWindow(xfm, "Envelope Curve", 163*UI.font_scaling, 0,
+                 706*UI.font_scaling,
+                 200*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) {
+      if(_ev.isRightButton())
+      {
+         // showToolsMenu();
+         return true;
+      }
+      return Dialog::onMouseClick(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       f_curves[0],
+                     ]
+                    );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showCurve1Dialog(GEnvelopeCurve1 _env) {
+
+      env <= _env;
+
+      int curveIdx = 0;
+      BezierCurveForm *curveForm;
+      LayerSwitch *lsCurve;
+      BezierEditState *beState;
+      Envelope *beEnv;
+
+      loop(1)
+      {
+         curveForm <= f_curves.get(curveIdx);
+         lsCurve <= ls_curves.get(curveIdx);
+         lsCurve.switchToLayerNr(1);
+         beState <= _env.curve_states.get(curveIdx);
+         beEnv <= _env.curve_envs.get(curveIdx);
+         curveForm.showCurve(curve_labels.get(curveIdx)+":", beState, beEnv, null/*mtxNamedRecalc*/);
+         curveForm.setScaleFromParam(env.getParamById(scl_param_names[curveIdx]));
+         curveForm.setOffsetFromParam(env.getParamById(off_param_names[curveIdx]));
+         curveForm.updateScaleOffsetHints();
+
+         curveIdx++;
+      }
+
+      setWindowTitle("Envelope Curve");
+      show();
+   }
+
+   // // // <ui.png>
+   // // public virtual handleResize() {
+   // //    Dialog::handleResize();
+   // //    Dialog::relayout();
+   // // }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      updateOverlays();
+
+      relayout();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      // // UI.SetKeyboardFocus(cm_mode);
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      removeOverlays();
+
+      BezierCurveForm *curveForm;
+      foreach curveForm in f_curves
+         curveForm.stopEditing();
+
+      Dialog::hide();
+   }
+
+   // <method.png>
+   protected method updateOverlays() {
+      removeOverlays();
+
+      BezierCurveForm *curveForm;
+      int curveIdx = 0;
+      foreach curveForm in f_curves
+      {
+         LayerSwitch lsCurve <= ls_curves.get(curveIdx);
+         if(1 == lsCurve.getCurrentChildNr())
+            curveForm.addBezierOverlay(this);
+         curveIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method removeOverlays() {
+      BezierCurveForm *curveForm;
+      foreach curveForm in f_curves
+      {
+         curveForm.removeBezierOverlay(this);
+      }
+   }
+
+   // <method_get.png>
+   protected method isAnyCurveZoomed() : boolean {
+      LayerSwitch *lsCurve;
+      foreach lsCurve in ls_curves
+      {
+         if(0 == lsCurve.getCurrentChildNr())
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveZoom(int _curveIdx, boolean _bMaximize) {
+
+      BezierCurveForm *curveForm;
+
+      for(int hideCurveIdx = 0; hideCurveIdx < 1; hideCurveIdx++)
+      {
+         LayerSwitch lsCurve <= ls_curves.get(hideCurveIdx);
+         lsCurve.switchToLayerNr(!_bMaximize || (_curveIdx == hideCurveIdx));
+      }
+      relayout();
+      curveForm <= f_curves.get(_curveIdx);
+      curveForm.focusBezierEdit();
+      updateOverlays();
+      redraw();
+   }
+
+   // <method.png>
+   protected method updateEnvFloatParam(String _id, FloatParam _fp) {
+      GParamFloat pf <= env.getParamById(_id);
+      pf.updateFromFloatParam(_fp);
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveScaleChanged(int _curveIdx) {
+      BezierCurveForm curveForm <= f_curves.get(_curveIdx);
+      FloatParam fp <= curveForm.getScaleFP();
+      switch(_curveIdx)
+      {
+         case 0: // val
+            updateEnvFloatParam("scl", fp);
+            break;
+      }
+      curveForm.updateScaleOffsetHints();
+      current_project.queueUpdate();
+      root_form.pg_start.queueReshowParams();
+   }
+
+   // <ui_handle.png>
+   protected method handleCurveOffsetChanged(int _curveIdx) {
+      BezierCurveForm curveForm <= f_curves.get(_curveIdx);
+      FloatParam fp <= curveForm.getOffsetFP();
+      switch(_curveIdx)
+      {
+         case 0: // val
+            updateEnvFloatParam("off", fp);
+            break;
+      }
+      curveForm.updateScaleOffsetHints();
+      current_project.queueUpdate();
+      root_form.pg_start.queueReshowParams();
+   }
+
+   // <method_parse.png>
+   protected static ParseXYValuesFromASCII(String _buf) : FloatArray {
+      // either y per line (autox = 0..1)
+      // or "x y" per line
+      local FloatArray ret;
+      local StringArray a <= _buf.splitChar('\n');
+      boolean bAutoX = true;
+      if(null != a)
+      {
+         String *s;
+         foreach s in a
+         {
+            s.trim();
+            if!((s <= "#") || (s <= ";") || (s <= "//"))
+            {
+               local StringArray av <= s.splitSpace(true);
+               if(av.numElements >= 2)
+               {
+                  ret.add(float(av.get(0)));  // x
+                  ret.add(float(av.get(1)));  // y
+                  bAutoX = false;
+               }
+               else if(bAutoX && (av.numElements >= 1))
+               {
+                  ret.add(0);  // place holder x
+                  ret.add(float(av.get(0)));  // y
+               }
+            }
+            // else: skip comment line
+         }
+         if(bAutoX)
+         {
+            // Create "x" values (0..1)
+            int numKeyFrames = ret.numElements / 2;
+            if(numKeyFrames > 1)
+            {
+               float t = 0;
+               float tStep = 1.0 / (numKeyFrames-1);
+               int idx = 0;
+               loop(numKeyFrames)
+               {
+                  ret[idx] = t;
+                  t += tStep;
+                  idx += 2;
+               }
+            }
+         }
+         else if(ret.numElements >= 2)
+         {
+            // Fix first/last point x to 0;1
+            ret[0] = 0;
+            ret[ret.numElements-2] = 1;
+         }
+      }
+      return deref ret;
+   }
+
+   // <ui_handle.png>
+   protected method handleImportFromClipboard() {
+      // x/y pairs per line
+      PageStart pgStart <= root_form.pg_start;
+      local String sClipboard <= UI.GetClipboard();
+      if((null != sClipboard) && !sClipboard.isBlank())
+      {
+         Global.Debug("Curve1Dialog::handleImportClipboard: sClipboard.numChars="+sClipboard.numChars);
+         local FloatArray values <= ParseXYValuesFromASCII(sClipboard);
+         if(values.numElements >= 4)
+         {
+            int numKeyFrames = values.numElements / 2;
+            if(numKeyFrames > 1)
+            {
+               BezierEdit beVal <= f_curves.get(0).be_env;
+               beVal.clearCtlPoints();
+
+               float scl = env.getFloatParamById("scl");
+               float off = env.getFloatParamById("off");
+
+               float tc = values.get(0);
+               float fc = values.get(1);
+               fc = (fc - off) / scl;
+
+               float fn;
+               float tn;
+
+               int idx = 2;
+               loop(numKeyFrames - 1)
+               {
+                  tn = values.get(idx+0);
+                  fn = values.get(idx+1);
+                  fn = (fn - off) / scl;
+
+                  float ctlX = (tc+tn)*0.5;
+                  float ctlY = (fc+fn)*0.5;
+
+                  // trace "xxx import: tc="+tc+" fc="+fc+"   tn="+tn+" fn="+fn+"   ctl=("+ctlX+";"+ctlY+")";
+
+                  beVal.addCtlPoint(tc, fc,
+                                    ctlX, ctlY,
+                                    ctlX, ctlY
+                                    );
+
+                  // Next key frame
+                  tc = tn;
+                  fc = fn;
+                  idx += 2;
+               }
+
+               // Last key frame
+               beVal.addCtlPoint(1.0, fn, 0,0, 0,0);
+
+               beVal.recalc(true/*bAction*/);
+               beVal.resetZoom();
+               beVal.redraw();
+
+               if(GConfig.b_curve1_autosmooth)
+               {
+                  beVal.makeSymmetrical(45.0f*(2PI/360)/*maxAngle*/);
+                  beVal.alignLastToFirst();
+               }
+
+               Global.Success("Import "+numKeyFrames+" key frame"+Utils.GetPluralString(numKeyFrames));
+
+               current_project.queueRedraw();
+            }
+            else
+               Global.Warning("Import: no keyframes (ASCII x/y pairs from clipboard)");
+         }
+         else
+            Global.Warning("Import: not enough values (<4)");
+      }
+      else
+         Global.Warning("Import: clipboard is empty");
+   }
+
+   // // // <ui_show.png>
+   // // protected method showToolsMenu() {
+
+   // //    pm_tools <= PopupMenu.New(this);
+   // //    pm_tools.b_ext_focus_hack = true;
+
+   // //    PopupMenuButton *pmb;
+   // //    PopupMenu pm <= pm_tools;
+
+   // //    if(null != gtexture)
+   // //    {
+   // //       pmb <= pm.addDefaultButton("Import Image (Histogram)..",
+   // //                                  "import_histogram"
+   // //                                  );
+   // //       // pmb.setActive(null != obj);
+   // //       pmb.setAccelerators("lctrl-l", "");
+   // //    }
+
+   // //    // pm.addSeparator();
+
+   // //    pm.resizeToMinimum();
+   // //    pm.showNearMouse(-10, -10);
+
+   // //    Global.Print("Show tools menu.");
+   // // }
+
+//    // <ui_kbd.png>
+//    public virtual onTriadKeyTimeout() {
+//       Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+// "
+//           c  :  Close dialog
+// "
+//                                     ,
+//                                     this);
+//       return true;
+//    }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx Curve1Dialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageStart pgStart <= root_form.pg_start;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'v':
+            if(isAnyCurveZoomed())
+               handleCurveZoom(0, false/*bMaximize*/);
+            else
+               hide();
+            return true;
+
+         case '1':
+            handleCurveZoom(0, true/*bMaximize*/);
+            return true;
+      }
+
+      if(root_form.tryHandleTransportKey(_k))
+         return true;
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int curveIdx;
+      BezierCurveForm *curveForm;
+
+      if(BezierCurveForm.ACTION_CURVE_EDITED == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         if(-1 != curveIdx)
+         {
+            current_project.queueRedraw();
+            return true;
+         }
+      }
+      else if(BezierCurveForm.ACTION_CURVE_SAVED == acName)
+      {
+         foreach curveForm in f_curves
+         {
+            curveForm.scanCurvePresets();
+         }
+         return true;
+      }
+      else if((BezierCurveForm.ACTION_CURVE_MAXIMIZE == acName) || (BezierCurveForm.ACTION_CURVE_MINIMIZE == acName))
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveZoom(curveIdx, (BezierCurveForm.ACTION_CURVE_MAXIMIZE == acName)/*bMaximize*/);
+         return true;
+      }
+      else if(BezierCurveForm.ACTION_CURVE_SCL == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveScaleChanged(curveIdx);
+         return true;
+      }
+      else if(BezierCurveForm.ACTION_CURVE_OFF == acName)
+      {
+         curveIdx = f_curves.indexOfPointer(ap, 0);
+         handleCurveOffsetChanged(curveIdx);
+         return true;
+      }
+      else if(BezierCurveForm.ACTION_CURVE_IMPORT == acName)
+      {
+         handleImportFromClipboard();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         // case @(pm_tools):
+         //    Global.Debug("pm_tools acName="+acName);
+         //    switch(acName)
+         //    {
+         //       case PopupMenu.ACTION_CANCEL:
+         //       case "":
+         //          Global.Print("Close tools menu.");
+         //          UI.SetKeyboardFocus(this);
+         //          return true;
+
+         //       case "import_histogram":
+         //          UI.SetKeyboardFocus(this);
+         //          handleImportHistogram();
+         //          return true;
+         //    }
+         //    return true;
+
+         // case @(bt_import):
+         //    // handleImportHistogram();
+         //    return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,152 @@
+// ----
+// ---- file   : gproceduraltexturestatecurve4rgba.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 07Jul2020
+// ---- changed: 29Jul2020, 01Aug2020, 02Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGProceduralTextureStateCurve4RGBA;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GProceduralTextureStateCurve4RGBA : GProceduralTextureStateCurve4 {
+
+
+   // <method_get.png>
+   public virtual getCurveLabels() : StringArray {
+      return ["R", "G", "B", "A"];
+   }
+
+   // <ui_handle.png>
+   public virtual recalcTexture(GTexture _texture) {
+
+      Texture tex <= _texture.tex;
+      tex.unload();
+
+      // Global.Debug("GProceduralTextureStateCurve4RGBA::recalcTexture: tex sz=("+tex.sx+";"+tex.sy+") z="+tex.z);
+
+      Envelope envR <= curve_envs[0];
+      Envelope envG <= curve_envs[1];
+      Envelope envB <= curve_envs[2];
+      Envelope envA <= curve_envs[3];
+
+      float uStep = 1.0 / tex.sx;
+      float u = 0.0f;
+      int x = 0;
+
+      loop(tex.sx)
+      {
+         envR.time = u;
+         envG.time = u;
+         envB.time = u;
+         envA.time = u;
+         int r = envR.get() * 255;
+         int g = envG.get() * 255;
+         int b = envB.get() * 255;
+         int a = envA.get() * 255;
+         r = mathClampi(r, 0, 255);
+         g = mathClampi(g, 0, 255);
+         b = mathClampi(b, 0, 255);
+         a = mathClampi(a, 0, 255);
+         Integer c32 = argb(a, r, g, b);
+         // if(x < 10)
+         //    trace "xxx c4rgba tex["+x+"]=#"+c32.printf("%08x")+" (u="+u+")";
+         tex.setXY32(x++, 0, c32);
+         u += uStep;
+      }
+
+      color_mod.applyColorMods(tex);
+
+      if(_texture.b_constant_texel_ref)
+         current_project.queueUpdate();
+      else
+         current_project.queueRedraw();
+   }
+
+   // <method.png>
+   public virtual importColors(Curve4Dialog _dlg, GTexture _gtexture, IntArray _colors) {
+      if(_colors.numElements > 1)
+      {
+         BezierEdit beR <= _dlg.f_curves.get(0).be_env;
+         BezierEdit beG <= _dlg.f_curves.get(1).be_env;
+         BezierEdit beB <= _dlg.f_curves.get(2).be_env;
+       
+         beR.clearCtlPoints();
+         beG.clearCtlPoints();
+         beB.clearCtlPoints();
+  
+         float tStep = 1.0 / (_colors.numElements-1);
+         float t = 0;
+         int c32;
+         int idx = 1;
+
+         c32 = _colors[idx];
+         float r = ((c32 >> 16) & 255) / 255.0;
+         float g = ((c32 >>  8) & 255) / 255.0;
+         float b = ((c32      ) & 255) / 255.0;
+
+         loop(_colors.numElements -1)
+         {
+            c32 = _colors[idx];
+            float rNext = ((c32 >> 16) & 255) / 255.0;
+            float gNext = ((c32 >>  8) & 255) / 255.0;
+            float bNext = ((c32      ) & 255) / 255.0;
+
+            beR.addCtlPoint(t, r,
+                            (t+tStep*0.5), (rNext+r)*0.5,
+                            (t+tStep*0.5), (rNext+r)*0.5
+                            );
+
+            beG.addCtlPoint(t, g,
+                            (t+tStep*0.5), (gNext+g)*0.5,
+                            (t+tStep*0.5), (gNext+g)*0.5
+                            );
+
+            beB.addCtlPoint(t, b,
+                            (t+tStep*0.5), (bNext+b)*0.5,
+                            (t+tStep*0.5), (bNext+b)*0.5 
+                            );
+
+            r = rNext;
+            g = gNext;
+            b = bNext;
+            
+            t += tStep;
+            idx++;
+         }
+
+         beR.addCtlPoint(1.0, rNext, 0,0, 0,0);
+         beG.addCtlPoint(1.0, gNext, 0,0, 0,0);
+         beB.addCtlPoint(1.0, bNext, 0,0, 0,0);
+
+         beR.recalc(true/*bAction*/);
+         beR.resetZoom();
+
+         beG.recalc(true/*bAction*/);
+         beG.resetZoom();
+
+         beB.recalc(true/*bAction*/);
+         beB.resetZoom();
+
+         recalcTexture(_gtexture);
+
+         Global.Print("Import "+_colors.numElements+" RGB colors");
+      }
+      else
+      {
+         Global.Warning("importColors: need at least 2 colors");
+      }
+   }
+
+}
+

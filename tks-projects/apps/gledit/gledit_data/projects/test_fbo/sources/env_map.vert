@@ -1,0 +1,23 @@
+ 
+in vec3 lightpos; 
+in mat4 transform_inv; 
+in vec3 in_eye; 
+in vec3 in_normal; 
+ 
+out vec4 o_color; 
+out vec2 o_uv; 
+ 
+ 
+float dot = dot(normalize((transform_inv * vec4(lightpos,1))).xyz, in_normal); 
+//float dot = dot(lightpos, in_normal); 
+if(dot < 0) 
+  dot = 0; 
+o_color = vec4(dot, dot, dot, 1); 
+ 
+//vec3 t = normalize(a_position.xyz); 
+//t = (transform_inv * vec4(t,1)).xyz; 
+//v_uv = t.xy * t.z * 0.5; 
+ 
+vec3 eye = (transform_inv * normalize(vec4(in_eye,1))).xyz; 
+vec3 rv = reflect(eye, in_normal); 
+o_uv = normalize(rv).xy * 0.5 + 0.5; 

@@ -1,0 +1,682 @@
+// ----
+// ---- file   : gmodel.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 14Jun2020, 15Jun2020, 18Jun2020, 28Jun2020, 30Jun2020, 01Jul2020
+// ----          07Jul2020, 12Jul2020, 19Jul2020, 20Jul2020, 22Jul2020, 23Jul2020, 25Jul2020
+// ----          28Jul2020, 31Jul2020, 01Aug2020, 03Aug2020, 10Aug2020, 14Aug2020, 07Feb2025
+// ----          09Feb2025
+// ----
+// ----
+// ----
+module MGModel;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GModel : GObject, GNamespace {
+
+   // valid during emit:
+   GBuffer *attrib_buffer;
+   GBuffer *index_buffer;
+   IntArray attrib_offsets;
+   IntArray attrib_sizes;
+   int      vertex_attrib_size;
+
+   GModelUniform *[] model_uniforms;  // GProgram uniform overrides
+
+   protected boolean b_init_done;
+   protected boolean b_post_done;
+
+   int model_id;  // valid during emit()
+
+
+   // <method_new.png>
+   static New() : GModel {
+      local GModel r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      // // addInput("transform", TYPE_MAT4);  // (todo) remove ?
+      addInput("visible",   TYPE_BOOL);
+
+      addInput("mesh",      TYPE_REF);
+      addInput("program",   TYPE_REF);
+
+      addOutput(GOutput.OUT_DEF_OBJ, TYPE_REF);
+   }
+
+   // <method_init.png>
+   public virtual postInitNew() {
+      // Called after adding object to parent container
+      GProgram program <= GProgram.New();
+      program.postInit();
+      program.setId("default");
+      addProgram(deref program);
+      connect("program", program, GOutput.OUT_DEF_OBJ, OP_AUTO);
+
+      // // xxxxx test code:
+      // addModelUniformAutoId(GModelUniform.New("transform", TYPE_MAT4), "transform");
+      // addModelUniformAutoId(GModelUniform.New("color", TYPE_VEC4), "color");
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "models";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "model";
+   }
+
+   // <method.png>
+   public virtual setNamespaceId(String _id) {
+      id = _id;
+   }
+
+   // <method.png>
+   public virtual getNamespaceId() : String {
+      return id;
+   }
+
+   // <method_add.png>
+   public virtual canAddObject(GObject _object) : boolean {
+      if(_object instanceof GModelUniform)
+         return true;
+      return GNamespace::canAddObject(_object);
+   }
+
+   // <method_add.png>
+   public virtual addObject(GObject _object) : GObject {
+      if(_object instanceof GModelUniform)
+         addModelUniform(deref _object);
+      return GNamespace::addObject(_object);
+   }
+
+   // <method_get.png>
+   public virtual unlinkObject(GObject _object) : GObject {
+      if(_object instanceof GModelUniform)
+         return unlinkModelUniform(_object);
+      return GNamespace::unlinkObject(_object);
+   }
+
+   // <method.png>
+   public virtual prepareRemove() {
+      GObject::prepareRemove();
+      GNamespace::prepareRemoveNamespaceObjects();
+   }
+
+   // <method_find.png>
+   public virtual enumerateObjects(local PointerArray _ret, local int _recurseDepthLeft) {
+      _ret.joinRR(_ret, model_uniforms);
+      GNamespace::enumerateObjects(_ret, _recurseDepthLeft);
+   }
+
+   // <method.png>
+   public method hasSubObjects() : boolean {
+      return
+         GNamespace::hasSubObjects() ||
+         !model_uniforms.isEmpty()   ;
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedMesh() : GMesh {
+      // trace "xxx getMesh: connections="+#(getInputById("mesh").connections);
+      return getFirstConnectedInputObjectByType("mesh", GMesh);
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedProgram() : GProgram {
+      return getFirstConnectedInputObjectByType("program", GProgram);
+   }
+
+   // <method.png>
+   public method getAttributeOffsetById(String _id) : int {
+      GProgram program <= getFirstConnectedProgram();
+      if(null != program)
+      {
+         int idx = program.getAttributeIndexById(_id);
+         return attrib_offsets.get(idx);
+      }
+   }
+
+   // <method_get.png>
+   public method getNumModelUniforms() : int {
+      return model_uniforms.numElements;
+   }
+
+   // <method.png>
+   public method addModelUniform(GModelUniform _mu) : GModelUniform {
+      model_uniforms.add(#(deref _mu));
+      _mu.parent_namespace <= this;
+      return _mu;
+   }
+
+   // <method.png>
+   public method addModelUniformAutoId(GModelUniform _mu, String _prefIdOrNull) : GModelUniform {
+      // only used temporarily since id initially equals program uniform id
+      addModelUniform(deref _mu);
+      _mu.id = Utils.CreateAutoId((null != _prefIdOrNull) ? _prefIdOrNull : "mu", model_uniforms);
+      return _mu;
+   }
+
+   // <method_get.png>
+   public method unlinkModelUniform(GModelUniform _obj) : GModelUniform {
+      return model_uniforms.unlink(_obj);
+   }
+
+   // <method_get.png>
+   public method findModelUniformById(String _id) : GModelUniform {
+      GModelUniform *mu;
+      foreach mu in model_uniforms
+      {
+         if(mu.getId() == _id)
+            return mu;
+      }
+      return null;
+   }
+
+   // <method_remove.png>
+   public method removeModelUniform(GModelUniform _obj) : boolean {
+      boolean bLast = model_uniforms.isLast(_obj);
+      model_uniforms.remove(_obj);
+      return bLast;
+   }
+
+   // <method.png>
+   public method moveModelUniformUp(GModelUniform _obj) : boolean {
+      return Utils.MoveObjectUp(model_uniforms, _obj);
+   }
+
+   // <method.png>
+   public method moveModelUniformDown(GModelUniform _obj) : boolean {
+      return Utils.MoveObjectDown(model_uniforms, _obj);
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+
+      local GModelUniform *mu;
+      foreach mu in model_uniforms
+      {
+         mu.removeConnectionsToObject(_obj);
+      }
+
+      GObject::removeConnectionsToObject(_obj);
+      GNamespace::removeConnectionsToObject(_obj);
+
+      // // if(null != mesh)
+      // //    mesh.removeConnectionsToObject(_obj);
+
+      // // if(null != program)
+      // //    program.removeConnectionsToObject(_obj);
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 2;
+
+      // Model uniform (v2+)
+      ofs.i8 = model_uniforms.numElements;
+      local GModelUniform *mu;
+      foreach mu in model_uniforms
+      {
+         mu.saveStateObject(ofs, connectionWriter);
+      }
+
+      // Namespace
+      GNamespace::saveStateNamespace(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 2)
+      {
+         if(ver >= 2)
+         {
+            // Model uniforms (v2+)
+            int numModelUniforms = ifs.u8;
+            int muIdx = 0;
+            loop(numModelUniforms)
+            {
+               local GModelUniform mu <= GObject.LoadStateObject(ifs);
+               if!(mu instanceof GModelUniform)
+               {
+                  trace "[---] GModel::loadStateObject: failed to load model uniform "+(muIdx+1)+"/"+numModelUniforms+", mu="+#(mu)+" this="+#(this)+" path="+getObjectPath();
+                  return false;
+               }
+
+               addModelUniform(deref mu);
+               muIdx++;
+            }
+         }
+
+         // Namespace
+         if(GNamespace::loadStateNamespace(ifs))
+         {
+            // Succeeded
+            return true;
+         }
+         else
+         {
+            trace "[---] GModel::loadStateObject: failed to load namespace, this="+#(this)+" path="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[---] GModel::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+      if(_bUnfold)
+         setFoldStatus(false);
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      if(_path <= "model_uniforms.")
+      {
+         if(_bUnfold)
+            setVirtFolderFoldStatus("model_uniforms", false);
+
+         local String muId <= _path.replace("model_uniforms.", "");
+         local String *path;
+         local int idxOther = muId.indexOfChar('.', 0);
+         if(-1 != idxOther)
+         {
+            path <= muId.substring(idxOther+1, -1);
+            muId.substring(0, idxOther);
+            // trace "xxx GModel::findObjectByPathUnfold: muId=\""+muId+"\" path=\""+path+"\"";
+         }
+         GModelUniform *mu;
+         foreach mu in model_uniforms
+         {
+            if(mu.getId() == muId)
+            {
+               if(-1 == idxOther)
+                  return mu;
+               else
+                  return mu.findObjectByPathUnfold(path, _bUnfold);
+            }
+         }
+         return null;
+      }
+      else
+      {
+         return GNamespace::findObjectByPathUnfold(_path, _bUnfold);
+      }
+   }
+
+   // <save.png>
+   public method saveModelPresetStream(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      local GConnectionWriter connectionWriter;
+      connectionWriter.setObjectPathPrefixFilter(getObjectPath());
+
+      saveStateObject(ofs, connectionWriter);
+
+      // Connections
+      connectionWriter.saveStream(ofs);
+   }
+
+   // <load.png>
+   public method loadModelPresetStream(Stream ifs) : boolean {
+
+      current_project.runScriptExit();
+      removeNamespaceObjects();
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Load object base info (see GObject.LoadStateObject())
+         local String className <= GObject.LoadObjectHeader(ifs);
+
+         if(className == yacMetaClassName())
+         {
+            if(loadStateObject(ifs))
+            {
+               // Connections
+               local GConnectionReader connectionReader;
+               connectionReader.setObjectPathPrefixFilter(getObjectPath());
+
+               if!(connectionReader.loadStream(ifs))
+               {
+                  trace "[---] GModel::loadModelPresetStream: failed to load connections";
+                  return false;
+               }
+
+               // Succeeded
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] GModel::loadModelPresetStream: class name mismatch (expect GModel, have \""+className+"\")";
+         }
+      }
+      else
+      {
+         trace "[---] GModel::loadModelPresetStream: invalid version "+ver;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GModel::emitBegin";
+      b_init_done = false;
+      b_post_done = false;
+
+      GObject::emitBegin();
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      GObject::emitBeginRecursive();
+
+      local GModelUniform *mu;
+      foreach mu in model_uniforms
+      {
+         mu.emitBeginRecursive();
+      }
+
+      GNamespace::emitBeginRecursive();
+   }
+
+   // <method.png>
+   public method getModelDrawPrefix() : String {
+      // for emitCallDrawString()
+      return "model";
+   }
+
+   // <method.png>
+   public method emitCallDrawString(GModule _module, String _out, String _transformArgOrNull) {
+      appendScriptInputCond(_module, "visible", _out);
+      _out.append("Draw_"+getNamespacePrefix()+"_"+getModelDrawPrefix()+"_"+getId()+"("+current_project.cur_emit_fb_w+", "+current_project.cur_emit_fb_h);
+      if(null != _transformArgOrNull)
+         _out.append(", "+_transformArgOrNull);
+      else
+         _out.append(", null");
+      _out.append("/*transform*/");
+      _out.append(");\n");
+   }
+
+   // <method.png>
+   public method emitCallDraw(GModule _module) {
+      local String sDrawPre;
+      // // appendScriptInputCond(_module, "visible", sDrawPre);
+      // // sDrawPre.append("Draw_"+getNamespacePrefix()+"_model_"+getId()+"("+current_project.cur_emit_fb_w+", "+current_project.cur_emit_fb_h+");\n");
+      emitCallDrawString(_module, sDrawPre, null/*transformArgOrNull*/);
+      _module.appendDrawPre(sDrawPre);
+   }
+
+   // <method.png>
+   public virtual emitModule(GModule _module) {
+
+      // trace "xxx GModel::emitModule: b_init_done="+b_init_done;
+
+      if(b_init_done)
+         return;
+
+      model_id = current_project.allocModelId();
+
+      b_init_done = true;
+
+      local GMesh mesh <= getFirstConnectedMesh();
+      local GProgram program <= getFirstConnectedProgram();
+
+      // trace "[trc] GModel::emit: mesh="+#(mesh)+" program="+#(program);
+
+      if(null != mesh && null != program)
+      {
+         attrib_buffer <= GBuffer.New();
+         attrib_buffer.setId(id+"_a");
+         attrib_buffer.setNamespace(getNamespace());
+         attrib_offsets.empty();
+         attrib_sizes.empty();
+
+         local String sGlobal;
+         local String sInit;
+         local String sDrawPre;
+         local String sDrawPost;
+         local String sExit;
+
+         _module.beginSection(getNamespacePrefix()+"_model_"+getId());
+         _module.setSectionExtraDrawArgs("Matrix4f _transform");
+
+         local String aBufVar <= attrib_buffer.getVarName();
+         sDrawPre.append("if("+model_id+" != last_model_id)\n{\n");
+         sDrawPre.append("   glBindBuffer(GL_ARRAY_BUFFER, "+aBufVar+");\n");
+         if(0) sDrawPost.append("glBindBuffer(GL_ARRAY_BUFFER, 0);\n");
+
+         local String *iBufVar;
+         if(mesh.getNumIndices() > 0)
+         {
+            index_buffer <= GBuffer.New();
+            index_buffer.setId(id+"_i");
+            index_buffer.setNamespace(getNamespace());
+            iBufVar <= index_buffer.getVarName();
+            sDrawPre.append("   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, "+iBufVar+");\n");
+            if(0) sDrawPost.append("glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);\n");
+         }
+         else
+         {
+            sDrawPre.append("   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);\n");
+         }
+
+         // Calc attribute offsets, sizes, and total attrib size per vertex
+         GAttribute *attrib;
+         int attribOff = 0;
+         // trace "xxx program="+#(program);
+         foreach attrib in program.attributes
+         {
+            if(attrib.isEnabled())
+            {
+               // trace "xxx attrib="+#(attrib);
+               int attribSz = attrib.getNumBytes(mesh);
+               attrib_offsets.add(attribOff);
+               attrib.offset = attribOff;
+               attrib_sizes.add(attribSz);
+               attribOff += attribSz;
+            }
+         }
+         vertex_attrib_size = attribOff;
+
+         // Initialize attribute buffer
+         sGlobal.append("int "+aBufVar+";\n");
+         sInit.append(aBufVar+" = zglGenBuffer();\n");
+         sExit.append("zglDeleteBuffer("+aBufVar+");\n");
+         sInit.append("glBindBuffer(GL_ARRAY_BUFFER, "+aBufVar+");\n");
+         local String aBufVarData <= aBufVar+"_data";
+         sGlobal.append("Buffer *"+aBufVarData+";\n");
+         local String sBufSz <= "("+vertex_attrib_size+"/*vtxAttribSz*/ * "+mesh.getNumVertices()+"/*#verts*/)";
+         // // sInit.append(aBufVarData+".size = "+sBufSz+";\n");
+         attrib_buffer.alloc(vertex_attrib_size/*vtxAttribSz*/ * mesh.getNumVertices()/*#verts*/);
+         mesh.emitPrepareAttribBuffer(_module, this, program, sInit, attrib_buffer, vertex_attrib_size/*pitch*/);
+         sInit.append("zglBufferData(GL_ARRAY_BUFFER, "+sBufSz+", "+aBufVarData+", GL_STATIC_DRAW);\n");
+
+         if(current_project.b_export)
+         {
+            current_project.exportAddBuffer(_module, aBufVarData, attrib_buffer.data);
+         }
+
+         // Initialize index buffer
+         if(null != iBufVar)
+         {
+            sGlobal.append("int "+iBufVar+";\n");
+            sInit.append(iBufVar+" = zglGenBuffer();\n");
+            sExit.append("zglDeleteBuffer("+iBufVar+");\n");
+            sInit.append("glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, "+iBufVar+");\n");
+            local String iBufVarData <= iBufVar+"_data";
+            sGlobal.append("Buffer *"+iBufVarData+";\n");
+            local String sBufSzI <= "(4/*GL_UNSIGNED_INT*/ * "+mesh.getNumIndices()+"/*#indices*/)";
+            index_buffer.alloc(4/*GL_UNSIGNED_INT*/ * mesh.getNumIndices()/*#indices*/);
+            mesh.emitPrepareIndexBuffer(_module, this, sInit, index_buffer);
+            sInit.append("zglBufferData(GL_ELEMENT_ARRAY_BUFFER, "+sBufSzI+", "+iBufVarData+", GL_STATIC_DRAW);\n");
+            sInit.append("glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);\n");
+
+            if(current_project.b_export)
+            {
+               current_project.exportAddBuffer(_module, iBufVarData, index_buffer.data);
+            }
+         }
+
+         _module.appendInit(sInit);
+         sInit.empty();
+
+         sDrawPre.append("   last_model_id = "+model_id+";\n}\n");
+         _module.appendDrawPre(sDrawPre);
+         sDrawPre.empty();
+
+         _module.appendDrawPost(sDrawPost);
+         sDrawPost.empty();
+
+         local PointerArray parents;
+         parents.add(this);
+
+         // Emit program
+         program.vertex_attrib_size = vertex_attrib_size;  // temporary "call" parameter (attrib stride)
+         // Program Uniform overrides
+         local HashTable extUniforms;
+         local GModelUniform *mu;
+         local GUniform *uni;
+         program.emitModuleProgram(_module, this, mesh, GProgram.ACTION_PREBIND, extUniforms);
+         foreach mu in model_uniforms
+         {
+            if(mu.b_enable)
+            {
+               uni <= program.getUniformById(mu.getId());
+               if(null != uni)
+               {
+                  local String *sExtUniVar;
+                  if(mu.needDstVar())
+                     sExtUniVar <= _module.allocTmpVarScript(sDrawPre, uni.type, "mu_init");
+                  else
+                     sExtUniVar <= null;
+                  mu.emitModelUniform(_module,
+                                      program,
+                                      sDrawPre/*out*/,
+                                      sExtUniVar,
+                                      parents
+                                      );
+                  extUniforms[mu.getId()] = deref sExtUniVar;
+                  _module.appendDrawPre(sDrawPre);
+                  sDrawPre.empty();
+               }
+               else
+               {
+                  // ModelUniform references non-existing program uniform (simply ignore)
+                  trace "[~~~] GModel::emit: ModelUniform \""+mu.getId()+"\" references non-existing program uniform, skipping..";
+               }
+            }
+         }
+         program.emitModuleProgram(_module, this, mesh, GProgram.ACTION_DRAW, extUniforms);
+
+         parents.remove(this);
+
+         sInit.append("glBindBuffer(GL_ARRAY_BUFFER, 0);\n");
+
+         sDrawPre.append("// draw "+mesh.getNumTriangles()+" triangles\n");
+         sDrawPre.append("g_tri_count += "+mesh.getNumTriangles()+";\n");
+         if(null != iBufVar)
+         {
+            sDrawPre.append("zglDrawElementsOffset("+mesh.getGLModeName()+", "+mesh.getNumIndices()+"/*count*/, GL_UNSIGNED_INT, 0/*offset*/);\n");
+         }
+         else
+         {
+            sDrawPre.append("glDrawArrays("+mesh.getGLModeName()+", 0/*first*/, "+mesh.getNumVertices()+");\n");
+         }
+
+         _module.appendGlobal(sGlobal);
+         _module.appendInit(sInit);
+         _module.appendDrawPre(sDrawPre);
+         _module.appendDrawPost(sDrawPost);
+         _module.appendExit(sExit);
+
+         _module.endSection();
+
+      } // if mesh && program
+      else
+      {
+         if(null == mesh)
+            trace "[!!!] GModel::emitModule: mesh is NULL !! (this="+getObjectPath()+")";
+         if(null == program)
+            trace "[!!!] GModel::emitModule: program is NULL !! (this="+getObjectPath()+")";
+      }
+   }
+
+   // <method.png>
+   public virtual emitModulePost(GModule _module) {
+
+      if(b_init_done && !b_post_done)
+      {
+         b_post_done = true;
+
+         GMesh mesh <= getFirstConnectedMesh();
+         GProgram program <= getFirstConnectedProgram();
+
+         if((null != mesh) && (null != program))
+         {
+            mesh.emitModulePost(_module);
+            program.emitModulePost(_module);
+
+            // Update buffer refs
+            local Variable *v;
+
+            if(!current_project.b_export)
+            {
+               // Set attrib buffer ref
+               local String sAttribVar <= attrib_buffer.getVarName()+"_data";
+               // trace "[trc] GModel::emitPost: set attrib var "+sAttribVar;
+               v <= current_project.script.findVariable(sAttribVar);
+               v.pointerAssign(attrib_buffer.data);
+               v.store();
+
+               // Set index buffer ref
+               if(mesh.getNumIndices() > 0)
+               {
+                  local String sIndexVar <= index_buffer.getVarName()+"_data";
+                  // trace "[trc] GModel::emitPost: set index var "+sIndexVar;
+                  v <= current_project.script.findVariable(sIndexVar);
+                  v.pointerAssign(index_buffer.data);
+                  v.store();
+               }
+            }
+         }
+
+         GNamespace::emitModulePost(_module);
+      }
+   }
+
+}

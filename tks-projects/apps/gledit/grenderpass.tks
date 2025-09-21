@@ -1,0 +1,627 @@
+// ----
+// ---- file   : grenderpass.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 27Jun2020
+// ---- changed: 28Jun2020, 13Jul2020, 19Jul2020, 20Jul2020, 22Jul2020, 25Jul2020, 01Aug2020
+// ----          02Aug2020, 14Aug2020, 15Aug2020
+// ----
+// ----
+// ----
+module MGRenderPass;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GRenderPass : GObject, GNamespace, GParamProvider {
+
+   protected boolean b_init_done;
+   protected boolean b_post_done;
+
+   static StringArray gl_blend_factor_names = [
+      /* 0*/ "GL_ZERO",
+      /* 1*/ "GL_ONE",
+      /* 2*/ "GL_SRC_COLOR",
+      /* 3*/ "GL_ONE_MINUS_SRC_COLOR",
+      /* 4*/ "GL_DST_COLOR",
+      /* 5*/ "GL_ONE_MINUS_DST_COLOR",
+      /* 6*/ "GL_SRC_ALPHA",
+      /* 7*/ "GL_ONE_MINUS_SRC_ALPHA",
+      /* 8*/ "GL_DST_ALPHA",
+      /* 9*/ "GL_ONE_MINUS_DST_ALPHA",
+      /*10*/ "GL_CONSTANT_COLOR",
+      /*11*/ "GL_ONE_MINUS_CONSTANT_COLOR",
+      /*12*/ "GL_CONSTANT_ALPHA",
+      /*13*/ "GL_ONE_MINUS_CONSTANT_ALPHA",
+      /*14*/ "GL_SRC_ALPHA_SATURATE"
+                                            ];
+
+   static StringArray gl_zs_func_names = [
+      /* 0 */ "GL_NEVER",
+      /* 1 */ "GL_LESS",
+      /* 2 */ "GL_LEQUAL",
+      /* 3 */ "GL_GREATER",
+      /* 4 */ "GL_GEQUAL",
+      /* 5 */ "GL_EQUAL",
+      /* 6 */ "GL_NOTEQUAL",
+      /* 7 */ "GL_ALWAYS",
+                                          ];
+
+   static StringArray gl_s_op_names = [
+      /* 0 */ "GL_KEEP",
+      /* 1 */ "GL_ZERO",
+      /* 2 */ "GL_REPLACE",
+      /* 3 */ "GL_INCR",
+      /* 4 */ "GL_INCR_WRAP",
+      /* 5 */ "GL_DECR",
+      /* 6 */ "GL_DECR_WRAP",
+      /* 7 */ "GL_INVERT"
+                                       ];
+
+   // <method_new.png>
+   public static New() : GRenderPass {
+      local GRenderPass renderpass;
+      renderpass.init();
+      return deref renderpass;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      addParamBool("blend", "Blend", false);
+      addParamBool("depth_test", "Depth Test", false);
+      addParamBool("stencil_test", "Stencil Test", false);
+
+      addParamBool("clear_color_sw",   "Clear Color",   true);
+      addParamBool("clear_depth_sw",   "Clear Z",   false);
+      addParamBool("clear_stencil_sw", "Clear S", false);
+
+      addParamRGBA("clear_color_val", "Clear C Val", #ff202020);
+      addParamFloat("clear_depth_val", "Clear Z Val", 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f);
+      addParamInt("clear_stencil_val", "Clear S Val", 0, 0, 0, 255, 255, 128);
+
+      StringArray blendFactors = [
+         /* 0*/ "0",
+         /* 1*/ "1",
+         /* 2*/ "Cs",
+         /* 3*/ "1-Cs",
+         /* 4*/ "Cd",
+         /* 5*/ "1-Cd",
+         /* 6*/ "As",
+         /* 7*/ "1-As",
+         /* 8*/ "Ad",
+         /* 9*/ "1-Ad",
+         /*10*/ "Cc",
+         /*11*/ "1-Cc",
+         /*12*/ "Ac",
+         /*13*/ "1-Ac",
+         /*14*/ "sat(As)"
+        ];
+      addParamChoice("blend_src_rgb", "Blend Src RGB", 1, blendFactors);
+      addParamChoice("blend_dst_rgb", "Blend Dst RGB", 0, blendFactors);
+      addParamChoice("blend_src_a",   "Blend Src A",   1, blendFactors);
+      addParamChoice("blend_dst_a",   "Blend Dst A",   0, blendFactors);
+      addParamRGBA("blend_color", "Blend Color", #00000000);
+
+      addParamBool("color_wmask_r", "C WMask R", true);
+      addParamBool("color_wmask_g", "C WMask G", true);
+      addParamBool("color_wmask_b", "C WMask B", true);
+      addParamBool("color_wmask_a", "C WMask A", true);
+
+      StringArray zsFuncs = ["NEVER", "<", "<=", ">", ">=", "==", "!=", "ALWAYS"];
+      addParamBool("depth_wmask", "Z WrMask", true);
+      addParamChoice("depth_func", "Z Func", 1, zsFuncs);
+
+      addParamInt("stencil_wmask_front", "S WMask Front", 255, 0, 0, 255, 255, 128);
+      addParamInt("stencil_wmask_back", "S WMask Back", 255, 0, 0, 255, 255, 128);
+
+      StringArray sOps = ["KEEP", "ZERO", "REPLACE", "INCR", "INCR_WRAP", "DECR", "DECR_WRAP", "INVERT"];
+
+      addParamChoice("stencil_func_front",     "S Front Func", 7, zsFuncs);
+      addParamInt   ("stencil_ref_front",      "S Front Ref ", 0, 0, 0, 255, 255, 128);
+      addParamInt   ("stencil_tmask_front",    "S Front TMask", 255, 0, 0, 255, 255, 128);
+      addParamChoice("stencil_op_sfail_front", "S Front SFail", 0, sOps);
+      addParamChoice("stencil_op_zfail_front", "S Front ZFail", 0, sOps);
+      addParamChoice("stencil_op_zpass_front", "S Front ZPass", 0, sOps);
+
+      addParamChoice("stencil_func_back",     "S Back Func", 7, zsFuncs);
+      addParamInt   ("stencil_ref_back",      "S Back Ref",  0, 0, 0, 255, 255, 128);
+      addParamInt   ("stencil_tmask_back",    "S Back TMask", 255, 0, 0, 255, 255, 128);
+      addParamChoice("stencil_op_sfail_back", "S Back SFail", 0, sOps);
+      addParamChoice("stencil_op_zfail_back", "S Back ZFail", 0, sOps);
+      addParamChoice("stencil_op_zpass_back", "S Back ZPass", 0, sOps);
+
+      addParamBool("cull", "Cull", true);
+      addParamChoice("front_face", "Front Face", 0, ["CW", "CCW"]);
+      addParamChoice("cull_face", "Cull Face", 1, ["Front", "Back", "Front+Back"]);
+
+      addInput("visible", TYPE_BOOL);
+      addInput("model",   TYPE_REF);
+      addInput("fbo",     TYPE_REF);
+      addInput("script" , TYPE_REF);
+
+      addOutput(GOutput.OUT_DEF_OBJ, TYPE_REF);
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return getNamespacePrefix()+"_fbo_"+id;
+   }
+
+   // <method.png>
+   public virtual getNamespaceId() : String {
+      return id;
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "renderpasses";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "renderpass";
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedFBO() : GFBO {
+      return getFirstConnectedInputObjectByType("fbo", GFBO);
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedModel() : GModel {
+      return getFirstConnectedInputObjectByType("model", GModel);
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedScript() : GScriptRender {
+      return getFirstConnectedInputObjectByType("script", GScriptRender);
+   }
+
+   // <method_find.png>
+   public virtual isConnectedToAnyObject() : boolean {
+      // parent scene emits all enabled renderpasses (auto-connected)
+      return true;
+   }
+
+   // <method.png>
+   public virtual prepareRemove() {
+      GObject::prepareRemove();
+      GNamespace::prepareRemoveNamespaceObjects();
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+
+      GObject::removeConnectionsToObject(_obj);
+      GNamespace::removeConnectionsToObject(_obj);
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+      if(_bUnfold)
+         setFoldStatus(false);
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      return GNamespace::findObjectByPathUnfold(_path, _bUnfold);
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // Params
+      GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+
+      // Namespace
+      GNamespace::saveStateNamespace(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         if(GParamProvider::loadStateParamProvider(ifs))
+         {
+            // Namespace
+            if(GNamespace::loadStateNamespace(ifs))
+            {
+               // Succeeded
+               return true;
+            }
+            else
+            {
+               trace "[---] GRenderPass::loadStateObject: failed to load namespace, this="+#(this)+" path="+getObjectPath();
+            }
+         }
+         else
+         {
+            trace "[---] GRenderPass::loadStateObject: failed to load params, this="+#(this)+" path="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[---] GRenderPass::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method saveRenderpassPresetStream(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      // (todo) make all connections links relative to 'this'
+      local GConnectionWriter connectionWriter;
+      connectionWriter.setObjectPathPrefixFilter(getObjectPath());
+
+      saveStateObject(ofs, connectionWriter);
+
+      // Connections
+      connectionWriter.saveStream(ofs);
+   }
+
+   // <load.png>
+   public method loadRenderpassPresetStream(Stream ifs) : boolean {
+
+      current_project.runScriptExit();
+      removeNamespaceObjects();
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Load object base info (see GObject.LoadStateObject())
+         local String className <= GObject.LoadObjectHeader(ifs);
+
+         if(className == yacMetaClassName())
+         {
+            if(loadStateObject(ifs))
+            {
+               // Connections
+               local GConnectionReader connectionReader;
+               connectionReader.setObjectPathPrefixFilter(getObjectPath());
+
+               if!(connectionReader.loadStream(ifs))
+               {
+                  trace "[---] GRenderPass::loadRenderpassPresetStream: failed to load connections";
+                  return false;
+               }
+
+               // Succeeded
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] GRenderPass::loadRenderpassPresetStream: class name mismatch (expect GRenderPass, have \""+className+"\")";
+         }
+      }
+      else
+      {
+         trace "[---] GRenderPass::loadRenderpassPresetStream: invalid version "+ver;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GRenderPass::emitBegin";
+      b_init_done = false;
+      b_post_done = false;
+
+      GObject::emitBegin();
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      GObject::emitBeginRecursive();
+      GNamespace::emitBeginRecursive();
+   }
+
+   // <method.png>
+   public method emitRenderPass(local String       _outputId,
+                                local GModule      _module,
+                                local PointerArray _parents
+                                ) {
+
+      // trace "[trc] GRenderPass::emit: b_init_done="+b_init_done;
+
+      local GModel model <= getFirstConnectedModel();
+      local GFBO fbo <= getFirstConnectedFBO();
+      local GScriptRender script <= getFirstConnectedScript();
+
+      // // if((null != model) || (null != script))
+      {
+         if("init" == _outputId)
+         {
+            if(!b_init_done)
+            {
+               b_init_done = true;
+
+               if(null != model)
+                  model.emitModule(_module);
+
+               if(null != fbo)
+               {
+                  fbo.emitFBO("init",
+                              _module,
+                              _parents
+                              );
+               }
+
+               local String sGlobal;
+               local String sInit;
+               local String sExit;
+
+               _module.appendGlobal(sGlobal);
+               _module.appendInit(sInit);
+               _module.appendExit(sExit);
+            }
+
+         }
+         else if("draw" == _outputId)
+         {
+            local String sDrawPre;
+            local String sDrawPost;
+
+            _module.beginSection(getNamespacePrefix()+"_renderpass_"+getId());
+
+            // (todo)
+            boolean bBlend = getBoolParamById("blend");
+            boolean bZTest = getBoolParamById("depth_test");
+            boolean bSTest = getBoolParamById("stencil_test");
+
+            boolean bClearColor = getBoolParamById("clear_color_sw");
+            boolean bClearZ     = getBoolParamById("clear_depth_sw");
+            boolean bClearS     = getBoolParamById("clear_stencil_sw");
+
+            sDrawPre.append("// -------- BEGIN renderpass "+getObjectPath()+" --------\n");
+            _module.appendDrawPre(sDrawPre);
+            sDrawPre.empty();
+
+            if(null != fbo)
+            {
+               fbo.emitFBO("bind", _module, _parents);
+            }
+            // // else
+            // // {
+            // //    current_project.cur_emit_fb_w = 0;
+            // //    current_project.cur_emit_fb_h = 0;
+            // //    sDrawPre.append("glBindFramebuffer(GL_FRAMEBUFFER, g_default_fb);\n");
+            // // }
+
+            local String sClearFlags;
+
+            if(bClearColor)
+            {
+               GParamRGBA paramClearColor <= getParamById("clear_color_val");
+               sDrawPre.append("glClearColor("+paramClearColor.getRAsFloat()+", "+paramClearColor.getGAsFloat()+", "+paramClearColor.getBAsFloat()+", "+paramClearColor.getAAsFloat()+");\n");
+               sClearFlags.append("GL_COLOR_BUFFER_BIT");
+            }
+
+            if(bClearZ)
+            {
+               float clearDepth = getFloatParamById("clear_depth_val");
+               sDrawPre.append("glClearDepth("+clearDepth+");\n");
+               if(!sClearFlags.isBlank())
+                  sClearFlags.append(" | ");
+               sClearFlags.append("GL_DEPTH_BUFFER_BIT");
+            }
+
+            if(bClearS)
+            {
+               int clearStencil = getIntParamById("clear_stencil_val");
+               sDrawPre.append("glClearStencil("+clearStencil+");\n");
+               if(!sClearFlags.isBlank())
+                  sClearFlags.append(" | ");
+               sClearFlags.append("GL_STENCIL_BUFFER_BIT");
+            }
+
+            if(!sClearFlags.isBlank())
+               sDrawPre.append("glClear("+sClearFlags+");\n");
+
+            if(bZTest && ((null == fbo) || fbo.hasDepthBuffer()))
+            {
+               sDrawPre.append("glEnable(GL_DEPTH_TEST);\n");
+            }
+            else
+               sDrawPre.append("glDisable(GL_DEPTH_TEST);\n");
+
+            if(bSTest && ((null == fbo) || fbo.hasStencilBuffer()))
+            {
+               sDrawPre.append("glEnable(GL_STENCIL_TEST);\n");
+            }
+            else
+               sDrawPre.append("glDisable(GL_STENCIL_TEST);\n");
+
+            if(bBlend)
+            {
+               sDrawPre.append("glEnable(GL_BLEND);\n");
+               sDrawPre.append("glBlendFuncSeparate("
+                               +gl_blend_factor_names.get(getChoiceParamById("blend_src_rgb"))+", "
+                               +gl_blend_factor_names.get(getChoiceParamById("blend_dst_rgb"))+", "
+                               +gl_blend_factor_names.get(getChoiceParamById("blend_src_a"))+", "
+                               +gl_blend_factor_names.get(getChoiceParamById("blend_dst_d"))
+                               +");\n"
+                               );
+               GParamRGBA paramBlendColor <= getParamById("blend_color");
+               sDrawPre.append("glBlendColor("+paramBlendColor.getRAsFloat()+", "+paramBlendColor.getGAsFloat()+", "+paramBlendColor.getBAsFloat()+", "+paramBlendColor.getAAsFloat()+");\n");
+            }
+            else
+            {
+               sDrawPre.append("glDisable(GL_BLEND);\n");
+            }
+
+            sDrawPre.append("glColorMask("+getBoolParamByIdAsGLString("color_wmask_r")+", "+getBoolParamByIdAsGLString("color_wmask_g")+", "+getBoolParamByIdAsGLString("color_wmask_b")+", "+getBoolParamByIdAsGLString("color_wmask_a")+");\n");
+
+            if((null == fbo) || fbo.hasDepthBuffer())
+            {
+               sDrawPre.append("glDepthMask("+getBoolParamByIdAsGLString("depth_wmask")+");\n");
+               sDrawPre.append("glDepthFunc("+gl_zs_func_names.get(getChoiceParamById("depth_func"))+");\n");
+            }
+
+            if((null == fbo) || fbo.hasStencilBuffer())
+            {
+               int swmaskFront = getIntParamById("stencil_wmask_front");
+               int swmaskBack  = getIntParamById("stencil_wmask_back");
+               if(swmaskFront != swmaskBack)
+               {
+                  sDrawPre.append("glStencilMaskSeparate(GL_FRONT, "+swmaskFront+");\n");
+                  sDrawPre.append("glStencilMaskSeparate(GL_BACK, "+swmaskBack+");\n");
+               }
+               else
+               {
+                  sDrawPre.append("glStencilMask("+swmaskFront+");\n");
+               }
+
+               int sfuncFront  = getChoiceParamById("stencil_func_front");
+               int srefFront   = getIntParamById("stencil_ref_front");
+               int stmaskFront = getIntParamById("stencil_mask_front");
+
+               int sfuncBack  = getChoiceParamById("stencil_func_back");
+               int srefBack   = getIntParamById("stencil_ref_back");
+               int stmaskBack = getIntParamById("stencil_mask_back");
+
+               if( (sfuncFront != sfuncBack) || (srefFront != srefBack) || (stmaskFront != stmaskBack) )
+               {
+                  sDrawPre.append("glStencilFuncSeparate(GL_FRONT, "+gl_zs_func_names.get(sfuncFront)+", "+srefFront+", "+stmaskFront+");\n");
+                  sDrawPre.append("glStencilFuncSeparate(GL_BACK, "+gl_zs_func_names.get(sfuncBack)+", "+srefBack+", "+stmaskBack+");\n");
+               }
+               else
+               {
+                  sDrawPre.append("glStencilFunc("+gl_zs_func_names.get(sfuncFront)+", "+srefFront+", "+stmaskFront+");\n");
+               }
+
+               int sopSFailFront = getChoiceParamById("stencil_op_sfail_front");
+               int sopZFailFront = getChoiceParamById("stencil_op_zfail_front");
+               int sopZPassFront = getChoiceParamById("stencil_op_zpass_front");
+
+               int sopSFailBack = getChoiceParamById("stencil_op_sfail_back");
+               int sopZFailBack = getChoiceParamById("stencil_op_zfail_back");
+               int sopZPassBack = getChoiceParamById("stencil_op_zpass_back");
+
+               if( (sopSFailFront != sopSFailBack) || (sopZFailFront != sopZFailBack) || (sopZPassFront != sopZPassBack) )
+               {
+                  sDrawPre.append("glStencilOpSeparate(GL_FRONT, "
+                                  +gl_s_op_names.get(sopSFailFront)+", "
+                                  +gl_s_op_names.get(sopZFailFront)+", "
+                                  +gl_s_op_names.get(sopZPassFront)+");\n"
+                                  );
+                  sDrawPre.append("glStencilOpSeparate(GL_BACK, "
+                                  +gl_s_op_names.get(sopSFailBack)+", "
+                                  +gl_s_op_names.get(sopZFailBack)+", "
+                                  +gl_s_op_names.get(sopZPassBack)+");\n"
+                                  );
+               }
+               else
+               {
+                  sDrawPre.append("glStencilOp("
+                                  +gl_s_op_names.get(sopSFailFront)+", "
+                                  +gl_s_op_names.get(sopZFailFront)+", "
+                                  +gl_s_op_names.get(sopZPassFront)+");\n"
+                                  );
+               }
+            }
+
+            boolean bCull = getBoolParamById("cull");
+            if(bCull)
+            {
+               sDrawPre.append("glEnable(GL_CULL_FACE);\n");
+               sDrawPre.append("glFrontFace("+(["GL_CW", "GL_CCW"].get(getChoiceParamById("front_face")))+");\n");
+               sDrawPre.append("glCullFace("+(["GL_FRONT", "GL_BACK", "GL_FRONT_AND_BACK"].get(getChoiceParamById("cull_face")))+");\n");
+            }
+            else
+            {
+               sDrawPre.append("glDisable(GL_CULL_FACE);\n");
+            }
+
+            sDrawPost.append("// -------- END renderpass "+getObjectPath()+" --------\n");
+
+            _module.appendDrawPre(sDrawPre);
+
+            if(null != model)
+               model.emitCallDraw(_module);/////, null/*transformArgOrNull*/);
+
+            if(null != script)
+            {
+               script.setTransformArg(null);
+               script.emit(GOutput.OUT_DEF,
+                           _module,
+                           null/*program*/,
+                           sDrawPre/*out*/,
+                           null/*dstVar*/,
+                           false/*bGLSL*/,
+                           _parents
+                           );
+               _module.appendDrawPre(sDrawPre);
+            }
+
+            _module.appendDrawPost(sDrawPost);
+
+            current_project.cur_emit_fb_w = 0;
+            current_project.cur_emit_fb_h = 0;
+
+            _module.endSection();
+
+            sDrawPre.empty();
+            appendScriptInputCond(_module, "visible", sDrawPre);
+            sDrawPre.append("Draw_"+getNamespacePrefix()+"_renderpass_"+getId()+"(0/*fbW*/, 0/*fbH*/);\n");
+            _module.appendDrawPre(sDrawPre);
+
+         } // if "draw"
+      }
+      // // else
+      // // {
+      // //    trace "[~~~] GRenderPass::emitRenderPass: this.path="+getObjectPath()+" no model connected, skipping..";
+      // // }
+   }
+
+   // <method.png>
+   public virtual emitPost(local GModule      _module,
+                           local GProgram     _program,
+                           local PointerArray _parents
+                           ) {
+      if(b_init_done && !b_post_done)
+      {
+         b_post_done = true;
+         GObject::emitPost(_module, _program, _parents);
+
+         local GModel model <= getFirstConnectedModel();
+         local GFBO fbo <= getFirstConnectedFBO();
+
+         if(null != model)
+         {
+            model.emitModulePost(_module);
+         }
+
+         if(null != fbo)
+         {
+            fbo.emitPost(_module, _program, _parents);
+         }
+
+         GNamespace::emitModulePost(_module);
+      }
+   }
+}

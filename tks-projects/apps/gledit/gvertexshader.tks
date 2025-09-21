@@ -1,0 +1,166 @@
+// ----
+// ---- file   : gvertexshader.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 14Jun2020, 15Jun2020, 16Jun2020, 18Jun2020, 30Jun2020, 03Jul2020
+// ----          22Jul2020, 15Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGVertexShader;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GVertexShader : GShader {
+
+   // <method_new.png>
+   static New() : GVertexShader {
+      local GVertexShader r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GShader::init();
+
+      addInput("position",  TYPE_VEC4);
+      addInput("transform", TYPE_MAT4);
+      // // addInput("project",   TYPE_MAT4);
+   }
+
+   // <method.png>
+   public virtual getId() : String {
+      return "vs";
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return "vtx_"+id;
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_GLSL;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      // no outputs
+      return DOMAIN_GLSL;
+   }
+
+   // <method.png>
+   public virtual emitShader(local GModule       _module,
+                             local GProgram      _program,
+                             local GShaderSource _src,
+                             local PointerArray  _parents
+                             ) {
+      GSource *gsrc;
+      foreach gsrc in sources
+      {
+         if(gsrc.isEnabled())
+         {
+            gsrc.emitBegin();
+         }
+      }
+
+      _src.emitBegin();
+
+      local String sGlobal;
+      local String sMain;
+
+      // // sGlobal.append("uniform float u_time;\n");
+
+      boolean b120 = (Utils.IsMacOS() && !UIRenderer.b_glcore) || GConfig.b_glsl_1;
+      String sIn  <= b120 ? "attribute " : "in ";
+      String sOut <= b120 ? "varying "   : "out ";
+
+      // Declare attributes
+      GAttribute *attrib;
+      foreach attrib in _program.attributes
+      {
+         if(attrib.isEnabled())
+         {
+            sGlobal.append(sIn+attrib.getGLSLTypeName()+" "+attrib.getGLSLVarName()+";\n");
+         }
+      }
+
+      // Declare uniforms
+      GUniform *uni;
+      foreach uni in _program.uniforms
+      {
+         if(uni.isEnabled())
+         {
+            sGlobal.append("uniform "+uni.getGLSLTypeName()+" "+uni.getGLSLVarName()+";\n");
+         }
+      }
+
+      // Generate position output (gl_Position)
+      // local String sOutPos <= "gl_Position";
+      local String sOutPos <= _module.allocTmpVar(sMain, TYPE_VEC4, "gl_Position");
+      GInput inPosition <= getInputById("position");
+      if(!inPosition.isConnected())
+         trace "[~~~] GVertexShader: \"position\" is not connected ! this="+getObjectPath();
+      inPosition.emit(_module, _program, sMain, sOutPos, true/*bGLSL*/, _parents);
+
+      GInput inTransform <= getInputById("transform");
+      if(inTransform.isConnected())
+      {
+         local String sTransformVar <= _module.allocTmpVar(sMain, TYPE_MAT4, "inTransform");
+         inTransform.emit(_module, _program, sMain, sTransformVar, true/*bGLSL*/, _parents);
+         sMain.append(sOutPos+" = "+sTransformVar+" * "+sOutPos+";\n");
+      }
+
+      // Declare Varyings
+      GVarying *v;
+      foreach v in _program.varyings
+      {
+         if(v.isEnabled())
+         {
+            sGlobal.append(sOut+v.getGLSLTypeName()+" "+v.getGLSLVarName()+";\n");
+            v.emit("vs_out", _module, _program, sMain, v.getGLSLVarName()/*dstVar*/, true/*bGLSL*/, _parents);
+         }
+      }
+
+      sMain.append("gl_Position = "+sOutPos+";\n");
+
+      _src.appendGlobal(sGlobal);
+      _src.appendMain(sMain);
+
+      _src.emitEnd();
+   }
+
+   // <method.png>
+   public virtual emitShaderPost(local GModule       _module,
+                                 local GProgram      _program,
+                                 local PointerArray  _parents
+                                 ) {
+
+      GObject::emitPost(_module, _program, _parents);
+
+      GUniform *uni;
+      foreach uni in _program.uniforms
+      {
+         if(uni instanceof GUniformSampler)
+         {
+            if(uni.isEnabled())
+            {
+               uni.emitPost(_module,
+                            _program,
+                            _parents
+                            );
+            }
+         }
+      }
+   }
+}

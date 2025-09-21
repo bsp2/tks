@@ -1,0 +1,616 @@
+// ----
+// ---- file   : PreviewWidget.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL Edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 15Jun2020, 19Jun2020, 21Jun2020, 26Jun2020, 27Jun2020, 29Jul2020
+// ----          12Aug2020, 13Aug2020, 14Aug2020, 08Feb2025, 14Feb2025, 18Sep2025
+// ----
+// ----
+// ----
+
+module MPreviewWidget;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class PreviewWidget : Control {
+   define String TA_UPDATE;
+   define String TA_REDRAW;
+   protected TimerAction *ta_update;
+   protected TimerAction *ta_redraw;
+
+   protected boolean b_queue_update_script;
+
+   define int DRAG_NONE   = 0;
+   define int DRAG_ROT_XY = 1;
+   define int DRAG_ROT_Z  = 2;
+   int drag_mode;
+
+   int cam_dir_x;
+   int cam_dir_y;
+   int cam_dir_z;
+
+   float drag_start_rot_x;
+   float drag_start_rot_y;
+   float drag_start_rot_z;
+
+   float drag_start_ctr_x;
+   float drag_start_ctr_y;
+   float drag_start_ctr_z;
+
+   float drag_start_x;
+   float drag_start_y;
+
+   protected boolean b_mouse_grab;  // (todo) remove
+
+
+   // <ui_init.png>
+   public method initPreviewWidget() {
+      initControl();
+      initTimers();
+      b_editable = true;
+   }
+
+   // <ui_timer.png>
+   public method initTimers() {
+      ta_update <= TimerAction.New(TA_UPDATE, this, GConfig.update_interval_ms);
+      ta_redraw <= TimerAction.New(TA_REDRAW, this, GConfig.redraw_interval_ms);
+   }
+
+   // <method_get.png>
+   public virtual is3d() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isEditable() : boolean {
+      // want keyboard focus
+      return true; //(root_form.pg_start.current_param_object) instanceof GOrbitCamView;
+   }
+
+   // <method_update.png>
+   public method queueUpdate() {
+      trace "[dbg] PreviewWidget::queueUpdate";
+      b_queue_update_script = true;
+      ta_update.reschedule();
+   }
+
+   // <method_update.png>
+   public method queueRedraw() {
+      // trace "[dbg] PreviewWidget::queueRedraw";
+      ta_redraw.schedule();
+   }
+
+   // <method.png>
+   public virtual onResize() {
+      trace "[dbg] PreviewWidget::onResize";
+      queueUpdate();
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      // trace "xxx PreviewWidget::onDraw: ENTER";
+
+      // (note) Layer::drawHierarchy() pushes proj/model matrices + viewport + scissor
+      sdvg_ReturnToGL();
+
+      // Camera
+      GOrbitCamView cam <= current_project.getEditCamWhenActive();
+      // trace "xxx PreviewWidget::onDraw: cam="+#(cam);
+
+      if(null != cam)
+      {
+         if(0 != cam_dir_x || 0 != cam_dir_y || 0 != cam_dir_z)
+         {
+            float strafeSpeed = current_project.cam_strafe_speed;
+            if(UI.KeyModShift())
+               strafeSpeed *= 2;
+            cam.strafe(cam_dir_x * strafeSpeed,
+                       cam_dir_y * strafeSpeed,
+                       cam_dir_z * strafeSpeed
+                       );
+            redraw();
+            root_form.pg_start.queueReshowParams();
+         }
+      }
+
+      // trace "xxx redraw preview";
+      handleQueuedUpdate();
+
+      // glEnable(GL_CULL_FACE);
+      glDisable(GL_CULL_FACE);
+      glCullFace(GL_BACK);
+      glFrontFace(GL_CW);
+      // glEnable(GL_DEPTH_TEST);
+      glDisable(GL_DEPTH_TEST);
+      if(!UIRenderer.b_glcore)
+         glDisable(GL_ALPHA_TEST);
+      glDepthMask(GL_TRUE);
+      glDepthFunc(GL_LESS);
+      glDisable(GL_STENCIL_TEST);
+      glDisable(GL_BLEND);
+      glActiveTexture(GL_TEXTURE0);
+
+      glClearDepth(1.0f);
+      glClear(GL_DEPTH_BUFFER_BIT);
+
+      Double frameTimeMS;
+      if(current_project.b_animate)
+      {
+         milliSecondsDouble(frameTimeMS);
+         float spd = current_project.calcEffectiveAnimSpeed(current_project.anim_speed,
+                                                            current_project.b_slow_motion
+                                                            );
+         if(spd >= Project.FREEZE_SPD_THRESHOLD)
+         {
+            frameTimeMS -= current_project.anim_start_ms;
+            current_project.last_frame_time_ms = frameTimeMS;
+            current_project.last_effective_spd = spd;
+         }
+         else
+         {
+            // Freeze
+            current_project.anim_start_ms = frameTimeMS - current_project.last_frame_time_ms;
+            frameTimeMS = current_project.last_frame_time_ms;
+            // // trace "xxx PreviewWidget::onDraw: freeze current_project.anim_start_ms="+current_project.anim_start_ms;
+         }
+         // // trace "xxx PreviewWidget::onDraw: anim frameTimeMS="+frameTimeMS;
+      }
+      else
+      {
+         frameTimeMS = 0;
+      }
+
+      // // UIRenderer.PushProjMatrix();
+      // // UIRenderer.PushModelMatrix();
+
+      local Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+      // trace "xxx abspos="+abspos.getString()+" size="+getSizeString();
+      // abspos.y -= 16;  // (todo) fix this
+      abspos.x = int(abspos.x + 0.5);
+      abspos.y = int(abspos.y + 0.5);
+
+      sdvg_SetScissor(abspos.x, abspos.y, getSizeX(), getSizeY());
+      sdvg_EnableScissor();
+
+      UIRenderer.SetViewport(abspos.x, abspos.y, getSizeX(), getSizeY());
+
+      glClearColor(0.2,0.2,0.2,1.0);
+      glClear(GL_COLOR_BUFFER_BIT);
+
+      if(current_project.isEditCamActive())
+      {
+         trace "[trc] PreviewWidget::onDraw: EDIT CAM ACTIVE";
+         sdvg_ReturnToGL();
+         UIRenderer.ProjInit2D(1,1);
+         UIRenderer.DisableBlending();
+         UIRenderer.DrawRectangle(0, 0, 1, 1, 0.005, hasKeyboardFocus() ? #ffff0000 : #ffaf0000);
+         sdvg_ReturnToGL();
+      }
+      else
+      {
+         // trace "xxx PreviewWidget::onDraw: no edit cam";
+      }
+
+      // glEnable(GL_DEPTH_TEST);
+      // glEnable(GL_CULL_FACE);
+
+      current_project.runScriptDraw(frameTimeMS / 1000.0);
+
+      sdvg_ReturnToGL();
+
+      if(current_project.b_animate || ((current_project.num_frames_rendered < 2) && current_project.b_script_valid))
+      {
+         // trace "xxx anim frameTime="+frameTime;
+         redraw();
+      }
+
+      // // UIRenderer.PopViewport();
+
+      // // sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      // // UIRenderer.PopModelMatrix();
+      // // UIRenderer.PopProjMatrix();
+
+      sdvg_UnbindVBO();
+
+      glCullFace(GL_BACK);
+      glDisable(GL_CULL_FACE);
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_STENCIL_TEST);
+      glDisable(GL_BLEND);
+      glColorMask(1,1,1,1);
+      glActiveTexture(GL_TEXTURE0);
+
+      // trace "xxx PreviewWidget::onDraw: LEAVE";
+   }
+
+   // <ui_mouse.png>
+   public virtual isMouseFocusLocked() : boolean {
+      return b_mouse_grab;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // trace "xxx mouse abs=("+_ev.mouse_abs_x+";"+_ev.mouse_abs_y+") rel=("+_ev.mouse_rel_x+","+_ev.mouse_rel_y+")";
+      float x, y;
+
+      if(b_mouse_grab)
+      {
+         x = getAbsolutePositionX() + _ev.mouse_rel_x;
+         y = getAbsolutePositionY() + _ev.mouse_rel_y;
+      }
+      else
+      {
+         x = _ev.mouse_abs_x;
+         y = _ev.mouse_abs_y;
+      }
+      x -= current_project.cur_viewport_x;
+      y = (Viewport.height-1-y) - current_project.cur_viewport_y;
+
+      // trace "xxx mouse    p=("+x+";"+y+")";
+      current_project.last_vp_mouse_delta_x = x - current_project.last_vp_mouse_x;
+      current_project.last_vp_mouse_delta_y = y - current_project.last_vp_mouse_y;
+
+      x = mathClampf(x, 0.0f, current_project.cur_viewport_w);
+      y = mathClampf(y, 0.0f, current_project.cur_viewport_h);
+      current_project.last_vp_mouse_x = x;
+      current_project.last_vp_mouse_y = y;
+
+      GOrbitCamView cam <= null;
+
+      if(_ev.leftButtonUp())
+      {
+         current_project.last_mouse_buttons_x = -1.0f;
+         cam <= current_project.getEditCamWhenActive();
+         if(null != cam)
+         {
+            // (note) does not work with mouse-drag
+            // UI.UngrabMouse();
+            // b_mouse_grab = false;
+            // trace "xxx ungrab";
+         }
+      }
+      else if(_ev.isLeftButtonDown())
+      {
+         current_project.last_mouse_buttons_x =  1.0f;
+         if(_ev.leftButtonDown())
+         {
+            cam <= current_project.getEditCamWhenActive();
+            if(null != cam)
+            {
+               // (note) does not work with mouse-drag
+               // UI.GrabMouse();
+               // b_mouse_grab = true;
+               // trace "xxx grab";
+            }
+         }
+      }
+      else
+         current_project.last_mouse_buttons_x =  0.0f;
+
+      if(_ev.rightButtonUp())
+         current_project.last_mouse_buttons_y = -1.0f;
+      else if(_ev.isRightButtonDown())
+         current_project.last_mouse_buttons_y =  1.0f;
+      else
+         current_project.last_mouse_buttons_y =  0.0f;
+
+      if(_ev.middleButtonUp())
+         current_project.last_mouse_buttons_z = -1.0f;
+      else if(_ev.isMiddleButtonDown())
+         current_project.last_mouse_buttons_z =  1.0f;
+      else
+         current_project.last_mouse_buttons_z =  0.0f;
+
+      if(_ev.wheelUp())
+         current_project.last_mouse_buttons_w =  1.0f;
+      else if(_ev.wheelDown())
+         current_project.last_mouse_buttons_w = -1.0f;
+
+      if(current_project.emitUsesMouse())
+         redraw();
+
+      // trace "xxx onMouse: mouse_focus="+#(UI.mousefocus_layer);
+
+      return Control::onMouse(_ev);
+   }
+
+   // <ui_xfm.png>
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initPreviewWidget();
+
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         String atname, atnamelc;
+         StringArray atsplit;
+
+         foreach atname in _attributes
+         {
+            String atval=_attributes[atname], atvaluc;
+            atnamelc = atname;
+            atnamelc.toLower();
+
+            switch(atnamelc)
+            {
+               default:
+                  break;
+            }
+         }
+
+         return true;
+      }
+   }
+
+   // <method.png>
+   protected method handleQueuedUpdate() {
+      if(b_queue_update_script)
+      {
+         b_queue_update_script = false;
+         current_project.updateScript();
+         redraw();
+         UI.RedrawAll();
+         ta_update.cancel();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      return !([VKEY_LEFT, VKEY_RIGHT, VKEY_UP, VKEY_DOWN, 'w', 'a', 's', 'd', 'r', 'f'].contains(_k.code));
+   }
+
+   // <ui_kbd.png>
+   public virtual onKeyboardFocus() {
+      redraw();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      GOrbitCamView cam <= current_project.getEditCamWhenActive();
+      // trace "xxx PreviewWidget::onKey: cam="+#(cam);
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(current_project.isEditCamActive())
+               root_form.pg_start.toggleForcedConnection();
+            UI.SetKeyboardFocus(root_form.pg_start.tv_objects);
+            UI.RedrawAll();
+            return true;
+      }
+
+      if(null != cam)
+      {
+         redraw();
+
+         switch(_k.pressed)
+         {
+            case VKEY_LEFT:
+            case 'a':
+               cam_dir_x = -1;
+               redraw();
+               return true;
+
+            case VKEY_RIGHT:
+            case 'd':
+               cam_dir_x = 1;
+               redraw();
+               return true;
+
+            case 'r':
+               cam_dir_y = 1;
+               redraw();
+               return true;
+
+            case 'f':
+               cam_dir_y = -1;
+               redraw();
+               return true;
+
+            case VKEY_UP:
+            case 'w':
+               cam_dir_z = -1;
+               redraw();
+               return true;
+
+            case VKEY_DOWN:
+            case 's':
+               cam_dir_z = 1;
+               redraw();
+               return true;
+
+            case VKEY_INSERT:
+               if(cam.isAnon())
+               {
+                  root_form.pg_start.handleInputCloneAnon();
+               }
+               return true;
+
+            case VKEY_DELETE:
+               if(cam.isAnon())
+               {
+                  root_form.pg_start.handleInputRemove();
+               }
+               return true;
+         }
+
+         switch(_k.released)
+         {
+            case VKEY_LEFT:
+            case 'a':
+               if(cam_dir_x == -1)
+                  cam_dir_x = 0;
+               redraw();
+               return true;
+
+            case VKEY_RIGHT:
+            case 'd':
+               if(cam_dir_x == 1)
+                  cam_dir_x = 0;
+               redraw();
+               return true;
+
+            case 'r':
+               if(cam_dir_y == 1)
+                  cam_dir_y = 0;
+               redraw();
+               return true;
+
+            case 'f':
+               if(cam_dir_y == -1)
+               cam_dir_y = 0;
+               redraw();
+               return true;
+
+            case VKEY_UP:
+            case 'w':
+               if(cam_dir_z == -1)
+                  cam_dir_z = 0;
+               redraw();
+               return true;
+
+            case VKEY_DOWN:
+            case 's':
+               if(cam_dir_z == 1)
+                  cam_dir_z = 0;
+               redraw();
+               return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      GOrbitCamView cam <= current_project.getEditCamWhenActive();
+      if(null != cam)
+      {
+         grabKeyboardFocus();
+         drag_start_x = _dragStart.mouse_rel_x;
+         drag_start_y = _dragStart.mouse_rel_y;
+
+         drag_start_rot_x = cam.getFloatParamById("rot_x");
+         drag_start_rot_y = cam.getFloatParamById("rot_y");
+         drag_start_rot_z = cam.getFloatParamById("rot_z");
+
+         drag_start_ctr_x = cam.getFloatParamById("ctr_x");
+         drag_start_ctr_y = cam.getFloatParamById("ctr_y");
+         drag_start_ctr_z = cam.getFloatParamById("ctr_z");
+
+         if(_ev.isLeftButtonDown())
+         {
+            drag_mode = DRAG_ROT_XY;
+            return true;
+         }
+         else if(_ev.isRightButtonDown())
+         {
+            drag_mode = DRAG_ROT_Z;
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      GOrbitCamView cam <= current_project.getEditCamWhenActive();
+      if(null != cam)
+      {
+         float dx = _currentEv.mouse_rel_x - drag_start_x;
+         float dy = _currentEv.mouse_rel_y - drag_start_y;
+         // trace "xxx drag delta="+dx+";"+dy;
+         float rx = drag_start_rot_x;
+         float ry = drag_start_rot_y;
+         float rz = drag_start_rot_z;
+         if(DRAG_ROT_XY == drag_mode)
+         {
+            rx += dy * current_project.cam_rot_speed;
+            ry += dx * current_project.cam_rot_speed;
+         }
+         else
+         {
+            rz += dx * current_project.cam_rot_speed;
+         }
+
+         cam.rotate(rx % 360.0, ry % 360.0f, rz % 360.0f);
+         redraw();
+         root_form.pg_start.queueReshowParams();
+
+         return true;
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+
+      GOrbitCamView cam <= current_project.getEditCamWhenActive();
+      if(null != cam)
+      {
+         cam.rotate(drag_start_rot_x, drag_start_rot_y, drag_start_rot_z);
+         cam.center(drag_start_ctr_x, drag_start_ctr_y, drag_start_ctr_z);
+         redraw();
+         root_form.pg_start.queueReshowParams();
+         drag_mode = DRAG_NONE;
+      }
+
+      return Control::onMouseCancelDrag(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      drag_mode = DRAG_NONE;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         GOrbitCamView cam <= current_project.getEditCamWhenActive();
+         if(null != cam)
+         {
+            Global.Print("Edit cam '"+cam.getObjectPath()+"'");
+         }
+
+         grabKeyboardFocus();
+         return false;///true;  // (note) don't return true so onMouse() is called (mouse grab/ungrab)
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(@(ap) == @(this))
+      {
+         if(TA_UPDATE == acName)
+         {
+            // trace "xxx TA_UPDATE";
+            b_queue_update_script = true;
+            handleQueuedUpdate();
+            return true;
+         }
+
+         if(TA_REDRAW == acName)
+         {
+            redraw();
+            return true;
+         }
+      }
+
+      return Control::consumeAction(_ac);
+   }
+}

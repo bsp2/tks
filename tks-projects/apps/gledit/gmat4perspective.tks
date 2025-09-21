@@ -1,0 +1,217 @@
+// ----
+// ---- file   : gmat4perspective.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 21Jun2020
+// ---- changed: 24Jun2020, 09Jul2020, 09Aug2020, 14Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGMat4Perspective;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMat4Perspective : GConstant {
+   protected boolean b_fxn_done;
+
+   // <method_new.png>
+   public static New() : GMat4Perspective {
+      local GMat4Perspective r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_new.png>
+   public static New4(float _aspect, float _fov, float _near, float _far) : GMat4Perspective {
+      local GMat4Perspective r;
+      r.init();
+      r.setFloatParamById("aspect", _aspect);
+      r.setFloatParamById("fov",    _fov);
+      r.setFloatParamById("near",   _near);
+      r.setFloatParamById("far",    _far);
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = TYPE_MAT4;
+
+      addParamFloat("aspect",  "aspect",  1.0,  0.1,  0.1,     10.0,   10.0,  1.0);
+      addParamFloat("fov",     "fov",    45.0,  1.0,  1.0,    179.0,  179.0, 45.0);
+      addParamFloat("near",    "near",    0.1, 0.01,  0.001,   10.0,   10.0,  0.1);
+      addParamFloat("far",     "far",    20.0, 1.0,   0.1,   1000.0, 1000.0, 20.0);
+
+      addInput("aspect", TYPE_FLOAT);
+      addInput("fov",    TYPE_FLOAT);
+      addInput("near",   TYPE_FLOAT);
+      addInput("far",    TYPE_FLOAT);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getString() : String {
+      float aspect = getFloatParamById("aspect");
+      float fov    = getFloatParamById("fov");
+      float znear  = getFloatParamById("near");
+      float zfar   = getFloatParamById("far");
+      return "aspect="+aspect+" fov="+fov" n="+znear+" f="+zfar;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GMat4Perspective::emitBegin";
+      b_fxn_done = false;
+   }
+
+   // <method.png>
+   public method emit(local String       _outputId,
+                      local GModule      _module,
+                      local GProgram     _program,
+                      local String       _out,
+                      local String       _dstVar,
+                      local boolean      _bGLSL,
+                      local PointerArray _objDone
+                      ) {
+      float aspect = getFloatParamById("aspect");
+      float fov    = getFloatParamById("fov");
+      float znear  = getFloatParamById("near");
+      float zfar   = getFloatParamById("far");
+
+      _out.append("// GMat4Perspective id="+getObjectPath()+"\n");
+
+      if(_bGLSL)
+      {
+         float top = tan(fov * 2PI * (1.0f/360.0f) * 0.5f) * znear;
+
+         // // _initFrustum(_aspect*-top, _aspect*top, -top, top, _znear, _zfar);
+
+         float left   = aspect*-top;
+         float right  = aspect*top;
+         float bottom = -top;
+
+         float near2 = (2.0f * znear);
+
+         float a = near2 / (right - left);
+         float b = near2 / (top - bottom);
+
+         float c = (right + left) / (right - left);
+         float d = (top + bottom) / (top - bottom);
+         float e = -(zfar + znear) / (zfar - znear);
+
+         float f = -(2.0f * zfar * znear) / (zfar - znear);
+
+         // (note) column-major (OpenGL)
+         _out.append(_dstVar+" = mat4(vec4("+a+",0,0,0), vec4(0,"+b+",0,0), vec4("+c+","+d+","+e+",-1), vec4(0,0,"+f+",0));\n");
+      }
+      else
+      {
+         GInput *input;
+         local String *sAspect;
+         local String *sFOV;
+         local String *sNear;
+         local String *sFar;
+
+         // trace "xxx GMat4Perspective::emit: b_fxn_done="+b_fxn_done;
+
+         if(!b_fxn_done)
+         {
+            b_fxn_done = true;
+
+            local String sFunction;
+
+            // (note) row-major (C-array / Direct3D)
+            sFunction.append("\nfunction CalcMat4Perspective(Matrix4f _d, float aspect, float fov, float znear, float zfar) {\n");
+            sFunction.append(
+               "   float top = tan(fov * 2PI * (1.0f/360.0f) * 0.5f) * znear;\n"
+               "   float left   = aspect*-top;\n"
+               "   float right  = aspect*top;\n"
+               "   float bottom = -top;\n"
+               "\n"
+               "   float near2 = (2.0f * znear);\n"
+               "\n"
+               "   float a = near2 / (right - left);\n"
+               "   float b = near2 / (top - bottom);\n"
+               "\n"
+               "   float c = (right + left) / (right - left);\n"
+               "   float d = (top + bottom) / (top - bottom);\n"
+               "   float e = -(zfar + znear) / (zfar - znear);\n"
+               "\n"
+               "   float f = -(2.0f * zfar * znear) / (zfar - znear);\n"
+               "\n"
+               // // "   _d = [a,0,0,0, 0,b,0,0, c,d,e,-1, 0,0,f,0];\n"
+               // // "   _d = [a,0,0,0,\n"
+               // // "         0,b,0,0,\n"
+               // // "         c,d,e,-1,\n"
+               // // "         0,0,f,0\n"
+               // // "         ];\n"
+               "   _d = [a,0,c,0,\n"
+               "         0,b,d,0,\n"
+               "         0,0,e,f,\n"
+               "         0,0,-1,0\n"
+               "         ];\n"
+               "   //trace \"xxx mat4persp=\"+#(_d);\n"
+               "}\n"
+                             );
+            _module.appendGlobalOnce("CalcMat4Perspective", sFunction);
+         }
+
+         // aspect
+         input <= getInputById("aspect");
+         if(input.isConnected())
+         {
+            sAspect <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_aspect");
+            input.emit(_module, _program, _out, sAspect, false/*bGLSL*/, _objDone);
+            _out.append(sAspect+" += "+aspect+";\n");
+         }
+         else
+            sAspect <= String(aspect);
+
+         // FOV
+         input <= getInputById("fov");
+         if(input.isConnected())
+         {
+            sFOV <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_fov");
+            input.emit(_module, _program, _out, sFOV, false/*bGLSL*/, _objDone);
+            _out.append(sFOV+" += "+fov+";\n");
+         }
+         else
+            sFOV <= String(fov);
+
+         // near
+         input <= getInputById("near");
+         if(input.isConnected())
+         {
+            sNear <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_near");
+            input.emit(_module, _program, _out, sNear, false/*bGLSL*/, _objDone);
+            _out.append(sNear+" += "+znear+";\n");
+         }
+         else
+            sNear <= String(znear);
+
+         // far
+         input <= getInputById("far");
+         if(input.isConnected())
+         {
+            sFar <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_far");
+            input.emit(_module, _program, _out, sFar, false/*bGLSL*/, _objDone);
+            _out.append(sFar+" += "+zfar+";\n");
+         }
+         else
+            sFar <= String(zfar);
+
+         _out.append("CalcMat4Perspective("+_dstVar+", "+sAspect+", "+sFOV+", "+sNear+", "+sFar+");\n");
+         _out.append("//"+_dstVar+".initFrustumFov("+aspect+", "+fov+", "+znear+", "+zfar+");\n");
+         _out.append("//trace \"mat4frustumfov=\"+#("+_dstVar+");\n");
+      }
+   }
+}

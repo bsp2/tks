@@ -1,0 +1,223 @@
+// ----
+// ---- file   : gconnectionreader.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 20Jun2020
+// ---- changed: 21Jun2020, 26Jun2020, 27Jun2020, 30Jun2020, 01Aug2020, 07Feb2025
+// ----
+// ----
+// ----
+module MGConnectionReader;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GConnectionReader {
+   String *object_path_prefix_filter;
+   GObject *anon_target_object;  // map <anon> targetPath to this object (when cloning connection input object)
+
+
+   // <method_set.png>
+   public method setObjectPathPrefixFilter(String _path) {
+      object_path_prefix_filter <= Object(_path);
+      if!(object_path_prefix_filter >= ".")
+         object_path_prefix_filter.append(".");
+   }
+
+   // <method_set.png>
+   public method setAnonTargetObject(GObject _obj) {
+      anon_target_object <= _obj;
+   }
+
+   // <load.png>
+   protected method loadState(local Stream ifs) : boolean {
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 5)
+      {
+         local String  targetPath;  // target object path (e.g. "default.scenes.scene1")
+         local String  inputId;
+         local boolean bRelSource;
+         local String  sourcePath;  // null == use anon_source_object_state
+         local String  outputId;
+         local int     op;
+         local float   scale;
+         local float   offset;
+         local boolean bEnable;
+
+         // Target path
+         Utils.ReadString(ifs, targetPath);
+
+         // trace "xxx gconnectionreader: targetPath=\""+targetPath+"\"";
+
+         if(null != object_path_prefix_filter)
+            targetPath.insert(0, object_path_prefix_filter);
+
+         // (note) can happen when targetPath is empty (e.g. when cloning ModelUniform)
+         if(targetPath >= ".")
+            targetPath.substring(0, targetPath.numChars-1);
+
+         // trace "xxx gconnectionreader: prefixed targetPath=\""+targetPath+"\"";
+
+         // Input Id
+         Utils.ReadString(ifs, inputId);
+
+         if(ver >= 2)
+         {
+            // Relative source path
+            bRelSource = ifs.b8;
+         }
+
+         // Source path
+         //  (note) writes i32=0 if <anon>
+         Utils.ReadString(ifs, sourcePath);
+         if(sourcePath.isBlank())
+            sourcePath <= null;
+         else if(bRelSource && (null != object_path_prefix_filter))
+            sourcePath.insert(0, object_path_prefix_filter);
+
+         // Output Id
+         Utils.ReadString(ifs, outputId);
+
+         // trace "xxx connection targetPath=\""+targetPath+"\" sourcePath=\""+sourcePath+"\"";
+
+         // Op
+         op = ifs.u8;
+
+         if(ver <= 4 && op >= 39)
+            op++;  // OP_MAT_INV_TRP added in connection v5+
+
+         if(ver >= 3)
+         {
+            // Scale+Offset (v3+)
+            scale  = ifs.f32;
+            offset = ifs.f32;
+         }
+         else
+         {
+            scale  = 1.0;
+            offset = 0.0;
+         }
+
+         if(ver >= 4)
+         {
+            // Enable (v4+)
+            bEnable = ifs.b8;
+         }
+         else
+         {
+            bEnable = true;
+         }
+
+         GObject targetObject <= current_project.findObjectByPath(targetPath);
+         if(null == targetObject)
+         {
+            if("<anon>" == targetPath && null != anon_target_object)
+               targetObject <= anon_target_object;
+            if(null == targetObject)
+               trace "[~~~] GConnectionReader: failed to resolve targetPath=\""+targetPath+"\", skipping..";
+         }
+
+         local GObject *sourceObject;
+
+         // <anon>
+         if(null != sourcePath)
+         {
+            sourceObject <= current_project.findObjectByPath(sourcePath);
+            if(null == sourceObject)
+            {
+               trace "[~~~] GConnectionReader: failed to resolve sourcePath=\""+sourcePath+"\", skipping..";
+            }
+         }
+         else
+         {
+            // <anon> size
+            int bufSize = ifs.i32;
+            local Buffer b;
+            ifs.readBuffer(b, 0, bufSize, true/*bResize*/);
+            sourceObject <= GObject.LoadStateObject(b);
+            if(null == sourceObject)
+            {
+               trace "[---] GConnectionReader: failed to load <anon> object";
+               return false;
+            }
+         }
+
+         if(null != sourceObject)
+         {
+            if(null != targetObject)
+            {
+               GConnection conn <= targetObject.connect(inputId, deref sourceObject, outputId, op);
+               if(null != conn)
+               {
+                  conn.scale  = scale;
+                  conn.offset = offset;
+                  conn.setEnable(bEnable);
+
+                  if(null == sourcePath)
+                  {
+                     // <anon>
+                     sourceObject.anon_parent      <= targetObject;
+                     sourceObject.anon_parent_conn <= conn;
+                  }
+               }
+               else
+               {
+                  trace "[~~~] GConnectionReader: failed to connect targetObject="+#(targetObject)+":"+inputId+" with sourceObject="+#(sourceObject)+":"+outputId+" op="+op+", skipping..";
+               }
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GConnectionReader::loadState: invalid version "+ver;
+         return false;
+      }
+   }
+
+   // <load.png>
+   public method loadStream(local Stream ifs) : boolean {
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Num connections
+         int numConnections = ifs.u16;
+         int connIdx = 0;
+         loop(numConnections)
+         {
+            if(!loadState(ifs))
+            {
+               trace "[---] GConnectionReader::loadStream: failed to read connection "+(connIdx+1)+"/"+numConnections;
+               return false;
+            }
+            connIdx++;
+         }
+
+         trace "[dbg] GConnectionReader::loadStream: read "+numConnections+" connection(s)";
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GConnectionReader::loadStream: invalid version "+ver;
+         return false;
+      }
+   }
+
+}

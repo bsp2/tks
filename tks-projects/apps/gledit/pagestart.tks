@@ -1,0 +1,5817 @@
+// ----
+// ---- file   : pagestart.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL Edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 14Jun2020, 15Jun2020, 16Jun2020, 18Jun2020, 19Jun2020, 20Jun2020, 21Jun2020
+// ----          24Jun2020, 25Jun2020, 26Jun2020, 27Jun2020, 01Jul2020, 04Jul2020, 07Jul2020
+// ----          08Jul2020, 09Jul2020, 10Jul2020, 11Jul2020, 12Jul2020, 13Jul2020, 19Jul2020
+// ----          21Jul2020, 22Jul2020, 23Jul2020, 24Jul2020, 25Jul2020, 26Jul2020, 30Jul2020
+// ----          01Aug2020, 02Aug2020, 03Aug2020, 08Aug2020, 09Aug2020, 12Aug2020, 13Aug2020
+// ----          14Aug2020, 05Feb2025, 08Feb2025, 11Feb2025
+// ----
+// ----
+// ----
+
+module MPageStart;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class PageStart : Page, KeyboardFocusListener, GDefs {
+
+   define int SWPARAMS_NONE       = 0;
+   define int SWPARAMS_PARAMS     = 1;
+   define int SWPARAMS_CONNECTION = 2;
+   define int SWPARAMS_TEXTURE    = 3;
+
+   define String TA_WATCHFILE;
+   define String TA_RESHOW_PARAMS;
+   protected TimerAction *ta_watchfile;
+   protected TimerAction *ta_reshow_params;
+
+   protected ComboField *cf_nsp_proj;
+   protected Button     *bt_nsp_add;
+   protected Button     *bt_nsp_remove;
+   protected ComboBox   *cm_nsp_scene;
+   protected ComboBox   *cm_nsp_model;
+
+   protected TextField *tf_proj_name;
+
+   protected CheckBox   *cb_animate;
+   protected FloatParam *fp_anim_offset;
+   protected FloatParam *fp_anim_speed;
+   protected CheckBox   *cb_slow_motion;
+   protected int         ms_slow_motion_toggle;  // last lctrl-SPACE keypress
+   define int SLOW_MOTION_OFF_TIMEOUT = 200;
+
+   protected Button *bt_swap;
+   protected Button *bt_radar;
+
+   protected Button *bt_load;
+   protected Button *bt_save;
+   protected Button *bt_export;
+
+   protected SplitPane *sp_h;
+   protected SplitPane *sp_objects;
+   protected SplitPane *sp_inputs;
+
+   protected ObjectsTM   *tm_objects;
+   protected TableView   *tv_objects;
+   protected PopupMenu   *pm_objects;
+   protected Button      *bt_objects_add;
+   protected Button      *bt_objects_remove;
+   protected Button      *bt_objects_moveup;
+   protected Button      *bt_objects_movedown;
+   protected Button      *bt_objects_hide;
+
+   protected InputsTM  *tm_inputs;  // (todo) rename to "io" ?  (contains inputs + outputs)
+   protected TableView *tv_inputs;
+   protected PopupMenu *pm_inputs;
+   protected Button    *bt_inputs_add;
+   protected Button    *bt_inputs_remove;
+   protected Button    *bt_inputs_moveup;
+   protected Button    *bt_inputs_movedown;
+   protected Button    *bt_inputs_conn;
+
+   protected LayerSwitch    *sw_params;
+   protected ParamsForm     *f_params;
+   protected ConnectionForm *f_conn;
+   protected TextureForm    *f_texture;
+
+   // Preview
+   public PreviewWidget *preview;
+   protected LayerSwitch *sw_preview;
+   protected FloatParam *fp_cam_strafe_speed;
+   protected FloatParam *fp_cam_rot_speed;
+
+   public    GObject *current_input_object;
+   protected Object  *current_param_object;  // GParamProvider, GConnection, or GTexture
+   protected GObject *[] link_source_objects;
+   protected String   [] link_source_outputs;
+
+   // (note) anon object has precedence over regular link_source(s) during move
+   protected GObject     *anon_link_source_input_object;       // connection input parent
+   protected GConnection *anon_link_source_connection;
+
+   protected boolean b_first_frame = true;
+
+   protected ObjectTypeDialog *dlg_object_type;
+   protected HashTable last_object_type_map;  // maps parent container class name to object class
+   protected String object_add_preselect_class_name;
+   protected Object *object_add_dest;
+
+   protected UniformSelectDialog *dlg_uniform_select;
+
+   protected StringDialog *dlg_find;
+   protected int find_start_row_idx;
+   protected String last_object_find_string;
+
+   protected RadarDialog *dlg_radar;
+
+   protected ObjectListWindow *win_object_list;
+
+   protected ExportDialog *dlg_export;
+
+   protected boolean b_loading;
+
+   protected boolean b_cur_inputs_split_many = maybe;
+
+   protected TableView *last_focused_io_table_view;  // tv_objects or tv_inputs
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("pagestart.xfm"))
+         return false;
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      tm_objects <= new ObjectsTM;
+      tm_objects.initTableModel();
+      tv_objects.setTableModel(tm_objects);
+      tv_objects.tableModelChanged();
+
+      tm_inputs <= new InputsTM;
+      tm_inputs.initTableModel();
+      tv_inputs.setTableModel(tm_inputs);
+      tv_inputs.tableModelChanged();
+
+      f_params .initParamsForm();
+      f_conn   .initConnectionForm();
+      f_texture.initTextureForm();
+
+      last_object_type_map["GArg"]       = GArgFloat;
+      last_object_type_map["GConstant"]  = GConstantFloat;
+      last_object_type_map["GAttribute"] = GAttributeVec3;
+      last_object_type_map["GUniform"]   = GUniformMat4;
+      last_object_type_map["GVarying"]   = GVaryingVec4;
+
+      dlg_radar <= new RadarDialog();
+      dlg_radar.initRadarDialog();
+
+      initTimers();
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   public method initTimers() {
+      ta_watchfile     <= TimerAction.New(TA_WATCHFILE,     this, GConfig.watchfile_interval_ms);
+      ta_reshow_params <= TimerAction.New(TA_RESHOW_PARAMS, this, GConfig.reshow_params_interval_ms);
+   }
+
+   // <ui_timer.png>
+   public method queueReshowParams() {
+      ta_reshow_params.reschedule();
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      trace "[dbg] PageStart::pageEnter";
+
+      updateNSPProj();
+      updateNSPScene();
+      updateNSPModel();
+
+      updateProjectName();
+
+      rebuildObjects(true/*bShowParams*/);
+
+      ta_watchfile.reschedule();
+
+      UI.SetKeyboardFocusListener(this);
+
+      current_project.queueUpdate();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      ta_watchfile.cancel();
+      UI.SetKeyboardFocusListener(null);
+   }
+
+   // <ui.png>
+   public virtual pageFocusDefault() {
+      // UI.SetKeyboardFocus(cm_nsp_scene);
+      UI.SetKeyboardFocus(tv_objects);
+      tv_objects.redraw();
+   }
+
+   // <ui_kbd.png>
+   public virtual pageForceKbdFocusSelMode() {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [cf_nsp_proj,
+                    bt_nsp_add,
+                    bt_nsp_remove,
+                    cm_nsp_scene,
+                    cm_nsp_model,
+                    tf_proj_name,
+                    cb_animate,
+                    fp_anim_offset,
+                    fp_anim_speed,
+                    cb_slow_motion,
+                    bt_swap,
+                    bt_radar,
+                    bt_load,
+                    bt_save,
+                    bt_export,
+                    tv_objects,
+                    tv_inputs
+                    ];
+      sw_params.addTabCycleOverrides(_retLayers);
+   }
+
+   // <method.png>
+   protected method rebuildObjects(boolean _bShowParams) {
+      GNamespace objRoot <= getSelectedNamespace();
+      trace "[dbg] PageStart::rebuildObjects: objRoot="+#(objRoot);
+      tm_objects.buildTreeFromNamespace(objRoot);
+      tv_objects.tableModelChanged();
+
+      rebuildInputs(current_input_object, maybe/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+      if(_bShowParams)
+         showParams(current_param_object);
+
+      // tv_objects.moveCursorToFirstRowIfNoneSelected();
+   }
+
+   // <method.png>
+   protected method updateObjectRow(GObject _obj) {
+      // called when param is edited
+      if(_obj instanceof GConstant)
+      {
+         ObjectsTMEntry en <= tm_objects.getEntryByGObject(_obj);
+         if(null != en)
+            en.updateConstantCaption();
+      }
+   }
+
+   // <method.png>
+   protected method updateInputConnectionObjectRow(GObject _obj) {
+      // called when param is edited
+      if(_obj instanceof GConstant)
+      {
+         InputsTMEntry en <= tm_inputs.getEntryByConnectionObject(_obj);
+         if(null != en)
+            en.updateConnectionCaption();
+      }
+   }
+
+   // <method.png>
+   public method handleObjectsChanged() {
+      rebuildObjects(true/*bShowParams*/);
+      current_project.queueUpdate();
+   }
+
+   // <method.png>
+   public method selectTableRowByInputId(String _id) {
+      GObject selObj <= getSelectedObject();
+      trace "xxx selectTableRowByInputId: id="+_id+" selObj="+#(selObj);
+      if(null != selObj)
+      {
+         GInput ginput <= selObj.getInputById(_id);
+         trace "xxx selectTableRowByInputId: id="+_id+" => ginput="+#(ginput);
+         if(null != ginput)
+         {
+            int rowIdx = tm_inputs.getRowIdxByGInput(ginput);
+            if(rowIdx >= 0)
+            {
+               tv_inputs.moveCursorToRowNoAction(rowIdx);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectTableRowByOutputId(String _id) {
+      GObject selObj <= getSelectedObject();
+      if(null != selObj)
+      {
+         GOutput goutput <= selObj.getOutputById(_id);
+         if(null != goutput)
+         {
+            int rowIdx = tm_inputs.getRowIdxByGOutput(goutput);
+            if(rowIdx >= 0)
+            {
+               tv_inputs.moveCursorToRowNoAction(rowIdx);
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleObjectSelect() {
+      GNamespace objRoot <= getSelectedNamespace();
+      objRoot.setLastSelectedObjectsRowIdx(tm_objects.getCursorIndex());
+
+      rebuildInputs(null/*forceObj*/, false/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+      GObject selObj <= getSelectedObject();
+      // trace "xxx selObj="+#(selObj);
+      // trace "xxx selObj row="+tm_objects.getRowIdxByGObject(selObj);
+      if(null != selObj)
+      {
+         local String objPath <= selObj.getObjectPath();
+
+         if(!b_loading)
+         {
+            if(GNamespace.GLOBAL_ID == cf_nsp_proj.getSelectedOptionName())
+               current_project.last_object_path_global = objPath;
+            else
+               current_project.last_object_path_nsp = objPath;
+         }
+
+         Global.Print("Select object \""+objPath+"\"");
+         trace "[dbg] select object \""+objPath+"\" ("+#(selObj)+")";
+
+         // GObject debugSearch <= current_project.findObjectByPath(selObj.getObjectPath());
+         // trace "xxx debugSearch returned obj="+#(debugSearch);
+
+         GConnection selObjLastConn <= selObj.getLastSelectedInputConnection();
+         // trace "xxx selObjLastConn="+#(selObjLastConn);
+
+         int rowIdx;
+
+         boolean bParamsDone = false;
+
+         // orig code:
+         // if(canShowParams(selObj))
+         //    showParams(selObj);
+         // else
+         // {
+         //    if(null != selObjLastConn)
+         //    {
+         //       // trace "xxx selObjLastConn.port_id_rev="+selObjLastConn.port_id_rev;
+         //       if(!bt_inputs_conn.getToggleState())
+         //       {
+         //          if(canShowParams(selObjLastConn.object))
+         //             showParams(selObjLastConn.object);
+         //          else
+         //             showParams(selObjLastConn);
+         //       }
+         //       else
+         //          showParams(selObjLastConn);
+         //    }
+         // }
+
+         if(bt_inputs_conn.getToggleState())
+         {
+            // Prefer connection details
+            if(null != selObjLastConn)
+            {
+               showParams(selObjLastConn);
+            }
+            else
+            {
+               if(canShowParams(selObj))
+                  showParams(selObj);
+            }
+         }
+         else
+         {
+            // Prefer object params
+            if(canShowParams(selObj))
+               showParams(selObj);
+            else
+            {
+               if(null != selObjLastConn)
+               {
+                  if(canShowParams(selObjLastConn.object))
+                     showParams(selObjLastConn.object);
+                  else
+                     showParams(selObjLastConn);
+               }
+            }
+         }
+
+         if(null != selObjLastConn)
+            rowIdx = tm_inputs.getRowIdxByGConnection(selObjLastConn);
+         else
+            rowIdx = selObj.getLastSelectedInputRowIdx();
+
+         // trace "xxx selObjLastConnRowIdx="+selObjLastConnRowIdx;
+         tv_inputs.moveCursorToRowNoAction(rowIdx);
+
+         InputsTMEntry enInput <= getSelectedInputEntry();
+         if(null != enInput)
+         {
+            // Make entire port folder visible
+            tm_inputs.handleRowClick(true);  // fold
+            tm_inputs.handleRowClick(false); // unfold
+            tv_inputs.moveCursorToRowNoAction(rowIdx);
+         }
+
+         if(dlg_radar.isFloatingLayerVisible())
+         {
+            toggleRadarDialog(maybe);
+            toggleRadarDialog(maybe);
+         }
+      }
+      else
+      {
+         showParams(null);
+      }
+   }
+
+   // <ui_handle.png>
+   public method canExecObjectDefaultAction() : boolean {
+      GObject selObj <= getSelectedObject();
+      if(null != selObj)
+         return selObj.hasDefaultAction();
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method execObjectDefaultAction() : boolean {
+      GObject selObj <= getSelectedObject();
+      if(null != selObj)
+      {
+         if(selObj.hasDefaultAction())
+         {
+            selObj.execDefaultAction();
+
+            // Reselect object (e.g. GSource path_name may have changed)
+            handleObjectSelect();
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleObjectRename(GObject _obj, String _newId) {
+      if(_obj.canRename())
+      {
+         if!(_newId.trim().isBlank())
+         {
+            local String oldId = _obj.getId();
+            Global.Print("Rename Object \""+oldId+"\" to \""+_newId+"\"");
+            _newId = Utils.ConvertToIdentifier(_newId);
+
+            _obj.handleRename(oldId, _newId);
+            _obj.setId(_newId);
+
+            // Update last selected project paths
+            //  (note) in case the object is renamed and the project is saved immediately
+            if(GNamespace.GLOBAL_ID == cf_nsp_proj.getSelectedOptionName())
+               current_project.last_object_path_global = _obj.getObjectPath();
+            else
+               current_project.last_object_path_nsp = _obj.getObjectPath();
+
+            // (todo) check if id is unique within object namespace folder
+
+            if(_obj instanceof GNamespace)
+            {
+               updateNSPProj();
+               updateNSPScene();
+               updateNSPModel();
+            }
+
+            rebuildObjects(true/*bShowParams*/);
+            rebuildInputs(current_input_object, true/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+            current_project.queueUpdate();
+         }
+         else
+            Global.Error("Object ids must not be blank");
+      }
+      else
+         Global.Error("Object cannot be renamed");
+   }
+
+   // <method_set.png>
+   public method unsetLinkSources() {
+      link_source_objects.free();
+      link_source_outputs.free();
+
+      unsetLinkSourceAnon();
+   }
+
+   // <method_set.png>
+   public method unsetLinkSourceAnon() {
+      anon_link_source_input_object <= null;
+      anon_link_source_connection   <= null;
+   }
+
+   // <method_set.png>
+   public method addLinkSource(GObject _obj, String _outputId) {
+      if(null != _obj)
+      {
+         link_source_objects.add(_obj);
+         link_source_outputs.add(_outputId);
+      }
+   }
+
+   // <method_get.png>
+   public method areAllLinkSourceObjectsSceneGraphNodes() : boolean {
+      if(!link_source_objects.isEmpty())
+      {
+         boolean bYes = true;
+         GObject *obj;
+         foreach obj in link_source_objects
+         {
+            if!( (obj instanceof GSGNode) && !(obj instanceof GSceneGraph) )
+            {
+               bYes = false;
+               break;
+            }
+         }
+         return bYes;
+      }
+      return false;
+   }
+
+   // <method_set.png>
+   public method getFirstLinkSourceObject() : GObject {
+      return link_source_objects.get(0);
+   }
+
+   // <method_set.png>
+   public method removeLinkSourceObject(GObject _obj) {
+      for(;;)
+      {
+         int idx = link_source_objects.indexOfPointer(_obj, 0);
+         if(-1 != idx)
+         {
+            link_source_objects.delete(idx);
+            link_source_outputs.delete(idx);
+         }
+         else
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public method setLinkSource(GObject _obj, String _outputId) {
+      unsetLinkSources();
+      addLinkSource(_obj, _outputId);
+      if(_obj instanceof GObject)
+      {
+         GObject gObj <= _obj;
+         Global.Print("Set link source to "+gObj.getObjectPath()+":"+_outputId);
+      }
+      else if(null != _obj)
+         Global.Print("Set link source to "+_obj.getId()+":"+_outputId);
+      else
+         Global.Print("Unset link source");
+   }
+
+   // <method_set.png>
+   public method addLinkSourceAnon(GObject _inputObj, GConnection _conn) {
+      anon_link_source_input_object <= _inputObj;
+      anon_link_source_connection   <= _conn;
+   }
+
+   // <method_set.png>
+   public method setLinkSourcesToFocusedObjects(boolean _bUseLastFocusedTable) {
+      GOutput *outPort;
+
+      unsetLinkSources();
+
+      if(tv_objects.hasKeyboardFocus() ||
+         (_bUseLastFocusedTable && @(tv_objects) == @(last_focused_io_table_view))
+         )
+      {
+         IntArray rows <= tm_objects.getSelectedRowsIncludingCursor();
+         int rowIdx;
+         int numAdded = 0;
+         foreach rowIdx in rows
+         {
+            GObject outObject <= getSelectedObjectByIndex(rowIdx);
+            if(null != outObject)
+            {
+               outPort <= outObject.getDefaultOutput();
+               if(null != outPort)
+               {
+                  if(1 == rows.numElements)
+                  {
+                     setLinkSource(outObject, outPort.getId());
+                     return;
+                  }
+                  else
+                  {
+                     addLinkSource(outObject, outPort.getId());
+                     numAdded++;
+                  }
+               }
+               else
+               {
+                  // Add object with no outputs ("move" only)
+                  addLinkSource(outObject, GOutput.OUT_DEF);
+                  numAdded++;
+               }
+            }
+         }
+         Global.Print("Set "+numAdded+" link source"+Utils.GetPluralString(numAdded));
+         return;
+      }
+      else if(tv_inputs.hasKeyboardFocus() ||
+              (_bUseLastFocusedTable && @(tv_inputs) == @(last_focused_io_table_view))
+              )
+      {
+         InputsTMEntry enInput <= getSelectedInputEntry();
+         if(null != enInput)
+         {
+            if(InputsTMDefs.TYPE_OUTPUT == enInput.type)
+            {
+               if(!current_input_object.isAnon())
+               {
+                  outPort <= enInput.object;
+                  copyObjectPathToClipboard(current_input_object);
+                  setLinkSource(current_input_object, outPort.id);
+               }
+               else
+               {
+                  Global.Warning("<anon> objects can't be link sources");
+               }
+               return;
+            }
+            else if(InputsTMDefs.TYPE_CONNECTION == enInput.type)
+            {
+               GConnection conn <= enInput.conn;
+               if(enInput.object instanceof GInput)
+               {
+                  if!(conn.object.isAnon())
+                  {
+                     trace "xxx copy non-anon input connection path conn.object="+#(conn.object);
+                     copyObjectPathToClipboard(conn.object);
+                     setLinkSource(conn.object, conn.port_id);
+                  }
+                  else
+                  {
+                     // // trace "[trc] can't link to <anon> conn.object="+#(conn.object));
+                     addLinkSourceAnon(current_input_object, conn);
+                     Global.Print("Mark <anon> object for move");
+                  }
+                  return;
+               }
+               else if(enInput.object instanceof GOutput)
+               {
+                  outPort <= enInput.object;
+                  copyObjectPathToClipboard(conn.object);
+                  setLinkSource(current_input_object, outPort.getId());
+                  return;
+               }
+            }
+         }
+      }
+      setLinkSource(null, null);
+   }
+
+   // <ui_update.png>
+   protected method updateRadarIfVisible() {
+      boolean bRadarVis = dlg_radar.isFloatingLayerVisible();
+      if(bRadarVis)
+         dlg_radar.rebuildControls();
+   }
+
+   // <method_set.png>
+   protected method connectLinkSourceToFocusedObject(GObject _linkSourceObject,
+                                                     String  _linkSourceOutputId,
+                                                     boolean _bOnlyWhenInputsTableHasFocus
+                                                     ) : boolean {
+      // trace "xxx connectLinkSourceToFocusedObject: current_input_object="+#(current_input_object);
+      boolean ret = false;
+      if(null != current_input_object)
+      {
+         Global.Debug("connectLinkSourceToFocusedObject: linkSourceObject="+#(_linkSourceObject));
+         Global.Debug("connectLinkSourceToFocusedObject: linkSourceOutputId="+#(_linkSourceOutputId));
+         if(null != _linkSourceObject)
+         {
+            GOutput *outPort;
+
+            if( (_bOnlyWhenInputsTableHasFocus && tv_inputs.hasKeyboardFocus()) || true )
+            {
+               InputsTMEntry enInput <= getSelectedInputEntry();
+               if(null != enInput)
+               {
+                  local GInput *input;
+                  if([InputsTMDefs.TYPE_INPUT, InputsTMDefs.TYPE_CONNECTION].contains(enInput.type))
+                  {
+                     input <= enInput.object;
+                  }
+                  if(input instanceof GInput)
+                  {
+                     boolean bCanDo = true;
+
+                     bCanDo = input.isDomainCompatible(_linkSourceObject.getOutputById(_linkSourceOutputId));
+
+                     local String msg <= "Connect "+_linkSourceObject.getObjectPath()+":"+_linkSourceOutputId+" to input "+input.id;
+
+                     if(!bCanDo && GConfig.b_auto_create_proxy_uniforms)
+                     {
+                        if( (_linkSourceObject.getOutputDomain(_linkSourceOutputId) == DOMAIN_SCRIPT) &&
+                            (current_input_object.getInputDomain(input.id) == DOMAIN_GLSL)
+                            )
+                        {
+                           local GProgramSubObject *programSubObject;
+                           if(current_input_object instanceof GProgramSubObject)
+                              programSubObject <= current_input_object;
+
+                           if(null != programSubObject)
+                           {
+                              GProgram prg <= programSubObject.parent_program;
+                              GUniform uniProxy <= GUniform.New(prg, "newid", input.type);
+                              prg.addUniformAutoId(deref uniProxy, "proxy_"+_linkSourceObject.getId()+"_"+_linkSourceOutputId);
+                              uniProxy.connect(GInput.IN_DEF,
+                                               _linkSourceObject,
+                                               _linkSourceOutputId,
+                                               GDefs.OP_AUTO
+                                               );
+                              _linkSourceObject <= uniProxy;
+                              _linkSourceOutputId <= GOutput.OUT_DEF;
+                              bCanDo = true;
+                              msg.append(" (create proxy uniform \""+uniProxy.id+"\")");
+                              rebuildObjects(false/*bShowParams*/);
+                              ret = true;
+                           }
+                        }
+                     }
+
+                     if(bCanDo)
+                     {
+                        GConnection conn <= current_input_object.connect(input.id,
+                                                                         _linkSourceObject,
+                                                                         _linkSourceOutputId,
+                                                                         GDefs.OP_AUTO
+                                                                         );
+                        Global.Print(msg);
+                        handleInputsChanged();
+                        int rowIdx = tm_inputs.getRowIdxByGConnection(conn);
+                        tv_inputs.moveCursorToRowNoAction(rowIdx);
+                        tv_inputs.centerRow();
+
+                        if(!bt_inputs_conn.getToggleState())
+                           showParams(_linkSourceObject);
+
+                        ret = true;
+                     }
+                     else
+                     {
+                        Global.Error("Failed to connect: Incompatible domains (GLSL<>script)");
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      if(ret)
+         updateRadarIfVisible();
+
+      return ret;
+   }
+
+   // <method_set.png>
+   public method connectLinkSourcesToFocusedObject(boolean _bOnlyWhenInputsTableHasFocus) {
+      GObject *obj;
+      int idx = 0;
+      foreach obj in link_source_objects
+      {
+         String outputId <= link_source_outputs.get(idx++);
+         Global.Debug("connectLinkSourcesToFocusedObject: idx="+idx+" obj="+obj.getObjectPath()+" outputId="+outputId);
+         connectLinkSourceToFocusedObject(obj,
+                                          outputId,
+                                          _bOnlyWhenInputsTableHasFocus
+                                          );
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveAnonToInput() {
+      if(null != current_input_object)
+      {
+         GInput input <= getSelectedInput();
+         if(null != input)
+         {
+            // Unlink from connection
+            GObject connObj <= anon_link_source_connection.unlinkObject();
+
+            // Remove old connection
+            anon_link_source_input_object.disconnect(anon_link_source_connection);
+
+            // Not anonymous anymore
+            // // anon_link_source_input_object.anon_parent      <= null;
+            // // anon_link_source_input_object.anon_parent_conn <= null;
+            connObj.anon_parent      <= null;
+            connObj.anon_parent_conn <= null;
+
+            // Connect to new input
+            GConnection conn <= current_input_object.connect(input.getId(),
+                                                             deref connObj,
+                                                             connObj.getDefaultOutputId(),
+                                                             OP_AUTO
+                                                             );
+
+            handleInputsChanged();
+
+            Global.Print("Move <anon> object to "+current_input_object.getObjectPath()+":"+input.getId());
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleObjectMoveSingle(GNamespace _nspDst, GObject _gobj) : boolean {
+      GNamespace nspSrc <= _gobj.getNamespace();
+      if(_nspDst.canAddObject(_gobj))
+      {
+         _gobj <= nspSrc.unlinkObject(_gobj);
+         Global.Debug("Move object="+#(_gobj)+" to nspDst="+_nspDst.getNamespacePrefixDot());
+         _nspDst.addObject(deref _gobj);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleObjectsMove() {
+
+      if(tv_inputs.hasKeyboardFocus() && (null != anon_link_source_input_object))
+      {
+         return handleMoveAnonToInput();
+      }
+
+      int r = 0;
+      boolean bDone = false;
+
+      if(areAllLinkSourceObjectsSceneGraphNodes())
+      {
+         // Move scenegraph nodes
+         GSGNode sgnodeDst <= getSelectedObject();
+         if(sgnodeDst instanceof GSGNode)
+         {
+            GSGNode *sgnodeSrc;
+            foreach sgnodeSrc in link_source_objects
+            {
+               if(!sgnodeSrc.hasChildNode(sgnodeDst))
+               {
+                  sgnodeSrc <= sgnodeSrc.parent_node.unlinkChildNode(sgnodeSrc);
+                  sgnodeDst.addChildNode(deref sgnodeSrc);
+                  r++;
+               }
+            }
+         }
+         bDone = true;
+      }
+
+      if(!bDone)
+      {
+         // // GObject objDst <= getSelectedParentObject();
+
+         GNamespace nspDst <= getSelectedTableRowNamespace();
+         if(nspDst instanceof GNamespace)
+         {
+            GObject *gobj;
+            foreach gobj in link_source_objects
+            {
+               if(handleObjectMoveSingle(nspDst, gobj))
+                  r++;
+            }
+         }
+      }
+
+      if(r > 0)
+      {
+         handleObjectsChanged();
+         selectObjectRowByObject(getFirstLinkSourceObject());
+      }
+      Global.Print("Move "+r+" object"+Utils.GetPluralString(r));
+   }
+
+   // <ui_handle.png>
+   public method selectTableObjects() {
+      handleObjectCopyPath();  // copy first selected object or namespace path to clipboard
+      setLinkSourcesToFocusedObjects(false/*bUseLastFocusedTable*/);
+   }
+
+   // <ui_handle.png>
+   public method handleObjectCopyPath() {
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         local String objPath <= en.getPath();
+
+         if(null != objPath)
+         {
+            UI.SetClipboard(objPath);
+            Global.Print("Copy path \""+objPath+"\" to clipboard");
+         }
+      }
+   }
+
+   // <method.png>
+   public method copyObjectPathToClipboard(GObject _obj) {
+      local String objPath <= _obj.getObjectPath();
+      trace "xxx copyObjectPathToClipboard: objPath=\""+objPath+"\"";
+      UI.SetClipboard(objPath);
+      // UI.SetClipboard("hello, world.");   // why does this always fail with error 5 (access denied) ?!?!!!!!!
+      Global.Print("Copy object path \""+objPath+"\" to clipboard");
+   }
+
+   // <method.png>
+   protected method getSelectedObjectEntry() : ObjectsTMEntry {
+      return tm_objects.getSelectedTreeUserData();
+   }
+
+   // <method.png>
+   protected method getSelectedObjectByIndex(int _rowIdx) : Object {
+      if(0 == _rowIdx) // root ?
+      {
+         GNamespace objRoot <= getSelectedNamespace();
+         if(objRoot instanceof GObject)
+            return objRoot;
+      }
+      else
+      {
+         ObjectsTMEntry en <= tm_objects.getSelectedTreeUserDataByIndex(_rowIdx);
+         if(null != en)
+         {
+            if(en.isObject())
+            {
+               return en.object;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getSelectedObject() : Object {
+      return getSelectedObjectByIndex(tm_objects.getCursorIndex());
+   }
+
+   // // <method.png>
+   // protected method getSelectedParentObjectByIndex(int _rowIdx) : GNamespaceObject {
+   //    if(0 == _rowIdx) // root ?
+   //    {
+   //       GNamespace objRoot <= getSelectedNamespace();
+   //       if(null != objRoot)
+   //       {
+   //          return objRoot.getParent();
+   //       }
+   //    }
+   //    else
+   //    {
+   //       ObjectsTMEntry en <= tm_objects.getSelectedTreeUserDataByIndex(_rowIdx);
+   //       if(null != en)
+   //       {
+   //          if(en.isObject())
+   //          {
+   //             return en.object.getParent();
+   //          }
+   //       }
+   //    }
+   //    return null;
+   // }
+
+   // // <method.png>
+   // protected method getSelectedParentObject() : GNamespaceObject {
+   //    return getSelectedParentObjectByIndex(tm_objects.getCursorIndex());
+   // }
+
+   // <method_get.png>
+   public method getSelectedTableRowNamespace() : GNamespace {
+      GNamespace nsp <= getSelectedObject();
+      if(nsp instanceof GNamespace)
+      {
+         return nsp;
+      }
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      return en.nsp;
+   }
+
+   // <method.png>
+   public method handleInputsChanged() {
+      rebuildInputs(current_input_object, true/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+      current_project.queueUpdate();
+   }
+
+   // <method.png>
+   protected method rebuildInputs(GObject _forceObj, boolean _bReselectParams, boolean _bPreselectLastInputConn) {
+      // // int rowIdx = tm_objects.getCursorIndex();
+      GObject obj <= (null != _forceObj) ? _forceObj : getSelectedObject();
+      if(obj instanceof GObject)//// && !obj.isAnon())
+      {
+         current_input_object <= obj;
+         tm_inputs.buildTreeFromObject(obj);
+      }
+      else
+      {
+         current_input_object <= null;
+         tm_inputs.freeTreeNodes();
+      }
+      tv_inputs.tableModelChanged();
+
+      if(_bReselectParams)
+      {
+         if(null != current_input_object && null == current_param_object)
+         {
+            // Show connection properties
+            current_param_object <= current_input_object.getLastSelectedInputConnection();
+         }
+         if(true == _bReselectParams)
+            showParams(current_param_object);
+
+         // trace "xxx rebuildInputs: current_input_object="+#(current_input_object);
+         if(null != current_input_object)
+         {
+            if(_bPreselectLastInputConn)
+            {
+               // trace "xxx rebuildInputs: current_input_object.last_selected_input_row_idx="+current_input_object.last_selected_input_row_idx;
+               tv_inputs.moveCursorToRowNoAction(current_input_object.last_selected_input_row_idx);
+            }
+         }
+
+      }
+      else if(obj instanceof GObject && obj.isAnon())
+      {
+         // Select first (and only) output (backwards-link to parent input object)
+         tv_inputs.moveCursorToRow(tm_inputs.getRowIdxByFirstOutputConnection());
+      }
+
+      tv_inputs.moveCursorToFirstRowIfNoneSelected();
+   }
+
+   // <method.png>
+   protected method getSelectedInputEntry() : InputsTMEntry {
+      return tm_inputs.getSelectedTreeUserData();
+   }
+
+   // <method.png>
+   protected method getSelectedInputObject() : GObject {
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         if(InputsTMDefs.TYPE_CONNECTION == en.type)
+         {
+            return en.conn.object;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getSelectedInput() : GInput {
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         if(InputsTMDefs.TYPE_CONNECTION == en.type)
+         {
+            if(@(en.conn.object) != @(current_input_object))
+            {
+               // output connection
+               return current_input_object.getInputById(en.conn.port_id_rev);
+            }
+            else
+            {
+               // input connection
+               return current_input_object.getInputById(en.conn.port_id);
+            }
+         }
+         else if(InputsTMDefs.TYPE_INPUT == en.type)
+         {
+            return en.object;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getSelectedInputConnection() : GConnection {
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         if(InputsTMDefs.TYPE_CONNECTION == en.type)
+         {
+            if(en.object instanceof GInput)
+            {
+               return en.conn;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method toggleForcedConnection() : boolean {
+      if(current_input_object instanceof GConnectionContainer)
+      {
+         GConnectionContainer container <= current_input_object;
+         GConnection conn <= getSelectedInputConnection();
+         if(null != conn)
+         {
+            boolean bEnable = container.containerToggleForcedConnection(conn);
+            Global.Print("Forced container connection is "+Utils.GetEnableString(bEnable));
+            current_project.queueUpdate();
+            UI.RedrawAll();
+         }
+         else
+         {
+            Global.Warning("Cannot toggle forced connection: no connection selected");
+         }
+         return true;
+      }
+      else
+         Global.Warning("Cannot toggle forced connection: Input object is not a connection container");
+   }
+
+   // <method.png>
+   protected method unforcePreviousConnection() : boolean {
+      boolean bToggleForcedModifier = false;
+      if(current_project.isEditCamActive())
+      {
+         GConnectionContainer container <= current_input_object;
+         if(container instanceof GConnectionContainer)
+         {
+            bToggleForcedModifier = true;
+            GConnection prevForcedConn <= container.containerFindConnectionByObject(current_project.edit_cam);
+            if(null != prevForcedConn)
+            {
+               container.containerSetForcedConnection(null); // turn off previous cam
+               current_project.changeEditCam(null, false/*bAllowLast*/);
+            }
+         }
+      }
+      return bToggleForcedModifier;
+   }
+
+   // <method.png>
+   protected method toggleLastUsedEditCam() {
+      if(null != current_project.edit_cam)
+      {
+         current_project.changeEditCam(null, false/*bAllowLast*/);
+         showOrHideEditCamSettings();
+         Global.Print("Disable edit cam");
+      }
+      else
+      {
+         if(current_project.changeEditCamToLastUsed())
+         {
+            Global.Print("Enable edit cam "+current_project.last_edit_cam_path);
+            showOrHideEditCamSettings();
+         }
+         else
+         {
+            Global.Warning("Failed to enable edit cam '"+current_project.last_edit_cam_path+"'");
+         }
+      }
+   }
+
+   // <method.png>
+   protected method showOrHideEditCamSettings() {
+      if(null != current_project.edit_cam)
+      {
+         if(1 != sw_preview.getCurrentChildNr())
+         {
+            // Show camera settings
+            sw_preview.switchToLayerNr(1);
+            relayout();
+         }
+      }
+      else
+      {
+         if(0 != sw_preview.getCurrentChildNr())
+         {
+            // Hide camera settings
+            sw_preview.switchToLayerNr(0);
+            relayout();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method updateInputsSplit(boolean _bMany) {
+      float newSplit = 0;
+      // trace "xxx ~~~~~~~~~~~~~ updateInputsSplit: bMany="+_bMany+" cur="+b_cur_inputs_split_many;
+
+      if(maybe != b_cur_inputs_split_many)
+      {
+         if(b_cur_inputs_split_many == _bMany)
+         {
+            // keep
+            // // GConfig.params_split_many = sp_inputs.getSplit();
+            return;
+         }
+      }
+
+      if(_bMany)
+      {
+         // few => many
+         GConfig.params_split_few = sp_inputs.getSplit();
+         newSplit = GConfig.params_split_many;
+      }
+      else
+      {
+         // many => few
+         GConfig.params_split_many = sp_inputs.getSplit();
+         newSplit = GConfig.params_split_few;
+      }
+
+      b_cur_inputs_split_many = _bMany;
+
+      // trace "xxx ~~~~~~~~~~~~~~~~~~~~~ updateInputsSplit: newSplit="+newSplit;
+      if(newSplit > 0)
+      {
+         sp_inputs.setSplit(newSplit);
+         // // sp_inputs.relayout();
+         // // UI.LayoutRootLayer();
+         root_form.queueRelayout();
+         UI.RedrawAll();
+      }
+   }
+
+   // <method_get.png>
+   protected method canShowParams(Object _obj) : boolean {
+      int numParams = 0;
+      if(_obj instanceof GSource)
+         return true;
+      else if(_obj instanceof GTexture)
+         return true;
+      else if(_obj instanceof GParamProvider)
+      {
+         GParamProvider paramObject <= _obj;
+         numParams = paramObject.getNumParams();
+         return (numParams > 0);
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method showParams(Object _obj) {
+      // trace "[dbg] showParams: obj="+#(_obj);
+      // Utils.Backtrace();
+      GParamProvider paramObject <= _obj;
+      // // if(_obj instanceof GSource)
+      // // {
+      // //    current_param_object <= _obj;
+      // //    f_source.showSource(_obj);
+      // //    f_params.showParamProvider(null);
+      // //    f_conn.showConnection(null);
+      // //    f_texture.showTexture(null);
+      // //    sw_params.switchToLayerNr(SWPARAMS_SOURCE);
+      // // }
+      if(_obj instanceof GTexture)
+      {
+         current_param_object <= _obj;
+         f_params.showParamProvider(null);
+         f_conn.showConnection(null);
+         f_texture.showTexture(_obj);
+         sw_params.switchToLayerNr(SWPARAMS_TEXTURE);
+         updateInputsSplit(true/*bMany*/);
+      }
+      else if(_obj instanceof GParamProvider)
+      {
+         current_param_object <= _obj;
+         f_params.showParamProvider(_obj);
+         f_conn.showConnection(null);
+         f_texture.showTexture(null);
+         sw_params.switchToLayerNr(SWPARAMS_PARAMS);
+         GParamProvider paramProvider <= _obj;
+         if(paramProvider.getNumParams() > (ParamsForm.NUM_PARAMS_PER_ROW * 2))
+            updateInputsSplit(true/*bMany*/);
+         else
+            updateInputsSplit(false/*bMany*/);
+      }
+      else if(_obj instanceof GConnection)
+      {
+         current_param_object <= _obj;
+         f_params.showParamProvider(null);
+         f_conn.showConnection(_obj);
+         f_texture.showTexture(null);
+         sw_params.switchToLayerNr(SWPARAMS_CONNECTION);
+         updateInputsSplit(false/*bMany*/);
+      }
+      else
+      {
+         current_param_object <= null;
+         f_params.showParamProvider(null);
+         f_conn.showConnection(null);
+         f_texture.showTexture(null);
+         sw_params.switchToLayerNr(SWPARAMS_NONE);
+         updateInputsSplit(false/*bMany*/);
+      }
+
+      if(_obj instanceof GOrbitCamView)
+      {
+         current_project.changeEditCam(_obj, false/*bAllowLast*/);
+         showOrHideEditCamSettings();
+      }
+      else if(_obj instanceof GMat4OrbitCam)
+      {
+         GMat4OrbitCam cam <= _obj;
+         GOrbitCamView camView <= cam.getView();
+         trace "xxx PageStart::showParams: cam="+#(cam)+" camView="+#(camView);
+         current_project.changeEditCam(camView, false/*bAllowLast*/);
+         showOrHideEditCamSettings();
+      }
+      else
+      {
+         current_project.changeEditCam(null, true/*bAllowLast*/);
+         showOrHideEditCamSettings();
+      }
+
+      // // relayout();
+      redraw();
+   }
+
+   // <ui_show.png>
+   public method reshowParamsFor(GParamProvider _this) {
+      trace "xxx reshowParamsFor("+#(_this)+") current_param_object="+#(current_param_object);
+      if(@(_this) == @(current_param_object))
+      {
+         showParams(_this);
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedNamespace() : GNamespace {
+      int idx = cm_nsp_model.getSelectedOption();
+      if(idx > 0)
+      {
+         local String curModelId = cm_nsp_model.getSelectedOptionName();
+         return current_project.findModelByPath(curModelId);
+      }
+      else
+      {
+         idx = cm_nsp_scene.getSelectedOption();
+         if(idx > 0)
+         {
+            local String curSceneId = cm_nsp_scene.getSelectedOptionName();
+            return current_project.findSceneByPath(curSceneId);
+         }
+         else
+         {
+            idx = cf_nsp_proj.getSelectedOption();
+            return current_project.getNamespaceByIndex(idx);
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedScene() : GScene {
+      String path <= cm_nsp_scene.getSelectedOption();
+      return current_project.findSceneByPath(path);
+   }
+
+   // <method_get.png>
+   public method getSelectedModel() : GModel {
+      String path <= cm_nsp_scene.getSelectedOption();
+      return current_project.findModelByPath(path);
+   }
+
+   // <ui_update.png>
+   protected method updateAll() {
+      // trace "xxx updateAll: current_project.last_nsp_proj=\""+current_project.last_nsp_proj+"\"";
+      updateNSPProj();
+      cf_nsp_proj .setSelectedOptionByName(current_project.last_nsp_proj);
+
+      // trace "xxx updateAll: current_project.last_nsp_scene=\""+current_project.last_nsp_scene+"\"";
+      updateNSPScene();
+      cm_nsp_scene.setSelectedOptionByName(current_project.last_nsp_scene);
+
+      updateNSPModel();
+      cm_nsp_model.setSelectedOptionByName(current_project.last_nsp_model);
+
+      // trace "xxx updateAll: current_project.project_name=\""+current_project.project_name+"\"";
+      updateProjectName();
+
+      tm_objects.setCursorIndex(-1);
+      tm_inputs.setCursorIndex(-1);
+      rebuildObjects(true/*bShowParams*/);
+
+      ta_watchfile.reschedule();
+
+      fp_anim_offset.setValue(current_project.anim_offset);
+      fp_anim_speed.setValue(current_project.anim_speed);
+      cb_slow_motion.setSelected(current_project.b_slow_motion);
+
+      current_project.queueUpdate();
+   }
+
+   // <ui_update.png>
+   protected method updateNSPProj() {
+      local StringArray opt;
+      GNamespace *nsp;
+      foreach nsp in current_project.namespaces
+      {
+         opt.add(nsp.getNamespaceId());
+      }
+      cf_nsp_proj.setOptions(opt);
+      bt_nsp_remove.setEditable(opt.numElements > 1);
+   }
+
+   // <method.png>
+   protected method addNSPScenes(StringArray _opt, GNamespace _nsp) {
+      GScene *scene;
+      foreach scene in _nsp.scenes
+      {
+         _opt.add(_nsp.getNamespaceId()+"."+scene.getId());
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateNSPScene() {
+      local String curNSPId = cf_nsp_proj.getSelectedOptionName();
+      // trace "xxx curNSPId=\""+curNSPId+"\" cf_nsp_proj.getSelectedOption()="+cf_nsp_proj.getSelectedOption();
+      local StringArray opt;
+      opt.add("*");
+      GNamespace *nsp;
+      if("*" == curNSPId)
+      {
+         foreach nsp in current_project.namespaces
+         {
+            addNSPScenes(opt, nsp);
+         }
+      }
+      else
+      {
+         nsp <= current_project.getNamespaceById(curNSPId);
+         addNSPScenes(opt, nsp);
+      }
+      cm_nsp_scene.setOptions(opt);
+   }
+
+   // <method.png>
+   protected method addNSPModels(local StringArray _opt, local GNamespace _nsp) {
+      if(null != _nsp)
+      {
+         local GModel *model;
+         // trace "xxx nsp.models="+#(_nsp.models);
+         foreach model in _nsp.models
+         {
+            // // _opt.add(model.getNamespacePrefixDot()+"."+model.getId());
+            _opt.add(model.getObjectPath());
+         }
+         local GComposite *comp;
+         foreach comp in _nsp.composites
+         {
+            // // _opt.add(model.getNamespacePrefixDot()+"."+model.getId());
+            _opt.add(comp.getObjectPath());
+            addNSPModels(_opt, comp/*nsp*/);
+         }
+         local GRenderPass *renderpass;
+         foreach renderpass in _nsp.renderpasses
+         {
+            addNSPModels(_opt, renderpass);
+         }
+         local GScene *scene;
+         foreach scene in _nsp.scenes
+         {
+            addNSPModels(_opt, scene);
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateNSPModel() {
+      local StringArray opt;
+
+      local String curNSPId = cf_nsp_proj.getSelectedOptionName();
+      local String curSceneId = cm_nsp_scene.getSelectedOptionName();
+
+      GScene *scene;
+      GNamespace *nsp;
+
+      opt.add("-");
+
+      if("*" == curSceneId)
+      {
+         if("*" == curNSPId)
+         {
+            // All models from all namespaces
+            foreach nsp in current_project.namespaces
+            {
+               addNSPModels(opt, nsp);
+            }
+         }
+         else
+         {
+            // All models from specific namespace
+            nsp <= current_project.getNamespaceById(curNSPId);
+            addNSPModels(opt, nsp);
+         }
+      }
+      else
+      {
+         // All models from specific scene
+         nsp <= current_project.findSceneByPath(curSceneId);
+         addNSPModels(opt, nsp);
+      }
+
+      cm_nsp_model.setOptions(opt);
+   }
+
+   // <method.png>
+   protected method autoselectNamespaceByGObject(GObject _obj) {
+      // Called when clicking on object link that points outside the current namespace
+      if(_obj instanceof GObject)
+      {
+         GNamespace nspRoot <= _obj.getRootNamespace();
+         cf_nsp_proj.setSelectedOptionByName(nspRoot.getNamespaceId());
+         handleNSPProjChanged();
+
+         GScene scene <= _obj.getRootScene();
+         trace "xxx root scene="+#(scene);
+         if(null != scene)
+            cm_nsp_scene.setSelectedOptionByName(scene.getObjectPath().replace(".scenes", ""));
+         else
+            cm_nsp_scene.setSelectedOption(0); // *
+         handleNSPSceneChanged();
+
+         GModel model <= _obj.getRootModel();
+         trace "xxx root model="+#(model);
+         if(null != model)
+            cm_nsp_model.setSelectedOptionByName(model.getObjectPath());
+         else
+            cm_nsp_model.setSelectedOption(0); // -
+         handleNSPModelChanged();
+      }
+      else
+      {
+         GNamespace nsp <= _obj;
+         cf_nsp_proj.setSelectedOptionByName(nsp.getNamespaceId());
+         handleNSPProjChanged();
+
+         cm_nsp_scene.setSelectedOption(0); // *
+         handleNSPSceneChanged();
+
+         cm_nsp_model.setSelectedOption(0); // -
+         handleNSPModelChanged();
+      }
+   }
+
+   // <method.png>
+   protected method selectParentNamespace() {
+      GObject *obj <= getSelectedObject();
+      if(obj instanceof GNamespace)
+      {
+         if(null != obj.getNamespace())
+         {
+            autoselectNamespaceByGObject(obj.getNamespace());
+         }
+      }
+   }
+
+   // <method.png>
+   protected method selectObjectNamespace() {
+      GObject *obj <= getSelectedObject();
+      if(obj instanceof GNamespace)
+      {
+         if(null != obj.getNamespace())
+         {
+            autoselectNamespaceByGObject(obj);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNSPProjChanged() {
+      unforcePreviousConnection();
+      updateNSPScene();
+      updateNSPModel();
+      rebuildObjects(true/*bShowParams*/);
+
+      if(GNamespace.GLOBAL_ID != cf_nsp_proj.getSelectedOptionName())
+         current_project.last_nsp_proj = cf_nsp_proj.getSelectedOptionName();
+
+      Global.Print("Select namespace \""+cf_nsp_proj.getSelectedOptionName()+"\"");
+
+      GNamespace objRoot <= getSelectedNamespace();
+      bt_nsp_remove.setEditable(GNamespace.GLOBAL_ID != objRoot.getNamespaceId());
+
+      // boolean bObjAddRemove = objRoot.canCreateOrRemoveObjects();
+      // bt_objects_add.setEditable(bObjAddRemove);
+      // bt_objects_remove.setEditable(bObjAddRemove);
+
+      tv_objects.centerRow();
+      // // tv_objects.moveCursorToFirstRowIfNoneSelected();
+      tv_objects.moveCursorToRow(objRoot.getLastSelectedObjectsRowIdx());
+
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method toggleGlobalNamespace() {
+      unforcePreviousConnection();
+
+      if(GNamespace.GLOBAL_ID == cf_nsp_proj.getSelectedOptionName())
+      {
+         cf_nsp_proj.setSelectedOptionByName(current_project.last_nsp_proj);
+         handleNSPProjChanged();
+
+         cm_nsp_scene.setSelectedOptionByName(current_project.last_nsp_scene);
+         handleNSPSceneChanged();
+
+         cm_nsp_model.setSelectedOptionByName(current_project.last_nsp_model);
+         handleNSPModelChanged();
+      }
+      else
+      {
+         cf_nsp_proj.setSelectedOptionByName(GNamespace.GLOBAL_ID);
+         handleNSPProjChanged();
+
+         cm_nsp_scene.setSelectedOption(0);
+         cm_nsp_model.setSelectedOption(0);
+      }
+
+      selectLastObjectPath();
+   }
+
+   // <ui_handle.png>
+   protected method handleNSPProjRename() {
+      GNamespace nsp <= current_project.getNamespaceByIndex(cf_nsp_proj.getSelectedOption());
+      local String newName <= cf_nsp_proj.getSelectedOptionName().trim();
+      if((nsp.getNamespaceId() != GNamespace.GLOBAL_ID) && (newName != GNamespace.GLOBAL_ID))
+      {
+         nsp.setNamespaceId(newName);
+         handleNSPProjChanged();
+      }
+      else
+      {
+         cf_nsp_proj.setSelectedOptionByName(GNamespace.GLOBAL_ID);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNSPAdd() {
+      GNamespace nsp <= current_project.createNamespaceAutoId();
+      updateNSPProj();
+      cf_nsp_proj.setSelectedOptionByName(nsp.getNamespaceId());
+      handleNSPProjChanged();
+      Global.Print("Create namespace \""+nsp.getNamespaceId()+"\"");
+      cf_nsp_proj.onKeyboardFocus();
+      cf_nsp_proj.selectAll();
+   }
+
+   // <ui_handle.png>
+   protected method handleNSPRemove() {
+      if(current_project.getNumNamespaces() > 1)
+      {
+         GNamespace nsp <= current_project.getNamespaceByIndex(cf_nsp_proj.getSelectedOption());
+         if(GNamespace.GLOBAL_ID != nsp.getNamespaceId())
+         {
+            current_project.runScriptExit();
+            current_project.removeNamespace(nsp);
+            nsp <= current_project.getNamespaceByIndex(0);
+            updateNSPProj();
+            cf_nsp_proj.setSelectedOption(0);
+            handleNSPProjChanged();
+            current_project.queueUpdate();
+         }
+         else
+         {
+            Global.Warning("\'global\' namespace cannot be deleted");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNSPSceneChanged() {
+      unforcePreviousConnection();
+      updateNSPModel();
+      rebuildObjects(true/*bShowParams*/);
+
+      if(GNamespace.GLOBAL_ID != cf_nsp_proj.getSelectedOptionName())
+         current_project.last_nsp_scene = cm_nsp_scene.getSelectedOptionName();
+
+      GNamespace objRoot <= getSelectedNamespace();
+      tv_objects.moveCursorToRow(objRoot.getLastSelectedObjectsRowIdx());
+
+      Global.Print("Select scene \""+cm_nsp_scene.getSelectedOptionName()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNSPModelChanged() {
+      unforcePreviousConnection();
+
+      if(GNamespace.GLOBAL_ID != cf_nsp_proj.getSelectedOptionName())
+         current_project.last_nsp_model = cm_nsp_model.getSelectedOptionName();
+
+      Global.Print("Select model \""+cm_nsp_model.getSelectedOptionName()+"\"");
+      rebuildObjects(true/*bShowParams*/);
+
+      GNamespace objRoot <= getSelectedNamespace();
+      tv_objects.moveCursorToRow(objRoot.getLastSelectedObjectsRowIdx());
+   }
+
+   // <method.png>
+   public method seekAbs(float _sec) {
+      current_project.anim_offset = mathMaxf(0.0f, _sec);
+      fp_anim_offset.setValue(current_project.anim_offset);
+      preview.redraw();
+   }
+
+   // <method.png>
+   public method seekRel(float _secDelta, float _gran) {
+      float f = mathMaxf(0.0f, current_project.anim_offset + _secDelta);
+      f = int(f/_gran + 0.5) * _gran;
+      seekAbs(f);
+   }
+
+   // <method.png>
+   public method toggleAnimation() {
+      cb_animate.toggleSelectionAction();
+   }
+
+   // <method.png>
+   public method toggleSlowMotion(boolean _bForceCycle) {
+      // lctrl-SPACE, lctrl-NUMPAD enter
+      int t = milliSeconds();
+      if(_bForceCycle)
+      {
+         cb_slow_motion.toggleSelectionAction();
+      }
+      else
+      {
+         if((t - ms_slow_motion_toggle) < SLOW_MOTION_OFF_TIMEOUT)
+            cb_slow_motion.toggleSelectionActionTrueOrFalse();
+         else
+            cb_slow_motion.toggleSelectionActionTrueOrMaybe();
+      }
+      ms_slow_motion_toggle = t;
+   }
+
+   // <ui_handle.png>
+   protected method handleAnimateChanged() {
+      current_project.b_animate = cb_animate.isSelected();
+      if(current_project.b_animate)
+      {
+         current_project.startAnimation();
+
+         preview.redraw();
+      }
+      Global.Print("Animation is "+Utils.GetEnableString(current_project.b_animate));
+   }
+
+   // <ui_handle.png>
+   protected method handleAnimOffsetChanged() {
+      current_project.anim_offset = fp_anim_offset.getFloatValue();
+      preview.redraw();
+      Global.Print("Animation Offset is "+current_project.anim_offset+" sec");
+   }
+
+   // <ui_handle.png>
+   protected method handleAnimSpeedChanged() {
+      float newSpd = fp_anim_speed.getFloatValue();
+      current_project.handleAnimSpeedChange(current_project.calcEffectiveAnimSpeed(newSpd,
+                                                                                   current_project.b_slow_motion
+                                                                                   ),
+                                            current_project.calcEffectiveAnimSpeed(current_project.anim_speed,
+                                                                                   current_project.b_slow_motion
+                                                                                   )
+                                            );
+      current_project.anim_speed = newSpd;
+      preview.redraw();
+      local Float fo = current_project.anim_speed * 100;
+      Global.Print("Anim speed is "+fo.printf("%3.3f")+"%");
+   }
+
+   // <method.png>
+   public method scaleAnimSpeed(float _scl) {
+      // NP +/-
+      fp_anim_speed.setValue( mathClampf(current_project.anim_speed * _scl, 0.0125, 4.0) );
+      handleAnimSpeedChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleSlowMotionChanged() {
+      boolean bSlowMotion = cb_slow_motion.isSelected();
+      current_project.handleAnimSpeedChange(current_project.calcEffectiveAnimSpeed(current_project.anim_speed,
+                                                                                   bSlowMotion
+                                                                                   ),
+                                            current_project.calcEffectiveAnimSpeed(current_project.anim_speed,
+                                                                                   current_project.b_slow_motion
+                                                                                   )
+                                            );
+      current_project.b_slow_motion = bSlowMotion;
+      preview.redraw();
+      if(maybe == current_project.b_slow_motion)
+         Global.Print("Slow-Motion");
+      else if(true == current_project.b_slow_motion)
+         Global.Print("Pause animation");
+      else
+         Global.Print("Resume animation");
+   }
+
+   // <ui_handle.png>
+   protected method handleSwapPreviewLR() {
+      sp_h.swapLayers();
+      UI.LayoutRootLayer();
+      UI.RedrawAll();
+      Global.Print("Swap left / right panels");
+   }
+
+   // <ui_update.png>
+   protected method updateProjectName() {
+      tf_proj_name.setText(current_project.project_name);
+      Global.UpdateWindowTitle(current_project.project_name);
+   }
+
+   // <ui_handle.png>
+   protected method handleProjectNameChanged() {
+      current_project.setProjectName(tf_proj_name.getText());
+      tf_proj_name.setText(current_project.project_name);
+      Global.Print("Project name is \""+current_project.project_name+"\"");
+
+      GConfig.autoload_filename = "$(PROJECT_DIR)/"+current_project.project_name+"/"+current_project.project_name+Global.PROJECT_FILE_SUFFIX;
+   }
+
+   // <ui_handle.png>
+   protected method handleLoadDialog() {
+      local String *suggestedFile;
+      if(Utils.CanFileBeRead(Utils.ToNativePathName(GConfig.autoload_filename)))  // (note) win32 dialog does not open if file does not exist
+         suggestedFile <= Utils.ToNativePathName(GConfig.autoload_filename);
+      trace "[dbg] SourceForm::handleBrowse: TKUI_OpenFileDialog suggestedFile=\""+suggestedFile+"\"";
+      suggestedFile <= null;
+
+      String file <= TKUI_OpenFileDialog(current_project.getProjectRootPath(),
+                                         suggestedFile,
+                                         "Select project file",
+                                         ["GL Edit Projects (*.gpr)", "All Files"],
+                                         ["*.gpr", "*"],
+                                         false/*bMultipleSelection*/,
+                                         false/*bDirectoriesOnly*/
+                                         );
+      if(null != file)
+      {
+         handleLoad(file);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLoad(String _pathName) {
+
+      b_loading = true;
+
+      current_input_object <= null;
+      current_param_object <= null;
+      unsetLinkSources();
+
+      current_project.loadFromFile(_pathName);
+
+      updateAll();
+
+      GConfig.autoload_filename = _pathName;
+
+      b_loading = false;
+
+      selectLastObjectPath();
+   }
+
+   // <method.png>
+   public method selectLastObjectPath() {
+      int rowIdx;
+      if(GNamespace.GLOBAL_ID == cf_nsp_proj.getSelectedOptionName())
+         rowIdx = selectObjectRowByPath(current_project.last_object_path_global);
+      else
+         rowIdx = selectObjectRowByPath(current_project.last_object_path_nsp);
+      handleObjectSelect();
+   }
+
+   // <ui_handle.png>
+   protected method handleSave(String _pathName) {
+      // (todo) show file dialog
+      current_project.saveToFile(_pathName);
+   }
+
+
+   // <ui_handle.png>
+   protected method handleExport() {
+      if(null == dlg_export)
+      {
+         dlg_export <= new ExportDialog();
+         dlg_export.initExportDialog();
+      }
+      dlg_export.showExportDialog();
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectAdd() {
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         if(!en.canCreateOrRemoveObjects())
+            return false;
+
+         local PointerArray whiteListBase;
+         local PointerArray blackList = [GObject, GArg, GConstant, GEnvelope, GScreen, GMesh, GShader, GUniform, GModelUniform, GUniformSampler, GAttribute, GVarying/*, GModel_Test*/];
+         local PointerArray blackListBase;
+         Object *obj <= en.object;
+         Global.Debug2("[trc] handleObjectAdd: obj="+#(obj));
+         boolean bShow = true;
+         local String *preselectClassName;
+         GModel *model;
+
+         switch(en.type)
+         {
+            default:
+               bShow = false;
+               break;
+
+            case ObjectsTMDefs.TYPE_OBJECT:
+            case ObjectsTMDefs.TYPE_PROGRAM:
+            case ObjectsTMDefs.TYPE_SHADER:
+            case ObjectsTMDefs.TYPE_SGNODE:
+               if(obj instanceof GArg)
+               {
+                  whiteListBase.add(GArg);
+                  preselectClassName <= "GArg";
+               }
+               else if(obj instanceof GConstant)
+               {
+                  whiteListBase.add(GConstant);
+                  preselectClassName <= "GConstant";
+               }
+               else if(obj instanceof GMod)
+               {
+                  whiteListBase.add(GMod);
+                  blackList.add(GMod);
+                  // // blackList.add(GModSceneSelect);
+                  preselectClassName <= "GScript";
+               }
+               else if(obj instanceof GEnvelope)
+               {
+                  whiteListBase.add(GEnvelope);
+                  preselectClassName <= "GEnvelope";
+               }
+               else if(obj instanceof GTexture)
+               {
+                  whiteListBase.add(GTexture);
+                  preselectClassName <= "GTexture";
+               }
+               else if(obj instanceof GFBO)
+               {
+                  whiteListBase.add(GFBO);
+                  preselectClassName <= "GFBO";
+               }
+               else if(obj instanceof GRenderPass)
+               {
+                  whiteListBase.add(GRenderPass);
+                  preselectClassName <= "GRenderPass";
+               }
+               else if(obj instanceof GMesh)
+               {
+                  whiteListBase.add(GMesh);
+                  preselectClassName <= "GMesh";
+               }
+               else if(obj instanceof GProgram)
+               {
+                  whiteListBase.add(GProgram);
+                  preselectClassName <= "GProgram";
+               }
+               else if(obj instanceof GSGNode)
+               {
+                  whiteListBase.add(GSGNode);
+                  blackList.add(GSceneGraph);
+                  preselectClassName <= "GSGNode";
+               }
+               else if(obj instanceof GComposite)
+               {
+                  whiteListBase.add(GComposite);
+                  preselectClassName <= "GComposite";
+               }
+               else if(obj instanceof GModel)
+               {
+                  whiteListBase.add(GModel);
+                  blackListBase.add(GComposite);
+                  preselectClassName <= "GModel";
+               }
+               else if(obj instanceof GModelUniform)
+               {
+                  whiteListBase.add(GModelUniform);
+                  preselectClassName <= "GModelUniform";
+               }
+               else if(obj instanceof GScene)
+               {
+                  whiteListBase.add(GScene);
+                  preselectClassName <= "GScene";
+               }
+               else if(obj instanceof GAttribute)
+               {
+                  whiteListBase.add(GAttribute);
+                  preselectClassName <= "GAttribute";
+               }
+               else if(obj instanceof GUniform)
+               {
+                  whiteListBase.add(GUniform);
+                  preselectClassName <= "GUniform";
+               }
+               else if(obj instanceof GVarying)
+               {
+                  whiteListBase.add(GVarying);
+                  preselectClassName <= "GVarying";
+               }
+               else if(obj instanceof GVertexShader)
+               {
+                  whiteListBase.add(GVertexSource);
+                  blackList.add(GSource);
+                  blackListBase.add(GScript);
+                  preselectClassName <= "GVertexSource";
+               }
+               else if(obj instanceof GFragmentShader)
+               {
+                  whiteListBase.add(GFragmentSource);
+                  blackList.add(GSource);
+                  blackListBase.add(GScript);
+                  preselectClassName <= "GFragmentSource";
+               }
+               else if(obj instanceof GSource)
+               {
+                  if(en.shader instanceof GVertexShader)
+                  {
+                     // Vertex Shader
+                     whiteListBase.add(GVertexSource);
+                     preselectClassName <= "GVertexSource";
+                  }
+                  else // if(en.shader instanceof GFragmentShader)
+                  {
+                     // Fragment Shader
+                     whiteListBase.add(GFragmentSource);
+                     preselectClassName <= "GFragmentSource";
+                  }
+                  // // else
+                  // // {
+                  // //    // Script
+                  // //    whiteListBase.add(GSource);
+                  // //    blackListBase.add(GScript);
+                  // //    preselectClassName <= "GSource";
+                  // // }
+               }
+               else
+                  bShow = false;
+               break;
+
+            case ObjectsTMDefs.TYPE_ARGS:
+               whiteListBase.add(GArg);
+               preselectClassName <= "GArg";
+               break;
+
+            case ObjectsTMDefs.TYPE_MODS:
+               whiteListBase.add(GMod);
+               blackList.add(GMod);
+               preselectClassName <= "GScript";
+               break;
+
+            case ObjectsTMDefs.TYPE_CONSTANTS:
+               whiteListBase.add(GConstant);
+               preselectClassName <= "GConstant";
+               break;
+
+            case ObjectsTMDefs.TYPE_ENVELOPES:
+               whiteListBase.add(GEnvelope);
+               preselectClassName <= "GEnvelope";
+               break;
+
+            case ObjectsTMDefs.TYPE_TEXTURES:
+               whiteListBase.add(GTexture);
+               preselectClassName <= "GTexture";
+               break;
+
+            case ObjectsTMDefs.TYPE_FBOS:
+               whiteListBase.add(GFBO);
+               preselectClassName <= "GFBO";
+               break;
+
+            case ObjectsTMDefs.TYPE_RENDERPASSES:
+               whiteListBase.add(GRenderPass);
+               preselectClassName <= "GRenderPass";
+               break;
+
+            case ObjectsTMDefs.TYPE_MESHES:
+               whiteListBase.add(GMesh);
+               preselectClassName <= "GMesh";
+               break;
+
+            case ObjectsTMDefs.TYPE_PROGRAMS:
+               whiteListBase.add(GProgram);
+               preselectClassName <= "GProgram";
+               break;
+
+            case ObjectsTMDefs.TYPE_ATTRIBUTES:
+               whiteListBase.add(GAttribute);
+               preselectClassName <= "GAttribute";
+               break;
+
+            case ObjectsTMDefs.TYPE_UNIFORMS:
+               whiteListBase.add(GUniform);
+               preselectClassName <= "GUniform";
+               break;
+
+            case ObjectsTMDefs.TYPE_VARYINGS:
+               whiteListBase.add(GVarying);
+               preselectClassName <= "GVarying";
+               break;
+
+            case ObjectsTMDefs.TYPE_MODELS:
+               whiteListBase.add(GModel);
+               blackListBase.add(GComposite);
+               preselectClassName <= "GModel";
+               break;
+
+            case ObjectsTMDefs.TYPE_MODELUNIFORM:
+               whiteListBase.add(GModelUniform);
+               preselectClassName <= "GModelUniform";
+               break;
+
+            case ObjectsTMDefs.TYPE_COMPOSITES:
+               whiteListBase.add(GComposite);
+               preselectClassName <= "GComposite";
+               break;
+
+            case ObjectsTMDefs.TYPE_SCENES:
+               whiteListBase.add(GScene);
+               preselectClassName <= "GScene";
+               break;
+         }
+
+         if(bShow)
+         {
+            if(preselectClassName == "GModelUniform")
+            {
+               model <= en.nsp;
+               GProgram prg <= model.getFirstConnectedProgram();
+               if(null != prg)
+               {
+                  local String *prefUniId;
+                  if(ObjectsTM.TYPE_MODELUNIFORM == en.type)
+                     prefUniId <= en.object.getId();
+                  showUniformSelectDialog("Create Model Uniform",
+                                          model,
+                                          prg,
+                                          prefUniId
+                                          );
+               }
+               else
+               {
+                  Global.Warning("Add Model Uniform: model has no program");
+               }
+            }
+            else
+            {
+               // Show ObjectTypeDialog
+               local Class *preferredObjType;
+               if(last_object_type_map.exists(preselectClassName))
+               {
+                  preferredObjType <= last_object_type_map.get(preselectClassName);
+               }
+               object_add_preselect_class_name = preselectClassName;
+               // trace "xxx object_add_preselect_class_name=\""+object_add_preselect_class_name+"\", preferredObjType="+#(preferredObjType);
+
+               object_add_dest <= tv_objects;
+               showObjectTypeDialog("Create Object",
+                                    null/*whiteList*/,
+                                    whiteListBase,
+                                    blackList,
+                                    blackListBase,
+                                    preferredObjType
+                                    );
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectAdd2(GObject _class, boolean _bEditId) : GObject {
+      local GObject *obj;
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         GNamespace nsp <= en.nsp;
+         GProgram        *prg;
+         GShader         *sh;
+         GAttribute      *a;
+         GSource         *src;
+         GInput          *inp;
+         GOutput         *out;
+         GVertexShader   *vs;
+         GFragmentShader *fs;
+         GTexture        *tex;
+         GFBO            *fbo;
+         GRenderPass     *renderpass;
+         GComposite      *composite;
+         GUniformSampler *uSampler;
+         GSGNode         *sgnode;
+
+         // Remember selected type for next dialog run
+         if(!object_add_preselect_class_name.isBlank())
+         {
+            trace "[trc] update preferred object type ["+object_add_preselect_class_name+"] to "+_class.yacMetaClassName();
+            last_object_type_map[object_add_preselect_class_name] = _class;
+         }
+
+         trace "[dbg] handleObjectAdd2: class="+#(_class)+" nsp="+#(nsp);
+         obj <= _class.yacNew();
+         obj.init();
+         trace "[dbg] handleObjectAdd2: obj="+#(obj);
+
+         if(ObjectsTMDefs.TYPE_SGNODE == en.type)
+         {
+            sgnode <= en.object;
+            obj <= sgnode.addChildNodeAutoId(deref obj, null/*prefIdOrNull*/);
+         }
+         else if(null != nsp)
+         {
+            if(_class instanceof GArg)
+               obj <= nsp.addArgAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GConstant)
+               obj <= nsp.addConstantAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GEnvelope)
+               obj <= nsp.addEnvelopeAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GTexture)
+            {
+               obj <= nsp.addTextureAutoId(deref obj, null/*prefIdOrNull*/);
+
+               if(GConfig.b_auto_connect)
+               {
+                  // Connect texture to first unconnected uniform of first (and only) program in same namespace
+                  if(1 == nsp.getNumPrograms())
+                  {
+                     prg <= nsp.getProgramByIndex(0);
+                     uSampler <= prg.getSamplerUniformByIndex(0);
+                     if(null != uSampler)
+                     {
+                        if(!uSampler.isAnyInputConnected())
+                        {
+                           uSampler.connectObject("tex", obj);
+                        }
+                     }
+                  }
+               }
+            }
+            else if(_class instanceof GFBO)
+               obj <= nsp.addFBOAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GRenderPass)
+               obj <= nsp.addRenderPassAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GMesh)
+               obj <= nsp.addMeshAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GProgram)
+               obj <= nsp.addProgramAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GComposite)
+               obj <= nsp.addCompositeAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GModel)
+               obj <= nsp.addModelAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GScene)
+               obj <= nsp.addSceneAutoId(deref obj, null/*prefIdOrNull*/);
+            else if(_class instanceof GMod)
+            {
+               obj <= nsp.addModAutoId(deref obj, null/*prefIdOrNull*/);
+
+               if(GConfig.b_auto_connect)
+               {
+                  // trace "xxx obj="+#(obj)+" nsp="+#(nsp);
+                  if((obj instanceof GScriptRender) && (nsp instanceof GRenderPass))
+                  {
+                     Global.Debug("auto connect GScriptRender to GRenderPass");
+                     renderpass <= nsp;
+                     renderpass.connectObject("script", obj);
+                  }
+               }
+            }
+            else
+               obj <= null;
+         }
+         else
+         {
+            if((ObjectsTMEntry.TYPE_ATTRIBUTES == en.type) || (en.object instanceof GAttribute))
+            {
+               prg <= en.program;
+               prg.addAttributeAutoId(deref obj, null/*prefIdOrNull*/);
+
+               if(GConfig.b_auto_connect)
+               {
+                  if(1 == prg.getNumAttributes())
+                  {
+                     // Added first attribute, name it "position" and connect to vertex shader position input
+                     a <= obj;
+                     sh <= prg.getVertexShader();
+                     inp <= sh.getInputById("position");
+                     if(!inp.isConnected())
+                     {
+                        a.setId("position");
+                        sh.connect("position", a, "out", OP_AUTO);
+                     }
+                  }
+               }
+            }
+            else if((ObjectsTMEntry.TYPE_UNIFORMS == en.type) || (en.object instanceof GUniform))
+            {
+               prg <= en.program;
+               prg.addUniformAutoId(deref obj, null/*preferredPrefixOrNull*/);
+
+               if(GConfig.b_auto_connect)
+               {
+                  if(obj instanceof GUniformSampler)
+                  {
+                     if(1 == prg.getNumSamplerUniforms())
+                     {
+                        // Added first sampler uniform, try to connect first unused texture
+                        tex <= prg.getNamespace().findFirstUnconnectedTexture();
+                        if(null != tex)
+                        {
+                           uSampler <= obj;
+                           uSampler.connectObject("tex", tex);
+                        }
+                     }
+                  }
+               }
+            }
+            else if((ObjectsTMEntry.TYPE_VARYINGS == en.type) || (en.object instanceof GVarying))
+            {
+               prg <= en.program;
+               prg.addVaryingAutoId(deref obj, null/*prefIdOrNull*/);
+            }
+            else if((ObjectsTMEntry.TYPE_SHADER == en.type) || (en.object instanceof GSource))
+            {
+               sh  <= en.shader;
+               src <= obj;
+               sh.addSourceAutoId(deref obj, null/*prefIdOrNull*/);
+
+               if(GConfig.b_auto_connect)
+               {
+                  if(1 == sh.getNumSources())
+                  {
+                     // auto-connect first shader source output to parent shader input
+                     out <= src.getOutputByIndex(0);
+                     if(null != out)
+                     {
+                        if(sh instanceof GVertexShader)
+                        {
+                           sh.connect("position", src, out.getId(), OP_AUTO);
+                        }
+                        else if(sh instanceof GFragmentShader)
+                        {
+                           sh.connect("color", src, out.getId(), OP_AUTO);
+                        }
+                     }
+                  }
+               }
+            }
+            else
+               obj <= null;
+         }
+
+         if(null != obj)
+         {
+            // Configure source param, ..
+            obj.postInit();
+            obj.postInitNew();
+
+            // Select added object
+            handleObjectsChanged();
+            int rowIdx = selectObjectRowByObject(obj);
+
+            // Edit "id"
+            if(_bEditId)
+               tm_objects.editColumn(0, rowIdx);
+         }
+      }
+      return obj;
+   }
+
+   // <ui_handle.png>
+   protected method handleModelUniformAdd2(GModel   _model,
+                                           GUniform _uniform
+                                           ) {
+      local GModelUniform mu <= _uniform.createModelUniform();
+      _model.addModelUniform(deref mu);
+
+      // Select added object
+      handleObjectsChanged();
+      int rowIdx = selectObjectRowByObject(mu);
+
+      Global.Print("Add Model Uniform "+mu.getObjectPath());
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectClone() {
+      GObject object <= getSelectedObject();
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != object)
+      {
+         if(!en.canCreateOrRemoveObjects())
+            return false;
+
+         if(object.canClone())
+         {
+            // workaround for move up/down issue: fold object to be cloned
+            object.setFoldStatus(true);
+            rebuildObjects(false/*bShowParams*/);
+            en <= getSelectedObjectEntry();
+
+            int rowIdxSrc = tm_objects.getRowIdxByGObject(object);
+
+            local GObject newObj <= object.yacNew();
+            newObj.init();
+
+            if(null != newObj)
+            {
+               GNamespace nsp <= en.nsp;
+
+               GSGNode *sgnode;
+               GModel *model;
+
+               local String prefId <= object.getId();
+
+               if(ObjectsTMDefs.TYPE_SGNODE == en.type)
+               {
+                  sgnode <= en.object;
+                  if(sgnode instanceof GSceneGraph) // cloning root node ?
+                  {
+                     newObj <= nsp.addObjectAutoId(deref newObj, prefId);
+                  }
+                  else
+                  {
+                     newObj <= sgnode.parent_node.addChildNodeAutoId(deref newObj, prefId);
+                  }
+               }
+               else if(ObjectsTMDefs.TYPE_MODELUNIFORM == en.type)
+               {
+                  model <= en.nsp;
+                  model.addModelUniformAutoId(deref newObj, prefId);
+               }
+               else if(null != en.shader)
+                  en.shader.addSourceAutoId(deref newObj, prefId);
+               else if(newObj instanceof GAttribute)
+                  en.program.addAttributeAutoId(deref newObj, prefId);
+               else if(newObj instanceof GUniform)
+                  en.program.addUniformAutoId(deref newObj, prefId);
+               else if(newObj instanceof GVarying)
+                  en.program.addVaryingAutoId(deref newObj, prefId);
+               else
+                  newObj <= nsp.addObjectAutoId(deref newObj, prefId);
+
+               if(null != newObj)
+               {
+                  if(object.cloneToObject(newObj))
+                  {
+                     // newObj.setId(object.getId()+"_2");
+
+                     newObj.postInit();
+
+                     // Select added object
+                     handleObjectsChanged();
+                     int rowIdx = selectObjectRowByObject(newObj);
+
+                     while(rowIdx > (rowIdxSrc+1))
+                     {
+                        handleObjectMoveUp();
+                        rowIdx--;
+                     }
+
+                     // Edit "id"
+                     tm_objects.editColumn(0, rowIdx);
+                  }
+               }
+            }
+         }
+         else
+         {
+            Global.Warning("Object \""+object.getObjectPath()+"\" cannot be cloned");
+         }
+      } // if object
+      else
+      {
+         Global.Warning("Clone: no object selected");
+      }
+   }
+
+   // <method_select.png>
+   protected method selectObjectRowByObject(GObject _obj) : int {
+      if(null != _obj)
+      {
+         GObject tmpObj <= current_project.findObjectByPathUnfold(_obj.getObjectPath(), true/*bUnfold*/);
+         // trace "xxx selectObjectRowByObject: tmpObj="+#(tmpObj);
+         rebuildObjects(false/*bShowParams*/);
+
+         int rowIdx = tm_objects.getRowIdxByGObject(_obj);
+         tv_objects.moveCursorToRowNoAction(rowIdx);
+         tv_objects.centerRow();
+
+         rebuildInputs(_obj, false/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+         showParams(_obj);
+
+         return rowIdx;
+      }
+      else
+         return -1;
+   }
+
+   // <method_select.png>
+   public method selectNamespaceAndObjectRowByObject(GObject _obj, boolean _bKeepInputsAndParams) : int {
+      Global.Debug("selectNamespaceAndObjectRowByObject: obj="+#(_obj));
+      if(null != _obj)
+      {
+         GObject tmpObj <= current_project.findObjectByPathUnfold(_obj.getObjectPath(), true/*bUnfold*/);
+
+         // Check if obj resides outside of current root namespace
+         GNamespace objRoot <= getSelectedNamespace();
+         local String *objRootPath;
+         if(objRoot instanceof GObject)
+         {
+            GObject objRootObj <= objRoot;
+            objRootPath <= objRootObj.getObjectPath();
+         }
+         else
+            objRootPath <= objRoot.getNamespaceId();
+         if!(tmpObj.getObjectPath() <= objRootPath)
+         {
+            autoselectNamespaceByGObject(tmpObj);
+         }
+
+         // (todo) only rebuild when parent object folders were folded before
+         rebuildObjects(!_bKeepInputsAndParams/*bShowParams*/);
+
+         int rowIdx = tm_objects.getRowIdxByGObject(_obj);
+
+         tv_objects.moveCursorToRowNoAction(rowIdx);
+         tv_objects.centerRow();
+
+         if(!_bKeepInputsAndParams)
+            rebuildInputs(null/*forceObj*/, false/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+
+         return rowIdx;
+      }
+      else
+         return -1;
+   }
+
+   // <method_select.png>
+   public method selectObjectRowByPath(String _path) : int {
+      GObject obj <= current_project.findObjectByPathUnfold(_path, true/*bUnfold*/);
+      // // rebuildObjects();
+      trace "[dbg] selectObjectRowByPath: path=\""+_path+"\" => obj="+#(obj);
+      return selectObjectRowByObject(obj);
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectRemove() : boolean {
+      boolean ret = false;
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         if(!en.canCreateOrRemoveObjects())
+            return false;
+
+         GNamespace nsp <= en.nsp;////getSelectedNamespace();
+         Global.Debug("handleObjectRemove: nsp="+#(nsp));
+         local String id;
+         GObject *obj <= en.object;
+         boolean bRemove = true;
+         boolean bMoveUp = false;
+         int rowIdx = tm_objects.getCursorIndex();
+         GProgram *prg;
+         GShader *sh;
+         GModel *model;
+         switch(en.type)
+         {
+            default:
+               bRemove = false;
+               break;
+
+            case ObjectsTMDefs.TYPE_OBJECT:
+            case ObjectsTMDefs.TYPE_PROGRAM:
+            case ObjectsTMDefs.TYPE_MODELUNIFORM:
+            case ObjectsTMDefs.TYPE_SGNODE:
+
+               if(obj.canDelete())
+               {
+                  // workaround for move up/down issue: fold object to be deleted
+                  obj.setFoldStatus(true);
+                  rebuildObjects(false/*bShowParams*/);
+                  en <= getSelectedObjectEntry();
+
+                  current_project.runScriptExit();
+
+                  // Save id for log message
+                  id = obj.getId();
+
+                  // Prepare removal
+                  //  - remove connections to 'this'
+                  //  - recursively remove sub-object connections
+                  obj.prepareRemove();
+
+                  // Remove object
+                  if(obj instanceof GArg)
+                     bMoveUp = nsp.removeArg(obj);
+                  else if(obj instanceof GConstant)
+                     bMoveUp = nsp.removeConstant(obj);
+                  else if(obj instanceof GEnvelope)
+                     bMoveUp = nsp.removeEnvelope(obj);
+                  else if(obj instanceof GTexture)
+                     bMoveUp = nsp.removeTexture(obj);
+                  else if(obj instanceof GFBO)
+                     bMoveUp = nsp.removeFBO(obj);
+                  else if(obj instanceof GRenderPass)
+                     bMoveUp = nsp.removeRenderPass(obj);
+                  else if(obj instanceof GMesh)
+                     bMoveUp = nsp.removeMesh(obj);
+                  else if(obj instanceof GProgram)
+                     bMoveUp = nsp.removeProgram(obj);
+                  else if((obj instanceof GSource) && !(obj instanceof GScript))
+                  {
+                     prg <= en.program;
+                     sh <= en.shader;
+                     bMoveUp = sh.removeSource(obj);
+                  }
+                  else if(obj instanceof GAttribute)
+                  {
+                     prg <= en.program;
+                     bMoveUp = prg.removeAttribute(obj);
+                  }
+                  else if(obj instanceof GUniform)
+                  {
+                     prg <= en.program;
+                     bMoveUp = prg.removeUniform(obj);
+                  }
+                  else if(obj instanceof GVarying)
+                  {
+                     prg <= en.program;
+                     bMoveUp = prg.removeVarying(obj);
+                  }
+                  else if(obj instanceof GComposite)
+                     bMoveUp = nsp.removeComposite(obj);
+                  else if(obj instanceof GSGNode)
+                  {
+                     GSGNode sgnode <= obj;
+                     sgnode <= sgnode.parent_node;
+                     bMoveUp = sgnode.removeChildNode(obj);
+                  }
+                  else if(obj instanceof GModel)
+                     bMoveUp = nsp.removeModel(obj);
+                  else if(obj instanceof GModelUniform)
+                  {
+                     model <= nsp;
+                     bMoveUp = model.removeModelUniform(obj);
+                  }
+                  else if(obj instanceof GScene)
+                     bMoveUp = nsp.removeScene(obj);
+                  else if(obj instanceof GMod)
+                     bMoveUp = nsp.removeMod(obj);
+
+               } // if obj.canDelete()
+               else
+               {
+                  bRemove = false;
+               }
+               break;
+         } // switch en.type
+
+         if(bRemove)
+         {
+            Global.Print("Remove object \""+id+"\"");
+
+            if(@(obj) == @(current_input_object))
+               current_input_object <= null;
+
+            if(@(obj) == @(current_param_object))
+               current_param_object <= null;
+
+            removeLinkSourceObject(obj);
+
+            if(@(obj) == @(anon_link_source_input_object))
+            {
+               unsetLinkSourceAnon();
+            }
+
+            handleObjectsChanged();
+
+            // (todo) move to previous object, not row (prev object may be unfolded)
+
+            if(bMoveUp)
+               rowIdx--;
+            // // tv_objects.moveCursorToRowNoAction(rowIdx);
+            tv_objects.moveCursorToRow(rowIdx);
+
+            ret = true;
+         }
+      }
+
+      if(ret)
+         updateRadarIfVisible();
+
+      return ret;
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectMoveUp() {
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         local GObject  *obj;
+         local GProgram *prg;
+         local GShader  *sh;
+         local GModel   *model;
+         int idx;
+         obj <= en.object;
+
+         if(en.isObject())
+         {
+            // workaround for move up/down issue: fold object to be moved
+            obj.setFoldStatus(true);
+            rebuildObjects(false/*bShowParams*/);
+            en <= getSelectedObjectEntry();
+
+            int row = tm_objects.getCursorIndex();
+            trace "[dbg] handleObjectMoveUp: obj="+#(obj)+" row="+row;
+
+            // Arg
+            if(obj instanceof GArg)
+            {
+               if(obj.getNamespace().moveArgUp(obj))
+               {
+                  Global.Print("Move arg \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Constant
+            if(obj instanceof GConstant)
+            {
+               if(obj.getNamespace().moveConstantUp(obj))
+               {
+                  Global.Print("Move constant \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Envelope
+            if(obj instanceof GEnvelope)
+            {
+               if(obj.getNamespace().moveEnvelopeUp(obj))
+               {
+                  Global.Print("Move envelope \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Texture
+            if(obj instanceof GTexture)
+            {
+               if(obj.getNamespace().moveTextureUp(obj))
+               {
+                  Global.Print("Move texture \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // FBO
+            if(obj instanceof GFBO)
+            {
+               if(obj.getNamespace().moveFBOUp(obj))
+               {
+                  Global.Print("Move FBO \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // RenderPass
+            if(obj instanceof GRenderPass)
+            {
+               if(obj.getNamespace().moveRenderPassUp(obj))
+               {
+                  Global.Print("Move renderpass \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Mesh
+            if(obj instanceof GMesh)
+            {
+               if(obj.getNamespace().moveMeshUp(obj))
+               {
+                  Global.Print("Move mesh \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Program
+            if(obj instanceof GProgram)
+            {
+               if(obj.getNamespace().moveProgramUp(obj))
+               {
+                  Global.Print("Move program \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Source
+            if((obj instanceof GSource) && !(obj instanceof GScript))
+            {
+               sh <= en.shader;
+               if((sh.sources.numElements) >= 2)
+               {
+                  idx = sh.sources.indexOfPointer(obj, 0);
+                  if(idx > 0)
+                  {
+                     Global.Print("Move source \""+en.caption+"\" up");
+                     sh.sources.swap(idx - 1, idx);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row - 1);
+                     return true;
+                  }
+               }
+            }
+
+            // Attribute
+            if(obj instanceof GAttribute)
+            {
+               prg <= en.program;
+               if((prg.attributes.numElements) >= 2)
+               {
+                  idx = prg.attributes.indexOfPointer(obj, 0);
+                  if(idx > 0)
+                  {
+                     Global.Print("Move attribute \""+en.caption+"\" up");
+                     prg.attributes.swap(idx - 1, idx);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row - 1);
+                     return true;
+                  }
+               }
+            }
+
+            // Uniform
+            if(obj instanceof GUniform)
+            {
+               prg <= en.program;
+               if((prg.uniforms.numElements) >= 2)
+               {
+                  idx = prg.uniforms.indexOfPointer(obj, 0);
+                  if(idx > 0)
+                  {
+                     Global.Print("Move uniform \""+en.caption+"\" up");
+                     prg.uniforms.swap(idx - 1, idx);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row - 1);
+                  }
+               }
+            }
+
+            // Varying
+            if(obj instanceof GVarying)
+            {
+               prg <= en.program;
+               if((prg.varyings.numElements) >= 2)
+               {
+                  idx = prg.varyings.indexOfPointer(obj, 0);
+                  if(idx > 0)
+                  {
+                     Global.Print("Move varying \""+en.caption+"\" up");
+                     prg.varyings.swap(idx - 1, idx);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row - 1);
+                  }
+               }
+            }
+
+            // Composite
+            if(obj instanceof GComposite)
+            {
+               if(obj.getNamespace().moveCompositeUp(obj))
+               {
+                  Global.Print("Move composite \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // SGNode
+            if(obj instanceof GSGNode)
+            {
+               GSGNode sgnode <= obj;
+               sgnode <= sgnode.parent_node;
+               if(sgnode.moveChildNodeUp(obj))
+               {
+                  Global.Print("Move scene graph node \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Model
+            if(obj instanceof GModel)
+            {
+               if(obj.getNamespace().moveModelUp(obj))
+               {
+                  Global.Print("Move model \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // ModelUniform
+            if(obj instanceof GModelUniform)
+            {
+               model <= obj.getNamespace();
+               if(model.moveModelUniformUp(obj))
+               {
+                  Global.Print("Move model unifrom \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Scene
+            if(obj instanceof GScene)
+            {
+               if(obj.getNamespace().moveSceneUp(obj))
+               {
+                  Global.Print("Move scene \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+            // Mod / Script
+            if(obj instanceof GMod)
+            {
+               if(obj.getNamespace().moveModUp(obj))
+               {
+                  Global.Print("Move mod \""+en.caption+"\" up");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row - 1);
+                  return true;
+               }
+            }
+
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectMoveDown() {
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         local GObject  *obj;
+         local GProgram *prg;
+         local GShader  *sh;
+         local GModel   *model;
+         int idx;
+         obj <= en.object;
+
+         if(en.isObject())
+         {
+            // workaround for move up/down issue: fold object to be moved
+            obj.setFoldStatus(true);
+            rebuildObjects(false/*bShowParams*/);
+            en <= getSelectedObjectEntry();
+
+            int row = tm_objects.getCursorIndex();
+            trace "[dbg] handleObjectMoveDown: obj="+#(obj)+" row="+row;
+
+            // Arg
+            if(obj instanceof GArg)
+            {
+               if(obj.getNamespace().moveArgDown(obj))
+               {
+                  Global.Print("Move arg \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Constant
+            if(obj instanceof GConstant)
+            {
+               if(obj.getNamespace().moveConstantDown(obj))
+               {
+                  Global.Print("Move constant \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Envelope
+            if(obj instanceof GEnvelope)
+            {
+               if(obj.getNamespace().moveEnvelopeDown(obj))
+               {
+                  Global.Print("Move envelope \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Texture
+            if(obj instanceof GTexture)
+            {
+               if(obj.getNamespace().moveTextureDown(obj))
+               {
+                  Global.Print("Move texture \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // FBO
+            if(obj instanceof GFBO)
+            {
+               if(obj.getNamespace().moveFBODown(obj))
+               {
+                  Global.Print("Move FBO \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // RenderPass
+            if(obj instanceof GRenderPass)
+            {
+               if(obj.getNamespace().moveRenderPassDown(obj))
+               {
+                  Global.Print("Move renderpass \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Mesh
+            if(obj instanceof GMesh)
+            {
+               if(obj.getNamespace().moveMeshDown(obj))
+               {
+                  Global.Print("Move mesh \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Program
+            if(obj instanceof GProgram)
+            {
+               if(obj.getNamespace().moveProgramDown(obj))
+               {
+                  Global.Print("Move program \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Source
+            if((obj instanceof GSource) && !(obj instanceof GScript))
+            {
+               sh <= en.shader;
+               if((sh.sources.numElements) >= 2)
+               {
+                  idx = sh.sources.indexOfPointer(obj, 0);
+                  if((idx >= 0) && (idx < (sh.sources.numElements -1)))
+                  {
+                     Global.Print("Move source \""+en.caption+"\" down");
+                     sh.sources.swap(idx, idx + 1);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row + 1);
+                     return true;
+                  }
+               }
+            }
+
+            // Attribute
+            if(obj instanceof GAttribute)
+            {
+               prg <= en.program;
+               if((prg.attributes.numElements) >= 2)
+               {
+                  idx = prg.attributes.indexOfPointer(obj, 0);
+                  if((idx >= 0) && (idx < (prg.attributes.numElements -1)))
+                  {
+                     Global.Print("Move attribute \""+en.caption+"\" down");
+                     prg.attributes.swap(idx, idx+1);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row + 1);
+                     return true;
+                  }
+               }
+            }
+
+            // Uniform
+            if(obj instanceof GUniform)
+            {
+               prg <= en.program;
+               if((prg.uniforms.numElements) >= 2)
+               {
+                  idx = prg.uniforms.indexOfPointer(obj, 0);
+                  if((idx >= 0) && (idx < (prg.uniforms.numElements -1)))
+                  {
+                     Global.Print("Move uniform \""+en.caption+"\" down");
+                     prg.uniforms.swap(idx, idx+1);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row + 1);
+                  }
+               }
+            }
+
+            // Varying
+            if(obj instanceof GVarying)
+            {
+               prg <= en.program;
+               if((prg.varyings.numElements) >= 2)
+               {
+                  idx = prg.varyings.indexOfPointer(obj, 0);
+                  if((idx >= 0) && (idx < (prg.varyings.numElements -1)))
+                  {
+                     Global.Print("Move varying \""+en.caption+"\" down");
+                     prg.varyings.swap(idx, idx+1);
+                     handleObjectsChanged();
+                     tv_objects.moveCursorToRowNoAction(row + 1);
+                  }
+               }
+            }
+
+            // Composite
+            if(obj instanceof GComposite)
+            {
+               if(obj.getNamespace().moveCompositeDown(obj))
+               {
+                  Global.Print("Move composite \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+               return false;
+            }
+
+            // SGNode
+            if(obj instanceof GSGNode)
+            {
+               GSGNode sgnode <= obj;
+               // // trace "xxx movedown: sgnode="+#(sgnode);
+               // // trace "xxx movedown:   sgnode.parent_node="+#(sgnode.parent_node);
+               sgnode <= sgnode.parent_node;
+               if(sgnode.moveChildNodeDown(obj))
+               {
+                  Global.Print("Move scene graph node \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Model
+            if(obj instanceof GModel)
+            {
+               if(obj.getNamespace().moveModelDown(obj))
+               {
+                  Global.Print("Move model \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // ModelUniform
+            if(obj instanceof GModelUniform)
+            {
+               model <= obj.getNamespace();
+               if(model.moveModelUniformDown(obj))
+               {
+                  Global.Print("Move model unifrom \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Scene
+            if(obj instanceof GScene)
+            {
+               if(obj.getNamespace().moveSceneDown(obj))
+               {
+                  Global.Print("Move scene \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+            // Mod / Script
+            if(obj instanceof GMod)
+            {
+               if(obj.getNamespace().moveModDown(obj))
+               {
+                  Global.Print("Move mod \""+en.caption+"\" down");
+                  handleObjectsChanged();
+                  tv_objects.moveCursorToRowNoAction(row + 1);
+                  return true;
+               }
+            }
+
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleHideEmptyChanged() {
+      GObject obj <= getSelectedObject();
+      if(null == obj)
+      {
+         ObjectsTMEntry en <= getSelectedObjectEntry();
+         if(null != en)
+            if(en.nsp instanceof GObject)
+               obj <= en.nsp;
+      }
+
+      tm_objects.b_hide_empty = bt_objects_hide.getToggleState();
+      if(null == obj)
+         rebuildObjects(true/*bShowParams*/);
+      else
+         selectObjectRowByObject(obj);
+
+      Global.Print("Hide empty folders is "+Utils.GetEnableString(bt_objects_hide.getToggleState()));
+   }
+
+   // <ui_handle.png>
+   public method canExecInputDefaultAction() : boolean {
+      GObject selObj <= getSelectedInputObject();
+      if(null != selObj)
+         return selObj.hasDefaultAction();
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method execInputDefaultAction() : boolean {
+      trace "xxx execInputDefaultAction";
+      GObject selObj <= getSelectedInputObject();
+      if(null != selObj)
+      {
+         if(selObj.hasDefaultAction())
+         {
+            selObj.execDefaultAction();
+         
+            // Reselect object (e.g. GSource path_name may have changed)
+            queueReshowParams();
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleInputAdd() {
+      if(null != current_input_object)
+      {
+         GInput input <= getSelectedInput();
+         if(null != input)
+         {
+            local Class *preferredObjType <= input.getPreferredTypeClass();
+            if(null == preferredObjType)
+            {
+               if(last_object_type_map.exists("GConstant"))
+               {
+                  preferredObjType <= last_object_type_map.get("GConstant");
+               }
+            }
+
+            // null = all types
+            PointerArray types <= current_input_object.getSupportedAnonInputObjectTypes(input.id);
+
+            object_add_dest <= tv_inputs;
+            showObjectTypeDialog("Create <anon> Input",
+                                 types/*whiteList*/,
+                                 null,//[GConstant/*, GScript*/]/*whiteListBase*/,
+                                 [GObject, GConstant, GScreen, GShader, GScriptRender, GRenderPass, GComposite, GProgram, GProgramSubObject]/*blackList*/,
+                                 null/*blackListBase*/,
+                                 preferredObjType
+                                 );
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputAdd2(GObject _class) {
+      trace "[dbg] handleInputAdd2: class="+#(_class);
+      GInput input <= getSelectedInput();
+      if(null != input)
+      {
+         GConnection prevConn <= getSelectedInputConnection();
+
+         // Remember selected type for next dialog run
+         last_object_type_map["GConstant"] = _class;
+
+         local GObject *obj <= _class.yacNew();
+         obj.init();
+         trace "[dbg] handleInputAdd2: obj="+#(obj);
+
+         if(null != obj)
+         {
+            obj.postInitNewAnon(input.type);
+
+            // Connect and Select added object
+            GConnection conn <= current_input_object.connect(input.getId(),
+                                                             deref obj,
+                                                             obj.getDefaultOutputId(),
+                                                             OP_AUTO
+                                                             );
+            obj.anon_parent      <= current_input_object;
+            obj.anon_parent_conn <= conn;
+
+            if(null != prevConn)
+            {
+               input.moveConnectionAfter(prevConn, conn);
+            }
+
+            handleInputsChanged();
+
+            int rowIdx = tm_inputs.getRowIdxByGConnection(conn);
+            trace "xxx handleInputAdd2: conn rowIdx="+rowIdx;
+            tv_inputs.moveCursorToRowNoAction(rowIdx);
+            tv_inputs.centerRow();
+
+            showParams(obj);
+
+            Global.Print("Add <anon> object connection to "+input.getId()+" (class="+obj.yacMetaClassName()+")");
+
+            updateRadarIfVisible();
+         }
+
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputCloneAnon() {
+      trace "xxx handleInputCloneAnon: current_input_object="+#(current_input_object);
+      if(null != current_input_object)
+      {
+         GInput input <= getSelectedInput();
+         // trace "xxx handleInputCloneAnon: input="+#(input);
+         if(null != input)
+         {
+            GConnection prevConn <= getSelectedInputConnection();
+            // trace "xxx handleInputCloneAnon: prevConn="+#(prevConn);
+            if(null != prevConn)
+            {
+               GObject prevObj <= prevConn.object;
+               trace "xxx handleInputCloneAnon: prevObj="+#(prevObj);
+               if(prevObj.canCloneToAnon())   // [07Feb2025] experimental (true) (was: isAnon())
+               {
+                  boolean bToggleForcedModifier = unforcePreviousConnection();
+
+                  local GObject obj <= prevObj.yacNew();
+                  obj.init();
+                  // // local Buffer buf; buf.size = GConnectionWriter.MAX_ANON_DATA_SIZE;
+                  // // buf.offset = 0;
+                  // // prevObj.saveStateObject(buf, null/*connectionWriter*/);
+                  // // buf.offset = 0;
+                  // // local GObject obj <= GObject.LoadStateObject(buf);
+                  // // if(null != obj)
+                  if(prevObj.cloneToObject(obj))
+                  {
+                     // // obj.setNamespace(null);
+                     obj.setId("");
+
+                     // Connect and Select added object
+                     GConnection conn <= current_input_object.connect(input.getId(),
+                                                                      deref obj,
+                                                                      obj.getDefaultOutputId(),
+                                                                      OP_AUTO
+                                                                      );
+                     obj.anon_parent      <= current_input_object;
+                     obj.anon_parent_conn <= conn;
+
+                     if(null != prevConn)
+                     {
+                        input.moveConnectionAfter(prevConn, conn);
+                     }
+
+                     handleInputsChanged();
+
+                     int rowIdx = tm_inputs.getRowIdxByGConnection(conn);
+                     trace "xxx handleInputClone: conn rowIdx="+rowIdx;
+                     tv_inputs.moveCursorToRowNoAction(rowIdx);
+                     tv_inputs.centerRow();
+
+                     showParams(obj);
+
+                     if(bToggleForcedModifier)
+                        toggleForcedConnection();
+
+                     Global.Print("Clone <anon> object connection to "+input.getId()+" (class="+obj.yacMetaClassName()+")");
+                  }
+                  else
+                     Global.Error("Failed to clone <anon> object !!!");
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputRemove(boolean _bConnectionOnly) : boolean {
+      boolean ret = false;
+      GConnection *conn;
+      if(null != current_input_object)
+      {
+         InputsTMEntry en <= getSelectedInputEntry();
+         if(null != en)
+         {
+            if(InputsTMDefs.TYPE_CONNECTION == en.type)
+            {
+               local GInput input <= en.object;
+               local GOutput output <= en.object;
+               boolean bMoveUp;
+               int rowIdx;
+               if(input instanceof GInput)
+               {
+                  boolean bToggleForcedModifier = unforcePreviousConnection();
+
+                  bMoveUp = (1 == input.getNumConnections()) || (@(en.conn) == @(input.getLastConnection()));
+                  rowIdx = tm_inputs.getRowIdxByGConnection(en.conn);
+                  Global.Print("Disconnect "+(en.conn.object.getObjectPath())+":"+(en.conn.port_id)+" from input "+input.id);
+                  if(@(current_param_object) == @(en.conn))
+                  {
+                     showParams(null);
+                  }
+                  current_input_object.disconnect(en.conn);
+
+                  if(@(anon_link_source_connection) == @(en.conn))
+                  {
+                     unsetLinkSourceAnon();
+                  }
+
+                  handleInputsChanged();
+                  // // tv_inputs.moveCursorToRowNoAction(rowIdx - bMoveUp);
+                  tv_inputs.moveCursorToRow(rowIdx - bMoveUp);
+                  tv_inputs.centerRow();
+
+                  // trace "xxx bToggleForcedModifier="+bToggleForcedModifier;
+                  if(bToggleForcedModifier)
+                     toggleForcedConnection();
+
+                  ret = true;
+               }
+               else if(output instanceof GOutput)
+               {
+                  trace "[trc] handleInputRemove: output.numConnections="+output.getNumConnections();
+                  bMoveUp = (1 == output.getNumConnections()) || (@(en.conn) == @(output.getLastConnection()));
+                  rowIdx = tm_inputs.getRowIdxByGConnection(en.conn);
+                  Global.Print("Disconnect input "+(en.conn.object.getObjectPath())+":"+(en.conn.port_id_rev));
+                  if(@(current_param_object) == @(en.conn))
+                  {
+                     showParams(null);
+                  }
+                  conn <= en.conn.object.findInputConnection(en.conn.port_id, current_input_object, en.conn.port_id_rev);
+                  if(null != conn)
+                  {
+
+                     if(@(anon_link_source_connection) == @(conn))
+                     {
+                        unsetLinkSourceAnon();
+                     }
+
+                     en.conn.object.disconnect(conn);
+                     handleInputsChanged();
+                     tv_inputs.moveCursorToRowNoAction(rowIdx - bMoveUp);
+                     tv_inputs.centerRow();
+                     ret = true;
+                  }
+               }
+            }
+            else if(!_bConnectionOnly)
+            {
+            }
+         }
+
+         if(ret)
+            updateRadarIfVisible();
+
+         return ret;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputMoveUp() {
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         local GInput *input;
+         int idx;
+         input <= en.object;
+         int row = tm_inputs.getCursorIndex();
+         trace "[dbg] handleInputMoveUp: input="+#(input)+" row="+row;
+
+         if(InputsTMDefs.TYPE_CONNECTION == en.type)
+         {
+            // Connection
+            if(input instanceof GInput)
+            {
+               GConnection conn <= en.conn;
+               if((input.connections.numElements) >= 2)
+               {
+                  idx = input.connections.indexOfPointer(conn, 0);
+                  if(idx > 0)
+                  {
+                     Global.Print("Move input \""+input.id+"\" connection \""+conn.getObjectString(null/*parentNsp*/)+" "+en.caption+"\" up");
+                     input.connections.swap(idx - 1, idx);
+                     handleInputsChanged();
+                     tv_inputs.moveCursorToRowNoAction(row - 1);
+                     return true;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputMoveDown() {
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         local GInput *input;
+         int idx;
+         input <= en.object;
+         int row = tm_inputs.getCursorIndex();
+         trace "[dbg] handleInputMoveDown: input="+#(input)+" row="+row;
+
+         if(InputsTMDefs.TYPE_CONNECTION == en.type)
+         {
+            // Connection
+            if(input instanceof GInput)
+            {
+               GConnection conn <= en.conn;
+               if((input.connections.numElements) >= 2)
+               {
+                  idx = input.connections.indexOfPointer(conn, 0);
+                  if( (idx >= 0) && (idx < (input.connections.numElements -1)) )
+                  {
+                     Global.Print("Move input \""+input.id+"\" connection \""+conn.getObjectString(null/*parentNsp*/)+" "+en.caption+"\" down");
+                     input.connections.swap(idx, idx + 1);
+                     handleInputsChanged();
+                     tv_inputs.moveCursorToRowNoAction(row + 1);
+                     return true;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handleShowInputConnChanged() {
+      // InputsTMEntry enInput <= getSelectedInputEntry();
+      // if(null != enInput)
+      // {
+      // }
+      GConnection conn <= getSelectedInputConnection();
+      if(null != conn)
+      {
+         if(bt_inputs_conn.getToggleState())
+         {
+            showParams(conn);
+         }
+         else
+         {
+            showParams(conn.object);
+         }
+         UI.LayoutRootLayer();
+         UI.RedrawAll();
+      }
+      Global.Print("Show "+(bt_inputs_conn.getToggleState()?"Connection":"Connection Object Params"));
+   }
+
+   // <ui_show.png>
+   protected method showObjectTypeDialog(String _selectCaption,
+                                         PointerArray _whiteList,
+                                         PointerArray _whiteListBase,
+                                         PointerArray _blackList,
+                                         PointerArray _blackListBase,
+                                         Class        _preferredClass
+                                         ) {
+      dlg_object_type <= new ObjectTypeDialog;
+      dlg_object_type.init();
+      dlg_object_type.showObjectTypeDialog(this/*recipient*/,
+                                           deref _selectCaption,
+                                           deref _whiteList,
+                                           deref _whiteListBase,
+                                           deref _blackList,
+                                           deref _blackListBase,
+                                           _preferredClass
+                                           );
+   }
+
+   // <ui_show.png>
+   protected method showUniformSelectDialog(String   _selectCaption,
+                                            GModel   _model,
+                                            GProgram _program,
+                                            String   _preferredUniformId
+                                            ) {
+      dlg_uniform_select <= new UniformSelectDialog;
+      dlg_uniform_select.init();
+      dlg_uniform_select.showUniformSelectDialog(this/*recipient*/,
+                                                 _selectCaption,
+                                                 _model,
+                                                 _program,
+                                                 _preferredUniformId
+                                                 );
+   }
+
+   // <ui_show.png>
+   protected method showObjectFindDialog() {
+      if(null == dlg_find)
+      {
+         dlg_find <= new StringDialog;
+         dlg_find.init(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         dlg_find.b_provide_edit = true;
+         dlg_find.b_keep_open_after_return = true;
+      }
+      if(dlg_find.isFloatingLayerVisible())
+      {
+         handleObjectFind(last_object_find_string, true/*bNext*/);
+      }
+      else
+      {
+         dlg_find.configure("", 32, 16, this/*recipient*/);
+         find_start_row_idx = tm_objects.getCursorIndex();
+         dlg_find.showBelowLayer(tv_objects);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleObjectFind(String _s, boolean _bNext) {
+      trace "xxx find \""+_s+"\" bNext="+_bNext;
+      last_object_find_string = _s;
+      if(_bNext)
+         find_start_row_idx = (tm_objects.getCursorIndex() + 1) % tm_objects.getNumRows();
+      int rowIdx = tm_objects.getNextRowIdxByTreeNodeCaptionSubString(_s, find_start_row_idx);
+      int curRowIdx = tm_objects.getCursorIndex();
+      if(-1 != rowIdx)
+      {
+         if(!_bNext || (rowIdx != curRowIdx))
+         {
+            tv_objects.moveCursorToRow(rowIdx);
+            tv_objects.centerRow();
+         }
+         else
+            hideObjectFindDialog();
+      }
+   }
+
+   // <ui_hide.png>
+   protected method hideObjectFindDialog() {
+      dlg_find.hide();
+      pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method handleModelPresetSave(GModel _model) {
+      if(_model instanceof GModel)
+      {
+         String file <= TKUI_SaveFileDialog(current_project.getModelPresetDirectory(),
+                                            null,
+                                            "Save Model Preset",
+                                            ["Model Preset Files (*.gmp)", "All Files"],
+                                            ["*.gmp", "*"],
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.MODEL_PRESET_FILE_SUFFIX)
+               file.append(Global.MODEL_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_OUT))
+            {
+               _model.saveModelPresetStream(f);
+
+               f.close();
+
+               Global.Success("Model Preset saved to \""+file+"\"");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleModelPresetLoad(GModel _model) {
+      local boolean bRemove;
+      int oldRowIdx = tm_objects.getCursorIndex();
+      if(null == _model)
+      {
+         _model <= handleObjectAdd2(GModel, false/*bEditId*/);
+         bRemove = (null != _model);
+      }
+
+      if(_model instanceof GModel)
+      {
+         String file <= TKUI_OpenFileDialog(current_project.getModelPresetDirectory(),
+                                            null/*suggestedFile*/,
+                                            "Load Model Preset",
+                                            ["Model Preset Files (*.gmp)", "All Files"],
+                                            ["*.gmp", "*"],
+                                            false/*bMultipleSelection*/,
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.MODEL_PRESET_FILE_SUFFIX)
+               file.append(Global.MODEL_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_IN))
+            {
+               if(_model.loadModelPresetStream(f))
+               {
+                  Global.Success("Model Preset loaded from \""+file+"\"");
+               }
+               else
+               {
+                  Global.Error("Failed to load model preset from \""+file+"\"");
+               }
+
+               updateAll();
+               pageFocusDefault();
+               selectObjectRowByObject(_model);
+               f.close();
+
+               if(bRemove)
+               {
+                  // New object, edit id
+                  bRemove = false;
+                  int rowIdx = tm_objects.getRowIdxByGObject(_model);
+                  tm_objects.editColumn(0, rowIdx);
+               }
+
+            }
+         }
+      }
+      if(bRemove)
+      {
+         handleObjectRemove();
+         tv_objects.moveCursorToRow(oldRowIdx);
+         tv_objects.centerRow();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRenderpassPresetSave(GRenderPass _renderpass) {
+      if(_renderpass instanceof GRenderPass)
+      {
+         String file <= TKUI_SaveFileDialog(current_project.getRenderpassPresetDirectory(),
+                                            null,
+                                            "Save Renderpass Preset",
+                                            ["Renderpass Preset Files (*.grp)"],
+                                            ["*.grp"],
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.RENDERPASS_PRESET_FILE_SUFFIX)
+               file.append(Global.RENDERPASS_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_OUT))
+            {
+               _renderpass.saveRenderpassPresetStream(f);
+
+               f.close();
+
+               Global.Success("Renderpass Preset saved to \""+file+"\"");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRenderpassPresetLoad(GRenderPass _renderpass) {
+      local boolean bRemove;
+      int oldRowIdx = tm_objects.getCursorIndex();
+      if(null == _renderpass)
+      {
+         _renderpass <= handleObjectAdd2(GRenderPass, false/*bEditId*/);
+         bRemove = (null != _renderpass);
+      }
+
+      if(_renderpass instanceof GRenderPass)
+      {
+         String file <= TKUI_OpenFileDialog(current_project.getRenderpassPresetDirectory(),
+                                            null,
+                                            "Load Renderpass Preset",
+                                            ["Renderpass Preset Files (*.grp)", "All Files"],
+                                            ["*.grp", "*"],
+                                            false/*bMultipleSelection*/,
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.RENDERPASS_PRESET_FILE_SUFFIX)
+               file.append(Global.RENDERPASS_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_IN))
+            {
+               if(_renderpass.loadRenderpassPresetStream(f))
+               {
+                  Global.Success("Renderpass Preset loaded from \""+file+"\"");
+               }
+               else
+               {
+                  Global.Error("Failed to load Renderpass preset from \""+file+"\"");
+               }
+
+               updateAll();
+               pageFocusDefault();
+               selectObjectRowByObject(_renderpass);
+               f.close();
+
+               if(bRemove)
+               {
+                  // New object, edit id
+                  bRemove = false;
+                  int rowIdx = tm_objects.getRowIdxByGObject(_renderpass);
+                  tm_objects.editColumn(0, rowIdx);
+               }
+            }
+         }
+      }
+      if(bRemove)
+      {
+         handleObjectRemove();
+         tv_objects.moveCursorToRow(oldRowIdx);
+         tv_objects.centerRow();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleScenePresetSave(GScene _scene) {
+      if(_scene instanceof GScene)
+      {
+         String file <= TKUI_SaveFileDialog(current_project.getScenePresetDirectory(),
+                                            null,
+                                            "Save Scene Preset",
+                                            ["Scene Preset Files (*.gsp)"],
+                                            ["*.gsp"],
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.SCENE_PRESET_FILE_SUFFIX)
+               file.append(Global.SCENE_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_OUT))
+            {
+               _scene.saveScenePresetStream(f);
+
+               f.close();
+
+               Global.Success("Scene Preset saved to \""+file+"\"");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleScenePresetLoad(GScene _scene) {
+      local boolean bRemove;
+      int oldRowIdx = tm_objects.getCursorIndex();
+      if(null == _scene)
+      {
+         _scene <= handleObjectAdd2(GScene, false/*bEditId*/);
+         bRemove = (null != _scene);
+      }
+
+      if(_scene instanceof GScene)
+      {
+         String file <= TKUI_OpenFileDialog(current_project.getScenePresetDirectory(),
+                                            null,
+                                            "Load Scene Preset",
+                                            ["Scene Preset Files (*.gsp)", "All Files"],
+                                            ["*.gsp", "*"],
+                                            false/*bMultipleSelection*/,
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.SCENE_PRESET_FILE_SUFFIX)
+               file.append(Global.SCENE_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_IN))
+            {
+               if(_scene.loadScenePresetStream(f))
+               {
+                  Global.Success("Scene Preset loaded from \""+file+"\"");
+               }
+               else
+               {
+                  Global.Error("Failed to load Scene preset from \""+file+"\"");
+               }
+
+               updateAll();
+               pageFocusDefault();
+               selectObjectRowByObject(_scene);
+               f.close();
+
+               if(bRemove)
+               {
+                  // New object, edit id
+                  bRemove = false;
+                  int rowIdx = tm_objects.getRowIdxByGObject(_scene);
+                  tm_objects.editColumn(0, rowIdx);
+               }
+            }
+         }
+      }
+      if(bRemove)
+      {
+         handleObjectRemove();
+         tv_objects.moveCursorToRow(oldRowIdx);
+         tv_objects.centerRow();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTexturePresetSave(GTexture _tex) {
+      if(_tex instanceof GTexture)
+      {
+         String file <= TKUI_SaveFileDialog(current_project.getTexturePresetDirectory(),
+                                            null,
+                                            "Save Texture Preset",
+                                            ["Texture Preset Files (*.gtp)"],
+                                            ["*.gtp"],
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.TEXTURE_PRESET_FILE_SUFFIX)
+               file.append(Global.TEXTURE_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_OUT))
+            {
+               _tex.saveTexturePresetStream(f);
+
+               f.close();
+
+               Global.Success("Texture Preset saved to \""+file+"\"");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTexturePresetLoad(GTexture _tex) {
+      local boolean bRemove;
+      int oldRowIdx = tm_objects.getCursorIndex();
+      if(null == _tex)
+      {
+         _tex <= handleObjectAdd2(GTexture, false/*bEditId*/);
+         bRemove = (null != _tex);
+      }
+
+      if(_tex instanceof GTexture)
+      {
+         String file <= TKUI_OpenFileDialog(current_project.getTexturePresetDirectory(),
+                                            null,
+                                            "Load Texture Preset",
+                                            ["Texture Preset Files (*.gtp)", "All Files"],
+                                            ["*.gtp", "*"],
+                                            false/*bMultipleSelection*/,
+                                            false/*bDirectoriesOnly*/
+                                            );
+         // trace "xxx selected file="+#(file);
+         if(null != file)
+         {
+            if!(file >= Global.TEXTURE_PRESET_FILE_SUFFIX)
+               file.append(Global.TEXTURE_PRESET_FILE_SUFFIX);
+
+            local File f;
+            if(f.openLocal(file, IOS_IN))
+            {
+               if(_tex.loadTexturePresetStream(f))
+               {
+                  Global.Success("Texture Preset loaded from \""+file+"\"");
+               }
+               else
+               {
+                  Global.Error("Failed to load texture preset from \""+file+"\"");
+               }
+
+               updateAll();
+               pageFocusDefault();
+               selectObjectRowByObject(_tex);
+               f.close();
+
+               if(bRemove)
+               {
+                  // New object, edit id
+                  bRemove = false;
+                  int rowIdx = tm_objects.getRowIdxByGObject(_tex);
+                  tm_objects.editColumn(0, rowIdx);
+               }
+            }
+         }
+      }
+      if(bRemove)
+      {
+         handleObjectRemove();
+         tv_objects.moveCursorToRow(oldRowIdx);
+         tv_objects.centerRow();
+      }
+   }
+
+   // <ui_show.png>
+   protected method showObjectsMenu() {
+
+      ObjectsTMEntry en <= getSelectedObjectEntry();
+      if(null != en)
+      {
+         GNamespace objRoot <= getSelectedNamespace();
+         boolean bAddOrRemove = en.canCreateOrRemoveObjects();
+
+         pm_objects <= PopupMenu.New(this);
+         pm_objects.b_ext_focus_hack = true;
+
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_objects;
+
+         String sIcon_add    <= UI.PreferMonoIcons() ? "adds_mono"    : "adds";
+         String sIcon_remove <= UI.PreferMonoIcons() ? "removes_mono" : "trashcan_sm";
+
+         GObject *obj <= getSelectedObject();
+
+         Global.Debug("showObjectsMenu: obj="+#(obj));
+
+         boolean bRoot = @(obj) == @(objRoot);
+
+         if(null != obj)
+         {
+            pmb <= pm.addDefaultButton("Show editor..",
+                                       "objects_defaultaction"
+                                       );
+            pmb.setActive(obj.hasDefaultAction());
+            pmb.setAccelerators("v", "");
+            pm.addSeparator();
+
+            pmb <= pm.addDefaultButton("Select as link source",
+                                       "objects_select"
+                                       );
+            pmb.setActive(true);
+            pmb.setAccelerators("lctrl-c", "");
+            pm.addSeparator();
+         }
+
+         pmb <= pm.addDefaultButton("Move object(s) here",
+                                    "objects_movehere"
+                                    );
+         pmb.setActive(null != getFirstLinkSourceObject());
+         pmb.setAccelerators("lctrl-m", "");
+         pm.addSeparator();
+
+         if(obj instanceof GNamespace)
+         {
+            if(null != obj.getNamespace())
+            {
+               pmb <= pm.addDefaultButton("Select object namespace",
+                                          "objects_nsp_select"
+                                          );
+               pmb.setAccelerators("lalt-RIGHT", "");
+
+               pmb <= pm.addDefaultButton("Go to parent namespace",
+                                          "objects_nsp_parent"
+                                          );
+               pmb.setAccelerators("lalt-LEFT", "");
+            }
+         }
+
+         if(null != obj && obj.canRename())
+         {
+            pm.addSeparator();
+            pmb <= pm.addDefaultButton("Rename",
+                                       "objects_rename"
+                                       );
+            pmb.setAccelerators("F2", "RMB");
+         }
+
+         if(bAddOrRemove)
+         {
+            if(!bRoot)
+            {
+               pm.addSeparator();
+               pmb <= pm.addIconButton("Add..",
+                                       sIcon_add,
+                                       "objects_add"
+                                       );
+               pmb.setActive(true);
+               pmb.setAccelerators("lctrl-a", "");
+
+               if(null != obj)
+               {
+                  if(obj.canClone())
+                  {
+                     pmb <= pm.addIconButton("Clone",
+                                             sIcon_add,
+                                             "objects_clone"
+                                             );
+                     pmb.setActive(true);
+                     pmb.setAccelerators("lctrl-lshift-a", "");
+
+                  }
+
+                  pm.addSeparator();
+
+                  pmb <= pm.addDefaultButton("Move up",
+                                             "objects_moveup"
+                                             );
+                  pmb.setActive(null != obj);
+                  pmb.setAccelerators("lctrl-up", "");
+
+                  pmb <= pm.addDefaultButton("Move down",
+                                             "objects_movedown"
+                                             );
+                  pmb.setActive(null != obj);
+                  pmb.setAccelerators("lctrl-down", "");
+
+                  if(obj.canDelete())
+                  {
+                     pm.addSeparator();
+
+                     pmb <= pm.addIconButton("Remove",
+                                             sIcon_remove,
+                                             "objects_remove"
+                                             );
+                     pmb.setActive(null != obj);
+                     pmb.setAccelerators("DELETE", "");
+                  }
+               }
+            }
+
+            if(obj instanceof GModel)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Load Preset Model..",
+                                          "objects_model_preset_load"
+                                          );
+               pmb <= pm.addDefaultButton("Save Preset Model..",
+                                          "objects_model_preset_save"
+                                          );
+            }
+            else if(ObjectsTM.TYPE_MODELS == en.type)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Create From Preset Model..",
+                                          "objects_model_preset_load"
+                                          );
+            }
+            else if(obj instanceof GRenderPass)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Load Preset Renderpass..",
+                                          "objects_renderpass_preset_load"
+                                          );
+               pmb <= pm.addDefaultButton("Save Preset Renderpass..",
+                                          "objects_renderpass_preset_save"
+                                          );
+            }
+            else if(ObjectsTM.TYPE_RENDERPASSES == en.type)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Create From Preset Renderpass..",
+                                          "objects_renderpass_preset_load"
+                                          );
+            }
+            else if(obj instanceof GScene)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Load Preset Scene..",
+                                          "objects_scene_preset_load"
+                                          );
+               pmb <= pm.addDefaultButton("Save Preset Scene..",
+                                          "objects_scene_preset_save"
+                                          );
+            }
+            else if(obj instanceof GTexture)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Load Preset Texture..",
+                                          "objects_texture_preset_load"
+                                          );
+               pmb <= pm.addDefaultButton("Save Preset Texture..",
+                                          "objects_texture_preset_save"
+                                          );
+            }
+            else if(ObjectsTM.TYPE_SCENES == en.type)
+            {
+               pm.addSeparator();
+               pmb <= pm.addDefaultButton("Create From Preset Scene..",
+                                          "objects_scene_preset_load"
+                                          );
+            }
+
+            pm.addSeparator();
+         } // if bAddOrRemove
+
+         pmb <= pm.addDefaultButton("Find",
+                                    "objects_find"
+                                    );
+         pmb.setAccelerators("lctrl-f", "");
+         pmb.setActive(null != obj);
+
+         if(en.canCopyPath())
+         {
+            pmb <= pm.addDefaultButton("Copy path",
+                                       "objects_copypath"
+                                       );
+            pmb.setToolTipCaption("Copy namespace or object path to clipboard");
+            pmb.setAccelerators("lctrl-l", "");
+         }
+
+
+         pm.resizeToMinimum();
+         pm.showAtXY(tv_objects.contextmenu_suggested_abs_x,
+                     tv_objects.contextmenu_suggested_abs_y
+                     );
+
+         Global.Print("Show Objects context menu.");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showInputsMenu() {
+
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         pm_inputs <= PopupMenu.New(this);
+         pm_inputs.b_ext_focus_hack = true;
+
+         PopupMenuButton *pmb;
+
+         PopupMenu pm <= pm_inputs;
+
+         String sIcon_add    <= UI.PreferMonoIcons() ? "adds_mono"    : "adds";
+         String sIcon_remove <= UI.PreferMonoIcons() ? "removes_mono" : "trashcan_sm";
+
+         GConnection conn <= getSelectedInputConnection();  // GInput only
+         GObject inputConnObj <= getSelectedInputObject();
+
+         if(null != inputConnObj)
+         {
+            pmb <= pm.addDefaultButton("Show editor..",
+                                       "inputs_defaultaction"
+                                       );
+            pmb.setActive(inputConnObj.hasDefaultAction());
+            pmb.setAccelerators("v", "");
+            pm.addSeparator();
+
+            pmb <= pm.addDefaultButton("Select as link source",
+                                       "inputs_select"
+                                       );
+            pmb.setActive(true);
+            pmb.setAccelerators("lctrl-c", "");
+            pm.addSeparator();
+         }
+
+         pmb <= pm.addDefaultButton("Connect link source"+Utils.GetPluralString(link_source_outputs.numElements),
+                                    "inputs_connect"
+                                    );
+         pmb.setActive(!link_source_outputs.isEmpty());
+         pmb.setAccelerators("lctrl-v", "");
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Move <anon> object here",
+                                    "inputs_movehere"
+                                    );
+         pmb.setActive(null != anon_link_source_connection);
+         pmb.setAccelerators("lctrl-m", "");
+
+         pmb <= pm.addDefaultButton("Move <anon> to parent namespace",
+                                    "inputs_move_anon"
+                                    );
+         pmb.setActive(null != conn && conn.object.isAnon());
+
+         pm.addSeparator();
+
+         pmb <= pm.addIconButton("Add..",
+                                 sIcon_add,
+                                 "inputs_add"
+                                 );
+         pmb.setActive(true);
+         pmb.setAccelerators("lctrl-a", "");
+
+         if(null != inputConnObj)
+         {
+            // trace "xxx contextmenu: inputConnObj="+#(inputConnObj)+" inputConnObj.canClone()="+inputConnObj.canClone();
+            if(inputConnObj.canClone())
+            {
+               pmb <= pm.addIconButton("Clone",
+                                       sIcon_add,
+                                       "inputs_clone"
+                                       );
+               // // pmb.setActive(inputConnObj.isAnon());
+               pmb.setActive(inputConnObj.canCloneToAnon());  // [07Feb2025] experimental (true)
+               pmb.setAccelerators("lctrl-lshift-a", "");
+            }
+
+            pm.addSeparator();
+
+            pmb <= pm.addDefaultButton("Move up",
+                                       "inputs_moveup"
+                                       );
+            pmb.setActive(null != inputConnObj);
+            pmb.setAccelerators("lctrl-up", "");
+
+            pmb <= pm.addDefaultButton("Move down",
+                                       "inputs_movedown"
+                                       );
+            pmb.setActive(null != inputConnObj);
+            pmb.setAccelerators("lctrl-down", "");
+
+            pm.addSeparator();
+
+            pmb <= pm.addIconButton("Remove",
+                                    sIcon_remove,
+                                    "inputs_remove"
+                                    );
+            pmb.setActive(null != inputConnObj);
+            pmb.setAccelerators("DELETE", "");
+
+         }
+
+         if((InputsTMDefs.TYPE_INPUT == en.type) && (current_input_object instanceof GUniform))
+         {
+            pm.addSeparator();
+            pmb <= pm.addDefaultButton("Move connections to selected/marked Model Uniform",
+                                       "inputs_move_model"
+                                       );
+            pmb.setToolTipCaption("Move connections to selected/marked Model Uniform\n\n (note) select target model with lctrl-c");
+         }
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Insert connection (script / source)",
+                                    "inputs_insert_connection"
+                                    );
+         pmb.setActive((null != conn) && (null != getFirstLinkSourceObject()) && conn.canInsertObject(getFirstLinkSourceObject()));
+         pmb.setAccelerators("lctrl-lshift-v", "");
+
+         pmb <= pm.addDefaultButton("Remove and connect next",
+                                    "inputs_remove_and_connect_next"
+                                    );
+         pmb.setActive((null != conn) && conn.canRemoveAndConnectNext());
+         pmb.setAccelerators("lctrl-lshift-q", "");
+
+
+         if(current_input_object instanceof GConnectionContainer)
+         {
+            // trace "xxx inputConnObj="+#(inputConnObj);
+            GConnectionContainer container <= current_input_object;
+            if(container.containerCanToggleForcedConnection(conn))
+            {
+               pm.addSeparator();
+               pmb <= pm.addCheckButton("Force input connection",
+                                        container.containerIsForcedConnection(conn),
+                                        "inputs_toggle_forced_connection"
+                                        );
+               pmb.setToolTipCaption("Force input connection\n\n (note) e.g. OrbitCamView in ModSwitch or ModTween container object\n\n (note) enables cam-edit mode in preview widget when container object type is OrbitCamView\n\n (note) click Preview then use W/A/S/D/R/F to strafe, LMB-mouse drag to look, INS/DEL to clone/delete camera keyframe");
+               pmb.setAccelerators("s", "");
+            }
+         }
+
+         // pm.addSeparator();
+
+         pm.resizeToMinimum();
+         pm.showAtXY(tv_inputs.contextmenu_suggested_abs_x,
+                     tv_inputs.contextmenu_suggested_abs_y
+                     );
+
+         Global.Print("Show Inputs context menu.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputMoveAnon() {
+      GConnection conn <= getSelectedInputConnection();
+      if(null != conn && conn.object.isAnon() && (conn.object instanceof GConstant))
+      {
+         local GConstant obj <= conn.unlinkObject();
+
+         GNamespace *nsp;
+
+         if(current_input_object instanceof GNamespace)
+         {
+            nsp <= current_input_object;
+         }
+         else
+         {
+            nsp <= current_input_object.getNamespace();
+         }
+
+         trace "[dbg] handleInputMoveAnon: current_input_object="+#(current_input_object)+" nsp="+#(nsp);
+
+         obj.setId(Utils.CreateAutoId(conn.port_id_rev, nsp.constants));
+         nsp.addConstant(deref obj);
+
+         // Select added object
+         handleObjectsChanged();
+
+         selectObjectRowByObject(obj);
+         // // int rowIdx = tm_objects.getRowIdxByGObject(obj);
+         // // tv_objects.moveCursorToRowNoAction(rowIdx);
+         // // tv_objects.centerRow();
+
+         showParams(obj);
+
+         Global.Print("Move <anon> connection object to parent namespace");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputMoveModel() {
+      InputsTMEntry en <= getSelectedInputEntry();
+      if(null != en)
+      {
+         if((InputsTMDefs.TYPE_INPUT == en.type) && (current_input_object instanceof GUniform))
+         {
+            GInput   inputSrc <= en.object;
+            GUniform uni      <= current_input_object;
+            GModel   model    <= getFirstLinkSourceObject();
+            if(!(model instanceof GModel))
+               model <= current_input_object.getNamespace();  // try parent model
+            if(model instanceof GModel)
+            {
+               GModelUniform mu <= model.findModelUniformById(uni.getId());
+               if(null == mu)
+                  mu <= model.addModelUniform(uni.createModelUniform());
+
+               GInput inputDst <= mu.getInputByIndex(0);
+               int numMoved = current_input_object.moveConnectionsTo(0/*inputIdx*/, mu, inputDst);
+
+               // GConnection *connOld;
+               // foreach connOld in inputSrc.connections
+               // {
+               //    current_input_object.moveConnectionsTo(0/*inputIdx*/, mu, inputDst);
+               // }
+
+               // Select added object
+               handleObjectsChanged();
+               selectObjectRowByObject(mu);
+               showParams(mu);
+
+               Global.Print("Move "+numMoved+" connection"+Utils.GetPluralString(numMoved)+" to model "+model.getObjectPath());
+            }
+            else
+            {
+               Global.Warning("Move connections: no target model selected (lctrl-c)");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleInputInsertConnection() {
+      GConnection conn <= getSelectedInputConnection();  // GInput only
+      if(null != conn)
+      {
+         GObject linkSourceObject <= getFirstLinkSourceObject();
+         if(null != linkSourceObject)
+         {
+            if(conn.canInsertObject(linkSourceObject))
+            {
+               GInput  input      <= linkSourceObject.getInputByIndex(0);
+               GOutput output     <= linkSourceObject.getOutputByIndex(0);
+               GObject objectOrig <= conn.unlinkObject();
+
+               linkSourceObject.connect(input.id,
+                                        deref objectOrig,
+                                        conn.port_id,
+                                        GDefs.OP_AUTO
+                                        );
+               conn.setObject(linkSourceObject);
+               conn.port_id = output.id;
+
+               handleInputsChanged();
+               int rowIdx = tm_inputs.getRowIdxByGConnection(conn);
+               tv_inputs.moveCursorToRowNoAction(rowIdx);
+               tv_inputs.centerRow();
+
+               if(!bt_inputs_conn.getToggleState())
+                  showParams(linkSourceObject);
+               else
+                  showParams(conn);
+
+               Global.Print("Insert connection "+linkSourceObject.getObjectPath()+" <- "+objectOrig.getObjectPath());
+               return;
+            }
+            else
+            {
+               Global.Error("Failed to insert connection to "+linkSourceObject.getObjectPath()+" (infinite recursion)");
+            }
+         }
+         else
+         {
+            Global.Warning("Failed to insert connection: no link source object");
+         }
+      }
+      else
+      {
+         Global.Warning("Failed to insert connection: no connection");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleInputRemoveAndConnectNext() {
+      GConnection conn <= getSelectedInputConnection();  // GInput only
+      if(null != conn)
+      {
+         if(conn.canRemoveAndConnectNext())
+         {
+            conn.removeAndConnectNext();
+
+            handleInputsChanged();
+            int rowIdx = tm_inputs.getRowIdxByGConnection(conn);
+            tv_inputs.moveCursorToRowNoAction(rowIdx);
+            tv_inputs.centerRow();
+
+            if(!bt_inputs_conn.getToggleState())
+               showParams(conn.object);
+            else
+               showParams(conn);
+
+            Global.Print("Remove and connect next object="+(conn.object.getObjectPath()));
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleBookmark(int _idx, boolean _bSet) {
+      // (note) something about this method confuses the emacs highlighter
+      tv_objects.deselectMultiple();
+      if(_bSet)
+      {
+         GObject selObj <= getSelectedObject();
+         if(null != selObj)
+         {
+            local String *objPath;
+            objPath <= selObj.getObjectPath();
+            current_project.setBookmark(_idx, deref objPath);
+            Global.SuccessShort("Set bookmark["+(_idx+1)+"] to \""+objPath);
+         }
+         else
+         {
+            Global.Warning("Failed to set bookmark["+(_idx+1)+"]: no object selected");
+         }
+      }
+      else
+      {
+         objPath <= current_project.getBookmark(_idx);
+         if(null != objPath)
+         {
+            selectObjectRowByPath(objPath);
+            Global.Print("Go to bookmarked object path \""+objPath+"\"");
+         }
+         else
+         {
+            Global.Warning("Bookmark object path \""+objPath+"\" not found");
+         }
+      }
+   }
+
+   // <ui_toggle.png>
+   public method toggleRadarDialog(boolean _bForce) {
+      boolean bVis = dlg_radar.isFloatingLayerVisible();
+      trace "[dbg] PageStart::toggleRadarDialog: bVis="+bVis+" bForce="+_bForce;
+      if(maybe == _bForce)
+      {
+         if(bVis)
+         {
+            dlg_radar.hide();
+         }
+         else
+         {
+            showRadarDialog();
+         }
+      }
+      else if(true == _bForce)
+      {
+         if(!bVis)
+            showRadarDialog();
+      }
+      else
+      {
+         if(bVis)
+            dlg_radar.hide();
+      }
+
+      bVis = dlg_radar.isFloatingLayerVisible();
+      bt_radar.setToggleState(bVis);
+   }
+
+   // <ui_show.png>
+   protected method showRadarDialog() {
+      dlg_radar.showRadarDialog(getSelectedObject());
+   }
+
+   // <ui_show.png>
+   protected method showObjectListWindow(GObject _fltTypeOrNull) {
+      if(null == win_object_list)
+      {
+         win_object_list <= new ObjectListWindow();
+         win_object_list.initObjectListWindow();
+      }
+      GObject *obj;
+      if(null != _fltTypeOrNull)
+      {
+         obj <= _fltTypeOrNull;
+      }
+      else
+      {
+         obj <= getSelectedObject();
+         if(null == obj)
+         {
+            ObjectsTMEntry en <= getSelectedObjectEntry();
+            if(null != en)
+            {
+               obj <= en.getObjectClass();
+            }
+         }
+      }
+      if(null != obj)
+      {
+         win_object_list.showObjectListWindow(this, obj);
+      }
+   }
+
+   // <ui_show.png>
+   protected method toggleObjectListWindow(GObject _fltTypeOrNull) {
+      if((null != win_object_list) && (win_object_list.isFloatingLayerVisible()))
+      {
+         win_object_list.hide();
+      }
+      else
+      {
+         showObjectListWindow(_fltTypeOrNull);
+      }
+   }
+
+   // <method.png>
+   public method foldAllVisible() {
+      GObject selObj <= getSelectedObject();
+      tm_objects.foldAllVisible();
+
+      GNamespace objRoot <= getSelectedNamespace();
+      objRoot.setFoldStatus(true/*bFolded*/);
+      objRoot.setAllVirtFolderFoldStatus(true/*bFolded*/);
+
+      rebuildObjects(true/*bShowParams*/);
+      tv_objects.moveCursorToFirstRowNoAction();
+      if(null != selObj)
+      {
+         local String selObjPath <= selObj.getObjectPath();
+         // // int rowIdx = selectObjectRowByObject(selObj);
+         int rowIdx = selectObjectRowByPath(selObjPath);
+         if(-1 != rowIdx)
+            tv_objects.moveCursorToRow(rowIdx);
+         // trace "xxx foldAllVisible: rowIdx="+rowIdx+" selObj="+#(selObj)+" path="+selObjPath;
+         Global.Print("Fold all visible except for "+selObjPath);
+      }
+      else
+      {
+         Global.Print("Fold all visible");
+      }
+   }
+
+   // <ui_handle.png>
+   public method toggleShowTriCount() {
+      GConfig.b_debug_tri_count = !GConfig.b_debug_tri_count;
+      Global.Print("b_debug_tri_count is "+Utils.GetEnableString(GConfig.b_debug_tri_count));
+   }
+
+   // <ui_handle.png>
+   public method toggleShowUnconnected() {
+      GConfig.b_show_unconnected = !GConfig.b_show_unconnected;
+      Global.Print("show-unconnected is "+Utils.GetEnableString(GConfig.b_show_unconnected));
+      handleObjectsChanged();
+   }
+
+   // <method_set.png>
+   public method setLastFocusedTableToObjects() {
+      last_focused_io_table_view <= tv_objects;
+   }
+
+   // <method_set.png>
+   public method setLastFocusedTableToInputs() {
+      last_focused_io_table_view <= tv_inputs;
+   }
+
+   // <ui_handle.png>
+   public method handleCopy() {
+      // lctrl-c
+      handleObjectCopyPath();  // copy first selected object or namespace path to clipboard
+      setLinkSourcesToFocusedObjects(true/*bUseLastFocusedTable*/);
+   }
+
+   // <ui_handle.png>
+   public method handlePaste() {
+      // (note) called from RadarDialog
+      // (note) lctrl-v
+      connectLinkSourcesToFocusedObject(false/*bOnlyWhenInputsTableHasFocus*/);
+   }
+
+   // <ui_handle.png>
+   public method canHandleKeyV() : boolean {
+      // // trace "xxx last_focused_io_table_view="+#(last_focused_io_table_view);
+      if(@(last_focused_io_table_view) == @(tv_inputs))
+      {
+         if(canExecInputDefaultAction())
+            return true;
+         return canExecObjectDefaultAction();
+      }
+      else
+      {
+         if(canExecObjectDefaultAction())  // tv_objects
+            return true;
+         return canExecInputDefaultAction();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleKeyV() : boolean {
+      // // trace "xxx last_focused_io_table_view="+#(last_focused_io_table_view);
+      if(@(last_focused_io_table_view) == @(tv_inputs))
+      {
+         if(execInputDefaultAction())
+            return true;
+         return execObjectDefaultAction();
+      }
+      else
+      {
+         if(execObjectDefaultAction())  // tv_objects
+            return true;
+         return execInputDefaultAction();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleCtrlA(boolean _bShift, boolean _bForceInputs) {
+      // (note) also called from RadarDialog (with bForceInputs=true)
+      if(_bForceInputs || tv_inputs.hasKeyboardFocus())
+      {
+         if(_bShift)
+            handleInputCloneAnon();
+         else
+            handleInputAdd();
+      }
+      else if(tv_objects.hasKeyboardFocus())
+      {
+         tv_objects.deselectMultiple();
+         if(_bShift)
+            handleObjectClone();
+         else
+            handleObjectAdd();
+      }
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return ["hello\t<to>",
+              "add\t<arg1> <arg2>",
+              "name\t<name>"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      local StringArray r;
+      switch(_cmd)
+      {
+         case "hello":
+            break;
+
+         case "add":
+            break;
+
+         case "name":
+            boolean bBlank = _prefix.isBlank();
+            if bBlank || (current_project.project_name <= _prefix)
+               r.add(current_project.project_name);
+            if bBlank || (current_project.author_name <= _prefix)
+               r.add(current_project.author_name);
+            return deref r;
+      }
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      switch(_cmd)
+      {
+         case "hello":
+            switch(_argIdx)
+            {
+               case 0:
+                  return ["world", "there"];
+            }
+            break;
+
+         case "add":
+         case "name":
+            break;
+      }
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      switch(_argv.get(0))
+      {
+         case "hello":
+            if(2 == _argv.numElements)
+            {
+               trace "xxx PageStart::pageCmdExec: \"hello, "+_argv.get(1)+"!\"";
+               return true;
+            }
+            break;
+
+         case "add":
+            if(3 == _argv.numElements)
+            {
+               trace "xxx cmd add: \""+_argv.get(1)+"\" + \""+_argv.get(2)+"\" = "+(float(_argv.get(1)) + float(_argv.get(2)));
+               return true;
+            }
+            break;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual handleKeyboardFocusChanged(Layer _newKeyboardLayer) {
+      // KeyboardFocusListener
+      // trace "xxx PageStart: new KeybardFocus="+#(_newKeyboardLayer);
+      if(_newKeyboardLayer instanceof TableViewData)
+      {
+         TableViewData tvData <= _newKeyboardLayer;
+         TableView tv <= tvData.getTableView();
+         if(@(tv) == @(tv_objects) || @(tv) == @(tv_inputs))
+            last_focused_io_table_view <= tv;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[>>>] PageStart: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod+" unicode="+_k.unicode;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(current_project.isEditCamActive())
+               root_form.pg_start.toggleForcedConnection();
+            else if( (null != current_input_object) && (current_input_object.isAnon()) )
+            {
+               // Select <anon> parent
+               rebuildInputs(current_input_object.anon_parent,
+                             maybe/*bReselectParams*/,
+                             true/*bPreselectLastInputConn*/
+                             );
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               handleCopy();
+               return true;
+            }
+            else
+            {
+               bt_inputs_conn.toggleStateAction();
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  handleInputInsertConnection();
+               else
+                  connectLinkSourcesToFocusedObject(true/*bOnlyWhenInputsTableHasFocus*/);
+            }
+            else
+            {
+               handleKeyV();
+            }
+            return true;
+
+         case 'l':
+            if(_k.modCtrl())
+            {
+               handleObjectCopyPath();
+               return true;
+            }
+            break;
+
+         case 'm':
+            if(_k.modCtrl())
+            {
+               handleObjectsMove();
+               return true;
+            }
+            break;
+
+         case '1':
+         case '2':
+         case '3':
+         case '4':
+         case '5':
+         case '6':
+         case '7':
+         case '8':
+         case '9':
+            handleBookmark(_k.pressed - '1', _k.modCtrl()/*bSet*/);
+            return true;
+
+         case 'e':
+            if(_k.modNone())
+            {
+               toggleLastUsedEditCam();
+               return true;
+            }
+            break;
+
+         case 'd':
+            handleBookmark(9, _k.modCtrl()/*bSet*/);
+            return true;
+
+         case 'g':
+            if(_k.modNone())
+            {
+               tv_objects.deselectMultiple();
+               toggleGlobalNamespace();
+               return true;
+            }
+            break;
+
+         case 's':
+            if(tv_inputs.hasKeyboardFocus())
+            {
+               toggleForcedConnection();
+               return true;
+            }
+            // else run into case 'h'
+         case 'h':
+            if(_k.modCtrl())
+            {
+               foldAllVisible();
+            }
+            else
+            {
+               bt_objects_hide.toggleStateAction();
+            }
+            return true;
+
+         case VKEY_F2:
+            tv_objects.deselectMultiple();
+            pageFocusDefault();
+            tm_objects.editColumn(0, tm_objects.getCursorIndex());
+            return true;
+
+         case VKEY_DELETE:
+            if(tv_objects.hasKeyboardFocus())
+            {
+               tv_objects.deselectMultiple();
+               handleObjectRemove();
+            }
+            else if(tv_inputs.hasKeyboardFocus())
+            {
+               handleInputRemove(false/*bConnectionOnly*/);
+            }
+            return true;
+
+         case VKEY_RIGHT:
+            if(_k.modAlt())
+            {
+               selectObjectNamespace();
+               return true;
+            }
+            return false;
+
+         case VKEY_LEFT:
+            if(_k.modAlt())
+            {
+               selectParentNamespace();
+               return true;
+            }
+            return false;
+
+         case 'q':
+            if(_k.modCtrl())
+            {
+               if(tv_inputs.hasKeyboardFocus())
+               {
+                  if(_k.modShift())
+                     handleInputRemoveAndConnectNext();
+                  else
+                     handleInputRemove(true/*bConnectionOnly*/);
+               }
+               return true;
+            }
+            break;
+
+         case 'n':
+         case 'a':
+            if(_k.modCtrl())
+            {
+               handleCtrlA(_k.modShift(), false/*bForceInputs*/);
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               toggleObjectListWindow(null/*fltTypeOrNull*/);
+            }
+            else if(tv_objects.hasKeyboardFocus())
+            {
+               tv_objects.deselectMultiple();
+               showObjectFindDialog();
+            }
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               if(tv_objects.hasKeyboardFocus())
+               {
+                  handleObjectMoveUp();
+                  return true;
+               }
+               else if(tv_inputs.hasKeyboardFocus())
+               {
+                  handleInputMoveUp();
+                  return true;
+               }
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               if(tv_objects.hasKeyboardFocus())
+               {
+                  handleObjectMoveDown();
+                  return true;
+               }
+               else if(tv_inputs.hasKeyboardFocus())
+               {
+                  handleInputMoveDown();
+                  return true;
+               }
+            }
+            break;
+
+         case 'o':
+            if(_k.modCtrl())
+            {
+               toggleObjectListWindow(GModel);
+               return true;
+            }
+            break;
+
+         case 'p':
+            if(_k.modCtrl())
+            {
+               toggleObjectListWindow(GProgram);
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               toggleObjectListWindow(GRenderPass);
+            }
+            else
+            {
+               tv_objects.deselectMultiple();
+               if(tv_inputs.hasKeyboardFocus())
+               {
+                  dlg_radar.setInputFilter(getSelectedInput());
+               }
+               else
+               {
+                  dlg_radar.setInputFilter(null);
+               }
+               dlg_radar.setOutputFilter(null); // (todo)
+               toggleRadarDialog(maybe);
+            }
+            return true;
+
+         case 't':
+            if(_k.modNone())
+            {
+               toggleShowTriCount();
+               return true;
+            }
+            break;
+         //    handleObjectEditTexture();
+         //    return true;
+
+         case 'u':
+            if(_k.modNone())
+            {
+               toggleShowUnconnected();
+               return true;
+            }
+            break;
+
+      }
+
+      if(root_form.tryHandleTransportKey(_k))
+         return true;
+
+      return false;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      if(b_first_frame)
+      {
+         b_first_frame = false;
+         relayout(); // workaround for SplitPane pixel issue
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleParamEdited(local String _paramId, boolean _bReshowParams) {
+      if(current_param_object instanceof GParamProvider) // should always be true
+      {
+         local GParamProvider *paramObject;
+         paramObject <= current_param_object;
+         paramObject.handleParamChanged(_paramId);
+         updateObjectRow(current_input_object);
+         // trace "xxx PARAM_EDITED: current_input_object="+#(current_input_object);
+         // // if!(root_form.pg_start.current_param_object.isAnon())
+
+         // (note) must not rebuild input widgets while input param widget is still being edited
+         // (todo) why rebuild in the first place ? just update the matching table rows
+         boolean bAllowRebuildInputs = true;
+         if(current_param_object instanceof GObject)
+         {
+            GObject paramObjectBase <= current_param_object;
+            updateInputConnectionObjectRow(paramObjectBase);
+            // trace "xxx paramObjectBase="+#(paramObjectBase)+" isAnon="+paramObjectBase.isAnon();
+            bAllowRebuildInputs = !paramObjectBase.isAnon();
+         }
+         if(bAllowRebuildInputs)
+         {
+            if(null != current_input_object)
+            {
+               bAllowRebuildInputs = !current_input_object.isAnon();
+               // trace "xxx handleParamEdited: current_input_object.isAnon()="+!bAllowRebuildInputs;
+            }
+            if(0 && bAllowRebuildInputs)
+               rebuildInputs(current_input_object, false/*bReselectParams*/, false/*bPreselectLastInputConn*/);  // update info string
+         }
+
+         if(_bReshowParams)
+            reshowParamsFor(paramObject);  // when called from ColorPicker
+
+         current_project.queueUpdate();
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      local String acName <= _ac.getActionName();
+      local ActionProvider ap <= _ac.getActionProvider();
+      StringAction *sac;
+
+      if(TA_WATCHFILE == acName)
+      {
+         current_project.checkWatchFileLists();
+         ta_watchfile.reschedule();
+         return true;
+      }
+
+      if(TA_RESHOW_PARAMS == acName)
+      {
+         UI.SetEnableLockKeyboardFocus(true);
+         showParams(current_param_object);
+         UI.SetEnableLockKeyboardFocus(false);
+         return true;
+      }
+
+      // trace "[trc] PageStart::consumeAction: acName=\""+acName+"\" ap="+#(ap);
+
+      if(ParamsForm.ACTION_PARAM_EDITED == acName)
+      {
+         sac <= _ac;
+         handleParamEdited(sac.getStringValue()/*paramId*/, false/*bReshowParams*/);
+         return true;
+      }
+
+      if(ConnectionForm.ACTION_CONNECTION_EDITED == acName)
+      {
+         if(current_input_object.isAnon())
+         {
+            UI.SetKeyboardFocus(root_form.pg_start.tv_inputs);
+         }
+         else
+         {
+            trace "xxx ACTION_CONNECTION_EDITED rebuildInputs";
+            rebuildInputs(current_input_object, false/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+         }
+         current_project.queueUpdate();
+         return true;
+      }
+
+      if(TextureForm.ACTION_TEXTURE_PATH_CHANGED == acName)
+      {
+         GTexture tex <= current_param_object;
+         tex.reloadTexture();
+         current_project.queueUpdate();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         // case @(bt_pipemap):
+         //    root_form.showPage(RootForm.PAGE_PIPEMAP, true);
+         //    return true;
+
+         case @(dlg_object_type):
+            if(ObjectTypeDialog.ACTION_OBJECT_TYPE_SELECT == acName)
+            {
+               if(@(tv_objects) == @(object_add_dest))
+               {
+                  handleObjectAdd2(dlg_object_type.getSelectedObjectType(), true/*bEditId*/);
+               }
+               else if(@(tv_inputs) == @(object_add_dest))
+               {
+                  handleInputAdd2(dlg_object_type.getSelectedObjectType());
+               }
+            }
+            return true;
+
+         case @(dlg_uniform_select):
+            if(UniformSelectDialog.ACTION_SELECT == acName)
+            {
+               handleModelUniformAdd2(dlg_uniform_select.getModel(),
+                                      dlg_uniform_select.getSelectedUniform()
+                                      );
+            }
+            return true;
+
+         case @(cf_nsp_proj):
+            if(ComboField.ACTION_OPTIONRENAMED == acName)
+            {
+               handleNSPProjRename();
+               pageFocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleNSPProjChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)  // return w/o changing option name
+            {
+               pageFocusDefault();
+            }
+            return true;
+
+         case @(bt_nsp_add):
+            handleNSPAdd();
+            return true;
+
+         case @(bt_nsp_remove):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleNSPRemove();
+            }
+            else
+            {
+               Global.Warning("Hold-click to remove namespace");
+            }
+            return true;
+
+         case @(cm_nsp_scene):
+            handleNSPSceneChanged();
+            return true;
+
+         case @(cm_nsp_model):
+            handleNSPModelChanged();
+            return true;
+
+         case @(tf_proj_name):
+            handleProjectNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               pageFocusDefault();
+            return true;
+
+         case @(cb_animate):
+            handleAnimateChanged();
+            return true;
+
+         case @(fp_anim_offset):
+            handleAnimOffsetChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               pageFocusDefault();
+            return true;
+
+         case @(fp_anim_speed):
+            handleAnimSpeedChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               pageFocusDefault();
+            return true;
+
+         case @(cb_slow_motion):
+            handleSlowMotionChanged();
+            return true;
+
+         case @(bt_swap):
+            handleSwapPreviewLR();
+            return true;
+
+         case @(bt_radar):
+            toggleRadarDialog(bt_radar.getToggleState());
+            return true;
+
+         case @(bt_load):
+            // // handleLoad(GConfig.autoload_filename);
+            handleLoadDialog();
+            return true;
+
+         case @(bt_save):
+            handleSave(GConfig.autoload_filename);
+            return true;
+
+         case @(bt_export):
+            handleExport();
+            return true;
+
+         case @(tv_objects):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               handleObjectSelect();
+               execObjectDefaultAction();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleObjectSelect();
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showObjectsMenu();
+            }
+            else if(TableView.ACTION_KBDFOCUS == acName)
+            {
+               showParams(getSelectedObject());
+            }
+            return true;
+
+         case @(pm_objects):
+            Global.Debug("pm_objects acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close objects context menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "objects_defaultaction":
+                  execObjectDefaultAction();
+                  return true;
+
+               case "objects_select":
+                  selectTableObjects();
+                  return true;
+
+               case "objects_movehere":
+                  handleObjectsMove();
+                  return true;
+
+               case "objects_nsp_parent":
+                  selectParentNamespace();
+                  return true;
+
+               case "objects_nsp_select":
+                  selectObjectNamespace();
+                  return true;
+
+               case "objects_rename":
+                  UI.SetKeyboardFocus(tv_objects);
+                  tm_objects.editColumn(0, tm_objects.getCursorIndex());
+                  return true;
+
+               case "objects_add":
+                  handleObjectAdd();
+                  return true;
+
+               case "objects_clone":
+                  handleObjectClone();
+                  return true;
+
+               case "objects_moveup":
+                  handleObjectMoveUp();
+                  return true;
+
+               case "objects_movedown":
+                  handleObjectMoveDown();
+                  return true;
+
+               case "objects_remove":
+                  handleObjectRemove();
+                  return true;
+
+               case "objects_find":
+                  showObjectFindDialog();
+                  return true;
+
+               case "objects_copypath":
+                  handleObjectCopyPath();
+                  return true;
+
+               case "objects_model_preset_save":
+                  handleModelPresetSave(getSelectedObject());
+                  return true;
+
+               case "objects_model_preset_load":
+                  handleModelPresetLoad(getSelectedObject());
+                  return true;
+
+               case "objects_renderpass_preset_save":
+                  handleRenderpassPresetSave(getSelectedObject());
+                  return true;
+
+               case "objects_renderpass_preset_load":
+                  handleRenderpassPresetLoad(getSelectedObject());
+                  return true;
+
+               case "objects_scene_preset_save":
+                  handleScenePresetSave(getSelectedObject());
+                  return true;
+
+               case "objects_scene_preset_load":
+                  handleScenePresetLoad(getSelectedObject());
+                  return true;
+
+               case "objects_texture_preset_save":
+                  handleTexturePresetSave(getSelectedObject());
+                  return true;
+
+               case "objects_texture_preset_load":
+                  handleTexturePresetLoad(getSelectedObject());
+                  return true;
+
+            }
+            return true;
+
+         case @(bt_objects_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleObjectClone();
+            else
+               handleObjectAdd();
+            return true;
+
+         case @(bt_objects_remove):
+            handleObjectRemove();
+            return true;
+
+         case @(bt_objects_moveup):
+            handleObjectMoveUp();
+            return true;
+
+         case @(bt_objects_movedown):
+            handleObjectMoveDown();
+            return true;
+
+         case @(bt_objects_hide):
+            handleHideEmptyChanged();
+            return true;
+
+         case @(tv_inputs):
+            GObject *connObject <= getSelectedInputObject();
+            GConnection *conn <= getSelectedInputConnection();
+
+            // trace "xxx tv_inputs: acName="+acName+" row="+tm_inputs.getCursorIndex();
+
+            boolean bToggleForced = false;
+            boolean bToggleForcedModifier = unforcePreviousConnection() || (VMOD_LCTRL == UI.GetKeyMod());
+
+            if(null != conn)
+            {
+               if(bToggleForcedModifier)
+               {
+                  bToggleForced = toggleForcedConnection();
+                  // trace "xxx bToggleForced="+bToggleForced;
+               }
+            }
+
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               current_input_object.setLastSelectedInputRowIdx(tm_inputs.getCursorIndex());
+
+               if(bToggleForced)
+                  return true;
+
+               if((null != connObject) && !connObject.isAnon())
+               {
+                  InputsTMEntry enOut <= getSelectedInputEntry();
+                  GConnection preselConn <= null;
+                  GConnection preselConnOut <= null;
+                  if((InputsTMDefs.TYPE_CONNECTION == enOut.type) && (enOut.object instanceof GOutput))
+                  {
+                     // Preselect input (clicked on output)
+                     preselConn <= connObject.findInputConnection(enOut.conn.port_id, current_input_object, enOut.conn.port_id_rev);
+                     // trace "xxx preselConn="+#(preselConn);
+                  }
+                  else if((InputsTMDefs.TYPE_CONNECTION == enOut.type) && (enOut.object instanceof GInput))
+                  {
+                     // Preselect output (clicked on input)
+                     preselConnOut <= connObject.findOutputConnection(enOut.conn.port_id, current_input_object, enOut.conn.port_id_rev);
+                     // trace "xxx preselConnOut="+#(preselConnOut);
+                  }
+
+                  // (todo) set last selected output if conn is output connection
+                  rebuildInputs(connObject, false/*bReselectParams*/, false/*bPreselectLastInputConn*/);
+                  showParams(connObject);
+
+                  // select in objects table
+                  // // int rowIdxObj = tm_objects.getRowIdxByGObject(connObject);
+                  // // if(-1 != rowIdxObj) // not <anon> ?
+                  // //    tv_objects.moveCursorToRowNoAction(rowIdxObj);
+                  /*int rowIdxObj = */selectNamespaceAndObjectRowByObject(connObject, true/*bKeepInputsAndParams*/);
+
+                  int preselConnRowIdx;
+                  if(null != preselConn)
+                  {
+                     preselConnRowIdx = tm_inputs.getRowIdxByGConnection(preselConn);
+                     // trace "xxx preselConnRowIdx="+preselConnRowIdx;
+                     tv_inputs.moveCursorToRowNoAction(preselConnRowIdx);
+                     tv_inputs.centerRow();
+
+                     if(bt_inputs_conn.getToggleState() || !canShowParams(connObject))
+                        showParams(preselConn);
+                  }
+                  else
+                  {
+                     if(null != preselConnOut)
+                     {
+                        preselConnRowIdx = tm_inputs.getRowIdxByGConnection(preselConnOut);
+                        // trace "xxx fromoutput: preselConnRowIdx="+preselConnRowIdx;
+                        tv_inputs.moveCursorToRowNoAction(preselConnRowIdx);
+                     }
+                     else
+                     {
+                        // Select last selected input connection, if object has no params
+                        if(!canShowParams(connObject))
+                        {
+                           // (todo) or preselect output ?
+                           preselConn <= connObject.getLastSelectedInputConnection();
+                           if(null != preselConn)
+                           {
+                              preselConnRowIdx = tm_inputs.getRowIdxByGConnection(preselConn);
+                              // trace "xxx frominput: preselConnRowIdx="+preselConnRowIdx;
+                              tv_inputs.moveCursorToRowNoAction(preselConnRowIdx);
+                           }
+                        }
+                     }
+                  }
+
+               }
+               else if(null != connObject)
+               {
+                  // Click on <anon> object
+                  if(connObject.getNumInputs() > 0)
+                  {
+                     // has inputs => follow link
+                     //  (note) show editor with 'v' or via context menu
+                     Global.Debug("<anon> path="+connObject.getObjectPath());
+                     rebuildInputs(connObject, false/*bReshowParams*/, false/*bPreselectLastInputConn*/);
+                  }
+                  else
+                  {
+                     // no inputs, show editor
+                     //   (e.g. show source editor if object is a GScript)
+                     // trace "xxx tv_inputs: call execDefaultAction connObject="+#(connObject);
+                     connObject.execDefaultAction();
+                  }
+               }
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               // trace "xxx select row: current_input_object="+#(current_input_object)+" setLastSelectedInputRowIdx("+tm_inputs.getCursorIndex()+")";
+               current_input_object.setLastSelectedInputRowIdx(tm_inputs.getCursorIndex());
+
+               if(0/*root*/ == tm_inputs.getCursorIndex())
+               {
+                  showParams(current_input_object);
+               }
+               else if(null != conn)
+               {
+                  // trace "xxx connObject="+#(connObject);
+                  // trace "xxx conn="+#(conn);
+                  // trace "xxx current_input_object="+#(current_input_object);
+                  // _Debug();
+                  // trace connObject.id; // xxxxxxxxxxxxxxxxxxxxxxx
+                  trace "[dbg] updateLastSelectedConnection: connObject.id="+connObject.getId()+" conn.port_id="+conn.port_id+" rev="+conn.port_id_rev;
+                  current_input_object.setLastSelectedConnection(conn);
+                  if(bt_inputs_conn.getToggleState())
+                     showParams(conn);
+                  else
+                     showParams(connObject);
+
+               }
+               else
+               {
+                  // // current_input_object.setLastSelectedInputRowIdx(tm_inputs.getCursorIndex());
+                  if(null != connObject)
+                  {
+                     showParams(connObject);
+                  }
+               }
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showInputsMenu();
+            }
+            else if(TableView.ACTION_KBDFOCUS == acName)
+            {
+               if(bt_inputs_conn.getToggleState())
+                  showParams(conn);
+               else
+                  showParams(connObject);
+            }
+            return true;
+
+         case @(pm_inputs):
+            Global.Debug("pm_inputs acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close inputs context menu.");
+                  UI.SetKeyboardFocus(tv_inputs);
+                  return true;
+
+               case "inputs_defaultaction":
+                  execInputDefaultAction();
+                  return true;
+
+               case "inputs_select":
+                  selectTableObjects();
+                  return true;
+
+               case "inputs_connect":
+                  connectLinkSourcesToFocusedObject(false/*bOnlyWhenInputsTableHasFocus*/);
+                  return true;
+
+               case "inputs_movehere":
+                  handleObjectsMove();
+                  return true;
+
+               case "inputs_add":
+                  handleInputAdd();
+                  return true;
+
+               case "inputs_clone":
+                  handleInputCloneAnon();
+                  return true;
+
+               case "inputs_remove":
+                  handleInputRemove(false/*bConnectionOnly*/);
+                  return true;
+
+               case "inputs_moveup":
+                  handleInputMoveUp();
+                  return true;
+
+               case "inputs_movedown":
+                  handleInputMoveDown();
+                  return true;
+
+               case "inputs_move_anon":
+                  handleInputMoveAnon();
+                  return true;
+
+               case "inputs_move_model":
+                  handleInputMoveModel();
+                  return true;
+
+               case "inputs_insert_connection":
+                  handleInputInsertConnection();
+                  return true;
+
+               case "inputs_remove_and_connect_next":
+                  handleInputRemoveAndConnectNext();
+                  return true;
+
+               case "inputs_toggle_forced_connection":
+                  toggleForcedConnection();
+                  return true;
+            }
+            return true;
+
+         case @(bt_inputs_add):
+            handleInputAdd();
+            return true;
+
+         case @(bt_inputs_remove):
+            handleInputRemove(false/*bConnectionOnly*/);
+            return true;
+
+         case @(bt_inputs_moveup):
+            handleInputMoveUp();
+            return true;
+
+         case @(bt_inputs_movedown):
+            handleInputMoveDown();
+            return true;
+
+         case @(bt_inputs_conn):
+            handleShowInputConnChanged();
+            return true;
+
+         case @(dlg_find):
+            if(StringDialog.ACTION_EDIT == acName)
+            {
+               sac <= _ac;
+               handleObjectFind(sac.getStringValue(), false/*bNext*/);
+            }
+            else if(StringDialog.ACTION_RETURN == acName)
+            {
+               sac <= _ac;
+               handleObjectFind(sac.getStringValue(), true/*bNext*/);
+            }
+            else if(StringDialog.ACTION_CANCEL == acName)
+            {
+               hideObjectFindDialog();
+            }
+            return true;
+
+         case @(win_object_list):
+            selectNamespaceAndObjectRowByObject(win_object_list.getSelectedObject(), false/*bKeepInputsAndParams*/);
+            handleObjectSelect();
+            return true;
+
+         case @(fp_cam_strafe_speed):
+            current_project.cam_strafe_speed = fp_cam_strafe_speed.getFloatValue();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               pageFocusDefault();
+            return true;
+
+         case @(fp_cam_rot_speed):
+            current_project.cam_rot_speed = fp_cam_rot_speed.getFloatValue();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               pageFocusDefault();
+            return true;
+      }
+
+      return Page::consumeAction(_ac);
+   }
+
+}

@@ -1,0 +1,225 @@
+// ----
+// ---- file   : FileForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL Edit" application.
+// ----
+// ---- created: 21Jun2020
+// ---- changed: 15Aug2020
+// ----
+// ----
+// ----
+
+module MFileForm;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class FileForm : XMLForm, ActionProvider {
+
+   define String ACTION_FILE_PATH_CHANGED;
+  
+   protected Label  *lb_pathname;
+   protected Button *bt_browse;
+   protected Button *bt_edit;
+
+   protected String          path_name;
+   protected String          suggested_directory;
+   protected StringArray     file_filters;
+   protected StringArray     file_filter_names;
+   protected GParamProvider *parent_object;
+
+
+   // <method_new.png>
+   public static New(String         _pathName, 
+                     String         _suggestedDir,
+                     StringArray    _fileFilters,
+                     StringArray    _fileFilterNames,
+                     GParamProvider _parentObject
+                     ) : FileForm {
+      local FileForm ff;
+      ff.initForm();
+      ff.initFileForm();
+      ff.showFile(_pathName,
+                  _suggestedDir,
+                  _fileFilters,
+                  _fileFilterNames,
+                  _parentObject
+                  );
+      return deref ff;
+   }
+
+   // <ui_init.png>
+   public method initFileForm() : boolean {
+
+      if(!initPakFile("FileForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_FILE_PATH_CHANGED];
+   }
+
+   // <method.png>
+   protected method provideEdited() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_FILE_PATH_CHANGED), this));
+   }
+
+   // <method_get.png>
+   public method getPathName() : String {
+      return path_name;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           bt_browse,
+                           bt_edit,
+                         ]
+                        );
+   }
+
+   // <ui_show.png>
+   public method showFile(String         _pathName, 
+                          String         _suggestedDirectory,
+                          StringArray    _fileFilters,
+                          StringArray    _fileFilterNames,
+                          GParamProvider _parentObject
+                          ) {
+      // trace "[trc] FileForm::showFile(path=\""+_pathName+"\" dir=\""+_suggestedDirectory+"\" filters="+_fileFilters+" filterNames="+_fileFilterNames+")";
+
+      path_name           = _pathName;
+      suggested_directory = _suggestedDirectory;
+      file_filters        = _fileFilters;
+      file_filter_names   = _fileFilterNames;
+      parent_object      <= _parentObject;
+
+      if(parent_object instanceof GSource)
+         bt_edit.setEditable(true);
+
+      lb_pathname.setCaption(path_name);
+   }
+
+   // <ui_handle.png>
+   protected method handleResetPathName() {
+
+      trace "[dbg] FileForm::handleResetPathName";
+
+      lb_pathname.setCaption("");
+      redraw();
+
+      if(parent_object instanceof GSource)
+      {
+         GSource source <= parent_object;
+         current_project.removeSourceFileFromWatchList(path_name);
+
+         path_name = "";
+         source.setPathName(path_name);
+         source.reloadSource();
+         // (note) I/O may have changed after script reload
+         root_form.pg_start.rebuildInputs(root_form.pg_start.current_input_object,
+                                          false/*bReselectParams*/,
+                                          false/*bPreselectLastInputConn*/
+                                          );
+         current_project.queueUpdate();
+      }
+
+      provideEdited();
+   }
+
+   // <ui_handle.png>
+   protected method handleBrowse() {
+      local String *suggestedFile;
+      trace "xxx handleBrowse: initial path_name=\""+path_name+"\"";
+      if(Utils.CanFileBeRead(Utils.ToNativePathName(path_name)))  // (note) win32 dialog does not open when file does not exist
+      {
+         suggestedFile <= Utils.ToNativePathName(path_name);
+      }
+      trace "[dbg] FileForm::handleBrowse: TKUI_OpenFileDialog suggestedFile=\""+suggestedFile+"\"";
+      trace "[dbg] FileForm::handleBrowse: TKUI_OpenFileDialog suggested_directory=\""+suggested_directory+"\"";
+      // suggestedFile <= null;
+
+      String file <= TKUI_OpenFileDialog(Utils.ToNativePathName(suggested_directory+"/"),
+                                         suggestedFile,
+                                         "Select file",
+                                         file_filter_names,
+                                         file_filters,
+                                         false/*bMultipleSelection*/,
+                                         false/*bDirectoriesOnly*/
+                                         );
+      // trace "xxx selected file="+#(file);
+      if(null != file)
+      {
+         local String oldPathName = path_name;
+         path_name = Utils.ToProjectPathName(file);
+         lb_pathname.setCaption(path_name);
+         redraw();
+
+         if(parent_object instanceof GSource)
+         {
+            GSource source <= parent_object;
+            current_project.removeSourceFileFromWatchList(oldPathName);
+            source.setPathName(path_name);
+            current_project.addSourceFileToWatchList(path_name);
+            source.reloadSource();
+            // (note) I/O may have changed after script reload
+            root_form.pg_start.rebuildInputs(root_form.pg_start.current_input_object, false/*bReselectParams*/);
+            current_project.queueUpdate();
+         }
+
+         trace "[dbg] FileForm::handleBrowse: path_name is \""+path_name+"\"";
+         provideEdited();
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleEdit() {
+      if(parent_object instanceof GSource)
+      {
+         GSource source <= parent_object;
+         source.openInEditor();
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      //trace "xxx FileForm::consumeAction: acName=\""+acName+"\".";
+
+      switch(@(ap))
+      {
+         case @(bt_browse):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               handleResetPathName();
+            else
+               handleBrowse();
+            return true;
+
+         case @(bt_edit):
+            handleEdit();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

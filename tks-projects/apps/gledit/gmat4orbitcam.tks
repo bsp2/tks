@@ -1,0 +1,125 @@
+// ----
+// ---- file   : gmat4orbitcam.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 09Aug2020
+// ---- changed: 14Aug2020
+// ----
+// ----
+// ----
+module MGMat4OrbitCam;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMat4OrbitCam : GConstant, GParamProvider {
+   protected boolean b_fxn_done;
+
+   // <method_new.png>
+   public static New() : GMat4OrbitCam {
+      local GMat4OrbitCam r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = TYPE_MAT4;
+
+      addInput("view", TYPE_ORBITCAMVIEW);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getInputDomain(String _inputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <method_get.png>
+   public virtual getOutputDomain(String _outputId) : int {
+      return DOMAIN_SCRIPT;
+   }
+
+   // <method_get.png>
+   public method getView() : GOrbitCamView {
+      // used for PreviewWidget mousecam
+      GOrbitCamView view <= getFirstConnectedInputObjectByType("view", GOrbitCamView);
+      if(view instanceof GOrbitCamView)
+         return view;
+      return null;
+   }
+
+   // <method.png>
+   public method emit(local String       _outputId,
+                      local GModule      _module,
+                      local GProgram     _program,
+                      local String       _out,
+                      local String       _dstVar,
+                      local boolean      _bGLSL,
+                      local PointerArray _parents
+                      ) {
+
+      local GInput *input;
+
+      _parents.add(this);
+
+      // value
+      input <= getInputById("view");
+      if(input.isConnected())
+      {
+         _out.append("// ---- BEGIN GMat4OrbitCam "+getObjectPath()+"\n");
+
+         local String sVarView <= _module.allocTmpVarScript(_out, TYPE_ORBITCAMVIEW, "in_view");
+         input.emit(_module, _program, _out, sVarView, _bGLSL, _parents);
+
+         local String sVarEye    <= _module.allocTmpVarScript(_out, TYPE_VEC3, "eye");
+         local String sVarEyeRot <= _module.allocTmpVarScript(_out, TYPE_VEC3, "eye_rot");
+         local String sVarEyeMat <= _module.allocTmpVarScript(_out, TYPE_MAT3, "eye_mat");
+         local String sVarCtr    <= _module.allocTmpVarScript(_out, TYPE_VEC3, "ctr");
+         local String sVarUp     <= _module.allocTmpVarScript(_out, TYPE_VEC3, "up");
+
+         // Center
+         _out.append(sVarCtr+".init("+sVarView+".ctr_x, "+sVarView+".ctr_y, "+sVarView+".ctr_z);\n");
+
+         // Eye
+         // // _out.append(sVarEye+".x = sin("+sVarView+".rot_x * (2PI/360.0)) * "+sVarView+".eye_dist;\n");
+         // // _out.append(sVarEye+".y = cos("+sVarView+".rot_y * (2PI/360.0)) * "+sVarView+".eye_dist;\n");
+         _out.append(sVarEye+".init(0, 0, "+sVarView+".eye_dist);\n");
+         // _out.append(sVarEyeMat+".initEulerYXZ("+sVarView+".rot_y * (2PI/360.0), "+sVarView+".rot_x * (2PI/360.0), 0);\n");
+         _out.append(sVarEyeMat+".initEulerXYZ("+sVarView+".rot_x * (-2PI/360.0), "+sVarView+".rot_y * (-2PI/360.0), 0);\n");
+         _out.append(sVarEyeMat+".mulv("+sVarEye+") => "+sVarEyeRot+";\n");
+         _out.append(sVarEyeRot+".add("+sVarCtr+");\n");
+
+         // Up
+         // _out.append(sVarUp+".init(0,1,0);\n");
+         _out.append(sVarUp+".x = sin("+sVarView+".rot_z * (2PI/360.0));\n");
+         _out.append(sVarUp+".y = cos("+sVarView+".rot_z * (2PI/360.0));\n");
+
+         // Output matrix
+         _out.append("Matrix4f.BuildLookAtMatrix4f("+sVarEyeRot+", "+sVarCtr+", "+sVarUp+") => "+_dstVar+";\n");
+
+         _out.append("// ---- END GMat4OrbitCam "+getObjectPath()+"\n");
+      }
+      else
+      {
+         trace "[~~~] GMat4OrbitCam: no view connected, falling back to identity matrix. path="+getObjectPath();
+         _out.append("// GMat4OrbitCam: no view connected, falling back to identity matrix\n");
+         if(_bGLSL)
+            _out.append(_dstVar+" = mat4(1.0);\n");
+         else
+            _out.append(_dstVar+".initIdentity();\n");
+      }
+
+      _parents.remove(this);
+   }
+
+}

@@ -1,0 +1,1150 @@
+// ----
+// ---- file   : RadarDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 26Jun2020
+// ---- changed: 04Jul2020, 10Jul2020, 04Feb2025, 09Feb2025, 11Feb2025
+// ----
+// ----
+// ----
+
+module MRadarDialog;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class RadarControl extends Button {
+   define int TYPE_OBJECT    = 1;
+   define int TYPE_INPUT     = 2;
+   define int TYPE_OUTPUT    = 3;
+   define int TYPE_NSP_INPUT = 4;
+   define int TYPE_PARENT    = 5;
+   define int TYPE_ROOT      = 6;
+   int      type;
+   GObject *gobject_parent;  // e.g. parent object for TYPE_INPUT
+   GObject *gobject;
+   String   gobject_path;
+   String  *port_id_or_null;
+   boolean  b_output;  // 1=in output section
+
+   public method initRadarControl(GObject _gobjectParent,
+                                  GObject _gobject,
+                                  int     _type,
+                                  String  _portIdOrNull,
+                                  boolean _bOutput
+                                  ) {
+      initButton();
+      gobject_parent <= _gobjectParent;
+      gobject        <= _gobject;
+      gobject_path   <= (null != _gobject) ? _gobject.getObjectPath() : null;
+      type            = _type;
+      if(null != _portIdOrNull)
+         port_id_or_null <= Object(_portIdOrNull);
+      b_output        = _bOutput;
+   }
+}
+
+
+// <class.png>
+class RadarDialog extends Dialog {
+
+   protected XMLForm *xfm;
+
+   protected ScrollPane *sp_controls;
+   protected Panel      *pn_controls;
+
+   protected GObject      *gobject;  // current root object
+   protected GObject   *[] history;  // previously selected objects (highlight most recent)
+   protected GInput       *input_filter;
+   protected GOutput      *output_filter;
+   protected RadarControl *root_control;
+   protected SizeGroupX   *sgx_root_lb;
+   protected SizeGroupX   *sgx_root_control;
+   protected boolean       b_first_output;
+
+   // valid during rebuildControls():
+   protected GObject *[] parents;  // for recursion detection
+
+
+   // <ui_init.png>
+   public method initRadarDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("RadarDialog.xfm");
+      if(null == xfm)
+      {
+         trace "[---] initRadarDialog() failed";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm, "Radar", 263 * UI.font_scaling, 22 * UI.font_scaling,
+                 600 * UI.font_scaling,
+                 400 * UI.font_scaling
+                 );
+
+      setAlpha(240);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual isEditable() : boolean {
+      // => wantKeyboardFocus()
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) {
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   public method showRadarDialog(GObject _gobject) {
+      history.free();
+      gobject <= _gobject;
+      rebuildControls();
+      show();
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      relayout();
+      recursiveSetEnableCursorKeyTabCycling(false);
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      UI.CancelScheduleFor(this);
+      Dialog::hide();
+   }
+
+   // <method_set.png>
+   public method setInputFilter(GInput _input) {
+      input_filter <= _input;
+   }
+
+   // <method_set.png>
+   public method setOutputFilter(GOutput _output) {
+      output_filter <= _output;
+   }
+
+   // <method_add.png>
+   protected method addControl(Panel   _p,
+                               GObject _oParent,
+                               GObject _o,
+                               int     _type,
+                               boolean _bOutput,
+                               String  _inputIdOrNull
+                               ) : RadarControl {
+      // trace "xxx addControl o=\""+#(_o)+"\"";
+      local RadarControl rc;
+      rc.initRadarControl(_oParent, _o, _type, _inputIdOrNull, _bOutput);
+      rc.setEnableHold(true);
+      local String caption = _o.isAnon() ? "<anon>" : _o.getId();
+
+      int c32 = 0;
+      int c32FgTint = 0;
+
+      if(_o instanceof GArg)
+      {
+         caption.insert(0, "X:");
+         c32 = #40FF4040;
+      }
+      else if(_o instanceof GConstant)
+      {
+         caption.insert(0, "C:");
+         caption.append(" "+_o.getString());
+         c32 = #1000ffff;
+         c32FgTint = UI.IsDarkOrMono() ? #28000000 : #28ffffff;
+      }
+      else if(_o instanceof GSource)
+      {
+         GSource sourceObj <= _o;
+         if(sourceObj.parent_object instanceof GVertexShader)
+         {
+            caption.insert(0, "Vsrc:");
+            c32 = #407155eb;
+         }
+         else if(sourceObj.parent_object instanceof GFragmentShader)
+         {
+            caption.insert(0, "Fsrc:");
+            c32 = UI.IsDarkOrMono() ? #30afaf70 : #40ffff70;
+         }
+         else
+         {
+            caption.insert(0, "S:");
+            // // c32 = #40ffff70;
+         }
+      }
+      else if(_o instanceof GVarying)
+      {
+         caption.insert(0, "V:");
+         c32 = #107f007f;
+      }
+      else if(_o instanceof GAttribute)
+      {
+         caption.insert(0, "A:");
+         c32 = #10FFaf5f;
+      }
+      else if(_o instanceof GUniform)
+      {
+         caption.insert(0, "U:");
+         c32 = #2000005f;
+      }
+      else if(_o instanceof GVertexShader)
+      {
+         caption.insert(0, "VS:");
+         //c32 = #103f3faf;
+         c32 = #706e3eb4;//5f369c;//a228ac;
+      }
+      else if(_o instanceof GFragmentShader)
+      {
+         caption.insert(0, "FS:");
+         // c32 = #10ff3f3f;
+         c32 = #5083a03d;//8ead42;//a4c94d;//81964e;//87ac28;
+      }
+      else if(_o instanceof GProgram)
+      {
+         caption.insert(0, "P:");
+         c32 = UI.IsDarkOrMono() ? #b02737a0 : #600f1f8f;
+      }
+      else if(_o instanceof GMesh)
+      {
+         caption.insert(0, "Ms:");
+         // // c32 = #600f1f8f;
+      }
+      else if(_o instanceof GModel)
+      {
+         caption.insert(0, "M:");
+         // // c32 = #600f1f8f;
+      }
+      else if(_o instanceof GTexture)
+      {
+         caption.insert(0, "T:");
+         // // c32 = #600f1f8f;
+      }
+      else if(_o instanceof GFBO)
+      {
+         caption.insert(0, "Fb:");
+         // // c32 = #600f1f8f;
+      }
+      else if(_o instanceof GRenderPass)
+      {
+         caption.insert(0, "R:");
+         // // c32 = #600f1f8f;
+      }
+      else if(_o instanceof GScene)//GNamespace)
+      {
+         c32 = #60cf792d;
+      }
+
+      // trace "xxx history.last="+#(history.last)+" o="+#(_o);
+      if( @(history.last) == @(_o) || (history.isEmpty() && @(_o) == @(gobject)) )
+      {
+         c32 = UI.TintColor32(c32, UI.IsDarkOrMono() ? #c060afaf : #68000000);
+         if(0 == c32FgTint)
+            c32FgTint = UI.IsDarkOrMono() ? #ef000000 : #efffffff;
+         else
+            c32FgTint = UI.TintColor32(c32FgTint, UI.IsDarkOrMono() ? #ef000000 : #efffffff);
+      }
+
+      rc.setCaption(caption);
+      // rc.setTint(c32);
+      rc.setBackgroundTint(c32);
+      rc.setCaptionTint(c32FgTint);
+      if(null != _o)
+         rc.setToolTipCaption(_o.getObjectPath());
+      // // if(0 == _p.getNumChildLayers())
+      // //    rc.setLayerStyle(LookAndFeel.STYLE_FLAT);
+      rc.setAlignment(_bOutput ? Layout.TOP : Layout.BOTTOM);
+      _p.addLayer(deref rc, Layout.LEFT);
+      return rc;
+   }
+
+   // <method_add.png>
+   protected method addLabel(Panel _p, String _caption, boolean _bOutput) : Label {
+      local Label lb;
+      lb.initLabel();
+      lb.setCaption(_caption);
+      lb.setAlignment((_bOutput ? Layout.TOP : Layout.BOTTOM)|Layout.LEFT);
+      lb.setTextPlacement(Layout.RIGHT);
+      _p.addLayer(deref lb, Layout.LEFT);
+      return lb;
+   }
+
+   // <method_add.png>
+   protected method addIOLabel(Panel   _p,
+                               GObject _oParent,
+                               GObject _o,
+                               int     _type,
+                               String  _caption,
+                               boolean _bOutput,
+                               String  _portIdOrNull
+                               ) : Label {
+      local RadarControl lb;
+      lb.initRadarControl(_oParent, _o, _type, _portIdOrNull, _bOutput);
+      lb.setEnableLabelButton(true);
+      lb.setCaption(_caption);
+      lb.setEnableCaptionDim(true);
+      lb.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+      lb.setAlignment((_bOutput ? Layout.TOP : Layout.BOTTOM)|Layout.LEFT);
+      lb.setTextPlacement(Layout.RIGHT);
+      lb.setEnableFillBackground(true);
+
+      if(RadarControl.TYPE_NSP_INPUT == _type)
+      {
+         lb.setForegroundTint(UI.IsDarkOrMono() ? #3f000000 : #3fffffff);
+      }
+      lb.setMouseOverTint(UI.IsDarkOrMono() ? #b8000000 : (#f8000000|(lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG)&#ffffff)));
+
+      _p.addLayer(deref lb, Layout.LEFT);
+      return lb;
+   }
+
+   // <method.png>
+   protected method createHPanel(local Panel _parent) : Panel {
+      local Panel *p;
+      p <= Panel.New();
+      p.setAlignment(Layout.BOTTOM|Layout.LEFT|Layout.EXPANDY);
+      // p.setDebug(1);
+      _parent.addLayer(deref p, Layout.LEFT);
+      return p;
+   }
+
+   // <method.png>
+   protected method createObjectPanel(local Panel _parent) : Panel {
+      local Panel *p;
+      p <= Panel.New();
+      p.setAlignment(Layout.BOTTOM|Layout.LEFT|Layout.EXPANDY);
+      // p.setDebug(1);
+      _parent.addLayer(deref p, Layout.LEFT); //Layout.BOTTOM);///
+      return p;
+   }
+
+   // <method.png>
+   protected method createSubObjectPanel(local Panel _parent) : Panel {
+      local Panel *p;
+      p <= Panel.New();
+      p.setAlignment(Layout.BOTTOM|Layout.LEFT|Layout.EXPANDY);
+      // p.setDebug(1);
+      _parent.addLayer(deref p, Layout.LEFT);
+      return p;
+   }
+
+   // <method.png>
+   protected method createOutputPanel(local Panel _parent) : Panel {
+      local Panel *p;
+      p <= Panel.New();
+      p.setAlignment(Layout.BOTTOM|Layout.LEFT|Layout.EXPANDY);
+      // p.setDebug(1);
+      _parent.addLayer(deref p, Layout.LEFT);
+      return p;
+   }
+
+   // <method.png>
+   protected method createInputPanel(local Panel _parent) : Panel {
+      // was: createHPanel()
+      local Panel *p;
+      p <= Panel.New();
+      p.setAlignment(Layout.BOTTOM|Layout.LEFT|Layout.EXPANDY);
+      // p.setDebug(1);
+      p.setPadLeft(10);
+      _parent.addLayer(deref p, Layout.BOTTOM);  // Layout.LEFT
+      return p;
+   }
+
+   // <method.png>
+   protected method createConnPanel(local Panel _parent) : Panel {
+      local Panel *p;
+      p <= Panel.New();
+      p.setAlignment(Layout.BOTTOM|Layout.LEFT|Layout.EXPANDY);
+      // p.setDebug(1);
+      p.setPadLeft(10);
+      _parent.addLayer(deref p, Layout.TOP);
+      return p;
+   }
+
+   // <method.png>
+   protected method createVPanel(local Panel _parent, boolean _bBottom) : Panel {
+      local Panel p;
+      p.initPanel();
+      p.setAlignment((_bBottom ? Layout.TOP : Layout.BOTTOM)|Layout.LEFT|Layout.EXPANDX);
+      local Panel pl;
+      pl.initPanel();
+      // pl.setDebug(true);
+      p.addLayer(deref pl, Layout.LEFT);
+      _parent.addLayer(deref p, _bBottom ? Layout.BOTTOM : Layout.TOP);
+      return pl;
+   }
+
+   // <method.png>
+   protected method recursiveAddInputs(local GObject _o,
+                                       local Panel   _phOuter,
+                                       local GPort   _portFilter,
+                                       local int     _recurseDepthLeft
+                                       ) {
+      local SizeGroupX sgxlb <= _phOuter.addSizeGroup("sgx_lb_inputs", new SizeGroupX);
+      parents.add(_o);
+
+      local GInput *input;
+      local int inputIdx = (_o.inputs.numElements)-1;
+      while(inputIdx >= 0)
+      {
+         input <= _o.inputs.get(inputIdx);
+         // trace "xxx recursiveAddInputs: input.id="+input.id;
+         if( ( (null == _portFilter) || (@(_portFilter) == @(input)) ) && (input.isConnected() || (@(_o) == @(gobject))) )
+         {
+            local Panel pv <= createVPanel(_phOuter, false/*bBottom*/);
+            local Panel phInput <= createInputPanel(pv);
+            if(input.connections.numElements > 0)
+            {
+               local GConnection *conn;
+               local int connIdx = (input.connections.numElements)-1;
+               while(connIdx >= 0)
+               {
+                  conn <= input.connections.get(connIdx);
+                  local String sInputCaption = input.id+((connIdx > 0)?("#"+(connIdx+1)):"")+":";
+                  local Panel phConn <= createConnPanel(phInput);
+                  recursiveAddObject(input.id/*inputIdOrNull*/,
+                                     conn.port_id/*outputIdOrNull*/,
+                                     _o/*oParent*/,
+                                     conn.object,
+                                     phConn,
+                                     sInputCaption,
+                                     "<"+conn.port_id,
+                                     (0 != connIdx)/*bPad*/,
+                                     sgxlb,
+                                     null/*inputFilter*/,
+                                     _recurseDepthLeft - 1,
+                                     RadarControl.TYPE_INPUT/*inputRadarControlType*/
+                                     );
+                  connIdx--;
+               }
+            }
+            else
+            {
+               // Unconnected input
+               if(@(_o) == @(gobject))
+               {
+                  local Panel phUnconn <= createConnPanel(phInput);
+                  Label lb <= addIOLabel(phUnconn,
+                                         _o/*oParent*/,
+                                         null/*o*/,
+                                         RadarControl.TYPE_INPUT/*inputRadarControlType*/,
+                                         input.id+":"/*inputCaption*/,
+                                         false/*bOutput*/,
+                                         input.id/*inputIdOrNull*/
+                                         );
+                  // lb.setPadLeft(20);
+                  lb.setSizeGroup(sgxlb);
+               }
+            }
+         }
+         inputIdx--;
+      }
+
+      parents.remove(_o);
+   }
+
+   // <method.png>
+   protected method recursiveAddSubObjects(local GObject      _oParent,
+                                           local Panel        _phOuter,
+                                           local PointerArray _subObjects,
+                                           local int          _recurseDepthLeft
+                                           ) {
+      local SizeGroupX sgxlb <= _phOuter.addSizeGroup("sgx_lb_subs", new SizeGroupX);
+      parents.add(_oParent);
+
+      local GObject *sub;
+      local int subIdx = _subObjects.numElements - 1;
+      while(subIdx >= 0)
+      {
+         sub <= _subObjects.get(subIdx);
+
+         local Panel pv <= createVPanel(_phOuter, false/*bBottom*/);
+         local Panel ph <= createSubObjectPanel(pv);
+
+         local String sInputCaption = /*_oParent.id+*/"."+sub.id+":";
+         recursiveAddObject(null/*inputIdOrNull*/,
+                            null/*outputIdOrNull*/,
+                            _oParent,
+                            sub,
+                            ph,
+                            sInputCaption,
+                            "",  // displayed right next to VS:vs
+                            (0 != subIdx)/*bPad*/,
+                            sgxlb,
+                            null/*inputFilter*/,
+                            _recurseDepthLeft - 1,
+                            RadarControl.TYPE_NSP_INPUT
+                            );
+
+         subIdx--;
+      }
+
+      parents.remove(_oParent);
+   }
+
+   // <method_add.png>
+   protected method recursiveAddObject(local String    _inputIdOrNull,
+                                       local String    _outputIdOrNull,
+                                       local GObject   _oParent,
+                                       local GObject   _o,
+                                       local Panel     _parent,
+                                       local String    _inputCaption,
+                                       local String    _portCaption,
+                                       local boolean   _bPad,
+                                       local SizeGroup _sgxLb,
+                                       local GPort     _portFilter,
+                                       local int       _recurseDepthLeft,
+                                       local int       _inputRadarControlType
+                                       ) {
+
+      if(parents.containsPointer(_o))
+         throw GInfiniteRecursion "RadarDialog: infinite recursion detected o="+#(_o)+" o.path="+_o.getObjectPath();
+
+      // trace "xxx recursiveAddObject: gobject="+#(_o);
+
+      // ph.setPadLeft(10);
+      local Panel phOuter <= createObjectPanel(_parent);
+      local Label *lb;
+      if(!_portCaption.isBlank() && (_portCaption != "<out"))
+      {
+         lb <= addIOLabel(phOuter,
+                          _oParent,
+                          _o,
+                          RadarControl.TYPE_OUTPUT,
+                          _portCaption,
+                          false/*bOutput*/,
+                          _outputIdOrNull
+                          );
+      }
+
+      local boolean bFirst = (null == root_control);
+      if(bFirst)
+      {
+         root_control <= addControl(phOuter,
+                                    _oParent,
+                                    _o,
+                                    RadarControl.TYPE_OBJECT,
+                                    false/*bOutput*/,
+                                    null/*inputIdOrNull*/
+                                    );
+         sgx_root_control <= _parent.addSizeGroup("sgx_root_control", new SizeGroupX);
+         root_control.setSizeGroup(sgx_root_control);
+         // _parent.setDebug(true);
+      }
+      else
+      {
+         addControl(phOuter,
+                    _oParent,
+                    _o,
+                    RadarControl.TYPE_OBJECT,
+                    false/*bOutput*/,
+                    _inputIdOrNull
+                    );
+      }
+
+      if(!_inputCaption.isBlank())
+      {
+         lb <= addIOLabel(_parent,
+                          _oParent,
+                          _o,
+                          _inputRadarControlType,
+                          _inputCaption,
+                          false/*bOutput*/,
+                          _inputIdOrNull
+                          );
+         if(_bPad)
+            lb.setPadLeft(20);
+         if(bFirst)
+         {
+            sgx_root_lb <= _parent.addSizeGroup("sgx_root_lb", new SizeGroupX);
+            lb.setSizeGroup(sgx_root_lb);
+         }
+         else if(null != _sgxLb)
+            lb.setSizeGroup(_sgxLb);
+      }
+
+      if( (_recurseDepthLeft > 0) && ((@(_o) == @(gobject)) || _o.isAnyInputConnected()) )
+      {
+         // trace "xxx tryRecurse inputs o="+#(_o)+" gobject="+#(gobject);
+         recursiveAddInputs(_o, phOuter, _portFilter, _recurseDepthLeft - 1);
+      }
+
+      // Add program "pseudo"-inputs (vs/fs sub-objects)
+      local PointerArray aSubObjects;
+      if(@(_o) == @(gobject) && _o instanceof GProgram)
+      {
+         local GProgram program <= _o;
+         // // local GShader *shader;
+
+         // // shader <= program.getVertexShader();
+         // // if(null != shader)
+         // //    aSubObjects.add(shader);
+
+         // // shader <= program.getFragmentShader();
+         // // if(null != shader)
+         // //    aSubObjects.add(shader);
+         program.enumerateObjects(aSubObjects, 0/*_recurseDepthLeft - 1*/);
+      }
+      else if(@(_o) == @(gobject) && _o instanceof GShader)
+      {
+         local GShader shader <= _o;
+         shader.enumerateObjects(aSubObjects, 0/*_recurseDepthLeft - 1*/);  // add source(s)
+      }
+      else if(@(_o) == @(gobject) && _o instanceof GNamespace)
+      {
+         // e.g. GScene
+         GNamespace nsp <= _o;
+         nsp.enumerateObjects(aSubObjects, 0/*_recurseDepthLeft - 1*/);
+      }
+
+      if(!aSubObjects.isEmpty())
+         recursiveAddSubObjects(_o/*parent*/, phOuter, aSubObjects, 0/*_recurseDepthLeft - 1*/);
+
+   }
+
+   // <method.png>
+   protected method addOutputs(local GObject _o,
+                               local Panel   _phOuter,
+                               local GPort   _portFilter,
+                               local int     _recurseDepthLeft
+                               ) {
+      local SizeGroupX sgxlb <= _phOuter.addSizeGroup("sgx_lb_out", new SizeGroupX);
+      parents.add(_o);
+
+      local GOutput *output;
+      // local int outputIdx = (_o.outputs.numElements)-1;
+      local int outputIdx = 0;
+      // while(outputIdx >= 0)
+      while(outputIdx < _o.outputs.numElements)
+      {
+         output <= _o.outputs.get(outputIdx);
+         if( ( (null == _portFilter) || (@(_portFilter) == @(output)) ) && (output.isConnected() || @(_o) == @(gobject)) )
+         {
+            local Panel pv <= createVPanel(_phOuter, true/*BOTTOM*/);
+            local Panel ph <= createOutputPanel(pv);
+            if(output.connections.numElements > 0)
+            {
+               local GConnection *conn;
+               local int connIdx = (output.connections.numElements)-1;
+               // local int connIdx = 0;
+               while(connIdx >= 0)
+               // while(connIdx < output.connections.numElements)
+               {
+                  conn <= output.connections.get(connIdx);
+                  local String outputCaption = output.id+((connIdx > 0)?("#"+(connIdx+1)):"")+":";
+                  local Panel phConn <= createConnPanel(ph);
+                  recursiveAddObjectOutput(_o/*oParent*/,
+                                           conn.object/*o*/,
+                                           output.id/*outputIdOrNull*/,
+                                           conn.port_id/*inputIdOrNull*/,
+                                           phConn,
+                                           outputCaption,
+                                           ">"+conn.port_id,
+                                           (0 != connIdx)/*bPad*/,
+                                           sgxlb,
+                                           null/*outputFilter*/,
+                                           _recurseDepthLeft - 1,
+                                           RadarControl.TYPE_OUTPUT/*portRadarControlType*/
+                                           );
+                  connIdx--;
+               }
+            }
+            else
+            {
+               // Unconnected output
+               if(@(_o) == @(gobject))
+               {
+                  Label lb <= addIOLabel(ph,
+                                         _o/*oParent*/,
+                                         null/*o*/,
+                                         RadarControl.TYPE_OUTPUT/*inputRadarControlType*/,
+                                         output.id+":"/*caption*/,
+                                         true/*bOutput*/,
+                                         output.id/*portIdOrNull*/
+                                         );
+                  // lb.setPadLeft(20);
+                  lb.setSizeGroup(sgxlb);
+               }
+            }
+         }
+         outputIdx++;
+      }
+
+      parents.remove(_o);
+   }
+
+   // <method_add.png>
+   protected method recursiveAddObjectOutput(local GObject   _oParent,
+                                             local GObject   _o,
+                                             local String    _outputIdOrNull,
+                                             local String    _inputIdOrNull,
+                                             local Panel     _parent,
+                                             local String    _outputCaption,
+                                             local String    _portCaption,
+                                             local boolean   _bPad,
+                                             local SizeGroup _sgxLb,
+                                             local GPort     _portFilter,
+                                             local int       _recurseDepthLeft,
+                                             local int       _portRadarControlType
+                                             ) {
+
+      if(parents.containsPointer(_o))
+         throw GInfiniteRecursion "RadarDialog: infinite recursion detected detected o="+#(_o)+" o.path="+_o.getObjectPath();
+
+      // trace "xxx recursiveAddObject: gobject="+#(_o);
+
+      // // ph.setPadLeft(10);
+      local Panel phOuter <= createHPanel(_parent);
+      local Label *lb;
+      if(!b_first_output)
+      {
+         if(!_portCaption.isBlank() && (_portCaption != ">in"))
+         {
+            lb <= addIOLabel(phOuter,
+                             _oParent,
+                             _o,
+                             RadarControl.TYPE_INPUT,
+                             _portCaption,
+                             true/*bOutput*/,
+                             _inputIdOrNull/*portIdOrNull*/
+                             );
+         }
+         addControl(phOuter,
+                    _oParent,
+                    _o,
+                    RadarControl.TYPE_OBJECT,
+                    true/*bOutput*/,
+                    null/*inputIdOrNull*/
+                    );
+         if(!_outputCaption.isBlank())
+         {
+            lb <= addIOLabel(_parent,
+                             _oParent,
+                             _o,
+                             _portRadarControlType/*RadarControl.TYPE_OUTPUT*/,
+                             _outputCaption,
+                             true/*bOutput*/,
+                             _outputIdOrNull/*portIdOrNull*/
+                             );
+            if(_bPad)
+               lb.setPadLeft(20);
+            if(null != _sgxLb)
+               lb.setSizeGroup(_sgxLb);
+         }
+      }
+      else
+      {
+         local Spacer spc;
+         spc.initSpacer();
+         spc.setSizeGroup(sgx_root_control);
+         // spc.setEnableDebug(true);
+         phOuter.addLayer(deref spc, Layout.LEFT);
+
+         spc <= new Spacer;
+         spc.initSpacer();
+         // spc.setRequiredSizeX(100);
+         // trace "xxx sgx_root_lb="+#(sgx_root_lb);
+         spc.setSizeGroup(sgx_root_lb);
+         // spc.setEnableDebug(true);
+         _parent.addLayer(deref spc, Layout.LEFT);
+         b_first_output = false;
+      }
+
+      if(_recurseDepthLeft > 0)
+      {
+         if(_o instanceof GProgramSubObject && (@(_o) == @(gobject) ||
+                                                _o instanceof GVertexShader ||
+                                                _o instanceof GFragmentShader
+                                                )
+            )
+         {
+            // Add program sub-objects "pseudo"-outputs (GProgram)
+            local GProgramSubObject programSub <= _o;
+            local GProgram program <= programSub.getParentProgram();
+            if(null != program)  // should never be null
+            {
+               recursiveAddParentObject(program/*parent*/,
+                                        programSub/*o*/, phOuter,
+                                        "parent_program",
+                                        _recurseDepthLeft - 1
+                                        );
+            }
+         }
+         else if(_o instanceof GSource)
+         {
+            // e.g. GShaderSource
+            GSource gsource <= _o;
+            local GObject gparent <= gsource.parent_object;
+            if(null != gparent)
+            {
+               recursiveAddParentObject(gparent, _o, phOuter, "parent", 0/*recurseDepthLeft*/);
+            }
+         }
+         else if(null != _o.anon_parent)
+         {
+            recursiveAddParentObject(_o.anon_parent, _o, phOuter, "anon_parent", 0/*recurseDepthLeft*/);
+         }
+         else if(_o.getNamespace() instanceof GObject)
+         {
+            // e.g. GFBO => GScene
+            recursiveAddParentObject(_o.getNamespace(), _o, phOuter, "namespace", _recurseDepthLeft - 1);
+         }
+      }
+
+
+      if( (@(_o) == @(gobject)) || _o.isAnyOutputConnected() )
+      {
+         addOutputs(_o, phOuter, _portFilter, _recurseDepthLeft - 1);
+      }
+
+   }
+
+   // <method.png>
+   protected method recursiveAddParentObject(local GObject _oParent/*program*/,
+                                             local GObject _o/*programsubobject*/,
+                                             local Panel   _phOuter,
+                                             local String  _parentCaption,
+                                             local int     _recurseDepthLeft
+                                             ) {
+      local SizeGroupX sgxlb <= _phOuter.addSizeGroup("sgx_lb_out", new SizeGroupX);
+      parents.add(_o);
+
+      local int parentIdx = 0;
+      if(1)
+      {
+         local Panel pv <= createVPanel(_phOuter, true/*BOTTOM*/);
+         local Panel ph <= createHPanel(pv);
+
+         local String sOutputCaption = _parentCaption;//_oParent.id+"."+_o.id+":";
+         recursiveAddObjectOutput(null/*oParent*/,
+                                  _oParent/*o*/,
+                                  null/*outputIdOrNull*/,
+                                  null/*inputIdOrNull*/,
+                                  ph,
+                                  sOutputCaption,
+                                  "",  // displayed right next to e.g. P:prg1
+                                  false/*bPad*/,
+                                  sgxlb,
+                                  null/*outputFilter*/,
+                                  _recurseDepthLeft - 1,
+                                  RadarControl.TYPE_PARENT/*portRadarControlType*/
+                                  );
+      }
+
+      parents.remove(_o);
+   }
+
+   // <method_remove.png>
+   protected method freeControls() {
+      UI.LoseKeyboardFocusIfWithin(pn_controls, true/*bQuiet*/);
+      UI.LoseMouseFocusIfWithin(pn_controls);      
+      pn_controls.removeChildren();
+      parents.empty();
+      root_control <= null;
+   }
+
+   // <ui_update.png>
+   public method rebuildControls() {
+      // (note) also called via
+      //          PageStart::connectLinkSourceToFocusedObject()
+      //          PageStart::handleObjectRemove()
+      //          PageStart::handleInputRemove()
+
+      // trace "xxx rebuildControls: history="+#(history);
+
+      freeControls();
+
+      if(null != gobject)
+      {
+         try
+         {
+            // Recursively add object and its dependent input objects
+            recursiveAddObject(null/*inputIdOrNull*/,
+                               null/*outputIdOrNull*/,
+                               null/*oParent*/,
+                               gobject,
+                               pn_controls,
+                               "root:",
+                               ""/*portCaption*/,
+                               false/*bPad*/,
+                               null/*sgxLb*/,
+                               input_filter,
+                               2/*recurseDepthLeft*/,
+                               RadarControl.TYPE_ROOT
+                               );
+
+            if(1)
+            {
+               parents.empty();
+               b_first_output = true;
+
+               // Add outputs (bottom)
+               local Panel pv <= createVPanel(pn_controls, true/*BOTTOM*/);
+               recursiveAddObjectOutput(null/*oParent*/,
+                                        gobject,
+                                        null/*outputIdOrNull*/,
+                                        null/*inputIdOrNull*/,
+                                        pv,
+                                        "root:",
+                                        ""/*portCaption*/,
+                                        false/*bPad*/,
+                                        null/*sgxLb*/,
+                                        output_filter,
+                                        1/*recurseDepthLeft*/,
+                                        RadarControl.TYPE_OBJECT/*portRadarControlType*/
+                                        );
+            }
+
+            setWindowTitle(gobject.yacMetaClassName()+": "+gobject.getObjectPath()+((null != input_filter)?("        input:"+input_filter.getId()):""));
+
+            // trace "xxx RadarDialog: makeWidgetVisible(root_control="+root_control.getDisplayedText()+")";
+            relayout();
+            redraw();
+            recursiveBuildTabCycleLists();
+            sp_controls.makeWidgetVisible(root_control);
+         }
+         catch(GInfiniteRecursion e)
+         {
+            freeControls();
+            addLabel(pn_controls, "<infinite recursion detected>\n"+e.message, false/*bOutput*/);
+         }
+
+      }
+      else
+      {
+         addLabel(pn_controls, "<no object>", false/*bOutput*/);
+      }
+
+   }
+
+   // <method.png>
+   protected method selectNewRootObject(GObject _obj) {
+      PageStart pgStart <= root_form.pg_start;
+      pgStart.selectObjectRowByPath(_obj.getObjectPath());
+
+      int idxHistory = history.indexOfPointer(_obj, 0);
+      if(-1 == idxHistory)
+         history.add(gobject);
+      else
+      {
+         loop(history.numElements - idxHistory)
+            history.delete(idxHistory);
+      }
+
+      gobject <= _obj;
+
+      pgStart.setLastFocusedTableToObjects();
+
+      rebuildControls();
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            PageStart pgStart <= root_form.pg_start;
+            pgStart.toggleRadarDialog(false);
+            return true;
+      }
+   }
+
+//    // <ui_kbd.png>
+//    public virtual onTriadKeyTimeout() {
+//       Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+// "
+//           c  :  Close dialog
+// "
+//                                     ,
+//                                     this);
+//       return true;
+//    }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx RadarDialog::onKey: pressed="+_k.pressed+" DOWN="+VKEY_DOWN;
+      PageStart pgStart <= root_form.pg_start;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'r':
+            pgStart.toggleRadarDialog(false);
+            return true;
+
+         case 'a':
+            if(_k.modCtrlOnly())
+            {
+               pgStart.handleCtrlA(false/*bShift*/, true/*bForceInputs*/);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrlOnly())
+            {
+               pgStart.handleCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrlOnly())
+            {
+               pgStart.handlePaste();  // (note) calls rebuildControls()
+            }
+            else
+            {
+               // // if(gobject.hasDefaultAction())
+               // // {
+                  if(pgStart.canHandleKeyV())
+                  {
+                     hide();
+                     pgStart.handleKeyV();
+                  }
+                  else
+                     Global.Warning(gobject.yacMetaClassName()+" '"+gobject.id+"' has no default action");
+               // // }
+               // // else
+               // // {
+               // //    Global.Warning("Object '"+gobject.id+"' has no default action");
+               // // }
+            }
+            return true;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      PageStart pgStart <= root_form.pg_start;
+      pgStart.toggleRadarDialog(false);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      PageStart pgStart <= root_form.pg_start;
+
+      if(ap instanceof RadarControl)
+      {
+         RadarControl rc <= ap;
+         // trace "xxx rc.caption=\""+rc.getCaption()+"\" o="+#(rc.gobject)+" type="+rc.type+" rc.port_id_or_null="+rc.port_id_or_null;
+
+         // if(RadarControl.TYPE_OBJECT == rc.type)
+         //    pgStart.selectObjectRowByPath(rc.gobject_path);
+         // GObject obj <= current_project.findObjectByPath(rc.gobject_path);
+
+         GObject obj <= rc.gobject;
+
+         if(Button.ACTION_HOLD_CLICK != acName)
+         {
+            // trace "xxx handle rc.type="+rc.type;
+            switch(rc.type)
+            {
+               default:
+                  // trace "xxx unhandled rc.type="+rc.type;
+                  break;
+
+               case RadarControl.TYPE_OBJECT:
+                  // trace "xxx TYPE_OBJECT rc.type="+rc.type;
+                  if(@(obj) != @(gobject))
+                     selectNewRootObject(obj);
+                  break;
+
+               case RadarControl.TYPE_INPUT:
+                  // trace "xxx TYPE_INPUT";
+                  String inputId = rc.port_id_or_null;
+                  if(rc.b_output)
+                  {
+                     if(@(rc.gobject) != @(gobject))
+                        selectNewRootObject(rc.gobject);
+                  }
+                  else
+                  {
+                     if(@(rc.gobject_parent) != @(gobject))
+                        selectNewRootObject(rc.gobject_parent);
+                  }
+                  pgStart.setLastFocusedTableToInputs();
+                  pgStart.selectTableRowByInputId(inputId);
+                  break;
+
+               case RadarControl.TYPE_OUTPUT:
+                  // trace "xxx TYPE_OUTPUT";
+                  String outputId = rc.port_id_or_null;
+                  if(rc.b_output)
+                  {
+                     if(@(rc.gobject_parent) != @(gobject))
+                        selectNewRootObject(rc.gobject_parent);
+                  }
+                  else
+                  {
+                     if(@(rc.gobject) != @(gobject))
+                        selectNewRootObject(rc.gobject);
+                  }
+                  pgStart.setLastFocusedTableToInputs();
+                  pgStart.selectTableRowByOutputId(outputId);
+                  break;
+            }
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

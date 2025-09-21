@@ -1,0 +1,168 @@
+// ----
+// ---- file   : guniformsampler.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 17Jun2020
+// ---- changed: 20Jun2020, 27Jun2020, 03Aug2020, 14Aug2020
+// ----
+// ----
+// ----
+module MGUniformSampler;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+abstract class GUniformSampler : GUniform, GParamProvider {
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+      type = getUniformSamplerType();
+      initIO();
+
+      addParamIntSimple("tex_unit", 0, 0, 7);
+
+      // trace "xxx GUniformSampler::init: numParams="+getNumParams();
+   }
+
+   // <method.png>
+   abstract public method getUniformSamplerType() : int {
+   }
+
+   // <method.png>
+   public virtual initIO() {
+      inputs.free();
+      outputs.free();
+      addInput("tex", TYPE_REF);
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      boolean bLoadParams = false;
+
+      if(current_project.project_file_version >= 3)
+         bLoadParams = true;
+      else
+      {
+         // (note) [07Jul2020] forgot to save GParamProvider state, now we need a hack
+         local Integer magicMarker = ifs.i32;
+         trace "xxx GUniformSampler::loadStateObject: magicMarker="+magicMarker.printf("0x%08x");
+         if(0x49074489 == magicMarker)
+         {
+            bLoadParams = true;
+         }
+         else
+         {
+            // pre 07Jul2020, rewind
+            ifs.seek(-4, SEEK_CUR);
+            return true;
+         }
+      }
+
+      if(bLoadParams)
+      {
+         short ver = ifs.u16;
+
+         if(1 <= ver <= 1)
+         {
+            if(!GParamProvider::loadStateParamProvider(ifs))
+               return false;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] GUniformSampler:loadStateObject: invalid version "+ver;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_new.png>
+   public method createModelUniform() : GModelUniform {
+      return GModelUniformSampler.New(getId(),
+                                      getUniformSamplerType()
+                                      );
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId,
+                       local GModule      _module,
+                       local GProgram     _program,
+                       local String       _out,
+                       local String       _dstVar,
+                       local boolean      _bGLSL,
+                       local PointerArray _parents
+                       ) {
+
+      // trace "xxx GUniformSampler::emit: b_init_done="+b_init_done+" num_params="+getNumParams();
+
+      if("bind" == _outputId)
+      {
+         int texUnit = getIntParamById("tex_unit");
+
+         GTexture tex <= getFirstConnectedInputObjectByType("tex", GTexture);
+         // trace "xxx tex="+#(tex);
+         if(null != tex)
+         {
+            // emit texture init + draw(bind/unbind)
+            tex.emitTexture(texUnit,
+                            "bind",
+                            _module,
+                            _out,
+                            _dstVar,
+                            _bGLSL,
+                            _parents
+                            );
+         }
+
+         local String uniVarName <= getVarName();
+         _out.append("glUniform1i("+uniVarName+", "+texUnit+");  // bind texture unit "+texUnit+" to "+GDefs.GetGLSLTypeName(type)+"\n");
+      }
+
+      // if("out" == _outputId)
+      // {
+      //    GInput inColor <= getInputById("color");
+      //    inColor.emit(_module, _program, sMain, sOutColor, true/*bGLSL*/, _objDone);
+      //    _dstVar = vec4(
+      //       _src.appendMain(sMain);
+      // }
+   }
+
+   // <method.png>
+   public virtual emitPost(local GModule      _module,
+                           local GProgram     _program,
+                           local PointerArray _objDone
+                           ) {
+      GTexture tex <= getFirstConnectedInputObjectByType("tex", GTexture);
+      // trace "xxx POST tex="+#(tex);
+      if(null != tex)
+      {
+         tex.emitPost(_module,
+                      _program,
+                      _objDone
+                      );
+      }
+   }
+
+}

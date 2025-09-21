@@ -1,0 +1,387 @@
+// ----
+// ---- file   : gfbo.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 27Jun2020
+// ---- changed: 28Jun2020, 12Jul2020, 14Aug2020, 15Aug2020, 18Sep2025
+// ----
+// ----
+// ----
+module MGFBO;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GFBO : GObject, GParamProvider {
+   // (note) https://www.khronos.org/opengl/wiki/Multisampling
+
+   // (note) msaa_samples=16 on NVidia Geforce 1080 TI is interesting since it adds some inner-edge AA (looks nice!)
+
+   protected boolean b_init_done;
+   protected boolean b_post_done;
+
+
+   // <method_new.png>
+   public static New() : GFBO {
+      local GFBO fbo;
+      fbo.init();
+      return deref fbo;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      addParamInt("depth_bits",      "Depth Bits",   24, 0, 0, 32, 32, 16);
+      addParamInt("stencil_bits",    "Stencil Bits",  8, 0, 0,  8,  8,  8);
+      addParamChoice("msaa_samples", "MSAA Samples",  0, ["-", "2", "4", "8", "16"]);
+      addParamChoice("msaa_filter",  "MSAA Filter",   0, ["Nearest", "Linear"]);
+      // (todo) make blit buffer bits configurable (currently hardcoded to GL_COLOR_BUFFER_BIT)
+      addParamInt("msaa_extra_w", "MSAA Extra W", 0, -16, -2048, 16, 2048, 0);
+      addParamInt("msaa_extra_h", "MSAA Extra H", 0, -16, -2048, 16, 2048, 0);
+
+      addInput("tex_color", TYPE_REF);
+
+      addOutput(GOutput.OUT_DEF_OBJ, TYPE_REF);
+   }
+
+   // <method.png>
+   public virtual getVarName() : String {
+      return getNamespacePrefix()+"_fbo_"+id;
+   }
+
+   // <method.png>
+   public method getVarNameMSAA() : String {
+      return getNamespacePrefix()+"_fbo_msaa_"+id;
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "fbos";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "fbo";
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedTexture() : GTexture {
+      return getFirstConnectedInputObjectByType("tex_color", GTexture);
+   }
+
+   // <method_get.png>
+   public method hasDepthBuffer() : boolean {
+      int depthBits = getIntParamById("depth_bits");
+      return (depthBits > 0);
+      int stencilBits = getIntParamById("stencil_bits");
+   }
+
+   // <method_get.png>
+   public method hasStencilBuffer() : boolean {
+      int stencilBits = getIntParamById("stencil_bits");
+      return (stencilBits > 0);
+   }
+
+   // <method_get.png>
+   public method getNumSamples() : int {
+      int sampleIdx = getChoiceParamById("msaa_samples");
+      return [0, 2, 4, 8, 16].get(sampleIdx);
+   }
+
+   // <method_get.png>
+   protected method getRenderW(GTexture _tex) : int {
+      int r = _tex.getTextureWidth();
+      if(0 != getChoiceParamById("msaa_samples"))
+      {
+         r += getIntParamById("msaa_extra_w");
+         if(r < 1)
+            r = 1;
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   protected method getRenderH(GTexture _tex) : int {
+      int r = _tex.getTextureHeight();
+      if(0 != getChoiceParamById("msaa_samples"))
+      {
+         r += getIntParamById("msaa_extra_h");
+         if(r < 1)
+            r = 1;
+      }
+      return r;
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // Params
+      GParamProvider::saveStateParamProvider(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         if(GParamProvider::loadStateParamProvider(ifs))
+         {
+            // Succeeded
+            return true;
+         }
+         else
+         {
+            trace "[---] GFBO::loadStateObject: failed to load params, this="+#(this)+" path="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[---] GFBO::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GFBO::emitBegin";
+      b_init_done = false;
+      b_post_done = false;
+   }
+
+   // <method.png>
+   public method emitFBO(local String       _outputId,
+                         local GModule      _module,
+                         local PointerArray _parents
+                         ) {
+
+      // trace "[trc] GFBO::emitFBO: b_init_done="+b_init_done;
+
+      // (todo) support depth-buffer-only FBOs
+      local GTexture tex <= getFirstConnectedTexture();
+
+      if(null != tex)
+      {
+         local String sFBOVar <= getVarName();
+         local String sFBOVarMSAA <= getVarNameMSAA();
+
+         local String *sFBOVarRender;
+
+         int numSamples = getNumSamples();
+         local String sMSAAFilter = ["GL_NEAREST", "GL_LINEAR"].get(getChoiceParamById("msaa_filter"));
+
+         int renderW = getRenderW(tex);
+         int renderH = getRenderH(tex);
+
+         if(numSamples > 0)
+            sFBOVarRender <= sFBOVarMSAA;
+         else
+            sFBOVarRender <= sFBOVar;
+
+         if("init" == _outputId)
+         {
+            if(!b_init_done)
+            {
+               tex.emitTexture(0/*unitIdx,ignored*/,
+                               "init",
+                               _module,
+                               null/*out,ignored*/,
+                               null/*dstVar,ignored*/,
+                               false/*bGLSL,ignored*/,
+                               _parents
+                               );
+
+               local String sGlobal;
+               local String sInit;
+               local String sExit;
+
+               b_init_done = true;
+
+               sGlobal.append("int "+sFBOVar+";\n");
+
+               sInit.append("// -------- BEGIN init FBO "+getObjectPath()+" -------\n");
+               sExit.append("// -------- BEGIN exit FBO "+getObjectPath()+" -------\n");
+
+               // Create multisample resolve framebuffer
+               sInit.append(sFBOVar+" = zglGenFramebuffer();\n");
+               sInit.append("glBindFramebuffer(GL_FRAMEBUFFER, "+sFBOVar+");\n");
+               sInit.append(tex.getVarName()+".bind(); // create id + alloc GL texture RAM\n");
+               sInit.append(tex.getVarName()+".unbind();\n");
+               sInit.append("glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, "+tex.getVarName()+".id, 0/*level*/);\n");
+
+               if(numSamples > 0)
+               {
+                  sInit.append("int "+getVarName()+"_fbStatus_msaa = glCheckFramebufferStatus(GL_FRAMEBUFFER);\n");
+                  sInit.append("if(GL_FRAMEBUFFER_COMPLETE != "+getVarName()+"_fbStatus_msaa)\n");
+                  sInit.append("  trace \"[~~~] <tempscript> GFBO: glCheckFramebufferStatus() indicated a problem (id="+getObjectPath()+", status=\"+"+getVarName()+"_fbStatus_msaa+\"=\"+TKS.constantToString("+getVarName()+"_fbStatus_msaa, \"GL_FRAMEBUFFER\")+\")\";\n");
+
+                  // Create MSAA framebuffer
+                  sGlobal.append("int "+sFBOVarMSAA+";\n");
+                  sGlobal.append("int "+sFBOVarMSAA+"_tex;\n");
+                  sInit.append(sFBOVarMSAA+" = zglGenFramebuffer();\n");
+                  sInit.append("glBindFramebuffer(GL_FRAMEBUFFER, "+sFBOVarMSAA+");\n");
+                  sInit.append(sFBOVarMSAA+"_tex = zglGenTexture();\n");
+                  sInit.append("glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, "+sFBOVarMSAA+"_tex);\n");
+                  // (note) fixedsamplelocations must be GL_TRUE or framebuffer with z/s renderbuffer will be incomplete
+                  sInit.append("glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, "+numSamples+", GL_RGBA8, "+renderW+", "+renderH+", GL_TRUE/*fixedsamplelocations*/);\n");
+                  sInit.append("glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, "+sFBOVarMSAA+"_tex, 0/*level*/);\n");
+                  sInit.append("glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);\n");
+               }
+
+               // Create depth/stencil renderbuffers
+               int depthBits = getIntParamById("depth_bits");
+               int stencilBits = getIntParamById("stencil_bits");
+
+               if((depthBits > 0) || (stencilBits > 0))
+               {
+                  local String *sZSType;
+                  local String *sZSAttachment;
+
+                  sGlobal.append("int "+sFBOVarRender+"_zs_rb;\n");
+                  sInit.append(sFBOVarRender+"_zs_rb = zglGenRenderbuffer();\n");
+                  sInit.append("glBindRenderbuffer(GL_RENDERBUFFER, "+sFBOVarRender+"_zs_rb);\n");
+
+                  if(depthBits > 0)
+                  {
+                     if(0 == stencilBits)
+                     {
+                        if(depthBits > 24)
+                           sZSType <= "GL_DEPTH_COMPONENT32";
+                        else if(depthBits > 16)
+                           sZSType <= "GL_DEPTH_COMPONENT24";
+                        else
+                           sZSType <= "GL_DEPTH_COMPONENT16";
+
+                        sZSAttachment <= "GL_DEPTH_ATTACHMENT";
+                     }
+                     else
+                     {
+                        if(depthBits > 24)
+                           sZSType <= "GL_DEPTH32F_STENCIL8";
+                        else
+                           sZSType <= "GL_DEPTH24_STENCIL8";
+
+                        sZSAttachment <= "GL_DEPTH_STENCIL_ATTACHMENT";
+                     }
+                  }
+                  else
+                  {
+                     sZSType <= "GL_STENCIL_INDEX8";
+                     sZSAttachment <= "GL_STENCIL_ATTACHMENT";
+                  }
+
+                  if(numSamples > 0)
+                     sInit.append("glRenderbufferStorageMultisample(GL_RENDERBUFFER, "+numSamples+", "+sZSType+", "+tex.getTextureWidth()+", "+tex.getTextureHeight()+");\n");
+                  else
+                     sInit.append("glRenderbufferStorage(GL_RENDERBUFFER, "+sZSType+", "+tex.getTextureWidth()+", "+tex.getTextureHeight()+");\n");
+                  sInit.append("glFramebufferRenderbuffer(GL_FRAMEBUFFER, "+sZSAttachment+", GL_RENDERBUFFER, "+sFBOVarRender+"_zs_rb);\n");
+                  sInit.append("glBindRenderbuffer(GL_RENDERBUFFER, 0);\n");
+
+                  sExit.append("zglDeleteRenderbuffer("+sFBOVarRender+"_zs_rb);\n");
+
+               } // if z or s
+
+               sInit.append("int "+sFBOVarRender+"_fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);\n");
+               sInit.append("if(GL_FRAMEBUFFER_COMPLETE != "+sFBOVarRender+"_fbStatus)\n");
+               sInit.append("  trace \"[~~~] <tempscript> GFBO: glCheckFramebufferStatus() indicated a problem (id="+getObjectPath()+", status=\"+"+sFBOVarRender+"_fbStatus+\"=\"+TKS.constantToString("+sFBOVarRender+"_fbStatus, \"GL_FRAMEBUFFER\")+\")\";\n");
+
+               sInit.append("glBindFramebuffer(GL_FRAMEBUFFER, g_default_fb);\n");
+               sExit.append("zglDeleteFramebuffer("+sFBOVar+");\n");
+               if(numSamples > 0)
+               {
+                  sExit.append("zglDeleteFramebuffer("+sFBOVarMSAA+");\n");
+                  sExit.append("zglDeleteTexture("+sFBOVarMSAA+"_tex);\n");
+               }
+               sInit.append("// -------- END init FBO "+getObjectPath()+" -------\n");
+               sExit.append("// -------- END exit FBO "+getObjectPath()+" -------\n");
+
+               _module.appendGlobal(sGlobal);
+               _module.appendInit(sInit);
+               _module.appendExit(sExit);
+
+            } // if !b_init_done
+
+         }
+         else if("bind" == _outputId)
+         {
+            local String sDrawPre;
+            local String sDrawPost;
+
+            current_project.cur_emit_fb_w = renderW;
+            current_project.cur_emit_fb_h = renderH;
+
+            if(numSamples > 0)
+            {
+               sDrawPre.append("glEnable(GL_MULTISAMPLE);\n");
+               sDrawPost.append("glDisable(GL_MULTISAMPLE);\n");
+            }
+            sDrawPre.append("glBindFramebuffer(GL_FRAMEBUFFER, "+sFBOVarRender+");\n");
+
+            sDrawPre.append("glViewport(0, 0, "+renderW+", "+renderH+");\n");
+            sDrawPre.append("glScissor(0, 0, "+renderW+", "+renderH+");\n");
+
+            if(numSamples > 0)
+            {
+               // MSAA resolve
+               sDrawPost.append("// ---- BEGIN multisample resolve FBO.id="+getObjectPath()+"\n");
+               sDrawPost.append("glBindFramebuffer(GL_DRAW_FRAMEBUFFER, "+sFBOVar+");\n");
+               sDrawPost.append("glBindFramebuffer(GL_READ_FRAMEBUFFER, "+sFBOVarRender+");\n");  // (note) should already by set
+               // // sDrawPost.append("glDrawBuffer(GL_BACK);\n");
+               sDrawPost.append("glBlitFramebuffer(0, 0, "+renderW+", "+renderH+",\n"
+                                "                  0, 0, "+tex.getTextureWidth()+", "+tex.getTextureHeight()+",\n"
+                                "                  GL_COLOR_BUFFER_BIT, "+sMSAAFilter+"\n"
+                                "                  );\n"
+                                );
+               sDrawPost.append("// ---- END multisample resolve FBO.id="+getObjectPath()+"\n");
+            }
+
+            sDrawPost.append("glBindFramebuffer(GL_FRAMEBUFFER, g_default_fb);\n");
+            sDrawPost.append("glViewport(g_default_vp_x, g_default_vp_y, g_default_vp_w, g_default_vp_h);\n");
+            sDrawPost.append("glScissor(g_default_vp_x, g_default_vp_y, g_default_vp_w, g_default_vp_h);\n");
+
+            _module.appendDrawPre(sDrawPre);
+            _module.appendDrawPost(sDrawPost);
+         }
+      }
+      else
+      {
+         trace "[~~~] GFBO::emitFBO: this.path="+getObjectPath()+" no texture connected, skipping..";
+      }
+   }
+
+   // <method.png>
+   public virtual emitPost(local GModule      _module,
+                           local GProgram     _program,
+                           local PointerArray _parents
+                           ) {
+      // trace "xxx GFBO::emitPost: b_init_done="+b_init_done+" b_post_done="+b_post_done;
+
+      if(b_init_done && !b_post_done)
+      {
+         b_post_done = true;
+         GObject::emitPost(_module, _program, _parents);
+
+         local GTexture tex <= getFirstConnectedTexture();
+         if(null != tex)
+         {
+            tex.emitPost(_module, _program, _parents);
+         }
+
+      }
+   }
+}

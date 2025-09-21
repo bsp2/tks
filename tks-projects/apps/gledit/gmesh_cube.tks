@@ -1,0 +1,709 @@
+// ----
+// ---- file   : gmesh_cube.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----           generates GL_TRIANGLE_FAN with subdiv=0
+// ----           and indexed GL_TRIANGLES with subdiv>0
+// ----
+// ---- created: 09Aug2020
+// ---- changed: 14Aug2020
+// ----
+// ----
+// ----
+module MGMesh_Cube;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GMesh_Cube : GMesh {
+
+   // <method_new.png>
+   static New() : GMesh_Cube {
+      local GMesh_Cube r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GMesh::init();
+
+      GParamFloat *pf;
+
+      addParamFloat("width",  "width",  1.0, 0.00001, 0.0001, 10.0, 1000.0, 1.0);
+      addParamFloat("height", "height", 1.0, 0.00001, 0.0001, 10.0, 1000.0, 1.0);
+      addParamFloat("depth",  "depth",  1.0, 0.00001, 0.0001, 10.0, 1000.0, 1.0);
+      addParamIntSimple("subdiv_x", 0, 0, 99);
+      addParamIntSimple("subdiv_y", 0, 0, 99);
+      addParamIntSimple("subdiv_z", 0, 0, 99);
+
+      addParamFloat("off_x", "Offset X", 0.0, -10.0, -1000.0, 10.0, 1000.0, 0.0);
+      addParamFloat("off_y", "Offset Y", 0.0, -10.0, -1000.0, 10.0, 1000.0, 0.0);
+      addParamFloat("off_z", "Offset Z", 0.0, -10.0, -1000.0, 10.0, 1000.0, 0.0);
+
+      addParamBool("front",  "Front",  true);
+      addParamBool("back",   "Back",   true);
+      addParamBool("left",   "Left",   true);
+      addParamBool("right",  "Right",  true);
+      addParamBool("top",    "Top",    true);
+      addParamBool("bottom", "Bottom", true);
+
+      addParamBool("color_debug", "Color Debug", false);  // create checkboard-like pattern to see subdivision
+
+      addParamBool("spherify", "Spherify", false);  // normalize vertices
+      pf <= addParamFloat("spherify_amt", "Spherify Amt", 1.0, 0.0, 0.0, 1.0, 1.0, -1);
+      pf.setEnablePercent(true);
+
+      addOutput("position", TYPE_VEC3);
+      addOutput("normal",   TYPE_VEC3);
+      addOutput("uv",       TYPE_VEC2);
+      addOutput("color",    TYPE_VEC4);
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "cube";
+   }
+
+   // <method_get.png>
+   public virtual getNumVertices() : int {
+      int subdivX = getIntParamById("subdiv_x");
+      int subdivY = getIntParamById("subdiv_y");
+      int subdivZ = getIntParamById("subdiv_z");
+
+      int r = 0;
+
+      if(getBoolParamById("front"))
+         r += ((2+subdivX) * (2+subdivY));
+      if(getBoolParamById("back"))
+         r += ((2+subdivX) * (2+subdivY));
+      if(getBoolParamById("left"))
+         r += ((2+subdivZ) * (2+subdivY));
+      if(getBoolParamById("right"))
+         r += ((2+subdivZ) * (2+subdivY));
+      if(getBoolParamById("top"))
+         r += ((2+subdivX) * (2+subdivZ));
+      if(getBoolParamById("bottom"))
+         r += ((2+subdivX) * (2+subdivZ));
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getNumIndices() : int {
+      int subdivX = getIntParamById("subdiv_x");
+      int subdivY = getIntParamById("subdiv_y");
+      int subdivZ = getIntParamById("subdiv_z");
+
+      int r = 0;
+
+      if(getBoolParamById("front"))
+         r += ( (3*2*(1+subdivX)) * (1+subdivY) );
+      if(getBoolParamById("back"))
+         r += ( (3*2*(1+subdivX)) * (1+subdivY) );
+      if(getBoolParamById("left"))
+         r += ( (3*2*(1+subdivZ)) * (1+subdivY) );
+      if(getBoolParamById("right"))
+         r += ( (3*2*(1+subdivZ)) * (1+subdivY) );
+      if(getBoolParamById("top"))
+         r += ( (3*2*(1+subdivX)) * (1+subdivZ) );
+      if(getBoolParamById("bottom"))
+         r += ( (3*2*(1+subdivX)) * (1+subdivZ) );
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getGLMode() : int {
+      return GL_TRIANGLES;
+   }
+
+   // <method.png>
+   public virtual emitPrepareAttribBuffer(GModule  _module,
+                                          GModel   _model,
+                                          GProgram _program,
+                                          String   _sInit,
+                                          GBuffer  _buffer,
+                                          int      _pitch
+                                          ) {
+      Integer offPosition = _model.getAttributeOffsetById("position");
+
+      boolean bNormal = /*getBoolParamById("emit_normal") && */_program.hasAttribute("normal");
+      boolean bColor  = /*getBoolParamById("emit_color")  && */_program.hasAttribute("color");
+      boolean bUV     = /*getBoolParamById("emit_uv")     && */_program.hasAttribute("uv");
+
+      Integer offNormal = bNormal ? _model.getAttributeOffsetById("normal") : -1;
+      Integer offColor  = bColor  ? _model.getAttributeOffsetById("color")  : -1;
+      Integer offUV     = bUV     ? _model.getAttributeOffsetById("uv")     : -1;
+
+      // trace "xxx mesh bUV="+bUV+" offUV="+offUV;
+
+      float width   = getFloatParamById("width");
+      float height  = getFloatParamById("height");
+      float depth   = getFloatParamById("depth");
+      int   subdivX = getIntParamById("subdiv_x");
+      int   subdivY = getIntParamById("subdiv_y");
+      int   subdivZ = getIntParamById("subdiv_z");
+      float offX    = getFloatParamById("off_x");
+      float offY    = getFloatParamById("off_y");
+      float offZ    = getFloatParamById("off_z");
+      boolean bColorDebug = getBoolParamById("color_debug");
+      boolean bSpherify = getBoolParamById("spherify");
+      float spherifyAmt = getFloatParamById("spherify_amt");
+
+      float w = (2.0f * width)  / (1+subdivX);
+      float h = (2.0f * height) / (1+subdivY);
+      float d = (2.0f * depth)  / (1+subdivZ);
+
+      float cx;
+      float cy;
+      float cz;
+      float cu;
+      float cv;
+      float uStep;
+      float vStep;
+
+      int ix;
+      int iy;
+      Vector3f vt;
+      Vector3f vScale; vScale.init(width, height, depth);
+      Vector3f vTrans; vTrans.init(offX, offY, offZ);
+
+      Vector3f vn;
+
+      emitBeginAttribData(_sInit, _buffer, _pitch);
+
+      // Front
+      if(getBoolParamById("front"))
+      {
+         cy = -height + offY;
+         cv = 0.0;
+         cz = depth + offZ;
+         uStep = 1.0 / (1+subdivX);
+         vStep = 1.0 / (1+subdivY);
+         iy = 0;
+
+         loop(2+subdivY)
+         {
+            cx = -width + offX;
+            cu = 0;
+            ix = 0;
+            loop(2+subdivX)
+            {
+               if(bSpherify)
+               {
+                  vt.init(cx, cy, cz);
+                  vt.sub(vTrans);
+                  vt.unit();
+                  if(bNormal)
+                  {
+                     vn.init(0,0,1);
+                     vn.init(mathLerpf(vn.x, vt.x, spherifyAmt),
+                             mathLerpf(vn.y, vt.y, spherifyAmt),
+                             mathLerpf(vn.z, vt.z, spherifyAmt)
+                             );
+                     emitVec3v(offNormal, vn);
+                  }
+                  vt.mul(vScale);
+                  vt.add(vTrans);
+                  vt.init(mathLerpf(cx, vt.x, spherifyAmt),
+                          mathLerpf(cy, vt.y, spherifyAmt),
+                          mathLerpf(cz, vt.z, spherifyAmt)
+                          );
+                  emitVec3v(offPosition, vt);
+               }
+               else
+               {
+                  emitVec3(offPosition, cx, cy, cz);
+                  if(bNormal)
+                     emitVec3(offNormal, 0,0,1);
+               }
+               if(bColor)
+               {
+                  if(bColorDebug)
+                  {
+                     if((ix^iy)&1)
+                        emitVec4(offColor, 0,0,0.5,1);
+                     else
+                        emitVec4(offColor, 0,0,1,1);
+                  }
+                  else
+                     emitVec4(offColor, 0,0,1,1);
+               }
+               if(bUV)
+                  emitVec2(offUV, cu, cv);
+
+               cx += w;
+               cu += uStep;
+               ix++;
+            }
+            cy += h;
+            cv += vStep;
+            iy++;
+         }
+      }
+
+      // Back
+      if(getBoolParamById("back"))
+      {
+         cy = -height + offY;
+         cv = 0.0;
+         cz = -depth + offZ;
+         uStep = 1.0 / (1+subdivX);
+         vStep = 1.0 / (1+subdivY);
+         iy = 0;
+         loop(2+subdivY)
+         {
+            cx = -width + offX;
+            cu = 0;
+            ix = 0;
+            loop(2+subdivX)
+            {
+               if(bSpherify)
+               {
+                  vt.init(cx, cy, cz);
+                  vt.sub(vTrans);
+                  vt.unit();
+                  if(bNormal)
+                  {
+                     vn.init(0,0,-1);
+                     vn.init(mathLerpf(vn.x, vt.x, spherifyAmt),
+                             mathLerpf(vn.y, vt.y, spherifyAmt),
+                             mathLerpf(vn.z, vt.z, spherifyAmt)
+                             );
+                     emitVec3v(offNormal, vn);
+                  }
+                  vt.mul(vScale);
+                  vt.add(vTrans);
+                  vt.init(mathLerpf(cx, vt.x, spherifyAmt),
+                          mathLerpf(cy, vt.y, spherifyAmt),
+                          mathLerpf(cz, vt.z, spherifyAmt)
+                          );
+                  emitVec3v(offPosition, vt);
+               }
+               else
+               {
+                  emitVec3(offPosition, cx, cy, cz);
+                  if(bNormal)
+                     emitVec3(offNormal, 0,0,-1);
+               }
+               if(bColor)
+               {
+                  if(bColorDebug)
+                  {
+                     if((ix^iy)&1)
+                        emitVec4(offColor, 0,0.5,0,1);
+                     else
+                        emitVec4(offColor, 0,1,0,1);
+                  }
+                  else
+                     emitVec4(offColor, 0,1,0,1);
+               }
+               if(bUV)
+                  emitVec2(offUV, cu, cv);
+
+               cx += w;
+               cu += uStep;
+               ix++;
+            }
+            cy += h;
+            cv += vStep;
+            iy++;
+         }
+      }
+
+      // Left
+      if(getBoolParamById("left"))
+      {
+         cy = -height + offY;
+         cv = 0.0;
+         cx = -width + offX;
+         uStep = 1.0 / (1+subdivZ);
+         vStep = 1.0 / (1+subdivY);
+         iy = 0;
+         loop(2+subdivY)
+         {
+            cz = -depth + offZ;
+            cu = 0;
+            ix = 0;
+            loop(2+subdivZ)
+            {
+               if(bSpherify)
+               {
+                  vt.init(cx, cy, cz);
+                  vt.sub(vTrans);
+                  vt.unit();
+                  if(bNormal)
+                  {
+                     vn.init(-1,0,0);
+                     vn.init(mathLerpf(vn.x, vt.x, spherifyAmt),
+                             mathLerpf(vn.y, vt.y, spherifyAmt),
+                             mathLerpf(vn.z, vt.z, spherifyAmt)
+                             );
+                     emitVec3v(offNormal, vn);
+                  }
+                  vt.mul(vScale);
+                  vt.add(vTrans);
+                  vt.init(mathLerpf(cx, vt.x, spherifyAmt),
+                          mathLerpf(cy, vt.y, spherifyAmt),
+                          mathLerpf(cz, vt.z, spherifyAmt)
+                          );
+                  emitVec3v(offPosition, vt);
+               }
+               else
+               {
+                  emitVec3(offPosition, cx, cy, cz);
+                  if(bNormal)
+                     emitVec3(offNormal, -1,0,0);
+               }
+               if(bColor)
+               {
+                  if(bColorDebug)
+                  {
+                     if((ix^iy)&1)
+                        emitVec4(offColor, 0,0.5,0.5,1);
+                     else
+                        emitVec4(offColor, 0,1,1,1);
+                  }
+                  else
+                     emitVec4(offColor, 0,1,1,1);
+               }
+               if(bUV)
+                  emitVec2(offUV, cu, cv);
+
+               cz += d;
+               cu += uStep;
+               ix++;
+            }
+            cy += h;
+            cv += vStep;
+            iy++;
+         }
+      }
+
+      // Right
+      if(getBoolParamById("right"))
+      {
+         cy = -height + offY;
+         cv = 0.0;
+         cx = width + offX;
+         uStep = 1.0 / (1+subdivZ);
+         vStep = 1.0 / (1+subdivY);
+         iy = 0;
+         loop(2+subdivY)
+         {
+            cz = -depth + offZ;
+            cu = 0;
+            ix = 0;
+            loop(2+subdivZ)
+            {
+               if(bSpherify)
+               {
+                  vt.init(cx, cy, cz);
+                  vt.sub(vTrans);
+                  vt.unit();
+                  if(bNormal)
+                  {
+                     vn.init(1,0,0);
+                     vn.init(mathLerpf(vn.x, vt.x, spherifyAmt),
+                             mathLerpf(vn.y, vt.y, spherifyAmt),
+                             mathLerpf(vn.z, vt.z, spherifyAmt)
+                             );
+                     emitVec3v(offNormal, vn);
+                  }
+                  vt.mul(vScale);
+                  vt.add(vTrans);
+                  vt.init(mathLerpf(cx, vt.x, spherifyAmt),
+                          mathLerpf(cy, vt.y, spherifyAmt),
+                          mathLerpf(cz, vt.z, spherifyAmt)
+                          );
+                  emitVec3v(offPosition, vt);
+               }
+               else
+               {
+                  emitVec3(offPosition, cx, cy, cz);
+                  if(bNormal)
+                     emitVec3(offNormal, 1,0,0);
+               }
+               if(bColor)
+               {
+                  if(bColorDebug)
+                  {
+                     if((ix^iy)&1)
+                        emitVec4(offColor, 0.5,0,0,1);
+                     else
+                        emitVec4(offColor, 1,0,0,1);
+                  }
+                  else
+                     emitVec4(offColor, 1,0,0,1);
+               }
+               if(bUV)
+                  emitVec2(offUV, cu, cv);
+
+               cz += d;
+               cu += uStep;
+               ix++;
+            }
+            cy += h;
+            cv += vStep;
+            iy++;
+         }
+      }
+
+      // Top
+      if(getBoolParamById("top"))
+      {
+         cz = -depth + offZ;
+         cv = 0.0;
+         cy = height + offY;
+         uStep = 1.0 / (1+subdivX);
+         vStep = 1.0 / (1+subdivZ);
+         iy = 0;
+         loop(2+subdivZ)
+         {
+            cx = -width + offX;
+            cu = 0;
+            ix = 0;
+            loop(2+subdivX)
+            {
+               if(bSpherify)
+               {
+                  vt.init(cx, cy, cz);
+                  vt.sub(vTrans);
+                  vt.unit();
+                  if(bNormal)
+                  {
+                     vn.init(0,1,0);
+                     vn.init(mathLerpf(vn.x, vt.x, spherifyAmt),
+                             mathLerpf(vn.y, vt.y, spherifyAmt),
+                             mathLerpf(vn.z, vt.z, spherifyAmt)
+                             );
+                     emitVec3v(offNormal, vn);
+                  }
+                  vt.mul(vScale);
+                  vt.add(vTrans);
+                  vt.init(mathLerpf(cx, vt.x, spherifyAmt),
+                          mathLerpf(cy, vt.y, spherifyAmt),
+                          mathLerpf(cz, vt.z, spherifyAmt)
+                          );
+                  emitVec3v(offPosition, vt);
+               }
+               else
+               {
+                  emitVec3(offPosition, cx, cy, cz);
+                  if(bNormal)
+                     emitVec3(offNormal, 0,1,0);
+               }
+               if(bColor)
+               {
+                  if(bColorDebug)
+                  {
+                     if((ix^iy)&1)
+                        emitVec4(offColor, 0.5,0,0.5,1);
+                     else
+                        emitVec4(offColor, 1,0,1,1);
+                  }
+                  else
+                     emitVec4(offColor, 1,0,1,1);
+               }
+               if(bUV)
+                  emitVec2(offUV, cu, cv);
+
+               cx += w;
+               cu += uStep;
+               ix++;
+            }
+            cz += d;
+            cv += vStep;
+            iy++;
+         }
+      }
+
+      // Bottom (yellow)
+      if(getBoolParamById("bottom"))
+      {
+         cz = -depth + offZ;
+         cv = 0.0;
+         cy = -height + offY;
+         uStep = 1.0 / (1+subdivX);
+         vStep = 1.0 / (1+subdivZ);
+         iy = 0;
+         loop(2+subdivZ)
+         {
+            cx = -width + offX;
+            cu = 0;
+            ix = 0;
+            loop(2+subdivX)
+            {
+               if(bSpherify)
+               {
+                  vt.init(cx, cy, cz);
+                  vt.sub(vTrans);
+                  vt.unit();
+                  if(bNormal)
+                  {
+                     vn.init(0,-1,0);
+                     vn.init(mathLerpf(vn.x, vt.x, spherifyAmt),
+                             mathLerpf(vn.y, vt.y, spherifyAmt),
+                             mathLerpf(vn.z, vt.z, spherifyAmt)
+                             );
+                     emitVec3v(offNormal, vn);
+                  }
+                  vt.mul(vScale);
+                  vt.add(vTrans);
+                  vt.init(mathLerpf(cx, vt.x, spherifyAmt),
+                          mathLerpf(cy, vt.y, spherifyAmt),
+                          mathLerpf(cz, vt.z, spherifyAmt)
+                          );
+                  emitVec3v(offPosition, vt);
+               }
+               else
+               {
+                  emitVec3(offPosition, cx, cy, cz);
+                  if(bNormal)
+                     emitVec3(offNormal, 0,-1,0);
+               }
+               if(bColor)
+               {
+                  if(bColorDebug)
+                  {
+                     if((ix^iy)&1)
+                        emitVec4(offColor, 0.5,0.5,0,1);
+                     else
+                        emitVec4(offColor, 1,1,0,1);
+                  }
+                  else
+                     emitVec4(offColor, 1,1,0,1);
+               }
+               if(bUV)
+                  emitVec2(offUV, cu, cv);
+
+               cx += w;
+               cu += uStep;
+               ix++;
+            }
+            cz += d;
+            cv += vStep;
+            iy++;
+         }
+      }
+
+      emitEndAttribData();
+   }
+
+   // <method.png>
+   protected method emitIndicesCW(int _subdivX, int _subdivY, int _faceIdxOff) {
+      int cy = 0;
+      int w = (2 + _subdivX);
+      loop(1 + _subdivY)
+      {
+         int cx = 0;
+         loop(1 + _subdivX)
+         {
+            // tri 1
+            emitIndex32(_faceIdxOff + cy + cx + 0);
+            emitIndex32(_faceIdxOff + cy + cx + w + 0);
+            emitIndex32(_faceIdxOff + cy + cx + w + 1 + 0);
+
+            // tri 2
+            emitIndex32(_faceIdxOff + cy + cx + 0);
+            emitIndex32(_faceIdxOff + cy + cx + w + 1);
+            emitIndex32(_faceIdxOff + cy + cx + 1);
+
+            cx++;
+         }
+         cy += w;
+      }
+   }
+
+   // <method.png>
+   protected method emitIndicesCCW(int _subdivX, int _subdivY, int _faceIdxOff) {
+      int cy = 0;
+      int w = (2 + _subdivX);
+      loop(1 + _subdivY)
+      {
+         int cx = 0;
+         loop(1 + _subdivX)
+         {
+            // tri 1
+            emitIndex32(_faceIdxOff + cy + cx + w + 1 + 0);
+            emitIndex32(_faceIdxOff + cy + cx + w + 0);
+            emitIndex32(_faceIdxOff + cy + cx + 0);
+
+            // tri 2
+            emitIndex32(_faceIdxOff + cy + cx + 1);
+            emitIndex32(_faceIdxOff + cy + cx + w + 1);
+            emitIndex32(_faceIdxOff + cy + cx + 0);
+
+            cx++;
+         }
+         cy += w;
+      }
+   }
+
+   // <method.png>
+   public virtual emitPrepareIndexBuffer(GModule _module, GModel _model, String _sInit, GBuffer _buffer) {
+
+      int subdivX = getIntParamById("subdiv_x");
+      int subdivY = getIntParamById("subdiv_y");
+      int subdivZ = getIntParamById("subdiv_z");
+
+      emitBeginIndexData(_sInit, _buffer);
+      _buffer.data.setOffset(0);
+
+      int faceIdxOff = 0;
+
+      // Front  (blue)
+      if(getBoolParamById("front"))
+      {
+         emitIndicesCW(subdivX, subdivY, faceIdxOff);
+         faceIdxOff += ((2+subdivX) * (2+subdivY));
+      }
+
+      // Back   (green)
+      if(getBoolParamById("back"))
+      {
+         emitIndicesCCW(subdivX, subdivY, faceIdxOff);
+         faceIdxOff += ((2+subdivX) * (2+subdivY));
+      }
+
+      // Left   (cyan)
+      if(getBoolParamById("left"))
+      {
+         emitIndicesCW(subdivZ, subdivY, faceIdxOff);
+         faceIdxOff += ((2+subdivZ) * (2+subdivY));
+      }
+
+      // Right  (red)
+      if(getBoolParamById("right"))
+      {
+         emitIndicesCCW(subdivZ, subdivY, faceIdxOff);
+         faceIdxOff += ((2+subdivZ) * (2+subdivY));
+      }
+
+      // Top    (purple)
+      if(getBoolParamById("top"))
+      {
+         emitIndicesCCW(subdivX, subdivZ, faceIdxOff);
+         faceIdxOff += ((2+subdivX) * (2+subdivZ));
+      }
+
+      // Bottom (yellow)
+      if(getBoolParamById("bottom"))
+      {
+         emitIndicesCW(subdivX, subdivZ, faceIdxOff);
+         faceIdxOff += ((2+subdivX) * (2+subdivZ));
+      }
+
+      // trace "xxx faceIdxOff="+faceIdxOff+" getNumIndices="+getNumIndices();
+
+      emitEndIndexData();
+   }
+
+}

@@ -1,0 +1,1747 @@
+// ----
+// ---- file   : ObjectsTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 14Jun2020
+// ---- changed: 15Jun2020, 16Jun2020, 17Jun2020, 19Jun2020, 20Jun2020, 22Jun2020, 27Jun2020
+// ----          28Jun2020, 30Jun2020, 01Jul2020, 08Jul2020, 09Jul2020, 10Jul2020, 13Jul2020
+// ----          19Jul2020, 23Jul2020, 30Jul2020, 01Aug2020, 02Aug2020, 08Feb2025, 09Feb2025
+// ----
+// ----
+// ----
+module MObjectsTM;
+
+use namespace ui;
+use namespace gledit;
+
+// <class.png>
+class ObjectsTMDefs {
+   define int TYPE_OBJECT        =  0;
+   define int TYPE_ARGS          =  1;  // virtual folder
+   define int TYPE_CONSTANTS     =  2;  // virtual folder
+   define int TYPE_ENVELOPES     =  3;  // virtual folder
+   define int TYPE_TEXTURES      =  4;  // virtual folder
+   define int TYPE_FBOS          =  5;  // virtual folder
+   define int TYPE_RENDERPASSES  =  6;  // virtual folder
+   define int TYPE_MESHES        =  7;  // virtual folder
+   define int TYPE_PROGRAMS      =  8;  // virtual folder
+   define int TYPE_MODELS        =  9;  // virtual folder
+   define int TYPE_MODELUNIFORM  = 10;  // virtual folder
+   define int TYPE_COMPOSITES    = 11;  // virtual folder
+   define int TYPE_SCENES        = 12;  // virtual folder
+   define int TYPE_PROGRAM       = 13;
+   define int TYPE_SHADER        = 14;
+   define int TYPE_ATTRIBUTES    = 15;  // virtual folder
+   define int TYPE_UNIFORMS      = 16;  // virtual folder
+   define int TYPE_VARYINGS      = 17;  // virtual folder
+   define int TYPE_MODS          = 18;  // virtual folder
+   define int TYPE_SGNODE        = 19;  // scenegraph node (arbitrary nesting)
+   define int TYPE_LABEL         = 20;  // no-op, just a label (e.g. to separate scenegraph root node children from namespace folders)
+}
+
+
+// <class.png>
+class ObjectsTMEntry : ObjectsTMDefs {
+
+   int         type;
+   GNamespace *nsp;
+   GProgram   *program;  // parent program, for GShader, GAttribute, GUniform, GVarying objects
+   GShader    *shader;   // parent shader, for GSource
+   // // GSGNode    *sgnode;   // parent scenegraph (-node)
+   GObject    *object;
+   String      caption;  // object id or virtual folder caption
+   String      path;     // (todo) is this still used ?
+   boolean     b_empty;
+   boolean     b_output_connected;
+
+
+   public method canCreateOrRemoveObjects() : boolean {
+      // trace "xxx canCreateOrRemoveObjects: nsp="+#(nsp);
+      if((nsp instanceof GNamespace) && (GNamespace.GLOBAL_ID == nsp.getNamespaceId()))
+      {
+         // trace "xxx global canCreateOrRemoveObjects: type="+type;
+         switch(type)
+         {
+            case TYPE_ARGS:
+            case TYPE_CONSTANTS:
+            case TYPE_ENVELOPES:
+            case TYPE_MODS:
+            case TYPE_OBJECT:
+               return true;
+         }
+         return false;
+      }
+      if(TYPE_LABEL == type)
+      {
+         return false;
+      }
+      return true;
+   }
+
+   public method canCopyPath() : boolean {
+      return (TYPE_LABEL != type);
+   }
+
+   public static New(GNamespace _nsp, GObject _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type    = TYPE_OBJECT;
+      r.nsp    <= _nsp;
+      r.object <= _object;
+      // r.caption = _object.getId();
+      r.caption = _object.getString();
+      // if(_object instanceof GMod)
+      //    trace "xxx mod obj.id=\""+r.caption+"\"";
+      r.path    = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewVirt(GObject _parentObject, int _type, String _caption) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type    = _type;
+      r.nsp    <= (_parentObject instanceof GNamespace) ? _parentObject : null;
+      r.object <= _parentObject;
+      r.caption = _caption;
+      // // r.path    = _parentObject.getObjectPath()+"."+
+      r.b_output_connected = (_parentObject instanceof GObject) ? _parentObject.isConnectedToAnyObject() : true;
+      return deref r;
+   }
+
+   public static NewLabel(String _caption) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type    = TYPE_LABEL;
+      r.caption = _caption;
+      return deref r;
+   }
+
+   public static NewConstant(GNamespace _nsp, GConstant _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type    = TYPE_OBJECT;
+      r.nsp    <= _nsp;
+      r.object <= _object;
+      r.updateConstantCaption();
+      r.path    = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewVirtProgram(GProgram _program, int _type, String _caption) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = _type;
+      r.nsp     <= null;
+      r.program <= _program;
+      r.object  <= _program;
+      r.caption  = _caption;
+      r.b_output_connected = _program.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewProgram(GProgram _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type    = TYPE_PROGRAM;
+      r.nsp    <= _object.getNamespace();
+      r.object <= _object;
+      r.caption = _object.getId();
+      r.path    = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewShader(GProgram _prg, GShader _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = TYPE_SHADER;
+      r.nsp     <= null;
+      r.program <= _prg;
+      r.shader  <= _object;
+      r.object  <= _object;
+      r.caption  = _object.getId();
+      r.path     = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewSource(GShader _sh, GSource _src) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = TYPE_OBJECT;
+      r.nsp     <= null;
+      r.program <= _sh.parent_program;
+      r.shader  <= _sh;
+      r.object  <= _src;
+      r.caption  = _src.getId();
+      r.path     = (r.program.getNamespacePrefixDot())+"."+_sh.getId()+".src."+r.caption;
+      r.b_output_connected = _src.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewAttribute(GProgram _prg, GAttribute _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = TYPE_OBJECT;
+      r.nsp     <= null;
+      r.program <= _prg;
+      r.object  <= _object;
+      r.caption  = _object.getGLSLTypeName()+" "+_object.getId();
+      r.path     = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewUniform(GProgram _prg, GUniform _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = TYPE_OBJECT;
+      r.nsp    <= null;
+      r.program <= _prg;
+      r.object  <= _object;
+      r.caption  = _object.getGLSLTypeName()+" "+_object.getId();
+      r.path     = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewVarying(GProgram _prg, GVarying _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = TYPE_OBJECT;
+      r.nsp     <= null;
+      r.program <= _prg;
+      r.object  <= _object;
+      r.caption  = _object.getGLSLTypeName()+" "+_object.getId();
+      r.path     = _object.getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewModelUniform(GModel _nspModel, GModelUniform _mu) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type     = TYPE_MODELUNIFORM;
+      r.nsp     <= _nspModel;
+      r.object  <= _mu;
+      r.caption  = _mu.getId();
+      r.path     = _mu.getObjectPath();///getNamespacePrefixDot()+"."+r.caption;
+      r.b_output_connected = _mu.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public static NewSGNode(GNamespace _nsp, GSGNode _object) : ObjectsTMEntry {
+      local ObjectsTMEntry r;
+      r.type    = TYPE_SGNODE;
+      r.nsp    <= _nsp;
+      r.object <= _object;
+      r.caption = _object.getId();
+      r.path    = _object.getObjectPath();
+      r.b_output_connected = _object.isConnectedToAnyObject();
+      return deref r;
+   }
+
+   public method updateConstantCaption() {
+      caption = object.getGLSLTypeName()+" "+object.getId()+" v="+object.getString();
+   }
+
+   public method isObject() : boolean {
+      return [TYPE_OBJECT, TYPE_PROGRAM, TYPE_SHADER, TYPE_MODELUNIFORM, TYPE_SGNODE].contains(type);
+   }
+
+   public method isNamespace() : boolean {
+      return [TYPE_OBJECT, TYPE_SGNODE].contains(type) && (object instanceof GNamespace);
+   }
+
+   public method getLabelTint() : int {
+      int ret = 0;
+      if(isObject())
+      {
+         // if([TYPE_RENDERPASSES, TYPE_MODELS, TYPE_COMPOSITES, TYPE_SCENES].contains(en.type))
+         if((object instanceof GScene) ||
+            (object instanceof GModel)
+            )
+         {
+            if(TYPE_MODELUNIFORM != type)
+            {
+               if(UI.IsDarkOrMono())
+                  ret = #0cffffff;
+               else
+                  ret = #0c000000;
+            }
+         }
+         else if(object instanceof GRenderPass)
+         {
+            if(UI.IsDarkOrMono())
+               ret = #05ffffff;
+            else
+               ret = #05000000;
+         }
+
+         if(!b_output_connected && GConfig.b_show_unconnected)
+         {
+            int c32NotConnected = UI.IsDarkOrMono() ? #30cf7777 : #382f0000;
+            if(0 == ret)
+               ret = c32NotConnected;
+            else
+               ret = UI.TintColor32(ret, c32NotConnected);
+         }
+      }
+      return ret;
+   }
+
+   public method storeFoldStatus(boolean _bFolded) {
+      if(object instanceof GNamespaceObject)
+      {
+         GNamespaceObject nspObj <= object;
+
+         local String virtFolderName <= getVirtFolderName();
+         if(null != virtFolderName)
+         {
+            nspObj.setVirtFolderFoldStatus(virtFolderName, _bFolded);
+         }
+         else
+         {
+            nspObj.setFoldStatus(_bFolded);
+         }
+      }
+   }
+
+   public method getObjectClass() : GObject {
+      switch(type)
+      {
+         case TYPE_ARGS:          return GArg;
+         case TYPE_CONSTANTS:     return GConstant;
+         case TYPE_ENVELOPES:     return GEnvelope;
+         case TYPE_TEXTURES:      return GTexture;
+         case TYPE_FBOS:          return GFBO;
+         case TYPE_RENDERPASSES:  return GRenderPass;
+         case TYPE_MESHES:        return GMesh;
+         case TYPE_PROGRAMS:      return GProgram;
+         case TYPE_MODELS:        return GModel;
+         case TYPE_MODELUNIFORM:  return GModelUniform;
+         case TYPE_COMPOSITES:    return GComposite;
+         case TYPE_SCENES:        return GScene;
+         case TYPE_PROGRAM:       return GProgram;
+         case TYPE_SHADER:        return GShader;
+         case TYPE_ATTRIBUTES:    return GAttribute;
+         case TYPE_UNIFORMS:      return GUniform;
+         case TYPE_VARYINGS:      return GVarying;
+         case TYPE_MODS:          return GMod;
+      }
+      return null;
+   }
+
+   public method getVirtFolderName() : String {
+      switch(type)
+      {
+         case TYPE_ARGS:
+            return "args";
+
+         case TYPE_CONSTANTS:
+            return "constants";
+
+         case TYPE_ENVELOPES:
+            return "envelopes";
+
+         case TYPE_TEXTURES:
+            return "textures";
+
+         case TYPE_FBOS:
+            return "fbos";
+
+         case TYPE_RENDERPASSES:
+            return "renderpasses";
+
+         case TYPE_MESHES:
+            return "meshes";
+
+         case TYPE_PROGRAMS:
+            return "programs";
+
+         case TYPE_MODELS:
+            return "models";
+
+         case TYPE_MODELUNIFORM:
+            return "model_uniforms";
+
+         case TYPE_COMPOSITES:
+            return "composites";
+
+         case TYPE_SCENES:
+            return "scenes";
+
+         case TYPE_ATTRIBUTES:
+            return "attributes";
+
+         case TYPE_UNIFORMS:
+            return "uniforms";
+
+         case TYPE_VARYINGS:
+            return "varyings";
+
+         case TYPE_MODS:
+            return "mods";
+      }
+      return null;
+   }
+
+   public method getPath() : String {
+      local String virtFolderName <= getVirtFolderName();
+      if(null != virtFolderName)
+      {
+         if(null != program)
+         {
+            return program.getObjectPath()+"."+virtFolderName;
+         }
+         else
+         {
+            // trace "xxx nsp.id=\""+nsp.getNamespaceId()+"\"";
+            GObject nspObj <= nsp;
+            if(nspObj instanceof GObject)
+               return nspObj.getObjectPath()+"."+virtFolderName;
+            else
+               return nsp.getNamespacePrefixDot()+"."+nsp.getNamespaceId()+"."+virtFolderName;
+         }
+      }
+      else
+      {
+         return object.getObjectPath();
+      }
+   }
+}
+
+
+// <class.png>
+class ObjectsTM : TreeTableModel, ObjectsTMDefs {
+
+   Icon *icon_open;
+   Icon *icon_open_fat;
+   Icon *icon_closed;
+   Icon *icon_closed_fat;
+   Icon *icon_open_empty;
+   Icon *icon_closed_empty;
+   Icon *icon_leaf;
+   Icon *icon_spacer;
+
+   define int COL_ENABLE    = 0;
+   define int COL_ID        = 1;
+
+   boolean b_hide_empty;
+
+   Label *lb_enable;
+   Label *lb_h1;
+   Font *fnt_def;
+   Font *fnt_h1;
+
+
+   public virtual initTableModel() {
+      TreeTableModel::initTableModel();
+
+      icon_open         <= UI.GetIcon("treeopen");
+      icon_open_fat     <= UI.GetIcon("treeopenfat");
+      icon_closed       <= UI.GetIcon("treeclosed");
+      icon_closed_fat   <= UI.GetIcon("treeclosedfat");
+      icon_open_empty   <= UI.GetIcon("treeopenempty");
+      icon_closed_empty <= UI.GetIcon("treeclosedempty");
+      icon_leaf         <= UI.GetIcon("treeleaf");
+      icon_spacer       <= UI.GetIcon("treespacer");
+
+      lb_enable <= Label.New();
+      lb_enable.setCaption("");
+      lb_enable.setPadding4f(0,0,0,0);
+
+      lb_h1 <= Label.New();
+      lb_h1.setFontByName("big8");
+
+      fnt_def <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      fnt_h1  <= UI.GetFontByName("big8");
+   }
+
+   public virtual getTreeHierarchyCaption() : String {
+      return "object"; // namespace
+   }
+
+   public virtual getTreeNumColumns() : int {
+      return 2;
+   }
+
+   public virtual getTreeColumnCaption(int _col) : String {
+      return ["En", "Id"][_col];
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      // (note) first column is used by tree (hierarchy/icons)
+      return [300, 20, 400][_col];
+   }
+
+   public virtual getMaximumColumnWidth(int _col) : int {
+      // (note) first column is used by tree (hierarchy/icons)
+      return [550, 20, 450][_col];
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      // (note) first column is used by tree (hierarchy/icons)
+      return [550, 20, 450][_col];
+   }
+
+   // public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+   //    if(0 == _col)
+   //    {
+   //       Label lb <= TreeTableModel::getCellRenderer(_col, _row, _visibleRow);
+
+   //       TreeTableNode tn <= flat_tree_nodes.get(_row);
+   //       ObjectsTMEntry en <= tn.user_data;
+   //       if(en instanceof ObjectsTMEntry)
+   //       {
+   //          if(en.doHighlightLabel())
+   //          {
+   //             GObject obj <= en.object;
+   //             if(obj instanceof GScene)
+   //             {
+   //                // lb.setFont(fnt_h1);
+   //                return lb;
+   //             }
+   //          }
+   //       }
+
+   //       // trace "xxx setfontdef";
+   //       // lb.setFont(fnt_def);
+   //       return lb;
+   //    }
+   //    return TreeTableModel::getCellRenderer(_col, _row, _visibleRow);
+   // }
+
+   public method getTreeCellRenderer(Object _userData, int _col) : Layer {
+
+      if(_userData instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= _userData;
+         if(en.isObject())
+         {
+            if(COL_ENABLE == _col)
+            {
+               if(en.object.isEnabled())
+               {
+                  lb_enable.setIcon(UI.GetIcon("table_checkbox"));
+                  return lb_enable;
+
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public virtual updateTreeCellRendererLabelColor(Object _userData, Label _lb, int _col) {
+      if(_userData instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= _userData;
+         int c32BG = _lb.getBackgroundColor();
+         int c32FG = _lb.getForegroundColor();
+         int c32HL;
+         if(en.b_empty)
+         {
+            c32BG &= 0x00FFFFFF;
+            c32BG |= 0x80000000;
+            _lb.setForegroundColor(UI.TintColor32(c32FG, c32BG));
+         }
+         else
+         {
+            c32HL = en.getLabelTint();
+            if(0 != c32HL)
+            {
+               _lb.setBackgroundColor(UI.TintColor32(c32BG, c32HL));
+            }
+         }
+      }
+   }
+
+   public getTreeCellCaption(Object _userData, int _col) : String {
+      ////trace "xxx getTreeCellCaption: _userData="+#(_userData)+" _col="+_col;
+      if(_userData instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= _userData;
+         switch(_col)
+         {
+            case COL_ID:
+               if(en.isObject())
+                  return en.caption;
+               break;
+         }
+      }
+      return "";
+   }
+
+   // public getTreeCellIcon(Object _userData, int _col) : Icon {
+
+   //    // if(_userData == "penguin")
+   //    // {
+   //    //    if(COL_GENDER == _col)
+   //    //    {
+   //    //       return UI.GetIcon("penguin");
+   //    //    }
+   //    // }
+
+   //    return null;
+   // }
+
+   // public getTreeRowHeight(Object _userData) : int {
+   //    return default;
+   // }
+
+   public virtual handleFold(TreeTableNode tn) {
+      TreeTableModel::handleFold(tn);
+
+      if(tn.user_data instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= tn.user_data;
+         en.storeFoldStatus(true);
+      }
+
+      table_view.redraw();
+   }
+
+   public virtual handleUnfold(TreeTableNode tn) {
+
+      TreeTableModel::handleUnfold(tn);
+
+      if(tn.user_data instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= tn.user_data;
+         float oldY = view_pixel_offset_y;
+
+         tn.removeAllRight();
+
+         en.storeFoldStatus(false);
+
+         if(TYPE_SGNODE == en.type)
+            addTreeFromVirt(tn, en.object/*nsp*/, TYPE_SGNODE, false/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+         else if((en.object instanceof GModel) && !(en.object instanceof GComposite) && (TYPE_OBJECT == en.type))
+         {
+            addTreeFromNamespace(tn, en.object/*nsp*/, true/*bVirt*/, false/*bObject*/, false/*bDescend*/);
+            addTreeFromVirt(tn, en.object/*nsp*/, TYPE_MODELUNIFORM, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+         }
+         else if(en.isNamespace())/// && (ObjectsTMEntry.TYPE_MODELS != en.type))/// && !(en.object instanceof GModel))
+            addTreeFromNamespace(tn, en.object/*nsp*/, true/*bVirt*/, false/*bObject*/, false/*bDescend*/);
+         else
+            addTreeFromVirt(tn, en.object/*nsp*/, en.type, false/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+
+         tableModelChanged();
+
+         table_view.centerRow();
+
+         // trace "xxx oldY="+oldY+" newY="+view_pixel_offset_y;
+
+         // Never scroll up when expanding
+         if(view_pixel_offset_y > oldY)
+         {
+            // trace "xxx scroll back";
+            table_view.scrollToPositionY(oldY);
+         }
+      }
+
+   }
+
+   // <method.png>
+   public method buildTreeFromNamespace(GNamespace _nsp) {
+
+      // trace "[dbg] ObjectsTM::buildTreeFromNamespace("+#(_nsp)+")";
+
+      local ObjectsTMEntry *en;
+
+      if(_nsp instanceof GModel)
+      {
+         GModel model <= _nsp;
+         en <= ObjectsTMEntry.New(model.getNamespace(), model);
+      }
+      else if(_nsp instanceof GRenderPass)
+      {
+         GRenderPass renderpass <= _nsp;
+         en <= ObjectsTMEntry.New(renderpass.getNamespace(), renderpass);
+      }
+      else if(_nsp instanceof GScene)
+      {
+         GScene scene <= _nsp;
+         en <= ObjectsTMEntry.New(scene.getNamespace(), scene);
+      }
+
+      TreeTableNode tnRoot <= initRootNode(icon_open, icon_closed, _nsp.getNamespaceId(), deref en);
+      tnRoot.open();
+
+      // // addTreeFromNamespace(tnRoot, _nsp, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+      addTreeFromNamespace(tnRoot, _nsp, true/*bVirt*/, false/*bObject*/, false/*bDescend*/);
+
+      tableModelChanged();
+   }
+
+   // <method_add.png>
+   public method addTreeFromVirt(local TreeTableNode _tnRoot,
+                                 local GNamespace    _nsp, // parent namespace and/or GObject
+                                 local int           _type,
+                                 local boolean       _bVirt,
+                                 local boolean       _bObject,
+                                 local boolean       _bDescend
+                                 ) {
+      local TreeTableNode tnp <= _tnRoot;
+      local TreeTableNode *tn;
+      local GProgram *prg;
+      local GAttribute *a;
+      local GUniform *u;
+      local GVarying *v;
+      local GShader *sh;
+      local GSource *src;
+      local GModel *model;
+      local GModelUniform *mu;
+      local GSGNode *sgnode;
+      local ObjectsTMEntry *en;
+      local GNamespace *nspParent;
+      local TreeTableNode *tnpNSP;
+
+      switch(_type)
+      {
+         case TYPE_ARGS:
+            if(b_hide_empty && _nsp.args.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_ARGS, "Args");
+               tn <= tnp.insertRight(icon_open, icon_closed, "ARGS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.args.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("args"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GArg *arg;
+               tn <= null;
+               foreach arg in _nsp.args
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, arg.getId(), ObjectsTMEntry.New(_nsp, arg));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, arg.getId(), ObjectsTMEntry.New(_nsp, arg));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_CONSTANTS:
+            if(b_hide_empty && _nsp.constants.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_CONSTANTS, "Constants");
+               tn <= tnp.insertRight(icon_open, icon_closed, "CONSTANTS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.constants.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("constants"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GConstant *constant;
+               tn <= null;
+               foreach constant in _nsp.constants
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, constant.getIdString(), ObjectsTMEntry.NewConstant(_nsp, constant));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, constant.getIdString(), ObjectsTMEntry.NewConstant(_nsp, constant));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_ENVELOPES:
+            if(b_hide_empty && _nsp.envelopes.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_ENVELOPES, "Envelopes");
+               tn <= tnp.insertRight(icon_open, icon_closed, "ENVELOPES", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.envelopes.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("envelopes"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GEnvelope *env;
+               tn <= null;
+               foreach env in _nsp.envelopes
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, env.getId(), ObjectsTMEntry.New(_nsp, env));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, env.getId(), ObjectsTMEntry.New(_nsp, env));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_TEXTURES:
+            if(b_hide_empty && _nsp.textures.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_TEXTURES, "Textures");
+               tn <= tnp.insertRight(icon_open, icon_closed, "TEXTURES", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.textures.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("textures"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GTexture *tex;
+               tn <= null;
+               foreach tex in _nsp.textures
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, tex.getId(), ObjectsTMEntry.New(_nsp, tex));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, tex.getId(), ObjectsTMEntry.New(_nsp, tex));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_FBOS:
+            if(b_hide_empty && _nsp.fbos.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_FBOS, "FBOs");
+               tn <= tnp.insertRight(icon_open, icon_closed, "FBOS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.fbos.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("fbos"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GFBO *fbo;
+               tn <= null;
+               foreach fbo in _nsp.fbos
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, fbo.getId(), ObjectsTMEntry.New(_nsp, fbo));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, fbo.getId(), ObjectsTMEntry.New(_nsp, fbo));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_RENDERPASSES:
+            if(b_hide_empty && _nsp.renderpasses.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_RENDERPASSES, "RenderPasses");
+               tn <= tnp.insertRight(icon_open_fat, icon_closed_fat, "RENDERPASSES", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.renderpasses.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("renderpasses"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            // trace "xxx TYPE_RENDERPASSES: bObject="+_bObject+" bDescend="+_bDescend;
+            if(_bObject || _bDescend)
+            {
+               local GRenderPass *renderpass;
+               tn <= null;
+               foreach renderpass in _nsp.renderpasses
+               {
+                  if(_bObject)
+                  {
+                     if(null == tn)
+                        tn <= tnp.insertRight(icon_open_fat, icon_closed_fat, renderpass.getId(), ObjectsTMEntry.New(_nsp, renderpass));
+                     else
+                        tn <= tn.insertLeft(icon_open_fat, icon_closed_fat, renderpass.getId(), ObjectsTMEntry.New(_nsp, renderpass));
+                     tn.setLeafNode(false);
+
+                     if(!renderpass.isFolded() || (b_hide_empty && !renderpass.hasSubObjects()))
+                        tn.open();
+
+                     if(_bDescend || !renderpass.isFolded())
+                     {
+                        addTreeFromNamespace(tn, renderpass, true/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+                     }
+                  }
+                  else
+                  {
+                     // Expand
+                     addTreeFromNamespace(tnp, renderpass, true/*bVirt*/, false/*bObject*/, false/*_bDescend*/);
+                  }
+               }
+            }
+            break;
+
+         case TYPE_MESHES:
+            if(b_hide_empty && _nsp.meshes.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_MESHES, "-- Meshes --");
+               tn <= tnp.insertRight(icon_open, icon_closed, "MESHES", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.meshes.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("meshes"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GMesh *mesh;
+               tn <= null;
+               foreach mesh in _nsp.meshes
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, mesh.getIdString(), ObjectsTMEntry.New(_nsp, mesh));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, mesh.getIdString(), ObjectsTMEntry.New(_nsp, mesh));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_PROGRAMS:
+            if(b_hide_empty && _nsp.programs.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_PROGRAMS, "Programs");
+               tn <= tnp.insertRight(icon_open, icon_closed, "PROGRAMS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.programs.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("programs"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               int prgIdx = _nsp.programs.numElements;
+               loop(prgIdx)
+               {
+                  prg <= _nsp.getProgramByIndex(--prgIdx);
+                  addTreeFromVirt(tnp, prg, TYPE_PROGRAM, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+               }
+            }
+            break;
+
+         case TYPE_PROGRAM:
+            prg <= _nsp;
+            if(_bVirt)
+            {
+               tn <= tnp.insertRight(icon_open, icon_closed, prg.getId(), ObjectsTMEntry.NewProgram(prg));
+               tn.setLeafNode(false);
+               tnp <= tn;
+               if(_bObject && !prg.isFolded())
+                  tn.open();
+            }
+            if(_bObject)
+            {
+               local boolean bPrgSubUnfold;
+               // // _bDescend |= !prg.isFolded();
+               _bDescend = false;
+
+               bPrgSubUnfold = !prg.isVirtFolderFolded("varyings");
+               addTreeFromVirt(tnp, prg, TYPE_VARYINGS,   true/*bVirt*/, _bDescend/*bObject*/||bPrgSubUnfold, _bDescend||bPrgSubUnfold);
+
+               bPrgSubUnfold = !prg.isVirtFolderFolded("uniforms");
+               addTreeFromVirt(tnp, prg, TYPE_UNIFORMS,   true/*bVirt*/, _bDescend/*bObject*/||bPrgSubUnfold, _bDescend||bPrgSubUnfold);
+
+               bPrgSubUnfold = !prg.isVirtFolderFolded("attributes");
+               addTreeFromVirt(tnp, prg, TYPE_ATTRIBUTES, true/*bVirt*/, _bDescend/*bObject*/||bPrgSubUnfold, _bDescend||bPrgSubUnfold);
+
+               bPrgSubUnfold = !(prg.fragment_shader.isFolded());
+               addTreeFromVirt(tnp, prg.fragment_shader, TYPE_SHADER, true/*bVirt*/, _bDescend/*bObject*/||bPrgSubUnfold, _bDescend||bPrgSubUnfold);
+
+               bPrgSubUnfold = !(prg.vertex_shader.isFolded());
+               addTreeFromVirt(tnp, prg.vertex_shader,   TYPE_SHADER, true/*bVirt*/, _bDescend/*bObject*/||bPrgSubUnfold, _bDescend||bPrgSubUnfold);
+
+               // // tn <= tnp.insertRight(icon_leaf, null, "vertex shader", ObjectsTMEntry.NewShader(prg, prg.vertex_shader));
+               // // tn.setLeafNode(true);
+
+               // // tn <= tnp.insertRight(icon_leaf, null, "fragment shader", ObjectsTMEntry.NewShader(prg, prg.fragment_shader));
+               // // tn.setLeafNode(true);
+            }
+            break;
+
+         case TYPE_SHADER:
+            sh <= _nsp;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewShader(sh.parent_program, sh);
+               tn <= tnp.insertRight(icon_open, icon_closed,
+                                     sh.getId(),
+                                     deref en
+                                     );
+               tn.setLeafNode(false);
+               en.b_empty = (sh.sources.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     // // tn.setIcons(icon_open_empty, icon_closed_empty);
+                     en.b_empty = false;  // don't show shaded text
+                  }
+                  else if(!sh.isFolded())
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               tn <= null;
+               foreach src in sh.sources
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, src.getId(), ObjectsTMEntry.NewSource(sh, src));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, src.getId(), ObjectsTMEntry.NewSource(sh, src));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_ATTRIBUTES:
+            prg <= _nsp;
+            if(b_hide_empty && prg.attributes.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirtProgram(prg, TYPE_ATTRIBUTES, "Attributes");
+               tn <= tnp.insertRight(icon_open, icon_closed,
+                                     "ATTRIBUTES",
+                                     deref en
+                                     );
+
+               tn.setLeafNode(false);
+               en.b_empty = (prg.attributes.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!prg.isFolded())
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               tn <= null;
+               foreach a in prg.attributes
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, a.getId(), ObjectsTMEntry.NewAttribute(prg, a));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, a.getId(), ObjectsTMEntry.NewAttribute(prg, a));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_UNIFORMS:
+            prg <= _nsp;
+            if(b_hide_empty && prg.uniforms.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               // trace "xxx create TYPE_UNIFORMS prg="+#(prg);
+               en <= ObjectsTMEntry.NewVirtProgram(prg, TYPE_UNIFORMS, "Uniforms");
+               tn <= tnp.insertRight(icon_open, icon_closed,
+                                     "UNIFORMS",
+                                     deref en
+                                     );
+               tn.setLeafNode(false);
+               en.b_empty = (prg.uniforms.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!prg.isFolded())
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               tn <= null;
+               foreach u in prg.uniforms
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, u.getId(), ObjectsTMEntry.NewUniform(prg, u));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, u.getId(), ObjectsTMEntry.NewUniform(prg, u));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_VARYINGS:
+            prg <= _nsp;
+            if(b_hide_empty && prg.varyings.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirtProgram(prg, TYPE_VARYINGS, "Varyings");
+               tn <= tnp.insertRight(icon_open, icon_closed,
+                                     "VARYINGS",
+                                     deref en
+                                     );
+               tn.setLeafNode(false);
+               en.b_empty = (prg.varyings.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!prg.isFolded())
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               tn <= null;
+               foreach v in prg.varyings
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, v.getId(), ObjectsTMEntry.NewVarying(prg, v));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, v.getId(), ObjectsTMEntry.NewVarying(prg, v));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_MODELS:
+            if(b_hide_empty && _nsp.models.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_MODELS, "-- Models --");
+               tn <= tnp.insertRight(icon_open_fat, icon_closed_fat, "MODELS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.models.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("models"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject || _bDescend)
+            {
+               tn <= null;
+               foreach model in _nsp.models
+               {
+                  if(_bObject)
+                  {
+                     if(null == tn)
+                        tn <= tnp.insertRight(icon_open_fat, icon_closed_fat, model.getId(), ObjectsTMEntry.New(_nsp, model));
+                     else
+                        tn <= tn.insertLeft(icon_open_fat, icon_closed_fat, model.getId(), ObjectsTMEntry.New(_nsp, model));
+                     tn.setLeafNode(false);
+
+                     if(!model.isFolded() || (b_hide_empty && !model.hasSubObjects()))
+                        tn.open();
+
+                     if(_bDescend || !model.isFolded())
+                     {
+                        addTreeFromNamespace(tn, model, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+                        addTreeFromVirt(tn, model/*nsp*/, TYPE_MODELUNIFORM, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+                     }
+                  }
+                  else
+                  {
+                     // Expand
+                     trace "\n\n\n\n\n\n expand models";
+                     addTreeFromNamespace(tnp, model, true/*bVirt*/, false/*bObject*/, false/*_bDescend*/);
+                     addTreeFromVirt(tnp, model/*nsp*/, TYPE_MODELUNIFORM, true/*bVirt*/, false/*bObject*/, false/*bDescend*/);
+                  }
+               }
+            }
+            break;
+
+         case TYPE_MODELUNIFORM:
+            model <= _nsp;
+            if(b_hide_empty && model.model_uniforms.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_MODELUNIFORM, "ModelUniforms");
+               tn <= tnp.insertRight(icon_open, icon_closed, "MODEL_UNIFORMS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (model.model_uniforms.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!model.isVirtFolderFolded("model_uniforms"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               tn <= null;
+               foreach mu in model.model_uniforms
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, mu.getString(), ObjectsTMEntry.NewModelUniform(model, mu));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, mu.getString(), ObjectsTMEntry.NewModelUniform(model, mu));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+
+         case TYPE_COMPOSITES:
+            if(b_hide_empty && _nsp.composites.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_COMPOSITES, "Composites");
+               tn <= tnp.insertRight(icon_open, icon_closed, "COMPOSITES", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.composites.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("composites"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GComposite *comp;
+               tn <= null;
+               local int compIdx = _nsp.composites.numElements;
+               loop(compIdx)
+               {
+                  comp <= _nsp.composites.get(--compIdx);
+                  if(comp instanceof GSceneGraph)
+                  {
+                     // trace "xxx add sgnode root, comp="+#(comp);
+                     addTreeFromVirt(tnp, comp/*nsp*/, TYPE_SGNODE, true/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+                  }
+                  else
+                  {
+                     // not reachable ATM
+                  }
+               }
+            }
+            break;
+
+         case TYPE_SGNODE:
+            // trace "xxx buildtree: TYPE_SGNODE: _nsp="+#(_nsp);
+            sgnode <= _nsp;
+            if(_bVirt)
+            {
+               // Create scenegraph parent node
+               _nsp <= sgnode.getNamespace();
+               tn <= tnp.insertRight(icon_open, icon_closed, sgnode.getId(), ObjectsTMEntry.NewSGNode(_nsp, sgnode));
+               tn.setLeafNode(false);
+
+               if( _bObject && (!sgnode.isFolded() || ((!sgnode.hasChildren() && b_hide_empty) && !(sgnode instanceof GSceneGraph))) )
+                  tn.open();
+
+               tnp <= tn;
+            }
+            // trace "xxx buildtree: sgnode="+#(sgnode);
+            if(_bObject && !sgnode.isFolded())
+            {
+               if(sgnode instanceof GSceneGraph)
+               {
+                  // add namespace folders, separated by dummy label
+                  addTreeFromNamespace(tnp, sgnode/*nsp*/, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+                  tn <= tnp.insertRight(null/*icon_spacer*/, null, "   -- namespace --"/*id/label*/, ObjectsTMEntry.NewLabel("nsp_unused"));
+               }
+
+               // // addTreeFromSGnode(tnp, _nsp, sgnode/*parentNode*/);
+               // tn <= null;
+               local int nodeIdx = sgnode.child_nodes.numElements;
+               loop(nodeIdx)
+               {
+                  local GSGNode sgnodeChild <= sgnode.child_nodes.get(--nodeIdx);
+                  // // local boolean bChildren = !(n.child_nodes.isEmpty());
+                  addTreeFromVirt(tnp, sgnodeChild, TYPE_SGNODE, true/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+               }
+            }
+            break;
+
+         case TYPE_SCENES:
+            if(b_hide_empty && _nsp.scenes.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_SCENES, "-- Scenes --");
+               tn <= tnp.insertRight(icon_open_fat, icon_closed_fat, "SCENES", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.scenes.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isFolded())
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject || _bDescend)
+            {
+               local GScene *scene;
+               tn <= null;
+               foreach scene in _nsp.scenes
+               {
+                  if(_bObject)
+                  {
+                     if(null == tn)
+                        tn <= tnp.insertRight(icon_open_fat, icon_closed_fat, scene.getId(), ObjectsTMEntry.New(_nsp, scene));
+                     else
+                        tn <= tn.insertLeft(icon_open_fat, icon_closed_fat, scene.getId(), ObjectsTMEntry.New(_nsp, scene));
+                     tn.setLeafNode(false);
+
+                     if(!scene.isFolded() || (b_hide_empty && !scene.hasSubObjects()))
+                        tn.open();
+
+                     if(_bDescend || !scene.isFolded())
+                     {
+                        addTreeFromNamespace(tn, scene, true/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+                     }
+                  }
+                  else
+                  {
+                     // Expand
+                     addTreeFromNamespace(tnp, scene, true/*bVirt*/, false/*bObject*/, false/*bDescend*/);
+                  }
+               }
+            }
+            break;
+
+         case TYPE_MODS:
+            if(b_hide_empty && _nsp.mods.isEmpty())
+               return;
+            if(_bVirt)
+            {
+               en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_MODS, "-- Mods --");
+               tn <= tnp.insertRight(icon_open, icon_closed, "MODS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = (_nsp.mods.isEmpty());
+               if(_bObject || en.b_empty)
+               {
+                  if(en.b_empty)
+                  {
+                     tn.open();
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  else if(!_nsp.isVirtFolderFolded("mods"))
+                     tn.open();
+                  tnp <= tn;
+               }
+            }
+            if(_bObject)
+            {
+               local GMod *mod;
+               tn <= null;
+               foreach mod in _nsp.mods
+               {
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_leaf, null, mod.getIdString(), ObjectsTMEntry.New(_nsp, mod));
+                  else
+                     tn <= tn.insertLeft(icon_leaf, null, mod.getIdString(), ObjectsTMEntry.New(_nsp, mod));
+                  tn.setLeafNode(true);
+               }
+            }
+            break;
+      }
+   }
+
+   // <method_add.png>
+   public method addGlobalScenesFromVirt(local TreeTableNode _tnRoot,
+                                         local GNamespace    _nsp
+                                         ) {
+      local TreeTableNode tnp <= _tnRoot;
+      local TreeTableNode *tn;
+      local ObjectsTMEntry *en;
+      local GNamespace *nspParent;
+      local TreeTableNode *tnpNSP;
+
+      local PointerArray allScenes;
+      current_project.findAllScenes(allScenes);
+      // trace "xxx allScenes="+#(allScenes);
+
+      if(b_hide_empty && allScenes.isEmpty())
+         return;
+
+      en <= ObjectsTMEntry.NewVirt(_nsp, TYPE_SCENES, "-- Scenes --");
+      tn <= tnp.insertRight(icon_open, icon_closed, "ALL SCENES", deref en);
+      tn.setLeafNode(false);
+
+      en.b_empty = allScenes.isEmpty();
+
+      if(en.b_empty)
+      {
+         tn.open();
+         tn.setIcons(icon_open_empty, icon_closed_empty);
+      }
+      else if(!_nsp.isFolded())
+         tn.open();
+
+      tnp <= tn;
+
+      local GScene *scene;
+      tn <= null;
+      foreach scene in allScenes
+      {
+         if(null == tn)
+            tn <= tnp.insertRight(icon_leaf, null, scene.getId(), ObjectsTMEntry.New(scene.getNamespace(), scene));
+         else
+            tn <= tn.insertLeft(icon_leaf, null, scene.getId(), ObjectsTMEntry.New(scene.getNamespace(), scene));
+         tn.setLeafNode(true);
+      }
+
+   }
+
+   // <method_add.png>
+   public method addTreeFromNamespace(local TreeTableNode _tnRoot,
+                                      local GNamespace    _nsp,
+                                      local boolean       _bVirt,
+                                      local boolean       _bObject,
+                                      local boolean       _bDescend
+                                      ) {
+
+      local TreeTableNode tnp <= _tnRoot;
+      local TreeTableNode *tn;
+      local boolean bVirtUnfold;
+
+      if(GNamespace.GLOBAL_ID == _nsp.getNamespaceId())
+      {
+         // add scenes from all other namespaces
+         bVirtUnfold = !_nsp.isVirtFolderFolded("scenes");
+         addGlobalScenesFromVirt(tnp, _nsp);
+
+         // envelopes
+         bVirtUnfold = !_nsp.isVirtFolderFolded("envelopes");
+         addTreeFromVirt(tnp, _nsp, TYPE_ENVELOPES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // constants
+         bVirtUnfold = !_nsp.isVirtFolderFolded("constants");
+         addTreeFromVirt(tnp, _nsp, TYPE_CONSTANTS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // mods
+         bVirtUnfold = !_nsp.isVirtFolderFolded("mods");
+         addTreeFromVirt(tnp, _nsp, TYPE_MODS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // args
+         bVirtUnfold = !_nsp.isVirtFolderFolded("args");
+         addTreeFromVirt(tnp, _nsp, TYPE_ARGS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+      }
+      else
+      {
+         // trace "xxx addTreeFromNamespace: bVirt="+_bVirt+" bObject="+_bObject+" bDescend="+_bDescend;
+
+         // scenes
+         if(!(_nsp instanceof GModel) && !(_nsp instanceof GScene) && !(_nsp instanceof GRenderPass))
+         {
+            bVirtUnfold = !_nsp.isVirtFolderFolded("scenes");
+            addTreeFromVirt(tnp, _nsp, TYPE_SCENES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+         }
+
+         // composites
+         if(!(_nsp instanceof GModel) || (_nsp instanceof GComposite))
+         {
+            bVirtUnfold = !_nsp.isVirtFolderFolded("composites");
+            addTreeFromVirt(tnp, _nsp, TYPE_COMPOSITES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+         }
+
+         // models
+         if(!(_nsp instanceof GModel) || (_nsp instanceof GComposite))
+         {
+            bVirtUnfold = !_nsp.isVirtFolderFolded("models");
+            addTreeFromVirt(tnp, _nsp, TYPE_MODELS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+         }
+
+         // programs
+         bVirtUnfold = !_nsp.isVirtFolderFolded("programs");
+         addTreeFromVirt(tnp, _nsp, TYPE_PROGRAMS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // meshes
+         bVirtUnfold = !_nsp.isVirtFolderFolded("meshes");
+         addTreeFromVirt(tnp, _nsp, TYPE_MESHES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // textures
+         bVirtUnfold = !_nsp.isVirtFolderFolded("textures");
+         addTreeFromVirt(tnp, _nsp, TYPE_TEXTURES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // fbos
+         bVirtUnfold = !_nsp.isVirtFolderFolded("fbos");
+         addTreeFromVirt(tnp, _nsp, TYPE_FBOS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         if(_nsp.hasRenderPasses())
+         {
+            bVirtUnfold = !_nsp.isVirtFolderFolded("renderpasses");
+            addTreeFromVirt(tnp, _nsp, TYPE_RENDERPASSES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+         }
+
+         // envelopes
+         bVirtUnfold = !_nsp.isVirtFolderFolded("envelopes");
+         addTreeFromVirt(tnp, _nsp, TYPE_ENVELOPES, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // constants
+         bVirtUnfold = !_nsp.isVirtFolderFolded("constants");
+         addTreeFromVirt(tnp, _nsp, TYPE_CONSTANTS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // mods
+         bVirtUnfold = !_nsp.isVirtFolderFolded("mods");
+         addTreeFromVirt(tnp, _nsp, TYPE_MODS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+
+         // args
+         bVirtUnfold = !_nsp.isVirtFolderFolded("args");
+         addTreeFromVirt(tnp, _nsp, TYPE_ARGS, _bVirt, _bObject||bVirtUnfold, _bDescend||bVirtUnfold);
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleTreeCellOnMouse(Object _userData, int _col, MouseEvent _ev) : boolean {
+      // (note) col 0 is hierarchy column (e.g. object id)
+      if(_col == (COL_ENABLE+1))
+      {
+         if(_userData instanceof ObjectsTMEntry)
+         {
+            ObjectsTMEntry en <= _userData;
+            if(en.isObject())
+            {
+               if(_ev.leftButtonUp())
+               {
+                  // trace "xxx handleTreeCellOnMouse: COL_ENABLE";
+                  en.object.setEnable(!en.object.isEnabled());
+                  root_form.pg_start.preview.queueUpdate();
+               }
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public virtual handleTreeCellEditing(Object _userData, TableCellEditor _tce) {
+
+      if(_userData instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= _userData;
+         switch(_tce.table_col)
+         {
+            case 0: // hierarchy
+            case COL_ID+1: // id
+               // don't update instantly, wait until RETURN is pressed
+               break;
+
+            // // case COL_ENABLE:
+            // //    trace "xxx handleTreeCellEditing: COL_ENABLE";
+            // //    break;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleTreeCellEdited(Object _userData, TableCellEditor _tce) {
+
+      if(_userData instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= _userData;
+         TableCellEditorString *tcestr;
+
+         switch(_tce.table_col)
+         {
+            case 0: // hierarchy
+            case COL_ID+1: // id
+               if(en.isObject())
+               {
+                  tcestr <= _tce;
+                  root_form.pg_start.handleObjectRename(en.object, tcestr.getText());
+               }
+               break;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual getTreeCellEditor(Object _userData, int _col) : TableCellEditor {
+
+      if(_userData instanceof ObjectsTMEntry)
+      {
+         ObjectsTMEntry en <= _userData;
+         TableCellEditorString *tcestr;
+
+         switch(_col)
+         {
+            case 0:  // hierarchy
+            case COL_ID+1: // id
+               if(en.isObject())
+               {
+                  tcestr <= new TableCellEditorString;
+                  tcestr.initStringEditor(en.object.getId());
+                  tcestr.setMaxCols(32);
+                  return deref tcestr;
+               }
+               break;
+         }
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getRowIdxByGObject(GObject _obj) : int {
+      if(@(_obj) == @(root_form.pg_start.getSelectedNamespace()))
+         return 0;
+      TreeTableNode *tn;
+      int rowIdx = 0;
+      foreach tn in flat_tree_nodes
+      {
+         // trace "xxx tn="+#(tn);
+         ObjectsTMEntry en <= tn.user_data;
+         if(en instanceof ObjectsTMEntry)
+         {
+            // trace "xxx en="+#(en);
+            // if(_obj instanceof GAttribute)
+            // {
+            // }
+            // else if(_obj instanceof GUniform)
+            // {
+            // }
+            // else if(_obj instanceof GVarying)
+            // {
+            // }
+            if(en.isObject())
+            {
+               if(@(en.object) == @(_obj))
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getEntryByGObject(GObject _obj) : ObjectsTMEntry {
+      int rowIdx = getRowIdxByGObject(_obj);
+      if(-1 != rowIdx)
+         return flat_tree_nodes.get(rowIdx).user_data;
+   }
+
+   // <method.png>
+   public method foldAllVisible() {
+      TreeTableNode *tn;
+      foreach tn in flat_tree_nodes
+      {
+         ObjectsTMEntry en <= tn.user_data;
+         if(null != en)
+         {
+            if(en.isObject())
+            {
+               en.object.setFoldStatus(true/*bFolded*/);
+               en.object.setAllVirtFolderFoldStatus(true/*bFolded*/);
+            }
+         }
+      }
+   }
+
+}

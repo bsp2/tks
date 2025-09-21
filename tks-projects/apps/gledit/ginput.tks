@@ -1,0 +1,1245 @@
+// ----
+// ---- file   : ginput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 12Jun2020
+// ---- changed: 13Jun2020, 15Jun2020, 16Jun2020, 18Jun2020, 21Jun2020, 26Jun2020, 27Jun2020
+// ----          30Jun2020, 01Jul2020, 03Jul2020, 04Jul2020, 09Jul2020, 10Jul2020, 21Jul2020
+// ----          01Aug2020, 09Aug2020, 14Aug2020, 05Feb2025, 07Feb2025
+// ----
+// ----
+// ----
+module MGInput;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GInput : GPort {
+   define String IN_DEF = "in";
+
+   boolean b_debug;
+
+
+   // <method_get.png>
+   public virtual getPreferredTypeClass() : Class {
+      switch(type)
+      {
+         case TYPE_BOOL:
+            return GConstantBool;
+      }
+      // use last selected class for type
+      return null;
+   }
+
+   // <method_get.png>
+   public method isDomainCompatible(GOutput _output) : boolean {
+      if((TYPE_REF == type) && (TYPE_REF == _output.type))
+         return true;
+      else
+         return parent_object.getInputDomain(id) & (_output.parent_object.getOutputDomain(_output.id));
+   }
+
+   // <method_get.png>
+   public method isInputObject(GObject _o) : boolean {
+      local GConnection *conn;
+      foreach conn in connections
+      {
+         if(@(conn.object) == @(_o))
+            return true;
+
+         if(conn.object.isInputObject(_o))
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method emitFltConn(local int          _fltConnIdx,
+                             local GModule      _module,
+                             local GProgram     _program,
+                             local String       _out,
+                             local String       _dstVar,
+                             local boolean      _bGLSL,
+                             local PointerArray _parents
+                             ) {
+      if(isConnected())
+      {
+         local String *tmpVarOut;
+         local GConnection *conn;
+         local int connIdx = 0;
+         local int connNr = 1;
+         local String *tmpVarTCSrc;
+         local String *tmpVarTCDst;
+         local String *tmpVarSrc;
+         local String *tmpVarOff;
+         local String *tmpVarDst;
+         local String *tmpVarDCD;
+         local String sCol0 <= _bGLSL ? "[0]" : ".getCol(0)";
+         // // local String sTC_IVEC2 <= _bGLSL ? "ivec2" : "vector2f";
+         // if(b_debug)
+         //    trace "xxx emit input.id="+id+" connections="+#(connections)+" fltConnIdx="+_fltConnIdx;
+         foreach conn in connections
+         {
+            local GObject obj <= conn.object;
+            if( (-1 == _fltConnIdx || _fltConnIdx == connIdx) && conn.isEnabled() && obj.isEnabled() )
+            {
+               local int connOp = (1 == connNr) ? (conn.op != OP_MAT_INVERT && conn.op != OP_MAT_INV_TRP) ? OP_REP/*force replace*/ : conn.op : conn.op;
+               local int connType = conn.type;
+               // trace "xxx ginput this.id="+id+" connOp="+connOp+" (was "+conn.op+") connType="+GDefs.GetGLSLTypeName(connType);
+
+               local boolean bScaleOffset = conn.usesScalingOrOffset();
+               // if(b_debug) trace "xxx emit input.id="+id+" obj="+#(obj)+" bScaleOffset="+bScaleOffset;
+
+               if(OP_AUTO == connOp)
+                  connOp = obj.getOpAuto();
+
+               if(!bScaleOffset &&
+                  (OP_REP == connOp || OP_MAT_INVERT == connOp || OP_MAT_INV_TRP == connOp) &&
+                  (type == connType) &&
+                  (1 == connections.numElements)
+                  )
+               {
+                  tmpVarDst <= _dstVar;
+                  tmpVarOut <= _dstVar;
+               }
+               else
+               {
+                  tmpVarOut <= _dstVar;
+                  // // if(null == tmpVarOut)
+                  // // {
+                  // //    if(_bGLSL)
+                  // //       tmpVarOut <= _module.allocTmpVar(_out, type, id+"_out");
+                  // //    else
+                  // //       tmpVarOut <= _module.allocTmpVarScript(_out, type, id+"_out");
+                  // // }
+                  if(!bScaleOffset && (type == connType))
+                  {
+                     if(OP_REP == connOp || OP_MAT_INVERT == connOp || OP_MAT_INV_TRP == connOp)
+                     {
+                        tmpVarDst <= tmpVarOut;
+                     }
+                     else
+                     {
+                        if(null == tmpVarTCDst)
+                        {
+                           if(_bGLSL)
+                           {
+                              tmpVarTCDst <= _module.allocTmpVar(_out, type, id+"_dst");
+                           }
+                           else
+                           {
+                              tmpVarTCDst <= _module.allocTmpVarScript(_out, type, id+"_dst");
+                           }
+                        }
+                        tmpVarDst <= tmpVarTCDst;
+                     }
+                  }
+                  else
+                  {
+                     // Need typecast and/or scaling/offset needs to be applied
+                     if(null == tmpVarTCSrc)
+                     {
+                        if(_bGLSL)
+                        {
+                           tmpVarTCSrc <= _module.allocTmpVar(_out, connType, id+"_src");
+                        }
+                        else
+                        {
+                           tmpVarTCSrc <= _module.allocTmpVarScript(_out, connType, id+"_src");
+                        }
+                     }
+                     if(OP_REP == connOp || OP_MAT_INVERT == connOp || OP_MAT_INV_TRP == connOp)
+                     {
+                        tmpVarSrc <= tmpVarTCSrc;
+                        tmpVarDst <= tmpVarOut;
+                     }
+                     else
+                     {
+                        if(null == tmpVarTCDst)
+                        {
+                           if(_bGLSL)
+                           {
+                              tmpVarTCDst <= _module.allocTmpVar(_out, type, id+"_dst");
+                           }
+                           else
+                           {
+                              tmpVarTCDst <= _module.allocTmpVarScript(_out, type, id+"_dst");
+                           }
+                        }
+                        tmpVarSrc <= tmpVarTCSrc;
+                        tmpVarDst <= tmpVarTCDst;
+                     }
+                  }
+               }
+
+               if(_parents.containsPointer(obj))
+                  throw GInfiniteRecursion "obj="+#(obj)+" id="+obj.id+" this.id="+(parent_object.id)+" this.input.id="+id+" conn.port_id="+conn.port_id+" _parents="+Utils.GetParentsDebugString(_parents);
+
+               _parents.add(obj);
+
+               // trace "xxx ginput.id="+id+" obj="+#(obj)+" obj.id="+obj.id+" port_id="+conn.port_id;
+
+               if(!bScaleOffset && (type == connType))
+               {
+                  // _out.append("// this_input.id="+id+" !bScaleOffset obj="+#(obj)+" call obj.emit\n");
+                  obj.emit(conn.port_id, _module, _program, _out, tmpVarDst, _bGLSL, _parents);
+               }
+               else
+               {
+                  // Typecast connection source value
+                  obj.emit(conn.port_id, _module, _program, _out, tmpVarSrc, _bGLSL, _parents);
+
+                  if(bScaleOffset)
+                  {
+                     tmpVarOff <=
+                        _bGLSL ? _module.allocTmpVar(_out, type, id+"_scloff")
+                        : _module.allocTmpVarScript(_out, type, id+"_scloff");
+
+                     local String scl <= Utils.ToGLSLFloatString(conn.scale);  // 1 => 1.0
+                     local String off <= Utils.ToGLSLFloatString(conn.offset);
+
+                     switch(connType)
+                     {
+                        default:
+                        case TYPE_NONE:         throw GUnsupportedType "scloff connType="+connType;
+                        case TYPE_INT:          _out.append(tmpVarOff+" = int(float("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_IVEC2:        _out.append(tmpVarOff+" = ivec2(vec2("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_IVEC3:        _out.append(tmpVarOff+" = ivec3(vec3("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_IVEC4:        _out.append(tmpVarOff+" = ivec3(vec4("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_UINT:         _out.append(tmpVarOff+" = uint(float("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_UVEC2:        _out.append(tmpVarOff+" = uvec2(vec2("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_UVEC3:        _out.append(tmpVarOff+" = uvec3(vec3("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_UVEC4:        _out.append(tmpVarOff+" = uvec4(vec4("+tmpVarSrc+")*"+scl+"+"+off+");\n"); break;
+                        case TYPE_FLOAT:        _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_VEC2:         _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_VEC3:         _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_VEC4:         _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_MAT2:         _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_MAT3:         _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_MAT4:         _out.append(tmpVarOff+" = "+tmpVarSrc+"*"+scl+"+"+off+";\n"); break;
+                        case TYPE_FUNCTION:     _out.append(tmpVarOff+" <= "+tmpVarSrc+";\n"); break;
+                        case TYPE_ORBITCAMVIEW: _out.append(tmpVarOff+" <= "+tmpVarSrc+";\n"); break;
+                     }
+
+                     tmpVarSrc <= tmpVarOff;
+                  } // if bScaleOffset
+
+                  // trace "xxx type="+type+" connType="+connType;
+
+                  switch(type)
+                  {
+                     default:
+                     case TYPE_NONE:   throw GUnsupportedTypeCast "d=none";
+                     case TYPE_INT:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=int, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = "+tmpVarSrc+".x;\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = "+tmpVarSrc+".x;\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = "+tmpVarSrc+".x;\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = int("+tmpVarSrc+");\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = int("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = int("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = int("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = int("+tmpVarSrc+");\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = int("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = int("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = int("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = int("+tmpVarSrc+sCol0+".x);\n");
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = int("+tmpVarSrc+sCol0+".x);\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = int("+tmpVarSrc+sCol0+".x);\n"); break;
+                        }
+                        break;
+
+                     case TYPE_BOOL:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=int, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = ("+tmpVarSrc+" > 0);\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = ("+tmpVarSrc+".x > 0);\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = ("+tmpVarSrc+".x > 0);\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = ("+tmpVarSrc+".x > 0);\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+") > 0);\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = (int("+tmpVarSrc+".x) > 0);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = (int("+tmpVarSrc+".x) > 0);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = (int("+tmpVarSrc+".x) > 0);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = (int("+tmpVarSrc+") > 0);\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+".x) > 0);\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+".x) > 0);\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+".x) > 0);\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+sCol0+".x) > 0);\n");
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+sCol0+".x) > 0);\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = (int("+tmpVarSrc+sCol0+".x) > 0);\n"); break;
+                        }
+                        break;
+
+                     case TYPE_IVEC2:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=ivec2, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = "+tmpVarSrc+".xy;\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = "+tmpVarSrc+".xy;\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+sCol0+".xy);\n"); break;
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+sCol0+".xy);\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = ivec2("+tmpVarSrc+sCol0+".xy);\n"); break;
+                        }
+                        break;
+
+                     case TYPE_IVEC3:
+                     case TYPE_IVEC4:
+                     case TYPE_UINT:
+                     case TYPE_UVEC2:
+                     case TYPE_UVEC3:
+                     case TYPE_UVEC4:
+                        throw GUnsupportedTypeCast "d="+getGLSLTypeName()+", s="+obj.getGLSLTypeName();
+
+                     case TYPE_FLOAT:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=float, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = float("+tmpVarSrc+");\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = float("+tmpVarSrc+");\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = float("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = float("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = float("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = float("+tmpVarSrc+");\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = float("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = float("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = float("+tmpVarSrc+".x);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = "+tmpVarSrc+".x;\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = "+tmpVarSrc+".x;\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = "+tmpVarSrc+".x;\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = "+tmpVarSrc+".getCol(0).x;\n"); break;
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = "+tmpVarSrc+".getCol(0).x;\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = "+tmpVarSrc+".getCol(0).x;\n"); break;
+                        }
+                        break;
+
+                     case TYPE_VEC2:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=vec2, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = vec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = vec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = vec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = vec2("+tmpVarSrc+", 0);\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = vec2("+tmpVarSrc+".xy);\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = "+tmpVarSrc+".getCol(0);\n"); break;
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = "+tmpVarSrc+".getCol(0).xy;\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = "+tmpVarSrc+".getCol(0).xy;\n"); break;
+                        }
+                        break;
+
+                     case TYPE_VEC3:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=vec3, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = vec3("+tmpVarSrc+", 0,0);\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = vec3("+tmpVarSrc+", 0,0);\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xy, 0);\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xyz);\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xyz);\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = vec3("+tmpVarSrc+", 0,0);\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xy, 0);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xyz);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xyz);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = vec3("+tmpVarSrc+", 0,0);\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xy, 0);\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = vec3("+tmpVarSrc+".xyz);\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = vec3("+tmpVarSrc+sCol0+".xy, 0);\n"); break;
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = "+tmpVarSrc+sCol0+";\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = "+tmpVarSrc+sCol0+".xyz;\n"); break;
+                        }
+                        break;
+
+                     case TYPE_VEC4:
+                        switch(connType)
+                        {
+                           default:
+                           case TYPE_NONE:   throw GUnsupportedTypeCast "d=vec4, s=none";
+                           case TYPE_INT:    _out.append(tmpVarDst+" = vec4("+tmpVarSrc+", 0,0,1);\n"); break;
+                           case TYPE_BOOL:   _out.append(tmpVarDst+" = vec4("+tmpVarSrc+", 0,0,1);\n"); break;
+                           case TYPE_IVEC2:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xy, 0,1);\n"); break;
+                           case TYPE_IVEC3:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xyz, 1);\n"); break;
+                           case TYPE_IVEC4:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xyzw);\n"); break;
+                           case TYPE_UINT:   _out.append(tmpVarDst+" = vec4("+tmpVarSrc+", 0,0,1);\n"); break;
+                           case TYPE_UVEC2:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xy, 0,1);\n"); break;
+                           case TYPE_UVEC3:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xyz, 1);\n"); break;
+                           case TYPE_UVEC4:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xyzw);\n"); break;
+                           case TYPE_FLOAT:  _out.append(tmpVarDst+" = vec4("+tmpVarSrc+", 0,0,1);\n"); break;
+                           case TYPE_VEC2:   _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xy, 0,1);\n"); break;
+                           case TYPE_VEC3:   _out.append(tmpVarDst+" = vec4("+tmpVarSrc+".xyz, 1);\n"); break;
+                           case TYPE_VEC4:   _out.append(tmpVarDst+" = "+tmpVarSrc+";\n"); break;
+                           case TYPE_MAT2:   _out.append(tmpVarDst+" = vec4("+tmpVarSrc+sCol0+".xy, 0,1);\n"); break;
+                           case TYPE_MAT3:   _out.append(tmpVarDst+" = vec4("+tmpVarSrc+sCol0+".xyz, 1);\n"); break;
+                           case TYPE_MAT4:   _out.append(tmpVarDst+" = "+tmpVarSrc+sCol0+";\n"); break;
+                        }
+                        break;
+
+                     case TYPE_MAT2:
+                     case TYPE_MAT3:
+                     case TYPE_MAT4:
+                        if(connType == type)
+                        {
+                           _out.append(tmpVarDst+" = "+tmpVarSrc+";\n");
+                        }
+                        else
+                           throw GUnsupportedTypeCast "d="+getGLSLTypeName()+", s="+obj.getGLSLTypeName();
+
+                     case TYPE_FUNCTION:
+                     case TYPE_ORBITCAMVIEW:
+                        if(connType == type)
+                        {
+                           _out.append(tmpVarDst+" <= "+tmpVarSrc+";\n");
+                        }
+                        else
+                           throw GUnsupportedTypeCast "d="+getGLSLTypeName()+", s="+obj.getGLSLTypeName();
+                  }
+
+               }
+
+               _parents.remove(obj);
+
+               // trace "xxx id="+id+" conn.op="+conn.op;
+               local boolean bOpDone = false;
+
+               if(!bOpDone && (TYPE_BOOL == type))
+               {
+                  switch(connOp)
+                  {
+                     case OP_AND:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" && "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_OR:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" || "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_EOR:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" ^ "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+                  }
+               }
+
+               if(!bOpDone && ([TYPE_INT, TYPE_UINT].contains(type)))
+               {
+                  switch(connOp)
+                  {
+                     case OP_AND:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" & "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_OR:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" | "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_EOR:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" ^ "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+                  }
+               }
+
+               if(!bOpDone)
+               {
+                  switch(connOp)
+                  {
+                     case OP_REP:
+                        // if(type != connType)
+                        // {
+                        //    _out.append(tmpVarOut+" =
+                        // }
+                        // else: already assigned
+                        bOpDone = true;
+                        break;
+
+                     case OP_MUL:
+                        _out.append("// connOp=OP_MUL this_input.id="+id+"\n");
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" * "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_MUL_REV:
+                        _out.append(tmpVarOut+" = "+tmpVarDst+" * "+tmpVarOut+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_ADD:
+                        _out.append(tmpVarOut+" = "+tmpVarDst+" + "+tmpVarOut+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_SUB:
+                        _out.append(tmpVarOut+" = "+tmpVarDst+" - "+tmpVarOut+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_SUB_REV:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" - "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_DIV:
+                        _out.append(tmpVarOut+" = "+tmpVarDst+" / "+tmpVarOut+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_DIV_REV:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" / "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_MOD:
+                        _out.append(tmpVarOut+" = "+tmpVarDst+" % "+tmpVarOut+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_MOD_REV:
+                        _out.append(tmpVarOut+" = "+tmpVarOut+" % "+tmpVarDst+";\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_MIN:
+                        _out.append(tmpVarOut+" = min("+tmpVarDst+", "+tmpVarOut+");\n");
+                        bOpDone = true;
+                        break;
+
+                     case OP_MAX:
+                        _out.append(tmpVarOut+" = max("+tmpVarDst+", "+tmpVarOut+");\n");
+                        bOpDone = true;
+                        break;
+                  }
+               }
+
+               if(!bOpDone)
+               {
+                  _out.append("// "+GDefs.GetOpNameConst(connOp)+"\n");
+
+                  local String sCSR <= tmpVarDst+".x";  // script
+                  local String sCSG <= tmpVarDst+".y";  // script
+                  local String sCSB <= tmpVarDst+".z";  // script
+                  local String sCDR <= tmpVarOut+".x";  // script
+                  local String sCDG <= tmpVarOut+".y";  // script
+                  local String sCDB <= tmpVarOut+".z";  // script
+
+                  local String sMin <= _bGLSL ? "min" : "mathMinf";
+
+                  // (note) see <https://www.w3.org/TR/compositing-1/#porterduffcompositingoperators>
+                  if( (type == TYPE_VEC4) && (type == connType) )
+                  {
+                     // Porter Duff (input=alpha+non-premultiplied color, output=alpha+premultiplied color)
+                     local String sCS  <= tmpVarDst+".xyz";
+                     local String sCD  <= tmpVarOut+".xyz";
+                     local String sAS  <= tmpVarDst+".w";
+                     local String sAD  <= tmpVarOut+".w";
+                     local String s1AS <= "(1.0 - "+tmpVarDst+".w)";
+                     local String s1AD <= "(1.0 - "+tmpVarOut+".w)";
+                     switch(connOp)
+                     {
+                        default:
+                           break;
+
+                        case OP_RGBA_SRC:
+                           // co = cs * as
+                           // ao = as
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4("+sCS+" * "+sAS+", "+sAS+");\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+"; // r\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_DST:
+                           // co = cd * ad
+                           // ao = ad
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4("+sCD+" * "+sAD+", "+sAD+");\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCDR+" * "+sAD+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCDG+" * "+sAD+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCDB+" * "+sAD+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAD+"; // a\n");  // no-op ? (same var)
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_SRC_OVER:
+                           // co = cs * as + cd * ad * (1 - as)
+                           // ao = as + ad * (1 - as)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4((("+sCS+" * "+sAS+") + ("+sCD+" * "+sAD+" * "+s1AS+")), ("+sAS+" + "+sAS+" * "+s1AS+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".init("
+                                          +sCSR+"*"+sAS+"+"+sCDR+"*"+sAD+"*"+s1AS+", "
+                                          +sCSG+"*"+sAS+"+"+sCDG+"*"+sAD+"*"+s1AS+", "
+                                          +sCSB+"*"+sAS+"+"+sCDB+"*"+sAD+"*"+s1AS+", "
+                                          +sAS+"+"+sAD+"*"+s1AS+");\n"
+                                          );
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_DST_OVER:
+                           // co = cs * as * (1 - ad) + cd * ad
+                           // ao = as * (1 - ad) + ad
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4((("+sCS+" * "+sAS+" * "+s1AS+") + "+sCD+" * "+sAD+"), (("+sAS+" * "+s1AD+") + "+sAD+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" * "+s1AD+" + "+sCDR+" * "+sAD+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" * "+s1AD+" + "+sCDG+" * "+sAD+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" * "+s1AD+" + "+sCDB+" * "+sAD+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" * "+s1AD+" + "+sAD+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_SRC_IN:
+                           // co = cs * as * ad
+                           // ao = as * ad
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4(("+sCS+" * "+sAS+" * "+sAD+"), ("+sAS+" * "+sAD+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" * "+sAD+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" * "+sAD+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" * "+sAD+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" * "+sAD+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_DST_IN:
+                           // co = cd * ad * as
+                           // ao = ad * as
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4(("+sCD+" * "+sAD+" * "+sAS+"), ("+sAD+" * "+sAS+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCDR+" * "+sAD+" * "+sAS+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCDG+" * "+sAD+" * "+sAS+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCDB+" * "+sAD+" * "+sAS+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAD+" * "+sAS+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_SRC_OUT:
+                           // co = cs * as * (1 - ad)
+                           // ao = as * (1 - ad)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4(("+sCS+" * ("+sAS+" * "+s1AD+")), ("+sAS+" * "+s1AD+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" * "+s1AD+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" * "+s1AD+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" * "+s1AD+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" * "+s1AD+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_DST_OUT:
+                           // co = cd * ad * (1 - as)
+                           // ao = ad * (1 - as)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4(("+sCD+" * ("+sAD+" * "+s1AS+")), ("+sAD+" * "+s1AS+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCDR+" * "+sAD+" * "+s1AS+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCDG+" * "+sAD+" * "+s1AS+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCDB+" * "+sAD+" * "+s1AS+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAD+" * "+s1AS+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_SRC_ATOP:
+                           // co = cs * as * ad + cd * ad * (1 - as)
+                           // ao = as * ad + ad * (1 - as)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4((("+sCS+" * ("+sAS+" * "+sAD+")) + ("+sCD+" * ("+sAD+" * "+s1AS+"))), (("+sAS+" * "+sAD+") + ("+sAD+" * "+s1AS+")));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" * "+sAD+" + "+sCDR+" * "+sAD+" * "+s1AS+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" * "+sAD+" + "+sCDG+" * "+sAD+" * "+s1AS+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" * "+sAD+" + "+sCDB+" * "+sAD+" * "+s1AS+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" * "+sAD+" + "+sAD+" * "+s1AS+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_DST_ATOP:
+                           // co = cs * as * (1 - ad) + cd * ad * as
+                           // ao = as * (1 - ad) + ad * as
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4((("+sCS+" * ("+sAS+" * "+s1AD+")) + ("+sCD+" * ("+sAD+" * "+sAS+"))), (("+sAS+" * "+s1AD+") + ("+sAD+" * "+sAS+")));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" * "+s1AD+" + "+sCDR+" * "+sAD+" * "+sAS+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" * "+s1AD+" + "+sCDG+" * "+sAD+" * "+sAS+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" * "+s1AD+" + "+sCDB+" * "+sAD+" * "+sAS+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" * "+s1AD+" + "+sAD+" * "+sAS+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_XOR:
+                           // co = cs * as * (1 - ad) + cd * ad * (1 - as)
+                           // ao = as * (1 - ad) + ad * (1 - as)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4((("+sCS+" * ("+sAS+" * "+s1AD+")) + ("+sCD+" * ("+sAD+" * "+s1AS+"))), (("+sAS+" * "+s1AD+") + ("+sAD+" * "+s1AS+")));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" * "+s1AD+" + "+sCDR+" * "+sAD+" * "+s1AS+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" * "+s1AD+" + "+sCDG+" * "+sAD+" * "+s1AS+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" * "+s1AD+" + "+sCDB+" * "+sAD+" * "+s1AS+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" * "+s1AD+" + "+sAD+" * "+s1AS+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_PLUS:  // aka "lighter"
+                           // co = cs * as + cd * ad
+                           // ao = as + ad
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4((("+sCS+" * "+sAS+") + ("+sCD+" * "+sAD+")), ("+sAS+" + "+sAD+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sAS+" + "+sCDR+" * "+sAD+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sAS+" + "+sCDG+" * "+sAD+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sAS+" + "+sCDB+" * "+sAD+"; // b\n");
+                              _out.append(tmpVarOut+".w = "+sAS+" + "+sAD+"; // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGBA_PLUS_CLAMP:  // aka "lighter" (clamp to 'white' / vec4(1,1,1,1))
+                           // co = cs * as + cd * ad
+                           // ao = as + ad
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+" = vec4(min((("+sCS+" * "+sAS+") + ("+sCD+" * "+sAD+")), vec3(1,1,1)), min(("+sAS+" + "+sAD+"), 1.0));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = mathMinf(1.0, "+sCSR+" * "+sAS+" + "+sCDR+" * "+sAD+"); // r\n");
+                              _out.append(tmpVarOut+".y = mathMinf(1.0, "+sCSG+" * "+sAS+" + "+sCDG+" * "+sAD+"); // g\n");
+                              _out.append(tmpVarOut+".z = mathMinf(1.0, "+sCSB+" * "+sAS+" + "+sCDB+" * "+sAD+"); // b\n");
+                              _out.append(tmpVarOut+".w = mathMinf(1.0, "+sAS+" + "+sAD+"); // a\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                     }
+                  }
+                  if(!bOpDone && ( ([TYPE_VEC3, TYPE_VEC4].contains(type)) && ([TYPE_VEC3, TYPE_VEC4].contains(connType)) ))
+                  {
+                     // // local String sCSR <= tmpVarDst+".x";
+                     // // local String sCSG <= tmpVarDst+".y";
+                     // // local String sCSB <= tmpVarDst+".z";
+
+                     if(TYPE_VEC4 == connType)
+                     {
+                        sCSR <= "("+tmpVarDst+".x * "+tmpVarDst+".w)";   // premultiply source
+                        sCSG <= "("+tmpVarDst+".y * "+tmpVarDst+".w)";   // premultiply source
+                        sCSB <= "("+tmpVarDst+".z * "+tmpVarDst+".w)";   // premultiply source
+                     }
+                     else
+                     {
+                        sCSR <= tmpVarDst+".x";
+                        sCSG <= tmpVarDst+".y";
+                        sCSB <= tmpVarDst+".z";
+                     }
+
+                     // // local String sCDR <= tmpVarOut+".x";
+                     // // local String sCDG <= tmpVarOut+".y";
+                     // // local String sCDB <= tmpVarOut+".z";
+
+                     // (note) ao = ad
+                     switch(connOp)
+                     {
+                        default:
+                           break;
+
+                        case OP_RGB_NORMAL:
+                           // co = cs
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = "+sCS+";\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+"; // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_MULTIPLY:
+                           // co = cs * cd
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = ("+sCS+" * "+sCD+");\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCSR+" * "+sCDR+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCSG+" * "+sCDG+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCSB+" * "+sCDB+"; // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_SCREEN:
+                           // co = cd + cs - (cd * cs)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = ("+sCD+" + "+sCS+" - ("+sCD+" * "+sCS+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCDR+" + "+sCSR+" - ("+sCDR+" * "+sCSR+"); // r\n");
+                              _out.append(tmpVarOut+".y = "+sCDG+" + "+sCSG+" - ("+sCDG+" * "+sCSG+"); // g\n");
+                              _out.append(tmpVarOut+".z = "+sCDB+" + "+sCSB+" - ("+sCDB+" * "+sCSB+"); // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_OVERLAY:
+                           // if(cd <= 0.5)
+                           //     co = 2 * cd * cs  (multiply(d=cs, s=cd))
+                           // else
+                           //     co = cs + (2 * cd -1) - (cs * (2 * cd -1))   (screen(d=cs, s=2*cd-1))
+                           if(1 || _bGLSL)
+                           {
+                              _out.append("if("+sCDR+" <= 0.5)\n");
+                              _out.append("   "+tmpVarOut+".x = (2.0 * "+sCDR+" * "+sCSR+");\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".x = ("+sCSR+" + ((2.0 * "+sCDR+") - 1.0) - ("+sCSR+" * ((2.0 * "+sCDR+") - 1.0)));\n");
+
+                              _out.append("if("+sCDG+" <= 0.5)\n");
+                              _out.append("   "+tmpVarOut+".y = (2.0 * "+sCDG+" * "+sCSG+");\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".y = ("+sCSG+" + ((2.0 * "+sCDG+") - 1.0) - ("+sCSG+" * ((2.0 * "+sCDG+") - 1.0)));\n");
+
+                              _out.append("if("+sCDB+" <= 0.5)\n");
+                              _out.append("   "+tmpVarOut+".z = (2.0 * "+sCDB+" * "+sCSB+");\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".z = ("+sCSB+" + ((2.0 * "+sCDB+") - 1.0) - ("+sCSB+" * ((2.0 * "+sCDB+") - 1.0)));\n");
+
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_DARKEN:
+                           // co = min(cd, cs)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = min("+sCD+", "+sCS+");\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = mathMinf("+sCDR+", "+sCSR+"); // r\n");
+                              _out.append(tmpVarOut+".y = mathMinf("+sCDG+", "+sCSG+"); // g\n");
+                              _out.append(tmpVarOut+".z = mathMinf("+sCDB+", "+sCSB+"); // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_LIGHTEN:
+                           // ci = max(cd, cs)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = max("+sCD+", "+sCS+");\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = mathMaxf("+sCDR+", "+sCSR+"); // r\n");
+                              _out.append(tmpVarOut+".y = mathMaxf("+sCDG+", "+sCSG+"); // g\n");
+                              _out.append(tmpVarOut+".z = mathMaxf("+sCDB+", "+sCSB+"); // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_COLORDODGE:
+                           // if(cd == 0)
+                           //   co = 0
+                           // else if(cs == 1)
+                           //   co = 1
+                           // else
+                           //   co = min(1, cd / (1 - cs))
+                           if(1 || _bGLSL)
+                           {
+                              _out.append("if(0.0 == "+sCDR+")\n");
+                              _out.append("   "+tmpVarOut+".x = 0.0;\n");
+                              _out.append("else if(1.0 == "+sCSR+")\n");
+                              _out.append("   "+tmpVarOut+".x = 1.0;\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".x = "+sMin+"(1.0, "+sCDR+" / (1.0 - "+sCSR+"));\n");
+
+                              _out.append("if(0.0 == "+sCDG+")\n");
+                              _out.append("   "+tmpVarOut+".y = 0.0;\n");
+                              _out.append("else if(1.0 == "+sCSG+")\n");
+                              _out.append("   "+tmpVarOut+".y = 1.0;\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".y = "+sMin+"(1.0, "+sCDG+" / (1.0 - "+sCSG+"));\n");
+
+                              _out.append("if(0.0 == "+sCDB+")\n");
+                              _out.append("   "+tmpVarOut+".z = 0.0;\n");
+                              _out.append("else if(1.0 == "+sCSB+")\n");
+                              _out.append("   "+tmpVarOut+".z = 1.0;\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".z = "+sMin+"(1.0, "+sCDB+" / (1.0 - "+sCSB+"));\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_COLORBURN:
+                           // if(cd == 1)
+                           //   co = 1
+                           // else if(cs == 0)
+                           //   co = 0
+                           // else
+                           //   co = 1 - min(1, (1 - cd) / cs)
+                           if(1 || _bGLSL)
+                           {
+                              _out.append("if(1.0 == "+sCDR+")\n");
+                              _out.append("   "+tmpVarOut+".x = 1.0;\n");
+                              _out.append("else if(0.0 == "+sCSR+")\n");
+                              _out.append("   "+tmpVarOut+".x = 0.0;\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".x = (1.0 - "+sMin+"(1.0, (1.0 - "+sCDR+") / "+sCSR+"));\n");
+
+                              _out.append("if(1.0 == "+sCDG+")\n");
+                              _out.append("   "+tmpVarOut+".y = 1.0;\n");
+                              _out.append("else if(0.0 == "+sCSG+")\n");
+                              _out.append("   "+tmpVarOut+".y = 0.0;\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".y = (1.0 - "+sMin+"(1.0, (1.0 - "+sCDG+") / "+sCSG+"));\n");
+
+                              _out.append("if(1.0 == "+sCDB+")\n");
+                              _out.append("   "+tmpVarOut+".z = 1.0;\n");
+                              _out.append("else if(0.0 == "+sCSB+")\n");
+                              _out.append("   "+tmpVarOut+".z = 0.0;\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".z = (1.0 - "+sMin+"(1.0, (1.0 - "+sCDB+") / "+sCSB+"));\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_HARDLIGHT:
+                           // if(cs <= 0.5)
+                           //     co = cs * 2 * cd  (multiply)
+                           // else
+                           //     co = cd + (2*cs-1) - (cd * (2*cs-1))  (screen(d=cd, s=2*cs-1))
+                           if(1 || _bGLSL)
+                           {
+                              _out.append("if("+sCSR+" <= 0.5)\n");
+                              _out.append("   "+tmpVarOut+".x = "+sCSR+" * 2.0 * "+sCDR+";\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".x = "+sCDR+" + "+"(2.0 * "+sCSR+" - 1.0)"+" - ("+sCDR+" * "+"(2.0 * "+sCSR+" - 1.0)"+");\n");
+
+                              _out.append("if("+sCSG+" <= 0.5)\n");
+                              _out.append("   "+tmpVarOut+".y = "+sCSG+" * 2.0 * "+sCDG+";\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".y = "+sCDG+" + "+"(2.0 * "+sCSG+" - 1.0)"+" - ("+sCDG+" * "+"(2.0 * "+sCSG+" - 1.0)"+");\n");
+
+                              _out.append("if("+sCSB+" <= 0.5)\n");
+                              _out.append("   "+tmpVarOut+".z = "+sCSB+" * 2.0 * "+sCDB+";\n");
+                              _out.append("else\n");
+                              _out.append("   "+tmpVarOut+".z = "+sCDB+" + "+"(2.0 * "+sCSB+" - 1.0)"+" - ("+sCDB+" * "+"(2.0 * "+sCSB+" - 1.0)"+");\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_SOFTLIGHT:
+                           // if(Cs <= 0.5)
+                           //         B(Cb, Cs) = Cb - (1 - 2 x Cs) x Cb x (1 - Cb)
+                           //     else
+                           //         B(Cb, Cs) = Cb + (2 x Cs - 1) x (D(Cb) - Cb)
+                           // with
+                           //     if(Cb <= 0.25)
+                           //         D(Cb) = ((16 * Cb - 12) x Cb + 4) x Cb
+                           //     else
+                           //         D(Cb) = sqrt(Cb)
+                           if(1 || _bGLSL)
+                           {
+                              if(null == tmpVarDCD)
+                                 tmpVarDCD <= _module.allocTmpVar(_out, TYPE_FLOAT, id+"_dcd");
+
+                              // red
+                              _out.append("if("+sCSR+" <= 0.5)\n");
+                              _out.append("  "+tmpVarOut+".x = "+sCDR+" - (1.0 - 2.0 * "+sCSR+") * "+sCDR+" * (1.0 - "+sCDR+");\n");
+                              _out.append("else {\n");
+                              _out.append("  if("+sCDR+" <= 0.25)\n");
+                              _out.append("    "+tmpVarDCD+" = ((16.0 * "+sCDR+" - 12.0) * "+sCDR+" + 4.0);\n");
+                              _out.append("  else\n");
+                              _out.append("    "+tmpVarDCD+" = sqrt("+sCDR+");\n");
+                              _out.append("  "+tmpVarOut+".x = "+sCDR+" + (2.0 * "+sCSR+" - 1.0) * ("+tmpVarDCD+" - "+sCDR+");\n");
+                              _out.append("}\n");
+
+                              // green
+                              _out.append("if("+sCSG+" <= 0.5)\n");
+                              _out.append("  "+tmpVarOut+".y = "+sCDG+" - (1.0 - 2.0 * "+sCSG+") * "+sCDG+" * (1.0 - "+sCDG+");\n");
+                              _out.append("else {\n");
+                              _out.append("  if("+sCDG+" <= 0.25)\n");
+                              _out.append("    "+tmpVarDCD+" = ((16.0 * "+sCDG+" - 12.0) * "+sCDG+" + 4.0);\n");
+                              _out.append("  else\n");
+                              _out.append("    "+tmpVarDCD+" = sqrt("+sCDG+");\n");
+                              _out.append("  "+tmpVarOut+".y = "+sCDG+" + (2.0 * "+sCSG+" - 1.0) * ("+tmpVarDCD+" - "+sCDG+");\n");
+                              _out.append("}\n");
+
+                              // blue
+                              _out.append("if("+sCSB+" <= 0.5)\n");
+                              _out.append("  "+tmpVarOut+".z = "+sCDB+" - (1.0 - 2.0 * "+sCSB+") * "+sCDB+" * (1.0 - "+sCDB+");\n");
+                              _out.append("else {\n");
+                              _out.append("  if("+sCDB+" <= 0.25)\n");
+                              _out.append("    "+tmpVarDCD+" = ((16.0 * "+sCDB+" - 12.0) * "+sCDB+" + 4.0);\n");
+                              _out.append("  else\n");
+                              _out.append("    "+tmpVarDCD+" = sqrt("+sCDB+");\n");
+                              _out.append("  "+tmpVarOut+".z = "+sCDB+" + (2.0 * "+sCSB+" - 1.0) * ("+tmpVarDCD+" - "+sCDB+");\n");
+                              _out.append("}\n");
+
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_DIFFERENCE:
+                           // co = abs(cd - cs)
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = abs("+sCD+" - "+sCS+");\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = abs("+sCDR+" - "+sCSR+"); // r\n");
+                              _out.append(tmpVarOut+".y = abs("+sCDG+" - "+sCSG+"); // g\n");
+                              _out.append(tmpVarOut+".z = abs("+sCDB+" - "+sCSB+"); // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                        case OP_RGB_EXCLUSION:
+                           // co = cd + cs - 2 * cd * cs
+                           if(_bGLSL)
+                           {
+                              _out.append(tmpVarOut+".xyz = ("+sCD+" + "+sCS+" - (2.0 * "+sCD+" * "+sCS+"));\n");
+                              bOpDone = true;
+                           }
+                           else
+                           {
+                              _out.append(tmpVarOut+".x = "+sCDR+" + "+sCSR+" - 2 * "+sCDR+" * "+sCSR+"; // r\n");
+                              _out.append(tmpVarOut+".y = "+sCDG+" + "+sCSG+" - 2 * "+sCDG+" * "+sCSG+"; // g\n");
+                              _out.append(tmpVarOut+".z = "+sCDB+" + "+sCSB+" - 2 * "+sCDB+" * "+sCSB+"; // b\n");
+                              bOpDone = true;
+                           }
+                           break;
+
+                     }
+                  }
+
+                  // if(!bOpDone)
+                  //    trace "xxx this="+id+" connOp="+connOp+" connType="+connType;
+
+                  if(!bOpDone && (OP_MAT_INVERT == connOp) && ([TYPE_MAT4, TYPE_MAT3, TYPE_MAT2].contains(connType)))
+                  {
+                     if(_bGLSL)
+                     {
+                        // (note) inverse() requires GLSL3
+                        _out.append("// unsupported GLSL op: OP_MAT_INVERT\n");
+                     }
+                     else
+                     {
+                        _out.append(tmpVarOut+".invert();\n");
+                        bOpDone = true;
+                     }
+                  }
+
+                  if(!bOpDone && (OP_MAT_INV_TRP == connOp) && ([TYPE_MAT4, TYPE_MAT3, TYPE_MAT2].contains(connType)))
+                  {
+                     if(_bGLSL)
+                     {
+                        // (note) inverse().transpose() requires GLSL3
+                        _out.append("// unsupported GLSL op: OP_MAT_INV_TRP\n");
+                     }
+                     else
+                     {
+                        _out.append(tmpVarOut+".invert();\n");
+                        _out.append(tmpVarOut+".transpose();\n");
+                        bOpDone = true;
+                     }
+                  }
+               }
+
+               if(!bOpDone)
+               {
+                  // revert to MUL
+                  _out.append(tmpVarOut+" = "+tmpVarOut+" * "+tmpVarDst+";\n");
+               }
+
+               // Next connection
+               connNr++;
+
+            } // if conn.isEnabled()
+            // else
+            //    trace "xxx ginput.id="+id+" skip conn="+#(conn)+" conn.isEnabled="+conn.isEnabled()+" obj="+#(obj)+" obj.isEnabled="+obj.isEnabled();
+
+            connIdx++;
+
+         } // foreach conn
+
+         if((null != tmpVarOut) && (@(tmpVarOut) != @(_dstVar)))
+            _out.append(_dstVar+" = "+tmpVarOut+"; // input="+id+"\n");
+
+         // if(!_bGLSL)
+         //    _out.append("trace \"xxx "+_dstVar+"=\"+#("+_dstVar+");\n");
+      }
+      else
+      {
+         trace "[~~~] GInput::emitFltConn: parent="+parent_object.getObjectPath()+" input.id=\""+id+"\" is not connected, return default type value (bGLSL="+_bGLSL+")";
+         if([TYPE_FUNCTION, TYPE_REF, TYPE_ORBITCAMVIEW].contains(type))
+            _out.append(_dstVar+" <= null;\n");
+         else if(_bGLSL)
+            _out.append(_dstVar+" = "+GDefs.GetGLSLDefaultTypeValue(type)+";\n");
+         else
+            _out.append(_dstVar+" = "+GDefs.GetScriptDefaultTypeValue(type)+";\n");
+      }
+   }
+
+   // <method.png>
+   public method emit(local GModule      _module,
+                      local GProgram     _program,
+                      local String       _out,
+                      local String       _dstVar,
+                      local boolean      _bGLSL,
+                      local PointerArray _parents
+                      ) {
+      return emitFltConn(-1/*fltConnIdx*/,
+                         _module,
+                         _program,
+                         _out,
+                         _dstVar,
+                         _bGLSL,
+                         _parents
+                         );
+   }
+
+   // <method.png>
+   public method emitPost(local GModule      _module,
+                          local GProgram     _program,
+                          local PointerArray _parents
+                          ) {
+      local GConnection *conn;
+      foreach conn in connections
+      {
+         if(conn.isEnabled())
+         {
+            local GObject obj <= conn.object;
+            // trace "xxx GInput::emitPost: id="+id+" obj="+#(obj)*" parents="+#(_parents);
+            if(_parents.containsPointer(obj))
+            {
+               throw GInfiniteRecursion "POST obj="+#(obj)+" id="+obj.id+" this.input.id="+id+" conn.port_id="+conn.port_id;
+            }
+            _parents.add(obj);
+            obj.emitPost(_module, _program, _parents);
+            _parents.remove(obj);
+            // trace "xxx GInput::emitPost: END id="+id+" obj="+#(obj)*" parents="+#(_parents);
+         }
+      }
+   }
+
+}

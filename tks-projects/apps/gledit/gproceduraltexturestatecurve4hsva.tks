@@ -1,0 +1,153 @@
+// ----
+// ---- file   : gproceduraltexturestatecurve4hsva.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 07Jul2020
+// ---- changed: 26Jul2020, 29Jul2020, 01Aug2020, 04Feb2025
+// ----
+// ----
+// ----
+module MGProceduralTextureStateCurve4HSVA;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GProceduralTextureStateCurve4HSVA : GProceduralTextureStateCurve4 {
+
+
+   // <method_get.png>
+   public virtual getCurveLabels() : StringArray {
+      return ["H", "S", "V", "A"];
+   }
+
+   // <ui_handle.png>
+   public virtual recalcTexture(GTexture _texture) {
+
+      Texture tex <= _texture.tex;
+      tex.unload();
+
+      Global.Debug("GProceduralTextureStateCurve4HSVA::recalcTexture: tex sz=("+tex.sx+";"+tex.sy+") z="+tex.z);
+
+      Envelope envH <= curve_envs[0];
+      Envelope envS <= curve_envs[1];
+      Envelope envV <= curve_envs[2];
+      Envelope envA <= curve_envs[3];
+
+      float uStep = 1.0 / tex.sx;
+      float u = 0.0f;
+      int x = 0;
+
+      loop(tex.sx)
+      {
+         envH.time = u;
+         envS.time = u;
+         envV.time = u;
+         envA.time = u;
+         float h = envH.get() * 360;
+         float s = envS.get();
+         float v = envV.get();
+         int   a = envA.get() * 255;
+         h = mathClampf(h, 0, 360);
+         s = mathClampf(s, 0, 1);
+         v = mathClampf(v, 0, 1);
+         a = mathClampi(a, 0, 255);
+         Integer c32 = UI.HSVTOARGB32(h, s, v, a);
+         // if(x < 10)
+         //    trace "xxx c4hsva tex["+x+"]=#"+c32.printf("%08x")+" (u="+u+")";
+         tex.setXY32(x++, 0, c32);
+         u += uStep;
+      }
+
+      color_mod.applyColorMods(tex);
+
+      if(_texture.b_constant_texel_ref)
+         current_project.queueUpdate();
+      else
+         current_project.queueRedraw();
+   }
+
+   // <method.png>
+   public virtual importColors(Curve4Dialog _dlg, GTexture _gtexture, IntArray _colors) {
+      if(_colors.numElements > 1)
+      {
+         BezierEdit beH <= _dlg.f_curves.get(0).be_env;
+         BezierEdit beS <= _dlg.f_curves.get(1).be_env;
+         BezierEdit beV <= _dlg.f_curves.get(2).be_env;
+       
+         beH.clearCtlPoints();
+         beS.clearCtlPoints();
+         beV.clearCtlPoints();
+  
+         float tStep = 1.0 / (_colors.numElements-1);
+         float t = 0;
+         int c32;
+         Float h;
+         Float s;
+         Float v;
+         UI.RGB32TOHSV(_colors[0], h, s, v);
+         h *= (1.0 / 360.0);
+         int idx = 1;
+
+         loop(_colors.numElements -1)
+         {
+            Float hNext;
+            Float sNext;
+            Float vNext;
+            UI.RGB32TOHSV(_colors[idx], hNext, sNext, vNext);
+            hNext *= (1.0 / 360.0);
+
+            beH.addCtlPoint(t, h,
+                            (t+tStep*0.5), (hNext+h)*0.5,
+                            (t+tStep*0.5), (hNext+h)*0.5
+                            );
+
+            beS.addCtlPoint(t, s,
+                            (t+tStep*0.5), (sNext+s)*0.5,
+                            (t+tStep*0.5), (sNext+s)*0.5
+                            );
+
+            beV.addCtlPoint(t, v,
+                            (t+tStep*0.5), (vNext+v)*0.5,
+                            (t+tStep*0.5), (vNext+v)*0.5 
+                            );
+
+            h = hNext;
+            s = sNext;
+            v = vNext;
+            
+            t += tStep;
+            idx++;
+         }
+
+         beH.addCtlPoint(1.0, hNext, 0,0, 0,0);
+         beS.addCtlPoint(1.0, sNext, 0,0, 0,0);
+         beV.addCtlPoint(1.0, hNext, 0,0, 0,0);
+
+         beH.recalc(true/*bAction*/);
+         beH.resetZoom();
+
+         beS.recalc(true/*bAction*/);
+         beS.resetZoom();
+
+         beV.recalc(true/*bAction*/);
+         beV.resetZoom();
+
+         recalcTexture(_gtexture);
+
+         Global.Print("Import "+_colors.numElements+" HSV colors");
+      }
+      else
+      {
+         Global.Warning("importColors: need at least 2 colors");
+      }
+   }
+
+}
+

@@ -1,0 +1,207 @@
+// ----
+// ---- file   : gconstanthsva.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 01Aug2020
+// ---- changed: 14Aug2020
+// ----
+// ----
+// ----
+module MGConstantHSVA;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GConstantHSVA : GConstant {
+   // (note) outputs RGBA
+
+   // <method_new.png>
+   public static New() : GConstantHSVA {
+      local GConstantHSVA r;
+      r.init();
+      return deref r;
+   }
+
+   // <method_init.png>
+   public virtual init() {
+      GConstant::init();
+      type = TYPE_VEC4;
+
+      GParamFloat *p;
+
+      p <= addParamFloat("h", "h", 0.0f, 0.0f, 0.0f, 360.0f, 360.0, -1);
+
+      p <= addParamFloat("s", "s", 1.0f, 0.0f, 0.0f, 1.0f, 1.0, 0.5f);
+      p.b_percent = true;
+
+      p <= addParamFloat("v", "v", 1.0f, 0.0f, 0.0f, 1.0f, 1.0, 0.5f);
+      p.b_percent = true;
+
+      p <= addParamFloat("a", "a", 1.0f, 0.0f, 0.0f, 1.0f, 1.0, 0.5f);
+      p.b_percent = true;
+
+      addInput("h", TYPE_FLOAT);
+      addInput("s", TYPE_FLOAT);
+      addInput("v", TYPE_FLOAT);
+      addInput("a", TYPE_FLOAT);
+
+      addOutput(GOutput.OUT_DEF, type);
+   }
+
+   // <method_get.png>
+   public virtual getOpAuto() : int {
+      return OP_RGBA_SRC_OVER;
+   }
+
+   // <method_get.png>
+   public virtual getString() : String {
+      local float h = getFloatParamById("h")      ;
+      local float s = getFloatParamById("s");
+      local float v = getFloatParamById("v");
+      local float a = getFloatParamById("a") * 255;
+      local Integer io = UI.HSVTOARGB32(h, s, v, a);
+      return io.printf("#%08x");
+   }
+
+   // <method.png>
+   public virtual emit(local String       _outputId,
+                       local GModule      _module,
+                       local GProgram     _program,
+                       local String       _out,
+                       local String       _dstVar,
+                       local boolean      _bGLSL,
+                       local PointerArray _parents
+                       ) {
+      float h = getFloatParamById("h");
+      float s = getFloatParamById("s");
+      float v = getFloatParamById("v");
+      float a = getFloatParamById("a");
+
+      _parents.add(this);
+      local GInput *input;
+
+      // h
+      local String *sH;
+      input <= getInputById("h");
+      if(input.isConnected())
+      {
+         sH <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_h");
+         input.emit(_module, _program, _out, sH, _bGLSL, _parents);
+         _out.append(sH+" += "+h+";\n");
+      }
+      else
+         sH <= String(h);
+
+      // s
+      local String *sS;
+      input <= getInputById("s");
+      if(input.isConnected())
+      {
+         sS <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_s");
+         input.emit(_module, _program, _out, sS, _bGLSL, _parents);
+         _out.append(sS+" += "+s+";\n");
+      }
+      else
+         sS <= String(s);
+
+      // v
+      local String *sV;
+      input <= getInputById("v");
+      if(input.isConnected())
+      {
+         sV <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_v");
+         input.emit(_module, _program, _out, sV, _bGLSL, _parents);
+         _out.append(sV+" += "+v+";\n");
+      }
+      else
+         sV <= String(v);
+
+      // a
+      local String *sA;
+      input <= getInputById("a");
+      if(input.isConnected())
+      {
+         sA <= _module.allocTmpVarScript(_out, TYPE_FLOAT, "in_a");
+         input.emit(_module, _program, _out, sA, _bGLSL, _parents);
+         _out.append(sA+" += "+a+";\n");
+      }
+      else
+         sA <= String(a);
+
+      local String *sFxn;
+
+      if(_bGLSL)
+      {
+         sFxn <=
+            "void HSVAToRGBA(in vec4 hsva, out vec4 o_rgba) { \n"
+            "   float h; \n"
+            "   if(hsva.x >= 360.0) \n"
+            "      h = hsva.x - 360.0; \n"
+            "   else \n"
+            "      h = hsva.x; \n"
+            "   h *= (1.0 / 60.0); \n"
+            "   int i = int(h); \n"
+            "   float f = h - float(i); \n"
+            "   float p = hsva.z * (1.0 - hsva.y); \n"
+            "   float q = hsva.z * (1.0 - hsva.y * f); \n"
+            "   float t = hsva.z * (1.0 - hsva.y * (1.0 - f)); \n"
+            "   if(0 == i) \n"
+            "      o_rgba = vec4(hsva.z, t, p, hsva.w); \n"
+            "   else if(1 == i) \n"
+            "      o_rgba = vec4(q, hsva.z, p, hsva.w); \n"
+            "   else if(2 == i) \n"
+            "      o_rgba = vec4(p, hsva.z, t, hsva.w); \n"
+            "   else if(3 == i) \n"
+            "      o_rgba = vec4(p, q, hsva.z, hsva.w); \n"
+            "   else if(4 == i) \n"
+            "      o_rgba = vec4(t, p, hsva.z, hsva.w); \n"
+            "   else \n"
+            "      o_rgba = vec4(hsva.z, p, q, hsva.w); \n"
+            "} \n"
+            ;
+         _program.appendShaderSourceFunctionsOnce("HSVAToRGBA", sFxn);
+
+         _out.append("HSVAToRGBA(vec4("+sH+", "+sS+", "+sV+", "+sA+", "+_dstVar+");\n");
+      }
+      else
+      {
+         sFxn <=
+            "function HSVAToRGBA(float h, float s, float v, float a, Vector4f o_rgba) { \n"
+            "   if(h >= 360.0) \n"
+            "      h -= 360.0; \n"
+            "   h *= (1.0 / 60.0); \n"
+            "   int i = h; \n"
+            "   float f = h - i; \n"
+            "   float p = v * (1.0 - s); \n"
+            "   float q = v * (1.0 - s * f); \n"
+            "   float t = v * (1.0 - s * (1.0 - f)); \n"
+            "   if(0 == i) \n"
+            "      o_rgba.init(v, t, p, a); \n"
+            "   else if(1 == i) \n"
+            "      o_rgba.init(q, v, p, a); \n"
+            "   else if(2 == i) \n"
+            "      o_rgba.init(p, v, t, a); \n"
+            "   else if(3 == i) \n"
+            "      o_rgba.init(p, q, v, a); \n"
+            "   else if(4 == i) \n"
+            "      o_rgba.init(t, p, v, a); \n"
+            "   else \n"
+            "      o_rgba.init(v, p, q, a); \n"
+            "} \n"
+            ;
+
+         _module.appendGlobalOnce("HSVAToRGBA", sFxn);
+
+         _out.append("HSVAToRGBA("+sH+", "+sS+", "+sV+", "+sA+", "+_dstVar+");\n");
+      }
+
+      _parents.remove(this);
+   }
+}

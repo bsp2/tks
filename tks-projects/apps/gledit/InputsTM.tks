@@ -1,0 +1,650 @@
+// ----
+// ---- file   : InputsTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 14Jun2020
+// ---- changed: 15Jun2020, 30Jun2020, 02Aug2020, 07Feb2025
+// ----
+// ----
+// ----
+module MInputsTM;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class InputsTMDefs {
+   define int TYPE_INPUTS     = 0;  // virtual folder
+   define int TYPE_INPUT      = 1;
+   define int TYPE_CONNECTION = 2;
+   define int TYPE_OUTPUTS    = 3;  // virtual folder
+   define int TYPE_OUTPUT     = 4;
+   define int TYPE_PARAM      = 5;
+   define int TYPE_PARAMS     = 6;  // virtual folder
+}
+
+
+// <class.png>
+class InputsTMEntry : InputsTMDefs {
+   int          type;
+   Object      *object;   // port (GInput / GOutput)
+   String       caption;  // object id or virtual folder caption
+   GConnection *conn;
+   boolean      b_empty;
+
+
+   public static NewInput(GInput _input) : InputsTMEntry {
+      local InputsTMEntry r;
+      r.type    = TYPE_INPUT;
+      r.object <= _input;
+      r.caption = _input.getGLSLTypeName()+" "+_input.getId();
+      return deref r;
+   }
+
+   public static NewOutput(GOutput _output) : InputsTMEntry {
+      local InputsTMEntry r;
+      r.type    = TYPE_OUTPUT;
+      r.object <= _output;
+      r.caption = _output.getGLSLTypeName()+" "+_output.getId();
+      return deref r;
+   }
+
+   public static NewConnection(GPort _port, GConnection _conn) : InputsTMEntry {
+      local InputsTMEntry r;
+      r.type    = TYPE_CONNECTION;
+      r.object <= _port;
+      r.caption = _conn.getOpPortString();
+      r.conn   <= _conn;
+      return deref r;
+   }
+
+   public static NewParam(GParam _param) : InputsTMEntry {
+      local InputsTMEntry r;
+      r.type    = TYPE_PARAM;
+      r.object <= _param;
+      // r.caption = _param.getId();
+      r.caption = _param.getString();
+      return deref r;
+   }
+
+   public static NewVirt(Object _parentObject, int _type, String _caption) : InputsTMEntry {
+      local InputsTMEntry r;
+      r.type    = _type;
+      r.object <= _parentObject;
+      r.caption = _caption;
+      return deref r;
+   }
+
+   public method isConnectionEnabled() : boolean {
+      if((TYPE_CONNECTION == type) && (object instanceof GInput))
+      {
+         return conn.isEnabled();
+      }
+      return false;
+   }
+
+   public method toggleEnableConnection() {
+      if((TYPE_CONNECTION == type) && (object instanceof GInput))
+      {
+         conn.setEnable(!conn.isEnabled());
+      }
+   }
+
+   public method updateConnectionCaption() {
+      // e.g. after editing param
+      if(null != conn)
+         caption = conn.getOpPortString();
+   }
+}
+
+
+// <class.png>
+class InputsTM : TreeTableModel, InputsTMDefs {
+   Icon *icon_open;
+   Icon *icon_closed;
+   Icon *icon_open_empty;
+   Icon *icon_closed_empty;
+   Icon *icon_leaf;
+
+   Label *lb_enable;
+
+   // // PointerArray entries;
+
+   define int COL_ENABLE  = 0;
+   define int COL_ID      = 1;
+
+
+   public virtual initTableModel() {
+      TreeTableModel::initTableModel();
+
+      icon_open         <= UI.GetIcon("treeopen");
+      icon_closed       <= UI.GetIcon("treeclosed");
+      icon_open_empty   <= UI.GetIcon("treeopenempty");
+      icon_closed_empty <= UI.GetIcon("treeclosedempty");
+      icon_leaf         <= UI.GetIcon("treeleaf");
+
+      lb_enable <= Label.New();
+      lb_enable.setCaption("");
+      lb_enable.setPadding4f(0,0,0,0);
+   }
+
+   public virtual getTreeHierarchyCaption() : String {
+      return "inputs / outputs"; // inputs
+   }
+
+   public virtual getTreeNumColumns() : int {
+      return 2;
+   }
+
+   public virtual getTreeColumnCaption(int _col) : String {
+      return ["En", "Id"][_col];
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      // (note) first column is used by tree (hierarchy/icons)
+      return [300, 20, 200][_col];
+   }
+
+   public virtual getMaximumColumnWidth(int _col) : int {
+      // (note) first column is used by tree (hierarchy/icons)
+      return [550, 20, 250][_col];
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      // (note) first column is used by tree (hierarchy/icons)
+      return [550, 20, 250][_col];
+   }
+
+   // // public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+   // //    Label lb <= TreeTableModel::getCellRenderer(_col, _row, _visibleRow);
+   // //    // if(COL_SIZE == _col-1)
+   // //    // {
+   // //    //    lb.setTextPlacement(Layout.RIGHT | Layout.CENTERY);
+   // //    //    /////lb.ipad_r = lb.ipad_r + 2;
+   // //    // }
+   // //    // else
+   // //    // {
+   // //       lb.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+   // //    // }
+   // //    return lb;
+   // // }
+
+   public virtual updateTreeCellRendererLabelColor(Object _userData, Label _lb, int _col) {
+
+      _lb.setBackgroundTint(0);
+
+      if(_userData instanceof InputsTMEntry)
+      {
+         InputsTMEntry en <= _userData;
+         if(en.b_empty)
+         {
+            int c32BG = _lb.getBackgroundColor();
+            int c32FG = _lb.getForegroundColor();
+            c32BG &= 0x00FFFFFF;
+            c32BG |= 0x80000000;
+            _lb.setForegroundColor(UI.TintColor32(c32FG, c32BG));
+         }
+
+         // trace "xxx en.object="+#(en.object)+" en.conn="+#(en.conn);
+         if(en.object instanceof GInput && null != en.conn)
+         {
+            GInput input <= en.object;
+            if(input.parent_object instanceof GConnectionContainer)
+            {
+               GConnectionContainer cc <= input.parent_object;
+               // trace "xxx obj is gconnectioncontainer";
+               if(cc.containerIsForcedConnection(en.conn))
+               {
+                  _lb.setBackgroundTint(#30ff0000);
+               }
+            }
+         }
+      }
+   }
+
+   public virtual getTreeCellRenderer(Object _userData, int _col) : Layer {
+
+      if(COL_ENABLE == _col)
+      {
+         if(_userData instanceof InputsTMEntry)
+         {
+            InputsTMEntry en <= _userData;
+            if(en.isConnectionEnabled())
+            {
+               lb_enable.setIcon(UI.GetIcon("table_checkbox"));
+               return lb_enable;
+            }
+         }
+      }
+      return null;
+   }
+
+   public virtual getTreeCellCaption(Object _userData, int _col) : String {
+      ////trace "xxx getTreeCellCaption: _userData="+#(_userData)+" _col="+_col;
+      if(_userData instanceof InputsTMEntry)
+      {
+         InputsTMEntry en <= _userData;
+         switch(_col)
+         {
+            case COL_ID:
+               if([TYPE_INPUT, TYPE_OUTPUT, TYPE_PARAM, TYPE_CONNECTION].contains(en.type))
+                  return en.caption;
+               break;
+         }
+      }
+      return "";
+   }
+
+   public virtual handleTreeCellOnMouse(Object _userData, int _col, MouseEvent _ev) : boolean {
+      // (note) col 0 is hierarchy column (e.g. object id)
+      if(_col == (COL_ENABLE+1))
+      {
+         if(_userData instanceof InputsTMEntry)
+         {
+            InputsTMEntry en <= _userData;
+            if(_ev.leftButtonUp())
+            {
+               en.toggleEnableConnection();
+               current_project.queueUpdate();
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // public getTreeCellIcon(Object _userData, int _col) : Icon {
+
+   //    // if(_userData == "penguin")
+   //    // {
+   //    //    if(COL_GENDER == _col)
+   //    //    {
+   //    //       return UI.GetIcon("penguin");
+   //    //    }
+   //    // }
+
+   //    return null;
+   // }
+
+   // public getTreeRowHeight(Object _userData) : int {
+   //    return default;
+   // }
+
+   public virtual handleFold(TreeTableNode tn) {
+      TreeTableModel::handleFold(tn);
+      table_view.redraw();
+   }
+
+   public virtual handleUnfold(TreeTableNode tn) {
+
+      TreeTableModel::handleUnfold(tn);
+
+      if(tn.user_data instanceof InputsTMEntry)
+      {
+         InputsTMEntry en <= tn.user_data;
+         float oldY = view_pixel_offset_y;
+
+         tn.removeAllRight();
+
+         if(InputsTMEntry.TYPE_INPUT == en.type)
+            addTreeFromVirt(tn, en.object/*input*/, en.type, false/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+         else if(InputsTMEntry.TYPE_OUTPUT == en.type)
+            addTreeFromVirt(tn, en.object/*input*/, en.type, false/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+         else if(InputsTMEntry.TYPE_PARAM == en.type)
+            addTreeFromVirt(tn, en.object/*param*/, en.type, false/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+         else
+            addTreeFromVirt(tn, en.object/*nsp*/, en.type, false/*bVirt*/, true/*bObject*/, false/*bDescend*/);
+
+         tableModelChanged();
+
+         table_view.centerRow();
+
+         // trace "xxx oldY="+oldY+" newY="+view_pixel_offset_y;
+
+         // Never scroll up when expanding
+         if(view_pixel_offset_y > oldY)
+         {
+            // trace "xxx scroll back";
+            table_view.scrollToPositionY(oldY);
+         }
+      }
+
+   }
+
+   public method buildTreeFromObject(GObject _obj) {
+
+      TreeTableNode tnRoot <= initRootNode(icon_open, icon_closed, _obj.getId(), null);
+      tnRoot.open();
+
+      addTreeFromVirt(tnRoot, _obj, TYPE_OUTPUTS, true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+      addTreeFromVirt(tnRoot, _obj, TYPE_INPUTS,  true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+      addTreeFromVirt(tnRoot, _obj, TYPE_PARAMS,  true/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+
+      tableModelChanged();
+   }
+
+   public method addTreeFromVirt(local TreeTableNode _tnRoot,
+                                 local Object        _obj, // parent
+                                 local int           _type,
+                                 local boolean       _bVirt,
+                                 local boolean       _bObject,
+                                 local boolean       _bDescend
+                                 ) {
+      local TreeTableNode tnp <= _tnRoot;
+      local TreeTableNode *tn;
+      local TreeTableNode *tc;
+      local GObject *obj;
+      local GInput *input;
+      local GOutput *output;
+      local GConnection *conn;
+      int connNr;
+      local GParamProvider *paramObj;
+      local InputsTMEntry *en;
+      local GNamespaceObject *parentNsp;  // for eliminating common namespace path prefix (=> shorten object names)
+      if(_obj instanceof GNamespaceObject)
+      {
+         parentNsp <= _obj;
+      }
+      else if( (root_form.pg_start.current_input_object) instanceof GNamespaceObject )
+         parentNsp <= (root_form.pg_start.current_input_object);
+
+      switch(_type)
+      {
+         case TYPE_INPUTS:
+            obj <= _obj;
+            if(_bVirt)
+            {
+               en <= InputsTMEntry.NewVirt(obj, TYPE_INPUTS, "Inputs");
+               tn <= tnp.insertRight(icon_open, icon_closed, "INPUTS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = !obj.isAnyInputConnected();
+               if(_bObject || en.b_empty)
+               {
+                  tn.open();
+                  if(en.b_empty)
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  tnp <= tn;
+               }
+            }
+            if(_bObject || _bDescend)
+            {
+               tn <= null;
+               foreach input in obj.inputs
+               {
+                  en <= InputsTMEntry.NewInput(input);
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_open, icon_closed, input.id, deref en);
+                  else
+                     tn <= tn.insertLeft(icon_open, icon_closed, input.id, deref en);
+                  tn.setLeafNode(false);
+                  en.b_empty = (input.connections.isEmpty());
+                  if(_bDescend || en.b_empty)
+                  {
+                     tn.open();
+                     if(en.b_empty)
+                        tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  if(_bDescend)
+                  {
+                     addTreeFromVirt(tn, input, TYPE_INPUT, false/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+                  }
+               }
+            }
+            break;
+
+         case TYPE_INPUT:
+            input <= _obj;
+            connNr = 1;
+            foreach conn in input.connections
+            {
+               if(null == tn)
+                  tn <= tnp.insertRight(icon_leaf, null,
+                                        String(connNr++)+": "+conn.getObjectString(parentNsp),
+                                        InputsTMEntry.NewConnection(input, conn)
+                                        );
+               else
+                  tn <= tn.insertLeft(icon_leaf, null,
+                                      String(connNr++)+": "+conn.getObjectString(parentNsp),
+                                      InputsTMEntry.NewConnection(input, conn)
+                                      );
+               tn.setLeafNode(true);
+            }
+            break;
+
+         case TYPE_OUTPUTS:
+            obj <= _obj;
+            if(_bVirt)
+            {
+               en <= InputsTMEntry.NewVirt(obj, TYPE_OUTPUTS, "Outputs");
+               tn <= tnp.insertRight(icon_open, icon_closed, "OUTPUTS", deref en);
+               tn.setLeafNode(false);
+               en.b_empty = !obj.isAnyOutputConnected();
+               if(_bObject || en.b_empty)
+               {
+                  tn.open();
+                  if(en.b_empty)
+                     tn.setIcons(icon_open_empty, icon_closed_empty);
+                  tnp <= tn;
+               }
+            }
+            if(_bObject || _bDescend)
+            {
+               tn <= null;
+               foreach output in obj.outputs
+               {
+                  en <= InputsTMEntry.NewOutput(output);
+                  if(null == tn)
+                     tn <= tnp.insertRight(icon_open, icon_closed, output.id, deref en);
+                  else
+                     tn <= tn.insertLeft(icon_open, icon_closed, output.id, deref en);
+                  tn.setLeafNode(false);
+                  en.b_empty = (output.connections.isEmpty());
+                  if(_bDescend || en.b_empty)
+                  {
+                     tn.open();
+                     if(en.b_empty)
+                        tn.setIcons(icon_open_empty, icon_closed_empty);
+                  }
+                  if(_bDescend)
+                  {
+                     addTreeFromVirt(tn, output, TYPE_OUTPUT, false/*bVirt*/, true/*bObject*/, true/*bDescend*/);
+                  }
+               }
+            }
+            break;
+
+         case TYPE_OUTPUT:
+            output <= _obj;
+            connNr = 1;
+            foreach conn in output.connections
+            {
+               // trace "xxx output.parent_object="+#(output.parent_object);
+               if(null == tn)
+                  tn <= tnp.insertRight(icon_leaf, null,
+                                        String(connNr++)+": "+conn.getObjectString(output.parent_object/*parentNsp*/),
+                                        InputsTMEntry.NewConnection(output, conn)
+                                        );
+               else
+                  tn <= tn.insertLeft(icon_leaf, null,
+                                      String(connNr++)+": "+conn.getObjectString(output.parent_object/*parentNsp*/),
+                                      InputsTMEntry.NewConnection(output, conn)
+                                      );
+               tn.setLeafNode(true);
+            }
+            break;
+
+         case TYPE_PARAMS:
+            if(_obj instanceof GParamProvider)
+            {
+               paramObj <= _obj;
+               if(_bVirt)
+               {
+                  en <= InputsTMEntry.NewVirt(paramObj, TYPE_PARAMS, "Params");
+                  tn <= tnp.insertRight(icon_open, icon_closed, "PARAMS", deref en);
+                  tn.setLeafNode(false);
+                  en.b_empty = (paramObj.params.isEmpty());
+                  if(_bObject || en.b_empty)
+                  {
+                     if(en.b_empty)
+                     {
+                        tn.open();
+                        tn.setIcons(icon_open_empty, icon_closed_empty);
+                     }
+                     tnp <= tn;
+                  }
+               }
+               if(_bObject || _bDescend)
+               {
+                  local GParam *param;
+                  tn <= null;
+                  foreach param in paramObj.params
+                  {
+                     if(null == tn)
+                        tn <= tnp.insertRight(icon_leaf, null, param.id, InputsTMEntry.NewParam(param));
+                     else
+                        tn <= tn.insertLeft(icon_leaf, null, param.id, InputsTMEntry.NewParam(param));
+                     tn.setLeafNode(true);
+                  }
+               }
+            }
+            break;
+
+      }
+   }
+
+   public method getRowIdxByGConnection(GConnection _conn) : int {
+      TreeTableNode *tn;
+      int rowIdx = 0;
+      foreach tn in flat_tree_nodes
+      {
+         InputsTMEntry en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_CONNECTION == en.type)
+            {
+               if(@(en.conn) == @(_conn))
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+      return -1;
+   }
+
+   public method getRowIdxByGInput(GInput _input) : int {
+      TreeTableNode *tn;
+      int rowIdx = 0;
+      InputsTMEntry *en;
+
+      // Find first connection
+      foreach tn in flat_tree_nodes
+      {
+         en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_CONNECTION == en.type)
+            {
+               if(@(en.object) == @(_input))
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+
+      // Fallback: Find input folder
+      foreach tn in flat_tree_nodes
+      {
+         en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_INPUT == en.type)
+            {
+               if(@(en.object) == @(_input))
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+
+      // Fallback: Find "Inputs" folder
+      rowIdx = 0;
+      foreach tn in flat_tree_nodes
+      {
+         en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_INPUTS == en.type)
+            {
+               if(@(en.object) == @(_input))
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+
+      return -1;
+   }
+
+   public method getRowIdxByGOutput(GOutput _output) : int {
+      TreeTableNode *tn;
+      int rowIdx = 0;
+      foreach tn in flat_tree_nodes
+      {
+         InputsTMEntry en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_OUTPUT == en.type)
+            {
+               if(@(en.object) == @(_output))
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+      return -1;
+   }
+
+   public method getRowIdxByFirstOutputConnection() : int {
+      TreeTableNode *tn;
+      int rowIdx = 0;
+      foreach tn in flat_tree_nodes
+      {
+         InputsTMEntry en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_CONNECTION == en.type)
+            {
+               if(en.object instanceof GOutput)
+                  return rowIdx;
+            }
+         }
+         rowIdx++;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getEntryByConnectionObject(GObject _obj) : InputsTMEntry {
+      TreeTableNode *tn;
+      foreach tn in flat_tree_nodes
+      {
+         InputsTMEntry en <= tn.user_data;
+         if(en instanceof InputsTMEntry)
+         {
+            if(TYPE_CONNECTION == en.type)
+            {
+               if(@(en.conn.object) == @(_obj))
+                  return en;
+            }
+         }
+      }
+      return null;
+   }
+
+}

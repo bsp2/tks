@@ -1,0 +1,1252 @@
+/*
+ *   3DS object loader
+ *      a TKScript module written by Bastian Spiegel <bs@tkscript.de>
+ *   
+ *   created: 8.Dec.2003
+ *   changed: 12.Mar.2004 12feb2005 25feb2009, 21Jun2020
+ *
+ *
+ */
+
+module Simple3DS;
+use tksdl;
+use tkopengl;
+//use tkoldmath;
+use tkmath;
+
+
+String default_ambient_texture_name="default.png";
+// int    force_default_texture
+
+enum {
+   3DS_MAIN                   = 0x4D4D,
+   3DS_EDITOR                 = 0x3D3D,
+   
+   3DS_COLOR_RGBF             =0x010,
+   3DS_COLOR_RGBI             =0x011,
+   3DS_COLOR_UNK              =0x013,
+   
+   3DS_OBJ                    = 0x4000,
+   3DS_OBJ_MESH               = 0x4100,
+   3DS_OBJ_MESH_VERTICELIST   = 0x4110,
+   3DS_OBJ_MESH_FACELIST      = 0x4120,
+   3DS_OBJ_MESH_FACEMAT       = 0x4130,
+   3DS_OBJ_MESH_MAPCOORDLIST  = 0x4140,
+   3DS_OBJ_MESH_SMOOTHLIST    = 0x4150,
+   3DS_OBJ_MESH_LOCALCOORDS   = 0x4160,
+   
+   3DS_OBJ_LIGHT              = 0x4600,
+   3DS_OBJ_LIGHT_SPOTLIGHT    = 0x4610,
+
+   3DS_OBJ_CAMERA             = 0x4700,
+    
+   3DS_MAT                    = 0xAFFF,
+   3DS_MAT_NAME               = 0xA000,
+   3DS_MAT_AMBIENT            = 0xA010,
+   3DS_MAT_DIFFUSE            = 0xa020, 
+   3DS_MAT_SPECULAR           = 0xA030,
+   3DS_MAT_MAP_TEXTURE1       = 0xA200,
+   3DS_MAT_MAP_BUMP           = 0xa230,
+   3DS_MAT_MAP_REFLECTION     = 0xa220,
+   3DS_MAT_MAP_FILENAME       = 0xa300,
+   3DS_MAT_MAP_PARAMETERS     = 0xa351,
+
+   3DS_PAD__
+
+};
+
+enum {
+   3DS_COLORTYPE_PAD
+};
+
+#define 3DS_AVGNUMMATERIALS 16
+#define 3DS_AVGNUMOBJECTS 8
+
+class CGLScene3DS {
+   public CGLObject3DS objects[];
+
+   public method draw() {
+      CGLObject3DS co;
+      foreach co in objects
+         co.draw();
+   }
+}
+
+class CGLObject3DS {
+   public CGLMesh3DS meshes[];
+   
+   public method draw() {
+      CGLMesh3DS cm;
+      foreach cm in meshes 
+         cm.draw();
+   }
+}
+
+class CGLToonScene3DS {
+   public CGLToonObject3DS objects[];
+
+   public method draw(Vector4f lightDir) {
+      CGLToonObject3DS co;
+      foreach co in objects
+      {
+         co.draw(lightDir);
+      }
+   }
+
+   public method uploadTextures() {
+      CGLToonObject3DS co;
+      foreach co in objects
+      {
+         co.uploadTexture();
+      }
+   }
+}
+
+class CGLToonObject3DS {
+   public CGLToonMesh3DS meshes[];
+   
+   public method draw(Vector4f lightDir) {
+      CGLToonMesh3DS cm;
+      foreach cm in meshes 
+      {
+         cm.draw(lightDir);
+      }
+   }
+
+   public method uploadTexture() {
+      CGLToonMesh3DS cm;
+      foreach cm in meshes 
+      {
+         cm.uploadTexture();
+      }
+   }
+}
+
+class C3DSColor {
+   float r, g, b, a;
+
+   getColor4b() {
+      int r8 = (r*255); if(r8>255)r8=255;
+      int g8 = (g*255); if(g8>255)g8=255;
+      int b8 = (b*255); if(b8>255)b8=255;
+      int a8 = (a*255); if(a8>255)a8=255;
+
+      return (a8<<24) | (r8<<16) | (g8<<8) | b8;
+   }
+
+   getString {
+      Integer io; io = getColor4b();
+      return io.printf("#%08x");
+   }
+}
+
+class CGLMesh3DS {
+   public FloatArray vertices;
+   public FloatArray normals;
+   public FloatArray uvcoords;
+   public IntArray   colors;
+   public Texture    tex;
+   
+   CGLMesh3DS() {
+      tex<=null;
+   }
+   
+   public method draw() {
+      glEnableClientState(GL_VERTEX_ARRAY);
+      zglVertexPointer(vertices);
+      glEnableClientState(GL_NORMAL_ARRAY);
+      zglNormalPointer(normals);
+      glEnableClientState(GL_COLOR_ARRAY);
+      zglColorPointer4b(colors);
+      if(tex)
+      {
+         tex.bind();
+         glEnable(GL_TEXTURE_2D);
+         glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+         zglTexCoordPointer2f(uvcoords);
+      }
+      else
+      {
+         glDisable(GL_TEXTURE_2D);
+      }
+      glDrawArrays(GL_TRIANGLES, 0, vertices.numElements/3);
+
+
+      glDisableClientState(GL_VERTEX_ARRAY);
+      glDisableClientState(GL_NORMAL_ARRAY);
+      if(tex)
+      {
+         glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+         glDisable(GL_TEXTURE_2D);
+      }
+      glDisableClientState(GL_COLOR_ARRAY);
+   }
+}
+
+class CGLToonMesh3DS {
+   public FloatArray vertices;
+   public FloatArray normals;
+   public FloatArray uvcoords; // generated from mat_faces, depends on normal/light pos
+   public Texture    tex; // generated
+   public IntArray   mat_faces; // each elem. stores number of faces for mat 0..n
+   
+   init() {
+      tex.alloc(256, 1, 4); // generated from material ambient colors
+      tex.flags = TEX_1D;
+   }
+   
+   public method uploadTexture() {
+      tex.unload();
+      tex.upload();
+   }
+
+   public method draw(Vector4f lightDir) {
+      
+      // Calc texture coords
+      int vi = 0;
+      int matFaceIdx = 0;
+      int uvi = 0;
+
+//       trace "#uvcoords="+uvcoords.numElements;
+//       trace "#vertices="+(vertices.numElements/3);
+//       trace "#normals="+(normals.numElements/3);
+//       trace uvcoords;
+
+      loop(mat_faces.numElements)
+      {
+         int numFaces = mat_faces[matFaceIdx];
+         loop(3*numFaces)
+         {
+            Vector4f v;
+            v.init(normals[vi+0], normals[vi+1], normals[vi+2], 1);
+            float dot = v.dot(lightDir);
+            if(dot<0) dot=0;
+            uvcoords[uvi + 0] = dot;
+            //uvcoords[uvi + 1] = 0;//(1.0/256);//matFaceIdx * (3.0/256);
+            //uvi += 2;
+            uvi += 1;
+            vi += 3;
+         }
+         matFaceIdx++;
+      }
+
+      glEnable(GL_CULL_FACE);
+      glFrontFace(GL_CCW);
+      glCullFace(GL_BACK);
+
+      // Draw the toon mesh
+      glEnableClientState(GL_VERTEX_ARRAY);
+      zglVertexPointer(vertices);
+      glEnableClientState(GL_NORMAL_ARRAY);
+      zglNormalPointer(normals);
+      tex.bind();
+      glEnable(GL_TEXTURE_1D);
+      glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+      zglTexCoordPointer1f(uvcoords);
+      glDisableClientState(GL_COLOR_ARRAY);
+      glDrawArrays(GL_TRIANGLES, 0, vertices.numElements/3);
+
+      glDisableClientState(GL_VERTEX_ARRAY);
+      glDisableClientState(GL_NORMAL_ARRAY);
+      glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+      glDisable(GL_TEXTURE_1D);
+   }
+}
+
+class C3DSMaterial {
+   public  String  name;
+   public  C3DSColor   ambient;
+   public  C3DSColor   diffuse;
+   public  C3DSColor   specular;
+   public  Texture tex_ambient;
+   public  String  tex_ambient_name;
+   private int     enable_tex2d;
+   
+   C3DSMaterial() {
+      tex_ambient<=null;
+      enable_tex2d=false;
+   }
+   
+   public method enable2DTexturing() {
+      enable_tex2d=true;
+   }
+   
+   public method setAmbientTextureName(String _s) {
+      tex_ambient_name=_s;
+      enable_tex2d=true;
+   }
+   
+   public method loadTexture() {
+      if(enable_tex2d)
+      {
+         trace "C3DSMaterial::loadTexture(material=\""+name+"\")";
+         String texname;
+         
+         if(!tex_ambient_name.isBlank())
+            texname<=tex_ambient_name;
+         else
+            texname<=default_ambient_texture_name;
+         
+         trace "Material["+name+"] load ambient texture \""+texname+"\"";
+         if(!tex_ambient)
+            tex_ambient<=new Texture();
+         tex_ambient.loadImage(tex_ambient_name, 256, 256, 4);
+         trace "tex_ambient.width="+tex_ambient.sx;
+         trace "tex_ambient.height="+tex_ambient.sy;
+         trace "tex_ambient.z="+tex_ambient.z;
+         tex_ambient.flags=TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR|TEX_REPEAT_S|TEX_REPEAT_T|TEX_MODULATE;
+         tex_ambient.upload();
+      }
+   }
+}
+
+class C3DSMesh {
+   public FloatArray   vertices;     // vec3
+   public IntArray     faces;        
+   public FloatArray   facenormals;
+   public FloatArray   normals;      // vec3
+   public FloatArray   uv;           // vec2
+   public C3DSMaterial materials; // read-only reference to array in C3DS object
+   
+   public method calcNormals() {
+      FloatArray fa<=facenormals;
+      if(fa.realloc((faces.numElements/4)*3))
+      {
+         fa.numElements=faces.numElements*3;
+         // pass1: generate surface normals
+         int i=0;
+         int fai=0;
+         Vector3f v;
+         float ax,ay,az,bx,by,bz;
+         compile 
+            loop(faces.numElements/4)
+            {
+               ax= vertices[faces[i  ]*3  ] - 
+                  vertices[faces[i+1]*3  ];
+               ay= vertices[faces[i  ]*3+1] - 
+                  vertices[faces[i+1]*3+1];
+               az= vertices[faces[i  ]*3+2] - 
+                  vertices[faces[i+1]*3+2];
+               
+               bx= vertices[faces[i+1]*3  ] - 
+                  vertices[faces[i+2]*3  ];
+               by= vertices[faces[i+1]*3+1] - 
+                  vertices[faces[i+2]*3+1];
+               bz= vertices[faces[i+1]*3+2] - 
+                  vertices[faces[i+2]*3+2];
+               
+               v.x=ay*bz - az*by;
+               v.y=az*bx - ax*bz;
+               v.z=ax*by - ay*bx;
+               
+               v.unit();
+               fa[fai++]=v.x;
+               fa[fai++]=v.y;
+               fa[fai++]=v.z;
+               i=i+4;
+            }     
+         // pass2: generate point normals
+         FloatArray fp<=normals;
+         if(fp.realloc(vertices.numElements))
+         {
+            fp.numElements=vertices.numElements;
+            fp.fill(0);
+            IntArray ifc<=faces;
+            fai=0;
+            i=0;
+            compile 
+               loop(ifc.numElements/4)
+               {
+                  fp[ifc[fai]*3  ]+=fa[i  ];
+                  fp[ifc[fai]*3+1]+=fa[i+1];
+                  fp[ifc[fai]*3+2]+=fa[i+2];
+                  
+                  fp[ifc[fai+1]*3  ]+=fa[i  ];
+                  fp[ifc[fai+1]*3+1]+=fa[i+1];
+                  fp[ifc[fai+1]*3+2]+=fa[i+2];
+                  
+                  fp[ifc[fai+2]*3  ]+=fa[i  ];
+                  fp[ifc[fai+2]*3+1]+=fa[i+1];
+                  fp[ifc[fai+2]*3+2]+=fa[i+2];
+                  i+=3;
+                  fai+=4;
+               }
+         }
+         i=0;
+         compile 
+            loop(normals.numElements/3)
+            {
+               v.x=fp[i];
+               v.y=fp[i+1];
+               v.z=fp[i+2];
+               v.unit();
+               fp[i++]=v.x;
+               fp[i++]=v.y;
+               fp[i++]=v.z;
+            }
+      }
+   }
+   
+   public method getGLMesh(CGLMesh3DS r) { // get mesh that is prepared for glDrawArrays()
+      //CGLMesh3DS r<=new CGLMesh3DS;
+      IntArray fi<=faces;
+      int numTris=fi.numElements/4;
+      if(numTris)
+      {
+         //trace "getGLMesh numtris="+numTris;
+         FloatArray s_v<=vertices;
+         FloatArray s_n<=normals;
+         FloatArray s_uv<=uv;
+         
+         r.tex<=materials[fi[3]].tex_ambient; 
+
+         FloatArray d_v<=r.vertices;
+         d_v.alloc(numTris*3*3); d_v.numElements=d_v.maxElements;
+         FloatArray d_n<=r.normals;
+         d_n.alloc(numTris*3*3); d_n.numElements=d_n.maxElements;
+         IntArray d_c<=r.colors;
+         d_c.alloc(numTris*3); d_c.numElements=d_c.maxElements;
+         FloatArray d_uv<=r.uvcoords;
+         d_uv.alloc(numTris*3*2); d_uv.numElements=d_uv.maxElements;
+
+         int i_vn=0;
+         int i_uv=0;
+         int i_c=0;
+         int i_fi=0;
+
+         int ii;
+
+         loop(numTris)
+            {
+               int ambient_color=materials[fi[i_fi+3]].ambient.getColor4b();
+               loop(3)
+                  {
+                     ii=fi[i_fi]*3;
+                     d_v[i_vn  ]=s_v[ii  ];
+                     d_v[i_vn+1]=s_v[ii+1];
+                     d_v[i_vn+2]=s_v[ii+2];
+                     d_n[i_vn  ]=s_n[ii  ];
+                     d_n[i_vn+1]=s_n[ii+1];
+                     d_n[i_vn+2]=s_n[ii+2];
+                     if(s_uv.numElements)
+                     {
+                        ii=fi[i_fi]*2;
+                        d_uv[i_uv  ]=s_uv[ii ];
+                        d_uv[i_uv+1]=s_uv[ii+1];
+                     }
+                     else
+                     {
+                        d_uv[i_uv  ]=0;
+                        d_uv[i_uv+1]=0;
+                     }
+                     d_c[i_c++]=ambient_color;//#ffffffff;
+				
+                     i_uv+=2;
+                     i_vn+=3;
+                     i_fi++;
+                  }
+               i_fi++; // skip material index
+            }
+      }
+      return deref r;
+   }
+
+   static int saveImgNr = 0;
+
+   mulColor(int col, float s) {
+      int a = ((col >> 24)&255) * s;
+      int r = ((col >> 16)&255) * s;
+      int g = ((col >>  8)&255) * s;
+      int b = ((col      )&255) * s;
+      return argb(a,r,g,b);
+   }
+   
+   static int xxx_mesh_nr = 0;
+
+   public method getGLToonMesh(CGLToonMesh3DS r) {
+      IntArray fi<=faces;
+      int numTris=fi.numElements/4;
+
+      r.init();
+
+      if(numTris)
+      {
+         //trace "getGLMesh numtris="+numTris;
+         FloatArray s_v <= vertices;
+         FloatArray s_n <= normals;
+         
+         //////r.tex<=materials[fi[3]].tex_ambient; 
+         
+         FloatArray d_v <= r.vertices;
+         d_v.alloc(numTris*3*3); d_v.useAll();
+         FloatArray d_n<=r.normals;
+         d_n.alloc(numTris*3*3); d_n.useAll();
+         FloatArray d_uv<=r.uvcoords;
+         d_uv.alloc(numTris*3*1); d_uv.useAll();
+
+         int i_vn=0;
+         int i_fi=0;
+
+         int matFaceCount = 0;
+         int cMat = -1;
+         IntArray matFaces <= r.mat_faces;
+         Texture tex <= r.tex;
+         tex.clear(0);
+         int texY = 0;
+
+         loop(numTris)
+         {
+            int mat = fi[i_fi+3];
+            if(mat != cMat)
+            {
+               if(-1 != cMat)
+               {
+                  matFaces.add(matFaceCount);
+                  matFaceCount = 0;
+                  trace "matFaceCount="+matFaceCount;
+               }
+               cMat = mat;
+               int ambientColor = materials[mat].ambient.getColor4b();
+               int cx = 0;
+               int c32 = mulColor(ambientColor, 0.2);
+               loop(tex.sx/4)
+               {
+                  tex[cx++] = c32;
+               }
+               c32 = mulColor(ambientColor, 0.3);
+               loop(tex.sx/4)
+               {
+                  tex[cx++] = c32;
+               }
+               c32 = mulColor(ambientColor, 0.6);
+               loop(tex.sx/4)
+               {
+                  tex[cx++] = c32;
+               }
+               loop(tex.sx/4)
+               {
+                  tex[cx++] = ambientColor;
+               }
+               //tex.copyRegion(tex, 0, texY, tex.sx, 1, 0, texY+1);
+               //tex.copyRegion(tex, 0, texY, tex.sx, 1, 0, texY+2);
+               //tex.drawFilledBox(0, texY, tex.sx, 3, ambientColor);
+
+               //texY += 3;
+            }
+
+            int ii;
+
+            loop(3)
+            {
+               ii = fi[i_fi]*3;
+
+//                if((xxx_mesh_nr == 1) && ( (i_fi/4)!=1))
+//                {
+//                   d_v[i_vn + 0] = 0;
+//                   d_v[i_vn + 1] = 0;
+//                   d_v[i_vn + 2] = 0;
+//                   d_n[i_vn + 0] = 0;
+//                   d_n[i_vn + 1] = 0;
+//                   d_n[i_vn + 2] = 1;
+//                }
+//                else
+//                {
+//                if(xxx_mesh_nr == 1)
+//                {
+//                   trace "i_fi="+(i_fi/4);
+//                   trace "  norm=("+s_n[ii+0]+";"+s_n[ii+1]+";"+s_n[ii+2]+")";
+//                }
+               // Copy vertex
+               d_v[i_vn  ]=s_v[ii  ];
+               d_v[i_vn+1]=s_v[ii+1];
+               d_v[i_vn+2]=s_v[ii+2];
+               
+               // Copy normal
+               d_n[i_vn  ]=s_n[ii  ];
+               d_n[i_vn+1]=s_n[ii+1];
+               d_n[i_vn+2]=s_n[ii+2];
+               
+               i_vn+=3;
+               i_fi++;
+            }
+            matFaceCount++;
+            i_fi++; // skip material index
+         }
+         matFaces.add(matFaceCount);
+         trace "matFaceCount="+matFaceCount;
+         
+         ////tex.saveImage("tex"+saveImgNr++ +".png");
+      }
+      xxx_mesh_nr++;
+      return deref r;
+   }
+
+}
+
+
+class C3DSObject {
+   public String   name;
+   public C3DSMesh meshes[];
+
+   public method getMeshByIndex(int _index) : C3DSMesh {
+      return meshes.get(_index);
+   }
+}
+
+class C3DS {
+   public  C3DSMaterial materials[];
+   public  C3DSObject   objects[];
+   public int          total_numvertices;
+   public int          total_numfaces;
+   public float        maxx;
+   public float        maxy;
+   public float        maxz;
+   public float        minx;
+   public float        miny;
+   public float        minz;
+
+   private C3DSMaterial cmaterial;
+   private C3DSObject   cobject;
+   private C3DSMesh     cmesh;
+
+   C3DS() {
+   }
+
+   private Stream ifs;
+   private int    i_filesize;
+   private int    i_chunk_id;
+   private int    i_chunk_size;
+   private int    i_subchunk_id;
+   private int    i_subchunk_size;
+   private String s_tmpname;
+
+   public method getGLScene() {
+      CGLObject3DS co;
+      CGLMesh3DS   cm;
+      CGLScene3DS  cs<=new CGLScene3DS();
+      cs.objects.alloc(objects.numElements);
+      C3DSObject   co3;
+      C3DSMesh     cm3;
+      foreach co3 in objects
+      {
+         co<=cs.objects.nextFree;
+         co.meshes.alloc(co3.meshes.numElements);
+         foreach cm3 in co3.meshes
+         {
+            cm<=co.meshes.nextFree;
+            cm3.getGLMesh(cm);
+         }
+      }
+      return deref cs;
+   }
+
+   public method getObjectByIndex(int _index) : C3DSObject {
+      return objects.get(_index);
+   }
+
+   public method getGLToonScene() {
+      CGLToonObject3DS co;
+      CGLToonMesh3DS   cm;
+      CGLToonScene3DS  cs<=new CGLToonScene3DS();
+      cs.objects.alloc(objects.numElements);
+      C3DSObject     co3;
+      C3DSMesh       cm3;
+      foreach co3 in objects
+      {
+         co<=cs.objects.nextFree;
+         co.meshes.alloc(co3.meshes.numElements);
+         foreach cm3 in co3.meshes
+         {
+            cm<=co.meshes.nextFree;
+            cm3.getGLToonMesh(cm);
+         }
+      }
+      return deref cs;
+   }
+
+   private method readChunkHeader() {
+      i_chunk_id = ifs.i16;
+      i_chunk_size=ifs.i32-6;
+      return i_chunk_id;
+   }
+
+   private method readSubChunkHeader() {
+      i_subchunk_id = ifs.i16 &0xFFFF;
+      i_subchunk_size=ifs.i32 -6;
+      //trace "readSubChunkHeader: i_subchunk_id="+getSubChunkName()+" size="+i_subchunk_size;
+      return i_subchunk_id;
+   }
+
+   public function int2hexstring(int _i) {
+      Integer io; io.value=_i; return io.printf("%04x");
+   }
+
+   private method getChunkName() {
+      return int2hexstring(i_chunk_id);
+   }
+
+   private method getSubChunkName() {
+      return int2hexstring(i_subchunk_id);
+   }
+
+   private method readTempName() {
+      int i=0;
+      s_tmpname.alloc(128);
+      int c;
+      do {
+         c=ifs.i8;
+         s_tmpname[i++]=c;
+      } while c!=0;
+      s_tmpname.fixLength();
+      i_subchunk_size-=i;
+      return s_tmpname;
+   }
+
+   private method readColorChunk(C3DSColor _c) {
+      int cf=ifs.i16&0xFFFF;
+      int cfsz=ifs.i32-6;
+      switch(cf)
+      {
+         case 3DS_COLOR_RGBF:
+            trace "        colortype RGBF.";
+            _c.r=ifs.f32;
+            _c.g=ifs.f32;
+            _c.b=ifs.f32;
+            _c.a=1;
+            break;
+         case 3DS_COLOR_RGBI:
+            trace "        colortype RGBI.";
+            _c.r=ifs.i8/255.0;
+            _c.g=ifs.i8/255.0;
+            _c.b=ifs.i8/255.0;
+            _c.a=1;
+            break;
+         case 3DS_COLOR_UNK:
+         default:
+            trace "      unknown color format "+cf+"..skipping.";
+            _c.r=0;
+            _c.g=0;
+            _c.b=0;
+            _c.a=0;
+            ifs.seek(cfsz, SEEK_CUR);
+            break;
+      }
+      trace "read color "+_c.getString();
+   }
+
+   private method skipSubChunk() {
+      ifs.seek(i_subchunk_size, SEEK_CUR);
+      //trace "skipSubChunk "+getSubChunkName()+" size="+i_subchunk_size;
+   }
+
+   private method seekNextSubChunkByID(int _id) {
+      while ( readSubChunkHeader() != _id ) 
+         skipSubChunk();
+   }
+
+   public method getMaterialIndexByName(String _name) {
+      C3DSMaterial m;
+      int i=0;
+      foreach m in materials 
+      {
+         if(m.name==_name)
+            return i;
+         else i++;
+      }
+   }
+
+   private method validateIndices() {
+      C3DSObject o;
+      C3DSMesh m;
+      int maxmat=materials.numElements;
+      foreach o in objects
+      {
+         foreach m in o.meshes 
+         {
+            int vtxnum=m.vertices.numElements/3;
+            IntArray fl<=m.faces;
+            int flnum=fl.numElements;
+            for(int i=0; i<flnum; i+=4)
+            {
+               if(fl[i  ]>=vtxnum) fl[i  ]=0;
+               if(fl[i+1]>=vtxnum) fl[i+1]=0;
+               if(fl[i+2]>=vtxnum) fl[i+2]=0;
+               if(fl[i+3]>=maxmat) fl[i+3]=0;
+            }
+         }
+      }
+   }
+
+	
+   public method loadLocal3DS(String _name)/*:boolean*/ {
+      File fs;
+      ifs<=fs;
+      if(fs.open(_name, IOS_IN))
+      {
+         return load3DSFromStream(fs);
+      }
+      else
+      {
+         stderr "Load3DS: cannot open local file \""+_name+"\"\n";
+         dtrace true;
+         return false;
+      }
+   }
+
+   public method load3DS(String _name)/*:boolean*/ {
+      PakFile fs;
+      ifs<=fs;
+      if(fs.open(_name))
+      {
+         return load3DSFromStream(fs);
+      }
+      else
+      {
+         stderr "Load3DS: cannot open logic file \""+_name+"\"\n";
+         dtrace true;
+         return false;
+      }
+   }
+
+   public method load3DSFromStream(Stream _ifs) {
+      materials.alloc(3DS_AVGNUMMATERIALS);
+      objects.alloc(3DS_AVGNUMOBJECTS);
+      cobject<=null;
+      cmaterial<=null;
+      cmesh<=null;
+      total_numvertices=0;
+      total_numfaces=0;
+      maxx=-10000;
+      maxy=-10000;
+      maxz=-10000;
+      minx=10000;
+      miny=10000;
+      minz=10000;
+
+      FloatArray verts;
+      int numverts;
+	
+//  	dtrace false;
+	
+      if(1)//fs.openLocal(_name, 0))
+      {
+         readChunkHeader();
+         if (i_chunk_id==3DS_MAIN)
+         {
+            trace "--3DS_MAIN-- ("+i_chunk_size+" bytes)";
+            seekNextSubChunkByID(3DS_EDITOR);
+//  		    dtrace false;
+            while(!ifs.eof())
+            {
+               //trace "ifs.offset="+ifs.offset+" ifs.size="+ifs.size;
+               readSubChunkHeader();
+               switch(i_subchunk_id)
+               {
+                  default:
+//  				    trace "-------- unknown chunk (size="+i_subchunk_size+").";
+//  				    trace "         i_subchunk_id="+getSubChunkName();
+//  				    trace "         i_subchunk_size="+i_subchunk_size;
+//  				    trace "         x readSubChunkHeader: ifs.offset="+ifs.offset;
+                     skipSubChunk();
+//      				    dtrace false;
+                     break;
+
+                  case 3DS_OBJ:
+                     trace "-------- found OBJECT chunk.";
+                     readTempName();
+                     trace "         name:" +s_tmpname;
+                     objects.realloc(objects.numElements+1);
+                     cobject<=objects.nextFree;
+//    				    dtrace true;
+//    				    dtrace false;
+                     break;
+
+                  case 3DS_OBJ_MESH:
+                     trace "-------- found OBJECT::MESH CHUNK.";
+                     if(cobject)
+                     {
+                        _=cobject.meshes.realloc(cobject.meshes.numElements+1);
+                        cmesh<=cobject.meshes.nextFree;
+                        cmesh.materials<=materials;
+                     }
+                     else
+                     {
+                        cmesh<=null;
+                        skipSubChunk();
+                     }
+                     break;
+				    
+                  case 3DS_OBJ_MESH_VERTICELIST:
+                     trace "-------- found OBJECT::MESH::VERTICELIST CHUNK.";
+                     if(cmesh)
+                     {
+                        numverts=ifs.i16&0xFFFF;
+                        float cfx,cfy,cfz;
+                        verts<=cmesh.vertices;
+                        verts.alloc(numverts*3); verts.numElements=0;
+                        int vi=0;
+                        compile loop(numverts)
+                           {
+                              cfx=-ifs.f32;
+                              if(cfx>maxx) maxx=cfx;
+                              if(cfx<minx) minx=cfx;
+                              verts.add(cfx);
+
+                              cfz=ifs.f32;
+                              cfy=ifs.f32;
+
+                              if(cfy>maxy) maxy=cfy;
+                              if(cfy<miny) miny=cfy;
+
+                              if(cfz>maxz) maxz=cfz;
+                              if(cfz<minz) minz=cfz;
+
+                              verts.add(cfy);
+                              verts.add(cfz);
+
+                              //trace "v["+vi+++"]=("+cfx+";"+cfy+";"+cfz+")";
+                           }
+                        trace "read "+numverts+" vertices.";
+                        total_numvertices+=numverts;
+                     }
+                     else
+                     {
+                        trace "vertice list outside of mesh";
+                        skipSubChunk();
+                     }
+                     break;
+
+                  case 3DS_OBJ_MESH_FACELIST:
+                     trace "-------- found OBJECT::MESH::FACELIST CHUNK.";
+                     if(cmesh)
+                     {
+                        int numfaces=ifs.i16&0xFFFF;
+                        IntArray fia<=cmesh.faces;
+                        fia.alloc(numfaces*4); fia.numElements=0;
+                        compile loop(numfaces)
+                           {
+                              fia.add(ifs.i16&0xFFFF);
+                              fia.add(ifs.i16&0xFFFF);
+                              fia.add(ifs.i16&0xFFFF);
+                              fia.add(ifs.i16&0); // later material index
+                           }
+                        trace "read "+numfaces+" faces.";
+                        total_numfaces+=numfaces;
+                     }
+                     else
+                     {
+                        trace "face list outside of mesh";
+                        skipSubChunk();
+                     }
+                     break;
+
+                  case 3DS_OBJ_MESH_FACEMAT:
+                     trace "-------- found OBJECT::MESH::FACEMAT CHUNK.";
+                     if(cmesh)
+                     {
+                        int mi=getMaterialIndexByName(readTempName());
+                        int numentries=ifs.i16&0xFFFF;
+                        IntArray faces<=cmesh.faces;
+                        loop(numentries)
+                           {
+                              int fi=ifs.i16&0xFFFF;
+                              faces[fi*4+3]=mi;
+                           }
+                        trace "read material assignments for "+numentries+" faces.";
+                     }
+                     else
+                        skipSubChunk();
+                     break;
+				
+                  case 3DS_OBJ_MESH_MAPCOORDLIST:
+                     trace "-------- found OBJECT::MESH::MAPCOORDLIST CHUNK.";
+                     verts<=cmesh.uv;
+                     numverts=ifs.i16&0xFFFF;
+                     verts.alloc(numverts*2); verts.numElements=0;
+                     compile loop(numverts)
+                        {
+                           verts.add(ifs.f32);   // u
+                           verts.add(1-ifs.f32); // v
+                        }
+                     trace "read "+numverts+" u/v coordinates.";
+                     //skipSubChunk();
+                     break;
+
+                  case 3DS_OBJ_MESH_SMOOTHLIST:
+                     trace "-------- found OBJECT::MESH::SMOOTHLIST CHUNK.";
+                     skipSubChunk();
+                     break;
+
+                  case 3DS_OBJ_MESH_LOCALCOORDS:
+                     trace "-------- found OBJECT::MESH::LOCALCOORDS CHUNK.";
+                     skipSubChunk();
+                     break;
+
+                  case 3DS_OBJ_LIGHT:
+                     trace "-------- found OBJECT::LIGHT CHUNK.";
+                     skipSubChunk();
+                     break;
+
+                  case 3DS_OBJ_LIGHT_SPOTLIGHT:
+                     trace "-------- found OBJECT::LIGHT::SPOTLIGHT CHUNK.";
+                     skipSubChunk();
+                     break;
+
+                  case 3DS_OBJ_CAMERA:
+                     trace "-------- found OBJECT::CAMERA CHUNK.";
+                     skipSubChunk();
+                     break;
+    
+                  case 3DS_MAT:
+                     trace "-------- found MATERIAL CHUNK.";
+                     materials.realloc(materials.numElements+1);
+                     cmaterial<=materials.nextFree;
+                     //skipSubChunk();
+                     break;
+				    
+                  case 3DS_MAT_NAME:
+                     trace "-------- found MATERIAL::NAME CHUNK.";
+                     if(cmaterial)
+                     {
+                        cmaterial.name=readTempName();
+                        trace "---- name=\""+cmaterial.name+"\"";
+                     }
+                     else
+                     {
+                        skipSubChunk();
+                     }
+                     break;
+
+                  case 3DS_MAT_AMBIENT:
+                     trace "-------- found MATERIAL::AMBIENTCOLOR CHUNK.";
+                     if(cmaterial)
+                        readColorChunk(cmaterial.ambient);
+                     else
+                        skipSubChunk();
+                     break;
+				    
+                  case 3DS_MAT_DIFFUSE:
+                     trace "-------- found MATERIAL::DIFFUSECOLOR CHUNK.";
+                     if(cmaterial)
+                        readColorChunk(cmaterial.diffuse);
+                     else
+                        skipSubChunk();
+                     break;
+
+                  case 3DS_MAT_SPECULAR:
+                     trace "-------- found MATERIAL::SPECULAR CHUNK.";
+                     if(cmaterial)
+                        readColorChunk(cmaterial.specular);
+                     else
+                        skipSubChunk();
+                     break;
+
+                  case 3DS_MAT_MAP_TEXTURE1:
+                     trace "-------- found MATERIAL::MAP_TEXTURE1 CHUNK.";
+                     break;
+				    
+                  case 3DS_MAT_MAP_BUMP:
+                     trace "-------- found MATERIAL::MAP_BUMP CHUNK.";
+                     skipSubChunk();
+                     break;
+
+                  case 3DS_MAT_MAP_REFLECTION:
+                     trace "-------- found MATERIAL::MAP_REFLECTION CHUNK.";
+                     skipSubChunk();
+                     break;
+
+                  case 3DS_MAT_MAP_FILENAME:
+                     trace "-------- found MATERIAL::MAP::FILENAME CHUNK.";
+                     if(cmaterial)
+                     {
+                        cmaterial.setAmbientTextureName(readTempName());
+                        trace "---- ambient texture filename=\""+cmaterial.tex_ambient_name+"\"";
+                     }
+                     else
+                        skipSubChunk();
+                     break;
+
+                  case 3DS_MAT_MAP_PARAMETERS:
+                     trace "-------- found MATERIAL::MAP::PARAMETERS CHUNK.";
+                     skipSubChunk();
+                     break;
+               }
+            }
+
+            // ---- finished parsing
+            dtrace true;
+            validateIndices();
+            trace "Load3DS: found "+materials.numElements+" materials and "+
+               objects.numElements+" objects.";
+            trace "                #triangles="+total_numfaces+" #vertices="+total_numvertices;
+            return true;
+         }
+         else {
+            stderr "Load3DS: missing 3DS_MAIN.";
+            dtrace true;
+            return false;
+         }
+      }
+   }
+
+
+   public method normalize(float _scl) {
+      trace "normalize(): max=("+maxx+","+maxy+","+maxz+")";
+      trace "             min=("+minx+","+miny+","+minz+")";
+
+      float scx = abs(1.0/mathAbsMaxf(maxx,minx));
+      float scy = abs(1.0/mathAbsMaxf(maxy,miny));
+      float scz = abs(1.0/mathAbsMaxf(maxz,minz));
+
+      float scl = mathMinf(scx, scy);
+      scl = _scl * mathMinf(scl, scz);
+	
+      C3DSMesh m;
+      C3DSObject o;
+      foreach o in objects 
+      {
+         foreach m in o.meshes 
+         {
+            FloatArray va<=m.vertices;
+            va.scale(va, scl);
+         }
+      }
+   }
+   
+   public method calcNormals() {
+      C3DSObject o;
+      C3DSMesh m;
+      foreach o in objects
+      {
+         foreach m in o.meshes
+         {
+            m.calcNormals();
+         }
+      }
+   }
+
+   public method loadTextures() {
+      trace "C3DS::loadTextures()";
+      C3DSMaterial m;
+      foreach m in materials
+      {
+         m.loadTexture();
+      }
+   }
+
+
+}
+
+
+
+
+
+
+
+/*
+  http://www.spacesimulator.net/tut4_3dsloader.html
+
+  In this table we can see the offset (in byte) and the length (in byte) of each field in a typical chunk:
+  Offset 	Length 	 
+  0 	2 	Chunk identifier
+  2 	4 	Chunk length: chunk data + sub-chunks(6+n+m)
+  6 	n 	Data
+  6+n 	m 	Sub-chunks
+
+
+  MAIN CHUNK 0x4D4D
+  3D EDITOR CHUNK 0x3D3D
+  OBJECT BLOCK 0x4000
+  TRIANGULAR MESH 0x4100
+  VERTICES LIST 0x4110
+  FACES DESCRIPTION 0x4120
+  FACES MATERIAL 0x4130
+  MAPPING COORDINATES LIST 0x4140
+  SMOOTHING GROUP LIST 0x4150
+  LOCAL COORDINATES SYSTEM 0x4160
+  LIGHT 0x4600
+  SPOTLIGHT 0x4610
+  CAMERA 0x4700
+  MATERIAL BLOCK 0xAFFF
+  MATERIAL NAME 0xA000
+  AMBIENT COLOR 0xA010
+  DIFFUSE COLOR 0xA020
+  SPECULAR COLOR 0xA030
+  TEXTURE MAP 1 0xA200
+  BUMP MAP 0xA230
+  REFLECTION MAP 0xA220
+  [SUB CHUNKS FOR EACH MAP]
+  MAPPING FILENAME 0xA300
+  MAPPING PARAMETERS 0xA351
+  KEYFRAMER CHUNK 0xB000
+  MESH INFORMATION BLOCK 0xB002
+  SPOT LIGHT INFORMATION BLOCK 0xB007
+  FRAMES (START AND END) 0xB008
+  OBJECT NAME 0xB010
+  OBJECT PIVOT POINT 0xB013
+  POSITION TRACK 0xB020
+  ROTATION TRACK 0xB021
+  SCALE TRACK 0xB022
+  HIERARCHY POSITION 0xB030 
+
+
+
+
+  MAIN CHUNK 0x4D4D
+  3D EDITOR CHUNK 0x3D3D
+  OBJECT BLOCK 0x4000
+  TRIANGULAR MESH 0x4100
+  VERTICES LIST 0x4110
+  FACES DESCRIPTION 0x4120
+  MAPPING COORDINATES LIST 0x4140
+
+  Let's describe in detail these chunks:
+  MAIN CHUNK
+  Identifier 	0x4d4d 
+  Length 	0 + sub-chunks length
+  Chunk father 	None
+  Sub chunks 	3D EDITOR CHUNK
+  Data 	None
+  3D EDITOR CHUNK
+  Identifier 	0x3D3D 
+  Length 	0 + sub-chunks length
+  Chunk father 	MAIN CHUNK
+  Sub chunks 	OBJECT BLOCK, MATERIAL BLOCK, KEYFRAMER CHUNK
+  Data 	None
+  OBJECT BLOCK
+  Identifier 	0x4000
+  Length 	Object name length + sub-chunks length
+  Chunk father 	3D EDITOR CHUNK
+  Sub chunks 	TRIANGULAR MESH, LIGHT, CAMERA
+  Data 	Object name
+  TRIANGULAR MESH
+  Identifier 	0x4100
+  Length 	0 + sub-chunks length
+  Chunk father 	OBJECT BLOCK
+  Sub chunks 	VERTICES LIST, FACES DESCRIPTION, MAPPING COORDINATES LIST
+  Data 	None
+  VERTICES LIST
+  Identifier 	0x4110
+  Length 	varying + sub-chunks length
+  Chunk father 	TRIANGULAR MESH
+  Sub chunks 	None
+  Data 	Vertices number (unsigned short)
+  Vertices list: x1,y1,z1,x2,y2,z2 etc. (for each vertex: 3*float)
+  FACES DESCRIPTION
+  Identifier 	0x4120
+  Length 	varying + sub-chunks length
+  Chunk father 	TRIANGULAR MESH
+  Sub chunks 	FACES MATERIAL
+  Data 	Polygons number (unsigned short)
+  Polygons list: a1,b1,c1,a2,b2,c2 etc. (for each point: 3*unsigned short)
+  Face flag: face options, sides visibility etc. (unsigned short)
+  MAPPING COORDINATES LIST
+  Identifier 	0x4140
+  Length 	varying + sub-chunks length
+  Chunk father 	TRIANGULAR MESH
+  Sub chunks 	SMOOTHING GROUP LIST
+  Data 	Vertices number (unsigned short)
+  Mapping coordinates list: u1,v1,u2,v2 etc. (for each vertex: 2*float)
+
+
+*/

@@ -1,0 +1,215 @@
+// ----
+// ---- file   : gnamespaceprovider.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 14Jun2020
+// ---- changed: 15Jun2020, 19Jun2020, 22Jun2020, 08Jul2020, 09Jul2020, 13Jul2020, 09Feb2025
+// ----
+// ----
+// ----
+module MGNamespaceProvider;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GNamespaceProvider : GDefs {
+   GNamespace *namespaces[];
+
+
+   // <method_add.png>
+   public method createNamespace(String _id) : GNamespace {
+      local GNamespace nsp;
+      nsp.setNamespaceId(_id);
+      namespaces.add(#(deref nsp));
+      return nsp;
+   }
+
+   // <method_add.png>
+   public method createNamespaceHead(String _id) : GNamespace {
+      local GNamespace nsp;
+      nsp.setNamespaceId(_id);
+      namespaces.insert(0, #(deref nsp));
+      return nsp;
+   }
+
+   // <method_add.png>
+   public method createNamespaceAutoId() : GNamespace {
+      local GNamespace nsp;
+      nsp.setNamespaceId(Utils.CreateAutoIdNamespace("nsp", namespaces));
+      namespaces.add(#(deref nsp));
+      return nsp;
+   }
+
+   // <method_get.png>
+   public method getNumNamespaces() : int {
+      return namespaces.numElements;
+   }
+
+   // <method_get.png>
+   public method getNamespaceById(String _id) : GNamespace {
+      GNamespace *nsp;
+      foreach nsp in namespaces
+      {
+         if(nsp.getNamespaceId() == _id)
+            return nsp;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNamespaceByIndex(int _idx) : GNamespace {
+      return namespaces.get(_idx);
+   }
+
+   // <method_remove.png>
+   public method freeNamespaces() {
+      namespaces.free();
+   }
+
+   // <method_add.png>
+   public method removeNamespace(GNamespace _nsp) {
+      _nsp.removeNamespaceObjects();
+      namespaces.remove(_nsp);
+   }
+
+   // // <method_find.png>
+   // public method findFirstConnectionToObject(GObject _obj) : GConnection {
+   //    local GNamespace *nsp;
+   //    foreach nsp in namespaces
+   //    {
+   //       GConnection conn <= nsp.findFirstConnectionToObject(_obj);
+   //       if(null != conn)
+   //          return conn;
+   //    }
+   //    return null;
+   // }
+
+   // <method_remove.png>
+   public method removeConnectionsToObject(local GObject _obj) {
+
+      if(@(_obj) == @(current_project.edit_cam))
+         current_project.edit_cam <= null;
+
+      local GNamespace *nsp;
+      foreach nsp in namespaces
+      {
+         nsp.removeConnectionsToObject(_obj);
+      }
+   }
+
+   // <method_remove.png>
+   public method emitBeginRecursive() {
+      local GNamespace *nsp;
+      foreach nsp in namespaces
+      {
+         nsp.emitBeginRecursive();
+      }
+   }
+
+   // <method_find.png>
+   public method enumerateObjects(local PointerArray _ret, local int _recurseDepthLeft) {
+      local GNamespace *nsp;
+      foreach nsp in namespaces
+      {
+         nsp.enumerateObjects(_ret, _recurseDepthLeft);
+      }
+   }
+
+   // <save.png>
+   public method saveStateNamespaceProvider(local Stream ofs, local GConnectionWriter connectionWriter) {
+      // Version
+      ofs.i16 = 1;
+
+      // Num namespaces
+      ofs.i8 = namespaces.numElements;
+
+      local GNamespace *nsp;
+      foreach nsp in namespaces
+      {
+         nsp.saveStateNamespace(ofs, connectionWriter);
+      }
+   }
+
+   // <load.png>
+   public method loadStateNamespaceProvider(local Stream ifs) : boolean {
+
+      // Version
+      local short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Namespaces
+         local int numNamespaces = ifs.u8;
+         // trace "xxx GNamespaceProvider::loadStateNamespaceProvider: numNamespaces="+numNamespaces;
+         local int nspIdx=0;
+         loop(numNamespaces)
+         {
+            GNamespace nsp <= new GNamespace;
+            if(!nsp.loadStateNamespace(ifs))
+            {
+               trace "[---] GNamespaceProvider::loadStateNamespaceProvider: failed to load namespace "+(nspIdx+1)+"/"+numNamespaces+" this="+#(this);
+               return false;
+            }
+
+            namespaces.add(#(deref nsp));
+
+            nspIdx++;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] GNamespaceProvider::loadStateNamespaceProvider: invalid version "+ver+", this="+#(this);
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public method findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+      local int idx = _path.indexOfChar('.', 0);
+      if(-1 != idx)
+      {
+         local String namespaceId <= _path.substring(0, idx);
+
+         // trace "xxx GNamespaceProvider::findObjectByPath: path=\""+_path+"\" namespaceId=\""+namespaceId+"\"";
+
+         local GNamespace nsp <= getNamespaceById(namespaceId);
+         if(null != nsp)
+         {
+            if(_bUnfold)
+               nsp.setFoldStatus(false);
+
+            // trace "xxx    nspprovider path idx="+idx;
+            return nsp.findObjectByPathUnfold(_path.substring(idx+1, -1), _bUnfold);
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findObjectByPath(local String _path) : GObject {
+      return findObjectByPathUnfold(_path, false/*bUnfold*/);
+   }
+
+   // <method_find.png>
+   public method findAllScenes(PointerArray _ret) {
+      GNamespace *nsp;
+      foreach nsp in namespaces
+      {
+         if(GNamespace.GLOBAL_ID != nsp.getNamespaceId())
+         {
+            _ret.joinRR(_ret, nsp.scenes);
+         }
+      }
+   }
+
+}

@@ -1,0 +1,290 @@
+// ----
+// ---- file   : gscenegraph.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "GL edit" application.
+// ----
+// ---- created: 22Jul2020
+// ---- changed: 23Jul2020, 02Aug2020
+// ----
+// ----
+// ----
+module MGSceneGraph;
+
+use namespace ui;
+use namespace gledit;
+
+
+// <class.png>
+class GSceneGraph : GSGNode, GComposite {
+
+   protected boolean b_sg_init_done;
+   protected boolean b_sg_post_done;
+
+
+   // <method_init.png>
+   public virtual init() {
+      GObject::init();
+
+      initGSGNode();
+
+      addOutput(GOutput.OUT_DEF_OBJ, TYPE_REF);
+   }
+
+   // <method_init.png>
+   public virtual postInit() {
+      // Called after adding object to parent container
+      postInitGSGNode();
+   }
+
+   // <method_get.png>
+   public virtual getObjectPathVirtFolder() : String {
+      return "composites";
+   }
+
+   // <method_get.png>
+   public virtual getPreferredIdPrefix() : String {
+      return "scenegraph";
+   }
+
+   // <method.png>
+   public virtual setNamespaceId(String _id) {
+      id = _id;
+   }
+
+   // <method.png>
+   public virtual getNamespaceId() : String {
+      return id;
+   }
+
+   // <method.png>
+   public virtual prepareRemove() {
+      GSGNode::prepareRemove();
+      GNamespace::prepareRemoveNamespaceObjects();
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedModel() : GModel {
+      return getFirstConnectedInputObjectByType("model", GModel);
+   }
+
+   // <method_set.png>
+   public method getFirstConnectedScript() : GScriptRender {
+      return getFirstConnectedInputObjectByType("script", GScriptRender);
+   }
+
+   // <method_remove.png>
+   public virtual removeConnectionsToObject(local GObject _obj) {
+
+      GObject::removeConnectionsToObject(_obj);
+      GNamespace::removeConnectionsToObject(_obj);
+   }
+
+   // <save.png>
+   public virtual saveStateObject(local Stream ofs, local GConnectionWriter connectionWriter) {
+      GObject::saveStateObject(ofs, connectionWriter);
+
+      // Version
+      ofs.i16 = 1;
+
+      // GSGNode
+      saveStateGSGNode(ofs, connectionWriter);
+
+      // Namespace
+      GNamespace::saveStateNamespace(ofs, connectionWriter);
+   }
+
+   // <load.png>
+   public virtual loadStateObject(local Stream ifs) : boolean {
+      // (note) base class object info is loaded by LoadStateObject
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // SceneGraphNode
+         if(GSGNode::loadStateObject(ifs))
+         {
+            // Namespace
+            if(GNamespace::loadStateNamespace(ifs))
+            {
+               // Succeeded
+               return true;
+            }
+            else
+            {
+               trace "[---] GSceneGraph::loadStateObject: failed to load namespace, this="+#(this)+" path="+getObjectPath();
+            }
+         }
+         else
+         {
+            trace "[---] GSceneGraph::loadStateObject: failed to load GSGNode state, this="+#(this)+" path="+getObjectPath();
+         }
+      }
+      else
+      {
+         trace "[---] GSceneGraph::loadStateObject: invalid version "+ver+", this="+#(this)+" path="+getObjectPath();
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public virtual findObjectByPathUnfold(local String _path, local boolean _bUnfold) : GObject {
+      if(_bUnfold)
+         setFoldStatus(false);
+
+      // find inputs.*
+      GObject r <= GObject::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      r <= GSGNode::findObjectByPathUnfold(_path, _bUnfold);
+      if(null != r)
+         return r;
+
+      return GNamespace::findObjectByPathUnfold(_path, _bUnfold);
+   }
+
+   // <save.png>
+   public virtual saveModelPresetStream(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      local GConnectionWriter connectionWriter;
+      connectionWriter.setObjectPathPrefixFilter(getObjectPath());
+
+      saveStateObject(ofs, connectionWriter);
+
+      // Connections
+      connectionWriter.saveStream(ofs);
+   }
+
+   // <load.png>
+   public virtual loadModelPresetStream(Stream ifs) : boolean {
+
+      current_project.runScriptExit();
+      removeNamespaceObjects();
+
+      // Version
+      short ver = ifs.u16;
+
+      if(1 <= ver <= 1)
+      {
+         // Load object base info (see GObject.LoadStateObject())
+         local String className <= GObject.LoadObjectHeader(ifs);
+
+         if(className == yacMetaClassName())
+         {
+            if(loadStateObject(ifs))
+            {
+               // Connections
+               local GConnectionReader connectionReader;
+               connectionReader.setObjectPathPrefixFilter(getObjectPath());
+
+               if!(connectionReader.loadStream(ifs))
+               {
+                  trace "[---] GSceneGraph::loadModelPresetStream: failed to load connections";
+                  return false;
+               }
+
+               // Succeeded
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] GSceneGraph::loadModelPresetStream: class name mismatch (expect GSceneGraph, have \""+className+"\")";
+         }
+      }
+      else
+      {
+         trace "[---] GSceneGraph::loadModelPresetStream: invalid version "+ver;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitBegin() {
+      // trace "xxx GSceneGraph::emitBegin";
+      b_sg_init_done = false;
+      b_sg_post_done = false;
+
+      GComposite::emitBegin();
+      GSGNode::emitBegin();
+   }
+
+   // <method.png>
+   public virtual emitBeginRecursive() {
+      // trace "xxx GSceneGraph::emitBeginRecursive";
+      GComposite::emitBeginRecursive();
+      GSGNode::emitBeginRecursive();
+      GNamespace::emitBeginRecursive();
+   }
+
+   // <method.png>
+   public virtual emitModule(GModule _module) {
+
+      // trace "xxx GSceneGraph::emitModule: b_sg_init_done="+b_sg_init_done;
+
+      if(b_sg_init_done)
+         return;
+
+      // (todo) skip model_id ?
+      model_id = current_project.allocModelId();
+
+      b_sg_init_done = true;
+
+      local String sDraw;
+
+      _module.beginSection(getNamespacePrefix()+"_scenegraph_"+getId());
+      _module.setSectionExtraDrawArgs("Matrix4f _transform");
+
+      // (note) Draw() '_transform' arg contains parent (root node) matrix, or null
+      sDraw.append("if(null == _transform)\n{\n");
+      sDraw.append("   _transform <= new Matrix4f;  // root node: load identity\n");
+      sDraw.append("}\n");
+
+      _module.appendDrawPre(sDraw);
+      sDraw.empty();
+
+      local PointerArray parents;
+      parents.add(this);
+
+      // Traverse scenegraph nodes
+      GSGNode::emitSGNode(_module, sDraw, "_transform", parents);
+      _module.appendDrawPre(sDraw);
+
+      parents.remove(this);
+
+      // // _module.appendInit(sInit);
+      // // sInit.empty();
+
+      // // sDrawPre.append("   last_model_id = "+model_id+";\n}\n");
+
+      _module.endSection();
+   }
+
+   // <method.png>
+   public virtual emitModulePost(GModule _module) {
+
+      if(b_sg_init_done && !b_sg_post_done)
+      {
+         b_sg_post_done = true;
+
+         GSGNode::emitSGNodePost(_module);
+
+         GNamespace::emitModulePost(_module);
+      }
+   }
+
+   // <method.png>
+   public virtual getModelDrawPrefix() : String {
+      // for emitCallDrawString()
+      return "scenegraph";
+   }
+
+}
