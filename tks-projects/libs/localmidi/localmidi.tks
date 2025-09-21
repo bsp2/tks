@@ -1,0 +1,264 @@
+// ----
+// ---- file   : localmidi.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : lock-free inter-process ringbuffer
+// ----
+// ---- created: 21Jul2023
+// ---- changed: 22Jul2023, 17Aug2024
+// ----
+// ----
+// ----
+
+module MLocalMIDI;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class LocalMIDI {
+   define int CONN_TIMEOUT_MS = 250;
+
+   define int DEF_DATA_SZ = 4*1024*1024;
+
+   define int OFF_CONNID_CLIENT  =  0;
+   define int OFF_CONNID_HOST    =  4;
+   define int OFF_WRITEOFF       =  8;
+   define int OFF_READOFF        = 12;
+   define int OFF_DATA           = 16;
+
+   // off 0: .i connection id (inc'd by client)
+   // off 4: .i connection id (inc'd by host)
+   //     8: .i write offset (updated by ring writer)
+   //    12: .i read offset (updated by ring reader)
+   //    16: bytes[4*1024*1024]
+   SharedBuffer sh;
+   int          data_sz;
+   int          max_avail;
+   int          last_conn_id;
+   int          write_off;
+   int          read_off;
+   String       name; // debug
+
+
+   // <method.png>
+   public method create(local String _name, local int _dataSz) : boolean {
+
+      if(0 == _dataSz)
+         _dataSz = DEF_DATA_SZ;
+
+      if(sh.allocSharedMemoryByKey(_name, OFF_DATA + _dataSz))
+      {
+         if(b_debug)
+            trace "[dbg] LocalMIDI::create: shared memory \""+_name+"\" dataSz="+_dataSz;
+
+         sh.fillZero();
+
+         write_off    = 0;
+         last_conn_id = 0;
+         data_sz      = _dataSz;
+         max_avail    = _dataSz/2;
+         name         = _name;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] LocalMIDIWriter: failed to create shared memory \""+_name+"\" dataSz="+_dataSz;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method connect(local String _name, local int _dataSz) : boolean {
+
+      if(0 == _dataSz)
+         _dataSz = DEF_DATA_SZ;
+
+      if(sh.visitSharedMemory(_name, OFF_DATA + _dataSz))
+      {
+         if(b_debug)
+            trace "[dbg] LocalMIDI::visit: shared memory \""+_name+"\" dataSz="+_dataSz;
+
+         // Initiate connection
+         local int connIdC = sh.peekI32(OFF_CONNID_CLIENT) + 1;
+         if(0 == connIdC)
+            connIdC++;
+         sh.pokeI32(OFF_CONNID_CLIENT, connIdC);
+
+         local int retryCount = 0;
+         while(sh.peekI32(OFF_CONNID_HOST) != connIdC)
+         {
+            TKS.sleep(1);
+            if(++retryCount >= CONN_TIMEOUT_MS)
+            {
+               trace "[---] LocalMIDI::visit: connection time out";
+               sh.free();
+               return false;
+            }
+         }
+
+         if(b_debug)
+            trace "[dbg] LocalMIDI::visit: connected to host. client id="+connIdC;
+
+         data_sz   = _dataSz;
+         max_avail = _dataSz/2;
+         name      = _name;
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method checkForNewConnection() {
+      if(sh.isOpen() && sh.isOwner())
+      {
+         // trace "xxx checkForNewConnection name=\""+name+"\"";
+
+         // Check for new connection
+         local int connIdC = sh.peekI32(OFF_CONNID_CLIENT);
+         if(last_conn_id != connIdC)
+         {
+            // New client connection, reset ring buffer
+            last_conn_id = connIdC;
+            write_off = 0;
+            read_off = 0;
+            sh.pokeI32(OFF_WRITEOFF, 0);
+            sh.pokeI32(OFF_READOFF, 0);
+            sh.pokeI32(OFF_CONNID_HOST, last_conn_id);
+         }
+      }
+   }
+
+   // <method.png>
+   public method waitForConnection(local int _timeoutMS) : boolean {
+      if(sh.isOpen())
+      {
+         // Wait for new connection request
+         local int waitCount = 0;
+         while(sh.peekI32(OFF_CONNID_HOST) == sh.peekI32(OFF_CONNID_CLIENT))
+         {
+            TKS.sleep(1);
+            if(waitCount++ >= _timeoutMS)
+            {
+               trace "[~~~] LocalMIDI::waitForConnection: time out";
+               return false;
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method isOpen() : boolean {
+      return sh.isOpen();
+   }
+
+   // <method.png>
+   public method isConnected() : boolean {
+      local int connIdH = sh.peekI32(OFF_CONNID_HOST);
+      local int connIdC = sh.peekI32(OFF_CONNID_CLIENT);
+      return sh.isOpen() && (connIdH > 0) && (connIdH == connIdC);
+   }
+
+   // <method.png>
+   public method send(local Buffer _buf) {
+      if(sh.isOpen())
+      {
+         checkForNewConnection();
+
+         // if("remote_audio" == name)
+         //    trace "xxx send<"+name+">: isConnected="+isConnected();
+
+         if(isConnected())  // is reader connected ?
+         {
+            local int readOff = sh.peekI32(OFF_READOFF);
+            local int numAvail = (write_off - readOff);
+            if(numAvail < 0)
+               numAvail += data_sz;
+
+            // trace "xxx LocalMIDI::send: avail: "+numAvail+"/"+max_avail+" write_off="+write_off+" readOff="+readOff;
+
+            if( (numAvail + _buf.offset) <= max_avail )
+            {
+               write_off = sh.ringWriteBuffer(OFF_DATA, data_sz, write_off, _buf, 0/*srcOff*/, _buf.offset/*numBytes*/);
+               sh.pokeI32(OFF_WRITEOFF, write_off);
+            }
+         }
+
+      }
+   }
+
+   // <method.png>
+   public method recv(local Buffer _buf) : boolean {
+      _buf.offset = 0;
+      if(sh.isOpen())
+      {
+         checkForNewConnection();
+
+         local int writeOff = sh.peekI32(OFF_WRITEOFF);
+         // trace "xxx writeOff="+writeOff+" readOff="+readOff;
+
+         local int numAvail = (writeOff - read_off);
+         if(numAvail < 0)
+            numAvail += data_sz;
+
+         // trace "xxx numAvail="+numAvail+" writeOff="+writeOff+" read_off="+read_off;
+
+         if(numAvail > 0)
+         {
+            local int readSz = mathMini(numAvail, _buf.size);
+
+            local int oldReadOff = read_off;
+            read_off = sh.ringReadBuffer(OFF_DATA, data_sz, read_off, _buf, 0/*dstOff*/, readSz/*numBytes*/);
+            sh.pokeI32(OFF_READOFF, read_off);
+            _buf.offset = (oldReadOff != read_off) ? readSz : 0;
+
+            return (_buf.offset > 0);
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method disconnect() {
+      if(sh.isOpen())
+      {
+         // Terminate connection
+         sh.pokeI32(OFF_CONNID_CLIENT, sh.peekI32(OFF_CONNID_CLIENT) + 1);
+      }
+   }
+
+   // <method.png>
+   public method waitForDisconnect(local int _timeoutMS) {
+      if(sh.isOpen())
+      {
+         // Wait until client is disconnected
+         local int waitCount = 0;
+         for(;;)
+         {
+            local int connIdC = sh.peekI32(OFF_CONNID_CLIENT);
+            if(connIdC > 0)
+            {
+               if(sh.peekI32(OFF_CONNID_HOST) != connIdC)
+                  return;
+               TKS.sleep(1);
+               if(waitCount++ >= _timeoutMS)
+               {
+                  trace "[~~~] LocalMIDI::waitForDisconnect: time out";
+                  break;
+               }
+            }
+            else
+               break;
+         }
+      }
+   }
+
+}
