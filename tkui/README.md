@@ -7,3 +7,5 @@ Built-in widget classes: `Bezier01Edit`, `BezierEdit`, `Button`, `CheckBox`, `Co
 Layouters: `FlowLayout`, `GridLayout`, `BorderLayout`.
 
 `tkui` is used by e.g. the [Synergy](../tks-projects/apps/synergy/) MIDI sequencer and [Eureka](../tks-projects/apps/eureka/) DAW applications
+
+`tkui` uses the OpenGL 4.1 core profile by default (see `UI.ConfigureGL()`).
