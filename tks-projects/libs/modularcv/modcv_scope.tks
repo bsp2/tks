@@ -1,0 +1,921 @@
+// ----
+// ---- file   : modcv_scope.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 10Oct2024
+// ---- changed: 11Oct2024, 12Oct2024, 11Sep2025, 16Sep2025
+// ----
+// ----
+// ----
+
+module MModularCVMod_Scope;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ScopeView : ui::Layer {
+   ModCV_Scope *scope;
+   define int HISTORY_SIZE = (768*4);
+
+   FloatArray history;
+   int        history_num;
+   int        write_offset;
+
+   FloatArray pause_history;
+   int        pause_history_num;
+   int        pause_read_offset;
+   int        pause_tick_nr;
+
+
+   public method initScopeView(ModCV_Scope _parent) {
+      scope <= _parent;
+      initLayer();
+      history.allocAndFill(HISTORY_SIZE, 0);
+   }
+
+   public method push(float _f) {
+      // written by =replay=
+      if(write_offset >= HISTORY_SIZE)
+         write_offset = 0;
+      else
+         history_num++;
+      history[write_offset++] = _f;
+   }
+
+   public =replay= method clear() {
+      write_offset = 0;
+      history.fill(0);
+      history_num = 0;
+
+      pause_read_offset = 0;
+      pause_history.free();
+      pause_history_num = 0;
+   }
+
+   public =replay= method getReadOffset() : int {
+      return scope.b_pause ? pause_read_offset : (write_offset - 1);
+   }
+
+   public =replay= method getTickNr() : int {
+      return scope.b_pause ? pause_tick_nr : (scope.parent_node.tick_nr);
+   }
+
+   public method copyPauseHistory() {
+      pause_history     = history;
+      pause_history_num = history_num;
+      pause_read_offset = getReadOffset();
+      pause_tick_nr     = getTickNr();
+   }
+
+   public method onDraw() {
+      // (todo) add native code renderer ?
+
+      float w = getSizeX();
+      float h = getSizeY();
+      ui::UIRenderer.DrawFilledRectangle(0, 0, w, h, #ff002f00);
+
+      int readOff  = getReadOffset();
+      int tickNr   = getTickNr() - 1;
+      int numTicks = mathClampi(round(current_song.ppq * mathPowerf(2, 4.0f*scope.scale_x)), 1, HISTORY_SIZE);
+      int qTicks;
+
+      if(replay.b_playing)
+      {
+         if(numTicks > (current_song.getNumTicksPerBar()*2))
+            qTicks = current_song.getNumTicksPerBar();
+         else if(numTicks >= (current_song.getNumTicksPerBeat()*2))
+            qTicks = current_song.getNumTicksPerBeat();
+         else if(numTicks >= (current_song.getNumTicksPer16th()*2))
+            qTicks = current_song.getNumTicksPer16th();
+         else
+            qTicks = 999999999;
+      }
+      else
+      {
+         qTicks = 999999999;
+      }
+
+      // trace "xxx ScopeView::onDraw: readOff="+readOff;
+      float cx = w - 1;
+      float cxStep = w / numTicks;
+      ui::UIRenderer.EnableBlendingKeepAlpha();
+      float centerY = h * 0.5f;
+      float scaleY = h * -0.4f * mathClampf(mathPowerf(2, 4.0f*scope.scale_y), 1.0/16, 16);
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+      // // ui::UI.PushScissors(abspos.x+0.5, abspos.y+0.5, w+0.5, h+0.5);
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, w+0.5, h+0.5);
+      glEnable(GL_SCISSOR_TEST);
+
+      ui::UIRenderer.SetLineWidth(1.0f);
+      ui::UIRenderer.SetColorARGB(#8f44aa44);
+      if(ui::UIRenderer.BeginLinesAA(2))
+      {
+         ui::UIRenderer.Vertex2f(0, centerY);
+         ui::UIRenderer.Vertex2f(w, centerY);
+         ui::UIRenderer.End();
+      }
+
+      int c32 = #7faaaaaa;
+      int c32Sync = #dfffffff;
+      int maxVerts = 2048;
+      ui::UIRenderer.SetColorARGB(c32);
+      ui::UIRenderer.BeginLinesAA(maxVerts);
+      int relTicks = tickNr;
+      int idx = 0;
+      FloatArray a <= scope.b_pause ? pause_history : history;
+      int num = scope.b_pause ? pause_history_num : history_num;
+      loop(numTicks)
+      {
+         if(idx++ >= num)
+            break;
+
+         if(readOff < 0)
+            readOff += HISTORY_SIZE;
+         float y =  a.get(readOff);
+         y *= scaleY;
+         y += centerY;
+
+         if(0 == relTicks % qTicks)
+         {
+            ui::UIRenderer.End();
+
+            ui::UIRenderer.SetColorARGB(#2c6a9f6f);
+            ui::UIRenderer.BeginLinesAA(2);
+            ui::UIRenderer.Vertex2f(cx, 0);
+            ui::UIRenderer.Vertex2f(cx, h);
+            ui::UIRenderer.End();
+
+            ui::UIRenderer.SetColorARGB(c32Sync);
+            ui::UIRenderer.BeginLinesAA(maxVerts);
+            ui::UIRenderer.Vertex2f(cx, centerY);
+            ui::UIRenderer.Vertex2f(cx, y);
+            ui::UIRenderer.End();
+
+            ui::UIRenderer.SetColorARGB(c32);
+            ui::UIRenderer.BeginLinesAA(maxVerts);
+         }
+         else
+         {
+            ui::UIRenderer.Vertex2f(cx, centerY);
+            ui::UIRenderer.Vertex2f(cx, y);
+         }
+
+         cx -= cxStep;
+         readOff--;
+         relTicks--;
+      }
+      ui::UIRenderer.End();
+      ui::UIRenderer.DisableBlending();
+      // // glDisable(GL_LINE_SMOOTH);
+
+      // // ui::UI.PopScissors();
+      sdvg_PopScissor();
+      glDisable(GL_SCISSOR_TEST);
+
+      redraw();
+   }
+
+}
+
+class ModCV_Scope : ModCV_Output {
+
+   ScopeView *sv_1;
+   ScopeView *sv_2;
+   ScopeView *sv_3;
+   ScopeView *sv_4;
+
+   float scale_x;  // -1=ppq/16 .. 0=ppq .. 1.0=ppq*16
+   float scale_y;  //
+
+   float out_1_scale;
+   float out_1_offset;
+
+   float out_2_scale;
+   float out_2_offset;
+
+   float out_3_scale;
+   float out_3_offset;
+
+   float out_4_scale;
+   float out_4_offset;
+
+   boolean b_out_1_pre;  // 1=apply scale/offset before sending current value to ScopeView  0=apply to output only
+   boolean b_out_2_pre;
+   boolean b_out_3_pre;
+   boolean b_out_4_pre;
+
+   boolean b_pause;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("scope"/*id*/,
+                 "scope"/*header_id*/,
+                 "Scope"/*tooltip*/
+                 );
+      setModuleSize(12, 3);
+
+      sv_1 <= new ScopeView;
+      sv_1.initScopeView(this);
+      addChildLayer(sv_1);
+
+      sv_2 <= new ScopeView;
+      sv_2.initScopeView(this);
+      addChildLayer(sv_2);
+
+      sv_3 <= new ScopeView;
+      sv_3.initScopeView(this);
+      addChildLayer(sv_3);
+
+      sv_4 <= new ScopeView;
+      sv_4.initScopeView(this);
+      addChildLayer(sv_4);
+
+      addInput("in_1", "Input A", 0.0f, IO_ANY);
+      addInput("in_2", "Input B", 0.0f, IO_ANY);
+      addInput("in_3", "Input C", 0.0f, IO_ANY);
+      addInput("in_4", "Input D", 0.0f, IO_ANY);
+
+      addOutput("out_1", "Output A", IO_ANY);
+      addOutput("out_2", "Output B", IO_ANY);
+      addOutput("out_3", "Output C", IO_ANY);
+      addOutput("out_4", "Output D", IO_ANY);
+
+      out_1_scale  = 1.0;
+      out_1_offset = 0.0;
+
+      out_2_scale  = 1.0;
+      out_2_offset = 0.0;
+
+      out_3_scale  = 1.0;
+      out_3_offset = 0.0;
+
+      out_4_scale  = 1.0;
+      out_4_offset = 0.0;
+
+      b_out_1_pre = true;
+      b_out_2_pre = true;
+      b_out_3_pre = true;
+      b_out_4_pre = true;
+   }
+
+   public virtual copyFrom(ModCV_Scope _o) {
+      scale_x = _o.scale_x;
+      scale_y = _o.scale_y;
+
+      out_1_scale  = _o.out_1_scale;
+      out_1_offset = _o.out_1_offset;
+      out_2_scale  = _o.out_2_scale;
+      out_2_offset = _o.out_2_offset;
+      out_3_scale  = _o.out_3_scale;
+      out_3_offset = _o.out_3_offset;
+      out_4_scale  = _o.out_4_scale;
+      out_4_offset = _o.out_4_offset;
+
+      b_out_1_pre = _o.b_out_1_pre;
+      b_out_2_pre = _o.b_out_2_pre;
+      b_out_3_pre = _o.b_out_3_pre;
+      b_out_4_pre = _o.b_out_4_pre;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx;
+      float cy;
+      float stepY;
+      PortWidget *pw;
+      ui::Dial   *dl;
+      ui::Layer  *l;
+
+      createCheckButton(RACK_UNIT_WIDTH * 10.25, 35,
+                        "b_pause",
+                        b_pause
+                        );
+
+      float viewW = 8.5 * RACK_UNIT_WIDTH;
+      float inStepX = viewW / 4.0f;
+
+      // X/Y scaling
+      cx = 0.25 * RACK_UNIT_WIDTH + viewW*0.5;
+      cy = 25;
+
+      dl <= createTinyDial(cx - 20, cy,
+                           "scale_x",
+                           -1.0, 1.0, 0.0, scale_x,
+                           ""
+                           );
+      dl.setPrecision(4);
+      dl.setToolTipCaption("Scale X\n\n (note) -1=1/64 .. 0=1/4 .. 1=4/4");
+      dl.setPresetOptions([-1.0f,  -0.75f, -0.5f,  -0.25f, 0,     0.25,  0.5f,  0.75,  1.0   ],
+                          ["1/64", "1/32", "1/16", "1/8",  "1/4", "1/2", "1/1", "2/1", "4/1" ]
+                          );
+
+      createTinyDial(cx + 20, cy,
+                     "scale_y",
+                     -1.0, 1.0, 0.0, scale_x,
+                     ""
+                     );
+
+
+      // Input ports
+      cx = 0.25 * RACK_UNIT_WIDTH + inStepX*0.5;
+      cy = 35;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "A"/*captionOrNull*/
+                             );
+
+      cx += inStepX;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "B"/*captionOrNull*/
+                             );
+
+      cx += inStepX;
+      pw <= createPortWidget(2, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "C"/*captionOrNull*/
+                             );
+
+      cx += inStepX;
+      pw <= createPortWidget(3, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "D"/*captionOrNull*/
+                             );
+
+      // Scope views
+      float viewH = RACK_MODULE_HEIGHT / 6;
+      cx = 0.25 * RACK_UNIT_WIDTH;
+      stepY = viewH + 2;
+      cy = RACK_MODULE_HEIGHT - 4 - 4*stepY;
+      float outOffX = viewW + 1.25 * RACK_UNIT_WIDTH + 2;
+      float outOffY = viewH * 0.5f;
+      float outSclOffX = outOffX - 6.0;
+      float outSclOffY = outOffY - 12.0;
+      float outOffOffX = outOffX + 6.0;
+      float outOffOffY = outOffY - 12.0;
+      float outPreOffX = outOffX;
+      float outPreOffY = outOffY + 12.0f;
+
+      // Scope 1 / Output 1
+      sv_1.setRequiredSize2fScaled(viewW, viewH);
+      sv_1.setPosition2fScaled(cx, cy);
+
+      createPortWidget(0, true/*bOutput*/,
+                       cx + outOffX, cy + outOffY,
+                       null/*captionOrNull*/
+                       );
+
+      dl <= createTinyDial(cx + outSclOffX, cy + outSclOffY,
+                           "out_1_scale",
+                           -2.0, 2.0, 1.0, out_1_scale,
+                           null/*caption*/
+                           );
+      dl.setStep(1.0/32);
+      dl.setPrecision(4);
+      dl.setToolTipCaption("Output 1 Level");
+      dl.setPresetOptions([-2.0f, -1.5f,  -1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f, 1.5f,  2.0f],
+                          ["-2",  "-3/2", "-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",  "3/2", "2" ]
+                          );
+
+      dl <= createTinyDial(cx + outOffOffX, cy + outOffOffY,
+                           "out_1_offset",
+                           -1.0, 1.0, 0.0, out_1_offset,
+                           null/*caption*/
+                           );
+      dl.setToolTipCaption("Output 1 Offset");
+      dl.setPresetOptions([-1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f],
+                          ["-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",]
+                          );
+
+      l <= createTinyCheckButton(cx + outPreOffX, cy + outPreOffY,
+                                 "b_out_1_pre",
+                                 b_out_1_pre
+                                 );
+      l.setToolTipCaption("When enabled, send scaled+offset input to scope\n\nWhen unchecked, view raw input signal");
+
+
+      // Scope 2 / Output 2
+      cy += stepY;
+      sv_2.setRequiredSize2fScaled(viewW, viewH);
+      sv_2.setPosition2fScaled(cx, cy);
+
+      createPortWidget(1, true/*bOutput*/,
+                       cx + outOffX, cy + outOffY,
+                       null/*captionOrNull*/
+                       );
+
+      dl <= createTinyDial(cx + outSclOffX, cy + outSclOffY,
+                           "out_2_scale",
+                           -2.0, 2.0, 1.0, out_2_scale,
+                           null/*caption*/
+                           );
+      dl.setPrecision(4);
+      dl.setStep(1.0/32);
+      dl.setToolTipCaption("Output 2 Level");
+      dl.setPresetOptions([-2.0f, -1.5f,  -1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f, 1.5f,  2.0f],
+                          ["-2",  "-3/2", "-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",  "3/2", "2" ]
+                          );
+
+      dl <= createTinyDial(cx + outOffOffX, cy + outOffOffY,
+                           "out_2_offset",
+                           -1.0, 1.0, 0.0, out_2_offset,
+                           null/*caption*/
+                           );
+      dl.setToolTipCaption("Output 2 Offset");
+      dl.setPresetOptions([-1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f],
+                          ["-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",]
+                          );
+
+      l <= createTinyCheckButton(cx + outPreOffX, cy + outPreOffY,
+                                 "b_out_2_pre",
+                                 b_out_2_pre
+                                 );
+      l.setToolTipCaption("When enabled, send scaled+offset input to scope\n\nWhen unchecked, view raw input signal");
+
+      // Scope 3 / Output 3
+      cy += stepY;
+      sv_3.setRequiredSize2fScaled(viewW, viewH);
+      sv_3.setPosition2fScaled(cx, cy);
+
+      createPortWidget(2, true/*bOutput*/,
+                       cx + outOffX, cy + outOffY,
+                       null/*captionOrNull*/
+                       );
+
+      dl <= createTinyDial(cx + outSclOffX, cy + outSclOffY,
+                           "out_3_scale",
+                           -2.0, 2.0, 1.0, out_3_scale,
+                           null/*caption*/
+                           );
+      dl.setPrecision(4);
+      dl.setStep(1.0/32);
+      dl.setToolTipCaption("Output 3 Level");
+      dl.setPresetOptions([-2.0f, -1.5f,  -1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f, 1.5f,  2.0f],
+                          ["-2",  "-3/2", "-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",  "3/2", "2" ]
+                          );
+
+      dl <= createTinyDial(cx + outOffOffX, cy + outOffOffY,
+                           "out_3_offset",
+                           -1.0, 1.0, 0.0, out_3_offset,
+                           null/*caption*/
+                           );
+      dl.setToolTipCaption("Output 3 Offset");
+      dl.setPresetOptions([-1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f],
+                          ["-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",]
+                          );
+
+      l <= createTinyCheckButton(cx + outPreOffX, cy + outPreOffY,
+                                 "b_out_3_pre",
+                                 b_out_3_pre
+                                 );
+      l.setToolTipCaption("When enabled, send scaled+offset input to scope\n\nWhen unchecked, view raw input signal");
+
+      // Scope 4 / Output 4
+      cy += stepY;
+      sv_4.setRequiredSize2fScaled(viewW, viewH);
+      sv_4.setPosition2fScaled(cx, cy);
+
+      createPortWidget(3, true/*bOutput*/,
+                       cx + outOffX, cy + outOffY,
+                       null/*captionOrNull*/
+                       );
+
+      dl <= createTinyDial(cx + outSclOffX, cy + outSclOffY,
+                           "out_4_scale",
+                           -2.0, 2.0, 1.0, out_4_scale,
+                           null/*caption*/
+                           );
+      dl.setPrecision(4);
+      dl.setStep(1.0/32);
+      dl.setToolTipCaption("Output 4 Level");
+      dl.setPresetOptions([-2.0f, -1.5f,  -1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f, 1.5f,  2.0f],
+                          ["-2",  "-3/2", "-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",  "3/2", "2" ]
+                          );
+
+      dl <= createTinyDial(cx + outOffOffX, cy + outOffOffY,
+                           "out_4_offset",
+                           -1.0, 1.0, 0.0, out_4_offset,
+                           null/*caption*/
+                           );
+      dl.setToolTipCaption("Output 4 Offset");
+      dl.setPresetOptions([-1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f],
+                          ["-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",]
+                          );
+
+      l <= createTinyCheckButton(cx + outPreOffX, cy + outPreOffY,
+                                 "b_out_4_pre",
+                                 b_out_4_pre
+                                 );
+      l.setToolTipCaption("When enabled, send scaled+offset input to scope\n\nWhen unchecked, view raw input signal");
+
+   }
+
+   protected =replay= method setEnablePause(boolean _bEnable) {
+      if(!b_pause && _bEnable)
+      {
+         sv_1.copyPauseHistory();
+         sv_2.copyPauseHistory();
+         sv_3.copyPauseHistory();
+         sv_4.copyPauseHistory();
+      }
+      b_pause = _bEnable;
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return ("scale_x" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "scale_x":
+            scale_x = _value;
+            int numTicks = round(mathPowerf(2, 4*_value) * current_song.ppq);
+            float num16th = int(100 * numTicks / (current_song.ppq/4) + 0.5) / 100.0;
+            float numBeats = int(100 * numTicks / current_song.getNumTicksPerBeat() + 0.5) / 100.0;
+            float numBars = int(100 * numTicks / current_song.getNumTicksPerBar() + 0.5) / 100.0;
+            Global.Print("Param \"scale_x\" is "+_value+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th)+" / "+numBeats+" beat"+Utils.GetPluralStringFloat(numBeats)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
+            break;
+
+         case "scale_y":
+            scale_y = _value;
+            break;
+
+         case "out_1_scale":
+            out_1_scale = _value;
+            break;
+
+         case "out_1_offset":
+            out_1_offset = _value;
+            break;
+
+         case "out_2_scale":
+            out_2_scale = _value;
+            break;
+
+         case "out_2_offset":
+            out_1_offset = _value;
+            break;
+
+         case "out_3_scale":
+            out_3_scale = _value;
+            break;
+
+         case "out_3_offset":
+            out_3_offset = _value;
+            break;
+
+         case "out_4_scale":
+            out_4_scale = _value;
+            break;
+
+         case "out_4_offset":
+            out_4_offset = _value;
+            break;
+
+         case "b_out_1_pre":
+            b_out_1_pre = _value;
+            break;
+
+         case "b_out_2_pre":
+            b_out_2_pre = _value;
+            break;
+
+         case "b_out_3_pre":
+            b_out_3_pre = _value;
+            break;
+
+         case "b_out_4_pre":
+            b_out_4_pre = _value;
+            break;
+
+         case "b_pause":
+            setEnablePause(_value >= 0.5f);
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "scale_x":
+            return scale_x;
+
+         case "scale_y":
+            return scale_y;
+
+         case "out_1_scale":
+            return out_1_scale;
+
+         case "out_1_offset":
+            return out_1_offset;
+
+         case "out_2_scale":
+            return out_2_scale;
+
+         case "out_2_offset":
+            return out_2_offset;
+
+         case "out_3_scale":
+            return out_3_scale;
+
+         case "out_3_offset":
+            return out_3_offset;
+
+         case "out_4_scale":
+            return out_4_scale;
+
+         case "out_4_offset":
+            return out_4_offset;
+
+         case "b_pause":
+            return b_pause;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["scale x",
+              "scale y",
+              "out 1 scale",
+              "out 1 offset",
+              "out 1 pre",
+              "out 2 scale",
+              "out 2 offset",
+              "out 2 pre",
+              "out 3 scale",
+              "out 3 offset",
+              "out 3 pre",
+              "out 4 scale",
+              "out 4 offset",
+              "out 4 pre",
+              "pause",
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            scale_x = FromNormalized(_value, -1, 1);
+            updateParamWidget("scale_x", scale_x);
+            Global.Print("Param \"scale_x\" is "+scale_x);
+            break;
+
+         case 1:
+            scale_y = FromNormalized(_value, -1, 1);
+            updateParamWidget("scale_y", scale_y);
+            Global.Print("Param \"scale_y\" is "+scale_y);
+            break;
+
+         case 2:
+            out_1_scale = FromNormalized(_value, -2, 2);
+            updateParamWidget("out_1_scale", out_1_scale);
+            Global.Print("Param \"out_1_scale\" is "+out_1_scale);
+            break;
+
+         case 3:
+            out_1_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("out_1_offset", out_1_offset);
+            Global.Print("Param \"out_1_offset\" is "+out_1_offset);
+            break;
+
+         case 4:
+            b_out_1_pre = FromNormalized(_value, 0, 1);
+            updateParamWidget("b_out_1_pre", (_value >= 0.5f));
+            Global.Print("Param \"b_out_1_pre\" is "+b_out_1_pre);
+            break;
+
+         case 5:
+            out_2_scale = FromNormalized(_value, -2, 2);
+            updateParamWidget("out_2_scale", out_2_scale);
+            Global.Print("Param \"out_2_scale\" is "+out_2_scale);
+            break;
+
+         case 6:
+            out_2_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("out_2_offset", out_2_offset);
+            Global.Print("Param \"out_2_offset\" is "+out_2_offset);
+            break;
+
+         case 7:
+            b_out_2_pre = FromNormalized(_value, 0, 1);
+            updateParamWidget("b_out_2_pre", (_value >= 0.5f));
+            Global.Print("Param \"b_out_2_pre\" is "+b_out_2_pre);
+            break;
+
+         case 8:
+            out_3_scale = FromNormalized(_value, -2, 2);
+            updateParamWidget("out_3_scale", out_3_scale);
+            Global.Print("Param \"out_3_scale\" is "+out_3_scale);
+            break;
+
+         case 9:
+            out_3_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("out_3_offset", out_3_offset);
+            Global.Print("Param \"out_3_offset\" is "+out_3_offset);
+            break;
+
+         case 10:
+            b_out_3_pre = FromNormalized(_value, 0, 1);
+            updateParamWidget("b_out_3_pre", (_value >= 0.5f));
+            Global.Print("Param \"b_out_3_pre\" is "+b_out_3_pre);
+            break;
+
+         case 11:
+            out_4_scale = FromNormalized(_value, -2, 2);
+            updateParamWidget("out_4_scale", out_4_scale);
+            Global.Print("Param \"out_4_scale\" is "+out_4_scale);
+            break;
+
+         case 12:
+            out_4_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("out_4_offset", out_4_offset);
+            Global.Print("Param \"out_4_offset\" is "+out_4_offset);
+            break;
+
+         case 13:
+            b_out_4_pre = FromNormalized(_value, 0, 1);
+            updateParamWidget("b_out_4_pre", (_value >= 0.5f));
+            Global.Print("Param \"b_out_4_pre\" is "+b_out_4_pre);
+            break;
+
+         case 14:
+            setEnablePause( FromNormalized(_value, 0, 1) >= 0.5f );
+            updateParamWidget("b_pause", (_value >= 0.5f));
+            Global.Print("Param \"b_pause\" is "+b_pause);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+          case 0:
+             return ToNormalized(scale_x, -1, 1);
+
+          case 1:
+             return ToNormalized(scale_y, -1, 1);
+
+          case 2:
+             return ToNormalized(out_1_scale, -2, 2);
+
+          case 3:
+             return ToNormalized(out_1_offset, -1, 1);
+
+          case 4:
+             return ToNormalized(b_out_1_pre, 0, 1);
+
+          case 5:
+             return ToNormalized(out_2_scale, -2, 2);
+
+          case 6:
+             return ToNormalized(out_2_offset, -1, 1);
+
+          case 7:
+             return ToNormalized(b_out_2_pre, 0, 1);
+
+          case 8:
+             return ToNormalized(out_3_scale, -2, 2);
+
+          case 9:
+             return ToNormalized(out_3_offset, -1, 1);
+
+          case 10:
+             return ToNormalized(b_out_3_pre, 0, 1);
+
+          case 11:
+             return ToNormalized(out_4_scale, -2, 2);
+
+          case 12:
+             return ToNormalized(out_4_offset, -1, 1);
+
+          case 13:
+             return ToNormalized(b_out_4_pre, 0, 1);
+
+          case 14:
+             return ToNormalized(b_pause, 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 3;
+
+      ofs.f32 = scale_x;
+      ofs.f32 = scale_y;
+
+      ofs.f32 = out_1_scale;   // v2+
+      ofs.f32 = out_1_offset;  // v2+
+      ofs.f32 = out_2_scale;   // v2+
+      ofs.f32 = out_2_offset;  // v2+
+      ofs.f32 = out_3_scale;   // v2+
+      ofs.f32 = out_3_offset;  // v2+
+      ofs.f32 = out_4_scale;   // v2+
+      ofs.f32 = out_4_offset;  // v2+
+
+      ofs.i8 = b_out_1_pre; // v2+
+      ofs.i8 = b_out_2_pre; // v2+
+      ofs.i8 = b_out_3_pre; // v2+
+      ofs.i8 = b_out_4_pre; // v2+
+
+      ofs.i8 = b_pause; // v3+
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            scale_x = ifs.f32;
+            scale_y = ifs.f32;
+
+            if(ver >= 2)
+            {
+               out_1_scale  = ifs.f32;  // v2+
+               out_1_offset = ifs.f32;  // v2+
+               out_2_scale  = ifs.f32;  // v2+
+               out_2_offset = ifs.f32;  // v2+
+               out_3_scale  = ifs.f32;  // v2+
+               out_3_offset = ifs.f32;  // v2+
+               out_4_scale  = ifs.f32;  // v2+
+               out_4_offset = ifs.f32;  // v2+
+
+               b_out_1_pre = ifs.b8;  // v2+
+               b_out_2_pre = ifs.b8;  // v2+
+               b_out_3_pre = ifs.b8;  // v2+
+               b_out_4_pre = ifs.b8;  // v2+
+            }
+
+            if(ver >= 3)
+            {
+               b_pause = ifs.b8;  // v3+
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Scope::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      sv_1.clear();
+      sv_2.clear();
+      sv_3.clear();
+      sv_4.clear();
+   }
+
+   public virtual tick() {
+      // this module has (optional) outputs, update them
+      local float in1 = inputs[0].getValue();
+      local float in2 = inputs[1].getValue();
+      local float in3 = inputs[2].getValue();
+      local float in4 = inputs[3].getValue();
+
+      local float out1 = in1 * out_1_scale + out_1_offset;
+      local float out2 = in2 * out_2_scale + out_2_offset;
+      local float out3 = in3 * out_3_scale + out_3_offset;
+      local float out4 = in4 * out_4_scale + out_4_offset;
+
+      sv_1.push(b_out_1_pre ? out1 : in1);
+      sv_2.push(b_out_2_pre ? out2 : in2);
+      sv_3.push(b_out_3_pre ? out3 : in3);
+      sv_4.push(b_out_4_pre ? out4 : in4);
+
+      // Mirror to outputs
+      out[0] = out1;
+      out[1] = out2;
+      out[2] = out3;
+      out[3] = out4;
+   }
+
+   public virtual tickOutput(MIDIPipeFrame _frOut) {
+      if(last_tick_nr != parent_patch.next_tick_nr)
+         tick();
+      // else: already processed in previous tick() call while reading output(s)
+   }
+}

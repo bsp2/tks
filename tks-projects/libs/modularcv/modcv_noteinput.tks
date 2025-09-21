@@ -1,0 +1,304 @@
+// ----
+// ---- file   : modcv_noteinput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 01Apr2021
+// ---- changed: 02Apr2021, 03Apr2021, 06Apr2021, 16Apr2021, 07May2021, 08May2021, 21Feb2022
+// ----          07Oct2024, 10Oct2024, 04Nov2024, 16Nov2024, 23Mar2025
+// ----
+// ----
+// ----
+
+module MModularCVMod_NoteInput;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_NoteInput : ModCV_Input {
+   float pb_range;  // use 24 for MIDI synths, 5*12=60 for modular (-5V..+5V => -5..5 octaves)
+
+   int   last_note;
+   float last_pb;  // -1..1
+   int   gate_countdown; // ticks. 0=manual note off
+
+   IntArray active_notes;
+   IntArray active_note_countdowns;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("note_input"/*id*/,
+                 "n in"/*header_id*/,
+                 "Note Input"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      pb_range = 24;
+
+      last_note       = 12*5;
+      last_pb         = 0.0f;
+      gate_countdown  = 0;
+      out[4/*slide*/] = 0.0f;
+
+      addOutput("gate",  "Gate",  IO_GATE);  // 0
+      addOutput("note",  "Note",  IO_CV);    // 1
+      addOutput("vel",   "Vel",   IO_ANY);   // 2
+      addOutput("dur",   "Dur",   IO_ANY);   // 3
+      addOutput("slide", "Slide", IO_GATE);  // 4
+   }
+
+   public virtual copyFrom(ModCV_NoteInput _o) {
+      port_index = _o.port_index;
+      pb_range   = _o.pb_range;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, false/*bOutput*/);
+
+      cx = 15;
+      cy = 54-8;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      dl <= createTinyDial(cx, cy,
+                           "pb_range",
+                           -60.0, 60.0, 24.0, pb_range,
+                           null/*captionOrNull*/
+                           );
+      dl.setToolTipCaption("Pitchbend Range");
+      dl.setPrecision(4);
+      dl.setPresetOptions([0.0f, 12.0f, 24.0f, 36.0f, 48.0f, 60.0f],
+                          ["off", "1 oct", "2 oct", "3 oct", "4 oct", "5 oct"]
+                          );
+
+      cy += 12;
+      pw <= createPortWidget(1, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "cv"/*captionOrNull*/
+                             );
+
+      cy += 34-3;
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "gate"/*captionOrNull*/
+                             );
+
+      cy += 34-3;
+      pw <= createPortWidget(2, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "vel"/*captionOrNull*/
+                             );
+      cy += 34-3;
+      pw <= createPortWidget(4, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "slide"
+                             );
+
+      cy += 34-3;// + 12 - 32;
+      pw <= createPortWidget(3, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "dur"
+                             );
+
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "pb_range":
+            pb_range = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "pb_range":
+            return pb_range;
+      }
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("Input Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8  = port_index;
+      ofs.f32 = pb_range;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index = ifs.u8;
+            pb_range   = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_NoteInput::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      gate_countdown = 0;
+      active_notes.empty();
+      active_note_countdowns.empty();
+      out[4/*slide*/] = 0.0f;
+   }
+
+   public virtual tickInput(MIDIPipeFrame _frIn, boolean _bAdvance) {
+      local CtlIOPort ioPort <= parent_node.getPortByIndex(port_index);
+      if(null != ioPort)
+      {
+         if(ioPort.b_enable)
+         {
+            float t;
+            int numEv;
+            int evIdx;
+            MIDIPipeEvent ev;
+            int activeNoteIdx;
+
+            t = _frIn.getFilteredPitchbend(ioPort.dev_idx, ioPort.dev_ch);
+            if(t >= 0.0)
+            {
+               last_pb = (t >= 8192.0) ? ((t-8192.0)/8191.0) : (-1.0 + (t/8192.0));
+               out[1/*note*/] = ( (last_note + last_pb * pb_range) - (5*12) ) / (5.0*12);
+            }
+
+            // All Notes Off
+            numEv = _frIn.getNumEventsAllNotesOffByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               out[0/*gate*/] = 0.0f;
+               gate_countdown = 0;
+               active_notes.empty();
+               active_note_countdowns.empty();
+               out[4/*slide*/] = 0.0f;
+            }
+
+            // Auto Note Off
+            if(_bAdvance)
+            {
+               activeNoteIdx = 0;
+               while(activeNoteIdx < active_notes.numElements)
+               {
+                  if(active_note_countdowns[activeNoteIdx] > 0)
+                  {
+                     active_note_countdowns[activeNoteIdx] = active_note_countdowns[activeNoteIdx] - 1;
+                     // // trace "xxx active_note_countdowns[activeNoteIdx="+activeNoteIdx+"] = "+active_note_countdowns[activeNoteIdx]+" song.tick_nr="+current_song.tick_nr;
+                     if(0 == active_note_countdowns[activeNoteIdx])
+                     {
+                        active_notes.delete(activeNoteIdx);
+                        active_note_countdowns.delete(activeNoteIdx);
+                        activeNoteIdx--;
+                        if(0 == active_notes.numElements)
+                           out[4/*slide*/] = 0.0f;
+                     }
+                  }
+
+                  activeNoteIdx++;
+               }
+
+               if(gate_countdown > 0)
+               {
+                  if(0 == --gate_countdown)
+                  {
+                     out[0/*gate*/] = 0.0f;
+                     out[4/*slide*/] = 0.0f;
+                  }
+               }
+            }
+
+            // Manual Note off
+            numEv = _frIn.getNumEventsNoteOffByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               evIdx = 0;
+               loop(numEv)
+               {
+                  _frIn.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, ioPort.dev_idx, ioPort.dev_ch);
+                  activeNoteIdx = active_notes.indexOf(ev.note, 0);
+                  if(-1 != activeNoteIdx)
+                  {
+                     active_notes.delete(activeNoteIdx);
+                     active_note_countdowns.delete(activeNoteIdx);
+                  }
+                  if(ev.note == last_note)
+                  {
+                     if(active_notes.numElements > 0)
+                     {
+                        // Revert to previous note
+                        last_note      = active_notes.last;
+                        gate_countdown = active_note_countdowns.last;
+                        out[1/*note*/] = ( (last_note + last_pb * pb_range) - (5*12) ) / (5.0*12);
+                     }
+                     else
+                     {
+                        // Release last note
+                        out[0/*gate*/] = 0.0f;
+                        gate_countdown = 0;
+                        out[4/*slide*/] = 0.0f;
+                     }
+                  }
+                  evIdx++;
+               }
+            }
+
+            // Note On
+            numEv = _frIn.getNumEventsNoteOnByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               evIdx = 0;
+               loop(numEv)
+               {
+                  _frIn.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, ioPort.dev_idx, ioPort.dev_ch);
+                  last_note = ev.note;
+                  gate_countdown = ev.duration;
+                  active_notes.add(ev.note);
+                  active_note_countdowns.add(gate_countdown);
+                  out[0/*gate*/] = 1.0f;
+                  out[1/*note*/] = ( (last_note + last_pb * pb_range) - (5*12) ) / (5.0*12);
+                  // // trace "xxx note on note="+last_note+" out[cv]="+out[1]+" dur="+ev.duration;
+                  out[2/*vel */] = ev.velocity / 127.0;
+                  out[3/*dur */] = ev.duration / float(current_song.ppq);  // (note) should match ModCV_NoteOutput scaling
+                  out[4/*slide*/] = (active_notes.numElements > 1);
+                  evIdx++;
+               }
+            }
+         } // if ioPort.b_enable
+      } // if ioPort
+   }
+}

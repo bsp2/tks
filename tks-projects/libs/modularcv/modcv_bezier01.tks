@@ -1,0 +1,328 @@
+// ----
+// ---- file   : modcv_bezier01.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 13Jun2021
+// ---- changed: 28Dec2021, 21Feb2022, 08Oct2023, 08Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Bezier01;
+
+namespace modularcv;
+use namespace ui;
+use namespace st2;
+
+
+class ModCV_Bezier01 : Module {
+
+   float   ctl_x;
+   float   ctl_y;
+   float   ctl_exp;  // -7..7  (+-Bezier01Edit.EXP_RANGE)
+   float   ctl_x_amt;    // -1..1
+   float   ctl_y_amt;    // -1..1
+   float   ctl_exp_amt;  // -1..1
+   boolean b_flip;
+
+   protected Bezier01Edit *be;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("bezier01"/*id*/,
+                 "bezier01"/*header_id*/,
+                 "Bezier01\n\n- clamp input to 0..1\n- remap to curve"/*tooltip*/
+                 );
+      setModuleSize(7, 3);
+
+      ctl_x   = 0.5;
+      ctl_y   = 0.5;
+      ctl_exp = 0;
+      b_flip  = false;
+
+      addInput("in",  "Input",                          0.0f, IO_ANY);
+      addInput("x",   "Ctl Point X Modulation",         0.0f, IO_OFF);
+      addInput("y",   "Ctl Point Y Modulation",         0.0f, IO_OFF);
+      addInput("c",   "Log..Lin..Exp Curve Modulation", 0.0f, IO_OFF);
+
+      addOutput("out", "Output", IO_ANY);
+
+      Bezier01Edit.LazyInitializeLUTs();
+   }
+
+   public virtual copyFrom(ModCV_Bezier01 _o) {
+      ctl_x       = _o.ctl_x;
+      ctl_y       = _o.ctl_y;
+      ctl_exp     = _o.ctl_exp;
+      ctl_x_amt   = _o.ctl_x_amt;
+      ctl_y_amt   = _o.ctl_y_amt;
+      ctl_exp_amt = _o.ctl_exp_amt;
+      b_flip      = _o.b_flip;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 27;
+      float cy = 30;
+      PortWidget *pw;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "in"/*captionOrNull*/
+                             );
+
+      cy += 32;
+
+      be <= Bezier01Edit.New();
+      be.setLookAndFeelLight();
+      be.setPosition2fScaled(4, cy);
+      be.setRequiredSize2fScaled(48, 48);
+      be.ctl_x   = ctl_x;
+      be.ctl_y   = ctl_y;
+      be.ctl_exp = ctl_exp;
+      be.b_flip  = b_flip;
+      addChildLayer(deref be);
+
+      cy += 48 + 16;
+
+      // x mod
+      float xmodOff  = 11;
+      float xmodStep = 16;
+      float ymodStep = 12;
+      createTinyDial(xmodOff + xmodStep*0, cy,
+                     "ctl_x_amt",
+                     -1, 1, 0.0, ctl_x_amt,
+                     null/*captionOrNull*/
+                     );
+
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             xmodOff + xmodStep*0,
+                             cy + ymodStep,
+                             "x"/*captionOrNull*/
+                             );
+
+      // y mod
+      createTinyDial(xmodOff + xmodStep*1, cy,
+                     "ctl_y_amt",
+                     -1, 1, 0.0, ctl_y_amt,
+                     null/*captionOrNull*/
+                     );
+
+      pw <= createPortWidget(2, false/*bOutput*/,
+                             xmodOff + xmodStep*1,
+                             cy + ymodStep,
+                             "y"/*captionOrNull*/
+                             );
+
+      // log..lin..exp mod
+      createTinyDial(xmodOff + xmodStep*2, cy,
+                     "ctl_exp_amt",
+                     -1, 1, 0.0, ctl_exp_amt,
+                     null/*captionOrNull*/
+                     );
+
+      pw <= createPortWidget(3, false/*bOutput*/,
+                             xmodOff + xmodStep*2,
+                             cy + ymodStep,
+                             "c"/*captionOrNull*/
+                             );
+
+
+      cy += 32;
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             (RACK_MODULE_HEIGHT - 20),
+                             null/*captionOrNull*/
+                             );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "ctl_x_amt":
+            ctl_x_amt = _value;
+            break;
+
+         case "ctl_y_amt":
+            ctl_y_amt = _value;
+            break;
+
+         case "ctl_exp_amt":
+            ctl_exp_amt = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "ctl_x_amt":
+            return ctl_x_amt;
+
+         case "ctl_y_amt":
+            return ctl_y_amt;
+
+         case "ctl_exp_amt":
+            return ctl_exp_amt;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["x amt", "y amt", "exp amt"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            ctl_x_amt = FromNormalized(_value, -1, 1);
+            updateParamWidget("ctl_x_amt", ctl_x_amt);
+            break;
+
+         case 1:
+            ctl_y_amt = FromNormalized(_value, -1, 1);
+            updateParamWidget("ctl_y_amt", ctl_y_amt);
+            break;
+
+         case 2:
+            ctl_exp_amt = FromNormalized(_value, -1, 1);
+            updateParamWidget("ctl_exp_amt", ctl_exp_amt);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(ctl_x_amt, -1, 1);
+
+         case 1:
+            return ToNormalized(ctl_y_amt, -1, 1);
+
+         case 2:
+            return ToNormalized(ctl_exp_amt, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.f32 = ctl_x;
+      ofs.f32 = ctl_y;
+      ofs.f32 = ctl_exp;
+      ofs.f32 = ctl_x_amt;
+      ofs.f32 = ctl_y_amt;
+      ofs.f32 = ctl_exp_amt;
+      ofs.i8  = b_flip;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            ctl_x       = ifs.f32;
+            ctl_y       = ifs.f32;
+            ctl_exp     = ifs.f32;
+            ctl_x_amt   = ifs.f32;
+            ctl_y_amt   = ifs.f32;
+            ctl_exp_amt = ifs.f32;
+            b_flip      = ifs.b8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Bezier01::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(@(be) == @(ap))
+      {
+         ctl_x   = be.ctl_x;
+         ctl_y   = be.ctl_y;
+         ctl_exp = be.ctl_exp;
+         b_flip  = be.b_flip;
+
+         Global.PrintFast("ctl=("+ctl_x+";"+ctl_y+") log/lin/exp="+ctl_exp+" b_flip="+b_flip);
+         return true;
+      }
+
+      return Module::consumeAction(_ac);
+   }
+
+   public virtual tick() {
+
+      local float fIn  = inputs[0].getValue();
+
+      // [08Oct2024] allow negative input (e.g. LFO output)
+      local boolean bNeg = (fIn < 0.0f);
+      if(bNeg)
+         fIn = -fIn;
+
+      fIn = mathClampf(fIn, 0, 1);
+
+      local float ctlX = mathClampf(inputs[1].getValue() * ctl_x_amt + ctl_x, 0, 1);
+      local float ctlY = mathClampf(inputs[2].getValue() * ctl_y_amt + ctl_y, 0, 1);
+      local float fExp = inputs[3].getValue() * ctl_exp_amt + ctl_exp;
+      int ctlRes = Bezier01Edit.ctl_res;
+
+      float fCtlX = mathClampf(ctlRes * ctlX, 0, ctlRes-1);
+      float fCtlY = mathClampf(ctlRes * ctlY, 0, ctlRes-1);
+      int iCtlX = fCtlX;
+      int iCtlY = fCtlY;
+      float fracX = fCtlX - iCtlX;
+      float fracY = fCtlY - iCtlY;
+      PointerArray luts <= Bezier01Edit.luts;
+      FloatArray lutLB <= luts.get(iCtlY * ctlRes + iCtlX);
+      FloatArray lutRB <= luts.get(iCtlY * ctlRes + mathClampi(iCtlX+1, 0, ctlRes-1));
+      FloatArray lutRT <= luts.get(mathClampi(iCtlY+1, 0, ctlRes-1) * ctlRes + mathClampi(iCtlX+1, 0, ctlRes-1));
+      FloatArray lutLT <= luts.get(mathClampi(iCtlY+1, 0, ctlRes-1) * ctlRes + iCtlX);
+
+      float t =  (b_flip ? (1.0 - fIn) : fIn) * (Bezier01Edit.lut_sz-1);
+      float fLB = lutLB.winLinear(t);
+      float fRB = lutRB.winLinear(t);
+      float fRT = lutRT.winLinear(t);
+      float fLT = lutLT.winLinear(t);
+
+      float fOutXT = fLT + (fRT - fLT) * fracX;
+      float fOutXB = fLB + (fRB - fLB) * fracX;
+      float fOut = fOutXB + (fOutXT - fOutXB) * fracY;
+
+      // // FloatArray lut <= Bezier01Edit.GetLUT(ctl_x, ctl_y);
+      // // float fOut = lut.winLinear( (b_flip ? (1.0 - fIn) : fIn) * (Bezier01Edit.lut_sz-1));
+      fOut = mathLogLinExpf(fOut, ctl_exp + fExp * 7.0);
+
+      if(b_flip)
+         fOut = 1.0 - fOut;
+
+      if(bNeg)
+         out[0] = -fOut;
+      else
+         out[0] = fOut;
+   }
+
+}

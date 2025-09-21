@@ -1,0 +1,318 @@
+// ----
+// ---- file   : modcv_flip.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 16Apr2021
+// ---- changed: 07May2021, 21Feb2022
+// ----
+// ----
+// ----
+
+module MModularCVMod_Flip;
+
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_Flip : Module {
+   // t-flipflop  (in MODE_TOGGLE* in=signal, trig=clock)
+
+   define int MODE_MOMENTARY          = 0;
+   define int MODE_MOMENTARY_INV      = 1;
+   define int MODE_TOGGLE             = 2;
+   define int MODE_TOGGLE_INV         = 3;
+   define int MODE_TRIG_MOMENTARY     = 4;
+   define int MODE_TRIG_MOMENTARY_INV = 5;
+   define int MODE_TRIG_TOGGLE        = 6;
+   define int MODE_TRIG_TOGGLE_INV    = 7;
+   int mode;
+
+   protected TrigInput trig_in;
+   protected TrigInput trig_trig;
+   protected TrigInput trig_clock;
+
+   protected boolean toggle_state;
+   protected boolean b_bt;  // true=UI state changed
+
+   protected RoundButton *bt;
+
+
+   static StringArray mode_short_names =
+      ["mo",
+       "mi",
+       "to",
+       "ti",
+       "tmo",
+       "tmi",
+       "tto",
+       "tti",
+       ];
+
+   static StringArray mode_long_names =
+      ["mo\tMomentary",             //  0
+       "mi\tMomentary (inverted)",  //  1
+       "tog\tToggle",               //  2
+       "tin\tToggle (inverted)",    //  3
+       "tmo\tTrig Momentary (needs clock)",            //  4
+       "tmi\tTrig Momentary (inverted, needs clock)",  //  5
+       "tto\tTrig Toggle (needs clock)",               //  6
+       "tti\tTrig Toggle (inverted, needs clock)",     //  7
+       ];
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Flip"/*id*/,
+                 "flip"/*header_id*/,
+                 "Flip"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      addInput("in",   "in",   0.0, IO_GATE);
+      addInput("trig", "trig", 0.0, IO_GATE);
+      addInput("clk",  "clk",  0.0, IO_CLOCK);
+
+      addOutput("out", "Output", IO_GATE);
+   }
+
+   public virtual copyFrom(ModCV_Flip _o) {
+      mode = _o.mode;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 30;
+
+      createModeParamWidget(cx, cy,
+                            "mode",
+                            mode_short_names,
+                            mode_long_names,
+                            mode,
+                            "mode"/*captionOrNull*/
+                            );
+
+      // In
+      cy += 42;
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       "in"/*captionOrNull*/
+                       );
+
+      // Trig
+      cy += 34;
+      createPortWidget(1, false/*bOutput*/,
+                       8, cy,
+                       "flp"/*captionOrNull*/
+                       );
+      createPortWidget(2, false/*bOutput*/,
+                       22, cy,
+                       "clk"/*captionOrNull*/
+                       );
+
+
+      // Button
+      cy += 42;
+      boolean bToggle = (MODE_TOGGLE <= mode <= MODE_TOGGLE_INV) || (MODE_TRIG_TOGGLE <= mode <= MODE_TRIG_TOGGLE_INV);
+      bt <= createRoundButton(15, cy,
+                              null/*paramName*/,
+                              bToggle/*bToggle*/,
+                              bToggle ? toggle_state : false/*bPressed*/
+                              );
+
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+
+      setParamByName("mode", mode);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "mode":
+            mode = _value;
+            boolean bToggle = (MODE_TOGGLE <= mode <= MODE_TOGGLE_INV) || (MODE_TRIG_TOGGLE <= mode <= MODE_TRIG_TOGGLE_INV);
+            bt.setEnableToggle(bToggle);
+            bt.setToggleState(bToggle ? toggle_state : false);
+            bt.setEnableDelta(!bToggle);
+            b_bt = bToggle ? maybe : false;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "mode":
+            return mode;
+      }
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.i8  = mode;
+      ofs.i8 = toggle_state;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            mode = ifs.u8;
+            toggle_state = ifs.b8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Flip::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public =replay= virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(bt):
+            boolean bToggle = (MODE_TOGGLE <= mode <= MODE_TOGGLE_INV) || (MODE_TRIG_TOGGLE <= mode <= MODE_TRIG_TOGGLE_INV);
+            if(!bToggle)
+            {
+               if((Button.ACTION_PRESS   == acName) ||
+                  (Button.ACTION_RELEASE == acName) ||
+                  (Button.ACTION_CLICK   == acName)
+                  )
+               {
+                  b_bt = bt.isPressed();
+                  // trace "xxx b_bt="+b_bt;
+               }
+            }
+            else if(Button.ACTION_CLICK == acName)
+            {
+               b_bt = true;
+               toggle_state = bt.getToggleState();
+            }
+            return true;
+      }
+
+      return Module::consumeAction(_ac);
+   }
+
+   public virtual reset() {
+      trig_in.reset();
+      trig_trig.reset();
+      trig_clock.reset();
+      b_bt = false;
+   }
+
+   public virtual tick() {
+      local float fIn   = inputs[0].getValue();
+      local float fTrig = inputs[1].getValue();
+
+      local boolean bIn    = trig_in.process(fIn);
+      local boolean bTrig  = trig_trig.process(fTrig);
+      local boolean bClock = trig_clock.process(inputs[2].getValue());
+
+      switch(mode)
+      {
+         default:
+         case MODE_MOMENTARY:
+            out[0] = ((fTrig >= TRIG_ON) || b_bt) ^ (fIn >= TRIG_ON);
+            break;
+
+         case MODE_MOMENTARY_INV:
+            out[0] = ((fTrig >= TRIG_ON) || b_bt) ^ (fIn < TRIG_ON);
+            break;
+
+         case MODE_TOGGLE:
+            if(bTrig || b_bt)
+            {
+               if(false == b_bt)
+                  toggle_state = !toggle_state;
+               b_bt = false;
+               out[0] = toggle_state ^ (fIn >= TRIG_ON);
+            }
+            break;
+
+         case MODE_TOGGLE_INV:
+            if(bTrig || b_bt)
+            {
+               if(false == b_bt)
+                  toggle_state = !toggle_state;
+               b_bt = false;
+               out[0] = toggle_state ^ (fIn < TRIG_ON);
+            }
+            break;
+
+         case MODE_TRIG_MOMENTARY:
+            if(bClock)
+               out[0] = ((fTrig >= TRIG_ON) || b_bt) ^ bIn;
+            else
+               out[0] = 0.0f;
+            break;
+
+         case MODE_TRIG_MOMENTARY_INV:
+            if(bClock)
+               out[0] = ((fTrig >= TRIG_ON) || b_bt) ^ !bIn;
+            else
+               out[0] = 0.0f;
+            break;
+
+         case MODE_TRIG_TOGGLE:
+            if(bClock || b_bt)
+            {
+               if(bTrig || b_bt)
+               {
+                  if(false == b_bt)
+                     toggle_state = !toggle_state;
+                  b_bt = false;
+               }
+               out[0] = toggle_state ^ bIn;
+            }
+            else
+               out[0] = 0.0f;
+            break;
+
+         case MODE_TRIG_TOGGLE_INV:
+            if(bClock || b_bt)
+            {
+               if(bTrig || b_bt)
+               {
+                  if(false == b_bt)
+                     toggle_state = !toggle_state;
+                  b_bt = false;
+               }
+               out[0] = toggle_state ^ !bIn;
+            }
+            else
+               out[0] = 0.0f;
+            break;
+      }
+
+
+   }
+}

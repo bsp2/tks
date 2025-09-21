@@ -1,0 +1,206 @@
+// ----
+// ---- file   : modcv_gateoutput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 29Mar2021
+// ---- changed: 30Mar2021, 03Apr2021, 16Apr2021, 07May2021, 21Feb2022, 10Oct2024, 23Oct2024
+// ----          16Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_GateOutput;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_GateOutput : ModCV_Output {
+   boolean b_allow_gateon;
+   int     gateoff_countdown;  // ticks
+   float   duration_off;       // duration offset. -1..1 = -ppq..ppq ticks
+
+   public virtual init() {
+      Module::init();
+
+      initModule("gate_output"/*id*/,
+                 "g out"/*header_id*/,
+                 "Gate Output"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      duration_off = 0.0f;
+
+      b_allow_gateon = true;
+      gateoff_countdown = 0;
+
+      addInput("gate", "Gate", 0.0f, IO_GATE);
+      addInput("dur",  "Dur",  0.0f, IO_DUR);
+   }
+
+   public virtual copyFrom(ModCV_GateOutput _o) {
+      duration_off = _o.duration_off;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+      float stepY = 40;
+
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, true/*bOutput*/);
+
+      cx = 15;
+      cy = 56;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "gate"/*captionOrNull*/
+                             );
+
+      cy += stepY*1.25;
+      dl <= createTinyDial(cx, cy,
+                           "duration_off",
+                           -1.0, 1.0, 0.0, duration_off,
+                           "dur"
+                           );
+      dl.setToolTipCaption("Duration Offset (1.0=PPQ ticks)");
+      dl.setPresetOptions([0.125f, 0.25f,  0.5f,  1.0f ],
+                          ["1/32", "1/16", "1/8", "1/4"]
+                          );
+
+
+      cy += 24;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return ("duration_off" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "duration_off":
+            duration_off = _value;
+            int numTicks = int(_value * current_song.ppq);
+            float num16th = (_value * 4.0);
+            Global.Print("Param \"duration_off\" is "+_value+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "duration_off":
+            return duration_off;
+      }
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("Gate Output Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8  = port_index;
+      ofs.f32 = duration_off;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index   = ifs.u8;
+            duration_off = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_GateOutput::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tickOutput(MIDIPipeFrame _frOut) {
+      // Forward patch inputs to outputs
+      local float fGate = inputs[0].getValue();
+
+      if(!b_allow_gateon)
+      {
+         if(fGate < 0.2f)
+         {
+            // manual or auto gate off
+            if(!b_allow_gateon)
+            {
+               if(gateoff_countdown > 0)
+                  gateoff_countdown--;
+
+               if(0 == gateoff_countdown)
+               {
+                  parent_node.emitOutputTrig(_frOut, port_index, false);
+                  b_allow_gateon = true;
+               }
+            }
+         }
+         else
+         {
+            // auto gate off
+            if(!b_allow_gateon)
+            {
+               if(gateoff_countdown > 0)
+                  gateoff_countdown--;
+
+               if(0 == gateoff_countdown)
+               {
+                  parent_node.emitOutputTrig(_frOut, port_index, false);
+                  b_allow_gateon = true;
+               }
+            }
+         
+         }
+      }
+
+      if(b_allow_gateon && (fGate >= 0.8f))
+      {
+         // gate on
+         local float fDur = inputs[1].getValue() + duration_off;
+         if(fDur >= 0.0f)
+            gateoff_countdown = mathMaxi(1, fDur * current_song.ppq);  // auto gate off
+         else
+            gateoff_countdown = 0;  // gate input determines duration
+
+         if(!replay.b_cycle_mute_after_loop)
+            parent_node.emitOutputTrig(_frOut, port_index, true);
+
+         b_allow_gateon = false;
+      }
+
+   }
+}

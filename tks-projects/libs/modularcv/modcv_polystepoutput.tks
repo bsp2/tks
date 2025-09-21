@@ -1,0 +1,291 @@
+// ----
+// ---- file   : modcv_polystepoutput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 17Nov2024
+// ---- changed:
+// ----
+// ----
+// ----
+
+module MModularCVMod_PolyStepOutput;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_PolyStepOutput : ModCV_Output {
+   int poly_ch;     // 0=<track>, 1..16
+   int poly_pat;    // 0=<keep>, 1..128 (01A..31D)
+   int poly_track;  // 0=<keep>, 1..16
+   int num_steps;   // 1..64
+
+   boolean b_allow_trig;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("polystep_output"/*id*/,
+                 "ps out"/*header_id*/,
+                 "PolyStep Output\n\n (note) 'PolyStep' allows arbitrary sequencer steps to be played out-of-sequence\n (note) the replay is controlled via (internal) RPN messages sent to the target node\n (note) the target node's (e.g. a Tracker) automation port has to match the module's output port\n (note) the target node should also be set to Ext.Clk mode (so it does not play on its own)"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      poly_ch    = 0;  // <track>
+      poly_pat   = 0;  // <keep>
+      poly_track = 0;  // <keep>
+      num_steps  = 16;
+
+      addInput("trig", "Trig", 0.0f, IO_GATE);
+      addInput("step", "Step", 0.0f, IO_LEVEL);
+
+      b_allow_trig = true;
+   }
+
+   public virtual copyFrom(ModCV_PolyStepOutput _o) {
+      port_index = _o.port_index;
+      poly_ch    = _o.poly_ch;
+      poly_pat   = _o.poly_pat;
+      poly_track = _o.poly_track;
+      num_steps  = _o.num_steps;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx;
+      float cy;
+      float stepY = 33;
+      local StringArray aOpt;
+      local StringArray aOptLong;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+      ui::ComboBox *cm;
+      ui::Label *lb;
+
+      // Output Port
+      cx = 6;
+      cy = 20;
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, true/*bOutput*/);
+      port_select_widget.setToolTipCaption("I/O port that target node (e.g. Tracker) listens to (autodev A/B)");
+
+      // Voice / Channel
+      cx = 15;
+      cy = 53;
+      int chNr = 1;
+      aOpt.add("<t>");
+      aOptLong.add("<track>");
+      loop(16)
+      {
+         aOpt.add(String(chNr));
+         aOptLong.add("Channel "+String(chNr));
+         chNr++;
+      }
+      cm <= createModeParamWidget(cx-0.5, cy,
+                                  "poly_ch",
+                                  aOpt,
+                                  aOptLong,
+                                  poly_ch,
+                                  "ch"/*captionOrNull*/
+                                  );
+      cm.setToolTipCaption("ch\n\n (note) polyphonic index (when triggering multiple steps)\n (note) <track>: poly channel index equals track index");
+
+      // Pattern (base) selection
+      cy += stepY;
+      aOpt.join(["<k>"], Node.patnr_options_short);
+      aOptLong.join(["<keep>"], Node.patnr_options);
+      cm <= createModeParamWidget(cx-0.5, cy,
+                                  "poly_pat",
+                                  aOpt,
+                                  aOptLong,
+                                  poly_pat,
+                                  "pat"/*captionOrNull*/
+                                  );
+      cm.setToolTipCaption("pat\n\n (note) <keep>: use currently selected target node pattern (don't send RPN_COMMON_POLY_PAT_<voice>)");
+
+
+      // Track selection
+      cy += stepY;
+      int trackNr = 1;
+      aOpt.empty();
+      aOptLong.empty();
+      aOpt.add("<k>");
+      aOptLong.add("<keep>");
+      loop(16)
+      {
+         aOpt.add(String(trackNr));
+         aOptLong.add("Track "+String(trackNr));
+         trackNr++;
+      }
+      cm <= createModeParamWidget(cx-0.5, cy,
+                                  "poly_track",
+                                  aOpt,
+                                  aOptLong,
+                                  poly_track,
+                                  "track"/*captionOrNull*/
+                                  );
+      cm.setToolTipCaption("track\n\n (note) <keep>: use currently selected target node track (don't send RPN_COMMON_POLY_TRACK_<voice>)");
+
+      // Step
+      stepY = 29;
+      cy += stepY + 4;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx-7,
+                             cy,
+                             "step"/*captionOrNull*/
+                             );
+      lb <= pw.lb;
+      lb.setPositionXScaled(lb.getPositionXScaled() + 7.0f);
+
+      dl <= createTinyDial(cx + 7, cy+1,
+                           "num_steps",
+                           1.0, 64.0, 16.0, num_steps,
+                           null/*captionOrNull*/
+                           );
+      dl.setToolTipCaption("Num Steps");
+      dl.setPrecision(0);
+      dl.setPresetOptions([1.0f, 4.0f, 5.0f, 6.0f, 8.0f, 12.0f, 16.0f, 24.0f, 32.0f, 64.0f],
+                          ["1",  "4",  "5",  "6", "8",   "12",  "16",  "24",  "32",  "64" ]
+                          );
+
+
+      // Trig
+      cy += stepY;
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "trig"/*captionOrNull*/
+                             );
+
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      // return ("duration_off" != _name);
+      return true;
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "poly_ch":
+            poly_ch = _value;
+            break;
+
+         case "poly_pat":
+            poly_pat = _value;
+            break;
+
+         case "poly_track":
+            poly_track = _value;
+            break;
+
+         case "num_steps":
+            num_steps = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "poly_ch":
+            return poly_ch;
+
+         case "poly_pat":
+            return poly_pat;
+
+         case "poly_track":
+            return poly_track;
+
+         case "num_steps":
+            return num_steps;
+      }
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("PolyStep Output Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8 = port_index;
+      ofs.i8 = poly_ch;
+      ofs.i8 = poly_pat;
+      ofs.i8 = poly_track;
+      ofs.i8 = num_steps;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index = ifs.u8;
+            poly_ch    = ifs.u8;
+            poly_pat   = ifs.u8;
+            poly_track = ifs.u8;
+            num_steps  = ifs.u8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_PolyStepOutput::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      b_allow_trig = true;
+   }
+
+   public virtual tickOutput(MIDIPipeFrame _frOut) {
+
+      local float fTrig = inputs[0].getValue();
+      local float fStep = inputs[1].getValue();
+
+      CtlIOPort ioPort <= parent_node.getPortByIndex(port_index);
+
+      b_allow_trig |= (fTrig < TRIG_OFF);
+
+      if(b_allow_trig && fTrig >= TRIG_ON)
+      {
+         // trace "xxx TRIG_ON";
+
+         if((null != ioPort) && ioPort.b_enable)
+         {
+            int voiceIdx = (poly_ch > 0) ? (poly_ch - 1) : (poly_track > 0) ? (poly_track - 1) : 0;
+            int stepIdx = mathWrapi(fStep * num_steps, 0, num_steps);
+
+            // trace "xxx voiceIdx="+voiceIdx+" stepIdx="+stepIdx+" pat="+poly_pat+" track="+poly_track;
+
+            if(poly_pat > 0)
+               _frOut.rpn(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, Node.RPN_COMMON_POLY_PAT_1+voiceIdx, poly_pat - 1);
+
+            if(poly_track > 0)
+               _frOut.rpn(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, Node.RPN_COMMON_POLY_TRACK_1+voiceIdx, poly_track - 1);
+
+            _frOut.rpn(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, Node.RPN_COMMON_POLY_STEP_1+voiceIdx, stepIdx);
+         }
+
+         // Wait for gate-off
+         b_allow_trig = false;
+      }
+   }
+
+}

@@ -1,0 +1,316 @@
+// ----
+// ---- file   : modcv_serial.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2022 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 14Apr2021
+// ---- changed: 16Apr2021, 07May2021, 28Dec2021, 21Feb2022
+// ----
+// ----
+// ----
+
+module MModularCVMod_Serial;
+
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_Serial : Module {
+   define int MAX_LEN = 32;
+   float seed;
+   int   len;
+   int   extra;  // extra variation, added to 'len' when creating random numbers
+
+   protected boolean b_allow_trig;
+   protected int rand_seed_1;
+   protected int rand_seed_2;
+
+   protected FloatArray rand_values;
+   protected int read_idx;
+
+   protected TrigInput trig_reset;
+   protected TrigInput trig_next;
+   protected TrigInput trig_trig;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("serial"/*id*/,
+                 "serial"/*header_id*/,
+                 "Serial -- non repeating random number generator"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      seed   = 0.0f;
+      len    = 16;
+      extra  = 0;
+
+      b_allow_trig = true;
+
+      addInput("reset", "reset", 0.0, IO_GATE);
+      addInput("trig",  "trig",  0.0, IO_GATE);
+      addInput("next",  "next",  0.0, IO_GATE);
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_Serial _o) {
+      seed  = _o.seed;
+      len   = _o.len;
+      extra = _o.extra;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 30;
+      float stepY = 26;
+      float portOffY = 16;
+
+      // Seed
+      createSmallDial(cx, cy,
+                      "seed",
+                      -1.0, 1.0, 0.0, seed,
+                      "seed"
+                      );
+
+      // Length
+      cy += 32;
+      createSmallDial(cx, cy,
+                      "len",
+                      1.0, 32.0, 16.0, len,
+                      "len"
+                      );
+
+      // Extra
+      cy += 32;
+      createSmallDial(cx, cy,
+                      "extra",
+                      0.0, 1024.0, 0.0, extra,
+                      "extra"
+                      );
+
+      // Next
+      cy += 34;
+      createPortWidget(2, false/*bOutput*/,
+                       10, cy,
+                       "n"/*captionOrNull*/
+                       );
+
+      // Reset
+      createPortWidget(0, false/*bOutput*/,
+                       22, cy,
+                       "r"/*captionOrNull*/
+                       );
+
+      // Trig
+      cy += 28;
+      createPortWidget(1, false/*bOutput*/,
+                       cx, cy,
+                       "trig"/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "seed":
+            seed = _value;
+            reset();
+            break;
+
+         case "len":
+            len = _value;
+            reset();
+            break;
+
+         case "extra":
+            extra = _value;
+            reset();
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "seed":
+            return seed;
+
+         case "len":
+            return len;
+
+         case "extra":
+            return extra;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["seed", "len", "extra"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            seed = FromNormalized(_value, -1, 1);
+            updateParamWidget("seed", seed);
+            reset();
+            break;
+
+         case 1:
+            len = FromNormalized(_value, 1, 32);
+            updateParamWidget("len", len);
+            reset();
+            break;
+
+         case 2:
+            extra = FromNormalized(_value, 0, 1024);
+            updateParamWidget("extra", extra);
+            reset();
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(seed, -1, 1);
+
+         case 1:
+            return ToNormalized(len, 1, 32);
+
+         case 2:
+            return ToNormalized(extra, 0, 1024);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.f32 = seed;
+      ofs.i8  = len;
+      ofs.i8  = extra;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            seed  = ifs.f32;
+            len   = ifs.u8;
+            extra = ifs.u8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Serial::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected method calcRnd() : float {
+      int fb1 = rand_seed_1 & 1;
+      rand_seed_1 >>= 1;
+      if(0 != fb1)
+         rand_seed_1 ^= 0xB4BCD35C;
+
+      int fb2 = rand_seed_2 & 1;
+      rand_seed_2 >>= 1;
+      if(0 != fb2)
+         rand_seed_2 ^= 0x7A5BC2E3;
+
+      int r16 = (rand_seed_1 ^ rand_seed_2) & 0xFFFF;
+      float r = r16 / float(0xFFFF);  // => 0..1
+      float step = 1.0 / (len + extra);
+      // trace "xxx step="+step+" r="+r;
+      r = int((r / step)) * step;
+      return r;
+   }
+
+   protected method calcRandValues(float _notFirst) {
+      rand_values.empty();
+      float prev = _notFirst;
+      loop(len)
+      {
+         float r;
+         int iter = 0;
+         do
+         {
+            r = calcRnd();
+            if(++iter > 1000)
+               break; // paranoia
+         }
+         while((r == prev) || rand_values.contains(r));
+         rand_values.add(r);
+         prev = r;
+      }
+      // trace "xxx new rand_values="+rand_values;
+   }
+
+   public virtual reset() {
+      b_allow_trig = true;
+
+      rand_seed_1 = int(seed * 0x7FFFFFF) ^ 0xAAAAaaaa;// ^ 0xd89dcfbdu;
+      rand_seed_2 = int(-seed * 0x7FFFFFF) ^ 0x55555555;// ^ 0x3fb8deacu;
+      loop(abs(int(seed*32))&31)
+         calcRnd();
+
+      calcRandValues(-1.0);
+      read_idx = 0;
+
+      trig_reset.reset();
+      trig_trig.reset();
+      trig_next.reset();
+   }
+
+   public virtual tick() {
+      if(trig_next.process(inputs[2].getValue()))
+      {
+         calcRandValues(rand_values.get(read_idx - 1));
+      }
+
+      if(trig_reset.process(inputs[0].getValue()))
+      {
+         read_idx = 0;
+      }
+
+      if(trig_trig.process(inputs[1].getValue()))
+      {
+         if(read_idx == len)
+         {
+            // // calcRandValues(rand_values.get(len-1));
+            read_idx = 0;
+         }
+
+         out[0] = rand_values.get(read_idx++);
+      }
+
+   }
+
+}

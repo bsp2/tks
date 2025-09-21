@@ -1,0 +1,914 @@
+// ----
+// ---- file   : modcv_trigseq16.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 02Apr2021
+// ---- changed: 03Apr2021, 12Apr2021, 13Apr2021, 16Apr2021, 07May2021, 15May2021, 09Aug2021
+// ----          28Dec2021, 21Feb2022, 08Oct2023, 08Oct2024, 12Oct2024, 20Oct2024, 23Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_TrigSeq16;
+
+use namespace ui;
+namespace modularcv;
+
+
+// <class.png>
+class TrigSeq16_Pattern {
+
+   // 'clk' input phase-scrub modes
+   define int SCRUB_NONE     = 0;
+   define int SCRUB_WRAP     = 1;
+   define int SCRUB_FOLD     = 2;
+   define int SCRUB_FOLD_NR  = 3;  // don't repeat last step
+   define int SCRUB_CLAMP    = 4;  // scale clk CV 0..1 to 0..numSteps   (e.g. num=4, cv=0.5 => step=2)
+   define int SCRUB_CLAMP_PK = 5;  // scale clk CV 0..1 to 0..numSteps-1 (e.g. num=4, cv=0.5 => step=1.5)
+
+   static StringArray scrub_mode_names = [
+      "-",
+      "Wrap",
+      "Fold",
+      "Fold (no repeat)",
+      "Clamp",
+      "Clamp (peak)",
+                                                   ];
+
+   int pat_idx;
+
+   int      num_steps;
+   int      step_offset;
+   IntArray steps;
+   byte     scrub_mode;
+
+
+   public method init(int _patIdx) {
+      pat_idx = _patIdx;
+
+      num_steps   = 16;
+      step_offset = 0;
+      scrub_mode  = SCRUB_NONE;
+
+      steps.allocAndFill(16, false);
+   }
+
+   public method copyFrom(TrigSeq16_Pattern _o) {
+      num_steps   = _o.num_steps;
+      step_offset = _o.step_offset;
+      steps       = _o.steps;
+      scrub_mode  = _o.scrub_mode;
+   }
+
+   public method clear() {
+      steps.fill(false);
+   }
+
+   public method randomize() {
+      int stepIdx = 0;
+      loop(16)
+         steps[stepIdx++] = rand(2);
+   }
+
+   public =replay= method setScrubMode(int _mode) {
+      scrub_mode = _mode;
+   }
+
+   public method calcPhaseStepOffset(float _fOff, int _numSteps) : int {
+      switch(scrub_mode)
+      {
+         default:
+         case SCRUB_WRAP:
+            return mathWrapi(floor(_fOff * _numSteps), 0, _numSteps);
+
+         case SCRUB_FOLD:
+            return mathClampi(mathFoldi(floor(_fOff * _numSteps), 0, _numSteps), 0, _numSteps-1);
+
+         case SCRUB_FOLD_NR:
+            return mathClampi(mathFoldi(floor(_fOff * (_numSteps - 1)), 0, _numSteps), 0, _numSteps-1);
+
+         case SCRUB_CLAMP:
+            return mathClampi(floor(_fOff * _numSteps), 0, (_numSteps - 1));
+
+         case SCRUB_CLAMP_PK:
+            return mathClampi(floor(_fOff * (_numSteps-1)), 0, (_numSteps - 1));
+      }
+   }
+
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 2;
+
+      // params
+      ofs.i8 = num_steps;
+      ofs.i8 = step_offset;
+      ofs.i8 = scrub_mode;  // v2+
+
+      int stepIdx = 0;
+      loop(16)
+         ofs.i8 = steps[stepIdx++];
+   }
+
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // params
+         num_steps   = ifs.u8;
+         step_offset = ifs.s8;
+
+         if(ver >= 2)
+         {
+            scrub_mode = ifs.u8;  // v2+
+         }
+
+         int stepIdx = 0;
+         loop(16)
+            steps[stepIdx++] = ifs.s8;
+
+         return true;
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class ModCV_TrigSeq16 : Module {
+   define int NUM_PATTERNS = 8;
+
+   int edit_pat_idx;
+   boolean b_force_edit_pat;
+   int step_idx;
+   int step_idx_last_played;
+   boolean b_oneshot;
+   boolean b_playing;  // oneshot mode (true after rising edge on reset input)
+
+   TrigSeq16_Pattern *[] patterns;
+
+   RoundButton *bt_force_edit_pat;
+   PortWidget *pw_clk;
+
+   RoundButton *[] step_buttons;
+   LED *[] step_leds;
+
+   protected TrigInput trig_reset;
+   protected TrigInput trig_clock;
+
+   protected FloatParam *fp_off;
+   protected FloatParam *fp_len;
+
+   static TrigSeq16_Pattern *pat_clipboard;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("TrigSeq16"/*id*/,
+                 "trig seq 16"/*header_id*/,
+                 "Trig Seq 16\n\n - Off input is relative to default pattern offset\n - Len input overrides the default pattern len when connected\n - Pat input overrides the edit pattern during replay when connected"/*tooltip*/
+                 );
+      setModuleSize(15, 3);
+
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         TrigSeq16_Pattern pat <= new TrigSeq16_Pattern;
+         pat.init(patIdx++);
+         patterns.add(#(deref pat));
+      }
+
+      edit_pat_idx = 0;
+      step_idx = 0;
+
+      addInput("reset",  "Reset",   0.0, IO_GATE);   // 0
+      addInput("clock",  "Clock",   0.0, IO_CLOCK);  // 1
+      addInput("len",    "Len\n\n (note) Overrides the default pattern len when connected", 0.0, IO_SCALE);  // 2
+      addInput("off",    "Offset",  0.0, IO_OFF);    // 3
+      addInput("pat",    "Pattern (offset)\n\n (note) Overrides the current edit pattern nr during replay when connected", 0.0, IO_OFF);  // 4
+
+      addOutput("out", "Output", IO_GATE);
+   }
+
+   public virtual copyFrom(ModCV_TrigSeq16 _o) {
+
+      b_force_edit_pat = _o.b_force_edit_pat;
+      b_oneshot = _o.b_oneshot;
+
+      TrigSeq16_Pattern *pat;
+      TrigSeq16_Pattern *patO;
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         pat <= patterns.get(patIdx);
+         patO <= _o.patterns.get(patIdx);
+         pat.copyFrom(patO);
+         patIdx++;
+      }
+   }
+
+   public method getEditPattern() : TrigSeq16_Pattern {
+      return patterns.get(edit_pat_idx);
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float shiftX = 2;
+      float cx = 9 + shiftX;
+      float cy = 48;
+      ComboBox *cm;
+      FloatParam *fp;
+      RoundButton *bt;
+
+      // b_force_edit_pat
+      bt_force_edit_pat <= createCheckButton(cx-4+22-14, cy-28+10-1,
+                                             "b_force_edit_pat",
+                                             b_force_edit_pat
+                                             );
+      bt_force_edit_pat.setToolTipCaption("When checked, force edit pattern replay (patnr+offset+len).\n\nWhen unchecked, \"pat\" input controls replay pattern selection, \"len\" overrides default len, and \"off\" is added to default pattern offset");
+
+
+      // edit_pat_idx
+      local StringArray patNrOpt;
+      int patNr = 1;
+      loop(NUM_PATTERNS)
+         patNrOpt.add(String(patNr++));
+      cm <= createModeParamWidget(cx-4+22-10+22, cy-28+10,
+                                  "edit_pat_idx",
+                                  patNrOpt,
+                                  null/*patNrOptLong*/,
+                                  edit_pat_idx,
+                                  null/*captionOrNull*/
+                                  );
+      cm.setRequiredSize2fScaled(20, 21);
+      cm.setToolTipCaption("Current edit pattern index.\n\n (note) also the current play pattern when the \"pat\" input is not connected, or the \"force\" toggle button is engaged");
+
+      // offset
+      fp_off <= createIntParamWidget(cx-4+22+22, cy-25,
+                                     "step_offset",
+                                     -16/*min*/,
+                                     16/*max*/,
+                                     0/*reset*/,
+                                     0/*step_offset*/,
+                                     null/*captionOrNull*/
+                                     );
+      // trace "xxx fp_off.size="+fp_off.getSizeString(); // =>20x21
+
+      // #steps
+      fp_len <= createIntParamWidget(cx-4+22+22+22, cy-25,
+                                     "num_steps",
+                                     1/*min*/,
+                                     16/*max*/,
+                                     16/*reset*/,
+                                     16/*num_steps*/,
+                                     null/*captionOrNull*/
+                                     );
+
+      // Clock
+      cx = 14+shiftX;
+      pw_clk <= createPortWidget(1, false/*bOutput*/,
+                                 cx, cy,
+                                 "clk"/*captionOrNull*/
+                                 );
+
+      // Play Pattern (0..1 => pat#1..8)
+      cx += 22;
+      createPortWidget(4, false/*bOutput*/,
+                       cx, cy,
+                       "pat"/*captionOrNull*/
+                       );
+
+      // off
+      cx += 22;
+      createPortWidget(3, false/*bOutput*/,
+                       cx, cy,
+                       "off"/*captionOrNull*/
+                       );
+
+
+      // len
+      cx += 22;
+      createPortWidget(2, false/*bOutput*/,
+                       cx, cy,
+                       "len"/*captionOrNull*/
+                       );
+
+      // Reset
+      cx += 22;
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       "rst"/*captionOrNull*/
+                       );
+
+      // Output
+      // cx += 22;
+      createPortWidget(0, true/*bOutput*/,
+                       cx, cy-19,
+                       null/*captionOrNull*/
+                       );
+
+
+      int stepIdx = 0;
+      cx = 10+shiftX+5;
+      cy = 94-6;
+      float stepXI = 24 + 4;
+      float stepYI = 30;
+
+      step_leds.alloc(16);
+      step_leds.useAll();
+      float ledOffY = 13;
+
+      step_buttons.alloc(16);
+      step_buttons.useAll();
+      loop(4)
+      {
+         // 1
+         bt <= createRoundButton(cx + (stepIdx * stepXI), cy,
+                                 "step_"+(stepIdx+1),
+                                 true/*bToggle*/,
+                                 false/*bPressed*/
+                                 );
+         step_buttons[stepIdx] = bt;
+         step_leds[stepIdx] = createLED(cx + (stepIdx * stepXI), cy+ledOffY);
+
+         // 2
+         bt <= createRoundButton(cx + (stepIdx * stepXI), cy + stepYI,
+                                 "step_"+(4+stepIdx+1),
+                                 true/*bToggle*/,
+                                 false/*bPressed*/
+                                 );
+         step_buttons[4 + stepIdx] = bt;
+         step_leds[4 + stepIdx] = createLED(cx + (stepIdx * stepXI), cy+stepYI+ledOffY);
+
+         // 3
+         bt <= createRoundButton(cx + (stepIdx * stepXI), cy + (stepYI *2),
+                                 "step_"+(8+stepIdx+1),
+                                 true/*bToggle*/,
+                                 false/*bPressed*/
+                                 );
+         step_buttons[8 + stepIdx] = bt;
+         step_leds[8 + stepIdx] = createLED(cx + (stepIdx * stepXI), cy+(stepYI*2)+ledOffY);
+
+         // 4
+         bt <= createRoundButton(cx + (stepIdx * stepXI), cy + (stepYI * 3),
+                                 "step_"+(12+stepIdx+1),
+                                 true/*bToggle*/,
+                                 false/*bPressed*/
+                                 );
+         step_buttons[12 + stepIdx] = bt;
+         step_leds[12 + stepIdx] = createLED(cx + (stepIdx * stepXI), cy+(stepYI*3)+ledOffY);
+
+         stepIdx++;
+      }
+
+      updatePatWidgets();
+   }
+
+   protected method updateClkPhaseCaption() {
+      TrigSeq16_Pattern pat <= getEditPattern();
+      if(null != pw_clk)
+         pw_clk.updateCaption(TrigSeq16_Pattern.SCRUB_NONE != pat.scrub_mode ? "pha" : "clk");
+   }
+
+   protected method updatePatWidgets() {
+      TrigSeq16_Pattern pat <= getEditPattern();
+      IntArray steps <= pat.steps;
+      RoundButton *bt;
+      int stepIdx = 0;
+      loop(16)
+      {
+         bt <= step_buttons[stepIdx];
+         bt.setSelected(steps.get(stepIdx));
+         stepIdx++;
+      }
+
+      fp_off.setValue(pat.step_offset);
+      fp_len.setValue(pat.num_steps);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      TrigSeq16_Pattern pat <= getEditPattern();
+
+      switch(_name)
+      {
+         default:
+            if(_name <= "step_")
+            {
+               int stepIdx = _name.replace("step_", "");
+               IntArray steps <= pat.steps;
+               steps[stepIdx - 1] = _value;
+            }
+            break;
+
+         case "num_steps":
+            pat.num_steps = _value;
+            break;
+
+         case "step_offset":
+            pat.step_offset = _value;
+            break;
+
+         case "edit_pat_idx":
+            edit_pat_idx = _value;
+            updatePatWidgets();
+            resetStepLEDs();
+            b_force_edit_pat = true;
+            bt_force_edit_pat.setSelected(true);
+            break;
+
+         case "b_force_edit_pat":
+            b_force_edit_pat = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      TrigSeq16_Pattern pat <= getEditPattern();
+
+      switch(_name)
+      {
+         default:
+            if(_name <= "step_")
+            {
+               int stepIdx = _name.replace("step_", "");
+               IntArray steps <= pat.steps;
+               return steps[stepIdx - 1];
+            }
+            break;
+
+         case "num_steps":
+            return pat.num_steps;
+
+         case "step_offset":
+            return pat.step_offset;
+
+         case "edit_pat_idx":
+            return edit_pat_idx;
+
+         case "b_force_edit_pat":
+            return b_force_edit_pat;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["step 1",  "step 2",  "step 3",  "step 4",
+              "step 5",  "step 6",  "step 7",  "step 8",
+              "step 9",  "step 10", "step 11", "step 12",
+              "step 13", "step 14", "step 15", "step 16",
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      TrigSeq16_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      switch(_paramIdx)
+      {
+         case 0:
+         case 1:
+         case 2:
+         case 3:
+         case 4:
+         case 5:
+         case 6:
+         case 7:
+         case 8:
+         case 9:
+         case 10:
+         case 11:
+         case 12:
+         case 13:
+         case 14:
+         case 15:
+            steps[_paramIdx] = (FromNormalized(_value, 0, 1) >= 0.5f);
+            updateParamWidget("step_"+(_paramIdx+1), steps[_paramIdx]);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      TrigSeq16_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      switch(_paramIdx)
+      {
+         case 0:
+         case 1:
+         case 2:
+         case 3:
+         case 4:
+         case 5:
+         case 6:
+         case 7:
+         case 8:
+         case 9:
+         case 10:
+         case 11:
+         case 12:
+         case 13:
+         case 14:
+         case 15:
+            //return ToNormalized(steps[_paramIdx], 0, 1);
+            return steps[_paramIdx] ? (8192*1.5) : (8192*0.5);  // don't move to extreme positions
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 5;
+
+      // Patterns (v3+)
+      TrigSeq16_Pattern *pat;
+      foreach pat in patterns
+      {
+         pat.saveState(ofs);
+      }
+
+      // Current edit pattern (v3+)
+      ofs.i8 = edit_pat_idx;
+
+      // Force edit pattern (v4+)
+      ofs.i8 = b_force_edit_pat;
+
+      // Oneshot mode (v5+)
+      ofs.i8 = b_oneshot;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            TrigSeq16_Pattern *pat;
+
+            if(ver < 3)
+            {
+               pat <= patterns.get(0);
+
+               // params
+               pat.num_steps = ifs.u8;
+
+               if(ver >= 2)
+                  pat.step_offset = ifs.s8;  // v2+
+
+               int stepIdx = 0;
+               IntArray steps <= pat.steps;
+               loop(16)
+                  steps[stepIdx++] = ifs.s8;
+            }
+            else
+            {
+               // v3+
+               int patNr = 1;
+               foreach pat in patterns
+               {
+                  if(!pat.loadState(ifs))
+                  {
+                     trace "[---] ModCV_TrigSeq16::loadState: failed to load pattern "+patNr+"/"+NUM_PATTERNS;
+                     return false;
+                  }
+                  patNr++;
+               }
+
+               // Current edit pattern (v3+)
+               edit_pat_idx = ifs.u8;
+
+               if(ver >= 4)
+               {
+                  // Force edit pattern (v4+)
+                  b_force_edit_pat = ifs.b8;
+               }
+
+               if(ver >= 5)
+               {
+                  // Oneshot Mode (v5+)
+                  b_oneshot = ifs.b8;
+               }
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_TrigSeq16::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected method resetStepLEDs() {
+      LED *led;
+      foreach led in step_leds
+         led.setConstValue(0.0f);
+   }
+
+   public virtual reset() {
+      step_idx = 0;
+      step_idx_last_played = -1;
+      b_playing = !b_oneshot;
+
+      resetStepLEDs();
+
+      trig_reset.reset();
+      trig_clock.reset();
+   }
+
+   // <method.png>
+   protected virtual addExtraContextMenuItems(PopupMenu pm) {
+      PopupMenuButton *pmb;
+      TrigSeq16_Pattern pat <= getEditPattern();
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy to Clipboard", "copy");
+      pmb.setAccelerators("c", "");
+
+      pmb <= pm.addDefaultButton("Paste from Clipboard", "paste");
+      pmb.setAccelerators("v", "");
+      pmb.setActive(null != pat_clipboard);
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Clear", "clear");
+      pmb.setAccelerators("BACKSPACE", "");
+
+      pmb <= pm.addDefaultButton("Randomize", "rand");
+      pmb.setAccelerators("r", "");
+
+      pm.addSeparator();
+      PopupMenu spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Clock-Phase scrub mode", deref spm);
+      spm.addRadioButton("-",                (TrigSeq16_Pattern.SCRUB_NONE     == pat.scrub_mode), "scrub_none");
+      spm.addRadioButton("Wrap",             (TrigSeq16_Pattern.SCRUB_WRAP     == pat.scrub_mode), "scrub_wrap");
+      spm.addRadioButton("Fold",             (TrigSeq16_Pattern.SCRUB_FOLD     == pat.scrub_mode), "scrub_fold");
+      spm.addRadioButton("Fold (no repeat)", (TrigSeq16_Pattern.SCRUB_FOLD_NR  == pat.scrub_mode), "scrub_fold_nr");
+      spm.addRadioButton("Clamp",            (TrigSeq16_Pattern.SCRUB_CLAMP    == pat.scrub_mode), "scrub_clamp");
+      spm.addRadioButton("Clamp (peak)",     (TrigSeq16_Pattern.SCRUB_CLAMP_PK == pat.scrub_mode), "scrub_clamp_pk");
+
+      pm.addSeparator();
+      pmb <= pm.addCheckButton("Oneshot Mode", b_oneshot, "oneshot");
+      pmb.setToolTipCaption("When enabled, stop replay after last step\n\n (note) use \'rst\' input to start replay\n\n (note) ignored in scrub-mode");
+   }
+
+   // <method.png>
+   protected method handlePatCopy() {
+      if(null == pat_clipboard)
+      {
+         pat_clipboard <= new TrigSeq16_Pattern;
+         pat_clipboard.init(0);
+      }
+      pat_clipboard.copyFrom(getEditPattern());
+      Global.Print("Copy TrigSeq16 pattern to clipboard");
+   }
+
+   // <method.png>
+   protected method handlePatPaste() {
+      if(null != pat_clipboard)
+      {
+         TrigSeq16_Pattern pat <= getEditPattern();
+         pat.copyFrom(pat_clipboard);
+         updatePatWidgets();
+         Global.Print("Paste TrigSeq16 pattern from clipboard");
+         updateParentEditorBidirectionalControls();
+      }
+   }
+
+   // <method.png>
+   protected method handlePatClear() {
+      TrigSeq16_Pattern pat <= getEditPattern();
+      pat.clear();
+      updatePatWidgets();
+      Global.Print("Clear TrigSeq16 pattern");
+      updateParentEditorBidirectionalControls();
+   }
+
+   // <method.png>
+   protected method handlePatRand() {
+      TrigSeq16_Pattern pat <= getEditPattern();
+      pat.randomize();
+      updatePatWidgets();
+      Global.Print("Randomize TrigSeq16 pattern");
+      updateParentEditorBidirectionalControls();
+   }
+
+   // <method.png>
+   protected =replay= method handleToggleOneShot() {
+      b_oneshot = !b_oneshot;
+      Global.Print("Oneshot Mode is "+Utils.GetEnableString(b_oneshot));
+   }
+
+   // <method.png>
+   protected virtual handleExtraContextMenuItem(String _id) : boolean {
+      TrigSeq16_Pattern pat <= getEditPattern();
+
+      switch(_id)
+      {
+         case "copy":
+            handlePatCopy();
+            return true;
+
+         case "paste":
+            handlePatPaste();
+            return true;
+
+         case "clear":
+            handlePatClear();
+            return true;
+
+         case "rand":
+            handlePatRand();
+            return true;
+
+         case "scrub_none":
+            pat.setScrubMode(TrigSeq16_Pattern.SCRUB_NONE);
+            Global.Print("Clock-phase scrub mode is \""+(TrigSeq16_Pattern.scrub_mode_names.get(pat.scrub_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "scrub_wrap":
+            pat.setScrubMode(TrigSeq16_Pattern.SCRUB_WRAP);
+            Global.Print("Clock-phase scrub mode is \""+(TrigSeq16_Pattern.scrub_mode_names.get(pat.scrub_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "scrub_fold":
+            pat.setScrubMode(TrigSeq16_Pattern.SCRUB_FOLD);
+            Global.Print("Clock-phase scrub mode is \""+(TrigSeq16_Pattern.scrub_mode_names.get(pat.scrub_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "scrub_fold_nr":
+            pat.setScrubMode(TrigSeq16_Pattern.SCRUB_FOLD_NR);
+            Global.Print("Clock-phase scrub mode is \""+(TrigSeq16_Pattern.scrub_mode_names.get(pat.scrub_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "scrub_clamp":
+            pat.setScrubMode(TrigSeq16_Pattern.SCRUB_CLAMP);
+            Global.Print("Clock-phase scrub mode is \""+(TrigSeq16_Pattern.scrub_mode_names.get(pat.scrub_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "scrub_clamp_pk":
+            pat.setScrubMode(TrigSeq16_Pattern.SCRUB_CLAMP_PK);
+            Global.Print("Clock-phase scrub mode is \""+(TrigSeq16_Pattern.scrub_mode_names.get(pat.scrub_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "oneshot":
+            handleToggleOneShot();
+            return true;
+      }
+   }
+
+   public virtual wantKeyboardFocus() : boolean {
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_BACKSPACE:
+               handlePatClear();
+               return true;
+
+            case 'c':
+               handlePatCopy();
+               return true;
+
+            case 'v':
+               handlePatPaste();
+               return true;
+
+            case 'r':
+               handlePatRand();
+               return true;
+         }
+      }
+
+      return Module::onKey(_k);
+   }
+
+   public virtual tick() {
+      local TrigSeq16_Pattern *pat;
+
+      if(inputs[4/*pat*/].isConnected())
+      {
+         // Pattern input overrides edit pattern
+         local int patIdx = mathClampi(inputs[4].getValue() * NUM_PATTERNS, 0, NUM_PATTERNS-1);
+         if(b_force_edit_pat)
+            pat <= getEditPattern();
+         else
+            pat <= patterns.get(patIdx);
+      }
+      else
+      {
+         // Play edit pattern
+         pat <= getEditPattern();
+      }
+
+      local int numSteps;
+      if(inputs[2/*len*/].isConnected())
+      {
+         if(b_force_edit_pat)
+            numSteps = pat.num_steps;
+         else
+            numSteps = mathClampi(inputs[2].getValue() * 16, 1, 16);
+      }
+      else
+      {
+         numSteps = pat.num_steps;
+      }
+
+      if(trig_reset.process(inputs[0/*reset*/].getValue()))
+      {
+         step_idx = 0;
+         b_playing = true;
+         step_idx_last_played = -1;
+      }
+
+      local float fClock = inputs[1/*clock*/].getValue();
+
+      local float fOff = inputs[3/*offset*/].getValue();
+      if(b_force_edit_pat)
+         fOff = 0;
+      else
+         fOff = fOff * 16;
+      fOff += pat.step_offset;
+
+      int stepOff = mathClampi(fOff, -32, 32);
+
+      out[0] = 0.0f;
+
+      boolean bTrig  = false;
+      boolean bScrub = (TrigSeq16_Pattern.SCRUB_NONE != pat.scrub_mode);
+
+      int stepIdx;
+
+      if(bScrub)
+      {
+         step_idx = pat.calcPhaseStepOffset(fClock, numSteps);
+         stepIdx = mathWrapi(step_idx + stepOff, 0, 16);
+         // // trace "xxx fClock="+fClock+" numSteps="+numSteps+" stepOff="+stepOff+" => step_idx="+step_idx;
+         bTrig = (stepIdx != step_idx_last_played);
+      }
+      else
+      {
+         bTrig = trig_clock.process(fClock);
+
+         if(bTrig)
+         {
+            // trace "xxx trig step_idx="+step_idx+" numSteps="+numSteps+" stepOff="+stepOff;
+
+            if(b_oneshot && (step_idx >= numSteps))
+               b_playing = false;
+            
+            bTrig = b_playing;
+         }
+
+         if(bTrig)
+         {
+            stepIdx = mathWrapi( (step_idx++ % numSteps) + stepOff, 0, 16);
+         }
+      }
+
+      if(bTrig)
+      {
+         // // trace "xxx bTrig fClock="+fClock+" step_idx="+step_idx+" step_idx_last_played="+step_idx_last_played;
+
+         LED *led;
+
+         if(pat.pat_idx == edit_pat_idx)
+         {
+            led <= step_leds.get(step_idx_last_played);
+            if(null != led)
+               led.setConstValue(0.0);
+         }
+
+         if(pat.pat_idx == edit_pat_idx)
+         {
+            led <= step_leds.get(stepIdx);
+            if(null != led)
+               led.setConstValue(bScrub ? 1.0 : -1.0);
+         }
+
+         out[0] = pat.steps.get(stepIdx);
+
+         step_idx_last_played = stepIdx;
+      }
+
+   }
+}

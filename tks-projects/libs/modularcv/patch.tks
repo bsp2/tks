@@ -1,0 +1,569 @@
+// ----
+// ---- file   : patch.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 26Mar2021
+// ---- changed: 27Mar2021, 30Mar2021, 31Mar2021, 02Apr2021, 07May2021, 13May2021, 26Oct2021
+// ----          28Dec2021, 08Oct2024, 11Oct2024, 12Oct2024, 14Mar2025, 23Mar2025
+// ----
+// ----
+// ----
+
+module MModularCVPatch;
+
+use namespace ui;
+namespace modularcv;
+
+
+class Patch : ModularCV {
+   define int MAX_INPUT_VALUES  = 16;
+   define int MAX_OUTPUT_VALUES = 16;
+
+   NodeModular *parent_node;
+
+   int              next_tick_nr;  // used to test whether output has already been updated for current tick
+   Module       *[] all_modules;
+   FloatArray       input_values;
+   FloatArray       output_values;
+   ModCV_Input  *[] input_modules;  // ref to all_modules instances
+   ModCV_Output *[] output_modules;  // ref to all_modules instances
+
+   boolean b_composite;  // 1=redraw overlays
+
+   boolean b_show_connection_lines;
+
+   define int MAX_QUEUED_NORMALIZED_PARAM_UPDATES = 16;
+   FloatArray normalized_param_update_queue;  // moduleidx,paramidx,value tuples
+   Mutex mtx_normalized_param_update;
+
+
+   public method init() {
+      input_values.allocAndFill(MAX_INPUT_VALUES, 0.0f);
+      output_values.allocAndFill(MAX_OUTPUT_VALUES, 0.0f);
+
+      b_show_connection_lines = true;
+   }
+
+   public method loadTestPatch() {
+      local ModCV_Output o1;
+      o1.init();
+      addModule(deref o1);
+      o1.initUI();
+      o1.setModulePosition(0, 0);
+
+      local ModCV_Const c1;
+      c1.init();
+      c1.c1 = -1.0;
+      c1.c2 = -0.5;
+      c1.c3 =  0.5;
+      c1.c4 =  1.0;
+      addModule(deref c1);
+      c1.initUI();
+      c1.setModulePosition(10, 0);
+
+      // local ModCV_RingMod rm1;
+      // rm1.init();
+      // addModule(deref rm1);
+      // rm1.setModulePosition(30, 3);
+
+      // rm1.connect(0, c1, 0);
+      // rm1.connect(1, c1, 1);
+      // o1.connect(0, rm1, 0);
+
+      o1.connect(0, c1, 0);
+   }
+
+   public method addModule(Module _module) {
+      _module.parent_patch <= this;
+      _module.parent_node <= parent_node;
+      _module.index = all_modules.numElements;
+      _module.reset();
+
+      all_modules.add(#(deref _module));
+
+      if(_module instanceof ModCV_Input)
+      {
+         input_modules.add(_module);
+      }
+      if(_module instanceof ModCV_Output)
+      {
+         output_modules.add(_module);
+      }
+   }
+
+   public method removeModule(Module _module) {
+      // Disconnect inputs
+      Input *input;
+      foreach input in _module.inputs
+      {
+         if(input.isConnected())
+         {
+            input.disconnect();
+         }
+      }
+
+      // Disconnect outputs
+      Module *modDst;
+      foreach modDst in all_modules
+      {
+         foreach input in modDst.inputs
+         {
+            if(@(input.source) == @(_module))
+            {
+               input.disconnect();
+            }
+         }
+      }
+
+      // Discard pending normalized param updates (and adjust module indices)
+      mtx_normalized_param_update.lock();
+      int queueIdx = 0;
+      loop(normalized_param_update_queue.numElements / 3)
+      {
+         if(normalized_param_update_queue[queueIdx] == _module.index)
+         {
+            normalized_param_update_queue.delete(queueIdx);  // moduleidx
+            normalized_param_update_queue.delete(queueIdx);  // paramIdx
+            normalized_param_update_queue.delete(queueIdx);  // value
+         }
+         else
+         {
+            if(normalized_param_update_queue[queueIdx] > _module.index)
+               normalized_param_update_queue[queueIdx] = normalized_param_update_queue[queueIdx] - 1;
+
+            queueIdx += 3;
+         }
+      }
+      mtx_normalized_param_update.unlock();
+
+      input_modules.remove(_module);
+      output_modules.remove(_module);
+      all_modules.remove(_module);
+
+      // Re-enumerate modules
+      Module *mod;
+      int modIdx = 0;
+      foreach mod in all_modules
+         mod.index = modIdx++;
+   }
+
+   public method getNumModules() : int {
+      return all_modules.numElements;
+   }
+
+   public method getModuleByIndex(int _index) : Module {
+      return all_modules.get(_index);
+   }
+
+   public method getIndexByModule(Module _mod) : int {
+      return all_modules.indexOfPointer(_mod, 0);
+   }
+
+   public method sortModulesByPosition(IntArray ia) {
+      Module *mod;
+      local IntArray pos;
+      foreach mod in all_modules
+         pos.add(mod.module_x + mod.module_y*10000);
+      pos.sortByValue(ia);
+   }
+
+   public method findModuleAtXY(int _moduleX, int _moduleY) : Module {
+      Module *mod;
+      // Reverse loop so cloned modules have precedence
+      int modIdx = all_modules.numElements;
+      loop(modIdx)
+      {
+         mod <= all_modules.get(--modIdx);
+         if(mod.module_y == _moduleY)
+         {
+            if(mod.module_x <= _moduleX < (mod.module_x + mod.module_w))
+               return mod;
+         }
+      }
+      return null;
+   }
+
+   public method findFirstConnectedInput(Module _mod, int _outputIndex) : Input {
+      Output output <= _mod.getOutputByIndex(_outputIndex);
+      if(null != output)
+      {
+         Module *mod;
+         foreach mod in all_modules
+         {
+            Input *input;
+            foreach input in mod.inputs
+            {
+               if(@(input.source) == @(_mod))
+               {
+                  if(input.source_output_index == _outputIndex)
+                  {
+                     return input;
+                  }
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public method findAllConnectedInputs(Module _mod, int _outputIndex, PointerArray _ret) {
+      _ret.empty();
+      Output output <= _mod.getOutputByIndex(_outputIndex);
+      if(null != output)
+      {
+         Module *mod;
+         foreach mod in all_modules
+         {
+            Input *input;
+            foreach input in mod.inputs
+            {
+               if(@(input.source) == @(_mod))
+               {
+                  if(input.source_output_index == _outputIndex)
+                  {
+                     _ret.add(input);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   public method checkOverlap(Module _mod) : int {
+      // returns 0=no overlap, -1=overlap, prefer move left, 1=overlap, prefer move right
+      Module *modO;
+      local Rectangle2f rect;
+      rect.initFromLayer(_mod);
+      foreach modO in all_modules
+      {
+         if(@(modO) != @(_mod))
+         {
+            if(rect.layerCollisionTest(modO))
+            {
+               if(rect.px < (modO.getPositionX() + modO.getSizeX()*0.5))
+                  return -1;
+               else
+                  return 1;
+            }
+         }
+      }
+      return 0;
+   }
+
+   public method tryMoveModuleToNonOverlappingPosition(ModularRack _rack, Module _mod, boolean _bAllowMoveY) : boolean {
+      // Check overlap / find nearest free rack space
+      int maxX = _rack.getRackWidth() - _mod.module_w;
+
+      int modX = _mod.module_x;
+      int modY = _mod.module_y;
+
+      int overlapPrefDir = checkOverlap(_mod);
+      boolean bOk = (0 == overlapPrefDir);
+      // trace "xxx tryMoveModuleToNonOverlappingPosition: overlapPrefDir="+overlapPrefDir;
+
+      if(!bOk)
+      {
+         int newX;
+         int newY;
+         loop(_bAllowMoveY ? 2 : 1)
+         {
+            int iter = 0;
+            loop(2)
+            {
+               if(!bOk && ( (1 == iter) ^ (-1 == overlapPrefDir) ) )
+               {
+                  // Try move left
+                  newX = modX - 1;
+                  newY = modY;
+                  while(newX >= 0)
+                  {
+                     _mod.setModulePosition(newX, newY);
+                     if(0 == checkOverlap(_mod))
+                     {
+                        bOk = true;
+                        break;
+                     }
+
+                     newX--;
+                  }
+               }
+
+               if(!bOk && ( (1 == iter) ^ (1 == overlapPrefDir) ) )
+               {
+                  // Try move right
+                  newX = modX + 1;
+                  newY = modY;
+                  while(newX <= maxX)
+                  {
+                     _mod.setModulePosition(newX, newY);
+                     if(0 == checkOverlap(_mod))
+                     {
+                        bOk = true;
+                        break;
+                     }
+
+                     newX++;
+                  }
+               }
+
+               if(bOk)
+                  break;
+
+               iter++;
+            }
+
+            // Try next row
+            modY = (3 == modY) ? 0 : 3;
+
+            if(bOk)
+               break;
+         }
+      }
+
+      return bOk;
+   }
+
+   public method getTotalNumConnections() : int {
+      int r = 0;
+      Module *mod;
+      foreach mod in all_modules
+      {
+         Input *input;
+         foreach input in mod.inputs
+         {
+            if(null != input.source)
+               r++;
+         }
+      }
+      return r;
+   }
+
+   public method queueNormalizedParamUpdate(int _moduleIdx, int _paramIdx, float _value) {
+      mtx_normalized_param_update.lock();
+      if( (3*MAX_QUEUED_NORMALIZED_PARAM_UPDATES) == normalized_param_update_queue.numElements)
+      {
+         normalized_param_update_queue.delete(0); // moduleidx
+         normalized_param_update_queue.delete(0); // paramidx
+         normalized_param_update_queue.delete(0); // value
+      }
+      normalized_param_update_queue.add(_moduleIdx);
+      normalized_param_update_queue.add(_paramIdx);
+      normalized_param_update_queue.add(_value);
+      mtx_normalized_param_update.unlock();
+   }
+
+   public method handleQueuedNormalizedParamUpdates() {
+      mtx_normalized_param_update.lock();
+      for(;;)
+      {
+         if(normalized_param_update_queue.numElements >= 3)
+         {
+            int moduleIdx = normalized_param_update_queue[0];
+            int paramIdx  = normalized_param_update_queue[1];
+            float value   = normalized_param_update_queue[2];
+            normalized_param_update_queue.delete(0);
+            normalized_param_update_queue.delete(0);
+            normalized_param_update_queue.delete(0);
+            Module mod <= all_modules.get(moduleIdx);
+            if(null != mod)  // should not be null
+            {
+               mtx_normalized_param_update.unlock();
+               mod.updateQueuedNormalizedParamByIndexUI(paramIdx, value);  // tries to lock =replay=, beware of deadlocks!!
+               mtx_normalized_param_update.lock();
+            }
+         }
+         else
+         {
+            break;
+         }
+      }
+      mtx_normalized_param_update.unlock();
+   }
+
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 2;
+
+      // Modules
+      ofs.i16 = all_modules.numElements;
+      Module *mod;
+      foreach mod in all_modules
+      {
+         // id
+         ofs.serialize(mod.yacMetaClassName(), false);
+
+         // Chunk size placeholder
+         int offset = ofs.offset;
+         ofs.i32 = 0;
+
+         // State
+         mod.saveState(ofs);
+
+         // Fix chunk size
+         int coff = ofs.offset;
+         int chunkSize = coff - offset;
+         ofs.seek(offset, SEEK_SET);
+         ofs.i32 = chunkSize;
+         ofs.seek(coff, SEEK_SET);
+      }
+
+      if(Configuration.debugLevel >= 2)
+         trace "[trc] Patch::saveState: wrote "+all_modules.numElements+" modules";
+
+      // Connections
+      foreach mod in all_modules
+      {
+         mod.saveConnections(ofs);
+      }
+
+      // Show connection lines (v2+)
+      ofs.i8 = b_show_connection_lines;
+
+      if(Configuration.debugLevel >= 2)
+         trace "[trc] Patch::saveState: wrote "+getTotalNumConnections()+" module connections";
+   }
+
+   public method loadState(Stream ifs) : boolean {
+
+      deleteAllModules();
+
+      // ver
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         // modules
+         int numModules = ifs.u16;
+         loop(numModules)
+         {
+            local String modClassName;
+            ifs.deserialize(modClassName, false);
+            // // trace "xxx Patch::loadState: modClassName=\""+modClassName+"\"";
+
+            int endOffset = ifs.offset;
+            int chunkSize = ifs.i32;
+            endOffset += chunkSize;
+
+            Module mod <= TKS.newObjectByName("modularcv"/*nsp*/, modClassName);
+            if(null != mod)
+            {
+               mod.init();
+
+               if(mod.loadState(ifs))
+               {
+               }
+               else
+               {
+                  trace "[~~~] Patch::loadState: failed to load module state (index="+all_modules.numElements+" id="+mod.id+")";
+                  ifs.seek(endOffset, SEEK_SET);
+               }
+            }
+            else
+            {
+               trace "[~~~] Patch::loadState: failed to instantiate modClassName=\""+modClassName+"\" (chunkSize="+chunkSize+"), skipping..";
+               ifs.seek(endOffset, SEEK_SET);
+
+               // Add dummy module to keep indices consistent
+               ModCV_Unavail modUnavail <= new ModCV_Unavail;
+               modUnavail.init();
+               modUnavail.setUnvailableClassName(modClassName);
+            }
+
+            addModule(deref mod);
+
+            if(null != parent_node) // not clipboard ?
+            {
+               mod.initUI();
+               mod.setToolTipCaption(mod.module_tooltip);
+            }
+         }
+
+         if(Configuration.debugLevel >= 2)
+            Global.Debug2("Patch::loadState: loaded "+numModules+" modules");
+
+         // connections
+         foreach mod in all_modules
+         {
+            if(!mod.loadConnections(ifs))
+            {
+               trace "[---] Patch::loadState: failed to load module connections (mod.index="+mod.index+" mod.id="+mod.id+")";
+               return false;
+            }
+         }
+
+         if(ver >= 2)
+         {
+            // Show connection lines (v2+)
+            b_show_connection_lines = ifs.b8;
+         }
+
+         if(Configuration.debugLevel >= 2)
+            Global.Debug2("Patch::loadState: loaded "+getTotalNumConnections()+" module connections");
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Patch::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+
+   public method deleteAllModules() {
+      input_modules.free();
+      output_modules.free();
+      all_modules.free();
+   }
+
+   public =replay= method queueComposite() {
+      // called from replay thread when module requests an overlay redraw
+      b_composite = true;
+   }
+
+   public =replay= method checkResetComposite() : boolean {
+      // called from UI thread
+      return = b_composite;
+      b_composite = false;
+      return;
+   }
+
+   public method reset() {
+      Module *mod;
+      foreach mod in all_modules
+      {
+         mod.reset();
+      }
+   }
+
+   public method callOnPatternChanged() {
+      Module *mod;
+      foreach mod in all_modules
+      {
+         mod.onPatternChanged();
+      }
+   }
+
+   public method tick(int _tickNr, MIDIPipeFrame _frRec, MIDIPipeFrame _frPlay, MIDIPipeFrame _frOut) {
+      next_tick_nr++;
+
+      ModCV_Input *inp;
+      foreach inp in input_modules
+      {
+         inp.tickInput(_frRec,  false/*bAdvance*/);
+         inp.tickInput(_frPlay, true /*bAdvance*/);
+      }
+
+      ModCV_Output *out;
+      foreach out in output_modules
+      {
+         // // if(st2::replay.b_playing)
+         // //    trace "xxx ["+st2::current_song.song_offset+"] patch emit output module "+#(out);
+         out.tickOutput(_frOut);
+      }
+
+   }
+}

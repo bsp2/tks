@@ -1,0 +1,216 @@
+// ----
+// ---- file   : modcv_gatehysteresis.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 03Dec2021
+// ---- changed: 21Feb2022, 11Oct2024, 21Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_GateHysteresis;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_GateHysteresis : Module {
+   boolean b_allow_trig_a;  // gate input 
+   boolean b_allow_trig_b;  // true=hysteresis timeout expired
+   int timeout_countdown;  // ticks
+   float timeout;
+
+   public virtual init() {
+      Module::init();
+
+      initModule("gatehysteresis"/*id*/,
+                 "gth"/*header_id*/,
+                 "Gate Hysteresis\n\nAllow new gate not until <timeout> ticks after last gate"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      timeout = 0.0f;
+
+      b_allow_trig_a = true;
+      b_allow_trig_b = true;
+      timeout_countdown = 0;
+
+      addInput("gate", "Gate", 0.0f, IO_GATE);
+      addInput("dur",  "Dur (1.0=4*PPQ ticks timeout)",  0.0f, IO_DUR);
+
+      addOutput("gate", "Gate", IO_GATE);
+   }
+
+   public virtual copyFrom(ModCV_GateHysteresis _o) {
+      timeout = _o.timeout;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+      float stepY = 40;
+
+      cx = 15;
+      cy = 56;
+
+      PortWidget *pw;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "gate"/*captionOrNull*/
+                             );
+
+      cy += stepY*1.25 + 4;
+      createSmallDial(cx, cy,
+                      "timeout",
+                      0.0, 1.0, 0.0, timeout,
+                      "time"
+                      );
+
+      cy += 32;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+
+
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             (RACK_MODULE_HEIGHT - 20),
+                             null/*captionOrNull*/
+                             );
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return ("timeout" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "timeout":
+            timeout = _value;
+            int numTicks = round(_value * 4.0f * current_song.ppq);
+            float num16th = int(100 * _value * 16.0) / 100.0;
+            Global.Print("Param \"timeout\" is "+_value+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "timeout":
+            return timeout;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["timeout"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            timeout = FromNormalized(_value, 0, 1);
+            updateParamWidget("timeout", timeout);
+
+            int numTicks = round(_value * 4.0f * current_song.ppq);
+            float num16th = int(100 * _value * 16.0) / 100.0;
+            Global.Print("Param \"timeout\" is "+_value+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(timeout, 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.f32 = timeout;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            timeout = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_GateHysteresis::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      b_allow_trig_a = true;
+      b_allow_trig_b = true;
+      timeout_countdown = 0;
+   }
+
+   public virtual tick() {
+      // Forward patch inputs to outputs
+      local float fTrig = inputs[0].getValue();
+      local float fTime = inputs[1].getValue() + timeout;
+
+      if(timeout_countdown > 0)
+      {
+         if(0 == --timeout_countdown)
+         {
+            b_allow_trig_b = true;
+         }
+      }
+
+      if(fTrig < TRIG_ON)
+         out[0] = 0.0f;
+
+      if(!b_allow_trig_a)
+      {
+         if(fTrig < TRIG_OFF)
+         {
+            b_allow_trig_a = true;
+         }
+      }
+      else if(fTrig >= TRIG_ON)
+      {
+         // gate on
+         if(b_allow_trig_b)
+         {
+            timeout_countdown = mathMaxi(1, fTime * 4.0 * current_song.ppq);
+            out[0] = 1.0f;
+            b_allow_trig_a = false;
+            b_allow_trig_b = false;
+         }
+      }
+
+   }
+
+}

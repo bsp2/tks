@@ -1,0 +1,223 @@
+// ----
+// ---- file   : modcv_crossfade.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2023 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 01Apr2021
+// ---- changed: 03Apr2021, 16Apr2021, 07May2021, 13May2021, 28Dec2021, 21Feb2022, 11Nov2023
+// ----
+// ----
+// ----
+
+module MModularCVMod_Crossfade;
+
+namespace modularcv;
+
+
+class ModCV_Crossfade : Module {
+   // (todo) add more algorithms (cos/sqrt/..)
+
+   float a_offset;  // -1..1
+   float b_offset;  // -1..1
+   float x_offset;  // -1..1  (effective 'x' is clamped to 0..1)
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Crossfade"/*id*/,
+                 "fade"/*header_id*/,
+                 "Crossfade"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      a_offset = 0.0;
+      b_offset = 0.0;
+
+      addInput("a", "A",  0.0, IO_ANY);
+      addInput("b", "B",  0.0, IO_ANY);
+      addInput("x", "X (0=A .. 1=B)",  0.0, IO_ANY);
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_Crossfade _o) {
+      a_offset = _o.a_offset;
+      b_offset = _o.b_offset;
+      x_offset = _o.x_offset;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cy = 38;
+      float stepYI = 24;
+      float stepYO = 26;
+      ui::Dial *dl;
+
+      // A
+      createTinyDial(15, cy,
+                     "a_offset",
+                     -1.0, 1.0, 0.0, a_offset,
+                     "a"
+                     );
+
+      cy += stepYI;
+      createPortWidget(0, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // X
+      cy += stepYO;
+      dl <= createTinyDial(15, cy,
+                           "x_offset",
+                           -1.0, 1.0, 0.0, x_offset,
+                           "x"
+                           );
+      dl.setResetValues([0.0f, 1.0f, -1.0f]);
+
+      cy += stepYI;
+      createPortWidget(2, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // B
+      cy += stepYO;
+      createTinyDial(15, cy,
+                     "b_offset",
+                     -1.0, 1.0, 0.0, b_offset,
+                     "b"/*captionOrNull*/
+                     );
+
+      cy += stepYI;
+      createPortWidget(1, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       15, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "a_offset":
+            a_offset = _value;
+            break;
+
+         case "b_offset":
+            b_offset = _value;
+            break;
+
+         case "x_offset":
+            x_offset = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "a_offset":
+            return a_offset;
+
+         case "b_offset":
+            return b_offset;
+
+         case "x_offset":
+            return x_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["a off", "x off", "b off"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            a_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("a_offset", a_offset);
+            break;
+
+         case 1:
+            x_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("x_offset", x_offset);
+            break;
+
+         case 2:
+            b_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("b_offset", b_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(a_offset, -1, 1);
+
+         case 1:
+            return ToNormalized(x_offset, -1, 1);
+
+         case 2:
+            return ToNormalized(b_offset, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.f32 = a_offset;
+      ofs.f32 = b_offset;
+      ofs.f32 = x_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            a_offset = ifs.f32;
+            b_offset = ifs.f32;
+            x_offset = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Crossfade::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tick() {
+      local float fA = inputs[0].getValue() + a_offset;
+      local float fB = inputs[1].getValue() + b_offset;
+      local float fX = mathClampf(inputs[2].getValue() + x_offset, 0.0f, 1.0f);
+
+      out[0] = fA + (fB - fA) * fX;
+   }
+}

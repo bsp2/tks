@@ -1,0 +1,168 @@
+// ----
+// ---- file   : modcv_shuttlecontrol.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 31Mar2021
+// ---- changed: 04Apr2021, 13Apr2021, 07May2021, 21Feb2022, 23Oct2024, 14Mar2025
+// ----
+// ----
+// ----
+
+module MModularCVMod_ShuttleControl;
+
+use namespace ui;
+use namespace st2;
+namespace modularcv;
+
+
+class ModCV_ShuttleControl : ModCV_Output {
+   // (note) ports 1.. 8: pitchbend (bipolar)
+   // (note) ports 9..16: cc (unipolar)
+   int dev_idx;
+
+   FloatArray debug_last_out;
+
+   public virtual init() {
+      Module::init();
+
+      initModule("ShuttleControl"/*id*/,
+                 "ShCtl"/*header_id*/,
+                 "Shuttle Control\n\n Port 1..8: Pitchbend (bipolar -5V..+5V)\n\n Ports 9..16: CC#1 (unipolar 0..+5V)\n\n (note) implicit dev alias=\"shuttlecontrol\""/*tooltip*/
+                 );
+      setModuleSize(6, 3);
+
+      debug_last_out.allocAndFill(16, -1);
+
+      addInput("o1",  "output value 1",  0.0f, IO_CV);
+      addInput("o2",  "output value 2",  0.0f, IO_GATE);
+      addInput("o3",  "output value 3",  0.0f, IO_ANY);
+      addInput("o4",  "output value 4",  0.0f, IO_ANY);
+      addInput("o5",  "output value 5",  0.0f, IO_ANY);
+      addInput("o6",  "output value 6",  0.0f, IO_ANY);
+      addInput("o7",  "output value 7",  0.0f, IO_ANY);
+      addInput("o8",  "output value 8",  0.0f, IO_ANY);
+      addInput("o9",  "output value 9",  0.0f, IO_ANY);
+      addInput("o10", "output value 10", 0.0f, IO_ANY);
+      addInput("o11", "output value 11", 0.0f, IO_ANY);
+      addInput("o12", "output value 12", 0.0f, IO_ANY);
+      addInput("o13", "output value 13", 0.0f, IO_ANY);
+      addInput("o14", "output value 14", 0.0f, IO_ANY);
+      addInput("o15", "output value 15", 0.0f, IO_ANY);
+      addInput("o16", "output value 16", 0.0f, IO_ANY);
+
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName("shuttlecontrol");
+      if(null != dev)
+      {
+         dev_idx = dev.dev_idx;
+         if(Configuration.debugLevel >= 2)
+            Global.Debug("ModCV_ShuttleControl: \"shuttlecontrol\" dev_idx="+dev_idx);
+      }
+      else
+      {
+         trace "[~~~] ModCV_ShuttleControl: dev alias=\"shuttlecontrol\" not found, module won't work";
+         dev_idx = -1;
+      }
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 13;
+      float cy = 34;
+      float stepY = 20;
+      float rightOff = 20;
+      float bottomOff = 94;
+
+      int pIdx = 0;
+      loop(4)
+      {
+         // left top
+         PortWidget pw <= createPortWidget(pIdx, false/*bOutput*/,
+                                           cx,
+                                           cy,
+                                           null/*captionOrNull*/
+                                           );
+
+         // left bottom
+         pw <= createPortWidget(pIdx + 4, false/*bOutput*/,
+                                cx,
+                                cy + bottomOff,
+                                null/*captionOrNull*/
+                                );
+
+         // right top
+         pw <= createPortWidget(pIdx + 8, false/*bOutput*/,
+                                cx + rightOff,
+                                cy,
+                                null/*captionOrNull*/
+                                );
+
+         // right bottom
+         pw <= createPortWidget(pIdx + 12, false/*bOutput*/,
+                                cx + rightOff,
+                                cy + bottomOff,
+                                null/*captionOrNull*/
+                                );
+
+         cy += stepY;
+         pIdx++;
+      }
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_ShuttleControl::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public method tickOutput(MIDIPipeFrame _frOut) {
+      int pIdx = 0;
+      loop(16)
+      {
+         if(inputs[pIdx].isConnected())
+         {
+            float val = inputs[pIdx].getValue();
+
+            if(val != debug_last_out[pIdx])
+            {
+               debug_last_out[pIdx] = val;
+               // // trace "xxx ModCV_ShuttleControl: out["+pIdx+"] changed to "+val;
+            }
+
+            if(!replay.b_cycle_mute_after_loop)
+            {
+               if(pIdx >= 8)
+                  _frOut.cc(true/*bSet*/, dev_idx, pIdx/*ch*/, 1/*modwheel*/, mathClampf(val*127.0f, 0.0f, 127.0f));
+               else
+                  _frOut.pitchbend(true/*bSet*/, dev_idx, pIdx/*ch*/, (val >= 0.0) ? (8192 + val*8191) : (8192 + val*8192));
+            }
+         }
+
+         pIdx++;
+      }
+   }
+
+}

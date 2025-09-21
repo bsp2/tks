@@ -1,0 +1,1002 @@
+// ----
+// ---- file   : modcv_memory.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 12Nov2021
+// ---- changed: 13Nov2021, 28Dec2021, 21Feb2022, 08Oct2023, 09Oct2023, 11Nov2023, 07Oct2024
+// ----          08Oct2024, 09Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Memory;
+
+use namespace ui;
+namespace modularcv;
+
+
+// <class.png>
+class VoltageMemory_Pattern {
+   define int NUM_STEPS = 4;
+   define int NUM_ROWS  = 4;
+
+   int pat_idx;
+
+   FloatArray steps;
+   IntArray   interpol_types;
+
+
+   public method init(int _patIdx) {
+      pat_idx = _patIdx;
+
+      steps.allocAndFill(NUM_STEPS * NUM_ROWS, 0.0f);
+
+      interpol_types.allocAndFill(NUM_ROWS, 0/*none*/);
+   }
+
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // Steps
+      int stepIdx = 0;
+      loop(NUM_STEPS * NUM_ROWS)
+         ofs.f32 = steps[stepIdx++];
+
+      // Row interpolation types
+      int rowIdx = 0;
+      loop(NUM_ROWS)
+         ofs.i8 = interpol_types[rowIdx++];
+   }
+
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Steps
+         int stepIdx = 0;
+         loop(NUM_STEPS * NUM_ROWS)
+            steps[stepIdx++] = ifs.f32;
+
+         // Row interpolation types
+         int rowIdx = 0;
+         loop(NUM_ROWS)
+            interpol_types[rowIdx++] = ifs.u8;
+
+         return true;
+      }
+      return false;
+   }
+
+   public method copyFrom(VoltageMemory_Pattern _o) {
+      steps          = _o.steps;
+      interpol_types = _o.interpol_types;
+   }
+
+   public method clear() {
+      steps.fill(false);
+   }
+
+   public method randomize() {
+      int stepIdx = 0;
+      loop(NUM_STEPS * NUM_ROWS)
+      {
+         steps[stepIdx++] = rand(2.0) - 1.0;
+      }
+   }
+}
+
+
+// <class.png>
+class ModCV_Memory : Module {
+   define int NUM_PATTERNS = 8;
+   define int MAX_CHAINED_MODULES = 16;  // => 4*16 = 64 steps
+
+   define int INTERPOL_NONE        = 0;
+   define int INTERPOL_LIN         = 1;
+   define int INTERPOL_SIN         = 2;
+   define int INTERPOL_COS         = 3;
+   define int INTERPOL_SMOOTHSTEP  = 4;
+
+   static StringArray interpol_type_short_names = [
+      "-",
+      "lin",
+      "sin",
+      "cos",
+      "stp",
+                                                   ];
+
+   static StringArray interpol_type_long_names = [
+      "-: None",
+      "lin: Linear",
+      "sin: Sine",
+      "cos: Cosine",
+      "stp: Smoothstep",
+                                                   ];
+
+   int      edit_pat_idx;
+   boolean  b_force_edit_pat;
+   float    step_offset;
+   float    row_step_offset;
+   IntArray bipolar_state;  // per row
+
+   VoltageMemory_Pattern *[] patterns;
+
+   RoundButton *bt_force_edit_pat;
+
+   Dial *[] step_dials;
+   LED *[] step_leds;
+   ComboBox *[] row_interpol;
+
+   static VoltageMemory_Pattern *pat_clipboard;
+
+   ModCV_Memory *[] chained_modules;  // temporary during tick()
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Memory"/*id*/,
+                 "voltage memory"/*header_id*/,
+                 "Voltage Memory\n\n"/*tooltip*/
+                 );
+      setModuleSize(19, 3);
+
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         VoltageMemory_Pattern pat <= new VoltageMemory_Pattern;
+         pat.init(patIdx++);
+         patterns.add(#(deref pat));
+      }
+
+      bipolar_state.allocAndFill(VoltageMemory_Pattern.NUM_ROWS, true);
+
+      edit_pat_idx = 0;
+
+      addInput("chain",  "Chain\n\n (note) used to extend the number of steps per row",   0.0, IO_ANY);    // 0
+      addInput("pat",    "Pattern\n\n (note) Overrides the current edit pattern nr during replay when connected", 0.0, IO_OFF);  // 1
+      addInput("step",   "Step (offset)\n\n (note) clock this module via an LFO in \"Sawtooth\" (unipolar beat sync)\" mode",   0.0, IO_OFF);  // 2
+      addInput("rowoff", "Row Offset\n\n (note) Row step offset", 0.0, IO_OFF);  // 3
+
+      addOutput("chain", "Chain\n\n (note) used to extend the number of steps per row", IO_ANY);  // 0
+      addOutput("out_1", "Row 1 Output", IO_ANY);  // 1
+      addOutput("out_2", "Row 2 Output", IO_ANY);  // 2
+      addOutput("out_3", "Row 3 Output", IO_ANY);  // 3
+      addOutput("out_4", "Row 4 Output", IO_ANY);  // 4
+
+      chained_modules.alloc(MAX_CHAINED_MODULES);
+   }
+
+   public virtual copyFrom(ModCV_Memory _o) {
+
+      edit_pat_idx     = _o.edit_pat_idx;
+      b_force_edit_pat = _o.b_force_edit_pat;
+      step_offset      = _o.step_offset;
+      row_step_offset  = _o.row_step_offset;
+
+      VoltageMemory_Pattern *pat;
+      VoltageMemory_Pattern *patO;
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         pat <= patterns.get(patIdx);
+         patO <= _o.patterns.get(patIdx);
+         pat.copyFrom(patO);
+         patIdx++;
+      }
+
+      bipolar_state = _o.bipolar_state;
+   }
+
+   public method getEditPattern() : VoltageMemory_Pattern {
+      return patterns.get(edit_pat_idx);
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float shiftX = 2;
+      float cx = 9 + shiftX + 40;
+      float cy = 48;
+      ComboBox *cm;
+      FloatParam *fp;
+      RoundButton *bt;
+      Dial *dl;
+      int uStepX = 26;
+
+      // Step
+      dl <= createSmallDial(cx-4+9+(uStepX*0), cy-18,
+                            "step_offset",
+                            -1.0, 1.0, 0.0, step_offset,
+                            null/*captionOrNull*/
+                            );
+      dl.setToolTipCaption("step_offset\n\n (note) hold lctrl to snap to integer values");
+
+      // Row Step Offset
+      dl <= createSmallDial(cx-4+9+(uStepX*1), cy-18,
+                            "row_step_offset",
+                            -1.0, 1.0, 0.0, row_step_offset,
+                            null/*captionOrNull*/
+                            );
+      dl.setToolTipCaption("row_step_offset\n\n (note) hold lctrl to snap to integer values");
+
+      // b_force_edit_pat
+      bt_force_edit_pat <= createCheckButton(cx-4+22-13+(uStepX*3), cy-28+10-1,
+                                             "b_force_edit_pat",
+                                             b_force_edit_pat
+                                             );
+      bt_force_edit_pat.setToolTipCaption("When checked, force edit pattern replay.\n\nWhen unchecked, \"pat\" input controls replay pattern selection");
+
+
+      // edit_pat_idx
+      local StringArray patNrOpt;
+      int patNr = 1;
+      loop(NUM_PATTERNS)
+         patNrOpt.add(String(patNr++));
+      cm <= createModeParamWidget(cx-4-14+(uStepX*3), cy-28+10,
+                                  "edit_pat_idx",
+                                  patNrOpt,
+                                  null/*patNrOptLong*/,
+                                  edit_pat_idx,
+                                  null/*captionOrNull*/
+                                  );
+      cm.setRequiredSize2fScaled(20, 21);
+      cm.setToolTipCaption("Current edit pattern index.\n\n (note) also the current play pattern when the \"pat\" input is not connected, or the \"force\" toggle button is engaged");
+
+
+
+      // CV: Chain Output
+      cx = 9 + shiftX;
+      createPortWidget(0, true/*bOutput*/,
+                       cx+9, cy-19+9,
+                       "c.out"/*captionOrNull*/
+                       );
+
+      cx = 14+shiftX + 40;
+
+      // CV: Step offset
+      createPortWidget(2, false/*bOutput*/,
+                       cx, cy,
+                       "step"/*captionOrNull*/
+                       );
+
+
+      // CV: Row Step Offset
+      cx += uStepX;
+      createPortWidget(3, false/*bOutput*/,
+                       cx, cy,
+                       "roff"/*captionOrNull*/
+                       );
+
+      // CV: Play Pattern (0..1 => pat#1..8)
+      cx += uStepX;
+      createPortWidget(1, false/*bOutput*/,
+                       cx, cy,
+                       "pat"/*captionOrNull*/
+                       );
+
+      // CV: Chain Input
+      cx += uStepX;
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       "c.in"/*captionOrNull*/
+                       );
+
+
+      cy = 94-6;
+      float stepXI = 22;
+      float stepYI = 30;
+
+      step_leds.alloc(VoltageMemory_Pattern.NUM_STEPS * VoltageMemory_Pattern.NUM_ROWS);
+      float ledOffY = 13;
+      step_dials.alloc(VoltageMemory_Pattern.NUM_STEPS * VoltageMemory_Pattern.NUM_ROWS);
+      row_interpol.alloc(VoltageMemory_Pattern.NUM_ROWS);
+
+      int rowIdx = 0;
+      int rowNr = 1;
+      int stepIdx = 0;   // row1: 0..3, row2: 4..7, row3: 8..11, row4: 12..15
+
+      loop(VoltageMemory_Pattern.NUM_ROWS)
+      {
+         cx = 10 + shiftX + 5;
+         float cxStep = cx + stepXI;
+
+         // Interpolation
+         cm <= createModeParamWidget(cx, cy,
+                                     "interpol_type_"+rowNr,
+                                     interpol_type_short_names,
+                                     interpol_type_long_names,
+                                     0/*pat.interpol_types.get(rowIdx)*/,
+                                     null/*captionOrNull*/
+                                     );
+         cm.setToolTipCaption("Row "+rowNr+" Interpolation Type");
+         row_interpol.add(cm);
+
+         // Step dials
+         int rowStepNr = 1;
+         loop(VoltageMemory_Pattern.NUM_STEPS)
+         {
+            dl <= createSmallDial(cxStep, cy,
+                                  "step_"+stepIdx,
+                                  -1.0, 1.0, 0.0,
+                                  0.0f/*steps[stepIdx]*/,
+                                  null/*captionOrNull*/
+                                  );
+            dl.setResetValues([0.0f, 1.0f, -1.0f]);
+            dl.setToolTipCaption("Row "+rowNr+" Step "+rowStepNr);
+            step_dials.add(dl);
+            step_leds.add(createLED(cxStep, cy+ledOffY));
+
+            // Next step
+            cxStep += stepXI;
+            stepIdx++;
+            rowStepNr++;
+         }
+
+         // Bipolar switch
+         cxStep -= 5;
+         createTinyCheckButton(cxStep, cy,
+                               "bipolar_"+rowNr,
+                               bipolar_state[rowIdx]/*bChecked*/
+                               );
+
+         // CV Out
+         cxStep += stepXI - 5;
+         createPortWidget(1+rowIdx, true/*bOutput*/,
+                          cxStep, cy,
+                          null/*captionOrNull*/
+                          );
+
+         // Next row
+         rowIdx++;
+         rowNr++;
+         cy += stepYI;
+      }
+
+      updatePatWidgets();
+   }
+
+   protected method updatePatWidgets() {
+      VoltageMemory_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      IntArray interpolTypes <= pat.interpol_types;
+      Dial *dl;
+      ui::ComboBox *cm;
+
+      int stepIdx = 0;
+      loop(VoltageMemory_Pattern.NUM_STEPS * VoltageMemory_Pattern.NUM_ROWS)
+      {
+         dl <= step_dials[stepIdx];
+         dl.setValue(steps.get(stepIdx));
+         stepIdx++;
+      }
+
+      int rowIdx = 0;
+      loop(VoltageMemory_Pattern.NUM_ROWS)
+      {
+         cm <= row_interpol[rowIdx];
+         cm.setSelectedOption(interpolTypes.get(rowIdx));
+
+         rowIdx++;
+      }
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      VoltageMemory_Pattern pat <= getEditPattern();
+      int rowIdx;
+      float stepOffset;
+      int numSteps;
+
+      switch(_name)
+      {
+         default:
+            if(_name <= "step_")
+            {
+               int stepIdx = _name.replace("step_", "");
+               FloatArray steps <= pat.steps;
+               steps[stepIdx] = _value;
+               Global.PrintFast("Value is "+(bipolar_state[(stepIdx/VoltageMemory_Pattern.NUM_STEPS)] ? _value : (_value*0.5f+0.5f)));
+            }
+            else if(_name <= "interpol_type_")
+            {
+               rowIdx = _name.replace("interpol_type_", "");
+               IntArray interpolTypes <= pat.interpol_types;
+               interpolTypes[rowIdx - 1] = _value;
+            }
+            else if(_name <= "bipolar_")
+            {
+               rowIdx = _name.replace("bipolar_", "");
+               bipolar_state[rowIdx - 1] = _value;
+            }
+            break;
+
+         case "edit_pat_idx":
+            edit_pat_idx = _value;
+            updatePatWidgets();
+            resetStepLEDs();
+            b_force_edit_pat = true;
+            bt_force_edit_pat.setSelected(true);
+            break;
+
+         case "b_force_edit_pat":
+            b_force_edit_pat = _value;
+            break;
+
+         case "step_offset":
+            step_offset = _value;
+            numSteps = getTotalNumSteps();
+            stepOffset = numSteps * step_offset;
+            if(UI.KeyModCtrl())
+            {
+               stepOffset = round(stepOffset);
+               step_offset = stepOffset / numSteps;
+            }
+            stepOffset = int(100*stepOffset)/100.0;
+            Global.Print("step_offset is "+step_offset+" => "+stepOffset+" step"+Utils.GetPluralStringFloat(stepOffset));
+            break;
+
+         case "row_step_offset":
+            row_step_offset = _value;
+            numSteps = getTotalNumSteps();
+            stepOffset = numSteps * row_step_offset;
+            if(UI.KeyModCtrl())
+            {
+               stepOffset = round(stepOffset);
+               row_step_offset = stepOffset / numSteps;
+            }
+            stepOffset = int(100*stepOffset)/100.0;
+            Global.Print("row_step_offset is "+row_step_offset+" => "+stepOffset+" step"+Utils.GetPluralStringFloat(stepOffset));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      VoltageMemory_Pattern pat <= getEditPattern();
+
+      switch(_name)
+      {
+         default:
+            if(_name <= "step_")
+            {
+               int stepIdx = _name.replace("step_", "");
+               FloatArray steps <= pat.steps;
+               return steps[stepIdx];
+            }
+            else if(_name <= "interpol_type_")
+            {
+               int rowIdx = _name.replace("interpol_type_", "");
+               IntArray interpolTypes <= pat.interpol_types;
+               return interpolTypes[rowIdx - 1];
+            }
+            else if(_name <= "bipolar_")
+            {
+               rowIdx = _name.replace("bipolar_", "");
+               return bipolar_state[rowIdx - 1];
+            }
+            break;
+
+         case "edit_pat_idx":
+            return edit_pat_idx;
+
+         case "b_force_edit_pat":
+            return b_force_edit_pat;
+
+         case "step_offset":
+            return step_offset;
+
+         case "row_step_offset":
+            return row_step_offset;
+      }
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return
+         (_name != "step_offset") &&
+         (_name != "row_step_offset") &&
+         !(_name <= "step_")
+         ;
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["row 1 step 1", "row 1 step 2", "row 1 step 3", "row 1 step 4",
+              "row 2 step 1", "row 2 step 2", "row 2 step 3", "row 2 step 4",
+              "row 3 step 1", "row 3 step 2", "row 3 step 3", "row 3 step 4",
+              "row 4 step 1", "row 4 step 2", "row 4 step 3", "row 4 step 4",
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      VoltageMemory_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      switch(_paramIdx)
+      {
+         case 0:
+         case 1:
+         case 2:
+         case 3:
+         case 4:
+         case 5:
+         case 6:
+         case 7:
+         case 8:
+         case 9:
+         case 10:
+         case 11:
+         case 12:
+         case 13:
+         case 14:
+         case 15:
+            steps[_paramIdx] = FromNormalized(_value, -1, 1);
+            updateParamWidget("step_"+_paramIdx, steps[_paramIdx]);
+            Global.PrintFast("Value is "+(bipolar_state[(_paramIdx/VoltageMemory_Pattern.NUM_STEPS)] ? steps[_paramIdx] : (steps[_paramIdx]*0.5f+0.5f)));
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      VoltageMemory_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      switch(_paramIdx)
+      {
+         case 0:
+         case 1:
+         case 2:
+         case 3:
+         case 4:
+         case 5:
+         case 6:
+         case 7:
+         case 8:
+         case 9:
+         case 10:
+         case 11:
+         case 12:
+         case 13:
+         case 14:
+         case 15:
+            return ToNormalized(steps[_paramIdx], -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 2;
+
+      // Patterns
+      VoltageMemory_Pattern *pat;
+      foreach pat in patterns
+      {
+         pat.saveState(ofs);
+      }
+
+      // Current edit pattern
+      ofs.i8 = edit_pat_idx;
+
+      // Force edit pattern
+      ofs.i8 = b_force_edit_pat;
+
+      // Step offset
+      ofs.f32 = step_offset;
+
+      // Row Step offset
+      ofs.f32 = row_step_offset;
+
+      // Bipolar state
+      int rowIdx = 0;
+      loop(VoltageMemory_Pattern.NUM_ROWS)
+         ofs.i8 = bipolar_state[rowIdx++];
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            VoltageMemory_Pattern *pat;
+
+            // Patterns
+            int patNr = 1;
+            foreach pat in patterns
+            {
+               if(!pat.loadState(ifs))
+               {
+                  trace "[---] ModCV_Memory::loadState: failed to load pattern "+patNr+"/"+NUM_PATTERNS;
+                  return false;
+               }
+               patNr++;
+            }
+
+            // Current edit pattern
+            edit_pat_idx = ifs.u8;
+
+            // Force edit pattern
+            b_force_edit_pat = ifs.b8;
+
+            // Step offset
+            step_offset = ifs.f32;
+
+            // Row Step offset
+            row_step_offset = ifs.f32;
+
+            if(ver >= 2)
+            {
+               // Bipolar state
+               int rowIdx = 0;
+               loop(VoltageMemory_Pattern.NUM_ROWS)
+                  bipolar_state[rowIdx++] = ifs.b8;
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Memory::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected method resetStepLEDs() {
+      LED *led;
+      foreach led in step_leds
+      {
+         led.setConstValue(0.0f);
+      }
+   }
+
+   public virtual reset() {
+   }
+
+   // <method.png>
+   protected virtual addExtraContextMenuItems(PopupMenu pm) {
+      PopupMenuButton *pmb;
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy to Clipboard", "copy");
+      pmb.setAccelerators("c", "");
+
+      pmb <= pm.addDefaultButton("Paste from Clipboard", "paste");
+      pmb.setAccelerators("v", "");
+      pmb.setActive(null != pat_clipboard);
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Clear", "clear");
+      pmb.setAccelerators("BACKSPACE", "");
+
+      pmb <= pm.addDefaultButton("Randomize", "rand");
+      pmb.setAccelerators("r", "");
+   }
+
+   // <method.png>
+   protected method handlePatCopy() {
+      if(null == pat_clipboard)
+      {
+         pat_clipboard <= new VoltageMemory_Pattern;
+         pat_clipboard.init(0);
+      }
+      pat_clipboard.copyFrom(getEditPattern());
+      Global.Print("Copy Voltage Memory pattern to clipboard");
+   }
+
+   // <method.png>
+   protected method handlePatPaste() {
+      if(null != pat_clipboard)
+      {
+         VoltageMemory_Pattern pat <= getEditPattern();
+         pat.copyFrom(pat_clipboard);
+         updatePatWidgets();
+         Global.Print("Paste Voltage Memory pattern from clipboard");
+         updateParentEditorBidirectionalControls();
+      }
+   }
+
+   // <method.png>
+   protected method handlePatClear() {
+      VoltageMemory_Pattern pat <= getEditPattern();
+      pat.clear();
+      updatePatWidgets();
+      Global.Print("Clear Voltage Memory pattern");
+      updateParentEditorBidirectionalControls();
+   }
+
+   // <method.png>
+   protected method handlePatRand() {
+      VoltageMemory_Pattern pat <= getEditPattern();
+      pat.randomize();
+      updatePatWidgets();
+      Global.Print("Randomize Voltage Memory pattern");
+      updateParentEditorBidirectionalControls();
+   }
+
+   // <method_get.png>
+   protected method getTotalNumSteps() : int {
+      // called by UI thread
+      int ret = 0;
+      ModCV_Memory cmod <= this;
+      ModCV_Memory *nmod;
+      loop(MAX_CHAINED_MODULES)
+      {
+         ret += VoltageMemory_Pattern.NUM_STEPS;
+
+         if(cmod.inputs[0].isConnected())
+         {
+            nmod <= cmod.inputs[0].source;
+
+            if(nmod instanceof ModCV_Memory)
+            {
+               cmod <= nmod;
+            }
+            else
+            {
+               break;
+            }
+         }
+         else
+         {
+            break;
+         }
+      }
+      return ret;
+   }
+
+   // <method.png>
+   protected virtual handleExtraContextMenuItem(String _id) : boolean {
+      switch(_id)
+      {
+         case "copy":
+            handlePatCopy();
+            return true;
+
+         case "paste":
+            handlePatPaste();
+            return true;
+
+         case "clear":
+            handlePatClear();
+            return true;
+
+         case "rand":
+            handlePatRand();
+            return true;
+      }
+   }
+
+   public virtual wantKeyboardFocus() : boolean {
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_BACKSPACE:
+            if(0 == _k.mod)
+            {
+               handlePatClear();
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(0 == _k.mod)
+            {
+               handlePatCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(0 == _k.mod)
+            {
+               handlePatPaste();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(0 == _k.mod)
+            {
+               handlePatRand();
+               return true;
+            }
+            break;
+      }
+
+      return Module::onKey(_k);
+   }
+
+   protected method getPlayPattern() : VoltageMemory_Pattern {
+      if(inputs[1].isConnected())
+      {
+         // Pattern input overrides edit pattern
+         local int patIdx = mathClampi(inputs[1].getValue() * NUM_PATTERNS, 0, NUM_PATTERNS-1);
+         if(b_force_edit_pat)
+            return getEditPattern();
+         else
+            return patterns.get(patIdx);
+      }
+      else
+      {
+         // Play edit pattern
+         return getEditPattern();
+      }
+   }
+
+   public virtual tick() {
+
+      // trace "xxx ModCV_Memory::tick: this="+#(this);
+
+      local LED *led;
+      local VoltageMemory_Pattern thisPat <= getPlayPattern();
+
+      // Traverse link chain and determine total number of steps
+      local int numSteps = 0;
+      local ModCV_Memory cmod <= this;
+      local ModCV_Memory *nmod;
+      chained_modules.empty();
+      loop(MAX_CHAINED_MODULES)
+      {
+         numSteps += VoltageMemory_Pattern.NUM_STEPS;
+         chained_modules.add(cmod);
+
+         foreach led in cmod.step_leds
+            led.setConstValue(0.0);
+
+         if(cmod.inputs[0].isConnected())
+         {
+            nmod <= cmod.inputs[0].source;
+
+            if(nmod instanceof ModCV_Memory)
+            {
+               cmod <= nmod;
+            }
+            else
+            {
+               break;
+            }
+         }
+         else
+         {
+            break;
+         }
+      }
+
+      local float stepOff    = (step_offset     + inputs[2].getValue()) * numSteps;
+      local float rowStepOff = (row_step_offset + inputs[3].getValue()) * numSteps;
+
+      local int rowIdx = 0;
+
+      loop(VoltageMemory_Pattern.NUM_ROWS)
+      {
+         local float stepIdxFloat = stepOff;
+         while(stepIdxFloat < 0)
+            stepIdxFloat += numSteps;
+         while(stepIdxFloat >= numSteps)
+            stepIdxFloat -= numSteps;
+         local int stepIdxInt = int(stepIdxFloat);
+         local int stepIdxIntNext = (stepIdxInt + 1) % numSteps;
+
+         local int moduleIdx     = stepIdxInt     / VoltageMemory_Pattern.NUM_STEPS;
+         local int moduleIdxNext = stepIdxIntNext / VoltageMemory_Pattern.NUM_STEPS;
+
+         cmod <= chained_modules.get(moduleIdx);
+         nmod <= chained_modules.get(moduleIdxNext);
+         local VoltageMemory_Pattern pat     <= cmod.getPlayPattern();
+         local VoltageMemory_Pattern patNext <= nmod.getPlayPattern();
+         local FloatArray steps     <= pat.steps;
+         local FloatArray stepsNext <= patNext.steps;
+         local LED *[] stepLeds     <= cmod.step_leds;
+         local LED *[] stepLedsNext <= nmod.step_leds;
+
+         local float r = stepIdxFloat - stepIdxInt;
+
+         stepIdxInt     = stepIdxInt     % VoltageMemory_Pattern.NUM_STEPS;
+         stepIdxIntNext = stepIdxIntNext % VoltageMemory_Pattern.NUM_STEPS;
+
+         local float c = steps    .get(rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxInt);
+         local float n = stepsNext.get(rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxIntNext);
+
+         if(!bipolar_state[rowIdx])
+         {
+            c = c * 0.5f + 0.5f;
+            n = n * 0.5f + 0.5f;
+         }
+
+         switch(thisPat.interpol_types[rowIdx])
+         {
+            case INTERPOL_NONE:
+               out[1 + rowIdx] = c;
+
+               if(pat.pat_idx == cmod.edit_pat_idx)
+               {
+                  led <= stepLeds[rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxInt];
+                  led.setConstValue(1.0);
+               }
+               break;
+
+            case INTERPOL_LIN:
+               out[1 + rowIdx] = c + (n - c) * r;
+
+               if(pat.pat_idx == cmod.edit_pat_idx)
+               {
+                  led <= stepLeds    [rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxInt];
+                  led.setConstValue(1.0 - r);
+               }
+
+               if(patNext.pat_idx == nmod.edit_pat_idx)
+               {
+                  led <= stepLedsNext[rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxIntNext];
+                  led.setConstValue(r);
+               }
+               break;
+
+            case INTERPOL_SIN:
+               out[1 + rowIdx] = c + (n - c) * sin(r * PI * 0.5);
+
+               if(pat.pat_idx == cmod.edit_pat_idx)
+               {
+                  led <= stepLeds    [rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxInt];
+                  led.setConstValue(1.0 - r);
+               }
+
+               if(patNext.pat_idx == nmod.edit_pat_idx)
+               {
+                  led <= stepLedsNext[rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxIntNext];
+                  led.setConstValue(r);
+               }
+               break;
+
+            case INTERPOL_COS:
+               out[1 + rowIdx] = c + (n - c) * (1.0f - cos(r * PI * 0.5));
+
+               if(pat.pat_idx == cmod.edit_pat_idx)
+               {
+                  led <= stepLeds    [rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxInt];
+                  led.setConstValue(1.0 - r);
+               }
+
+               if(patNext.pat_idx == nmod.edit_pat_idx)
+               {
+                  led <= stepLedsNext[rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxIntNext];
+                  led.setConstValue(r);
+               }
+               break;
+
+            case INTERPOL_SMOOTHSTEP:
+               out[1 + rowIdx] = mathSmoothStepf(c, n, r);
+
+               if(pat.pat_idx == cmod.edit_pat_idx)
+               {
+                  led <= stepLeds    [rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxInt];
+                  led.setConstValue(1.0 - r);
+               }
+
+               if(patNext.pat_idx == nmod.edit_pat_idx)
+               {
+                  led <= stepLedsNext[rowIdx*VoltageMemory_Pattern.NUM_STEPS + stepIdxIntNext];
+                  led.setConstValue(r);
+               }
+               break;
+         } // switch interpol_type
+
+         // Next row
+         rowIdx++;
+         stepOff += rowStepOff;
+      } // loop rows
+
+   }
+}

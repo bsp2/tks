@@ -1,0 +1,157 @@
+// ----
+// ---- file   : modcv_output.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26Mar2021
+// ---- changed: 27Mar2021, 29Mar2021, 16Apr2021, 07May2021, 21Feb2022, 08Oct2024, 10Oct2024
+// ----          16Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Output;
+
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_Output : Module {
+   int port_index;
+   PortSelectWidget *port_select_widget;
+   Label *[] labels;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Output"/*id*/,
+                 "cv out"/*header_id*/,
+                 "Output"/*tooltip*/
+                 );
+      setModuleSize(6, 3);
+
+      addInput("o1", "output value 1", 0.0f, IO_ANY);
+      addInput("o2", "output value 2", 0.0f, IO_ANY);
+      addInput("o3", "output value 3", 0.0f, IO_ANY);
+      addInput("o4", "output value 4", 0.0f, IO_ANY);
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 20;
+      float stepY = 40;
+
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, true/*bOutput*/);
+
+      cx = 24;
+      cy = 56;
+      int pIdx = 0;
+      loop(4)
+      {
+         String portId <= parent_node.getPortIdByIndex(pIdx + port_index);
+
+         PortWidget pw <= createPortWidget(pIdx, false/*bOutput*/,
+                                           cx,
+                                           cy,
+                                           (portId.numChars > 7) ? portId.substring(0,7):portId/*captionOrNull*/
+                                           );
+
+         labels.add(pw.lb);
+
+         cy += stepY;
+         pIdx++;
+      }
+   }
+
+   protected method handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      int pIdx = 0;
+      ui::Label *lb;
+      foreach lb in labels
+      {
+         lb.setCaption(parent_node.getPortIdByIndex(pIdx + port_index));
+         float w = lb.getCaptionWidth();
+         float h = lb.getCaptionHeight();
+         lb.setRequiredSize2f(w, h);
+         lb.setPositionX(24*UI.font_scaling - w * 0.5 + 2*UI.font_scaling);
+         pIdx++;
+      }
+      relayout();
+      redraw();
+      Global.Print("Base Output Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8 = port_index;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index = ifs.u8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Output::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public method tickOutput(MIDIPipeFrame _frOut) {
+      local int pIdx = 0;
+      loop(4)
+      {
+         if(inputs[pIdx].isConnected())
+         {
+            local float val = inputs[pIdx].getValue();
+            parent_node.emitOutput(_frOut, port_index + pIdx, val, -1/*forcedType*/);
+         }
+
+         pIdx++;
+      }
+   }
+
+   public virtual onPortSelectionChanged() {
+      // // trace "xxx ModCV_Output::onPortSelectionChanged: port_select_widget="+#(port_select_widget);
+      if(null != port_select_widget)
+         port_select_widget.updatePortOptions(parent_node);
+   }
+
+   public virtual consumeAction(ui::Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ui::ActionProvider *ap; ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(port_select_widget):
+            handlePortChanged(port_select_widget.getSelectedPortIndex());
+            if(FloatParam.ACTION_VALUECHANGED == acName) // return
+            {
+               UI.SetKeyboardFocus(this);
+               redraw();
+            }
+            return true;
+      }
+
+      return Module::consumeAction(_ac);
+   }
+}

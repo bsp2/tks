@@ -1,0 +1,331 @@
+// ----
+// ---- file   : modcv_clock.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 01Apr2021
+// ---- changed: 02Apr2021, 03Apr2021, 16Apr2021, 07May2021, 28Dec2021, 08Oct2024, 10Oct2024
+// ----          11Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Clock;
+
+use namespace st2;
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_Clock : Module {
+
+   int clock_mul;
+   int clock_mul2;
+   int clock_div;
+   int clock_off;  // ticks
+
+   protected ui::FloatParam *fp_mul;
+   protected ui::FloatParam *fp_mul2;
+   protected ui::FloatParam *fp_div;
+   protected ui::FloatParam *fp_off;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Clock"/*id*/,
+                 "clock"/*header_id*/,
+                 "Clock (base=24 ticks per quarter note)"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      clock_mul  = 24;
+      clock_mul2 = 1;
+      clock_div  = 1;
+      clock_off  = 0;
+
+      addInput("mul", "mul", 1.0f, IO_SCALE);
+      addInput("div", "div", 1.0f, IO_SCALE);
+      addInput("off", "off", 1.0f, IO_SCALE);
+
+      addOutput("out", "clock output (trig pulse)", IO_CLOCK);
+   }
+
+   public virtual copyFrom(ModCV_Clock _o) {
+      clock_mul  = _o.clock_mul;
+      clock_mul2 = _o.clock_mul2;
+      clock_div  = _o.clock_div;
+      clock_off  = _o.clock_off;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cy = 20;
+      float stepY = 41;
+      PortWidget *pw;
+
+      // Base
+      fp_mul <= createIntParamWidget(6, cy,
+                                     "clock_mul",
+                                     1/*min*/,
+                                     96/*max*/,
+                                     24/*reset*/,
+                                     clock_mul/*cur*/,
+                                     "base"/*captionOrNull*/
+                                     );
+      fp_mul.setPresetOptions([current_song.ppq/32,
+                               current_song.ppq/16,
+                               current_song.ppq/8,
+                               current_song.ppq/4,
+                               current_song.ppq/2,
+                               current_song.ppq*1,
+                               current_song.ppq*2,
+                               current_song.ppq*4
+                               ],
+                              [String("1/128\t"+(current_song.ppq/32)+" ticks"),
+                               String("1/64\t"+(current_song.ppq/16)+" ticks"),
+                               String("1/32\t"+(current_song.ppq/8)+" ticks"),
+                               String("1/16\t"+(current_song.ppq/4)+" ticks"),
+                               String("1/8\t"+(current_song.ppq/2)+" ticks"),
+                               String("1/4\t"+current_song.ppq+" ticks"),
+                               String("1/2\t"+(current_song.ppq*2)+" ticks"),
+                               String("1/1\t"+(current_song.ppq*4)+" ticks"),
+                               ]
+                              );
+
+
+      // Mul
+      cy += stepY;
+      fp_div <= createIntParamWidget(6, cy,
+                                     "clock_mul2",
+                                     1/*min*/,
+                                     64/*max*/,
+                                     1/*reset*/,
+                                     clock_mul2/*cur*/,
+                                     "m"/*captionOrNull*/
+                                     );
+      last_label.setPositionX(last_label.getPositionX() + 7*UI.font_scaling);
+      last_label.setPositionY(last_label.getPositionY() + 1*UI.font_scaling);
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             10, cy + 22,
+                             null/*captionOrNull*/
+                             );
+      pw.setToolTipCaption("Clock-Tick Multiplier Input\n\n (note) scaled by mul ticks knob\n\n (note) 1.0 when not connected");
+
+
+      // Div
+      cy += stepY;
+      fp_div <= createIntParamWidget(6, cy,
+                                     "clock_div",
+                                     1/*min*/,
+                                     64/*max*/,
+                                     1/*reset*/,
+                                     clock_div/*cur*/,
+                                     "d"/*captionOrNull*/
+                                     );
+      last_label.setPositionX(last_label.getPositionX() + 7*UI.font_scaling);
+      last_label.setPositionY(last_label.getPositionY() + 1*UI.font_scaling);
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             10, cy + 22,
+                             null/*captionOrNull*/
+                             );
+      pw.setToolTipCaption("Clock-Tick Divisor Input\n\n (note) scaled by div ticks knob\n\n (note) 1.0 when not connected");
+
+
+      // Offset
+      cy += stepY;
+      fp_off <= createIntParamWidget(6, cy,
+                                     "clock_off",
+                                     -96/*min*/,
+                                     96/*max*/,
+                                     0/*reset*/,
+                                     clock_off/*cur*/,
+                                     "o"/*captionOrNull*/
+                                     );
+      fp_off.setToolTipCaption("Clock Offset Input Scaling (#ticks)");
+      fp_off.setPrecision(4);
+      fp_off.setPresetOptions([0,
+                               current_song.ppq/16,
+                               current_song.ppq/8,
+                               current_song.ppq/4,
+                               current_song.ppq/2,
+                               current_song.ppq*1,
+                               current_song.ppq*2,
+                               current_song.ppq*4
+                               ],
+                               ["-", "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1"]
+                              );
+
+      last_label.setPositionX(last_label.getPositionX() + 7*UI.font_scaling);
+      last_label.setPositionY(last_label.getPositionY() + 1*UI.font_scaling);
+      pw <= createPortWidget(2, false/*bOutput*/,
+                             10, cy + 22,
+                             null/*captionOrNull*/
+                             );
+      pw.setToolTipCaption("Clock Offset Input\n\n (note) scaled by offset ticks knob\n\n (note) 1.0 when not connected (=> offset knob determines tick offset)");
+
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       15, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return ("clock_off" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "clock_mul":
+            clock_mul = _value;
+            break;
+
+         case "clock_mul2":
+            clock_mul2 = _value;
+            break;
+
+         case "clock_div":
+            clock_div = _value;
+            break;
+
+         case "clock_off":
+            clock_off = round(_value);
+            float num16th = clock_off / current_song.getNumTicksPer16th();
+            Global.Print("Param \"clock_off\" is "+clock_off+" tick"+Utils.GetPluralStringFloat(clock_off)+" => "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "clock_mul":
+            return clock_mul;
+
+         case "clock_mul2":
+            return clock_mul2;
+
+         case "clock_div":
+            return clock_div;
+
+         case "clock_off":
+            return clock_off;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["mul", "mul2", "div", "off"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            clock_mul = FromNormalized(_value, 1, 96);
+            updateParamWidget("clock_mul", clock_mul);
+            break;
+
+         case 1:
+            clock_mul2 = FromNormalized(_value, 1, 64);
+            updateParamWidget("clock_mul2", clock_mul2);
+            break;
+
+         case 2:
+            clock_div = FromNormalized(_value, 1, 64);
+            updateParamWidget("clock_div", clock_div);
+            break;
+
+         case 3:
+            clock_off = round(FromNormalized(_value, -96, 96));
+            updateParamWidget("clock_off", clock_off);
+            float num16th = clock_off / current_song.getNumTicksPer16th();
+            Global.Print("Param \"clock_off\" is "+clock_off+" tick"+Utils.GetPluralStringFloat(clock_off)+" => "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(clock_mul, 1, 96);
+
+         case 1:
+            return ToNormalized(clock_mul2, 1, 64);
+
+         case 2:
+            return ToNormalized(clock_div, 1, 64);
+
+         case 3:
+            return ToNormalized(clock_off, -96, 96);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 3;
+
+      // params
+      ofs.i16 = clock_mul;
+      ofs.i16 = clock_mul2; // v2+
+      ofs.i16 = clock_div;
+      ofs.i16 = clock_off;  // v3+
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            clock_mul = ifs.u16;
+            if(ver >= 2)
+               clock_mul2 = ifs.u16;
+            clock_div = ifs.u16;
+            if(ver >= 3)
+               clock_off = ifs.s16;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Clock::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tick() {
+
+      local float fMul = inputs[0].getValue();
+      local float fDiv = inputs[1].getValue();
+      local float fOff = inputs[2].getValue();
+      
+      int tickNr = parent_node.tick_nr - round(clock_off * fOff);  // ticks since nodeReset() or nodeSeek()
+
+      out[0] = 0.0f;
+
+      if(replay.b_playing)
+      {
+         if(0 == (tickNr % mathMaxi(2, (clock_mul * mathMaxi(1, clock_mul2 * fMul) * (current_song.ppq/24)) / mathMaxi(1, clock_div * fDiv))))
+         {
+            out[0] = 1.0f;
+            // trace "xxx ["+current_song.song_offset+"] ~~~~~~ ModCV_Clock: node.tick_nr="+parent_node.tick_nr+" emit trig ~~~~~~~";
+         }
+      }
+   }
+}

@@ -1,0 +1,388 @@
+// ----
+// ---- file   : modcv_adsr.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2023 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 04Apr2021
+// ---- changed: 05Apr2021, 16Apr2021, 07May2021, 28Dec2021, 21Feb2022, 08Oct2023
+// ----
+// ----
+// ----
+
+module MModularCVMod_ADSR;
+
+use namespace st2;
+namespace modularcv;
+
+
+class ModCV_ADSR : Module {
+   define int ST_ATK = 0;
+   define int ST_DCY = 1;
+   define int ST_SUS = 2;
+   define int ST_RLS = 3;
+   define int ST_END = 4;
+   protected int cur_stage;
+   protected boolean b_allow_gate;
+   protected boolean b_allow_retrig;
+
+   float rate_a_offset;
+   float rate_d_offset;
+   float level_s_offset;
+   float rate_r_offset;
+
+   protected float cur_level;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("ADSR"/*id*/,
+                 "adsr"/*header_id*/,
+                 "ADSR"/*tooltip*/
+                 );
+      setModuleSize(6, 3);
+
+      rate_a_offset  = 0.1;
+      rate_d_offset  = 0.5;
+      level_s_offset = 0.5;
+      rate_r_offset  = 0.5;
+
+      cur_stage = ST_RLS;
+      b_allow_gate = true;
+      b_allow_retrig = true;
+
+      addInput("gate", "Gate",          0.0, IO_GATE);
+
+      addInput("a",    "Attack Rate",   0.0, IO_RATE);
+      addInput("d",    "Decay Rate",    0.0, IO_RATE);
+      addInput("s",    "Sustain Level", 0.0, IO_LEVEL);
+      addInput("r",    "Release Rate",  0.0, IO_RATE);
+
+      addInput("retrig", "Retrig",      0.0, IO_GATE);
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_ADSR _o) {
+      rate_a_offset  = _o.rate_a_offset;
+      rate_d_offset  = _o.rate_d_offset;
+      level_s_offset = _o.level_s_offset;
+      rate_r_offset  = _o.rate_r_offset;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 16;
+      float cy = 24;
+      float stepY = 34;
+      float portOffX = 19;
+
+      // Gate
+      createPortWidget(0, false/*bOutput*/,
+                       15,
+                       cy,
+                       "gt"/*captionOrNull*/
+                       );
+
+      // Retrig
+      createPortWidget(5, false/*bOutput*/,
+                       31,
+                       cy,
+                       "rt"/*captionOrNull*/
+                       );
+
+
+      // Attack
+      cy += stepY;
+      createSmallDial(cx, cy,
+                      "rate_a_offset",
+                      0.0, 1.0, 0.5, rate_a_offset,
+                      "a"
+                      );
+      createPortWidget(1, false/*bOutput*/,
+                       cx + portOffX,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+                       
+
+      // Decay
+      cy += stepY;
+      createSmallDial(cx, cy,
+                      "rate_d_offset",
+                      0.0, 1.0, 0.5, rate_d_offset,
+                      "d"
+                      );
+      createPortWidget(2, false/*bOutput*/,
+                       cx + portOffX,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Sustain
+      cy += stepY;
+      createSmallDial(cx, cy,
+                      "level_s_offset",
+                      0.0, 1.0, 0.5, level_s_offset,
+                      "s"
+                      );
+      createPortWidget(3, false/*bOutput*/,
+                       cx + portOffX,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Release
+      cy += stepY;
+      createSmallDial(cx, cy,
+                      "rate_r_offset",
+                      0.0, 1.0, 0.5, rate_r_offset,
+                      "r"
+                      );
+      createPortWidget(4, false/*bOutput*/,
+                       cx + portOffX,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       23,
+                       RACK_MODULE_HEIGHT - 20,
+                       null/*captionOrNull*/
+                       );
+
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "rate_a_offset":
+            rate_a_offset = _value;
+            break;
+
+         case "rate_d_offset":
+            rate_d_offset = _value;
+            break;
+
+         case "level_s_offset":
+            level_s_offset = _value;
+            break;
+
+         case "rate_r_offset":
+            rate_r_offset = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "rate_a_offset":
+            return rate_a_offset;
+
+         case "rate_d_offset":
+            return rate_d_offset;
+
+         case "level_s_offset":
+            return level_s_offset;
+
+         case "rate_r_offset":
+            return rate_r_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["attack", "decay", "sustain", "release"
+              ];
+   }
+
+   // // public virtual getNormalizedParamMapping() : StringArray {
+   // //    return ["rate_a_offset", "rate_d_offset", "level_s_offset", "rate_r_offset"
+   // //            ];
+   // // }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            rate_a_offset = FromNormalized(_value, 0, 1);
+            updateParamWidget("rate_a_offset", rate_a_offset);
+            break;
+
+         case 1:
+            rate_d_offset = FromNormalized(_value, 0, 1);
+            updateParamWidget("rate_d_offset", rate_d_offset);
+            break;
+
+         case 2:
+            level_s_offset = FromNormalized(_value, 0, 1);
+            updateParamWidget("level_s_offset", level_s_offset);
+            break;
+
+         case 3:
+            rate_r_offset = FromNormalized(_value, 0, 1);
+            updateParamWidget("rate_r_offset", rate_r_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(rate_a_offset, 0, 1);
+
+         case 1:
+            return ToNormalized(rate_d_offset, 0, 1);
+
+         case 2:
+            return ToNormalized(level_s_offset, 0, 1);
+
+         case 3:
+            return ToNormalized(rate_r_offset, 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.f32 = rate_a_offset;
+      ofs.f32 = rate_d_offset;
+      ofs.f32 = level_s_offset;
+      ofs.f32 = rate_r_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            rate_a_offset  = ifs.f32;
+            rate_d_offset  = ifs.f32;
+            level_s_offset = ifs.f32;
+            rate_r_offset  = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_ADSR::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      cur_stage = ST_RLS;
+      b_allow_gate = true;
+      b_allow_retrig = true;
+   }
+
+   public virtual tick() {
+      local float fGate   = inputs[0].getValue();
+      local float fA      = mathClampf(inputs[1].getValue() + rate_a_offset,  0.0f, 1.0f);
+      local float fD      = mathClampf(inputs[2].getValue() + rate_d_offset,  0.0f, 1.0f);
+      local float fS      = mathClampf(inputs[3].getValue() + level_s_offset, 0.0f, 1.0f);
+      local float fR      = mathClampf(inputs[4].getValue() + rate_r_offset,  0.0f, 1.0f);
+      local float fRetrig = inputs[5].getValue();
+
+      if(b_allow_retrig)
+      {
+         if(fRetrig >= TRIG_ON)
+         {
+            b_allow_retrig = false;
+            cur_stage = ST_ATK;
+         }
+      }
+      else if(fRetrig < TRIG_OFF)
+      {
+         b_allow_retrig = (fGate >= TRIG_ON);///true;
+      }
+
+      if(b_allow_gate)
+      {
+         if(fGate >= TRIG_ON)
+         {
+            b_allow_gate = false;
+            cur_stage = ST_ATK;
+         }
+      }
+      else if(fGate < TRIG_OFF)
+      {
+         b_allow_gate = true;
+         cur_stage = ST_RLS;
+      }
+
+      fA = 1.0f - fA;
+      fD = 1.0f - fD;
+      fR = 1.0f - fR;
+
+      fA *= fA * fA;
+      fD *= fD * fD;
+      fR *= fR * fR;
+
+      fA *= (192.0 / current_song.ppq);
+      fD *= (192.0 / current_song.ppq);
+      fR *= (192.0 / current_song.ppq);
+
+      switch(cur_stage)
+      {
+         case ST_ATK:
+            cur_level += fA;
+            // trace "xxx ST_ATK: cur_level="+cur_level+" fA="+fA;
+            if(cur_level >= 1.0f)
+            {
+               cur_level = 1.0;
+               cur_stage++;
+            }
+            break;
+
+         case ST_DCY:
+            // trace "xxx ST_DCY: cur_level="+cur_level+" fD="+fD;
+            cur_level -= fD;
+            if(cur_level <= fS)
+            {
+               cur_level = fS;
+               cur_stage++;
+            }
+            break;
+
+         case ST_SUS:
+            cur_level = fS;
+            break;
+
+         case ST_RLS:
+            // trace "xxx ST_RLS: cur_level="+cur_level+" fR="+fR;
+            cur_level -= fR;
+            if(cur_level < 0.0f)
+            {
+               cur_level = 0.0f;
+               cur_stage++;
+            }
+            break;
+
+         case ST_END:
+            break;
+      }
+
+      // if(cur_level > 0)
+      //    trace "xxx cur_stage="+cur_stage+" cur_level="+cur_level;
+
+      out[0] = cur_level;
+   }
+}

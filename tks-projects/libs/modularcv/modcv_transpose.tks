@@ -1,0 +1,219 @@
+// ----
+// ---- file   : modcv_transpose.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2022 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 06Apr2021
+// ---- changed: 16Apr2021, 07May2021, 28Dec2021, 21Feb2022
+// ----
+// ----
+// ----
+
+module MModularCVMod_Transpose;
+
+namespace modularcv;
+
+
+class ModCV_Transpose : Module {
+   int oct_offset;   // -5..5
+   int note_offset;  // -24..24
+   int fine_offset;  // -99..99 cents
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Transpose"/*id*/,
+                 "trp"/*header_id*/,
+                 "Transpose"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      addInput("in", "in", 0.0, IO_CV);
+
+      addInput("oct",  "oct",  0.0, IO_OFF);
+      addInput("note", "note", 0.0, IO_OFF);
+      addInput("fine", "fine", 0.0, IO_OFF);
+
+      addOutput("out", "Transposed Output", IO_CV);
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 78;
+      float stepY = 48;
+      float paramOffX = -8;
+      float paramOffY = -40;
+
+      // Input
+      createPortWidget(0, false/*bOutput*/,
+                       cx,
+                       28,
+                       null/*captionOrNull*/
+                       );
+
+      // Oct
+      createIntParamWidget(cx+paramOffX, cy+paramOffY,
+                           "oct_offset",
+                           -5, 5, 0, oct_offset,
+                           "oct"/*captionOrNull*/
+                           );
+      createPortWidget(1, false/*bOutput*/,
+                       cx,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Note
+      cy += stepY;
+      createIntParamWidget(cx+paramOffX, cy+paramOffY,
+                           "note_offset",
+                           -24, 24, 0, note_offset,
+                           "note"/*captionOrNull*/
+                           );
+      createPortWidget(2, false/*bOutput*/,
+                       cx,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Fine
+      cy += stepY;
+      createIntParamWidget(cx+paramOffX, cy+paramOffY,
+                           "fine_offset",
+                           -99, 99, 0, fine_offset,
+                           "fine"/*captionOrNull*/
+                           );
+      createPortWidget(3, false/*bOutput*/,
+                       cx,
+                       cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "oct_offset":
+            oct_offset = _value;
+            break;
+
+         case "note_offset":
+            note_offset = _value;
+            break;
+
+         case "fine_offset":
+            fine_offset = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "oct_offset":
+            return oct_offset;
+
+         case "note_offset":
+            return note_offset;
+
+         case "fine_offset":
+            return fine_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["oct off", "semi off", "fine off"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            oct_offset = FromNormalized(_value, -5, 5);
+            updateParamWidget("oct_offset", oct_offset);
+            break;
+
+         case 1:
+            note_offset = FromNormalized(_value, -24, 24);
+            updateParamWidget("note_offset", note_offset);
+            break;
+
+         case 2:
+            fine_offset = FromNormalized(_value, -99, 99);
+            updateParamWidget("fine_offset", fine_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(oct_offset, -5, 5);
+
+         case 1:
+            return ToNormalized(note_offset, -24, 24);
+
+         case 2:
+            return ToNormalized(fine_offset, -99, 99);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8 = oct_offset;
+      ofs.i8 = note_offset;
+      ofs.i8 = fine_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            oct_offset  = ifs.s8;
+            note_offset = ifs.s8;
+            fine_offset = ifs.s8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Transpose::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tick() {
+      local float fIn   = inputs[0].getValue();
+      local float fOct  = mathClampi(inputs[1].getValue()*6,    -5,  5) + oct_offset;
+      local float fNote = mathClampi(inputs[2].getValue()*6,   -24, 24) + note_offset;
+      local float fFine = mathClampi(inputs[3].getValue()*100, -99, 99) + fine_offset;
+
+      // (note) -1..1=-5..5 octaves => octave delta = 1/5 = 0.2
+      out[0] = fIn + fOct*0.2 + (fNote*0.2)/12 + (fFine*0.2)/(12*100);
+   }
+
+}

@@ -1,0 +1,1217 @@
+// ----
+// ---- file   : module.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26Mar2021
+// ---- changed: 27Mar2021, 29Mar2021, 30Mar2021, 01Apr2021, 12Apr2021, 16Apr2021, 19Apr2021
+// ----          07May2021, 13Nov2021, 27Dec2021, 28Dec2021, 21Feb2022, 08Oct2023, 11Nov2023
+// ----          29Mar2024, 18Sep2024, 08Oct2024, 09Oct2024, 10Oct2024, 11Oct2024, 12Oct2024
+// ----          16Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVModule;
+
+use namespace ui;
+use namespace st2;
+namespace modularcv;
+
+
+// <class.png>
+class Module : Control/*Composite*/, ModularCV {
+
+   Patch *parent_patch;
+   ::NodeModular *parent_node;
+
+   int    index;  // index in patch.all_modules array
+   String id;
+   String header_id;  // short id, e.g. "in", "out", "con", "m", "atn", "mix", ..
+   String module_tooltip;
+   int    module_x;      // in TE
+   int    module_y;      // in rack units (3U = 15 TE = (15*16) = 240 pixels). must be a multiple of 3 (for now).
+   int    module_w;      // width (1 TE = 16 pixels)
+   int    module_h;      // must be 3 (for now)
+
+   Input  *[] inputs;
+   Output *[] outputs;
+   FloatArray out;
+   int        last_tick_nr;
+
+   Layer *[] param_widgets;
+   Layer *[] led_widgets;
+   Layer *[] dpy_widgets;
+
+   protected Label *last_label;  // last created label
+
+   protected PopupMenu *pm_context;
+   protected Font *header_font;
+
+   define int DRAG_NONE = 0;
+   define int DRAG_POS  = 1;
+   protected int   drag_mode;
+   protected int   drag_start_module_x;
+   protected int   drag_start_module_y;
+   protected float drag_start_x;
+   protected float drag_start_y;
+
+
+   public method init() {
+      initControl();
+
+      setModuleSize(5, 3);
+
+      header_font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_TEXTFIELD);
+   }
+
+   protected method initModule(String _id,
+                               String _headerId,
+                               String _toolTip
+                               ) {
+      id             = _id;
+      header_id      = _headerId;
+      module_tooltip = _toolTip;
+   }
+
+   public method initUI() {
+      // called after parent_patch / parent_node have been set (Patch::addModule())
+      if(!app_lnf.b_dark_modular)
+         setLookAndFeelLight();
+   }
+
+   public virtual isEditable() : boolean {
+      return true;
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   protected method setModuleSize(int _w, int _h) {
+      module_w = _w;
+      module_h = _h;
+
+      setRequiredSize2f(module_w * GetRackUnitWidth(),
+                        module_h * GetRackUnitHeight()
+                        );
+   }
+
+   public method addInput(String _id, String _tooltip, float _defValue, int _ioClass) : Input {
+      local Input input;
+      input.init();
+      input.parent_module <= this;
+      input.index     = inputs.numElements;
+      input.id        = _id;
+      input.tooltip   = _tooltip;
+      input.def_value = _defValue;
+      input.io_class  = _ioClass;
+      inputs.add(#(deref input));
+      return input;
+   }
+
+   public method getInputByIndex(int _index) : Input {
+      return inputs.get(_index);
+   }
+
+   public method findInputById(String _id) : Input {
+      Input *input;
+      foreach input in inputs
+      {
+         if(input.id == _id)
+            return input;
+      }
+      return null;
+   }
+
+   public method addOutput(String _id, String _tooltip, int _ioClass) : Output {
+      local Output output;
+      output.init();
+      output.parent_module <= this;
+      output.index    = outputs.numElements;
+      output.id       = _id;
+      output.tooltip  = _tooltip;
+      output.io_class = _ioClass;
+      outputs.add(#(deref output));
+      out.add(0.0f);
+      return output;
+   }
+
+   public method getOutputByIndex(int _index) : Output {
+      return outputs.get(_index);
+   }
+
+   public method findOutputById(String _id) : Output {
+      Output *output;
+      foreach output in outputs
+      {
+         if(output.id == _id)
+            return output;
+      }
+      return null;
+   }
+
+   public method handleOutputConnect(int _outputIdx) {
+      // can be used by derived modules to break normalized connections (e.g. ModCV_Mix4)
+   }
+
+   public method handleOutputDisconnect(int _outputIdx) {
+   }
+
+   public =replay= method connect(int _inputIdx, Module _source, int _outputIdx) {
+      Input input <= inputs.get(_inputIdx);
+      if(null != input)
+      {
+         input.source <= _source;
+         input.source_output_index = _outputIdx;
+         _source.handleOutputConnect(_outputIdx);
+      }
+      else
+      {
+         trace "[---] Module::connect: invalid inputIdx="+_inputIdx+" (num="+inputs.numElements+")";
+      }
+   }
+
+   public =replay= method disconnect(int _inputIdx) {
+      Input input <= inputs.get(_inputIdx);
+      if(null != input)
+      {
+         input.source.handleOutputDisconnect(input.source_output_index);
+         input.source <= null;
+      }
+      else
+      {
+         trace "[---] Module::disconnect: invalid inputIdx="+_inputIdx+" (num="+inputs.numElements+")";
+      }
+   }
+
+   public method autoColorizeInput(int _inputIdx) {
+      // Called after connect()
+      Input input <= inputs.get(_inputIdx);
+      if(null != input)
+      {
+         input.palette_idx = STConfig.modular_ioclass_color_indices.get(input.io_class);
+
+         if(IO_ANY == input.io_class)
+         {
+            Output output <= input.source.getOutputByIndex(input.source_output_index);
+            if(IO_ANY == output.io_class)
+               input.palette_idx = input.source.getCurrentDefaultIOPaletteIdx();  // propagate in=>out
+            else
+               input.palette_idx = STConfig.modular_ioclass_color_indices.get(output.io_class);
+         }
+      }
+   }
+
+   public method getCurrentDefaultIOPaletteIdx() : int {
+      Input input <= getInputByIndex(0);
+      if(null != input)
+         return input.palette_idx;
+   }
+
+   public method setModulePosition(int _x, int _y) {
+      _y = mathClampi(_y, 0, 3);
+
+      module_x = _x;
+      module_y = _y;
+
+      moveToPosition2f(module_x * GetRackUnitWidth(),
+                       module_y * GetRackUnitHeight()
+                       );
+   }
+
+   public method wantDefaultParamMessage(String _name) : boolean {
+      // false=module prints a custom status message when setParamByName() is called (e.g. ModCV_Const)
+      return true;
+   }
+
+   public method setParamByName(String _name, float _value) {
+      // implemented by derived classes
+   }
+
+   public method getParamByName(String _name) : float {
+      // implemented by derived classes
+   }
+
+   protected method updateParamWidget(String _paramName, float _value) {
+      // 'value' is in widget value range (i.e. _not_ normalized)
+      // (note) called when param is edited via MIDI controller (e.g. FaderPort)
+      Layer *l;
+      foreach l in param_widgets
+      {
+         String paramName <= l.getUserData();
+         // trace "xxx find \""+_paramName+"\" cur=\""+paramName+"\"";
+
+         if(_paramName == paramName)
+         {
+            if(l instanceof Dial)
+            {
+               Dial dial <= l;
+               dial.setValue(_value);
+               if(wantDefaultParamMessage(paramName))
+                  Global.PrintFast("Param \""+paramName+"\" is "+dial.getValue());
+            }
+            else if(l instanceof FloatParam)
+            {
+               FloatParam fp <= l;
+               fp.setValue(_value);
+               if(wantDefaultParamMessage(paramName))
+                  Global.PrintFast("Param \""+paramName+"\" is "+fp.getFloatValue());
+            }
+            else if(l instanceof RoundButton)
+            {
+               RoundButton bt <= l;
+               bt.setSelected(_value >= 0.5f);
+               if(wantDefaultParamMessage(paramName))
+                  Global.PrintFast("Param \""+paramName+"\" is "+Utils.GetEnableString(bt.isSelected()));
+            }
+            else if(l instanceof ComboBox)
+            {
+               ComboBox cm <= l;
+               cm.setSelectedOption(int(_value));
+               if(wantDefaultParamMessage(paramName))
+                  Global.PrintFast("Param \""+paramName+"\" is "+cm.getSelectedOption()+" => "+cm.getSelectedOptionName());
+            }
+            else if(l instanceof Slider)
+            {
+               Slider sl <= l;
+               sl.setValue(_value);
+               if(wantDefaultParamMessage(paramName))
+                  Global.PrintFast("Param \""+paramName+"\" is "+sl.getValue());
+            }
+         }
+      }
+   }
+
+   public method getNormalizedParamNames() : Object {
+      // implemented by derived classes
+      //  (note) returns StringArray or ValueArray (dynamic param names)
+      //  (note) also determines number of parameters
+      return null;
+   }
+
+   // // public virtual getNormalizedParamMapping() : StringArray {
+   // //    // returns mapping of normalized param indices to regular param names
+   // //    //  - used for UI widget updates after setNormalizedParamByIndexUI()
+   // //    return null;
+   // // }
+
+   public method setNormalizedParamByIndexReplay(int _paramIdx, float _value) {
+      // called from replay thread
+      // queue UI update
+      // 'value' is in range 0..16383 (RPN)
+      parent_patch.queueNormalizedParamUpdate(index, _paramIdx, _value);
+   }
+
+   public method setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      // called from UI thread while =replay= is locked
+      // implemented by derived classes
+      // 'value' is in range 0..16383 (RPN)
+   }
+
+   public =replay= method updateQueuedNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      // called by Patch::handleQueuedNormalizedParamUpdates()
+      // 'value' is in range 0..16383 (RPN)
+      setNormalizedParamByIndexUI(_paramIdx, _value);
+   }
+
+   public method getNormalizedParamByIndex(int _paramIdx) : float {
+      // implemented by derived classes
+      // returned value is in range 0..16383 (RPN)
+   }
+
+   public static FromNormalized(float _value, float _min, float _max) : float {
+      // Bipolar
+      if(_value >= 8192.0f)
+         return _min + (0.5f + 0.5f*((_value-8192.0f)/8191.0f)) * (_max - _min);
+      else
+         return _min + (0.5f*(_value/8192.0f)) * (_max - _min);
+   }
+
+   public static ToNormalized(float _value, float _min, float _max) : float {
+      // Bipolar
+      float ctr = (_min + _max) / 2.0f;
+      if(_value >= ctr)
+         return 8192.0 + 8191.0 * ((_value - ctr) / (_max - ctr));
+      else
+         return 8192.0 - 8192.0 * ((ctr - _value) / (ctr - _min));
+   }
+
+   public method getOutputValueByIndex(local int _index) : float {
+      if(last_tick_nr != parent_patch.next_tick_nr)
+      {
+         // if(replay.b_playing)
+         //    trace "xxx ["+current_song.song_offset+"] getOutputValueByIndex("+_index+") this_module="+#(this);
+         last_tick_nr = parent_patch.next_tick_nr;
+         tick();
+         // if(replay.b_playing)
+         //    trace "xxx ["+current_song.song_offset+"]   ==> getOutputValueByIndex("+_index+") this_module="+#(this)+" val=="+out[_index];
+      }
+      return out.get(_index);
+   }
+
+   public method copyFrom(Module _o) {
+      // (note) don't copy index/position/..
+      // (note) called when cloning module
+   }
+
+   public method saveState(Stream ofs) {
+      // (note) module class name is saved by caller
+
+      // ver
+      ofs.i16 = 2;
+
+      // position
+      ofs.i16 = module_x;
+      ofs.i16 = module_y;
+
+      // input / cable colors (v2+)
+      ofs.i8 = inputs.numElements;
+      Input *input;
+      foreach input in inputs
+      {
+         ofs.i8 = input.palette_idx;
+      }
+   }
+
+   public method loadState(Stream ifs) : boolean {
+      // (note) module class name is loaded by caller
+
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         // position
+         module_x = ifs.u16;
+         module_y = ifs.u16;
+         setModulePosition(module_x, module_y);
+
+         if(ver >= 2)
+         {
+            // input / cable colors (v2+)
+            int numInputs = ifs.u8;
+            int inputIdx = 0;
+            loop(numInputs)
+            {
+               byte paletteIdx = ifs.u8;
+               Input input <= getInputByIndex(inputIdx++);
+               if(null != input)
+                  input.palette_idx = paletteIdx;
+            }
+         }
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Module::loadState: invalid ver="+ver;
+      }
+      return false;
+   }
+
+   public method saveConnections(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // Input connections
+      //  (note) save input/output port refs by id, in case order changes in future builds
+      ofs.i16 = inputs.numElements;
+      Input *input;
+      foreach input in inputs
+      {
+         Module source <= input.source;
+         if(null != source)
+         {
+            Output output <= input.source.getOutputByIndex(input.source_output_index);
+            if(null != output)
+            {
+               ofs.i16 = source.index;
+               ofs.serialize(input.id, false);
+               ofs.serialize(output.id, false);
+            }
+            else
+            {
+               // should not be reachable (invalid output)
+               trace "[---] Module::saveConnections: invalid output index (this.id="+id+" input.id="+input.id+" input.source_output_index="+input.source_output_index;
+               ofs.i16 = -1;
+            }
+         }
+         else
+         {
+            // not connected
+            ofs.i16 = -1;
+         }
+
+      } // foreach input
+   }
+
+   public method loadConnections(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+      if(ver >= 1)
+      {
+         // Num inputs
+         int numInputs = ifs.u16;
+         loop(numInputs)
+         {
+            short sourceIndex = ifs.i16;
+            if(-1 != sourceIndex)
+            {
+               local String inputId;
+               ifs.deserialize(inputId, false);
+
+               local String outputId;
+               ifs.deserialize(outputId, false);
+
+               Module source <= parent_patch.getModuleByIndex(sourceIndex);
+
+               if(null != source)
+               {
+                  Input input <= findInputById(inputId);
+                  if(null != input)
+                  {
+                     Output output <= source.findOutputById(outputId);
+                     if(null != output)
+                     {
+                        connect(input.index, source, output.index);
+                     }
+                     else
+                     {
+                        trace "[~~~] Module::loadConnections: invalid outputId=\""+outputId+"\" (this.id="+id+" this.index="+index+" inputId="+inputId+" source.id="+source.id+" sourceIndex="+sourceIndex+"), skipping..";
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] Module::loadConnections: invalid inputId=\""+inputId+"\" (this.id="+id+" this.index="+index+"), skipping..";
+                  }
+               }
+               else
+               {
+                  trace "[~~~] Module::loadConnections: invalid sourceIndex="+sourceIndex+" (this.id="+id+" this.index="+index+"), skipping..";
+               }
+            }
+            // else: not connected
+
+         } // loop numInputs
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Module::loadConnections: invalid ver="+ver;
+      }
+      return false;
+   }
+
+   protected method createLED(int _px, int _py) : LED {
+      local LED led;
+      led.initLED();
+      led.setPosition2fScaled(_px-1, _py-1);
+      led.setRequiredSize2fScaled(4.0f, 4.0f);
+      addChildLayer(deref led);
+      led_widgets.add(led);
+      return led;
+   }
+
+   protected method setLED(int _idx, float _val) {
+      LED led <= led_widgets.get(_idx);
+      if(null != led)
+      {
+         // trace "xxx setLED("+_idx+" val="+_val+")";
+         led.setConstValue(_val);
+         parent_patch.queueComposite();
+      }
+   }
+
+   protected method incLEDDecay(int _idx, float _val, float _dcy) {
+      LED led <= led_widgets.get(_idx);
+      if(null != led)
+      {
+         // trace "xxx incDecayValue("+_idx+" val="+_val+")";
+         led.incDecayValue(_val, _dcy);
+         parent_patch.queueComposite();
+      }
+   }
+
+   protected method createValueDisplay(int _px, int _py) : ValueDisplay {
+      local ValueDisplay vd;
+      vd.initLabel();
+      vd.setPosition2fScaled(_px - 9.0f, _py);
+      vd.setRequiredSize2fScaled(20.5f, 12.0f);
+      vd.setEnableFillBackground(true);
+      vd.setFontByName("big10");
+      addChildLayer(deref vd);
+      dpy_widgets.add(vd);
+      return vd;
+   }
+
+   protected method updateValueDisplay(int _idx, float _val) {
+      ValueDisplay vd <= dpy_widgets.get(_idx);
+      if(null != vd)
+      {
+         vd.queueValue(_val);
+         parent_patch.queueComposite();
+      }
+   }
+
+   protected method createLabel(int _px, int _py, String _caption) : Label {
+      local Label lb;
+      lb.initLabel();
+      if(!app_lnf.b_dark_modular)
+         lb.setLookAndFeelLight();
+      lb.setCaption(_caption);
+      float w = lb.getCaptionWidth();
+      float h = lb.getCaptionHeight();
+      // trace "xxx createLabel: caption=\""+_caption+"\" => sz=("+w+";"+h+")";
+      lb.setInnerPadding4f(0, 0, 0, 0);
+      lb.setRequiredSize2f(w, h);
+      lb.setPosition2f(_px*UI.font_scaling - w * 0.5 + 2, _py*UI.font_scaling);
+      lb.setEnableAbbreviation(false);
+      lb.setEnableFillBackground(false);
+      addChildLayer(deref lb);
+      last_label <= lb;
+      return lb;
+   }
+
+   protected method createRoundButton(int _px, int _py, String _paramName, boolean _bToggle, boolean _bPressed) : RoundButton {
+      local RoundButton bt;
+      bt.initRoundButton();
+      if(!app_lnf.b_dark_modular)
+         bt.setLookAndFeelLight();
+      bt.setEnableToggle(_bToggle);
+      bt.setSelected(_bPressed);
+      bt.setUserData(Object(_paramName));
+      bt.setPosition2fScaled(_px-7.0, _py-7.0);
+      bt.setRequiredSize2fScaled(16.0f, 16.0f);
+      bt.setToolTipCaption(_paramName);
+      addChildLayer(deref bt);
+      if(null != _paramName)
+         param_widgets.add(bt);
+      return bt;
+   }
+
+   protected method createCheckButton(int _px, int _py, String _paramName, boolean _bChecked) : RoundButton {
+      local RoundButton bt;
+      bt.initRoundButton();
+      if(!app_lnf.b_dark_modular)
+         bt.setLookAndFeelLight();
+      bt.setEnableToggle(true);
+      bt.setToggleState(_bChecked);
+      // // bt.setEnableDelta(true); // send press/release actions (momentary)
+      bt.setUserData(Object(_paramName));
+      bt.setPosition2fScaled(_px-7.0, _py-7.0);
+      bt.setRequiredSize2fScaled(16.0f, 16.0f);
+      bt.setToolTipCaption(_paramName);
+      addChildLayer(deref bt);
+      if(null != _paramName)
+         param_widgets.add(bt);
+      return bt;
+   }
+
+   protected method createSmallCheckButton(int _px, int _py, String _paramName, boolean _bChecked) : RoundButton {
+      local RoundButton bt;
+      bt.initRoundButton();
+      if(!app_lnf.b_dark_modular)
+         bt.setLookAndFeelLight();
+      bt.setEnableToggle(true);
+      bt.setToggleState(_bChecked);
+      // // bt.setEnableDelta(true); // send press/release actions (momentary)
+      bt.setUserData(Object(_paramName));
+      bt.setPosition2fScaled(_px-5.5, _py-5.5);
+      bt.setRequiredSize2fScaled(12.0f, 12.0f);
+      bt.setToolTipCaption(_paramName);
+      addChildLayer(deref bt);
+      if(null != _paramName)
+         param_widgets.add(bt);
+      return bt;
+   }
+
+   protected method createTinyCheckButton(int _px, int _py, String _paramName, boolean _bChecked) : RoundButton {
+      local RoundButton bt;
+      bt.initRoundButton();
+      if(!app_lnf.b_dark_modular)
+         bt.setLookAndFeelLight();
+      bt.setEnableToggle(true);
+      bt.setToggleState(_bChecked);
+      // // bt.setEnableDelta(true); // send press/release actions (momentary)
+      bt.setUserData(Object(_paramName));
+      bt.setPosition2fScaled(_px-3.0, _py-3.0);
+      bt.setRequiredSize2fScaled(8.0f, 8.0f);
+      bt.setToolTipCaption(_paramName);
+      addChildLayer(deref bt);
+      if(null != _paramName)
+         param_widgets.add(bt);
+      return bt;
+   }
+
+   protected method createTinyDial(int _px, int _py, String _paramName, float _min, float _max, float _reset, float _cur, String _captionOrNull) : Dial {
+      local Dial dial;
+      dial.initDial(_min, _max, _cur);
+      if(!app_lnf.b_dark_modular)
+         dial.setLookAndFeelLight();
+      dial.setResetValue(_reset);
+      dial.setUserData(Object(_paramName));
+      dial.setRequiredSize2fScaled(10, 10);
+      dial.setPosition2fScaled(_px - 4.0, _py - 5.0);
+      // // dial.setEnableFillBackground(false);
+      dial.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_BG));
+      dial.setEnableKbdFocusOnMouse(false);
+      dial.setToolTipCaption(_paramName);
+      if(_max > 1.0)
+         dial.setStep(1.0/(_max - _min));  // (note) step is relative to min/max range
+      else
+         dial.setStep( (_max - _min) / 128.0 );
+      // trace "xxx dial paramName=\""+_paramName+"\" min="+_min+" max="+_max+" step="+dial.step_coarse;
+      addChildLayer(deref dial);
+      if(null != _paramName)
+         param_widgets.add(dial);
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         createLabel(_px-1, _py + 5, _captionOrNull);
+      }
+
+      return dial;
+   }
+
+   protected method createSmallDial(int _px, int _py, String _paramName, float _min, float _max, float _reset, float _cur, String _captionOrNull) : Dial {
+      local Dial dial;
+      dial.initDial(_min, _max, _cur);
+      if(!app_lnf.b_dark_modular)
+         dial.setLookAndFeelLight();
+      dial.setResetValue(_reset);
+      dial.setUserData(Object(_paramName));
+      dial.setRequiredSize2fScaled(16, 16);
+      dial.setPosition2fScaled(_px - 7.0, _py - 7.0);
+      // // dial.setEnableFillBackground(false);
+      dial.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_BG));
+      dial.setEnableKbdFocusOnMouse(false);
+      dial.setToolTipCaption(_paramName);
+      float range = _max - _min;
+      if(range <= 16.0f)
+         dial.setStep(1.0 / 128.0);
+      else
+         dial.setStep(1.0 / range);  // e.g. modcv_delay (-2048..2048)
+      addChildLayer(deref dial);
+      if(null != _paramName)
+         param_widgets.add(dial);
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         createLabel(_px-1, _py + 9, _captionOrNull);
+      }
+
+      return dial;
+   }
+
+   protected method createDial(int _px, int _py, String _paramName, float _min, float _max, float _reset, float _cur, String _captionOrNull) : Dial {
+      local Dial dial;
+      dial.initDial(_min, _max, _cur);
+      if(!app_lnf.b_dark_modular)
+         dial.setLookAndFeelLight();
+      dial.setResetValue(_reset);
+      dial.setUserData(Object(_paramName));
+      dial.setRequiredSize2fScaled(24, 24);
+      dial.setPosition2fScaled(_px - 12.0, _py - 12.0);
+      // // dial.setEnableFillBackground(false);
+      dial.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_BG));
+      dial.setToolTipCaption(_paramName);
+      float range = _max - _min;
+      if(range <= 16.0f)
+         dial.setStep(1.0 / 128.0);
+      else
+         dial.setStep(1.0 / range);  // e.g. modcv_delay (-2048..2048)
+      addChildLayer(deref dial);
+      if(null != _paramName)
+         param_widgets.add(dial);
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         createLabel(_px, _py + 13, _captionOrNull);
+      }
+
+      return dial;
+   }
+
+   protected method createBigDial(int _px, int _py, String _paramName, float _min, float _max, float _reset, float _cur, String _captionOrNull) : Dial {
+      local Dial dial;
+      dial.initDial(_min, _max, _cur);
+      if(!app_lnf.b_dark_modular)
+         dial.setLookAndFeelLight();
+      dial.setResetValue(_reset);
+      dial.setUserData(Object(_paramName));
+      dial.setRequiredSize2fScaled(36, 36);
+      dial.setPosition2fScaled(_px - 18.0, _py - 18.0);
+      // // dial.setEnableFillBackground(false);
+      dial.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_BG));
+      dial.setToolTipCaption(_paramName);
+      float range = _max - _min;
+      if(range <= 16.0f)
+         dial.setStep(1.0 / 128.0);
+      else
+         dial.setStep(1.0 / range);  // e.g. modcv_delay (-2048..2048)
+      addChildLayer(deref dial);
+      if(null != _paramName)
+         param_widgets.add(dial);
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         createLabel(_px, _py + 20, _captionOrNull);
+      }
+
+      return dial;
+   }
+
+   protected method createSlider(float _px, float _py,
+                                 float _w, float _h,
+                                 String _paramName,
+                                 float _min, float _max, float _reset, float _cur
+                                 ) : Slider {
+      local Slider slider;
+      slider.initSlider(_min, _max, _cur, 1/*step*/);
+      if(!app_lnf.b_dark_modular)
+         slider.setLookAndFeelLight();
+      slider.setPosition2fScaled(_px, _py);
+      slider.setRequiredSize2fScaled(_w, _h);
+      slider.setVertical(true);
+      slider.setFlip(true);
+      slider.setUserData(Object(_paramName));
+      slider.setResetValue(_reset);
+      slider.setValue(_cur);
+      float range = _max - _min;
+      if(range <= 16.0f)
+         slider.setStepCoarse(range / 128.0);
+      else
+         slider.setStepCoarse(1);
+      param_widgets.add(slider);
+      addChildLayer(deref slider);
+      return slider;
+   }
+
+   protected method createPortWidget(int _portIndex, boolean _bOutput, int _px, int _py, String _captionOrNull) : PortWidget {
+      local PortWidget p;
+      p.initPortWidget(this, _portIndex, _bOutput);
+      p.setPosition2fScaled(_px - 5.0f, _py - 5.0f);
+      addChildLayer(deref p);
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         p.lb <= createLabel(_px-1, _py + 6 + (_bOutput?1:0), _captionOrNull);
+      }
+
+      if(_bOutput)
+      {
+         Output output <= getOutputByIndex(_portIndex);
+         if(null != output)
+         {
+            output.port_widget <= p;
+            p.setToolTipCaption(output.tooltip+"\n\n class: "+io_class_names.get(output.io_class));
+         }
+      }
+      else
+      {
+         Input input <= getInputByIndex(_portIndex);
+         if(null != input)
+         {
+            input.port_widget <= p;
+            p.setToolTipCaption(input.tooltip+"\n\n class: "+io_class_names.get(input.io_class));
+         }
+      }
+
+      return p;
+   }
+
+   protected method createPortOffsetWidget(int _px, int _py, int _cur, boolean _bOutput) : PortOffsetWidget {
+      local PortOffsetWidget pow;
+      pow.initPortOffsetWidget(_cur);
+      pow.setPosition2fScaled(_px, _py);
+      pow.setToolTipCaption(_bOutput ? "Output Port" : "Input Port");
+      addChildLayer(deref pow);
+      return pow;
+   }
+
+   protected method createPortSelectWidget(int _px, int _py, int _cur, boolean _bOutput) : PortSelectWidget {
+      local PortSelectWidget psw;
+      psw.initPortSelectWidget(_cur);
+      psw.setPosition2fScaled(_px, _py);
+      psw.setToolTipCaption(_bOutput ? "Output Port" : "Input Port");
+      psw.updatePortOptions(parent_node);
+      addChildLayer(deref psw);
+      return psw;
+   }
+
+   protected method createIntParamWidget(int _px, int _py,
+                                         String _paramName,
+                                         int _min, int _max, int _reset, int _cur,
+                                         String _captionOrNull
+                                         ) : FloatParam {
+      // 20x21
+      local ui::FloatParam fp;
+      fp.initFloatParam();
+      if(!app_lnf.b_dark_modular)
+         fp.setLookAndFeelLight();
+      fp.setRequiredSize2fScaled(20, FloatParam.MIN_SIZE_Y);
+      fp.setMinMaxValues(_min, _max);
+      fp.setResetValue(_reset);
+      fp.setPrecision(0);
+      fp.setStep(1);
+      fp.setValue(_cur);
+      fp.setVisibleTextLength(2);
+      fp.setEnableCenterAlign(true);
+      fp.setPosition2fScaled(_px, _py);
+      fp.setToolTipCaption(_paramName);
+      fp.setEnableCursorKeyTabCycling(false);
+      fp.setEnableCursorLeftRight(true);  // send ACTION_CURSOR* instead of propagating to parent (=> really disable tab cycling)
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         Label lb <= createLabel(_px + 8, _py + 15, _captionOrNull);
+      }
+      addChildLayer(deref fp);
+      if(null != _paramName)
+      {
+         fp.setUserData(Object(_paramName));
+         param_widgets.add(fp);
+      }
+      return fp;
+   }
+
+   protected method createModeParamWidget(int _px, int _py,
+                                          String _paramName,
+                                          StringArray _optionsShort,
+                                          StringArray _optionsLong,
+                                          int _cur,
+                                          String _captionOrNull
+                                          ) : ComboBox {
+      local ui::ComboBox cm <= ComboBox.New();
+      if(!app_lnf.b_dark_modular)
+         cm.setLookAndFeelLight();
+      cm.setArrowWidth(0);
+      cm.setRequiredSize2fScaled(25, 17);////FloatParam.MIN_SIZE_Y);
+      cm.setOptions(_optionsShort);
+      cm.setOptionsLong(_optionsLong);
+      cm.setSelectedOption(_cur);
+      cm.setPosition2fScaled(_px - 11, _py - 10);
+      cm.setToolTipCaption(_paramName);
+      cm.setTextPlacement(Layout.CENTERX);
+
+      if((null != _captionOrNull) && !_captionOrNull.isBlank())
+      {
+         Label lb <= createLabel(_px, _py + 7, _captionOrNull);
+      }
+      addChildLayer(deref cm);
+      if(null != _paramName)
+      {
+         cm.setUserData(Object(_paramName));
+         param_widgets.add(cm);
+      }
+      return cm;
+   }
+
+   // <ui_update.png>
+   protected method updateParentEditorBidirectionalControls() {
+      NodeModularEditor editor <= parent_node.nodeGetEditor();
+      editor.queueUpdateBidirectionalControls();
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      UIRenderer.DisableBlending();
+      UIRenderer.DrawFilledRectangle(0, 0,
+                                     getSizeX(), getSizeY(),
+                                     app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_BG)
+                                     );
+      UIRenderer.DrawFilledRectangle(2, 2,
+                                     getSizeX()-4, GetRackModuleHeaderHeight()-4,
+                                     app_lnf.getColor(hasKeyboardFocus()
+                                                      ? AppLookAndFeel.COLOR_MODULAR_MODULE_HEADER_FOCUS_BG
+                                                      : AppLookAndFeel.COLOR_MODULAR_MODULE_HEADER_BG
+                                                      )
+                                     );
+      UIRenderer.DrawDefaultRaisedBorderTint(0, 0,
+                                             getSizeX(), getSizeY(),
+                                             app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_BORDER_TINT)
+                                             );
+
+      float headerW = header_font.stringWidth(header_id);
+      float px = (getSizeX() - headerW)* 0.5;
+      int c32Header = app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_MODULE_HEADER_CAPTION);
+      UIRenderer.DrawText(header_id, header_font,
+                          c32Header,
+                          c32Header/*ul*/,
+                          px, 2,
+                          0/*availW*/, 0/*align*/
+                          );
+   }
+
+   // <method.png>
+   protected method addExtraContextMenuItems(PopupMenu pm) {
+   }
+
+   // <method.png>
+   protected method handleExtraContextMenuItem(String _id) : boolean {
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      pm_context.b_ext_focus_hack = true;
+
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Clone", "clone");
+
+      pm.addSeparator();
+      pmb <= pm.addIconButton("Delete Module", "trashcan_sm", "delete");
+      pmb.setAccelerators("DELETE", "");
+
+      addExtraContextMenuItems(pm);
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(0, 0);
+
+      Global.Print("Show module context menu.");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      else if(_ev.isLeftButton())
+      {
+         grabKeyboardFocus();
+         redraw();
+      }
+      return Layer::onMouseClick(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if(_ev.mouse_rel_y < GetRackModuleHeaderHeight())
+      {
+         drag_start_module_x = module_x;
+         drag_start_module_y = module_y;
+         drag_start_x = _dragStart.mouse_rel_x;
+         drag_start_y = _dragStart.mouse_rel_y;
+         drag_mode = DRAG_POS;
+
+         UI.ShowCursor(UIConstants.CURSOR_MOVE);
+
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      if(DRAG_POS == drag_mode)
+      {
+         // trace "xxx drag rel=("+_currentEv.mouse_rel_x+";"+_currentEv.mouse_rel_y+")";
+         float dx = _currentEv.mouse_rel_x - drag_start_x;
+         float dy = _currentEv.mouse_rel_y - drag_start_y;
+
+         setModulePosition(drag_start_module_x + int(dx / GetRackUnitWidth()),
+                           drag_start_module_y + int((dy + GetRackUnitHeight()*(dy<0 ?-0.5:0.5)) / GetRackUnitHeight())*3
+                           );
+
+         parent.redraw();
+      }
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      if(DRAG_POS == drag_mode)
+      {
+         if(!parent_patch.tryMoveModuleToNonOverlappingPosition(parent/*rack*/, this, false/*bAllowMoveY*/))
+         {
+            Global.Warning("Can't place module here");
+            setModulePosition(drag_start_module_x,
+                              drag_start_module_y
+                              );
+         }
+      }
+
+      drag_mode = DRAG_NONE;
+      parent.redraw();
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      if(DRAG_POS == drag_mode)
+      {
+         setModulePosition(drag_start_module_x,
+                           drag_start_module_y
+                           );
+      }
+      drag_mode = DRAG_NONE;
+      parent.redraw();
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_DELETE:
+            if(_k.modNone())
+            {
+               ModularRack rack <= getParent();
+               rack.handleDeleteModule(this);
+               return true;
+            }
+            break;
+      }
+      return Control::onKey(_k);
+   }
+
+   // <ui_kbd.png>
+   public method handleRackKey(Key _k) : boolean {
+      // when module does not have keyboard focus
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public method wantRackKeyRepeat(Key _k) : boolean {
+      return maybe;
+   }
+
+   // <method.png>
+   public method handleShowModule() {
+      // usually nothing to do here except for some corner cases
+      //  (like holding a momentary ModCV_Buttons key while leaving the node editor or changing the edit pattern)
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      int paramWidgetIdx = param_widgets.indexOfPointer(ap, 0);
+      if(-1 != paramWidgetIdx)
+      {
+         Layer l <= param_widgets[paramWidgetIdx];
+         String *paramName;
+         if(l instanceof Dial)
+         {
+            Dial dial <= l;
+            paramName <= dial.getUserData();
+            setParamByName(paramName, dial.getValue());
+            if(wantDefaultParamMessage(paramName))
+               Global.PrintFast("Param \""+paramName+"\" is "+dial.getValue());
+            updateParentEditorBidirectionalControls();
+         }
+         else if(l instanceof FloatParam)
+         {
+            FloatParam fp <= l;
+            paramName <= fp.getUserData();
+            setParamByName(paramName, fp.getFloatValue());
+            if(wantDefaultParamMessage(paramName))
+               Global.PrintFast("Param \""+paramName+"\" is "+fp.getFloatValue());
+            updateParentEditorBidirectionalControls();
+            if(FloatParam.ACTION_VALUECHANGED == acName) // return
+            {
+               UI.SetKeyboardFocus(this);
+               redraw();
+            }
+         }
+         else if(l instanceof RoundButton)
+         {
+            RoundButton bt <= l;
+            paramName <= bt.getUserData();
+            // // trace "xxx bt.getEnableToggle()="+bt.getEnableToggle()+" bt.isSelected()="+bt.isSelected()+" bt.isPressed()="+bt.isPressed();
+            if(bt.getEnableDelta())  // checkbox-style momentary or toggle button ?
+               setParamByName(paramName, bt.getToggleState() || bt.isPressed());
+            else
+               setParamByName(paramName, bt.getToggleState());
+            if(wantDefaultParamMessage(paramName))
+               Global.PrintFast("Param \""+paramName+"\" is "+Utils.GetEnableString(bt.isSelected()));
+            updateParentEditorBidirectionalControls();
+         }
+         else if(l instanceof ComboBox)
+         {
+            ComboBox cm <= l;
+            paramName <= cm.getUserData();
+            setParamByName(paramName, cm.getSelectedOption());
+            if(wantDefaultParamMessage(paramName))
+               Global.PrintFast("Param \""+paramName+"\" is "+cm.getSelectedOption()+" => "+cm.getSelectedOptionNameLong());
+            updateParentEditorBidirectionalControls();
+         }
+         else if(l instanceof Slider)
+         {
+            Slider sl <= l;
+            paramName <= sl.getUserData();
+            setParamByName(paramName, sl.getValue());
+            if(wantDefaultParamMessage(paramName))
+               Global.PrintFast("Param \""+paramName+"\" is "+sl.getValue());
+            updateParentEditorBidirectionalControls();
+         }
+         return true;
+      }
+
+      ModularRack rack <= getParent();
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("module: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close module context menu.");
+                  return true;
+
+               default:
+                  if(!handleExtraContextMenuItem(acName))
+                  {
+                     Global.Print("Select: "+acName);
+                  }
+                  return true;
+
+               case "clone":
+                  rack.handleCloneModule(this);
+                  return true;
+
+               case "delete":
+                  rack.handleDeleteModule(this);
+                  return true;
+            }
+            return true;
+
+      }
+
+      return Control::consumeAction(_ac);
+   }
+
+   public method reset() {
+      // (note) (optionally) implemented by derived classes
+   }
+
+   public method onPatternChanged() {
+      // (note) (optionally) implemented by derived classes
+      // (note) reset 'future' / 'queued' state changes
+      //         (which may refer to the past when pattern/module is activated again)
+      // (note) do _NOT_ reset play positions / TrigInputs etc
+      // (note) e.g. implemented by ModCV_GateQuantizer
+   }
+
+   public method onPortSelectionChanged() {
+      // (note) (optionally) implemented by derived classes (update I/O port options)
+   }
+
+   public method tick() {
+      // Calculate new output states
+      //  (note) implemented by derived classes
+      //  (note) may be called recursively (=> use local variables)
+   }
+}

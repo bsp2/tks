@@ -1,0 +1,439 @@
+// ----
+// ---- file   : modcv_patternquantizer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2022 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : based on "Quantizer" but supports user-defined modes and up to 8 patterns
+// ----
+// ---- created: 12Apr2021
+// ---- changed: 16Apr2021, 07May2021, 30Oct2021, 02Dec2021, 28Dec2021, 21Feb2022
+// ----
+// ----
+// ----
+
+module MModularCVMod_PatternQuantizer;
+
+use namespace ui;
+namespace modularcv;
+
+
+// <class.png>
+class PatternQuantizer_Pattern {
+   int pat_idx;
+   IntArray mode_tbl;  // relative to "C"
+
+   public method init(int _patIdx) {
+      pat_idx = _patIdx;
+
+      mode_tbl.identity(12);
+   }
+
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8 = mode_tbl.numElements;
+      int noteIdx = 0;
+      loop(mode_tbl.numElements)
+         ofs.i8 = mode_tbl[noteIdx++];
+   }
+
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // params
+         int numNotes = ifs.u8;
+         mode_tbl.alloc(numNotes);
+         loop(numNotes)
+            mode_tbl.add(ifs.u8);
+
+         return true;
+      }
+      return false;
+   }
+
+   public method copyFrom(PatternQuantizer_Pattern _o) {
+      mode_tbl = _o.mode_tbl;
+   }
+}
+
+
+// <class.png>
+class ModCV_PatternQuantizer : Module {
+   define int NUM_PATTERNS = 8;
+
+   int   pat_idx;  // 0..7
+   int   key;      // 0..11 => C..B
+   float sq_amt;   // semi-tone quantization amount
+
+   PatternQuantizer_Pattern *[] patterns;
+
+   RoundButton *[] note_buttons;
+
+   public virtual init() {
+      Module::init();
+
+      initModule("patternquantizer"/*id*/,
+                 "patquant"/*header_id*/,
+                 "Pattern Quantizer"/*tooltip*/
+                 );
+      setModuleSize(8, 3);
+
+      sq_amt = 0.0f;
+
+      addInput("in",   "in",                           0.0, IO_CV);
+      addInput("pat",  "Pattern\n\n (note) Overrides the UI pattern nr when connected", 0.0, IO_OFF);
+      addInput("key",  "key",                          0.0, IO_ANY);
+      addInput("sq",   "semitone-quantization amount", 0.0, IO_SCALE);
+
+      addOutput("out", "Output", IO_CV);
+
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         PatternQuantizer_Pattern pat <= new PatternQuantizer_Pattern;
+         pat.init(patIdx++);
+         patterns.add(#(deref pat));
+      }
+   }
+
+   public virtual copyFrom(ModCV_PatternQuantizer _o) {
+      pat_idx = _o.pat_idx;
+      key     = _o.key;
+      sq_amt  = _o.sq_amt;
+      
+      PatternQuantizer_Pattern *pat;
+      PatternQuantizer_Pattern *patO;
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         pat <= patterns.get(patIdx);
+         patO <= _o.patterns.get(patIdx);
+         pat.copyFrom(patO);
+         patIdx++;
+      }
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 30;
+      float stepY = 26;
+      float portOffY = 16;
+
+      // In
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Mode
+      cy += 26;
+      local StringArray optPat;
+      String *s;
+      int patNr = 1;
+      loop(NUM_PATTERNS)
+         optPat.add(String(patNr++));
+      ComboBox cm <= createModeParamWidget(cx, cy,
+                                           "pat",
+                                           optPat,
+                                           null/*optLong*/,
+                                           pat_idx,
+                                           null/*captionOrNull*/
+                                           );
+      cm.setEnableAbbreviation(false);
+      cy += portOffY;
+      createPortWidget(1, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Key
+      cy += stepY;
+      createModeParamWidget(cx, cy,
+                            "key",
+                            Scale.key_names,
+                            Scale.key_names,
+                            key,
+                            null/*captionOrNull*/
+                            );
+      cy += portOffY;
+      createPortWidget(2, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Semitone-Quantization (sq)
+      cy += stepY;
+      createSmallDial(15, cy,
+                      "sq_amt",
+                      0.0, 1.0, 0.0, sq_amt,
+                      "sq"
+                      );
+      cy += portOffY + 10;
+      createPortWidget(3, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+
+      // Mode note checkboxes / toggle buttons
+      cx = 40;
+      cy = 32;
+      stepY = 14;
+      float bOffX = 13;
+      float bOffY = stepY/2;
+      cy -= stepY;
+
+      PatternQuantizer_Pattern pat <= patterns.get(pat_idx);
+      IntArray modeTbl <= pat.mode_tbl;
+      IntArray bfTbl <= Scale.black_flags_tbl;
+      RoundButton *bt;
+      int noteIdx = 0;
+      loop(12)
+      {
+         if(bfTbl[noteIdx])
+         {
+            bt <= createTinyCheckButton(cx + bOffX, cy + bOffY,
+                                        "note_"+noteIdx,
+                                        modeTbl.contains(noteIdx)
+                                        );
+         }
+         else
+         {
+            cy += stepY;
+            bt <= createTinyCheckButton(cx, cy,
+                                        "note_"+noteIdx,
+                                        modeTbl.contains(noteIdx)
+                                        );
+         }
+
+         bt.setToolTipCaption("Note "+(MIDI.base_note_names.get(noteIdx))+"\n\n (note) always relative to key \"C\", independent of currently active key");
+
+         note_buttons.add(bt);
+
+         noteIdx++;
+      }
+   }
+
+   protected =replay= method rebuildModeTbl() {
+      PatternQuantizer_Pattern pat <= patterns.get(pat_idx);
+      IntArray modeTbl <= pat.mode_tbl;
+      RoundButton *bt;
+      int noteIdx = 0;
+      modeTbl.empty();
+      foreach bt in note_buttons
+      {
+         if(bt.getToggleState())
+            modeTbl.add(noteIdx);
+
+         noteIdx++;
+      }
+   }
+
+   protected method updatePatWidgets() {
+      PatternQuantizer_Pattern pat <= patterns.get(pat_idx);
+      IntArray modeTbl <= pat.mode_tbl;
+      RoundButton *bt;
+      int noteIdx = 0;
+      foreach bt in note_buttons
+      {
+         bt.setToggleState(modeTbl.contains(noteIdx++));
+      }
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+
+      switch(_name)
+      {
+         case "pat":
+            pat_idx = _value;
+            updatePatWidgets();
+            break;
+
+         case "key":
+            key = _value;
+            break;
+
+         case "sq_amt":
+            sq_amt = _value;
+            break;
+
+         default:
+            if(_name <= "note_")
+            {
+               // // int noteIdx = _name.replace("note_", "");
+               rebuildModeTbl();
+            }
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "pat":
+            return pat_idx;
+
+         case "key":
+            return key;
+
+         case "sq_amt":
+            return sq_amt;
+
+         default:
+            if(_name <= "note_")
+            {
+               int noteIdx = _name.replace("note_", "");
+               PatternQuantizer_Pattern pat <= patterns.get(pat_idx);
+               IntArray modeTbl <= pat.mode_tbl;
+               return modeTbl.contains(noteIdx) ? 1.0f : 0.0f;
+            }
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["pat", "key", "sq amt"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            pat_idx = FromNormalized(_value, 0, ModCV_PatternQuantizer.NUM_PATTERNS-1);
+            updateParamWidget("pat", pat_idx);
+            updatePatWidgets();
+            break;
+
+         case 1:
+            key = FromNormalized(_value, 0, (Scale.key_names.getNumElements())-1);
+            updateParamWidget("key", key);
+            break;
+
+         case 2:
+            sq_amt = FromNormalized(_value, 0, 1);
+            updateParamWidget("sq_amt", sq_amt);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(pat_idx, 0, ModCV_PatternQuantizer.NUM_PATTERNS-1);
+
+         case 1:
+            return ToNormalized(key, 0, (Scale.key_names.getNumElements())-1);
+
+         case 2:
+            return ToNormalized(sq_amt, 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.i8  = pat_idx;
+      ofs.i8  = key;
+      ofs.f32 = sq_amt;
+
+      // Patterns
+      PatternQuantizer_Pattern *pat;
+      foreach pat in patterns
+      {
+         pat.saveState(ofs);
+      }
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            pat_idx = ifs.u8;
+            key     = ifs.u8;
+            sq_amt  = ifs.f32;
+
+            int patNr = 1;
+            PatternQuantizer_Pattern *pat;
+            foreach pat in patterns
+            {
+               if(!pat.loadState(ifs))
+               {
+                  trace "[---] ModCV_PatternQuantizer::loadState: failed to load pattern "+patNr+"/"+NUM_PATTERNS;
+                  return false;
+               }
+               patNr++;
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_PatternQuantizer::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   // public virtual reset() {
+   // }
+
+   public virtual tick() {
+      local PatternQuantizer_Pattern *pat;
+
+      if(inputs[1].isConnected())
+      {
+         // Pattern input overrides edit/UI pattern
+         local int patIdx = mathClampi(inputs[1].getValue() * NUM_PATTERNS, 0, NUM_PATTERNS-1);
+         pat <= patterns.get(patIdx);
+      }
+      else
+      {
+         // Play edit/UI pattern
+         pat <= patterns.get(pat_idx);
+      }
+
+      local float fIn = inputs[0].getValue();
+
+      local int iKey = (inputs[2].getValue() * 12) + key;
+      iKey = mathWrapi(iKey, 0, 12);
+      iKey = mathMini(iKey, 12-1);
+
+      local float fSQAmt = inputs[3].getValue() + sq_amt;
+      // trace "xxx fSQAmt="+fSQAmt+" sq_amt="+sq_amt;
+      fSQAmt = mathClampf(fSQAmt, 0.0f, 1.0f);
+
+      fIn = (fIn * 5*12) + 5*12;
+      int iNote = fIn;
+      float fRem = fIn - iNote;
+      // trace "xxx key="+iKey+" mode="+iMode+" note="+iNote;
+      iNote = Scale.ScaleNoteDownTbl(iNote, iKey, pat.mode_tbl);
+      // trace "     ==> note="+iNote;
+
+      out[0] = ((iNote-(5*12)) + fRem*fSQAmt) / (5.0*12);
+   }
+
+}

@@ -1,0 +1,365 @@
+// ----
+// ---- file   : modcv_gatequantizer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 11Oct2024
+// ---- changed:
+// ----
+// ----
+// ----
+
+module MModularCVMod_GateQuantizer;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_GateQuantizer : Module {
+
+   float q_off;  // quantization offset (0..1 = 0..PPQ ticks)
+   float q_base; // q_off is relative to q_base (e.g. 1 bar)
+
+   int delayed_gate_start;  // quantized ticks
+   int delayed_gate_dur;    // ticks left
+
+   boolean b_allow_queue;
+   boolean b_allow_len;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("gatequantizer"/*id*/,
+                 "gtq"/*header_id*/,
+                 "Gate Quantizer"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      q_off  = 0.25f;  // 1/16
+      q_base = 0.25f;  // 0.25=1 bar
+
+      delayed_gate_start = -1;
+      delayed_gate_dur   =  0;
+
+      addInput("gate",   "Gate Input",                    0.0f, IO_GATE);
+      addInput("q",      "Quantization (1.0=PPQ ticks)",  0.0f, IO_DUR );
+      addInput("q_base", "Quantization Base (1.0=1 bar)", 0.0f, IO_DUR );
+
+      addOutput("gate",   "Gate Output", IO_GATE);
+      addOutput("q_base", "Quantization Base Trig Output", IO_GATE);
+   }
+
+   public virtual copyFrom(ModCV_GateQuantizer _o) {
+      q_off  = _o.q_off;
+      q_base = _o.q_base;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+      float stepY = 24;
+
+      cx = 15;
+      cy = 32;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      // Gate input
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "gate"/*captionOrNull*/
+                             );
+
+      // Quantization base
+      cy  = 80;
+      dl <= createSmallDial(cx, cy,
+                            "q_base",
+                            0.0, 1.0, 0.25f, q_off,
+                            "qb"
+                            );
+      dl.setToolTipCaption("Quantization Base Offset (1.0=1 bar)");
+      dl.setPrecision(4);
+      dl.setPresetOptions([0.0f, 0.125,     0.25,      0.5,       0.75,      1.0,   ],
+                          ["-",  "1/8 bar", "1/4 bar", "1/2 bar", "3/4 bar", "1 bar"]
+                          );
+      dl.setResetValues([0.0f, 0.25, 1.0]);
+      dl.setStep(1.0f / 16);
+
+      cy += 32;
+      pw <= createPortWidget(2, false/*bOutput*/,
+                             cx-7,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+
+      // Quantization base trig output
+      pw <= createPortWidget(1, true/*bOutput*/,
+                             cx+7,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+
+      // Quantization offset
+      cy += stepY;
+      dl <= createSmallDial(cx, cy,
+                            "q_off",
+                            0.0, 1.0, 0.25f, q_off,
+                            "q"
+                            );
+      dl.setToolTipCaption("Quantization Offset (1.0=PPQ ticks)");
+      dl.setPrecision(4);
+      dl.setPresetOptions([0.0f,    0.0625f, 0.125f, 4.0/24, 0.1875f, 0.25f,  4.0/12, 0.375f,  0.5f,  0.75f,  1.0f ],
+                          ["Pulse", "1/64",  "1/32", "1/24", "1/32t", "1/16", "1/12", "1/16t", "1/8", "3/16", "1/4"]
+                          );
+      dl.setResetValues([0.0f, 0.1875f, 0.25f]);
+      dl.setStep(1.0f / 16);
+
+      cy += 32;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+
+
+      // Output
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             (RACK_MODULE_HEIGHT - 20),
+                             null/*captionOrNull*/
+                             );
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return !(["q_off", "q_base"].containsObject(_name));
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      int numTicks;
+      float num16th;
+      float numBars;
+
+      switch(_name)
+      {
+         case "q_off":
+            q_off = round(_value * current_song.ppq) / float(current_song.ppq);
+            numTicks = round(_value * current_song.ppq);
+            num16th = float(numTicks) / current_song.getNumTicksPer16th();
+            Global.Print("Param \"q_off\" is "+q_off+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+
+         case "q_base":
+            q_base = round(_value * current_song.getNumTicksPerBar()) / float(current_song.getNumTicksPerBar());
+            numTicks = round(_value * current_song.getNumTicksPerBar());
+            if(numTicks > 1)
+            {
+               num16th = float(numTicks) / current_song.getNumTicksPer16th();
+               numBars = float(numTicks) / current_song.getNumTicksPerBar();
+               Global.Print("Param \"q_base\" is "+q_base+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
+            }
+            else
+            {
+               Global.Print("Param \"q_base\" is "+_value+" => <off>");
+            }
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "q_off":
+            return q_off;
+
+         case "q_base":
+            return q_base;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["q off",
+              "q base"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      int numTicks;
+      float num16th;
+      float numBars;
+
+      switch(_paramIdx)
+      {
+         case 0:
+            q_off = FromNormalized(_value, 0, 1);
+            updateParamWidget("q_off", q_off);
+            numTicks = round(q_off * current_song.ppq);
+            num16th = float(numTicks) / current_song.getNumTicksPer16th();
+            Global.Print("Param \"q_off\" is "+q_off+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+
+         case 1:
+            q_base = FromNormalized(_value, 0, 1);
+            numTicks = round(q_base * current_song.getNumTicksPerBar());
+            if(numTicks > 1)
+            {
+               num16th = float(numTicks) / current_song.getNumTicksPer16th();
+               numBars = float(numTicks) / current_song.getNumTicksPerBar();
+               Global.Print("Param \"q_base\" is "+q_base+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th)+" / "+numBars+" bar"+Utils.GetPluralStringFloat(numBars));
+            }
+            else
+            {
+               Global.Print("Param \"q_base\" is "+q_base+" => <off>");
+            }
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(q_off, 0, 1);
+
+         case 1:
+            return ToNormalized(q_base, 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 2;
+
+      ofs.f32 = q_off;
+      ofs.f32 = q_base;  // v2+
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            q_off = ifs.f32;
+
+            if(ver >= 2)
+            {
+               q_base = ifs.f32;  // v2+
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_GateQuantizer::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      delayed_gate_start = -1;
+      delayed_gate_dur   =  0;
+      b_allow_queue      = true;
+      b_allow_len        = false;
+   }
+
+   public virtual onPatternChanged() {
+      reset();
+   }
+
+   public virtual tick() {
+
+      local float fTrig  = inputs[0].getValue();
+      local float fQ     = inputs[1].getValue() + q_off;
+      local float fQBase = inputs[2].getValue() + q_base;
+
+      int tickNr = parent_node.tick_nr;
+
+      float a = 0.0f;
+
+      // if(replay.b_playing)
+      //    trace "xxx ["+tickNr+"] fTrig="+fTrig+" dlyStart="+delayed_gate_start+" dlyLen="+delayed_gate_dur+" bQueue="+b_allow_queue+" bLen="+b_allow_len;
+
+      int qTickBase = mathMaxi(1, round(current_song.getNumTicksPerBar() * fQBase));
+      int qTickBaseOff = (tickNr / qTickBase) * qTickBase;
+      int qTickNr = tickNr - qTickBaseOff;
+
+      out[1] = (0 == qTickNr) ? 1.0f : 0.0f;
+
+      if(fTrig >= TRIG_ON)
+      {
+         if(-1 == delayed_gate_start)
+         {
+            if(b_allow_queue)
+            {
+               if(qTickBase > 1)
+               {
+                  int qNumTicks = mathMaxi(1, round(current_song.ppq * fQ));
+                  // trace "xxx ["+tickNr+"] queue delayed tick: fQBase="+fQBase+" qTickBase="+qTickBase+" qTickBaseOff="+qTickBaseOff+" qTickNr="+qTickNr+" fQ="+fQ+" qNumTicks="+qNumTicks;
+                  qTickNr = ((qTickNr + qNumTicks-1) / qNumTicks) * qNumTicks;
+                  // trace "xxx ["+tickNr+"] queue delayed tick:   qTickNr="+qTickNr;
+                  qTickNr += qTickBaseOff;
+               }
+               else
+               {
+                  qTickNr = ((tickNr + qNumTicks-1) / qNumTicks) * qNumTicks;
+               }
+               // trace "xxx ["+tickNr+"] queue delayed tick: => qTickNr="+qTickNr;
+
+               delayed_gate_start = qTickNr;
+               delayed_gate_dur = 1+1;
+               b_allow_len = true;
+               // trace "xxx ["+tickNr+"] queue delayed tick to "+delayed_gate_start+" (curTickNr="+tickNr+") qNumTicks="+qNumTicks+" fQ="+fQ;
+            }
+         }
+         else
+         {
+            if(b_allow_len)
+            {
+               delayed_gate_dur++;
+               // trace "xxx ["+tickNr+"]   inc delayed tick dur to "+delayed_gate_dur;
+            }
+         }
+      }
+      else
+      {
+         b_allow_len = false;
+      }
+
+      if(delayed_gate_start <= tickNr)
+      {
+         if(delayed_gate_dur > 0)
+         {
+            if(0 == --delayed_gate_dur)
+            {
+               a = 0.0f;
+               delayed_gate_start = -1;
+               // trace "xxx ["+tickNr+"] END delayed tick";
+               b_allow_queue = true;
+            }
+            else
+            {
+               a = 1.0f;
+               // trace "xxx ["+tickNr+"] play delayed tick, dur="+delayed_gate_dur;
+               b_allow_queue = false;
+            }
+         }
+      }
+
+      out[0] = a;
+   }
+
+}

@@ -1,0 +1,269 @@
+// ----
+// ---- file   : modcv_autorpnslider.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 14May2021
+// ---- changed: 09Dec2021, 27Dec2021, 28Dec2021, 21Feb2022, 08Oct2023, 10Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_AutoRPNSlider;
+
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_AutoRPNSlider : Module {
+   int     ctl_idx;
+   float   value;
+   boolean b_bipolar;
+
+   protected Slider *slider;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("AutoRPNSlider"/*id*/,
+                 "rpn"/*header_id*/,
+                 "Autodev RPN Slider (CTL_1..CTL_32)"/*tooltip*/
+                 );
+      setModuleSize(3, 3);
+
+      value = 0.0f;
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_AutoRPNSlider _o) {
+      ctl_idx   = _o.ctl_idx;
+      value     = _o.value;
+      b_bipolar = _o.b_bipolar;
+   }
+
+   public virtual initUI() {
+      float cx = 12;
+      float cy = 32;
+
+      Module::initUI();
+
+      local StringArray ctlNames;
+      local StringArray ctlNamesLong;
+      int ctlIdx = 0;
+      loop(32)
+      {
+         ctlNames.add(String(ctlIdx+1));
+         ctlNamesLong.add("CTL_"+String(ctlIdx+1)+" / RPN#"+(100+ctlIdx));
+         ctlIdx++;
+      }
+
+      ComboBox cm <= createModeParamWidget(12, 28,
+                                           "ctl_idx",
+                                           ctlNames,
+                                           ctlNamesLong,
+                                           ctl_idx,
+                                           null/*captionOrNull*/
+                                           );
+      cm.setRequiredSizeXScaled(21.0);
+
+      createTinyCheckButton(10, 45,
+                            "b_bipolar",
+                            b_bipolar
+                            );
+
+      slider <= createSlider(2.0, 54.0,
+                             19.0f, RACK_MODULE_HEIGHT - 84.0f /*- 10.0*/,
+                             "value",
+                             0/*min*/, 16383/*max*/, 8192/*reset*/, valToRPN(value)/*cur*/
+                             );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       10, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return !(["value"].containsObject(_name));
+   }
+
+   protected method printValueMessage() {
+      Global.Print("Value is "+value+" => RPN value="+valToRPN(value));
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "ctl_idx":
+            ctl_idx = _value;
+            break;
+
+         case "value":
+            value = rpnToVal(_value);
+            printValueMessage();
+            break;
+
+         case "b_bipolar":
+            b_bipolar = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "ctl_idx":
+            return ctl_idx;
+
+         case "value":
+            return value;
+
+         case "b_bipolar":
+            return b_bipolar;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["autorpn "+(ctl_idx+1)
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            value = FromNormalized(_value, b_bipolar ? -1 : 0, 1);
+            updateParamWidget("value", valToRPN(value));
+            printValueMessage();
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(value, b_bipolar ? -1 : 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public method rpnToVal(float _rpnVal) : float {
+      float f;
+      if(b_bipolar)
+      {
+         if(_rpnVal >= 8192)
+         {
+            f = (_rpnVal - 8192) / 8191.0;
+         }
+         else
+         {
+            f = (_rpnVal - 8192) / 8192.0;
+         }
+      }
+      else
+      {
+         f = _rpnVal / 16383.0;
+      }
+      return f;
+   }
+
+   public method valToRPN(float _val) : float {
+      float f;
+      if(b_bipolar)
+      {
+         if(_val >= 0.0f)
+         {
+            f = _val * 8191.0;
+         }
+         else
+         {
+            f = _val * 8192.0;
+         }
+         f += 8192.0;
+      }
+      else
+      {
+         f = _val * 16383.0;
+      }
+      return f;
+   }
+
+   public method handleValueChangedViaMIDIReplay(float _rpnVal) {
+      // called from replay thread
+      value = rpnToVal(_rpnVal);
+   }
+
+   public method handleValueChangedViaMIDIUI(float _rpnVal) {
+      // called from UI thread
+      slider.setValue(_rpnVal);
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 3;
+
+      // params
+      ofs.i8  = ctl_idx;
+      ofs.f32 = value;
+      ofs.i8  = b_bipolar;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            ctl_idx   = ifs.i8;
+            value     = ifs.f32;
+            b_bipolar = ifs.b8;
+
+            if(2 == ver)
+            {
+               float scaleDummy = ifs.f32;
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_AutoRPNSlider::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         case @(slider):
+            value = rpnToVal(slider.getValue());
+            parent_node.nodeQueueBidirectionalAutoDevRPNUpdate(Node.RPN_CTL_BASE+ctl_idx, valToRPN(value), "autorpn "+(ctl_idx+1));
+            parent_node.nodeQueueBidirectionalEditFocusRPNUpdate(Node.RPN_CTL_BASE+0, valToRPN(value), "autorpn "+(ctl_idx+1));
+            printValueMessage();
+            return true;
+      }
+
+      return Module::consumeAction(_ac);
+   }
+
+   public virtual tick() {
+      out[0] = value;
+   }
+}

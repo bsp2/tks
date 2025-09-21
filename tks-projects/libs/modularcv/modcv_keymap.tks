@@ -1,0 +1,256 @@
+// ----
+// ---- file   : modcv_keymap.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 08May2021
+// ---- changed: 21Feb2022, 08Oct2024, 16Nov2024, 23Mar2025
+// ----
+// ----
+// ----
+
+module MModularCVMod_KeyMap;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_KeyMap : ModCV_Input {
+   define int NUM_NOTES = 8;
+   int base_note;
+
+   protected IntArray note_countdowns;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("keymap"/*id*/,
+                 "kmap"/*header_id*/,
+                 "Key Map\n\n (note) routes 8 notes C..G in the selected octave to gate and velocity outputs"/*tooltip*/
+                 );
+      setModuleSize(6, 3);
+
+      base_note = 12*4;
+
+      note_countdowns.allocAndFill(NUM_NOTES, -1);
+
+      int noteIdx = 0;
+      loop(NUM_NOTES)
+      {
+         addOutput("gate_"+(noteIdx+1), "Gate "+(noteIdx+1), IO_GATE);
+         addOutput("vel_"+(noteIdx+1),  "Velocity "+(noteIdx+1), IO_ANY);
+         noteIdx++;
+      }
+
+   }
+
+   public virtual copyFrom(ModCV_KeyMap _o) {
+      port_index = _o.port_index;
+      base_note  = _o.base_note;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      port_select_widget <= createPortSelectWidget(3, 20, port_index, true/*bOutput*/);
+
+      PortWidget *pw;
+      ui::FloatParam *fp;
+
+      // Base
+      fp <= createIntParamWidget(23, 20,
+                                 "base_note",
+                                 0, 120, 0, base_note,
+                                 null/*captionOrNull*/
+                                 );
+      fp.setPresetOptions([0, 12, 24, 36, 48, 60, 72, 84, 96, 108],
+                          ["C-0..G-0\t0..7",
+                           "C-1..G-1\t12..19",
+                           "C-2..G-2\t24..31",
+                           "C-3..G-3\t36..43",
+                           "C-4..G-4\t48..55",
+                           "C-5..G-5\t60..67",
+                           "C-6..G-6\t72..79",
+                           "C-7..G-7\t84..91",
+                           "C-8..G-8\t96..103",
+                           "C-9..G-9\t108..115",
+                           ]
+                          );
+
+      float cx = 12;
+      float cy = 54;
+
+      int noteIdx = 0;
+      loop(NUM_NOTES)
+      {
+         // Gate
+         pw <= createPortWidget((noteIdx*2)+0, true/*bOutput*/,
+                                cx,
+                                cy,
+                                null/*captionOrNull*/
+                                );
+
+         // Vel
+         pw <= createPortWidget((noteIdx*2)+1, true/*bOutput*/,
+                                cx + 20,
+                                cy,
+                                null/*captionOrNull*/
+                                );
+
+         cy += 20;
+         noteIdx++;
+      }
+
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return !(["base_note"].containsObject(_name));
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "base_note":
+            base_note = int(_value);
+            StringArray aNotes <= MIDI.midi_notes;
+            Global.Print("Base note is "+base_note+" ("+aNotes.get(base_note)+")");
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "base_note":
+            return base_note;
+      }
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("Input Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8 = port_index;
+      ofs.i8 = base_note;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index = ifs.u8;
+            base_note  = ifs.u8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_KeyMap::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      note_countdowns.empty();
+      out.fill(0);
+   }
+
+   public virtual tickInput(MIDIPipeFrame _frIn, boolean _bAdvance) {
+      local CtlIOPort ioPort <= parent_node.getPortByIndex(port_index);
+      if(null != ioPort)
+      {
+         if(ioPort.b_enable)
+         {
+            float t;
+            int numEv;
+            int evIdx;
+            MIDIPipeEvent ev;
+            int noteIdx;
+
+            // All Notes Off
+            numEv = _frIn.getNumEventsAllNotesOffByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               noteIdx = 0;
+               loop(NUM_NOTES)
+                  out[noteIdx*2 + 0] = 0.0f;
+               note_countdowns.empty();
+            }
+
+            // Auto Note Off
+            if(_bAdvance)
+            {
+               noteIdx = 0;
+               loop(NUM_NOTES)
+               {
+                  if(note_countdowns[noteIdx] > 0)
+                  {
+                     note_countdowns[noteIdx] = note_countdowns[noteIdx] - 1;
+                     if(0 == note_countdowns[noteIdx])
+                     {
+                        out[noteIdx*2 + 0] = 0.0f;
+                     }
+                  }
+
+                  noteIdx++;
+               }
+            }
+
+            // Manual Note off
+            numEv = _frIn.getNumEventsNoteOffByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               evIdx = 0;
+               loop(numEv)
+               {
+                  _frIn.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, ioPort.dev_idx, ioPort.dev_ch);
+
+                  noteIdx = ev.note - base_note;
+                  if(0 <= noteIdx < NUM_NOTES)
+                  {
+                     note_countdowns[noteIdx] = -1;
+                     out[noteIdx*2 + 0] = 0.0f;
+                  }
+                  evIdx++;
+               }
+            }
+
+            // Note On
+            numEv = _frIn.getNumEventsNoteOnByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               evIdx = 0;
+               loop(numEv)
+               {
+                  _frIn.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, ioPort.dev_idx, ioPort.dev_ch);
+
+                  noteIdx = ev.note - base_note;
+                  if(0 <= noteIdx < NUM_NOTES)
+                  {
+                     note_countdowns[noteIdx] = ev.duration;
+                     out[noteIdx*2 + 0] = 1.0f;
+                     out[noteIdx*2 + 1] = ev.velocity / 127.0;
+                  }
+                  evIdx++;
+               }
+            }
+         } // if ioPort.b_enable
+      } // if ioPort
+   }
+}

@@ -1,0 +1,190 @@
+// ----
+// ---- file   : modcv_delay.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 14Apr2021
+// ---- changed: 16Apr2021, 07May2021, 31May2021, 21Feb2022, 08Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Delay;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_Delay : Module {
+   define int DLY_SIZE = 2048;
+
+   float dly_offset;  // -1..1 => -1..1 bar
+
+   FloatArray history;
+   int write_offset;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("delay"/*id*/,
+                 "dly"/*header_id*/,
+                 "Delay"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      dly_offset = 0.0f;
+
+      history.allocAndFill(DLY_SIZE, 0.0f);
+      write_offset = 0;
+
+      addInput("in",  "Input", 0.0f, IO_ANY);
+      addInput("dly", "Delay (max="+DLY_SIZE+" ticks)", 0.0f, IO_SCALE);
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_Delay _o) {
+      dly_offset = _o.dly_offset;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+      float stepY = 40;
+
+      cx = 15;
+      cy = 56;
+
+      PortWidget *pw;
+      ui::Layer *l;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "in"/*captionOrNull*/
+                             );
+
+      cy += stepY*1.25 + 4;
+      l <= createSmallDial(cx, cy,
+                           "dly_offset",
+                           -1, 1, 0.0, dly_offset,
+                           "dly"
+                           );
+      l.setToolTipCaption("Delay offset (-1..1 bar)");
+
+      cy += 32;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+      pw.setToolTipCaption("Delay input. 0..1 => 0..1 bar\n\n (note) max ticks = 2048");
+
+
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             (RACK_MODULE_HEIGHT - 20),
+                             null/*captionOrNull*/
+                             );
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return !(["dly_offset"].containsObject(_name));
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "dly_offset":
+            dly_offset = _value;
+            int ticksPerBar = current_song.getNumTicksPerBar();
+            int numTicks = int(dly_offset*ticksPerBar + 0.5);
+            Global.Print("Delay offset is "+dly_offset+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "dly_offset":
+            return dly_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["dly offset"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            dly_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("dly_offset", dly_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(dly_offset, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.f32 = dly_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            dly_offset = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Delay::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      history.allocAndFill(DLY_SIZE, 0.0f);
+      write_offset = 0;
+   }
+
+   public virtual tick() {
+      // Forward patch inputs to outputs
+      local float fIn  = inputs[0].getValue();
+      local int ticksPerBar = current_song.getNumTicksPerBar();
+      local int iDly = mathClampi(((inputs[1].getValue() + dly_offset) * ticksPerBar)+0.5, 0, DLY_SIZE - 1);
+      history[write_offset] = fIn;
+      int readOffset = mathWrapi(write_offset - iDly, 0, DLY_SIZE);
+      out[0] = history[readOffset];
+      write_offset = (write_offset + 1 ) % DLY_SIZE;
+   }
+
+}

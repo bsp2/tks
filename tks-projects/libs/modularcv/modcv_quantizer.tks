@@ -1,0 +1,259 @@
+// ----
+// ---- file   : modcv_quantizer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2022 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 12Apr2021
+// ---- changed: 16Apr2021, 07May2021, 02Dec2021, 28Dec2021, 21Feb2022
+// ----
+// ----
+// ----
+
+module MModularCVMod_Quantizer;
+
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_Quantizer : Module {
+   int   mode;
+   int   key;
+   float sq_amt;  // semi-tone quantization amount
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("quantizer"/*id*/,
+                 "quant"/*header_id*/,
+                 "Quantizer"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      sq_amt = 0.0f;
+
+      addInput("in",   "in",                           0.0, IO_CV);
+      addInput("mode", "mode",                         0.0, IO_ANY);
+      addInput("key",  "key",                          0.0, IO_ANY);
+      addInput("sq",   "semitone-quantization amount", 0.0, IO_SCALE);
+
+      addOutput("out", "Output", IO_CV);
+   }
+
+   public virtual copyFrom(ModCV_Quantizer _o) {
+      mode    = _o.mode;
+      key     = _o.key;
+      sq_amt  = _o.sq_amt;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 30;
+      float stepY = 26;
+      float portOffY = 16;
+      Dial *dl;
+
+      // In
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Mode
+      cy += 26;
+      local StringArray optMode3ln;
+      String *s;
+      foreach s in Scale.mode_names_3ln
+      {
+         optMode3ln.add(s.toLower());
+      }
+      ComboBox cm <= createModeParamWidget(cx, cy,
+                                           "mode",
+                                           optMode3ln,
+                                           Scale.mode_names,
+                                           mode,
+                                           null/*captionOrNull*/
+                                           );
+      cm.setEnableAbbreviation(false);
+      cy += portOffY;
+      createPortWidget(1, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Key
+      cy += stepY;
+      createModeParamWidget(cx, cy,
+                            "key",
+                            Scale.key_names,
+                            Scale.key_names,
+                            key,
+                            null/*captionOrNull*/
+                            );
+      cy += portOffY;
+      createPortWidget(2, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Semitone-Quantization (sq)
+      cy += stepY;
+      dl <= createSmallDial(15, cy,
+                            "sq_amt",
+                            0.0, 1.0, 0.0, sq_amt,
+                            "sq"
+                            );
+      dl.setResetValues([0.0f, 1.0f]);
+      cy += portOffY + 10;
+      createPortWidget(3, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "mode":
+            mode = _value;
+            break;
+
+         case "key":
+            key = _value;
+            break;
+
+         case "sq_amt":
+            sq_amt = _value;
+            break;
+
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "mode":
+            return mode;
+
+         case "key":
+            return key;
+
+         case "sq_amt":
+            return sq_amt;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["mode", "key", "sq amt"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            mode = FromNormalized(_value, 0, (Scale.mode_names.getNumElements())-1);
+            updateParamWidget("mode", mode);
+            break;
+
+         case 1:
+            key = FromNormalized(_value, 0, (Scale.key_names.getNumElements())-1);
+            updateParamWidget("key", key);
+            break;
+
+         case 2:
+            sq_amt = FromNormalized(_value, 0, 1);
+            updateParamWidget("sq_amt", sq_amt);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(mode, 0, (Scale.mode_names.getNumElements())-1);
+
+         case 1:
+            return ToNormalized(key, 0, (Scale.key_names.getNumElements())-1);
+
+         case 2:
+            return ToNormalized(sq_amt, 0, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.i8  = mode;
+      ofs.i8  = key;
+      ofs.f32 = sq_amt;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            mode   = ifs.u8;
+            key    = ifs.u8;
+            sq_amt = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Quantizer::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   // public virtual reset() {
+   // }
+
+   public virtual tick() {
+      local float fIn = inputs[0].getValue();
+
+      local int iMode = int(inputs[1].getValue() * 80) + mode;
+      iMode = mathWrapi(iMode, 0, 80);
+      iMode = mathMini(iMode, Scale.NUM_MODES-1);
+
+      local int iKey = (inputs[2].getValue() * 12) + key;
+      iKey = mathWrapi(iKey, 0, 12);
+      iKey = mathMini(iKey, 12-1);
+
+      local float fSQAmt = inputs[3].getValue() + sq_amt;
+      fSQAmt = mathClampf(fSQAmt, 0.0f, 1.0f);
+
+      fIn = (fIn * 5*12) + 5*12;
+      int iNote = fIn;
+      float fRem = fIn - iNote;
+      // trace "xxx key="+iKey+" mode="+iMode+" note="+iNote;
+      iNote = Scale.ScaleNoteDown(iNote, iKey, iMode);
+      // trace "     ==> note="+iNote;
+
+      out[0] = ((iNote-(5*12)) + fRem*fSQAmt) / (5.0*12);
+   }
+
+}

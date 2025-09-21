@@ -1,0 +1,228 @@
+// ----
+// ---- file   : modcv_slew.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 31Mar2021
+// ---- changed: 03Apr2021, 16Apr2021, 07May2021, 28Dec2021, 21Feb2022, 05Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Slew;
+
+namespace modularcv;
+
+
+class ModCV_Slew : Module {
+
+   float rise_offset;  // -1..1
+   float fall_offset;  // -1..1
+
+   float last_out_val;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Slew"/*id*/,
+                 "slew"/*header_id*/,
+                 "Slew"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      rise_offset = 0.0;
+      fall_offset = 0.0;
+      last_out_val = 0.0f;
+
+      addInput("in",     "Input",  0.0, IO_ANY);   // 0
+      addInput("rise",   "Rise",   0.0, IO_ANY);   // 1
+      addInput("fall",   "Fall",   0.0, IO_ANY);   // 2
+      addInput("active", "Active", 1.0, IO_GATE);  // 3
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_Slew _o) {
+      rise_offset = _o.rise_offset;
+      fall_offset = _o.fall_offset;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+      ui::Dial *dl;
+
+      // Input
+      createPortWidget(0, false/*bOutput*/,
+                       15, 32,
+                       null/*captionOrNull*/
+                       );
+
+      float cy = 70-14;
+
+      // Rise
+      dl <= createSmallDial(15, cy,
+                            "rise_offset",
+                            -1.0, 1.0, 0.0, rise_offset,
+                            "rise"
+                            );
+      dl.setResetValues([0.0f, 1.0f, -1.0f]);
+
+      cy += 28;
+      createPortWidget(1, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+
+      // Fall
+      cy += 30-8;
+      dl <= createSmallDial(15, cy,
+                            "fall_offset",
+                            -1.0, 1.0, 0.0, fall_offset,
+                            "fall"
+                            );
+      dl.setResetValues([0.0f, 1.0f, -1.0f]);
+
+      cy += 28;
+      createPortWidget(2, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Active
+      cy += 30-9;
+      createPortWidget(3, false/*bOutput*/,
+                       15, cy,
+                       "actv"/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       15, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "rise_offset":
+            rise_offset = _value;
+            break;
+
+         case "fall_offset":
+            fall_offset = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "rise_offset":
+            return rise_offset;
+
+         case "fall_offset":
+            return fall_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["rise off", "fall off"];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            rise_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("rise_offset", rise_offset);
+            break;
+
+         case 1:
+            fall_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("fall_offset", fall_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(rise_offset, -1, 1);
+
+         case 1:
+            return ToNormalized(fall_offset, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.f32 = rise_offset;
+      ofs.f32 = fall_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            rise_offset = ifs.f32;
+            fall_offset = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Slew::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tick() {
+      local float fIn   = inputs[0].getValue();
+      local float fRise = mathClampf(inputs[1].getValue() + rise_offset, 0.0f, 1.0f);
+      local float fFall = mathClampf(inputs[2].getValue() + fall_offset, 0.0f, 1.0f);
+      local float fActive = inputs[3].getValue();
+
+      if(fActive >= TRIG_ON)
+      {
+         if(fIn > last_out_val)
+         {
+            // Rise
+            fRise = 1.0f - fRise;
+            fRise = fRise * fRise * fRise;
+            last_out_val += (fIn - last_out_val) * fRise;
+         }
+         else
+         {
+            // Fall
+            fFall = 1.0f - fFall;
+            fFall = fFall * fFall * fFall;
+            last_out_val += (fIn - last_out_val) * fFall;
+         }
+      }
+      else
+      {
+         last_out_val = fIn;
+      }
+
+      out[0] = last_out_val;
+   }
+}

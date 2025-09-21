@@ -1,0 +1,248 @@
+// ----
+// ---- file   : modcv_bernoulli.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 01May2021
+// ---- changed: 07May2021, 28Dec2021, 21Feb2022, 12Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Bernoulli;
+
+namespace modularcv;
+
+
+class ModCV_Bernoulli : Module {
+
+   float seed;
+   float pan_offset;  // -1..1
+
+   protected int rand_seed_1;
+   protected int rand_seed_2;
+
+   protected TrigInput trig_in;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Bernoulli"/*id*/,
+                 "bgate"/*header_id*/,
+                 "Bernoulli Gate"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      seed = 0.0;
+      pan_offset = 0.0;
+
+      addInput("in",  "In",  0.0, IO_ANY);
+      addInput("pan", "Pan", 0.0, IO_ANY);
+
+      addOutput("out_l", "Output L", IO_ANY);
+      addOutput("out_r", "Output R", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_Bernoulli _o) {
+      seed       = _o.seed;
+      pan_offset = _o.pan_offset;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cy = 34;
+      float stepYI = 24;
+      float stepYO = 32;
+
+      // Input
+      createPortWidget(0, false/*bOutput*/,
+                       15, 32,
+                       null/*captionOrNull*/
+                       );
+
+      // Random Seed
+      cy += 25;
+      createTinyDial(15, cy,
+                     "seed",
+                     -1.0, 1.0, 0.0, seed,
+                     "seed"
+                     );
+
+      // L
+      cy += stepYO + 8;
+      createPortWidget(0, true/*bOutput*/,
+                       15, cy,
+                       "L"/*captionOrNull*/
+                       );
+
+      // Pan
+      cy += stepYO+2;
+      createTinyDial(15, cy,
+                     "pan_offset",
+                     -1.0, 1.0, 0.0, pan_offset,
+                     "pan"
+                     );
+
+      cy += stepYI;
+      createPortWidget(1, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+
+      // R
+      cy += stepYO-8;
+      createPortWidget(1, true/*bOutput*/,
+                       15, cy,
+                       "R"/*captionOrNull*/
+                       );
+
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "seed":
+            seed = _value;
+            reset();
+            break;
+
+         case "pan_offset":
+            pan_offset = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "seed":
+            return seed;
+
+         case "pan_offset":
+            return pan_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["seed", "pan"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            seed = FromNormalized(_value, -1, 1);
+            reset();
+            updateParamWidget("seed", seed);
+            break;
+
+         case 1:
+            pan_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("pan_offset", pan_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(seed, -1, 1);
+
+         case 1:
+            return ToNormalized(pan_offset, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.f32 = seed;
+      ofs.f32 = pan_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            seed       = ifs.f32;
+            pan_offset = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Bernoulli::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected method calcRand() : float {
+      int fb1 = rand_seed_1 & 1;
+      rand_seed_1 >>= 1;
+      if(0 != fb1)
+         rand_seed_1 ^= 0xB4BCD35C;
+
+      int fb2 = rand_seed_2 & 1;
+      rand_seed_2 >>= 1;
+      if(0 != fb2)
+         rand_seed_2 ^= 0x7A5BC2E3;
+
+      int r16 = (rand_seed_1 ^ rand_seed_2) & 0xFFFF;
+      return r16 / float(0xFFFF);  // => 0..1
+   }
+
+   public virtual reset() {
+      trig_in.reset();
+
+      rand_seed_1 = int(seed * 0x7FFFFFF) ^ 0xAAAAaaaa;// ^ 0xd89dcfbdu;
+      rand_seed_2 = int(-seed * 0x7FFFFFF) ^ 0x55555555;// ^ 0x3fb8deacu;
+      loop(abs(int(seed*32))&31)
+         calcRand();
+   }
+
+   public virtual tick() {
+      local float fPan = mathClampf(inputs[1].getValue() + pan_offset, -1.0f, 1.0f);
+      fPan = fPan*0.5 + 0.5;
+
+      out[0] = 0.0f;
+      out[1] = 0.0f;
+
+      if(trig_in.process(inputs[0].getValue()))
+      {
+         float r = calcRand();
+
+         if(r <= fPan)
+         {
+            // Right
+            out[0] = 0.0f;
+            out[1] = 1.0f;
+         }
+         else
+         {
+            // Left
+            out[0] = 1.0f;
+            out[1] = 0.0f;
+         }
+      }
+   }
+
+}

@@ -1,0 +1,173 @@
+// ----
+// ---- file   : modcv_extclkoutput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 11Oct2024
+// ---- changed: 16Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_ExtClkOutput;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_ExtClkOutput : ModCV_Output {
+   // (note) controls Monitor, Tracker, or TrigSeq node (must be set to ext.clk mode)
+   // (note) output port must match node automation port A or B
+   // (note) 'clock' input is normalled to 'gate' (send RPN_COMMON_CLOCKGATE instead of CLOCK when gate is not connected)
+
+   protected TrigInput trig_clock;
+   protected TrigInput trig_gate;
+   protected TrigInput trig_restart;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("extclk_output"/*id*/,
+                 "extclk"/*header_id*/,
+                 "ExtClk Output\n\n (note) clk trig input sends RPN_COMMON_CLOCK (normalled to 'gate' input)\n (note) gate trig input sends RPN_COMMON_GATE\n (note) rst trig input sends RPN_COMMON_RESTART\n\n (note) target Tracker / TrigSeq node has to be set to external clock mode ('Play' tab)"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      addInput("clock"  , "Clock trig input (RPN_COMMON_CLOCK)",     0.0f, IO_GATE);
+      addInput("gate",    "Gate trig input (RPN_COMMON_GATE)",       0.0f, IO_GATE);
+      addInput("restart", "Restart trig input (RPN_COMMON_RESTART)", 0.0f, IO_GATE);
+   }
+
+   public virtual copyFrom(ModCV_ExtClkOutput _o) {
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+      float stepY = 40;
+
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, true/*bOutput*/);
+
+      cx = 15;
+      cy = 56;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "clk"/*captionOrNull*/
+                             );
+
+      cy += stepY;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "gate"/*captionOrNull*/
+                             );
+
+      cy += stepY;
+      pw <= createPortWidget(2, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "rst"/*captionOrNull*/
+                             );
+
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return true;//("duration_off" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+      }
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("Clock Output Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 2;
+
+      // Port index (v2+)
+      ofs.i8 = port_index;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            if(ver >= 2)
+            {
+               port_index = ifs.u8;  // v2+
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_ExtClkOutput::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      // trace "xxx modcv_extclkoutput::reset";
+      // trig_clock.b_debug = true;
+      trig_clock  .reset();
+      trig_gate   .reset();
+      trig_restart.reset();
+   }
+
+   public virtual tickOutput(MIDIPipeFrame _frOut) {
+      
+      // if(replay.b_playing)
+      //    trace "xxx ["+current_song.song_offset+"] node.tick_nr="+parent_node.tick_nr+" clk input value="+inputs[0].getValue();
+
+      if(trig_clock.process(inputs[0].getValue()))
+      {
+         if(null == inputs[1].source)
+            parent_node.emitOutputBipolar(_frOut, port_index, Node.RPN_COMMON_CLOCKGATE/*502*/, 1.0f, MIDIMapDefs.TYPE_RPN/*forcedType*/);
+         else
+            parent_node.emitOutputBipolar(_frOut, port_index, Node.RPN_COMMON_CLOCK/*503*/, 1.0f, MIDIMapDefs.TYPE_RPN/*forcedType*/);
+
+         // trace "xxx ["+current_song.song_offset+"] ---------------- ModCV_ExtClkOutput emit extclk ---------------------------";
+      }
+
+      if(trig_gate.process(inputs[1].getValue()))
+      {
+         parent_node.emitOutputBipolar(_frOut, port_index, Node.RPN_COMMON_GATE/*504*/, 1.0f, MIDIMapDefs.TYPE_RPN/*forcedType*/);
+      }
+
+      if(trig_restart.process(inputs[2].getValue()))
+      {
+         parent_node.emitOutputBipolar(_frOut, port_index, Node.RPN_COMMON_RESTART/*509*/, 1.0f, MIDIMapDefs.TYPE_RPN/*forcedType*/);
+      }
+
+   }
+}

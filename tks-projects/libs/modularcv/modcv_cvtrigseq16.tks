@@ -1,0 +1,1332 @@
+// ----
+// ---- file   : modcv_cvtrigseq16.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : a mixture between CVSeq16 and TrigSeq16 (with dual outputs)
+// ----
+// ---- created: 17Nov2024
+// ---- changed: 
+// ----
+// ----
+// ----
+
+module MModularCVMod_CVTrigSeq16;
+
+use namespace ui;
+namespace modularcv;
+
+
+// <class.png>
+class CVTrigSeq16_Pattern {
+
+   define int INTERPOL_NONE       = 0;
+   define int INTERPOL_LIN        = 1;
+   define int INTERPOL_SIN        = 2;
+   define int INTERPOL_COS        = 3;
+   define int INTERPOL_SMOOTHSTEP = 4;
+   define int NUM_INTERPOL_TYPES  = 5;
+
+   static StringArray interpol_type_names = [
+      "<none>",
+      "Linear",
+      "Sine",
+      "Cosine",
+      "Smoothstep",
+                                                   ];
+
+   // 'clk' input LUT modes
+   define int LUT_NONE     = 0;
+   define int LUT_WRAP     = 1;
+   define int LUT_FOLD     = 2;
+   define int LUT_FOLD_NR  = 3;  // don't repeat last step
+   define int LUT_CLAMP    = 4;  // scale clk CV 0..1 to 0..numSteps   (e.g. num=4, cv=0.5 => step=2)
+   define int LUT_CLAMP_PK = 5;  // scale clk CV 0..1 to 0..numSteps-1 (e.g. num=4, cv=0.5 => step=1.5)
+
+   static StringArray lut_mode_names = [
+      "-",
+      "Wrap",
+      "Fold",
+      "Fold (no repeat)",
+      "Clamp",
+      "Clamp (peak)",
+                                                   ];
+
+   int        pat_idx;
+   int        num_steps;
+   int        step_offset;
+   FloatArray steps;
+   byte       interpol_type;
+   byte       lut_mode;
+   boolean    b_abs_sign;
+
+
+   public method init(int _patIdx) {
+      pat_idx     = _patIdx;
+
+      num_steps     = 16;
+      step_offset   = 0;
+      interpol_type = INTERPOL_NONE;
+      lut_mode      = LUT_NONE;
+      b_abs_sign    = false;
+
+      steps.allocAndFill(16, 0.0f);
+   }
+
+   public method copyFrom(CVTrigSeq16_Pattern _o) {
+      num_steps     = _o.num_steps;
+      step_offset   = _o.step_offset;
+      steps         = _o.steps;
+      interpol_type = _o.interpol_type;
+      lut_mode      = _o.lut_mode;
+      b_abs_sign    = _o.b_abs_sign;
+   }
+
+   public method clear() {
+      steps.fill(false);
+   }
+
+   public method clearUnmaskedOnly() {
+      int stepIdx = 0;
+      loop(16)
+      {
+         if(steps[stepIdx] >= ModCV_CVTrigSeq16.TOGGLE_THRESHOLD)
+            steps[stepIdx] = 0.0f;
+         stepIdx++;
+      }
+   }
+
+   public method randomize() {
+      int stepIdx = 0;
+      loop(16)
+         steps[stepIdx++] = rand(2.0) - 1.0;
+   }
+
+   public method randomizeUnmaskedOnly() {
+      int stepIdx = 0;
+      loop(16)
+      {
+         if(steps[stepIdx] >= ModCV_CVTrigSeq16.TOGGLE_THRESHOLD)
+            steps[stepIdx] = rand(1.0 - ModCV_CVTrigSeq16.TOGGLE_THRESHOLD) + ModCV_CVTrigSeq16.TOGGLE_THRESHOLD;
+         stepIdx++;
+      }
+   }
+
+   public =replay= method setInterpolType(int _type) {
+      interpol_type = _type;
+   }
+
+   public =replay= method setLUTMode(int _mode) {
+      lut_mode = _mode;
+   }
+
+   public =replay= method setEnableAbsSign(boolean _bEnable) {
+      b_abs_sign = _bEnable;
+   }
+
+   public method calcLUTOffset(float _fOff, int _numSteps) : float {
+      switch(lut_mode)
+      {
+         default:
+         case LUT_WRAP:
+            return mathWrapf(_fOff * _numSteps, 0, _numSteps);
+
+         case LUT_FOLD:
+            return mathClampf(mathFoldf(_fOff * _numSteps, 0, _numSteps), 0, _numSteps-1);
+
+         case LUT_FOLD_NR:
+            return mathClampf(mathFoldf(_fOff * (_numSteps - 1), 0, _numSteps), 0, _numSteps-1);
+
+         case LUT_CLAMP:
+            return mathClampf(_fOff * _numSteps, 0, (_numSteps - 1));
+
+         case LUT_CLAMP_PK:
+            return mathClampf(_fOff * (_numSteps-1), 0, (_numSteps - 1));
+      }
+   }
+
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 3;
+
+      // params
+      ofs.i8 = num_steps;
+      ofs.i8 = step_offset;
+      ofs.i8 = interpol_type;
+      ofs.i8 = lut_mode;    // v3+
+      ofs.i8 = b_abs_sign;  // v3+
+
+      int stepIdx = 0;
+      loop(16)
+         ofs.f32 = steps[stepIdx++];
+   }
+
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // params
+         num_steps   = ifs.u8;
+         step_offset = ifs.s8;
+
+         // Interpolation (v2+)
+         if(ver >= 2)
+            interpol_type = ifs.u8;  // v2+
+
+         if(ver >= 3)
+         {
+            lut_mode   = ifs.u8;  // v3+
+            b_abs_sign = ifs.b8;  // v3+
+         }
+
+         int stepIdx = 0;
+         loop(16)
+            steps[stepIdx++] = ifs.f32;
+
+         return true;
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class ModCV_CVTrigSeq16 : Module {
+   // (note) when 'clk' is not connected, play step at 'off' (=> LUT mode)
+
+   define int NUM_PATTERNS = 8;
+
+   define float TOGGLE_THRESHOLD = -0.8f;
+
+   int     edit_pat_idx;
+   boolean b_force_edit_pat;
+   int     step_idx;
+   int     step_idx_last_played;
+   boolean b_oneshot;
+   boolean b_playing;
+   boolean b_rec_th;   // 1=record only to steps that already store values >= TOGGLE_THRESHOLD
+
+   CVTrigSeq16_Pattern *[] patterns;
+
+   protected RoundButton *bt_force_edit_pat;
+   protected PortWidget *pw_clk;
+
+   protected Dial *[] step_dials;
+   protected LED  *[] step_leds;
+
+   protected Button *bt_rec_th;
+
+   protected TrigInput trig_reset;
+   protected TrigInput trig_clock;
+
+   protected FloatParam *fp_off;
+   protected FloatParam *fp_len;
+
+   static CVTrigSeq16_Pattern *pat_clipboard;
+
+   protected boolean b_ui_queued_step_update;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("CVTrigSeq16"/*id*/,
+                 "cv / trig seq 16"/*header_id*/,
+                 "CV / Trig Seq 16\n\n - Off input is relative to default pattern offset\n - Len input overrides the default pattern len when connected\n - Pat input overrides the edit pattern during replay when connected"/*tooltip*/
+                 );
+      setModuleSize(15, 3);
+
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         CVTrigSeq16_Pattern pat <= new CVTrigSeq16_Pattern;
+         pat.init(patIdx++);
+         patterns.add(#(deref pat));
+      }
+
+      edit_pat_idx = 0;
+      step_idx = 0;
+
+      addInput("reset",    "Reset",       0.0, IO_GATE);   // 0
+      addInput("clock",    "Clock",       0.0, IO_CLOCK);  // 1
+      addInput("len",      "Len\n\n (note) Overrides the default pattern len when connected", 0.0, IO_SCALE);  // 2
+      addInput("off",      "Offset",      0.0, IO_OFF);    // 3
+      addInput("pat",      "Pattern (offset)\n\n (note) Overrides the current edit pattern nr during replay when connected", 0.0, IO_OFF);  // 4
+      addInput("rec_cv",   "Record CV",   0.0, IO_ANY);    // 5
+      addInput("rec_gate", "Record Gate", 0.0, IO_GATE);   // 6
+
+      addOutput("out_cv",   "CV Output",   IO_ANY);   // 0
+      addOutput("out_trig", "Trig Output", IO_GATE);  // 1
+
+      b_rec_th = false;
+   }
+
+   public virtual copyFrom(ModCV_CVTrigSeq16 _o) {
+
+      b_force_edit_pat = _o.b_force_edit_pat;
+
+      CVTrigSeq16_Pattern *pat;
+      CVTrigSeq16_Pattern *patO;
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         pat <= patterns.get(patIdx);
+         patO <= _o.patterns.get(patIdx);
+         pat.copyFrom(patO);
+         patIdx++;
+      }
+
+      b_rec_th = _o.b_rec_th;
+   }
+
+   public method getEditPattern() : CVTrigSeq16_Pattern {
+      return patterns.get(edit_pat_idx);
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float shiftX = 2;
+      float cx = 2 + shiftX;
+      float cy = 48;
+      ComboBox *cm;
+      FloatParam *fp;
+      RoundButton *bt;
+      Dial *dl;
+
+      // b_force_edit_pat
+      bt_force_edit_pat <= createCheckButton(cx-4+22-14+2, cy-28+10-1,
+                                             "b_force_edit_pat",
+                                             b_force_edit_pat
+                                             );
+      bt_force_edit_pat.setToolTipCaption("When checked, force edit pattern replay (patnr+offset+len).\n\nWhen unchecked, \"pat\" input controls replay pattern selection, \"len\" overrides default len, and \"off\" is added to default pattern offset");
+
+
+      // edit_pat_idx
+      local StringArray patNrOpt;
+      int patNr = 1;
+      loop(NUM_PATTERNS)
+         patNrOpt.add(String(patNr++));
+      cm <= createModeParamWidget(cx-4+22-10+22, cy-28+10,
+                                  "edit_pat_idx",
+                                  patNrOpt,
+                                  null/*patNrOptLong*/,
+                                  edit_pat_idx,
+                                  null/*captionOrNull*/
+                                  );
+      cm.setRequiredSize2fScaled(20, 21);
+      cm.setToolTipCaption("Current edit pattern index.\n\n (note) also the current play pattern when the \"pat\" input is not connected, or the \"force\" toggle button is engaged");
+
+      // offset
+      fp_off <= createIntParamWidget(cx-4+22+22, cy-25,
+                                     "step_offset",
+                                     -16/*min*/,
+                                     16/*max*/,
+                                     0/*reset*/,
+                                     0/*step_offset*/,
+                                     null/*captionOrNull*/
+                                     );
+
+      // #steps
+      fp_len <= createIntParamWidget(cx-4+22+22+22, cy-25,
+                                     "num_steps",
+                                     1/*min*/,
+                                     16/*max*/,
+                                     16/*reset*/,
+                                     16/*num_steps*/,
+                                     null/*captionOrNull*/
+                                     );
+
+      // Clock
+      cx = 14+shiftX;
+      pw_clk <= createPortWidget(1, false/*bOutput*/,
+                                 cx, cy,
+                                 "clk"/*captionOrNull*/
+                                 );
+
+      // Play Pattern (0..1 => pat#1..8)
+      cx += 22;
+      createPortWidget(4, false/*bOutput*/,
+                       cx, cy,
+                       "pat"/*captionOrNull*/
+                       );
+
+      // off
+      cx += 22;
+      createPortWidget(3, false/*bOutput*/,
+                       cx, cy,
+                       "off"/*captionOrNull*/
+                       );
+
+
+      // len
+      cx += 22;
+      createPortWidget(2, false/*bOutput*/,
+                       cx, cy,
+                       "len"/*captionOrNull*/
+                       );
+
+      // Reset
+      cx += 22;
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       "rst"/*captionOrNull*/
+                       );
+
+      // CV Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx-10, cy-19,
+                       null/*captionOrNull*/
+                       );
+
+      // Trig Output
+      createPortWidget(1, true/*bOutput*/,
+                       cx+5, cy-19,
+                       null/*captionOrNull*/
+                       );
+
+
+      int stepIdx = 0;
+      cx = 10+shiftX+5;
+      cy = 94-6 - 5;
+      float stepXI = 24 + 4;
+      float stepYI = 30;
+
+      step_leds.alloc(16);
+      step_leds.useAll();
+      float ledOffY = 13;
+
+      local FloatArray aPresetValues;
+      local StringArray aPresetNames;
+      StringArray aNotes <= MIDI.midi_notes;
+      int noteIdx = 4*12;
+      loop(25)
+      {
+         aPresetValues.add( (noteIdx - 5*12) / (5.0*12) );
+         aPresetNames.add( aNotes.get(noteIdx) );
+         noteIdx++;
+      }
+
+      step_dials.alloc(16);
+      step_dials.useAll();
+      loop(4)
+      {
+         // 1
+         dl <= createSmallDial(cx + (stepIdx * stepXI), cy,
+                               "step_"+(stepIdx+1),
+                               -1.0, 1.0, 0.0,
+                               0.0f/*steps[stepIdx]*/,
+                               null/*captionOrNull*/
+                               );
+         dl.setResetValues([0.0f, 1.0f, -1.0f]);
+         dl.setPresetOptions(Object(aPresetValues), Object(aPresetNames));
+         dl.setStep(1.0f / (10*12));
+         dl.setToggleThreshold(TOGGLE_THRESHOLD);
+         dl.setToggleMinValue(-1.0f);
+         dl.setEnableToggle(true);
+
+         step_dials[stepIdx] = dl;
+         step_leds[stepIdx] = createLED(cx + (stepIdx * stepXI), cy+ledOffY);
+
+         // 2
+         dl <= createSmallDial(cx + (stepIdx * stepXI), cy + stepYI,
+                               "step_"+(4+stepIdx+1),
+                               -1.0, 1.0, 0.0,
+                               0.0f/*steps[4 + stepIdx]*/,
+                               null/*captionOrNull*/
+                               );
+         dl.setResetValues([0.0f, 1.0f, -1.0f]);
+         dl.setPresetOptions(Object(aPresetValues), Object(aPresetNames));
+         dl.setStep(1.0f / (10*12));
+         dl.setToggleThreshold(TOGGLE_THRESHOLD);
+         dl.setToggleMinValue(-1.0f);
+         dl.setEnableToggle(true);
+
+         step_dials[4 + stepIdx] = dl;
+         step_leds[4 + stepIdx] = createLED(cx + (stepIdx * stepXI), cy+stepYI+ledOffY);
+
+         // 3
+         dl <= createSmallDial(cx + (stepIdx * stepXI), cy + (stepYI *2),
+                               "step_"+(8+stepIdx+1),
+                               -1.0, 1.0, 0.0,
+                               0.0f/*steps[8 + stepIdx]*/,
+                               null/*captionOrNull*/
+                               );
+         dl.setResetValues([0.0f, 1.0f, -1.0f]);
+         dl.setPresetOptions(Object(aPresetValues), Object(aPresetNames));
+         dl.setStep(1.0f / (10*12));
+         dl.setToggleThreshold(TOGGLE_THRESHOLD);
+         dl.setToggleMinValue(-1.0f);
+         dl.setEnableToggle(true);
+
+         step_dials[8 + stepIdx] = dl;
+         step_leds[8 + stepIdx] = createLED(cx + (stepIdx * stepXI), cy+(stepYI*2)+ledOffY);
+
+         // 4
+         dl <= createSmallDial(cx + (stepIdx * stepXI), cy + (stepYI * 3),
+                               "step_"+(12+stepIdx+1),
+                               -1.0, 1.0, 0.0,
+                               0.0f/*steps[12 + stepIdx]*/,
+                               null/*captionOrNull*/
+                               );
+         dl.setResetValues([0.0f, 1.0f, -1.0f]);
+         dl.setPresetOptions(Object(aPresetValues), Object(aPresetNames));
+         dl.setStep(1.0f / (10*12));
+         dl.setToggleThreshold(TOGGLE_THRESHOLD);
+         dl.setToggleMinValue(-1.0f);
+         dl.setEnableToggle(true);
+
+         step_dials[12 + stepIdx] = dl;
+         step_leds[12 + stepIdx] = createLED(cx + (stepIdx * stepXI), cy+(stepYI*3)+ledOffY);
+
+         stepIdx++;
+      }
+
+      // Rec CV
+      cx = 14+shiftX;
+      cy += stepYI * 4 - 3;
+      pw_clk <= createPortWidget(5, false/*bOutput*/,
+                                 cx, cy,
+                                 null/*captionOrNull*/
+                                 );
+
+      bt_rec_th <= createTinyCheckButton(cx + 11, cy,
+                                         "b_rec_th",
+                                         b_rec_th
+                                         );
+      bt_rec_th.setToolTipCaption("When checked, record only to steps which already contain a value >= -0.8\n\n (note) a 'math' module set to mode 'sth' can mask / skip the 'mask' output values (set 'b' to -0.8)\n (note) also enables Dial-toggle mode (LMB-click toggles between skip(<-0.8) and last edited value)\n (note) 't'");
+
+      // Rec Gate
+      cx += 22;
+      createPortWidget(6, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      updatePatWidgets();
+   }
+
+   protected method updateClkPhaseCaption() {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      if(null != pw_clk)
+         pw_clk.updateCaption(CVTrigSeq16_Pattern.LUT_NONE != pat.lut_mode ? "pha" : "clk");
+   }
+
+   protected method updateStepWidgets(CVTrigSeq16_Pattern _pat) {
+      FloatArray faSteps <= _pat.steps;
+      Dial *dl;
+      int stepIdx = 0;
+      loop(16)
+      {
+         dl <= step_dials[stepIdx];
+         float f = faSteps.get(stepIdx);
+         dl.setValue(f);
+         // // dl.setEnableToggle(b_rec_th);
+         // // if(b_rec_th)
+            dl.setToggleState(f >= TOGGLE_THRESHOLD);
+         stepIdx++;
+      }
+   }
+
+   protected method updatePatWidgets() {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+
+      updateStepWidgets(pat);
+
+      fp_off.setValue(pat.step_offset);
+      fp_len.setValue(pat.num_steps);
+
+      updateClkPhaseCaption();
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return !(_name <= "step_") && ("b_rec_th" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+
+      switch(_name)
+      {
+         default:
+            if(_name <= "step_")
+            {
+               int stepIdx = int(_name.replace("step_", "")) - 1;
+               FloatArray steps <= pat.steps;
+               steps[stepIdx] = _value;
+
+               float noteIdxF = (_value * 5.0f * 12) + (5*12);
+               int noteIdx = noteIdxF;
+               float noteFrac = frac(noteIdxF);
+               if(noteFrac >= 0.5f)
+               {
+                  noteIdx++;
+                  noteFrac = noteFrac - 1.0f;
+               }
+               StringArray aNotes <= MIDI.midi_notes;
+               noteFrac = int(noteFrac * 10000) / 100;
+               Global.Print("Step "+(stepIdx+1)+" is "+_value+" ("+aNotes.get(noteIdx)+((noteFrac>0.0f)?"+":"")+((noteFrac!=0.0f)?noteFrac:"")+")");
+
+               if(!st2::replay.b_playing)
+                  setStepIdxLastPlayed(stepIdx);  // for CV recording (e.g. MIDI note input)
+            }
+            break;
+
+         case "num_steps":
+            pat.num_steps = _value;
+            break;
+
+         case "step_offset":
+            pat.step_offset = _value;
+            break;
+
+         case "edit_pat_idx":
+            edit_pat_idx = _value;
+            updatePatWidgets();
+            resetStepLEDs();
+            b_force_edit_pat = true;
+            bt_force_edit_pat.setSelected(true);
+            break;
+
+         case "b_force_edit_pat":
+            b_force_edit_pat = _value;
+            break;
+
+         case "b_rec_th":
+            b_rec_th = _value;
+            updatePatWidgets();
+            Global.Print("Threshold recording mode is "+Utils.GetEnableString(b_rec_th));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+
+      switch(_name)
+      {
+         default:
+            if(_name <= "step_")
+            {
+               int stepIdx = _name.replace("step_", "");
+               FloatArray steps <= pat.steps;
+               return steps[stepIdx - 1];
+            }
+            break;
+
+         case "num_steps":
+            return pat.num_steps;
+
+         case "step_offset":
+            return pat.step_offset;
+
+         case "edit_pat_idx":
+            return edit_pat_idx;
+
+         case "b_force_edit_pat":
+            return b_force_edit_pat;
+
+         case "b_rec_th":
+            return b_rec_th;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["step 1",  "step 2",  "step 3",  "step 4",
+              "step 5",  "step 6",  "step 7",  "step 8",
+              "step 9",  "step 10", "step 11", "step 12",
+              "step 13", "step 14", "step 15", "step 16",
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      switch(_paramIdx)
+      {
+         case 0:
+         case 1:
+         case 2:
+         case 3:
+         case 4:
+         case 5:
+         case 6:
+         case 7:
+         case 8:
+         case 9:
+         case 10:
+         case 11:
+         case 12:
+         case 13:
+         case 14:
+         case 15:
+            steps[_paramIdx] = FromNormalized(_value, -1, 1);
+            updateParamWidget("step_"+(_paramIdx+1), steps[_paramIdx]);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      FloatArray steps <= pat.steps;
+      switch(_paramIdx)
+      {
+         case 0:
+         case 1:
+         case 2:
+         case 3:
+         case 4:
+         case 5:
+         case 6:
+         case 7:
+         case 8:
+         case 9:
+         case 10:
+         case 11:
+         case 12:
+         case 13:
+         case 14:
+         case 15:
+            return ToNormalized(steps[_paramIdx], -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 6;
+
+      // Patterns (v3+)
+      CVTrigSeq16_Pattern *pat;
+      foreach pat in patterns
+      {
+         pat.saveState(ofs);
+      }
+
+      // Current edit pattern (v3+)
+      ofs.i8 = edit_pat_idx;
+
+      // Force edit pattern (v4+)
+      ofs.i8 = b_force_edit_pat;
+
+      // Oneshot mode (v5+)
+      ofs.i8 = b_oneshot;
+
+      // Record to steps >= TOGGLE_THRESHOLD only (v6+)
+      ofs.i8 = b_rec_th;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            CVTrigSeq16_Pattern *pat;
+
+            if(ver < 3)
+            {
+               pat <= patterns.get(0);
+
+               // params
+               pat.num_steps = ifs.u8;
+
+               if(ver >= 2)
+                  pat.step_offset = ifs.s8;  // v2+
+
+               int stepIdx = 0;
+               FloatArray steps <= pat.steps;
+               loop(16)
+                  steps[stepIdx++] = ifs.f32;
+            }
+            else
+            {
+               // v3+
+               int patNr = 1;
+               foreach pat in patterns
+               {
+                  if(!pat.loadState(ifs))
+                  {
+                     trace "[---] ModCV_CVTrigSeq16::loadState: failed to load pattern "+patNr+"/"+NUM_PATTERNS;
+                     return false;
+                  }
+                  patNr++;
+               }
+
+               // Current edit pattern (v3+)
+               edit_pat_idx = ifs.u8;
+
+               if(ver >= 4)
+               {
+                  // Force edit pattern (v4+)
+                  b_force_edit_pat = ifs.b8;
+               }
+
+               if(ver >= 5)
+               {
+                  // Oneshot Mode (v5+)
+                  b_oneshot = ifs.b8;
+               }
+
+               if(ver >= 6)
+               {
+                  // Record to steps >= TOGGLE_THRESHOLD only (v6+)
+                  b_rec_th = ifs.b8;
+               }
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_CVTrigSeq16::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected method resetStepLEDs() {
+      LED *led;
+      foreach led in step_leds
+      {
+         led.setConstValue(0.0f);
+      }
+   }
+
+   public virtual reset() {
+      step_idx = 0;
+      b_playing = !b_oneshot;
+      step_idx_last_played = 0;
+
+      resetStepLEDs();
+
+      trig_reset.reset();
+      trig_clock.reset();
+
+      out[1/*trig*/] = 0.0f;
+   }
+
+   protected =replay= method setStepIdxLastPlayed(int _idx) {
+      // when editing dial and replay is not running
+      step_idx_last_played = _idx;
+   }
+
+   // <method.png>
+   protected virtual addExtraContextMenuItems(PopupMenu pm) {
+      PopupMenuButton *pmb;
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy to Clipboard", "copy");
+      pmb.setAccelerators("c", "");
+
+      pmb <= pm.addDefaultButton("Paste from Clipboard", "paste");
+      pmb.setAccelerators("v", "");
+      pmb.setActive(null != pat_clipboard);
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Clear", "clear");
+      pmb.setAccelerators("BACKSPACE", "");
+
+      pmb <= pm.addDefaultButton("Randomize", "rand");
+      pmb.setAccelerators("r", "");
+
+      pm.addSeparator();
+      PopupMenu *spm;
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Interpolation", deref spm);
+      spm.addRadioButton("-",          (CVTrigSeq16_Pattern.INTERPOL_NONE       == pat.interpol_type),  "ipol_none");
+      spm.addRadioButton("Linear",     (CVTrigSeq16_Pattern.INTERPOL_LIN        == pat.interpol_type),  "ipol_lin");
+      spm.addRadioButton("Sin",        (CVTrigSeq16_Pattern.INTERPOL_SIN        == pat.interpol_type),  "ipol_sin");
+      spm.addRadioButton("Cos",        (CVTrigSeq16_Pattern.INTERPOL_COS        == pat.interpol_type),  "ipol_cos");
+      spm.addRadioButton("Smoothstep", (CVTrigSeq16_Pattern.INTERPOL_SMOOTHSTEP == pat.interpol_type),  "ipol_smoothstep");
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Clock-Phase LUT mode", deref spm);
+      spm.addRadioButton("-",                (CVTrigSeq16_Pattern.LUT_NONE     == pat.lut_mode), "lut_none");
+      spm.addRadioButton("Wrap",             (CVTrigSeq16_Pattern.LUT_WRAP     == pat.lut_mode), "lut_wrap");
+      spm.addRadioButton("Fold",             (CVTrigSeq16_Pattern.LUT_FOLD     == pat.lut_mode), "lut_fold");
+      spm.addRadioButton("Fold (no repeat)", (CVTrigSeq16_Pattern.LUT_FOLD_NR  == pat.lut_mode), "lut_fold_nr");
+      spm.addRadioButton("Clamp",            (CVTrigSeq16_Pattern.LUT_CLAMP    == pat.lut_mode), "lut_clamp");
+      spm.addRadioButton("Clamp (peak)",     (CVTrigSeq16_Pattern.LUT_CLAMP_PK == pat.lut_mode), "lut_clamp_pk");
+
+      pmb <= pm.addCheckButton("Abs Sign Mode", pat.b_abs_sign, "abs_sign");
+      pmb.setToolTipCaption("When enabled, use abs(offset_cv) and multiply output value by sign(offset_cv)\n\n (note) e.g. for using the seq as a CV waveshaper");
+
+      pm.addSeparator();
+      pmb <= pm.addCheckButton("Oneshot Mode", b_oneshot, "oneshot");
+      pmb.setToolTipCaption("When enabled, stop replay after last step\n\n (note) use \'rst\' input to start replay\n\n (note) ignored in clock-phase LUT mode");
+   }
+
+   // <method.png>
+   protected method handlePatCopy() {
+      if(null == pat_clipboard)
+      {
+         pat_clipboard <= new CVTrigSeq16_Pattern;
+         pat_clipboard.init(0);
+      }
+      pat_clipboard.copyFrom(getEditPattern());
+      Global.Print("Copy CVTrigSeq16 pattern to clipboard");
+   }
+
+   // <method.png>
+   protected method handlePatPaste() {
+      if(null != pat_clipboard)
+      {
+         CVTrigSeq16_Pattern pat <= getEditPattern();
+         pat.copyFrom(pat_clipboard);
+         updatePatWidgets();
+         Global.Print("Paste CVTrigSeq16 pattern from clipboard");
+         updateParentEditorBidirectionalControls();
+      }
+   }
+
+   // <method.png>
+   protected method handlePatClear() {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      if(b_rec_th)
+         pat.clearUnmaskedOnly();
+      else
+         pat.clear();
+      updatePatWidgets();
+      Global.Print("Clear CVTrigSeq16 pattern"+(b_rec_th?" (unmasked only)":""));
+      updateParentEditorBidirectionalControls();
+   }
+
+   // <method.png>
+   protected method handlePatRand() {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      if(b_rec_th)
+         pat.randomizeUnmaskedOnly();
+      else
+         pat.randomize();
+      updatePatWidgets();
+      Global.Print("Randomize CVTrigSeq16 pattern"+(b_rec_th?" (unmasked only)":""));
+      updateParentEditorBidirectionalControls();
+   }
+
+   // <method.png>
+   protected =replay= method handleToggleOneShot() {
+      b_oneshot = !b_oneshot;
+      Global.Print("Oneshot Mode is "+Utils.GetEnableString(b_oneshot));
+   }
+
+   // <method.png>
+   protected =replay= method cycleInterpolationTypes() {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      pat.setInterpolType((pat.interpol_type + 1) % CVTrigSeq16_Pattern.NUM_INTERPOL_TYPES);
+      Global.Print("Interpolation is \""+(CVTrigSeq16_Pattern.interpol_type_names.get(pat.interpol_type))+"\"");
+   }
+
+   // <method.png>
+   protected =replay= method toggleThresholdMode() {
+      b_rec_th = !b_rec_th;
+      setParamByName("b_rec_th", b_rec_th);
+      bt_rec_th.setToggleState(b_rec_th);
+   }
+
+   // <method.png>
+   protected virtual handleExtraContextMenuItem(String _id) : boolean {
+      CVTrigSeq16_Pattern pat <= getEditPattern();
+      switch(_id)
+      {
+         case "copy":
+            handlePatCopy();
+            return true;
+
+         case "paste":
+            handlePatPaste();
+            return true;
+
+         case "clear":
+            handlePatClear();
+            return true;
+
+         case "rand":
+            handlePatRand();
+            return true;
+
+         case "oneshot":
+            handleToggleOneShot();
+            return true;
+
+         case "ipol_none":
+            pat.setInterpolType(CVTrigSeq16_Pattern.INTERPOL_NONE);
+            Global.Print("Interpolation is \""+(CVTrigSeq16_Pattern.interpol_type_names.get(pat.interpol_type))+"\"");
+            return true;
+
+         case "ipol_lin":
+            pat.setInterpolType(CVTrigSeq16_Pattern.INTERPOL_LIN);
+            Global.Print("Interpolation is \""+(CVTrigSeq16_Pattern.interpol_type_names.get(pat.interpol_type))+"\"");
+            return true;
+
+         case "ipol_sin":
+            pat.setInterpolType(CVTrigSeq16_Pattern.INTERPOL_SIN);
+            Global.Print("Interpolation is \""+(CVTrigSeq16_Pattern.interpol_type_names.get(pat.interpol_type))+"\"");
+            return true;
+
+         case "ipol_cos":
+            pat.setInterpolType(CVTrigSeq16_Pattern.INTERPOL_COS);
+            Global.Print("Interpolation is \""+(CVTrigSeq16_Pattern.interpol_type_names.get(pat.interpol_type))+"\"");
+            return true;
+
+         case "ipol_smoothstep":
+            pat.setInterpolType(CVTrigSeq16_Pattern.INTERPOL_SMOOTHSTEP);
+            Global.Print("Interpolation is \""+(CVTrigSeq16_Pattern.interpol_type_names.get(pat.interpol_type))+"\"");
+            return true;
+
+         case "lut_none":
+            pat.setLUTMode(CVTrigSeq16_Pattern.LUT_NONE);
+            Global.Print("Clock LUT mode is \""+(CVTrigSeq16_Pattern.lut_mode_names.get(pat.lut_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "lut_wrap":
+            pat.setLUTMode(CVTrigSeq16_Pattern.LUT_WRAP);
+            Global.Print("Clock LUT mode is \""+(CVTrigSeq16_Pattern.lut_mode_names.get(pat.lut_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "lut_fold":
+            pat.setLUTMode(CVTrigSeq16_Pattern.LUT_FOLD);
+            Global.Print("Clock LUT mode is \""+(CVTrigSeq16_Pattern.lut_mode_names.get(pat.lut_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "lut_fold_nr":
+            pat.setLUTMode(CVTrigSeq16_Pattern.LUT_FOLD_NR);
+            Global.Print("Clock LUT mode is \""+(CVTrigSeq16_Pattern.lut_mode_names.get(pat.lut_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "lut_clamp":
+            pat.setLUTMode(CVTrigSeq16_Pattern.LUT_CLAMP);
+            Global.Print("Clock LUT mode is \""+(CVTrigSeq16_Pattern.lut_mode_names.get(pat.lut_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "lut_clamp_pk":
+            pat.setLUTMode(CVTrigSeq16_Pattern.LUT_CLAMP_PK);
+            Global.Print("Clock LUT mode is \""+(CVTrigSeq16_Pattern.lut_mode_names.get(pat.lut_mode))+"\"");
+            updateClkPhaseCaption();
+            return true;
+
+         case "abs_sign":
+            pat.setEnableAbsSign(!pat.b_abs_sign);
+            Global.Print("Abs-Sign LUT mode is "+Utils.GetEnableString(pat.b_abs_sign));
+            return true;
+      }
+   }
+
+   public virtual wantKeyboardFocus() : boolean {
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_BACKSPACE:
+            if(_k.modNone())
+            {
+               handlePatClear();
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modNone())
+            {
+               handlePatCopy();
+               return true;
+            }
+            break;
+
+         case 'i':
+            if(_k.modNone())
+            {
+               cycleInterpolationTypes();
+               return true;
+            }
+            break;
+
+         case 't':
+            if(_k.modNone())
+            {
+               toggleThresholdMode();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modNone())
+            {
+               handlePatPaste();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modNone())
+            {
+               handlePatRand();
+               return true;
+            }
+            break;
+      }
+
+      return Module::onKey(_k);
+   }
+
+   public virtual onDraw() {
+      if(b_ui_queued_step_update)
+      {
+         b_ui_queued_step_update = false;
+         updateStepWidgets(getEditPattern());
+      }
+      Module::onDraw();
+   }
+
+   public virtual tick() {
+      local CVTrigSeq16_Pattern *pat;
+
+      if(inputs[4/*pat*/].isConnected())
+      {
+         // Pattern input overrides edit pattern
+         local int patIdx = mathClampi(inputs[4/*pat*/].getValue() * NUM_PATTERNS, 0, NUM_PATTERNS-1);
+         if(b_force_edit_pat)
+            pat <= getEditPattern();
+         else
+            pat <= patterns.get(patIdx);
+      }
+      else
+      {
+         // Play edit pattern
+         pat <= getEditPattern();
+      }
+
+      local int numSteps;
+      if(inputs[2/*len*/].isConnected())
+      {
+         if(b_force_edit_pat)
+            numSteps = pat.num_steps;
+         else
+            numSteps = mathClampi(inputs[2/*len*/].getValue() * 16, 1, 16);
+      }
+      else
+      {
+         numSteps = pat.num_steps;
+      }
+
+      if(trig_reset.process(inputs[0/*reset*/].getValue()))
+      {
+         step_idx = 0;
+         b_playing = true;
+      }
+
+      local float fClock = inputs[1/*clock*/].getValue();
+
+      local float fOff = inputs[3/*offset*/].getValue();
+      if(b_force_edit_pat)
+         fOff = 0;
+      else
+         fOff = fOff * 16;
+      fOff += pat.step_offset;
+
+      local float recCV   = inputs[5/*rec_cv*/].getValue();
+      local float recGate = inputs[6/*rec_gate*/].getValue();
+
+      boolean bRec = (recGate >= TRIG_ON);///// && (pat.pat_idx == edit_pat_idx);
+
+      LED *led;
+      FloatArray faSteps <= pat.steps;
+
+      boolean bAllowTrig = (0.0f == out[1/*trig*/]);
+      float fOut;
+
+      // Trig output
+      out[1/*trig*/] = 0.0f;
+
+      if(CVTrigSeq16_Pattern.LUT_NONE == pat.lut_mode)
+      {
+         boolean bClock = trig_clock.process(fClock);
+
+         if(bClock || bRec)
+         {
+            int stepOff = mathClampi(fOff, -32, 32);
+
+            led <= step_leds[step_idx_last_played]; led.setConstValue(0.0);
+
+            if(b_oneshot && (step_idx >= numSteps))
+               b_playing = false;
+
+
+            if(b_playing && st2::replay.b_playing)
+            {
+               step_idx_last_played = mathWrapi(((step_idx % numSteps) + stepOff) % 16, 0, 16);
+               if(bClock)
+                  step_idx++;
+
+               led <= step_leds[step_idx_last_played]; led.setConstValue(-1.0);
+               if(pat.pat_idx == edit_pat_idx)
+               {
+                  led <= step_leds[step_idx_last_played];
+                  led.setConstValue(-1.0);
+               }
+
+               fOut = faSteps[step_idx_last_played];
+               if(fOut >= TOGGLE_THRESHOLD)
+               {
+                  // trace "xxx CVTrigSeq16: play stepIdx="+step_idx_last_played+" cv="+fOut;
+                  out[0/*cv*/  ] = fOut;
+                  out[1/*trig*/] = 1.0f;
+               }
+            }
+
+            if(bRec)
+            {
+               if(!b_rec_th || (faSteps[step_idx_last_played] >= TOGGLE_THRESHOLD))
+               {
+                  faSteps[step_idx_last_played] = recCV;
+                  if(recCV >= TOGGLE_THRESHOLD)
+                  {
+                     out[0] = recCV;
+                     out[1] = 1.0f;
+                  }
+               }
+               else
+                  bRec = false;  // skip redraw
+            }
+
+         }
+      }
+      else
+      {
+         // Clock LUT mode
+         float lutOff = fClock;
+         float fSignMul;
+         if(pat.b_abs_sign)
+         {
+            fSignMul = sign(lutOff);
+            lutOff = abs(lutOff);
+         }
+         else
+         {
+            fSignMul = 1.0f;
+         }
+
+         // // trace "xxx lutOff="+lutOff+" numSteps="+numSteps+" => idxF="+pat.calcLUTOffset(lutOff, numSteps);
+         float idxF = mathWrapf(pat.calcLUTOffset(lutOff, numSteps) + fOff, 0, 16);
+         step_idx = int(idxF);
+         int stepIdxN;
+         float fFrac;
+
+         if(bRec)
+         {
+            if(!b_rec_th || (faSteps[step_idx] >= TOGGLE_THRESHOLD))
+               faSteps[step_idx] = recCV;
+            else
+               bRec = false;  // skip redraw
+         }
+
+         if(bAllowTrig)
+         {
+            if(CVTrigSeq16_Pattern.INTERPOL_NONE != pat.interpol_type)
+            {
+               stepIdxN = mathWrapi(step_idx + 1, int(fOff), int(fOff)+numSteps);
+               stepIdxN = mathWrapi(stepIdxN, 0, 16);
+               fFrac = frac(idxF);
+               // // trace "xxx    step_idx="+step_idx+" stepIdxN="+stepIdxN+" fFrac="+fFrac+" pat.step_offset="+pat.step_offset;
+
+               if(pat.pat_idx == edit_pat_idx)
+               {
+                  // (todo) optimize
+                  int ledIdx = 0;
+                  loop(16)
+                  {
+                     led <= step_leds[ledIdx++];
+                     led.setConstValue(0.0f);
+                  }
+               }
+            }
+
+            switch(pat.interpol_type)
+            {
+               default:
+               case CVTrigSeq16_Pattern.INTERPOL_NONE:
+                  fOut = fSignMul * faSteps[step_idx];
+                  
+                  led <= step_leds[step_idx_last_played]; led.setConstValue(0.0);
+                  step_idx_last_played = step_idx;
+                  led <= step_leds[step_idx]; led.setConstValue(1.0);
+                  break;
+
+               case CVTrigSeq16_Pattern.INTERPOL_LIN:
+                  fOut = fSignMul * mathLerpf(faSteps[step_idx], faSteps[stepIdxN], fFrac);
+                  break;
+
+               case CVTrigSeq16_Pattern.INTERPOL_SIN:
+                  fOut = fSignMul * mathSerpf(faSteps[step_idx], faSteps[stepIdxN], fFrac);
+                  break;
+
+               case CVTrigSeq16_Pattern.INTERPOL_COS:
+                  fOut = fSignMul * mathCerpf(faSteps[step_idx], faSteps[stepIdxN], fFrac);
+                  break;
+
+               case CVTrigSeq16_Pattern.INTERPOL_SMOOTHSTEP:
+                  fOut = fSignMul * mathSmoothStepf(faSteps[step_idx], faSteps[stepIdxN], fFrac);
+                  break;
+            }
+
+            if(fOut >= TOGGLE_THRESHOLD)
+            {
+               out[0/*cv*/]   = fOut;
+               out[1/*trig*/] = 1.0f;
+            }
+
+            step_idx_last_played = step_idx;
+
+            if(CVTrigSeq16_Pattern.INTERPOL_NONE == pat.interpol_type)
+            {
+               if(pat.pat_idx == edit_pat_idx)
+               {
+                  led <= step_leds[step_idx_last_played];
+                  led.setConstValue(1.0);
+               }
+            }
+            else
+            {
+               // trace "xx   step_idx="+step_idx+" stepIdxN="+stepIdxN+" ledC="+(1.0 - fFrac)+" ledN="+fFrac;
+               if(stepIdxN == step_idx)
+               {
+                  led <= step_leds[step_idx]; led.setConstValue(1.0f);
+               }
+               else
+               {
+                  led <= step_leds[step_idx]; led.setConstValue(1.0 - fFrac);
+                  led <= step_leds[stepIdxN]; led.setConstValue(      fFrac);
+               }
+            }
+
+         } // if bAllowTrig
+
+      } // else if LUT mode
+
+      if(bRec && parent_node.nodeIsEditorVisible())
+      {
+         b_ui_queued_step_update = true;
+         Events.SendRedrawAll();  // (todo) optimize (only redraw updated step widget(s))
+      }
+
+   }
+}

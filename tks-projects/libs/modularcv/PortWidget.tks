@@ -1,0 +1,428 @@
+// ----
+// ---- file   : PortWidget.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26Mar2021
+// ---- changed: 27Mar2021, 29Mar2021, 30Mar2021, 01Apr2021, 12Apr2021, 16Apr2021, 19Apr2021
+// ----          07May2021, 13Nov2021, 27Dec2021, 28Dec2021, 21Feb2022, 08Oct2023, 11Nov2023
+// ----          29Mar2024, 18Sep2024, 08Oct2024, 09Oct2024, 12Oct2024, 23Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVPortWidget;
+
+use namespace ui;
+use namespace st2;
+namespace modularcv;
+
+
+// <class.png>
+class PortWidget : ui::Layer {
+   Module  *mod;
+   int      port_index;
+   boolean  b_output;
+   Label   *lb;
+
+   Module *drag_start_source;
+   int     drag_start_source_output_index;
+   Input  *drag_input;
+   int     drag_input_palette_idx;
+   Output *drag_output;
+   float   drag_start_x;  // rack coord
+   float   drag_start_y;
+
+   define int DRAG_NONE        = 0;
+   define int DRAG_FROM_SOURCE = 1;
+   define int DRAG_FROM_SINK   = 2;
+   define int DRAG_TO_SINK     = 3;
+   define int DRAG_TO_SOURCE   = 4;
+   int drag_mode;
+
+
+   // <ui_init.png>
+   public method initPortWidget(Module _module, int _portIndex, boolean _bOutput) {
+      initLayer();
+      if(!app_lnf.b_dark_modular)
+         setLookAndFeelLight();
+      setRequiredSize2fScaled(12.0, 12.0);
+
+      mod        <= _module;
+      port_index  = _portIndex;
+      b_output    = _bOutput;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      UIRenderer.EnableBlending();
+      if(b_output)
+      {
+         UIRenderer.DrawFilledRectangle(-1, -1, getSizeX()+2, getSizeY()+2, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_PORTWIDGET_OUT_BG));
+         UIRenderer.DrawFilledEllipse(6.0 * UI.font_scaling, 6.0 * UI.font_scaling,
+                                      5.0 * UI.font_scaling, 5.0 * UI.font_scaling,
+                                      32/*numSeg*/,
+                                      app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_PORTWIDGET_OUT_INNER_BG)
+                                      );
+      }
+      else
+      {
+         UIRenderer.DrawFilledEllipse(6.0 * UI.font_scaling, 6.0 * UI.font_scaling,
+                                      5.0 * UI.font_scaling, 5.0 * UI.font_scaling,
+                                      32/*numSeg*/,
+                                      app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_PORTWIDGET_IN_BG)
+                                      );
+         UIRenderer.DrawFilledEllipse(6.0 * UI.font_scaling, 6.0 * UI.font_scaling,
+                                      3.0 * UI.font_scaling, 3.0 * UI.font_scaling,
+                                      32/*numSeg*/,
+                                      app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_PORTWIDGET_IN_INNER_BG)
+                                      );
+      }
+
+   }
+
+   // <method.png>
+   public method getParentRack() : ModularRack {
+      Layer c <= parent;
+      while(null != c)
+      {
+         if(c instanceof ModularRack)
+            return c;
+         else
+            c <= c.parent;
+      }
+      return c;
+   }
+
+   // <method_get.png>
+   protected method getFirstInput() : Input {
+      if(b_output)
+         return mod.parent_patch.findFirstConnectedInput(mod, port_index);
+      else
+         return mod.getInputByIndex(port_index);
+   }
+
+   // <method_get.png>
+   protected method getAllInputs(PointerArray _ret) {
+      if(b_output)
+      {
+         mod.parent_patch.findAllConnectedInputs(mod, port_index, _ret);
+      }
+      else
+      {
+         _ret.empty();
+         Input input <= mod.getInputByIndex(port_index);
+         if(null != input)
+            _ret.add(input);
+      }
+   }
+
+   // <method_set.png>
+   public method updateCaption(String _text) {
+      if(null != lb)
+      {
+         float wOld = lb.getMinimumSizeX();
+         lb.setCaption(_text);
+         lb.setRequiredSizeX(0);  // cancel forced width set by createLabel()
+         float wNew = lb.getMinimumSizeX();
+         lb.setPositionX(lb.getPositionX() + (wOld - wNew)*0.5);
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      PointerArray allInputs;
+      getAllInputs(allInputs);
+      if(allInputs.numElements > 0)
+      {
+         Input *input;
+         foreach input in allInputs
+         {
+            input.b_mouseover_highlight = true;
+         }
+         UI.CompositeAll();
+      }
+      return Layer::onMouseEnter(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      PointerArray allInputs;
+      getAllInputs(allInputs);
+      if(allInputs.numElements > 0)
+      {
+         Input *input;
+         foreach input in allInputs
+         {
+            input.b_mouseover_highlight = false;
+         }
+         UI.CompositeAll();
+      }
+      return Layer::onMouseLeave(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+
+      ModularRack rack <= getParentRack();
+      rack.drag_pw_candidate <= null;
+
+      if(!b_output)
+      {
+         // Drag input
+         drag_input <= mod.getInputByIndex(port_index);
+         drag_start_source <= drag_input.source;
+         drag_start_source_output_index = drag_input.source_output_index;
+         drag_input_palette_idx = drag_input.palette_idx;
+
+         if(null != drag_start_source)
+         {
+            Output output <= drag_start_source.getOutputByIndex(drag_input.source_output_index);
+            drag_input.disconnect();
+
+            rack.drag_source_x = output.port_widget.getPositionX() + output.port_widget.getSizeX()*0.5 + drag_start_source.getPositionX();
+            rack.drag_source_y = output.port_widget.getPositionY() + output.port_widget.getSizeY()*0.5 + drag_start_source.getPositionY();
+
+            drag_start_x = /*_dragStart.mouse_rel_x +*/ getPositionX() + mod.getPositionX();
+            drag_start_y = /*_dragStart.mouse_rel_y +*/ getPositionY() + mod.getPositionY();
+
+            rack.drag_sink_x = drag_start_x + _ev.mouse_rel_x;
+            rack.drag_sink_y = drag_start_y + _ev.mouse_rel_y;
+
+            drag_mode = DRAG_TO_SINK;
+         }
+         else
+         {
+            rack.drag_sink_x = getPositionX() + getSizeX()*0.5 + mod.getPositionX();
+            rack.drag_sink_y = getPositionY() + getSizeY()*0.5 + mod.getPositionY();
+
+            drag_start_x = /*_dragStart.mouse_rel_x +*/ getPositionX() + mod.getPositionX();
+            drag_start_y = /*_dragStart.mouse_rel_y +*/ getPositionY() + mod.getPositionY();
+
+            rack.drag_source_x = drag_start_x + _ev.mouse_rel_x;
+            rack.drag_source_y = drag_start_y + _ev.mouse_rel_y;
+
+            drag_mode = DRAG_FROM_SINK;
+         }
+
+      }
+      else
+      {
+         // Drag output
+         drag_input <= rack.patch.findFirstConnectedInput(mod, port_index);
+         if(null != drag_input)
+         {
+            drag_start_source <= drag_input.source;
+            drag_start_source_output_index = drag_input.source_output_index;
+            drag_input_palette_idx = drag_input.palette_idx;
+            drag_input.disconnect();
+
+            rack.drag_sink_x = drag_input.port_widget.getPositionX() + drag_input.port_widget.getSizeX()*0.5 + drag_input.parent_module.getPositionX();
+            rack.drag_sink_y = drag_input.port_widget.getPositionY() + drag_input.port_widget.getSizeY()*0.5 + drag_input.parent_module.getPositionY();
+
+            drag_start_x = /*_dragStart.mouse_rel_x +*/ getPositionX() + mod.getPositionX();
+            drag_start_y = /*_dragStart.mouse_rel_y +*/ getPositionY() + mod.getPositionY();
+
+            rack.drag_source_x = drag_start_x + _ev.mouse_rel_x;
+            rack.drag_source_y = drag_start_y + _ev.mouse_rel_y;
+
+            drag_mode = DRAG_TO_SOURCE;
+         }
+         else
+         {
+            rack.drag_source_x = getPositionX() + getSizeX()*0.5 + mod.getPositionX();
+            rack.drag_source_y = getPositionY() + getSizeY()*0.5 + mod.getPositionY();
+
+            drag_start_x = /*_dragStart.mouse_rel_x +*/ getPositionX() + mod.getPositionX();
+            drag_start_y = /*_dragStart.mouse_rel_y +*/ getPositionY() + mod.getPositionY();
+
+            rack.drag_sink_x = drag_start_x + _ev.mouse_rel_x;
+            rack.drag_sink_y = drag_start_y + _ev.mouse_rel_y;
+
+            drag_mode = DRAG_FROM_SOURCE;
+         }
+      }
+
+      if(DRAG_NONE != drag_mode)
+      {
+         UI.ShowCursor(UIConstants.CURSOR_MOVE);
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      ModularRack rack <= getParentRack();
+
+      float px = drag_start_x + _currentEv.mouse_rel_x;
+      float py = drag_start_y + _currentEv.mouse_rel_y;
+
+      if(DRAG_FROM_SINK == drag_mode)
+      {
+         rack.drag_source_x = px;
+         rack.drag_source_y = py;
+
+         UI.CompositeAll();
+      }
+      else if(DRAG_TO_SINK == drag_mode)
+      {
+         rack.drag_sink_x = px;
+         rack.drag_sink_y = py;
+
+         UI.CompositeAll();
+      }
+      else if(DRAG_FROM_SOURCE == drag_mode)
+      {
+         rack.drag_sink_x = px;
+         rack.drag_sink_y = py;
+
+         UI.CompositeAll();
+      }
+      else if(DRAG_TO_SOURCE == drag_mode)
+      {
+         rack.drag_source_x = px;
+         rack.drag_source_y = py;
+
+         UI.CompositeAll();
+      }
+
+      PortWidget pw <= rack.layerAt2f(px, py);
+      rack.drag_pw_candidate <= pw;
+      if(pw instanceof PortWidget)
+      {
+         boolean bPWOk = false;
+         switch(drag_mode)
+         {
+            case DRAG_FROM_SOURCE:
+            case DRAG_TO_SINK:
+               bPWOk = !pw.b_output;
+               break;
+
+            case DRAG_FROM_SINK:
+            case DRAG_TO_SOURCE:
+               bPWOk = pw.b_output;
+               break;
+         }
+         UI.ShowCursor(bPWOk ? UIConstants.CURSOR_PENCIL : UIConstants.CURSOR_DENIED);
+      }
+      else
+         UI.ShowCursor(UIConstants.CURSOR_MOVE);
+
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      ModularRack rack <= getParentRack();
+      PortWidget *pw;
+
+      // trace "xxx PortWidget::onMouseEndDrag";
+
+      if(DRAG_FROM_SINK == drag_mode)
+      {
+         pw <= rack.layerAt2f(rack.drag_source_x, rack.drag_source_y);
+         if(pw instanceof PortWidget)
+         {
+            if(pw.b_output)
+            {
+               mod.connect(port_index, pw.mod, pw.port_index);
+               mod.autoColorizeInput(port_index);
+            }
+         }
+      }
+      else if(DRAG_TO_SINK == drag_mode)
+      {
+         pw <= rack.layerAt2f(rack.drag_sink_x, rack.drag_sink_y);
+         if(pw instanceof PortWidget)
+         {
+            if(!pw.b_output)
+            {
+               pw.mod.connect(pw.port_index, drag_start_source, drag_start_source_output_index);
+               pw.mod.autoColorizeInput(pw.port_index);
+            }
+         }
+      }
+      else if(DRAG_FROM_SOURCE == drag_mode)
+      {
+         pw <= rack.layerAt2f(rack.drag_sink_x, rack.drag_sink_y);
+         if(pw instanceof PortWidget)
+         {
+            if(!pw.b_output)
+            {
+               pw.mod.connect(pw.port_index, mod, port_index);
+               pw.mod.autoColorizeInput(pw.port_index);
+            }
+         }
+      }
+      else if(DRAG_TO_SOURCE == drag_mode)
+      {
+         pw <= rack.layerAt2f(rack.drag_source_x, rack.drag_source_y);
+         if(pw instanceof PortWidget)
+         {
+            if(pw.b_output)
+            {
+               drag_input.parent_module.connect(drag_input.index, pw.mod, pw.port_index);
+               drag_input.parent_module.autoColorizeInput(drag_input.index);
+            }
+         }
+      }
+
+      rack.drag_source_x = -1;
+      rack.drag_sink_x   = -1;
+      drag_mode = DRAG_NONE;
+      parent.redraw();
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      ModularRack rack <= getParentRack();
+
+      if(null != drag_input)
+      {
+         if(null != drag_start_source)
+         {
+            // Restore connection
+            drag_input.parent_module.connect(drag_input.index, drag_start_source, drag_start_source_output_index);
+            drag_input.palette_idx = drag_input_palette_idx;  // (todo) not needed (atm), color changes not until connect()
+         }
+      }
+
+      rack.drag_source_x = -1;
+      rack.drag_sink_x   = -1;
+      drag_mode = DRAG_NONE;
+      parent.redraw();
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(ui::MouseEvent _ev) : boolean {
+      Input input <= getFirstInput();
+      if(null != input)
+      {
+         IntArray cableColors <= STConfig.modular_cable_colors.get(UI.GetLookAndFeelIdx());
+         if(_ev.wheelUp())
+         {
+            input.palette_idx = mathWrapi(input.palette_idx - 1, 0, (cableColors.getNumElements())/2);
+            Global.Print("Palette idx is "+input.palette_idx);
+            UI.RedrawAll();
+            return true;
+         }
+         else if(_ev.wheelDown())
+         {
+            input.palette_idx = mathWrapi(input.palette_idx + 1, 0, (cableColors.getNumElements())/2);
+            Global.Print("Palette idx is "+input.palette_idx);
+            UI.RedrawAll();
+            return true;
+         }
+      }
+      return false;
+   }
+}

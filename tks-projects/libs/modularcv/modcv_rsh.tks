@@ -1,0 +1,264 @@
+// ----
+// ---- file   : modcv_rsh.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2022 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 12Apr2021
+// ---- changed: 14Apr2021, 16Apr2021, 07May2021, 21Feb2022
+// ----
+// ----
+// ----
+
+module MModularCVMod_RSH;
+
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_RSH : Module {
+   float offset;
+   float seed;
+   float level;
+
+   protected boolean b_allow_trig;
+   protected int rand_seed_1;
+   protected int rand_seed_2;
+
+   protected float last_rnd;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("rsh"/*id*/,
+                 "rsh"/*header_id*/,
+                 "Random sample & hold"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      offset = 0.0f;
+      seed   = 0.0f;
+      level  = 1.0f;
+
+      b_allow_trig = true;
+
+      addInput("offset", "offset", 0.0, IO_OFF);
+      addInput("trig",   "trig",   0.0, IO_GATE);
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_RSH _o) {
+      offset = _o.offset;
+      seed   = _o.seed;
+      level  = _o.level;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 15;
+      float cy = 30;
+      float stepY = 26;
+      float portOffY = 16;
+
+      // Offset
+      createSmallDial(cx, cy,
+                      "offset",
+                      -1.0, 1.0, 0.0, offset,
+                      "off"
+                      );
+      cy += 28;
+      createPortWidget(0, false/*bOutput*/,
+                       cx, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Seed
+      cy += 24;
+      createSmallDial(cx, cy,
+                      "seed",
+                      -1.0, 1.0, 0.0, seed,
+                      "seed"
+                      );
+
+      // Level
+      cy += 36;
+      createSmallDial(cx, cy,
+                      "level",
+                      -1.0, 1.0, 0.0, level,
+                      "level"
+                      );
+
+      // Trig
+      cy += 38;
+      createPortWidget(1, false/*bOutput*/,
+                       cx, cy,
+                       "trig"/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "offset":
+            offset = _value;
+            break;
+
+         case "seed":
+            seed = _value;
+            reset();
+            break;
+
+         case "level":
+            level = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "offset":
+            return offset;
+
+         case "seed":
+            return seed;
+
+         case "level":
+            return level;
+      }
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      // params
+      ofs.f32 = offset;
+      ofs.f32 = seed;
+      ofs.f32 = level;
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["offset", "seed", "level"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("offset", offset);
+            break;
+
+         case 1:
+            seed = FromNormalized(_value, -1, 1);
+            updateParamWidget("seed", seed);
+            reset();
+            break;
+
+         case 2:
+            level = FromNormalized(_value, -1, 1);
+            updateParamWidget("level", level);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(offset, -1, 1);
+
+         case 1:
+            return ToNormalized(seed, -1, 1);
+
+         case 2:
+            return ToNormalized(level, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            offset = ifs.f32;
+            seed   = ifs.f32;
+            level  = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_RSH::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected method calcNewRnd() {
+      int fb1 = rand_seed_1 & 1;
+      rand_seed_1 >>= 1;
+      if(0 != fb1)
+         rand_seed_1 ^= 0xB4BCD35C;
+
+      int fb2 = rand_seed_2 & 1;
+      rand_seed_2 >>= 1;
+      if(0 != fb2)
+         rand_seed_2 ^= 0x7A5BC2E3;
+
+      int r16 = (rand_seed_1 ^ rand_seed_2) & 0xFFFF;
+      last_rnd = (r16 - 0x8000) / float(0x8000);  // => -1..1
+   }
+
+   public virtual reset() {
+      b_allow_trig = true;
+
+      rand_seed_1 = int(seed * 0x7FFFFFF) ^ 0xAAAAaaaa;// ^ 0xd89dcfbdu;
+      rand_seed_2 = int(-seed * 0x7FFFFFF) ^ 0x55555555;// ^ 0x3fb8deacu;
+      loop(1 + (abs(int(seed*32))&31))
+         calcNewRnd();
+   }
+
+   public virtual tick() {
+      local float fOffset = inputs[0].getValue() + offset;
+      local float fTrig   = inputs[1].getValue();
+
+      if(b_allow_trig)
+      {
+         if(fTrig >= TRIG_ON)
+         {
+            // trig
+            b_allow_trig = false;
+
+            calcNewRnd();
+         }
+      }
+      else if(fTrig < TRIG_OFF)
+      {
+         b_allow_trig = true;
+      }
+
+      out[0] = fOffset + last_rnd * level;
+   }
+
+}

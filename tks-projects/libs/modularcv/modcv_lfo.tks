@@ -1,0 +1,785 @@
+// ----
+// ---- file   : modcv_lfo.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 19Apr2021
+// ---- changed: 07May2021, 28Dec2021, 21Feb2022, 09Oct2023, 07Oct2024, 08Oct2024, 11Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_LFO;
+
+use namespace ui;
+use namespace st2;
+namespace modularcv;
+
+
+class ModCV_LFO : Module {
+
+   define int TYPE_SIN    = 0;
+   define int TYPE_TRI    = 1;
+   define int TYPE_SAW    = 2;
+   define int TYPE_PULSE  = 3;
+   define int TYPE_NOISE  = 4;  // v6+
+   int type;
+
+   static StringArray type_short_names =
+      ["sin",  // 0
+       "tri",  // 1
+       "saw",  // 2
+       "pul",  // 3
+       "nos",  // 4
+       ];
+
+   static StringArray type_long_names =
+      [" sin: Sine",        // 0
+       " tri: Triangle",    // 1
+       " saw: Sawtooth",    // 2
+       " pul: Pulse",       // 3
+       " nos: Noise",       // 4
+       ];
+
+   boolean b_bipolar;     // 1=output -1..1  0=output 0..1
+   boolean b_beat_sync;   // 1=phase follows play position  0=accumulate phase
+   float   phase_offset;
+   float   mul_offset;    // speed multiplier
+   float   pulse_offset;  // pulse width (TYPE_PULSE)
+   float   div_offset;    // speed divisor (slow down) (<0: reverse. not editable in UI)
+   boolean b_quant;       // 1=quantize mul/div to integer values (mul: before pow  div: after pow)
+
+   protected TrigInput trig_sync;
+   protected int       tick_nr_start;
+   protected float     phase;
+   protected boolean   b_noise_sample;
+   protected float     noise_sh;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("LFO"/*id*/,
+                 "LFO"/*header_id*/,
+                 "LFO"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      type         = TYPE_SAW;
+      b_bipolar    = false;
+      b_beat_sync  = true;
+      phase_offset = 0.0f;
+      mul_offset   = (5.0f / 8.0f);  // *2^5=32
+      pulse_offset = 0.0f;
+      div_offset   = (5.0f / 8.0f);  // *2^5=32
+      b_quant      = true;
+
+      addInput("syn", "Sync",              0.0, IO_GATE);  // 0
+      addInput("spd", "Speed Multiplier",  0.0, IO_ANY);   // 1  (note) should now be called "mul"
+      addInput("pul", "Pulsewidth",        0.0, IO_ANY);   // 2
+      addInput("pha", "Phase",             0.0, IO_ANY);   // 3
+      addInput("div", "Speed Divisor",     0.0, IO_ANY);   // 4 (v6+)
+
+      addOutput("out", "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_LFO _o) {
+      type         = _o.type;
+      b_bipolar    = _o.b_bipolar;
+      b_beat_sync  = _o.b_beat_sync;
+      phase_offset = _o.phase_offset;
+      mul_offset   = _o.mul_offset;
+      pulse_offset = _o.pulse_offset;
+      div_offset   = _o.div_offset;
+      b_quant      = _o.b_quant;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx    = 15;
+      float cy    = 30;
+      float stepY = 48;
+
+      ui::Layer *l;
+      ui::Dial *dl;
+      ui::ComboBox *cm;
+
+      // Oscillator type
+      cm <= createModeParamWidget(cx-0.5, cy,
+                                  "type",
+                                  type_short_names,
+                                  type_long_names,
+                                  type,
+                                  null/*captionOrNull*/
+                                  );
+
+      cy += 11;
+
+      // Beat sync flag
+      l <= createTinyCheckButton(cx-9, cy,
+                                 "b_beat_sync",
+                                 b_beat_sync
+                                 );
+      l.setToolTipCaption("When enabled, phase follows play position (beat sync)\n\nWhen disabled, phase is accumulated (unsynced)");
+
+      // Bipolar flag
+      l <= createTinyCheckButton(cx, cy,
+                                 "b_bipolar",
+                                 b_bipolar
+                                 );
+      l.setToolTipCaption("When enabled, output values in the range -1..1 (bipolar)\n\nWhen disabled, output values in the range 0..1 (unipolar)");
+
+      // Quantization flag
+      l <= createTinyCheckButton(cx+9, cy,
+                                 "b_quant",
+                                 b_quant
+                                 );
+      l.setToolTipCaption("Quantize mul and div to integer values\n\n (note) 'mul' is quantized before pow (1/2/4/8/16..)\n (note) 'div' is quantized after pow (1/2/3/4/5/..)");
+
+
+      // Phase
+      cy += 16;
+      dl <= createTinyDial(22, cy,
+                           "phase_offset",
+                           -1.0, 1.0, 0.0, phase_offset,
+                           "pha"
+                           );
+      last_label.setPositionX(last_label.getPositionX() - 7.0*UI.font_scaling);
+      createPortWidget(3, false/*bOutput*/,
+                       9, cy - 1.0f,
+                       null/*captionOrNull*/
+                       );
+
+
+      // Speed Multiplier
+      cy += 27;
+      dl <= createTinyDial(22, cy,
+                           "mul_offset",
+                           -1.0, 1.0, 0.0, mul_offset,
+                           "mul"
+                           );
+      dl.setToolTipCaption("mul_offset:\n 0..1: speed up (*1..*256)  0..-1: slow down (/1../256)");
+      dl.setStep(1.0f / 512.0f);
+      last_label.setPositionX(last_label.getPositionX() - 7.0*UI.font_scaling);
+
+      createPortWidget(1, false/*bOutput*/,
+                       9, cy - 1.0f,
+                       null/*captionOrNull*/
+                       );
+
+
+      // Speed Divisor
+      cy += 27;
+      dl <= createTinyDial(22, cy,
+                           "div_offset",
+                           -1.0, 1.0, 0.0, div_offset,
+                           "div"
+                           );
+      dl.setToolTipCaption("div_offset: speed divisor / cycle length multiplier (slow down)");
+      dl.setStep(1.0f / 512.0f);
+      last_label.setPositionX(last_label.getPositionX() - 7.0*UI.font_scaling);
+
+      createPortWidget(4, false/*bOutput*/,
+                       9, cy - 1.0f,
+                       null/*captionOrNull*/
+                       );
+
+
+      // Pulsewidth
+      cy += 27;
+      dl <= createTinyDial(22, cy,
+                           "pulse_offset",
+                           -0.5, 0.5, 0.0, pulse_offset,
+                           "pw"
+                           );
+      last_label.setPositionX(last_label.getPositionX() - 7.0*UI.font_scaling);
+
+      createPortWidget(2, false/*bOutput*/,
+                       9, cy - 1.0f,
+                       null/*captionOrNull*/
+                       );
+
+
+      // Sync
+      cy += 25;
+      l <= createPortWidget(0, false/*bOutput*/,
+                            cx, cy,
+                            "sy"/*captionOrNull*/
+                            );
+      l.setToolTipCaption("Sync: Reset LFO phase when rising edge is detected (e.g. from a gate signal)");
+      last_label.setPositionY(last_label.getPositionY() - 2.0*UI.font_scaling);
+
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       cx, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   // <method.png>
+   protected virtual addExtraContextMenuItems(PopupMenu pm) {
+      PopupMenuButton *pmb;
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("16th",     "preset_16");
+      pmb <= pm.addDefaultButton("8th",      "preset_8");
+      pmb <= pm.addDefaultButton("Quarter",  "preset_4");
+      pmb <= pm.addDefaultButton("Half",     "preset_2");
+      pmb <= pm.addDefaultButton("Beat",     "preset_beat");
+      pmb <= pm.addDefaultButton("1/2 Bar",  "preset_05_bar");
+      pmb <= pm.addDefaultButton("3/4 Bar",  "preset_34_bar");
+      pmb <= pm.addDefaultButton("1 Bar",    "preset_bar");
+      pmb <= pm.addDefaultButton("1.5 Bars", "preset_15_bars");
+      pmb <= pm.addDefaultButton("2 Bars",   "preset_2_bars");
+      pmb <= pm.addDefaultButton("3 Bars",   "preset_3_bars");
+   }
+
+   // <method.png>
+   protected method setSpeedFromBarFactor(float _f) {
+      float obf = int(100.0f*(1.0f/_f))/100.0f;
+      if(int(_f) == _f)
+      {
+         // *1, *2, *3, ..
+         trace "[trc] ModCV_LFO::setSpeedFromBarFactor: int mul="+_f;
+         mul_offset = log(32) / (8*log(2));
+         div_offset = (log(int(32*_f+0.5f))) / (8*log(2));
+         b_quant = true;
+      }
+      else if(int(obf) == (obf))
+      {
+         trace "[trc] ModCV_LFO::setSpeedFromBarFactor: int div="+obf;
+         // /1, /2, /3, ..
+         mul_offset = log(32) / (8*log(2));
+         div_offset = (log(int(32/obf+0.5f))) / (8*log(2));
+         b_quant = true;
+      }
+      else
+      {
+         // find best matching ratio
+         float fMulBest = 1;
+         float fDivBest = 1;
+         float distBest = 9999999;
+         float tDiv = 1.0f;
+         loop(8)
+         {
+            float tMul = 1.0f;
+            loop(8)
+            {
+               float barFactor = tDiv / tMul;
+               float d = abs(barFactor - _f);
+               if(d < distBest)
+               {
+                  distBest = d;
+                  fMulBest = tMul;
+                  fDivBest = tDiv;
+               }
+               tMul *= 2;
+            }
+            tDiv += 1.0f;
+         }
+         trace "[trc] ModCV_LFO::setSpeedFromBarFactor: fMulBest="+fMulBest+" fDivBest="+fDivBest+" distBest="+distBest;
+         mul_offset = log(fMulBest) / (8*log(2));
+         div_offset = log(fDivBest) / (8*log(2));
+         b_quant = true;
+      }
+
+      updateParamWidget("b_quant", b_quant);
+      updateParamWidget("mul_offset", mul_offset);
+      updateParamWidget("div_offset", div_offset);
+      setParamByName("mul_offset", mul_offset);
+      setParamByName("div_offset", div_offset);  // show speed info
+      trace "[dbg] ModCV_LFO::setSpeedFromBarFactor: final mul_offset="+mul_offset+"("+pow(2,8*mul_offset)+") div_offset="+div_offset+"("+pow(2,8*div_offset)+")";
+   }
+
+   // <method.png>
+   protected =replay= virtual handleExtraContextMenuItem(String _id) : boolean {
+      float ticksPerBar  = current_song.getNumTicksPerBar();
+      float ticksPerBeat = current_song.getNumTicksPerBeat();
+      float ticksPer16th = current_song.getNumTicksPer16th();
+      switch(_id)
+      {
+         case "preset_16":
+            setSpeedFromBarFactor( ticksPer16th / ticksPerBar );
+            return true;
+
+         case "preset_8":
+            setSpeedFromBarFactor( (2.0f * ticksPer16th) / ticksPerBar );
+            return true;
+
+         case "preset_4":
+            setSpeedFromBarFactor( (4.0f * ticksPer16th) / ticksPerBar );
+            return true;
+
+         case "preset_2":
+            setSpeedFromBarFactor( (8.0f * ticksPer16th) / ticksPerBar );
+            return true;
+
+         case "preset_beat":
+            setSpeedFromBarFactor( ticksPerBeat / ticksPerBar );
+            return true;
+
+         case "preset_05_bar":
+            setSpeedFromBarFactor( 0.5f );
+            return true;
+
+         case "preset_34_bar":
+            setSpeedFromBarFactor( 0.75f );
+            return true;
+
+         case "preset_bar":
+            setSpeedFromBarFactor( 1.0f );
+            return true;
+
+         case "preset_15_bars":
+            setSpeedFromBarFactor( 1.5f );
+            return true;
+
+         case "preset_2_bars":
+            setSpeedFromBarFactor( 2.0f );
+            return true;
+
+         case "preset_3_bars":
+            setSpeedFromBarFactor( 3.0f );
+            return true;
+      }
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return !(["mul_offset", "div_offset", "b_quant"].containsObject(_name));
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "type":
+            type = _value;
+            break;
+
+         case "b_bipolar":
+            b_bipolar = _value;
+            break;
+
+         case "b_beat_sync":
+            b_beat_sync = _value;
+            break;
+
+         case "phase_offset":
+            phase_offset = _value;
+            break;
+
+         case "mul_offset":
+            if(b_quant)
+               mul_offset = int(log(pow(2,_value*8)) / log(2)) / 8.0f;  // quant before pow
+            else
+               mul_offset = _value;
+            Global.Print("Mul is "+mul_offset+" => Speed is "+getSpeedString());
+            break;
+
+         case "pulse_offset":
+            pulse_offset = _value;
+            break;
+
+         case "b_quant":
+            b_quant = _value;
+            Global.Print("Mul / Div integer quantization is "+Utils.GetEnableString(b_quant));
+            break;
+
+         case "div_offset":
+            if(b_quant)
+            {
+               if(_value < 0.0f)
+                  div_offset = log(int(pow(2,_value*-8)+0.5f)) / (-8.0f * log(2));  // quant after pow
+               else
+                  div_offset = log(int(pow(2,_value*8)+0.5f)) / (8.0f * log(2));  // quant after pow
+            }
+            else
+               div_offset = _value;
+            Global.Print("Div is "+div_offset+" => Speed is "+getSpeedString());
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "type":
+            return type;
+
+         case "phase_offset":
+            return phase_offset;
+
+         case "mul_offset":
+            return mul_offset;
+
+         case "pulse_offset":
+            return pulse_offset;
+
+         case "b_quant":
+            return b_quant;
+
+         case "div_offset":
+            return div_offset;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["type", "bipolar", "beat sync", "phase offset", "div offset", "mul offset", "b_quant", "pulse offset"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            type = FromNormalized(_value, 0, type_short_names.numElements-1);
+            updateParamWidget("type", type);
+            break;
+
+         case 1:
+            b_bipolar = (FromNormalized(_value, 0, 1) >= 0.5f);
+            updateParamWidget("b_bipolar", b_bipolar);
+            break;
+
+         case 2:
+            b_beat_sync = (FromNormalized(_value, 0, 1) >= 0.5f);
+            updateParamWidget("b_beat_sync", b_beat_sync);
+            break;
+
+         case 3:
+            phase_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("phase_offset", phase_offset);
+            break;
+
+         case 4:
+            div_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("div_offset", div_offset);
+            break;
+
+         case 5:
+            mul_offset = FromNormalized(_value, -1, 1);
+            updateParamWidget("mul_offset", mul_offset);
+            break;
+
+         case 6:
+            b_quant = (FromNormalized(_value, 0, 1) >= 0.5f);
+            updateParamWidget("b_quant", b_quant);
+            break;
+
+         case 7:
+            pulse_offset = FromNormalized(_value, -0.5, 0.5);
+            updateParamWidget("pulse_offset", pulse_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(type, 0, type_short_names.numElements-1);
+
+         case 1:
+            return ToNormalized(b_bipolar, 0, 1);
+
+         case 2:
+            return ToNormalized(b_beat_sync, 0, 1);
+
+         case 3:
+            return ToNormalized(phase_offset, -1, 1);
+
+         case 4:
+            return ToNormalized(div_offset, -1, 1);
+
+         case 5:
+            return ToNormalized(mul_offset, -1, 1);
+
+         case 6:
+            return ToNormalized(b_quant, 0, 1);
+
+         case 7:
+            return ToNormalized(pulse_offset, -0.5, 0.5);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 6;
+
+      // params
+      ofs.i8  = type;
+      ofs.i8  = b_bipolar;    // v5+
+      ofs.i8  = b_beat_sync;  // v6+
+      ofs.f32 = phase_offset;
+      ofs.f32 = mul_offset;
+      ofs.f32 = pulse_offset;
+      ofs.i8  = b_quant;      // v2+
+      ofs.f32 = div_offset;   // v3+
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+
+            type = ifs.u8;
+
+            if(ver < 5)
+            {
+               // (note) [07Oct2024] removed the 0..1 / SYNC types (+added bipolar/beat_sync flags instead)
+               // => import old patches
+               switch(type)
+               {
+                  case 0:  //  define int TYPE_SIN          =  0;
+                     type = TYPE_SIN;     b_beat_sync = 0; b_bipolar = 1; break;
+                  case 1:  //  define int TYPE_TRI          =  1;
+                     type = TYPE_TRI;     b_beat_sync = 0; b_bipolar = 1; break;
+                  case 2:  //  define int TYPE_SAW          =  2;
+                     type = TYPE_SAW;     b_beat_sync = 0; b_bipolar = 1; break;
+                  case 3:  //  define int TYPE_PULSE        =  3;
+                     type = TYPE_PULSE;   b_beat_sync = 0; b_bipolar = 1; break;
+                  case 4:  //  define int TYPE_SIN_SYNC     =  4;
+                     type = TYPE_SIN;     b_beat_sync = 1; b_bipolar = 1; break;
+                  case 5:  //  define int TYPE_TRI_SYNC     =  5;
+                     type = TYPE_TRI;     b_beat_sync = 1; b_bipolar = 1; break;
+                  case 6:  //  define int TYPE_SAW_SYNC     =  6;
+                     type = TYPE_SAW;     b_beat_sync = 1; b_bipolar = 1; break;
+                  case 7:  //  define int TYPE_PULSE_SYNC   =  7;  // v4+
+                     type = TYPE_PULSE;   b_beat_sync = 1; b_bipolar = 1; break;
+                  case 8:  //  define int TYPE_SIN01        =  8;  // v4+
+                     type = TYPE_SIN;     b_beat_sync = 0; b_bipolar = 0; break;
+                  case 9:  //  define int TYPE_TRI01        =  9;  // v4+
+                     type = TYPE_TRI;     b_beat_sync = 0; b_bipolar = 0; break;
+                  case 10:  //  define int TYPE_SAW01        = 10;  // v4+
+                     type = TYPE_SAW;     b_beat_sync = 0; b_bipolar = 0; break;
+                  case 11:  //  define int TYPE_PULSE01      = 11;  // v4+
+                     type = TYPE_PULSE;   b_beat_sync = 0; b_bipolar = 0; break;
+                  case 12:  //  define int TYPE_SIN01_SYNC   = 12;  // v4+
+                     type = TYPE_SIN;     b_beat_sync = 1; b_bipolar = 0; break;
+                  case 13:  //  define int TYPE_TRI01_SYNC   = 13;  // v4+
+                     type = TYPE_TRI;     b_beat_sync = 1; b_bipolar = 0; break;
+                  case 14:  //  define int TYPE_SAW01_SYNC   = 14;  // v4+
+                     type = TYPE_SAW;     b_beat_sync = 1; b_bipolar = 0; break;
+                  case 15:  //  define int TYPE_PULSE01_SYNC = 15;  // v4+
+                     type = TYPE_PULSE;   b_beat_sync = 1; b_bipolar = 0; break;
+               }
+            }
+
+            if(ver >= 5)
+               b_bipolar = ifs.b8;  // v5+
+
+            if(ver >= 6)
+               b_beat_sync = ifs.b8;  // v6+
+
+            phase_offset = ifs.f32;
+            mul_offset   = ifs.f32;
+            pulse_offset = ifs.f32;
+
+            if(ver >= 2)
+               b_quant = ifs.b8;  // v2+
+
+            if(ver >= 3)
+            {
+               div_offset = ifs.f32;
+
+               if(ver < 6)
+               {
+                  // [08Oct2024] changed div_factor (1..256) to div_offset (-1..1)
+                  div_offset = log(div_offset) / (8*log(2));
+               }
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_LFO::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      trig_sync.reset();
+      if(null != parent_node)
+         tick_nr_start = parent_node.tick_nr;
+      phase = 0.0f;
+      b_noise_sample = true;
+   }
+
+   protected method calcMul(local float _mul) : float {
+      // (note) quantize before pow
+      if(_mul >= 0.0f)
+      {
+         // 0..1 => /1../256  (speed up / decrease cycle length)
+         _mul = _mul * 8;
+         if(b_quant)
+            _mul = int(_mul + 0.5f);
+         _mul = mathPowerf(2, -_mul);
+      }
+      else
+      {
+         // 0..-1 => *1..*256  (slow down / increase cycle length)
+         _mul = -_mul * 8;
+         if(b_quant)
+            _mul = int(_mul + 0.5f);
+         _mul = mathPowerf(2, _mul);
+      }
+      return _mul;
+   }
+
+   protected method calcDiv(local float _div) : float {
+      // (note) quantize after pow
+      if(_div >= 0.0f)
+      {
+         // 0..1 => *1..*256  (slow down / increase cycle length)
+         _div = _div * 8;
+         _div = mathPowerf(2, _div);
+         if(b_quant)
+            _div = int(_div + 0.5f);
+      }
+      else
+      {
+         // 0..-1 => /1../256 (speed up / decrease cycle length)
+         _div = _div * -8;
+         _div = mathPowerf(2, _div);
+         if(b_quant)
+            _div = int(_div + 0.5f);
+         _div = 1.0f / _div;
+      }
+      return _div;
+   }
+
+   protected method getSpeedString() : String {
+      float spd = calcMul(mul_offset);
+      float div = calcDiv(div_offset);
+      float bars = spd * div;  // bar multiplier
+      if(bars > 0.001)
+         bars = (int(bars*1000)/1000.0);
+      trace "[>>>] ModCV_LFO::getSpeedString: mulFactor="+spd+" divFactor="+div+" => bars="+bars+" ("+int(current_song.getNumTicksPerBar()*bars+0.5)+" ticks)";
+      local String msg;
+      if(div >= 1.0f)
+         msg.append(
+            (spd >= 1.0f)
+             ? ("1/("+spd+"*"+div+")")
+             :
+             ("("+(1.0f/spd)+"/"+div+")")
+                    );
+      else
+         msg.append(
+            (spd >= 1.0f)
+             ? ((1.0f/div)+"/"+spd)
+             :
+             ("("+(1.0f/spd)+"*"+(1.0f/div)+")")
+                    );
+
+      msg.append(" => "+bars+" bar"+((1.0 == bars || 0.0 == bars || -1.0 == bars)?"":"s")+" ("+int(current_song.getNumTicksPerBar()*bars+0.5)+" ticks)");
+      return deref msg;
+   }
+
+   public virtual tick() {
+      if(trig_sync.process(inputs[0].getValue()))
+      {
+         tick_nr_start = parent_node.tick_nr;
+         phase = 0.0f;
+         b_noise_sample = true;
+      }
+
+      local float inMul   = inputs[1].getValue()        + mul_offset;
+      local float inPulse = inputs[2].getValue() * 0.5f + pulse_offset + 0.5f;
+      local float inPhase = inputs[3].getValue()        + phase_offset;
+      local float inDiv   = inputs[4].getValue()        + div_offset;
+
+      local float mul      = calcMul(inMul);
+      local float div      = calcDiv(inDiv);
+      local float cycleDur = mul * current_song.getNumTicksPerBar() * div;
+      // trace "xxx mul="+mul+" div="+div+" => cycleDur="+cycleDur;
+      local float a;
+
+      if(b_beat_sync)
+      {
+         local int tickNr = parent_node.tick_nr - tick_nr_start;
+         if(cycleDur < 0.00001f)
+         {
+            a = 0;
+            b_noise_sample = true;
+         }
+         else
+         {
+            a = tickNr / cycleDur;
+            b_noise_sample = replay.b_playing && (0 == (tickNr % int(cycleDur+0.5f)));  // ignores phase_offset
+         }
+      }
+      else
+      {
+         a = phase;
+         if(cycleDur < 0.00001f)
+         {
+            b_noise_sample = true;
+         }
+         else
+         {
+            phase += 1.0f / cycleDur;
+            if(phase >= 1.0f)
+            {
+               b_noise_sample = true;  // ignores phase_offset
+               phase = frac(phase);
+            }
+         }
+      }
+
+      a += inPhase;
+      if(a > 0.0f)
+         a = frac(a);
+      else if(a < 0.0f)
+         a = 1.0f - frac(-a);
+
+      switch(type)
+      {
+         default:
+         case TYPE_SIN:
+            a = sin(2PI * a);
+            break;
+
+         case TYPE_TRI:
+            a = (a < 0.5f) ? (-1.0 + a * 4.0f) : (1.0 - (a - 0.5f)*4);
+            break;
+
+         case TYPE_SAW:
+            a = -1.0 + (a * 2.0f);
+            break;
+
+         case TYPE_PULSE:
+            a = (a < inPulse) ? 1.0f : -1.0f;
+            break;
+
+         case TYPE_NOISE:
+            if(b_noise_sample)
+            {
+               noise_sh = rand(2.0f) - 1.0f;
+               b_noise_sample = false;
+            }
+            a = noise_sh;
+            break;
+      }
+
+      if(b_bipolar)
+         out[0] = a;
+      else
+         out[0] = a * 0.5f + 0.5f;
+   }
+
+}

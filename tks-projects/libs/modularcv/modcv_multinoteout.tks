@@ -1,0 +1,238 @@
+// ----
+// ---- file   : modcv_multinoteout.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 01May2021
+// ---- changed: 07May2021, 21Feb2022, 16Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_MultiNoteOut;
+
+use namespace st2;
+use namespace ui;
+namespace modularcv;
+
+
+class ModCV_MultiNoteOut : ModCV_Output {
+   // (note) send note trig C-n .. B-n on selected I/O port
+   int   octave;
+   float vel_offset;
+   float dur_offset;
+
+   protected TrigInput*[] trig_inputs;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("multinoteout"/*id*/,
+                 "NoteOut"/*header_id*/,
+                 "Multi Note Output"/*tooltip*/
+                 );
+      setModuleSize(6, 3);
+
+      int outIdx = 0;
+      loop(12)
+      {
+         addInput("o"+(outIdx+1),  "Output Value "+(outIdx+1),  0.0f, IO_GATE);
+         trig_inputs.add(#(new TrigInput));
+         outIdx++;
+      }
+
+      addInput("vel",  "Velocity",                  1.0f, IO_ANY);
+      addInput("dur",  "Duration (1.0=PPQ ticks)",  0.0f, IO_DUR);
+
+      vel_offset = 0.5;
+      dur_offset = 0.03125;   // 6 ticks @ppq=192
+   }
+
+   public virtual copyFrom(ModCV_MultiNoteOut _o) {
+      port_index = _o.port_index;
+      octave     = _o.octave;
+      vel_offset = _o.vel_offset;
+      dur_offset = _o.dur_offset;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      port_select_widget <= createPortSelectWidget(3, 20, port_index, true/*bOutput*/);
+
+      // Oct
+      createIntParamWidget(23, 20,
+                           "octave",
+                           0, 10, 0, octave,
+                           "oct"/*captionOrNull*/
+                           );
+
+      // Vel
+      ui::Dial *dial;
+      float cy = 70;
+      dial <= createTinyDial(11, cy,
+                             "vel_offset",
+                             -1.0, 1.0, 0.0, vel_offset,
+                             null/*captionOrNull*/
+                             );
+      dial.setToolTipCaption("Velocity Offset");
+
+      createPortWidget(12, false/*bOutput*/,
+                       11, cy+12,
+                       "vel"
+                       );
+
+      // Dur
+      dial <= createTinyDial(35, cy,
+                             "dur_offset",
+                             -1.0, 1.0, 0.0, dur_offset,
+                             null/*captionOrNull*/
+                             );
+      dial.setToolTipCaption("Duration Offset");
+
+      createPortWidget(13, false/*bOutput*/,
+                       35, cy+12,
+                       "dur"
+                       );
+
+
+      cy += 42;
+      float cx = 15;
+      float stepY = 14;
+      float bOffX = 18;
+      float bOffY = stepY/2;
+      cy -= stepY;
+
+      IntArray bfTbl <= Scale.black_flags_tbl;
+      PortWidget *pw;
+      int pIdx = 0;
+      loop(12)
+      {
+         if(bfTbl[pIdx])
+         {
+            pw <= createPortWidget(pIdx, false/*bOutput*/,
+                                   cx + bOffX,
+                                   cy + bOffY,
+                                   null/*captionOrNull*/
+                                   );
+         }
+         else
+         {
+            cy += stepY;
+            pw <= createPortWidget(pIdx, false/*bOutput*/,
+                                   cx,
+                                   cy,
+                                   null/*captionOrNull*/
+                                   );
+         }
+
+         pIdx++;
+      }
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "octave":
+            octave = _value;
+            break;
+
+         case "vel_offset":
+            vel_offset = _value;
+            break;
+
+         case "dur_offset":
+            dur_offset = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "octave":
+            return octave;
+
+         case "vel_offset":
+            return vel_offset;
+
+         case "dur_offset":
+            return dur_offset;
+      }
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8  = octave;
+      ofs.i8  = port_index;
+      ofs.f32 = vel_offset;
+      ofs.f32 = dur_offset;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            octave     = ifs.u8;
+            port_index = ifs.u8;
+            vel_offset = ifs.f32;
+            dur_offset = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_MultiNoteOut::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("Note Output Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+   
+   public virtual reset() {
+      TrigInput *ti;
+      foreach ti in trig_inputs
+         ti.reset();
+   }
+
+   public method tickOutput(MIDIPipeFrame _frOut) {
+
+      local int fVel = mathMaxf(1.0f, (inputs[12].getValue()+vel_offset) * 127);
+      local int iDur = mathMaxi(1, (inputs[13].getValue()+dur_offset) * current_song.ppq);
+
+      local CtlIOPort ioPort <= parent_node.getPortByIndex(port_index);
+
+      local int outIdx = 0;
+      loop(12)
+      {
+         TrigInput ti <= trig_inputs[outIdx];
+         if(ti.process(inputs[outIdx].getValue()))
+         {
+            if((null != ioPort) && ioPort.b_enable)
+            {
+               // trace "xxx outIdx="+outIdx+" fVel="+fVel+" iDur="+iDur;
+               _frOut.noteOn(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, (octave*12) + outIdx, fVel, iDur);
+            }
+         }
+
+         outIdx++;
+      }
+   }
+
+}

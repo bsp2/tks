@@ -1,0 +1,218 @@
+// ----
+// ---- file   : modcv_trigtogate.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 02Apr2021
+// ---- changed: 03Apr2021, 12Apr2021, 16Apr2021, 07May2021, 03Dec2021, 28Dec2021, 21Feb2022
+// ----          10Oct2024, 11Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_TrigToGate;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_TrigToGate : Module {
+   boolean b_allow_trig;
+   int gateoff_countdown;  // ticks
+   float duration_off;  // duration offset
+
+   public virtual init() {
+      Module::init();
+
+      initModule("trigtogate"/*id*/,
+                 "t2g"/*header_id*/,
+                 "Trig To Gate"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      duration_off = 0.0f;
+
+      b_allow_trig = true;
+      gateoff_countdown = 0;
+
+      addInput("trig", "Trig", 0.0f, IO_GATE);
+      addInput("dur",  "Dur (1.0=PPQ ticks)",  0.0f, IO_DUR);
+
+      addOutput("gate", "Gate", IO_GATE);
+   }
+
+   public virtual copyFrom(ModCV_TrigToGate _o) {
+      duration_off = _o.duration_off;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+      float stepY = 40;
+
+      cx = 15;
+      cy = 56;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "trig"/*captionOrNull*/
+                             );
+
+      cy += stepY*1.25 + 4;
+      dl <= createSmallDial(cx, cy,
+                            "duration_off",
+                            -1.0, 1.0, 0.0, duration_off,
+                            "dur"
+                            );
+      dl.setToolTipCaption("Duration Offset (1.0=PPQ ticks)");
+      dl.setPrecision(4);
+      dl.setPresetOptions([0.0f,    0.0625f, 0.125f, 4.0/24, 0.25f,  4.0/12, 0.5f,  1.0f],
+                          ["Pulse", "1/64",  "1/32", "1/24", "1/16", "1/12", "1/8", "1/4"]
+                          );
+      dl.setStep(0.5f / current_song.ppq);
+
+      // // dl.setPresetOptions([0.125f, 0.25f,  0.5f,  1.0f],
+      // //                     ["1/32", "1/16", "1/8", "1/4"]
+      // //                     );
+
+      cy += 32;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             null/*captionOrNull*/
+                             );
+
+
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             (RACK_MODULE_HEIGHT - 20),
+                             null/*captionOrNull*/
+                             );
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return ("duration_off" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "duration_off":
+            duration_off = _value;
+            int numTicks = round(_value * current_song.ppq);
+            float num16th = float(numTicks) / current_song.getNumTicksPer16th();
+            Global.Print("Param \"duration_off\" is "+_value+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "duration_off":
+            return duration_off;
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["dur off"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            duration_off = FromNormalized(_value, -1, 1);
+            updateParamWidget("duration_off", duration_off);
+            int numTicks = round(_value * current_song.ppq);
+            float num16th = float(numTicks) / current_song.getNumTicksPer16th();
+            Global.Print("Param \"duration_off\" is "+duration_off+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(duration_off, -1, 1);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.f32 = duration_off;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            duration_off = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_TrigToGate::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      b_allow_trig = true;
+      gateoff_countdown = 0;
+   }
+
+   public virtual tick() {
+
+      float fTrig = inputs[0].getValue();
+      float fDur  = inputs[1].getValue() + duration_off;
+
+      if(gateoff_countdown > 0)
+      {
+         if(0 == --gateoff_countdown)
+         {
+            out[0] = 0.0f;
+         }
+      }
+
+      if(!b_allow_trig)
+      {
+         if(fTrig < TRIG_OFF)
+         {
+            b_allow_trig = true;
+         }
+      }
+      else if(fTrig >= TRIG_ON)
+      {
+         // gate on
+         gateoff_countdown = mathMaxi(1, round(fDur * current_song.ppq));  // auto gate off
+         // trace "xxx trig2gate: gateoff_countdown="+gateoff_countdown+" ticks";
+         out[0] = 1.0f;
+         b_allow_trig = false;
+      }
+
+   }
+
+}

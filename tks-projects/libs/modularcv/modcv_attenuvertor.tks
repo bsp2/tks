@@ -1,0 +1,289 @@
+// ----
+// ---- file   : modcv_attenuvertor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 31Aug2022
+// ---- changed: 10Oct2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_Attenuvertor;
+
+namespace modularcv;
+
+
+class ModCV_Attenuvertor : Module {
+
+   float input_curve;    // -1..1 => log..lin..exp
+   float scale_offset;   // -2..2
+   float offset_offset;  // -2..2
+
+   float def_scale_input;  // scale input value when not connected (def=1)
+
+   RoundButton *bt_input_scale_def_1;
+   ui::Dial *dl_scale_offset;
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("Attenuvertor"/*id*/,
+                 "atnv"/*header_id*/,
+                 "Attenuvertor"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      input_curve   = 0.0f;
+      scale_offset  = 1.0;  // v1: 0.0   v2: 1.0
+      offset_offset = 0.0;
+
+      addInput("in",     "Input",  1.0, IO_ANY);  // changed def_value from v1=0.0 to v2=1.0
+      addInput("scale",  "Scale",  0.0, IO_ANY);  // changed def_value from v1=1.0 to v2=0.0
+      addInput("offset", "Offset", 0.0, IO_ANY);
+
+      addOutput("out",   "Output", IO_ANY);
+   }
+
+   public virtual copyFrom(ModCV_Attenuvertor _o) {
+      input_curve   = _o.input_curve;
+      scale_offset  = _o.scale_offset;
+      offset_offset = _o.offset_offset;
+
+      Input inScale <= getInputByIndex(1/*scale*/);
+      Input inScaleO <= _o.getInputByIndex(1/*scale*/);
+      inScale.def_value = inScaleO.def_value;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      // Input
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             15, 32,
+                             null/*captionOrNull*/
+                             );
+
+      // Input curve
+      createTinyDial(15, 54,
+                     "input_curve",
+                     -1.0, 1.0, 0.0, input_curve,
+                     ""
+                     );
+
+      float cy = 80;
+
+      // Scale
+      Input inScale <= getInputByIndex(1/*scale*/);
+      trace "[trc] ModCV_Attenuvertor::initUI: inScale.def_value="+inScale.def_value;
+      dl_scale_offset <= createSmallDial(15, cy,
+                                         "scale_offset",
+                                         -2.0, 2.0, (inScale.def_value == 1.0) ? 0.0 : 1.0, scale_offset,
+                                         "scl"
+                                         );
+      dl_scale_offset.setPrecision(4);
+      dl_scale_offset.setToolTipCaption("Scale offset\n\n (note) added to scale input");
+      dl_scale_offset.setPresetOptions([-2.0f, -1.5f,  -1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f, 1.5f,  2.0f],
+                                       ["-2",  "-3/2", "-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",  "3/2", "2" ]
+                                       );
+
+
+      cy += 28;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             9, cy,
+                             null/*captionOrNull*/
+                             );
+      pw.setToolTipCaption("Scale input\n\n (note) 0.0 when not connected");
+
+      // Scale input default value 1.0
+      bt_input_scale_def_1 <= createTinyCheckButton(21, cy,
+                                                    "b_scale_input_def_1",
+                                                    (1.0 == inScale.def_value)
+                                                    );
+      bt_input_scale_def_1.setToolTipCaption("When enabled, default scale input value is 1.0\n\nWhen disabled, default value is 0.0");
+
+
+      // Offset
+      cy += 26;
+      dl <= createSmallDial(15, cy,
+                            "offset_offset",
+                            -2.0, 2.0, 0.0, offset_offset,
+                            "off"
+                            );
+      dl.setPrecision(4);
+      dl.setToolTipCaption("Offset offset\n\n (note) added to offset input");
+      dl.setPresetOptions([-2.0f, -1.5f,  -1.0f, -2.0/3, -0.5f,  -1.0/3, -0.25,  0.0f, 0.25,  1.0/3, 0.5,   1.0f, 1.5f,  2.0f],
+                          ["-2",  "-3/2", "-1",  "-2/3", "-0.5", "-1/3", "-1/4", "0",  "1/4", "1/3", "1/2", "1",  "3/2", "2" ]
+                          );
+
+      cy += 28;
+      createPortWidget(2, false/*bOutput*/,
+                       15, cy,
+                       null/*captionOrNull*/
+                       );
+
+      // Output
+      createPortWidget(0, true/*bOutput*/,
+                       15, (RACK_MODULE_HEIGHT - 20),
+                       null/*captionOrNull*/
+                       );
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "input_curve":
+            input_curve = _value;
+            break;
+
+         case "scale_offset":
+            scale_offset = _value;
+            break;
+
+         case "offset_offset":
+            offset_offset = _value;
+            break;
+
+         case "b_scale_input_def_1":
+            Input inScale <= getInputByIndex(1/*scale*/);
+            inScale.def_value = (_value >= 0.5f) ? 1.0f : 0.0f;
+            dl_scale_offset.setResetValue((inScale.def_value == 1.0) ? 0.0 : 1.0);
+            // bt_input_scale_def_1.setToggleState(_value >= 0.5f);
+            break;
+      }
+   }
+
+   protected method toggleScaleInputDefaultValue() {
+      Input input <= getInputByIndex(1/*scale*/);
+      input.def_value = (input.def_value != 1.0f) ? 1.0f : 0.0f;
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "input_curve":
+            return input_curve;
+
+         case "scale_offset":
+            return scale_offset;
+
+         case "offset_offset":
+            return offset_offset;
+
+         case "b_scale_input_def_1":
+            Input inScale <= getInputByIndex(1/*scale*/);
+            return (1.0f == inScale.def_value);
+      }
+   }
+
+   public virtual getNormalizedParamNames() : Object {
+      return ["in curve", "scale off", "offset off"
+              ];
+   }
+
+   public virtual setNormalizedParamByIndexUI(int _paramIdx, float _value) {
+      switch(_paramIdx)
+      {
+         case 0:
+            input_curve = FromNormalized(_value, -1, 1);
+            updateParamWidget("input_curve", input_curve);
+            break;
+
+         case 1:
+            scale_offset = FromNormalized(_value, -2, 2);
+            updateParamWidget("scale_offset", scale_offset);
+            break;
+
+         case 2:
+            offset_offset = FromNormalized(_value, -2, 2);
+            updateParamWidget("offset_offset", offset_offset);
+            break;
+      }
+   }
+
+   public virtual getNormalizedParamByIndex(int _paramIdx) : float {
+      switch(_paramIdx)
+      {
+         case 0:
+            return ToNormalized(input_curve, -1, 1);
+
+         case 1:
+            return ToNormalized(scale_offset, -2, 2);
+
+         case 2:
+            return ToNormalized(offset_offset, -2, 2);
+      }
+      return 0.0f;
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 2;
+
+      // params
+      ofs.f32 = input_curve;
+      ofs.f32 = scale_offset;
+      ofs.f32 = offset_offset;
+
+      // def scale input value (v2+)
+      Input inScale <= getInputByIndex(1/*scale*/);
+      ofs.f32 = inScale.def_value;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      // (note) called before initUI()
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            // params
+            input_curve   = ifs.f32;
+            scale_offset  = ifs.f32;
+            offset_offset = ifs.f32;
+
+            Input inScale <= getInputByIndex(1/*scale*/);
+            if(ver >= 2)
+            {
+               // def scale inScale value (v2+)
+               inScale.def_value = ifs.f32;
+               trace "[>>>] ModCV_Attenuvertor::loadstate: v2, read inScale.def_value="+inScale.def_value;
+            }
+            else
+            {
+               // pre v2
+               inScale.def_value = 1.0f;
+               trace "[>>>] ModCV_Attenuvertor::loadstate: v1, set inScale.def_value=1";
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_Attenuvertor::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tick() {
+      local float fIn     = inputs[0].getValue();
+      local float fScale  = inputs[1].getValue() + scale_offset;
+      local float fOffset = inputs[2].getValue() + offset_offset;
+
+      // trace "xxx ModCV_Attenuvertor::tick: fIn="+fIn+" curve="+input_curve+" fInCurve="+mathLogLinExpf(fIn, input_curve)+" scale_offset="+scale_offset+" fScale="+fScale+" offset_offset="+offset_offset+" fOffset="+fOffset;
+
+      out[0] = mathLogLinExpf(fIn, input_curve) * fScale + fOffset;
+   }
+}

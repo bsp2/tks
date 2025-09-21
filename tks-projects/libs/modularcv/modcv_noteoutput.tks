@@ -1,0 +1,260 @@
+// ----
+// ---- file   : modcv_noteoutput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 29Mar2021
+// ---- changed: 31Mar2021, 02Apr2021, 03Apr2021, 04Apr2021, 07May2021, 21Feb2022, 10Oct2024
+// ----          16Nov2024
+// ----
+// ----
+// ----
+
+module MModularCVMod_NoteOutput;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_NoteOutput : ModCV_Output {
+   boolean b_allow_gateon;
+   float   duration_off;   // duration offset
+   float   pb_range;       // use 24 for MIDI synths, 5*12=60 for modular (-5V..+5V => -5..5 octaves)
+
+   int last_note;
+   int last_dur;  // ticks
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("note_output"/*id*/,
+                 "n out"/*header_id*/,
+                 "Note Output"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      pb_range = 24;
+      duration_off = 0.0f;
+
+      last_note = 12*5;
+      last_dur = 1;
+      b_allow_gateon = true;
+
+      addInput("gate", "Gate",                      0.0f,        IO_GATE);
+      addInput("note", "Note",                      0.0f/*c-5*/, IO_CV  );
+      addInput("vel",  "Velocity",                  1.0f,        IO_ANY );
+      addInput("dur",  "Duration (1.0=PPQ ticks)",  0.0f,        IO_DUR );
+   }
+
+   public virtual copyFrom(ModCV_NoteOutput _o) {
+      port_index   = _o.port_index;
+      duration_off = _o.duration_off;
+      pb_range     = _o.pb_range;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, true/*bOutput*/);
+
+      cx = 15;
+      cy = 54;
+
+      PortWidget *pw;
+      ui::Dial *dl;
+
+      dl <= createTinyDial(cx, cy,
+                           "pb_range",
+                           -60.0, 60.0, 24.0, pb_range,
+                           null/*captionOrNull*/
+                           );
+      dl.setToolTipCaption("Pitchbend Range");
+      dl.setPrecision(4);
+      dl.setPresetOptions([0.0f, 12.0f, 24.0f, 36.0f, 48.0f, 60.0f],
+                          ["off", "1 oct", "2 oct", "3 oct", "4 oct", "5 oct"]
+                          );
+                          
+
+      cy += 12;
+      pw <= createPortWidget(1, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "cv"/*captionOrNull*/
+                             );
+
+      cy += 34;
+      pw <= createPortWidget(0, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "gate"/*captionOrNull*/
+                             );
+
+      cy += 34;
+      pw <= createPortWidget(2, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "vel"/*captionOrNull*/
+                             );
+
+      cy += 35;
+      dl <= createTinyDial(cx, cy,
+                           "duration_off",
+                           -1.0, 1.0, 0.0, duration_off,
+                           null/*captionOrNull*/
+                           );
+      dl.setToolTipCaption("Duration Offset (1.0=PPQ ticks)");
+      dl.setPresetOptions([0.125f, 0.25f,  0.5f,  1.0f ],
+                          ["1/32", "1/16", "1/8", "1/4"]
+                          );
+
+      cy += 12;
+      pw <= createPortWidget(3, false/*bOutput*/,
+                             cx,
+                             cy,
+                             "dur"
+                             );
+
+   }
+
+   public virtual wantDefaultParamMessage(String _name) : boolean {
+      return ("duration_off" != _name);
+   }
+
+   public virtual setParamByName(String _name, float _value) {
+      switch(_name)
+      {
+         case "duration_off":
+            duration_off = _value;
+            int numTicks = int(_value * current_song.ppq);
+            float num16th = (_value * 4.0);
+            Global.Print("Param \"duration_off\" is "+_value+" => "+numTicks+" tick"+Utils.GetPluralString(numTicks)+" / "+num16th+" 16th"+Utils.GetPluralStringFloat(num16th));
+            break;
+
+         case "pb_range":
+            pb_range = _value;
+            break;
+      }
+   }
+
+   public virtual getParamByName(String _name) : float {
+      switch(_name)
+      {
+         case "duration_off":
+            return duration_off;
+
+         case "pb_range":
+            return pb_range;
+      }
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("Output Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8  = port_index;
+      ofs.f32 = pb_range;
+      ofs.f32 = duration_off;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index  = ifs.u8;
+            pb_range     = ifs.f32;
+            duration_off = ifs.f32;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_NoteOutput::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual reset() {
+      b_allow_gateon = true;
+   }
+
+   public virtual tickOutput(MIDIPipeFrame _frOut) {
+
+      local float fGate = inputs[0].getValue();
+      local float fNote = inputs[1].getValue();
+      local float fVel  = mathClampf(inputs[2].getValue(), 0.0f, 1.0f);
+      local float fDur  = inputs[3].getValue() + duration_off;
+
+      CtlIOPort ioPort <= parent_node.getPortByIndex(port_index);
+
+      if(!b_allow_gateon)
+      {
+         if(fGate < TRIG_OFF)
+         {
+            if(0 == last_dur)
+            {
+               if((null != ioPort) && ioPort.b_enable)
+               {
+                  // trace "xxx note off @t="+current_song.song_offset+": last_note="+last_note;
+                  _frOut.noteOff(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, last_note, fVel*127.0);
+               }
+            }
+            b_allow_gateon = true;
+         }
+      }
+
+      // Update freq
+      //   (note) -1..1 => +-5 octaves centered around C-5
+      float cNote = 5*12 + (fNote * (5*12));
+      float pb = (cNote - last_note) / pb_range;
+      if((null != ioPort) && ioPort.b_enable)
+      {
+         // trace "xxx update pb to "+pb+"  fNote="+fNote+" cNote="+cNote+" last_note="+last_note;
+         _frOut.pitchbend(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, (pb >= 0.0) ? (8192 + pb*8191) : (8192 + pb*8192));
+      }
+
+      if(b_allow_gateon && (fGate >= TRIG_ON))
+      {
+         // trace "xxx TRIG_ON";
+
+         // gate on
+         // trace "xxx ModCV_NoteOutput: fGate="+fGate+" fDur="+fDur+" (fDur >= 0.0f)="+(fDur >= 0.0f);
+         if(fDur > 0.0f)
+            last_dur = mathMaxi(1, fDur * current_song.ppq);  // auto gate off
+         else
+            last_dur = 0;  // gate input determines duration
+
+         last_note = int(cNote + 0.5f);
+         float fracNote = cNote - last_note;
+         pb = fracNote / pb_range;
+         // trace "xxx ModCV_NoteOutput: fNote="+fNote+" cNote="+cNote+" last_note="+last_note+" pb="+pb;
+
+         if((null != ioPort) && ioPort.b_enable)
+         {
+            // trace "xxx note on @t="+current_song.song_offset+": last_note="+last_note+" last_dur="+last_dur;
+            _frOut.pitchbend(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, (pb >= 0.0) ? (8192 + pb*8191) : (8192 + pb*8192));
+            _frOut.noteOn(true/*bSet*/, ioPort.dev_idx, ioPort.dev_ch, last_note, mathClampf(fVel*127.0, 1, 127), last_dur);
+         }
+
+         b_allow_gateon = false;
+      }
+   }
+}

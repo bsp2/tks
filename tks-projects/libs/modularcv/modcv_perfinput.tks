@@ -1,0 +1,190 @@
+// ----
+// ---- file   : modcv_perfinput.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 21Apr2021
+// ---- changed: 22Apr2021, 07May2021, 21Feb2022, 16Nov2024, 23Mar2025
+// ----
+// ----
+// ----
+
+module MModularCVMod_PerfInput;
+
+namespace modularcv;
+use namespace st2;
+
+
+class ModCV_PerfInput : ModCV_Input {
+
+
+   public virtual init() {
+      Module::init();
+
+      initModule("perf_input"/*id*/,
+                 "p in"/*header_id*/,
+                 "PerfCtl Input"/*tooltip*/
+                 );
+      setModuleSize(4, 3);
+
+      addOutput("mw", "Mod Wheel (CC#1)",      IO_CV);
+      addOutput("bc", "Breath Control (CC#2)", IO_CV);
+      addOutput("fc", "Foot Control (CC#4)",   IO_CV);
+      addOutput("ex", "Expression (CC#11)",    IO_CV);
+      addOutput("at", "Aftertouch",            IO_CV);
+   }
+
+   public virtual copyFrom(ModCV_PerfInput _o) {
+      port_index = _o.port_index;
+   }
+
+   public virtual initUI() {
+
+      Module::initUI();
+
+      float cx = 7;
+      float cy = 20;
+
+      port_select_widget <= createPortSelectWidget(cx, cy, port_index, false/*bOutput*/);
+
+      PortWidget *pw;
+      cx = 15;
+      cy = 53;
+      float stepY = 32;
+
+      // Mod Wheel
+      pw <= createPortWidget(0, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "mw"/*captionOrNull*/
+                             );
+      // Breath Control
+      cy += stepY;
+      pw <= createPortWidget(1, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "bc"/*captionOrNull*/
+                             );
+
+      // Foot Control
+      cy += stepY;
+      pw <= createPortWidget(2, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "fc"/*captionOrNull*/
+                             );
+
+      // Expression
+      cy += stepY;
+      pw <= createPortWidget(3, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "ex"/*captionOrNull*/
+                             );
+
+      // Aftertouch
+      cy += stepY;
+      pw <= createPortWidget(4, true/*bOutput*/,
+                             cx,
+                             cy,
+                             "at"/*captionOrNull*/
+                             );
+
+   }
+
+   protected virtual handlePortChanged(int _portIndex) {
+      port_index = _portIndex;
+      Global.Print("PerfCtl Input Port is "+(_portIndex + 1)+" ("+parent_node.getPortIdByIndex(port_index)+")");
+   }
+
+   public virtual saveState(Stream ofs) {
+      Module::saveState(ofs);
+
+      // ver
+      ofs.i16 = 1;
+
+      ofs.i8  = port_index;
+   }
+
+   public virtual loadState(Stream ifs) : boolean {
+      if(Module::loadState(ifs))
+      {
+         short ver = ifs.u16;
+         if(ver >= 1)
+         {
+            port_index = ifs.u8;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] ModCV_PerfInput::loadState: invalid ver="+ver;
+         }
+      }
+      return false;
+   }
+
+   public virtual tickInput(MIDIPipeFrame _frIn, boolean _bAdvance) {
+      local CtlIOPort ioPort <= parent_node.getPortByIndex(port_index);
+      if(null != ioPort)
+      {
+         if(ioPort.b_enable)
+         {
+            float t;
+            int numEv;
+            int evIdx;
+            MIDIPipeEvent pev;
+
+            // Mod Wheel
+            t = _frIn.getFilteredCC(ioPort.dev_idx, ioPort.dev_ch, 1);
+            if(t >= 0.0)
+            {
+               out[0] = t / 127.0;
+            }
+
+            // Breath Control
+            t = _frIn.getFilteredCC(ioPort.dev_idx, ioPort.dev_ch, 2);
+            if(t >= 0.0)
+            {
+               out[1] = t / 127.0;
+            }
+
+            // Foot Control
+            t = _frIn.getFilteredCC(ioPort.dev_idx, ioPort.dev_ch, 4);
+            if(t >= 0.0)
+            {
+               out[2] = t / 127.0;
+            }
+
+            // Expression
+            t = _frIn.getFilteredCC(ioPort.dev_idx, ioPort.dev_ch, 11);
+            if(t >= 0.0)
+            {
+               out[3] = t / 127.0;
+            }
+
+            // Poly Pressure
+            numEv = _frIn.getNumEventsPolyPressureByFlt(ioPort.dev_idx, ioPort.dev_ch);
+            if(numEv > 0)
+            {
+               if(_frIn.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, ioPort.dev_idx, ioPort.dev_ch))
+               {
+                  out[4] = pev.polyPressureValue / 127.0;
+               }
+            }
+
+            // Channel Pressure
+            t = _frIn.getFilteredChPressure(ioPort.dev_idx, ioPort.dev_ch);
+            if(t >= 0.0)
+            {
+               out[4] = t / 127.0;
+            }
+
+         } // if ioPort.b_enable            
+      } // if ioPort
+   }
+}
