@@ -1,0 +1,881 @@
+// ----
+// ---- file   : cycle_ui.tks
+// ---- author : bsp
+// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ----
+// ---- info   : Graphical patch editor / Cycle patch generator
+// ---- note   :
+// ----
+// ---- created: 31Jan2025
+// ---- changed: 06Apr2025
+// ----
+// ----
+// ----
+
+module MCycleUI;
+
+use namespace ui;
+
+boolean b_cycle_ui_mod_debug = 0;
+boolean b_cycle_ui_patch_debug = 0;//1;
+
+
+// <class.png>
+class CyUIPort {
+   CyUIModule *parent_mod;
+   String id;
+   String name;      // displayed name
+   String var_name;  // template var name (e.g. 'in_freq', usually 'in_<id>')
+   String tooltip;
+   int    dir;       // Layout.TOP/LEFT/BOTTOM/RIGHT
+
+   public method copyFrom(CyUIPort _o) {
+      // (note) don't copy 'parent_mod'
+      id       = _o.id;
+      name     = _o.name;
+      var_name = _o.var_name;
+      tooltip  = _o.tooltip;
+      dir      = _o.dir;
+   }
+
+   public method parsePortAttrib(StringArray _words) : boolean {
+      switch(_words.get(0))
+      {
+         case "name":
+            name = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set name=\""+name+"\"";
+            return true;
+
+         case "var_name":
+            // (note) usually auto-assigned (var_<id>)
+            var_name = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set var_name=\""+var_name+"\"";
+            return true;
+
+         case "tooltip":
+            tooltip = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set tooltip=\""+tooltip+"\"";
+            return true;
+
+         case "dir":
+            if(_words.numElements >= 2)
+            {
+               switch(_words.get(1).toLower())
+               {
+                  case "top":
+                  case "t":
+                     dir = Layout.TOP;
+                     break;
+
+                  case "bottom":
+                  case "b":
+                     dir = Layout.BOTTOM;
+                     break;
+
+                  case "left":
+                  case "l":
+                     dir = Layout.LEFT;
+                     break;
+
+                  case "right":
+                  case "r":
+                     dir = Layout.RIGHT;
+                     break;
+               }
+               if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set dir="+dir+" (str=\""+_words.get(1)+")";
+            }
+            else
+            {
+               trace "[---] "+yacMetaClassName()+": id="+id+" missing dir value";
+            }
+            return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class CyUIOutput : CyUIPort {
+   // Output port
+
+   public virtual copyFrom(CyUIOutput _o) {
+      CyUIPort::copyFrom(_o);
+   }
+}
+
+
+// <class.png>
+class CyUIConnection {
+   CyUIModule *mod;  // source module
+   CyUIOutput *out;  // source module output id
+}
+
+
+// <class.png>
+class CyUIInput : CyUIPort {
+   // Input port
+   CyUIConnection *[] connections;
+
+   public virtual copyFrom(CyUIInput _o) {
+      // (note) don't copy 'connections'
+      CyUIPort::copyFrom(_o);
+   }
+
+   public method addConnection(CyUIModule _mod, CyUIOutput _out) : CyUIConnection {
+      local CyUIConnection conn;
+      conn.mod <= _mod;
+      conn.out <= _out;
+      connections.add(#(deref conn));
+      return conn;
+   }
+}
+
+
+// <class.png>
+class CyUIValue {
+   String id;    // param or macro arg id w/o template instance suffix (e.g. 'myparam')
+   String name;  // displayed name, e.g. "Osc Type"
+   float  def_value;
+   float  min_value;
+   float  max_value;
+   int    precision;
+   float  step_fine;
+   float  step_coarse;
+
+   public method copyFrom(CyUIValue _o) {
+      id = _o.id;
+      name = _o.name;
+      def_value   = _o.def_value;
+      min_value   = _o.min_value;
+      max_value   = _o.max_value;
+      precision   = _o.precision;
+      step_fine   = _o.step_fine;
+      step_coarse = _o.step_coarse;
+   }
+
+   public method parseValueAttrib(StringArray _words) : boolean {
+      switch(_words.get(0))
+      {
+         case "def":
+            def_value = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set def_value="+def_value;
+            return true;
+
+         case "min":
+            min_value = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set min_value="+min_value;
+            return true;
+
+         case "max":
+            max_value = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set max_value="+max_value;
+            return true;
+
+         case "prec":
+         case "precision":
+            precision = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set precision="+precision;
+            return true;
+
+         case "step_fine":
+            step_fine = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set step_fine="+step_fine;
+            return true;
+
+         case "step_coarse":
+            step_coarse = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set step_coarse="+step_coarse;
+            return true;
+
+         case "step":
+            step_fine = _words.get(1);
+            step_coarse = step_fine;
+            if(b_cycle_ui_mod_debug) trace "xxx "+yacMetaClassName()+": id="+id+" set step="+step_coarse;
+            return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class CyUIArg : CyUIValue {
+   // static configuration (macro arg)
+   String arg_value;  // macro arg value
+   StringArray *options;
+
+   public virtual copyFrom(CyUIArg _o) {
+      CyUIValue::copyFrom(_o);
+      arg_value = _o.arg_value;
+      if(null != _o.options)
+         options <= Object(_o.options);
+   }
+
+   public method parseArgAttrib(StringArray _words) {
+
+      if(!parseValueAttrib(_words))
+      {
+         switch(_words.get(0))
+         {
+            case "name":
+               name = _words.get(1);
+               if(b_cycle_ui_mod_debug) trace "xxx CyUIArg: set name=\""+name+"\"";
+               break;
+
+            case "options":
+               String sOpt <= _words.get(1);
+               if(null != sOpt)
+               {
+                  options <= sOpt.splitChar(';');
+                  if(b_cycle_ui_mod_debug) trace "xxx CyUIArg: set options="+options;
+               }
+               else
+               {
+                  trace "[~~~] CyUIArg: missing options value";
+               }
+               break;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class CyUIParam : CyUIValue {
+   // dynamic configuration ('param' or 'arg')
+   float param_value;
+
+   public virtual copyFrom(CyUIParam _o) {
+      // (note) don't copy 'param_value'
+      CyUIValue::copyFrom(_o);
+   }
+
+   public method parseParamAttrib(StringArray _words) {
+      switch(_words.get(0))
+      {
+      }
+   }
+}
+
+
+// <class.png>
+class CyUIModule {
+   // UI module definition / instance
+   CyUIPatch *parent_patch;
+   String template_id;  // e.g. 'myosc' or 'out'
+   String instance_id;  // e.g. 'osc1' (when parsing CyUIPatch)  (local to current patch)
+   String name;         // displayed module type name (e.g. "My Oscillator") or instance name
+   String category;     // e.g. 'Oscillator'  (todo) create list
+   String inc_path;     // e.g. '.myosc' (used when generating 'inc' statements)
+   int px;
+   int py;
+   CyUIArg    *[] args;
+   CyUIParam  *[] params;
+   CyUIInput  *[] inputs;
+   CyUIOutput *[] outputs;
+
+   Object *cur_parse_object;  // CyUIArg, CyUIParam, CyUIInput, CyUIOutput
+
+   public method initModuleDef() {
+      // called when '[ui:mod]' line is found in .cy script
+      if(b_cycle_ui_mod_debug) trace "xxx CyUIModule::initModuleDef:";
+   }
+
+   public method initModuleInstance(CyUIPatch _parentPatch, CyUIModule _def, String _instanceId) {
+      parent_patch <= _parentPatch;
+      template_id = _def.template_id;
+      instance_id = _instanceId;
+      name        = _def.name;
+      category    = _def.category;
+      inc_path    = _def.inc_path;
+
+      // Copy args
+      CyUIArg *argO;
+      foreach argO in _def.args
+      {
+         CyUIArg arg <= new CyUIArg;
+         arg.copyFrom(argO);
+         args.add(#(deref arg));
+      }
+
+      // Copy params
+      CyUIParam *paramO;
+      foreach paramO in _def.params
+      {
+         CyUIParam param <= new CyUIParam;
+         param.copyFrom(paramO);
+         params.add(#(deref param));
+      }
+
+      // Copy inputs
+      CyUIInput *inputO;
+      foreach inputO in _def.inputs
+      {
+         CyUIInput input <= new CyUIInput;
+         input.copyFrom(inputO);
+         input.parent_mod <= this;
+         inputs.add(#(deref input));
+      }
+
+      // Copy outputs
+      CyUIOutput *outputO;
+      foreach outputO in _def.outputs
+      {
+         CyUIOutput output <= new CyUIOutput;
+         output.copyFrom(outputO);
+         output.parent_mod <= this;
+         outputs.add(#(deref output));
+      }
+
+   }
+
+   public method initOutModule(CyUIPatch _parentPatch) {
+      parent_patch <= _parentPatch;
+      instance_id = "out";
+      name = "out";
+
+      CyUIInput inp <= new CyUIInput;
+      inp.id = "in";
+      inp.name = "in";
+      inp.var_name = "in";
+      inp.dir = Layout.TOP;
+      inputs.add(#(deref inp));
+   }
+
+   protected method addArg(StringArray _words) : CyUIArg {
+      // arg <id>
+      CyUIArg arg <= new CyUIArg;
+      arg.id = _words.get(1);
+      args.add(#(deref arg));
+      if(b_cycle_ui_mod_debug) trace "xxx CyUIModule::addArg: templ="+template_id+" id=\""+arg.id+"\"";
+      return arg;
+   }
+
+   protected method addParam(StringArray _words) : CyUIParam {
+      // param <id>
+      CyUIParam param <= new CyUIParam;
+      param.id = _words.get(1);
+      params.add(#(deref param));
+      if(b_cycle_ui_mod_debug) trace "xxx CyUIModule::addParam: templ="+template_id+" id=\""+param.id+"\"";
+      return param;
+   }
+
+   protected method addInput(StringArray _words) : CyUIInput {
+      // in <id>
+      CyUIInput inp <= new CyUIInput;
+      inp.id       = _words.get(1);
+      inp.name     = inp.id;
+      inp.var_name = "in_"+inp.id;
+      inp.dir      = Layout.TOP;
+      inputs.add(#(deref inp));
+      if(b_cycle_ui_mod_debug) trace "xxx CyUIModule::addInput: templ="+template_id+" id=\""+inp.id+"\" var_name=\""+inp.var_name+"\"";
+      return inp;
+   }
+
+   protected method addOutput(StringArray _words) : CyUIOutput {
+      // out <id>
+      CyUIOutput outp <= new CyUIOutput;
+      outp.id = _words.get(1);
+      outp.name = outp.id;
+      outp.dir  = Layout.BOTTOM;
+      if("" == outp.id)
+      {
+         outp.id = "out";
+         outp.var_name = "out";
+      }
+      else
+      {
+         outp.var_name = "out_"+outp.id;
+      }
+      if(b_cycle_ui_mod_debug) trace "xxx CyUIModule::addOutput: templ="+template_id+" id=\""+outp.id+"\" var_name=\""+outp.var_name+"\"";
+      outputs.add(#(deref outp));
+      return outp;
+   }
+
+   protected method parseModuleAttrib(StringArray _words) {
+      switch(_words.get(0))
+      {
+         case "name":
+            name = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx CyUIModule: set name=\""+name+"\"";
+            break;
+
+         case "cat":
+         case "category":
+            category = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx CyUIModule: set category=\""+category+"\"";
+            break;
+
+         case "inc":
+            inc_path = _words.get(1);
+            if(b_cycle_ui_mod_debug) trace "xxx CyUIModule: set inc_path=\""+inc_path+"\"";
+            break;
+      }
+   }
+
+   public method parseNextLine(String _line, int _indent, StringArray _words) {
+      // when parsing [ui:mod] section
+      if(b_cycle_ui_mod_debug) trace "xxx CyUIModule::parseNextLine: templ="+template_id+" line=<<"+_line+">>";
+      boolean bLineDone = true;
+      switch(_words.get(0))
+      {
+         default:
+            bLineDone = false;
+            break;
+
+         case "mod":  // mod <template_id>
+            template_id = _words.get(1);
+            cur_parse_object <= null;
+            break;
+
+         case "in":  // in <input_id>
+            cur_parse_object <= addInput(_words);
+            break;
+
+         case "out":  // out <input_id>
+            cur_parse_object <= addOutput(_words);
+            break;
+
+         case "arg":  // arg <arg_id>
+            cur_parse_object <= addArg(_words);
+            break;
+
+         case "param":  // param <param_id>
+            cur_parse_object <= addParam(_words);
+            break;
+      }
+
+      if(!bLineDone)
+      {
+         if(cur_parse_object instanceof CyUIInput)
+         {
+            CyUIInput inp <= cur_parse_object;
+            inp.parsePortAttrib(_words);
+         }
+         else if(cur_parse_object instanceof CyUIOutput)
+         {
+            CyUIOutput outp <= cur_parse_object;
+            outp.parsePortAttrib(_words);
+         }
+         else if(cur_parse_object instanceof CyUIArg)
+         {
+            CyUIArg arg <= cur_parse_object;
+            arg.parseArgAttrib(_words);
+         }
+         else if(cur_parse_object instanceof CyUIParam)
+         {
+            CyUIParam param <= cur_parse_object;
+            param.parseParamAttrib(_words);
+         }
+         else
+         {
+            parseModuleAttrib(_words);
+         }
+      }
+   }
+
+   public method findArgById(String _id) : CyUIArg {
+      CyUIArg *arg;
+      foreach arg in args
+      {
+         if(b_cycle_ui_patch_debug) trace "xxx CyUIModule::findArgById: arg.id="+arg.id+" find id="+_id;
+         if(arg.id == _id)
+            return arg;
+      }
+      return null;
+   }
+
+   public method findParamById(String _id) : CyUIParam {
+      CyUIParam *param;
+      foreach param in params
+      {
+         if(b_cycle_ui_patch_debug) trace "xxx CyUIModule::findParamById: param.id="+param.id+" find id="+_id;
+         if(param.id == _id)
+            return param;
+      }
+      return null;
+   }
+
+   public method findInputById(String _id) : CyUIInput {
+      CyUIInput *inp;
+      foreach inp in inputs
+      {
+         if(b_cycle_ui_patch_debug) trace "xxx CyUIModule::findInputById: inp.id="+inp.id+" find id="+_id;
+         if(inp.id == _id)
+            return inp;
+      }
+      return null;
+   }
+
+   public method findOutputById(String _id) : CyUIOutput {
+      CyUIOutput *outp;
+      foreach outp in outputs
+      {
+         if(b_cycle_ui_patch_debug) trace "xxx CyUIModule::findOutputById: outp.id="+outp.id+" find id="+_id;
+         if(outp.id == _id)
+            return outp;
+      }
+      return null;
+   }
+
+   public method getFQInstanceId() : String {
+      return parent_patch.s_prefix+instance_id;
+   }
+
+   public method emit(String _buf, PointerArray _aModsDone) {
+      _buf.append("  #---- emit "+getFQInstanceId()+" #inputs="+inputs.numElements+"\n");
+      local CyUIInput *inp;
+      _aModsDone.add(this);
+      local boolean bIsMod = !template_id.isBlank();  // not 'out'
+      local String *sVarInput;
+      foreach inp in inputs
+      {
+         // (todo) sum inputs if #connections>1
+         local CyUIConnection *conn;
+         local int connIdx = 0;
+         local boolean bMultiConn = (inp.connections.numElements > 1);
+         if(inp.connections.numElements > 0)
+         {
+            _buf.append("  #-------- input.id="+inp.id+" #connections="+inp.connections.numElements+"\n");
+            if(bMultiConn)
+            {
+               sVarInput <= getFQInstanceId()+"_in_"+inp.id;
+               _buf.append("  var "+sVarInput+"\n");
+            }
+            foreach conn in inp.connections
+            {
+               local CyUIModule modSrc <= conn.mod;
+               if(!_aModsDone.containsPointer(modSrc))
+               {
+                  modSrc.emit(_buf, _aModsDone);
+               }
+
+               if(bMultiConn)
+               {
+                  if(0 == connIdx)
+                     _buf.append("  set "+sVarInput+"\n");
+                  else
+                     _buf.append("  inc "+sVarInput+"\n");
+               }
+               else
+               {
+                  // Single input, set to source variable
+                  sVarInput <= modSrc.getFQInstanceId()+"."+conn.out.var_name;
+               }
+
+               connIdx++;
+            }
+
+            // Copy output var to input var
+            if(bIsMod)
+            {
+               if(null != sVarInput) // should not be null
+               {
+                  if(sVarInput & ".")
+                     _buf.append("  set "+getFQInstanceId()+"."+inp.var_name+" "+sVarInput+"\n");
+                  else
+                     _buf.append("  set "+getFQInstanceId()+"."+inp.var_name+" $"+sVarInput+"\n");
+               }
+            }
+         }
+         else
+         {
+            _buf.append("  #- - - -  skip input.id="+inp.id+"\n");
+         }
+      }
+
+      if(bIsMod)  // not 'out' ?
+      {
+         _buf.append("  calc "+getFQInstanceId()+"\n");
+      }
+      else
+      {
+         // Output module, return last input
+         if(null != sVarInput) // should not be null
+         {
+            if(sVarInput & ".")
+               _buf.append("  "+sVarInput+"\n");  // last input connection source var (mymod.outputid)
+            else
+               _buf.append("  $"+sVarInput+"\n");  // last input 'sum' var
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class CyUIPatch {
+   String id;   // optional. when not blank, postfix patch buffer and prefix module instance ids in .cy script
+   String *s_prefix;  // valid during emitPatchBuffer()
+   String *s_suffix;
+
+   CyUIModule *[] all_modules;
+   CyUIModule *output_module;
+
+   CyUIModule *[] *available_modules;  // module defs (via [ui:mod] sections)
+
+   CyUIModule *cur_module;
+   CyUIConnection *cur_connection;
+
+
+   public method initPatch(PointerArray _availableModules) {
+      // called when '[ui:patch]' line is found in .cy script
+      if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch::initPatch: ......................................";
+      available_modules <= _availableModules;
+   }
+
+   protected method findModuleByInstanceId(String _id) : CyUIModule {
+      CyUIModule *mod;
+      foreach mod in all_modules
+      {
+         if(mod.instance_id == _id)
+            return mod;
+      }
+      return null;
+   }
+
+   public method parseNextLine(String _line, int _indent, StringArray _words) {
+      // when parsing [ui:patch] section
+      if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch::parseNextLine: line=<<"+_line+">>";
+      boolean bLineDone = false;
+      local CyUIModule *mod;
+
+      if("=" == _words.get(1))
+      {
+         bLineDone = true;
+         if(_words.numElements >= 3)
+         {
+            if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: parse connect "+_words.get(2)+" to "+_words.get(0);
+            local StringArray aDst <= _words.get(0).splitChar('.');
+            local StringArray aSrc <= _words.get(2).splitChar('.');
+            cur_connection <= null;
+            if(aDst.numElements >= 1 && 2 == aSrc.numElements)
+            {
+               String sConnDstInstanceId <= aDst.get(0);
+               String sConnDstInputId    <= aDst.get(1);
+               String sConnSrcInstanceId <= aSrc.get(0);
+               String sConnSrcOutputId   <= aSrc.get(1);
+               CyUIModule modSrc <= findModuleByInstanceId(sConnSrcInstanceId);
+               if(null != modSrc)
+               {
+                  if(null == sConnSrcOutputId || sConnSrcOutputId.isBlank())
+                     sConnSrcOutputId <= "out";  // mymod.out (implicit)
+                  CyUIOutput outSrc <= modSrc.findOutputById(sConnSrcOutputId);
+                  if(null != outSrc)
+                  {
+                     CyUIModule modDst <= findModuleByInstanceId(sConnDstInstanceId);
+                     if(null != modDst)
+                     {
+                        if(null == sConnDstInputId || sConnDstInputId.isBlank())
+                           sConnDstInputId <= "in";  // out.in (implicit)
+                        CyUIInput inDst <= modDst.findInputById(sConnDstInputId);
+                        if(null != inDst)
+                        {
+                           cur_connection <= inDst.addConnection(modSrc, outSrc);
+                           if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch:   connection added  modDst.instance_id="+modDst.instance_id+" inDst.id="+inDst.id;
+                        }
+                        else
+                        {
+                           trace "[~~~] CyUIPatch: undeclared input modDst="+modDst.instance_id+" sConnDstInputId=\""+sConnDstInputId+"\"";
+                        }
+                     }
+                     else
+                     {
+                        trace "[~~~] CyUIPatch: undeclared modDst sConnDstInstanceId=\""+sConnSrcInstanceId+"\"";
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] CyUIPatch: undeclared output modSrc="+modSrc.instance_id+" sConnSrcOutputId=\""+sConnSrcOutputId+"\"";
+                  }
+               }
+               else
+               {
+                  trace "[~~~] CyUIPatch: undeclared modSrc sConnSrcInstanceId=\""+sConnSrcInstanceId+"\"";
+               }
+            }
+         }
+         else
+         {
+            trace "[~~~] CyUIPatch: invalid module connection (words="+_words+")";
+         }
+      }
+      else
+      {
+         switch(_words.get(0))
+         {
+            case "id":
+               bLineDone = true;
+               id = _words.get(1);
+               if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: set patch id=\""+id+"\"";
+               break;
+
+            case "mod":
+               bLineDone = true;
+               if(_words.numElements >= 3)  // mod <template_id> <instance_id>
+               {
+                  String sTemplateId <= _words.get(1);
+                  String sInstanceId <= _words.get(2);
+                  if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: instantiate sTemplateId=\""+sTemplateId+"\" instanceId=\""+sInstanceId+"\"";
+                  CyUIModule *modDef;
+                  foreach modDef in available_modules
+                  {
+                     if(modDef.template_id == sTemplateId)
+                     {
+                        mod <= new CyUIModule;
+                        mod.initModuleInstance(this, modDef, sInstanceId);
+                        if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch:   module templ="+sTemplateId+" instanceId="+sInstanceId+" initialized";
+                        all_modules.add(#(deref mod));
+                        cur_module <= mod;
+                        cur_connection <= null;
+                        break;
+                     }
+                  }
+               }
+               else
+               {
+                  trace "[~~~] CyUIPatch: invalid 'mod' line (words="+_words+")";
+               }
+               break;
+
+            case "out":
+               if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: create out module";
+               mod <= new CyUIModule;
+               mod.initOutModule(this);
+               all_modules.add(#(deref mod));
+               output_module <= mod;
+               cur_module <= mod;
+               cur_connection <= null;
+               break;
+
+         }
+      }
+
+      if(!bLineDone)
+      {
+         if(null != cur_connection)
+         {
+         }
+         else if(null != cur_module)
+         {
+            switch(_words.get(0))
+            {
+               case "pos":
+                  cur_module.px = _words.get(1);
+                  cur_module.py = _words.get(2);
+                  if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: set cur_module="+cur_module.instance_id+" px="+cur_module.px+" py="+cur_module.py;
+                  break;
+
+               case "arg":
+                  // arg <id <value>
+                  if(_words.numElements >= 3)
+                  {
+                     CyUIArg arg <= cur_module.findArgById(_words.get(1));
+                     if(null != arg)
+                     {
+                        arg.arg_value = _words.get(2);
+                        if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: mod="+cur_module.instance_id+" set arg.id="+arg.id+" arg_value=\'"+arg.arg_value+"\'";
+                     }
+                     else
+                     {
+                        trace "[~~~] CyUIPatch: undeclared arg id="+_words.get(1);
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] CyUIPatch: invalid arg line (words="+_words+")";
+                  }
+                  break;
+
+               case "param":
+                  // param <id <value>
+                  if(_words.numElements >= 3)
+                  {
+                     CyUIParam param <= cur_module.findParamById(_words.get(1));
+                     if(null != param)
+                     {
+                        param.param_value = _words.get(2);
+                        if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch: mod="+cur_module.instance_id+" set param.id="+param.id+" param_value="+param.param_value;
+                     }
+                     else
+                     {
+                        trace "[~~~] CyUIPatch: undeclared param id="+_words.get(1);
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] CyUIPatch: invalid param line (words="+_words+")";
+                  }
+                  break;
+            }
+         }
+      }
+
+   }
+
+   public method getPatchBufferName() : String {
+      if(id.isBlank())
+         return ".patch";
+      else
+         return ".patch_"+id;
+   }
+
+   public method emitPatchBuffer(String _buf) {
+      // after parsing [ui:patch] section (at end of buffer / popParseContext())
+      if(b_cycle_ui_patch_debug) trace "xxx CyUIPatch::emitPatchBuffer: ################################################# buf="+getPatchBufferName();
+      _buf.empty();
+      _buf.append("# auto-generated on "+Utils.GetCurrentDateTimeStringNumeric()+", do not edit!\n");
+      _buf.append("\n");
+
+      s_prefix <= id.isBlank() ? "" : (id+"_");
+      s_suffix <= id.isBlank() ? "" : ("_"+id);
+
+      // Emit module 'inc' statements
+      local StringArray aIncPathsDone;
+      CyUIModule *mod;
+      foreach mod in all_modules
+      {
+         String sIncPath <= mod.inc_path;
+         if(!sIncPath.isBlank())
+         {
+            if(!aIncPathsDone.containsObject(sIncPath))
+            {
+               _buf.append("inc "+sIncPath+"\n");
+               aIncPathsDone.add(sIncPath);
+            }
+         }
+      }
+      if(!aIncPathsDone.isEmpty())
+         _buf.append("\n");
+
+      // Emit module instantiations
+      int numInstances = 0;
+      foreach mod in all_modules
+      {
+         if(!mod.template_id.isBlank())  // not 'out' ?
+         {
+            _buf.append("~"+mod.template_id+" id="+s_prefix+mod.instance_id+"\n");
+            numInstances++;
+         }
+      }
+      if(numInstances > 0)
+         _buf.append("\n");
+
+      // Emit patch template
+      //  - iterate output modules
+      //     - recursively process inputs
+      //        - iterate input source output modules ..
+      //     - 
+      if(null != output_module)
+      {
+         _buf.append("def patch"+s_suffix+"\n");
+         // _buf.append("  sin\n");
+         local PointerArray aModsDone;
+         output_module.emit(_buf, aModsDone);
+      }
+
+   }
+
+}
