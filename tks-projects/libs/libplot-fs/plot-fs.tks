@@ -1,0 +1,413 @@
+// simple plot utility that renders a user defined fragment shader
+//
+// usage in emacs org-mode document:
+//
+//   #+begin_src tks :cmd-line "-ep lib:plot-fs" :results file link :file "myfs1.png"
+//     String sFS <= "vec2 t; float d = 0; float s = 0.6;"
+//        "t = vec2(p - s*vec2(sin(u_t*1.31), sin(u_t*1.7)));"
+//        "d += 1.0 - clamp(sqrt(t.x*t.x + t.y*t.y), 0.0, 1.0);"
+//
+//        "t = vec2(p - s*vec2(sin(u_t*-0.93), sin(u_t*1.9)));"
+//        "d -= 1.0 - clamp(sqrt(t.x*t.x + t.y*t.y), 0.0, 1.0);"
+//
+//        "t = vec2(p - s*vec2(sin(u_t*-0.43), sin(u_t*-1.1)));"
+//        "d += 1.0 - clamp(sqrt(t.x*t.x + t.y*t.y), 0.0, 1.0);"
+//
+//        "t = vec2(p - s*vec2(sin(u_t*0.43), sin(u_t*1.1)));"
+//        "d -= 1.0 - clamp(sqrt(t.x*t.x + t.y*t.y), 0.0, 1.0);"
+//                    
+//        "d = clamp(pow(d, 2.3), 0.0, 2.0);"
+//        "c = vec4(mix(vec3(0.95,0.97,0.984), vec3(0.3,0.43,0.8), d), 1);"
+//     ;
+//     PlotFS.SetT(911.11); PlotFS.SetSize(640, 240);
+//     if 0 PlotFS.Run(sFS); else PlotFS.SavePNG("myfs1.png", sFS);
+//   #+end_src
+//
+//
+
+// cmdline test:
+//   $ (make; cp plot-fs.tsl /usr/local/lib/tks/libraries) ; tks -ef "lib:plot-fs" test; ic test.png
+
+// predefined uniforms:
+//   "u_t"  time (fractional seconds)
+//   "u_s"  (internal) 1 / viewport size (used to calc p.x/p.y)
+//
+// predefined variables:
+//   "p"  vec2 normalized x/y position (-1..1, -1..1)
+//   "c"  vec4 output variable (must be written by shader. initial value = vec4(1,0,1,1))
+//  
+
+use tksdl;
+use tkopengl;
+
+module MPlotLibFS;
+
+use namespace ui;
+
+
+// <class.png>
+class PlotShader : Shader {
+   static String s_fs;  // user defined shader body
+   int u_t;
+   int u_s;
+   float t_start;
+
+   static String vs_src =
+      "\n"
+      "void main(void) { \n"
+      "  gl_Position = ftransform(); \n"
+      "}"
+      ;
+
+   static String fs_src =
+      "uniform float u_t; \n"
+      "uniform vec2  u_s; \n"
+      "$(PARAM_DECLS) \n"
+      "\n"
+      "out vec4 c; \n"
+      "\n"
+      "#define M_E        2.7182818284590452353602874713526625 \n"
+      "#define M_LOG2E    1.4426950408889634073599246810018922 \n"
+      "#define M_LOG10E   0.4342944819032518276511289189166051 \n"
+      "#define M_LN2      0.6931471805599453094172321214581766 \n"
+      "#define M_LN10     2.3025850929940456840179914546843642 \n"
+      "#define M_2PI      6.2831853071795864769252867665590058 \n"
+      "#define M_PI       3.1415926535897932384626433832795029 \n"
+      "#define M_PI_2     1.5707963267948966192313216916397514 \n"
+      "#define M_PI_4     0.7853981633974483096156608458198757 \n"
+      "#define M_1_PI     0.3183098861837906715377675267450287 \n"
+      "#define M_2_PI     0.6366197723675813430755350534900574 \n"
+      "#define M_2_SQRTP  1.1283791670955125738961589031215452 \n"
+      "#define M_SQRT1_2  0.7071067811865475244008443621048490 \n"
+      "#define M_SQRT2    1.4142135623730950488016887242096981 \n"
+      "void main(void) { \n"
+      "  vec2 p = vec2(gl_FragCoord.x * u_s.x, gl_FragCoord.y * u_s.y); \n"
+      "  p = (p * 2.0) - 1.0; \n"
+      "  c = vec4(1,0,1,1); \n"
+      "$(BODY) \n"
+      "}"
+      ;
+
+   // for macOS 13.2+:
+   static String vs_src_120 =
+      "\n"
+      "void main(void) { \n"
+      "  gl_Position = ftransform(); \n"
+      "}"
+      ;
+
+   static String fs_src_120 =
+      "uniform float u_t; \n"
+      "uniform vec2  u_s; \n"
+      "$(PARAM_DECLS) \n"
+      "\n"
+      "#define M_E        2.7182818284590452353602874713526625 \n"
+      "#define M_LOG2E    1.4426950408889634073599246810018922 \n"
+      "#define M_LOG10E   0.4342944819032518276511289189166051 \n"
+      "#define M_LN2      0.6931471805599453094172321214581766 \n"
+      "#define M_LN10     2.3025850929940456840179914546843642 \n"
+      "#define M_2PI      6.2831853071795864769252867665590058 \n"
+      "#define M_PI       3.1415926535897932384626433832795029 \n"
+      "#define M_PI_2     1.5707963267948966192313216916397514 \n"
+      "#define M_PI_4     0.7853981633974483096156608458198757 \n"
+      "#define M_1_PI     0.3183098861837906715377675267450287 \n"
+      "#define M_2_PI     0.6366197723675813430755350534900574 \n"
+      "#define M_2_SQRTP  1.1283791670955125738961589031215452 \n"
+      "#define M_SQRT1_2  0.7071067811865475244008443621048490 \n"
+      "#define M_SQRT2    1.4142135623730950488016887242096981 \n"
+      " \n"
+      "void main(void) { \n"
+      "  vec2 p = vec2(gl_FragCoord.x * u_s.x, gl_FragCoord.y * u_s.y); \n"
+      "  p = (p * 2.0) - 1.0; \n"
+      "  vec4 c = vec4(1,0,1,1); \n"
+      "$(BODY) \n"
+      "  gl_FragColor = c; \n"
+      "}"
+      ;
+
+   public virtual create() : boolean {
+      t_start = -1;
+
+      local String sParamUniforms;
+      PointerArray params <= PlotFS.params;
+      PlotFSParam *param;
+      foreach param in params
+         sParamUniforms.append("uniform float u_"+param.id+";\n");
+
+      local String sFS = UI.IsMacOS() ? fs_src_120 : fs_src;
+      sFS.replace("$(PARAM_DECLS)", sParamUniforms);
+      sFS.replace("$(BODY)", s_fs);
+      // trace "xxx sFS="+sFS;
+
+      if(UI.IsMacOS()
+         ? createFromStrings(vs_src_120, sFS)
+         : createFromStrings(vs_src,     sFS)
+         )
+      {
+         u_t = shader.getUniformLocation("u_t");
+         u_s = shader.getUniformLocation("u_s");
+         foreach param in params
+            param.u_location = shader.getUniformLocation("u_"+param.id);
+
+         if(Configuration.debugLevel >= 2)
+            trace "[dbg] ui::PlotShader::create: OK.";
+         return true;
+      }
+      else
+      {
+         trace "[!!!] ui::PlotShader::create: failed";
+      }
+      return false;
+   }
+
+   public virtual bind() {
+      Shader::bind();
+      float t = 0;
+      if(t_start < 0)
+         t_start = milliSeconds();
+      else
+         t = milliSeconds() - t_start;
+      t += PlotFS.t_off;
+      glUniform1f(u_t, t * 0.001f);
+
+      PointerArray params <= PlotFS.params;
+      PlotFSParam *param;
+      foreach param in params
+         glUniform1f(param.u_location, param.val);
+   }
+
+}
+
+
+// <class.png>
+class RenderOutput : Panel {
+   int numframesrendered;
+   PlotShader shader;
+
+   public virtual onOpen() {
+      shader.create();
+   }
+
+   public virtual onDraw() {
+      // trace "RootForm::onDraw";
+      shader.bind();
+      glUniform2f(shader.u_s, 1.0f / getSizeX(), 1.0f / getSizeY());
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), 0);
+      shader.unbind();
+      redraw();
+   }
+
+   public virtual onDrawPost() {
+      // Save screenshot of previous frame ?
+      if(++numframesrendered > 1 && PlotFS.screenshot_pathname >= ".png" && PlotFS.b_exit_after_screenshot)
+      {
+         exportPNG(PlotFS.screenshot_pathname);
+         UI.Stop();
+      }
+   }
+}
+
+// <class.png>
+class RootForm : Form {
+   RenderOutput *render_output;
+   SizeGroupX *sgx_lb;
+   FloatParam *[] a_fp;
+   Slider     *[] a_sl;
+
+   public virtual onInitForm() : boolean {
+      initForm();
+
+      render_output <= new RenderOutput;
+      render_output.initPanel();
+      render_output.setAlignment(Layout.EXPAND);
+      render_output.setRequiredSize2f(PlotFS.view_sx, PlotFS.view_sy);
+      addLayer(render_output, Layout.CENTER);
+
+      PointerArray params <= PlotFS.params;
+      if(params.numElements > 0)
+      {
+         Panel pParams <= Panel.New();
+         pParams.setAlignment(Layout.EXPANDX);
+         pParams.setPadding4f(1,1,1,1);
+
+         sgx_lb <= new SizeGroupX;
+         pParams.addSizeGroup("sgx_lb", sgx_lb);
+         
+         PlotFSParam *param;
+         foreach param in params
+         {
+            Panel pn <= Panel.New();
+            pn.setAlignment(Layout.EXPANDX);
+
+            FloatParam fp <= FloatParam.New();
+            fp.setDisplayType(FloatParam.DISPLAY_PERCENT);
+            fp.setStep(0.002);
+            fp.setMinMaxValues(0, 1);
+            fp.setValue(param.val);
+            fp.setPrecision(5);
+            fp.setAlignment(Layout.BASELINE);
+            pn.addLayer(deref fp, Layout.RIGHT);
+            a_fp.add(fp);
+
+            Slider sl <= Slider.New(0/*min*/, 1/*max*/, param.val, 0.002/*step*/);
+            // sl.setLookAndFeel(LookAndFeel.LIGHT);
+            // sl.setLayerStyle(LookAndFeel.STYLE_BEVEL);
+            sl.setEnableAdaptiveKnobSize(false);
+            sl.setResetValue(param.val);
+            sl.setLayoutWeightX(1.0);
+            sl.setAlignment(Layout.CENTERY | Layout.EXPANDX);
+            pn.addLayer(deref sl, Layout.CENTER);
+            a_sl.add(sl);
+
+            Label lb <= Label.New();
+            lb.setCaption(param.id);
+            lb.setTextPlacement(Layout.RIGHT);
+            lb.setAlignment(Layout.CENTERY);
+            lb.setSizeGroup(sgx_lb);
+            pn.addLayer(deref lb, Layout.LEFT);
+            
+            pParams.addLayer(deref pn, Layout.BOTTOM);
+         }           
+
+         addLayer(deref pParams, Layout.BOTTOM);
+      }
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(++render_output.numframesrendered > 1 && PlotFS.screenshot_pathname >= ".png")
+            {
+               if(PlotFS.b_screenshot_ctls)
+                  exportPNG(PlotFS.screenshot_pathname);
+               else
+                  render_output.exportPNG(PlotFS.screenshot_pathname);
+            }
+            PointerArray params <= PlotFS.params;
+            PlotFSParam *param;
+            foreach param in params
+               trace "PlotsFS.AddCtl(\""+param.id+"\", "+param.val+");";
+            UI.Stop();
+            return true;
+      }
+      return false;
+   }
+
+   protected method handleFloatParamChanged(int _idx) {
+      // trace "xxx handleFloatParamChanged("+_idx+")";
+      FloatParam fp <= a_fp.get(_idx);
+      Slider     sl <= a_sl.get(_idx);
+      float paramVal = fp.getValue();
+      sl.setValue(paramVal);
+      sl.redraw();
+      PlotFSParam p <= PlotFS.params.get(_idx);
+      p.val = paramVal;
+   }
+
+   protected method handleSliderChanged(int _idx) {
+      FloatParam fp <= a_fp.get(_idx);
+      Slider     sl <= a_sl.get(_idx);
+      float paramVal = sl.getValue();
+      fp.setValue(paramVal);
+      fp.redraw();
+      PlotFSParam p <= PlotFS.params.get(_idx);
+      p.val = paramVal;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      int idx;
+
+      // Try slider
+      idx = a_sl.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         handleSliderChanged(idx);
+         return true;
+      }
+
+      // Try floatparam / dial
+      idx = a_fp.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         handleFloatParamChanged(idx);
+         return true;
+      }
+
+      return Form::consumeAction(_action);
+   }
+}
+
+
+// <class.png>
+class PlotFSParam {
+   String id;
+   float val;
+   int u_location;
+}
+
+
+// <class.png>
+class PlotFS {
+   static int view_sx = 1200;
+   static int view_sy =  480;
+   static String screenshot_pathname;
+   static boolean b_screenshot_ctls;  // 1=include ctls in screenshot
+   static boolean b_exit_after_screenshot;
+   static float t_off;  // offsets u_t
+   static PlotFSParam *[] params;
+
+   static SetSize(int _w, int _h) {
+      view_sx = _w;
+      view_sy = _h;
+   }
+
+   static SetT(float _t) {
+      t_off = _t * 1000.0f;
+   }
+
+   static AddCtl(String _id, float _val) {
+      local PlotFSParam p;
+      p.id = _id;
+      p.val = _val;
+      params.add(#(deref p));
+   }
+
+   static SetPNGOutput(String _pngPathname, boolean _bCtls) {
+      screenshot_pathname = _pngPathname;
+      b_screenshot_ctls = _bCtls;
+   }
+
+   static Run(String _sFS) {
+
+      UI.ConfigureHiDPI();
+      UI.Initialize(Arguments);
+      UI.SetLookAndFeel(LookAndFeel.DARK);
+      UI.SetLocalToRawKeyTableByName("auto");
+      // UI.SetLocalToRawKeyTableByName("bg");
+      // UI.SetEnableForceUSUnicode(true);
+
+      RootForm root_form;
+      PlotShader.s_fs = _sFS;
+      UI.SetRootForm(root_form);
+      UI.OpenWindow(root_form.getMinimumSizeX(), root_form.getMinimumSizeY());
+      UI.Run();
+
+      trace root_form.render_output.numframesrendered+" frames rendered.";
+   }
+
+   static SavePNG(String _pngPathname, String _sFS) {
+      screenshot_pathname = _pngPathname;
+      b_exit_after_screenshot = true;
+      Run(_sFS);
+   }
+}
+
+//Plot.Run(sinsw, -1, 1);
+
+// trace "hello from plot.tks";
