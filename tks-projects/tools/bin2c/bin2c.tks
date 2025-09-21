@@ -1,0 +1,270 @@
+//
+//    file: bin2c.tks
+// created: 23Nov2021 <bsp>
+// changed: 09May2022, 10May2022, 20Apr2024
+//
+
+int NUM_BYTES_PER_LINE = 16;
+
+boolean bASCII = false;
+int skipOffset = 0;
+boolean bAmigaChip = false;  // 1=place in chip RAM (__chip (VBCC) + don't declare as "const" (VBCC bug ?))
+
+class Utils {
+   static GetCurrentDateTimeStringNumeric() : String {
+      Time t;
+      t.now();
+      Integer io_mon  = t.month + 1;
+      Integer io_mday = t.monthday;
+      Integer io_h    = t.hour;
+      Integer io_m    = t.min;
+      Integer io_s    = t.sec;
+      return t.year + io_mon.printf("%02d")+io_mday.printf("%02d")+"-"+io_h.printf("%02i")+io_m.printf("%02i")+io_s.printf("%02i");
+   }
+
+   static SplitPathname(String name, path, file) {
+      // Split last used file name into directory/file components
+
+      int idx = name.lastIndexOf("/");
+      int idxDos = name.lastIndexOf("\\");
+      if(idxDos > idx)
+      {
+         idx = idxDos;
+      }
+
+      if(-1 != idx)
+      {
+         name.substring(0, idx) => path;
+         name.substring(idx+1, -1) => file;
+      }
+      else
+      {
+         path = null;
+         file = name;
+      }
+   }
+
+   static BaseName(String _pathName) : String {
+      // "some/path/myfile.ext" => "myfile"
+      local String path;
+      local String file;
+      SplitPathname(_pathName, path, file);
+      int idx = file.lastIndexOf(".");  // (todo) lastIndexOfChar()
+      if(-1 != idx)
+      {
+         return file.substring(0, idx);
+      }
+      // no suffix ??
+      return deref file;
+   }
+
+   static ConvertToId(String _name) : String {
+      local String r = _name;
+      r.replaceChar(' ',  '_');
+      r.replaceChar('-',  '_');
+      r.replaceChar('+',  '_');
+      r.replaceChar(':',  '_');
+      r.replaceChar('/',  '_');
+      r.replaceChar('\\', '_');
+      r.replaceChar('$',  '_');
+      r.replaceChar('&',  '_');
+      r.replaceChar('§',  '_');
+      r.replaceChar('%',  '_');
+      r.replaceChar('\'', '_');
+      r.replaceChar('`',  '_');
+      r.replaceChar('<',  '_');
+      r.replaceChar('>',  '_');
+      r.replaceChar('*',  '_');
+      r.replaceChar('|',  '_');
+      r.replaceChar('!',  '_');
+      r.replaceChar('?',  '_');
+      r.replaceChar('^',  '_');
+      r.replaceChar('=',  '_');
+      r.replaceChar('~',  '_');
+      r.replaceChar('#',  '_');
+      r.replaceChar(';',  '_');
+      return deref r;
+   }
+
+   public static GetPaddedString(String _s, int _numChars) : String {
+      int l = _s.numChars;
+      local String s = _s;
+      loop(_numChars - l)
+         s.append(" ");
+      return deref s;
+   }
+}
+
+function Usage() {
+   trace
+      "tks bin2c <inputfile> [-id <c_identifier>] [-o|--output-file <outputfile>] [-a|--ascii] [-s|--skip <offset>] [-ac|--amiga-chip]\n"
+      "\n"
+      "  e.g.  $ tks bin2c some_file.dat\n"
+      "        $ tks bin2c some_file.dat -id some_file -o some_file.c\n"
+      "\n"
+      ;
+   exit(10);
+}
+
+if(Arguments.numElements >= 1)
+{
+   // Parse args
+   String inPathName = Arguments[0];
+   String cId;
+   String outPathName;
+   int argIdx = 1;
+   while(argIdx < Arguments.numElements)
+   {
+      switch(Arguments[argIdx])
+      {
+         default:
+            Usage();
+            break;
+
+         case "-a":
+         case "--ascii":
+            bASCII = true;
+            argIdx++;
+            break;
+
+         case "-ac":
+         case "--amiga-chip":
+            bAmigaChip = true;
+            argIdx++;
+            break;
+
+         case "-id":
+            if(++argIdx < Arguments.numElements)
+               cId = Arguments[argIdx++];
+            else
+               Usage();
+            break;
+
+         case "-o":
+         case "--output-file":
+            if(++argIdx < Arguments.numElements)
+               outPathName = Arguments[argIdx++];
+            else
+               Usage();
+            break;
+
+         case "-s":
+         case "--skip":
+            if(++argIdx < Arguments.numElements)
+               skipOffset = mathMaxi(0, int(Arguments[argIdx++]));
+            else
+               Usage();
+            break;
+      }
+   }
+
+   File f;
+   if(f.openLocal(inPathName, IOS_IN))
+   {
+      int fSize = f.size;
+
+      if(skipOffset < fSize)
+      {
+         f.offset = skipOffset;
+         fSize = fSize - skipOffset;
+
+         String buf; buf.alloc(fSize * 6);
+
+         buf.append("// ---- auto-generated on "+Utils.GetCurrentDateTimeStringNumeric()+" by bin2c.tks\n");
+         buf.append("//        input file: \""+inPathName+"\"\n");
+
+         if(cId.isBlank())
+            cId = Utils.ConvertToId(Utils.BaseName(inPathName));
+
+         // Forward declaration
+         buf.append("\n#ifdef BIN2C_DECL\n");
+         if(bAmigaChip)
+            buf.append("extern /*const*/ __chip unsigned char mem_base_"+cId+"["+fSize+"];\n");
+         else
+            buf.append("extern const unsigned char mem_base_"+cId+"["+fSize+"];\n");
+         buf.append("extern const unsigned int  mem_size_"+cId+";\n");
+         buf.append("#else\n");
+
+         buf.append("const unsigned int  mem_size_"+cId+" = "+fSize+";\n");
+         if(bAmigaChip)
+            buf.append("/*const*/ __chip unsigned char mem_base_"+cId+"["+fSize+"] = {");
+         else
+            buf.append("const unsigned char mem_base_"+cId+"["+fSize+"] = {");
+
+         int k = 0;
+         String valLineBuf;
+         String asciiLineBuf; asciiLineBuf.alloc(80);
+         int lineIdx = 0;
+         while(fSize > 0)
+         {
+            UnsignedByte c = f.u8;
+            if(0 == (k % NUM_BYTES_PER_LINE))
+            {
+               if(lineIdx > 0)
+               {
+                  buf.append(valLineBuf);
+                  if(bASCII)
+                     buf.append("  /* "+asciiLineBuf+" */");
+               }
+               buf.append("\n   ");
+               asciiLineBuf.empty();
+               valLineBuf.empty();
+               lineIdx = 0;
+            }
+            if(k > 0)
+               valLineBuf.append(", ");
+            else if(0 == k)
+               valLineBuf.append("  ");
+            valLineBuf.append(c.printf("%3u"));
+            valLineBuf.append("u");
+            if(bASCII)
+            {
+               if(32 <= c < 128)
+                  asciiLineBuf[lineIdx] = int(c);
+               else
+                  asciiLineBuf[lineIdx] = '.';
+            }
+            lineIdx++;
+            k++;
+            fSize--;
+         }
+
+         if(lineIdx > 0)
+         {
+            buf.append(Utils.GetPaddedString(valLineBuf, (NUM_BYTES_PER_LINE*6)));
+            if(bASCII)
+               buf.append("  /* "+asciiLineBuf+" */");
+         }
+
+         f.close();
+
+         buf.append("\n};\n");
+         buf.append("\n#endif /* BIN2C_DECL */\n");
+
+         if( (outPathName >= ".c") || (outPathName >= ".cpp") || (outPathName >= ".h") )
+         {
+            buf.saveLocal(outPathName);
+            trace "[...] bin2c: wrote \""+outPathName+"\"";
+         }
+         else
+            trace buf;
+
+         // Succeeded
+         exit(0);
+      }
+      else
+      {
+         trace "[---] invalid skip offset ("+skipOffset+" >= "+fSize+")";
+      exit(10);
+      }
+   }
+   else
+   {
+      trace "[---] failed to open input bin file \""+inPathName+"\"";
+      exit(10);
+   }
+}
+else
+{
+   Usage();
+}
