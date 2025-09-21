@@ -1,0 +1,770 @@
+
+module Player;
+
+namespace jumpy;
+
+// 12Aug2009, 13Aug2009, 11Oct2009, 12Oct2009, 19Oct2009, 13Mar2010, 15Mar2010, 
+// 18Mar2010, 31Mar2010, 02Apr2010, 03Apr2010, 04Apr2010
+
+class Player : Character {
+
+   int key_dir_left;
+   int key_dir_right;
+   int key_dir_up;
+
+   define int HOOK_INACTIVE = 0;
+   define int HOOK_SHOT     = 1; // hook shot
+   define int HOOK_HOOKED   = 2; // hook hit entity
+   
+   Hook      hook;
+   int       hook_state;
+   int       hook_dir_x;
+   int       hook_dir_y;
+   float     hook_len;
+   float     hook_end_position_x;
+   float     hook_end_position_y;
+   float     hook_timeout;
+   define float HOOK_TIMEOUT = 20;
+   define float HOOK_FLOORCOLL_TIMEOUT = 7;
+
+   boolean b_hook_key;
+   boolean b_reduce_hook_len;
+
+
+   public virtual init() {
+      Character::init();
+
+      size_x = NORMAL_SIZE_X;
+      size_y = NORMAL_SIZE_Y;
+   }
+
+   public virtual resetCharacter() {
+      Character::resetCharacter();
+
+      suggested_speed_x = 0;
+      suggested_speed_y = 0;
+
+      key_dir_left  = 0;
+      key_dir_right = 0;
+      key_dir_up = 0;
+
+      hook_state = HOOK_INACTIVE;
+      hook_dir_x = 0;
+      hook_dir_y = 0;
+      hook_len   = 0;
+
+      b_hook_key = false;
+
+      b_reduce_hook_len = false;
+
+   }
+
+   public virtual calc(float dt) {
+      Character::calc(dt);
+
+      calcHook(dt);
+   }
+
+   public virtual draw(float dt) {
+      
+      drawHook();
+
+      Character::draw(dt);
+
+      // Debug
+      if(b_edit_mode)
+      {
+         DebugText.Draw(10, 10, "c="+state+" p=("+position_x+";"+position_y+")"+"  s=("+speed_x+";"+speed_y+")", #ff10f010, #ff008000);
+      }
+
+   }
+   
+   public virtual handleInsideCollision(Entity _o) {
+      // Trapped inside a box, can happen if a door is activated while the player is inside of it
+      if((crouch_crush_timeout > 0) && (gravity < 0))
+      {
+         if(!b_alwayscrouch)
+         {
+            b_crouch = false;
+            position_y -= NORMAL_SIZE_Y;
+            size_y = NORMAL_SIZE_Y;
+         }
+      }
+      else
+      {
+         ////trace "xxx crush 2";
+         g_ingame.showMessage("you have been crushed", "you failed to complete this room. please try again !", 120, Ingame.ACTION_RESETMAP);
+      }
+   }
+
+   public virtual handleCollectEntity(Entity e) : boolean {
+      ////trace "xxx handleCollectEntity e="+#(e);
+      if(e.handleCollect(carry_entity))
+      {
+         carry_entity <= e;
+         return true;
+      }
+      return false;
+   }
+
+   protected method checkBaddiesCollision() : int {
+      Character c;
+      int lcm = last_coll_mask; // last wall/entity collision mask
+      int d = last_coll_mask;
+      foreach c in g_level.baddies compile {
+         if(c.checkCollision(this))
+         {
+            int n = c.hitBy(this); // returns DIR_xxx
+            if(c.b_nocollision)
+            {
+               n = 0;
+            }
+            ////trace "xxx checkBaddiesCollision: c="+#(c)+" n="+n;
+            d |= n;
+            if(d)
+            {
+               // Colliding left and right ?
+               if( ((lcm&DIR_LEFT) && (d&DIR_RIGHT)) ||
+                   ((lcm&DIR_RIGHT) && (d&DIR_LEFT)) )
+               {
+                  ////trace "xxx coll LR";
+                  if( ( (c.speed_x < 0) && (c.position_x > position_x) ) ||
+                      ( (c.speed_x > 0) && (c.position_x < position_x) ) 
+                      )
+                  {
+                     ////trace "xxx crush 3";
+                     g_ingame.showMessage("you have been crushed", "you failed to complete this room. please try again !", 120, Ingame.ACTION_RESETMAP);
+                  }
+               }
+               ////trace "xxx baddie collision last_coll_mask="+lcm+" d="+d;
+               lcm = d;
+            }
+            ////trace "xxx hitBy returned "+c;
+         }
+      }
+   }
+
+   public virtual checkPlayerCollisions() {
+      checkItemCollision();
+      checkBaddiesCollision();
+   }
+
+   public method useItem() {
+      ////trace "xxx use item: e="+#(carry_entity)+" player position_y="+position_y+" state="+state;
+      ////g_ingame.b_freeze = true;//xxx debug
+      carry_entity.handleDrop();
+      carry_entity <= null;
+      standon_entity <= null;
+      standon_entity_timeout = 0;
+      last_floor_coll_entity <= null;
+      last_floor_coll_timeout = 0;
+      position_y += 0.5; // xxx hack to make player not collect the item beneath (if any)
+      jump();
+   }
+
+   protected method checkHookEntityCollision(PointerArray _entities) : boolean {
+      Entity *e;
+      Float cx, cy;
+      float hspx = position_x + size_x*0.5;
+      float hspy = position_y + size_y*0.75;
+      foreach e in _entities
+      {
+         if(@(e) != @(carry_entity))
+         {
+            if(e.b_visible)
+            {
+               if(e.checkRayCollision(hspx, hspy, hook_end_position_x, hook_end_position_y, cx, cy))
+               {
+                  hook_state = HOOK_HOOKED;
+                  float l = sqrt((float(cx)-hspx)*(float(cx)-hspx) + (float(cy)-hspy)*(float(cy)-hspy));
+                  if(l < Hook.MAX_LEN*0.5)
+                  {
+                     hook_len = 0.8+0.2*(l/(Hook.MAX_LEN*0.5));
+                  }
+                  ////trace "xxx hook_len="+hook_len+" MAX_HOOK_LEN="+Hook.MAX_LEN+" e="+#(e);
+                  hook.init(
+                     cx,
+                     cy,
+                     hspx,
+                     hspy,
+                     hook_len,
+                     e
+                            );
+                  hook_timeout = HOOK_FLOORCOLL_TIMEOUT;
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   protected method calcHook(float dt) compile {
+      switch(hook_state)
+      {
+         default:
+         case HOOK_INACTIVE:
+            break;
+
+         case HOOK_SHOT:
+            hook_len += 6.3 * dt;
+            if(hook_len >= Hook.MAX_LEN)
+            {
+               hook_len = Hook.MAX_LEN;
+               hook_timeout -= dt;
+               if(hook_timeout <= 0)
+               {
+                  hook_state = HOOK_INACTIVE;
+               }
+            }
+            if(hook_timeout > 0)
+            {
+               hook_end_position_x = position_x + size_x*0.50 + hook_dir_x * hook_len * 0.5;
+               hook_end_position_y = position_y + size_y*0.75 + hook_dir_y * hook_len;
+               if(!checkHookEntityCollision(g_level.entities))
+               {
+                  if(!checkHookEntityCollision(g_level.items))
+                  {
+                     checkHookEntityCollision(g_level.baddies);
+                  }
+               }
+            }
+            break;
+
+         case HOOK_HOOKED:
+            if(b_reduce_hook_len)
+            {
+               ////trace "xxx b_reduce_hook_len";
+               hook_len -= 1.5 * dt;
+               if(hook_len < 0.1)
+               {
+                  hook_len = 0.1;
+               }
+               hook.scaleLength(hook_len);
+            }
+            hook.calc(dt);
+
+            if(hook_timeout > 0)
+            {
+               hook_timeout -= dt;
+               if(hook_timeout <= 0)
+               {
+                  hook_timeout = 0;
+                  if(last_floor_coll_timeout > 0)
+                  {
+                     if(wallcoll_timeout <= 0)
+                     {
+                        handleHookReleased();
+                     }
+                  }
+               }
+            }
+
+            break;
+      }
+   }
+
+   protected method drawHook() {
+      switch(hook_state)
+      {
+         default:
+         case HOOK_INACTIVE:
+            break;
+
+         case HOOK_SHOT:
+            ////trace "xxx hook_len="+hook_len+" dir="+hook_dir_x+";"+hook_dir_y;
+            glLineWidth(2.0);
+            float rel = hook_timeout / HOOK_TIMEOUT;
+            int c32 = argb(255, 32+223*rel, 32+223*rel, 32+223*rel);
+            zglColorARGB(c32);
+            glBegin(GL_LINES);
+            glVertex2f(position_x + size_x*0.5, 
+                       position_y + size_y*0.75
+                       );
+            glVertex2f(hook_end_position_x,
+                       hook_end_position_y
+                       );
+            glEnd();
+            glLineWidth(1.0);
+            break;
+
+         case HOOK_HOOKED:
+            hook.draw();
+            break;
+      }
+   }
+
+   public method handleHookPressed(boolean _bAllowX) {
+      if(HOOK_INACTIVE == hook_state)
+      {
+         b_hook_key = true; // wait for direction key
+         ////trace "xxx hook_key_pressed: dir_x="+dir_x+" dir_y="+dir_y+" key_dir_left="+key_dir_left+" key_dir_right="+key_dir_right;
+         if(key_dir_right && _bAllowX)
+         {
+            hook_dir_x = 1;
+         }
+         else if(key_dir_left && _bAllowX)
+         {
+            hook_dir_x = -1;
+         }
+         else
+         {
+            hook_dir_x  = 0;//(speed_x > 0) ? 1 : -1;
+         }
+
+      }
+   }
+
+   public method handleHookDirKey() {
+      b_hook_key = false;
+      hook_state  = HOOK_SHOT;
+      hook_dir_y  = 1;
+      hook_len    = 0;
+   }
+
+   public method handleHookReleased() {
+      if(b_hook_key)
+      {
+         handleHookDirKey();
+         b_reduce_hook_len = (1 == key_dir_up);
+         b_hook_key = false;
+         hook_timeout = HOOK_TIMEOUT;
+      }
+      else
+      {
+         switch(hook_state)
+         {
+            case HOOK_SHOT:
+               hook_state = HOOK_INACTIVE;
+               break;
+
+            case HOOK_HOOKED:
+               hook_state = HOOK_INACTIVE;
+               b_allow_flying = true;
+               HookElement e <= hook.elements[hook.elements.numElements-1];
+               float dy = e.y - e.last_y;
+               speed_y += 1.2;
+               if(dy > 0)
+               {
+                  speed_y += dy*4*4 * 0.5 * (0.25/g_dt);
+               }
+               else
+               {
+                  if(speed_y < 0)
+                  {
+                     speed_y = 0;
+                  }
+               }
+
+               dir_y = 0; 
+
+               break;
+         }
+      }
+   }
+
+   public method handleUpPressed() {
+
+      key_dir_up = true;
+
+      if(HOOK_INACTIVE != hook_state)
+      {
+         ////trace "xxx handleUpPressed: b_hook_key="+b_hook_key;
+         if(b_hook_key)
+         {
+            dir_y = 1;
+         }
+         else
+         {
+            b_reduce_hook_len = true;
+         }
+         return;
+      }
+
+      dir_y = 1;
+
+
+      ////trace "xxx #################### jump state="+state+" standon_entity="+#(standon_entity);
+      if((state == ST_NORMAL) || (state == ST_STARTING_TO_FALL) || (state == ST_NORMAL_LANDING)) || (null != standon_entity)
+      {
+         ///trace "[dbg] jump standing on the floor";
+         position_y += 0.1; // xxx hack to make player not collect the item beneath (if any)
+         jump();
+         standon_entity <= null;
+         standon_entity_timeout = 0;
+         last_floor_coll_entity <= null;
+         last_floor_coll_timeout = 0;
+      }
+      else
+      {
+         rejump_timeout = 15.0;
+         //trace "xxx trywalljump wallcoll_timeout="+wallcoll_timeout;
+         if(wallcoll_timeout > 0)
+         {
+            //if(dir_x != 0)
+            if(1)
+            {
+               walljump();
+               return true;
+            }
+         }
+
+         if(null != carry_entity)
+         {
+            useItem();
+         }
+         else if(b_nofloat)
+         {
+            dir_y = 0;
+         }
+      }
+
+   }
+
+   public method handleUpReleased() {
+      b_reduce_hook_len = false;
+
+      key_dir_up = false;
+
+      if(dir_y == 1)
+      {
+         dir_y = 0;
+      }
+      if(smalljump_timeout > 0)
+      {
+         beginState(ST_FALLING);
+         if(wallcoll_timeout < 0.001)
+         {
+            if(smalljump_timeout > SMALLJUMP_TIMEOUT_NOFLY)
+            {
+               b_allow_flying = false;
+            }
+         }
+      }
+      if(b_allow_flying == maybe)
+      {
+         //trace "xxx set b_allow_flying=true";
+         b_allow_flying = true;
+      }
+   }
+
+   public method handleDownPressed() {
+      if(!b_alwayscrouch)
+      {
+         setEnableCrouch(true);
+      }
+      if((speed_y < 0) && (ST_FALLING == state) && (dir_x==0))
+      {
+         b_stomping = true;
+         stomp_timeout = 0;
+      }
+      if(gravity < 0)
+      {
+         b_stomping = true;
+         stomp_timeout = gravity_stompoffset;
+      }
+   }
+
+   public method handleDownReleased() {
+      if(!b_alwayscrouch)
+      {
+         setEnableCrouch(false);
+      }
+      b_stomping = false;
+      stomp_timeout = 0.0;
+   }
+
+   public method handleLeftPressed() {
+      key_dir_left = -1;
+      dir_x = -1;
+      walljump_last_dirx = -1;
+   }
+
+   public method handleLeftReleased() {
+      key_dir_left = 0;
+      if(dir_x == -1)
+      {
+         dir_x = key_dir_right;
+      }
+      walljump_last_dirx = 0;
+   }
+
+   public method handleRightPressed() {
+      key_dir_right = 1;
+      dir_x = 1;
+      walljump_last_dirx = 1;
+   }
+
+   public method handleRightReleased() {
+      key_dir_right = 0;
+      if(dir_x == 1)
+      {
+         dir_x = key_dir_left;
+      }
+      walljump_last_dirx = 0;
+   }
+
+   public method onJoyButton(int button, int pressed) {
+      ////trace "xxx button="+button+" pressed="+pressed;
+
+      // special PSX pad /\ O X [] ==> UP, RIGHT, DOWN, LEFT mapping
+      if(b_psx_pad)
+      {
+         if(pressed)
+         {
+            if(g_ingame.handleAnyKeyPress(null)) // waiting for any key to continue ?
+            {
+               return;
+            }
+
+            switch(button)
+            {
+               case 0:
+                  handleUpPressed();
+                  break;
+
+               case 1:
+                  handleRightPressed();
+                  break;
+
+               case 2:
+                  handleDownPressed();
+                  break;
+
+               case 3:
+                  handleLeftPressed();
+                  break;
+            }
+         }
+         else
+         {
+            switch(button)
+            {
+               case 0:
+                  handleUpReleased();
+                  break;
+
+               case 1:
+                  handleRightReleased();
+                  break;
+
+               case 2:
+                  handleDownReleased();
+                  break;
+
+               case 3:
+                  handleLeftReleased();
+                  break;
+            }
+         }
+
+         return;
+      }
+
+      if(4 == button)
+      {
+         if(pressed)
+         {
+            handleLeftPressed();
+         }
+         else
+         {
+            handleLeftReleased();
+         }
+         return;
+      }
+      else if(5 == button)
+      {
+         if(pressed)
+         {
+            handleRightPressed();
+         }
+         else
+         {
+            handleRightReleased();
+         }
+         return;
+      }
+
+      if(pressed)
+      {
+         if(!g_ingame.handleAnyKeyPress(null)) // waiting for any key to continue ?
+         {
+            handleUpPressed();
+         }
+      }
+      else
+      {
+         handleUpReleased();
+      }
+   }
+
+   public method onJoyAxisMotion(int axis, val) {
+      if(0 == axis)
+      {
+         // Horizontal
+         if(val < -(32767/2))
+         {
+            handleLeftPressed();
+         }
+         else if(val > (32767/2))
+         {
+            handleRightPressed();
+         }
+         else if( -100 < val < 100)
+         {
+            handleLeftReleased();
+            handleRightReleased();
+         }
+      }
+      else if(1 == axis)
+      {
+         // Vertical
+         if(val > (32767/2))
+         {
+            handleDownPressed();
+         }
+         else if(-100 < val < 100)
+         {
+            handleDownReleased();
+         }
+      }
+      ////trace "xxx axis="+axis+" val="+val;
+   }
+
+   public method onKeyboard(Key k) : boolean {
+      //trace "xxx player::onKeyboard: k="+k.name+" code="+k.code;
+
+      boolean bRet = false;
+
+      switch(k.pressed)
+      {
+         case VKEY_LEFT:
+            handleLeftPressed();
+            bRet = true;
+            break;
+
+         case VKEY_RIGHT:
+            handleRightPressed();
+            bRet = true;
+            break;
+
+         case VKEY_UP:
+            handleUpPressed();
+            bRet = true;
+            break;
+
+         case VKEY_PAGEDOWN:
+            // pandora 'X' button
+            if(!b_edit_mode)
+            {
+               if(gravity < 0)
+               {
+                  handleDownPressed();
+               }
+               else
+               {
+                  handleUpPressed();
+               }
+               bRet = true;
+            }
+            break;
+
+         case VKEY_DOWN:
+         case 's':
+         case 'x':
+         case VKEY_PAGEUP:
+            // pandora 'Y' button
+            handleDownPressed();
+            bRet = true;
+            break;
+
+         case 'd':
+         case 'c':
+         case VKEY_HOME: // pandora 'A' button
+            if(b_hook_unlocked || b_edit_mode)
+            {
+               handleHookPressed(true);
+            }
+            bRet = true;
+            break;
+
+         case 'a':
+         case 'y':
+            if(b_hook_unlocked || b_edit_mode)
+            {
+               handleHookPressed(false);
+            }
+            bRet = true;
+            break;
+      }
+
+      switch(k.released)
+      {
+         case VKEY_LEFT:
+            handleLeftReleased();
+            bRet = true;
+            break;
+
+         case VKEY_RIGHT:
+            handleRightReleased();
+            bRet = true;
+            break;
+
+         case VKEY_UP:
+            handleUpReleased();
+            bRet = true;
+            break;
+
+         case VKEY_PAGEDOWN:
+            // pandora 'X' button
+            if(!b_edit_mode)
+            {
+               handleHookReleased();
+               if(gravity < 0)
+               {
+                  handleDownReleased();
+               }
+               else
+               {
+                  handleUpReleased();
+               }
+               bRet = true;
+            }
+            break;
+
+         case VKEY_DOWN:
+         case 's':
+         case 'x':
+         case VKEY_PAGEUP:
+            // pandora 'Y' button
+            handleDownReleased();
+            bRet = true;
+            break;
+
+         case 'd':
+         case 'a':
+         case 'y':
+         case 'c':
+         case VKEY_HOME: // pandora 'A' button
+            handleHookReleased();
+            bRet = true;
+            break;
+      }
+
+      if(bRet && k.pressed)
+      {
+         if(!g_ingame.b_level_timer_running)
+         {
+            trace "[dbg] start level timer";
+         }
+         g_ingame.b_level_timer_running = true;
+         g_ingame.b_freeze = false;
+      }
+
+      return bRet;
+   }
+}
+
+g_player.reset_x = 50;
+g_player.reset_y = 20;

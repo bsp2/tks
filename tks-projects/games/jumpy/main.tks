@@ -1,0 +1,157 @@
+
+use tksdl;
+use tkopengl;
+
+module Main;
+
+int numframesrendered=0;
+
+use namespace jumpy;
+
+function onOpen() {
+   DebugText.OnOpen();
+
+   tex_spike.flags = TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR;
+   tex_spike.loadImage("spike.png", 0,0,0);
+
+   tex_up.flags = TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR;
+   tex_up.loadImage("up.png", 0,0,0);
+
+   tex_exit.flags = TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR;
+   tex_exit.loadImage("exit.png", 0,0,0);
+}
+
+
+function onDraw() {
+   if( !(++numframesrendered&511) )
+      trace "FPS.real="+FPS.real;
+
+   float dt=FPS.precision;
+
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT);///|GL_DEPTH_BUFFER_BIT);
+
+   if(b_editing)
+   {
+      g_editor.draw(dt);
+   }
+   else
+   {
+      g_ingame.draw(dt);
+   }
+
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   if(b_editing)
+   {
+      //print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+      g_editor.onMouse(_x, _y, _cbs, _nbs);
+   }
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.code)
+   {
+
+      default:
+         if(b_editing)
+         {
+            g_editor.onKeyboard(_k);
+         }
+         else
+         {
+            if(b_edit_mode)
+            {
+               if('v' == _k.pressed)
+               {
+                  b_vsync = ! b_vsync;
+                  Viewport.swapInterval(b_vsync);
+                  trace "[dbg] b_vsync is now "+b_vsync;
+               }
+            }
+            g_ingame.onKeyboard(_k);
+         }
+         break;
+   }
+
+}
+
+function onJoyButton(int dev, int button, int pressed) {
+   g_player.onJoyButton(button, pressed);
+}
+
+function onJoyAxisMotion(int dev, int axis, int val) {
+   //trace "[...] onJoyAxisMotion: dev="+dev+" axis="+axis+" val="+val;
+   g_player.onJoyAxisMotion(axis, val);
+}
+
+function PrintJoystickInfo() {
+   Joystick *j;
+   int i=0;
+   trace "#joysticks="+SDL.numJoysticks;
+   loop(SDL.numJoysticks)
+   {
+      j <= SDL.getJoystick(i);
+      trace "joystick["+i+++"]:";
+      trace "\tname="+j.name;
+      trace "\tnumAxes="+j.numAxes;
+      trace "\tnumBalls="+j.numBalls;
+      trace "\tnumButtons="+j.numButtons;
+      trace "\tnumHats="+j.numHats;
+   }
+}
+
+function main() {
+   use callbacks;
+
+   Viewport.setScreenResolution(800, 600, 32);
+   Viewport.multisampleBuffers = 1;
+   Viewport.multisampleSamples = 4;
+   Viewport.openWindow(800, 500); // should match Level aspect ratio (TODO: add borders to preserve AR if size differs)
+   Viewport.swapInterval(b_vsync);
+   FPS.tickInterval = 1000.0/60;
+   //FPS.limit=60;
+
+   g_ingame.init();
+   g_level.init();
+   g_player.init();
+
+   String *s;
+   int si = 0;
+   loop(Arguments.numElements)
+   {
+      s <= Arguments.get(si);
+      switch(s)
+      {
+         case "-editor":
+            b_edit_mode = true;
+            b_allow_toggle_edit_mode = true;
+            trace "[dbg] editor mode enabled.";
+            break;
+
+         case "-psx":
+            b_psx_pad = true;
+            trace "[dbg] experimental PSX pad button mapping enabled.";
+            break;
+
+         case "-timescale":
+            g_ingame.default_timescale = mathClampf(Arguments.get(si+1), 0.1, 1);
+            b_customtimescale = true;
+            break;
+      }
+
+      si++;
+   }
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(0,0);
+
+   g_level.map_cycleindex = -1;
+   g_ingame.queueAction(Ingame.ACTION_SHOWTITLE);
+
+   PrintJoystickInfo();
+
+   trace "[dbg] entering eventloop";
+   SDL.eventLoop();
+}

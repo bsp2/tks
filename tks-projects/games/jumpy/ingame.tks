@@ -1,0 +1,984 @@
+
+// 11Oct2009, 19Oct2009, 12Mar2009, 13Mar2009, 20Mar2010, 22Mar2010, 23Mar2010, 31Mar2010, 05Apr2010, 06Apr2010
+// 13Apr2010
+
+module MIngame;
+
+namespace jumpy;
+
+boolean xxx_scrolllock = false; // to debug camera during room rotation
+boolean xxx_scrolllock2 = false;
+
+Selector speed_selector;
+speed_selector.init(["normal", "medium", "slow", "slower", "get off my lawn"], Ingame.ACTION_SPEEDSELECTED, Ingame.ACTION_SHOWTITLE, true);
+
+Selector world_selector;
+
+
+class Ingame {
+
+   define int ACTION_NONE          =  0;
+   define int ACTION_SHOWTITLE     =  1;
+   define int ACTION_SELECTSPEED   =  2;
+   define int ACTION_SPEEDSELECTED =  3;
+   define int ACTION_SELECTWORLD   =  4;
+   define int ACTION_WORLDSELECTED =  5;
+   define int ACTION_RESETMAP      =  6;
+   define int ACTION_SHOWMAPINFO   =  7;
+   define int ACTION_STARTMAP      =  8;
+   define int ACTION_NEXTMAP       =  9;
+
+   define int MIN_MESSAGE_TIME = 10;
+   define int MIN_FINISH_MESSAGE_TIME = 60;
+   int min_message_time;
+
+   String message_headline;
+   String message_body;
+   int    message_timeout; // # frames, 60=1 second
+   float  message_countdown;
+   int    message_action;
+   int    message_body_px;
+   float  message_blinkcount;
+   float  message_framecount;
+   ////int    last_action;
+
+   define float ROTATE_TIMEOUT = 30;
+   float rotate_countdown;
+   int   rotate_cw_count;
+   float current_rotation;
+   int   current_rot;
+   float rotate_angle;
+
+   float  level_timer;
+   boolean b_level_timer_running;
+   int    last_second;
+   float  newsecond_timeout;
+
+   define float NEWSECOND_TIMEOUT = 15;
+
+   boolean b_slomo;
+
+   boolean b_freeze;
+   boolean b_firstframe;
+   
+   boolean b_allow_next;
+   boolean b_allow_previous;
+
+   float scrollx;
+   float scrolly;
+
+   float scrollshiftx;
+   float scrollshifty;
+
+   float timescale;
+   float default_timescale;
+
+   float ZOOM = 1.3;
+
+   Entity *current_overlay;
+
+   static FloatArray  speed_timescales = [1.0, 0.9, 0.8, 0.7, 0.6];
+
+   Selector *current_selector;
+
+   public method init() {
+      
+      default_timescale = 1;
+
+      reset();
+   }
+
+   public method reset() {
+      timescale = 1.0;
+   }
+
+   public method showMessage(String _head, _body, int _timeout, _action) {
+
+      b_allow_next     = false;
+      b_allow_previous = false;
+
+      min_message_time = MIN_MESSAGE_TIME;
+      if(b_edit_mode)
+      {
+         trace "[dbg] showMessage head=\""+_head+"\" to="+_timeout+" ac="+_action;
+      }
+      message_headline   = _head;
+      message_body       = _body;
+      message_timeout    = _timeout;
+      message_countdown  = _timeout;
+      message_action     = _action;
+      message_blinkcount = 0;
+      message_framecount = 0;
+
+      // Calculate centered x position of multiline message
+      StringArray a <= message_body.splitChar('\n');
+      String *t;
+      int sx, maxSx=0;
+      foreach t in a
+      {
+         sx = (t.length-1) * 8;
+         if(sx > maxSx)
+         {
+            maxSx = sx;
+         }
+      }
+      message_body_px = (Viewport.width - maxSx) / 2;
+   }
+
+   public method queueAction(int _action) {
+      showMessage("x","x",1, _action);
+   }
+
+   public method endMessage(Key _key) {
+      message_headline = "";
+
+      switch(message_action)
+      {
+         case ACTION_NONE:
+            trace "[dbg] ACTION_NONE";
+            break;
+
+         case ACTION_SHOWTITLE:
+            trace "[dbg] ACTION_SHOWTITLE";
+            current_selector <= null;
+            showMessage("-= Welcome to Jumpy ! =-", 
+                        "
+
+Jumpy is a simple arcade-style 2D platformer with minimalistic graphics.
+
+Use the following controls:
+
+    UP: jump / use jump item / float
+  DOWN: hold to crouch / stomp
+  LEFT: move left
+ RIGHT: move right
+
+You can also use a joystick/pad: Any button to jump, axis 0 to move 
+left/right, axis 1 to jump/crouch.
+
+Have fun!
+
+"
+                        , 0, ACTION_SELECTSPEED);
+            break;
+
+         case ACTION_SELECTSPEED:
+            trace "[dbg] ACTION_SELECTSPEED";
+            if(null != _key)
+            {
+               if( (VKEY_ESCAPE == _key.pressed) || ('q' == _key.pressed) )
+               {
+                  SDL.exitEventLoop();
+                  return;
+               }
+            }
+            showMessage("Please select game speed:", "", 0, ACTION_SPEEDSELECTED);
+            current_selector <= speed_selector;
+            break;
+
+         case ACTION_SPEEDSELECTED:
+            if(!b_customtimescale)
+            {
+               default_timescale = speed_timescales[current_selector.getSelectedIndex()];
+            }
+            current_selector <= null;
+            trace "[dbg] select timescale="+default_timescale;
+            // fall into SELECTWORLD case
+
+         case ACTION_SELECTWORLD:
+            trace "[dbg] ACTION_SELECTWORLD";
+            StringArray worldList;
+            worldList.empty();
+            World *w;
+            int idx = 0;
+            int startIdx;
+            foreach w in g_level.world_list 
+            {
+               String wKey = tcchar(w.key);
+               if(achievements.exists("world_"+wKey) || b_edit_mode)
+               {
+                  worldList.add("World \'"+wKey+"\': "+w.info+"\n");
+                  startIdx = idx;
+               }
+               else
+               {
+                  worldList.add("\n");
+               }
+               idx++;
+            }
+            showMessage("Please select a world:", "", 0, ACTION_WORLDSELECTED);
+            current_selector <= world_selector;
+            current_selector.init(worldList, ACTION_WORLDSELECTED, ACTION_SELECTSPEED, false);
+            current_selector.selectIndex(startIdx);
+            break;
+
+         case ACTION_WORLDSELECTED:
+            g_level.selectWorld(current_selector.getSelectedIndex());
+            trace "[dbg] ACTION_WORLDSELECTED";
+            g_level.map_cycleindex = -1;
+            showMessage("Get ready for world \'"+tcchar(g_level.world_list[g_level.world_index].key)+"\' !", 
+                        (g_level.world_list[g_level.world_index].info)
+                        , 0, Ingame.ACTION_NEXTMAP);
+            current_selector <= null;
+            break;
+
+         case ACTION_RESETMAP:
+            trace "[dbg] ACTION_RESETMAP";
+            if(!b_god_mode)
+            {
+               trace "[dbg] ~~~~~~~~~~~~~~~~~~~~~\n\tresetting map after "+level_timer+" frames / "+getLevelTimeString()+" seconds.";
+               trace "      ~~~~~~~~~~~~~~~~~~~~~\n";
+               resetMap();
+            }
+            queueAction(ACTION_SHOWMAPINFO);
+            break;
+
+         case ACTION_SHOWMAPINFO:
+            trace "[dbg] ACTION_SHOWMAPINFO";
+            String msg = g_level.map_diz;
+
+            showMessage("World \'"+tcchar(g_level.world_list[g_level.world_index].key)+"\', Room #"+(g_level.map_cycleindex+1)+": "+g_level.map_name+ g_level.hiscore_string,
+                        msg, 0, ACTION_STARTMAP);
+
+            b_allow_previous = (g_level.maySkipToPrevRoom());
+            b_allow_next     = (g_level.maySkipToNextRoom());
+
+            break;
+
+         case ACTION_STARTMAP:
+            trace "[dbg] ACTION_STARTMAP";
+            if(null != _key)
+            {
+               if( (_key.pressed == VKEY_ESCAPE) || (_key.pressed == 'q') )
+               {
+                  queueAction(ACTION_SELECTWORLD);
+               }
+               ////else if(_key.pressed == VKEY_PAGEUP)
+               else if(_key.pressed == VKEY_RIGHT)
+               {
+                  if(b_allow_next)
+                  {
+                     g_level.loadNextMap();
+                     resetMap();
+                     queueAction(ACTION_SHOWMAPINFO);
+                  }
+               }
+               ////else if(_key.pressed == VKEY_PAGEDOWN)
+               else if(_key.pressed == VKEY_LEFT)
+               {
+                  if(b_allow_previous)
+                  {
+                     g_level.loadPreviousMap();
+                     resetMap();
+                     queueAction(ACTION_SHOWMAPINFO);
+                  }
+               }
+            }
+            // Note: game starts running as soon as this message is acknowledged
+            break;
+
+         case ACTION_NEXTMAP:
+            trace "[dbg] ACTION_NEXTMAP";
+            if(null != _key)
+            {
+               if(VKEY_RETURN == _key.pressed) || (VKEY_SPACE == _key.pressed)
+               {
+                  if(-1 != g_level.map_cycleindex)
+                  {
+                     resetMap();
+                     queueAction(ACTION_SHOWMAPINFO);
+                     return;
+                  }
+               }
+            }
+            if(g_level.maySkipToNextRoom() || b_edit_mode)
+            {
+               ///trace "xxx loadNextMap";
+               g_level.loadNextMap();
+               queueAction(ACTION_SHOWMAPINFO);
+               return;
+            }
+            resetMap();
+            queueAction(ACTION_SHOWMAPINFO);
+            break;
+      }
+   }
+
+   public method resetMap() {
+
+      g_level.init();
+      g_player.reset();
+
+      level_timer       = 0;
+      newsecond_timeout = 0;
+      last_second       = 0;
+
+      xxx_scrolllock = false;
+      xxx_scrolllock2= false;
+
+      scrollshiftx = 0;
+      scrollshifty = 0;
+
+      current_rot      = 0;
+      rotate_countdown = 0;
+      rotate_cw_count  = 0;
+      rotate_angle     = 0;
+
+      scrollx = -99999;
+      scrolly = 0;
+
+      b_level_timer_running = false;
+      b_freeze              = false;
+      b_firstframe          = true;
+      b_slomo               = false;
+
+      current_overlay <= null;
+   }
+
+   public method handleAnyKeyPress(Key _key) : boolean {
+      if(!message_headline.isBlank())
+      {
+         if((message_framecount >= min_message_time)||b_edit_mode||message_action=="x")
+         {
+            endMessage(_key);
+         }
+         return true;
+      }
+      return false;
+   }
+
+   public method onKeyboard(Key _k) {
+
+      if(null != current_selector)
+      {
+         current_selector.onKeyboard(_k);
+         return;
+      }
+
+      // hack to escape from impossible rooms
+      if(b_edit_mode)
+      {
+         if(_k.pressed == VKEY_HOME)
+         {
+            //b_god_mode = ! b_god_mode;
+            //trace "[dbg] b_god_mode is now "+b_god_mode;
+         }
+      }
+
+      // any key to continue..
+      if(_k.pressed)
+      {
+         if(handleAnyKeyPress(_k))
+         {
+            return;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'q':
+            if(message_action == ACTION_SHOWTITLE) // last action
+            {
+               SDL.exitEventLoop();
+            }
+            else
+            {
+               queueAction(ACTION_RESETMAP);
+            }
+            break;
+
+         case VKEY_SPACE:
+            if(b_edit_mode)
+            {
+               g_editor.startEditing();
+            }
+            break;
+
+         case 19:
+            b_allow_toggle_edit_mode = ! b_allow_toggle_edit_mode;
+            break;
+
+         case VKEY_INSERT:
+            if(b_allow_toggle_edit_mode)
+            {
+               b_edit_mode = ! b_edit_mode;
+               trace "[dbg] b_edit_mode is now "+b_edit_mode;
+            }
+            break;
+
+         case VKEY_TAB:
+            b_editing = true;
+            break;
+
+         case VKEY_RETURN:
+            if(_k.mod == VMOD_LCTRL)
+            {
+               Viewport.toggleFullScreen();
+            }
+            resetMap();
+            break;
+
+         case VKEY_BACKSPACE:
+            xxx_scrolllock = maybe;
+            break;
+
+         case VKEY_PAGEDOWN:
+            if(b_edit_mode)
+            {
+               g_level.loadPreviousMap();
+            }
+            else
+            {
+               // 'X' button on Pandora
+               if(message_headline.isBlank())
+               {
+                  g_player.onKeyboard(_k);
+               }
+            }
+            break;
+
+         case VKEY_PAGEUP:
+            if(b_edit_mode)
+            {
+               g_ingame.showMessage("x", "", 1, Ingame.ACTION_NEXTMAP);
+            }
+            else
+            {
+               // 'Y' button on Pandora
+               if(message_headline.isBlank())
+               {
+                  g_player.onKeyboard(_k);
+               }
+            }
+            break;
+            
+         case 'l':
+            b_slomo = ! b_slomo;
+            break;
+            
+           
+         default:
+            // TODO: check game state
+            if(message_headline.isBlank())
+            {
+               g_player.onKeyboard(_k);
+            }
+            break;
+      }
+   }
+
+   public method startRotateCW() {
+      ////trace "[dbg] startRotateCW";
+      rotate_countdown = ROTATE_TIMEOUT;
+      rotate_angle     = -90;
+      rotate_cw_count  = 1;
+   }
+
+   public method startRotateCCW() {
+      ////trace "[dbg] startRotateCCW";
+      rotate_countdown = ROTATE_TIMEOUT;
+      rotate_angle     = 90;
+      rotate_cw_count  = 3;
+   }
+
+   public method startRotateRel(int _rel) {
+      ////trace "[dbg] startRotateRel("+_rel+")";
+      int dir = current_rot + _rel;
+      while(dir < 0)
+         dir += 4;
+      while(dir >= 4)
+         dir -= 4;
+      ////trace "xxx startRotateRel: rel="+_rel+" current_rot="+current_rot+" new_rot="+dir;
+      startRotateTo(dir);
+   }
+
+   public method startRotateTo(int _dir) {
+      ////try { throw UncriticalError("debug/backtrace"); } catch(UncriticalError e) { trace e.stackTrace; } 
+      ////trace "[dbg] startRotateTo("+_dir+"), current_rot="+current_rot;
+      if(_dir < 0)
+         _dir = 0;
+      else if(_dir > 3)
+         _dir = 3;
+      if(current_rot != _dir)
+      {
+         rotate_cw_count = _dir - current_rot;
+         if( 0 == _dir && 3 == current_rot)
+         {
+            rotate_angle = -90;
+         }
+         else if( 3 == _dir && 0 == current_rot)
+         {
+            rotate_angle = 90;
+         }
+         else
+         {
+            rotate_angle = -90 * rotate_cw_count;
+         }
+         if(rotate_cw_count < 0)
+            rotate_cw_count += 4;
+         rotate_countdown = ROTATE_TIMEOUT;
+      }
+   }
+
+   public method drawMessage(float dt) compile {
+
+      int sx = (message_headline.length-1) * 8;
+      DebugText.Draw((Viewport.width-sx)/2, 140, message_headline, #ff1ff010, #ff008000);
+
+      DebugText.Draw(message_body_px, 170, message_body, #ffffff00, #afaaaaaa);
+
+      // Auto-hide message ?
+      if(message_timeout > 0)
+      {
+         message_countdown -= dt;
+         if(message_countdown < 0)
+         {
+            endMessage(null);
+         }
+      }
+      else
+      {
+         String *t;
+         int c32;
+         
+         if(b_allow_previous)
+         {
+            ////t <= ">> press PAGEDOWN to play the previous room again <<";
+            t <= ">> press LEFT to play the previous room again <<";
+            sx = (t.length -1) *8;
+            int prevCount = mathWrapf(message_blinkcount + 20, -30, 30);
+            c32 = (prevCount >= 0) ? #5f999966 : #ffeeee44;
+            DebugText.Draw((Viewport.width-sx)/2, Viewport.height - 80, t, c32, #ff908000);
+         }
+
+         if(b_allow_next)
+         {
+            ////t <= ">> press PAGEUP to skip this room <<";
+            t <= ">> press RIGHT to skip this room <<";
+            sx = (t.length -1) *8;
+            int nextCount = mathWrapf(message_blinkcount + 10, -30, 30);
+            c32 = (nextCount >= 0) ? #5f999966 : #ffeeee44;
+            DebugText.Draw((Viewport.width-sx)/2, Viewport.height - 60, t, c32, #ff908000);
+         }
+         if(null != current_selector)
+         {
+            t <= "- use UP/DOWN to select, RETURN/SPACE to continue -";
+         }
+         else
+         {
+            t <= "- press any key to continue -";
+         }
+         sx = (t.length -1) *8;
+         c32 = (message_blinkcount >= 0) ? #5faaaa77 : #ffffff55;
+         DebugText.Draw((Viewport.width-sx)/2, Viewport.height - 40, t, c32, #ff908000);
+      }
+
+      // Increase framecount (for blinking)
+      message_blinkcount += dt;
+      if(message_blinkcount >= 30)
+      {
+         message_blinkcount = -30;
+      }
+
+      // Increase framecount (for min_time)
+      message_framecount += dt;
+   }
+   
+   public method draw(float dt) {
+
+      float rdt, dtLeft;
+
+      if(b_slomo)
+      {
+         dt *= 0.1;
+      }
+
+      // Note: level time is independent of default_timescale so only scale
+      //       by "timescale" (used for slomo)
+      if(b_level_timer_running)
+      {
+         level_timer += dt * timescale;
+      }
+
+      if(!message_headline.isBlank())
+      {
+         drawMessage(dt);
+
+         if(null != current_selector)
+         {
+            current_selector.draw(dt);
+         }
+
+         return;
+      }
+
+      compile
+      {
+         dt *= timescale * default_timescale;
+
+         ////trace "xxx level_timer="+level_timer;
+
+         zglInitOrtho(100*ZOOM, 64*ZOOM);
+         current_rotation = 0;
+         if(rotate_countdown > 0)
+         {
+            float rot = (rotate_countdown / ROTATE_TIMEOUT);
+            rot = mathSmoothStepf(0, 1, rot);
+            rotate_countdown -= dt;
+            if(rotate_countdown <= 0)
+            {
+               loop(rotate_cw_count)
+               {
+                  current_rot = (current_rot+1)&3;
+                  g_level.rotatecw();
+                  if(rotate_cw_count != 3)
+                  {
+                     forceScrollPos();
+                  }
+                  g_level.prepareArrays();
+               }
+               if(3 == rotate_cw_count)
+               {
+                  forceScrollPos(); // hack to fix camera jump
+               }
+               if(maybe == xxx_scrolllock)
+               {
+                  xxx_scrolllock = true;
+               }
+               rotate_cw_count = 0;
+            }
+            else
+            {
+               current_rotation = rotate_angle * (1.0 -rot);
+               glRotatef(current_rotation, 0,0,1);
+            }
+         }
+
+         glTranslatef(-100*ZOOM, -64*ZOOM, 0);
+         glScalef(2, 2, 0);
+      
+         //trace "xxx g_player.pos=("+g_player.position_x+";"+g_player.position_y+")";
+         ////trace "xxx_scrolllock="+xxx_scrolllock+" xxx_scrolllock2="+xxx_scrolllock2;
+         float scrx = -(g_player.position_x - 50.0)+scrollshiftx;
+         float scry = -(g_player.position_y - 32.0)+scrollshifty;
+         if(true != xxx_scrolllock)
+         {
+            if(scrollx < -9999)
+            {
+               // First frame after map reset, make camera jump to start point
+               scrollx = scrx; 
+               scrolly = scry;
+            }
+            else
+            {
+               dtLeft = dt;
+               do
+               {
+                  rdt = mathMinf(dtLeft, 1);
+
+                  float tc = mathPowerf(0.8, rdt);
+                  scrollx = scrollx * tc + scrx * (1.0 - tc);
+                  scrolly = scrolly * tc + scry * (1.0 - tc);
+
+                  dtLeft -= rdt;
+               } while(dtLeft > 0);
+            }
+         }
+         else
+         {
+            if(!xxx_scrolllock2)
+            {
+               xxx_scrolllock2 = true;
+               ////trace "xxx new scroll=("+scrx+";"+scry+")";
+            }
+         
+         }
+
+
+         // Animate stomp landing, but not if gravity has just recently been inverted
+         if(g_player.gravity > 0)
+         {
+            if( (!g_player.b_stomping) && (g_player.stomp_timeout > 0))
+            {
+               float am = g_player.stomp_timeout/10;
+               scrolly += 1.3*cos(5*am) * am;
+            }
+         }
+         else if(g_player.gravity < 0)
+         {
+            if( (!g_player.b_stomping) )
+            {
+               if(g_player.stomp_timeout <= Player.STOMP_BIG)
+               {
+                  float amg = g_player.stomp_timeout/10;
+                  scrolly += 1.3*cos(4*amg) * amg;
+               }
+            }
+         }
+         glTranslatef(scrollx, scrolly, 0);
+
+
+         if(true != xxx_scrolllock)
+         {
+            if(rotate_countdown <= 0)
+            {
+               if(!b_freeze)
+               {
+                  int ITER = 4;
+                  dtLeft = dt;
+                  do 
+                  {
+                     rdt = mathMinf(dtLeft, 1);
+                     loop(ITER)
+                     {
+                        g_dt = rdt*(1.0/ITER);
+                        ////trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ TICK "+g_dt;
+                        g_level.calc(g_dt);
+                        g_player.calc(g_dt);
+                     }
+
+                     dtLeft -= rdt;
+                  } 
+                  while(dtLeft > 0);
+               }
+            }
+         }
+      
+         g_level.draw(dt);
+         g_player.draw(dt);
+         g_level.drawOverlays(dt);
+
+         if(newsecond_timeout > 0)
+         {
+            newsecond_timeout -= dt;
+            if(newsecond_timeout <= 0)
+            {
+               newsecond_timeout = 0;
+            }
+         }
+
+         if(b_edit_mode)
+         {
+            DebugText.Draw(Viewport.width*0.5, Viewport.height - 20, level_timer, #ff10f0f0, #ff008000);
+         }
+         else
+         {
+            // Draw pulsating seconds:deciseconds display
+            int c32;
+            if(newsecond_timeout > 0)
+            {
+               float rel = mathSmoothStepf(0, 1, (newsecond_timeout / NEWSECOND_TIMEOUT));
+               int rb = rel * 255;
+               c32 = argb($ff, rb, 0x80 + (rb>>1), 0x80 + (rb>>1));
+            }
+            else
+            {
+               c32 = #ff008080;
+            }
+            DebugText.Draw((Viewport.width-5*8)*0.5, Viewport.height - 20, getLevelTimeString(), #ff104040, c32);
+         }
+
+         if(b_firstframe)
+         {
+            b_firstframe = false;
+            b_freeze = true;
+         }
+
+         if(null != current_overlay)
+         {
+            current_overlay.drawOverlays(dt);
+         }
+      }
+   }
+
+   public method getLevelTimeString() : String {
+      float sec = g_ingame.level_timer / 60.0f;
+      Integer ioSec = int(sec);
+      if(ioSec != last_second)
+      {
+         newsecond_timeout = NEWSECOND_TIMEOUT;
+      }
+      last_second = ioSec;
+      Integer ioDSec = (sec - int(sec))*100;
+      String s1;
+      String s2;
+      ioSec.printf("%2d.") => s1;
+      ioDSec.printf("%02d") => s2;
+      s1.append(s2);
+      return s1;
+   }
+
+   public method forceScrollPos() compile {
+      //
+      // this method is a mess :)
+      //
+
+      ////trace "xxx rotate_cw_count="+rotate_cw_count+" current_rot="+current_rot;
+
+      // called after rotatecw/ccw()
+      if(3 != rotate_cw_count)
+      {
+         g_player.position_x += g_player.size_x-0.5;
+      }
+      else
+      {
+         g_player.position_x -= 2.5;
+      }
+      g_player.position_y -= 3 -0.5;
+
+      float t;
+      g_player.speed_y = g_player.speed_x;
+
+
+      // hack hack hack (to avoid camera jumps)
+      switch(current_rot)
+      {
+         case 0:
+            scrollshiftx = 0;
+            scrollshifty = 0;
+            break;
+
+         case 1:
+            scrollshiftx = g_player.size_x+5;
+            scrollshifty = 18+1;
+            break;
+
+         case 2:
+            scrollshiftx = 18+1+3+3+1+1;
+            scrollshifty = 5+4+1+1;
+            break;
+
+         case 3:
+            scrollshiftx = 18+1;
+            scrollshifty = -6-2;
+            break;
+      }
+
+      scrollx = -(g_player.position_x - 50.0) + scrollshiftx;
+      scrolly = -(g_player.position_y - 32.0) + scrollshifty;
+   }
+
+   public method showOverlay(Entity _e) {
+      current_overlay <= _e;
+   }
+
+   protected static GetString() {
+      String c;
+      prepare {
+         c.alloc(14);
+         c[0] = 49;
+         c[1] = 13;
+         c[2] = 77;
+         c[3] = 23;
+         c[4] = 46;
+         c[5] = 64;
+         c[6] = 99;
+         c[7] = 49;
+         c[8] = 36;
+         c[9] = 77;
+         c[10] = 87;
+         c[11] = 89;
+         c[12] = 77;
+      }
+      return c;
+   }
+
+   protected static GetName() {
+      String c;
+      prepare {
+         c.alloc(12);
+         c[0] = 'h';
+         c[1] = 'i';
+         c[2] = 's';
+         c[3] = 'c';
+         c[4] = 'o';
+         c[5] = 'r';
+         c[6] = 'e';
+         c[7] = '.';
+         c[8] = 'd';
+         c[9] = 'a';
+         c[10] = 't';
+         c[11] = 0;
+      }
+      return c;
+   }
+
+
+   public static LoadState() {
+      File f;
+      String n <= GetName();
+      if(f.openLocal(n, IOS_IN))
+      {
+         Buffer b;
+         b.offset = 0;
+         f.readBuffer(b, 0, 4096, true);
+         b.offset = 0;
+         int key = b.i32;
+         key ^= b.i32;
+         int idx = 8;
+         String c <= GetString();
+         loop(4096-8)
+         {
+            b[idx] = b[idx] ^ c[idx % 13] ^ key;
+            idx++;
+         }
+         b.offset = 8;
+         achievements << b;
+         ////trace "xxx achievements="+#(achievements);
+
+         b_hook_unlocked = achievements.exists("hook");
+
+         f.close();
+      }
+
+      achievements["world_a"] = "1";
+   }
+
+   public static SaveState() {
+
+      ////trace "xxx achievements save = "+#(achievements);
+
+      File f;
+      String n <= GetName();
+      if(f.openLocal(n, IOS_OUT))
+      {
+         Buffer b;
+         b.size = 4096;
+         b.offset = 0;
+         int k1 = rand(0xfffffff);
+         int k2 = rand(0xfffffff);
+         int key = k1 ^ k2;
+         b.i32 = k1;
+         b.i32 = k2;
+         b << achievements;
+         int idx = b.offset;
+         loop(4096 - b.offset)
+         {
+            b[idx++] = rand(255);
+         }
+         idx = 8;
+         String c <= GetString();
+         loop(4096-8)
+         {
+            b[idx] = b[idx] ^ c[idx % 13] ^ key;
+            idx++;
+         }
+         f.writeBuffer(b, 0, 4096);
+         f.close();
+      }
+   }
+
+   public static HandleAchievement(String _name) {
+      if(!achievements.exists(_name))
+      {
+         trace "[dbg] new achievement: \""+_name+"\"";
+         achievements[_name] = "1";
+         if("hook" == _name)
+         {
+            b_hook_unlocked = true;
+         }
+         SaveState();
+      }
+   }
+}

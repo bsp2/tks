@@ -1,0 +1,526 @@
+
+// 31Mar2010, 01Apr2010, 02Apr2010, 03Apr2010, 04Apr2010, 05Apr2010
+
+module MHook;
+
+namespace jumpy;
+
+
+class HookElement {
+   float x, y;
+   float last_x, last_y;
+   float new_last_x, new_last_y;
+   float fx, fy;
+   float rfx, rfy;
+}
+
+class Hook {
+
+   define float LENSCALE = 1.0;
+
+   define float MAX_LEN  = 36 * LENSCALE;
+
+   define int NUM_ELEMENTS = 8;
+
+   define float GRAVITY = 0.03*7;
+   define float MAX_GRAVITY = 1;
+   
+   define float CORRECT_LEN_AMOUNT = 0.4;
+
+   float min_dist;
+   float norm_dist;
+   float max_dist;
+
+   float gravacc;
+
+   ClassArray elements;
+
+   BoxEntity element_entity;
+
+   float player_speedx_decay;
+
+   Entity *hook_entity;
+
+   float rel_x;
+   float rel_y;
+
+   float max_len;
+   
+   public method init(float _startX, _startY, _endX, _endY, float _len, Entity _entity) {
+      calcDists(_len);
+
+      hook_entity <= _entity;
+      rel_x = _startX - hook_entity.position_x;
+      rel_y = _startY - hook_entity.position_y;
+      ////trace "xxx rel=("+rel_x+";"+rel_y+")";
+
+      elements.template = HookElement;
+      elements.realloc(NUM_ELEMENTS);
+      elements.useAll();
+      HookElement *e;
+      float cx = _startX;
+      float cy = _startY;
+      float dx = (_endX - _startX) / NUM_ELEMENTS;
+      float dy = (_endY - _startY) / NUM_ELEMENTS;
+      foreach e in elements
+      {
+         e.x = cx;
+         e.y = cy;
+         e.last_x = cx;
+         e.last_y = cy;
+         e.fx = 0;
+         e.fy = 0;
+         e.rfx = 0;
+         e.rfy = 0;
+         cx += dx;
+         cy += dy;
+      }
+      
+      gravacc=0;
+
+      element_entity.size_x = 1.0;
+      element_entity.size_y = 1.0;
+
+      player_speedx_decay = 1.0;
+   }
+
+   public method calcDists(float _len) {
+      float minLen  = _len * 0.5;
+      float normLen = _len * 1.0;
+      float maxLen  = _len * 1.25;
+      min_dist  = minLen  / NUM_ELEMENTS;
+      norm_dist = normLen / NUM_ELEMENTS;
+      max_dist  = maxLen  / NUM_ELEMENTS;
+      max_len = maxLen;
+   }
+
+   public method scaleLength(float _newLen) {
+      calcDists(_newLen);
+   }
+
+   public method calc(float dt) {
+      // TODO: rope physics are tuned for nominal framerate dt=0.25 :(
+
+      HookElement *e, *p, *n;
+
+      e <= elements[0];
+      e.x = hook_entity.position_x + rel_x;
+      e.y = hook_entity.position_y + rel_y;
+
+      // Save old positions and reset forces
+      int idx = 0;
+      foreach e in elements {
+         e.new_last_x = e.x;
+         e.new_last_y = e.y;
+         if(idx++ > 0)
+         {
+            e.fx = 0;
+            e.fy = 0;
+         }
+         else
+         {
+            e.fy = 0;
+         }
+      }
+
+      // Gravity
+      gravacc -= GRAVITY * dt;
+      if(gravacc < -MAX_GRAVITY)
+      {
+         gravacc = -MAX_GRAVITY;
+      }
+
+      // Move nodes towards ideal position
+      p <= elements.get(0);
+      e <= elements.get(1);
+      idx = 1;
+      float distx, disty, dist, nx, ny, fx, fy, cx, cy;
+      compile loop(NUM_ELEMENTS-1)
+      {
+         ///trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~ e.x="+e.x+" e.y="+e.y;
+
+         // Distance to previous
+         distx = p.x - e.x;
+         disty = p.y - e.y;
+         dist = sqrt(distx*distx + disty*disty);
+         ////trace "xxx p dist="+dist+" norm_dist="+norm_dist;
+         ////trace "xxx p    distx="+distx+" disty="+disty;
+         nx = distx * (1.0 / dist);
+         ny = disty * (1.0 / dist);
+         cx = (nx * (norm_dist-dist) * CORRECT_LEN_AMOUNT)*0.75;
+         cy = (ny * (norm_dist-dist) * CORRECT_LEN_AMOUNT);
+         e.fx -= cx;
+         e.fy -= cy;
+         ////trace "xxx p  e.fx="+e.fx+" e.fy="+e.fy;
+         if(idx > 1)
+         {
+            p.fx += cx;
+            p.fy += cy;
+            ////trace "xxx p  p.fx="+p.fx+" e.fy="+p.fy;
+         }
+         else
+         {
+            e.fx -= cx;
+            e.fy -= cy;
+         }
+
+         // Distance to next
+         n <= elements.get(idx+1);
+         if(null != n)
+         {
+            distx = n.x - e.x;
+            disty = n.y - e.y;
+            dist = sqrt(distx*distx + disty*disty);
+            ////trace "xxx n dist="+dist+" norm_dist="+norm_dist;
+            ////trace "xxx n    distx="+distx+" disty="+disty;
+            nx = distx * (1.0 / dist);
+            ny = disty * (1.0 / dist);
+            cx = (nx * (norm_dist-dist) * CORRECT_LEN_AMOUNT)*0.75;
+            cy = (ny * (norm_dist-dist) * CORRECT_LEN_AMOUNT);
+            n.fx += cx;
+            n.fy += cy;
+            e.fx -= cx;
+            e.fy -= cy;
+
+            ////trace "xxx n  n.fx="+n.fx+" n.fy="+n.fy;
+            ////trace "xxx n  e.fx="+e.fx+" e.fy="+e.fy;
+         }
+
+         p <= e;
+         e <= n;
+         idx++;
+      }
+
+      // Apply min/max distance constraints
+      idx = 1;
+      p <= elements.get(0);
+      e <= elements.get(1);
+      compile loop(NUM_ELEMENTS-1)
+      {
+         ///trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~ e.x="+e.x+" e.y="+e.y;
+
+         // Distance to previous
+         distx = p.x - e.x;
+         disty = p.y - e.y;
+         dist = sqrt(distx*distx + disty*disty);
+         ////trace "xxx p dist="+dist+" norm_dist="+norm_dist+" max_dist="+max_dist+" min_dist="+min_dist;
+         ////trace "xxx p    distx="+distx+" disty="+disty;
+         if(dist > max_dist)
+         {
+            nx = distx * (1.0 / dist);
+            ny = disty * (1.0 / dist);
+            cx = (nx * (max_dist-dist) * 0.5);
+            cy = (ny * (max_dist-dist) * 0.75);
+            ////trace "xxx cx="+cx+" cy="+cy;
+            e.fx -= cx;
+            e.fy -= cy;
+            ////trace "xxx p  e.fx="+e.fx+" e.fy="+e.fy;
+            if(idx > 1)
+            {
+               p.fx += cx;
+               p.fy += cy;
+               ////trace "xxx p  p.fx="+p.fx+" e.fy="+p.fy;
+            }
+            else
+            {
+               e.fx -= cx;
+               e.fy -= cy;
+            }
+         }
+         else if(dist < min_dist)
+         {
+            ///trace "xxx <min";
+            nx = distx * (1.0 / dist);
+            ny = disty * (1.0 / dist);
+            cx = (nx * (min_dist-dist) * 0.5);
+            cy = (ny * (min_dist-dist) * 0.75);
+            e.fx -= cx;
+            e.fy -= cy;
+            // trace "xxx p  e.fx="+e.fx+" e.fy="+e.fy;
+            if(idx > 1)
+            {
+               p.fx += cx;
+               p.fy += cy;
+               // trace "xxx p  p.fx="+p.fx+" e.fy="+p.fy;
+            }
+            else
+            {
+               e.fx -= cx;
+               e.fy -= cy;
+            }
+         }
+
+         // Distance to next
+         n <= elements.get(idx+1);
+         if(null != n)
+         {
+            distx = n.x - e.x;
+            disty = n.y - e.y;
+            dist = sqrt(distx*distx + disty*disty);
+            if(dist > max_dist)
+            {
+               ////trace "xxx n dist="+dist+" max_dist="+max_dist;
+               ////trace "xxx n    distx="+distx+" disty="+disty;
+               nx = distx * (1.0 / dist);
+               ny = disty * (1.0 / dist);
+               cx = (nx * (dist-max_dist) * 0.5);
+               cy = (ny * (dist-max_dist) * 0.5);
+               n.fx += cx;
+               n.fy += cy;
+               e.fx -= cx;
+               e.fy -= cy;
+            }
+            else if(dist < min_dist)
+            {
+               ////trace "xxx n dist="+dist+" norm_dist="+norm_dist;
+               ////trace "xxx n    distx="+distx+" disty="+disty;
+               nx = distx * (1.0 / dist);
+               ny = disty * (1.0 / dist);
+               cx = (nx * (min_dist-dist) * 0.5);
+               cy = (ny * (min_dist-dist) * 0.5);
+               n.fx -= cx;
+               n.fy -= cy;
+               e.fx += cx;
+               e.fy += cy;
+            }
+
+            // trace "xxx n  n.fx="+n.fx+" n.fy="+n.fy;
+            // trace "xxx n  e.fx="+e.fx+" e.fy="+e.fy;
+         }
+
+         p <= e;
+         e <= n;
+         idx++;
+      }
+
+      // Add cumulated forces
+      idx = 0;
+      foreach e in elements {
+         e.x = e.x + e.fx*2.0;
+         e.y = e.y + e.fy*3.0;
+         if(idx > 0)
+         {
+            e.y += gravacc * 0.12*1.1745*4*2.5;
+         }
+         idx++;
+      }
+
+
+      // verlet
+      idx = 0;
+      foreach e in elements compile {
+         float am = dt * 0.05691 * 1.0 * 4;
+         e.rfx = e.rfx*(1.0-am) + (e.x - e.last_x) * am*5.15;
+         e.rfy = e.rfy*(1.0-am) + (e.y - e.last_y) * am*1.3;
+         e.x = e.last_x + e.rfx * dt;
+         e.y = e.last_y + e.rfy * dt;
+         e.last_x = e.new_last_x;
+         e.last_y = e.new_last_y;
+
+         idx++;
+      }
+
+
+     
+      // hard clip to max distance
+      idx = 1;
+      p <= elements[0];
+      float hcam = 0.34*dt;
+      boolean bClipped = false;
+      foreach e in elements compile {
+         distx = (e.x - p.x);
+         disty = (e.y - p.y);
+         dist = sqrt(distx*distx + disty*disty);
+         if(dist > max_dist)
+         {
+            nx = distx * (1/dist);
+            ny = disty * (1/dist);
+            e.x = (e.x*(1-hcam)) + (p.x + nx * max_dist) * hcam;
+            e.y = (e.y*(1-hcam)) + (p.y + ny * max_dist) * hcam;
+            bClipped = true;
+         }
+         p <= e;
+         idx++;
+      }
+
+      compile if(bClipped)
+      {
+         p <= elements[NUM_ELEMENTS-1];
+         e <= elements[NUM_ELEMENTS-1];
+         float pcamx = 0.37 * dt * (1-0.5*player_speedx_decay);
+         float pcamy = 0.37 * dt;
+         float ecamx = (0.23 + 0.7*(1-player_speedx_decay)) * dt;
+         float ecamy = 0.11 * dt;
+         distx = e.x - p.x;
+         disty = e.y - p.y;
+         dist = sqrt(distx*distx + disty*disty);
+         //if(dist > max_dist)
+         {
+            float ex = e.x;
+            float ey = e.y;
+            g_player.position_x = (g_player.position_x*(1-pcamx)) + (e.x - g_player.size_x*0.5)*pcamx;
+            g_player.position_y = (g_player.position_y*(1-pcamy)) + (e.y - g_player.size_y)*pcamy;
+            e.x = (g_player.position_x*ecamx) + (ex*(1-ecamx));
+            e.y = (g_player.position_y*ecamy) + (ey*(1-ecamy));
+         }
+      }
+
+      // Calc entity collision
+      if(false)
+      {
+         HookElement *he;
+         foreach he in elements
+         {
+            element_entity.position_x = he.x;
+            element_entity.position_y = he.y;
+            Entity *en;
+            foreach en in g_level.entities 
+            {
+               if(en.checkCollision(element_entity))
+               {
+                  ////trace "xxx elem coll";
+                  int cmask = en.hitBy(element_entity);
+                  if(cmask & Entity.DIR_LEFT)
+                  {
+                     if(he.rfx > 0)
+                        he.rfx = -he.rfx;
+                  }
+                  else if(cmask & Entity.DIR_RIGHT)
+                  {
+                     if(he.rfx < 0)
+                        he.rfx = -he.rfx;
+                  }
+                  if(cmask & Entity.DIR_UP)
+                  {
+                     if(he.rfy < 0)
+                        he.rfy = -he.rfy;
+                  }
+                  else if(cmask & Entity.DIR_DOWN)
+                  {
+                     if(he.rfy > 0)
+                        he.rfy = -he.rfy;
+                  }
+                  if(cmask)
+                  {
+                     he.x = element_entity.position_x;
+                     he.y = element_entity.position_y;
+                     he.last_x = he.x;
+                     he.last_y = he.y;
+                  }
+               }
+            }
+         }
+      }
+
+      // Move player
+      e <= elements[NUM_ELEMENTS-1];
+      p <= elements[0];
+      distx = e.x - p.x;
+      disty = e.y - p.y;
+      dist = sqrt(distx*distx + disty*disty);
+
+      if(dist > max_len)
+      {
+         g_player.speed_x += e.rfx * dt * 0.02*2;
+         e.x = g_player.position_x + g_player.size_x * 0.5;
+         e.y = g_player.position_y + g_player.size_y;
+      
+         e.rfx += g_player.speed_x * dt * 0.01*2;
+         e.rfy += g_player.speed_y * dt * 0.01*2;
+
+         if(e.rfy > 0)
+         {
+            g_player.speed_y += e.rfy * dt * 0.015 * 3;
+         }
+      }
+      else
+      {
+         ////trace "xxx dist="+dist+" max_dist="+max_dist;
+         e.x = g_player.position_x + g_player.size_x * 0.5;
+         e.y = g_player.position_y + g_player.size_y;
+         e.last_x = e.x;
+         e.last_y = e.y;
+      }
+
+
+      // Initial speed decay
+      if(player_speedx_decay > 0)
+      {
+         player_speedx_decay -= (1.0/40)*dt;
+      }
+
+
+      float lx, ly;
+      e <= elements[0];
+      lx = e.x;
+      ly = e.y;
+      idx = 1;
+      distx = 0;
+      disty = 0;
+      loop(NUM_ELEMENTS-1)
+      {
+         e <= elements[idx++];
+         distx += e.x - lx;
+         disty += e.y - ly;
+         lx = e.x;
+         ly = e.y;
+      }
+      dist = sqrt(distx*distx + disty*disty);
+      ////trace "xxx dist="+dist+" max_len="+max_len;
+      
+   }
+
+   public method draw() compile {
+      
+      HookElement *e;
+      int idx;
+
+      zglColorARGB(#ffeeeeee);
+      if(true)
+      {
+         // Draw lines
+         glLineWidth(2);
+         e <= elements[0];
+         float lx = e.x;
+         float ly = e.y;
+         idx = 1;
+         glBegin(GL_LINES);
+         loop(NUM_ELEMENTS-1)
+         {
+            e <= elements[idx++];
+            glVertex2f(lx, ly);
+            glVertex2f(e.x, e.y);
+            lx = e.x;
+            ly = e.y;
+         }
+         glEnd();
+      }
+      else
+      {
+         // Draw dots
+         glPointSize(3);
+         glBegin(GL_POINTS);
+         idx = 0;
+         foreach e in elements 
+         {
+            if(1 == idx)
+            {
+               glEnd();
+               zglColorARGB(#ff00ff00);
+               glBegin(GL_POINTS);
+            }
+            else
+            {
+               glEnd();
+               zglColorARGB(#ffffffff);
+               glBegin(GL_POINTS);
+            }
+            glVertex2f(e.x, e.y);
+            idx++;
+         }
+         glEnd();
+         glPointSize(1);
+      }
+   }
+   
+}

@@ -1,0 +1,1472 @@
+
+module MCharacter;
+
+namespace jumpy;
+
+// 12Aug2009, 13Aug2009, 11Oct2009, 12Oct2009, 19Oct2009, 13Mar2010, 14Mar2010, 
+// 18Mar2010, 19Mar2010, 20Mar2010, 21Mar2010, 22Mar2010, 23Mar2010, 24Mar2010
+// 26Mar2010, 04Apr2010
+
+
+class Character : BoxEntity {
+
+   define float DEFAULT_GRAVITY_STOMPOFFSET = 80;
+   define float DEFAULT_SPEEDSCALE = 1.0;
+
+   // Entity::reset_b_active
+   // Entity::reset_b_visible
+   // Entity::reset_b_mover
+   public float   reset_gravity;
+   public float   reset_gravity_stompoffset;
+   public float   reset_gravity_stompscale;
+   public boolean reset_b_turnaround;
+   public boolean reset_b_alwayscrouch;
+   public boolean reset_b_nojump;
+   public boolean reset_b_nowalljump;
+   public boolean reset_b_nofloat;
+   
+   float gravity_stompoffset;
+   float gravity_stompscale;
+   float dir_x_anim;
+   float coll_timeout;
+   float rejump_timeout;
+   float smalljump_timeout;
+   boolean b_nojump;
+   boolean b_nofloat;
+
+   float wallcoll_timeout;
+   float wallcoll_speed_x;
+   int   wallcoll_lastdir;
+   float walljump_speed_x;
+   int   walljump_last_dirx;
+   boolean b_nowalljump;
+
+   boolean b_crouch;
+   boolean b_force_crouch;
+   boolean b_alwayscrouch;
+   float force_crouch_timeout;
+   float crouch_crush_timeout; // to prevent the ply from immediately being crushed after standing up if gravity is inverted
+
+   boolean b_stomping;
+   float stomp_timeout;
+
+   ////int color32;
+
+   Entity *carry_entity; // also see item.tks
+
+   public boolean b_turnaround;
+
+   Entity *standon_entity; // reference to entity on which the player is currently standing, or null (used for moving blocks)
+   float standon_entity_timeout;
+
+   Entity *hang_under_entity; // reference to entity under which the player is currently hanging (gravity <0), or null (used for moving blocks)
+   float hang_under_entity_timeout;
+   define float HANG_UNDER_ENTITY_TIMEOUT = 3;
+
+   Entity *last_floor_coll_entity; // reference to entity that the character last landed on (used to find stompable runners)
+   float last_floor_coll_timeout;
+
+   define float STANDON_ENTITY_TIMEOUT = 9;
+   define float LAST_FLOOR_COLL_TIMEOUT = 8;
+
+   define float FORCE_CROUCH_TIMEOUT = 60;
+   define float CROUCH_CRUSH_TIMEOUT = 6;
+
+   ////define float MAX_SPEEDYUP = 1.8;
+   define float MAX_SPEEDYUP = 1.8;
+   define float MAX_SPEEDYDOWN = 1.8*1.3;
+   define float MAX_SPEEDYDOWNSTOMP = 1.8*1.6;
+   define float ADD_SPEEDYDOWNSTOMP = 1.0;
+   define float MAX_SPEEDX = 0.75*1.25;
+
+   define float FRICTION_FLY_BOOST_Y = 0.995;
+   define float FRICTION_FLY_Y = 0.80;
+   define float FRICTION_FLY_H = 0.81;
+   define float FRICTION_H = 0.79;
+   define float FRICTION_CROUCH_H = 0.96;
+
+   float friction_fly_h;
+   float friction_h;
+   float friction_crouch_h;
+
+   float crouch_jump_speedx;
+   float fly_speedx;
+   float walk_speedx;
+
+
+   define float SMALLJUMP_TIMEOUT = 12;
+   define float SMALLJUMP_TIMEOUT_NOFLY = 7;
+
+   define float BOUNCE_U = 0.12; // handleCollision
+   define float BOUNCE_D = 0.12;
+   define float BOUNCE_H = 0.25;
+
+   define float WALLCOLL_TIMEOUT = 10;//8
+   define float WALLJUMP_SPEEDX = 0.85*1.25;
+   define float FRICTION_WALLJUMP_SPEEDX = 0.90;
+
+   define float STOMP_RUNNER = 4;
+   define float STOMP_SMALL  = 16;
+   define float STOMP_BIG    = 48;
+
+   define float MAX_STOMP_SPEED_Y = 4.0;
+
+   boolean b_normal_last_collision;
+   int last_coll_mask;
+
+   define int ST_NORMAL           = 0;
+   define int ST_STARTING_TO_FALL = 1;
+   define int ST_FALLING          = 2;
+   define int ST_NORMAL_LANDING   = 3;
+   define int ST_JUMPING          = 4;
+   define int ST_FLYING           = 5;
+
+   int state;
+   float anim;
+
+   boolean b_allow_flying; // hover after jump
+
+   define int NORMAL_SIZE_X = 3; // Player size
+   define int NORMAL_SIZE_Y = 8;
+   define int CROUCH_SIZE_Y = 3;
+
+   ParticleSystem ps_walljump;
+   ParticleSystem ps_wallcoll;
+   ParticleSystem ps_stomp;
+   ParticleSystemLines ps_stomplines;
+
+
+   public method init() {
+      ////trace "[dbg] Character::init";
+      color32 = #ffaaaaaa;
+
+      reset_size_x              = NORMAL_SIZE_X;
+      reset_size_y              = NORMAL_SIZE_Y;
+      reset_dir_x               = 0;
+      reset_dir_y               = 0;
+      reset_gravity             = 1.0;
+      reset_gravity_stompoffset = Player.DEFAULT_GRAVITY_STOMPOFFSET;
+      reset_gravity_stompscale  = 1.0;
+      reset_speedscale          = Player.DEFAULT_SPEEDSCALE;
+      reset_b_active            = true;
+      reset_b_visible           = true;
+      reset_b_turnaround        = true;
+      reset_b_alwayscrouch      = false;
+      reset_b_nojump            = false;
+      reset_b_nowalljump        = false;
+      reset_b_nofloat           = false;
+      reset_b_mover             = true;
+      reset_b_semipermeable     = false;
+
+      friction_fly_h     = FRICTION_FLY_H;
+      friction_h         = FRICTION_H;
+      friction_crouch_h  = FRICTION_CROUCH_H;
+      crouch_jump_speedx = 0.05;
+      fly_speedx         = 0.2;
+      walk_speedx        = 0.2;
+
+      reset();
+   }
+
+   public method resetCharacter() {
+      resetEntity();
+      position_x          = reset_x;
+      position_y          = reset_y;
+      size_x              = reset_size_x;
+      size_y              = reset_size_y;
+      dir_x               = reset_dir_x;
+      dir_y               = reset_dir_y;
+      gravity             = reset_gravity;
+      gravity_stompoffset = reset_gravity_stompoffset;
+      gravity_stompscale  = reset_gravity_stompscale;
+      speed_scale         = reset_speedscale;
+      b_active            = reset_b_active;
+      b_visible           = reset_b_visible;
+      b_turnaround        = reset_b_turnaround;
+      b_alwayscrouch      = reset_b_alwayscrouch;
+      b_nojump            = reset_b_nojump;
+      b_nowalljump        = reset_b_nowalljump;
+      b_nofloat           = reset_b_nofloat;
+      b_mover             = reset_b_mover;
+      b_semipermeable     = reset_b_semipermeable;
+   }
+
+   public method reset() {
+      ////trace "xxx resetCharacter";
+      resetCharacter();
+
+      dir_x_anim = 0;
+      coll_timeout = 0;
+      smalljump_timeout = 0;
+      wallcoll_timeout = 0;
+      walljump_speed_x = 0;
+      walljump_last_dirx = 0;
+      b_crouch = false;
+      b_force_crouch = false;
+      force_crouch_timeout = 0.0;
+      last_coll_mask = 0;
+      carry_entity <= null;
+      b_stomping = false;
+      stomp_timeout = 0;
+
+      ps_walljump.init(32);
+      ps_wallcoll.init(16);
+      ps_stomp.init(16);
+      ps_stomplines.init(32);
+
+      beginState(ST_NORMAL);
+
+      suggested_speed_x = 0;
+      suggested_speed_y = 0;
+
+      setEnableCrouch(b_alwayscrouch);
+
+      standon_entity <= null;
+      standon_entity_timeout = 0;
+
+      last_floor_coll_entity <= null;
+      last_floor_coll_timeout = 0;
+
+      hang_under_entity <= null;
+      hang_under_entity_timeout = 0;
+      
+      delta_x = 0;
+      delta_y = 0;
+
+      speed_x = 0;
+      speed_y = 0;
+
+      rejump_timeout = 0;
+   }
+
+   public method rotatecw() {
+      float osx = size_x;
+      float osy = size_y;
+      Entity::rotatecw();
+      size_x = osx;
+      size_y = osy;
+   }
+
+   public method landOnEntity(Entity _e) compile { 
+      ////trace "xxx landOnEntity "+#(_e)+" state="+state;
+
+      if(@(_e) != @(carry_entity))
+      {
+         if((@(_e) != @(standon_entity)) && (state == ST_FALLING)) || (_e.gravity == 0) // hack hack hack
+         {
+            beginState(ST_NORMAL_LANDING);
+            if(_e.delta_x != 0)
+            {
+               if(@(standon_entity) != @(_e))
+               {
+                  speed_x = 0;
+               }
+            }
+            standon_entity <= _e;
+            standon_entity_timeout = STANDON_ENTITY_TIMEOUT;
+         }
+         standon_entity_timeout = STANDON_ENTITY_TIMEOUT;
+
+         if(speed_y < 0)
+         {
+            speed_y = 0;
+         }
+      }
+   }
+
+   public method beginState(int _st) compile {
+      ////trace "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx beginState "+_st;
+      ////trace "xxx beginState: b_alwayscrouch="+b_alwayscrouch+" b_crouch="+b_crouch;
+
+      state = _st;
+      anim = 0;
+
+      if(ST_FALLING == state)
+      {
+         speed_y -= 0.3;
+      }
+      else if(ST_NORMAL == state)
+      {
+         b_normal_last_collision = false;
+         speed_y -= 0.3;
+      }
+      else if(ST_NORMAL_LANDING == state)
+      {
+         if(b_stomping)
+         {
+            b_stomping = false;
+
+            if(stomp_timeout >= STOMP_RUNNER)
+            {
+               stompRunners();
+            }
+
+            if(stomp_timeout > STOMP_BIG)
+            {
+               stomp_timeout = 30;
+               spawnStompParticles(16, 0.7);
+            }
+            else
+            {
+               stomp_timeout = 14;
+               spawnStompParticles(8, 0.25);
+            }
+         }
+
+         ////trace "xxx beginState LANDING rejump_timeout="+rejump_timeout;
+
+         if(rejump_timeout > 0)
+         {
+            jump();
+         }
+      }
+      else if(ST_FLYING == state)
+      {
+         ////trace "[dbg] beginState(ST_FLYING): speed_y="+speed_y;
+      }
+   }
+
+   public method stompRunners() {
+      // Find all moving blocks on the same floor as the player
+      Character *c;
+      foreach c in g_level.baddies
+      {
+         if(@(c.last_floor_coll_entity) == @(last_floor_coll_entity))
+         {
+            ////trace "xxx stompRunners: c="+#(c);
+            c.handleStomp();
+         }
+      }
+   }
+
+   public virtual draw(float dt) {
+
+      if(!b_visible)
+      {
+         if(b_edit_mode)
+         {
+            Render.drawFilledBox(position_x, position_y, size_x, size_y, #ff222222); // debug info
+            if(b_mover)
+            {
+               Render.drawRectangle(position_x, position_y, size_x, size_y, #ff009900); // debug info
+            }
+            else
+            {
+               Render.drawRectangle(position_x, position_y, size_x, size_y, #ff990000); // debug info
+            }
+         }         
+         return;
+      }
+
+      compile
+      {
+         ////trace "."+state;
+         ////trace "xxx Character::draw: pos=("+position_x+";"+position_y+")";
+         if(g_ingame.current_rotation != 0)
+         {
+            // (broken) Hack to unrotate player when rooms are rotated
+            //trace "xxx current_rotation="+g_ingame.current_rotation;
+            Render.drawRotatedFilledBox(position_x, position_y, size_x, size_y, color32, -g_ingame.current_rotation*2PI/360);
+         }
+         else
+         {
+            Render.drawFilledBox(position_x, position_y, size_x, size_y, color32);
+         }
+         
+         // Render particles
+         glPointSize(2.0f);
+         
+         ps_walljump.draw(dt);
+         
+         spawnWallCollParticles(dt);
+         ps_wallcoll.draw(dt);
+         
+         ps_stomp.draw(dt);
+         ps_stomplines.draw(dt);
+         
+         glPointSize(1.0f);
+      }
+   }
+   
+   public method handleCollectEntity(Entity _o) : boolean {
+      return false;
+   }
+
+   public method handleWallCollision(Entity _o) {
+   }
+
+   public method handleStomp() {
+   }
+
+   public method handleCollision(Entity _o, int _dir, float _px, _py) {
+      ////trace "xxx Character::handleCollision: this="+#(this)+" o="+#(o)+" dir="+_dir;
+      ////trace "xxx Character::handleCollision: this="+#(this)+" o="+#(_o)+" o.b_nocollision="+_o.b_nocollision;
+      if(!b_active || !b_visible)
+      {
+         return;
+      }
+
+      boolean bNoColl = _o.b_nocollision;
+
+      if(_o instanceof BirdItem)
+      {
+         ////trace "xxx Character::handleCollision: o is upitem";
+         if(carry_entity instanceof Runner)
+         {
+            BirdItem up <= _o;
+            if(up.b_collectable)
+            {
+               ////trace "xxx Character::handleCollision: o is upitem and carrying a runner";
+               bNoColl = false;
+               tryToLandOnEntity(_dir, _o);
+            }
+         }
+      }
+
+      if((_o.b_collectable) && (@(this)==@(g_player)))
+      {
+         if(handleCollectEntity(_o))
+         {
+         }
+         return;
+      }
+      else if(bNoColl)
+      {
+         return;
+      }
+
+      switch(_dir)
+      {
+         case DIR_LEFT:
+         case DIR_RIGHT:
+            if(this instanceof Player)
+            {
+               // hack hack hack
+               Player ply <= this;
+               if(Player.HOOK_INACTIVE == ply.hook_state) // hack to avoid collision when rope-jumping topleft/topright corners
+               {
+                  position_x += (_px - position_x) * 0.25 * g_dt;
+               }
+               else
+               {
+                  position_x = _px;
+               }
+            }
+            else
+            {
+               position_x = _px;
+            }
+            if(force_crouch_timeout < 0.01)
+            {
+               if(speed_x < 0)
+               {
+                  if(speed_x < wallcoll_speed_x)
+                     wallcoll_speed_x = speed_x;
+               }
+               else
+               {
+                  if(speed_x > wallcoll_speed_x)
+                     wallcoll_speed_x = speed_x;
+               }
+
+               //trace "xxx coll L/R crouchTO="+force_crouch_timeout;
+               if(DIR_LEFT == _dir)
+               {
+                  if(speed_x > 0)
+                  {
+                     speed_x = -speed_x * BOUNCE_H;
+                  }
+               }
+               else
+               {
+                  if(speed_x < 0)
+                  {
+                     speed_x = -speed_x * BOUNCE_H;
+                  }
+               }
+
+               wallcoll_timeout = WALLCOLL_TIMEOUT;
+               wallcoll_lastdir = _dir;
+               walljump_speed_x *= 0.5;
+               handleWallCollision(_o);
+            }
+            break;
+            
+         case DIR_UP:
+            position_y = _py;
+            speed_y = -speed_y * BOUNCE_U;
+            last_floor_coll_entity <= _o;
+            last_floor_coll_timeout = LAST_FLOOR_COLL_TIMEOUT;
+            ////trace "xxx COLL UP";
+            break;
+            
+         case DIR_DOWN:
+            if(gravity < 0)
+            {
+               position_y = _py;
+               position_y += 0.001; // push into platform
+               if(speed_y <= 0)
+               {
+                  hang_under_entity <= _o;
+                  hang_under_entity_timeout = HANG_UNDER_ENTITY_TIMEOUT;
+                  speed_y = 0;
+               }
+            }
+            else
+            {
+               position_y = _py;
+               speed_y = -speed_y * BOUNCE_D;
+            }
+            ////trace "xxx COLL DOWN";
+            break;
+      }
+
+
+   }
+
+   protected method checkEntityCollision() : int {
+      if(!b_active || !b_visible)
+      {
+         return 0;
+      }
+
+      int c = 0;
+      if(1)//if(coll_timeout < 0.01)
+      {
+         Entity *e;
+         foreach e in g_level.entities compile {
+            if(e.checkCollision(this))
+            {
+               int d = e.hitBy(this); // returns DIR_xxx
+               c |= d;
+               ////trace "xxx hitBy returned "+c;
+               coll_timeout = 3.0;
+            }
+         }
+      }
+
+      compile
+      {
+         // Colliding above and below? force crouch
+         if( ((last_coll_mask&DIR_UP) && (c&DIR_DOWN)) ||
+             ((last_coll_mask&DIR_DOWN) && (c&DIR_UP)) )
+         {
+            ////trace "xxx coll UD this="+#(this);
+            if(false)
+            {
+               if(!b_force_crouch)
+               {
+                  b_force_crouch = true;
+                  if(!b_crouch)
+                  {
+                     position_y += (NORMAL_SIZE_Y - CROUCH_SIZE_Y) + 0.2;
+                     size_y = CROUCH_SIZE_Y;
+                  }
+               }
+               force_crouch_timeout = FORCE_CROUCH_TIMEOUT;
+            }
+            else
+            {
+               // (TODO) only allow player to be crushed when a colliding entity is a movable block ?
+               ///trace "xxx crush 1";
+               g_ingame.showMessage("you have been crushed", "you failed to complete this room. please try again !", 180, Ingame.ACTION_RESETMAP);
+            }
+         }
+      }
+
+      // // if(this instanceof Player)
+      // // {
+      // //    trace "xxx last_coll_mask="+last_coll_mask+" c="+c;
+      // // }
+
+      last_coll_mask = c;
+      return c;
+   }
+
+   protected method checkItemCollision() : int {
+      Item e;
+      foreach e in g_level.items {
+         if(e.checkCollision(this))
+         {
+            int d = e.hitBy(this); // returns DIR_xxx
+            ////trace "xxx hitBy returned "+c;
+         }
+      }
+   }
+
+
+   protected method calcStNormal(float dt) compile {
+      b_allow_flying = true; // allow floating after walking of a plattform or solid block
+      int c = checkEntityCollision();
+      if(!c)
+      {
+         //trace "xxx calcStNormal: no collision speed_y="+speed_y;
+         beginState(ST_FALLING);
+      }
+      else
+      {
+         ///trace "xxx calcStNormal: collision detected speed_y="+speed_y+" dir="+c;
+         b_normal_last_collision = false;
+      }
+
+      // Push player against the floor to stay in NORMAL state (instead of cycling
+      // through NORMAL, FALLING and LANDING states)
+      if(speed_y > 0)
+         speed_y = -speed_y;
+      
+      if(speed_y > -0.01)
+         speed_y = -0.01;
+   }
+
+   protected method calcStStartingToFall(float dt) compile {
+      int c = checkEntityCollision();
+      if(!c)
+      {
+         anim += 0.05 * dt;
+         if(anim >= 1.0)
+         {
+            beginState(ST_FALLING);
+         }
+         else
+         {
+            speed_y -= dt * 0.1 * sin(anim*PI*0.5);
+         }
+      }
+      else
+      {
+         if(c == DIR_UP)
+         {
+            beginState(ST_NORMAL_LANDING);
+         }
+         //beginState(ST_FALLING);
+      }
+   }
+
+   protected method calcStFalling(float dt) {
+      int r = checkEntityCollision();
+      if(!(r & DIR_UP)) // no collision with floor ?
+      {
+         ////trace "xxx ST_FALLING no floor coll";
+         if(speed_y < 0)
+         {
+            if(dir_y == 1)
+            {
+               ////trace "xxx FALLING try fly allow="+b_allow_flying;
+               if(true == b_allow_flying)
+               {
+                  b_allow_flying = false;
+                  beginState(ST_FLYING);
+                  return;
+               }
+            }
+         }
+         ////trace "xxx ST_FALLING: speed_y="+speed_y;
+         anim += 0.05 * dt;
+         if(anim >= 1.0)
+            anim -= 1.0;
+         speed_y -= dt * (0.1 * (b_stomping?6:1));
+      }
+      else
+      {
+         ////trace "xxx end state FALLING";
+         speed_y = 0;
+         beginState(ST_NORMAL_LANDING);
+      }
+   }
+
+   protected method calcStNormalLanding(float dt) compile {
+      int r = checkEntityCollision();
+      if(!r || !(r&DIR_UP))
+      {
+         anim += 0.25 * dt;
+         if(anim >= 1.0)
+         {
+            beginState(ST_NORMAL);
+         }
+      }
+      else
+      {
+         beginState(ST_FALLING);
+      }
+   }
+
+   protected method calcStJumping(float dt) {
+      anim += 0.075 * dt;
+      ////trace "xxx JUMPING anim="+anim;
+
+      int c = checkEntityCollision();
+      if(c&DIR_DOWN) // collision with ceiling?
+      {
+         beginState(ST_FALLING);
+         return;
+      }
+
+      if(smalljump_timeout > 0)
+      {
+         smalljump_timeout -= dt;
+         if(smalljump_timeout <= 0)
+         {
+            smalljump_timeout = 0;
+         }
+      }
+
+      if(anim < 0.2)
+      {
+         speed_y += 0.04 * dt * cos(anim * PI*0.5);
+      }
+      else if(anim < 0.9)
+      {
+         speed_y += 0.04 * dt * cos(anim * PI*0.5);
+      }
+      if(anim >= 1.0)
+      {
+         beginState(ST_FALLING);
+      }
+
+   }
+
+   protected method calcStFlying(float dt) compile {
+      int r = checkEntityCollision();
+      if(!(r & DIR_UP)) // no collision with floor ?
+      {
+         ////trace "xxx ST_FLYING anim="+anim+" speed_y="+speed_y;
+         if(speed_y < 0)
+         {
+            if(gravity < 0)
+            {
+               speed_y *= mathPowerf(FRICTION_FLY_BOOST_Y, dt);
+               speed_y -= dt * 0.025;
+            }
+            else
+            {
+               speed_y *= mathPowerf(FRICTION_FLY_Y, dt);
+               speed_y += dt * 0.1;
+            }
+         }
+         else
+         {
+            speed_y += dt * 0.04;
+         }
+         anim += 0.05 * dt;
+         if(anim >= 1.0)
+         {
+            beginState(ST_FALLING);
+         }
+      }
+      else
+      {
+         ////trace "xxx end state FALLING";
+         speed_y = 0;
+         beginState(ST_NORMAL_LANDING);
+      }
+   }
+
+   protected method calcStVerticalMover(float dt) compile {
+      // a bit hackish, used for vertical ping-pong movers 
+      // this should actually be placed in the Runner class :/
+      int c = checkEntityCollision();
+      if(c&DIR_DOWN) // collision with ceiling?
+      {
+         if(b_turnaround)
+         {
+            dir_y = -dir_y;
+         }
+      }
+      else if(c & DIR_UP) // collision with floor ?
+      {
+         if(b_turnaround)
+         {
+            dir_y = -dir_y;
+         }
+      }
+      speed_y = dir_y * (MAX_SPEEDX*2);
+      position_y += dt * speed_y * speed_scale;
+   }
+
+   public method checkPlayerCollisions() {
+   }
+
+   public virtual calc(float dt) {
+      if(!b_active)
+      {
+         return;
+      }
+
+      // if(this instanceof Player)
+      // {
+      //    ////trace "xxx Player::calc: this="+#(this);
+      //    ////trace "xxx Player::calc: state="+state;
+      //    trace "xxx Player::calc: pos=("+position_x+";"+position_y+")";
+      //    ////trace "xxx Player::calc: speed_x="+speed_x;
+      //    ////trace "xxx Player::calc: dir_x="+dir_x+" b_crouch="+b_crouch+" b_force_crouch="+b_force_crouch+" dir_x_anim="+dir_x_anim;
+      //    ////trace "xxx Player::calc: standon_entity="+#(standon_entity);
+      // }
+
+      compile
+      {
+         if(b_stomping)
+         {
+            stomp_timeout += dt;
+            ////trace "xxx b_stomping";
+
+            if(rnd(int((7*(0.25/dt))+0.75))==1)
+            {
+               ////trace "xxx rnd stompline dt="+dt;
+               Particle *p;
+               float spd = rnd(2.0)+0.1;
+               boolean bStompBig = (stomp_timeout >= STOMP_BIG);
+               boolean bStompSmall = (stomp_timeout >= STOMP_SMALL);
+               if(!bStompSmall)
+               {
+                  spd *= 0.6;
+               }
+               p <= ps_stomplines.spawn(position_x, position_y, -0.1*spd, 0.6*spd, 15);
+               float len = rnd(6)+3;
+               if(null != p)
+               {
+                  if(bStompBig)
+                  {
+                     p.cr = 1.0;
+                     p.cg = 0.5;
+                     p.cb = 0.2;
+                  }
+                  else if(!bStompSmall)
+                  {
+                     p.cr = 0.1;
+                     p.cg = 0.1;
+                     p.cb = 0.3;
+                  }
+                  p.len = len;
+               }
+               p <= ps_stomplines.spawn(position_x+size_x, position_y,  0.1*spd, 0.6*spd, 15);
+               if(null != p)
+               {
+                  if(bStompBig)
+                  {
+                     p.cr = 1.0;
+                     p.cg = 0.5;
+                     p.cb = 0.2;
+                  }
+                  else if(!bStompSmall)
+                  {
+                     p.cr = 0.1;
+                     p.cg = 0.1;
+                     p.cb = 0.3;
+                  }
+                  p.len = len;
+               }
+            }
+         }
+         else
+         {
+            if(stomp_timeout > 0)
+            {
+               stomp_timeout -= dt;
+            }
+         }
+      
+         if(force_crouch_timeout > 0)
+         {
+            force_crouch_timeout -= dt;
+            if(force_crouch_timeout <= 0)
+            {
+               force_crouch_timeout = 0;
+               b_force_crouch = false;
+               size_y = NORMAL_SIZE_Y;
+            }
+         }
+
+         crouch_crush_timeout = mathClampf(crouch_crush_timeout - dt, 0, 100);
+
+         boolean bWalking = [ST_NORMAL, ST_STARTING_TO_FALL, ST_NORMAL_LANDING].contains(state);
+         boolean bCrouch = b_force_crouch || b_crouch;
+
+         if(bWalking && bCrouch)
+         {
+            if(abs(speed_x) > 0.1)
+            {
+               int l = 100 - (dt/0.25) * 60;
+               if(l > 75) l = 75;
+               if(rnd(int(100*abs(speed_x)))>l)
+               {
+                  ps_wallcoll.spawn(position_x + ((dir_x>0)?size_x:0), position_y, (dir_x>0)?0.4:-0.4, rnd(0.2)+0.2, 25);
+               }
+            }
+         }
+
+         rejump_timeout -= dt;
+         if(rejump_timeout < 0)
+            rejump_timeout = 0;
+
+         coll_timeout -= dt;
+         if(coll_timeout < 0.01)
+         {
+            coll_timeout = 0;
+         }
+
+         if(wallcoll_timeout > 0)
+         {
+            ////trace "xxx wallcoll_timeout="+wallcoll_timeout;
+            wallcoll_timeout -= dt;
+            if(wallcoll_timeout < 0.01)
+            {
+               wallcoll_timeout = 0;
+               wallcoll_speed_x = 0;
+            }
+         }
+
+         position_x += (speed_x * speed_scale/* + suggested_speed_x*/) * dt;
+
+         /////trace "xxx this="+#(this)+" speed_x="+speed_x;
+         float cspdy = (speed_y /*+ suggested_speed_y*/) * gravity;
+         if(b_stomping)
+         {
+            float stompSpdy = (stomp_timeout / STOMP_BIG) * ADD_SPEEDYDOWNSTOMP * gravity_stompscale;
+            ////trace "xxx stompSpdy="+stompSpdy;
+            if(stompSpdy > MAX_STOMP_SPEED_Y)
+            {
+               stompSpdy = MAX_STOMP_SPEED_Y;
+            }
+            cspdy -= stompSpdy;
+         }
+
+         position_y += cspdy * dt;
+
+         suggested_speed_x *= mathPowerf(0.95, dt);
+
+
+         if(abs(walljump_speed_x) > 0)
+         {
+            speed_x += walljump_speed_x * dt;
+            walljump_speed_x *= mathPowerf(FRICTION_WALLJUMP_SPEEDX, dt);
+            if(abs(walljump_speed_x) < 0.1)
+            {
+               walljump_speed_x = 0;
+               if(walljump_last_dirx)
+               {
+                  dir_x = walljump_last_dirx;
+               }
+               walljump_last_dirx = 0;
+            }
+         }
+
+         if(dir_x != 0)
+         {
+            dir_x_anim += dir_x * 0.1 * dt;
+            dir_x_anim = mathClampf(dir_x_anim, -1, 1);
+         }
+         else
+         {
+            dir_x_anim *= mathPowerf(0.82, dt);
+         }
+
+
+         if(!bWalking)
+         {
+            if(bCrouch)
+            {
+               // crouch jump
+               speed_x += crouch_jump_speedx * dir_x * dt;
+            }
+            else
+            {
+               // fly
+               speed_x += fly_speedx * dir_x * dt;
+            }
+         }
+         else
+         {
+            if(!bCrouch)
+            {
+               if(this instanceof Player)
+               {
+                  speed_x += walk_speedx * dir_x_anim * dt;
+               }
+               else
+               {
+                  speed_x += walk_speedx * dir_x * (1-0.75*cos(abs(dir_x_anim)*PI*0.5)) * dt;
+               }
+            }
+         }
+         if(speed_x > MAX_SPEEDX)
+         {
+            speed_x = MAX_SPEEDX;
+         }
+         else if(speed_x < -MAX_SPEEDX)
+         {
+            speed_x = -MAX_SPEEDX;
+         }
+
+         if(bCrouch)
+         {
+            ////float xxx = mathPowerf(FRICTION_CROUCH_H, dt);
+            speed_x *= mathPowerf(friction_crouch_h, dt);
+         }
+         else if(bWalking)
+         {
+            ///trace "xxx walking";
+            speed_x *= mathPowerf(friction_h, dt);
+         }
+         else
+         {
+            speed_x *= mathPowerf(friction_fly_h, dt);
+         }
+
+         if((0 == dir_x)||b_crouch)
+         {
+            if(abs(speed_x) < 0.000075)
+            {
+               speed_x = 0;
+            }
+         }
+
+         ////trace "xxx state="+state+" anim="+anim;
+
+         ///trace "xxx speed_x FIN="+speed_x;
+
+         // Implemented by derived Player class to check for item/baddy collisions
+         checkPlayerCollisions();
+      }
+
+      if(this instanceof Runner)
+      {
+         if(dir_y != 0)
+         {
+            // Movers/runners
+            calcStVerticalMover(dt);
+            return;
+         }
+      }
+
+        
+      switch(state)
+      {
+         case ST_NORMAL:
+            calcStNormal(dt);
+            break;
+
+         case ST_STARTING_TO_FALL:
+            calcStStartingToFall(dt);
+            break;
+
+         case ST_FALLING:
+            calcStFalling(dt);
+            break;
+
+         case ST_NORMAL_LANDING:
+            calcStNormalLanding(dt);
+            break;
+
+         case ST_JUMPING:
+            calcStJumping(dt);
+            break;
+
+         case ST_FLYING:
+            calcStFlying(dt);
+            break;
+      }
+
+      if(speed_y < -(b_stomping?MAX_SPEEDYDOWNSTOMP:MAX_SPEEDYDOWN))
+      {
+         speed_y = -(b_stomping?MAX_SPEEDYDOWNSTOMP:MAX_SPEEDYDOWN);
+      }
+      else if(speed_y > MAX_SPEEDYUP)
+      {
+         speed_y = MAX_SPEEDYUP;
+      }
+
+      if((position_y < -100) || (position_y > 3000))
+      {
+         if(@(this) == @(g_player)) // hack
+         {
+            g_ingame.showMessage("out of bounds !", "you have failed to complete this room. please try again !", 120, Ingame.ACTION_RESETMAP);
+         }
+      }
+
+      if(null != standon_entity)
+      {
+         position_y = standon_entity.position_y + standon_entity.size_y; // -0.01 to keep colliding
+         position_x += standon_entity.delta_x;
+         //trace "xxx standon_entity="+#(standon_entity)+" dx="+standon_entity.delta_x+" timeout="+standon_entity_timeout;
+         if(standon_entity_timeout > 0)
+         {
+            standon_entity_timeout -= dt;
+            if(standon_entity_timeout <= 0)
+            {
+               standon_entity <= null;
+               suggested_speed_y =0;
+               ///trace "xxx player reset suggested_speed_y="+suggested_speed_y;
+            }
+         }
+      }
+
+      if(null != last_floor_coll_entity)
+      {
+         if(last_floor_coll_timeout > 0)
+         {
+            last_floor_coll_timeout -= dt;
+            if(last_floor_coll_timeout <= 0)
+            {
+               last_floor_coll_entity <= null;
+            }
+         }
+      }
+
+      if(null != hang_under_entity)
+      {
+         if(hang_under_entity_timeout > 0)
+         {
+            position_x += hang_under_entity.delta_x;
+            hang_under_entity_timeout -= dt;
+            if(hang_under_entity_timeout <= 0)
+            {
+               speed_x += hang_under_entity.delta_x * (1.0 / dt);
+               hang_under_entity <= null;
+            }
+         }
+      }
+
+      if(null != carry_entity)
+      {
+         carry_entity.position_y = position_y + size_y + 1;
+         carry_entity.position_x = position_x + (size_x - carry_entity.size_x)*0.5;
+      }
+   }
+
+   public method jump() {
+      if(b_nojump)
+      {
+         return;
+      }
+
+      compile
+      {
+         ////trace "xxx jump. cstate="+state;
+         anim = 0;
+         state = ST_JUMPING;
+         position_y += 0.05;
+         speed_y = 1.1;
+         coll_timeout = 1;
+         b_allow_flying = maybe;
+         smalljump_timeout = SMALLJUMP_TIMEOUT;
+         if(suggested_speed_y < 0)
+         {
+            suggested_speed_y = 0;
+         }
+         speed_y += suggested_speed_y;
+         ////trace "xxx jump suggested_speed_y="+suggested_speed_y;
+         suggested_speed_y = 0;
+         if(null != standon_entity)
+         {
+            ////trace "xxx jumping while standing on "+#(standon_entity)+" delta=("+standon_entity.delta_x+";"+standon_entity.delta_y+")";
+            ////trace "xxx jumping while standing on "+#(standon_entity)+" delta=("+standon_entity.delta_x+";"+standon_entity.delta_y+")";
+            speed_x += standon_entity.delta_x*4;
+            speed_y += standon_entity.delta_y*3;
+            suggested_speed_x = standon_entity.speed_x * standon_entity.speed_scale;
+            speed_x += suggested_speed_x;
+            standon_entity <= null;
+            standon_entity_timeout = 0;
+         }
+         last_floor_coll_entity <= null;
+         last_floor_coll_timeout = 0;
+      }
+   }
+   
+   public method walljump() {
+      if(b_nowalljump)
+      {
+         return;
+      }
+
+      compile
+      {
+         wallcoll_timeout = 0;
+         //trace "xxx WALLJUMP lastdir="+wallcoll_lastdir+" dir_x="+dir_x;
+         boolean bOk = false; // player must steer in opposite direction of wall to become true
+         if(wallcoll_lastdir == DIR_LEFT)
+         {
+            if(dir_x == -1)
+               //if(1)
+            {
+               walljump_speed_x = -WALLJUMP_SPEEDX;
+               bOk = true;
+            }
+            else
+            {
+               //trace "xxx LEFT wallcoll_speed_x="+wallcoll_speed_x;
+               if(speed_x < -0.01)
+               {
+                  walljump_speed_x = -WALLJUMP_SPEEDX;
+                  bOk = true;
+               }
+            }
+         }
+         else
+         {
+            if(dir_x == 1)
+               //if(1)
+            {
+               walljump_speed_x = WALLJUMP_SPEEDX;
+               bOk = true;
+            }
+            else
+            {
+               //trace "xxx RIGHT wallcoll_speed_x="+wallcoll_speed_x;
+               if(speed_x > 0.01)
+               {
+                  walljump_speed_x = WALLJUMP_SPEEDX;
+                  bOk = true;
+               }
+            }
+         }
+
+
+         if(bOk)
+         {
+            speed_y = 1.7*1.33;
+            walljump_last_dirx = dir_x;
+            dir_x = 0;
+            dir_y = 0;
+            spawnWalljumpParticles();
+         }
+      }
+   }
+
+   public method spawnWalljumpParticles() compile {
+      float px;
+      float py = position_y;
+      float a;
+      if(walljump_last_dirx < 0)
+      {
+         px = position_x + size_x;
+         a = 0;
+      }
+      else
+      {
+         px = position_x;
+         a = PI;
+      }
+      a = a + 1.2;
+      int num = 16;
+      float w = ((2PI-2.4) / num);
+      float cdx = speed_x * 0.1;
+      float cdy = speed_y *0.1;
+      loop(num)
+      {
+         float dx =  cos(a)*0.25 + cdx;
+         float dy = -sin(a)*0.25 + cdy;
+         ps_walljump.spawn(px, py, dx, dy, 24);
+         a += w;
+      }
+   }
+
+   public method spawnWallCollParticles(float dt) compile {
+      if(speed_y < 0)
+      {
+         if(wallcoll_timeout > 0)
+         {
+            float px;
+            float dx;
+            if(wallcoll_lastdir == DIR_RIGHT)
+            {
+               px = position_x;
+               dx = 0.46;
+            }
+            else
+            {
+               px = position_x + size_x;
+               dx = -0.46;
+            }
+            if(rnd(int(5*(1.0/dt)))==1)
+            {
+               ps_wallcoll.spawn(px, position_y-0.2, dx, rnd(-0.5)-0.2, 20);
+            }
+         }
+      }
+   }
+
+   public method spawnStompParticles(int num, float spread) compile {
+      float px = position_x + size_x*0.5;
+      float py = position_y - 3.3;
+      float a = PI;
+      float w = ((PI) / num);
+      float cdx = 0;
+      float cdy = 0.5;
+      loop(num)
+      {
+         float dx =  cos(a)*spread + cdx + rnd(0.2) - 0.1;
+         float dy = -sin(a)*spread*0.32 + cdy + rnd(0.1);
+         ps_walljump.spawn(px, py, dx, dy, 44);
+         a += w;
+      }
+   }
+
+   public method setEnableCrouch(boolean _bCrouch) compile {
+      ////trace "xxx setEnableCrouch("+_bCrouch+")";
+      if(!b_force_crouch)
+      {
+         if(_bCrouch)
+         {
+            size_y = CROUCH_SIZE_Y;
+         }
+         else
+         {
+            size_y = NORMAL_SIZE_Y;
+         }
+      }
+      b_crouch = _bCrouch;
+      if(!b_crouch)
+      {
+         if((gravity < 0) && (state == ST_FALLING))
+         {
+            position_y -= (NORMAL_SIZE_Y - CROUCH_SIZE_Y);
+         }
+         crouch_crush_timeout = CROUCH_CRUSH_TIMEOUT;
+      }
+   }
+
+   public method tryToLandOnEntity(int d, Entity e) : boolean {
+      ////trace "xxx tryToLandOnEntity d="+d+" e="+#(e)+" state="+state;
+      if(!(d & (Entity.DIR_RIGHT | Entity.DIR_LEFT)))
+      {
+         ////setSuggestedSpeedX(e.speed_x * e.speed_scale);
+         if(d & Entity.DIR_UP)
+         {
+            if(position_y >= (e.position_y -0.5))
+            {
+               if(state != ST_JUMPING)
+               {
+                  position_y = e.position_y + e.size_y - 0.01; // hack to keep colliding
+                  ////trace "xxx land on block "+#(e)+" p.speed_y="+speed_y;
+                  landOnEntity(e);
+               
+                  if((Entity.DIR_UP == d) && ((e.dir_y != 0)||(e.speed_y > 0))) // reset_dir_y
+                  {
+                     ///trace "xxx character: setSuggestedSpeedY "+e.speed_y * e.speed_scale;
+                     setSuggestedSpeedY(e.speed_y * e.speed_scale);
+                     speed_y = e.speed_y * e.speed_scale;
+                  }
+                  return true;
+               }
+            }
+         }
+         else
+         {
+            position_y = position_y + 0.01; // hack to keep colliding
+         }
+      }
+      return false;
+   }
+
+   public virtual actionActivate() {
+      ////trace "xxx character: b_active="+b_active+" b_visible="+b_visible;
+      b_active = true;
+   }
+
+   public virtual actionDeactivate() {
+      b_active = false;
+   }
+
+   public virtual actionSet(String key, value) : boolean {
+      StringArray *a;
+      ////trace "xxx character::actionSet: key=\""+key+"\" value=\""+value+"\"";
+      switch(key)
+      {
+         case "dirx":
+            if(value == "invert")
+            {
+               dir_x = -dir_x;
+            }
+            else
+            {
+               dir_x = value;
+            }
+            return true;
+
+         case "diry":
+            if(value == "invert")
+            {
+               dir_y = -dir_y;
+            }
+            else
+            {
+               dir_y = value;
+            }
+            ////trace "xxx set dir_y="+dir_y;
+            return true;
+
+         case "gravity":
+            if(value == "invert")
+            {
+               gravity = -gravity;
+            }
+            else
+            {
+               gravity = float(value);
+            }
+            trace "xxx player.gravity set to "+gravity;
+            return true;
+
+         case "gravity_stompoffset":
+            gravity_stompoffset = mathClampf(float(value), 0, 400);
+            return true;
+
+         case "gravity_stompscale":
+            gravity_stompscale = mathClampf(float(value), -1, 1);
+            ////trace "xxx player.gravity_stompscale set to "+gravity_stompscale;
+            return true;
+
+         case "speed":
+            speed_scale = value;
+            return true;
+
+         case "mover":
+            if(value == "toggle")
+            {
+               b_mover = !b_mover;
+            }
+            else
+            {
+               b_mover = value;
+            }
+            color32 = b_mover ? #ff00ff00 : #ffff0000;
+            return true;
+
+         case "rotate":
+            if(value == "cw")
+            {
+               g_ingame.startRotateCW();
+            }
+            else if(value == "ccw")
+            {
+               g_ingame.startRotateCCW();
+            }
+            else 
+            {
+               int pmIdx = value.charsetIndexOf("+-",0);
+               if(-1 != pmIdx)
+               {
+                  String t; 
+                  value.substring(pmIdx+1, value.length-pmIdx-1) => t;
+                  t.trim();
+                  int rel = int(t);
+                  if(value[pmIdx] == '-')
+                     rel = -rel;
+                  g_ingame.startRotateRel(rel);
+               }
+               else
+               {
+                  g_ingame.startRotateTo(value);
+               }
+            }
+            return true;
+      }
+      return BoxEntity::actionSet(key, value);
+   }
+
+   public virtual actionToggleMover() {
+      b_mover = !b_mover;
+      color32 = b_mover ? #ff00ff00 : #ffff0000;
+   }
+
+}

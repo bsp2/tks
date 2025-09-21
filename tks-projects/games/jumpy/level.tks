@@ -1,0 +1,2762 @@
+
+// 11Oct2009, 19Oct2009, 12Mar2010, 13Mar2010, 14Mar2010, 17Mar2010, 20Mar2010
+// 22Mar2010, 26Mar2010, 27Mar2010
+
+module Level;
+
+namespace jumpy;
+
+class World {
+   int    key;
+   String dirname;
+   String info;
+}
+
+class Challenge {
+   String  message;
+   boolean b_complete;
+   float   time;
+}
+
+class Level {
+   // 100x64 cells per screen (~16/10 aspect ratio)
+   define int RES_X = 100;
+   define int RES_Y = 64;
+
+   float width;
+   float height;
+
+   PointerArray entities;
+   PointerArray items;
+   PointerArray baddies;
+   PointerArray challenges;
+
+   HashTable named_entities;
+   IntArray  named_positions; // 'A'..'Z'
+
+   HashTable macros;
+
+   IntArray t_cells; // for text parser (1/3rd of actual resolution)
+   IntArray t_orig_cells; // for text parser (1/3rd of actual resolution)
+   int t_size_x;
+   int t_size_y;
+
+   IntArray *editor_cells;
+   int editor_t_size_x;
+   int editor_t_size_y;
+
+   String map_filename;
+   String map_name;
+
+   StringArray map_cyclelist;
+   int map_cycleindex;
+  
+   PointerArray world_list; // array<World>
+   int world_index;
+
+   String meta_data;
+
+   String map_diz; // description / message
+
+   Challenge *current_challenge;
+   float current_challenge_time;
+
+   String hiscore_string;
+
+   FloatArray spike_verts;
+   FloatArray spike_uvs;
+
+
+   module method loadWorldList() : boolean {
+      String t;
+
+      achievements.alloc(256);
+
+      Ingame.LoadState();
+
+      world_index = 0;
+
+      world_list.free();
+
+      boolean bLoaded = t.loadLocal("maps/worlds.txt", true);
+      if(!bLoaded)
+      {
+         bLoaded = t.load("maps/worlds.txt", true);
+      }
+      if(bLoaded)
+      {
+         StringArray a <= t.splitChar('\n');
+         foreach t in a 
+         {
+            t.trim();
+            if(!t.startsWith("#"))
+            {
+               if(!t.isBlank())
+               {
+                  StringArray va <= t.splitChar(':'); // <key>:<dirname>:<info>
+                  String key     = va.get(0);
+                  String dirname = va.get(1);
+                  String info    = va.get(2);
+                  if(!dirname.isBlank() && !key.isBlank())
+                  {
+                     t = "maps/" + t + ".map";
+                     World w <= new World;
+                     key.trim();
+                     dirname.trim();
+                     w.key     = key.getc(0);
+                     w.dirname = dirname;
+                     w.info    = info;
+                     world_list.add(#(deref w));
+                     if(b_edit_mode)
+                     {
+                        trace "[dbg] adding world key="+key+" dirname="+dirname;
+                     }
+                  }
+               }
+            }
+         }
+         
+         ////trace "[dbg] world_list="+#(world_list);
+
+         return true;
+      }
+
+      return false;
+   }
+
+   module method loadMapCycleList() : boolean {
+      String t;
+
+      map_cycleindex = 0;
+
+      map_cyclelist.free();
+
+      World w <= world_list.get(world_index);
+      if(null == w)
+      {
+         die "[---] loadMapCycleList: world #"+world_index+" does not exist.";
+      }
+
+      String mapcyclename = "maps/"+w.dirname+"/mapcycle.txt";
+
+      boolean bLoaded = t.loadLocal(mapcyclename, true);
+      if(!bLoaded)
+      {
+         bLoaded = t.load(mapcyclename, true);
+      }
+      if(bLoaded)
+      {
+         StringArray a <= t.splitChar('\n');
+         foreach t in a 
+         {
+            t.trim();
+            if(!t.startsWith("#"))
+            {
+               if(!t.isBlank())
+               {
+                  t = "maps/" + w.dirname + "/" + t + ".map";
+                  map_cyclelist.add(t);
+               }
+            }
+         }
+         
+         // map_finishflags.alloc(map_cyclelist.numElements);
+         // map_finishflags.useAll();
+         // map_finishflags.fill(b_cheat_allfinished);
+         if(b_edit_mode)
+         {
+            trace "[dbg] map_cyclelist="+#(map_cyclelist);
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   public method handleMapFinished() {
+      trace "[dbg] handleMapFinished";
+      String t = "finish "+map_cyclelist[map_cycleindex];
+      if(achievements.exists(t))
+      {
+         float recTime = achievements[t];
+         if(g_ingame.level_timer < recTime)
+         {
+            // New hiscore
+            achievements[t] = ""+g_ingame.level_timer;
+         }
+      }
+      else
+      {
+         // Map finished for the first time
+         achievements[t] = ""+g_ingame.level_timer;
+      }
+      Ingame.SaveState();
+   }
+
+   public method maySkipToNextRoom() : boolean {
+      if(-1 == map_cycleindex)
+      {
+         return true;
+      }
+      else
+      {
+         World w <= world_list[world_index];
+         String t <= "finish "+map_cyclelist[map_cycleindex];
+         return achievements.exists(t) || b_cheat_allfinished || b_edit_mode;
+      }
+   }
+
+   public method maySkipToPrevRoom() : boolean {
+      if(-1 == map_cycleindex)
+      {
+         return false;
+      }
+      else
+      {
+         World w <= world_list[world_index];
+         int prevIdx = map_cycleindex -1;
+         if(prevIdx < 0)
+         {
+            prevIdx = map_cyclelist.numElements -1;
+         }
+         String t <= "finish "+map_cyclelist[prevIdx];
+         return achievements.exists(t) || b_cheat_allfinished || b_edit_mode;
+      }
+   }
+
+   protected method loadMapByIndex(int _idx) : boolean {
+      trace "[dbg] loadMapByIndex(idx="+_idx+")";
+      if(_idx < 0)
+      {
+         _idx = map_cyclelist.numElements - 1;
+      }
+      else if(_idx >= map_cyclelist.numElements)
+      {
+         _idx = 0;
+      }
+      map_cycleindex = _idx;
+
+      String t = map_cyclelist.get(map_cycleindex);
+      if(!t.isBlank())
+      {
+         return loadMap(t);
+      }
+
+      return false;
+   }
+
+   public method loadNextMap() {
+      trace "[dbg] loadNextMap current cycleindex = "+map_cycleindex;
+      if(!b_edit_mode)
+      {
+         if(map_cycleindex == map_cyclelist.numElements-1)
+         {
+            // if((-1 == map_finishflags.indexOf(false, 0)) && (world_index == 0))
+            // {
+            // map_cyclelist.add("maps/__original/living in a box.map");
+            // }
+         }
+      }
+      loadMapByIndex(map_cycleindex + 1);
+      g_ingame.resetMap();
+   }
+
+   public method loadPreviousMap() {
+      loadMapByIndex(map_cycleindex - 1);
+      g_ingame.resetMap();
+   }
+
+   protected method addEntity(Entity e) {
+      entities.add(#(deref e));
+   }
+
+   protected method addNamedEntity(Entity e, String id) {
+      ////trace "[dbg] addNamedEntity id="+id+" e="+#(e);
+      entities.add(#(deref e));
+      named_entities[id] = e;
+   }
+
+   public method findEntityById(String _id) : Entity {
+      ////trace "xxx named_entities="+#(named_entities);
+      return named_entities[_id];
+   }
+
+   protected method addItem(Item e) {
+      items.add(#(deref e));
+   }
+
+   protected method addBaddy(Character c) {
+      baddies.add(#(deref c));
+   }
+
+   public method loadMap(String _fileName) : boolean {
+      String s;
+
+      editor_cells <= null;
+      map_diz = "";
+
+      hiscore_string = "";
+
+      trace "[dbg] loadMap(fileName=\""+_fileName+"\")";
+      String origFilename = _fileName;
+      boolean bLoaded = s.loadLocal(_fileName, true);
+      if(!bLoaded)
+      {
+         bLoaded = s.load(_fileName, true);
+      }
+      if(bLoaded)
+      {
+         if(init_fromtext(s))
+         {
+            g_editor.initCells(t_orig_cells, t_size_x, t_size_y);
+            setMapFilename(_fileName);
+            trace "[dbg] room has "+(challenges.numElements)+" challenges.";
+            current_challenge <= null;
+            current_challenge_time = -1;
+            ////trace "xxx \""+"finish "+origFilename+"\"";
+            if(achievements.exists("finish "+origFilename))
+            {
+               float recTime = achievements["finish "+origFilename];
+               float sec = recTime/60;
+               Integer iodsec = int((recTime/60-int(sec))*100);
+               trace iodsec.printf("%02d");
+               hiscore_string = " (Best time: "+int(sec)+"."+iodsec.printf("%02d")+" seconds)";
+            }
+            return true;
+         }
+         else
+         {
+            trace "[---] loadMap: init_fromtext failed.";
+         }
+         return false;
+      }
+      else
+      {
+         trace "[---] failed to load map file \""+_fileName+"\".";
+      }
+      return false;
+   }
+
+   public method setMapFilename(String _name) {
+      map_filename = _name;
+
+      World w <= world_list[world_index];
+
+      _name.replace("maps/"+w.dirname+"/", "");
+      _name.replace(".map", "");
+      map_name = _name;
+   }
+
+   public method setMapName(String _name) {
+      _name.replaceChar('/', 0);
+      _name.replaceChar('\\', 0);
+      _name.replaceChar(':', 0);
+      _name.replaceChar('$', 0);
+
+      World w <= world_list[world_index];
+      map_name     = _name;
+      map_filename = "maps/" + w.dirname + "/" + _name + ".map";
+   }
+
+   public method init_fromtext(String data) {
+      StringArray *lines;
+      lines <= data.splitChar('\n');
+
+      g_ingame.reset();
+      entities.free();
+      items.free();
+      baddies.free();
+      macros.free();
+      challenges.free();
+      named_entities.alloc(300);
+      named_positions.alloc(26);
+      named_positions.useAll();
+      named_positions.fill(-1);
+
+      // Determine level boundaries. Level ends with ';' char or end of string
+      t_size_x = 0;
+      t_size_y = lines.numElements;
+      String *l;
+      int linenr = 0;
+      int cols;
+      foreach l in lines {
+         cols = l.length -1;
+         if(-1 != l.indexOfChar(';', 0))
+         {
+            if(t_size_y >= 0)
+            {
+               t_size_y = -linenr;
+            }
+            // TODO: end of map cells, now parse meta data
+            break;
+         }
+         if(cols > t_size_x)
+         {
+            t_size_x = cols;
+         }
+         linenr++;
+      }
+      if(t_size_y < 0)
+      {
+         t_size_y = -t_size_y;
+      }
+
+      ////trace "[dbg] level::init_fromtext: tsx="+t_size_x+" tsy="+t_size_y;
+      
+      // Now read char data into 2d array
+      t_cells.alloc(t_size_x * t_size_y);
+      t_cells.useAll();
+      t_cells.fill(' ');
+      int y = 0;
+      foreach l in lines {
+         if(-1 != l.indexOfChar(';', 0))
+         {
+            break;
+         }
+         int x = 0;
+         cols = l.length-1;
+         loop(cols)
+         {
+            t_cells[x+(y*t_size_x)] = l[x];
+            x++;
+         }
+         y++;
+      }
+      lines.free();
+
+      //debugPrintCells();
+
+      t_orig_cells = t_cells;
+
+      trace "[dbg] room size=("+t_size_x+"; "+t_size_y+")";
+
+      // Scan cells and create entities
+      if(scanCellsAndCreateEntities())
+      {
+         // Parse metadata
+         parseMetaData(data);
+
+         return true;
+      }
+
+      return false;
+   }
+
+   public method findNamedCell(String t, Float rx, ry) {
+      ////trace "xxx findNamedCell t=\""+t+"\".";
+      t.trim();
+      char ch = t.getc(0);
+      if('A' <= ch <= 'Z')
+      {
+         int yx = named_positions.get(ch - 'A');
+         if(-1 != yx)
+         {
+            rx = mapCellToPosX(yx & 0xffff);
+            ry = mapCellToPosY((yx>>16) & 0xffff);
+
+            int idx = t.charsetIndexOf("+-", 0);
+            if(-1 != idx)
+            {
+               if(t[idx] == '+')
+               {
+                  idx++;
+               }
+               String s;
+               t.substring(idx, t.length-idx) => s;
+               StringArray a <= s.splitChar(';');
+
+               String tx = a.get(0);
+               String ty = a.get(1);
+               ////trace "xxx translate cell=("+tx+";"+ty+")";
+
+               if(-1 != tx.indexOfChar('*', 0))
+               {
+                  a <= tx.splitChar('*');
+                  rx += float(a.get(0)) * float(a.get(1));
+               }
+               else
+               {
+                  rx += float(tx);
+               }
+
+               if(-1 != ty.indexOfChar('*', 0))
+               {
+                  a <= ty.splitChar('*');
+                  ry += float(a.get(0)) * float(a.get(1));
+               }
+               else
+               {
+                  ry += float(ty);
+               }
+            }
+         }
+         else
+         {
+            rx = -1;
+            ry = -1;
+            trace "[---] findNamedCell: cell \'"+t+"\' was not declared.";
+         }
+      }
+      else
+      {
+         rx = -1;
+         ry = -1;
+         trace "[---] findNamedCell: illegal CELL id \'"+t+"\'.";
+      }
+   }
+
+   protected method parseMetaData(String data) {
+      int off = data.indexOfChar(';', 0);
+      meta_data = "";
+      if(-1 != off)
+      {
+         String meta;
+         data.substring(off+2, data.length-off-2) => meta;
+         meta_data = meta;
+         ////trace "xxx meta=\""+meta+"\"";
+         ////trace "xxx ~~~~~~~~~~~~~~~~";
+         off = -1;
+         int lastValueOff = -1;
+         String lastKey;
+         int eoff = -1;
+         do {
+            String key;
+            String value;
+            off = meta.indexOfChar('§', off+1);
+            ////trace "xxx off="+off;
+            if(-1 != off)
+            {
+               eoff = meta.charsetIndexOf(" \n", off+1);
+               ////trace "xxx eoff="+eoff;
+               if(-1 != eoff)
+               {
+                  meta.substring(off+1, (eoff-off-1)) => key;
+                  if(lastValueOff != -1)
+                  {
+                     meta.substring(lastValueOff, off-lastValueOff) => value;
+
+                     parseEntity(lastKey, value);
+                  }
+                  lastValueOff = eoff+1;
+                  lastKey = key;
+                  ////trace "xxx key=\""+key+"\"";
+               }
+               else
+               {
+                  // malformed tag
+                  break;
+               }
+            }
+            else
+            {
+               meta.substring(lastValueOff, meta.length-lastValueOff) => value;
+               parseEntity(lastKey, value);
+            }
+         } while(-1 != off);
+
+      }
+   }
+
+   protected method parseEntity(local String lastKey, local value) {
+      ////trace "xxx value=\""+value+"\"";
+      switch(lastKey)
+      {
+         case "diz": // Map description
+            map_diz = value;
+            break;
+
+         case "global":
+            parseGlobal(value);
+            break;
+
+         case "wall":
+            parseWall(value);
+            break;
+
+         case "elastic":
+            parseElastic(value);
+            break;
+
+         case "runner":
+            parseRunner(value);
+            break;
+                           
+         case "door":
+            parseDoor(value);
+            break;
+
+         case "switch":
+            parseSwitch(value);
+            break;
+
+         case "finish":
+            parseFinish(value);
+            break;
+
+         case "up":
+            parseUp(value);
+            break;
+
+         case "spike":
+            parseSpike(value);
+            break;
+
+         case "timer":
+            parseTimer(value);
+            break;
+
+         case "sequencer":
+            parseSequencer(value);
+            break;
+
+         case "script":
+            parseScript(value);
+            break;
+
+         case "wheel":
+            parseWheel(value);
+            break;
+
+         case "wave":
+            parseWave(value);
+            break;
+
+         case "macro":
+            parseMacro(value);
+            break;
+
+         case "call":
+            parseCall(value);
+            break;
+
+         case "challenge":
+            parseChallenge(value);
+            break;
+
+         case "info":
+            parseInfo(value);
+            break;
+      }
+   }
+
+   protected method parseKeyValuePairs(HashTable d, String buf) {
+      // Parse key=value from string into a HashTable
+      //  duplicate entries will be suffixed, e.g. bla, bla1, bla2, ..
+      d.free();
+
+      StringArray a <= buf.splitChar('\n');
+      String *line;
+      String key, value;
+      foreach line in a 
+      {
+         int off = line.indexOfChar('=', 0);
+         if(-1 != off)
+         {
+            StringArray kv <= line.splitChar('=');
+            key = kv.get(0);
+            key.trim();
+            value = kv.get(1);
+            value.trim();
+            d[key] = String(value);
+            ////trace "xxx   key=\""+key+"\" val=\""+value+"\".";
+         }
+      }
+   }
+
+   public method mapPosToCellX(float x) : int {
+      return int(x / 3);
+   }
+
+   public method mapPosToCellY(float y) : int {
+      // y = (t_size_y - (cy + 1)) *6;
+      // y/6 = t_size_y - (cy + 1)
+      // (y/6) - t_size_y = -(cy +1)
+      // (y/6) - t_size_y = -cy -1
+      // (y/6) - t_size_y + 1 = -cy;
+      // -(y/6) + t_size_y - 1 = cy
+      // cy = t_size_y - (y/6) - 1
+      return t_size_y - int(y/6) - 1;
+   }
+
+   public method mapCellToPosX(int cx) : float {
+      return (cx * 3);
+   }
+
+   public method mapCellToPosY(int cy) : float {
+      return (t_size_y - (cy + 1)) *6;
+   }
+
+   protected method parseBoolean(String _val) : boolean {
+      int idx;
+      boolean bNot = false;
+      _val.trim();
+      if(_val.getc(0) == '!')
+      {
+         bNot = true;
+         idx = 1;
+      }
+      else
+      {
+         idx = 0;
+      }
+      if(_val.getc(idx) == '`')
+      {
+         String acid;
+         _val.substring(idx+1, _val.length-idx-1) => acid;
+         return achievements.exists(acid) ^ bNot;
+      }
+      else
+      {
+         return int(_val);
+      }
+   }
+
+   protected method parseWallAttributesAndAdd(BoxEntity e, HashTable h) {
+
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      // Position
+      float posx, posy;
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx;
+         posy = ty;
+      }
+      if(posx < 0)
+      {
+         trace "[---] cannot construct a wall without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // semi-permeable switch
+      boolean bSemiPermeable = false;
+      if(h.exists("semipermeable"))
+      {
+         bSemiPermeable = parseBoolean(h["semipermeable"]);
+      }
+
+      // semi-permeablex switch
+      boolean bSemiPermeableX = false;
+      if(h.exists("semipermeablex"))
+      {
+         bSemiPermeableX = parseBoolean(h["semipermeablex"]);
+      }
+
+      // Size
+      float sizex = 6;
+      float sizey = bSemiPermeable ? 1 : 6;
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         sizex = a.get(0);
+         sizey = a.get(1);
+      }
+
+      // Color
+      int c32 = bSemiPermeable ? bSemiPermeableX ? #ffa0a000 : #ffd0d000 : #ffffff00;
+      if(h.exists("color"))
+      {
+         c32 = h["color"];
+      }
+
+      // Is invisible ?
+      boolean bVisible = true;
+      if(h.exists("visible"))
+      {
+         bVisible = parseBoolean(h["visible"]);
+      }
+
+      e.initBoxEntity(posx, posy, sizex, sizey, c32);
+      e.reset_b_visible        = bVisible;
+      e.reset_b_semipermeable  = bSemiPermeable;
+      e.reset_b_semipermeablex = bSemiPermeableX;
+
+      if(!id.isBlank())
+      {
+         addNamedEntity(deref e, id);
+      }
+      else
+      {
+         addEntity(deref e);
+      }
+   }
+
+   protected method parseWall(String buf) {
+      local BoxEntity e;
+
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+
+      parseWallAttributesAndAdd(deref e, h);
+   }
+
+   protected method parseElastic(String buf) {
+
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+
+      local ElasticEntity e;
+      e.initElasticEntity();
+
+      parseWallAttributesAndAdd(deref e, h);
+
+      e.color32 = #ff99cc00;
+
+      // Sink speed
+      if(h.exists("sinkspeed"))
+      {
+         e.sink_speed = h["sinkspeed"];
+      }
+
+      // Elasticity
+      if(h.exists("elasticity"))
+      {
+         e.elasticity = h["elasticity"];
+      }
+
+      // Decay
+      if(h.exists("decay"))
+      {
+         e.decay = h["decay"];
+      }
+
+      // Range
+      if(h.exists("range"))
+      {
+         e.range = h["range"];
+      }
+   }
+
+   protected method parseRunner(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      // Position
+      float posx, posy;
+      if(h.exists("pos")) // Note: the pos/cell lookup code is a bit redundant in this file, should be moved to Entity baseclass
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }         
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx;
+         posy = ty;
+      }
+
+      // Id
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // semi-permeable switch
+      boolean bSemiPermeable = false;
+      if(h.exists("semipermeable"))
+      {
+         bSemiPermeable = parseBoolean(h["semipermeable"]);
+      }
+
+      // semi-permeablex switch
+      boolean bSemiPermeableX = bSemiPermeable;
+      if(h.exists("semipermeablex"))
+      {
+         bSemiPermeableX = parseBoolean(h["semipermeablex"]);
+      }
+
+
+      // Size
+      float sx = 6;
+      float sy = bSemiPermeable ? 1 : 6;
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         sx = a.get(0);
+         sy = a.get(1);
+      }         
+
+      // Horizontal direction
+      int dirx = 0;
+      if(h.exists("dirx"))
+      {
+         dirx = h["dirx"];
+      }
+
+      // Vertical direction
+      int diry = 0;
+      if(h.exists("diry"))
+      {
+         diry = h["diry"];
+      }
+
+      // Gravity coefficient (1=normal gravity, 0=no gravity)
+      float gravity = 1.0;
+      if(h.exists("gravity"))
+      {
+         gravity = h["gravity"];
+      }
+
+      // Speed coefficient (1=normal speed, 0=no movement)
+      float speed = 1.0;
+      if(h.exists("speed"))
+      {
+         speed = h["speed"];
+      }
+
+      // Mover switch
+      boolean bMover = true;
+      if(h.exists("mover"))
+      {
+         bMover = parseBoolean(h["mover"]);
+      }
+
+      // Color
+      int c32 = bMover ? #ff00ff00 : #ffff0000;
+      if(h.exists("color"))
+      {
+         c32 = h["color"];
+      }
+      
+
+      // Visibility/Activation
+      boolean bActive = true;
+      if(h.exists("active"))
+      {
+         bActive = parseBoolean(h["active"]);
+      }
+
+      // Is visible ?
+      boolean bVisible = true;
+      if(h.exists("visible"))
+      {
+         bVisible = parseBoolean(h["visible"]);
+      }
+
+      // Turnaround switch
+      boolean bTurnaround = true;
+      if(h.exists("turnaround"))
+      {
+         bTurnaround = parseBoolean(h["turnaround"]);
+      }
+
+      // Collision with other runners ?
+      boolean bCollideOther = false;
+      if(h.exists("collideother"))
+      {
+         bCollideOther = parseBoolean(h["collideother"]);
+      }
+
+      Runner *run <= Runner.NewRunner(posx, posy, sx, sy, dirx, diry, gravity, speed, bMover, c32, 
+                                      bActive, bTurnaround, bSemiPermeable, bCollideOther);
+      run.reset_b_semipermeablex = bSemiPermeableX;
+
+      // Revive timeout
+      if(h.exists("revivetime"))
+      {
+         run.revive_time = h["revivetime"];
+      }
+
+      ////trace "xxx add runner id=\""+id+"\" pos=("+posx+";"+posy+") size=("+sx+";"+sy+") dir=("+dirx+";"+diry+") grav="+gravity+" speed="+speed+" bMover="+bMover+" bActive="+bActive;
+      run.reset_b_visible = bVisible;
+      addBaddy(deref run);
+
+      if(!id.isBlank())
+      {
+         named_entities[id] = run;
+      }
+   }
+
+   protected method parseDoor(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      // Vertical/horizontal 
+      boolean bVertical = true;
+      if(h.exists("vertical"))
+      {
+         bVertical = h["vertical"];
+      }
+
+      // Size
+      int size = 1;
+      if(h.exists("size"))
+      {
+         size = h["size"];
+      }
+
+      // Position
+      float posx=-1, posy;
+      float x, y, sx, sy;
+      
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx;
+         posy = ty;
+      }
+      if(posx >= 0)
+      {
+         // Seek left and right edges and determine the position/size of the door
+         int cx = mapPosToCellX(posx);
+         int cy = mapPosToCellY(posy);
+         int rx, ry;
+         if(bVertical)
+         {
+            rx = size;
+            int rd = findCellYDown(' ', cx, cy);
+            int ru = findCellYUp(' ', cx, cy);
+            cy -= ru;
+            ry = ru + rd;
+            ///trace "xxx rd="+rd+" ru="+ru;
+         }
+         else
+         {
+            ry = size;
+            int rr = findCellXRight(' ', cx, cy);
+            int rl = findCellXLeft(' ', cx, cy);
+            cx -= rl;
+            rx = rl + rr;
+         }
+         x = cx * 3;
+         y = (t_size_y - (cy + ry)) * 6;
+         sx = rx * 3;
+         sy = ry * 6;
+      }
+      else
+      {
+         trace "[---] cannot construct door without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      // Id
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // Initial state (open/closed)
+      boolean bOpen = false;
+      if(h.exists("open"))
+      {
+         bOpen = parseBoolean(h["open"]);
+      }
+
+      // Color
+      int c32 = #ffaaaa00;
+      if(h.exists("color"))
+      {
+         c32 = h["color"];
+      }
+
+      // Is invisible ?
+      boolean bVisible = true;
+      if(h.exists("visible"))
+      {
+         bVisible = parseBoolean(h["visible"]);
+      }
+
+      ////trace "xxx parseDoor: pos=("+x+";"+y+") size=("+sx+";"+sy+") open="+bOpen+" vertical="+bVertical;
+
+      DoorEntity d <= DoorEntity.NewDoorEntity(x, y, sx, sy, c32, bOpen);
+      d.reset_b_visible = bVisible;
+
+      if(!id.isBlank())
+      {
+         addNamedEntity(deref d, id);
+      }
+      else
+      {
+         trace "[---] cannot construct a door without an \"id\" parameter";
+         return;
+      }
+   }
+
+   protected method parseSwitch(String buf) {
+      ////trace "xxx parseSwitch";
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id ="";
+
+      // Position
+      float posx, posy;
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx;
+         posy = ty;
+      }
+      if(posx < 0)
+      {
+         trace "[---] cannot construct a switch without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // Size
+      float sizex = 6;
+      float sizey = 6;
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         sizex = a.get(0);
+         sizey = a.get(1);
+      }
+
+      // Color
+      int c32 = #ffffffff;
+      if(h.exists("color"))
+      {
+         c32 = h["color"];
+      }
+
+      // Default state
+      boolean bOn = false;
+      if(h.exists("on"))
+      {
+         bOn = parseBoolean(h["on"]);
+      }
+
+      // Is toggle ?
+      boolean bToggle = true;
+      if(h.exists("toggle"))
+      {
+         bToggle = parseBoolean(h["toggle"]);
+      }
+
+      // Is invisible ?
+      boolean bVisible = true;
+      if(h.exists("visible"))
+      {
+         bVisible = parseBoolean(h["visible"]);
+      }
+
+      // Can only be touched by runners ?
+      boolean bOnlyRunners = false;
+      if(h.exists("onlyrunners"))
+      {
+         bOnlyRunners = parseBoolean(h["onlyrunners"]);
+      }
+
+      SwitchEntity e <= SwitchEntity.NewSwitchEntity(posx, posy, sizex, sizey, c32, bOn, bToggle, bVisible, bOnlyRunners);
+      addEntity(deref e);
+
+      if(!id.isBlank())
+      {
+         named_entities[id] = e;
+      }
+
+      Script onScript  <= e.on_script;
+      Script offScript <= e.off_script;
+
+      // "on" script
+      if(h.exists("on_script"))
+      {
+         t <= h["on_script"];
+         onScript.addActionsFromString(t);
+      }
+
+      // "off" script
+      if(h.exists("off_script"))
+      {
+         t <= h["off_script"];
+         offScript.addActionsFromString(t);
+      }
+
+      // "toggle" script
+      if(h.exists("toggle_script"))
+      {
+         t <= h["toggle_script"];
+         onScript.addActionsFromString(t);
+         offScript.addActionsFromString(t);
+      }
+
+   }
+
+   protected method parseFinish(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      // Position
+      float posx, posy;
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx;
+         posy = ty;
+      }
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // Visible or not ?
+      boolean bVisible = true;
+      if(h.exists("visible"))
+      {
+         bVisible = parseBoolean(h["visible"]);
+      }
+
+      // Achievement (for alternative exits)
+      String achievement = "";
+      if(h.exists("achievement"))
+      {
+         achievement = h["achievement"];
+      }
+
+      // Achievement message
+      String achievementMessage = "";
+      if(h.exists("message"))
+      {
+         achievementMessage = h["message"];
+      }
+
+      // Warp
+      String warp = "";
+      if(h.exists("warp"))
+      {
+         warp = h["warp"];
+      }
+
+      FinishItem fi <= FinishItem.NewFinishItem(posx, posy, achievement, achievementMessage, warp); 
+      addItem(deref fi);
+      fi.reset_b_visible = bVisible;
+
+      if(!id.isBlank());
+      {
+         named_entities[id] = fi;
+      }
+   }
+
+   protected method parseUp(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      // Position
+      float posx = -1, posy;
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx + 0.5;
+         posy = ty + 0.5;
+      }
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      float sizex = 6-1;
+      float sizey = 6-1;
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         sizex = a.get(0);
+         sizey = a.get(1);
+      }
+
+      BirdItem up <= BirdItem.NewBirdItem(posx, posy); 
+      up.reset_size_x = sizex;
+      up.reset_size_y = sizey;
+      addItem(deref up);
+
+      if(!id.isBlank());
+      {
+         named_entities[id] = up;
+      }
+   }
+
+   protected method parseSpike(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      // Position
+      float posx, posy;
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx + 0.125;
+         posy = ty + 0.125;
+      }
+      if(posx < 0)
+      {
+         trace "[---] cannot construct a jump item without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      // Size
+      float sizex = 3-0.25;
+      float sizey = 6-0.25;
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         sizex = a.get(0);
+         sizey = a.get(1);
+      }
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // Walkable
+      boolean bWalkable = false;
+      if(h.exists("walkable"))
+      {
+         bWalkable = parseBoolean(h["walkable"]);
+      }
+
+      // Visible
+      boolean bVisible = true;
+      if(h.exists("visible"))
+      {
+         bVisible = parseBoolean(h["visible"]);
+      }
+
+      SpikeItem si <= SpikeItem.NewSpikeItem(posx, posy, bWalkable); 
+      si.reset_size_x = sizex;
+      si.reset_size_y = sizey;
+      si.reset_b_visible = bVisible;
+      addItem(deref si);
+
+      if(!id.isBlank());
+      {
+         named_entities[id] = si;
+      }
+   }
+
+   protected method parseTimer(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+
+      // Timeout
+      int timeout = 120;
+      if(h.exists("timeout"))
+      {
+         timeout = h["timeout"];
+      }
+      else
+      {
+         trace "[---] cannot construct a timer without a \"timeout\" parameter.";
+         return;
+      }
+
+      // Id
+      String id ="";
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+      else
+      {
+         trace "[---] cannot construct a timer without an \"id\" parameter.";
+         return;
+      }
+
+      TimerEntity ti <= TimerEntity.NewTimerEntity(timeout);
+      addNamedEntity(deref ti, id);
+
+      // Visibility/Activation
+      boolean bActive = true;
+      if(h.exists("active"))
+      {
+         ti.reset_b_active = parseBoolean(h["active"]);
+      }
+
+
+      // Parse scripts
+      Script *script;
+
+      // "expire" script
+      if(h.exists("expire_script"))
+      {
+         script <= ti.expire_script;
+         t <= h["expire_script"];
+         script.addActionsFromString(t);
+      }
+
+      // "abort" script
+      if(h.exists("abort_script"))
+      {
+         script <= ti.expire_script;
+         t <= h["abort_script"];
+         script.addActionsFromString(t);
+      }
+
+   }
+
+   protected method parseSequencer(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+
+      // Speed
+      float speed = 24;
+      if(h.exists("speed"))
+      {
+         speed = h["speed"];
+      }
+
+      // Id
+      String id ="";
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      SequencerEntity se <= SequencerEntity.NewSequencerEntity(speed);
+      if(!id.isBlank())
+      {
+         addNamedEntity(deref se, id);
+      }
+      else
+      {
+         addEntity(deref se);
+      }
+
+      // Visibility/Activation
+      boolean bActive = true;
+      if(h.exists("active"))
+      {
+         se.reset_b_active = parseBoolean(h["active"]);
+      }
+
+      // Parse scripts
+      Script *script;
+
+      int i = 0;
+      loop(255)
+      {
+         // "expire" script
+         if(h.exists("step"+i))
+         {
+            t <= h["step"+i];
+            se.addStepScriptFromString(t);
+            i++;
+         }
+         else
+         {
+            break;
+         }
+      }
+      
+   }
+
+   protected method parseScript(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+
+      // Id
+      String id ="";
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+      else
+      {
+         trace "[---] cannot construct a script without an \"id\" parameter.";
+         return;
+      }
+
+      // Actions
+      String actions ="";
+      if(h.exists("actions"))
+      {
+         actions = h["actions"];
+      }
+      else
+      {
+         trace "[---] cannot construct a script without an \"actions\" parameter.";
+         return;
+      }
+
+      ScriptEntity se <= ScriptEntity.NewScriptEntity(actions);
+      addNamedEntity(deref se, id);
+   }
+
+   protected method parseWheel(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      local WheelEntity w;
+      w.initWheelEntity();
+
+      // Position
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         w.reset_x = a.get(0);
+         w.reset_y = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         w.reset_x = tx;
+         w.reset_y = ty;
+      }
+      if(w.reset_x < 0)
+      {
+         trace "[---] cannot construct a wheel without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      // Size
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         w.reset_size_x = a.get(0);
+         w.reset_size_y = a.get(1);
+      }
+
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // angle
+      if(h.exists("angle"))
+      {
+         w.reset_angle = mathClampf(h["angle"], 0, 360) * (2PI/360);
+      }
+
+      // speed
+      if(h.exists("speed"))
+      {
+         w.reset_speed = mathClampf(h["speed"], -20, 20) * (2PI/360);
+      }
+
+      // members
+      if(h.exists("members"))
+      {
+         a <= h["members"].splitChar(',');
+         w.members = a;
+      }
+
+      if(!id.isBlank())
+      {
+         addNamedEntity(deref w, id);
+      }
+      else
+      {
+         addEntity(deref w);
+      }
+   }
+
+   protected method parseWave(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+      String id = "";
+
+      local WaveEntity w;
+      w.initWaveEntity();
+
+      // Position
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         w.reset_x = a.get(0);
+         w.reset_y = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         id = h["cell"];
+         findNamedCell(id, tx, ty);
+         w.reset_x = tx;
+         w.reset_y = ty;
+      }
+      if(w.reset_x < 0)
+      {
+         trace "[---] cannot construct a wave without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      // Size
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         w.reset_size_x = a.get(0);
+         w.reset_size_y = a.get(1);
+      }
+
+
+      if(h.exists("id"))
+      {
+         id = h["id"];
+      }
+
+      // type
+      if(h.exists("type"))
+      {
+         switch(h["type"])
+         {
+            default:
+            case "sin":
+               w.type = WaveEntity.TYPE_SIN;
+               break;
+
+            case "smoothstep":
+               w.type = WaveEntity.TYPE_SMOOTHSTEP;
+               break;
+
+            case "tri":
+               w.type = WaveEntity.TYPE_TRI;
+               break;
+         }
+      }
+
+      // angle
+      if(h.exists("angle"))
+      {
+         w.reset_angle = mathClampf(h["angle"], 0, 360) * (2PI/360);
+      }
+
+      // speed
+      if(h.exists("speed"))
+      {
+         w.reset_speed = mathClampf(h["speed"], -180, 180) * (2PI/360);
+         ////trace "xxx setting wave reset speed to "+w.reset_speed;
+      }
+
+      // innerspeed
+      if(h.exists("innerspeed"))
+      {
+         w.reset_inner_speed = mathClampf(h["innerspeed"], -180, 180) * (2PI/360);
+      }
+
+      // members
+      if(h.exists("members"))
+      {
+         a <= h["members"].splitChar(',');
+         w.members = a;
+      }
+
+      // members
+      if(h.exists("vertical"))
+      {
+         w.b_vertical = h["vertical"];
+      }
+
+      if(!id.isBlank())
+      {
+         addNamedEntity(deref w, id);
+      }
+      else
+      {
+         addEntity(deref w);
+      }
+   }
+
+   protected method parseGlobal(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+
+      // Gravity
+      if(h.exists("player_gravity"))
+      {
+         g_player.reset_gravity = mathClampf(h["player_gravity"], -1, 1);
+      }
+
+      // Gravity stomp offset
+      if(h.exists("player_gravitystompoffset"))
+      {
+         g_player.reset_gravity_stompoffset = mathClampf(h["player_gravitystompoffset"], 0, 400);
+      }
+
+      // Gravity stomp scale
+      if(h.exists("player_gravitystompscale"))
+      {
+         g_player.reset_gravity_stompscale = mathClampf(h["player_gravitystompscale"], -1, 1);
+      }
+
+      // Speed scale
+      if(h.exists("player_speed"))
+      {
+         g_player.reset_speedscale = mathClampf(h["player_speed"], -1, 1);
+      }
+
+      // Don't allow player to stand up (play as a dot)
+      if(h.exists("player_alwayscrouch"))
+      {
+         g_player.reset_b_alwayscrouch = h["player_alwayscrouch"];
+         trace "[dbg] player_alwayscrouch="+g_player.reset_b_alwayscrouch;
+      }
+
+      // Don't allow player to jump
+      if(h.exists("player_nojump"))
+      {
+         g_player.reset_b_nojump = h["player_nojump"];
+         trace "[dbg] player_nojump="+g_player.reset_b_nojump;
+      }
+
+      // Don't allow player to walljump
+      if(h.exists("player_nowalljump"))
+      {
+         g_player.reset_b_nowalljump = h["player_nowalljump"];
+         trace "[dbg] player_nowalljump="+g_player.reset_b_nowalljump;
+      }
+
+      // Don't allow player to float/double
+      if(h.exists("player_nofloat"))
+      {
+         g_player.reset_b_nofloat = h["player_nofloat"];
+         trace "[dbg] player_nofloat="+g_player.reset_b_nofloat;
+      }
+
+      // Global timescale
+      if(h.exists("timescale"))
+      {
+         g_ingame.timescale = mathClampf(h["timescale"], 0.1, 1);
+      }
+
+      // Player friction
+      if(h.exists("player_frictionh"))
+      {
+         g_player.friction_h = mathClampf(h["player_frictionh"], 0.5, 0.999);
+      }
+
+      // Player fly friction
+      if(h.exists("player_flyfrictionh"))
+      {
+         g_player.friction_fly_h = mathClampf(h["player_flyfrictionh"], 0.5, 0.999);
+      }
+
+      // Player crouch friction
+      if(h.exists("player_crouchfrictionh"))
+      {
+         g_player.friction_crouch_h = mathClampf(h["player_crouchfrictionh"], 0.5, 0.999);
+      }
+
+      // Player walk speed
+      if(h.exists("player_walkspeedx"))
+      {
+         g_player.walk_speedx = mathClampf(h["player_walkspeedx"], 0.01, 1.0);
+      }
+
+      // Player fly speedx
+      if(h.exists("player_flyspeedx"))
+      {
+         g_player.fly_speedx = mathClampf(h["player_flyspeedx"], 0.01, 1.0);
+      }
+
+      // Player crouch-jump speedx
+      if(h.exists("player_crouchjumpspeedx"))
+      {
+         g_player.crouch_jump_speedx = mathClampf(h["player_crouchjumpspeedx"], 0.01, 1.0);
+      }
+   }
+
+   protected method parseMacro(String buf) {
+      buf.trim();
+
+      // Extract macro id (first word)
+      int idx = buf.charsetIndexOf(" \t\n", 0);
+      String id;
+      buf.substring(0, idx) => id;
+
+      // Extract macro data
+      String data <= new String;
+      buf.substring(idx+1, buf.length-idx-1) => data;
+
+      // Add macro
+      macros[id] = deref data;
+      ////trace "[dbg] adding macro \""+id+"\" data=\""+data+"\".";
+   }
+
+   protected method parseCall(local String _buf) {
+      local HashTable h;
+      parseKeyValuePairs(h, _buf);
+      local String *t;
+      local String *s;
+      local StringArray *a;
+
+      if(!h.exists("macro"))
+      {
+         trace "[---] cannot call a macro without a \"macro\" parameter.";
+         return;
+      }
+
+      local String id = h["macro"].trim();
+
+      // Find macro by id
+      local String meta = macros[id];
+      if(!meta.isBlank())
+      {
+         // Replace arguments
+         String *arg;
+         foreach arg in h 
+         {
+            meta.replace("$"+arg, h[arg]);
+         }
+
+         // Replace entity tag '°' with '§'
+         meta.replaceChar('°', '§');
+
+         ////trace "[dbg] parseCall: meta=\""+meta+"\".";
+         
+         ////trace "xxx meta=\""+meta+"\"";
+         ////trace "xxx ~~~~~~~~~~~~~~~~";
+         local int off = -1;
+         local int lastValueOff = -1;
+         local String lastKey;
+         local int eoff = -1;
+         do {
+            local String key;
+            local String value;
+            off = meta.indexOfChar('§', off+1);
+            ////trace "xxx off="+off;
+            if(-1 != off)
+            {
+               eoff = meta.charsetIndexOf(" \n", off+1);
+               ////trace "xxx eoff="+eoff;
+               if(-1 != eoff)
+               {
+                  meta.substring(off+1, (eoff-off-1)) => key;
+                  if(lastValueOff != -1)
+                  {
+                     meta.substring(lastValueOff, off-lastValueOff) => value;
+                     
+                     parseEntity(lastKey, value);
+                  }
+                  lastValueOff = eoff+1;
+                  lastKey = key;
+                  ////trace "xxx key=\""+key+"\"";
+               }
+               else
+               {
+                  // malformed tag
+                  break;
+               }
+            }
+            else
+            {
+               meta.substring(lastValueOff, meta.length-lastValueOff) => value;
+               parseEntity(lastKey, value);
+            }
+         } while(-1 != off);
+      }
+      else
+      {
+         trace "[---] parseCall: macro \""+id+"\" has not been defined.";
+      }
+   }
+
+   protected method parseChallenge(String _buf) {
+      local HashTable h;
+      parseKeyValuePairs(h, _buf);
+
+      if(h.exists("message"))
+      {
+         if(h.exists("time"))
+         {
+            local Challenge ch;
+            ch.message = h["message"];
+            ch.time    = float(h["time"]) * 60; // Convert seconds to frames (60Hz=1sec)
+            if(achievements.exists("finish "+map_cyclelist[map_cycleindex]))
+            {
+               float recTime = float(achievements["finish "+map_cyclelist[map_cycleindex]]);
+               ch.b_complete = recTime < ch.time;
+               ////trace "xxx ch.b_complete="+ch.b_complete;
+            }
+
+            challenges.add(#(deref ch));
+         }
+         else
+         {
+            trace "[---] cannot construct a challenge without a \"time\" parameter.";
+         }
+      }
+      else
+      {
+         trace "[---] cannot construct a challenge without a \"message\" parameter.";
+      }
+   }
+
+   protected method parseInfo(String buf) {
+      HashTable h;
+      parseKeyValuePairs(h, buf);
+      String *t;
+      String *s;
+      StringArray *a;
+
+      // Position
+      float posx, posy;
+      if(h.exists("pos"))
+      {
+         t <= h["pos"];
+         a <= t.splitChar(';');
+         posx = a.get(0);
+         posy = a.get(1);
+      }
+      else if(h.exists("cell"))
+      {
+         Float tx, ty;
+         String id = h["cell"];
+         findNamedCell(id, tx, ty);
+         posx = tx;
+         posy = ty;
+      }
+      if(posx < 0)
+      {
+         trace "[---] cannot construct an infopoint without a \"pos\" or \"cell\" parameter.";
+         return;
+      }
+
+      // Size
+      float sizex = 6;
+      float sizey = 6;
+      if(h.exists("size"))
+      {
+         t <= h["size"];
+         a <= t.splitChar(';');
+         sizex = a.get(0);
+         sizey = a.get(1);
+      }
+
+      if(!h.exists("message"))
+      {
+         trace "[---] cannot construct an infopoint without a \"message\" parameter.";
+      }
+
+      InfoEntity ie <= InfoEntity.NewInfoEntity(posx, posy, sizex, sizey, h["message"]);
+      addEntity(deref ie);
+   }
+
+   protected method debugPrintCells() {
+      int y = 0;
+      loop(t_size_y)
+      {
+         int x = 0;
+         loop(t_size_x)
+         {
+            stdout tcchar(t_cells[x+(y*t_size_x)]);
+            x++;
+         }
+         stdout "\n";
+         y++;
+      }
+   }
+
+   protected method scanCellsAndCreateEntities() : boolean {
+      width  = t_size_x * 3;
+      height = t_size_y * 3;
+
+      boolean bDone;
+      do 
+      {
+         bDone = true;
+         int y = 0;
+         loop(t_size_y)
+         {
+            int x = 0;
+            loop(t_size_x)
+            {
+               Integer rx, ry;
+               int ch = t_cells[x + (t_size_x*y)];
+               switch(ch)
+               {
+                  default:
+                     if('A' <= ch <= 'Z')
+                     {
+                        named_positions[ch-'A'] = (y<<16) | x;
+                        ////trace "xxx adding named position \'"+tcchar(ch)+"\'";
+                        t_cells[x + (t_size_x*y)] = ' ';
+                        t_orig_cells[x + (t_size_x*y)] = ' ';
+                     }
+                     break;
+                  case '#':
+                     // Solid block, find boundaries
+                     findCellRect('#', x, y, rx, ry);
+                     //trace "xxx found BoxEntity at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, rx, ry);
+                     //debugPrintCells();
+                     addEntity(BoxEntity.NewBoxEntity(x*3,(t_size_y-(y + ry))*6, rx*3, ry*6, #ffffff00));
+                     bDone = false;
+                     break;
+
+                  case 'p':
+                     // Player start
+                     ////trace "xxx found player start at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     g_player.reset_x = x*3 - (Player.NORMAL_SIZE_X*0.5);
+                     g_player.reset_y = (t_size_y-y)*6-6;
+                     bDone = false;
+                     break;
+
+                  case 'u':
+                     // BirdItem
+                     //trace "xxx found jump at tpos=("+x+";"+y+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     addItem(BirdItem.NewBirdItem(x*3+0.5, (t_size_y-(y+1))*6+0.5));
+                     bDone = false;
+                     break;
+
+                  case 's':
+                     // Small breakable block (small stomp)
+                     //trace "xxx found small breakable block at tpos=("+x+";"+y+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     addEntity(BreakableEntity.NewBreakableEntity(x*3+0.5, (t_size_y-(y+1))*6+0.5, false));
+                     bDone = false;
+                     break;
+
+                  case 'm':
+                     // Big breakable block (mega stomp)
+                     //trace "xxx found big breakable block at tpos=("+x+";"+y+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     addEntity(BreakableEntity.NewBreakableEntity(x*3+0.5, (t_size_y-(y+1))*6+0.5, true));
+                     bDone = false;
+                     break;
+
+                  case 'f':
+                     // Finish
+                     ////trace "xxx found finish at tpos=("+x+";"+y+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     addItem(FinishItem.NewFinishItem(x*3, (t_size_y-(y+1))*6, "", "", ""));
+                     bDone = false;
+                     break;
+
+                  case 'y':
+                     // Semi solid block, find boundaries
+                     findCellRect('y', x, y, rx, ry);
+                     //trace "xxx found SemiBoxEntity at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, rx, ry);
+                     //debugPrintCells();
+                     addEntity(SemiBoxEntity.NewSemiBoxEntity(x*3,(t_size_y-(y + ry))*6, rx*3, 1*1, #e0e0e000));
+                     bDone = false;
+                     break;
+
+                  case 'b':
+                     // Semi solid block / no horizontal collision, find boundaries
+                     findCellRect('b', x, y, rx, ry);
+                     //trace "xxx found SemiBoxEntity at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, rx, ry);
+                     //debugPrintCells();
+                     SemiBoxEntity se <= SemiBoxEntity.NewSemiBoxEntity(x*3,(t_size_y-(y + ry))*6, rx*3, 1*1, #e0e0e000);
+                     se.reset_b_semipermeablex = true;
+                     addEntity(deref se);
+                     bDone = false;
+                     break;
+
+                  case 't':
+                     // Top semi solid block, find boundaries
+                     findCellRect('t', x, y, rx, ry);
+                     //trace "xxx found SemiBoxEntity at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, rx, ry);
+                     //debugPrintCells();
+                     addEntity(SemiBoxEntity.NewSemiBoxEntity(x*3,(t_size_y-(y + ry))*6 +5, rx*3, 1*1, #e0e0e000));
+                     bDone = false;
+                     break;
+
+                  case 'l':
+                     // Left Semi solid block, find boundaries
+                     findCellRect('l', x, y, rx, ry);
+                     //trace "xxx found SemiBoxEntity at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, rx, ry);
+                     //debugPrintCells();
+                     addEntity(SemiBoxEntity.NewSemiBoxEntity(x*3,(t_size_y-(y + ry))*6, 1, ry*6, #e0e0e000));
+                     bDone = false;
+                     break;
+
+                  case 'r':
+                     // Right Semi solid block, find boundaries
+                     findCellRect('r', x, y, rx, ry);
+                     //trace "xxx found SemiBoxEntity at tpos=("+x+";"+y+"), tsize=("+rx+";"+ry+")";
+                     fillCellRect(' ', x, y, rx, ry);
+                     //debugPrintCells();
+                     addEntity(SemiBoxEntity.NewSemiBoxEntity(x*3+2,(t_size_y-(y + ry))*6, 1, ry*6, #e0e0e000));
+                     bDone = false;
+                     break;
+
+                  case 'k':
+                     // Spike / Kill block
+                     //trace "xxx found kill block at tpos=("+x+";"+y+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     addItem( SpikeItem.NewSpikeItem(x*3+0.125, (t_size_y-(y+1))*6+0.125, false) );
+                     
+                     bDone = false;
+                     break;
+
+                  case 'w':
+                     // Walkable spike / Kill block
+                     //trace "xxx found walkable kill block at tpos=("+x+";"+y+")";
+                     fillCellRect(' ', x, y, 1, 1);
+                     addItem( SpikeItem.NewSpikeItem(x*3+0.125, (t_size_y-(y+1))*6+0.125, true) );
+                     
+                     bDone = false;
+                     break;
+               }
+
+               x++;
+            }
+
+            y++;
+         }
+
+      } while(!bDone)
+
+      return true;
+   }
+
+   protected method findCellRect(char cSelf, int x, y, Integer rx, ry) {
+      int cx = x;
+      int c;
+      // Determine width
+      rx = t_size_x - x;
+      while(cx < t_size_x)
+      {
+         c = t_cells[cx + y*(t_size_x)];
+         if(cSelf != c)
+         {
+            rx = cx - x;
+            break;
+         }
+         cx++;
+      }
+
+      // Determine height (number of lines that are filled with rx consecutive cSelf chars)
+      ry = t_size_y - y;
+      int cy = y;
+      while(cy < t_size_y)
+      {
+         cx = x;
+         loop(rx)
+         {
+            c = t_cells[cx + cy*(t_size_x)];
+            //trace "xxx cx="+cx+" cy="+cy+" c="+c;
+            if(c != cSelf)
+            {
+               //trace "xxx findCell: c="+c+" cSelf="+cSelf+" rx="+rx;
+               ry = cy - y;
+               return;
+            }
+            cx++;
+         }
+         cy++;
+      } 
+   }
+
+   protected method fillCellRect(char c, int x, y, sx, sy) {
+      //trace "xxx fillCellRect ("+x+";"+y+";"+sx+";"+sy+")";
+      loop(sy)
+      {
+         int cx = x;
+         loop(sx)
+         {
+            t_cells[cx + y*(t_size_x)] = c;
+            cx++;
+         }
+         y++;
+      } 
+   }
+
+   protected method findCellXRight(char cSelf, int x, y) : int {
+      int r = 0;
+      int cx = x;
+      int c;
+      while(cx < t_size_x)
+      {
+         c = t_orig_cells[cx + y*(t_size_x)];
+         if(cSelf != c)
+         {
+            r = cx - x;
+            break;
+         }
+         cx++;
+      }
+      return r;
+   }
+
+   protected method findCellXLeft(char cSelf, int x, y) : int {
+      int r = 0;
+      int cx = x;
+      int c;
+      while(cx >= 0)
+      {
+         c = t_orig_cells[cx + y*(t_size_x)];
+         if(cSelf != c)
+         {
+            r = x - cx -1;
+            break;
+         }
+         cx--;
+      }
+      return r;
+   }
+
+   protected method findCellYDown(char cSelf, int x, y) : int {
+      int r = 0;
+      int cy = y;
+      int c;
+      while(cy < t_size_y)
+      {
+         c = t_orig_cells[x + cy*(t_size_x)];
+         ////trace "xxx findCellYDown p=("+x+";"+cy+") c=\'"+tcchar(c)+"\'";
+         if(cSelf != c)
+         {
+            r = cy - y;
+            break;
+         }
+         cy++;
+      }
+      return r;
+   }
+
+   protected method findCellYUp(char cSelf, int x, y) : int {
+      int r = 0;
+      int cy = y;
+      int c;
+      while(cy >= 0)
+      {
+         c = t_orig_cells[x + cy*(t_size_x)];
+         if(cSelf != c)
+         {
+            r = y - cy -1;
+            break;
+         }
+         cy--;
+      }
+      return r;
+   }
+
+
+   public method init_basicmovementtest() {
+      width  = RES_X * 4;
+      height = RES_Y * 4;
+
+      // Bottom (with a gap)
+      addEntity(BoxEntity.NewBoxEntity(0,-23, 54, 1+23, #ffffff00));
+      addEntity(BoxEntity.NewBoxEntity(54+2*6,-23, width-(54+2*6), 1+23, #ffffff00));
+
+      // Bottom #2
+      addEntity(BoxEntity.NewBoxEntity(0,-43, width, 6, #ffffff00));
+
+      // block left below bottom..
+      addEntity(BoxEntity.NewBoxEntity(-27,-63, 16, 16, #ffffff00));
+
+      // Left
+      addEntity(BoxEntity.NewBoxEntity(0,0, 1, height, #ffffff00));
+
+      // Top
+      //addEntity(BoxEntity.NewBoxEntity(0,RES_Y-1, RES_X, 1, #ffffff00));
+      addEntity(BoxEntity.NewBoxEntity(0,height-1, RES_X, 1, #ffffff00));
+
+      // Right
+      addEntity(BoxEntity.NewBoxEntity(width-1,0, 1, height,#ffffff00));
+
+      // Platform 1
+      addEntity(BoxEntity.NewBoxEntity(34,20, 10, 16,#ffffff00));
+
+      // Platform 2
+      addEntity(BoxEntity.NewBoxEntity(70,12, 10, 16,#ffffff00));
+
+      // Item 1 (before Platform 2)
+      addItem(BirdItem.NewBirdItem(60,32));
+      // Item 1b (before Platform 2)
+      addItem(BirdItem.NewBirdItem(60,32+(25*1)));
+      // Item 1c (before Platform 2)
+      addItem(BirdItem.NewBirdItem(60,32+(25*2)));
+
+      // Platform 3 (small block on the right)
+      addEntity(BoxEntity.NewBoxEntity(RES_X-1,1, 10, 6,#ffffff00));
+
+
+      // Platform 4 (left tunnel wall)
+      addEntity(BoxEntity.NewBoxEntity(RES_X+5,30, 2, 64,#ffffff00));
+
+      // Platform 5 (right tunnel wall)
+      addEntity(BoxEntity.NewBoxEntity(RES_X+32,30, 2, 64,#ffffff00));
+
+      // Platform 6 (left tunnel wall #2)
+      addEntity(BoxEntity.NewBoxEntity(RES_X+50,20, 2, 64,#ffffff00));
+      // Platform 7 (right tunnel wall #2)
+      addEntity(BoxEntity.NewBoxEntity(RES_X+50+24,20, 2, 64,#ffffff00));
+
+      // Platform 8 (above #1)
+      addEntity(SemiBoxEntity.NewSemiBoxEntity(30,60, 20, 1,#ffaaaa55));
+
+      // Platform 9 (Crouch slide test)
+      //addEntity(BoxEntity.NewBoxEntity(RES_X*2,5, 10, 40,#ffffff00));
+      addEntity(BoxEntity.NewBoxEntity(RES_X-30,5, 10, 40,#ffffff00));
+
+      // Small-stompable block
+      addEntity(BreakableEntity.NewBreakableEntity(177,1, false));
+      addEntity(BreakableEntity.NewBreakableEntity(177,7, false));
+      addEntity(BreakableEntity.NewBreakableEntity(177,13, true));
+
+      addEntity(BreakableEntity.NewBreakableEntity(60,-5, true));
+      addEntity(BreakableEntity.NewBreakableEntity(60,-11, true));
+      addEntity(BreakableEntity.NewBreakableEntity(60,-17, true));
+      addEntity(BreakableEntity.NewBreakableEntity(60,-23, true));
+
+      addEntity(BreakableEntity.NewBreakableEntity(54,-5, true));
+      addEntity(BreakableEntity.NewBreakableEntity(54,-11, true));
+      addEntity(BreakableEntity.NewBreakableEntity(54,-17, true));
+      addEntity(BreakableEntity.NewBreakableEntity(54,-23, true));
+
+
+      // bird grid
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*0), 32+(20*0)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*0), 32+(20*1)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*0), 32+(20*2)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*0), 32+(20*3)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*0), 32+(20*4)));
+
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*1), 32+(20*0)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*1), 32+(20*1)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*1), 32+(20*2)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*1), 32+(20*3)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*1), 32+(20*4)));
+
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*2), 32+(20*0)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*2), 32+(20*1)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*2), 32+(20*2)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*2), 32+(20*3)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*2), 32+(20*4)));
+
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*3), 32+(20*0)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*3), 32+(20*1)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*3), 32+(20*2)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*3), 32+(20*3)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*3), 32+(20*4)));
+
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*4), 32+(20*0)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*4), 32+(20*1)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*4), 32+(20*2)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*4), 32+(20*3)));
+      addItem(BirdItem.NewBirdItem(RES_X*2+15+(20*4), 32+(20*4)));
+
+
+   }
+
+   public method init_colltest() {
+      width = RES_X * 4;
+      height = RES_Y * 4;
+
+      addEntity(BoxEntity.NewBoxEntity(0, -64, 100, 64*2,#ffffff00));
+   }
+
+   public method setEditorCells(IntArray _cells, int _tsx, _tsy) {
+      editor_cells <= _cells;
+      editor_t_size_x = _tsx;
+      editor_t_size_y = _tsy;
+   }
+
+   protected method prepareArraySpike() {
+      spike_verts.empty();
+      spike_uvs.empty();
+
+      SpikeItem *si;
+      foreach si in items
+      {
+         if(si instanceof SpikeItem)
+         {
+            si.prepareArray(spike_verts, spike_uvs);
+         }
+      }
+   }
+
+   public method prepareArrays() {
+      prepareArraySpike();
+   }
+
+   public method init() {
+      // should actually be called reset() !
+
+      entities.empty();
+      items.empty();
+      baddies.empty();
+      g_player.init();
+
+      if(null != editor_cells)
+      {
+         t_cells = editor_cells;
+         t_orig_cells = editor_cells;
+         t_size_x = editor_t_size_x;
+         t_size_y = editor_t_size_y;
+         scanCellsAndCreateEntities();
+      }
+      else
+      {
+         if(!loadMapByIndex(map_cycleindex))
+         {
+            if(!loadMap("maps/test.map"))
+            {
+               init_basicmovementtest();
+            }
+         }
+      }
+
+      resetEntities();
+      resetItems();
+      resetBaddies();
+      //init_colltest();
+
+      prepareArrays();
+   }
+
+   protected method resetEntities() {
+      Entity *e;
+      foreach e in entities {
+         e.markScriptTargets();
+         e.resetEntity();
+      }
+   }
+
+   protected method resetItems() {
+      Item *i;
+      foreach i in items {
+         i.resetEntity();
+      }
+   }
+
+   protected method resetBaddies() {
+      Character *c;
+      foreach c in baddies {
+         c.resetCharacter();
+      }
+   }
+
+   protected method drawGrid() {
+      zglColorARGB(#ff337733);
+      
+      glBegin(GL_LINES);
+      float cy = 0.0;
+      loop(RES_Y)
+      {
+         glVertex2f(0, cy);
+         glVertex2f(RES_X, cy);
+
+         float cx = 0.0;
+         loop(RES_X)
+         {
+            glVertex2f(cx, 0);
+            glVertex2f(cx, RES_Y);
+            cx += 1;
+         }
+         cy += 1;
+      }
+      glEnd();
+   }
+
+   protected method drawEntities(float dt) {
+      Entity *e;
+      foreach e in entities {
+         e.draw(dt);
+      }
+   }
+
+   protected method drawItems(float dt) {
+      Item *e;
+      foreach e in items {
+         e.draw(dt);
+      }
+   }
+
+   protected method drawBaddies(float dt) {
+      Character *c;
+      foreach c in baddies {
+         c.draw(dt);
+      }
+   }
+
+   protected method calcEntities(float dt) {
+      Entity *e;
+      foreach e in entities {
+         e.calc(dt);
+      }
+   }
+
+   protected method calcItems(float dt) {
+      Item *e;
+      foreach e in items {
+         e.calc(dt);
+      }
+   }
+
+   protected method calcBaddies(float dt) {
+      Character *c;
+      foreach c in baddies {
+         c.calc(dt);
+      }
+   }
+
+   protected method drawStaticSpikeItems() {
+      // render all spike entities at once. rendering a lot of them individually is too slow on SGX533 (Open Pandora)
+      tex_spike.bind();
+      tex_spike.enable();
+      zglVertexPointer2f(spike_verts);
+      zglTexCoordPointer2f(spike_uvs);
+      glEnableClientState(GL_VERTEX_ARRAY);
+      glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+      glDrawArrays(GL_TRIANGLES, 0, spike_verts.numElements/2);
+      glDisableClientState(GL_VERTEX_ARRAY);
+      glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+      tex_spike.disable();
+   }
+
+   public method draw(float dt) {
+
+      //drawGrid();
+      
+      drawEntities(dt);
+
+      drawStaticSpikeItems();
+
+      drawBaddies(dt);
+      drawItems(dt);
+   }
+
+   public method drawOverlays(float dt) {
+      // Draw map name
+      int sx = map_name.length * 8;
+      DebugText.Draw((Viewport.width-sx)*0.5, 10, map_name, #ff10f0f0, #ff008000);
+
+      String msg ="";
+      int msgsy=0;
+      int maxsx=0;
+      if(g_player.b_alwayscrouch)
+      {
+         msg = "always crouch\n";
+         sx = "always crouch".length * 8;
+         if(sx > maxsx)
+            maxsx = sx;
+         msgsy += 12;
+      }
+      if(g_player.b_nojump)
+      {
+         msg += "no jumping\n";
+         sx = "no jumping".length * 8;
+         if(sx > maxsx)
+            maxsx = sx;
+         msgsy += 12;
+      }
+      if(g_player.b_nowalljump)
+      {
+         msg += "no walljumping\n";
+         sx = "no walljumping".length * 8;
+         if(sx > maxsx)
+            maxsx = sx;
+         msgsy += 12;
+      }
+      if(g_player.b_nofloat)
+      {
+         msg += "no floating\n";
+         sx = "no floating".length * 8;
+         if(sx > maxsx)
+            maxsx = sx;
+         msgsy += 12;
+      }
+      DebugText.Draw(Viewport.width-maxsx, Viewport.height-20-msgsy, msg, #ffaaff99, #ff444444);
+   }
+
+   public method rotatecw() {
+      Entity *e;
+      foreach e in entities 
+      {
+         e.rotatecw();
+      }
+      foreach e in items 
+      {
+         e.rotatecw();
+      }
+      foreach e in baddies 
+      {
+         e.rotatecw();
+      }
+      g_player.rotatecw();
+   }
+
+   public method calc(float dt) {
+      calcEntities(dt);
+      calcItems(dt);
+      calcBaddies(dt);
+   }
+
+   public method selectWorld(int _idx) : boolean {
+      trace "[dbg] selectWorld(idx="+_idx+")";
+      World w <= world_list.get(_idx);
+      if(null != w)
+      {
+         world_index = _idx;
+         if(!loadMapCycleList())
+         {
+            trace "[---] error while loading \"maps/"+w.dirname+"/mapcycle.txt\"";
+            return false;
+         }
+         else
+         {
+            return true;
+         }
+      }
+      else
+      {
+         trace "[---] selectWorld: world #"+_idx+" does not exist.";
+         return false;
+      }
+   }
+
+   public method warpTo(String _world, _room) {
+      trace "[dbg] warp to "+_world+":"+_room;
+      
+      World *w;
+      char c = _world.getc(0);
+      int idx = 0;
+      String mapName = "/"+_room + ".map";
+      foreach w in world_list
+      {
+         if(w.key == c)
+         {
+            selectWorld(idx);
+            idx = 0;
+            String *map;
+            foreach map in map_cyclelist
+            {
+               if(map.endsWith(mapName))
+               {
+                  loadMapByIndex(idx);
+                  g_ingame.resetMap();
+                  return;
+               }
+               idx++;
+            }
+         }
+         idx++;
+      }
+      trace "[---] warp to "+_world+":"+_room+" FAILED";
+      g_ingame.resetMap();
+   }
+}
+
+if(!g_level.loadWorldList())
+{
+   die "error while loading \"maps/worlds.txt\"";
+}
+
+g_level.selectWorld(0);
+

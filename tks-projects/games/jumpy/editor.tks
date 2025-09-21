@@ -1,0 +1,506 @@
+use tksdl;
+use tkopengl;
+
+module MEditor;
+
+
+namespace jumpy;
+
+
+class Editor {
+
+   IntArray t_cells;
+   int t_size_x;
+   int t_size_y;
+
+   int cursor_x;
+   int cursor_y;
+   int cursor_fg_c;
+   int cursor_fg_i;
+   int cursor_bg_c;
+   int cursor_bg_i;
+
+   int last_player_x;
+   int last_player_y;
+
+   int off_x;
+   int off_y;
+
+   static IntArray selectable_c = [' ', '#', 'p', 'y', 'u', 'm', 's', 'f', 'k'];
+
+   public method initEditor() {
+      cursor_x = 0;
+      cursor_y = 0;
+      resetFgBg();
+   }
+
+   public method resetFgBg() {
+      cursor_fg_c = '#';
+      cursor_bg_c = ' ';
+      cursor_fg_i = 1;
+      cursor_bg_i = 0;
+   }
+
+   public method initCells(IntArray _cells, int _sx, _sy) {
+      t_cells = _cells;
+      t_size_x = _sx;
+      t_size_y = _sy;
+   }
+
+   public method startEditing() {
+      b_editing = true;
+      last_player_x = (g_player.position_x+Player.NORMAL_SIZE_X*0.5) / 3;
+      last_player_y = (t_size_y - ((g_player.position_y+Player.NORMAL_SIZE_Y*0.5) / 6));
+   }
+
+   public method clearCells() {
+      t_cells.fill(' ');
+   }
+
+   public method resizeCells(int _newTSX, _newTSY) {
+      if(_newTSX <= 0)
+         return;
+      if(_newTSY <= 0)
+         return;
+      if(_newTSX >= 2000)
+         return;
+      if(_newTSY >= 2000)
+         return;
+      IntArray nc <= new IntArray;
+      if(nc.alloc(_newTSX * _newTSY))
+      {
+         nc.useAll();
+         nc.fill(' ');
+
+         // Copy old cells to new array
+         int y = 0;
+         int k = 0;
+         int i = 0;
+         int sstride, dstride;
+         int numRows;
+         int numCols;
+
+         // Determine source/dest strides
+         if(t_size_x < _newTSX)
+         {
+            sstride = 0;
+            dstride = (_newTSX - t_size_x);
+            numCols = t_size_x;
+         }
+         else
+         {
+            sstride = (t_size_x - _newTSX);
+            dstride = 0;
+            numCols = _newTSX;
+         }
+         if(t_size_y < _newTSY)
+         {
+            numRows = t_size_y;
+         }
+         else
+         {
+            numRows = _newTSY;
+         }
+
+         // Copy cells
+         loop(numRows)
+         {
+            loop(numCols)
+            {
+               nc[k++] = t_cells[i++];
+            }
+            k += dstride;
+            i += sstride;
+         }
+         trace "\n[...] map resized to ("+_newTSX+";"+_newTSY+")";
+         t_cells <= deref nc;
+         t_size_x = _newTSX;
+         t_size_y = _newTSY;
+      }
+      else
+      {
+         trace "[---] failed to allocate new cells ("+_newTSX+" * "+_newTSY+")";
+      }
+   }
+
+   public method uiResizeCells() {
+      String s;
+      int nsx, nsy;
+
+      stdout "\n\nEnter new map width: ";
+      StdInStream.readLine(s,7);
+      nsx = s;
+
+      stdout "\n\nEnter new map height: ";
+      StdInStream.readLine(s,7);
+      nsy = s;
+
+      resizeCells(nsx, nsy);
+   }
+
+   public method uiRenameMap() {
+      String s;
+
+      stdout "\n\nEnter new map name: ";
+      StdInStream.readLine(s, 48);
+
+      g_level.setMapName(s);
+   }
+
+   public method onMouse(int _x, _y, _cbs, _nbs) {
+
+      if(b_lctrl || b_lalt)
+      {
+         int availX = Viewport.width / DebugText.CHAR_SX;
+         int availY = Viewport.height / DebugText.CHAR_SY;
+         int maxoffX = t_size_x - availX;
+         int maxoffY = t_size_y - availY;
+         if(maxoffX < 0) maxoffX = 0;
+         if(maxoffY < 0) maxoffY = 0;
+         off_x -= Mouse.dx/4;
+         off_y -= Mouse.dy/3;
+         if(off_x < 0)
+            off_x = 0;
+         if(off_y < 0)
+            off_y = 0;
+         if(off_x > maxoffX)
+            off_x = maxoffX;
+         if(off_y > maxoffY)
+            off_y = maxoffY;
+         return;
+      }
+
+      cursor_x = _x / DebugText.CHAR_SX;
+      cursor_y = _y / DebugText.CHAR_SY;
+
+      if(cursor_x < t_size_x)
+         if(cursor_x >= 0)
+            if(cursor_y < t_size_y)
+               if(cursor_y >= 0)
+               {
+                  if(_cbs & MOUSE_LBUTTON)
+                  {
+                     t_cells[cursor_x + off_x + ((cursor_y+off_y)*t_size_x)] = cursor_fg_c;
+                  }
+                  else if(_cbs & MOUSE_RBUTTON)
+                  {
+                     t_cells[cursor_x + off_x + ((cursor_y+off_y)*t_size_x)] = cursor_bg_c;
+                  }
+               }
+
+      if(_cbs & MOUSE_WHEELUP)
+      {
+         selectNextFg();
+      }
+      else if(_cbs & MOUSE_WHEELDOWN)
+      {
+         selectPrevFg();
+      }
+   }
+
+   public method selectNextFg() {
+      if(cursor_fg_i == (selectable_c.numElements-1))
+      {
+         cursor_fg_i = 0;
+      }
+      else
+      {
+         cursor_fg_i++;
+      }
+      cursor_fg_c = selectable_c[cursor_fg_i];
+   }
+
+   public method selectPrevFg() {
+      if(cursor_fg_i == 0)
+      {
+         cursor_fg_i = (selectable_c.numElements-1);
+      }
+      else
+      {
+         cursor_fg_i--;
+      }
+      cursor_fg_c = selectable_c[cursor_fg_i];
+   }
+
+   public method selectNextBg() {
+      if(cursor_bg_i == (selectable_c.numElements-1))
+      {
+         cursor_bg_i = 0;
+      }
+      else
+      {
+         cursor_bg_i++;
+      }
+      cursor_bg_c = selectable_c[cursor_bg_i];
+   }
+
+   public method saveMap() {
+      File f;
+      String outName =  g_level.map_filename;
+      if(!outName.startsWith("maps/"))
+      {
+         outName = "maps/test.txt";
+      }
+      if(f.openLocal(outName, IOS_OUT))
+      {
+         trace "xxx saving map to \""+outName+"\" tsx="+t_size_x+" tsy="+t_size_y;
+
+         int y = 0;
+         loop(t_size_y)
+         {
+            int x = 0;
+            loop(t_size_x)
+            {
+               int c = t_cells[x + y*(t_size_x)];
+               f.i8 = c;
+               x++;
+            }
+            f.i8 = '\n';
+            y++;
+         }
+         f.i8 = ';';
+         f.i8 = '\n';
+         f.writeString(g_level.meta_data, 0, g_level.meta_data.length-1);
+         f.close();
+         trace "[...] wrote map to file \""+outName+"\".";
+      }
+   }
+
+   public method selectPrevBg() {
+      if(cursor_bg_i == 0)
+      {
+         cursor_bg_i = (selectable_c.numElements-1);
+      }
+      else
+      {
+         cursor_bg_i--;
+      }
+      cursor_bg_c = selectable_c[cursor_bg_i];
+   }
+
+   public method onKeyboard(Key _k) {
+      switch(_k.unicode)
+      {
+         case 'm':
+            uiResizeCells();
+            return;
+
+         case 'r':
+            resetFgBg();
+            break;
+
+         case 'w':
+            selectNextFg();
+            break;
+
+         case 's':
+            selectPrevFg();
+            break;
+
+         case 'd':
+            selectNextBg();
+            break;
+
+         case 'a':
+            selectPrevBg();
+            break;
+
+         case 'n':
+            uiRenameMap();
+            break;
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'q':
+            ////SDL.exitEventLoop();
+            break;
+
+         case VKEY_LCTRL:
+            b_lctrl = true;
+            Mouse.grab();
+            break;
+
+         case VKEY_LALT:
+            b_lalt = true;
+            Mouse.grab();
+            break;
+
+         case VKEY_UP:
+            selectNextFg();
+            break;
+
+         case VKEY_DOWN:
+            selectPrevFg();
+            break;
+
+         case VKEY_RIGHT:
+            selectNextBg();
+            break;
+
+         case VKEY_LEFT:
+            selectPrevBg();
+            break;
+
+         case VKEY_F1:
+            saveMap();
+            break;
+
+         case VKEY_SPACE:
+            g_level.setEditorCells(t_cells, t_size_x, t_size_y);
+            g_ingame.resetMap();
+            b_editing = false;
+            break;
+
+         case VKEY_DELETE:
+            clearCells();
+            break;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_LCTRL:
+            b_lctrl = false;
+            Mouse.ungrab();
+            break;
+
+         case VKEY_LALT:
+            b_lalt = false;
+            Mouse.ungrab();
+            break;
+      }
+   }
+
+   public method draw(float dt) {
+      zglInit2D(Viewport.width, Viewport.height);
+      glLoadIdentity();
+
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+
+      DebugText.BindTexture();
+
+      glTranslatef(-DebugText.CHAR_SX * off_x, 
+                   -DebugText.CHAR_SY * off_y,
+                   0
+                   );
+
+      float texw = DebugText.tex.sx;
+      float texh = DebugText.tex.sy;
+
+      float texcw = DebugText.CHAR_SX / texw;
+      float texch = DebugText.CHAR_SY / texh;
+      float cy = 0;
+      float cx = 0;
+      float u,v;
+      int k = 0;
+      zglColorARGB(#ffffffff);
+      //glDisable(GL_TEXTURE_2D);
+      glBegin(GL_QUADS);
+      loop(t_size_y)
+      {
+         cx = 0;
+         loop(t_size_x)
+         {
+            char c = t_cells[k++];
+            if(c > ' ')
+            {
+               if(c == '#')
+               {
+                  zglColorARGB(#ffffffff);
+               }
+               else
+               {
+                  zglColorARGB(#ffffff00);
+               }
+
+               c -= ' '+1;
+               u = c * texcw;
+               v = 0;
+
+
+               glTexCoord2f(u, v);
+               glVertex2f(cx, cy);
+
+               glTexCoord2f(u+texcw, v);
+               glVertex2f(cx+DebugText.CHAR_SX, cy);
+
+               glTexCoord2f(u+texcw, v+texch);
+               glVertex2f(cx+DebugText.CHAR_SX, cy+DebugText.CHAR_SY);
+
+               glTexCoord2f(u, v+texch);
+               glVertex2f(cx, cy+DebugText.CHAR_SY);
+            }
+            cx += DebugText.CHAR_SX;
+         }
+         cy += DebugText.CHAR_SY;
+      }
+
+
+      // Render cursor
+      zglColorARGB(#cfffaf2f);
+      u = (cursor_fg_c-' '-1) * texcw;
+      v = 0;
+      cx = (cursor_x + off_x) * DebugText.CHAR_SX;
+      cy = (cursor_y + off_y) * DebugText.CHAR_SY;
+
+      glTexCoord2f(u, v);
+      glVertex2f(cx, cy);
+      
+      glTexCoord2f(u+texcw, v);
+      glVertex2f(cx+DebugText.CHAR_SX, cy);
+      
+      glTexCoord2f(u+texcw, v+texch);
+      glVertex2f(cx+DebugText.CHAR_SX, cy+DebugText.CHAR_SY);
+      
+      glTexCoord2f(u, v+texch);
+      glVertex2f(cx, cy+DebugText.CHAR_SY);
+
+      // Render last position
+      zglColorARGB(#cf2fFF8f);
+      u = ('X'-' '-1) * texcw;
+      v = 0;
+      cx = last_player_x * DebugText.CHAR_SX;
+      cy = last_player_y * DebugText.CHAR_SY;
+
+      glTexCoord2f(u, v);
+      glVertex2f(cx, cy);
+      
+      glTexCoord2f(u+texcw, v);
+      glVertex2f(cx+DebugText.CHAR_SX, cy);
+      
+      glTexCoord2f(u+texcw, v+texch);
+      glVertex2f(cx+DebugText.CHAR_SX, cy+DebugText.CHAR_SY);
+      
+      glTexCoord2f(u, v+texch);
+      glVertex2f(cx, cy+DebugText.CHAR_SY);
+
+      glEnd();
+      
+      glDisable(GL_TEXTURE_2D);
+      ////glDisable(GL_BLEND);
+
+
+      // Draw editor status
+      zglColorARGB(#aa000000);
+      glTranslatef(DebugText.CHAR_SX * off_x, DebugText.CHAR_SY * off_y, 0);
+      glBegin(GL_QUADS);
+      glVertex2f(0,    6);
+      glVertex2f(200,  6);
+      glVertex2f(200, 32);
+      glVertex2f(0,   32);
+      glEnd();
+
+      DebugText.Draw(10, 10, 
+                     "fg="+tcchar(cursor_fg_c)+" bg="+tcchar(cursor_bg_c)+"  x="+(cursor_x+off_x)+" y="+(cursor_y+off_y)
+                     +"    pos=("+((cursor_x+off_x)*3)+";"+((t_size_y-(cursor_y+off_y+1))*6)+")",
+                     #ff00ff00, #ff000000
+                     );
+
+
+   }
+ 
+}
+
+g_editor.initEditor();

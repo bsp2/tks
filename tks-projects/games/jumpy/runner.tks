@@ -1,0 +1,408 @@
+
+// 14Mar2010, 15Mar2010, 17Mar2010, 24Mar2010
+
+module MRunner;
+
+namespace jumpy;
+
+// 13Mar2010
+
+class Runner : Character {
+   
+   float old_position_x;
+   float old_position_y;
+
+   define float STOMPED_TIMEOUT = 60;
+   float stomped_timeout;
+   define float STOMPED_JUMP_Y = 0.0024;
+
+   define float REVIVE_TIMEOUT = (3*60);
+   float revive_timeout;
+   int   revive_dir_x;
+   int   revive_dir_y;
+   int   revive_color32;
+   float revive_speed_scale;
+   boolean revive_b_semipermeable;
+   boolean revive_b_mover;
+
+   define float THROW_TIMEOUT = 0.3; // time until virtual UP key release
+   float throw_timeout = 0;
+   //boolean b_thrown;
+
+   boolean throw_b_collectable; // true=make item collectable again when it collides with a floor (after throwing it)
+
+   boolean reset_b_collide_other;
+   boolean b_collide_other;
+
+   float dx;
+   float dy;
+   
+   float revive_time;
+
+   public static NewRunner(float _px, _py, _sx, _sy, 
+                           int _dirx, _diry, 
+                           float _gravity, _speed, 
+                           boolean _bMover, 
+                           int _c32, 
+                           boolean _bActive, _bTurnaround, _bSemiPermeable, _bCollideOther
+                           ) : Runner
+   {
+      local Runner r <= new Runner;
+      r.initRunner(_px, _py, _sx, _sy, _dirx, _diry, _gravity, _speed, _bMover, _c32, _bActive, _bTurnaround, _bSemiPermeable, _bCollideOther);
+      return deref r;
+   }
+
+   public method initRunner(float _px, _py, _sx, _sy, 
+                            int _dirx, _diry, 
+                            float _gravity, _speed, 
+                            boolean _bMover, 
+                            int _c32, 
+                            boolean _bActive, _bTurnaround, _bSemiPermeable, _bCollideOther
+                            ) {
+      init();
+
+      reset_x               = _px;
+      reset_y               = _py;
+      reset_size_x          = _sx;
+      reset_size_y          = _sy;
+      reset_dir_x           = _dirx;
+      reset_dir_y           = _diry;
+      reset_gravity         = _gravity;
+      reset_speedscale      = _speed;
+      reset_b_active        = _bActive;
+      reset_b_turnaround    = _bTurnaround;
+      reset_b_mover         = _bMover;
+      reset_b_semipermeable = _bSemiPermeable;
+      reset_b_collide_other = _bCollideOther;
+
+      color32 = _c32;
+
+      revive_time = REVIVE_TIMEOUT;
+
+      resetCharacter();
+   }
+
+   public virtual draw(float dt) {
+      if(revive_timeout > 0 && b_collectable)
+      {
+         float rel = revive_timeout / revive_time;
+         if(rel < 0.2)
+         {
+            int x = int(rel*30);
+            if(x & 1)
+            {
+               return;
+            }
+         }
+      }
+      Character::draw(dt);
+   }
+
+   public virtual resetCharacter() {
+      Character::resetCharacter();
+
+      stomped_timeout     = 0;
+      dx = 0;
+      dy = 0;
+      revive_timeout      = 0;
+      throw_timeout       = 0;
+      throw_b_collectable = false;
+      b_collectable       = false;
+      b_collide_other     = reset_b_collide_other;
+   }
+
+   public virtual rotatecw() {
+      Entity::rotatecw();
+      if(0 == gravity)
+      {
+         int t = dir_x;
+         dir_x = -dir_y;
+         dir_y = t;
+      }
+   }
+
+   public virtual handleStomp() {
+      ///if(b_active) && gravity != 0
+      if (gravity != 0) // do not stomp moving platforms
+      {
+         if(revive_timeout <= 0) && (stomped_timeout <= 0)
+         {
+            revive_color32         = color32;
+            revive_dir_x           = dir_x;
+            revive_dir_y           = dir_y;
+            revive_speed_scale     = speed_scale;
+            revive_b_semipermeable = b_semipermeable;
+            revive_b_mover         = b_mover;
+            revive_timeout         = 0;
+            b_semipermeable        = false;
+         }
+
+         stomped_timeout = STOMPED_TIMEOUT;
+
+         gravity  = 1;
+         b_mover  = 1;
+         speed_y  = 3;
+         beginState(ST_FALLING);
+         color32  = #ffff7d5b;
+         b_collectable   = true;
+
+         delta_x = 0;
+         delta_y = 0;
+      }
+   }
+
+   public virtual handleWallCollision(Entity _o) {
+      if(b_turnaround)
+      {
+         dir_x = -dir_x;
+      }
+   }
+
+   public virtual handleCollect(Entity _carryEntity) : boolean {
+      // trace "xxx Runner::handleCollect: this="+#(this)+" b_collectable="+b_collectable;
+      // trace "xxx Runner::handleCollect: plypos=("+g_player.position_x+";"+g_player.position_y+")";
+      ////g_ingame.b_freeze = true; // xxx debug
+      if(null == _carryEntity)
+      {
+         if(b_collectable)
+         {
+            b_active = false;
+            ////b_visible = false;
+            dir_x = 0;
+            dir_y = 0;
+            b_nocollision = true;
+            revive_timeout = 0;
+            return true;
+         }
+      }
+      return false;//////(revive_timeout > 0) && (throw_timeout > 0) && (stomped_timeout) > 0;///false;
+   }
+
+   public virtual handleDrop() {
+      b_active = true;
+      b_visible = true;
+      dx = g_player.speed_x * 1.0;
+      dy = g_player.speed_y * 0.4;
+      if(dy < 0)
+         dy = 0;
+      ////speed_x = g_player.speed_x * 0.4;
+      speed_x = g_player.speed_x * 0.1;
+      speed_y = 0;
+      position_y = g_player.position_y + 7;
+      revive_timeout = 0;
+      b_semipermeable = false;//true;
+      //speed_y = g_player.speed_y*2 + 0.8;
+      throw_timeout = THROW_TIMEOUT;
+      b_collectable = false;
+      throw_b_collectable = true;
+      b_nocollision = false;
+      color32 = #ffaf5d4b;
+      dir_y = 1;
+      jump();
+      speed_scale = 0.5;
+   }
+
+   // public virtual landOnEntity(Entity _e) {
+   //    Character::landOnEntity(_e);
+   //    if(b_collide_other)
+   //    {
+   //       handleFloorCollision();
+   //    }
+   // }
+
+   public method handleFloorCollision(Entity _o) : boolean {
+      // Block landed on the floor, allow it to be recollected
+      ////trace "xxx floorcoll1 _o="+#(_o);
+      if(!b_collectable && throw_b_collectable)
+      {
+         ////trace "xxx floorcoll2";
+         //if(!_o instanceof Player)
+         {
+            b_collectable       = true;
+            throw_b_collectable = false;
+            b_active            = true;
+            b_semipermeable     = (_o instanceof Runner);
+            dir_y               = 0;
+            revive_timeout      = revive_time;
+            color32             = #ffff7d5b;
+            ////trace "xxx floorcoll3";
+            return;
+         }
+      }
+   }
+
+   public virtual handleCollision(Entity _o, int _dir, float _px, _py) {
+      ////trace "xxx Runner::handleCollision: _o="+#(_o)+" b_nocollision="+b_nocollision+" b_collectable="+b_collectable;
+      if(_dir & (DIR_LEFT | DIR_RIGHT))
+      {
+         dx = 0;
+      }
+      if(_dir & DIR_UP)
+      {
+         if(handleFloorCollision(_o))
+         {
+            return;
+         }
+      }
+      return Character::handleCollision(_o, _dir, _px, _py);
+   }
+
+   protected method checkBaddiesCollision() : int {
+      Character c;
+      int lcm = last_coll_mask; // last wall/entity collision mask
+      int d = last_coll_mask;
+      foreach c in g_level.baddies {
+         if(@(c) != @(this))
+         {
+            if(c.checkCollision(this))
+            {
+               int n = c.hitBy(this); // returns DIR_xxx
+               if(c.b_nocollision)
+               {
+                  n = 0;
+               }
+
+               ////trace "xxx checkBaddiesCollision: c="+#(c)+" n="+n;
+               d |= n;
+               if(d)
+               {
+                  ////trace "xxx baddie collision last_coll_mask="+lcm+" d="+d;
+                  lcm = d;
+               }
+               ////trace "xxx hitBy returned "+c;
+               //return c;
+            }
+         }
+      }
+   }
+
+   public virtual checkPlayerCollisions() {
+      ////trace "xxx b_collide_other="+b_collide_other;
+      if(b_collide_other)
+      {
+         checkBaddiesCollision();
+      }
+   }
+
+   public virtual calc(float dt) {
+      ////trace "xxx runner b_collide_other="+b_collide_other;
+      ////trace "xxx runner "+#(this)+" b_collectable="+b_collectable+" b_semipermeable="+b_semipermeable+" b_active="+b_active;
+      if(stomped_timeout > 0)
+      {
+         Character::calc(dt);
+         stomped_timeout -= dt;
+         speed_scale = stomped_timeout/STOMPED_TIMEOUT;
+         speed_y += STOMPED_JUMP_Y * (sin(stomped_timeout/STOMPED_TIMEOUT * PI)*0.5+0.5) * dt;
+         ////trace "xxx speed_y="+speed_y;
+         ////dy += -0.06 * dt;
+         if(stomped_timeout <= 0)
+         {
+            stomped_timeout = 0;
+            dir_x = 0;
+            dir_y = 0;
+            revive_timeout = revive_time;
+            ////trace "xxx end stomp anim";
+         }
+      }
+      else if(revive_timeout > 0) && b_collectable && b_active
+      {
+         ////Character::calc(dt);
+         revive_timeout -= dt;
+         if(revive_timeout <= 0)
+         {
+            revive_timeout  = 0;
+            b_collectable   = false;
+            b_active        = true;
+            color32         = revive_color32;
+            dir_x           = revive_dir_x;
+            dir_y           = revive_dir_y;
+            speed_scale     = revive_speed_scale;
+            b_semipermeable = revive_b_semipermeable;
+            b_mover         = revive_b_mover;
+            trace "[dbg] revive runner";
+         }
+      }
+      else
+      {
+         position_x += dx * dt;
+         position_y += dy * dt;
+         float dxyDecay = mathPowerf(0.983, dt);
+         dx *= dxyDecay;
+         dy *= dxyDecay;
+         Character::calc(dt);
+         delta_x = position_x - old_position_x;
+         delta_y = position_y - old_position_y;
+         old_position_x = position_x;
+         old_position_y = position_y;
+      }
+
+      if(throw_timeout > 0)
+      {
+         throw_timeout -= dt;
+         if(throw_timeout <= 0)
+         {
+            throw_timeout = 0;
+            dir_y = 0;
+         }
+      }
+
+      if(b_collectable)
+      {
+         delta_x = 0;
+         delta_y = 0;
+      }
+
+      // // if(gravity == 0)
+      // // {
+      // //    speed_x = delta_x;
+      // //    speed_y = delta_y;
+      // // }
+   }
+
+   public virtual hitBy(Entity _e) : int {
+      ////trace "xxx hitBy: this="+#(this)+" e="+#(_e)+" throw_b_collectable="+throw_b_collectable+" b_nocollision="+b_nocollision+" b_collectable="+b_collectable;
+
+      // // if((stomped_timeout > 0))
+      // // {
+      // //    return 0;
+      // // }
+
+      if(b_nocollision)
+      {
+         ////trace "xxx runner b_nocollision px="+position_x+" py="+position_y;
+         return 0;
+      }
+
+      if(throw_b_collectable)
+      {
+         return 0;
+      }
+
+      if(!b_active || !b_visible)
+      {
+         return 0;
+      }
+
+      int d = Character::hitBy(_e);
+
+      if(d)
+      {
+         if(_e instanceof Player)
+         {
+            if(!b_mover)
+            {
+               g_ingame.showMessage("you were hit by a kill block",
+                                    "you have failed to complete this room. please try again !", 
+                                    180, Ingame.ACTION_RESETMAP);
+            }
+            else
+            {
+               Player p <= _e;
+               p.tryToLandOnEntity(d, this);
+            }
+         }
+      }
+      return d;
+   }
+
+}

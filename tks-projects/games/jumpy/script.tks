@@ -1,0 +1,251 @@
+
+// 14Mar2010, 17Mar2010, 18Mar2010
+
+module MScript;
+
+namespace jumpy;
+
+class Action {
+   int    action_id;
+   String entity_id;
+   String entity_property; // if action is SETVALUE
+   String value;
+}
+
+
+class Script {
+
+   define int ACTION_NONE             = 0;
+   define int ACTION_ACTIVATE         = 1;
+   define int ACTION_DEACTIVATE       = 2;
+   define int ACTION_SETVALUE         = 3;
+   define int ACTION_CALL             = 4;
+   define int ACTION_TOGGLE           = 5;
+   define int ACTION_TOGGLEMOVER      = 6;
+   define int ACTION_TOGGLEVISIBILITY = 7;
+   define int ACTION_ROTATECW         = 8;
+   define int ACTION_ROTATECCW        = 9;
+
+   protected PointerArray actions;
+
+   public method addAction(String _entityId, int _actionId) {
+      local Action ac;
+      ac.action_id = _actionId;
+      ac.entity_id = _entityId;
+      actions.add(#(deref ac));
+   }
+
+   public method addSetValueAction(String _entityId, int _actionId, String _property, String _value) {
+      local Action ac;
+      ac.action_id = _actionId;
+      ac.entity_id = _entityId;
+      ac.entity_property = _property;
+      ac.value           = _value;
+      actions.add(#(deref ac));
+
+      ////trace "[dbg] Script::addSetValueAction: id="+_entityId+" ac="+_actionId+" property="+_property+" value="+_value;
+   }
+
+   public method addActionsFromString(String _cmds) {
+      StringArray cmds <= _cmds.splitChar(',');
+      String *cmd;
+      foreach cmd in cmds 
+      {
+         StringArray *a;
+         String id;
+         cmd.trim();
+
+         if(-1 != cmd.indexOfChar(':', 0))
+         {
+            // entity.property=value
+            a <= cmd.splitChar(':');
+            id = a.get(0);
+            id.trim();
+            
+            String t = a.get(1);
+            if(null != t)
+            {
+               if(-1 != t.indexOfChar(' ', 0))
+               {
+                  a <= t.splitSpace(true);
+                  String property <= a.get(0);
+                  property.trim();
+                  String value <= a.get(1);
+                  value.trim();
+                  addSetValueAction(id, ACTION_SETVALUE, property, value);
+               }
+               else
+               {
+                  trace "[---] Script: syntax error while parsing property assignment, cmd=\""+cmd+"\".";
+               }
+            }
+         }
+         else
+         {
+            // activate|enable|open|start|1|deactivate|disable|close|stop|0 entity
+            a <= cmd.splitChar(' ');
+            String action = a.get(0);
+            id     = a.get(1);
+            action.trim();
+            id.trim();
+            int actionId;
+            switch(action)
+            {
+               default:
+                  actionId = ACTION_NONE;
+                  trace "[---] Script: unsupported action \""+action+"\".";
+                  break;
+
+               case "none":
+                  actionId = ACTION_NONE;
+                  break;
+
+               case "activate":
+               case "enable":
+               case "open":
+               case "start":
+               case "1":
+                  actionId = ACTION_ACTIVATE;
+                  break;
+            
+               case "deactivate":
+               case "disable":
+               case "close":
+               case "stop":
+               case "0":
+                  actionId = ACTION_DEACTIVATE;
+                  break;
+
+               case "call":
+               case "run":
+                  actionId = ACTION_CALL;
+                  break;
+
+               case "toggle":
+                  actionId = ACTION_TOGGLE;
+                  break;
+
+               case "togglemover":
+                  actionId = ACTION_TOGGLEMOVER;
+                  break;
+
+               case "togglevisibility":
+               case "showhide":
+                  actionId = ACTION_TOGGLEVISIBILITY;
+                  break;
+                  
+               case "rotatecw":
+                  actionId = ACTION_ROTATECW;
+                  break;
+
+               case "rotateccw":
+                  actionId = ACTION_ROTATECCW;
+                  break;
+            }
+         
+            addAction(id, actionId);
+         }
+      }
+   }
+
+   public method markScriptTargets() {
+      Action *ac;
+      foreach ac in actions {
+         Entity e <= g_level.findEntityById(ac.entity_id);
+         if(null != e)
+         {
+            e.b_script_target = true;
+         }
+      }
+   }
+
+   public method run() {
+      // Execute a sequence of actions
+      //  This may be called recursively, hence the "local" variables.
+      local int i = 0;
+      loop(actions.numElements)
+      {
+         local Action ac <= actions[i];
+         local int actionId = ac.action_id;
+         if(ACTION_NONE != actionId)
+         {
+            local String id <= ac.entity_id;
+            local Entity *e;
+            if(id == "player")
+            {
+               e <= g_player;
+            }
+            else
+            {
+               e  <= g_level.findEntityById(id);
+            }
+            if(b_edit_mode) trace "[dbg] Script::run: ["+i+"] id="+id+" actionId="+actionId;
+            if(null != e)
+            {
+               switch(actionId)
+               {
+                  case ACTION_ACTIVATE:
+                     if(b_edit_mode) trace "[dbg] action ACTIVATE "+id;
+                     e.actionActivate();
+                     break;
+
+                  case ACTION_DEACTIVATE:
+                     if(b_edit_mode) trace "[dbg] action DEACTIVATE "+id;
+                     e.actionDeactivate();
+                     break;
+
+                  case ACTION_SETVALUE:
+                     if(b_edit_mode) trace "[dbg] action SET "+id+"."+ac.entity_property+" = \""+ac.value+"\"";
+                     ////trace "xxx ACTION_SETVALUE: e="+#(e);
+                     e.actionSet(ac.entity_property, ac.value);
+                     break;
+
+                  case ACTION_CALL:
+                     if(e instanceof ScriptEntity)
+                     {
+                        if(b_edit_mode) trace "[dbg] action CALL "+id;
+                        ScriptEntity se <= e;
+                        se.script.run();
+                     }
+                     else
+                     {
+                        trace "[---] Script::run: cannot call non-script entity \""+id+"\".";
+                     }
+                     break;
+
+                  case ACTION_TOGGLE:
+                     if(b_edit_mode) trace "[dbg] action TOGGLE "+id;
+                     e.actionToggle();
+                     break;
+
+                  case ACTION_TOGGLEMOVER:
+                     if(b_edit_mode) trace "[dbg] action TOGGLEMOVER "+id;
+                     e.actionToggleMover();
+                     break;
+
+                  case ACTION_TOGGLEVISIBILITY:
+                     if(b_edit_mode) trace "[dbg] action TOGGLEVISIBILITY "+id;
+                     e.actionToggleVisibility();
+                     break;
+
+                  case ACTION_ROTATECW:
+                     if(b_edit_mode) trace "[dbg] action ROTATECW";
+                     g_ingame.startRotateCW();
+                     break;
+
+                  case ACTION_ROTATECCW:
+                     if(b_edit_mode) trace "[dbg] action ROTATECCW";
+                     g_ingame.startRotateCCW();
+                     break;
+               }
+            }
+            else
+            {
+               trace "[---] Script::run: error: entity \""+id+"\" not found.";
+            }
+         }
+         i++;
+      }
+   }
+
+}
