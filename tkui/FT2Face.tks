@@ -1,12 +1,16 @@
 // ----
 // ---- file   : FT2Face.tks
-// ---- info   : script side of the tks freetype2 plugin. includes OpenGL text renderer.
-// ---- author : (C) 2005-2025 by Bastian Spiegel
-// ---- license: GNU Lesser General Public License. See <http://www.gnu.org/copyleft/lesser.html> for details.
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
-// ---- changed: 25Apr2005, 27Apr2005, 30Apr2005, 06May2005, 12Jun2005, 25Jun2005, 31Jul2005
-// ----          09May2007, 12May2007, 20Jan2008, 22Apr2010, 14Apr2013, 13Aug2014, 27Dec2020
-// ----          24Mar2024, 10Sep2025, 11Sep2025, 12Sep2025, 14Sep2025, 20Sep2025
+// ---- info   :
+// ----
+// ---- created: 25Apr2005
+// ---- changed: 27Apr2005, 30Apr2005, 06May2005, 12Jun2005, 25Jun2005, 31Jul2005, 09May2007
+// ----          12May2007, 20Jan2008, 22Apr2010, 14Apr2013, 13Aug2014, 27Dec2020, 24Mar2024
+// ----          10Sep2025, 11Sep2025, 12Sep2025, 14Sep2025, 20Sep2025, 22Sep2025
 // ----
 // ----
 // ----
@@ -27,6 +31,7 @@ class FT2Face {
    private int      height;       // standard glyph height
 
    // ---- Glyph objects (0..255)
+   define int MAX_GLYPHS = 256;
    private FT2Glyph glyphs[];     // ASCII encoding, 256 glyphs (actually 255). Not every glyph is actually used.
    private float glyphs_advancex[256]; // How many pixels to advance after printing glyph [0..255].
                                   // Kerning is not supported, yet. It should still be rather easy to add.
@@ -43,14 +48,17 @@ class FT2Face {
    private float    underline_thickness; // Thickness of the underline line
 
    // ---- OpenGL texture rendering fields
-   define int DEFAULT_TEXTURE_SIZE = 512; // 128
+   define int DEFAULT_TEXTURE_SIZE = 512;
+   static int default_texture_w = DEFAULT_TEXTURE_SIZE;
+   static int default_texture_h = DEFAULT_TEXTURE_SIZE;
 
    private int      num_textures;    // >0 if a font has been successfully loaded.
    private int      tex_cursor_x;    // Used during font loading
    private int      tex_cursor_y;    // Used during font loading
    private int      tex_cursor_line_max_y; // Used during font loading
    private Texture *tex_current;     // Used during font loading
-   private int      rtexsize;        // The size (width/height) of a single texture "page"
+   private int      rtex_w;          // The size (width/height) of a single texture "page"
+   private int      rtex_h;          //
    private List     textures;        // The glyph bitmaps are spread across n textures (depending on font pixel size)
    private boolean  texture_filter;  // Can be changed at runtime by calling setEnableTextureFilter()
 
@@ -60,6 +68,12 @@ class FT2Face {
    // ---- The object also holds an internal representation of the glyph infos.
    // ----
    private NativeFT2Face ft2;
+
+   // override default texture size
+   public static SetDefaultTextureSize2f(int _w, int _h) {
+      default_texture_w = _w;
+      default_texture_h = _h;
+   }
 
    // ----
    // ---- Query the height font attributes selected by the native freetype2 loader.
@@ -95,7 +109,7 @@ class FT2Face {
    public method getNumTextures()        { return num_textures; }
 
    // ---- Query the number of bytes occupied by the font texture pages
-   public method getTextureByteSize()    { return textures.size * rtexsize * rtexsize; }
+   public method getTextureByteSize()    { return textures.size * rtex_w * rtex_h; }
 
    // ---- Query glyph ----
    public method getGlyph(int _char) : FT2Glyph {
@@ -124,6 +138,18 @@ class FT2Face {
    // ---- Return the texture #_index (or null)
    public method getTexture(int _index) : Texture {
       return textures[_index];
+   }
+
+   // ---- find actual texture height
+   public method findMaxGlyphY() : int {
+      int r = 0;
+      FT2Glyph *g;
+      foreach g in glyphs
+      {
+         if(null != g)
+            r = mathMaxi(r, g.bitmapy + g.height);
+      }
+      return r;
    }
 
    // ----
@@ -183,12 +209,12 @@ class FT2Face {
    // ----       _h: 0 (=defaults to _w) or the height of the font. if both _w and _h are 0, 10 is assumed.
    // ---- _texsize: width and height of a single texture-"page". If _texsize is 0, 256 is assumed.
    // ----
-   public method openLocalFile(String _name, float _w, float _h, int _texsize) {
+   public method openLocalFile(String _name, float _w, float _h) {
       if(ft2.openFileFace(_name, _w, _h))
       {
          trace "[trc] FT2Face::openLocalFile: openFileFace() OK";
          name = _name;
-         return loadFace(_texsize);
+         return loadFace();
       }
       else
       {
@@ -201,7 +227,7 @@ class FT2Face {
    // ---- Load a font from the given "logic" pak file name (maps to a file in a .tkx pak file or the local fs (dev mode))
    // ---- The behaviour is otherwise equal to loadFromLocalFile().
    // ----
-   public method openPakFile(String _name, float _w, float _h, int _texsize) {
+   public method openPakFile(String _name, float _w, float _h) {
       PakFile f;
       if(f.open(_name))
       {
@@ -210,7 +236,7 @@ class FT2Face {
          if(ft2.openMemoryFace(b, _w, _h))
          {
             name = _name;
-            return loadFace(_texsize);
+            return loadFace();
          }
          else
          {
@@ -223,7 +249,7 @@ class FT2Face {
    // ---- Allocate a new texture "page" and add it to the "textures" List.
    private method newTexture() : Texture {
       local Texture t;
-      t.alloc(rtexsize, rtexsize, ft2.monochrome ? 1 : 4); // mono=>8bit, alpha=>32bit
+      t.alloc(rtex_w, rtex_h, ft2.monochrome ? 1 : 4); // mono=>8bit, alpha=>32bit
       t.clear(0);
       tex_cursor_x = 1; // add extra border for filtering
       tex_cursor_y = 1;
@@ -241,20 +267,18 @@ class FT2Face {
    // ---- Load and render a TrueType, Type 1, CID-keyed or OpenType/CFF font to a bitmap
    // ---- and copy the bitmap glyphs to areas within 2^n size textures.
    // ----
-   private method loadFace(int _texsize)/*:boolean*/ {
+   private method loadFace() : boolean {
 
       num_textures = 0;
       textures.removeAll();
-      if(_texsize <= 0)
-         rtexsize = DEFAULT_TEXTURE_SIZE;
-      else
-         rtexsize = 2n(_texsize); // next 2^n size
+      rtex_w = default_texture_w;
+      rtex_h = default_texture_h;
 
-      glyphs.alloc(256);
+      glyphs.alloc(MAX_GLYPHS);
       height = ft2.height;
-      if(height >= rtexsize)
+      if(height >= rtex_h)
       {
-         trace "[---] FT2Face::loadFace: average glyph height("+height+") exceeds texture height ("+rtexsize+"). bailing out..";
+         trace "[---] FT2Face::loadFace: average glyph height("+height+") exceeds texture height ("+rtex_h+"). bailing out..";
          return false;
       }
 
@@ -291,11 +315,11 @@ class FT2Face {
                t <= newTexture();
             }
             // ---- check whether glyph fits into current texture
-            if( (tex_cursor_x + g.width) >= (rtexsize - 1) )
+            if( (tex_cursor_x + g.width) >= (rtex_w - 1) )
             {
-               if(g.width >= (rtexsize-1))
+               if(g.width >= (rtex_w-1))
                {
-                  trace "[---] FT2Face::loadFace: glyph("+i+") width("+g.width+") exceeds texture width ("+rtexsize+".";
+                  trace "[---] FT2Face::loadFace: glyph("+i+") width("+g.width+") exceeds texture width ("+rtex_w+".";
                   b_render = false;
                }
                else
@@ -305,11 +329,11 @@ class FT2Face {
                   tex_cursor_line_max_y = -1;
                }
             }
-            if( (tex_cursor_y + g.height) >= (rtexsize - 1) )
+            if( (tex_cursor_y + g.height) >= (rtex_h - 1) )
             {
-               if(g.height >= (rtexsize - 1))
+               if(g.height >= (rtex_h - 1))
                {
-                  trace "[---] FT2Face::loadFace: glyph("+i+") height("+g.height+") exceeds texture height ("+rtexsize+".";
+                  trace "[---] FT2Face::loadFace: glyph("+i+") height("+g.height+") exceeds texture height ("+rtex_h+".";
                   b_render = false;
                }
                t <= newTexture();
@@ -338,7 +362,7 @@ class FT2Face {
       }
       // ---- normalize texture coordinates
       foreach g in glyphs
-         g.normalizeTexCoords(rtexsize);
+         g.normalizeTexCoords(rtex_w, rtex_h);
 
       // ---- Store the advancex fields of glyphs 0..255
       ft2.storeGlyphsAdvanceX(glyphs_advancex);
@@ -420,7 +444,7 @@ class FT2Face {
                   float tx = cx + g.offsetx + 0.375f;
                   float ty = cy - g.offsety + 0.375f;
 
-                  // // trace "g.sz=("+g.width+";"+g.height+") c=("+cx+";"+cy+") g.offset=("+g.offsetx+";"+g.offsety+") g.ltu="+g.ltu*rtexsize+" g.ltv="+g.ltv*rtexsize+" g.rtu="+g.rtu*rtexsize+" g.rtv="+g.rtv*rtexsize+" g.rbu="+g.rbu*rtexsize+" g.rbv="+g.rbv*rtexsize+" d=("+tx+";"+ty+")";
+                  // // trace "g.sz=("+g.width+";"+g.height+") c=("+cx+";"+cy+") g.offset=("+g.offsetx+";"+g.offsety+") g.ltu="+g.ltu*rtex_w+" g.ltv="+g.ltv*rtex_h+" g.rtu="+g.rtu*rtex_w+" g.rtv="+g.rtv*rtex_h+" g.rbu="+g.rbu*rtex_w+" g.rbv="+g.rbv*rtex_h+" d=("+tx+";"+ty+")";
                   // // trace "c='"+tcchar(c)+"' g.sz=("+g.width+";"+g.height+") c=("+cx+";"+cy+") g.offset=("+g.offsetx+";"+g.offsety+") d=("+tx+";"+ty+")";
 
                   // // trace "xxx tx="+tx+" ty="+ty;
@@ -730,7 +754,6 @@ class FT2Face {
                                  UIRenderer.End();
 
                                  UIRenderer.DisableTexture2D();
-                                 // // UIRenderer.SetColorARGB(UI.GetColor(LookAndFeel.COLOR_ACCEL_UL_FG));
                                  UIRenderer.SetColorARGB(_ulColor32);
                                  if(UIRenderer.BeginLineStrip(2))
                                  {
@@ -839,7 +862,7 @@ class FT2Face {
             }
             int dx = (i * _charW) + g.offsetx;
             int dy = _charH + descender - g.offsety + _yOff;
-            trace "xxx i="+i+" d=("+dx+";"+dy+") src.z="+texGlyph.z;
+            // trace "xxx i="+i+" d=("+dx+";"+dy+") src.z="+texGlyph.z;
             texOut.copyRegion(texGlyph, g.bitmapx, g.bitmapy, g.width, g.height, dx, dy);
          }
          i++;
