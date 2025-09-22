@@ -431,8 +431,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 74 ('J') */
  {
-    1/*x*/,
-    26/*y*/,
+    505/*x*/,
+    1/*y*/,
     8/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -441,8 +441,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 75 ('K') */
  {
-    11/*x*/,
-    26/*y*/,
+    515/*x*/,
+    1/*y*/,
     12/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -451,8 +451,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 76 ('L') */
  {
-    25/*x*/,
-    26/*y*/,
+    529/*x*/,
+    1/*y*/,
     10/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -461,8 +461,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 77 ('M') */
  {
-    37/*x*/,
-    26/*y*/,
+    541/*x*/,
+    1/*y*/,
     15/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -471,8 +471,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 78 ('N') */
  {
-    54/*x*/,
-    26/*y*/,
+    558/*x*/,
+    1/*y*/,
     12/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -481,8 +481,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 79 ('O') */
  {
-    68/*x*/,
-    26/*y*/,
+    572/*x*/,
+    1/*y*/,
     15/*width*/,
     18/*height*/,
     1/*offset_x*/,
@@ -491,8 +491,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 80 ('P') */
  {
-    85/*x*/,
-    26/*y*/,
+    589/*x*/,
+    1/*y*/,
     11/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -501,8 +501,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 81 ('Q') */
  {
-    98/*x*/,
-    26/*y*/,
+    602/*x*/,
+    1/*y*/,
     15/*width*/,
     23/*height*/,
     1/*offset_x*/,
@@ -511,8 +511,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 82 ('R') */
  {
-    115/*x*/,
-    26/*y*/,
+    619/*x*/,
+    1/*y*/,
     13/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -521,8 +521,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 83 ('S') */
  {
-    130/*x*/,
-    26/*y*/,
+    634/*x*/,
+    1/*y*/,
     11/*width*/,
     18/*height*/,
     1/*offset_x*/,
@@ -531,8 +531,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 84 ('T') */
  {
-    143/*x*/,
-    26/*y*/,
+    647/*x*/,
+    1/*y*/,
     14/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -541,8 +541,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 85 ('U') */
  {
-    159/*x*/,
-    26/*y*/,
+    663/*x*/,
+    1/*y*/,
     12/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -551,8 +551,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 86 ('V') */
  {
-    173/*x*/,
-    26/*y*/,
+    677/*x*/,
+    1/*y*/,
     14/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -561,8 +561,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 87 ('W') */
  {
-    189/*x*/,
-    26/*y*/,
+    693/*x*/,
+    1/*y*/,
     22/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -571,8 +571,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 88 ('X') */
  {
-    213/*x*/,
-    26/*y*/,
+    717/*x*/,
+    1/*y*/,
     14/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -581,8 +581,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 89 ('Y') */
  {
-    229/*x*/,
-    26/*y*/,
+    733/*x*/,
+    1/*y*/,
     14/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -591,8 +591,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 90 ('Z') */
  {
-    245/*x*/,
-    26/*y*/,
+    749/*x*/,
+    1/*y*/,
     11/*width*/,
     18/*height*/,
     1/*offset_x*/,
@@ -601,8 +601,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 91 ('[') */
  {
-    258/*x*/,
-    26/*y*/,
+    762/*x*/,
+    1/*y*/,
     6/*width*/,
     24/*height*/,
     2/*offset_x*/,
@@ -611,8 +611,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 92 ('\') */
  {
-    266/*x*/,
-    26/*y*/,
+    770/*x*/,
+    1/*y*/,
     9/*width*/,
     23/*height*/,
     1/*offset_x*/,
@@ -621,8 +621,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 93 (']') */
  {
-    277/*x*/,
-    26/*y*/,
+    781/*x*/,
+    1/*y*/,
     6/*width*/,
     24/*height*/,
     1/*offset_x*/,
@@ -631,8 +631,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 94 ('^') */
  {
-    285/*x*/,
-    26/*y*/,
+    789/*x*/,
+    1/*y*/,
     14/*width*/,
     9/*height*/,
     2/*offset_x*/,
@@ -641,8 +641,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 95 ('_') */
  {
-    301/*x*/,
-    26/*y*/,
+    805/*x*/,
+    1/*y*/,
     13/*width*/,
     2/*height*/,
     0/*offset_x*/,
@@ -651,8 +651,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 96 ('`') */
  {
-    316/*x*/,
-    26/*y*/,
+    820/*x*/,
+    1/*y*/,
     5/*width*/,
     4/*height*/,
     3/*offset_x*/,
@@ -661,8 +661,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 97 ('a') */
  {
-    323/*x*/,
-    26/*y*/,
+    827/*x*/,
+    1/*y*/,
     10/*width*/,
     13/*height*/,
     1/*offset_x*/,
@@ -671,8 +671,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 98 ('b') */
  {
-    335/*x*/,
-    26/*y*/,
+    839/*x*/,
+    1/*y*/,
     10/*width*/,
     19/*height*/,
     2/*offset_x*/,
@@ -681,8 +681,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 99 ('c') */
  {
-    347/*x*/,
-    26/*y*/,
+    851/*x*/,
+    1/*y*/,
     9/*width*/,
     13/*height*/,
     1/*offset_x*/,
@@ -691,8 +691,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 100 ('d') */
  {
-    358/*x*/,
-    26/*y*/,
+    862/*x*/,
+    1/*y*/,
     10/*width*/,
     19/*height*/,
     1/*offset_x*/,
@@ -701,8 +701,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 101 ('e') */
  {
-    370/*x*/,
-    26/*y*/,
+    874/*x*/,
+    1/*y*/,
     11/*width*/,
     13/*height*/,
     1/*offset_x*/,
@@ -711,8 +711,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 102 ('f') */
  {
-    383/*x*/,
-    26/*y*/,
+    887/*x*/,
+    1/*y*/,
     8/*width*/,
     19/*height*/,
     1/*offset_x*/,
@@ -721,8 +721,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 103 ('g') */
  {
-    393/*x*/,
-    26/*y*/,
+    897/*x*/,
+    1/*y*/,
     10/*width*/,
     18/*height*/,
     1/*offset_x*/,
@@ -731,8 +731,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 104 ('h') */
  {
-    405/*x*/,
-    26/*y*/,
+    909/*x*/,
+    1/*y*/,
     9/*width*/,
     19/*height*/,
     2/*offset_x*/,
@@ -741,8 +741,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 105 ('i') */
  {
-    416/*x*/,
-    26/*y*/,
+    920/*x*/,
+    1/*y*/,
     2/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -751,8 +751,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 106 ('j') */
  {
-    420/*x*/,
-    26/*y*/,
+    924/*x*/,
+    1/*y*/,
     6/*width*/,
     23/*height*/,
     -1/*offset_x*/,
@@ -761,8 +761,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 107 ('k') */
  {
-    428/*x*/,
-    26/*y*/,
+    932/*x*/,
+    1/*y*/,
     11/*width*/,
     19/*height*/,
     2/*offset_x*/,
@@ -771,8 +771,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 108 ('l') */
  {
-    441/*x*/,
-    26/*y*/,
+    945/*x*/,
+    1/*y*/,
     2/*width*/,
     19/*height*/,
     2/*offset_x*/,
@@ -781,8 +781,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 109 ('m') */
  {
-    445/*x*/,
-    26/*y*/,
+    949/*x*/,
+    1/*y*/,
     16/*width*/,
     13/*height*/,
     2/*offset_x*/,
@@ -791,8 +791,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 110 ('n') */
  {
-    463/*x*/,
-    26/*y*/,
+    967/*x*/,
+    1/*y*/,
     9/*width*/,
     13/*height*/,
     2/*offset_x*/,
@@ -801,8 +801,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 111 ('o') */
  {
-    474/*x*/,
-    26/*y*/,
+    978/*x*/,
+    1/*y*/,
     11/*width*/,
     13/*height*/,
     1/*offset_x*/,
@@ -811,8 +811,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 112 ('p') */
  {
-    487/*x*/,
-    26/*y*/,
+    991/*x*/,
+    1/*y*/,
     10/*width*/,
     18/*height*/,
     2/*offset_x*/,
@@ -821,8 +821,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 113 ('q') */
  {
-    499/*x*/,
-    26/*y*/,
+    1003/*x*/,
+    1/*y*/,
     10/*width*/,
     18/*height*/,
     1/*offset_x*/,
@@ -831,8 +831,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 114 ('r') */
  {
-    1/*x*/,
-    51/*y*/,
+    1015/*x*/,
+    1/*y*/,
     7/*width*/,
     13/*height*/,
     2/*offset_x*/,
@@ -841,8 +841,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 115 ('s') */
  {
-    10/*x*/,
-    51/*y*/,
+    1/*x*/,
+    26/*y*/,
     10/*width*/,
     13/*height*/,
     1/*offset_x*/,
@@ -851,8 +851,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 116 ('t') */
  {
-    22/*x*/,
-    51/*y*/,
+    13/*x*/,
+    26/*y*/,
     7/*width*/,
     17/*height*/,
     1/*offset_x*/,
@@ -861,8 +861,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 117 ('u') */
  {
-    31/*x*/,
-    51/*y*/,
+    22/*x*/,
+    26/*y*/,
     9/*width*/,
     13/*height*/,
     2/*offset_x*/,
@@ -871,8 +871,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 118 ('v') */
  {
-    42/*x*/,
-    51/*y*/,
+    33/*x*/,
+    26/*y*/,
     12/*width*/,
     13/*height*/,
     0/*offset_x*/,
@@ -881,8 +881,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 119 ('w') */
  {
-    56/*x*/,
-    51/*y*/,
+    47/*x*/,
+    26/*y*/,
     18/*width*/,
     13/*height*/,
     0/*offset_x*/,
@@ -891,8 +891,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 120 ('x') */
  {
-    76/*x*/,
-    51/*y*/,
+    67/*x*/,
+    26/*y*/,
     12/*width*/,
     13/*height*/,
     0/*offset_x*/,
@@ -901,8 +901,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 121 ('y') */
  {
-    90/*x*/,
-    51/*y*/,
+    81/*x*/,
+    26/*y*/,
     12/*width*/,
     18/*height*/,
     0/*offset_x*/,
@@ -911,8 +911,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 122 ('z') */
  {
-    104/*x*/,
-    51/*y*/,
+    95/*x*/,
+    26/*y*/,
     9/*width*/,
     13/*height*/,
     1/*offset_x*/,
@@ -921,8 +921,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 123 ('{') */
  {
-    115/*x*/,
-    51/*y*/,
+    106/*x*/,
+    26/*y*/,
     10/*width*/,
     24/*height*/,
     1/*offset_x*/,
@@ -931,8 +931,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 124 ('|') */
  {
-    127/*x*/,
-    51/*y*/,
+    118/*x*/,
+    26/*y*/,
     2/*width*/,
     24/*height*/,
     4/*offset_x*/,
@@ -941,8 +941,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 125 ('}') */
  {
-    131/*x*/,
-    51/*y*/,
+    122/*x*/,
+    26/*y*/,
     10/*width*/,
     24/*height*/,
     1/*offset_x*/,
@@ -951,8 +951,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 126 ('~') */
  {
-    143/*x*/,
-    51/*y*/,
+    134/*x*/,
+    26/*y*/,
     13/*width*/,
     6/*height*/,
     2/*offset_x*/,
@@ -961,8 +961,8 @@ static const sdvg_glyph_t glyphs_default_24[96] = {
  },
  /* glyph 127 ('') */
  {
-    158/*x*/,
-    51/*y*/,
+    149/*x*/,
+    26/*y*/,
     18/*width*/,
     18/*height*/,
     3/*offset_x*/,
