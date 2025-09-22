@@ -17,13 +17,7 @@
 
 extern YAC_Host *yac_host;
 
-#ifdef YAC_WIN32
-// (modified) SDL 1.x on Windows
-#include "../tksdl/tksdl_hooks.h"
-#else
-// SDL 2.x on macOS, Linux
 #include "../tksdl2/tksdl_hooks.h"
-#endif // YAC_WIN32
 
 #include "inc_opengl.h"
 #include "tkopengl.h"
