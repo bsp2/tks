@@ -128,7 +128,7 @@ public:
    PTN_Node(void);
    virtual ~PTN_Node();
 
-   virtual sUI   getID         (void) const; // used b.o. to check whether statements needs ";" terminator
+   virtual sUI   getID         (void) const; // used to check whether statements needs ";" terminator
    virtual sBool semanticCheck (void); // check whether node is ready to be evaluated
    virtual sBool isConst       (void);
    virtual void  optimize      (void);

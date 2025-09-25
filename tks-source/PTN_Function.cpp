@@ -270,6 +270,8 @@ void PTN_Function::optimize(void) {
 }
 
 void PTN_Function::subGenCallList(void) {
+   // tkscript->printf("xxx PTN_Function::subGenCallList: this=%p name=%s body=%p\n", this, name.chars, body);
+   // tkscript->printf("xxx    body->st_list=%p\n", body->st_list);
    if(body)
    {
       body->genCallList();

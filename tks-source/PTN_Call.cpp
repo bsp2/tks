@@ -1,6 +1,6 @@
 /// PTN_Call.cpp
 ///
-/// (c) 2001-2014 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 

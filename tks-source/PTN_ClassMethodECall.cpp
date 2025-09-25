@@ -132,6 +132,9 @@ static void PTN_ClassMethodECall__eval(PTN_Env *_env, YAC_Value *_r, const PTN_E
 
    TKS_ScriptClassInstance *robj;
 
+   // tkscript->printf("xxx PTN_ClassMethodECall__eval: st=%p\n", st);
+   // tkscript->printf("xxx PTN_ClassMethodECall__eval: st->method->function.name.chars=%s\n", st->method->function.name.chars);
+
    if(st->b_indirect)
    {
       robj = (TKS_ScriptClassInstance*) _env->context->tksvm_indirect_object;
