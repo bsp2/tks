@@ -855,24 +855,24 @@ void YAC_CALL sdvg_DestroyTexture2D(sUI _texId) {
    Dsdvg_glcall(zglDeleteTexture(_texId));
 }
 
-void YAC_CALL sdvg_BufferAddRectTexUVFlat32(YAC_Buffer *_b, sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _ut, sF32 _ur, sF32 _ub) {
+void YAC_CALL sdvg_BufferAddRectTexUVFlat32(YAC_Buffer *_b, sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb) {
    Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y);
-   Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _ut);
+   Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _vt);
 
    Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y);
-   Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _ut);
+   Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _vt);
 
    Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y + _h);
-   Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _ub);
+   Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _vb);
 
    Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y);
-   Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _ut);
+   Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _vt);
 
    Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y + _h);
-   Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _ub);
+   Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _vb);
 
    Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y + _h);
-   Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _ub);
+   Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _vb);
 }
 
 void YAC_CALL sdvg_WriteC32AsRGBA8(YAC_Buffer *_b, sUI _c32) {
@@ -885,31 +885,31 @@ void YAC_CALL sdvg_WriteC32AsRGBA8(YAC_Buffer *_b, sUI _c32) {
 void YAC_CALL sdvg_BufferAddRectTexUVGouraud32(YAC_Buffer *_b,
                                                sF32 _x, sF32 _y,
                                                sF32 _w, sF32 _h,
-                                               sF32 _ul, sF32 _ut, sF32 _ur, sF32 _ub,
+                                               sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb,
                                                sUI _c32LT, sUI _c32RT, sUI _c32LB, sUI _c32RB
                                                ) {
    Dstream_write_2f(_b, _x,  _y);
-   Dstream_write_2f(_b, _ul, _ut);
+   Dstream_write_2f(_b, _ul, _vt);
    sdvg_WriteC32AsRGBA8(_b, _c32LT);
 
    Dstream_write_2f(_b, _x + _w, _y);
-   Dstream_write_2f(_b, _ur, _ut);
+   Dstream_write_2f(_b, _ur, _vt);
    sdvg_WriteC32AsRGBA8(_b, _c32RT);
 
    Dstream_write_2f(_b, _x + _w, _y + _h);
-   Dstream_write_2f(_b, _ur, _ub);
+   Dstream_write_2f(_b, _ur, _vb);
    sdvg_WriteC32AsRGBA8(_b, _c32RB);
 
    Dstream_write_2f(_b, _x, _y);
-   Dstream_write_2f(_b, _ul, _ut);
+   Dstream_write_2f(_b, _ul, _vt);
    sdvg_WriteC32AsRGBA8(_b, _c32LT);
 
    Dstream_write_2f(_b, _x + _w, _y + _h);
-   Dstream_write_2f(_b, _ur, _ub);
+   Dstream_write_2f(_b, _ur, _vb);
    sdvg_WriteC32AsRGBA8(_b, _c32RB);
 
    Dstream_write_2f(_b, _x, _y + _h);
-   Dstream_write_2f(_b, _ul, _ub);
+   Dstream_write_2f(_b, _ul, _vb);
    sdvg_WriteC32AsRGBA8(_b, _c32LB);
 }
 
