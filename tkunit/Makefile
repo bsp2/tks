@@ -24,6 +24,14 @@ install: $(TARGET)
 
 
 #
+# Extract documentation (in "DOG" format)
+#
+.PHONY: ee
+ee:
+	tks -ee tkunit.tkp >tkunit.ee
+
+
+#
 # Show help
 #
 .PHONY: help
