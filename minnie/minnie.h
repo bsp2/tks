@@ -1414,7 +1414,7 @@ struct Vector2f {
       y = t;
    }
 
-   /* @method distanceToPlane,Vector2f q,Vector2f n:float
+   /* method distanceToPlane,Vector2f q,Vector2f n:float
       Calc distance of vertex to plane defined by Vector2f q (on plane) and plane normal n
       @arg q Point on plane
       @arg n Plane normal
@@ -3533,6 +3533,34 @@ class Path {
 
 
 // <class.png>
+/* @class MinnieSetup
+ */
+/* @constant MINNIE_PATH_TYPE_CONVEX
+ */
+/* @constant MINNIE_PATH_TYPE_CONCAVE
+ */
+/* @constant MINNIE_PATH_TYPE_EVENODD
+ */
+/* @constant MINNIE_PATH_TYPE_IMMEDIATE
+ */
+
+/* @constant MINNIE_LINEJOIN_NONE
+ */
+/* @constant MINNIE_LINEJOIN_MITER
+ */
+/* @constant MINNIE_LINEJOIN_ROUND 
+ */
+/* @constant MINNIE_LINEJOIN_BEVEL 
+ */
+
+/* @constant MINNIE_LINECAP_NONE 
+ */
+/* @constant MINNIE_LINECAP_BUTT 
+ */
+/* @constant MINNIE_LINECAP_ROUND 
+ */
+/* @constant MINNIE_LINECAP_SQUARE 
+ */
 namespace setup {
    static minnie_allocator_handle_t allocator;
 
@@ -10757,6 +10785,7 @@ YF void YAC_CALL minMoveTo (sF32 _x, sF32 _y);
 YF void YAC_CALL minLineTo (sF32 _dstX, sF32 _dstY);
 YF void YAC_CALL minCubicTo (sF32 _c1x, sF32 _c1y, sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _dstY);
 YF void YAC_CALL minCubicMirrorTo (sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _dstY);
+YF void YAC_CALL minArcTo (sF32 _rx, sF32 _ry, sF32 _rot, sBool _bLargeArc, sBool _bArcSweep, sF32 _dstX, sF32 _dstY);
 YF void YAC_CALL minRect (sF32 _w, sF32 _h);
 YF void YAC_CALL minRoundRect (sF32 _w, sF32 _h, sF32 _rx, sF32 _ry);
 YF void YAC_CALL minEllipse (sF32 _rx, sF32 _ry);
@@ -10810,43 +10839,67 @@ YF void YAC_CALL minRectTexUVGouraudDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, s
 #ifdef MINNIE_IMPLEMENTATION  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 extern "C" {
 
-// start new drawing
+/* @function minBegin
+Start new drawing
+*/
 void minBegin(void) {
    minnie::setup::reset();
    minnie::setup::begin();
 }
 
-// finish drawing
+/* @function minEnd
+End drawing
+*/
 void minEnd(void) {
    minnie::setup::end();
 }
 
+/* @function minFreeDynamic
+Free dynamically allocated memory (paths)
+*/
 void minFreeDynamic(void) {
    minnie::setup::freeDynamic();
 }
 
+/* @function minSetStrokeScale,float scale
+Set stroke width scaling factor. Applied to next path draw calls.
+*/
 void minSetStrokeScale(sF32 _scale) {
    minnie::setup::stroke_scale = _scale;
 }
 
+/* @function minSetStrokeOffset,float offset
+Set stroke width offset. Applied to next path draw calls.
+*/
 void minSetStrokeOffset(sF32 _offset) {
    minnie::setup::stroke_offset = _offset;
 }
 
+/* @function minGetWidth:int
+Get canvas width (pixels)
+*/
 sUI minGetWidth(void) {
    return minnie::setup::geo_w;
 }
 
+/* @function minGetWidth:int
+Get canvas height (pixels)
+*/
 sUI minGetHeight(void) {
    return minnie::setup::geo_h;
 }
 
+/* @function minGetColorByIndex,int idx:int
+Get ARGB32 color from current palette
+*/
 sUI minGetColorByIndex(sUI _idx) {
    if(_idx < minnie::setup::palette.num_elements)
       return minnie::setup::palette.elements.u32[_idx];
    return 0u;
 }
 
+/* @function minSetFramebufferOverride,int fbIdx,Texture tex,int w,int h,int pitch:boolean
+*/
 sBool minSetFramebufferOverride(sUI _fbIdx, YAC_Object *_pixels, sUI _w, sUI _h, sUI _pitch) {
    // override framebuffer
    if(_fbIdx < MINNIE_MAX_FRAMEBUFFERS)
@@ -10898,6 +10951,8 @@ sBool minSetFramebufferOverride(sUI _fbIdx, YAC_Object *_pixels, sUI _w, sUI _h,
 //   int _maxExtrudedVerticesPerPath = 1024u,
 //   int _maxClippedTrisPerPath      = 1024u
 // returns required scratch buffer size (must be <= buf.size)
+/* @function minInitScratchBuffers,Buffer buf,int defPointsPerPath,int maxPointsPerPath,int maxClippedPointsPerPath,int maxExtrudedVerticesPerPath,int maxClippedTrisPerPath:int
+*/
 sUI minInitScratchBuffers(YAC_Object *_buf,
                           sUI _defPointsPerPath,
                           sUI _maxPointsPerPath,
@@ -10928,6 +10983,9 @@ sUI minInitScratchBuffers(YAC_Object *_buf,
                                           );
 }
 
+/* @function minParseBuffer,Buffer buf:boolean
+Parse MIB stream
+*/
 sBool minParseBuffer(YAC_Object *_buf) {
    if(YAC_Is_Buffer(_buf))
    {
@@ -10937,146 +10995,217 @@ sBool minParseBuffer(YAC_Object *_buf) {
    return YAC_FALSE;
 }
 
+/* @function minDebugPrintAllocStats
+*/
 void minDebugPrintAllocStats(void) {
 #if MINNIE_ALLOC_DEBUG
    minnie::minnie_alloc_debug_print_stats();
 #endif // MINNIE_ALLOC_DEBUG
 }
 
+/* @function minDebugPrintPathStats
+*/
 void minDebugPrintPathStats(void) {
    Dyac_host_printf("[dbg] Minnie::debugPrintPathStats: ~~~~~~~~~~~~~ #paths=%u #strokeC=%u(%u pts) #strokeO=%u(%u pts) #fillSmall=%u(%u pts) #fillLarge=%u(%u pts) #swTess=%u\n", minnie::debug_num_paths, minnie::debug_num_stroke_closed_paths, minnie::debug_num_stroke_closed_path_points, minnie::debug_num_stroke_open_paths, minnie::debug_num_stroke_open_path_points, minnie::debug_num_small_paths, minnie::debug_num_small_path_points, minnie::debug_num_large_paths, minnie::debug_num_large_path_points, minnie::debug_num_swtess_paths);
 }
 
+/* @function minResetAllocStats
+*/
 void minResetAllocStats(void) {
 #if MINNIE_ALLOC_DEBUG
    minnie::minnie_reset_alloc_stats();
 #endif // MINNIE_ALLOC_DEBUG
 }
 
+/* @function minGetTotalNumPoints:int
+*/
 sUI minGetTotalNumPoints(void) {
    return minnie::total_num_points;
 }
 
+/* @function minGetTotalNumLines:int
+*/
 sUI minGetTotalNumLines(void) {
    return minnie::total_num_lines;
 }
 
+/* @function minGetTotalNumLineStrips:int
+*/
 sUI minGetTotalNumLineStrips(void) {
    return minnie::total_num_line_strips;
 }
 
+/* @function minGetTotalNumTris:int
+*/
 sUI minGetTotalNumTris(void) {
    return minnie::total_num_tris;
 }
 
+/* @function minGetTotalNumTrisTex:int
+*/
 sUI minGetTotalNumTrisTex(void) {
    return minnie::total_num_tris_tex;
 }
 
+/* @function minGetTotalNumRects:int
+*/
 sUI minGetTotalNumRects(void) {
    return minnie::total_num_rects;
 }
 
+/* @function minGetTotalNumEllipses:int
+*/
 sUI minGetTotalNumEllipses(void) {
    return minnie::total_num_ellipses;
 }
 
+/* @function minSetEnableDraw,boolean bEnable
+*/
 void minSetEnableDraw(sBool _bEnable) {
    minnie::setup::setEnableDraw(_bEnable);
 }
 
+/* @function minSetEnableDrawSW,boolean bEnable
+*/
 void minSetEnableDrawSW(sBool _bEnable) {
    minnie::setup::setEnableDrawSW(_bEnable);
 }
 
+/* @function minSetEnableRenderStrokes,boolean bEnable
+*/
 void minSetEnableRenderStrokes(sBool _bEnable) {
    minnie::setup::setEnableRenderStrokes(_bEnable);
 }
 
+/* @function minGetEnableRenderStrokes:boolean
+*/
 sBool minGetEnableRenderStrokes(void) {
    return minnie::setup::getEnableRenderStrokes();
 }
 
+/* @function minSetEnableRenderJoinCap,boolean bEnable
+*/
 void minSetEnableRenderJoinCap(sBool _bEnable) {
    minnie::setup::setEnableRenderJoinCap(_bEnable);
 }
 
+/* @function minGetEnableRenderJoinCap:boolean
+*/
 sBool minGetEnableRenderJoinCap(void) {
    return minnie::setup::getEnableRenderJoinCap();
 }
 
+/* @function minSetEnableRenderFillConcave,boolean bEnable
+*/
 void minSetEnableRenderFillConcave(sBool _bEnable) {
    minnie::setup::setEnableRenderFillConcave(_bEnable);
 }
 
+/* @function minGetEnableRenderFillConcave:boolean
+*/
 sBool minGetEnableRenderFillConcave(void) {
    return minnie::setup::getEnableRenderFillConcave();
 }
 
+/* @function minSetEnableRenderFillEvenOdd,boolean bEnable
+*/
 void minSetEnableRenderFillEvenOdd(sBool _bEnable) {
    minnie::setup::setEnableRenderFillEvenOdd(_bEnable);
 }
 
+/* @function minGetEnableRenderFillEvenOdd:boolean
+*/
 sBool minGetEnableRenderFillEvenOdd(void) {
    return minnie::setup::getEnableRenderFillEvenOdd();
 }
 
+/* @function minSetEnableEdgeAA,boolean bEnable
+*/
 void minSetEnableEdgeAA(sBool _bEnable) {
    minnie::setup::setEnableEdgeAA(_bEnable);
 }
 
+/* @function minGetEnableEdgeAA:boolean
+*/
 sBool minGetEnableEdgeAA(void) {
    return minnie::setup::getEnableEdgeAA();
 }
 
+/* @function minSetEnableTesselateConcave,boolean bEnable
+*/
 void minSetEnableTesselateConcave(sBool _bEnable) {
    minnie::setup::setEnableTesselateConcave(_bEnable);
 }
 
+/* @function minGetEnableTesselateConcave:boolean
+*/
 sBool minGetEnableTesselateConcave(void) {
    return minnie::setup::getEnableTesselateConcave();
 }
 
+/* @function minSetSwTesselateSizeThreshold,int sizeThreshold
+Bounding box area threshold. 0=disable SW tesselation
+*/
 void minSetSwTesselateSizeThreshold(sUI _sizeThreshold) {
    minnie::setup::setSwTesselateSizeThreshold(_sizeThreshold);
 }
 
+/* @function minGetSwTesselateSizeThreshold:int
+*/
 sUI minGetSwTesselateSizeThreshold(void) {
    return minnie::setup::getSwTesselateSizeThreshold();
 }
 
+/* @function minSetEnableForceConcaveEvenOdd,boolean bEnable
+*/
 void minSetEnableForceConcaveEvenOdd(sBool _bEnable) {
    minnie::setup::setEnableForceConcaveEvenOdd(_bEnable);
 }
 
+/* @function minGetEnableForceConcaveEvenOdd:boolean
+*/
 sBool minGetEnableForceConcaveEvenOdd(void) {
    return minnie::setup::getEnableForceConcaveEvenOdd();
 }
 
+/* @function minSetEnableUniformColors,boolean bEnable
+*/
 void minSetEnableUniformColors(sBool _bEnable) {
    minnie::setup::setEnableUniformColors(_bEnable);
 }
 
+/* @function minGetEnableUniformColors:boolean
+*/
 sBool minGetEnableUniformColors(void) {
    return minnie::setup::getEnableUniformColors();
 }
 
+/* @function minSetStrokeWLineStripThreshold,float threshold
+*/
 void minSetStrokeWLineStripThreshold(sF32 _threshold) {
    minnie::setup::setStrokeWLineStripThreshold(_threshold);
 }
 
+/* @function minGetStrokeWLineStripThreshold:float
+*/
 sF32 minGetStrokeWLineStripThreshold(void) {
    return minnie::setup::getStrokeWLineStripThreshold();
 }
 
+/* @function minSetStrokeWLineJoinThreshold,float threshold
+*/
 void minSetStrokeWLineJoinThreshold(sF32 _threshold) {
    minnie::setup::setStrokeWLineJoinThreshold(_threshold);
 }
 
+/* @function minGetStrokeWLineJoinThreshold:float
+*/
 sF32 minGetStrokeWLineJoinThreshold(void) {
    return minnie::setup::getStrokeWLineJoinThreshold();
 }
 
+/* @function minSetVertexBufferExportOFS,Stream ofs
+*/
 void minSetVertexBufferExportOFS(YAC_Object *_ofs) {
    if(YAC_VALID(_ofs))
       minnie::setup::setVertexBufferExportOFS((void*)_ofs);
@@ -11084,6 +11213,8 @@ void minSetVertexBufferExportOFS(YAC_Object *_ofs) {
       minnie::setup::setVertexBufferExportOFS(NULL);
 }
 
+/* @function minSetDrawListExportOFS,Stream ofs
+*/
 void minSetDrawListExportOFS(YAC_Object *_ofs) {
    if(YAC_VALID(_ofs))
       minnie::setup::setDrawListExportOFS((void*)_ofs);
@@ -11091,6 +11222,8 @@ void minSetDrawListExportOFS(YAC_Object *_ofs) {
       minnie::setup::setDrawListExportOFS(NULL);
 }
 
+/* @function minIsEdgeAA:boolean
+*/
 sBool minIsEdgeAA(void) {
 #if MINNIE_EXPORT_TRIS_EDGEAA
    return YAC_TRUE;
@@ -11099,6 +11232,8 @@ sBool minIsEdgeAA(void) {
 #endif // MINNIE_EXPORT_TRIS_EDGEAA
 }
 
+/* @function minIsVertexFix16:boolean
+*/
 sBool minIsVertexFix16(void) {
 #if MINNIE_EXPORT_VERTEX_16BIT
    return YAC_TRUE;
@@ -11107,6 +11242,8 @@ sBool minIsVertexFix16(void) {
 #endif // MINNIE_EXPORT_VERTEX_16BIT
 }
 
+/* @function minIsEdgeAAScaleFix16:boolean
+*/
 sBool minIsEdgeAAScaleFix16(void) {
 #if MINNIE_EXPORT_VERTEX_16BIT && MINNIE_EXPORT_TRIS_EDGEAA_SCALE_16BIT
    return YAC_TRUE;
@@ -11115,10 +11252,19 @@ sBool minIsEdgeAAScaleFix16(void) {
 #endif // MINNIE_EXPORT_VERTEX_16BIT && MINNIE_EXPORT_TRIS_EDGEAA_SCALE_16BIT
 }
 
+/* @function minSeg,int numSeg
+Set number of subdivisions for next curve / arc path segment
+*/
 void minSeg(sUI _numSeg) {
    minnie::setup::cur_num_seg = _numSeg;
 }
 
+/* @function minMoveTo,float x,float y
+Move path cursor to absolute position
+
+@arg x X position (abs)
+@arg y Y position (abs)
+*/
 void minMoveTo(sF32 _x, sF32 _y) {
    // (note) WIP
    // 0x22  M f32
@@ -11126,6 +11272,12 @@ void minMoveTo(sF32 _x, sF32 _y) {
    minnie::setup::cur_y = _y;
 }
 
+/* @function minLineTo,float dstX,float dstY
+Add line segment to current path
+
+@arg dstX Destination X (abs)
+@arg dstY Destination Y (abs)
+*/
 void minLineTo(sF32 _dstX, sF32 _dstY) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11144,6 +11296,16 @@ void minLineTo(sF32 _dstX, sF32 _dstY) {
    }
 }
 
+/* @function minCubicTo,float c1x,float c1y,float c2x,float c2y,float dstX,float dstY
+Add cubic spline segment to current path
+
+@arg c1x Control point 1 X (abs)
+@arg c1y Control point 1 Y (abs)
+@arg c2x Control point 2 X (abs)
+@arg c2y Control point 2 Y (abs)
+@arg dstX Destination X (abs)
+@arg dstY Destination Y (abs)
+*/
 void minCubicTo(sF32 _c1x, sF32 _c1y, sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _dstY) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11151,12 +11313,12 @@ void minCubicTo(sF32 _c1x, sF32 _c1y, sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _ds
       minnie::setup::cur_mirror_y = _dstY - _c2y;
       minnie::setup::cur_path->lazyBegin(minnie::setup::cur_x, minnie::setup::cur_y);
       minnie::setup::cur_path->cubicTo(minnie::setup::cur_x, minnie::setup::cur_y,
-                                     _c1x,   _c1y,
-                                     _c2x,   _c2y,
-                                     _dstX,  _dstY,
-                                     minnie::setup::cur_num_seg,
-                                     minnie::setup::cubic_min_dist_sqr
-                                     );
+                                       _c1x,   _c1y,
+                                       _c2x,   _c2y,
+                                       _dstX,  _dstY,
+                                       minnie::setup::cur_num_seg,
+                                       minnie::setup::cubic_min_dist_sqr
+                                       );
       minnie::setup::cur_x = _dstX;
       minnie::setup::cur_y = _dstY;
    }
@@ -11166,6 +11328,16 @@ void minCubicTo(sF32 _c1x, sF32 _c1y, sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _ds
    }
 }
 
+/* @function minCubicMirrorTo,float c2x,float c2y,float dstX,float dstY
+Add smoothed / mirrored cubic spline segment to current path.
+
+The implicite control point 1 is calculated by mirroring the previous segment's control point 2.
+
+@arg c2x Control point 2 X (abs)
+@arg c2y Control point 2 Y (abs)
+@arg dstX Destination X (abs)
+@arg dstY Destination Y (abs)
+*/
 void minCubicMirrorTo(sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _dstY) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11175,12 +11347,12 @@ void minCubicMirrorTo(sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _dstY) {
       minnie::setup::cur_mirror_y = _dstY - _c2y;
       minnie::setup::cur_path->lazyBegin(minnie::setup::cur_x, minnie::setup::cur_y);
       minnie::setup::cur_path->cubicTo(minnie::setup::cur_x, minnie::setup::cur_y,
-                                     c1x,   c1y,
-                                     _c2x,  _c2y,
-                                     _dstX, _dstY,
-                                     minnie::setup::cur_num_seg,
-                                     minnie::setup::cubic_min_dist_sqr
-                                     );
+                                       c1x,   c1y,
+                                       _c2x,  _c2y,
+                                       _dstX, _dstY,
+                                       minnie::setup::cur_num_seg,
+                                       minnie::setup::cubic_min_dist_sqr
+                                       );
       minnie::setup::cur_x   = _dstX;
       minnie::setup::cur_y   = _dstY;
    }
@@ -11190,6 +11362,49 @@ void minCubicMirrorTo(sF32 _c2x, sF32 _c2y, sF32 _dstX, sF32 _dstY) {
    }
 }
 
+/* @function minArcTo,float rx,float ry,float rot,boolean bLargeArc,boolean bArcSweep,float dstX,float dstY
+Add elliptic arc segment to current path
+
+@arg rx Radius x
+@arg ry Radius y
+@arg rot Rotation (radiant measure)
+@arg bLargeArc Large arc flag
+@arg bArcSweep Arc sweep flag
+@arg dstX Destination X (abs)
+@arg dstY Destination Y (abs)
+*/
+void minArcTo(sF32 _rx, sF32 _ry,
+              sF32 _rot,
+              sBool _bLargeArc,
+              sBool _bArcSweep,
+              sF32 _dstX, sF32 _dstY
+              ) {
+   if(NULL != minnie::setup::cur_path)
+   {
+      minnie::setup::last_x = minnie::setup::cur_x;
+      minnie::setup::last_y = minnie::setup::cur_y;
+      minnie::setup::cur_path->lazyBegin(minnie::setup::last_x, minnie::setup::last_y);
+      minnie::setup::cur_path->arcTo(minnie::setup::cur_x, minnie::setup::cur_y,
+                                     _rx, _ry,
+                                     _rot,
+                                     _bLargeArc, _bArcSweep,
+                                     _dstX, _dstY,
+                                     minnie::setup::cur_num_seg
+                                     );
+      minnie::setup::cur_x = _dstX;
+      minnie::setup::cur_y = _dstY;
+   }
+   else
+   {
+      Dapierror("[---] Minnie::apiArcTo: cur_path is NULL\n");
+   }
+}
+
+/* @function minRect,float w,float h
+Add rectangle segment to current path (cursor position denotes left / top corner)
+@arg w Width
+@arg h Height
+*/
 void minRect(sF32 _w, sF32 _h) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11208,6 +11423,13 @@ void minRect(sF32 _w, sF32 _h) {
    }
 }
 
+/* @function minRoundRect,float w,float h,float rx,float ry
+Add rounded rectangle segment to current path (cursor position denotes left / top corner).
+@arg w Width
+@arg h Height
+@arg rx Corner radius x
+@arg ry Corner radius y
+*/
 void minRoundRect(sF32 _w, sF32 _h, sF32 _rx, sF32 _ry) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11230,6 +11452,11 @@ void minRoundRect(sF32 _w, sF32 _h, sF32 _rx, sF32 _ry) {
    }
 }
 
+/* @function minEllipse,float rx,float ry
+Add ellipse segment to current path (cursor position denotes center)
+@arg rx Radius x
+@arg ry Radius y
+*/
 void minEllipse(sF32 _rx, sF32 _ry) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11251,6 +11478,10 @@ void minEllipse(sF32 _rx, sF32 _ry) {
    }
 }
 
+/* @function minCircle
+Add circle segment to current path (cursor position denotes center)
+@arg r Radius
+*/
 void minCircle(sF32 _r) {
    if(NULL != minnie::setup::cur_path)
    {
@@ -11272,6 +11503,13 @@ void minCircle(sF32 _r) {
    }
 }
 
+/* @function minBeginPathEx,int pathType:int
+Begin new path definition.
+
+@arg pathType See §MINNIE_PATH_TYPE_CONVEX, §MINNIE_PATH_TYPE_CONCAVE, §MINNIE_PATH_TYPE_EVENODD, §MINNIE_PATH_TYPE_IMMEDIATE
+
+@return Path id
+*/
 sSI minBeginPathEx(sSI _pathType) {
    // begin new path declaration. returns path_idx or -1 (error)
    //   pathType: MINNIE_PATH_TYPE_xxx (CONVEX|CONCAVE|EVENODD|IMMEDIATE)
@@ -11282,42 +11520,78 @@ sSI minBeginPathEx(sSI _pathType) {
    return -1;
 }
 
+/* @function minBeginPath:int
+Begin new Even-Odd path definition
+@return Path id
+*/
 sSI minBeginPath(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_EVENODD);
 }
 
+/* @function minBeginPathConvex:int
+Begin new Convex path definition
+@return Path id
+*/
 sSI minBeginPathConvex(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_CONVEX);
 }
 
+/* @function minBeginPathConcave:int
+Begin new Concave path definition
+@return Path id
+*/
 sSI minBeginPathConcave(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_CONCAVE);
 }
 
+/* @function minBeginPathEvenOdd:int
+Begin new Even-Odd path definition
+@return Path id
+*/
 sSI minBeginPathEvenOdd(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_EVENODD);
 }
 
+/* @function minBeginPathImmediate:int
+Begin new Immediate path definition
+@return Path id
+*/
 void minBeginImmediate(void) {
    (void)minBeginPathEx(MINNIE_PATH_TYPE_IMMEDIATE);
 }
 
+/* @function minEndImmediate
+End Immediate path definition
+*/
 void minEndImmediate(void) {
    minnie::setup::endPath(YAC_FALSE/*bClosed*/);
 }
 
+/* @function minEndPath,boolean bClosed
+End path definition
+*/
 void minEndPath(sBool _bClosed) {
    minnie::setup::endPath(_bClosed);
 }
 
+/* @function minEndPathOpen
+End path definition and keep path open
+*/
 void minEndPathOpen(void) {
    minnie::setup::endPath(YAC_FALSE/*bClosed*/);
 }
 
+/* @function minEndPathClosed
+End path definition and close path (connect last to first)
+*/
 void minEndPathClosed(void) {
    minnie::setup::endPath(YAC_TRUE/*bClosed*/);
 }
 
+/* @function minBeginSubEx,int pathType:int
+Begin new sub-path definition
+@return Sub-path id
+*/
 sSI minBeginSubEx(sSI _pathType) {
    // (note) return value: >=0 if subpath was created, -1 on error
    if(NULL != minnie::setup::last_parent_path)
@@ -11351,51 +11625,89 @@ sSI minBeginSubEx(sSI _pathType) {
    }
 }
 
+/* @function minBeginSub:int
+Begin new Even-Odd sub-path definition
+@return Sub-path id
+*/
 sSI minBeginSub(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_EVENODD);
 }
 
+/* @function minBeginSubConvex:int
+Begin new Convex sub-path definition
+@return Sub-path id
+*/
 sSI minBeginSubConvex(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_CONVEX);
 }
 
+/* @function minBeginSubConcave:int
+Begin new Concave sub-path definition
+@return Sub-path id
+*/
 sSI minBeginSubConcave(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_CONCAVE);
 }
 
+/* @function minBeginSubEvenOdd:int
+Begin new Even-Odd sub-path definition
+@return Sub-path id
+*/
 sSI minBeginSubEvenOdd(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_EVENODD);
 }
 
+/* @function minEndSub,boolean bClosed
+End sub-path definition
+*/
 void minEndSub(sBool _bClosed) {
    minEndPath(_bClosed);
 }
 
+/* @function minEndSubOpen
+End sub-path definition and keep sub-path open
+*/
 void minEndSubOpen(void) {
    minEndSub(YAC_FALSE/*bClosed*/);
 }
 
+/* @function minEndSubClosed
+End sub-path definition and close sub-path (connect last to first)
+*/
 void minEndSubClosed(void) {
    minEndSub(YAC_TRUE/*bClosed*/);
 }
 
+/* @function minStrokeWidth,float w
+Set line stroke width
+*/
 void minStrokeWidth(sF32 _w) {
    // (note) <0.001: enable fill mode  (see minFill())
    minnie::setup::cur_stroke_w = _w * minnie::setup::stroke_scale + minnie::setup::stroke_offset;
 }
 
+/* @function minFill
+Select fill mode for next path draw call
+*/
 void minFill(void) {
    minnie::setup::cur_stroke_w = 0.0f;
 }
 
+/* @function minMiterLimit,float l
+*/
 void minMiterLimit(sF32 _l) {
    minnie::setup::cur_miter_limit = _l;
 }
 
+/* @function minColor
+Set ARGB32 color for next path draw call
+*/
 void minColor(sUI _c32) {
    minnie::setup::cur_c32 = _c32;
 }
 
+/* @function minJoinCap,int joinCap
+*/
 void minJoinCap(sUI _joinCap) {
    // MINNIE_LINEJOIN_xxx  (NONE|MITER|ROUND|BEVEL)
    // MINNIE_LINECAP_xxx   (NONE|BUTT|ROUND|SQUARE)
@@ -11403,44 +11715,72 @@ void minJoinCap(sUI _joinCap) {
    minnie::setup::cur_join_cap = sU8(_joinCap);
 }
 
+/* @function minJoin,int joinType
+*/
 void minJoin(sUI _joinType) {
    // MINNIE_LINEJOIN_xxx  (NONE|MITER|ROUND|BEVEL)
    minnie::setup::cur_join_cap = (minnie::setup::cur_join_cap & ~15u) | sU8(_joinType & 15u);
 }
 
+/* @function minJoinNone
+Disable line joints
+*/
 void minJoinNone(void) {
    minJoin(MINNIE_LINEJOIN_NONE);
 }
 
+/* @function minJoinMiter
+Select Miter line joints
+*/
 void minJoinMiter(void) {
    minJoin(MINNIE_LINEJOIN_MITER);
 }
 
+/* @function minJoinRound
+Select Round line joints
+*/
 void minJoinRound(void) {
    minJoin(MINNIE_LINEJOIN_ROUND);
 }
 
+/* @function minJoinBevel
+Select Bevel line joints
+*/
 void minJoinBevel(void) {
    minJoin(MINNIE_LINEJOIN_BEVEL);
 }
 
+/* @function minCap,int capType
+*/
 void minCap(sUI _capType) {
    // MINNIE_LINECAP_xxx   (NONE|BUTT|ROUND|SQUARE)
    minnie::setup::cur_join_cap = (minnie::setup::cur_join_cap & ~0xF0u) | (sU8(_capType & 15u)<<4);
 }
 
+/* @function minCapNone
+Disable line caps
+*/
 void minCapNone(void) {
    minCap(MINNIE_LINECAP_NONE);
 }
 
+/* @function minCapRound
+Select Round line caps
+*/
 void minCapRound(void) {
    minCap(MINNIE_LINECAP_ROUND);
 }
 
+/* @function minCapButt
+Select Butt line caps
+*/
 void minCapButt(void) {
    minCap(MINNIE_LINECAP_BUTT);
 }
 
+/* @function minDrawPath,int pathId
+Draw previously defined path
+*/
 void minDrawPath(sSI _pathIdx) {
    /* yac_host->printf("xxx apiDraw: pathIdx=%u #paths=%u\n", _pathIdx, paths.num_elements); */
    minnie::Path *oPath = minnie::setup::paths.get(sUI(_pathIdx - 1));
@@ -11454,6 +11794,12 @@ void minDrawPath(sSI _pathIdx) {
    }
 }
 
+/* @function minBindTexture,int texId,boolean bRepeat,boolean bFilter
+Bind 2D texture
+@arg texId OpenGL texture id
+@arg bRepeat true=repeat texture false=clamp to edge
+@arg bFilter true=enable bilinear filter false=use nearest neighbour sampling
+*/
 void minBindTexture(sSI _texId, sBool _bRepeat, sBool _bFilter) {
    if(NULL != minnie::setup::loc_dl_export_ofs)
    {
@@ -11474,6 +11820,8 @@ void minBindTexture(sSI _texId, sBool _bRepeat, sBool _bFilter) {
    }
 }
 
+/* @function minUnbindTexture
+*/
 void minUnbindTexture(void) {
    if(NULL != minnie::setup::loc_dl_export_ofs)
    {
@@ -11486,6 +11834,9 @@ void minUnbindTexture(void) {
    }
 }
 
+/* @function minTextureDecalAlpha,float decalAlpha
+Select alpha for 'decal' texture draw calls
+*/
 void minTextureDecalAlpha(sF32 _decalAlpha) {
    if(NULL != minnie::setup::loc_dl_export_ofs)
    {
@@ -11499,6 +11850,24 @@ void minTextureDecalAlpha(sF32 _decalAlpha) {
    }
 }
 
+/* @function minTriangleTexUVFlat,float x1,float y1,float u1,float v1,float x2,float y2,float u2,float v2,float x3,float y3,float u3,float v3
+Draw texture mapped triangle
+
+@arg x1 Vertex 1 x
+@arg y1 Vertex 1 y
+@arg u1 Vertex 1 u texture coordinate (0..1)
+@arg v1 Vertex 1 v texture coordinate (0..1)
+@arg x2 Vertex 2 x
+@arg y2 Vertex 2 y
+@arg u2 Vertex 2 u texture coordinate (0..1)
+@arg v2 Vertex 2 v texture coordinate (0..1)
+@arg x3 Vertex 3 x
+@arg y3 Vertex 3 y
+@arg u3 Vertex 3 u texture coordinate (0..1)
+@arg v3 Vertex 3 v texture coordinate (0..1)
+
+@see minBindTexture
+*/
 void minTriangleTexUVFlat(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
                           sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2,
                           sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3
@@ -11518,6 +11887,24 @@ void minTriangleTexUVFlat(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
    }
 }
 
+/* @function minTriangleTexUVFlat,float x1,float y1,float u1,float v1,float x2,float y2,float u2,float v2,float x3,float y3,float u3,float v3
+Draw texture mapped triangle. The texture is crossfaded with the current fill color according to §minTextureDecalAlpha.
+
+@arg x1 Vertex 1 x
+@arg y1 Vertex 1 y
+@arg u1 Vertex 1 u texture coordinate (0..1)
+@arg v1 Vertex 1 v texture coordinate (0..1)
+@arg x2 Vertex 2 x
+@arg y2 Vertex 2 y
+@arg u2 Vertex 2 u texture coordinate (0..1)
+@arg v2 Vertex 2 v texture coordinate (0..1)
+@arg x3 Vertex 3 x
+@arg y3 Vertex 3 y
+@arg u3 Vertex 3 u texture coordinate (0..1)
+@arg v3 Vertex 3 v texture coordinate (0..1)
+
+@see minBindTexture
+*/
 void minTriangleTexUVFlatDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
                                sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2,
                                sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3
@@ -11537,6 +11924,27 @@ void minTriangleTexUVFlatDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
    }
 }
 
+/* @function minTriangleTexUVGouraudDecal,float x1,float y1,float u1,float v1,int c32v1,float x2,float y2,float u2,float v2,int c32v2,float x3,float y3,float u3,float v3,int c32v3
+Draw texture mapped, gouraud shaded triangle.
+
+@arg x1 Vertex 1 x
+@arg y1 Vertex 1 y
+@arg u1 Vertex 1 u texture coordinate (0..1)
+@arg v1 Vertex 1 v texture coordinate (0..1)
+@arg c32v1 Vertex 1 ARGB32 color
+@arg x2 Vertex 2 x
+@arg y2 Vertex 2 y
+@arg u2 Vertex 2 u texture coordinate (0..1)
+@arg v2 Vertex 2 v texture coordinate (0..1)
+@arg c32v2 Vertex 2 ARGB32 color
+@arg x3 Vertex 3 x
+@arg y3 Vertex 3 y
+@arg u3 Vertex 3 u texture coordinate (0..1)
+@arg v3 Vertex 3 v texture coordinate (0..1)
+@arg c32v3 Vertex 3 ARGB32 color
+
+@see minBindTexture
+*/
 void minTriangleTexUVGouraud(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1,
                              sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sU32 _c32v2,
                              sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3, sU32 _c32v3
@@ -11559,6 +11967,27 @@ void minTriangleTexUVGouraud(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1
    }
 }
 
+/* @function minTriangleTexUVGouraudDecal,float x1,float y1,float u1,float v1,int c32v1,float x2,float y2,float u2,float v2,int c32v2,float x3,float y3,float u3,float v3,int c32v3
+Draw texture mapped, gouraud shaded triangle. The texture is crossfaded with the current fill color according to §minTextureDecalAlpha.
+
+@arg x1 Vertex 1 x
+@arg y1 Vertex 1 y
+@arg u1 Vertex 1 u texture coordinate (0..1)
+@arg v1 Vertex 1 v texture coordinate (0..1)
+@arg c32v1 Vertex 1 ARGB32 color
+@arg x2 Vertex 2 x
+@arg y2 Vertex 2 y
+@arg u2 Vertex 2 u texture coordinate (0..1)
+@arg v2 Vertex 2 v texture coordinate (0..1)
+@arg c32v2 Vertex 2 ARGB32 color
+@arg x3 Vertex 3 x
+@arg y3 Vertex 3 y
+@arg u3 Vertex 3 u texture coordinate (0..1)
+@arg v3 Vertex 3 v texture coordinate (0..1)
+@arg c32v3 Vertex 3 ARGB32 color
+
+@see minBindTexture
+*/
 void minTriangleTexUVGouraudDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1,
                                   sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sU32 _c32v2,
                                   sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3, sU32 _c32v3
@@ -11581,6 +12010,20 @@ void minTriangleTexUVGouraudDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _
    }
 }
 
+/* @function minRectTexUVFlat,float x,float y,float w,float h,float ul,float vt,float ur,float vb
+Draw texture mapped rectangle
+
+@arg x X position
+@arg y Y position
+@arg w Width
+@arg h Height
+@arg ul Left u texture coordinate
+@arg vt Top v texture coordinate
+@arg ur Right u texture coordinate
+@arg vb Bottom v texture coordinate
+
+@see minBindTexture
+*/
 void minRectTexUVFlat(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                       sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb
                       ) {
@@ -11610,6 +12053,20 @@ void minRectTexUVFlat(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    }
 }
 
+/* @function minRectTexUVFlatDecal,float x,float y,float w,float h,float ul,float vt,float ur,float vb
+Draw texture mapped rectangle. The texture is crossfaded with the current fill color according to §minTextureDecalAlpha.
+
+@arg x X position
+@arg y Y position
+@arg w Width
+@arg h Height
+@arg ul Left u texture coordinate
+@arg vt Top v texture coordinate
+@arg ur Right u texture coordinate
+@arg vb Bottom v texture coordinate
+
+@see minBindTexture
+*/
 void minRectTexUVFlatDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                            sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb
                            ) {
@@ -11639,6 +12096,24 @@ void minRectTexUVFlatDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    }
 }
 
+/* @function minRectTexUVGouraud,float x,float y,float w,float h,float ul,float vt,float ur,float vb,int c32lt,int c32rt,int c32rb,int c32lb
+Draw texture mapped, gouraud shaded rectangle.
+
+@arg x X position
+@arg y Y position
+@arg w Width
+@arg h Height
+@arg ul Left u texture coordinate
+@arg vt Top v texture coordinate
+@arg ur Right u texture coordinate
+@arg vb Bottom v texture coordinate
+@arg c32lt Left/Top ARGB32 color
+@arg c32rt Right/Top ARGB32 color
+@arg c32rb Right/Bottom ARGB32 color
+@arg c32lb Left/Bottom ARGB32 color
+
+@see minBindTexture
+*/
 void minRectTexUVGouraud(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                          sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb,
                          sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb
@@ -11675,6 +12150,24 @@ void minRectTexUVGouraud(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    }
 }
 
+/* @function minRectTexUVGouraudDecal,float x,float y,float w,float h,float ul,float vt,float ur,float vb,int c32lt,int c32rt,int c32rb,int c32lb
+Draw texture mapped, gouraud shaded rectangle. The texture is crossfaded with the current fill color according to §minTextureDecalAlpha.
+
+@arg x X position
+@arg y Y position
+@arg w Width
+@arg h Height
+@arg ul Left u texture coordinate
+@arg vt Top v texture coordinate
+@arg ur Right u texture coordinate
+@arg vb Bottom v texture coordinate
+@arg c32lt Left/Top ARGB32 color
+@arg c32rt Right/Top ARGB32 color
+@arg c32rb Right/Bottom ARGB32 color
+@arg c32lb Left/Bottom ARGB32 color
+
+@see minBindTexture
+*/
 void minRectTexUVGouraudDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                               sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb,
                               sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb
