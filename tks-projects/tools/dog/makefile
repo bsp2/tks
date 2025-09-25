@@ -10,4 +10,3 @@ install: dog.tkx
 .PHONY: run_test
 run_test:
 	(cd tests/ ; rm -f _dog*.html .dog_cache; tks -ee test.tkp >test.ee ; tks app:dog test.ee )
-
