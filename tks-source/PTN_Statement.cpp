@@ -198,12 +198,14 @@ void PTN_Statement::genCallList(void) {
       c = this;
       st_list     = new const PTN_Statement*[nst+1];
       st_list_opt = new Fevalst[nst+1];
-      sUI i = 0;
+      sUI i = 0u;
       sUI j;
-      for(j=0; j<nst; j++)
+      for(j = 0u; j < nst; j++)
       {
          st_list     [i] = c->getEvalStArg();
          st_list_opt [i] = c->getEvalSt(); // non-virtual "c" call
+
+         // tkscript->printf("xxx PTN_Statement::genCallList:   c=%p c->getID()=%d  i=%u st_list[%u]=%p st_list_opt[%u]=%p\n", c, c->getID(), i, i, st_list[i], i, st_list_opt[i]);
 
          if(NULL != st_list_opt[i])
          {
@@ -214,7 +216,7 @@ void PTN_Statement::genCallList(void) {
       }
 
       // Terminate statement array
-      st_list     [i] = NULL; // EOL
+      st_list     [i] = NULL;
       st_list_opt [i] = NULL;
    }
    else

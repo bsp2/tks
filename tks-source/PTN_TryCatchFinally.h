@@ -1,10 +1,10 @@
 /// PTN_TryCatchFinally.h
 ///
-/// (c) 2006-2009 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2006-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
-#ifndef __PTN_TRYCATCHFINALLY_H__
-#define __PTN_TRYCATCHFINALLY_H__
+#ifndef PTN_TRYCATCHFINALLY_H__
+#define PTN_TRYCATCHFINALLY_H__
 
 
 class PTN_CatchBlock : public PTN_Node {
@@ -48,4 +48,4 @@ public:
 };
 
 
-#endif // __PTN_TRYCATCHFINALLY_H__
+#endif // PTN_TRYCATCHFINALLY_H__

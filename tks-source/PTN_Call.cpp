@@ -65,8 +65,18 @@ static void PTN_Call__eval(PTN_Env *_env, const PTN_Statement *_st) {
    ////env.cret.unsetFast(); 
    
    YAC_Value r;
+   // tkscript->printf("xxx PTN_Call__eval: st=%p\n", st);
+   // tkscript->printf("xxx PTN_Call__eval: st->expr_opt=%p\n", st->expr_opt);
+   // tkscript->printf("xxx PTN_Call__eval: st->getID()=%d\n", st->getID());
 
-   st->expr_opt(_env, &r, st->expr);
+   if(NULL != st->expr_opt)
+   {
+      st->expr_opt(_env, &r, st->expr);
+   }
+   else
+   {
+      st->expr->eval(_env, &r);
+   }
 
    // Discard return value
    r.unsetFast();

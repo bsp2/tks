@@ -1,6 +1,6 @@
 /// PTN_TryCatchFinally.cpp
 ///
-/// (c) 2006-2009 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2006-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -38,6 +38,7 @@ void PTN_CatchBlock::subGenCallList(void) {
    {
       body->genCallList();
    }
+
    if(NULL != next)
    {
       next->subGenCallList();
@@ -62,9 +63,7 @@ PTN_TryCatchFinally::PTN_TryCatchFinally(PTN_TryCatchFinally *_parent) {
 
 PTN_TryCatchFinally::~PTN_TryCatchFinally() {
    TKS_DELETE_SAFE(try_body);
-
    TKS_DELETE_SAFE(first_catch);
-
    TKS_DELETE_SAFE(finally_body);
 }
 
@@ -96,21 +95,24 @@ void PTN_TryCatchFinally::optimize(void) {
       first_catch->optimize();
    }
 
-   if(finally_body != NULL)
+   if(NULL != finally_body)
    {
       finally_body->optimizeAll();
    }
 }
 
 void PTN_TryCatchFinally::subGenCallList(void) {
+
    if(NULL != try_body)
    {
       try_body->genCallList();
    }
+
    if(NULL != first_catch)
    {
       first_catch->subGenCallList();
    }
+
    if(NULL != finally_body)
    {
       finally_body->genCallList();
@@ -124,7 +126,7 @@ void PTN_TryCatchFinally::addCatchSorted(TKS_ExceptionType *_t, PTN_Statement *_
 
    PTN_CatchBlock *n;
    PTN_NEW_STATIC_NODE(n, PTN_CatchBlock)(_t, _st);
-   if(first_catch == NULL)
+   if(NULL == first_catch)
    {
       first_catch = n;
       n->next = NULL;
@@ -133,12 +135,12 @@ void PTN_TryCatchFinally::addCatchSorted(TKS_ExceptionType *_t, PTN_Statement *_
    {
       PTN_CatchBlock *c = first_catch;
       PTN_CatchBlock *p = NULL;
-      while(c != NULL)
+      while(NULL != c)
       {
          if( !c->isExceptionTypeDerivedFrom(_t))
          {
             // Insert before c
-            if(p == NULL)
+            if(NULL == p)
             {
                first_catch = n;
             }
@@ -159,22 +161,22 @@ void PTN_TryCatchFinally::addCatchSorted(TKS_ExceptionType *_t, PTN_Statement *_
 
 sBool PTN_TryCatchFinally::canCatchType(sUI _exceptionTypeId) const {
    // Check whether this or one of the parent trycatch statements can catch the given exception type
-   sBool ret = 0;
+   sBool ret = YAC_FALSE;
    const PTN_TryCatchFinally *tcf = this;
    do
    {
       PTN_CatchBlock *c = tcf->first_catch;
-      while(c!=NULL)
+      while(NULL != c)
       {
          if(tkscript->exception_typecast_map[_exceptionTypeId][c->exception_type->exception_id])
          {
-            ret = 1;
+            ret = YAC_TRUE;
             break;
          }
          c=c->next;
       }
       tcf = tcf->parent;
-   } while( (tcf != NULL) && !ret );
+   } while(NULL != tcf && !ret);
    return ret;
 }
 
@@ -184,15 +186,12 @@ static void PTN_TryCatchFinally__eval(PTN_Env *_env, const PTN_Statement *_st) {
 
    const PTN_TryCatchFinally *sav_last_try = _env->context->last_try;
    _env->context->last_try = st;
-
-   /*PTN_Env env;
-   env.context = _env->context;
-   env.continue_flag = 1;*/
+   
    st->try_body->evalFirst(_env);
 
    TKS_Context *ctx = _env->context;
 
-   sBool bOk = 1;
+   sBool bOk = YAC_TRUE;
    if(Dhaveexception)
    {
       Dhandleexception(_st);
@@ -202,8 +201,8 @@ static void PTN_TryCatchFinally__eval(PTN_Env *_env, const PTN_Statement *_st) {
       PTN_CatchBlock *cb = st->first_catch;
       if(NULL != cb)
       {
-         bOk = 0;
-         while(cb != NULL)
+         bOk = YAC_FALSE;
+         while(NULL != cb)
          {
             // Is cb->exception_type a base class of the current exception?
             if(tkscript->exception_typecast_map[et->exception_id][cb->exception_type->exception_id])
@@ -259,7 +258,7 @@ static void PTN_TryCatchFinally__eval(PTN_Env *_env, const PTN_Statement *_st) {
    {
       // If exception was successfully caught or no exception was raised within try{} at all,
       // run the finally statement block
-      if(st->finally_body != NULL)
+      if(NULL != st->finally_body)
       {
          // Remember current exception (push)
          TKS_CachedObject save_exception_var;
