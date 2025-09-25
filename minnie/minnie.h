@@ -2979,7 +2979,7 @@ class Path {
       if(numVerts >= 3u)
       {
          const sF32 *va = _va->elements.f32;
-         Dexportprintfv("[trc] minnie::Path::exportConcaveVertices: write %u concave vertices at vboffset=%u\n", numVerts, Dstream_get_offset(_ofs));
+         Dexportprintfv("[trc] minnie::Path::exportConcaveVertices: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
             float x = (va[0] + _tx) * _geoScale;
@@ -3017,7 +3017,7 @@ class Path {
       if(numVerts >= 3u)
       {
          const sF32 *va = _va->elements.f32;
-         Dexportprintfv("[trc] minnie::Path::exportConcaveVerticesTransform2d: write %u concave vertices at vboffset=%u\n", numVerts, Dstream_get_offset(_ofs));
+         Dexportprintfv("[trc] minnie::Path::exportConcaveVerticesTransform2d: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
             Vector2f v; v.init(va[0], va[1]);

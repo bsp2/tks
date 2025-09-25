@@ -77,7 +77,7 @@ sBool _MinnieDrawable::alloc(sUI _maxGLBufSize, sUI _maxDrawBufSize) {
       buf_draw = YAC_New_Buffer();
    }
 
-   if(buf_gl->yacArrayAlloc(_maxGLBufSize,   0,0,0))
+   if(buf_gl->yacArrayAlloc(_maxGLBufSize, 0,0,0))
    {
       if(buf_draw->yacArrayAlloc(_maxDrawBufSize, 0,0,0))
       {
@@ -120,7 +120,7 @@ void _MinnieDrawable::free(void) {
 
 void _MinnieDrawable::lazyAllocGL(void) {
    // Create vertex attrib buffer
-   if(0u == gl_buf_id && (NULL != buf_gl) && (buf_gl->size > 0u))
+   if(0u == gl_buf_id && NULL != buf_gl && buf_gl->size > 0u)
    {
       gl_buf_id = Dsdvg_glcall(zglGenBuffer());
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, gl_buf_id));

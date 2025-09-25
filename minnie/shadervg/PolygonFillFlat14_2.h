@@ -74,8 +74,6 @@ class PolygonFillFlat14_2 : public ShaderVG_Shape {
       //   +0 s14.2 x
       //   +2 s14.2 y
 
-      Dyac_host_printf("~~~~~~~~~~~~~~~~~~ poly\n");
-
       sdvg_BindVBO(_vboId);
 
       shape_shader.bind();
