@@ -17,8 +17,8 @@ class TKS_PluginCallback;
 extern TKS_ScriptEngine *tkscript;
 
 // Version information
-#define TKS_VERSION_STR_BASE "0.9.92.2"
-#define TKS_VERSION 0x00095C02
+#define TKS_VERSION_STR_BASE "0.9.92.4"
+#define TKS_VERSION 0x00095C04
 #ifdef DX_X64
 #define TKS_VERSION_STR TKS_VERSION_STR_BASE " (x64)"
 #elif defined(DX_X86)

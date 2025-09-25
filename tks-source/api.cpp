@@ -8088,12 +8088,21 @@ Store 32bit single precision floating point value at the given buffer offset.
 
 /* @method peekI8,int off:byte
 
-Read byte from the given buffer offset
+Read unsigned byte from the given buffer offset
 
 @arg off Where to read the byte from
 @return Byte
 */
       YM //sSI  peekI8     (sSI _offset);
+
+/* @method peekS8,int off:byte
+
+Read signed byte from the given buffer offset
+
+@arg off Where to read the byte from
+@return Byte
+*/
+      YM //sSI  peekS8     (sSI _offset);
 
 /* @method peekI14,int off:short
 
@@ -8108,7 +8117,7 @@ The return value byteorder will be swapped according to the current buffer byteo
 
 /* @method peekI16,int off:short
 
-Read short integer from the given buffer offset.
+Read unsigned short integer from the given buffer offset.
 
 The return value byteorder will be swapped according to the current buffer byteorder.
 
@@ -8117,9 +8126,20 @@ The return value byteorder will be swapped according to the current buffer byteo
 */
       YM //sSI  peekI16    (sSI _offset);
 
+/* @method peekS16,int off:short
+
+Read signed short integer from the given buffer offset.
+
+The return value byteorder will be swapped according to the current buffer byteorder.
+
+@arg off Where to read the short integer from
+@return Short integer
+*/
+      YM //sSI  peekS16    (sSI _offset);
+
 /* @method peekI32,int off:int
 
-Read 32bit integer from the given buffer offset.
+Read unsigned 32bit integer from the given buffer offset.
 
 The return value byteorder will be swapped according to the current buffer byteorder.
 
@@ -8127,6 +8147,17 @@ The return value byteorder will be swapped according to the current buffer byteo
 @return 32bit integer
 */
       YM //sSI  peekI32    (sSI _offset);
+
+/* @method peekS32,int off:int
+
+Read signed 32bit integer from the given buffer offset.
+
+The return value byteorder will be swapped according to the current buffer byteorder.
+
+@arg off Where to read the 32bit integer from
+@return 32bit integer
+*/
+      YM //sSI  peekS32    (sSI _offset);
 
 /* @method peekF32,int off:float
 

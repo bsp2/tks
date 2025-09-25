@@ -49,8 +49,11 @@ public:
    void  YAC_VCALL yacGetConstantStringList(YAC_String *_s);
 
    sU8  getI8OF(sSI);
+   sS8  getS8OF(sSI);
    sU16 getI16OF(sSI);
+   sS16 getS16OF(sSI);
    sU32 getI32OF(sSI);
+   sS32 getS32OF(sSI);
    sF32 getF32OF(sSI);
 
    void  YAC_VCALL yacOperator       (sSI, YAC_Object*, YAC_Value*);
@@ -67,9 +70,12 @@ public:
    virtual void  pokeI32      (sSI _offset, sSI _value);
    void  pokeF32      (sSI _offset, sF32 _value);
    sSI   peekI8       (sSI _offset);
+   sSI   peekS8       (sSI _offset);
    sSI   peekI14      (sSI _offset);
    sSI   peekI16      (sSI _offset);
+   sSI   peekS16      (sSI _offset);
    virtual sSI   peekI32      (sSI _offset);
+   sSI   peekS32      (sSI _offset);
    sF32  peekF32      (sSI _offset);
    void  fillZero     (void);
    void  fillI8       (sUI _c);

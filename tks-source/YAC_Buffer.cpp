@@ -540,8 +540,21 @@ sU8 YAC_Buffer::getI8OF(sSI _offset) {
    return 0u;
 }
 
+sS8 YAC_Buffer::getS8OF(sSI _offset) {
+   union {
+      sU8 u;
+      sS8 s;
+   } u;
+   u.u = getI8OF(_offset);
+   return u.s;
+}
+
 sSI YAC_Buffer::peekI8(sSI _offset) {
    return (sSI) getI8OF(_offset);
+}
+
+sSI YAC_Buffer::peekS8(sSI _offset) {
+   return getS8OF(_offset);
 }
 
 sU16 YAC_VCALL YAC_Buffer::yacStreamReadI16(void) {
@@ -595,6 +608,15 @@ sU16 YAC_Buffer::getI16OF(sSI _offset) {
    return 0;
 }
 
+sS16 YAC_Buffer::getS16OF(sSI _offset) {
+   union {
+      sU16 u;
+      sS16 s;
+   } u;
+   u.u = getI16OF(_offset);
+   return u.s;
+}
+
 sSI YAC_Buffer::peekI14(sSI _offset) {
    sSI r = peekI16(_offset);
    r = ((r>>1)&0x3F80) | (r&127);
@@ -603,6 +625,10 @@ sSI YAC_Buffer::peekI14(sSI _offset) {
 
 sSI YAC_Buffer::peekI16(sSI _offset) {
    return (sSI)getI16OF(_offset);
+}
+
+sSI YAC_Buffer::peekS16(sSI _offset) {
+   return getS16OF(_offset);
 }
 
 sU32 YAC_VCALL YAC_Buffer::yacStreamReadI32(void) {
@@ -664,8 +690,21 @@ sU32 YAC_Buffer::getI32OF(sSI _offset) {
    return 0;
 }
 
+sS32 YAC_Buffer::getS32OF(sSI _offset) {
+   union {
+      sU32 u;
+      sS32 s;
+   } u;
+   u.u = getI32OF(_offset);
+   return u.s;
+}
+
 sSI YAC_Buffer::peekI32(sSI _offset) {
    return getI32OF(_offset);
+}
+
+sSI YAC_Buffer::peekS32(sSI _offset) {
+   return getS32OF(_offset);
 }
 
 sF32 YAC_VCALL YAC_Buffer::yacStreamReadF32(void) {
