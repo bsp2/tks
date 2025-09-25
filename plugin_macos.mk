@@ -89,8 +89,8 @@ yac: $(YAC_RULES)
 # Extract documentation (in "DOG" format)
 #
 .PHONY: ee
-ee:	$(EE_RULES)
-	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"$(YAC_ROOTPATH)/docs/$(PLUGIN).ee"
+ee::	$(EE_RULES)
+	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"$(YAC_ROOTPATH)/apidocs/ee/$(PLUGIN).ee"
 
 
 #
