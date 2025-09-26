@@ -593,6 +593,7 @@ Map vertex buffer object VRAM into virtual address space.
 @see sdvg_UnmapVBO
 @see sdvg_UnbindVBO
 @see sdvg_DestroyVBO
+@see sdvg_BeginVBO
 */
 YF void YAC_CALL sdvg_MapVBO (sUI _vboId);
 
@@ -914,21 +915,53 @@ YF void YAC_CALL sdvg_BufferAddLinesPointsFlat32 (YAC_Buffer *_b, sF32 _x1, sF32
 // -------- (low level) draw functions --------
 /* @function sdvg_DrawTrianglesFillFlatVBO32,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as filled triangles (32bit float format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
 /* @function sdvg_DrawTrianglesFillFlatVBO14_2,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  s14.2 x<br>
+  s14.2 y<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
 /* @function sdvg_DrawTrianglesFillGouraudVBO32,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bit float format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  f32 x<br>
+  f32 y<br>
+  u8  r<br>
+  u8  g<br>
+  u8  b<br>
+  u8  a<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
 /* @function sdvg_DrawTrianglesFillGouraudVBO14_2,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 u8    r<br>
+  +5 u8    g<br>
+  +6 u8    b<br>
+  +7 u8    a<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
@@ -954,21 +987,53 @@ YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2 (sUI _vboId, sUI _by
 
 /* @function sdvg_DrawPolygonFillFlatVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (32bit float format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawPolygonFillFlatVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (14.2 fixed point format)
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  s14.2 x<br>
+  s14.2 y<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawPolygonFillGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (32bit float format).
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  f32 x<br>
+  f32 y<br>
+  u8  r<br>
+  u8  g<br>
+  u8  b<br>
+  u8  a<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawPolygonFillGouraudVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (14.2 fixed point format).
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  s14.2 x<br>
+  s14.2 y<br>
+  u8    r<br>
+  u8    g<br>
+  u8    b<br>
+  u8    a<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
@@ -1084,6 +1149,16 @@ YF void YAC_CALL sdvg_SetupRoundRectFillStrokeAAVBO32 (YAC_Buffer *_vb, YAC_Buff
 
 /* @function sdvg_DrawRoundRectFillStrokeAAVBO32,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Draw previously prepared vertex buffer as filled, stroked, anti-aliased rounded rectangle (32bit float format)
+
+<pre>
+Draw-list format:<br>
+  +0  u16 aaRange * 256<br>
+  +2  i32 vbOffInner<br>
+  +6  u16 numVertsInner  (GL_TRIANGLES)<br>
+  +8  i32 vbOffBorder<br>
+  +12 u16 numVertsBorder<br>
+  +14 u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawRoundRectFillStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
@@ -1109,26 +1184,133 @@ YF void YAC_CALL sdvg_DrawRoundRectStrokeAA (sF32 _centerX, sF32 _centerY, sF32 
 
 /* @function sdvg_DrawTrianglesTexUVFlatVBO32,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as textured mapped triangles (32bit float format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
 /* @function sdvg_DrawTrianglesTexUVGouraudVBO32,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as textured mapped, gouraud shaded triangles (32bit float format)
+
+<pre>
+VBO vertex format (20 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+    +16  u8 r<br>
+    +17  u8 g<br>
+    +18  u8 b<br>
+    +19  u8 a<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
 /* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as decal-textured mapped triangles (32bit float format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
 /* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32,int vboId,int byteOffset,int numTris
 Draw previously prepared vertex buffer as decal-textured mapped, gouraud shaded triangles (32bit float format)
+
+<pre>
+VBO vertex format (20 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+    +16  u8 r<br>
+    +17  u8 g<br>
+    +18  u8 b<br>
+    +19  u8 a<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
 
+/* @function sdvg_DrawTrianglesTexUVFlatVBO32Alpha,int vboId,int byteOffset,int numTris
+Draw previously prepared vertex buffer as alpha-texture mapped triangles (32bit float format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+
+/* @function sdvg_DrawTrianglesTexUVGouraudVBO32Alpha,int vboId,int byteOffset,int numTris
+Draw previously prepared vertex buffer as alpha-texture mapped, gouraud shaded triangles (32bit float format)
+
+<pre>
+VBO vertex format (20 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+    +16  u8 r<br>
+    +17  u8 g<br>
+    +18  u8 b<br>
+    +19  u8 a<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+
+/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha,int vboId,int byteOffset,int numTris
+Draw previously prepared vertex buffer as alpha-decal-texture mapped triangles (32bit float format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+
+/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha,int vboId,int byteOffset,int numTris
+Draw previously prepared vertex buffer as alpha-decal-texture mapped, gouraud shaded triangles (32bit float format)
+
+<pre>
+VBO vertex format (20 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+    +16  u8 r<br>
+    +17  u8 g<br>
+    +18  u8 b<br>
+    +19  u8 a<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+
 /* @function sdvg_DrawLineStripFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip (14.2 fixed point format)
+
+<pre>
+VBO vertex format (6 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1139,6 +1321,13 @@ YF void YAC_CALL sdvg_DrawLineStripFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _
 
 /* @function sdvg_DrawLineStripFlatAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line strip (14.2 fixed point format)
+
+<pre>
+VBO vertex format (6 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1149,6 +1338,13 @@ YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI
 
 /* @function sdvg_DrawLineStripFlatBevelVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
+
+<pre>
+VBO vertex format (6 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1159,6 +1355,13 @@ YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32 (sUI _vboId, sUI _byteOffset, 
 
 /* @function sdvg_DrawLineStripFlatBevelAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (14.2 fixed point format)
+
+<pre>
+VBO vertex format (6 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1169,6 +1372,13 @@ YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32 (sUI _vboId, sUI _byteOffset
 
 /* @function sdvg_DrawLinesFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line segments (14.2 fixed point format)
+
+<pre>
+VBO vertex format (6 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawLinesFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1179,6 +1389,13 @@ YF void YAC_CALL sdvg_DrawLinesFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numP
 
 /* @function sdvg_DrawLinesFlatAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line segments (14.2 fixed point format)
+
+<pre>
+VBO vertex format (6 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1189,21 +1406,49 @@ YF void YAC_CALL sdvg_DrawLinesFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _nu
 
 /* @function sdvg_DrawPointsSquareVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as square points (32 bit float format)
+
+<pre>
+VBO vertex format (10 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPointsSquareVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsSquareAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, square points (32 bit float format)
+
+<pre>
+VBO vertex format (10 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPointsSquareAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsRoundVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as round points (32 bit float format)
+
+<pre>
+VBO vertex format (10 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPointsRoundVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsRoundAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, round points (32 bit float format)
+
+<pre>
+VBO vertex format (10 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
+</pre>
 */
 YF void YAC_CALL sdvg_DrawPointsRoundAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
@@ -1224,6 +1469,7 @@ Destroy user-defined shader program
 YF void YAC_CALL sdvg_DestroyShader (sUI _shaderIdx);
 
 /* @function sdvg_BindShader,int shaderIdx
+Bind user-defined shader program
 */
 YF void YAC_CALL sdvg_BindShader (sUI _shaderIdx);
 
@@ -1284,6 +1530,8 @@ Begin preparation of mapped vertex buffer
 
 @arg numVertices Number of vertices
 @arg stride Total number of attribute bytes per vertex
+
+@see sdvg_MapVBO
 */
 YF sBool YAC_CALL sdvg_BeginVBO (sUI _numVertices, sUI _stride);
 

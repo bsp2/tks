@@ -77,6 +77,7 @@ class TrianglesFillGouraud14_2 : public ShaderVG_Shape {
                                         Dsdvg_mat4_ref_t _mvpMatrix,
                                         sF32             _alpha
                                         ) {
+      //
       // VBO vertex format (8 bytes per vertex):
       //   +0 s14.2 x
       //   +2 s14.2 y
@@ -84,6 +85,7 @@ class TrianglesFillGouraud14_2 : public ShaderVG_Shape {
       //   +5 u8    g
       //   +6 u8    b
       //   +7 u8    a
+      //
 
       /* Dyac_host_printf("xxx drawTrianglesFillGouraudVBO14_2: vboId=%u byteOffset=%u numTris=%u\n", _vboId, _byteOffset, _numTris); */
 

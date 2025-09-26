@@ -1112,6 +1112,15 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sU
 }
 
 void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //   +4 u8    r
+   //   +5 u8    g
+   //   +6 u8    b
+   //   +7 u8    a
+   //
    triangles_fill_gouraud_14_2.drawTrianglesFillGouraudVBO14_2(_vboId,
                                                                _byteOffset,
                                                                _numTris,
