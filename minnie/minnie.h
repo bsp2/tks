@@ -10888,7 +10888,7 @@ sUI minGetWidth(void) {
    return minnie::setup::geo_w;
 }
 
-/* @function minGetWidth:int
+/* @function minGetHeight:int
 Get canvas height (pixels)
 */
 sUI minGetHeight(void) {
