@@ -67,6 +67,8 @@ typedef struct sdvg_font_s {  // RAM
 } sdvg_font_t;
 
 #ifdef SHADERVG_SCRIPT_API
+/* @class ShaderVG_Font
+*/
 YC class _ShaderVG_Font : public YAC_Object {
   public:
    sdvg_font_t font;
@@ -81,20 +83,64 @@ YC class _ShaderVG_Font : public YAC_Object {
 
 extern void sdvg_int_reset_font (void); // internal
 
+/* @function sdvg_InitFont,ShaderVG_Font,Object data,int texW,int texH,Object texData:boolean
+*/
 sBool YAC_CALL sdvg_InitFont (sdvg_font_t *_font, const void *_data, sUI _dataSz, sUI _texW, sUI _texH, const void *_texData);
+
+/* @function sdvg_FontOnOpen,ShaderVG_Font:boolean
+*/
 sBool YAC_CALL sdvg_FontOnOpen (sdvg_font_t *_font);  // create + upload texture. must be called in onOpen()
+
+/* @function sdvg_TextExtents,ShaderVG_Font,String text,Integer retW,Integer retH
+*/
 void YAC_CALL sdvg_TextExtents (const sdvg_font_t *_font, const char *_text, sSI *_retW, sSI *_retH);
+
+/* @function sdvg_TextWidth,ShaderVG_Font,String text:int
+*/
 sSI YAC_CALL sdvg_TextWidth (const sdvg_font_t *_font, const char *_text);
+
+/* @function sdvg_TextHeight,ShaderVG_Font,String text:int
+*/
 sSI YAC_CALL sdvg_TextHeight (const sdvg_font_t *_font, const char *_text);
+
+/* @function sdvg_TextBBox,ShaderVG_Font,String text,Integer retMinX,Integer retMaxX,Integer retMinY,Integer retMaxY
+*/
 void YAC_CALL sdvg_TextBBox (const sdvg_font_t *_font, const char *_text, sSI *_retMinX, sSI *_retMaxX, sSI *_retMinY, sSI *_retMaxY);
+
+/* @function sdvg_TextIndexAtX,ShaderVG_Font,String text,int x:int
+*/
 sSI YAC_CALL sdvg_TextIndexAtX (const sdvg_font_t *_font, const char *_text, sSI _x);
+
+/* @function sdvg_BindFont,ShaderVG_Font
+*/
 void YAC_CALL sdvg_BindFont (const sdvg_font_t *_font);
+
+/* @function sdvg_DrawText,String text,float x,float y
+*/
 void YAC_CALL sdvg_DrawText (const char *_text, sF32 _x, sF32 _y);
+
+/* @function sdvg_DrawTextClipped,String text,float x,float y,float clipLeft,float clipTop,float clipRight,float clipBottom
+*/
 void YAC_CALL sdvg_DrawTextClipped (const char *_text, sF32 _x, sF32 _y, sF32 _clipLeft, sF32 _clipTop, sF32 _clipRight, sF32 _clipBottom);
+
+/* @function sdvg_DrawTextUnderline,String text,float x,float y
+*/
 void YAC_CALL sdvg_DrawTextUnderline (const char *_text, sF32 _x, sF32 _y);
+
+/* @function sdvg_DrawTextUnderlineClipped,String text,float x,float y
+*/
 void YAC_CALL sdvg_DrawTextUnderlineClipped (const char *_text, sF32 _x, sF32 _y);
+
+/* @function sdvg_DrawTextAccel,String text,float x,float y
+*/
 void YAC_CALL sdvg_DrawTextAccel (const char *_text, sF32 _x, sF32 _y);
+
+/* @function sdvg_DrawTextAccelClipped,String text,float x,float y
+*/
 void YAC_CALL sdvg_DrawTextAccelClipped (const char *_text, sF32 _x, sF32 _y);
+
+/* @function sdvg_UnbindFont
+*/
 YF void YAC_CALL sdvg_UnbindFont (void);
 #ifdef SHADERVG_SCRIPT_API
 YF sBool YAC_CALL _sdvg_InitFont (YAC_Object *_font, YAC_Object *_data, sUI _texW, sUI _texH, YAC_Object *_texData);
