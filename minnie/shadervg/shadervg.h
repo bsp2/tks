@@ -414,34 +414,83 @@ YF void YAC_CALL sdvg_ClearARGB (sUI _c32);
 // -------- blending --------
 /* @function sdvg_EnableBlending
 Enable source-over blending
+
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlending (void);
 
 /* @function sdvg_EnableBlendingKeepAlpha
 Enable source-over blending (do not modify destination alpha)
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingKeepAlpha (void);
 
 /* @function sdvg_EnableBlendingAdditive
 Enable additive blending
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingAdditive (void);
 
 /* @function sdvg_EnableBlendingAdditiveKeepAlpha
 Enable additive blending (do not modify destination alpha)
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingAdditiveKeepAlpha (void);
 
 /* @function sdvg_EnableBlendingSrcColorKeepAlpha
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingSrcColorKeepAlpha (void);
 
 /* @function sdvg_EnableBlendingDstColorKeepAlpha
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingDstColorKeepAlpha (void);
 
 /* @function sdvg_DisableBlending
 Disable blending
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
 */
 YF void YAC_CALL sdvg_DisableBlending (void);
 
@@ -913,7 +962,7 @@ Append line segment vertex coordinates to buffer in 32bit float fixed point
 YF void YAC_CALL sdvg_BufferAddLinesPointsFlat32 (YAC_Buffer *_b, sF32 _x1, sF32 _y1, sF32 _x2, sF32 _y2);
 
 // -------- (low level) draw functions --------
-/* @function sdvg_DrawTrianglesFillFlatVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillFlatVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (32bit float format)
 
 <pre>
@@ -922,9 +971,9 @@ VBO vertex format (8 bytes per vertex):<br>
   +4 f32 y<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillFlatVBO14_2,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillFlatVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
 
 <pre>
@@ -933,9 +982,9 @@ VBO vertex format (4 bytes per vertex):<br>
   s14.2 y<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillGouraudVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bit float format)
 
 <pre>
@@ -948,9 +997,9 @@ VBO vertex format (12 bytes per vertex):<br>
   u8  a<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillGouraudVBO14_2,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillGouraudVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (14.2 fixed point format)
 
 <pre>
@@ -963,27 +1012,27 @@ VBO vertex format (8 bytes per vertex):<br>
   +7 u8    a<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillFlatEdgeAAVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillFlatEdgeAAVBO32,int vboId,int byteOffset,int numVerts
 experimental
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2,int vboId,int byteOffset,int numVerts
 experimental
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillGouraudEdgeAAVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillGouraudEdgeAAVBO32,int vboId,int byteOffset,int numVerts
 experimental
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2,int vboId,int byteOffset,int numVerts
 experimental
 */
-YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawPolygonFillFlatVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (32bit float format)
@@ -1182,7 +1231,7 @@ Draw stroked, anti-aliased rounded rectangle via scratch buffer (32 bit float fo
 */
 YF void YAC_CALL sdvg_DrawRoundRectStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawTrianglesTexUVFlatVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVFlatVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as textured mapped triangles (32bit float format)
 
 <pre>
@@ -1193,9 +1242,9 @@ VBO vertex format (16 bytes per vertex):<br>
     +12 f32 v<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVGouraudVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as textured mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
@@ -1210,9 +1259,9 @@ VBO vertex format (20 bytes per vertex):<br>
     +19  u8 a<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as decal-textured mapped triangles (32bit float format)
 
 <pre>
@@ -1223,9 +1272,9 @@ VBO vertex format (16 bytes per vertex):<br>
     +12 f32 v<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as decal-textured mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
@@ -1240,9 +1289,9 @@ VBO vertex format (20 bytes per vertex):<br>
     +19  u8 a<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVFlatVBO32Alpha,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVFlatVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-texture mapped triangles (32bit float format)
 
 <pre>
@@ -1253,9 +1302,9 @@ VBO vertex format (16 bytes per vertex):<br>
     +12 f32 v<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVGouraudVBO32Alpha,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVGouraudVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-texture mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
@@ -1270,9 +1319,9 @@ VBO vertex format (20 bytes per vertex):<br>
     +19  u8 a<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-decal-texture mapped triangles (32bit float format)
 
 <pre>
@@ -1283,9 +1332,9 @@ VBO vertex format (16 bytes per vertex):<br>
     +12 f32 v<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha,int vboId,int byteOffset,int numTris
+/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-decal-texture mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
@@ -1300,7 +1349,7 @@ VBO vertex format (20 bytes per vertex):<br>
     +19  u8 a<br>
 </pre>
 */
-YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numTris);
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawLineStripFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip (14.2 fixed point format)
@@ -1460,21 +1509,37 @@ Create user-defined shader program
 @arg fs Fragment shader source
 
 @return ShaderVG shader index
+
+@see sdvg_DestroyShader
+@see sdvg_BindShader
+@see sdvg_UnbindShader
 */
 sUI YAC_CALL sdvg_CreateShader (const char *vs, const char *fs);
 
 /* @function sdvg_DestroyShader,int shaderIdx
 Destroy user-defined shader program
+
+@see sdvg_CreateShader
+@see sdvg_BindShader
+@see sdvg_UnbindShader
 */
 YF void YAC_CALL sdvg_DestroyShader (sUI _shaderIdx);
 
 /* @function sdvg_BindShader,int shaderIdx
 Bind user-defined shader program
+
+@see sdvg_CreateShader
+@see sdvg_DestroyShader
+@see sdvg_UnbindShader
 */
 YF void YAC_CALL sdvg_BindShader (sUI _shaderIdx);
 
 /* @function sdvg_UnbindShader
 Unbind current shader program
+
+@see sdvg_CreateShader
+@see sdvg_DestroyShader
+@see sdvg_BindShader
 */
 YF void YAC_CALL sdvg_UnbindShader (void);
 

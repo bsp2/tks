@@ -73,7 +73,7 @@ class TrianglesFillGouraud14_2 : public ShaderVG_Shape {
 
    void drawTrianglesFillGouraudVBO14_2(sUI              _vboId,
                                         sUI              _byteOffset,
-                                        sUI              _numTris,
+                                        sUI              _numVerts,
                                         Dsdvg_mat4_ref_t _mvpMatrix,
                                         sF32             _alpha
                                         ) {
@@ -87,7 +87,7 @@ class TrianglesFillGouraud14_2 : public ShaderVG_Shape {
       //   +7 u8    a
       //
 
-      /* Dyac_host_printf("xxx drawTrianglesFillGouraudVBO14_2: vboId=%u byteOffset=%u numTris=%u\n", _vboId, _byteOffset, _numTris); */
+      /* Dyac_host_printf("xxx drawTrianglesFillGouraudVBO14_2: vboId=%u byteOffset=%u numVerts=%u\n", _vboId, _byteOffset, _numVerts); */
 
       sdvg_BindVBO(_vboId);
 
@@ -103,7 +103,7 @@ class TrianglesFillGouraud14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_color);
 
-      Dsdvg_draw_triangles(0, _numTris * 3);
+      Dsdvg_draw_triangles(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_color);
       Dsdvg_attrib_disable(shape_a_vertex);

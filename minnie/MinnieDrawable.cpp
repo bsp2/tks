@@ -281,7 +281,6 @@ void _MinnieDrawable::draw() {
          Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-list off=%u op=%u\n", (Dstream_get_offset(buf_draw)-2u), op);
          sF32 aaRange;
          sUI vbOff;
-         sUI numTris;
          sUI numVerts;
          sF32 r, g, b, a;
          sUI c32;
@@ -309,77 +308,77 @@ void _MinnieDrawable::draw() {
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               r       = Dstream_read_f32(buf_draw);
-               g       = Dstream_read_f32(buf_draw);
-               b       = Dstream_read_f32(buf_draw);
-               a       = Dstream_read_f32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-flat<f32>: vbOff=%u numTris=%u\n", vbOff, numTris);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               r        = Dstream_read_f32(buf_draw);
+               g        = Dstream_read_f32(buf_draw);
+               b        = Dstream_read_f32(buf_draw);
+               a        = Dstream_read_f32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-flat<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
                sdvg_SetFillColor4f(r, g, b, a);
                sdvg_DrawTrianglesFillFlatVBO32(gl_buf_id,
                                                vbOff,
-                                               numTris
+                                               numVerts
                                                );
                numOpsTri++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               r       = Dstream_read_f32(buf_draw);
-               g       = Dstream_read_f32(buf_draw);
-               b       = Dstream_read_f32(buf_draw);
-               a       = Dstream_read_f32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-flat<14_2>: vbOff=%u numTris=%u\n", vbOff, numTris);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               r        = Dstream_read_f32(buf_draw);
+               g        = Dstream_read_f32(buf_draw);
+               b        = Dstream_read_f32(buf_draw);
+               a        = Dstream_read_f32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-flat<14_2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
                sdvg_SetFillColor4f(r, g, b, a);
                sdvg_DrawTrianglesFillFlatVBO14_2(gl_buf_id,
                                                  vbOff,
-                                                 numTris
+                                                 numVerts
                                                  );
                numOpsTri++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<f32>: vbOff=%u numTris=%u\n", vbOff, numTris);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
                sdvg_DrawTrianglesFillGouraudVBO32(gl_buf_id,
                                                   vbOff,
-                                                  numTris
+                                                  numVerts
                                                   );
                numOpsTri++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<s14.2>: vbOff=%u numTris=%u\n", vbOff, numTris);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<s14.2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
                sdvg_DrawTrianglesFillGouraudVBO14_2(gl_buf_id,
                                                     vbOff,
-                                                    numTris
+                                                    numVerts
                                                     );
                numOpsTri++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<f32_edgeaa>: vbOff=%u numTris=%u\n", vbOff, numTris);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<f32_edgeaa>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
                sdvg_DrawTrianglesFillGouraudEdgeAAVBO32(gl_buf_id,
                                                         vbOff,
-                                                        numTris
+                                                        numVerts
                                                         );
                numOpsTri++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<s14.2_edgeaa>: vbOff=%u numTris=%u\n", vbOff, numTris);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-triangles-fill-gouraud<s14.2_edgeaa>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
                sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(gl_buf_id,
                                                           vbOff,
-                                                          numTris
+                                                          numVerts
                                                           );
                numOpsTri++;
                break;
@@ -711,53 +710,53 @@ void _MinnieDrawable::draw() {
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               c32     = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-flat<f32>: vbOff=%u numTris=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numTris, dlTexId, dlTexRepeat, dlTexFilter);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               c32      = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-flat<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
                sdvg_SetFillColorARGB(c32);
                sdvg_DrawTrianglesTexUVFlatVBO32(gl_buf_id,
                                                 vbOff,
-                                                numTris
+                                                numVerts
                                                 );
                numOpsTriTex++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               c32     = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-flat-decal<f32>: vbOff=%u numTris=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numTris, dlTexId, dlTexRepeat, dlTexFilter);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               c32      = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-flat-decal<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
                sdvg_SetFillColorARGB(c32);
                sdvg_DrawTrianglesTexUVFlatDecalVBO32(gl_buf_id,
                                                      vbOff,
-                                                     numTris
+                                                     numVerts
                                                      );
                numOpsTriTex++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32:
-               vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
-               c32     = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-gouraud<f32>: vbOff=%u numTris=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numTris, dlTexId, dlTexRepeat, dlTexFilter);
+               vbOff    = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
+               c32      = Dstream_read_i32(buf_draw);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-gouraud<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
                sdvg_SetFillColorARGB(c32);
                sdvg_DrawTrianglesTexUVGouraudVBO32(gl_buf_id,
                                                    vbOff,
-                                                   numTris
+                                                   numVerts
                                                    );
                numOpsTriTex++;
                break;
 
             case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32:
                vbOff   = Dstream_read_i32(buf_draw);
-               numTris = Dstream_read_i32(buf_draw);
+               numVerts = Dstream_read_i32(buf_draw);
                c32     = Dstream_read_i32(buf_draw);
-               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-gouraud-decal<f32>: vbOff=%u numTris=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numTris, dlTexId, dlTexRepeat, dlTexFilter);
+               Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-tri-tex-uv-gouraud-decal<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
                sdvg_SetFillColorARGB(c32);
                sdvg_DrawTrianglesTexUVGouraudDecalVBO32(gl_buf_id,
                                                         vbOff,
-                                                        numTris
+                                                        numVerts
                                                         );
                numOpsTriTex++;
                break;

@@ -5653,7 +5653,7 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_tris);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
                Dexport_dl_f32( ((active_dl_c32 >> 16) & 255) * (1.0f / 255.0f) );  // r
                Dexport_dl_f32( ((active_dl_c32 >>  8) & 255) * (1.0f / 255.0f) );  // g
                Dexport_dl_f32( ((active_dl_c32      ) & 255) * (1.0f / 255.0f) );  // b
@@ -5670,7 +5670,7 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_tris);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
             }
             break;
 
@@ -5919,7 +5919,7 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_tris);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                total_num_tris_tex += active_dl_num_tris;
             }
@@ -5931,7 +5931,7 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_tris);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                total_num_tris_tex += active_dl_num_tris;
             }
@@ -5943,7 +5943,7 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_tris);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                total_num_tris_tex += active_dl_num_tris;
             }
@@ -5955,7 +5955,7 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_tris);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                total_num_tris_tex += active_dl_num_tris;
             }

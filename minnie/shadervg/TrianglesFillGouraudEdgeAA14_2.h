@@ -111,7 +111,7 @@ class TrianglesFillGouraudEdgeAA14_2 : public ShaderVG_Shape {
 
    void drawTrianglesFillGouraudEdgeAAVBO14_2(sUI              _vboId,
                                               sUI              _byteOffset,
-                                              sUI              _numTris,
+                                              sUI              _numVerts,
                                               Dsdvg_mat4_ref_t _mvpMatrix,
                                               sBool            _bAA,
                                               sF32             _alpha
@@ -155,7 +155,7 @@ class TrianglesFillGouraudEdgeAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_scale);
       Dsdvg_attrib_enable(shape_a_bc);
 
-      Dsdvg_draw_triangles(0, _numTris * 3);
+      Dsdvg_draw_triangles(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_bc);
       Dsdvg_attrib_disable(shape_a_scale);

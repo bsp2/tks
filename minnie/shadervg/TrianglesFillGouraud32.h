@@ -72,7 +72,7 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
 
    void drawTrianglesFillGouraudVBO32(sUI              _vboId,
                                       sUI              _byteOffset,
-                                      sUI              _numTris,
+                                      sUI              _numVerts,
                                       Dsdvg_mat4_ref_t _projMatrix,
                                       sF32             _alpha
                                       ) {
@@ -99,7 +99,7 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_color);
 
-      Dsdvg_draw_triangles(0, _numTris * 3);
+      Dsdvg_draw_triangles(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_color);
       Dsdvg_attrib_disable(shape_a_vertex);

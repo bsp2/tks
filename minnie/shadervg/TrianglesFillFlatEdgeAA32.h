@@ -107,7 +107,7 @@ class TrianglesFillFlatEdgeAA32 : public ShaderVG_Shape {
 
    void drawTrianglesFillFlatEdgeAAVBO32(sUI              _vboId,
                                          sUI              _byteOffset,
-                                         sUI              _numTris,
+                                         sUI              _numVerts,
                                          Dsdvg_mat4_ref_t _mvpMatrix,
                                          sF32     _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
                                          sBool  _bAA
@@ -145,7 +145,7 @@ class TrianglesFillFlatEdgeAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_scale);
       Dsdvg_attrib_enable(shape_a_bc);
 
-      Dsdvg_draw_triangles(0, _numTris * 3);
+      Dsdvg_draw_triangles(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_bc);
       Dsdvg_attrib_disable(shape_a_scale);

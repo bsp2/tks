@@ -74,7 +74,7 @@ class TrianglesTexUVFlat32Alpha : public ShaderVG_Shape {
 
    void drawTrianglesTexUVFlatVBO32Alpha(sUI              _vboId,
                                          sUI              _byteOffset,
-                                         sUI              _numTris,
+                                         sUI              _numVerts,
                                          Dsdvg_mat4_ref_t _mvpMatrix,
                                          sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
                                          ) {
@@ -100,7 +100,7 @@ class TrianglesTexUVFlat32Alpha : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_uv);
 
-      Dsdvg_draw_triangles_vbo(0, _numTris * 3);
+      Dsdvg_draw_triangles_vbo(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_uv);
       Dsdvg_attrib_disable(shape_a_vertex);

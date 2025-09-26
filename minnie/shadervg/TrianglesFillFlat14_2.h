@@ -66,7 +66,7 @@ class TrianglesFillFlat14_2 : public ShaderVG_Shape {
 
    void drawTrianglesFillFlatVBO14_2(sUI              _vboId,
                                      sUI              _byteOffset,
-                                     sUI              _numTris,
+                                     sUI              _numVerts,
                                      Dsdvg_mat4_ref_t _mvpMatrix,
                                      sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
                                      ) {
@@ -74,7 +74,7 @@ class TrianglesFillFlat14_2 : public ShaderVG_Shape {
       //   +0 s14.2 x
       //   +2 s14.2 y
 
-      /* Dyac_host_printf("xxx drawTrianglesFillFlatVBO14_2: vboId=%u byteOffset=%u numTris=%u fill=(%f;%f;%f;%f)\n", _vboId, _byteOffset, _numTris, _fillR, _fillG, _fillB, _fillA); */
+      /* Dyac_host_printf("xxx drawTrianglesFillFlatVBO14_2: vboId=%u byteOffset=%u numVerts=%u fill=(%f;%f;%f;%f)\n", _vboId, _byteOffset, _numVerts, _fillR, _fillG, _fillB, _fillA); */
 
       sdvg_BindVBO(_vboId);
 
@@ -86,7 +86,7 @@ class TrianglesFillFlat14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
 
-      Dsdvg_draw_triangles(0, _numTris * 3);
+      Dsdvg_draw_triangles(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }

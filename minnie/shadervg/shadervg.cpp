@@ -1067,7 +1067,7 @@ static void loc_BufferAddLinesPointFlat32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
 }
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
 
-void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0 f32 x
@@ -1075,13 +1075,13 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _
    //
    triangles_fill_flat_32.drawTrianglesFillFlatVBO32(_vboId,
                                                      _byteOffset,
-                                                     _numTris,
+                                                     _numVerts,
                                                      mvp_matrix,
                                                      fill_r, fill_g, fill_b, fill_a * global_a
                                                      );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   s14.2 x
@@ -1089,13 +1089,13 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI
    //
    triangles_fill_flat_14_2.drawTrianglesFillFlatVBO14_2(_vboId,
                                                          _byteOffset,
-                                                         _numTris,
+                                                         _numVerts,
                                                          mvp_matrix,
                                                          fill_r, fill_g, fill_b, fill_a * global_a
                                                          );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    // VBO vertex format (12 bytes per vertex):
    //   f32 x
    //   f32 y
@@ -1105,13 +1105,13 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sU
    //   u8  a
    triangles_fill_gouraud_32.drawTrianglesFillGouraudVBO32(_vboId,
                                                            _byteOffset,
-                                                           _numTris,
+                                                           _numVerts,
                                                            mvp_matrix,
                                                            global_a
                                                            );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0 s14.2 x
@@ -1123,13 +1123,13 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, 
    //
    triangles_fill_gouraud_14_2.drawTrianglesFillGouraudVBO14_2(_vboId,
                                                                _byteOffset,
-                                                               _numTris,
+                                                               _numVerts,
                                                                mvp_matrix,
                                                                global_a
                                                                );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (26 bytes per vertex):
    //     0 f32 x
@@ -1146,14 +1146,14 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32(sUI _vboId, sUI _byteOffset,
    //
    triangles_fill_flat_edgeaa_32.drawTrianglesFillFlatEdgeAAVBO32(_vboId,
                                                                   _byteOffset,
-                                                                  _numTris,
+                                                                  _numVerts,
                                                                   mvp_matrix,
                                                                   fill_r, fill_g, fill_b, fill_a * global_a,
                                                                   b_aa
                                                                   );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (22 bytes per vertex):
    //     0 s14.2 x
@@ -1170,14 +1170,14 @@ void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO14_2(sUI _vboId, sUI _byteOffse
    //
    triangles_fill_flat_edgeaa_14_2.drawTrianglesFillFlatEdgeAAVBO14_2(_vboId,
                                                                       _byteOffset,
-                                                                      _numTris,
+                                                                      _numVerts,
                                                                       mvp_matrix,
                                                                       fill_r, fill_g, fill_b, fill_a * global_a,
                                                                       b_aa
                                                                       );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (30 bytes per vertex):
    //     0 f32 x
@@ -1198,14 +1198,14 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO32(sUI _vboId, sUI _byteOffs
    //
    triangles_fill_gouraud_edgeaa_32.drawTrianglesFillGouraudEdgeAAVBO32(_vboId,
                                                                         _byteOffset,
-                                                                        _numTris,
+                                                                        _numVerts,
                                                                         mvp_matrix,
                                                                         b_aa,
                                                                         global_a
                                                                         );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (26 bytes per vertex):
    //     0 f32 x
@@ -1226,7 +1226,7 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(sUI _vboId, sUI _byteOf
    //
    triangles_fill_gouraud_edgeaa_14_2.drawTrianglesFillGouraudEdgeAAVBO14_2(_vboId,
                                                                             _byteOffset,
-                                                                            _numTris,
+                                                                            _numVerts,
                                                                             mvp_matrix,
                                                                             b_aa,
                                                                             global_a
@@ -1818,7 +1818,7 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                              );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
    //     +0  f32 x
@@ -1828,13 +1828,13 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI 
    //
    triangles_tex_uv_flat_32.drawTrianglesTexUVFlatVBO32(_vboId,
                                                         _byteOffset,
-                                                        _numTris,
+                                                        _numVerts,
                                                         mvp_matrix,
                                                         fill_r, fill_g, fill_b, fill_a * global_a
                                                         );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
    //     +0  f32 x
@@ -1848,13 +1848,13 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32(sUI _vboId, sUI _byteOffset, s
    //
    triangles_tex_uv_gouraud_32.drawTrianglesTexUVGouraudVBO32(_vboId,
                                                               _byteOffset,
-                                                              _numTris,
+                                                              _numVerts,
                                                               mvp_matrix,
                                                               fill_r, fill_g, fill_b, fill_a * global_a
                                                               );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
    //     +0  f32 x
@@ -1864,14 +1864,14 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset,
    //
    triangles_tex_uv_flat_decal_32.drawTrianglesTexUVFlatDecalVBO32(_vboId,
                                                                    _byteOffset,
-                                                                   _numTris,
+                                                                   _numVerts,
                                                                    mvp_matrix,
                                                                    fill_r, fill_g, fill_b, fill_a * global_a,
                                                                    texture_decal_alpha
                                                                    );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
    //     +0  f32 x
@@ -1885,14 +1885,14 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffs
    //
    triangles_tex_uv_gouraud_decal_32.drawTrianglesTexUVGouraudDecalVBO32(_vboId,
                                                                          _byteOffset,
-                                                                         _numTris,
+                                                                         _numVerts,
                                                                          mvp_matrix,
                                                                          fill_r, fill_g, fill_b, fill_a * global_a,
                                                                          texture_decal_alpha
                                                                          );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
    //     +0  f32 x
@@ -1902,13 +1902,13 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha(sUI _vboId, sUI _byteOffset,
    //
    triangles_tex_uv_flat_32_alpha.drawTrianglesTexUVFlatVBO32Alpha(_vboId,
                                                                    _byteOffset,
-                                                                   _numTris,
+                                                                   _numVerts,
                                                                    mvp_matrix,
                                                                    fill_r, fill_g, fill_b, fill_a * global_a
                                                                    );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
    //     +0  f32 x
@@ -1922,13 +1922,13 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha(sUI _vboId, sUI _byteOffs
    //
    triangles_tex_uv_gouraud_32_alpha.drawTrianglesTexUVGouraudVBO32Alpha(_vboId,
                                                                          _byteOffset,
-                                                                         _numTris,
+                                                                         _numVerts,
                                                                          mvp_matrix,
                                                                          fill_r, fill_g, fill_b, fill_a * global_a
                                                                          );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
    //     +0  f32 x
@@ -1938,7 +1938,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOf
    //
    triangles_tex_uv_flat_decal_32_alpha.drawTrianglesTexUVFlatDecalVBO32Alpha(_vboId,
                                                                               _byteOffset,
-                                                                              _numTris,
+                                                                              _numVerts,
                                                                               mvp_matrix,
                                                                               fill_r, fill_g, fill_b, fill_a * global_a,
                                                                               stroke_r, stroke_g, stroke_b, stroke_a,
@@ -1946,7 +1946,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOf
                                                                               );
 }
 
-void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numTris) {
+void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
    //     +0  f32 x
@@ -1960,7 +1960,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byt
    //
    triangles_tex_uv_gouraud_decal_32_alpha.drawTrianglesTexUVGouraudDecalVBO32Alpha(_vboId,
                                                                                     _byteOffset,
-                                                                                    _numTris,
+                                                                                    _numVerts,
                                                                                     mvp_matrix,
                                                                                     fill_r, fill_g, fill_b, fill_a * global_a,
                                                                                     stroke_r, stroke_g, stroke_b, stroke_a,

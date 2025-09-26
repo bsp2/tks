@@ -65,7 +65,7 @@ class TrianglesFillFlat32 : public ShaderVG_Shape {
 
    void drawTrianglesFillFlatVBO32(sUI              _vboId,
                                    sUI              _byteOffset,
-                                   sUI              _numTris,
+                                   sUI              _numVerts,
                                    Dsdvg_mat4_ref_t _mvpMatrix,
                                    sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
                                    ) {
@@ -85,7 +85,7 @@ class TrianglesFillFlat32 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
 
-      Dsdvg_draw_triangles(0, _numTris * 3);
+      Dsdvg_draw_triangles(0, _numVerts);
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }
