@@ -205,6 +205,8 @@ typedef struct {
 
 
 // ---------------------------------------------------------------------------- ZGLShader
+/* @class ZGLShader
+ */
 YC class _ZGLShader : public YAC_Object {
    // (note) OpenGL ES predefines "GL_ES"
   public:
@@ -234,35 +236,95 @@ YC class _ZGLShader : public YAC_Object {
 
 
   public:
-   // Set/Override default #version header (optional)
-   //  (note) applies to all ZGLShader objects
-   //  (note) e.g. ZGLShader.SetDefaultVersion("140\n");
-   //  (note) must end with newline (and may contain additional, non-empty header lines)
-   YM void SetDefaultVersion(YAC_String *_ver);
+   /* @method SetDefaultVersion,String ver
+      Set/Override default #version header (optional)
 
-   YM void setVertexSource(YAC_String *_src);
-   YM void getVertexSource(YAC_Value *_r);
+      (note) applies to all ZGLShader objects
+      (note) e.g. ZGLShader.SetDefaultVersion("140\n");
+      (note) must end with newline (and may contain additional, non-empty header lines)
 
-   YM void setFragmentSource(YAC_String *_src);
-   YM void getFragmentSource(YAC_Value *_r);
+      @arg ver Version string (e.g. "140\n")
+   */
+   YM void SetDefaultVersion (YAC_String *_ver);
 
-   // Create program, Compile/create vertex+fragment shader and link program
+   /* @method setVertexSource,String src
+    Set GLSL vertex shader source
+    */
+   YM void setVertexSource (YAC_String *_src);
+
+   /* @method getVertexSource:String
+    Get GLSL vertex shader source
+    */
+   YM void getVertexSource (YAC_Value *_r);
+
+   /* @method setFragmentSource,String src
+    Set GLSL fragment shader source
+    */
+   YM void setFragmentSource (YAC_String *_src);
+
+   /* @method getFragmentSource:String
+    Get GLSL fragment shader source
+    */
+   YM void getFragmentSource (YAC_Value *_r);
+
+   /* @method create:boolean
+    Create program, compile vertex+fragment shader, and link program.
+   */
 	YM sBool create(void);
 
+   /* @method bind
+      Bind shader program
+    */
    YM void bind(void);
+
+   /* @method unbind
+      Unbind shader program
+    */
    YM void unbind(void);
 
+   /* @method destroy
+      Destroy shader program and attached shaders
+    */
    YM void destroy(void);
 
+   /* @method getUniformLocation,String name:int
+      Query uniform location
+    */
    YM sSI getUniformLocation(YAC_String *_name);
+
+   /* @method getAttribLocation,String name:int
+      Query attribute location
+    */
    YM sSI getAttribLocation(YAC_String *_name);
 
+   /* @method getProgramId:int
+      Get GL program id
+    */
    YM sUI getProgramId (void);
+
+   /* @method getFragmentShaderId:int
+      Get GL fragment shader id
+    */
    YM sUI getFragmentShaderId (void);
+
+   /* @method getVertexShaderId:int
+      Get GL vertex shader id
+    */
    YM sUI getVertexShaderId (void);
 
+   /* @method getNumActiveAttributes:int
+      Query number of active attributes
+    */
    YM sUI getNumActiveAttributes (void);
+
+   /* @method getNumActiveUniforms:int
+      Query number of active uniforms
+    */
    YM sUI getNumActiveUniforms (void);
+
+   /* @method getProgramBinaryLength:int
+      Query GL program binary size
+    */
    YM sUI getProgramBinaryLength (void);
 };
 
