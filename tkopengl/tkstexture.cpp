@@ -1401,7 +1401,7 @@ void _Texture::simpleBlur(Image *_i, Image *_j) {
                                  p[1][3]=DgetPixel8(x-1, y+1);
                                  p[2][3]=DgetPixel8(x-0, y+1);
                                  p[3][3]=DgetPixel8(x+1, y+1);
-                                 s.u8[x]=
+                                 d.u8[x]=
                                     (
                                        p[0][0]+p[1][0]+p[2][0]+p[3][0]+
                                        p[0][1]+p[1][1]+p[2][1]+p[3][1]+
@@ -1409,6 +1409,7 @@ void _Texture::simpleBlur(Image *_i, Image *_j) {
                                        p[0][3]+p[1][3]+p[2][3]+p[3][3])>>4;
                               }
                               s.u8+=_i->screen->stride;
+                              d.u8+=_j->screen->stride;
                            }
                            break;
                         case 4:
