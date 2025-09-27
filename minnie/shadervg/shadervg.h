@@ -1351,6 +1351,19 @@ VBO vertex format (20 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as alpha-SDF-texture mapped triangles (32bit float format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32 x<br>
+    +4  f32 y<br>
+    +8  f32 u<br>
+    +12 f32 v<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawLineStripFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip (14.2 fixed point format)
 
@@ -1749,6 +1762,13 @@ Begin preparation or rendering of alpha-channel-only textured, gouraud shaded tr
 @arg numVertices Number of vertices
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTrianglesAlphaSDF,int numVertices:boolean
+Begin preparation or rendering of alpha-SDF_channel-only textured triangles
+
+@arg numVertices Number of vertices
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlphaSDF (sUI _numVertices);
 
 /* @function sdvg_BeginLineStrip,int numPoints:boolean
 Begin preparation or rendering of line strip

@@ -105,6 +105,7 @@
 #include "TrianglesTexUVGouraud32Alpha.h"
 #include "TrianglesTexUVFlatDecal32Alpha.h"
 #include "TrianglesTexUVGouraudDecal32Alpha.h"
+#include "TrianglesTexUVFlat32AlphaSDF.h"
 #include "LineStripFlat14_2.h"
 #include "LineStripFlat32.h"
 #include "LineStripFlatAA14_2.h"
@@ -174,6 +175,7 @@ static TrianglesTexUVFlat32Alpha         triangles_tex_uv_flat_32_alpha;
 static TrianglesTexUVGouraud32Alpha      triangles_tex_uv_gouraud_32_alpha;
 static TrianglesTexUVFlatDecal32Alpha    triangles_tex_uv_flat_decal_32_alpha;
 static TrianglesTexUVGouraudDecal32Alpha triangles_tex_uv_gouraud_decal_32_alpha;
+static TrianglesTexUVFlat32AlphaSDF      triangles_tex_uv_flat_32_alpha_sdf;
 static LineStripFlat14_2                 line_strip_flat_14_2;
 static LineStripFlat32                   line_strip_flat_32;
 static LineStripFlatAA14_2               line_strip_flat_aa_14_2;
@@ -185,7 +187,7 @@ static LinesFlatAA32                     lines_flat_aa_32;
 static PointsSquareAA32                  points_square_aa_32;
 static PointsRoundAA32                   points_round_aa_32;
 
-#define SHADERVG_NUM_SHAPES  39
+#define SHADERVG_NUM_SHAPES  40
 static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
    &triangles_fill_flat_32,
    &triangles_fill_flat_14_2,
@@ -217,6 +219,7 @@ static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
    &triangles_tex_uv_gouraud_32_alpha,
    &triangles_tex_uv_flat_decal_32_alpha,
    &triangles_tex_uv_gouraud_decal_32_alpha,
+   &triangles_tex_uv_flat_32_alpha_sdf,
    &line_strip_flat_14_2,
    &line_strip_flat_32,
    &line_strip_flat_aa_14_2,
@@ -1966,6 +1969,22 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byt
                                                                                     stroke_r, stroke_g, stroke_b, stroke_a,
                                                                                     texture_decal_alpha
                                                                                     );
+}
+
+void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (16 bytes per vertex):
+   //     +0  f32 x
+   //     +4  f32 y
+   //     +8  f32 u
+   //     +12 f32 v
+   //
+   triangles_tex_uv_flat_32_alpha_sdf.drawTrianglesTexUVFlatVBO32AlphaSDF(_vboId,
+                                                                          _byteOffset,
+                                                                          _numVerts,
+                                                                          mvp_matrix,
+                                                                          fill_r, fill_g, fill_b, fill_a * global_a
+                                                                          );
 }
 
 void YAC_CALL sdvg_DrawLineStripFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -3985,6 +4004,17 @@ sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha(sUI _numVertices) {
    return loc_BeginTexturedGouraudTriangleStrip(_numVertices, &triangles_tex_uv_gouraud_32_alpha);
 }
 
+sBool YAC_CALL sdvg_BeginTexturedTrianglesAlphaSDF(sUI _numVertices) {
+   //
+   // VBO vertex format (16 bytes per vertex):
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  f32 x
+   //     +12 f32 y
+   //
+   return loc_BeginTexturedTriangles(_numVertices, &triangles_tex_uv_flat_32_alpha_sdf);
+}
+
 sBool YAC_CALL sdvg_BeginLineStrip(sUI _numPoints) {
    current_draw_mode = DRAW_MODE_LINE_STRIP;
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
@@ -4886,4 +4916,3 @@ sUI _sdvg_ARGBToHSVA(sU32 _c32, YAC_Object *_retH, YAC_Object *_retS, YAC_Object
    return 0u;
 }
 #endif // SHADERVG_SCRIPT_API
-
