@@ -36,6 +36,15 @@ String outPrefix = "out/";
 String ttfPathName;
 int styleFlags;
 int fontSize;
+boolean bSDF;
+
+// int sdfRadius = 16;
+// float sdfMaxDist = sdfRadius - 2;
+
+int sdfRadius = 12;
+float sdfMaxDist = sdfRadius - 1;
+
+// // // float sdfMaxDist = sqrt(sdfRadius*sdfRadius + sdfRadius*sdfRadius);
 
 String fontName = "default_30";
 
@@ -44,8 +53,11 @@ struct sdvg_font_t {
    sS16 height;
    sS16 ascender;
    sS16 descender;
+   sS16 underline_position;   // *64
+   sS16 underline_thickness;  // *64
    sU16 first_glyph;
    sU16 num_glyphs;
+   sU16 sdf_radius;
 };
 
 struct sdvg_glyph_t {
@@ -63,11 +75,6 @@ function Usage() {
    trace "Usage: trks font_convert <font.ttf> <fontName> <normal|bold> <size>";
    exit(10);
 }
-
-// UI.ConfigureHiDPI();
-UI.SetEnableFontSmoothing(true);
-UI.Initialize(Arguments);
-FT2Face.SetDefaultTextureSize2f(1024,2048);
 
 if(Arguments.numElements >= 1)
 {
@@ -109,13 +116,18 @@ if(Arguments.numElements >= 1)
                if(Arguments.numElements >= 4)
                {
                   fontSize = Arguments[3];
-                  if(4 <= fontSize <= 120)
+                  if(4 <= fontSize <= 200)
                   {
                      // ok
+
+                     if(Arguments.numElements >= 5)
+                     {
+                        bSDF = ("sdf" == Arguments[4]);
+                     }
                   }
                   else
                   {
-                     trace "[---] font size out of range (expect=4..120, have="+fontSize+")";
+                     trace "[---] font size out of range (expect=4..200, have="+fontSize+")";
                      Usage();
                   }
                }
@@ -150,11 +162,23 @@ else
    Usage();
 }
 
+if(bSDF)
+{
+   trace "[...] sdfRadius="+sdfRadius+" sdfMaxDist="+sdfMaxDist;
+}
+
+// UI.ConfigureHiDPI();
+UI.SetEnableFontSmoothing(!bSDF);
+UI.Initialize(Arguments);
+FT2Face.SetDefaultTextureSize2f(bSDF ? 2048 : 1024, bSDF ? 4096 : 2048);
+
 String styleName = Font.GetStyleFlagsStringFor(styleFlags);
 if("normal" == styleName) styleName="";
 String fullFontName <= fontName+" "+styleName+" "+fontSize;
 fullFontName.replace("  ", " ");
 String cFontName <= fullFontName.replace(" ","_");
+if(bSDF)
+   cFontName.append("_sdf");
 
 String pngOut = outPrefix+cFontName+".png";
 String cppOut = outPrefix+cFontName+".cpp";  // glyph c structs
@@ -195,7 +219,15 @@ int texH = face.findMaxGlyphY();
 Texture tex;
 tex.alloc(texFace.sx, texH, 1);
 
+Texture texSDF;
+if(bSDF)
+{
+   texSDF.alloc(texFace.sx, texFace.sy, 1);
+   texSDF.clear(0);
+}
+
 // (todo) add TKSTexture::scaleFromAlpha()
+// texFace.saveImage("t.png");
 int texY = 0;
 loop(texH)
 {
@@ -203,7 +235,7 @@ loop(texH)
    loop(texFace.sx)
    {
       int c32 = texFace.getXY32(texX, texY);
-      int c8 = (c32 >> 24) & 255;
+      int c8 = bSDF ? (c32 & 255) : ((c32 >> 24) & 255);
       c8 = argb(c8, c8, c8, c8);
       tex.setXY32(texX, texY, c8);
       texX++;
@@ -218,36 +250,100 @@ float descender   = face.getDescender();
 float ulPosition  = face.getUnderlinePosition();
 float ulThickness = face.getUnderlineThickness();
 
-File fBin;
-if(!fBin.openLocal(binOut, IOS_OUT))
-   die "failed to open \""+binOut+"\" for writing";
-
-String bufFontInfo;
-bufFontInfo.append("static const sdvg_font_info_t font_info_"+cFontName+" = {\n");  // 18 bytes
-bufFontInfo.append("  "+int(height)+"/*height*/,\n");
-bufFontInfo.append("  "+int(ascender)+"/*ascender*/,\n");
-bufFontInfo.append("  "+int(descender)+"/*descender*/\n");
-bufFontInfo.append("  "+int(ulPosition * 64)+"/*underline_position*/\n");
-bufFontInfo.append("  "+int(ulThickness * 64)+"/*underline_thickness*/\n");
-bufFontInfo.append("  "+int(firstGlyph)+"u/*first_glyph*/\n");
-bufFontInfo.append("  "+int(numGlyphs)+"u/*num_glyphs*/\n");
-bufFontInfo.append("};\n");
-
-fBin.i16 = int(height);
-fBin.i16 = int(ascender);
-fBin.i16 = int(descender);
-fBin.i16 = int(ulPosition * 64);
-fBin.i16 = int(ulThickness * 64);
-fBin.i16 = int(firstGlyph);
-fBin.i16 = int(numGlyphs);
-
 String bufGlyph;
 bufGlyph.append("static const sdvg_glyph_t glyphs_"+cFontName+"["+numGlyphs+"] = {\n");  // 14 bytes
+
+function UpdateSDF(FT2Glyph g) {
+   float y = 0;
+   loop(g.height + sdfRadius*2)
+   {
+      float x = 0;
+      loop(g.width + sdfRadius*2)
+      {
+         int c8 = texSDF.getXY32(g.bitmapx - sdfRadius + (x),
+                                 g.bitmapy - sdfRadius + (y)
+                                 );
+         if(255 != c8)
+         {
+            float minDist = 999999;
+            float iy = 0;
+            loop(g.height)
+            {
+               float ix = 0;
+               loop(g.width)
+               {
+                  int c8i = texSDF.getXY32(g.bitmapx + int(ix),
+                                           g.bitmapy + int(iy)
+                                           );
+                  if(255 == c8i)
+                  {
+                     float dx = ix + sdfRadius - x;
+                     float dy = iy + sdfRadius - y;
+                     // trace "xxx d=("+dx+";"+dy+")";
+                     float d = sqrt(dx*dx + dy*dy);
+                     if(d < minDist)
+                     {
+                        minDist = d;
+                        // minDist = mathMaxf(dx, dy);
+                     }
+                  }
+                  ix++;
+               }
+               iy++;
+            }
+            if(minDist < 999)
+            {
+               // trace "xxx p=("+x+","+y+") minDist="+minDist+"/"+sdfMaxDist;
+               minDist = 254 - ( (minDist * 254) / sdfMaxDist );
+               minDist = mathClampi(minDist, 0, 254);
+               texSDF.setXY32(g.bitmapx - sdfRadius + int(x),
+                              g.bitmapy - sdfRadius + int(y),
+                              argb(minDist, minDist, minDist, minDist)
+                              );
+            }
+            else
+            {
+               texSDF.setXY32(g.bitmapx - sdfRadius + (x),
+                              g.bitmapy - sdfRadius + (y),
+                              argb(minDist, minDist, minDist, 0)
+                              );
+            }
+         }
+         x++;
+      }
+      y++;
+   }
+}
+
+int sdfCurX = sdfRadius;
+int sdfCurY = sdfRadius;
+int sdfH = 0;
+int sdfRowH = 0;
+
+Buffer bufGlyphBin; bufGlyphBin.size = 1024*1024;
 
 int glyphIdx = firstGlyph;
 loop(numGlyphs)
 {
    FT2Glyph g <= face.getGlyph(glyphIdx);
+
+   if(bSDF)
+   {
+      // trace "xxx glyphIdx="+glyphIdx+"('"+tcchar(glyphIdx)+"') sdfCurX="+sdfCurX+" sdfCurY="+sdfCurY;
+      stdout ".";
+      if( (sdfCurX + g.width + sdfRadius) > texSDF.sx )
+      {
+         sdfCurY += sdfRowH;
+         sdfCurX = sdfRadius;
+      }
+      texSDF.copyRegion(tex, g.bitmapx, g.bitmapy, g.width, g.height, sdfCurX, sdfCurY);
+      g.bitmapx = sdfCurX;
+      g.bitmapy = sdfCurY;
+      UpdateSDF(g);
+      sdfCurX += g.width + sdfRadius*2;
+      sdfRowH = mathMaxi(sdfRowH, g.height+sdfRadius*2);
+      sdfH = mathMaxi(sdfH, g.bitmapy + g.height + sdfRadius);
+   }
 
    bufGlyph.append(" /* glyph "+glyphIdx+" (\'"+tcchar(glyphIdx)+"\') */\n");
    bufGlyph.append(" {\n");
@@ -260,17 +356,66 @@ loop(numGlyphs)
    bufGlyph.append("    "+int(g.advancex)+"/*advance_x*/\n");
    bufGlyph.append(" },\n");
 
-   fBin.i16 = int(g.bitmapx);   // +0
-   fBin.i16 = int(g.bitmapy);   // +2
-   fBin.i16 = int(g.width);     // +4
-   fBin.i16 = int(g.height);    // +6
-   fBin.i16 = int(g.offsetx);   // +8
-   fBin.i16 = int(g.offsety);   // +10
-   fBin.i16 = int(g.advancex);  // +12
+   bufGlyphBin.i16 = int(g.bitmapx);   // +0
+   bufGlyphBin.i16 = int(g.bitmapy);   // +2
+   bufGlyphBin.i16 = int(g.width);     // +4
+   bufGlyphBin.i16 = int(g.height);    // +6
+   bufGlyphBin.i16 = int(g.offsetx);   // +8
+   bufGlyphBin.i16 = int(g.offsety);   // +10
+   bufGlyphBin.i16 = int(g.advancex);  // +12
 
    glyphIdx++;
 }
 bufGlyph.append("};\n");
+
+if(bSDF)
+   stdout "\n";
+
+String bufFontInfo;
+bufFontInfo.append("static const sdvg_font_info_t font_info_"+cFontName+" = {\n");  // 18 bytes
+bufFontInfo.append("  "+int(height)+"/*height*/,\n");
+bufFontInfo.append("  "+int(ascender)+"/*ascender*/,\n");
+bufFontInfo.append("  "+int(descender)+"/*descender*/\n");
+bufFontInfo.append("  "+int(ulPosition * 64)+"/*underline_position*/,\n");
+bufFontInfo.append("  "+int(ulThickness * 64)+"/*underline_thickness*/,\n");
+bufFontInfo.append("  "+int(firstGlyph)+"u/*first_glyph*/,\n");
+bufFontInfo.append("  "+int(numGlyphs)+"u/*num_glyphs*/,\n");
+bufFontInfo.append("  "+int(bSDF ? sdfRadius : 0)+"u/*sdf_radius*/,\n");
+if(bSDF)
+{
+   bufFontInfo.append("  (1.0f / "+texSDF.sx+")/*us*/,\n");
+   bufFontInfo.append("  (1.0f / "+sdfH+")/*vs*/\n");
+}
+else
+{
+   bufFontInfo.append("  (1.0f / "+tex.sx+")/*us*/,\n");
+   bufFontInfo.append("  (1.0f / "+tex.sy+")/*vs*/\n");
+}
+bufFontInfo.append("};\n");
+
+File fBin;
+if(!fBin.openLocal(binOut, IOS_OUT))
+   die "failed to open \""+binOut+"\" for writing";
+
+fBin.i16 = int(height);
+fBin.i16 = int(ascender);
+fBin.i16 = int(descender);
+fBin.i16 = int(ulPosition * 64);
+fBin.i16 = int(ulThickness * 64);
+fBin.i16 = int(firstGlyph);
+fBin.i16 = int(numGlyphs);
+fBin.i16 = int(bSDF ? sdfRadius : 0);
+if(bSDF)
+{
+   fBin.f32 = (1.0f / texSDF.sx);
+   fBin.f32 = (1.0f / sdfH);
+}
+else
+{
+   fBin.f32 = (1.0f / tex.sx);
+   fBin.f32 = (1.0f / tex.sy);
+}
+fBin.writeBuffer(bufGlyphBin, 0, bufGlyphBin.offset);
 
 String bufFont;
 bufFont.append("sdvg_font_t font_"+cFontName+" = {\n");
@@ -283,8 +428,31 @@ if(b_debug) trace "[dbg] bufFontInfo="+bufFontInfo;
 if(b_debug) trace "[dbg] bufGlyph="+bufGlyph;
 if(b_debug) trace "[dbg] bufFont="+bufFont;
 
-tex.saveImage(pngOut);
-trace "[...] wrote \""+pngOut+"\" (w="+tex.sx+" h="+tex.sy+" bpp="+tex.z+")";
+if(bSDF)
+{
+   Texture texSDFClipY;
+   texSDFClipY.alloc(texSDF.sx, sdfH, 1);
+   texSDFClipY.copyRegion(texSDF, 0, 0, texSDF.sx, sdfH, 0, 0);
+   if(1)
+   {
+      Texture texSDFTmp; texSDFTmp.alloc(texSDFClipY.sx, texSDFClipY.sy, 1);
+      // texSDFTmp.simpleBlurX(texSDFClipY);
+      // texSDFClipY.simpleBlurY(texSDFTmp);
+      // texSDFClipY.saveImage(pngOut);
+      texSDFTmp.simpleBlur(texSDFClipY);
+      texSDFTmp.saveImage(pngOut);
+   }
+   else
+   {
+      // // texSDF.saveImage(pngOut);
+      texSDFClipY.saveImage(pngOut);
+   }
+}
+else
+{
+   tex.saveImage(pngOut);
+}
+trace "[...] wrote \""+pngOut+"\" (w="+tex.sx+" h="+tex.sy+" bpp="+tex.z+" => "+(int((tex.sx*tex.sy*tex.z*100)/1024.0)/100.0)+"k)";
 
 String buf;
 buf.append(bufFontInfo);
@@ -295,7 +463,8 @@ buf.append(bufFont);
 buf.saveLocal(cppOut);
 trace "[...] wrote \""+cppOut+"\"";
 
+int fBinSz = fBin.offset;
 fBin.close();
-trace "[...] wrote "+binOut+"\"";
+trace "[...] wrote "+binOut+"\" (sz="+(int((fBinSz*100)/1024.0)/100.0)+"k)";
 
 UI.Exit();

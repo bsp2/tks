@@ -2,10 +2,13 @@ static const sdvg_font_info_t font_info_default_bold_26 = {
   31/*height*/,
   27/*ascender*/,
   -6/*descender*/
-  -198/*underline_position*/
-  163/*underline_thickness*/
-  32u/*first_glyph*/
-  96u/*num_glyphs*/
+  -198/*underline_position*/,
+  163/*underline_thickness*/,
+  32u/*first_glyph*/,
+  96u/*num_glyphs*/,
+  0u/*sdf_radius*/,
+  (1.0f / 1024)/*us*/,
+  (1.0f / 106)/*vs*/
 };
 
 static const sdvg_glyph_t glyphs_default_bold_26[96] = {

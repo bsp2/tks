@@ -2,10 +2,13 @@ static const sdvg_font_info_t font_info_default_30 = {
   36/*height*/,
   31/*ascender*/,
   -7/*descender*/
-  -220/*underline_position*/
-  121/*underline_thickness*/
-  32u/*first_glyph*/
-  96u/*num_glyphs*/
+  -220/*underline_position*/,
+  121/*underline_thickness*/,
+  32u/*first_glyph*/,
+  96u/*num_glyphs*/,
+  0u/*sdf_radius*/,
+  (1.0f / 1024)/*us*/,
+  (1.0f / 122)/*vs*/
 };
 
 static const sdvg_glyph_t glyphs_default_30[96] = {
