@@ -1764,7 +1764,7 @@ Begin preparation or rendering of alpha-channel-only textured, gouraud shaded tr
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedTrianglesAlphaSDF,int numVertices:boolean
-Begin preparation or rendering of alpha-SDF_channel-only textured triangles
+Begin preparation or rendering of alpha-SDF-channel-only textured triangles
 
 @arg numVertices Number of vertices
 */
