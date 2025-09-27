@@ -95,8 +95,6 @@ sBool YAC_CALL sdvg_InitFont(sdvg_font_t *_font,
       // _font->data.deleteme = YAC_FALSE;
       _font->tex_w    = _texW;
       _font->tex_h    = _texH;
-      _font->ob_tex_w = (1.0f / _font->tex_w);
-      _font->ob_tex_h = (1.0f / _font->tex_h);
       _font->tex_data = _texData;
 
       // Succeeded
@@ -336,9 +334,13 @@ void YAC_CALL sdvg_DrawText(const char *_text, sF32 _x, sF32 _y) {
          sF32 cy = _y + shadervg_cur_font->info->ascender;
          sUI charIdx = 0u;
          sUI quadIdx = 0u;
-         const sF32 us = shadervg_cur_font->ob_tex_w;
-         const sF32 vs = shadervg_cur_font->ob_tex_h;
-         (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+         const sF32 us = shadervg_cur_font->info->us;
+         const sF32 vs = shadervg_cur_font->info->vs;
+         const sF32 sdfRadius = sF32(shadervg_cur_font->info->sdf_radius);
+         if(sdfRadius > 0.0f)
+            (void)sdvg_BeginTexturedTrianglesAlphaSDF(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+         else
+            (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
          for(;;)
          {
             sUI c = sUI(_text[charIdx++]);
@@ -358,21 +360,24 @@ void YAC_CALL sdvg_DrawText(const char *_text, sF32 _x, sF32 _y) {
                      {
                         sdvg_End();
 
-                        (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+                        if(sdfRadius > 0.0f)
+                           (void)sdvg_BeginTexturedTrianglesAlphaSDF(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+                        else
+                           (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
                         quadIdx = 0u;
                      }
 
                      const sdvg_glyph_t *g = &shadervg_cur_font->glyphs[c];
 
-                     const sF32 ul = g->x * us;
-                     const sF32 ur = (g->x + g->w) * us;
-                     const sF32 vt = g->y * vs;
-                     const sF32 vb = (g->y + g->h) * vs;
+                     sF32 ul = (g->x          - sdfRadius) * us;
+                     sF32 ur = ((g->x + g->w) + sdfRadius) * us;
+                     sF32 vt = (g->y          - sdfRadius) * vs;
+                     sF32 vb = ((g->y + g->h) + sdfRadius) * vs;
 
-                     const sF32 xl = cx + g->offset_x;
-                     const sF32 xr = xl + g->w;
-                     const sF32 yt = cy - g->offset_y;
-                     const sF32 yb = yt + g->h;
+                     sF32 xl = cx + g->offset_x - sdfRadius;
+                     sF32 xr = xl + g->w        + sdfRadius*2;
+                     sF32 yt = cy - g->offset_y - sdfRadius;
+                     sF32 yb = yt + g->h        + sdfRadius*2;
 
                      // Dprintf("xxx char=\'%c\' yt=%f yb=%f w=%d h=%d off=(%d, %d)\n", char(c+shadervg_cur_font->info->first_glyph), yt, yb, g->w, g->h, g->offset_x, g->offset_y);
 
@@ -427,13 +432,17 @@ void YAC_CALL sdvg_DrawTextClipped(const char *_text, sF32 _x, sF32 _y, sF32 _cl
       {
          _x += 0.375f;
          _y += 0.375f;
-         sF32 cx = _x;
-         sF32 cy = _y + shadervg_cur_font->info->ascender;
          sUI charIdx = 0u;
          sUI quadIdx = 0u;
-         const sF32 us = shadervg_cur_font->ob_tex_w;
-         const sF32 vs = shadervg_cur_font->ob_tex_h;
-         (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+         const sF32 us = shadervg_cur_font->info->us;
+         const sF32 vs = shadervg_cur_font->info->vs;
+         const sF32 sdfRadius = sF32(shadervg_cur_font->info->sdf_radius);
+         if(sdfRadius > 0.0f)
+            (void)sdvg_BeginTexturedTrianglesAlphaSDF(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+         else
+            (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+         sF32 cx = _x;
+         sF32 cy = _y + shadervg_cur_font->info->ascender;
          for(;;)
          {
             sUI c = sUI(_text[charIdx++]);
@@ -453,21 +462,24 @@ void YAC_CALL sdvg_DrawTextClipped(const char *_text, sF32 _x, sF32 _y, sF32 _cl
                      {
                         sdvg_End();
 
-                        (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+                        if(sdfRadius > 0.0f)
+                           (void)sdvg_BeginTexturedTrianglesAlphaSDF(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
+                        else
+                           (void)sdvg_BeginTexturedTrianglesAlpha(SHADERVG_TEXT_BATCH_SIZE * (2u * 3u));
                         quadIdx = 0u;
                      }
 
                      const sdvg_glyph_t *g = &shadervg_cur_font->glyphs[c];
 
-                     sF32 ul = g->x;
-                     sF32 ur = (g->x + g->w);
-                     sF32 vt = g->y;
-                     sF32 vb = (g->y + g->h);
+                     sF32 ul = g->x          - sdfRadius;
+                     sF32 ur = (g->x + g->w) + sdfRadius;
+                     sF32 vt = g->y          - sdfRadius;
+                     sF32 vb = (g->y + g->h) + sdfRadius;
 
-                     sF32 xl = cx + g->offset_x;
-                     sF32 xr = xl + g->w;
-                     sF32 yt = cy - g->offset_y;
-                     sF32 yb = yt + g->h;
+                     sF32 xl = cx + g->offset_x - sdfRadius;
+                     sF32 xr = xl + g->w        + sdfRadius*2;
+                     sF32 yt = cy - g->offset_y - sdfRadius;
+                     sF32 yb = yt + g->h        + sdfRadius*2;
 
                      if(xr >= _clipLeft && xl < _clipRight &&
                         yb >= _clipTop  && yt < _clipBottom

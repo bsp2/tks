@@ -32,7 +32,7 @@ YG("shadervg");
 #ifdef SHADERVG_TEXT
 #pragma pack(push, 2)
 
-typedef struct sdvg_font_info_s {  // 14 bytes (ROM)
+typedef struct sdvg_font_info_s {  // 24 bytes (ROM)
    sS16 height;
    sS16 ascender;
    sS16 descender;
@@ -40,6 +40,9 @@ typedef struct sdvg_font_info_s {  // 14 bytes (ROM)
    sS16 underline_thickness;  // *64
    sU16 first_glyph;
    sU16 num_glyphs;
+   sU16 sdf_radius;
+   sF32 us;  // 1/orig_tex_w
+   sF32 vs;  // 1/orig_tex_h
 } sdvg_font_info_t;
 
 typedef struct sdvg_glyph_s {  // 14 bytes (ROM)
