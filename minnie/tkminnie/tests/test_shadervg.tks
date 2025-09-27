@@ -140,7 +140,9 @@ int RENDER_TEXT_4_UL                                   = 56;
 int RENDER_TEXT_5_UL_CLIP                              = 57;
 int RENDER_TEXT_6_ACCEL                                = 58;
 int RENDER_TEXT_7_ACCEL_CLIP                           = 59;
-int NUM_RENDER_MODES                                   = 60;  // UP/DOWN
+int RENDER_TEXT_8_ZOOM                                 = 60;
+int RENDER_TEXT_9_ZOOM_SDF                             = 61;
+int NUM_RENDER_MODES                                   = 62;  // UP/DOWN
 
 int render_mode = RENDER_RECT_FILL_AA;
 // int render_mode = RENDER_ELLIPSE_FILL_AA;
@@ -235,6 +237,8 @@ StringArray mode_names = [/*  0 */ "rect_fill_aa",
                           /* 57 */ "text_5_ul_clip",
                           /* 58 */ "text_6_accel",
                           /* 59 */ "text_7_accel_clip",
+                          /* 60 */ "text_8_zoom",
+                          /* 61 */ "text_9_zoom_sdf",
                           ];
 
 int tex_id;
@@ -246,6 +250,14 @@ Texture tex_alpha_data;
 Texture       font_tex;
 Buffer        font_bin;
 ShaderVG_Font font;
+
+Texture       font_zoom_tex;
+Buffer        font_zoom_bin;
+ShaderVG_Font font_zoom;
+
+Texture       font_zoom_sdf_tex;
+Buffer        font_zoom_sdf_bin;
+ShaderVG_Font font_zoom_sdf;
 
 Buffer buf_vbo; buf_vbo.size = 16384;
 int    buf_vbo_id;
@@ -1499,6 +1511,42 @@ function TestText_7_Accel_Clip() {
    sdvg_UnbindFont();
 }
 
+// ---------------------------------------------------------------------------- TestText_8_Zoom
+function TestText_8_Zoom(boolean _bSDF) {
+   sdvg_BindFont(_bSDF ? font_zoom_sdf : font_zoom, true/*bFilter*/);
+   sdvg_EnableBlending();
+   sdvg_SetColorARGB(#ffffffff);
+
+   String s <= "hello, world.\nmulti-line\ntext-test.";
+
+   Integer minX, maxX, minY, maxY;
+   sdvg_TextBBox(_bSDF ? font_zoom_sdf : font_zoom, s, minX, maxX, minY, maxY);
+   int w = (maxX - minX);
+   int h = (maxY - minY);
+
+   float x = w * -0.5;
+   float y = h * -0.5;
+
+   float zoom = sin(ang_x*0.5) * 0.5 + 0.5;
+   zoom = (1.0 + zoom * 8);
+   // trace "ang_x = "+ang_x+"f;";
+   // trace "ang_w = "+ang_w+"f;";
+
+   float g = 20.0*8;
+   float aspect = (float(Viewport.width) / Viewport.height);
+   Matrix4f mProj;
+   mProj.initOrtho(-g * zoom * aspect, g * zoom * aspect,
+                   g * zoom/*bottom*/,  -g * zoom/*top*/,
+                   0.0f/*znear*/,  10.0f/*zfar*/
+                   );
+   mProj.rotatef(0.0f, 0.0f, sin(ang_h*4.0)*(PI*0.25));
+   sdvg_SetTransform(mProj);
+
+   sdvg_DrawText(s, x - minX, y - minY);
+
+   sdvg_UnbindFont();
+}
+
 // ---------------------------------------------------------------------------- onDraw
 function onDraw() {
 
@@ -1911,6 +1959,14 @@ function onDraw() {
       case RENDER_TEXT_7_ACCEL_CLIP:
          TestText_7_Accel_Clip();
          break;
+
+      case RENDER_TEXT_8_ZOOM:
+         TestText_8_Zoom(false/*bSDF*/);
+         break;
+
+      case RENDER_TEXT_9_ZOOM_SDF:
+         TestText_8_Zoom(true/*bSDF*/);
+         break;
    }
 
    sdvg_EndFrame();
@@ -2218,6 +2274,8 @@ function onOpen() {
    custom_vbo_id_3 = 0;
 
    sdvg_FontOnOpen(font);
+   sdvg_FontOnOpen(font_zoom);
+   sdvg_FontOnOpen(font_zoom_sdf);
 }
 
 // ---------------------------------------------------------------------------- onClose
@@ -2269,23 +2327,23 @@ function onClose() {
 }
 
 // ---------------------------------------------------------------------------- LoadFont
-function LoadFont(String _pathPrefix) {
+function LoadFont(String _pathPrefix, ShaderVG_Font _font, Buffer _fontBin, Texture _fontTex) {
    File fBin;
    if(fBin.openLocal(_pathPrefix+".bin", IOS_IN))
    {
-      fBin.readBuffer(font_bin, 0, fBin.size, true/*bResize*/);
+      fBin.readBuffer(_fontBin, 0, fBin.size, true/*bResize*/);
       fBin.close();
-      font_bin.offset = font_bin.size;
+      _fontBin.offset = _fontBin.size;
 
-      if(font_tex.loadLocalImage(_pathPrefix+".png", 0,0,1))
+      if(_fontTex.loadLocalImage(_pathPrefix+".png", 0,0,1))
       {
-         if(sdvg_InitFont(font, font_bin, font_tex.sx, font_tex.sy, font_tex))
+         if(sdvg_InitFont(_font, _fontBin, _fontTex.sx, _fontTex.sy, _fontTex))
          {
             trace "[...] LoadFont: OK, font \""+_pathPrefix+"\" loaded";
             if(0)
             {
-               trace "[trc]   StringWidth()="+sdvg_TextWidth(font, "hello, world.");
-               trace "[trc]   StringHeight()="+sdvg_TextHeight(font, "hello, world.");
+               trace "[trc]   StringWidth()="+sdvg_TextWidth(_font, "hello, world.");
+               trace "[trc]   StringHeight()="+sdvg_TextHeight(_font, "hello, world.");
             }
          }
          else
@@ -2319,8 +2377,10 @@ function main() {
    tex_alpha_data.alloc(tex_data.sx, tex_data.sy, 1);
    tex_alpha_data.scaleFrom(tex_data);
 
-   // Load font
-   LoadFont("../../tools/font_convert/out/default_30");
+   // Load fonts
+   LoadFont("../../tools/font_convert/out/default_30",      font,          font_bin,          font_tex);
+   LoadFont("../../tools/font_convert/out/default_128",     font_zoom,     font_zoom_bin,     font_zoom_tex);
+   LoadFont("../../tools/font_convert/out/default_128_sdf", font_zoom_sdf, font_zoom_sdf_bin, font_zoom_sdf_tex);
 
    use callbacks;
 
