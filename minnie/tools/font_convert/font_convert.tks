@@ -210,14 +210,66 @@ if(null == fontRes)
    die "failed to resolve fontRes";
 
 FT2Face face <= fontRes.getFT2Face();
+FT2Glyph *g;
+int glyphIdx;
 
 if(b_debug) trace "[dbg] fontRes="+#(fontRes);
 if(b_debug) trace "[dbg] face="+#(face);
 
 Texture texFace <= face.getTexture(0);
-int texH = face.findMaxGlyphY();
+// // int texH = face.findMaxGlyphY();
+Texture tex8;
+tex8.alloc(texFace.sx, texFace.sy, 1);
+tex8.clear(0);
+
+int curX = pad;
+int curY = pad;
+int pad = 4;
+int texH = 0;
+int rowH = 0;
+glyphIdx = firstGlyph;
+loop(numGlyphs)
+{
+   g <= face.getGlyph(glyphIdx);
+
+   if(curX + g.width + pad > tex8.sx)
+   {
+      curX = pad;
+      curY += rowH;
+      rowH = 0;
+   }
+
+   // (todo) add TKSTexture::scaleFromAlpha()
+   // texFace.saveImage("t.png");
+   int texY = 0;
+   loop(g.height)
+   {
+      int texX = 0;
+      loop(g.width)
+      {
+         int c32 = texFace.getXY32(g.bitmapx + texX, g.bitmapy + texY);
+         int c8 = bSDF ? (c32 & 255) : ((c32 >> 24) & 255);
+         c8 = argb(c8, c8, c8, c8);
+         tex8.setXY32(curX + texX, curY + texY, c8);
+         texX++;
+      }
+      texY++;
+   }
+
+   g.bitmapx = curX;
+   g.bitmapy = curY;
+
+   rowH = mathMaxi(rowH, g.height + pad*2);
+   texH = mathMaxi(texH, curY + g.height + pad);
+
+   curX += g.width + pad*2;
+
+   glyphIdx++;
+}
+
 Texture tex;
-tex.alloc(texFace.sx, texH, 1);
+tex.alloc(tex8.sx, texH, 1);
+tex.copyRegion(tex8, 0, 0, tex8.sx, texH, 0, 0);
 
 Texture texSDF;
 if(bSDF)
@@ -226,22 +278,6 @@ if(bSDF)
    texSDF.clear(0);
 }
 
-// (todo) add TKSTexture::scaleFromAlpha()
-// texFace.saveImage("t.png");
-int texY = 0;
-loop(texH)
-{
-   int texX = 0;
-   loop(texFace.sx)
-   {
-      int c32 = texFace.getXY32(texX, texY);
-      int c8 = bSDF ? (c32 & 255) : ((c32 >> 24) & 255);
-      c8 = argb(c8, c8, c8, c8);
-      tex.setXY32(texX, texY, c8);
-      texX++;
-   }
-   texY++;
-}
 if(b_debug) trace "[dbg] tex="+#(tex);
 
 float height      = face.getHeight();
@@ -322,10 +358,10 @@ int sdfRowH = 0;
 
 Buffer bufGlyphBin; bufGlyphBin.size = 1024*1024;
 
-int glyphIdx = firstGlyph;
+glyphIdx = firstGlyph;
 loop(numGlyphs)
 {
-   FT2Glyph g <= face.getGlyph(glyphIdx);
+   g <= face.getGlyph(glyphIdx);
 
    if(bSDF)
    {
@@ -335,6 +371,7 @@ loop(numGlyphs)
       {
          sdfCurY += sdfRowH;
          sdfCurX = sdfRadius;
+         sdfRowH = 0;
       }
       texSDF.copyRegion(tex, g.bitmapx, g.bitmapy, g.width, g.height, sdfCurX, sdfCurY);
       g.bitmapx = sdfCurX;
