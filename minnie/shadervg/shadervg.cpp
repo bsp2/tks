@@ -731,7 +731,7 @@ sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data
 #ifdef SHADERVG_GLES
          intFormat = GL_ALPHA;
          pixFormat = GL_ALPHA;
-         type      = GL_UNSIGN#ED_BYTE;
+         type      = GL_UNSIGNED_BYTE;
 #else
          if(sdvg_b_glcore)
          {
@@ -828,6 +828,113 @@ sUI YAC_CALL _sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, YAC_Object *_dat
    }
    texId = sdvg_CreateTexture2D(_texfmt, _w, _h, data, dataSz);
    return texId;
+}
+#endif // SHADERVG_SCRIPT_API
+
+void YAC_CALL sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data, sUI _dataSz) {
+   // GLenum intFormat;
+   GLenum pixFormat;
+   GLenum type = GL_NONE;
+   sUI bytesPerPixel;
+   switch(_texfmt)
+   {
+      default:
+         Dsdvg_errorprintf("[---] sdvg_UpdateTexture2D: invalid texfmt=%u\n", _texfmt);
+         break;
+
+      case SDVG_TEXFMT_ALPHA8:
+         bytesPerPixel = 1u;
+#ifdef SHADERVG_GLES
+         // intFormat = GL_ALPHA;
+         pixFormat = GL_ALPHA;
+         type      = GL_UNSIGNED_BYTE;
+#else
+         if(sdvg_b_glcore)
+         {
+            // intFormat = GL_R8;
+            pixFormat = GL_RED;
+            type      = GL_UNSIGNED_BYTE;
+         }
+#endif // SHADERVG_GLES
+         break;
+
+      case SDVG_TEXFMT_RGB565:
+         bytesPerPixel = 2u;
+#ifdef SHADERVG_GLES
+         // intFormat = GL_RGB;
+         pixFormat = GL_RGB;
+         type = GL_UNSIGNED_SHORT_5_6_5;
+#else
+         // intFormat = GL_RGB5;
+         pixFormat = GL_BGRA;
+         type      = GL_UNSIGNED_SHORT; //GL_5_6_5;
+#endif // SHADERVG_GLES
+         break;
+
+      case SDVG_TEXFMT_resvd_3:
+         break;
+
+      case SDVG_TEXFMT_BGRA8888:
+         bytesPerPixel = 4u;
+#ifdef SHADERVG_GLES
+         // intFormat = GL_BGRA8_EXT;
+         pixFormat = GL_BGRA8_EXT;
+         type      = GL_UNSIGNED_BYTE;
+#else
+         // intFormat = GL_RGBA;
+         pixFormat = GL_BGRA_EXT;
+         type      = GL_UNSIGNED_BYTE;
+#endif // SHADERVG_GLES
+         break;
+
+      case SDVG_TEXFMT_RGBA8888:
+         bytesPerPixel = 4u;
+         // intFormat = GL_RGBA;
+         pixFormat = GL_RGBA;
+         type      = GL_UNSIGNED_BYTE;
+         break;
+   }
+
+   if(GL_NONE != type)
+   {
+      const sUI reqSz = (bytesPerPixel * _w * _h);
+      if(_dataSz >= reqSz)
+      {
+         Dsdvg_glcall(glPixelStorei(GL_UNPACK_ALIGNMENT, bytesPerPixel));
+         Dsdvg_glcall(glTexSubImage2D(GL_TEXTURE_2D,
+                                      0/*level*/,
+                                      0/*xoffset*/,
+                                      0/*yoffset*/,
+                                      _w,
+                                      _h,
+                                      pixFormat,
+                                      type,
+                                      _data
+                                      )
+                      );
+      }
+      else
+      {
+         Dsdvg_errorprintf("[---] sdvg_UpdateTexture2D: insufficient dataSz (expect=%u have=%u) (texfmt=%u w=%u h=%u)\n", reqSz, _dataSz, _texfmt, _w, _h);
+      }
+   }
+   else
+   {
+      Dsdvg_errorprintf("[---] sdvg_UpdateTexture2D: invalid texfmt=%u (w=%u h=%u)\n", _texfmt, _w, _h);
+   }
+}
+
+#ifdef SHADERVG_SCRIPT_API
+void YAC_CALL _sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, YAC_Object *_data) {
+   if(YAC_VALID(_data))
+   {
+      const void *data = (const void*)_data->yacArrayGetPointer();
+      const sUI dataBytesPerPixel = _data->yacArrayGetElementByteSize();
+      const sUI dataW = _data->yacArrayGetWidth();
+      const sUI dataH = _data->yacArrayGetHeight();
+      sUI dataSz = dataBytesPerPixel * dataW * dataH;
+      sdvg_UpdateTexture2D(_texfmt, _w, _h, data, dataSz);
+   }
 }
 #endif // SHADERVG_SCRIPT_API
 
@@ -4916,6 +5023,64 @@ sU8 sdvg_ARGBToHSVA(sU32 _c32, sF32 *_retH, sF32 *_retS, sF32 *_retV) {
    return (_c32 >> 24) & 255u;
 }
 
+void YAC_CALL sdvg_GradientToTexture(sU32 *_dst, sU32 _dstW,
+                                     const sU32 *_colors, sU32 _numColors,
+                                     const sSI *_starts, sUI _numStarts,
+                                     sBool _bSmoothStep
+                                     ) {
+   // Dprintf("xxx sdvg_GradientToTexture: dstW=%u numColors=%U numStarts=%u\n", _dstW, _numColors, _numStarts);
+   if(_dstW > 0u && _numColors >= 2u && _numStarts >= _numColors)
+   {
+      const sSI gradientSize = _starts[_numStarts - 1u];
+      const sF32 gradientToTexScl = sF32(_dstW) / gradientSize;
+      sUI num = sMIN(_numStarts, _numColors);
+      sSI texPosPrev = 0u;
+      sU32 c32Prev = _colors[0];
+      sSI startPrev = _starts[0];
+      sUI gradientIdx = 1u;
+      while(gradientIdx < num)
+      {
+         // Dprintf("xxx gradientIdx=%u num=%u gradientSize=%d\n", gradientIdx, num, gradientSize);
+         sU32 c32 = _colors[gradientIdx];
+         sSI start = _starts[gradientIdx];
+         sSI texPos = sSI(start * gradientToTexScl + 0.5f);
+         sSI spanSz = start - startPrev;
+         // Dprintf("xxx gradientIdx=%u c32=#%08x start=%d texPos=%d spanSz=%d\n", gradientIdx, c32, start, texPos, spanSz);
+
+         if(spanSz > 0)
+         {
+            sSI texNum = texPos - texPosPrev;
+            sSI texCur = texPosPrev;
+            if(texPos >= 0 && texNum > 0)
+            {
+               sF32 t = 0.0f;
+               sF32 tStep = 1.0f / sF32(texNum);
+               while(texCur < texPos)
+               {
+                  // Dprintf("xxx texCur=%d texW=%U\n", texCur, _dstW);
+                  if(_bSmoothStep)
+                  {
+                     sF32 u = t * t * (3.0f - 2.0f * t);
+                     _dst[texCur++] = sdvg_MixARGBf(c32Prev, c32, u);
+                  }
+                  else
+                  {
+                     _dst[texCur++] = sdvg_MixARGBf(c32Prev, c32, t);
+                  }
+                  t += tStep;
+               }
+            }
+         }
+
+         // Next gradient element
+         texPosPrev = texPos;
+         c32Prev = c32;
+         startPrev = start;
+         gradientIdx++;
+      }
+   }
+}
+
 #ifdef SHADERVG_SCRIPT_API
 sU32 _sdvg_ARGB(sUI _a, sUI _r, sUI _g, sUI _b) {
    return sdvg_ARGB(sU8(_a), sU8(_r), sU8(_g), sU8(_b));
@@ -4956,4 +5121,37 @@ sUI _sdvg_ARGBToHSVA(sU32 _c32, YAC_Object *_retH, YAC_Object *_retS, YAC_Object
    }
    return 0u;
 }
+
+void YAC_CALL _sdvg_GradientToTexture (YAC_Object *_tex, YAC_Object *_colors, YAC_Object *_starts, sBool _bSmoothStep) {
+   if(YAC_VALID(_tex))
+   {
+      if(YAC_TYPE_INT == _tex->yacArrayGetElementType() && sizeof(sU32) == _tex->yacArrayGetElementByteSize())
+      {
+         sU32 *texData = (sU32*)_tex->yacArrayGetPointer();
+
+         if(YAC_VALID(_colors))
+         {
+            const sU32 *colorData = (sU32*)_colors->yacArrayGetPointer();
+
+            if(YAC_TYPE_INT == _colors->yacArrayGetElementType() && sizeof(sU32) == _colors->yacArrayGetElementByteSize())
+            {
+               const sSI *startData = (sSI*)_starts->yacArrayGetPointer();
+
+               if(YAC_VALID(_starts))
+               {
+                  if(YAC_TYPE_INT == _starts->yacArrayGetElementType() && sizeof(sSI) == _starts->yacArrayGetElementByteSize())
+                  {
+                     const sUI texW = _tex->yacArrayGetWidth();
+                     const sUI numColors = _colors->yacArrayGetNumElements();
+                     const sUI numStarts = _starts->yacArrayGetNumElements();
+
+                     sdvg_GradientToTexture(texData, texW, colorData, numColors, startData, numStarts, _bSmoothStep);
+                  }
+               }
+            }
+         }
+      }
+   }
+}
+
 #endif // SHADERVG_SCRIPT_API

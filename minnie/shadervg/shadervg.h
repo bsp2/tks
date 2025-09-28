@@ -829,6 +829,7 @@ Destroy framebuffer object
 YF void YAC_CALL sdvg_DestroyFBO (sUI _fboIdx);
 
 // -------- texturing --------
+
 /* @function sdvg_CreateTexture2D,int texFmt,int w,int h,Object data:int
 Create and allocate 2D texture
 @arg texFmt  §SDVG_TEXFMT_ALPHA8, §SDVG_TEXFMT_RGB565, §SDVG_TEXFMT_BGRA8888, §SDVG_TEXFMT_ARGB32, §SDVG_TEXFMT_RGBA8888, §
@@ -837,6 +838,7 @@ Create and allocate 2D texture
 @arg data Initial pixel data or null (only reserve memory)
 @return OpenGL texture id
 
+@see sdvg_UpdateTexture2D
 @see sdvg_BindMultiTexture2D
 @see sdvg_UnbindMultiTexture2D
 @see sdvg_BindTexture2D
@@ -848,10 +850,29 @@ sUI YAC_CALL sdvg_CreateTexture2D (sUI _texfmt, sUI _w, sUI _h, const void *_dat
 YF sUI YAC_CALL _sdvg_CreateTexture2D (sUI _texfmt, sUI _w, sUI _h, YAC_Object *_data);
 #endif // SHADERVG_SCRIPT_API
 
+/* @function sdvg_UpdateTexture2D,int texFmt,int w,int h,Object data
+Update contents of currently bound 2D texture
+@arg texFmt  §SDVG_TEXFMT_ALPHA8, §SDVG_TEXFMT_RGB565, §SDVG_TEXFMT_BGRA8888, §SDVG_TEXFMT_ARGB32, §SDVG_TEXFMT_RGBA8888, §
+@arg w Width
+@arg h Height
+@arg data New pixel data
+
+@see sdvg_BindMultiTexture2D
+@see sdvg_UnbindMultiTexture2D
+@see sdvg_BindTexture2D
+@see sdvg_UnbindTexture2D
+@see sdvg_DestroyTexture2D
+*/
+void YAC_CALL sdvg_UpdateTexture2D (sUI _texfmt, sUI _w, sUI _h, const void *_data, sUI _dataSz);
+#ifdef SHADERVG_SCRIPT_API
+YF void YAC_CALL _sdvg_UpdateTexture2D (sUI _texfmt, sUI _w, sUI _h, YAC_Object *_data);
+#endif // SHADERVG_SCRIPT_API
+
 /* @function sdvg_BindMultiTexture2D,int unitIdx,int texId,boolean bRepeat,boolean bFilter
 Bind texture to given texture unit
 
 @see sdvg_CreateTexture2D
+@see sdvg_UpdateTexture2D
 @see sdvg_UnbindMultiTexture2D
 @see sdvg_BindTexture2D
 @see sdvg_UnbindTexture2D
@@ -863,6 +884,7 @@ YF void YAC_CALL sdvg_BindMultiTexture2D (sUI _unitIdx, sUI _texId, sBool _bRepe
 Unbind texture from given texture unit
 
 @see sdvg_CreateTexture2D
+@see sdvg_UpdateTexture2D
 @see sdvg_BindMultiTexture2D
 @see sdvg_BindTexture2D
 @see sdvg_UnbindTexture2D
@@ -874,6 +896,7 @@ YF void YAC_CALL sdvg_UnbindMultiTexture2D (sUI _unitIdx);
 Bind texture to default texture unit
 
 @see sdvg_CreateTexture2D
+@see sdvg_UpdateTexture2D
 @see sdvg_BindMultiTexture2D
 @see sdvg_UnbindMultiTexture2D
 @see sdvg_UnbindTexture2D
@@ -885,6 +908,7 @@ YF void YAC_CALL sdvg_BindTexture2D (sUI _texId, sBool _bRepeat, sBool _bFilter)
 Unbind texture from default texture unit
 
 @see sdvg_CreateTexture2D
+@see sdvg_UpdateTexture2D
 @see sdvg_BindMultiTexture2D
 @see sdvg_UnbindMultiTexture2D
 @see sdvg_BindTexture2D
@@ -896,6 +920,7 @@ YF void YAC_CALL sdvg_UnbindTexture2D (void);
 Destroy texture
 
 @see sdvg_CreateTexture2D
+@see sdvg_UpdateTexture2D
 @see sdvg_BindMultiTexture2D
 @see sdvg_UnbindMultiTexture2D
 @see sdvg_BindTexture2D
@@ -2118,6 +2143,19 @@ Split packed ARGB32 color into hue / saturation / value / alpha components
 @return Alpha channel (0..255)
 */
 sU8 sdvg_ARGBToHSVA (sU32 _c32, sF32 *_retH, sF32 *_retS, sF32 *_retV);
+
+/* @function sdvg_GradientToTexture,Texture dst,IntArray colors,IntArray starts
+Convert gradient (colors + start positions) to ARGB32 texture.
+
+The first start position must be 0, and the last position determines the total gradient size.
+
+@arg dst Destination texture. Allocation size (at least 1) determines resolution of interpolated gradient.
+@arg colors ARGB32 color array. Number of elements must be at least two and determines number of gradient entries.
+@arg starts Color start positions. Number of elements must greater or equal to 'colors' array size.
+@arg bSmoothStep false=linear interpolation  true=smoothstep interpolation
+*/
+void YAC_CALL sdvg_GradientToTexture (sU32 *_dst, sU32 _dstW, const sU32 *_colors, sU32 _numColors, const sSI *_starts, sUI _numStarts, sBool _bSmoothStep);
+
 #ifdef SHADERVG_SCRIPT_API
 YF sU32 YAC_CALL _sdvg_ARGB (sUI _a, sUI _r, sUI _g, sUI _b);
 YF sU32 YAC_CALL _sdvg_MixARGBx (sU32 _x, sU32 _y, sUI _t);
@@ -2126,6 +2164,7 @@ YF sU32 YAC_CALL _sdvg_TintRGBAlpha (sU32 _x, sU32 _y, sUI _a8);
 YF sU32 YAC_CALL _sdvg_RGBAlpha (sU32 _c32, sUI _a8);
 YF sU32 YAC_CALL _sdvg_HSVAToARGB (sF32 _h, sF32 _s, sF32 _v, sUI _a8);
 YF sUI YAC_CALL _sdvg_ARGBToHSVA (sU32 _c32, YAC_Object *_retH, YAC_Object *_retS, YAC_Object *_retV);
+YF void YAC_CALL _sdvg_GradientToTexture (YAC_Object *_tex, YAC_Object *_colors, YAC_Object *_starts, sBool _bSmoothStep);
 #endif // SHADERVG_SCRIPT_API
 
 
