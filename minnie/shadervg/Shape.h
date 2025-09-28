@@ -87,6 +87,9 @@ class ShaderVG_Shape {
    sSI shape_u_debug;            // optional
    sSI shape_u_tex_0;            // optional
    sSI shape_u_tex_1;            // optional
+   sSI shape_u_a_min;            // optional
+   sSI shape_u_a_max;            // optional
+   sSI shape_u_a_maxmin_scale;   // optional
 
    // debug:
    sBool b_draw_inner;

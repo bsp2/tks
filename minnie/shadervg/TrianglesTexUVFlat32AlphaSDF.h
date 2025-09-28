@@ -46,43 +46,34 @@ class TrianglesTexUVFlat32AlphaSDF : public ShaderVG_Shape {
    const char *fs_src =
       "uniform sampler2D u_sampler; \n"
       "uniform vec4      u_color_fill; \n"
+      "uniform float     u_a_min; \n"
+      "uniform float     u_a_max; \n"
+      "uniform float     u_a_maxmin_scale; \n"
       " \n"
       "VARYING_IN vec2 v_uv; \n"
       " \n"
       "void main() { \n"
       "  float a = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
       " \n"
-
-      // 64
-      /* "  const float aMin = (64.0-5.0)/64.0; \n" */
-      /* "  const float aMax = (64.0-4.0)/64.0; \n" */
-
-      // 36
-      /* "  const float aMin = (36.0-2.0)/36.0; \n" */
-      /* "  const float aMax = (36.0-1.5)/36.0; \n" */
-
-      // 128
-      "  const float aMin = (128.0-12.0)/128.0; \n"
-      "  const float aMax = (128.0-6.0)/128.0; \n"
-
-      /* "  const float aGamma = 0.6; \n" */
-      "  const float aGamma = 1.0; \n"
+      "  if(a < u_a_min) a = 0.0; \n"
+      "  else if(a > u_a_max) a = 1.0; \n"
+      "  else a = (a - u_a_min) * (u_a_maxmin_scale); \n"
       " \n"
-      "  if(a < aMin) a = 0.0; \n"
-      "  else if(a > aMax) a = 1.0; \n"
-      "  else a = (a - aMin) * (1.0 / (aMax-aMin)); \n"
-      "  a = pow(a, aGamma); \n"
+      /* "  a = pow(a, 0.7); \n" */
       "  FRAGCOLOR = vec4(u_color_fill.rgb, a * u_color_fill.a); \n"
       "} \n"
       ;
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)     &&
-         (-1 != shape_a_uv)         &&
-         (-1 != shape_u_transform)  &&
-         (-1 != shape_u_sampler)    &&
-         (-1 != shape_u_color_fill)
+         (-1 != shape_a_vertex)
+         && (-1 != shape_a_uv)
+         && (-1 != shape_u_transform)
+         && (-1 != shape_u_sampler)
+         && (-1 != shape_u_color_fill)
+         && (-1 != shape_u_a_min)
+         && (-1 != shape_u_a_max)
+         && (-1 != shape_u_a_maxmin_scale)
          ;
    }
 
@@ -98,7 +89,10 @@ class TrianglesTexUVFlat32AlphaSDF : public ShaderVG_Shape {
                                             sUI              _byteOffset,
                                             sUI              _numVerts,
                                             Dsdvg_mat4_ref_t _mvpMatrix,
-                                            sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                            sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
+                                            sF32             _aMin,
+                                            sF32             _aMax,
+                                            sF32             _aMaxMinScale  // (1.0/(aMax-aMin))
                                             ) {
       //
       // VBO vertex format (16 bytes per vertex):
@@ -115,6 +109,9 @@ class TrianglesTexUVFlat32AlphaSDF : public ShaderVG_Shape {
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
       Dsdvg_uniform_1i(shape_u_sampler, 0);
+      Dsdvg_uniform_1f(shape_u_a_min, _aMin);
+      Dsdvg_uniform_1f(shape_u_a_max, _aMax);
+      Dsdvg_uniform_1f(shape_u_a_maxmin_scale, _aMaxMinScale);
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);

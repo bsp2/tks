@@ -88,6 +88,9 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_debug           = -1;
    shape_u_tex_0           = -1;
    shape_u_tex_1           = -1;
+   shape_u_a_min           = -1;
+   shape_u_a_max           = -1;
+   shape_u_a_maxmin_scale  = -1;
 
    // debug:
    b_draw_inner  = YAC_TRUE;
@@ -555,6 +558,9 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_debug           = shape_shader.getUniformLocation("u_debug");            // optional
    shape_u_tex_0           = shape_shader.getUniformLocation("u_tex_0");            // optional
    shape_u_tex_1           = shape_shader.getUniformLocation("u_tex_1");            // optional
+   shape_u_a_min           = shape_shader.getUniformLocation("u_a_min");            // optional
+   shape_u_a_max           = shape_shader.getUniformLocation("u_a_max");            // optional
+   shape_u_a_maxmin_scale  = shape_shader.getUniformLocation("u_a_maxmin_scale");   // optional
 
    sBool r = validateShapeShader();
    if(!r)

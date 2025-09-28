@@ -315,6 +315,9 @@ static YAC_Object *mvp_matrix;  // Matrix4f  row major
 static sBool  b_aa;
 static sF32   aa_range;
 static sF32   aa_exp;        // (todo) remove
+static sF32   alpha_sdf_min;
+static sF32   alpha_sdf_max;
+static sF32   alpha_sdf_maxmin_scale;
 static sF32   stroke_w;      // px
 static sF32   point_radius;  // px
 sF32 sdvg_pixel_scl;         // vp/proj (aa_range, stroke_w)
@@ -476,6 +479,8 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    stroke_a            = 1.0f;
    global_a            = 1.0f;
    texture_decal_alpha = 1.0f;
+
+   sdvg_SetAlphaSDFRange(0.0f, 0.0f);  // load default range
 
    ::memset((void*)fbos, 0, sizeof(fbos));
 
@@ -1983,7 +1988,8 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF(sUI _vboId, sUI _byteOffs
                                                                           _byteOffset,
                                                                           _numVerts,
                                                                           mvp_matrix,
-                                                                          fill_r, fill_g, fill_b, fill_a * global_a
+                                                                          fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                          alpha_sdf_min, alpha_sdf_max, alpha_sdf_maxmin_scale
                                                                           );
 }
 
@@ -3102,6 +3108,22 @@ void YAC_CALL sdvg_SetAARange(sF32 _aaRange) {
 void YAC_CALL sdvg_SetAAExp(sF32 _aaExp) {
    // (todo) remove
    aa_exp   = _aaExp;
+}
+
+void YAC_CALL sdvg_SetAlphaSDFRange(sF32 _aMin, sF32 _aMax) {
+   if(_aMax > _aMin)
+   {
+      alpha_sdf_min = _aMin;
+      alpha_sdf_max = _aMax;
+   }
+   else
+   {
+      // default
+      alpha_sdf_min = (128.0f - 26.0f) / 128.0f;
+      alpha_sdf_max = (128.0f -  6.0f) / 128.0f;
+   }
+   alpha_sdf_maxmin_scale = 1.0f / (alpha_sdf_max - alpha_sdf_min);
+   Dsdvg_tracecallv("[trc] sdvg_SetAlphaSDFRange: alpha_sdf min=%f max=%f scale=%f\n", alpha_sdf_min, alpha_sdf_max, alpha_sdf_maxmin_scale);
 }
 
 void YAC_CALL sdvg_SetFillColor4f(sF32 _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA) {
@@ -4453,6 +4475,25 @@ static sBool UpdateShaderUniforms(void) {
       if(loc >= 0)
       {
          Dsdvg_uniform_1i(loc, 1);
+      }
+
+      // (note) TrianglesTexUVFlat32AlphaSDF
+      loc = current_shape->shape_u_a_min;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_min);
+      }
+
+      loc = current_shape->shape_u_a_max;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_max);
+      }
+
+      loc = current_shape->shape_u_a_maxmin_scale;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_maxmin_scale);
       }
 
       loc = current_shape->shape_u_transform;

@@ -277,6 +277,19 @@ Deprecated, will be removed in future versions.
 */
 YF void YAC_CALL sdvg_SetAAExp (sF32 _aaExp);
 
+/* @function sdvg_SetAlphaSDFRange,float aMin,float aMax
+Set alpha range of distance field textures.
+
+This controls the bluriness of e.g. anti-aliased glyph edges during text rendering.
+
+@arg aMin Alpha range start (0..1, e.g. 0.8)
+@arg aMax Alpha range end (0..1, e.g. 0.95)
+
+@see sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF
+@see sdvg_BeginTexturedTrianglesAlphaSDF
+*/
+YF void YAC_CALL sdvg_SetAlphaSDFRange (sF32 _aMin, sF32 _aMax);
+
 // -------- render state (fill / stroke) --------
 /* @function sdvg_SetFillColor4f,float fillR,float fillG,float fillB,float A
 Set fill color (normalized floats)
@@ -1361,6 +1374,8 @@ VBO vertex format (16 bytes per vertex):<br>
     +8  f32 u<br>
     +12 f32 v<br>
 </pre>
+
+@see sdvg_SetAlphaSDFRange
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
@@ -1767,6 +1782,8 @@ YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha (sUI _numVertices)
 Begin preparation or rendering of alpha-SDF-channel-only textured triangles
 
 @arg numVertices Number of vertices
+
+@see sdvg_SetAlphaSDFRange
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlphaSDF (sUI _numVertices);
 
