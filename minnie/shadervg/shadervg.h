@@ -1643,6 +1643,49 @@ YF void YAC_CALL _sdvg_Uniform1i (YAC_String *_name, sSI _i);
 #endif // SHADERVG_SCRIPT_API
 
 // -------- (high level) draw functions --------
+
+/* @function sdvg_PaintSolid
+Select solid paint
+
+@see sdvg_PaintLinear
+@see sdvg_PaintRadial
+@see sdvg_PaintConic
+*/
+YF void YAC_CALL sdvg_PaintSolid (void);
+
+/* @function sdvg_PaintLinear
+Select linear paint
+
+@see sdvg_PaintSolid
+@see sdvg_PaintRadial
+@see sdvg_PaintConic
+*/
+YF void YAC_CALL sdvg_PaintLinear (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY);
+
+/* @function sdvg_PaintRadial
+Select radial paint
+
+@see sdvg_PaintSolid
+@see sdvg_PaintLinear
+@see sdvg_PaintConic
+*/
+YF void YAC_CALL sdvg_PaintRadial (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY);
+
+/* @function sdvg_PaintConic
+Select conic paint
+
+@arg startX
+@arg startY
+@arg radiusX
+@arg radiusY
+@arg angle01 Start angle (0..1 => 0..360 degrees)
+
+@see sdvg_PaintSolid
+@see sdvg_PaintLinear
+@see sdvg_PaintRadial
+*/
+YF void YAC_CALL sdvg_PaintConic (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01);
+
 /* @function sdvg_BeginVBO,int numVertices,int stride:boolean
 Begin preparation of mapped vertex buffer
 
@@ -2151,7 +2194,7 @@ The first start position must be 0, and the last position determines the total g
 
 @arg dst Destination texture. Allocation size (at least 1) determines resolution of interpolated gradient.
 @arg colors ARGB32 color array. Number of elements must be at least two and determines number of gradient entries.
-@arg starts Color start positions. Number of elements must greater or equal to 'colors' array size.
+@arg starts Color start positions. Number of elements must be greater or equal to 'colors' array size.
 @arg bSmoothStep false=linear interpolation  true=smoothstep interpolation
 */
 void YAC_CALL sdvg_GradientToTexture (sU32 *_dst, sU32 _dstW, const sU32 *_colors, sU32 _numColors, const sSI *_starts, sUI _numStarts, sBool _bSmoothStep);

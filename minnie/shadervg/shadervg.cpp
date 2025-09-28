@@ -76,6 +76,9 @@
 #define Dsdvg_pixel_scl(a) ((a) * sdvg_pixel_scl)
 
 #include "TrianglesFillFlat32.h"
+#include "TrianglesFillFlat32Linear.h"
+#include "TrianglesFillFlat32Radial.h"
+#include "TrianglesFillFlat32Conic.h"
 #include "TrianglesFillFlat14_2.h"
 #include "TrianglesFillGouraud32.h"
 #include "TrianglesFillGouraud14_2.h"
@@ -84,6 +87,9 @@
 #include "TrianglesFillGouraudEdgeAA32.h"
 #include "TrianglesFillGouraudEdgeAA14_2.h"
 #include "PolygonFillFlat32.h"
+// #include "PolygonFillFlat32Linear.h"
+// #include "PolygonFillFlat32Radial.h"
+// #include "PolygonFillFlat32Conic.h"
 #include "PolygonFillFlat14_2.h"
 #include "PolygonFillGouraud32.h"
 #include "PolygonFillGouraud14_2.h"
@@ -146,6 +152,9 @@ static Dsdvg_buffer_ref_t attrib_write_buffer = NULL;
 static sBool b_debug_write_vbo;
 
 static TrianglesFillFlat32               triangles_fill_flat_32;
+static TrianglesFillFlat32Linear         triangles_fill_flat_32_linear;
+static TrianglesFillFlat32Radial         triangles_fill_flat_32_radial;
+static TrianglesFillFlat32Conic          triangles_fill_flat_32_conic;
 static TrianglesFillFlat14_2             triangles_fill_flat_14_2;
 static TrianglesFillGouraud32            triangles_fill_gouraud_32;
 static TrianglesFillGouraud14_2          triangles_fill_gouraud_14_2;
@@ -187,9 +196,12 @@ static LinesFlatAA32                     lines_flat_aa_32;
 static PointsSquareAA32                  points_square_aa_32;
 static PointsRoundAA32                   points_round_aa_32;
 
-#define SHADERVG_NUM_SHAPES  40
+#define SHADERVG_NUM_SHAPES  43
 static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
    &triangles_fill_flat_32,
+   &triangles_fill_flat_32_linear,
+   &triangles_fill_flat_32_radial,
+   &triangles_fill_flat_32_conic,
    &triangles_fill_flat_14_2,
    &triangles_fill_gouraud_32,
    &triangles_fill_gouraud_14_2,
@@ -273,6 +285,7 @@ static sUI current_draw_start_offset;
 static sUI current_draw_attrib_offset;  // incs with each AttribOffset*() call
 static sUI current_draw_lines_vertex_index;   // incs with each Vertex2f() call in DRAW_MODE_LINES* (0, 6)
 static sUI current_draw_vertex_index;         // incs with each Vertex2f() call
+
 #define DRAW_MODE_LINE_STRIP           7000
 #define DRAW_MODE_LINE_STRIP_AA        7001
 #define DRAW_MODE_LINE_STRIP_BEVEL     7002
@@ -284,9 +297,21 @@ static sUI current_draw_vertex_index;         // incs with each Vertex2f() call
 #define DRAW_MODE_POINTS_ROUND         7008
 #define DRAW_MODE_POINTS_ROUND_AA      7009
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
+
 #define SHADERVG_MAX_ATTRIB_ENABLES 16
 static sSI current_draw_attrib_enables[SHADERVG_MAX_ATTRIB_ENABLES];
 static sUI num_draw_attrib_enables;
+
+#define PAINT_SOLID   0
+#define PAINT_LINEAR  1
+#define PAINT_RADIAL  2
+#define PAINT_CONIC   3
+static sSI  paint_mode;
+static sF32 paint_start_x;
+static sF32 paint_start_y;
+static sF32 paint_end_x;
+static sF32 paint_end_y;
+static sF32 paint_angle;  // 0..1
 
 // true=use GL core profile (GLSL 3.x, VAO)
 sBool sdvg_b_glcore = YAC_FALSE;
@@ -511,6 +536,13 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 #ifdef SHADERVG_TEXT
    sdvg_int_reset_font();
 #endif // SHADERVG_TEXT
+
+   paint_mode = PAINT_SOLID;
+   paint_start_x = 0.0f;
+   paint_start_y = 0.0f;
+   paint_end_x = 640.0f;
+   paint_end_y = 480.0f;
+   paint_angle = 0.0f;
 
    return r;
 }
@@ -3159,6 +3191,8 @@ void YAC_CALL sdvg_BeginFrame(void) {
    sdvg_int_reset_font();
 #endif // SHADERVG_TEXT
 
+   paint_mode = PAINT_SOLID;
+
    if(sdvg_b_glcore)
       Dsdvg_glcall(glBindVertexArray(vao_id));
 }
@@ -3688,6 +3722,35 @@ static sBool BeginDraw(sUI _numVertices, sUI _stride) {
    }
 }
 
+void YAC_CALL sdvg_PaintSolid(void) {
+   paint_mode = PAINT_SOLID;
+}
+
+void YAC_CALL sdvg_PaintLinear(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY) {
+   paint_mode = PAINT_LINEAR;
+   paint_start_x = _startX;
+   paint_start_y = _startY;
+   paint_end_x = _endX;
+   paint_end_y = _endY;
+}
+
+void YAC_CALL sdvg_PaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
+   paint_mode = PAINT_RADIAL;
+   paint_start_x = _startX;
+   paint_start_y = _startY;
+   paint_end_x = _startX + _radiusX;
+   paint_end_y = _startY + _radiusY;
+}
+
+void YAC_CALL sdvg_PaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01) {
+   paint_mode = PAINT_CONIC;
+   paint_start_x = _startX;
+   paint_start_y = _startY;
+   paint_end_x = _startX + _radiusX;
+   paint_end_y = _startY + _radiusY;
+   paint_angle = _angle01;
+}
+
 sBool YAC_CALL sdvg_BeginVBO(sUI _numVertices, sUI _stride) {
    // prepare-buffer mode (no rendering)
    current_draw_mode = GL_NONE;
@@ -3709,16 +3772,29 @@ sBool YAC_CALL sdvg_BeginTriangleStrip(sUI _numVertices, sUI _stride) {
    return BeginDraw(_numVertices, _stride);
 }
 
+static void loc_bind_default_triangles_fill_flat_shape(void) {
+   ShaderVG_Shape *shape;
+   switch(paint_mode)
+   {
+      default:
+      case PAINT_SOLID:   shape = &triangles_fill_flat_32;        break;
+      case PAINT_LINEAR:  shape = &triangles_fill_flat_32_linear; break;
+      case PAINT_RADIAL:  shape = &triangles_fill_flat_32_radial; break;
+      case PAINT_CONIC:   shape = &triangles_fill_flat_32_conic;  break;
+   }
+   BindShape(shape);
+}
+
 sBool YAC_CALL sdvg_BeginFilledTriangles(sUI _numVertices) {
    //
    // VBO vertex format (8 bytes per vertex):
    //     +0 f32 x
    //     +4 f32 y
    //
+
    if(NULL == current_shape)
-   {
-      BindShape(&triangles_fill_flat_32);
-   }
+      loc_bind_default_triangles_fill_flat_shape();
+
    if(sdvg_BeginTriangles(_numVertices, (2*4)/*stride*/))
    {
       sdvg_VertexOffset2f();
@@ -3733,10 +3809,10 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan(sUI _numVertices) {
    //     +0 f32 x
    //     +4 f32 y
    //
+
    if(NULL == current_shape)
-   {
-      BindShape(&triangles_fill_flat_32);
-   }
+      loc_bind_default_triangles_fill_flat_shape();
+
    if(sdvg_BeginTriangleFan(_numVertices, (2*4)/*stride*/))
    {
       sdvg_VertexOffset2f();
@@ -3755,10 +3831,10 @@ sBool YAC_CALL sdvg_BeginFilledTriangleStrip(sUI _numVertices) {
    //     +0 f32 x
    //     +4 f32 y
    //
+
    if(NULL == current_shape)
-   {
-      BindShape(&triangles_fill_flat_32);
-   }
+      loc_bind_default_triangles_fill_flat_shape();
+
    if(sdvg_BeginTriangleStrip(_numVertices, (2*4)/*stride*/))
    {
       sdvg_VertexOffset2f();
@@ -4601,6 +4677,71 @@ static sBool UpdateShaderUniforms(void) {
       if(loc >= 0)
       {
          Dsdvg_uniform_1f(loc, alpha_sdf_maxmin_scale);
+      }
+
+      loc = current_shape->shape_u_paint_tex;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1i(loc, 0/*tex_unit*/);
+      }
+
+      loc = current_shape->shape_u_paint_start;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_2f(loc, paint_start_x, paint_start_y);
+      }
+
+      loc = current_shape->shape_u_paint_end;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_2f(loc, paint_end_x, paint_end_y);
+      }
+
+      loc = current_shape->shape_u_paint_scale;
+      if(loc >= 0)
+      {
+         const sF32 sclX = (paint_end_x - paint_start_x > 0.0f) ? (1.0f / (paint_end_x - paint_start_x)) : 0.0f;
+         const sF32 sclY = (paint_end_y - paint_start_y > 0.0f) ? (1.0f / (paint_end_y - paint_start_y)) : 0.0f;
+         Dsdvg_uniform_2f(loc, sclX, sclY);
+      }
+
+      loc = current_shape->shape_u_paint_ndir;
+      if(loc >= 0)
+      {
+         sF32 dx = paint_end_x - paint_start_x;
+         sF32 dy = paint_end_y - paint_start_y;
+         sF32 l = sqrt(dx*dx + dy*dy);
+         if(l > 0.0f)
+         {
+            l = 1.0f / l;
+            dx *= l;
+            dy *= l;
+         }
+         else
+         {
+            dx = 0.0f;
+            dy = 0.0f;
+         }
+         Dsdvg_uniform_2f(loc, dx, dy);
+      }
+
+      loc = current_shape->shape_u_paint_ob_len;
+      if(loc >= 0)
+      {
+         const sF32 dx = paint_end_x - paint_start_x;
+         const sF32 dy = paint_end_y - paint_start_y;
+         sF32 l = sqrt(dx*dx + dy*dy);
+         if(l > 0.0f)
+         {
+            l = 1.0f / l;
+         }
+         Dsdvg_uniform_1f(loc, l);
+      }
+
+      loc = current_shape->shape_u_paint_angle;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, paint_angle);
       }
 
       loc = current_shape->shape_u_transform;
