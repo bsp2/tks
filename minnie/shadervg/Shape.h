@@ -90,6 +90,7 @@ class ShaderVG_Shape {
    sSI shape_u_a_min;            // optional
    sSI shape_u_a_max;            // optional
    sSI shape_u_a_maxmin_scale;   // optional
+   sSI shape_u_a_exp;            // optional
    sSI shape_u_paint_tex;        // optional
    sSI shape_u_paint_start;      // optional
    sSI shape_u_paint_end;        // optional

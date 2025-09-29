@@ -285,10 +285,22 @@ This controls the bluriness of e.g. anti-aliased glyph edges during text renderi
 @arg aMin Alpha range start (0..1, e.g. 0.8)
 @arg aMax Alpha range end (0..1, e.g. 0.95)
 
+@see sdvg_SetAlphaSDFExp
 @see sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF
 @see sdvg_BeginTexturedTrianglesAlphaSDF
 */
 YF void YAC_CALL sdvg_SetAlphaSDFRange (sF32 _aMin, sF32 _aMax);
+
+/* @function sdvg_SetAlphaSDFExp,float aExp
+Set exponent of output alpha
+
+@arg aExp Alpha exponent (gamma correction) (def=0.7)
+
+@see sdvg_SetAlphaSDFRange
+@see sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF
+@see sdvg_BeginTexturedTrianglesAlphaSDF
+*/
+YF void YAC_CALL sdvg_SetAlphaSDFExp (sF32 _aExp);
 
 // -------- render state (fill / stroke) --------
 /* @function sdvg_SetFillColor4f,float fillR,float fillG,float fillB,float A
@@ -1653,7 +1665,7 @@ Select solid paint
 */
 YF void YAC_CALL sdvg_PaintSolid (void);
 
-/* @function sdvg_PaintLinear
+/* @function sdvg_PaintLinear,float startX,float startY,float endX,float endY
 Select linear paint
 
 @see sdvg_PaintSolid
@@ -1662,7 +1674,7 @@ Select linear paint
 */
 YF void YAC_CALL sdvg_PaintLinear (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY);
 
-/* @function sdvg_PaintRadial
+/* @function sdvg_PaintRadial,float startX,float startY,float radiusX,float radiusY
 Select radial paint
 
 @see sdvg_PaintSolid
@@ -1671,14 +1683,14 @@ Select radial paint
 */
 YF void YAC_CALL sdvg_PaintRadial (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_PaintConic
+/* @function sdvg_PaintConic,float startX,float startY,float radiusX,float radiusY,float angle01
 Select conic paint
 
 @arg startX
 @arg startY
 @arg radiusX
 @arg radiusY
-@arg angle01 Start angle (0..1 => 0..360 degrees)
+@arg angle01 Normalized start angle (0..1 => 0..360 degrees). 0=north
 
 @see sdvg_PaintSolid
 @see sdvg_PaintLinear

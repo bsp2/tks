@@ -343,6 +343,7 @@ static sF32   aa_exp;        // (todo) remove
 static sF32   alpha_sdf_min;
 static sF32   alpha_sdf_max;
 static sF32   alpha_sdf_maxmin_scale;
+static sF32   alpha_sdf_exp;
 static sF32   stroke_w;      // px
 static sF32   point_radius;  // px
 sF32 sdvg_pixel_scl;         // vp/proj (aa_range, stroke_w)
@@ -506,6 +507,7 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    texture_decal_alpha = 1.0f;
 
    sdvg_SetAlphaSDFRange(0.0f, 0.0f);  // load default range
+   sdvg_SetAlphaSDFExp(0.7f);
 
    ::memset((void*)fbos, 0, sizeof(fbos));
 
@@ -2128,7 +2130,10 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF(sUI _vboId, sUI _byteOffs
                                                                           _numVerts,
                                                                           mvp_matrix,
                                                                           fill_r, fill_g, fill_b, fill_a * global_a,
-                                                                          alpha_sdf_min, alpha_sdf_max, alpha_sdf_maxmin_scale
+                                                                          alpha_sdf_min,
+                                                                          alpha_sdf_max,
+                                                                          alpha_sdf_maxmin_scale,
+                                                                          alpha_sdf_exp
                                                                           );
 }
 
@@ -3267,6 +3272,10 @@ void YAC_CALL sdvg_SetAlphaSDFRange(sF32 _aMin, sF32 _aMax) {
    Dsdvg_tracecallv("[trc] sdvg_SetAlphaSDFRange: alpha_sdf min=%f max=%f scale=%f\n", alpha_sdf_min, alpha_sdf_max, alpha_sdf_maxmin_scale);
 }
 
+void YAC_CALL sdvg_SetAlphaSDFExp(sF32 _aExp) {
+   alpha_sdf_exp = _aExp;
+}
+
 void YAC_CALL sdvg_SetFillColor4f(sF32 _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA) {
    fill_r = _fillR;
    fill_g = _fillG;
@@ -3748,7 +3757,7 @@ void YAC_CALL sdvg_PaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _r
    paint_start_y = _startY;
    paint_end_x = _startX + _radiusX;
    paint_end_y = _startY + _radiusY;
-   paint_angle = _angle01;
+   paint_angle = _angle01 + 0.25f/*north*/;
 }
 
 sBool YAC_CALL sdvg_BeginVBO(sUI _numVertices, sUI _stride) {
@@ -4677,6 +4686,12 @@ static sBool UpdateShaderUniforms(void) {
       if(loc >= 0)
       {
          Dsdvg_uniform_1f(loc, alpha_sdf_maxmin_scale);
+      }
+
+      loc = current_shape->shape_u_a_exp;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_exp);
       }
 
       loc = current_shape->shape_u_paint_tex;
