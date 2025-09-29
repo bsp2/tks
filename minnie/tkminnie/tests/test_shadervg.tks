@@ -146,7 +146,8 @@ int RENDER_GRADIENT_TO_TEXTURE                         = 62;
 int RENDER_TRIANGLES_GRADIENT_LINEAR                   = 63;
 int RENDER_TRIANGLES_GRADIENT_RADIAL                   = 64;
 int RENDER_TRIANGLES_GRADIENT_CONIC                    = 65;
-int NUM_RENDER_MODES                                   = 66;  // UP/DOWN
+int RENDER_POLYGON_VBO                                 = 66;
+int NUM_RENDER_MODES                                   = 67;  // UP/DOWN
 
 int render_mode = RENDER_RECT_FILL_AA;
 // int render_mode = RENDER_ELLIPSE_FILL_AA;
@@ -247,6 +248,7 @@ StringArray mode_names = [/*  0 */ "rect_fill_aa",
                           /* 63 */ "triangles_gradient_linear",
                           /* 64 */ "triangles_gradient_radial",
                           /* 65 */ "triangles_gradient_conic",
+                          /* 66 */ "polygon_vbo",
                           ];
 
 int tex_id;
@@ -1531,7 +1533,7 @@ function TestText_8_Zoom(boolean _bSDF) {
    sdvg_EnableBlending();
    sdvg_SetColorARGB(#ffffffff);
 
-   String s <= "hello, world.\nmulti-line\ntext-test.";
+   String s <= "Hello, world.\nmulti-line\ntext-test.";
 
    Integer minX, maxX, minY, maxY;
    sdvg_TextBBox(_bSDF ? font_zoom_sdf : font_zoom, s, minX, maxX, minY, maxY);
@@ -1548,10 +1550,13 @@ function TestText_8_Zoom(boolean _bSDF) {
 
    if(_bSDF)
    {
-      sdvg_SetAlphaSDFRange( mathLerpf(0.7,  0.90, 1.0 - zoomRel),
-                             mathLerpf(0.99, 0.96, 1.0 - zoomRel)
+      sdvg_SetAlphaSDFRange( mathLerpf(0.83, 0.90, 1.0 - zoomRel),
+                             mathLerpf(0.99, 0.98, 1.0 - zoomRel)
                              );
+      sdvg_SetAlphaSDFExp( mathLerpf(0.7, 0.5, 1.0 - zoomRel) );
    }
+
+   float shift = sin(ang_y)*200.0f + 200.0f;
 
    float g = 20.0*8;
    float aspect = (float(Viewport.width) / Viewport.height);
@@ -1561,6 +1566,7 @@ function TestText_8_Zoom(boolean _bSDF) {
                    0.0f/*znear*/,  10.0f/*zfar*/
                    );
    mProj.rotatef(0.0f, 0.0f, sin(ang_h*4.0)*(PI*0.25));
+   mProj.translatef(shift, shift, 0.0f);
    sdvg_SetTransform(mProj);
 
    sdvg_DrawText(s, x - minX, y - minY);
@@ -1774,6 +1780,42 @@ function TestTrianglesGradientConic() {
       sdvg_Vertex2f(x, y+h);
 
       sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestPolygon_VBO
+int polygon_vbo_id = 0;
+function TestPolygon_VBO() {
+   if(0 == polygon_vbo_id)
+   {
+      // Create + initialize VBO
+      polygon_vbo_id = sdvg_CreateVBO(256);
+      sdvg_MapVBO(polygon_vbo_id);
+      if(sdvg_BeginVBO(8, 8))
+      {
+         sdvg_Vertex2f( 30, 90);
+         sdvg_Vertex2f(320, 20);
+         sdvg_Vertex2f(640, 80);
+         sdvg_Vertex2f(600, 200);
+         sdvg_Vertex2f(250, 220);
+         sdvg_Vertex2f(500, 360);
+         sdvg_Vertex2f(300, 470);
+         sdvg_Vertex2f(120, 300);
+
+         sdvg_End();
+      }
+      sdvg_UnmapVBO();
+   }
+   if(polygon_vbo_id >= 0)
+   {
+      sdvg_SetGlobalAlpha( (sin(ang_w) * 0.5 + 0.5) * fill_alpha );
+
+      // float x = sin(ang_x*0.5) * 170 + 320 - sizeX*0.5;
+      // float y = sin(ang_y*0.5) * 170 + 240 - sizeY*0.5;
+
+      // Draw pre-initialized VBO
+      sdvg_DrawPolygonFillFlatVBO32(polygon_vbo_id, 0/*byteOffset*/, 8/*numVerts*/);
+      sdvg_BindVBO(0);
    }
 }
 
@@ -2214,6 +2256,10 @@ function onDraw() {
       case RENDER_TRIANGLES_GRADIENT_CONIC:
          TestTrianglesGradientConic();
          break;
+
+      case RENDER_POLYGON_VBO:
+         TestPolygon_VBO();
+         break;
    }
 
    sdvg_EndFrame();
@@ -2521,6 +2567,7 @@ function onOpen() {
    custom_shader_idx_3 = 0;
    test_text_3_shader_idx = 0;
    custom_vbo_id_3 = 0;
+   polygon_vbo_id = 0;
 
    sdvg_FontOnOpen(font);
    sdvg_FontOnOpen(font_zoom);
@@ -2569,6 +2616,12 @@ function onClose() {
    {
       sdvg_DestroyVBO(custom_vbo_id_3);
       custom_vbo_id_3 = 0;
+   }
+
+   if(0 != polygon_vbo_id)
+   {
+      sdvg_DestroyVBO(polygon_vbo_id);
+      polygon_vbo_id = 0;
    }
 
    sdvg_DestroyTexture2D(tex_id);
@@ -2628,8 +2681,8 @@ function main() {
 
    // Load fonts
    LoadFont("../../tools/font_convert/out/default_30",      font,          font_bin,          font_tex);
-   LoadFont("../../tools/font_convert/out/default_128",     font_zoom,     font_zoom_bin,     font_zoom_tex);
-   LoadFont("../../tools/font_convert/out/default_128_sdf", font_zoom_sdf, font_zoom_sdf_bin, font_zoom_sdf_tex);
+   LoadFont("../../tools/font_convert/out/default_256",     font_zoom,     font_zoom_bin,     font_zoom_tex);
+   LoadFont("../../tools/font_convert/out/default_256_sdf", font_zoom_sdf, font_zoom_sdf_bin, font_zoom_sdf_tex);
 
    use callbacks;
 
