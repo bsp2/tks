@@ -22,6 +22,18 @@ all:
 	tks font_convert $(TTF_NORMAL) default normal 64
 	tks font_convert $(TTF_NORMAL) default normal 128
 
+.PHONY: s256
+s256:
+	tks font_convert $(TTF_NORMAL) default normal 256
+
+.PHONY: sdf512
+sdf512:
+	tks font_convert $(TTF_NORMAL) default normal 128 sdf 4
+
+.PHONY: sdf256
+sdf256:
+	tks font_convert $(TTF_NORMAL) default normal 128 sdf 2
+
 .PHONY: sdf128
 sdf128:
 	tks font_convert $(TTF_NORMAL) default normal 128 sdf
