@@ -749,6 +749,18 @@ public:
     @arg bpp Bytes per pixel
     */
     YM void _visitBuffer(YAC_Object *_buffer, sUI _w, sUI _h, sUI _bpp);
+
+    /* @method calcAlphaSDF,Texture texSDF,int x,int y,int w,int h,int sdfRadius,float sdfMaxDist
+       Distance field font_convert helper (experimental)
+       ®arg texSDF 8bit texture storing the monochrome glyphs / icons. Will be updated with distance pixels.
+       @arg x Glyph / icon X position
+       @arg y Glyph / icon Y position
+       @arg w Glyph / icon width
+       @arg h Glyph / icon width
+       @arg sdfRadius SDF padding around glyph / icon (e.g. 12px) (should be sdfMaxDist+1)
+       @arg sdfMaxDist Max SDF distance (e.g. 11px)
+    */
+    YM void calcAlphaSDF (_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI _gwidth, sSI _gheight, sSI _sdfRadius, sF32 _sdfMaxDist);
 };
 
 

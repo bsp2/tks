@@ -17,6 +17,7 @@
 #include <yac.h>
 
 #include <stdlib.h>
+#include <math.h>
 
 #include "inc_opengl.h"
 
@@ -3145,3 +3146,152 @@ void _Texture::_visitBuffer(YAC_Object *_buffer, sUI _w, sUI _h, sUI _bpp) {
       }
    }
 }
+
+void _Texture::calcAlphaSDF(_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI _gwidth, sSI _gheight, sSI _sdfRadius, sF32 _sdfMaxDist) {
+#define Dargb(a,r,g,b) ((sU8(a)<<24)|(sU8(r)<<16)|(sU8(g)<<8)|sU8(b))
+   // (todo) check texture format and bounds
+   sF32 y = 0.5;
+   for(sSI yloopIdx = 0; yloopIdx < (_gheight + _sdfRadius*2); yloopIdx++)
+   {
+      sF32 x = 0.5;
+      for(sSI xloopIdx = 0; xloopIdx < (_gwidth + _sdfRadius*2); xloopIdx++)
+      {
+         int c8 = _texSDF->_getXY32(_gbitmapx - _sdfRadius + (x),
+                                    _gbitmapy - _sdfRadius + (y)
+                                    );
+         if(255 != c8)
+         {
+            sF32 minDist = 999999;
+            sF32 iy = 0;
+            for(sSI iyloopIdx = 0; iyloopIdx < _gheight; iyloopIdx++)
+            {
+               sF32 ix = 0;
+               for(sSI ixloopIdx = 0; ixloopIdx < _gwidth; ixloopIdx++)
+               {
+                  sF32 dx = 999999, dy = 99999;
+                  sSI bx = _gbitmapx + sSI(ix);
+                  sSI by = _gbitmapy + sSI(iy);
+                  // int c8i = texSDF.getXY32(bx, by);
+                  // if(255 == c8i)
+                  // {
+                     int lt = (255 == _texSDF->_getXY32(bx-1, by-1));
+                     int t  = (255 == _texSDF->_getXY32(bx,   by-1));
+                     int rt = (255 == _texSDF->_getXY32(bx+1, by-1));
+                     int l  = (255 == _texSDF->_getXY32(bx-1, by));
+                     int c  = (255 == _texSDF->_getXY32(bx,   by));
+                     int r  = (255 == _texSDF->_getXY32(bx+1, by));
+                     int lb = (255 == _texSDF->_getXY32(bx-1, by+1));
+                     int b  = (255 == _texSDF->_getXY32(bx,   by+1));
+                     int rb = (255 == _texSDF->_getXY32(bx+1, by+1));
+
+                     // 876
+                     // 5x3
+                     // 210
+                     int m = (lt << 8) | (t << 7) | (rt << 6) | (l << 5) | (c << 4) | (r << 3) | (lb << 2) || (b << 1) | (rb);
+                     sF32 aix = ix + _sdfRadius;
+                     sF32 aiy = iy + _sdfRadius;
+
+                     switch(m)
+                     {
+                        // 0x0
+                        // 00x
+                        // 000
+                        //
+                        // 0x0
+                        // x00
+                        // 000
+                        //
+                        // 000
+                        // x00
+                        // 0x0
+                        //
+                        // 000
+                        // 00x
+                        // 0x0
+                        case 0b010001000:
+                        case 0b010100000:
+                        case 0b000100010:
+                        case 0b000001010:
+                           dx = (ix + 0.5);
+                           dy = (iy + 0.5);
+                           break;
+
+                           // 0x0
+                           // 0x0
+                           // 0x0
+                        case 0b010010010:
+                           if(x < aix)
+                           {
+                              dx = (ix      );
+                              dy = (iy + 0.5);
+                           }
+                           else
+                           {
+                              dx = ix + 1.0;
+                              dy = iy + 0.5;
+                           }  
+                           break;
+
+                           // 000
+                           // xxx
+                           // 000
+                        case 0b000111000:
+                           if(y < aiy)
+                           {
+                              dx = (ix + 0.5);
+                              dy = (iy      );
+                           }
+                           else
+                           {
+                              dx = ix + 0.5;
+                              dy = iy + 1.0;
+                           }  
+                           break;
+
+                        default:
+                           if(c)
+                           {
+                              dx = ix + 0.5;
+                              dy = iy + 0.5;
+                           }
+                           break;
+                     }
+
+                     dx = dx + _sdfRadius - x - 0.5;
+                     dy = dy + _sdfRadius - y - 0.5;
+                     // trace "xxx d=("+dx+";"+dy+")";
+                     float d = sqrtf(dx*dx + dy*dy);
+                     if(d < minDist)
+                     {
+                        minDist = d;
+                        // minDist = mathMaxf(dx, dy);
+                     }
+                  // }
+                  ix++;
+               }
+               iy++;
+            }
+            if(minDist < 999)
+            {
+               // trace "xxx p=("+x+","+y+") minDist="+minDist+"/"+sdfMaxDist;
+               minDist = 254 - ( (minDist * 254) / _sdfMaxDist );
+               minDist = sRANGE(minDist, 0, 254);
+               _texSDF->_setXY32(_gbitmapx - _sdfRadius + int(x),
+                                 _gbitmapy - _sdfRadius + int(y),
+                                 Dargb(minDist, minDist, minDist, minDist)
+                                 );
+            }
+            else
+            {
+               _texSDF->_setXY32(_gbitmapx - _sdfRadius + (x),
+                                 _gbitmapy - _sdfRadius + (y),
+                                 Dargb(minDist, minDist, minDist, 0)
+                                 );
+            }
+         }
+         x++;
+      }
+      y++;
+   }
+}
+
