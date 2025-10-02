@@ -1,13 +1,14 @@
 /// inc_sdl.h
 ///
-/// (c) 2008-2023 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2008-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 
-#ifndef __TKSDL_INCLUDES_H__
-#define __TKSDL_INCLUDES_H__
+#ifndef TKSDL_INCLUDES_H__
+#define TKSDL_INCLUDES_H__
+
 
 #ifdef YAC_WIN32
 #include <windows.h>
@@ -43,4 +44,4 @@
 /* extern "C" int   SDL_GL_SetSwapInterval (int interval); */
 
 
-#endif // __TKSDL_INCLUDES_H__
+#endif // TKSDL_INCLUDES_H__
