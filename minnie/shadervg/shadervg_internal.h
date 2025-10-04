@@ -27,15 +27,36 @@
 #ifndef SHADERVG_INTERNAL_H__
 #define SHADERVG_INTERNAL_H__
 
+class ShaderVG_Shape;
+
+// ----------- Log helper macros -----------
+#define Dsdvg_printf        if(0);else Dyac_host_printf
+#define Dsdvg_tracecall     if(1);else Dsdvg_printf
+#define Dsdvg_tracecallv    if(1);else Dsdvg_printf
+#define Dsdvg_warnprintf    if(0);else Dsdvg_printf
+#define Dsdvg_errorprintf   if(0);else Dsdvg_printf
+#define Dsdvg_debugprintf   if(0);else Dsdvg_printf
+#define Dsdvg_debugprintfv  if(1);else Dsdvg_printf
+#define Dsdvg_debugprintfvv if(1);else Dsdvg_printf
 
 #include <stdlib.h>
 #include <new>
 
-#define Dsdvg_buffer_ref_t  YAC_Buffer *
-#define Dsdvg_mat4_ref_t  YAC_Object *
-
 extern sF32 sdvg_pixel_scl;  // vp/proj (aa_range, stroke_w)
 extern sBool sdvg_b_glcore;
+
+typedef struct shadervg_paint_s {
+#define PAINT_SOLID   0
+#define PAINT_LINEAR  1
+#define PAINT_RADIAL  2
+#define PAINT_CONIC   3
+   sSI  mode;
+   sF32 start_x;
+   sF32 start_y;
+   sF32 end_x;
+   sF32 end_y;
+   sF32 angle;  // 0..1
+} shadervg_paint_t;
 
 // -----------  internal -----------
 void BindScratchBuffer (void);
@@ -63,23 +84,17 @@ void sdvg_unmap_scratch_before_draw (void);
 void sdvg_remap_scratch_after_draw (void);
 #endif // SHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
 
-// ----------- Log helper macros -----------
-#define Dsdvg_printf        if(0);else Dyac_host_printf
-#define Dsdvg_tracecall     if(1);else Dsdvg_printf
-#define Dsdvg_tracecallv    if(1);else Dsdvg_printf
-#define Dsdvg_warnprintf    if(0);else Dsdvg_printf
-#define Dsdvg_errorprintf   if(0);else Dsdvg_printf
-#define Dsdvg_debugprintf   if(0);else Dsdvg_printf
-#define Dsdvg_debugprintfv  if(1);else Dsdvg_printf
-#define Dsdvg_debugprintfvv if(1);else Dsdvg_printf
-
 // ----------- OpenGL helper macros -----------
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
 #define Dupdate_scratch_offset UpdateScratchOffset()
 #define Dupload_scratch_to_vbo UploadScratchToVBO()
 #else
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
+#ifdef MINNIE_LIB
+#define Dsdvg_glcall(f) f
+#else
 #define Dsdvg_glcall(f) tkopengl_shared->_##f
+#endif // MINNIE_LIB
 #define Dsdvg_uniform_1i(a,v) Dsdvg_glcall(glUniform1i(a,v))
 #define Dsdvg_uniform_1f(a,v) Dsdvg_glcall(glUniform1f(a,v))
 #define Dsdvg_uniform_2f(a,v1,v2) Dsdvg_glcall(glUniform2f(a,v1,v2))

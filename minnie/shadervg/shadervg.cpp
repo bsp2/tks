@@ -28,9 +28,7 @@
 #include <stdarg.h>
 #include <math.h>
 
-#define YAC_BIGSTRING
-#define YAC_PRINTF
-#include <yac.h>
+#include "../inc_yac.h"
 
 #define MINNIE_SKIP_TYPEDEFS  defined
 #include "../minnie.h"
@@ -86,13 +84,16 @@
 #include "TrianglesFillFlatEdgeAA14_2.h"
 #include "TrianglesFillGouraudEdgeAA32.h"
 #include "TrianglesFillGouraudEdgeAA14_2.h"
+#ifndef SHADERVG_STENCIL_POLYGONS
+#error polygon rasterizer n/a
 #include "PolygonFillFlat32.h"
-// #include "PolygonFillFlat32Linear.h"
-// #include "PolygonFillFlat32Radial.h"
-// #include "PolygonFillFlat32Conic.h"
+#include "PolygonFillFlat32Linear.h"  // (todo)
+#include "PolygonFillFlat32Radial.h"  // (todo)
+#include "PolygonFillFlat32Conic.h"  // (todo)
 #include "PolygonFillFlat14_2.h"
 #include "PolygonFillGouraud32.h"
 #include "PolygonFillGouraud14_2.h"
+#endif // SHADERVG_STENCIL_POLYGONS
 #include "RectFillAA.h"
 #include "RectStrokeAA.h"
 #include "RectFillStrokeAA.h"
@@ -116,6 +117,12 @@
 #include "LineStripFlat32.h"
 #include "LineStripFlatAA14_2.h"
 #include "LineStripFlatAA32.h"
+// #include "LineStripFlatAA14_2Linear.h"
+#include "LineStripFlatAA32Linear.h"
+// #include "LineStripFlatAA14_2Radial.h"
+#include "LineStripFlatAA32Radial.h"
+// #include "LineStripFlatAA14_2Conic.h"
+#include "LineStripFlatAA32Conic.h"
 #include "LineStripFlatBevelAA14_2.h"
 #include "LineStripFlatBevelAA32.h"
 #include "LinesFlatAA14_2.h"
@@ -149,8 +156,6 @@ static int mapped_user_vbo_id;
 
 static Dsdvg_buffer_ref_t attrib_write_buffer = NULL;
 
-static sBool b_debug_write_vbo;
-
 static TrianglesFillFlat32               triangles_fill_flat_32;
 static TrianglesFillFlat32Linear         triangles_fill_flat_32_linear;
 static TrianglesFillFlat32Radial         triangles_fill_flat_32_radial;
@@ -162,10 +167,12 @@ static TrianglesFillFlatEdgeAA32         triangles_fill_flat_edgeaa_32;
 static TrianglesFillFlatEdgeAA14_2       triangles_fill_flat_edgeaa_14_2;
 static TrianglesFillGouraudEdgeAA32      triangles_fill_gouraud_edgeaa_32;
 static TrianglesFillGouraudEdgeAA14_2    triangles_fill_gouraud_edgeaa_14_2;
+#ifndef SHADERVG_STENCIL_POLYGONS
 static PolygonFillFlat32                 polygon_fill_flat_32;
 static PolygonFillFlat14_2               polygon_fill_flat_14_2;
 static PolygonFillGouraud32              polygon_fill_gouraud_32;
 static PolygonFillGouraud14_2            polygon_fill_gouraud_14_2;
+#endif // SHADERVG_STENCIL_POLYGONS
 static RectFillAA                        rect_fill_aa;
 static RectStrokeAA                      rect_stroke_aa;
 static RectFillStrokeAA                  rect_fill_stroke_aa;
@@ -189,6 +196,12 @@ static LineStripFlat14_2                 line_strip_flat_14_2;
 static LineStripFlat32                   line_strip_flat_32;
 static LineStripFlatAA14_2               line_strip_flat_aa_14_2;
 static LineStripFlatAA32                 line_strip_flat_aa_32;
+// static LineStripFlatAA14_2Linear         line_strip_flat_aa_14_2_linear;
+static LineStripFlatAA32Linear           line_strip_flat_aa_32_linear;
+// static LineStripFlatAA14_2Radial         line_strip_flat_aa_14_2_radial;
+static LineStripFlatAA32Radial           line_strip_flat_aa_32_radial;
+// static LineStripFlatAA14_2Conic         line_strip_flat_aa_14_2_conic;
+static LineStripFlatAA32Conic            line_strip_flat_aa_32_conic;
 static LineStripFlatBevelAA14_2          line_strip_flat_bevel_aa_14_2;
 static LineStripFlatBevelAA32            line_strip_flat_bevel_aa_32;
 static LinesFlatAA14_2                   lines_flat_aa_14_2;
@@ -196,8 +209,7 @@ static LinesFlatAA32                     lines_flat_aa_32;
 static PointsSquareAA32                  points_square_aa_32;
 static PointsRoundAA32                   points_round_aa_32;
 
-#define SHADERVG_NUM_SHAPES  43
-static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
+static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_32,
    &triangles_fill_flat_32_linear,
    &triangles_fill_flat_32_radial,
@@ -209,10 +221,12 @@ static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
    &triangles_fill_flat_edgeaa_14_2,
    &triangles_fill_gouraud_edgeaa_32,
    &triangles_fill_gouraud_edgeaa_14_2,
+#ifndef SHADERVG_STENCIL_POLYGONS
    &polygon_fill_flat_32,
    &polygon_fill_flat_14_2,
    &polygon_fill_gouraud_32,
    &polygon_fill_gouraud_14_2,
+#endif // SHADERVG_STENCIL_POLYGONS
    &rect_fill_aa,
    &rect_stroke_aa,
    &rect_fill_stroke_aa,
@@ -236,6 +250,12 @@ static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
    &line_strip_flat_32,
    &line_strip_flat_aa_14_2,
    &line_strip_flat_aa_32,
+   // &line_strip_flat_aa_14_2_linear,
+   &line_strip_flat_aa_32_linear,
+   // &line_strip_flat_aa_14_2_radial,
+   &line_strip_flat_aa_32_radial,
+   // &line_strip_flat_aa_14_2_conic,
+   &line_strip_flat_aa_32_conic,
    &line_strip_flat_bevel_aa_14_2,
    &line_strip_flat_bevel_aa_32,
    &lines_flat_aa_14_2,
@@ -243,6 +263,7 @@ static ShaderVG_Shape *all_shapes[SHADERVG_NUM_SHAPES] = {
    &points_square_aa_32,
    &points_round_aa_32,
 };
+#define SHADERVG_NUM_SHAPES  (sizeof(all_shapes)/sizeof(ShaderVG_Shape*))
 
 struct ShaderVG_FBO {
    sUI fbo_id;  // 0=unused
@@ -296,22 +317,18 @@ static sUI current_draw_vertex_index;         // incs with each Vertex2f() call
 #define DRAW_MODE_POINTS_SQUARE_AA     7007
 #define DRAW_MODE_POINTS_ROUND         7008
 #define DRAW_MODE_POINTS_ROUND_AA      7009
+#define DRAW_MODE_POLYGON              7010
+#define DRAW_MODE_POLYGON_AA           7011
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
+
+static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
+static sF32 draw_first_y;
 
 #define SHADERVG_MAX_ATTRIB_ENABLES 16
 static sSI current_draw_attrib_enables[SHADERVG_MAX_ATTRIB_ENABLES];
 static sUI num_draw_attrib_enables;
 
-#define PAINT_SOLID   0
-#define PAINT_LINEAR  1
-#define PAINT_RADIAL  2
-#define PAINT_CONIC   3
-static sSI  paint_mode;
-static sF32 paint_start_x;
-static sF32 paint_start_y;
-static sF32 paint_end_x;
-static sF32 paint_end_y;
-static sF32 paint_angle;  // 0..1
+static shadervg_paint_t paint;
 
 // true=use GL core profile (GLSL 3.x, VAO)
 sBool sdvg_b_glcore = YAC_FALSE;
@@ -336,7 +353,12 @@ static sSI scissor_w;
 static sSI scissor_h;
 
 // render state
+#ifdef MINNIE_LIB
+static Matrix4f *mvp_matrix;
+#endif // MINNIE_LIB
+#ifdef SHADERVG_SCRIPT_API
 static YAC_Object *mvp_matrix;  // Matrix4f  row major
+#endif // SHADERVG_SCRIPT_API
 static sBool  b_aa;
 static sF32   aa_range;
 static sF32   aa_exp;        // (todo) remove
@@ -359,6 +381,7 @@ static sF32   global_a;
 static sF32   texture_decal_alpha;
 
 // see SetGLSLVersion()
+#ifdef SHADERVG_SCRIPT_API
 static YAC_String *s_glsl_version = NULL;
 static YAC_String *s_glsl_attribute;
 static YAC_String *s_glsl_varying_out;
@@ -370,12 +393,26 @@ static YAC_String *s_glsl_texture2dproj;
 static YAC_String *s_glsl_texture3d;
 static YAC_String *s_glsl_texturecube;
 static YAC_String *s_glsl_tex_alpha;
+#else
+// MINNIE_LIB
+static YAC_String s_glsl_version;
+static YAC_String s_glsl_attribute;
+static YAC_String s_glsl_varying_out;
+static YAC_String s_glsl_varying_in;
+static YAC_String s_glsl_fragcolor_def;
+static YAC_String s_glsl_fragcolor;
+static YAC_String s_glsl_texture2d;
+static YAC_String s_glsl_texture2dproj;
+static YAC_String s_glsl_texture3d;
+static YAC_String s_glsl_texturecube;
+static YAC_String s_glsl_tex_alpha;
+#endif // SHADERVG_SCRIPT_API
 
 // solid-fill shader, shared among all render classes
 static ShaderVG_Shader fill_shader;
-static sSI       fill_a_vertex;
-static sSI       fill_u_transform;
-static sSI       fill_u_color;
+static sSI fill_a_vertex;
+static sSI fill_u_transform;
+static sSI fill_u_color;
 
 // ------------ fill vertex shader --------------
 static const char *fill_vs_src =
@@ -398,6 +435,7 @@ static const char *fill_fs_src =
    ;
 
 
+#ifdef SHADERVG_SCRIPT_API
 static void loc_alloc_glsl_strings(void) {
    s_glsl_version       = YAC_New_String();
    s_glsl_attribute     = YAC_New_String();
@@ -411,18 +449,26 @@ static void loc_alloc_glsl_strings(void) {
    s_glsl_texturecube   = YAC_New_String();
    s_glsl_tex_alpha     = YAC_New_String();
 }
+#endif // SHADERVG_SCRIPT_API
 
 // (note) must be called before sdvg_Init() (or this defaults to Desktop GL 2.x)
 void YAC_CALL sdvg_SetGLSLVersion(sBool _bV3, sBool _bGLES, YAC_String *_sVersionStringOrNull) {
 
+#ifdef SHADERVG_SCRIPT_API
    if(NULL == s_glsl_version)
    {
       loc_alloc_glsl_strings();
    }
+   YAC_String *sVer = s_glsl_version;
+#define Ds_glsl(a) (a)->
+#else
+   YAC_String *sVer = &s_glsl_version;
+#define Ds_glsl(a) (a).
+#endif // SHADERVG_SCRIPT_API
 
    if(NULL == _sVersionStringOrNull)
    {
-      s_glsl_version->visit(
+      sVer->visit(
          _bV3
          ? _bGLES ? "#version 300 es\n" : "#version 410 core\n"
          : _bGLES ? "#version 100\n"    : "#version 120\n"
@@ -430,22 +476,28 @@ void YAC_CALL sdvg_SetGLSLVersion(sBool _bV3, sBool _bGLES, YAC_String *_sVersio
    }
    else
    {
+#ifdef MINNIE_LIB
+      sVer->copy("#version ");
+      sVer->append(_sVersionStringOrNull);
+      sVer->append("\n");
+#else
       YAC_String t; t.copy("#version ");
       t.append(_sVersionStringOrNull);
       t.append("\n");
-      s_glsl_version->yacCopy(&t);
+      sVer->yacCopy(&t);
+#endif // MINNIE_LIB
    }
 
-   s_glsl_attribute     ->visit(_bV3 ? "in"                      : "attribute");
-   s_glsl_varying_out   ->visit(_bV3 ? "out"                     : "varying");
-   s_glsl_varying_in    ->visit(_bV3 ? "in"                      : "varying");
-   s_glsl_fragcolor_def ->visit(_bV3 ? "out vec4 o_FragColor;\n" : "");
-   s_glsl_fragcolor     ->visit(_bV3 ? "o_FragColor"             : "gl_FragColor");
-   s_glsl_texture2d     ->visit(_bV3 ? "texture"                 : "texture2D");
-   s_glsl_texture2dproj ->visit(_bV3 ? "textureProj"             : "texture2DProj");
-   s_glsl_texture3d     ->visit(_bV3 ? "texture"                 : "texture3D");
-   s_glsl_texturecube   ->visit(_bV3 ? "texture"                 : "textureCube");
-   s_glsl_tex_alpha     ->visit(_bV3 ? "r"                       : "a");
+   Ds_glsl(s_glsl_attribute    )visit(_bV3 ? "in"                  : "attribute");
+   Ds_glsl(s_glsl_varying_out  )visit(_bV3 ? "out"                 : "varying");
+   Ds_glsl(s_glsl_varying_in   )visit(_bV3 ? "in"                  : "varying");
+   Ds_glsl(s_glsl_fragcolor_def)visit(_bV3 ? "out vec4 o_Color;\n" : "");
+   Ds_glsl(s_glsl_fragcolor    )visit(_bV3 ? "o_Color"             : "gl_FragColor");
+   Ds_glsl(s_glsl_texture2d    )visit(_bV3 ? "texture"             : "texture2D");
+   Ds_glsl(s_glsl_texture2dproj)visit(_bV3 ? "textureProj"         : "texture2DProj");
+   Ds_glsl(s_glsl_texture3d    )visit(_bV3 ? "texture"             : "texture3D");
+   Ds_glsl(s_glsl_texturecube  )visit(_bV3 ? "texture"             : "textureCube");
+   Ds_glsl(s_glsl_tex_alpha    )visit(_bV3 ? "r"                   : "a");
 }
 
 void YAC_CALL sdvg_SetScratchBufferSize(sUI _szBytes) {
@@ -460,14 +512,20 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    sdvg_b_glcore = _bGLCore;
 
    // Import shared functions from tkopengl
+#ifndef MINNIE_LIB
    tkopengl_shared_resolve();
    if(NULL == tkopengl_shared)
    {
       Dsdvg_errorprintf("[---] sdvg_Init: tkopengl_shared_resolve() failed (plugin not loaded?)\n");
       return YAC_FALSE;
    }
+#endif // MINNIE_LIB
 
+#ifdef SHADERVG_SCRIPT_API
    if(NULL == s_glsl_version)
+#else
+   if(s_glsl_version.length <= 1u)
+#endif // SHADERVG_SCRIPT_API
    {
       sdvg_SetGLSLVersion(sdvg_b_glcore/*bV3*/,
                           YAC_FALSE/*bGLES*/,
@@ -487,9 +545,13 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 
    attrib_write_buffer = scratch_buffer;
 
-   b_debug_write_vbo = YAC_TRUE;
+#ifdef MINNIE_LIB
+   mvp_matrix = new Matrix4f();
+#endif // MINNIE_LIB
 
+#ifdef SHADERVG_SCRIPT_API
    mvp_matrix = yac_host->yacNew(NULL/*nsp*/, "Matrix4f");
+#endif // SHADERVG_SCRIPT_API
 
    b_aa                = YAC_TRUE;
    aa_range            = 1.5f;
@@ -539,12 +601,12 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    sdvg_int_reset_font();
 #endif // SHADERVG_TEXT
 
-   paint_mode = PAINT_SOLID;
-   paint_start_x = 0.0f;
-   paint_start_y = 0.0f;
-   paint_end_x = 640.0f;
-   paint_end_y = 480.0f;
-   paint_angle = 0.0f;
+   paint.mode = PAINT_SOLID;
+   paint.start_x = 0.0f;
+   paint.start_y = 0.0f;
+   paint.end_x = 640.0f;
+   paint.end_y = 480.0f;
+   paint.angle = 0.0f;
 
    return r;
 }
@@ -561,7 +623,9 @@ void YAC_CALL sdvg_Exit(void) {
    YAC_DELETE_SAFE(mvp_matrix);
 
    YAC_DELETE_SAFE(scratch_buffer);
+   YAC_DELETE_SAFE(user_vbo_buffer);
 
+#ifdef SHADERVG_SCRIPT_API
    YAC_DELETE_SAFE(s_glsl_version);
    YAC_DELETE_SAFE(s_glsl_attribute);
    YAC_DELETE_SAFE(s_glsl_varying_out);
@@ -573,6 +637,7 @@ void YAC_CALL sdvg_Exit(void) {
    YAC_DELETE_SAFE(s_glsl_texture3d);
    YAC_DELETE_SAFE(s_glsl_texturecube);
    YAC_DELETE_SAFE(s_glsl_tex_alpha);
+#endif // SHADERVG_SCRIPT_API
 
    if(Dyac_host_yacGetDebugLevel() >= 2u)
    {
@@ -622,10 +687,6 @@ void YAC_CALL sdvg_SetEnableDrawBorder(sBool _bEnable) {
    rect_fill_stroke_aa     .b_draw_border = _bEnable;
 }
 
-void YAC_CALL sdvg_DebugSetEnableWriteVBO(sBool _bEnable) {
-   b_debug_write_vbo = _bEnable;
-}
-
 sUI sdvg_CreateVBO(sUI _numBytes) {
    sUI id = Dsdvg_glcall(zglGenBuffer());
    if(id >= 0u)
@@ -637,7 +698,7 @@ sUI sdvg_CreateVBO(sUI _numBytes) {
    return id;
 }
 
-void YAC_CALL sdvg_UpdateVBO(sUI _vboId, sUI _offset, sUI _numBytes, YAC_Object *_data) {
+void YAC_CALL sdvg_UpdateVBO(sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data) {
    Dsdvg_tracecall("[trc] sdvg_UpdateVBO: vboId=%u offset=%u numBytes=%u data=%p\n", _vboId, _offset, _numBytes, (void*)_data);
    if(current_vbo_id != _vboId)
       sdvg_BindVBO(_vboId);
@@ -1388,14 +1449,22 @@ void YAC_CALL sdvg_DrawPolygonFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _nu
    //   +0 f32 x
    //   +4 f32 y
    //
-   // (note) requires stencil buffer
-   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   triangles_fill_flat_32.drawPolygonFillFlatVBO32(_vboId,
+                                                   _byteOffset,
+                                                   _numVerts,
+                                                   mvp_matrix,
+                                                   fill_r, fill_g, fill_b, fill_a * global_a
+                                                   );
+#else
+#error polygon rasterizer n/a
    polygon_fill_flat_32.drawPolygonFillFlatVBO32(_vboId,
                                                  _byteOffset,
                                                  _numVerts,
                                                  mvp_matrix,
                                                  fill_r, fill_g, fill_b, fill_a * global_a
                                                  );
+#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_DrawPolygonFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -1404,14 +1473,22 @@ void YAC_CALL sdvg_DrawPolygonFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _
    //   s14.2 x
    //   s14.2 y
    //
-   // (note) requires stencil buffer
-   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   triangles_fill_flat_14_2.drawPolygonFillFlatVBO14_2(_vboId,
+                                                       _byteOffset,
+                                                       _numVerts,
+                                                       mvp_matrix,
+                                                       fill_r, fill_g, fill_b, fill_a * global_a
+                                                       );
+#else
+#error polygon rasterizer n/a
    polygon_fill_flat_14_2.drawPolygonFillFlatVBO14_2(_vboId,
                                                      _byteOffset,
                                                      _numVerts,
                                                      mvp_matrix,
                                                      fill_r, fill_g, fill_b, fill_a * global_a
                                                      );
+#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_DrawPolygonFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -1424,14 +1501,21 @@ void YAC_CALL sdvg_DrawPolygonFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI 
    //   u8  b
    //   u8  a
    //
-   // (note) requires stencil buffer
-   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   triangles_fill_gouraud_32.drawPolygonFillGouraudVBO32(_vboId,
+                                                         _byteOffset,
+                                                         _numVerts,
+                                                         mvp_matrix,
+                                                         global_a
+                                                         );
+#else
    polygon_fill_gouraud_32.drawPolygonFillGouraudVBO32(_vboId,
                                                        _byteOffset,
                                                        _numVerts,
                                                        mvp_matrix,
                                                        global_a
                                                        );
+#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_DrawPolygonFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -1444,14 +1528,21 @@ void YAC_CALL sdvg_DrawPolygonFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sU
    //   u8    b
    //   u8    a
    //
-   // (note) requires stencil buffer
-   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   triangles_fill_gouraud_14_2.drawPolygonFillGouraudVBO14_2(_vboId,
+                                                             _byteOffset,
+                                                             _numVerts,
+                                                             mvp_matrix,
+                                                             global_a
+                                                             );
+#else
    polygon_fill_gouraud_14_2.drawPolygonFillGouraudVBO14_2(_vboId,
                                                            _byteOffset,
                                                            _numVerts,
                                                            mvp_matrix,
                                                            global_a
                                                            );
+#endif // SHADERVG_STENCIL_POLYGONS
 }
 
 void YAC_CALL sdvg_SetupRectFillAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
@@ -2548,7 +2639,7 @@ void AllocScratchBuffer(sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBy
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
       _scratchBuf->io_offset = 0u;  // (todo) already done by zglMapBuffer()
    }
-   Dsdvg_glcall(zglVertexAttribOffset(_aVertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _scratchBuf->io_offset));
+   Dsdvg_glcall(zglVertexAttribOffset(_aVertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0u/*stride*/, _scratchBuf->io_offset));
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
    current_draw_start_offset = _scratchBuf->io_offset;
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
@@ -2759,6 +2850,7 @@ void YAC_CALL sdvg_DestroyFBO(sUI _fboIdx) {
    //            4.2    420
    //            4.3    430
 void FixShaderSourceVert(YAC_String *_s, YAC_String *_r) {
+#ifdef SHADERVG_SCRIPT_API
    YAC_String t;
    t.copy(s_glsl_version);
    if(sdvg_b_glcore)
@@ -2776,9 +2868,30 @@ void FixShaderSourceVert(YAC_String *_s, YAC_String *_r) {
    k.visit("TEXTURE3D");     yac_host->yacStringReplace(_r, &k, s_glsl_texture3d);
    k.visit("TEXTURECUBE");   yac_host->yacStringReplace(_r, &k, s_glsl_texturecube);
    k.visit("TEX_ALPHA");     yac_host->yacStringReplace(_r, &k, s_glsl_tex_alpha);
+#else
+   // MINNIE_LIB
+   _r->alloc(_s->length + 512u);
+   _r->length = 0u;
+   _r->append(&s_glsl_version);
+   // Dprintf("xxx FixShaderSourceVert: s_glsl_version=\"%s\" _r=\"%s\"\n", s_glsl_version.chars, _r->chars);
+   if(sdvg_b_glcore)
+      _r->append("precision mediump float; \n");
+   _r->append(" \n\n");
+   _r->append(_s);
+   YAC_String k;
+   k.visit("ATTRIBUTE");     _r->overwriteReplace(&k, &s_glsl_attribute);
+   k.visit("VARYING_OUT");   _r->overwriteReplace(&k, &s_glsl_varying_out);
+   k.visit("TEXTURE2D");     _r->overwriteReplace(&k, &s_glsl_texture2d);
+   k.visit("TEXTURE2DPROJ"); _r->overwriteReplace(&k, &s_glsl_texture2dproj);
+   k.visit("TEXTURE3D");     _r->overwriteReplace(&k, &s_glsl_texture3d);
+   k.visit("TEXTURECUBE");   _r->overwriteReplace(&k, &s_glsl_texturecube);
+   k.visit("TEX_ALPHA");     _r->overwriteReplace(&k, &s_glsl_tex_alpha);
+   // Dprintf("xxx FixShaderSourceVert: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
+#endif // SHADERVG_SCRIPT_API
 }
 
 void FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
+#ifdef SHADERVG_SCRIPT_API
    YAC_String t;
    t.copy(s_glsl_version);
    if(sdvg_b_glcore)
@@ -2791,12 +2904,30 @@ void FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
 
    // (todo) use simplified overwrite-replace
    YAC_String k;
-   k.visit("VARYING_IN");    yac_host->yacStringReplace(_r, &k, s_glsl_varying_in);
-   // // k.visit("FRAGCOLOR_DEF"); yac_host->yacStringReplace(_r, &k, s_glsl_fragcolor_def);
-   k.visit("FRAGCOLOR");     yac_host->yacStringReplace(_r, &k, s_glsl_fragcolor);
-   k.visit("TEXTURE2D");     yac_host->yacStringReplace(_r, &k, s_glsl_texture2d);
-   k.visit("TEXTURE3D");     yac_host->yacStringReplace(_r, &k, s_glsl_texture3d);
-   k.visit("TEX_ALPHA");     yac_host->yacStringReplace(_r, &k, s_glsl_tex_alpha);
+   k.visit("VARYING_IN");  yac_host->yacStringReplace(_r, &k, s_glsl_varying_in);
+   k.visit("FRAGCOLOR");   yac_host->yacStringReplace(_r, &k, s_glsl_fragcolor);
+   k.visit("TEXTURE2D");   yac_host->yacStringReplace(_r, &k, s_glsl_texture2d);
+   k.visit("TEXTURE3D");   yac_host->yacStringReplace(_r, &k, s_glsl_texture3d);
+   k.visit("TEX_ALPHA");   yac_host->yacStringReplace(_r, &k, s_glsl_tex_alpha);
+#else
+   // MINNIE_LIB
+   _r->alloc(_s->length + 512u);
+   _r->length = 0u;
+   _r->append(&s_glsl_version);
+   if(sdvg_b_glcore)
+      _r->append("precision mediump float; \n");
+   _r->append(" \n\n");
+   _r->append(&s_glsl_fragcolor_def);
+   _r->append(" \n");
+   _r->append(_s);
+   YAC_String k;
+   k.visit("VARYING_IN");  _r->overwriteReplace(&k, &s_glsl_varying_in);
+   k.visit("FRAGCOLOR");   _r->overwriteReplace(&k, &s_glsl_fragcolor);
+   k.visit("TEXTURE2D");   _r->overwriteReplace(&k, &s_glsl_texture2d);
+   k.visit("TEXTURE3D");   _r->overwriteReplace(&k, &s_glsl_texture3d);
+   k.visit("TEX_ALPHA");   _r->overwriteReplace(&k, &s_glsl_tex_alpha);
+   // Dprintf("xxx FixShaderSourceFrag: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
+#endif // SHADERVG_SCRIPT_API
 }
 
 static sBool loc_CreateFillShader() {
@@ -2822,6 +2953,7 @@ static sBool loc_CreateFillShader() {
    return ret;
 }
 
+#ifdef SHADERVG_SCRIPT_API
 void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
    // 'o' is row-major matrix object (e.g. Matrix4f or FloatArray)
    if(NULL != _o)
@@ -2853,6 +2985,27 @@ void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
       Dsdvg_errorprintf("[---] shadervg:UniformMatrix4: matrix is NULL !!\n");
    }
 }
+#else
+// MINNIE_LIB
+void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
+   // 'o' is row-major matrix object (e.g. Matrix4f or FloatArray)
+   if(NULL != _o)
+   {
+      const GLfloat *fa = (const GLfloat *)_o->floats;
+      if(NULL != fa)
+      {
+#if 0
+         Dsdvg_debugprintfvv("[trc] sdvg:UniformMatrix4: fa={%f;%f;%f;%f  %f;%f;%f;%f  %f;%f;%f;%f  %f;%f;%f;%f}\n", fa[0], fa[1], fa[2], fa[3], fa[4], fa[5], fa[6], fa[7], fa[8], fa[9], fa[10], fa[11], fa[12], fa[13], fa[14], fa[15]);
+#endif
+         Dsdvg_glcall(glUniformMatrix4fv(_location, 1/*count*/, GL_TRUE/*transpose*/, fa));
+      }
+      else
+      {
+         Dsdvg_errorprintf("[---] shadervg:UniformMatrix4: yacArrayGetPointer() returned NULL !!\n");
+      }
+   }
+}
+#endif // SHADERVG_SCRIPT_API
 
 sSI BindFillShader(void) {
    // returns vertex attribute id (for allocScratchBuffer() calls)
@@ -2889,7 +3042,9 @@ sBool YAC_CALL sdvg_OnOpen(void) {
       Dsdvg_debugprintf("[dbg] sdvg_OnOpen: ENTER\n");
    }
 
+#ifndef MINNIE_LIB
    Dsdvg_glcall(zglLoadExtensions());
+#endif // MINNIE_LIB
 
    if(sdvg_b_glcore)
       vao_id = Dsdvg_glcall(zglGenVertexArray());
@@ -3196,7 +3351,7 @@ void YAC_CALL sdvg_BeginFrame(void) {
    sdvg_int_reset_font();
 #endif // SHADERVG_TEXT
 
-   paint_mode = PAINT_SOLID;
+   paint.mode = PAINT_SOLID;
 
    if(sdvg_b_glcore)
       Dsdvg_glcall(glBindVertexArray(vao_id));
@@ -3235,13 +3390,25 @@ void YAC_CALL sdvg_EndFrame(void) {
    Dsdvg_glcall(glDisable(GL_SCISSOR_TEST));
 }
 
-void YAC_CALL sdvg_SetTransform(YAC_Object *_mat4) {
+#ifdef MINNIE_LIB
+void sdvg_SetTransform(Matrix4f *_mat4) {
+   ::memcpy((void*)mvp_matrix->floats, (const void*)_mat4->floats, sizeof(sF32)*4*4);
+}
+
+Matrix4f *sdvg_GetTransformRef(void) {
+   return mvp_matrix;
+}
+#endif // MINNIE_LIB
+
+#ifdef SHADERVG_SCRIPT_API
+void YAC_CALL _sdvg_SetTransform(YAC_Object *_mat4) {
    mvp_matrix->yacOperatorAssign(_mat4);
 }
 
-YAC_Object *YAC_CALL sdvg_GetTransformRef(void) {
+YAC_Object *YAC_CALL _sdvg_GetTransformRef(void) {
    return mvp_matrix;
 }
+#endif // SHADERVG_SCRIPT_API
 
 void YAC_CALL sdvg_SetEnableAA(sBool _bEnable) {
    b_aa = _bEnable;
@@ -3292,6 +3459,13 @@ void YAC_CALL sdvg_SetFillColorARGB(sUI _c32) {
    fill_g = ((_c32 >>  8) & 255u) * (1.0f / 255.0f);
    fill_b = ((_c32      ) & 255u) * (1.0f / 255.0f);
    fill_a = ((_c32 >> 24) & 255u) * (1.0f / 255.0f);
+}
+
+void YAC_CALL sdvg_SetColor4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
+   fill_r = stroke_r = _r;
+   fill_g = stroke_g = _g;
+   fill_b = stroke_b = _b;
+   fill_a = stroke_a = _a;
 }
 
 void YAC_CALL sdvg_SetColorARGB(sUI _c32) {
@@ -3453,8 +3627,11 @@ void YAC_CALL sdvg_DestroyShader(sUI _shaderIdx) {
 }
 
 void BindShape(ShaderVG_Shape *_shape) {
-   ShaderVG_Shader *shapeShader = &_shape->shape_shader;
-   shapeShader->bind();
+   if(NULL != _shape)
+   {
+      ShaderVG_Shader *shapeShader = &_shape->shape_shader;
+      shapeShader->bind();
+   }
    current_shape = _shape;
 }
 
@@ -3732,32 +3909,32 @@ static sBool BeginDraw(sUI _numVertices, sUI _stride) {
 }
 
 void YAC_CALL sdvg_PaintSolid(void) {
-   paint_mode = PAINT_SOLID;
+   paint.mode = PAINT_SOLID;
 }
 
 void YAC_CALL sdvg_PaintLinear(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY) {
-   paint_mode = PAINT_LINEAR;
-   paint_start_x = _startX;
-   paint_start_y = _startY;
-   paint_end_x = _endX;
-   paint_end_y = _endY;
+   paint.mode = PAINT_LINEAR;
+   paint.start_x = _startX;
+   paint.start_y = _startY;
+   paint.end_x = _endX;
+   paint.end_y = _endY;
 }
 
 void YAC_CALL sdvg_PaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
-   paint_mode = PAINT_RADIAL;
-   paint_start_x = _startX;
-   paint_start_y = _startY;
-   paint_end_x = _startX + _radiusX;
-   paint_end_y = _startY + _radiusY;
+   paint.mode = PAINT_RADIAL;
+   paint.start_x = _startX;
+   paint.start_y = _startY;
+   paint.end_x = _startX + _radiusX;
+   paint.end_y = _startY + _radiusY;
 }
 
 void YAC_CALL sdvg_PaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01) {
-   paint_mode = PAINT_CONIC;
-   paint_start_x = _startX;
-   paint_start_y = _startY;
-   paint_end_x = _startX + _radiusX;
-   paint_end_y = _startY + _radiusY;
-   paint_angle = _angle01 + 0.25f/*north*/;
+   paint.mode = PAINT_CONIC;
+   paint.start_x = _startX;
+   paint.start_y = _startY;
+   paint.end_x = _startX + _radiusX;
+   paint.end_y = _startY + _radiusY;
+   paint.angle = _angle01 + 0.25f/*north*/;
 }
 
 sBool YAC_CALL sdvg_BeginVBO(sUI _numVertices, sUI _stride) {
@@ -3783,13 +3960,35 @@ sBool YAC_CALL sdvg_BeginTriangleStrip(sUI _numVertices, sUI _stride) {
 
 static void loc_bind_default_triangles_fill_flat_shape(void) {
    ShaderVG_Shape *shape;
-   switch(paint_mode)
+   switch(paint.mode)
    {
       default:
       case PAINT_SOLID:   shape = &triangles_fill_flat_32;        break;
       case PAINT_LINEAR:  shape = &triangles_fill_flat_32_linear; break;
       case PAINT_RADIAL:  shape = &triangles_fill_flat_32_radial; break;
       case PAINT_CONIC:   shape = &triangles_fill_flat_32_conic;  break;
+   }
+   BindShape(shape);
+}
+
+static void loc_bind_default_polygon_trianglestrip_flat_aa_shape(void) {
+   ShaderVG_Shape *shape;
+   switch(paint.mode)
+   {
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+#error loc_bind_default_polygon_trianglestrip_flat_aa_shape: implement me
+      default:
+      case PAINT_SOLID:   shape = &line_strip_flat_aa_14_2;        break;
+      case PAINT_LINEAR:  shape = &line_strip_flat_aa_14_2_linear; break;
+      case PAINT_RADIAL:  shape = &line_strip_flat_aa_14_2_radial; break;
+      case PAINT_CONIC:   shape = &line_strip_flat_aa_14_2_conic;  break;
+#else
+      default:
+      case PAINT_SOLID:   shape = &line_strip_flat_aa_32;        break;
+      case PAINT_LINEAR:  shape = &line_strip_flat_aa_32_linear; break;
+      case PAINT_RADIAL:  shape = &line_strip_flat_aa_32_radial; break;
+      case PAINT_CONIC:   shape = &line_strip_flat_aa_32_conic;  break;
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
    }
    BindShape(shape);
 }
@@ -3804,7 +4003,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangles(sUI _numVertices) {
    if(NULL == current_shape)
       loc_bind_default_triangles_fill_flat_shape();
 
-   if(sdvg_BeginTriangles(_numVertices, (2*4)/*stride*/))
+   if(sdvg_BeginTriangles(_numVertices, (2u*sizeof(sF32))/*stride*/))
    {
       sdvg_VertexOffset2f();
       return YAC_TRUE;
@@ -3822,7 +4021,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan(sUI _numVertices) {
    if(NULL == current_shape)
       loc_bind_default_triangles_fill_flat_shape();
 
-   if(sdvg_BeginTriangleFan(_numVertices, (2*4)/*stride*/))
+   if(sdvg_BeginTriangleFan(_numVertices, (2u*sizeof(sF32))/*stride*/))
    {
       sdvg_VertexOffset2f();
       return YAC_TRUE;
@@ -3844,7 +4043,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleStrip(sUI _numVertices) {
    if(NULL == current_shape)
       loc_bind_default_triangles_fill_flat_shape();
 
-   if(sdvg_BeginTriangleStrip(_numVertices, (2*4)/*stride*/))
+   if(sdvg_BeginTriangleStrip(_numVertices, (2u*sizeof(sF32))/*stride*/))
    {
       sdvg_VertexOffset2f();
       return YAC_TRUE;
@@ -3866,7 +4065,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangles(sUI _numVertices) {
    {
       BindShape(&triangles_fill_gouraud_32);
    }
-   if(sdvg_BeginTriangles(_numVertices, 4+(2*4)/*stride*/))
+   if(sdvg_BeginTriangles(_numVertices, 4u+(2u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffsetARGB("a_color");
       sdvg_VertexOffset2f();
@@ -3889,7 +4088,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan(sUI _numVertices) {
    {
       BindShape(&triangles_fill_gouraud_32);
    }
-   if(sdvg_BeginTriangleFan(_numVertices, 4+(2*4)/*stride*/))
+   if(sdvg_BeginTriangleFan(_numVertices, 4+(2u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffsetARGB("a_color");
       sdvg_VertexOffset2f();
@@ -3912,7 +4111,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip(sUI _numVertices) {
    {
       BindShape(&triangles_fill_gouraud_32);
    }
-   if(sdvg_BeginTriangleStrip(_numVertices, 4+(2*4)/*stride*/))
+   if(sdvg_BeginTriangleStrip(_numVertices, 4+(2u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffsetARGB("a_color");
       sdvg_VertexOffset2f();
@@ -3933,7 +4132,7 @@ static sBool loc_BeginTexturedTriangles(sUI _numVertices, ShaderVG_Shape *_defau
    {
       BindShape(_defaultShape);
    }
-   if(sdvg_BeginTriangles(_numVertices, (4*4)/*stride*/))
+   if(sdvg_BeginTriangles(_numVertices, (4u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffset2f("a_uv");
       sdvg_VertexOffset2f();
@@ -3954,7 +4153,7 @@ static sBool loc_BeginTexturedTriangleFan(sUI _numVertices, ShaderVG_Shape *_def
    {
       BindShape(_defaultShape);
    }
-   if(sdvg_BeginTriangleFan(_numVertices, (4*4)/*stride*/))
+   if(sdvg_BeginTriangleFan(_numVertices, (4u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffset2f("a_uv");
       sdvg_VertexOffset2f();
@@ -3975,7 +4174,7 @@ static sBool loc_BeginTexturedTriangleStrip(sUI _numVertices, ShaderVG_Shape *_d
    {
       BindShape(_defaultShape);
    }
-   if(sdvg_BeginTriangleStrip(_numVertices, (4*4)/*stride*/))
+   if(sdvg_BeginTriangleStrip(_numVertices, (4u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffset2f("a_uv");
       sdvg_VertexOffset2f();
@@ -4000,7 +4199,7 @@ static sBool loc_BeginTexturedGouraudTriangles(sUI _numVertices, ShaderVG_Shape 
    {
       BindShape(_defaultShape);
    }
-   if(sdvg_BeginTriangles(_numVertices, (2*4)+4+(2*4)/*stride*/))
+   if(sdvg_BeginTriangles(_numVertices, (2u*sizeof(sF32))+4u+(2u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffset2f("a_uv");
       sdvg_AttribOffsetARGB("a_color");
@@ -4026,7 +4225,7 @@ static sBool loc_BeginTexturedGouraudTriangleFan(sUI _numVertices, ShaderVG_Shap
    {
       BindShape(_defaultShape);
    }
-   if(sdvg_BeginTriangleFan(_numVertices, 4+(4*4)/*stride*/))
+   if(sdvg_BeginTriangleFan(_numVertices, 4u+(4u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffset2f("a_uv");
       sdvg_AttribOffsetARGB("a_color");
@@ -4052,7 +4251,7 @@ static sBool loc_BeginTexturedGouraudTriangleStrip(sUI _numVertices, ShaderVG_Sh
    {
       BindShape(_defaultShape);
    }
-   if(sdvg_BeginTriangleStrip(_numVertices, 4+(4*4)/*stride*/))
+   if(sdvg_BeginTriangleStrip(_numVertices, 4u+(4u*sizeof(sF32))/*stride*/))
    {
       sdvg_AttribOffset2f("a_uv");
       sdvg_AttribOffsetARGB("a_color");
@@ -4359,6 +4558,123 @@ sBool YAC_CALL sdvg_BeginPointsRoundAA(sUI _numPoints) {
 #endif // USE_VERTEX_ATTRIB_DIVISOR
 }
 
+sBool YAC_CALL sdvg_BeginPolygon(sUI _numVertices, sUI _stride) {
+   current_draw_mode = DRAW_MODE_POLYGON;
+   return BeginDraw(_numVertices, _stride);
+}
+
+sBool YAC_CALL sdvg_BeginPolygonAA(sUI _numVertices, sUI _stride) {
+   current_draw_mode = DRAW_MODE_POLYGON_AA;
+   return BeginDraw(_numVertices, _stride);
+}
+
+static sBool loc_BeginFilledPolygon(sUI _numVertices, sBool _bAA) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //     +0 f32 x
+   //     +4 f32 y
+   //
+
+   if(NULL == current_shape)
+   {
+#ifdef SHADERVG_STENCIL_POLYGONS
+      loc_bind_default_triangles_fill_flat_shape();
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+   }
+
+   current_draw_mode = _bAA ? DRAW_MODE_POLYGON_AA : DRAW_MODE_POLYGON;
+   if(BeginDraw(_numVertices + (_bAA ? 1u : 0u),
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+                (2u*sizeof(sS16))/*stride*/
+#else
+                (2u*sizeof(sF32))/*stride*/
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+                )
+      )
+   {
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+      sdvg_VertexOffset2fi16();
+#else
+      sdvg_VertexOffset2f();
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_CALL sdvg_BeginFilledPolygon(sUI _numVertices) {
+   return loc_BeginFilledPolygon(_numVertices, YAC_FALSE/*bAA*/);
+}
+
+sBool YAC_CALL sdvg_BeginFilledPolygonAA(sUI _numVertices) {
+   draw_first_x = -99999999.0f;
+   return loc_BeginFilledPolygon(_numVertices, YAC_TRUE/*bAA*/);
+}
+
+static void loc_drawStencilPolygon(sUI _numVerts) {
+   // (note) for use with sdvg_BeginFilledPolygon()
+   // (note) shader is selected in loc_bind_default_triangles_fill_flat_shape() (or use custom shader)
+   // (note) uniforms are set in UpdateShaderUniforms()
+
+   Dsdvg_stencil_poly_pass1();
+   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+   Dsdvg_stencil_poly_pass2();
+   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+   Dsdvg_stencil_poly_end();
+}
+
+static void loc_DrawLineStripFlatAAVBOGradient(sUI _byteOffset, sUI _numPoints, sBool _b14_2) {
+   // (note) for use with sdvg_BeginFilledPolygonAA()
+   // (note) shader is selected in loc_bind_default_polygon_trianglestrip_flat_aa_shape()
+   // (note) uniforms are set in sdvg_End() via current_shape->updatePaintUniforms()
+
+#ifdef USE_VERTEX_ATTRIB_DIVISOR
+
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+
+   Dsdvg_uniform_mat4(current_shape->shape_u_transform, mvp_matrix);
+   Dsdvg_uniform_4f(current_shape->shape_u_color_stroke, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
+   Dsdvg_uniform_1f(current_shape->shape_u_stroke_w, Dsdvg_pixel_scl(stroke_w) + aaOff);
+   Dsdvg_uniform_1f(current_shape->shape_u_aa_range, b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF);
+   if(-1 != current_shape->shape_u_debug)
+   {
+      Dsdvg_uniform_1f(current_shape->shape_u_debug, current_shape->b_debug ? 1.0f : 0.0f);
+   }
+   current_shape->updatePaintUniforms(&paint);
+
+   if(_b14_2)
+   {
+      Dsdvg_attrib_offset(current_shape->shape_a_vertex,   2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(current_shape->shape_a_vertex_n, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset +  4);
+   }
+   else
+   {
+      Dsdvg_attrib_offset(current_shape->shape_a_vertex,   2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(current_shape->shape_a_vertex_n, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  8);
+   }
+
+   Dsdvg_attrib_enable(current_shape->shape_a_vertex);
+   Dsdvg_attrib_enable(current_shape->shape_a_vertex_n);
+   Dsdvg_attrib_divisor(current_shape->shape_a_vertex, 1);
+   Dsdvg_attrib_divisor(current_shape->shape_a_vertex_n, 1);
+
+   const sUI numInstances = (_numPoints - 1);
+   Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
+
+   Dsdvg_attrib_disable(current_shape->shape_a_vertex_n);
+   Dsdvg_attrib_disable(current_shape->shape_a_vertex);
+   Dsdvg_attrib_divisor_reset(current_shape->shape_a_vertex);
+   Dsdvg_attrib_divisor_reset(current_shape->shape_a_vertex_n);
+
+#else
+   // (note) n/a
+#endif // USE_VERTEX_ATTRIB_DIVISOR
+}
+
 void YAC_CALL sdvg_VertexOffset2f(void) {
    if(NULL != current_shape && 0u == mapped_user_vbo_id)
    {
@@ -4373,6 +4689,24 @@ void YAC_CALL sdvg_VertexOffset2f(void) {
       else
       {
          Dsdvg_errorprintf("[---] sdvg_VertexOffset2f: SHADERVG_MAX_ATTRIB_ENABLES(%u) exceeded\n", SHADERVG_MAX_ATTRIB_ENABLES);
+      }
+   }
+}
+
+void YAC_CALL sdvg_VertexOffset2fi16(void) {
+   if(NULL != current_shape && 0u == mapped_user_vbo_id)
+   {
+      sSI a = current_shape->shape_a_vertex;
+      Dsdvg_attrib_offset(a, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, current_draw_stride, current_draw_attrib_offset);
+      Dsdvg_attrib_enable(a);
+      if(SHADERVG_MAX_ATTRIB_ENABLES != num_draw_attrib_enables)
+      {
+         current_draw_attrib_enables[num_draw_attrib_enables++] = a;
+         current_draw_attrib_offset += 2u * 2u;
+      }
+      else
+      {
+         Dsdvg_errorprintf("[---] sdvg_VertexOffset2fi16: SHADERVG_MAX_ATTRIB_ENABLES(%u) exceeded\n", SHADERVG_MAX_ATTRIB_ENABLES);
       }
    }
 }
@@ -4489,25 +4823,18 @@ void YAC_CALL _sdvg_Attribi16(sSI _i) {
 
 void YAC_CALL sdvg_Attrib1f(sF32 _f) {
    Dstream_write_f32(attrib_write_buffer, _f);
-   if(!b_debug_write_vbo)
-   {
-      attrib_write_buffer->io_offset -= 4;
-      return;
-   }
 }
 
 void YAC_CALL sdvg_Attrib2f(sF32 _f1, sF32 _f2) {
    Dstream_write_2f(attrib_write_buffer, _f1, _f2);
-   if(!b_debug_write_vbo)
-   {
-      attrib_write_buffer->io_offset -= 2*4;
-      return;
-   }
+}
+
+void YAC_CALL sdvg_Attrib2fi16 (sF32 _x, sF32 _y) {
+   Dstream_write_s16(attrib_write_buffer, sS16(_x * 4.0f));
+   Dstream_write_s16(attrib_write_buffer, sS16(_y * 4.0f));
 }
 
 void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
-
-   sUI oldOff = attrib_write_buffer->io_offset;
 
    // (todo) use fxnptr ?
    switch(current_draw_mode)
@@ -4549,12 +4876,27 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
       case DRAW_MODE_POINTS_ROUND_AA:
          sdvg_BufferAddLinePointFlat32(attrib_write_buffer, _x, _y);
          break;
-   }
 
-   if(!b_debug_write_vbo)
-   {
-      attrib_write_buffer->io_offset = oldOff;
-      return;
+      case DRAW_MODE_POLYGON:
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+         sdvg_Attrib2fi16(_x, _y);
+#else
+         sdvg_Attrib2f(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+         break;
+
+      case DRAW_MODE_POLYGON_AA:
+         if(-99999999.0f == draw_first_x)
+         {
+            draw_first_x = _x;
+            draw_first_y = _y;
+         }
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+         sdvg_Attrib2fi16(_x, _y);
+#else
+         sdvg_Attrib2f(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+         break;
    }
 
    current_draw_vertex_index++;
@@ -4568,11 +4910,6 @@ void YAC_CALL sdvg_Attrib3f(sF32 _f1, sF32 _f2, sF32 _f3) {
    Dstream_write_f32(attrib_write_buffer, _f1);
    Dstream_write_f32(attrib_write_buffer, _f2);
    Dstream_write_f32(attrib_write_buffer, _f3);
-   if(!b_debug_write_vbo)
-   {
-      attrib_write_buffer->io_offset -= 3*4;
-      return;
-   }
 }
 
 void YAC_CALL sdvg_Vertex3f(sF32 _x, sF32 _y, sF32 _z) {
@@ -4588,11 +4925,6 @@ void YAC_CALL sdvg_Attrib4f(sF32 _f1, sF32 _f2, sF32 _f3, sF32 _f4) {
    Dstream_write_f32(attrib_write_buffer, _f2);
    Dstream_write_f32(attrib_write_buffer, _f3);
    Dstream_write_f32(attrib_write_buffer, _f4);
-   if(!b_debug_write_vbo)
-   {
-      attrib_write_buffer->io_offset -= 4*4;
-      return;
-   }
 }
 
 void YAC_CALL sdvg_Color4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
@@ -4601,11 +4933,6 @@ void YAC_CALL sdvg_Color4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
 
 void YAC_CALL sdvg_AttribARGB(sUI _c32) {
    sdvg_WriteC32AsRGBA8(attrib_write_buffer, _c32);
-   if(!b_debug_write_vbo)
-   {
-      attrib_write_buffer->io_offset -= 4;
-      return;
-   }
 }
 
 void YAC_CALL sdvg_ColorARGB(sUI _c32) {
@@ -4694,70 +5021,7 @@ static sBool UpdateShaderUniforms(void) {
          Dsdvg_uniform_1f(loc, alpha_sdf_exp);
       }
 
-      loc = current_shape->shape_u_paint_tex;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1i(loc, 0/*tex_unit*/);
-      }
-
-      loc = current_shape->shape_u_paint_start;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_2f(loc, paint_start_x, paint_start_y);
-      }
-
-      loc = current_shape->shape_u_paint_end;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_2f(loc, paint_end_x, paint_end_y);
-      }
-
-      loc = current_shape->shape_u_paint_scale;
-      if(loc >= 0)
-      {
-         const sF32 sclX = (paint_end_x - paint_start_x > 0.0f) ? (1.0f / (paint_end_x - paint_start_x)) : 0.0f;
-         const sF32 sclY = (paint_end_y - paint_start_y > 0.0f) ? (1.0f / (paint_end_y - paint_start_y)) : 0.0f;
-         Dsdvg_uniform_2f(loc, sclX, sclY);
-      }
-
-      loc = current_shape->shape_u_paint_ndir;
-      if(loc >= 0)
-      {
-         sF32 dx = paint_end_x - paint_start_x;
-         sF32 dy = paint_end_y - paint_start_y;
-         sF32 l = sqrt(dx*dx + dy*dy);
-         if(l > 0.0f)
-         {
-            l = 1.0f / l;
-            dx *= l;
-            dy *= l;
-         }
-         else
-         {
-            dx = 0.0f;
-            dy = 0.0f;
-         }
-         Dsdvg_uniform_2f(loc, dx, dy);
-      }
-
-      loc = current_shape->shape_u_paint_ob_len;
-      if(loc >= 0)
-      {
-         const sF32 dx = paint_end_x - paint_start_x;
-         const sF32 dy = paint_end_y - paint_start_y;
-         sF32 l = sqrt(dx*dx + dy*dy);
-         if(l > 0.0f)
-         {
-            l = 1.0f / l;
-         }
-         Dsdvg_uniform_1f(loc, l);
-      }
-
-      loc = current_shape->shape_u_paint_angle;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, paint_angle);
-      }
+      current_shape->updatePaintUniforms(&paint);
 
       loc = current_shape->shape_u_transform;
       Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_transform=%d\n", current_shape->shape_u_transform);
@@ -4794,6 +5058,12 @@ void YAC_CALL sdvg_End(void) {
    {
       sUI bytesAvail;
       sBool bSizeOk;
+
+      if(DRAW_MODE_POLYGON_AA == current_draw_mode)
+      {
+         // close AA polyline
+         sdvg_Vertex2f(draw_first_x, draw_first_y);
+      }
 
       if(0u == mapped_user_vbo_id && 0u != current_vbo_id)
       {
@@ -4963,6 +5233,51 @@ void YAC_CALL sdvg_End(void) {
                                               current_draw_start_offset,
                                               current_draw_vertex_index
                                               );
+                  break;
+
+               case DRAW_MODE_POLYGON:
+                  if(UpdateShaderUniforms())
+                  {
+#ifdef SHADERVG_STENCIL_POLYGONS
+                     loc_drawStencilPolygon(current_draw_vertex_index/*numVerts*/);
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+                  }
+                  break;
+
+               case DRAW_MODE_POLYGON_AA:
+                  if(UpdateShaderUniforms())
+                  {
+#ifdef SHADERVG_STENCIL_POLYGONS
+                     if(current_draw_vertex_index >= 4u)
+                     {
+                        // Draw interior
+                        loc_drawStencilPolygon(current_draw_vertex_index - 1u/*numVerts*/);
+                        // Draw AA outline
+                        sF32 oldStrokeW = stroke_w;
+                        ShaderVG_Shape *oldShape = current_shape;
+                        stroke_w = 1.0f;
+#ifdef USE_VERTEX_ATTRIB_DIVISOR
+                        loc_bind_default_polygon_trianglestrip_flat_aa_shape();
+                        loc_DrawLineStripFlatAAVBOGradient(current_draw_start_offset,
+                                                           current_draw_num_vertices,
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+                                                           true/*b14_2*/
+#else
+                                                           false/*b14_2*/
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+                                                           );
+#else
+#error AA stencil polygons require -DUSE_VERTEX_ATTRIB_DIVISOR build option
+#endif // USE_VERTEX_ATTRIB_DIVISOR
+                        stroke_w = oldStrokeW;
+                        BindShape(oldShape);
+                     }
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+                  }
                   break;
 
             } // switch draw_mode

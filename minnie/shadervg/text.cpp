@@ -31,9 +31,7 @@
 #include <stdarg.h>
 #include <math.h>
 
-#define YAC_BIGSTRING
-#define YAC_PRINTF
-#include <yac.h>
+#include "../inc_yac.h"
 
 #define MINNIE_SKIP_TYPEDEFS  defined
 #include "../minnie.h"
@@ -68,16 +66,18 @@ void sdvg_int_reset_font(void) {
 #endif // SHADERVG_TEXT_UNDERLINE_BATCH_SIZE
 
 
+#ifdef SHADERVG_SCRIPT_API
 _ShaderVG_Font::_ShaderVG_Font(void) {
    ::memset(&font, 0, sizeof(sdvg_font_t));
 }
 
 _ShaderVG_Font::~_ShaderVG_Font() {
 }
+#endif // SHADERVG_SCRIPT_API
 
 sBool YAC_CALL sdvg_InitFont(sdvg_font_t *_font,
                              const void *_binData, sUI _binDataSz,
-                             sUI _texW, sUI _texH, const void *_texData
+                             const void *_texData, sUI _texW, sUI _texH
                              ) {
    sBool r = YAC_FALSE;
 
@@ -907,7 +907,7 @@ void YAC_CALL sdvg_UnbindFont(void) {
 }
 
 #ifdef SHADERVG_SCRIPT_API
-sBool YAC_CALL _sdvg_InitFont(YAC_Object *_font, YAC_Object *_data, sUI _texW, sUI _texH, YAC_Object *_texData) {
+sBool YAC_CALL _sdvg_InitFont(YAC_Object *_font, YAC_Object *_data, YAC_Object *_texData, sUI _texW, sUI _texH) {
    sBool r = YAC_FALSE;
    if(YAC_CHK(_font, clid_ShaderVG_Font))
    {
@@ -926,7 +926,7 @@ sBool YAC_CALL _sdvg_InitFont(YAC_Object *_font, YAC_Object *_data, sUI _texW, s
                const sUI texDataSz = _texData->yacArrayGetElementByteSize() * _texData->yacArrayGetNumElements();
                if(texDataSz >= (_texW * _texH))
                {
-                  r = sdvg_InitFont(&font->font, data, dataSz, _texW, _texH, texData);
+                  r = sdvg_InitFont(&font->font, data, dataSz, texData, _texW, _texH);
 
                   if(!r)
                   {

@@ -30,12 +30,19 @@
 YG("minnie");
 
 #include <stdlib.h>
+
+#if defined(__cplusplus)
 #include <new>
+#endif
 
 #ifdef HAVE_VGTESSELATE
+#if defined(__cplusplus)
 extern "C" {
+#endif // __cplusplus
 #include "VG_tesselator/tesselator/tessbinding.h"
+#if defined(__cplusplus)
 }
+#endif // __cplusplus
 #endif // HAVE_VGTESSELATE
 
 #ifndef MINNIE_SW_RENDER
@@ -113,15 +120,15 @@ extern "C" {
 #endif // MINNIE_PROCEDURAL_API
 
 #ifndef MINNIE_SKIP_TYPEDEFS  // (note) when not including "yac.h"
-typedef char                    sChar;
-typedef unsigned char           sU8;
-typedef signed char             sS8;
-typedef unsigned short          sU16;
-typedef signed short            sS16;
-typedef unsigned int            sU32;
-typedef signed int              sS32;
-typedef float                   sF32;
-typedef int                     sBool;
+typedef char            sChar;
+typedef unsigned char   sU8;
+typedef signed char     sS8;
+typedef unsigned short  sU16;
+typedef signed short    sS16;
+typedef unsigned int    sU32;
+typedef signed int      sS32;
+typedef float           sF32;
+typedef int             sBool;
 
 #ifndef NULL
 #define NULL 0
@@ -139,6 +146,7 @@ typedef int                     sBool;
 #define Dgrowarray(a) (sMAX(256u,(((a)+1u) + ((a)>>1))))
 
 // helper macros for writing to a stream
+#ifdef SHADERVG_SCRIPT_API
 #define Dstream_write_i8(s,v)  ((YAC_Object*)(s))->yacStreamWriteI8(v)
 #define Dstream_write_i16(s,v) ((YAC_Object*)(s))->yacStreamWriteI16(v)
 #define Dstream_write_s16(s,v) ((YAC_Object*)(s))->yacStreamWriteI16(v)
@@ -154,6 +162,25 @@ typedef int                     sBool;
 #define Dstream_read_s16(s) ((YAC_Object*)(s))->yacStreamReadI16()
 #define Dstream_read_i32(s) ((YAC_Object*)(s))->yacStreamReadI32()
 #define Dstream_read_f32(s) ((YAC_Object*)(s))->yacStreamReadF32()
+
+#else
+// MINNIE_LIB
+#define Dstream_write_i8(s,v)  ((YAC_Buffer*)(s))->writeI8(v)
+#define Dstream_write_i16(s,v) ((YAC_Buffer*)(s))->writeI16(v)
+#define Dstream_write_s16(s,v) ((YAC_Buffer*)(s))->writeI16(v)
+#define Dstream_write_i32(s,v) ((YAC_Buffer*)(s))->writeI32(v)
+#define Dstream_write_f32(s,v) ((YAC_Buffer*)(s))->writeF32(v)
+#define Dstream_write_2f(s,v1,v2) ((YAC_Buffer*)(s))->writeF32(v1); ((YAC_Buffer*)(s))->writeF32(v2)
+#define Dstream_get_offset(s)  ((YAC_Buffer*)(s))->io_offset
+#define Dstream_set_offset(s,o) ((YAC_Buffer*)(s))->io_offset = (o)
+
+// helper macros for reading from a stream
+#define Dstream_read_i8(s)  ((YAC_Buffer*)(s))->readI8()
+#define Dstream_read_i16(s) ((YAC_Buffer*)(s))->readI16()
+#define Dstream_read_s16(s) ((YAC_Buffer*)(s))->readI16()
+#define Dstream_read_i32(s) ((YAC_Buffer*)(s))->readI32()
+#define Dstream_read_f32(s) ((YAC_Buffer*)(s))->readF32()
+#endif // SHADERVG_SCRIPT_API
 
 
 // helper macros for writing to vertex buffer stream
@@ -260,8 +287,477 @@ typedef int                     sBool;
 
 #define Dkbytes(a)  (sSI(a*(100.0f/1024.0f))/100.0f)
 
+// row major matrix access helpers
+//   0 1 2
+//   3 4 5
+#define M2x3(a, row, col) (((row)*3)+(col))
+#define M3(a, row, col)   (((row)*3)+(col))
+#define M4(a, row, col)   (((row)<<2)+(col))
+
+#define TM2x3(row, col)  M2x3(this,row,col)
+#define TM3(row, col)    M3(this,row,col)
+#define TM4(row, col)    M4(this,row,col)
+
+#define OM2x3(row, col)  M2x3(o,row,col)
+#define OM3(row, col)    M3(o,row,col)
+#define OM4(row, col)    M4(o,row,col)
+
+#define TM2x3F(r,c)  floats[TM2x3(r,c)]
+#define OM2x3F(r,c)  o->floats[OM2x3(r,c)]
+#define M2x3F(a,r,c) (a)->floats[M2x3(a,r,c)]
+
+#define TM3F(r,c)  floats[TM3(r,c)]
+#define OM3F(r,c)  o->floats[OM3(r,c)]
+#define M3F(a,r,c) (a)->floats[M3(a,r,c)]
+
+#define TM4F(r,c)  floats[TM4(r,c)]
+#define OM4F(r,c)  o->floats[OM4(r,c)]
+#define M4F(a,r,c) (a)->floats[M4(a,r,c)]
+
+// <class.png>
+struct Vector2f {
+   sF32 x, y;
+
+#ifdef __cplusplus
+   void operator =(const Vector2f *_o) {
+      x = _o->x;
+      y = _o->y;
+   }
+
+   void operator =(const Vector2f &_o) {
+      x = _o.x;
+      y = _o.y;
+   }
+
+   bool operator ==(const Vector2f *_o) {
+      return (x == _o->x) && (y == _o->y);
+   }
+
+   bool operator ==(const Vector2f &_o) {
+      return (x == _o.x) && (y == _o.y);
+   }
+
+   void copyFrom(const Vector2f *_o) {
+      x = _o->x;
+      y = _o->y;
+   }
+
+   void init(sF32 _x, sF32 _y) {
+      x = _x;
+      y = _y;
+   }
+
+   void add(const Vector2f *_o) {
+      x += _o->x;
+      y += _o->y;
+   }
+
+   void addFrom(const Vector2f *_a, const Vector2f *_b) {
+      x = _a->x + _b->x;
+      y = _a->y + _b->y;
+   }
+
+   void sub(const Vector2f *_o) {
+      x -= _o->x;
+      y -= _o->y;
+   }
+
+   void subFrom(const Vector2f *_a, const Vector2f *_b) {
+      x = _a->x - _b->x;
+      y = _a->y - _b->y;
+   }
+
+   sF32 dot(const Vector2f *_o) const {
+      return x * _o->x + y * _o->y;
+   }
+
+   inline sF32 crossZ(const Vector2f *_o) const {
+      return x * _o->y - y * _o->x;
+   }
+
+   void mulf(const sF32 _s) {
+      x *= _s;
+      y *= _s;
+   }
+
+   void mulfFrom(const Vector2f *_o, const sF32 _s) {
+      x = _o->x * _s;
+      y = _o->y * _s;
+   }
+
+   sF32 getAbs(void) const {
+      return ::sqrtf(x*x + y*y);
+   }
+
+   void unit(void) {
+      sF32 absval = getAbs();
+      if(0.0f != absval)
+      {
+         absval = 1.0f / absval;
+         x *= absval;
+         y *= absval;
+      }
+      else
+      {
+         x = 0.0f;
+         y = 0.0f;
+      }
+   }
+
+   void unitScale(const sF32 _s) {
+      sF32 absval = getAbs();
+      if(0.0f != absval)
+      {
+         absval = _s / absval;
+         x *= absval;
+         y *= absval;
+      }
+      else
+      {
+         x = 0.0f;
+         y = 0.0f;
+      }
+   }
+
+#if 0
+   void unitScale2f(const sF32 _sx, const sF32 _sy) {
+      sF32 absval = getAbs();
+      if(0.0f != absval)
+      {
+         absval = 1.0f / absval;
+         x *= _sx * absval;
+         y *= _sy * absval;
+      }
+      else
+      {
+         x = 0.0f;
+         y = 0.0f;
+      }
+   }
+#endif
+
+   void unitScaleFrom(const Vector2f *_v, const sF32 _s) {
+      sF32 absval = _v->getAbs();
+      if(0.0f != absval)
+      {
+         absval = _s / absval;
+         x = _v->x * absval;
+         y = _v->y * absval;
+      }
+      else
+      {
+         x = 0.0f;
+         y = 0.0f;
+      }
+   }
+
+   inline void rotateCW90(void) {
+      const sF32 t = x;
+      x = y;
+      y = -t;
+   }
+
+   inline void rotateCCW90(void) {
+      const sF32 t = x;
+      x = -y;
+      y = t;
+   }
+
+   /* method distanceToPlane,Vector2f q,Vector2f n:float
+      Calc distance of vertex to plane defined by Vector2f q (on plane) and plane normal n
+      @arg q Point on plane
+      @arg n Plane normal
+      @return distance
+    */
+   sF32 distanceToPlane(const Vector2f *_q, const Vector2f *_n) const {
+      Vector2f v; v.subFrom(this, _q);
+      const sF32 nAbs = _n->getAbs();
+      return (0.0f != nAbs) ? (v.dot(_n) / nAbs) : 999999999.0f;
+   }
+
+   sF32 intersect(const Vector2f *_v1s, const Vector2f *_v1e,
+                  const Vector2f *_v2s, const Vector2f *_v2e,
+                  const sBool _bExtrapolate
+                  ) {
+      // returns intersection point in 'this'
+      // returns normalized position on edge v2s<>v2e
+
+      Vector2f vE; vE.subFrom(_v1e, _v1s);
+      Vector2f vF; vF.subFrom(_v2e, _v2s);
+      Vector2f vP; vP.init(-vE.y, vE.x);
+      Vector2f vG; vG.init(_v1s->x - _v2s->x, _v1s->y - _v2s->y);
+      sF32 h = vF.dot(&vP);
+      if(0.0f != h)
+         h = vG.dot(&vP) / h;
+      if( _bExtrapolate || ((0.0 <= h) && (h <= 1.0)) )
+      {
+         mulfFrom(&vF, h);  // (todo) fmaFrom()
+         add(_v2s);
+      }
+      else
+      {
+         copyFrom(_v2s);
+      }
+      return h;
+   }
+#endif // __cplusplus
+
+};
+
+// <class.png>
+#if defined(__cplusplus)
+struct Vector4f {
+#else
+typedef struct Vector4f_s {
+#endif
+   sF32 x, y, z, w;
+
+#ifdef __cplusplus
+   void init(sF32 _x, sF32 _y, sF32 _z, sF32 _w) {
+      x = _x;
+      y = _y;
+      z = _z;
+      w = _w;
+   }
+
+   void divzTo(Vector2f *_v2) {
+      if(z > 0.0f)
+      {
+         _v2->x = x / z;
+         _v2->y = y / z;
+      }
+      else
+      {
+         _v2->x = 0.0f;
+         _v2->y = 0.0f;
+      }
+   }
+#endif // __cplusplus
+
+#if defined(__cplusplus)
+};
+#else
+} Vector4f;
+#endif
+
+
+// <class.png>
+#if defined(__cplusplus)
+struct Matrix4f {
+#else
+typedef struct Matrix4f_s {
+#endif
+   // row major
+   sF32 floats[4*4];
+
+#ifdef __cplusplus
+   void copyFrom(const Matrix4f *_o) {
+      ::memcpy(floats, _o->floats, sizeof(floats));
+   }
+
+   void init(sF32 a, sF32 b, sF32 c, sF32 d,
+             sF32 e, sF32 f, sF32 g, sF32 h,
+             sF32 i, sF32 j, sF32 k, sF32 l,
+             sF32 m, sF32 n, sF32 o, sF32 p
+             ) {
+      // a b c d  (row-major)
+      // e f g h
+      // i j k l
+      // m n o p
+      floats[ 0] = a;  floats[ 1] = b;  floats[ 2] = c;  floats[ 3] = d;
+      floats[ 4] = e;  floats[ 5] = f;  floats[ 6] = g;  floats[ 7] = h;
+      floats[ 8] = i;  floats[ 9] = j;  floats[10] = k;  floats[11] = l;
+      floats[12] = m;  floats[13] = n;  floats[14] = o;  floats[15] = p;
+   }
+
+   void initIdentity(void) {
+      TM4F(0,0) = 1.0f;  TM4F(0,1) = 0.0f;  TM4F(0,2) = 0.0f;  TM4F(0,3) = 0.0f;
+      TM4F(1,0) = 0.0f;  TM4F(1,1) = 1.0f;  TM4F(1,2) = 0.0f;  TM4F(1,3) = 0.0f;
+      TM4F(2,0) = 0.0f;  TM4F(2,1) = 0.0f;  TM4F(2,2) = 1.0f;  TM4F(2,3) = 0.0f;
+      TM4F(3,0) = 0.0f;  TM4F(3,1) = 0.0f;  TM4F(3,2) = 0.0f;  TM4F(3,3) = 1.0f;
+   }
+
+   void initOrtho(sF32 _left,   sF32 _right,
+                  sF32 _bottom, sF32 _top,
+                  sF32 _znear,  sF32 _zfar
+                  ) {
+      /*
+       *  2/(r-l)   0        0         -(r+l)/(r-l)
+       *  0         2/(t-b)  0         -(t+b)/(t-b)
+       *  0         0        -2/(f-n)  -(f+n)/(f-n)
+       *  0         0        0         1
+       *
+       */
+      const sF32 rml = _right - _left;
+      const sF32 tmb = _top   - _bottom;
+      const sF32 fmn = _zfar  - _znear;
+
+      if(0.0f != rml && tmb != 0.0f && fmn != 0.0f)
+      {
+         TM4F(0, 0) = 2.0f / rml;
+         TM4F(0, 1) = 0.0f;
+         TM4F(0, 2) = 0.0f;
+         TM4F(0, 3) = -(_right + _left) / rml;
+
+         TM4F(1, 0) = 0.0f;
+         TM4F(1, 1) = 2.0f / tmb;
+         TM4F(1, 2) = 0.0f;
+         TM4F(1, 3) = -(_top + _bottom) / tmb;
+
+         TM4F(2, 0) = 0.0f;
+         TM4F(2, 1) = 0.0f;
+         TM4F(2, 2) = -2.0f / fmn;
+         TM4F(2, 3) = -(_zfar + _znear) / fmn;
+
+         TM4F(3, 0) = 0.0f;
+         TM4F(3, 1) = 0.0f;
+         TM4F(3, 2) = 0.0f;
+         TM4F(3, 3) = 1.0f;
+      }
+   }
+
+   void initScalef(sF32 _x, sF32 _y, sF32 _z) {
+      init(_x,    0.0f,  0.0f, 0.0f,
+           0.0f, _y,     0.0f, 0.0f,
+           0.0f,  0.0f, _z,    0.0f,
+           0.0f,  0.0f,  0.0f, 1.0f
+           );
+   }
+
+   void initTranslatef(sF32 _x, sF32 _y, sF32 _z) {
+      init(1, 0, 0, _x,
+           0, 1, 0, _y,
+           0, 0, 1, _z,
+           0, 0, 0,  1
+           );
+   }
+
+   void initRotatef(sF32 a, sF32 b, sF32 c) {
+      sF32 s1 = sinf(a), c1 = cosf(a);
+      sF32 s2 = sinf(b), c2 = cosf(b);
+      sF32 s3 = sinf(c), c3 = cosf(c);
+
+      TM4F(0,0) = c2*c3;
+      TM4F(0,1) = c3*s1*s2-c1*s3;
+      TM4F(0,2) = c1*c3*s2+s1*s3;
+      TM4F(0,3) = 0.0f;
+
+      TM4F(1,0) = c2*s3;
+      TM4F(1,1) = c1*c3+s1*s2*s3;
+      TM4F(1,2) = c1*s2*s3-c3*s1;
+      TM4F(1,3) = 0.0f;
+
+      TM4F(2,0) = -s2;
+      TM4F(2,1) = c2*s1;
+      TM4F(2,2) = c1*c2;
+      TM4F(2,3) = 0.0f;
+
+      TM4F(3,0) = 0.0f;
+      TM4F(3,1) = 0.0f;
+      TM4F(3,2) = 0.0f;
+      TM4F(3,3) = 1.0f;
+   }
+
+   void mulv(Vector4f *_v) const {
+      sF32 t[4];
+      for(sUI y = 0u; y < 4u; y++)
+      {
+         t[y] =
+            TM4F(y,0) * _v->x +
+            TM4F(y,1) * _v->y +
+            TM4F(y,2) * _v->z +
+            TM4F(y,3) * _v->w ;
+      }
+      _v->x = t[0];
+      _v->y = t[1];
+      _v->z = t[2];
+      _v->w = t[3];
+   }
+
+   void mulr(const Matrix4f *o, Matrix4f *r) const {
+      // Multiply by matrix o (this * o) and store in r
+      for(sUI y = 0u; y < 4u; y++)
+      {
+         for(sUI x = 0u; x < 4u; x++)
+         {
+            M4F(r,y,x) =
+               TM4F(y,0) * OM4F(0,x) +
+               TM4F(y,1) * OM4F(1,x) +
+               TM4F(y,2) * OM4F(2,x) +
+               TM4F(y,3) * OM4F(3,x) ;
+         }
+      }
+   }
+
+   void mul(const Matrix4f *o) {
+      // Multiply by matrix o (this * o)
+      sF32 t[4][4];
+
+      for(sUI y = 0u; y < 4u; y++)
+      {
+         for(sUI x = 0u; x < 4u; x++)
+         {
+            t[y][x] =
+               TM4F(y,0) * OM4F(0,x) +
+               TM4F(y,1) * OM4F(1,x) +
+               TM4F(y,2) * OM4F(2,x) +
+               TM4F(y,3) * OM4F(3,x) ;
+         }
+      }
+      for(sUI y = 0u; y < 4u; y++)
+      {
+         for(sUI x = 0u; x < 4u; x++)
+         {
+            TM4F(y,x) = t[y][x];
+         }
+      }
+   }
+
+   void scalef(sF32 _x, sF32 _y, sF32 _z) {
+      Matrix4f t;
+      t.initScalef(_x, _y, _z);
+      mul(&t);
+   }
+
+   void translatef(sF32 _x, sF32 _y, sF32 _z) {
+      Matrix4f t;
+      t.initTranslatef(_x, _y, _z);
+      mul(&t);
+   }
+
+   void rotatef(sF32 _x, sF32 _y, sF32 _z) {
+      Matrix4f t;
+      t.initRotatef(_x, _y, _z);
+      mul(&t);
+   }
+#endif // __cplusplus
+
+#if defined(__cplusplus)
+};
+extern "C" {
+extern void minnie_matrix4f_initIdentity (Matrix4f *_this);
+extern void minnie_matrix4f_initOrtho (Matrix4f *_this, sF32 _left, sF32 _right, sF32 _bottom, sF32 _top, sF32 _znear,  sF32 _zfar);
+extern void minnie_matrix4f_mulr (const Matrix4f *_this, const Matrix4f *_o, Matrix4f *_r);
+extern void minnie_matrix4f_scalef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+extern void minnie_matrix4f_translatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+extern void minnie_matrix4f_rotatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+}
+#else
+} Matrix4f;
+extern void minnie_matrix4f_initIdentity (Matrix4f *_this);
+extern void minnie_matrix4f_initOrtho (Matrix4f *_this, sF32 _left, sF32 _right, sF32 _bottom, sF32 _top, sF32 _znear,  sF32 _zfar);
+extern void minnie_matrix4f_mulr (const Matrix4f *_this, const Matrix4f *_o, Matrix4f *_r);
+extern void minnie_matrix4f_scalef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+extern void minnie_matrix4f_translatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+extern void minnie_matrix4f_rotatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z);
+#endif
+
 
 #ifdef MINNIE_IMPLEMENTATION  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#if !defined(__cplusplus)
+#error MINNIE_IMPLEMENTATION must be defined in a .cpp file
+#endif
 
 namespace minnie {
 
@@ -449,7 +945,9 @@ void *minnie_realloc(minnie_allocator_handle_t _allocator, void *_ptr, sU32 _sz)
 #endif // MINNIE_CUSTOM_ALLOC
 
 
+#if defined(__cplusplus)
 extern "C" {
+#endif // __cplusplus
 void *vgtesselator_alloc(unsigned int _sz) {
    void *ret = NULL;
    /* (void)_allocator; */
@@ -521,7 +1019,10 @@ void *vgtesselator_realloc(void *_ptr, unsigned int _sz) {
    return ::realloc(_ptr, _sz);
 #endif // MINNIE_ALLOC_DEBUG
 }
+
+#if defined(__cplusplus)
 } // extern "C"
+#endif // __cplusplus
 
 
 void minnie_alloc_debug_print_stats(void) {
@@ -555,33 +1056,6 @@ sU32 i32rgba8_from_argb32(const sU32 _c32) {
       ( (_c32 & 0xFFFFFF00u) | ((_c32 & 0x00FF0000u) >> 16) ) ;
    // (todo) big endian
 }
-
-// row major matrix access helpers
-//   0 1 2
-//   3 4 5
-#define M2x3(a, row, col) (((row)*3)+(col))
-#define M3(a, row, col)   (((row)*3)+(col))
-#define M4(a, row, col)   (((row)<<2)+(col))
-
-#define TM2x3(row, col)  M2x3(this,row,col)
-#define TM3(row, col)    M3(this,row,col)
-#define TM4(row, col)    M4(this,row,col)
-
-#define OM2x3(row, col)  M2x3(o,row,col)
-#define OM3(row, col)    M3(o,row,col)
-#define OM4(row, col)    M4(o,row,col)
-
-#define TM2x3F(r,c)  floats[TM2x3(r,c)]
-#define OM2x3F(r,c)  o->floats[OM2x3(r,c)]
-#define M2x3F(a,r,c) (a)->floats[M2x3(a,r,c)]
-
-#define TM3F(r,c)  floats[TM3(r,c)]
-#define OM3F(r,c)  o->floats[OM3(r,c)]
-#define M3F(a,r,c) (a)->floats[M3(a,r,c)]
-
-#define TM4F(r,c)  floats[TM4(r,c)]
-#define OM4F(r,c)  o->floats[OM4(r,c)]
-#define M4F(a,r,c) (a)->floats[M4(a,r,c)]
 
 static inline sF32 mathLerpf(const sF32 _a, const sF32 _b, const sF32 _t) {
    return _a + (_b - _a) * _t;
@@ -1264,197 +1738,6 @@ template <class T> class PointerArray {
 
 };
 
-
-// <class.png>
-struct Vector2f {
-  public:
-   sF32 x, y;
-
-   void operator =(const Vector2f *_o) {
-      x = _o->x;
-      y = _o->y;
-   }
-
-   void operator =(const Vector2f &_o) {
-      x = _o.x;
-      y = _o.y;
-   }
-
-   bool operator ==(const Vector2f *_o) {
-      return (x == _o->x) && (y == _o->y);
-   }
-
-   bool operator ==(const Vector2f &_o) {
-      return (x == _o.x) && (y == _o.y);
-   }
-
-   void copyFrom(const Vector2f *_o) {
-      x = _o->x;
-      y = _o->y;
-   }
-
-   void init(sF32 _x, sF32 _y) {
-      x = _x;
-      y = _y;
-   }
-
-   void add(const Vector2f *_o) {
-      x += _o->x;
-      y += _o->y;
-   }
-
-   void addFrom(const Vector2f *_a, const Vector2f *_b) {
-      x = _a->x + _b->x;
-      y = _a->y + _b->y;
-   }
-
-   void sub(const Vector2f *_o) {
-      x -= _o->x;
-      y -= _o->y;
-   }
-
-   void subFrom(const Vector2f *_a, const Vector2f *_b) {
-      x = _a->x - _b->x;
-      y = _a->y - _b->y;
-   }
-
-   sF32 dot(const Vector2f *_o) const {
-      return x * _o->x + y * _o->y;
-   }
-
-   inline sF32 crossZ(const Vector2f *_o) const {
-      return x * _o->y - y * _o->x;
-   }
-
-   void mulf(const sF32 _s) {
-      x *= _s;
-      y *= _s;
-   }
-
-   void mulfFrom(const Vector2f *_o, const sF32 _s) {
-      x = _o->x * _s;
-      y = _o->y * _s;
-   }
-
-   sF32 getAbs(void) const {
-      return ::sqrtf(x*x + y*y);
-   }
-
-   void unit(void) {
-      sF32 absval = getAbs();
-      if(0.0f != absval)
-      {
-         absval = 1.0f / absval;
-         x *= absval;
-         y *= absval;
-      }
-      else
-      {
-         x = 0.0f;
-         y = 0.0f;
-      }
-   }
-
-   void unitScale(const sF32 _s) {
-      sF32 absval = getAbs();
-      if(0.0f != absval)
-      {
-         absval = _s / absval;
-         x *= absval;
-         y *= absval;
-      }
-      else
-      {
-         x = 0.0f;
-         y = 0.0f;
-      }
-   }
-
-#if 0
-   void unitScale2f(const sF32 _sx, const sF32 _sy) {
-      sF32 absval = getAbs();
-      if(0.0f != absval)
-      {
-         absval = 1.0f / absval;
-         x *= _sx * absval;
-         y *= _sy * absval;
-      }
-      else
-      {
-         x = 0.0f;
-         y = 0.0f;
-      }
-   }
-#endif
-
-   void unitScaleFrom(const Vector2f *_v, const sF32 _s) {
-      sF32 absval = _v->getAbs();
-      if(0.0f != absval)
-      {
-         absval = _s / absval;
-         x = _v->x * absval;
-         y = _v->y * absval;
-      }
-      else
-      {
-         x = 0.0f;
-         y = 0.0f;
-      }
-   }
-
-   inline void rotateCW90(void) {
-      const sF32 t = x;
-      x = y;
-      y = -t;
-   }
-
-   inline void rotateCCW90(void) {
-      const sF32 t = x;
-      x = -y;
-      y = t;
-   }
-
-   /* method distanceToPlane,Vector2f q,Vector2f n:float
-      Calc distance of vertex to plane defined by Vector2f q (on plane) and plane normal n
-      @arg q Point on plane
-      @arg n Plane normal
-      @return distance
-    */
-   sF32 distanceToPlane(const Vector2f *_q, const Vector2f *_n) const {
-      Vector2f v; v.subFrom(this, _q);
-      const sF32 nAbs = _n->getAbs();
-      return (0.0f != nAbs) ? (v.dot(_n) / nAbs) : 999999999.0f;
-   }
-
-   sF32 intersect(const Vector2f *_v1s, const Vector2f *_v1e,
-                  const Vector2f *_v2s, const Vector2f *_v2e,
-                  const sBool _bExtrapolate
-                  ) {
-      // returns intersection point in 'this'
-      // returns normalized position on edge v2s<>v2e
-
-      Vector2f vE; vE.subFrom(_v1e, _v1s);
-      Vector2f vF; vF.subFrom(_v2e, _v2s);
-      Vector2f vP; vP.init(-vE.y, vE.x);
-      Vector2f vG; vG.init(_v1s->x - _v2s->x, _v1s->y - _v2s->y);
-      sF32 h = vF.dot(&vP);
-      if(0.0f != h)
-         h = vG.dot(&vP) / h;
-      if( _bExtrapolate || ((0.0 <= h) && (h <= 1.0)) )
-      {
-         mulfFrom(&vF, h);  // (todo) fmaFrom()
-         add(_v2s);
-      }
-      else
-      {
-         copyFrom(_v2s);
-      }
-      return h;
-   }
-
-};
-
-
 // <class.png>
 struct Vector3f {
   public:
@@ -1553,33 +1836,6 @@ struct Vector3f {
 
 
 // <class.png>
-struct Vector4f {
-  public:
-   sF32 x, y, z, w;
-
-   void init(sF32 _x, sF32 _y, sF32 _z, sF32 _w) {
-      x = _x;
-      y = _y;
-      z = _z;
-      w = _w;
-   }
-
-   void divzTo(Vector2f *_v2) {
-      if(z > 0.0f)
-      {
-         _v2->x = x / z;
-         _v2->y = y / z;
-      }
-      else
-      {
-         _v2->x = 0.0f;
-         _v2->y = 0.0f;
-      }
-   }
-};
-
-
-// <class.png>
 struct Matrix2x3f {
    // row major
   public:
@@ -1598,105 +1854,6 @@ struct Matrix2x3f {
 
    void copyFrom(const Matrix2x3f *_o) {
       ::memcpy(floats, _o->floats, sizeof(floats));
-   }
-
-};
-
-
-// <class.png>
-struct Matrix4f {
-   // row major
-  public:
-   float floats[4*4];
-
-   void copyFrom(const Matrix4f *_o) {
-      ::memcpy(floats, _o->floats, sizeof(floats));
-   }
-
-   void initIdentity(void) {
-      TM4F(0,0) = 1.0f;  TM4F(0,1) = 0.0f;  TM4F(0,2) = 0.0f;  TM4F(0,3) = 0.0f;
-      TM4F(1,0) = 0.0f;  TM4F(1,1) = 1.0f;  TM4F(1,2) = 0.0f;  TM4F(1,3) = 0.0f;
-      TM4F(2,0) = 0.0f;  TM4F(2,1) = 0.0f;  TM4F(2,2) = 1.0f;  TM4F(2,3) = 0.0f;
-      TM4F(3,0) = 0.0f;  TM4F(3,1) = 0.0f;  TM4F(3,2) = 0.0f;  TM4F(3,3) = 1.0f;
-   }
-
-   void initOrtho(sF32 _left,   sF32 _right,
-                  sF32 _bottom, sF32 _top,
-                  sF32 _znear,  sF32 _zfar
-                  ) {
-      /*
-       *  2/(r-l)   0        0         -(r+l)/(r-l)
-       *  0         2/(t-b)  0         -(t+b)/(t-b)
-       *  0         0        -2/(f-n)  -(f+n)/(f-n)
-       *  0         0        0         1
-       *
-       */
-      const sF32 rml = _right - _left;
-      const sF32 tmb = _top   - _bottom;
-      const sF32 fmn = _zfar  - _znear;
-
-      if(0.0f != rml && tmb != 0.0f && fmn != 0.0f)
-      {
-         TM4F(0, 0) = 2.0f / rml;
-         TM4F(0, 1) = 0.0f;
-         TM4F(0, 2) = 0.0f;
-         TM4F(0, 3) = -(_right + _left) / rml;
-
-         TM4F(1, 0) = 0.0f;
-         TM4F(1, 1) = 2.0f / tmb;
-         TM4F(1, 2) = 0.0f;
-         TM4F(1, 3) = -(_top + _bottom) / tmb;
-
-         TM4F(2, 0) = 0.0f;
-         TM4F(2, 1) = 0.0f;
-         TM4F(2, 2) = -2.0f / fmn;
-         TM4F(2, 3) = -(_zfar + _znear) / fmn;
-
-         TM4F(3, 0) = 0.0f;
-         TM4F(3, 1) = 0.0f;
-         TM4F(3, 2) = 0.0f;
-         TM4F(3, 3) = 1.0f;
-      }
-   }
-
-   void mulv(Vector4f *_v) const {
-      sF32 t[4];
-      for(sUI y = 0u; y < 4u; y++)
-      {
-         t[y] =
-            TM4F(y,0) * _v->x +
-            TM4F(y,1) * _v->y +
-            TM4F(y,2) * _v->z +
-            TM4F(y,3) * _v->w ;
-      }
-      _v->x = t[0];
-      _v->y = t[1];
-      _v->z = t[2];
-      _v->w = t[3];
-   }
-
-   void mul(Matrix4f *o) {
-      // Multiply by matrix o (this * o)
-      sF32 t[4][4];
-
-      for(sUI y = 0u; y < 4u; y++)
-      {
-         for(sUI x = 0u; x < 4u; x++)
-         {
-            t[y][x] =
-               TM4F(y,0) * OM4F(0,x) +
-               TM4F(y,1) * OM4F(1,x) +
-               TM4F(y,2) * OM4F(2,x) +
-               TM4F(y,3) * OM4F(3,x) ;
-         }
-      }
-      for(sUI y = 0u; y < 4u; y++)
-      {
-         for(sUI x = 0u; x < 4u; x++)
-         {
-            TM4F(y,x) = t[y][x];
-         }
-      }
    }
 
 };
@@ -2982,8 +3139,8 @@ class Path {
          Dexportprintfv("[trc] minnie::Path::exportConcaveVertices: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
-            float x = (va[0] + _tx) * _geoScale;
-            float y = (va[1] + _ty) * _geoScale;
+            sF32 x = (va[0] + _tx) * _geoScale;
+            sF32 y = (va[1] + _ty) * _geoScale;
 
 #if MINNIE_EXPORT_VERTEX_16BIT
             Dstream_write_i16(_ofs, sS16(x*4.0f));
@@ -3304,7 +3461,6 @@ class Path {
       }
       return YAC_FALSE;
    }
-#endif // HAVE_VGTESSELATE
 
    // <method.png>
    void vgtesselateFreeInput(void) {
@@ -3318,6 +3474,7 @@ class Path {
       }
       vgtesselate.input = NULL;
    }
+#endif // HAVE_VGTESSELATE
 
    // <method_get.png>
    static sUI CalcBBoxNumPixels(const FloatArray *_va) {
@@ -4049,8 +4206,8 @@ namespace setup {
       {
          Vector3f vCur; vCur.init(_vaIn3->get(inOff+0), _vaIn3->get(inOff+1), _vaIn3->get(inOff+2));
          Vector3f vIS;
-         float dPrev = vPrev.distanceToPlane(&vQ, &vN);
-         float dCur  = vCur .distanceToPlane(&vQ, &vN);
+         sF32 dPrev = vPrev.distanceToPlane(&vQ, &vN);
+         sF32 dCur  = vCur .distanceToPlane(&vQ, &vN);
          /* if(b_debug_clip3d) trace "[trc] Clip3DZNear: inOff="+inOff+" v1="+vPrev+" v2="+vCur+" dPrev="+dPrev+" dCur="+dCur; */
 
          if(dCur >= 0.0f)
@@ -5407,9 +5564,9 @@ namespace setup {
       return retNumTris;
    }
 
-   static void setupRoundRectFillVBO32(float _centerX, float _centerY,
-                                       float _sizeX,   float _sizeY,
-                                       float _radiusX, float _radiusY
+   static void setupRoundRectFillVBO32(sF32 _centerX, sF32 _centerY,
+                                       sF32 _sizeX,   sF32 _sizeY,
+                                       sF32 _radiusX, sF32 _radiusY
                                        ) {
       //  +0  u16 aaRange * 256
       //  +2  i32 vbOffInner
@@ -5492,10 +5649,10 @@ namespace setup {
       }
    }
 
-   static void setupRoundRectStrokeVBO32(float _centerX, float _centerY,
-                                         float _sizeX,   float _sizeY,
-                                         float _radiusX, float _radiusY,
-                                         float _strokeW
+   static void setupRoundRectStrokeVBO32(sF32 _centerX, sF32 _centerY,
+                                         sF32 _sizeX,   sF32 _sizeY,
+                                         sF32 _radiusX, sF32 _radiusY,
+                                         sF32 _strokeW
                                          ) {
       //  +0  u16 aaRange * 256
       //  +2  i32 vbOffBorder
@@ -5550,10 +5707,10 @@ namespace setup {
       }
    }
 
-   static void setupRoundRectFillStrokeVBO32(float _centerX, float _centerY,
-                                             float _sizeX,   float _sizeY,
-                                             float _radiusX, float _radiusY,
-                                             float _strokeW
+   static void setupRoundRectFillStrokeVBO32(sF32 _centerX, sF32 _centerY,
+                                             sF32 _sizeX,   sF32 _sizeY,
+                                             sF32 _radiusX, sF32 _radiusY,
+                                             sF32 _strokeW
                                              ) {
       //  +0  u16 aaRange * 256
       //  +2  i32 vbOffInner
@@ -10640,6 +10797,7 @@ namespace setup {
    }
 
    // <method.png>
+#ifdef SHADERVG_SCRIPT_API
    static void setFramebufferOverride(const sUI _fbIdx, void *_pixelData, const sUI _w, const sUI _h, const sUI _pitch) {
       Dprintf("[dbg] Minnie::setFramebufferOverride: fbIdx=%u pixels=%p w=%u h=%u pitch=%u\n", _fbIdx, _pixelData, _w, _h, _pitch);
       FramebufferOverride *fbOver = &framebuffer_overrides[_fbIdx];
@@ -10648,6 +10806,7 @@ namespace setup {
       fbOver->h     = _h;
       fbOver->pitch = _pitch;
    }
+#endif // SHADERVG_SCRIPT_API
 
    // <method.png>
    static sU32 initScratchBuffers(void *_data, sU32 _dataSz,
@@ -10730,7 +10889,9 @@ namespace setup {
 // --------------------------------------------------------------------------
 
 // forward declarations
+#ifdef __cplusplus
 extern "C" {
+#endif // __cplusplus
 YF void YAC_CALL minBegin (void);
 YF void YAC_CALL minEnd (void);
 YF void YAC_CALL minFreeDynamic (void);
@@ -10739,9 +10900,11 @@ YF void YAC_CALL minSetStrokeOffset (sF32 _offset);
 YF sUI YAC_CALL minGetWidth (void);
 YF sUI YAC_CALL minGetHeight (void);
 YF sUI YAC_CALL minGetColorByIndex (sUI _idx);
+#ifdef SHADERVG_SCRIPT_API
 YF sBool YAC_CALL minSetFramebufferOverride (sUI _fbIdx, YAC_Object *_pixels, sUI _w, sUI _h, sUI _pitch);  // MINNIE_SW_RENDER
-YF sUI YAC_CALL minInitScratchBuffers (YAC_Object *_buf, sUI _defPointsPerPath, sUI _maxPointsPerPath, sUI _maxClippedPointsPerPath, sUI _maxExtrudedVerticesPerPath, sUI _maxClippedTrisPerPath);
-YF sBool YAC_CALL minParseBuffer (YAC_Object *_buf);
+#endif // SHADERVG_SCRIPT_API
+YF sUI YAC_CALL minInitScratchBuffers (YAC_Buffer *_buf, sUI _defPointsPerPath, sUI _maxPointsPerPath, sUI _maxClippedPointsPerPath, sUI _maxExtrudedVerticesPerPath, sUI _maxClippedTrisPerPath);
+YF sBool YAC_CALL minParseBuffer (YAC_Buffer *_buf);
 YF void YAC_CALL minDebugPrintAllocStats (void);
 YF void YAC_CALL minDebugPrintPathStats (void);
 YF void YAC_CALL minResetAllocStats (void);
@@ -10775,8 +10938,8 @@ YF sBool YAC_CALL minGetEnableUniformColors (void);
 YF void YAC_CALL minSetStrokeWLineStripThreshold (sF32 _threshold);
 YF sF32 YAC_CALL minGetStrokeWLineStripThreshold (void);
 YF void YAC_CALL minSetStrokeWLineJoinThreshold (sF32 _threshold);
-YF void YAC_CALL minSetVertexBufferExportOFS (YAC_Object *_ofs);
-YF void YAC_CALL minSetDrawListExportOFS (YAC_Object *_ofs);
+YF void YAC_CALL minSetVertexBufferExportOFS (YAC_Buffer *_ofs);
+YF void YAC_CALL minSetDrawListExportOFS (YAC_Buffer *_ofs);
 YF sBool YAC_CALL minIsEdgeAA (void);
 YF sBool YAC_CALL minIsVertexFix16 (void);
 YF sBool YAC_CALL minIsEdgeAAScaleFix16 (void);
@@ -10834,10 +10997,14 @@ YF void YAC_CALL minRectTexUVFlat (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul,
 YF void YAC_CALL minRectTexUVFlatDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb);
 YF void YAC_CALL minRectTexUVGouraud (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
 YF void YAC_CALL minRectTexUVGouraudDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
+#ifdef __cplusplus
 } // extern "C"
+#endif // __cplusplus
 
 #ifdef MINNIE_IMPLEMENTATION  // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#ifdef __cplusplus
 extern "C" {
+#endif // __cplusplus
 
 /* @function minBegin
 Free paths, reset state and start new drawing.
@@ -10909,6 +11076,7 @@ sUI minGetColorByIndex(sUI _idx) {
 /* @function minSetFramebufferOverride,int fbIdx,Texture tex,int w,int h,int pitch:boolean
 Override framebuffer geometry and storage. Only applies to SW render mode.
 */
+#ifdef SHADERVG_SCRIPT_API
 sBool minSetFramebufferOverride(sUI _fbIdx, YAC_Object *_pixels, sUI _w, sUI _h, sUI _pitch) {
    // override framebuffer
    if(_fbIdx < MINNIE_MAX_FRAMEBUFFERS)
@@ -10953,6 +11121,7 @@ sBool minSetFramebufferOverride(sUI _fbIdx, YAC_Object *_pixels, sUI _w, sUI _h,
    }
    return YAC_FALSE;
 }
+#endif // SHADERVG_SCRIPT_API
 
 //   int _defPointsPerPath           =  200u,
 //   int _maxPointsPerPath           =  200u,
@@ -10969,7 +11138,7 @@ Initialize scratchbuffer or calculate required scratch buffer memory.
 @arg maxExtrudedVerticesPerPath Maximum number of extruded (line-)vertices per path
 @arg maxClippedTrisPerPath Maximum number of clipped triangles per path
 */
-sUI minInitScratchBuffers(YAC_Object *_buf,
+sUI minInitScratchBuffers(YAC_Buffer *_buf,
                           sUI _defPointsPerPath,
                           sUI _maxPointsPerPath,
                           sUI _maxClippedPointsPerPath,
@@ -10991,12 +11160,12 @@ sUI minInitScratchBuffers(YAC_Object *_buf,
       bufSz  = 0u;
    }
    return minnie::setup::initScratchBuffers(bufPtr, bufSz,
-                                          _defPointsPerPath,
-                                          _maxPointsPerPath,
-                                          _maxClippedPointsPerPath,
-                                          _maxExtrudedVerticesPerPath,
-                                          _maxClippedTrisPerPath
-                                          );
+                                            _defPointsPerPath,
+                                            _maxPointsPerPath,
+                                            _maxClippedPointsPerPath,
+                                            _maxExtrudedVerticesPerPath,
+                                            _maxClippedTrisPerPath
+                                            );
 }
 
 /* @function minParseBuffer,Buffer buf:boolean
@@ -11006,7 +11175,7 @@ The MIB data can either be generated by the application, or be converted from e.
 
 @arg buf §File or §Buffer stream
 */
-sBool minParseBuffer(YAC_Object *_buf) {
+sBool minParseBuffer(YAC_Buffer *_buf) {
    if(YAC_Is_Buffer(_buf))
    {
       YAC_CAST_ARG(YAC_Buffer, buf, _buf);
@@ -11315,7 +11484,7 @@ Set vertex attribute output stream.
 
 @see minSetDrawListExportOFS
 */
-void minSetVertexBufferExportOFS(YAC_Object *_ofs) {
+void minSetVertexBufferExportOFS(YAC_Buffer *_ofs) {
    if(YAC_VALID(_ofs))
       minnie::setup::setVertexBufferExportOFS((void*)_ofs);
    else
@@ -11329,7 +11498,7 @@ Set draw list output stream.
 
 @see minSetVertexBufferExportOFS
 */
-void minSetDrawListExportOFS(YAC_Object *_ofs) {
+void minSetDrawListExportOFS(YAC_Buffer *_ofs) {
    if(YAC_VALID(_ofs))
       minnie::setup::setDrawListExportOFS((void*)_ofs);
    else
@@ -12463,6 +12632,8 @@ void minRectTexUVGouraudDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    }
 }
 
+#ifdef __cplusplus
 } // extern "C"
+#endif // __cplusplus
 #endif // MINNIE_IMPLEMENTATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #endif // MINNIE_PROCEDURAL_API

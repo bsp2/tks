@@ -76,8 +76,8 @@ static void loc_shared_export(void) {
    // Dyac_host_printf("[trc] tkminnie:loc_shared_export: export TKMINNIE_SHARED_NAME=\"%s\" => callback_id=%d\n", TKMINNIE_SHARED_NAME, tkminnie_shared_callback_id);
    tkminnie_shared.sdvg_ReturnToGL = &sdvg_ReturnToGL;
    // -------- transform --------
-   tkminnie_shared.sdvg_SetTransform    = &sdvg_SetTransform;
-   tkminnie_shared.sdvg_GetTransformRef = &sdvg_GetTransformRef;
+   tkminnie_shared.sdvg_SetTransform    = &_sdvg_SetTransform;
+   tkminnie_shared.sdvg_GetTransformRef = &_sdvg_GetTransformRef;
    // -------- AA --------
    tkminnie_shared.sdvg_SetEnableAA = &sdvg_SetEnableAA;
    tkminnie_shared.sdvg_SetAARange  = &sdvg_SetAARange;

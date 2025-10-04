@@ -9,13 +9,13 @@
 // ----
 // ----
 
+#ifdef USE_MINNIE_MIB_SETUP
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
 
-#define YAC_BIGSTRING
-#define YAC_PRINTF
-#include <yac.h>
+#include "inc_yac.h"
 
 #define MINNIE_SKIP_TYPEDEFS defined
 #include "minnie.h"
@@ -28,7 +28,9 @@
 #include "shadervg/Shader.h"
 #include "shadervg/Shape.h"
 
+#ifndef MINNIE_LIB
 #include "../tkopengl/tkopengl_shared.h"
+#endif
 
 static sBool b_debug_draw_list = 0;
 
@@ -77,6 +79,7 @@ sBool _MinnieDrawable::alloc(sUI _maxGLBufSize, sUI _maxDrawBufSize) {
       buf_draw = YAC_New_Buffer();
    }
 
+#ifdef SHADERVG_SCRIPT_API
    if(buf_gl->yacArrayAlloc(_maxGLBufSize, 0,0,0))
    {
       if(buf_draw->yacArrayAlloc(_maxDrawBufSize, 0,0,0))
@@ -85,6 +88,17 @@ sBool _MinnieDrawable::alloc(sUI _maxGLBufSize, sUI _maxDrawBufSize) {
          ret = YAC_TRUE;
       }
    }
+#else
+   // MINNIE_LIB
+   if(buf_gl->alloc(_maxGLBufSize))
+   {
+      if(buf_draw->alloc(_maxDrawBufSize))
+      {
+         // Succeeded
+         ret = YAC_TRUE;
+      }
+   }
+#endif // SHADERVG_SCRIPT_API
 
    return ret;
 }
@@ -800,3 +814,5 @@ void _MinnieDrawable::draw() {
       }
    }
 }
+
+#endif // USE_MINNIE_MIB_SETUP

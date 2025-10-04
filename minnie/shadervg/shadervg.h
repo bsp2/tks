@@ -30,7 +30,12 @@
 YG("shadervg");
 
 
-class ShaderVG_Shape;
+#define Dsdvg_buffer_ref_t  YAC_Buffer *
+#ifdef MINNIE_LIB
+#define Dsdvg_mat4_ref_t  Matrix4f *
+#else
+#define Dsdvg_mat4_ref_t  YAC_Object *
+#endif // MINNIE_LIB
 
 // texture formats
 #ifdef SHADERVG_SCRIPT_API
@@ -76,6 +81,9 @@ alias for §SDVG_TEXFMT_BGRA8888 (little endian)
 
 #ifndef SHADERVG_SKIP_DECLARATIONS
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 
 // -------- init/exit --------
 /* @function sdvg_SetGLSLVersion,boolean bV3,boolean bGLES,String sVersionStringOrNull
@@ -248,14 +256,24 @@ Set modelview-projection transformation matrix
 
 @see sdvg_GetTransformRef
 */
-YF void YAC_CALL sdvg_SetTransform (YAC_Object *_mat4);
+#ifdef MINNIE_LIB
+void sdvg_SetTransform (Matrix4f *_mat4);
+#endif // MINNIE_LIB
+#ifdef SHADERVG_SCRIPT_API
+YF void YAC_CALL _sdvg_SetTransform (YAC_Object *_mat4);
+#endif // SHADERVG_SCRIPT_API
 
 /* @function sdvg_GetTransformRef:Matrix4f
 Get reference to modelview-projection matrix
 
 @see sdvg_SetTransform
 */
-YF YAC_Object *YAC_CALL sdvg_GetTransformRef (void);
+#ifdef MINNIE_LIB
+Matrix4f *sdvg_GetTransformRef (void);
+#endif // MINNIE_LIB
+#ifdef SHADERVG_SCRIPT_API
+YF YAC_Object *YAC_CALL _sdvg_GetTransformRef (void);
+#endif // SHADERVG_SCRIPT_API
 
 // -------- AA --------
 /* @function sdvg_SetEnableAA,boolean bEnable
@@ -314,6 +332,7 @@ Set fill color (normalized floats)
 @see sdvg_SetFillColorARGB
 @see sdvg_SetStrokeColor4f
 @see sdvg_SetStrokeColorARGB
+@see sdvg_SetColor4f
 @see sdvg_SetColorARGB
 */
 YF void YAC_CALL sdvg_SetFillColor4f (sF32 _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA);
@@ -326,6 +345,7 @@ Set fill alpha (normalized float)
 @see sdvg_SetFillColorARGB
 @see sdvg_SetStrokeColor4f
 @see sdvg_SetStrokeColorARGB
+@see sdvg_SetColor4f
 @see sdvg_SetColorARGB
 */
 YF void YAC_CALL sdvg_SetFillAlpha (sF32 _fillA);
@@ -339,12 +359,30 @@ Set fill color
 @see sdvg_SetFillAlpha
 @see sdvg_SetStrokeColor4f
 @see sdvg_SetStrokeColorARGB
+@see sdvg_SetColor4f
 @see sdvg_SetColorARGB
 */
 YF void YAC_CALL sdvg_SetFillColorARGB (sUI _c32);
 
-/* @function sdvg_SetColorARGB,int c32
+/* @function sdvg_SetColor4f,float r,float g,float b,float a
 Set fill and stroke colors
+
+@arg r Red (0..1)
+@arg g Green (0..1)
+@arg b Blue (0..1)
+@arg a Alpha (0..1)
+
+@see sdvg_SetFillColor4f
+@see sdvg_SetFillAlpha
+@see sdvg_SetFillColorARGB
+@see sdvg_SetStrokeColor4f
+@see sdvg_SetStrokeColorARGB
+@see sdvg_SetColorARGB
+*/
+YF void YAC_CALL sdvg_SetColor4f (sF32 _r, sF32 _g, sF32 _b, sF32 _a);
+
+/* @function sdvg_SetColorARGB,int c32
+Set fill and stroke colors from packed ARGB32 integer
 
 @arg c32 packed ARGB32 color
 
@@ -353,6 +391,7 @@ Set fill and stroke colors
 @see sdvg_SetFillColorARGB
 @see sdvg_SetStrokeColor4f
 @see sdvg_SetStrokeColorARGB
+@see sdvg_SetColor4f
 */
 YF void YAC_CALL sdvg_SetColorARGB (sUI _c32);
 
@@ -569,12 +608,6 @@ Enable or disable(debug) draw-border mode
 */
 YF void YAC_CALL sdvg_SetEnableDrawBorder (sBool _bEnable);
 
-/* @function sdvg_DebugSetEnableWriteVBO,boolean bEnable
-Enable or disable VBO writes (false=debug)
-
-*/
-YF void YAC_CALL sdvg_DebugSetEnableWriteVBO (sBool _bEnable);
-
 // -------- VBO --------
 /* @function sdvg_CreateVBO,int numBytes:int
 Create vertex buffer object (VBO)
@@ -594,8 +627,13 @@ Create vertex buffer object (VBO)
 */
 YF sUI YAC_CALL sdvg_CreateVBO (sUI _numBytes);
 
-/* @function sdvg_UpdateVBO,int vboId,int offset,int numBytes,Object data
+/* @function sdvg_UpdateVBO,int vboId,int offset,int numBytes,Buffer data
 Update vertex buffer object contents
+
+@arg vboId
+@arg offset Destination byte offset
+@arg numBytes Number of bytes to update (0=use data.size)
+@arg data
 
 @see sdvg_CreateVBO
 @see sdvg_BindVBO
@@ -607,7 +645,7 @@ Update vertex buffer object contents
 @see sdvg_UnbindVBO
 @see sdvg_DestroyVBO
 */
-YF void YAC_CALL sdvg_UpdateVBO (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Object *_data);
+YF void YAC_CALL sdvg_UpdateVBO (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data);
 
 /* @function sdvg_BindVBO,int vboId
 Bind vertex buffer object
@@ -1666,35 +1704,50 @@ Select solid paint
 YF void YAC_CALL sdvg_PaintSolid (void);
 
 /* @function sdvg_PaintLinear,float startX,float startY,float endX,float endY
-Select linear paint
+Select linear paint.
+
+The currently bound texture (nx1) is used as a gradient lookup table.
+
 
 @see sdvg_PaintSolid
 @see sdvg_PaintRadial
 @see sdvg_PaintConic
+@see sdvg_GradientToTexture
 */
 YF void YAC_CALL sdvg_PaintLinear (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY);
 
 /* @function sdvg_PaintRadial,float startX,float startY,float radiusX,float radiusY
-Select radial paint
+Select radial paint.
+
+The currently bound texture (nx1) is used as a gradient lookup table.
+
+@arg startX Focal point X
+@arg startY Focal point Y
+@arg radiusX Horizontal radius
+@arg radiusY Vertical radius
 
 @see sdvg_PaintSolid
 @see sdvg_PaintLinear
 @see sdvg_PaintConic
+@see sdvg_GradientToTexture
 */
 YF void YAC_CALL sdvg_PaintRadial (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY);
 
 /* @function sdvg_PaintConic,float startX,float startY,float radiusX,float radiusY,float angle01
-Select conic paint
+Select conic paint.
 
-@arg startX
-@arg startY
-@arg radiusX
-@arg radiusY
+The currently bound texture (nx1) is used as a gradient lookup table.
+
+@arg startX Focal point X
+@arg startY Focal point Y
+@arg radiusX Horizontal radius
+@arg radiusY Vertical radius
 @arg angle01 Normalized start angle (0..1 => 0..360 degrees). 0=north
 
 @see sdvg_PaintSolid
 @see sdvg_PaintLinear
 @see sdvg_PaintRadial
+@see sdvg_GradientToTexture
 */
 YF void YAC_CALL sdvg_PaintConic (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01);
 
@@ -1937,10 +1990,45 @@ Begin preparation or rendering of anti-aliased, round points
 */
 YF sBool YAC_CALL sdvg_BeginPointsRoundAA (sUI _numPoints);
 
+/* @function sdvg_BeginPolygon,int numVertices,int stride:boolean
+Begin preparation or rendering of polygon via user-defined shader
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+*/
+YF sBool YAC_CALL sdvg_BeginPolygon (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginPolygonAA,int numVertices,int stride:boolean
+Begin preparation or rendering of anti-aliased polygon via user-defined shader
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+*/
+YF sBool YAC_CALL sdvg_BeginPolygonAA (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginFilledPolygon,int numVertices:boolean
+Begin preparation or rendering of filled polygon
+
+@arg numVertices Number of vertices
+*/
+YF sBool YAC_CALL sdvg_BeginFilledPolygon (sUI _numVertices);
+
+/* @function sdvg_BeginFilledPolygonAA,int numVertices:boolean
+Begin preparation or rendering of filled, anti-aliased polygon
+
+@arg numVertices Number of vertices
+*/
+YF sBool YAC_CALL sdvg_BeginFilledPolygonAA (sUI _numVertices);
+
 /* @function sdvg_VertexOffset2f
 Set vertex coordinate buffer GPU read pointer to current write offset
 */
 YF void YAC_CALL sdvg_VertexOffset2f (void);
+
+/* @function sdvg_VertexOffset2fi16
+Set vertex coordinate buffer GPU read pointer to current write offset (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_VertexOffset2fi16 (void);
 
 /* @function sdvg_AttribOffsetf,String name,int size
 Set vertex attribute buffer GPU read pointer to current write offset (n floats)
@@ -1998,6 +2086,13 @@ Emit signed 16bit short vertex attribute to currently mapped vertex buffer
 @arg name Attribute name
 */
 void YAC_CALL sdvg_Attribi16 (sS16 _i);
+
+/* @function sdvg_Attrib2fi16,short i
+Convert from float and emit two signed 16bit short vertex attributes to currently mapped vertex buffer
+
+@arg name Attribute name
+*/
+void YAC_CALL sdvg_Attrib2fi16 (sF32 _x, sF32 _y);
 
 /* @function sdvg_Attrib1f,float f
 Emit 32bit float vertex attribute to currently mapped vertex buffer
@@ -2222,6 +2317,9 @@ YF sUI YAC_CALL _sdvg_ARGBToHSVA (sU32 _c32, YAC_Object *_retH, YAC_Object *_ret
 YF void YAC_CALL _sdvg_GradientToTexture (YAC_Object *_tex, YAC_Object *_colors, YAC_Object *_starts, sBool _bSmoothStep);
 #endif // SHADERVG_SCRIPT_API
 
+#ifdef __cplusplus
+} // extern "C"
+#endif // __cplusplus
 
 #endif // SHADERVG_SKIP_DECLARATIONS
 

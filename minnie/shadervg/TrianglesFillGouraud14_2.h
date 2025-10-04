@@ -109,4 +109,47 @@ class TrianglesFillGouraud14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_disable(shape_a_vertex);
    }
 
+#ifdef SHADERVG_STENCIL_POLYGONS
+   void drawPolygonFillGouraudVBO14_2(sUI              _vboId,
+                                      sUI              _byteOffset,
+                                      sUI              _numVerts,
+                                      Dsdvg_mat4_ref_t _projMatrix,
+                                      sF32             _alpha
+                                      ) {
+      //
+      // VBO vertex format (8 bytes per vertex):
+      //    +0 s14.2 x
+      //    +2 s14.2 y
+      //    +4 u8    r
+      //    +5 u8    g
+      //    +6 u8    b
+      //    +7 u8    a
+      //
+
+      sdvg_BindVBO(_vboId);
+
+      shape_shader.bind();
+
+      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      Dsdvg_uniform_1f(shape_u_global_alpha, _alpha);
+
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT,         GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 8/*stride*/, _byteOffset + 4);
+
+      Dsdvg_attrib_enable(shape_a_vertex);
+      Dsdvg_attrib_enable(shape_a_color);
+
+      Dsdvg_stencil_poly_pass1();
+      Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+      Dsdvg_stencil_poly_pass2();
+      Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+      Dsdvg_stencil_poly_end();
+
+      Dsdvg_attrib_disable(shape_a_color);
+      Dsdvg_attrib_disable(shape_a_vertex);
+   }
+#endif // SHADERVG_STENCIL_POLYGONS
+
 };

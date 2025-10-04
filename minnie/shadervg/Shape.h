@@ -153,6 +153,8 @@ class ShaderVG_Shape {
 
    sBool createShapeShader (const char *_sVS, const char *_sFS);
 
+   void updatePaintUniforms (const shadervg_paint_t *_paint);
+
    virtual sBool onOpen (void);
 };
 

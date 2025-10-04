@@ -46,7 +46,6 @@ class TrianglesFillFlat32Radial : public ShaderVG_Shape {
    const char *fs_src =
       "uniform vec4 u_color_fill; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform vec2  u_paint_ndir; \n"
       "uniform float u_paint_ob_len; \n"
       " \n"
       "VARYING_IN vec2 v_paint_pos; \n"

@@ -12,9 +12,12 @@
 #ifndef MINNIE_DRAWABLE_H__
 #define MINNIE_DRAWABLE_H__
 
+#ifdef USE_MINNIE_MIB_SETUP
+
 YG("minnie")
 
 
+#ifdef SHADERVG_SCRIPT_API
 YC class _MinnieDrawable : public YAC_Object {
 
   public:
@@ -66,7 +69,12 @@ YC class _MinnieDrawable : public YAC_Object {
 //#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                 YCI 0x1D
 //#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2           YCI 0x1E
 
-  public:
+#else
+   // MINNIE_LIB
+struct MinnieDrawable {
+#define _MinnieDrawable MinnieDrawable
+#endif // SHADERVG_SCRIPT_API
+
 #define MINNIE_DEFAULT_GL_BUF_SIZE    (128 * 1024)
 #define MINNIE_DEFAULT_DRAW_BUF_SIZE  (  2 * 1024)
 
@@ -100,11 +108,14 @@ YC class _MinnieDrawable : public YAC_Object {
    sF32 trans_y;
 
 
+#if defined(__cplusplus)
   public:
 	_MinnieDrawable(void);
 	~_MinnieDrawable();
 
+#ifndef YAC_NO_HOST
 	YAC(_MinnieDrawable);
+#endif // YAC_NO_HOST
 
    YM void init (void);
 
@@ -144,7 +155,10 @@ YC class _MinnieDrawable : public YAC_Object {
    YM sBool isComplete(void);
    YM void draw (void);
 
+#endif // __cplusplus
+
 };
 
+#endif // USE_MINNIE_MIB_SETUP
 
 #endif // MINNIE_DRAWABLE_H__

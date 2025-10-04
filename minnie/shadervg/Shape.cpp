@@ -29,9 +29,7 @@
 #include <stdarg.h>
 #include <math.h>
 
-#define YAC_BIGSTRING
-#define YAC_PRINTF
-#include <yac.h>
+#include "../inc_yac.h"
 
 #define MINNIE_SKIP_TYPEDEFS  defined
 #include "../minnie.h"
@@ -585,6 +583,73 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
       Dsdvg_errorprintf("[---] ShaderVG_Shape::createShapeShader: validateShapeShader() failed\n");
    }
    return r;
+}
+
+void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
+   sSI loc = shape_u_paint_tex;
+   if(loc >= 0)
+   {
+      Dsdvg_uniform_1i(loc, 0/*tex_unit*/);
+   }
+
+   loc = shape_u_paint_start;
+   if(loc >= 0)
+   {
+      Dsdvg_uniform_2f(loc, _paint->start_x, _paint->start_y);
+   }
+
+   loc = shape_u_paint_end;
+   if(loc >= 0)
+   {
+      Dsdvg_uniform_2f(loc, _paint->end_x, _paint->end_y);
+   }
+
+   loc = shape_u_paint_scale;
+   if(loc >= 0)
+   {
+      const sF32 sclX = (_paint->end_x - _paint->start_x > 0.0f) ? (1.0f / (_paint->end_x - _paint->start_x)) : 0.0f;
+      const sF32 sclY = (_paint->end_y - _paint->start_y > 0.0f) ? (1.0f / (_paint->end_y - _paint->start_y)) : 0.0f;
+      Dsdvg_uniform_2f(loc, sclX, sclY);
+   }
+
+   loc = shape_u_paint_ndir;
+   if(loc >= 0)
+   {
+      sF32 dx = _paint->end_x - _paint->start_x;
+      sF32 dy = _paint->end_y - _paint->start_y;
+      sF32 l = sqrtf(dx*dx + dy*dy);
+      if(l > 0.0f)
+      {
+         l = 1.0f / l;
+         dx *= l;
+         dy *= l;
+      }
+      else
+      {
+         dx = 0.0f;
+         dy = 0.0f;
+      }
+      Dsdvg_uniform_2f(loc, dx, dy);
+   }
+
+   loc = shape_u_paint_ob_len;
+   if(loc >= 0)
+   {
+      const sF32 dx = _paint->end_x - _paint->start_x;
+      const sF32 dy = _paint->end_y - _paint->start_y;
+      sF32 l = sqrtf(dx*dx + dy*dy);
+      if(l > 0.0f)
+      {
+         l = 1.0f / l;
+      }
+      Dsdvg_uniform_1f(loc, l);
+   }
+
+   loc = shape_u_paint_angle;
+   if(loc >= 0)
+   {
+      Dsdvg_uniform_1f(loc, _paint->angle);
+   }
 }
 
 sBool ShaderVG_Shape::onOpen(void) {

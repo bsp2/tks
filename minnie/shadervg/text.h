@@ -84,11 +84,15 @@ YC class _ShaderVG_Font : public YAC_Object {
 };
 #endif // SHADERVG_SCRIPT_API
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 extern void sdvg_int_reset_font (void); // internal
 
-/* @function sdvg_InitFont,ShaderVG_Font,Object data,int texW,int texH,Object texData:boolean
+/* @function sdvg_InitFont,ShaderVG_Font,Object data,Object texData,int texW,int texH:boolean
 */
-sBool YAC_CALL sdvg_InitFont (sdvg_font_t *_font, const void *_data, sUI _dataSz, sUI _texW, sUI _texH, const void *_texData);
+sBool YAC_CALL sdvg_InitFont (sdvg_font_t *_font, const void *_data, sUI _dataSz, const void *_texData, sUI _texW, sUI _texH);
 
 /* @function sdvg_FontOnOpen,ShaderVG_Font:boolean
 */
@@ -116,7 +120,7 @@ sSI YAC_CALL sdvg_TextIndexAtX (const sdvg_font_t *_font, const char *_text, sSI
 
 /* @function sdvg_BindFont,ShaderVG_Font
 */
-void YAC_CALL sdvg_BindFont (const sdvg_font_t *_font);
+void YAC_CALL sdvg_BindFont (const sdvg_font_t *_font, sBool _bFilter);
 
 /* @function sdvg_DrawText,String text,float x,float y
 */
@@ -130,23 +134,23 @@ void YAC_CALL sdvg_DrawTextClipped (const char *_text, sF32 _x, sF32 _y, sF32 _c
 */
 void YAC_CALL sdvg_DrawTextUnderline (const char *_text, sF32 _x, sF32 _y);
 
-/* @function sdvg_DrawTextUnderlineClipped,String text,float x,float y
+/* @function sdvg_DrawTextUnderlineClipped,String text,float x,float y,float clipLeft,float clipTop,float clipRight,float clipBottom
 */
-void YAC_CALL sdvg_DrawTextUnderlineClipped (const char *_text, sF32 _x, sF32 _y);
+void YAC_CALL sdvg_DrawTextUnderlineClipped (const char *_text, sF32 _x, sF32 _y, sF32 _clipLeft, sF32 _clipTop, sF32 _clipRight, sF32 _clipBottom);
 
 /* @function sdvg_DrawTextAccel,String text,float x,float y
 */
 void YAC_CALL sdvg_DrawTextAccel (const char *_text, sF32 _x, sF32 _y);
 
-/* @function sdvg_DrawTextAccelClipped,String text,float x,float y
+/* @function sdvg_DrawTextAccelClipped,String text,float x,float y,float clipLeft,float clipTop,float clipRight,float clipBottom
 */
-void YAC_CALL sdvg_DrawTextAccelClipped (const char *_text, sF32 _x, sF32 _y);
+void YAC_CALL sdvg_DrawTextAccelClipped (const char *_text, sF32 _x, sF32 _y, sF32 _clipLeft, sF32 _clipTop, sF32 _clipRight, sF32 _clipBottom);
 
 /* @function sdvg_UnbindFont
 */
 YF void YAC_CALL sdvg_UnbindFont (void);
 #ifdef SHADERVG_SCRIPT_API
-YF sBool YAC_CALL _sdvg_InitFont (YAC_Object *_font, YAC_Object *_data, sUI _texW, sUI _texH, YAC_Object *_texData);
+YF sBool YAC_CALL _sdvg_InitFont (YAC_Object *_font, YAC_Object *_data, YAC_Object *_texData, sUI _texW, sUI _texH);
 YF sBool YAC_CALL _sdvg_FontOnOpen (YAC_Object *_font);
 YF void YAC_CALL _sdvg_TextExtents (YAC_Object *_font, YAC_String *_text, YAC_Object *_retW, YAC_Object *_retH);
 YF sSI YAC_CALL _sdvg_TextWidth (YAC_Object *_font, YAC_String *_text);
@@ -161,6 +165,10 @@ YF void YAC_CALL _sdvg_DrawTextUnderlineClipped (YAC_String *_text, sF32 _x, sF3
 YF void YAC_CALL _sdvg_DrawTextAccel (YAC_String *_text, sF32 _x, sF32 _y);
 YF void YAC_CALL _sdvg_DrawTextAccelClipped (YAC_String *_text, sF32 _x, sF32 _y, sF32 _clipLeft, sF32 _clipTop, sF32 _clipRight, sF32 _clipBottom);
 #endif // SHADERVG_SCRIPT_API
+
+#ifdef __cplusplus
+} // extern "C"
+#endif // __cplusplus
 
 #endif // SHADERVG_TEXT
 

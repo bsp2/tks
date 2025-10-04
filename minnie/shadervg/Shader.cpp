@@ -29,12 +29,13 @@
 #include <stdarg.h>
 #include <math.h>
 
-#define YAC_BIGSTRING
-#define YAC_PRINTF
-#include <yac.h>
+#include "../inc_yac.h"
 
-// #define MINNIE_SKIP_TYPEDEFS  defined
-// #include "../minnie.h"
+#ifdef MINNIE_LIB
+// (note) Matrix4f
+#define MINNIE_SKIP_TYPEDEFS  defined
+#include "../minnie.h"
+#endif // MINNIE_LIB
 
 #include "../inc_opengl.h"
 
@@ -115,7 +116,7 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
       if(0 != buf[0])
       {
          Dsdvg_warnprintf("[~~~] ShaderVG_Shader::create: glGetShaderInfoLog[VS] returned:\n");
-         Dsdvg_warnprintf(buf);
+         Dsdvg_warnprintf("%s",buf);
       }
    }
 
@@ -132,7 +133,7 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
       if(0 != buf[0])
       {
          Dsdvg_warnprintf("[~~~] ShaderVG_Shader::create: glGetShaderInfoLog[FS] returned:\n");
-         Dsdvg_warnprintf(buf);
+         Dsdvg_warnprintf("%s",buf);
       }
    }
 
@@ -145,7 +146,7 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
 
       if(GL_TRUE == val)
       {
-         if(Dyac_host_yacGetDebugLevel() >= 2u)
+         if(Dyac_host_yacGetDebugLevel() >= 5u)
          {
             Dsdvg_debugprintf("[dbg] ShaderVG_Shader::create: ok, program linked successfully (prg_id=%u).\n", prg_id);
          }
@@ -165,7 +166,7 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
             if(0 != buf[0])
             {
                Dsdvg_warnprintf("[~~~] ShaderVG_Shader::create: glGetProgramInfoLog returned:\n");
-               Dsdvg_warnprintf(buf);
+               Dsdvg_warnprintf("%s",buf);
             }
          }
 

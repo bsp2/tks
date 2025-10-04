@@ -54,7 +54,7 @@ extern "C" {
       void (YAC_CALL *sdvg_AlphaWrite)                      (sBool _bEnable);
       // -------- VBO --------
       sUI  (YAC_CALL *sdvg_CreateVBO)          (sUI _numBytes);
-      void (YAC_CALL *sdvg_UpdateVBO)          (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Object *_data);
+      void (YAC_CALL *sdvg_UpdateVBO)          (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data);
       void (YAC_CALL *sdvg_BindVBO)            (sUI _vboId);
       sUI  (YAC_CALL *sdvg_GetVBOSize)         (void);
       sUI  (YAC_CALL *sdvg_GetMappedVBOOffset) (void);
