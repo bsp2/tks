@@ -5,13 +5,19 @@
 #
 #
 
+ifneq ("$(STATIC_TARGET)","")
+CLEAN_RULES+= clean_static_target
+endif
+
 include $(YAC_ROOTPATH)/plugin_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known
 #
+ifeq ("$(STATIC_TARGET)","")
 ifeq ("$(TARGET)","")
 TARGET=$(PLUGIN).so
+endif
 endif
 
 CPPFLAGS += -fPIC $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
