@@ -14,13 +14,13 @@ all:
 	tks font_convert $(TTF_BOLD)   default bold   13
 	tks font_convert $(TTF_BOLD)   default bold   26
 	tks font_convert $(TTF_NORMAL) default normal 17
-	tks font_convert $(TTF_NORMAL) default normal 32
+#	tks font_convert $(TTF_NORMAL) default normal 32
 	tks font_convert $(TTF_NORMAL) default normal 34
-	tks font_convert $(TTF_NORMAL) default normal 36
+#	tks font_convert $(TTF_NORMAL) default normal 36
 	tks font_convert $(TTF_NORMAL) default normal 24
 	tks font_convert $(TTF_NORMAL) default normal 48
-	tks font_convert $(TTF_NORMAL) default normal 64
-	tks font_convert $(TTF_NORMAL) default normal 128
+#	tks font_convert $(TTF_NORMAL) default normal 64
+#	tks font_convert $(TTF_NORMAL) default normal 128
 
 .PHONY: s256
 s256:
@@ -59,5 +59,5 @@ sdf32:
 	tks font_convert $(TTF_NORMAL) default normal 32 sdf
 
 .PHONY: sdf
-#sdf128 sdf96
-sdf: sdf128 sdf64 sdf48 sdf36 sdf32
+# sdf512 sdf128 sdf64 sdf48 sdf36 sdf32 sdf96
+sdf: sdf256
