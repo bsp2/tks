@@ -85,6 +85,7 @@
 #endif // DX_GLES
 
 
+#ifndef TKOPENGL_SKIP_GL_HEADERS
 #ifdef YAC_WIN32
 #include <windows.h>
 #include <GL/gl.h>
@@ -96,6 +97,7 @@
 #include <OpenGL/glext.h>
 //#include <OpenGL/gl3.h>
 #endif
+#endif // TKOPENGL_SKIP_GL_HEADERS
 
 #ifdef DX_GLES
 #define GL_GLEXT_PROTOTYPES defined
@@ -126,6 +128,7 @@
 #ifndef DX_EMU_MATRIX
 #ifndef DX_GLES
 
+#ifndef TKOPENGL_SKIP_GL_HEADERS
 // for gluLookAt:
 #ifdef YAC_MACOS
 #include <OpenGL/glu.h>
@@ -133,6 +136,7 @@
 // linux, windows
 #include <GL/glu.h>
 #endif // YAC_MACOS
+#endif // TKOPENGL_SKIP_GL_HEADERS
 
 #endif // DX_GLES
 #endif // DX_EMU_MATRIX
