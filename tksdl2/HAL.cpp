@@ -2482,7 +2482,7 @@ sSI _HAL::_getRedrawFlag(void) {
 void _HAL::loadGLDefaults(void) {
    sBool bGLCompat = !b_glcore;
 
-   if(Dyac_host_yacGetDebugLevel() >= 2u)
+   if(Dyac_host_yacGetDebugLevel() >= 30u)
    {
       Dyac_host_printf("[trc] HAL::loadGLDefaults ENTER bGLCompat=%d\n", bGLCompat);
    }
