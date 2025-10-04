@@ -10,7 +10,7 @@
 /// ----          08-Jan-2009 / 05-Mar-2009 / 01-Apr-2009 / 04-Apr-2009 / 18-Apr-2009 / 04-May-2009
 /// ----          01-Jun-2009 / 11-Jul-2010 / 21-Apr-2011 / 21-Dec-2012 / 13-Aug-2013 / 05-Feb-2014
 /// ----          26-Jun-2018 / 15-Dec-2018 / 28-Dec-2018 / 18-May-2019 / 31-Jul-2019 / 26-Jan-2023
-/// ----          12-Apr-2023 / 10-Oct-2024 / 10-Feb-2025
+/// ----          12-Apr-2023 / 10-Oct-2024 / 10-Feb-2025 / 01-Oct-2025
 /// ----
 /// ---- info   : YAC - Yet Another Component object model. originally for the "tks" project
 /// ----
@@ -18,8 +18,8 @@
 /// ----
 /// ----
 
-#ifndef __YAC_HOST_CPP__
-#define __YAC_HOST_CPP__
+#ifndef YAC_HOST_CPP__
+#define YAC_HOST_CPP__
 
 
 //
@@ -94,7 +94,7 @@ sUI              YAC_Object::object_counter                  =0;
                  YAC_Object::YAC_Object                      (void)                                  {
                     Dyac_object_counter_inc;
 
-#ifdef YAC_OBJECT_TAGS
+#if YAC_OBJECT_TAGS
                     validation_tag = YAC_VALID_TAG;
 #endif
 
@@ -106,7 +106,7 @@ sUI              YAC_Object::object_counter                  =0;
                  }
                  YAC_Object::~YAC_Object                     ()                                      {
                     Dyac_object_counter_dec;
-#ifdef YAC_OBJECT_TAGS
+#if YAC_OBJECT_TAGS
                     validation_tag = YAC_INVALID_TAG;
 #endif
 
@@ -115,7 +115,7 @@ sUI              YAC_Object::object_counter                  =0;
 #endif // YAC_OBJECT_POOL
                  }
 sUI              YAC_VCALL YAC_Object::yacQueryInterfaces              (void)                                  {return YAC_INTERFACE_ALL;}
-#ifndef YAC_CUST_OBJECT
+#ifndef YAC_CUST_OBJECT_IMPL
 const sChar*     YAC_VCALL YAC_Object::yacClassName                    (void)                                  {return "null";}
 YAC_Object*      YAC_VCALL YAC_Object::yacNewObject                    (void)                                  {return 0;}
 sUI              YAC_VCALL YAC_Object::yacMemberGetNum                 (void)                                  {return 0;}
@@ -135,7 +135,7 @@ sUI              YAC_VCALL YAC_Object::yacConstantGetNum               (void)   
 const char     **YAC_VCALL YAC_Object::yacConstantGetNames             (void)                                  {return 0;}
 const sUI       *YAC_VCALL YAC_Object::yacConstantGetTypes             (void)                                  {return 0;}
 yacmemptr        YAC_VCALL YAC_Object::yacConstantGetValues            (void)                                  {yacmemptr r; r.any=0; return r;}
-#endif // YAC_CUST_OBJECT
+#endif // YAC_CUST_OBJECT_IMPL
 void             YAC_VCALL YAC_Object::yacFinalizeObject               (YAC_ContextHandle)                     { }
 void             YAC_VCALL YAC_Object::yacGetConstantStringList        (YAC_String *)                          { }
 sBool            YAC_VCALL YAC_Object::yacIsComposite                  (void)                                  {return 0;}
@@ -1815,9 +1815,9 @@ sBool            YAC_String::append                   (YAC_String *o)           
                }
                if((bflags&DEL))
                {
-                  Dyac_host_printf("free old chars 1\n");
+                  // Dyac_host_printf("free old chars 1\n");
                   Dyacfreechars(chars);
-                  Dyac_host_printf("free old chars 2\n");
+                  // Dyac_host_printf("free old chars 2\n");
                }
                length--;
             }
@@ -2196,4 +2196,4 @@ void operator delete(void *_p) {
 #endif // YAC_GLOBAL_NEWDELETE
 
 
-#endif // __YAC_HOST_CPP__
+#endif // YAC_HOST_CPP__

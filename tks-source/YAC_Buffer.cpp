@@ -372,9 +372,8 @@ sUI YAC_VCALL YAC_Buffer::yacStreamGetSize(void) {
 }
 
 void YAC_VCALL YAC_Buffer::yacStreamWriteI8(sU8 _value) {
-   // bit_offset = 0u;
    if(io_offset < size)
-      buffer[((sUI)io_offset++)]=(sU8)_value;
+      buffer[io_offset++] = (sU8)_value;
 }
 
 void YAC_Buffer::pokeI8(sSI _offset, sSI _value) {
@@ -387,11 +386,10 @@ void YAC_Buffer::pokeI8(sSI _offset, sSI _value) {
 }
 
 void YAC_VCALL YAC_Buffer::yacStreamWriteI16(sU16 _value) {
-   // bit_offset = 0u;
-   if((io_offset+1) < size)
+   if((io_offset + 1u) < size)
    {
       pokeI16(io_offset, _value);
-      io_offset += 2;
+      io_offset += 2u;
    }
 }
 

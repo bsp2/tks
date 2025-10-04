@@ -13743,10 +13743,10 @@ static void YAC_CALL APIC__DebugOC(void) {
 
    ObjectPool::Print();
 
-#ifdef YAC_TRACK_CHARALLOC
+#if YAC_TRACK_CHARALLOC
    Dprintf("[dbg]    peak_char_size = %d\n", yac_string_peak_char_size);
    Dprintf("[dbg]   total_char_size = %d\n", yac_string_total_char_size);
-#endif //YAC_TRACK_CHARALLOC
+#endif // YAC_TRACK_CHARALLOC
 }
 
 

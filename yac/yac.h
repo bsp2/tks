@@ -19,7 +19,8 @@
 /// ----          04-Jan-2020 / 30-Apr-2021 / 23-Sep-2021 / 04-Oct-2021 / 09-Apr-2022 / 20-Sep-2022
 /// ----          06-Jan-2023 / 16-Jan-2023 / 26-Jan-2023 / 05-Feb-2023 / 12-Apr-2023 / 14-Apr-2023
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
-/// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025
+/// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
+/// ----          03-Oct-2025
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -64,7 +65,7 @@
 // ----
 // ---- Version number
 // ----
-#define YAC_VERSION_MAJOR 920
+#define YAC_VERSION_MAJOR 924
 #define YAC_VERSION_MINOR 0
 
 // ----
@@ -82,7 +83,9 @@
 
 /// ---- Adds validation tag to YAC_Object class (yac_host must support this, too!!).
 /// ---- This makes it possible to detect double-free'd objects, not only zero-pointers.
-#define YAC_OBJECT_TAGS defined
+#ifndef YAC_OBJECT_TAGS
+#define YAC_OBJECT_TAGS  1
+#endif // YAC_OBJECT_TAGS
 
 /// ---- Adds static object_counter field to YAC_Object class
 #define YAC_OBJECT_COUNTER defined
@@ -147,7 +150,7 @@
 //#define YAC_CUST_INTARRAY defined      // define to skip declaration of the YAC_IntArray class.
 //#define YAC_CUST_FLOATARRAY defined    // define to skip declaration of the YAC_FloatArray class.
 
-//#define YAC_TRACK_CHARALLOC defined    // define to keep track of total amount of allocated string chars
+//#define YAC_TRACK_CHARALLOC 1    // define to keep track of total amount of allocated string chars
 
 // ----
 // ----
@@ -379,16 +382,28 @@ typedef enum __yac_host_interfaces {
 // ----
 #ifndef YAC_NO_EXPORTS
 #ifdef YAC_VC
+#if defined(__cplusplus)
  #define YAC_APIC extern "C" __declspec(dllexport)
+#else
+ #define YAC_APIC __declspec(dllexport)
+#endif
  #define YAC_API __declspec(dllexport)
 #else
+#if defined(__cplusplus)
  #define YAC_APIC extern "C"
+#else
+ #define YAC_APIC
+#endif
  #define YAC_API
 #endif
 #else
+#if defined(__cplusplus)
 #define YAC_APIC extern "C"
-#define YAC_API
+#else
+#define YAC_APIC
 #endif
+#define YAC_API
+#endif // YAC_NO_EXPORTS
 
 // ----
 // ---- determine thread local storage attribute syntax
@@ -469,6 +484,13 @@ typedef enum __yac_host_interfaces {
 // ----         hence this workaround)
 // ----
 #define YAC_CONST const
+
+#undef NULL
+#if defined(__cplusplus)
+#define NULL 0
+#else
+#define NULL ((void*)0)
+#endif
 
 YG("core");
 
@@ -673,6 +695,9 @@ typedef union yac_ieee_double_u {
 #define sSIGN(x) (((x)==0)?0:(((x)>0)?1:-1))
 #define sABS(x) (((x)>0)?(x):-(x))
 #define sRANGE(a,b,c) (((a)<(b))?(b):(((a)>(c))?(c):(a)))
+#define sWRAP(a,b,c) (((a)<(b))?((c)-((b)-(a))):((a)>=(c))?((b)+((c)-(a))):(a))
+#define sLERP(a,b,t) ((a)+(((b)-(a))*(t)))
+#define sFRAC(a) ((a)-((sSI)(a)))
 #define sALIGN(x,a) (((x)+(a)-1)&~((a)-1))
 #define sMAKE2(b,a)      (((a)<<16)+(b))                      // special macros to pack multiple numbers in one integer.
 #define sMAKE4(d,c,b,a)  (((a)<<24)+((b)<<16)+((c)<<8)+(d))   // usefull for if() and switch() statements
@@ -705,11 +730,11 @@ typedef void *(*yac_thread_fxn_t)(void *_userData);
 typedef sSI yac_thread_priority_t;
 
 // ---- nameid types ----
-typedef sUI    YAC_ExceptionId;
-typedef sSI    YAC_CallbackId;
+typedef sUI YAC_ExceptionId;
+typedef sSI YAC_CallbackId;
 
 // ---- other anonymous pointer types ----
-typedef void * YAC_CFunctionPtr;
+typedef void *YAC_CFunctionPtr;
 
 typedef struct __YAC_PoolHandle {
    sUI pool_id;
@@ -721,12 +746,22 @@ typedef struct __YAC_PoolHandle {
 #define YAC_INVALID_TAG 0xD34DBEEF
 
 // ---- base classes and structures ----
+#if defined(__cplusplus)
+#if !defined(YAC_C_STRUCTS)
 class YAC_API YAC_Buffer;
 class YAC_API YAC_Event;
 class YAC_API YAC_Iterator;
 class YAC_API YAC_Object;
 class YAC_API YAC_String;
 class YAC_API YAC_Value;
+#else
+struct YAC_Buffer;
+struct YAC_String;
+#endif
+#else
+typedef struct YAC_Buffer_s YAC_Buffer;
+typedef struct YAC_String_s YAC_String;
+#endif // __cplusplus
 
 // ---- PrintHook callback function type
 //        'output'   is the previously registered output buffer
@@ -748,8 +783,10 @@ typedef union _yacmem {
    sBool              b;
    sF32               f32;
 
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
    YAC_Object        *o ;
    YAC_Object       **io;
+#endif // __cplusplus
    YAC_String        *s;
 
    // old (deprecated) field names
@@ -787,8 +824,10 @@ typedef union _yacmem64 {
    sF32               f32;
    sF64               f64;
 
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
    YAC_Object         *o;
    YAC_Object        **io;
+#endif // __cplusplus
    YAC_String         *s;
    void               *any;
 
@@ -819,8 +858,10 @@ typedef union _yacmemptr {
    sU64              *u64;
    sS64              *s64;
    sF32              *f32;
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
    YAC_Object        *o;
    YAC_Object       **io;
+#endif // __cplusplus
    YAC_String        *s;
 
    // ---- union with register int (32 bit) ----
@@ -844,7 +885,9 @@ typedef union _yaccmemptr {
    const sU64        *u64;
    const sS64        *s64;
    const sF32        *f32;
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
    const YAC_Object  *o;
+#endif // __cplusplus
    const YAC_String  *s;
 } yaccmemptr;
 
@@ -958,12 +1001,15 @@ enum __yac_class_IDs {
 #define YAC_POOL_PRIORITY_HIGH   2
 #define YAC_NUM_POOL_PRIORITIES  3
 
+#if defined(__cplusplus)
 #ifdef YAC_PLACEMENT_NEW
 #include <stdlib.h>
 #include <new>
 #endif // YAC_PLACEMENT_NEW
+#endif // __cplusplus
 
 // ---- basic type structure (no con-/destructors) ----
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
 class YAC_API YAC_TypeS {
   public:
 #ifdef YAC_VIRTUAL_VALUE
@@ -973,8 +1019,10 @@ class YAC_API YAC_TypeS {
   sUI type;       // YAC_TYPE_xxx
   sSI class_type; // if type==YAC_TYPE_OBJECT then this field stores the internal object class type
 };
+#endif // __cplusplus
 
 // ---- basic script value structure (no con-/destructors) ----
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
 class YAC_API YAC_ValueS : public YAC_TypeS {
 public:
 	union __my_value {
@@ -986,13 +1034,14 @@ public:
 	} value;
 	sUI deleteme; // ---- this flag is used to decide whether it is safe to delete the object
 };
+#endif // __cplusplus
 
 #ifndef YAC_TYPES_ONLY
 
 //
 // How to allocate string characters
 //
-#ifdef YAC_TRACK_CHARALLOC
+#if YAC_TRACK_CHARALLOC
 extern sSI yac_string_total_char_size;
 extern sU8 *yac_string_alloc_chars(size_t _n);
 extern void yac_string_free_chars(sU8 *_chars);
@@ -1054,6 +1103,7 @@ public:
 #define YAC_RETSC(a)  _r->initNewString((YAC_String*)(a))
 #define YAC_H(a)      YAC_Object*YAC_VCALL yacNewObject(void);const sChar*YAC_VCALL yacClassName(void)
                              // ---- start an interface definition, e.g. YAC_H(MyClass);
+#ifndef YAC
 #define YAC(a)    YAC_Object * YAC_VCALL yacNewObject         (void);\
    const sChar*  YAC_VCALL yacClassName                     (void);\
    sUI           YAC_VCALL yacMemberGetNum                  (void);\
@@ -1073,6 +1123,7 @@ public:
 	const char ** YAC_VCALL yacConstantGetNames              (void);\
 	const sUI   * YAC_VCALL yacConstantGetTypes              (void);\
 	yacmemptr     YAC_VCALL yacConstantGetValues             (void)
+#endif // YAC
 
 #define YAC_POOLED_H(a, p) \
    void         YAC_VCALL yacPoolInit        (YAC_Object *_this); \
@@ -1201,11 +1252,12 @@ enum __yacoperators {
 #define YAC_TENSOR_RANK_MATRIX 2 // e.g. tkmath::Matrix3f
 
 // ---- all plugin class(es) have to be derived from this virtual interface class ----
+#ifndef YAC_CUST_OBJECT
 YCR class YAC_API YAC_Object {
 public:
    sUI class_ID;                 /// ---- set by YAC_Host::yacRegisterClass()
 
-#ifdef YAC_OBJECT_TAGS
+#if YAC_OBJECT_TAGS
    sUI validation_tag;           /// ---- YAC_VALID_TAG ord YAC_INVALID_TAG
 #endif
 
@@ -1660,11 +1712,14 @@ public:
    YM sSI  _yacInstanceOf                         (YAC_Object *_o);
 #endif
 
-
 };
 
 YAC_API void YAC_CALL Object__operator(void*,yacmemptr,YAC_Value*);
 
+#endif // YAC_CUST_OBJECT
+
+
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
 #ifdef YAC_OBJECT_YAC
 // ---- forward declarations for external YAC_Object YAC interface implementation ----
 YAC_APIC void YAC_CALL yac_object_yacClassName                    (YAC_Object *_this, YAC_Value *_r);
@@ -1803,6 +1858,7 @@ YAC_APIC void YAC_CALL yac_object_yacNew                          (YAC_Object *_
 YAC_APIC sSI  YAC_CALL yac_object_yacCanDeserializeClass          (YAC_Object *_this, YAC_Object *_ifs);
 YAC_APIC sSI  YAC_CALL yac_object_yacInstanceOf                   (YAC_Object *_this, YAC_Object *_o);
 #endif // YAC_OBJECT_YAC
+#endif // __cplusplus
 
 #ifndef YAC_CUST_VALUE
 // ---- YAC_Object representation of a YAC_Value ----
@@ -1940,8 +1996,10 @@ public:
     sUI   YAC_VCALL yacArrayGetStride          (void);                 // return byte offset to next line
     void *YAC_VCALL yacArrayGetPointer         (void);                 // return pointer to first element in first line
 };
-#endif
+#endif // YAC_CUST_BUFFER
 #endif // YAC_CUST_STREAMBASE
+
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
 // ---- see YAC_Object::yacGetIterator() ----
 class YAC_API YAC_Iterator {
 public:
@@ -1954,6 +2012,9 @@ public:
     virtual void YAC_VCALL begin(void);          // start iteration
     virtual void YAC_VCALL end(void);            // finish iteration
 };
+#endif // __cplusplus
+
+#ifndef YAC_NO_HOST
 // ---- plugin host interface -----
 class YAC_API YAC_Host {
 public:
@@ -2183,6 +2244,8 @@ public:
 	void printf(const char *_fmt, ...);
 #endif
 };
+#endif // YAC_NO_HOST
+
 #ifndef YAC_CUST_STRING
 // ---- simple String class
 // ---- Import notes: * Never delete[]chars in Strings obtained from YAC_New_String()!
@@ -2422,10 +2485,12 @@ class YAC_API YAC_Double          : public YAC_Object { public: sF64 value; };
 #endif // YAC_CUST_NUMBEROBJECTS
 
 
+#ifndef YAC_NO_HOST
 // ---- magic loader symbols ----
 YAC_APIC void YAC_Init   (YAC_Host *); // ---- called when a plugin is (un-)loaded
 YAC_APIC void YAC_Exit   (YAC_Host *); // ---- your plugin needs to define at least these
 YAC_APIC sUI  YAC_Version(void      ); // ---- query plugin version information. 0xaabbccdd, e.g. 0x00050203.
+#endif // YAC_NO_HOST
 
 // ---- helper macros to instanciate new YAC_Objects  ----
 #ifndef YAC_NO_HOST
@@ -2514,6 +2579,7 @@ YAC_APIC sUI  YAC_Version(void      ); // ---- query plugin version information.
 #define YAC_IS_METACLASS(a) ((a)->yacMetaClassName()!=0)
 
 // ---- object class template macros ----
+#if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
 // -------- regular template ----
 /* template <class T> class YAC_Template  {public:T *ctemplate; public: YAC_Template  (YAC_Host *_host) { ctemplate=new T(); _host->yacRegisterClass(ctemplate, YAC_CLASSTYPE_NORMAL); } ~YAC_Template() { delete ctemplate; } };  */
 /* // -------- singleton type template, may not be instanciated ---- */
@@ -2528,12 +2594,13 @@ template <class T> class YAC_STemplate {public: T ctemplate; YAC_STemplate(YAC_H
 // -------- interface template, objects are only created by plugins, may not be instanciated but pointer variables may be declared ----
 template <class T> class YAC_RTemplate {public: T ctemplate; YAC_RTemplate(YAC_Host *_host) { _host->yacRegisterClass(&ctemplate, YAC_CLASSTYPE_NOINST); } ~YAC_RTemplate() { } };
 
+#endif // __cplusplus
 
 #ifndef YAC_NO_EXPORTS
 extern YAC_Host *yac_host;
 #endif
 
-#ifdef YAC_OBJECT_TAGS
+#if YAC_OBJECT_TAGS
 #define YAC_VALID(a) ((a)&&((a)->validation_tag==YAC_VALID_TAG))
 #else
 #define YAC_VALID(a) a

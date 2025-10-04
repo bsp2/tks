@@ -1,30 +1,29 @@
 /// tks-yac.h
 ///
-/// (c) 2001-2022 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
-///
- 
+//
 
-#define YAC_NO_EXPORTS defined 
+#define YAC_NO_EXPORTS defined
 
 /// Funny thing is: With MSVC, it's actually slower (5%!) when this is defined. (but why??)
 /// Note: this is defined by the GCC based makefiles since it is faster with GCC 3.x resp.
 ///       same speed with 4.x
 //#define TKS_NEWDELETE_INLINE defined
 
-#define YAC_CUST_OBJECT defined 
-#define YAC_CUST_STRING defined 
-#define YAC_CUST_EVENT defined 
-#define YAC_CUST_VALUE defined 
-#define YAC_CUST_LISTNODE defined 
-#define YAC_CUST_TREENODE defined 
-#define YAC_CUST_STREAMBASE defined 
-#define YAC_CUST_BUFFER defined 
-#define YAC_CUST_INTARRAY defined 
-#define YAC_CUST_FLOATARRAY defined 
-#define YAC_CUST_NUMBEROBJECTS defined 
+#define YAC_CUST_OBJECT_IMPL defined
+#define YAC_CUST_STRING defined
+#define YAC_CUST_EVENT defined
+#define YAC_CUST_VALUE defined
+#define YAC_CUST_LISTNODE defined
+#define YAC_CUST_TREENODE defined
+#define YAC_CUST_STREAMBASE defined
+#define YAC_CUST_BUFFER defined
+#define YAC_CUST_INTARRAY defined
+#define YAC_CUST_FLOATARRAY defined
+#define YAC_CUST_NUMBEROBJECTS defined
 
-#define YAC_TRACK_CHARALLOC defined
+#define YAC_TRACK_CHARALLOC 1
 
 // Use absolute epsilon float comparisons
 #define YAC_EPSILONCOMPARE_ABS defined
@@ -34,7 +33,7 @@
 //#define YAC_EPSILONCOMPARE_REL defined
 //#define YAC_EPSILONCOMPARE_REL_DEFAULT defined
 
-#include <yac.h> 
+#include <yac.h>
 
 /*#ifdef YAC_OBJECT_POOL
 #undef YAC_DELETE
@@ -91,7 +90,7 @@ static inline void        yacDelete__inline        (YAC_Object *_o);
 }
 
 static inline void yacDelete__inline(YAC_Object *_o) {
-   if(_o) 
+   if(_o)
    {
       delete _o
    }
@@ -123,7 +122,7 @@ static inline void        yacDelete__inline        (YAC_Object *_o);
 #undef YAC_NEW_CORE_TEMP
 #define YAC_NEW_CORE_TEMP(c) yacNewPooledByID__inline(c, YAC_POOL_HINT_TEMPORARY)
 
-/*#undef YAC_CLONE_POOLED 
+/*#undef YAC_CLONE_POOLED
 #define YAC_CLONE_POOLED(x, a) (a)->yacNewPooled((YAC_ContextHandle)x, YAC_POOL_HINT_DEFAULT)
 
 #undef YAC_CLONE_TEMP
@@ -146,7 +145,7 @@ static inline void        yacDelete__inline        (YAC_Object *_o);
 
 
 
-#include "tks-config.h" 
+#include "tks-config.h"
 
 
 
