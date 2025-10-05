@@ -1,5 +1,3 @@
-![screenshot](tests/screenshots/test_073_polygon_gradient_radial_aa.png)
-
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
 [](tests/test_shadervg.tks) contains a set of ~70 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
