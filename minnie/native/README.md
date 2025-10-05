@@ -6,9 +6,13 @@ This is the standalone C / C++ build of the `Minnie` vector graphics API (distri
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
+# Prerequisites
+- Clang compiler
+- SDL2 (install via `% brew install sdl2`)
+
 # Build instructions for macOS:
-- `$ . ./setenv_macos.sh`
-- `$ cd minnie/native/build/macos/`
+- `% . ./setenv_macos.sh`
+- `% cd minnie/native/build/macos/`
 - `m clean ; m bin`
 
 # Running the test:
