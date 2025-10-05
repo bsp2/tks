@@ -7,7 +7,7 @@ This is the standalone C / C++ build of the `Minnie` vector graphics API (distri
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
 # Build instructions for macOS:
-- `$ . setenv_macos.sh`
+- `$ . ./setenv_macos.sh`
 - `$ cd minnie/native/build/macos/`
 - `m clean ; m bin`
 

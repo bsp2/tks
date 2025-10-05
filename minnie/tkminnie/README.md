@@ -7,7 +7,7 @@ These are the `TKS` language bindings for the `Minnie` vector graphics API (dist
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
 # Build instructions for macOS:
-- `$ . setenv_macos.sh`
+- `$ . ./setenv_macos.sh`
 - `$ cd minnie/tkminnie/`
 - `$ m clean ; m bin && m install`
 
