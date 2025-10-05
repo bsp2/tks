@@ -20,6 +20,7 @@
 /* #undef ENABLE_VALGRIND */
 
 /* Symbol visibility prefix */
+#undef EXPORT
 #define EXPORT __attribute__((visibility("default")))
 
 /* Debug fixed-point implementation */

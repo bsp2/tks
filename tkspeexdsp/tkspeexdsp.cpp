@@ -1,8 +1,8 @@
 // ----
 // ---- file   : tkspeexdsp.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2023 by Bastian Spiegel. 
-// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ---- legal  : (c) 2020-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : libspeexdsp interface
@@ -85,7 +85,7 @@ sUI _SpeexResampler::GetOutputDelayInFramesByQualityAndFactor(sUI _quality, sF32
 }
 
 void _SpeexResampler::process(sUI _chIdx, YAC_Object *_faIn, sUI _numFramesIn, YAC_Object *_faOut, sUI _numFramesOut) {
-   
+
    if(NULL != srs)
    {
       if(YAC_Is_FloatArray(_faIn))
