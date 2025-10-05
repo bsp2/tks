@@ -20,14 +20,14 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 
 # Keyboard controls:
 - `ESCAPE` exit
+- `UP` select next test
+- `DOWN` select previous test
 - `SPACE` toggle animation
 - `lctrl - SPACE` toggle slow-motion
 - `RETURN` reset rotation
-- `UP` select next test
-- `DOWN` select previous test
 - `LEFT` decrease stroke width
 - `RIGHT` increase stroke width
-- `aa` toggle anti-aliasing
+- `a` toggle anti-aliasing
 - `d` toggle debug mode
 - `l` toggle symmetry-lock (rounded rectangles, ellipses, ..)
 - `r` decrease alpha

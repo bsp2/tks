@@ -7,24 +7,24 @@ These are the `TKS` language bindings for the `Minnie` vector graphics API (dist
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
 # Build instructions for macOS:
-- `$ . ./setenv_macos.sh`
-- `$ cd minnie/tkminnie/`
-- `$ m clean ; m bin && m install`
+- `% . ./setenv_macos.sh`
+- `% cd minnie/tkminnie/`
+- `% m clean ; m bin && m install`
 
 # Running the test:
-- `$ cd tests`
-- `$ tks test_shadervg`
+- `% cd tests`
+- `% tks test_shadervg`
 
 # Keyboard controls:
 - `ESCAPE` exit
+- `UP` select next test
+- `DOWN` select previous test
 - `SPACE` toggle animation
 - `lctrl - SPACE` toggle slow-motion
 - `RETURN` reset rotation
-- `UP` select next test
-- `DOWN` select previous test
 - `LEFT` decrease stroke width
 - `RIGHT` increase stroke width
-- `aa` toggle anti-aliasing
+- `a` toggle anti-aliasing
 - `d` toggle debug mode
 - `f` decrease radius-x scale
 - `lctrl - f` decrease both radius x and y scales
