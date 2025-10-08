@@ -203,7 +203,7 @@ void YAC_CALL sdvg_TextBBox(const sdvg_font_t *_font, const char *_text, sSI *_r
    {
       if(NULL != _text)
       {
-         sSI cx = 0.0f;
+         sSI cx = 0;
          sSI cy = _font->info->ascender - _font->info->height;
          sUI charIdx = 0u;
          for(;;)
