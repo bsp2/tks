@@ -25,21 +25,16 @@
 // ----
 // ----
 
-#define VP_W  640
-#define VP_H  480
-
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
 
-#include "../../tksdl2/inc_sdl.h"
-
 #include "../inc_minnie.h"
-
-static SDL_Window    *sdl_window = NULL;
-static SDL_GLContext  sdl_glcontext = NULL;
+#include "hal.h"
 
 static sBool b_anim       = 1;     // SPACE
+static sBool b_anim_xy    = 1;     // TAB
+static sBool b_anim_whc   = 1;     // lctrl-TAB
 static sBool b_slomo      = 0;     // lctrl-SPACE
 static sBool b_aa         = 1;     // 'a'
 static sF32  aa_range     = 2.5f;  // (todo) m/lshift-m
@@ -138,7 +133,16 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA            73
 #define RENDER_BEGIN_POLYGON_GRADIENT_CONIC                74
 #define RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA             75
-#define NUM_RENDER_MODES                                   76  // UP/DOWN
+#define RENDER_BEGIN_POLYGON_CUSTOM_SHADER                 76
+#define RENDER_BEGIN_POLYGON_PATTERN                       77
+#define RENDER_BEGIN_POLYGON_PATTERN_AA                    78
+#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA                 79
+#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA              80
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL                 81
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA              82
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA           83
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA        84
+#define NUM_RENDER_MODES                                   85  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -213,12 +217,21 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 67 */ "polygon_aa_vbo",
    /* 68 */ "begin_polygon",
    /* 69 */ "begin_polygon_aa",
-   /* 70 */ "polygon_gradient_linear",
-   /* 71 */ "polygon_gradient_linear_aa",
-   /* 72 */ "polygon_gradient_radial",
-   /* 73 */ "polygon_gradient_radial_aa",
-   /* 74 */ "polygon_gradient_conic",
-   /* 75 */ "polygon_gradient_conic_aa",
+   /* 70 */ "begin_polygon_gradient_linear",
+   /* 71 */ "begin_polygon_gradient_linear_aa",
+   /* 72 */ "begin_polygon_gradient_radial",
+   /* 73 */ "begin_polygon_gradient_radial_aa",
+   /* 74 */ "begin_polygon_gradient_conic",
+   /* 75 */ "begin_polygon_gradient_conic_aa",
+   /* 76 */ "begin_polygon_custom_shader",
+   /* 77 */ "begin_polygon_pattern",
+   /* 78 */ "begin_polygon_pattern_aa",
+   /* 79 */ "begin_polygon_pattern_alpha",
+   /* 80 */ "begin_polygon_pattern_alpha_aa",
+   /* 81 */ "begin_polygon_pattern_decal",
+   /* 82 */ "begin_polygon_pattern_decal_aa",
+   /* 83 */ "begin_polygon_pattern_decal_alpha",
+   /* 84 */ "begin_polygon_pattern_decal_alpha_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -235,10 +248,13 @@ static sUI        buf_vbo_id;
 #include "res/font_default_256_tex.c"      // const unsigned char mem_base_font_default_256_tex[299008]
 #include "res/font_default_256_sdf.c"      // const unsigned char mem_base_font_default_256_sdf[1368]
 #include "res/font_default_256_sdf_tex.c"  // const unsigned char mem_base_font_default_256_sdf_tex[299008]
+#include "res/pattern_1_alpha.c"           // const unsigned char mem_base_tex_pattern_1_alpha[65536]
 #undef BIN2C_DECL
 
 static sUI tex_id = 0u;
 static sUI tex_alpha_id = 0u;
+
+static sUI tex_pattern_1_alpha_id = 0u;
 
 static sdvg_font_t font;
 static sdvg_font_t font_zoom;
@@ -266,7 +282,7 @@ static void TestLineStripFlat_1(sBool _bAA) {
 static void TestLineStripFlat_2(sBool _bAA) {
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -289,7 +305,7 @@ static void TestLineStripFlat_2(sBool _bAA) {
 static void TestLineStripFlatBevel(sBool _bAA) {
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -310,7 +326,7 @@ static void TestLineStripFlatBevel(sBool _bAA) {
 
 // ---------------------------------------------------------------------------- TestCustomShader_1 (19)
 static sUI custom_shader_idx_1 = 0u;
-static void TestCustomShader_1(sF32 sizeX, sF32 sizeY) {
+static void LazyCreateCustomShader_1() {
    if(0u == custom_shader_idx_1)
    {
       const char *vs =
@@ -348,7 +364,10 @@ static void TestCustomShader_1(sF32 sizeX, sF32 sizeY) {
          ;
       custom_shader_idx_1 = sdvg_CreateShader(vs, fs);
    }
-   if(custom_shader_idx_1 >= 0u)
+}
+static sBool BindCustomShader_1() {
+   sBool r = (custom_shader_idx_1 >= 0u);
+   if(r)
    {
       sdvg_BindShader(custom_shader_idx_1);
       sdvg_Uniform1f("u_off", ang_x*2.0f);
@@ -358,7 +377,13 @@ static void TestCustomShader_1(sF32 sizeX, sF32 sizeY) {
       sdvg_Uniform1f("u_scl_y", 0.5f/480.0f);
       sdvg_SetFillColorARGB(0xffffffffu);
       sdvg_SetFillAlpha(fill_alpha);
-
+   }
+   return r;
+}
+static void TestCustomShader_1(sF32 sizeX, sF32 sizeY) {
+   LazyCreateCustomShader_1();
+   if(BindCustomShader_1())
+   {
       if(sdvg_BeginTriangles(6u, 2u*4u))
       {
          sizeX *= 2.0f;
@@ -532,7 +557,7 @@ static void TestCustomShader_3_VBO(Matrix4f *mProj, sF32 sizeX, sF32 sizeY) {
 static void TestLinesFlat(sBool _bAA) {
    sUI numSeg = 64u;
    sUI numPoints = numSeg * 2u;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x * 0.5f;
    buf_vbo.io_offset = 0u;
    for(sUI i = 0u; i < (numPoints / 2u); i++)
@@ -555,7 +580,7 @@ static void TestLinesFlat(sBool _bAA) {
 static void TestBeginLineStripFlat(sBool _bAA) {
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -579,7 +604,7 @@ static void TestBeginLineStripFlat(sBool _bAA) {
 static void TestBeginLineStripFlatBevel(sBool _bAA) {
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -604,7 +629,7 @@ static void TestBeginLinesFlat(sBool _bAA) {
    sdvg_SetStrokeWidth(stroke_w * 0.25f);
    sSI numSeg = 96;
    sSI numPoints = numSeg * 2;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x * 0.5f;
    sF32 x1, y1;
    sF32 x2, y2;
@@ -673,7 +698,7 @@ static void TestBeginLinesFlat(sBool _bAA) {
 static void TestBeginPointsSquare(sBool _bAA) {
    sdvg_SetPointRadius(stroke_w * 2.0f);
    sUI numPoints = 32u;
-   sF32 w = (sM_2PI / numPoints);
+   sF32 w = (sM_2PIf / numPoints);
    sF32 a = ang_x * 0.5f;
    if(_bAA
       ? sdvg_BeginPointsSquareAA(numPoints)
@@ -696,7 +721,7 @@ static void TestBeginPointsSquare(sBool _bAA) {
 static void TestBeginPointsRound(sBool _bAA) {
    sdvg_SetPointRadius(stroke_w * 2.0f);
    sUI numPoints = 32u;
-   sF32 w = (sM_2PI / numPoints);
+   sF32 w = (sM_2PIf / numPoints);
    sF32 a = ang_x * 0.5f;
    if(_bAA
       ? sdvg_BeginPointsRoundAA(numPoints)
@@ -1149,18 +1174,18 @@ static sUI test_text_3_shader_idx = 0u;
 static void TestText_3_draw(const char *_s, sF32 _scl, sF32 _ang, sF32 _deltaC, sU8 _a, sF32 _hue) {
    char sFloor[256]; 
    char sCeil[256]; 
-   int i = 0;
-   float deltaCF = 0;
+   sSI i = 0;
+   sF32 deltaCF = 0;
    if(_deltaC >= 0.5f)
       deltaCF = (_deltaC-0.5f) * 2.0f * 26.0f;
    else if(_deltaC <= -0.5f)
       deltaCF = -(_deltaC+0.5f) * 2.0f * -26.0f;
-   float deltaCFrac = sFRAC(deltaCF);
+   sF32 deltaCFrac = sFRAC(deltaCF);
    if(deltaCFrac < 0.0f)
       deltaCFrac += 1.0f;
-   int deltaCFloor = floorf(deltaCF);
-   int deltaCCeil = ceilf(deltaCF);
-   sUI numChars = strlen(_s);
+   sSI deltaCFloor = (sSI)floorf(deltaCF);
+   sSI deltaCCeil = (sSI)ceilf(deltaCF);
+   sUI numChars = (sUI)strlen(_s);
    for(sUI charIdx = 0u; charIdx < numChars; charIdx++)
    {
       sFloor[i] = _s[i];
@@ -1198,7 +1223,7 @@ static void TestText_3_draw(const char *_s, sF32 _scl, sF32 _ang, sF32 _deltaC, 
    a = (sU8)(_a * (1.0f - deltaCFrac) * fill_alpha);
    if(a > 0u)
    {
-      sdvg_Uniform1f("u_scale_to_ang", sM_2PI/sdvg_TextWidth(&font, sFloor));
+      sdvg_Uniform1f("u_scale_to_ang", sM_2PIf / sdvg_TextWidth(&font, sFloor));
       sdvg_SetColorARGB( (a << 24) | c24 );
       sdvg_DrawText(sFloor, 0, 0);
    }
@@ -1206,7 +1231,7 @@ static void TestText_3_draw(const char *_s, sF32 _scl, sF32 _ang, sF32 _deltaC, 
    a = (sU8)(_a * deltaCFrac * fill_alpha);
    if(a > 0u)
    {
-      sdvg_Uniform1f("u_scale_to_ang", sM_2PI/sdvg_TextWidth(&font, sCeil));
+      sdvg_Uniform1f("u_scale_to_ang", sM_2PIf / sdvg_TextWidth(&font, sCeil));
       sdvg_SetColorARGB( (a << 24) | c24 );
       sdvg_DrawText(sCeil, 0, 0);
    }
@@ -1265,23 +1290,23 @@ static void TestText_3_Swirl(void) {
       const char *s = "hello, world. round and round.";  // 26 glyphs =>  (26*2*7*2 = 728 triangles)
 
       sF32 rotBaseA = ang_h * 2.0f;
-      sF32 rotStepA = sM_2PI / 16.0f;
+      sF32 rotStepA = sM_2PIf / 16.0f;
       sF32 rotA;
 
       sF32 rotBaseB = ang_w * 4.0f;
-      sF32 rotStepB = sM_2PI / 24.0f;
+      sF32 rotStepB = sM_2PIf / 24.0f;
 
       sF32 rotBaseC = ang_c;
-      sF32 rotStepC = sM_2PI / 43.0f;
+      sF32 rotStepC = sM_2PIf / 43.0f;
 
       sF32 baseScale = 240.0f;
       sF32 scaleStep = 40.0f;
       sF32 scaleMod  = 25.0f;
 
-      sF32 rotBaseHue = ang_x * (360.0f / sM_2PI);
+      sF32 rotBaseHue = ang_x * (360.0f / sM_2PIf);
       sF32 hueStep = 360.0 / 5.0;
 
-      rotA = sinf(rotBaseA + rotStepA*0.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*0.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*0.0f + sinf(rotBaseB + rotStepB*0.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1290,7 +1315,7 @@ static void TestText_3_Swirl(void) {
                       rotBaseHue + sinf(rotBaseB + rotStepB*0.0f)*hueStep
                       );
 
-      rotA = sinf(rotBaseA + rotStepA*1.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*1.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*1.0f + sinf(rotBaseB + rotStepB*1.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1299,7 +1324,7 @@ static void TestText_3_Swirl(void) {
                       rotBaseHue + sinf(rotBaseB + rotStepB*1.0f)*hueStep
                       );
 
-      rotA = sinf(rotBaseA + rotStepA*2.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*2.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*2.0f + sinf(rotBaseB + rotStepB*2.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1308,7 +1333,7 @@ static void TestText_3_Swirl(void) {
                       rotBaseHue + sinf(rotBaseB + rotStepB*2.0f)*hueStep
                       );
 
-      rotA = sinf(rotBaseA + rotStepA*3.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*3.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*3.0f + sinf(rotBaseB + rotStepB*3.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1317,7 +1342,7 @@ static void TestText_3_Swirl(void) {
                       rotBaseHue + sinf(rotBaseB + rotStepB*3.0f)*hueStep
                       );
 
-      rotA = sinf(rotBaseA + rotStepA*4.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*4.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*4.0f + sinf(rotBaseB + rotStepB*4.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1326,7 +1351,7 @@ static void TestText_3_Swirl(void) {
                       rotBaseHue + sinf(rotBaseB + rotStepB*4.0f)*45.0f
                       );
 
-      rotA = sinf(rotBaseA + rotStepA*5.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*5.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*5.0f + sinf(rotBaseB + rotStepB*4.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1335,7 +1360,7 @@ static void TestText_3_Swirl(void) {
                       rotBaseHue + sinf(rotBaseB + rotStepB*5.0f)*45.0f
                       );
 
-      rotA = sinf(rotBaseA + rotStepA*6.0f) * sM_PI;
+      rotA = sinf(rotBaseA + rotStepA*6.0f) * sM_PIf;
       TestText_3_draw(s,
                       baseScale - scaleStep*6.0f + sinf(rotBaseB + rotStepB*4.0f)*scaleMod+scaleMod,
                       rotA,
@@ -1513,7 +1538,7 @@ static void TestText_8_Zoom(sBool _bSDF) {
                              g * zoom/*bottom*/,  -g * zoom/*top*/,
                              0.0f/*znear*/,  10.0f/*zfar*/
                              );
-   minnie_matrix4f_rotatef(&mProj, 0.0f, 0.0f, sinf(ang_h*4.0f)*(sM_PI*0.25f));
+   minnie_matrix4f_rotatef(&mProj, 0.0f, 0.0f, sinf(ang_h*4.0f)*(sM_PIf*0.25f));
    minnie_matrix4f_translatef(&mProj, shift, shift, 0.0f);
    sdvg_SetTransform(&mProj);
 
@@ -1530,10 +1555,10 @@ static void TestGradientToTexture(void) {
    sF32 len2   = sinf(ang_w) * 300.0f + 320.0f;
    sF32 len3   = sinf(ang_h) * 400.0f + 420.0f;
 
-   gradient_starts[1] = start1;
-   gradient_starts[2] = start1 + len1;
-   gradient_starts[3] = start1 + len1 + len2;
-   gradient_starts[4] = start1 + len1 + len2 + len3;
+   gradient_starts[1] = (sSI)(start1);
+   gradient_starts[2] = (sSI)(start1 + len1);
+   gradient_starts[3] = (sSI)(start1 + len1 + len2);
+   gradient_starts[4] = (sSI)(start1 + len1 + len2 + len3);
 
    sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
    sdvg_GradientToTexture(tex_gradient, 256u,
@@ -1578,7 +1603,7 @@ static void TestGradientToTexture(void) {
    sdvg_UnbindTexture2D();
 }
 
-// ---------------------------------------------------------------------------- TestTrianglesGradientLinear (63)
+// ---------------------------------------------------------------------------- SetupGradient*
 void SetupGradientLinear(void) {
    sF32 pdx = VP_W;
    sF32 pdy = VP_H;
@@ -1591,8 +1616,74 @@ void SetupGradientLinear(void) {
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
-void DrawGradientBackground(void) {
-   sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+void SetupGradientRadial(void) {
+   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
+   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
+
+   sdvg_PaintRadial(px, py, VP_W, VP_H);
+   sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupGradientConic(void) {
+   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
+   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
+
+   sF32 ang = sWRAP((ang_c * 8.0f) / sM_2PIf, 0.0f, 1.0f);
+
+   sdvg_PaintConic(px, py, VP_W, VP_H, ang);
+   sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintPattern(void) {
+   sF32 zoom = sinf(ang_y*0.5f) * 7.0f + 8.0f;
+   sF32 rx = sinf(ang_x*0.5f) * zoom;
+   sF32 ry = cosf(ang_x*0.5f) * zoom;
+
+   sF32 x = VP_W*0.5f;
+   sF32 y = VP_H*0.5f;
+
+   sdvg_PaintPattern(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintPatternAlpha(void) {
+   sF32 zoom = sinf(ang_y*0.5f) * 2.0f + 3.0f;
+   sF32 rx = sinf(ang_x*0.5f) * zoom;
+   sF32 ry = cosf(ang_x*0.5f) * zoom;
+
+   sF32 x = VP_W*0.5f;
+   sF32 y = VP_H*0.5f;
+
+   sdvg_PaintPatternAlpha(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintPatternDecal(void) {
+   sF32 zoom = sinf(ang_y*0.5f) * 7.0f + 8.0f;
+   sF32 rx = sinf(ang_x*0.5f) * zoom;
+   sF32 ry = cosf(ang_x*0.5f) * zoom;
+
+   sF32 x = VP_W*0.5f;
+   sF32 y = VP_H*0.5f;
+
+   sdvg_PaintPatternDecal(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintPatternDecalAlpha(void) {
+   sF32 zoom = sin(ang_y*0.5f) * 2.0f + 3.5f;
+   sF32 rx = sinf(ang_x*0.5f) * zoom;
+   sF32 ry = cosf(ang_x*0.5f) * zoom;
+
+   sF32 x = VP_W*0.5f;
+   sF32 y = VP_H*0.5f;
+
+   sdvg_PaintPatternDecalAlpha(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+// ---------------------------------------------------------------------------- DrawPaintBackground
+void DrawPaintBackground(void) {
    if(sdvg_BeginFilledTriangles(2u*3u))
    {
       // 1
@@ -1609,11 +1700,13 @@ void DrawGradientBackground(void) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestTrianglesGradientLinear (63)
 static void TestTrianglesGradientLinear(void) {
 
    SetupGradientLinear();
    sdvg_BindShader(0u);  // use built-in shader
-   DrawGradientBackground();
+   sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+   DrawPaintBackground();
 
    sF32 w = 400.0f;
    sF32 h = 300.0f;
@@ -1640,19 +1733,12 @@ static void TestTrianglesGradientLinear(void) {
 }
 
 // ---------------------------------------------------------------------------- TestTrianglesGradientRadial (64)
-void SetupGradientRadial(void) {
-   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
-   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
-
-   sdvg_PaintRadial(px, py, VP_W, VP_H);
-   sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
-}
-
 static void TestTrianglesGradientRadial(void) {
 
    SetupGradientRadial();
    sdvg_BindShader(0u);  // use built-in shader
-   DrawGradientBackground();
+   sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+   DrawPaintBackground();
 
    sF32 w = 400.0f;
    sF32 h = 300.0f;
@@ -1679,21 +1765,12 @@ static void TestTrianglesGradientRadial(void) {
 }
 
 // ---------------------------------------------------------------------------- TestTrianglesGradientConic (65)
-void SetupGradientConic(void) {
-   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
-   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
-
-   sF32 ang = sWRAP((ang_c * 8.0f) / sM_2PI, 0.0f, 1.0f);
-
-   sdvg_PaintConic(px, py, VP_W, VP_H, ang);
-   sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
-}
-
 static void TestTrianglesGradientConic(void) {
 
    SetupGradientConic();
    sdvg_BindShader(0u);  // use built-in shader
-   DrawGradientBackground();
+   sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+   DrawPaintBackground();
 
    sF32 w = 400.0f;
    sF32 h = 300.0f;
@@ -1793,8 +1870,8 @@ static void TestBeginPolygon(sBool _bAA) {
    }
 }
 
-// ---------------------------------------------------------------------------- loc_window_repaint
-static void loc_window_repaint(void) {
+// ---------------------------------------------------------------------------- hal_on_draw
+void hal_on_draw(void) {
 
    sU32 ticks = SDL_GetTicks();
    // Dprintf("xxx ticks=%u last_sdl_ticks=%u\n", ticks, last_sdl_ticks);
@@ -1804,7 +1881,7 @@ static void loc_window_repaint(void) {
    else
       dt = 01.0f;
    last_sdl_ticks = ticks;
-   // Dprintf("xxx loc_window_repaint dt=%f\n", dt);
+   // Dprintf("xxx hal_on_draw dt=%f\n", dt);
 
    sdvg_SetFramebufferSize(VP_W, VP_H);
    sdvg_BeginFrame();
@@ -2221,7 +2298,8 @@ static void loc_window_repaint(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupGradientLinear();
-         DrawGradientBackground();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
          TestPolygon_SetupMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
          TestBeginPolygon(YAC_FALSE/*bAA*/);
@@ -2231,7 +2309,8 @@ static void loc_window_repaint(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupGradientLinear();
-         DrawGradientBackground();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
          TestPolygon_SetupMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
          TestBeginPolygon(YAC_TRUE/*bAA*/);
@@ -2241,7 +2320,8 @@ static void loc_window_repaint(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupGradientRadial();
-         DrawGradientBackground();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
          TestPolygon_SetupMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
          TestBeginPolygon(YAC_FALSE/*bAA*/);
@@ -2251,7 +2331,8 @@ static void loc_window_repaint(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupGradientRadial();
-         DrawGradientBackground();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
          TestPolygon_SetupMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
          TestBeginPolygon(YAC_TRUE/*bAA*/);
@@ -2261,7 +2342,8 @@ static void loc_window_repaint(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupGradientConic();
-         DrawGradientBackground();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
          TestPolygon_SetupMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
          TestBeginPolygon(YAC_FALSE/*bAA*/);
@@ -2271,86 +2353,151 @@ static void loc_window_repaint(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupGradientConic();
-         DrawGradientBackground();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
          TestPolygon_SetupMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_CUSTOM_SHADER: // 76
+         LazyCreateCustomShader_1();
+         if(BindCustomShader_1())
+         {
+            sdvg_EnableBlending();
+            TestPolygon_SetupMVP();
+            sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+            TestBeginPolygon(YAC_FALSE/*bAA*/);
+         }
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN: // 77
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPattern();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         TestPolygon_SetupMVP();
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_AA: // 78
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPattern();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         TestPolygon_SetupMVP();
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_ALPHA: // 79
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternAlpha();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         TestPolygon_SetupMVP();
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA: // 80
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternAlpha();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         TestPolygon_SetupMVP();
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_DECAL: // 81
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         sdvg_SetTextureDecalAlpha(decal_alpha);
+         SetupPaintPatternDecal();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_SetStrokeColor4f(0.75f, 0.75f, 0.75f, 1.0f);
+         DrawPaintBackground();
+         TestPolygon_SetupMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA: // 82
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         sdvg_SetTextureDecalAlpha(decal_alpha);
+         SetupPaintPatternDecal();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_SetStrokeColor4f(0.75f, 0.75f, 0.75f, 1.0f);
+         DrawPaintBackground();
+         TestPolygon_SetupMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA: // 83
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         sdvg_SetTextureDecalAlpha(decal_alpha);
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColor4f(0.25f, 0.25f, 0.25f, 1.0f);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         sdvg_SetFillColorARGB(0x3c5996u | (((sUI)(fill_alpha*255))<<24));
+         sdvg_SetStrokeColorARGB(0xfff900u | (((sUI)(fill_alpha*255))<<24));
+         TestPolygon_SetupMVP();
+         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA: // 84
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         sdvg_SetTextureDecalAlpha(decal_alpha);
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColor4f(0.25f, 0.25f, 0.25f, 1.0f);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         sdvg_SetFillColorARGB(0x3c5996u | (((sUI)(fill_alpha*255))<<24));
+         sdvg_SetStrokeColorARGB(0xfff900u | (((sUI)(fill_alpha*255))<<24));
+         TestPolygon_SetupMVP();
          TestBeginPolygon(YAC_TRUE/*bAA*/);
          break;
    }
 
    sdvg_Flush();
    sdvg_EndFrame();
-   SDL_GL_SwapWindow(sdl_window);
+   hal_window_swap();
 
    sF32 spd = b_anim ? b_slomo ? 0.1f : 1.0f : 0.0f;
-   ang_x += dt * spd * 0.03;
-   ang_y += dt * spd * 0.02634;
-   ang_w += dt * spd * 0.0054112634;
-   ang_h += dt * spd * 0.0031312634;
-   ang_c += dt * spd * 0.0014132354;
-   if(ang_x >= 2*sM_2PI)
-      ang_x -= 2*sM_2PI;
-   if(ang_y >= 2*sM_2PI)
-      ang_y -= 2*sM_2PI;
-   if(ang_w >= 2*sM_2PI)
-      ang_w -= 2*sM_2PI;
-   if(ang_h >= 2*sM_2PI)
-      ang_h -= 2*sM_2PI;
-   if(ang_c >= sM_2PI)
-      ang_c -= sM_2PI;
-}
 
-// ---------------------------------------------------------------------------- loc_window_init
-static sBool loc_window_init(void) {
-   sBool ret = YAC_FALSE;
-
-   SDL_InitSubSystem(SDL_INIT_VIDEO);
-   SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-   SDL_GL_SetAttribute( SDL_GL_RED_SIZE, 5 );   // require at least 5 bits per channel
-   SDL_GL_SetAttribute( SDL_GL_GREEN_SIZE, 5);
-   SDL_GL_SetAttribute( SDL_GL_BLUE_SIZE, 5);
-   SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE, 16);
-   SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER, 1);
-   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-#if 0
-   SDL_GL_SetAttribute( SDL_GL_MULTISAMPLEBUFFERS, multisample_buffers);
-   SDL_GL_SetAttribute( SDL_GL_MULTISAMPLESAMPLES, multisample_samples);
-#endif
-   SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, 8);
-   sUI flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
-   sdl_window = SDL_CreateWindow("minnie",
-                                 SDL_WINDOWPOS_UNDEFINED,
-                                 SDL_WINDOWPOS_UNDEFINED,
-                                 VP_W, VP_H,
-                                 flags
-                                 );
-   if(NULL != sdl_window)
+   if(b_anim_xy)
    {
-      sdl_glcontext = SDL_GL_CreateContext(sdl_window);
-      Dprintf("[dbg] SDL_GL_CreateContext -> sdl_glcontext=%p\n", sdl_glcontext);
-      if(NULL != sdl_glcontext)
-      {
-         SDL_GL_MakeCurrent(sdl_window, sdl_glcontext);
-         SDL_GL_SetSwapInterval(1);
-
-         ret = YAC_TRUE;
-      }
-      else
-      {
-         Derrorprintf("[---] SDL_GL_CreateContext() failed\n");
-
-         SDL_DestroyWindow(sdl_window);
-         sdl_window = NULL;
-      }
-   }
-   else
-   {
-      Derrorprintf("[---] SDL_CreateWindow() failed\n");
+      ang_x += dt * spd * 0.03f;
+      ang_y += dt * spd * 0.02634f;
+      if(ang_x >= 2*sM_2PIf)
+         ang_x -= 2*sM_2PIf;
+      if(ang_y >= 2*sM_2PIf)
+         ang_y -= 2*sM_2PIf;
    }
 
-   return ret;
+   if(b_anim_whc)
+   {
+      ang_w += dt * spd * 0.0054112634f;
+      ang_h += dt * spd * 0.0031312634f;
+      ang_c += dt * spd * 0.0014132354f;
+      if(ang_w >= 2*sM_2PIf)
+         ang_w -= 2*sM_2PIf;
+      if(ang_h >= 2*sM_2PIf)
+         ang_h -= 2*sM_2PIf;
+      if(ang_c >= sM_2PIf)
+         ang_c -= sM_2PIf;
+   }
 }
 
 // ---------------------------------------------------------------------------- ResetParams
@@ -2383,134 +2530,104 @@ static void SelectRenderMode(sSI _mode) {
    SDL_SetWindowTitle(sdl_window, buf);
 }
 
-// ---------------------------------------------------------------------------- loc_window_event_loop
-static void loc_window_event_loop(void) {
-   sBool bRunning = YAC_TRUE;
-   while(bRunning)
+// ---------------------------------------------------------------------------- hal_on_key_down
+void hal_on_key_down(sU32 _code, sU32 _mod) {
+   switch(_code)
    {
-      SDL_Event ev;
-      int r;
-      r = SDL_PollEvent(&ev);
-      if(r)
-      {
-         switch(ev.type)
+      case SDLK_ESCAPE:
+         Dprintf("[dbg] SDLK_ESCAPE, exiting..\n");
+         b_hal_running = YAC_FALSE;
+         break;
+
+      case SDLK_SPACE:
+         if(_mod)
          {
-            default:
-               break;
-
-            case SDL_KEYDOWN:
-               switch(ev.key.keysym.sym)
-               {
-                  case SDLK_ESCAPE:
-                     Dprintf("[dbg] SDLK_ESCAPE, exiting..\n");
-                     bRunning = YAC_FALSE;
-                     break;
-
-                  case SDLK_SPACE:
-                     if(ev.key.keysym.mod)
-                     {
-                        b_slomo = !b_slomo;
-                        Dprintf("[...] b_slomo is %d\n", b_slomo);
-                     }
-                     else
-                     {
-                        b_anim = !b_anim;
-                        Dprintf("[...] b_anim is %d\n", b_anim);
-                     }
-                     break;
-
-                  case SDLK_RETURN:
-                     ResetParams();
-                     break;
-
-                  case SDLK_UP:
-                     SelectRenderMode(sWRAP(render_mode + 1, 0, NUM_RENDER_MODES));
-                     break;
-
-                  case SDLK_DOWN:
-                     SelectRenderMode(sWRAP(render_mode - 1, 0, NUM_RENDER_MODES));
-                     break;
-
-                  case SDLK_RIGHT:
-                     stroke_w = sMIN(stroke_w + 0.125f, 16.0f);
-                     Dprintf("[...] stroke_w is %f\n", stroke_w);
-                     break;
-
-                  case SDLK_LEFT:
-                     stroke_w = sMAX(stroke_w - 0.125f, 0.125f);
-                     Dprintf("[...] stroke_w is %f\n", stroke_w);
-                     break;
-
-                  case 'a':
-                     b_aa = !b_aa;
-                     Dprintf("[...] b_aa is %d\n", b_aa);
-                     break;
-
-                  case 'd':
-                     sdvg_SetEnableDebug(!sdvg_GetEnableDebug());
-                     Dprintf("[...] sdvg_SetEnableDebug(%d)\n", sdvg_GetEnableDebug());
-                     break;
-
-                  case 'l':
-                     b_sym_radius = !b_sym_radius;
-                     Dprintf("[...] b_sym_radius is %d\n", b_sym_radius);
-                     break;
-
-                  case 'r':
-                     if(ev.key.keysym.mod)
-                     {
-                        decal_alpha = sMAX(decal_alpha - 0.0625f, 0.0f);
-                        Dprintf("[...] decal_alpha is %f\n", decal_alpha);
-                     }
-                     else
-                     {
-                        fill_alpha = sMAX(fill_alpha - 0.0625f, 0.0f);
-                        Dprintf("[...] fill_alpha is %f\n", fill_alpha);
-                     }
-                     break;
-
-                  case 't':
-                     if(ev.key.keysym.mod)
-                     {
-                        decal_alpha = sMIN(decal_alpha + 0.0625f, 1.0f);
-                        Dprintf("[...] decal_alpha is %f\n", decal_alpha);
-                     }
-                     else
-                     {
-                        fill_alpha = sMIN(fill_alpha + 0.0625f, 1.0f);
-                        Dprintf("[...] fill_alpha is %f\n", fill_alpha);
-                     }
-                     break;
-               }
-               break;
-
-            case SDL_QUIT:
-               Dprintf("[dbg] received SDL_QUIT, exiting..\n");
-               bRunning = YAC_FALSE;
-               break;
+            b_slomo = !b_slomo;
+            Dprintf("[...] b_slomo is %d\n", b_slomo);
          }
+         else
+         {
+            b_anim = !b_anim;
+            Dprintf("[...] b_anim is %d\n", b_anim);
+         }
+         break;
 
-      }
+      case SDLK_RETURN:
+         ResetParams();
+         break;
 
-      loc_window_repaint();
+      case SDLK_TAB:
+         if(_mod)
+         {
+            b_anim_whc = !b_anim_whc;
+            Dprintf("[...] b_anim_whc is %d\n", b_anim_whc);
+         }
+         else
+         {
+            b_anim_xy = !b_anim_xy;
+            Dprintf("[...] b_anim_xy is %d\n", b_anim_xy);
+         }
+         break;
+
+      case SDLK_UP:
+         SelectRenderMode(sWRAP(render_mode + 1, 0, NUM_RENDER_MODES));
+         break;
+
+      case SDLK_DOWN:
+         SelectRenderMode(sWRAP(render_mode - 1, 0, NUM_RENDER_MODES));
+         break;
+
+      case SDLK_RIGHT:
+         stroke_w = sMIN(stroke_w + 0.125f, 16.0f);
+         Dprintf("[...] stroke_w is %f\n", stroke_w);
+         break;
+
+      case SDLK_LEFT:
+         stroke_w = sMAX(stroke_w - 0.125f, 0.125f);
+         Dprintf("[...] stroke_w is %f\n", stroke_w);
+         break;
+
+      case 'a':
+         b_aa = !b_aa;
+         Dprintf("[...] b_aa is %d\n", b_aa);
+         break;
+
+      case 'd':
+         sdvg_SetEnableDebug(!sdvg_GetEnableDebug());
+         Dprintf("[...] sdvg_SetEnableDebug(%d)\n", sdvg_GetEnableDebug());
+         break;
+
+      case 'l':
+         b_sym_radius = !b_sym_radius;
+         Dprintf("[...] b_sym_radius is %d\n", b_sym_radius);
+         break;
+
+      case 'r':
+         if(_mod)
+         {
+            decal_alpha = sMAX(decal_alpha - 0.0625f, 0.0f);
+            Dprintf("[...] decal_alpha is %f\n", decal_alpha);
+         }
+         else
+         {
+            fill_alpha = sMAX(fill_alpha - 0.0625f, 0.0f);
+            Dprintf("[...] fill_alpha is %f\n", fill_alpha);
+         }
+         break;
+
+      case 't':
+         if(_mod)
+         {
+            decal_alpha = sMIN(decal_alpha + 0.0625f, 1.0f);
+            Dprintf("[...] decal_alpha is %f\n", decal_alpha);
+         }
+         else
+         {
+            fill_alpha = sMIN(fill_alpha + 0.0625f, 1.0f);
+            Dprintf("[...] fill_alpha is %f\n", fill_alpha);
+         }
+         break;
    }
-}
-
-// ---------------------------------------------------------------------------- loc_window_exit
-static void loc_window_exit(void) {
-   if(NULL != sdl_glcontext)
-   {
-      SDL_GL_DeleteContext(sdl_glcontext);
-      sdl_glcontext = NULL;
-   }
-
-   if(NULL != sdl_window)
-   {
-      SDL_DestroyWindow(sdl_window);
-      sdl_window = NULL;
-   }
-
-   SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
 // ---------------------------------------------------------------------------- main
@@ -2526,7 +2643,7 @@ int main(int argc, char**argv) {
          render_mode = 0;
    }
 
-   if(loc_window_init())
+   if(hal_window_init())
    {
       // Update window title
       SelectRenderMode(render_mode);
@@ -2570,6 +2687,11 @@ int main(int argc, char**argv) {
                                           mem_size_tex_escher_alpha
                                           );
 
+      tex_pattern_1_alpha_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 256, 256,
+                                                    (const void*)mem_base_tex_pattern_1_alpha,
+                                                    mem_size_tex_pattern_1_alpha
+                                                    );
+
       sdvg_GradientToTexture(tex_gradient, 256u,
                              gradient_colors, 5u,
                              gradient_starts, 5u,
@@ -2588,14 +2710,13 @@ int main(int argc, char**argv) {
       custom_vbo_id_3 = 0u;
       polygon_vbo_id = 0u;
 
-      Dprintf("[...] init OK, entering event loop..\n");
-      loc_window_event_loop();
+      hal_window_loop();
 
 #ifdef USE_MINNIE_MIB_SETUP
       minnie_impl_exit();
 #endif // USE_MINNIE_MIB_SETUP
 
-      loc_window_exit();
+      hal_window_exit();
    }
 
    Dprintf("main: LEAVE\n");

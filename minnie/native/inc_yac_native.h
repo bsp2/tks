@@ -1,3 +1,29 @@
+// ----
+// ---- file   : inc_yac_native.cpp
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   :
+// ---- note   : must be compiled as C++ code
+// ----
+// ----
+// ----
 
 #include <stdlib.h>  // malloc,free
 #include <string.h>  // strlen
@@ -64,7 +90,7 @@ typedef struct YAC_String_s {
       free();
       chars  = (sU8*)_s;
       key    = YAC_LOSTKEY;
-      length = strlen(_s)+1;
+      length = (sUI)strlen(_s)+1;
       buflen = 0u;
    }
 
@@ -488,7 +514,7 @@ typedef struct YAC_Buffer_s {
          r  = (sU16)(buffer[io_offset++] << 8);
          r |= (sU16)buffer[io_offset++];
 #endif // YAC_LITTLE_ENDIAN
-      }        
+      }
       else
       {
          r = 0u;
@@ -511,7 +537,7 @@ typedef struct YAC_Buffer_s {
          r |= (sU16)(buffer[io_offset++] << 8);
          r |= (sU16)buffer[io_offset++];
 #endif // YAC_LITTLE_ENDIAN
-      }        
+      }
       else
       {
          r = 0u;
@@ -546,8 +572,3 @@ extern void yac_buffer_free (YAC_Buffer *_buffer);
 extern sBool yac_buffer_alloc (YAC_Buffer *_buffer, sU32 _size);
 extern void yac_buffer_free (YAC_Buffer *_buffer);
 #endif
-
-
-inline sUI yac_host_yacGetDebugLevel(void) {
-   return 4u;
-}

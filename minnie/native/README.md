@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of ~70 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of ~90 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -262,3 +262,30 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_075_polygon_gradient_conic_aa
   
   ![screenshot](../tkminnie/tests/screenshots/test_075_polygon_gradient_conic_aa.png)
+- test_076_begin_polygon_custom_shader
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_076_begin_polygon_custom_shader.png)
+- test_077_begin_polygon_pattern
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_077_begin_polygon_pattern.png)
+- test_078_begin_polygon_pattern_aa
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_078_begin_polygon_pattern_aa.png)
+- test_079_begin_polygon_pattern_alpha
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_079_begin_polygon_pattern_alpha.png)
+- test_080_begin_polygon_pattern_alpha_aa
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_080_begin_polygon_pattern_alpha_aa.png)
+- test_081_begin_polygon_pattern_decal
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_081_begin_polygon_pattern_decal.png)
+- test_082_begin_polygon_pattern_decal_aa
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_082_begin_polygon_pattern_decal_aa.png)
+- test_083_begin_polygon_pattern_decal_alpha
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_083_begin_polygon_pattern_decal_alpha.png)
+- test_084_begin_polygon_pattern_decal_alpha_aa
+  
+ ![screenshot](../tkminnie/tests/screenshots/test_084_begin_polygon_pattern_decal_alpha_aa.png)

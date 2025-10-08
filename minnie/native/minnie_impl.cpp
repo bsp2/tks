@@ -35,6 +35,10 @@
 #include "../inc_minnie.h"
 #endif // USE_MINNIE_MIB_SETUP
 
+sUI yac_host_yacGetDebugLevel(void) {
+   return 4u;
+}
+
 sBool yac_buffer_alloc(YAC_Buffer *_buffer, sU32 _size) {
    return _buffer->alloc(_size);
 }
