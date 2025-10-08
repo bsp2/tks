@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of ~70 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of ~90 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -281,3 +281,30 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_075_polygon_gradient_conic_aa
   
   ![screenshot](tests/screenshots/test_075_polygon_gradient_conic_aa.png)
+- test_076_begin_polygon_custom_shader
+  
+  ![screenshot](tests/screenshots/test_076_begin_polygon_custom_shader.png)
+- test_077_begin_polygon_pattern
+  
+ ![screenshot](tests/screenshots/test_077_begin_polygon_pattern.png)
+- test_078_begin_polygon_pattern_aa
+  
+ ![screenshot](tests/screenshots/test_078_begin_polygon_pattern_aa.png)
+- test_079_begin_polygon_pattern_alpha
+  
+ ![screenshot](tests/screenshots/test_079_begin_polygon_pattern_alpha.png)
+- test_080_begin_polygon_pattern_alpha_aa
+  
+ ![screenshot](tests/screenshots/test_080_begin_polygon_pattern_alpha_aa.png)
+- test_081_begin_polygon_pattern_decal
+  
+ ![screenshot](tests/screenshots/test_081_begin_polygon_pattern_decal.png)
+- test_082_begin_polygon_pattern_decal_aa
+  
+ ![screenshot](tests/screenshots/test_082_begin_polygon_pattern_decal_aa.png)
+- test_083_begin_polygon_pattern_decal_alpha
+  
+ ![screenshot](tests/screenshots/test_083_begin_polygon_pattern_decal_alpha.png)
+- test_084_begin_polygon_pattern_decal_alpha_aa
+  
+ ![screenshot](tests/screenshots/test_084_begin_polygon_pattern_decal_alpha_aa.png)
