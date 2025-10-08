@@ -20,7 +20,6 @@ endif
 
 CPPFLAGS += -I"$(YAC_ROOTPATH)/yac" -DWIN32 $(EXTRAFLAGS) $(EXTRAFLAGS_CPP) -DYAC_FORCE_NO_TLS
 CFLAGS += $(EXTRAFLAGS_C)
-EXTRALIBS += -DLL -MAP
 
 
 #
@@ -29,7 +28,7 @@ EXTRALIBS += -DLL -MAP
 ifneq ("$(STATIC_TARGET)","")
 .PHONY: static_target
 static_target: $(BIN_RULES) $(STATIC_TARGET_OBJ)
-	$(AR) -r $(STATIC_TARGET) $(STATIC_TARGET_OBJ)
+	$(LIB) -OUT:$(STATIC_TARGET) $(STATIC_TARGET_OBJ)
 
 .PHONY: clean_static_target
 clean_static_target:
@@ -40,7 +39,7 @@ ifeq ("$(CUSTOM_BIN_TARGET)",y)
 else
 .PHONY: bin
 bin: $(BIN_RULES) $(ALL_OBJ)
-	$(LD) $(LDFLAGS_SIZE) -OUT:$(TARGET) $(ALL_OBJ) $(EXTRALIBS)
+	$(LD) $(LDFLAGS_SIZE) -OUT:$(TARGET) $(ALL_OBJ) $(EXTRALIBS) -DLL -MAP
 	@echo "Build finished at `date +%H:%M`."
 endif
 endif
