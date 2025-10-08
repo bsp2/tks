@@ -97,7 +97,8 @@ class ShaderVG_Shape {
    sSI shape_u_paint_scale;      // optional
    sSI shape_u_paint_ndir;       // optional
    sSI shape_u_paint_ob_len;     // optional
-   sSI shape_u_paint_angle;      // optional
+   sSI shape_u_paint_angle01;    // optional
+   sSI shape_u_paint_ob_size;    // optional
 
    // debug:
    sBool b_draw_inner;

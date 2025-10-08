@@ -46,16 +46,22 @@ extern sF32 sdvg_pixel_scl;  // vp/proj (aa_range, stroke_w)
 extern sBool sdvg_b_glcore;
 
 typedef struct shadervg_paint_s {
-#define PAINT_SOLID   0
-#define PAINT_LINEAR  1
-#define PAINT_RADIAL  2
-#define PAINT_CONIC   3
+#define PAINT_SOLID                0
+#define PAINT_LINEAR               1
+#define PAINT_RADIAL               2
+#define PAINT_CONIC                3
+#define PAINT_PATTERN              4
+#define PAINT_PATTERN_ALPHA        5
+#define PAINT_PATTERN_DECAL        6
+#define PAINT_PATTERN_DECAL_ALPHA  7
    sSI  mode;
    sF32 start_x;
    sF32 start_y;
    sF32 end_x;
    sF32 end_y;
-   sF32 angle;  // 0..1
+   sF32 angle01;    // 0..1 => 0..2PI
+   sF32 ob_size_x;  // PAINT_PATTERN*
+   sF32 ob_size_y;  // PAINT_PATTERN*
 } shadervg_paint_t;
 
 // -----------  internal -----------

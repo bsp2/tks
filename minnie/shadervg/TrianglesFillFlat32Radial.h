@@ -76,6 +76,7 @@ class TrianglesFillFlat32Radial : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+#if 0
    void drawTrianglesFillFlatVBO32Radial(sUI              _vboId,
                                          sUI              _byteOffset,
                                          sUI              _numVerts,
@@ -103,5 +104,6 @@ class TrianglesFillFlat32Radial : public ShaderVG_Shape {
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }
+#endif // 0
 
 };

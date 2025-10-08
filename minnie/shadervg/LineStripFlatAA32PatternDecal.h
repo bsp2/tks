@@ -1,8 +1,8 @@
 // ----
-// ---- file   : LineStripFlatAA32Conic.h
+// ---- file   : LineStripFlatAA32PatternDecal.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2025 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -20,19 +20,21 @@
 // ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : ShaderVG render utilities
+// ---- note   :
 // ----
 // ----
 // ----
 
-class LineStripFlatAA32Conic : public ShaderVG_Shape {
+class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform float u_stroke_w; \n"
-      "uniform vec2 u_paint_start; \n"
-      "uniform vec2 u_paint_scale; \n"
+      "uniform vec2  u_paint_start; \n"
+      "uniform vec2  u_paint_ob_size; \n"
+      "uniform float u_paint_ob_len; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -42,7 +44,7 @@ class LineStripFlatAA32Conic : public ShaderVG_Shape {
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_OUT vec2 v_plane_n; \n"
-      "VARYING_OUT vec2 v_paint_pos; \n"
+      "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 v1 = a_vertex; \n"
@@ -83,51 +85,42 @@ class LineStripFlatAA32Conic : public ShaderVG_Shape {
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - v1; \n"
       "  v_plane_n   = vec2(vN.y, -vN.x); \n"
-      "  v_paint_pos = (v - u_paint_start) * u_paint_scale; \n"
+      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
+      "uniform vec4      u_color_fill; \n"
       "uniform vec4      u_color_stroke; \n"
+      "uniform float     u_decal_alpha; \n"
       "uniform float     u_stroke_w; \n"
       "uniform float     u_aa_range; \n"
       "uniform float     u_debug; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float     u_paint_angle01; \n"
+      "uniform vec2      u_paint_ndir; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
       "VARYING_IN vec2 v_plane_n; \n"
-      "VARYING_IN vec2 v_paint_pos; \n"
+      "VARYING_IN vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
       "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "  float a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
-      "  vec2 n = normalize(abs(v_paint_pos)); \n"
-      "  float ap = atan(n.y / n.x) * (1.0 / 6.2831853071795864); \n"
-      "  if(v_paint_pos.x > 0.0) {\n"
-      "    if(v_paint_pos.y < 0.0) { \n"
-      "      ap = 1.0 - ap; \n"
-      "    } \n"
-      "  } \n"
-      "  else if(v_paint_pos.y < 0.0) { \n"
-      "      ap += 0.5; \n"
-      "  } \n"
-      "  else { \n"
-      "    ap = 0.5 - ap; \n"
-      "  } \n"
-      "  ap += u_paint_angle01; \n"
-      "  if(ap >= 1.0) ap -= 1.0; \n"   // (note) use texture repeat ?
-      "  else if(ap < 0.0) ap += 1.0; \n"
-      "  vec4 cp = TEXTURE2D(u_paint_tex, vec2(ap, 0.0)); \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
+      "  vec2 uv; \n"
+      "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
+      "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
+      "  vec4 cp = TEXTURE2D(u_paint_tex, uv); \n"
+      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a * a); \n"
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    FRAGCOLOR = vec4(u_color_fill.r, a, u_color_fill.b, u_color_fill.a); \n"
+      "    FRAGCOLOR = cp; \n"
       "  } \n"
       "} \n"
       ;
 
    sBool validateShapeShader(void) {
+      return YAC_TRUE;
       return
             (-1 != shape_a_vertex)
          && (-1 != shape_a_vertex_n)
@@ -135,12 +128,15 @@ class LineStripFlatAA32Conic : public ShaderVG_Shape {
          && (-1 != shape_a_index)  // (todo) remove
 #endif // USE_VERTEX_ATTRIB_DIVISOR
          && (-1 != shape_u_transform)
-         && (-1 != shape_u_color_stroke)
+         && (-1 != shape_u_color_fill)
+         && (-1 != shape_u_decal_alpha)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_paint_start)
+         && (-1 != shape_u_paint_ob_size)
+         && (-1 != shape_u_paint_ob_len)
+         && (-1 != shape_u_paint_ndir)
          && (-1 != shape_u_paint_tex)
-         && (-1 != shape_u_paint_angle01)
          ;
    }
 

@@ -96,7 +96,8 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_paint_scale     = -1;
    shape_u_paint_ndir      = -1;
    shape_u_paint_ob_len    = -1;
-   shape_u_paint_angle     = -1;
+   shape_u_paint_angle01   = -1;
+   shape_u_paint_ob_size   = -1;
 
    // debug:
    b_draw_inner  = YAC_TRUE;
@@ -574,7 +575,8 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_paint_scale     = shape_shader.getUniformLocation("u_paint_scale");      // optional
    shape_u_paint_ndir      = shape_shader.getUniformLocation("u_paint_ndir");       // optional
    shape_u_paint_ob_len    = shape_shader.getUniformLocation("u_paint_ob_len");     // optional
-   shape_u_paint_angle     = shape_shader.getUniformLocation("u_paint_angle");      // optional
+   shape_u_paint_angle01   = shape_shader.getUniformLocation("u_paint_angle01");    // optional
+   shape_u_paint_ob_size   = shape_shader.getUniformLocation("u_paint_ob_size");    // optional
 
    sBool r = validateShapeShader();
    if(!r)
@@ -607,8 +609,8 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
    loc = shape_u_paint_scale;
    if(loc >= 0)
    {
-      const sF32 sclX = (_paint->end_x - _paint->start_x > 0.0f) ? (1.0f / (_paint->end_x - _paint->start_x)) : 0.0f;
-      const sF32 sclY = (_paint->end_y - _paint->start_y > 0.0f) ? (1.0f / (_paint->end_y - _paint->start_y)) : 0.0f;
+      const sF32 sclX = (_paint->end_x - _paint->start_x != 0.0f) ? (1.0f / (_paint->end_x - _paint->start_x)) : 0.0f;
+      const sF32 sclY = (_paint->end_y - _paint->start_y != 0.0f) ? (1.0f / (_paint->end_y - _paint->start_y)) : 0.0f;
       Dsdvg_uniform_2f(loc, sclX, sclY);
    }
 
@@ -629,6 +631,7 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
          dx = 0.0f;
          dy = 0.0f;
       }
+      // Dprintf("xxx paint_ndir=(%f; %f)\n", dx, dy);
       Dsdvg_uniform_2f(loc, dx, dy);
    }
 
@@ -645,10 +648,16 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
       Dsdvg_uniform_1f(loc, l);
    }
 
-   loc = shape_u_paint_angle;
+   loc = shape_u_paint_angle01;
    if(loc >= 0)
    {
-      Dsdvg_uniform_1f(loc, _paint->angle);
+      Dsdvg_uniform_1f(loc, _paint->angle01);
+   }
+
+   loc = shape_u_paint_ob_size;
+   if(loc >= 0)
+   {
+      Dsdvg_uniform_2f(loc, _paint->ob_size_x, _paint->ob_size_y);
    }
 }
 

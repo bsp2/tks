@@ -63,13 +63,13 @@ class TrianglesTexUVGouraudDecal32Alpha : public ShaderVG_Shape {
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)       &&
-         (-1 != shape_a_uv)           &&
-         (-1 != shape_u_transform)    &&
-         (-1 != shape_u_sampler)      &&
-         (-1 != shape_u_decal_alpha)  &&
-         (-1 != shape_u_color_fill)   &&
-         (-1 != shape_u_color_stroke)
+            (-1 != shape_a_vertex)
+         && (-1 != shape_a_uv)
+         && (-1 != shape_u_transform)
+         && (-1 != shape_u_sampler)
+         && (-1 != shape_u_decal_alpha)
+         && (-1 != shape_u_color_fill)
+         && (-1 != shape_u_color_stroke)
          ;
    }
 

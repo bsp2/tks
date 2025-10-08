@@ -47,7 +47,7 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
    const char *fs_src =
       "uniform vec4 u_color_fill; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float u_paint_angle; \n"
+      "uniform float u_paint_angle01; \n"
       " \n"
       "VARYING_IN vec2 v_paint_pos; \n"
       " \n"
@@ -65,7 +65,7 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
       "  else { \n"
       "    a = 0.5 - a; \n"
       "  } \n"
-      "  a += u_paint_angle; \n"
+      "  a += u_paint_angle01; \n"
       "  if(a >= 1.0) a -= 1.0; \n"   // (note) use texture repeat ?
       "  else if(a < 0.0) a += 1.0; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(a, 0.0)); \n"
@@ -75,13 +75,13 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)       &&
-         (-1 != shape_u_transform)    &&
-         (-1 != shape_u_color_fill)   &&
-         (-1 != shape_u_paint_tex)    &&
-         (-1 != shape_u_paint_start)  &&
-         (-1 != shape_u_paint_scale)  &&
-         (-1 != shape_u_paint_angle)
+         (-1 != shape_a_vertex)        &&
+         (-1 != shape_u_transform)     &&
+         (-1 != shape_u_color_fill)    &&
+         (-1 != shape_u_paint_tex)     &&
+         (-1 != shape_u_paint_start)   &&
+         (-1 != shape_u_paint_scale)   &&
+         (-1 != shape_u_paint_angle01)
          ;
       return YAC_TRUE;
    }
@@ -94,6 +94,7 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+#if 0
    void drawTrianglesFillFlatVBO32Conic(sUI              _vboId,
                                         sUI              _byteOffset,
                                         sUI              _numVerts,
@@ -121,5 +122,6 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }
+#endif // 0
 
 };
