@@ -61,3 +61,10 @@ sdf32:
 .PHONY: sdf
 # sdf512 sdf128 sdf64 sdf48 sdf36 sdf32 sdf96
 sdf: sdf256
+
+.PHONY: clean
+clean:
+	rm -f out/*.bin
+	rm -f out/*.png
+	rm -f out/*.cpp
+
