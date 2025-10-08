@@ -11907,65 +11907,66 @@ public:
 	YM //sSI         _create            (YAC_Object *_entryFunction);
 
 /* @method kill
-
+Terminate thread
 */
    YM //void        _kill              (void);
 
 /* @method wait:int
-
+Wait for thread
 @return
 */
    YM //sSI         _wait              (void);
 
 /* @method getId:int
+Return thread id (platform-specific).
 
-@return
+@return Thread id
 */
    YM //sSI         _getId             (void);
 
 /* @method setUserData,Object o
-
-@arg o
+Set thread user data
+@arg o User-data object (reference)
 
 */
    YM //void        _setUserdata       (YAC_Object*);
 
 /* @method getUserData:Object
-
-@return
+Get thread user data
+@return User-data object (reference)
 
 */
    YM //YAC_Object *_getUserdata       (void);
 
 /* @method isRunning:boolean
-
+Query whether thread is currently running
 @return
 */
    YM //sSI         _isRunning         (void);
 
 /* @method setName,String name
-
+Set thread name (debug)
 @arg name
 */
    YM //void        _setName           (YAC_String *_name);
 
 /* @method getName:String
-
+Query thread name (debug)
 @return
 
 */
    YM //void        _getName           (YAC_Value *_r);
 
 /* @method setPriority,int prio
+Set thread priority
 
-@arg prio
-
+@arg prio Thread priority (§THREAD_PRIORITY_ABOVE_NORMAL, §THREAD_PRIORITY_BELOW_NORMAL, §THREAD_PRIORITY_HIGHEST, §THREAD_PRIORITY_IDLE, §THREAD_PRIORITY_LOWEST, §THREAD_PRIORITY_NORMAL, §THREAD_PRIORITY_TIME_CRITICAL (root only)
 */
    YM //void        _setPriority       (sSI _priority);
 
 /* @method getPriority:int
-
-@return
+Query thread priority
+@return Thread priority
 */
    YM //sSI         _getPriority       (void);
 
@@ -12112,7 +12113,16 @@ On macOS the mask should contain only a single set bit and the method will fall 
 */
    YM //void        _waitEventById   (sSI _id, sUI _timeoutMS, YAC_Value *_r);
 
+/* @method rand:int
+Generate random number (thread-safe)
+@return Random integer
+*/
    YM //sUI         _rand            (void);
+
+/* @method srand,int seed
+Set random seed (thread-safe)
+@arg seed Random seed
+*/
    YM //void        _srand           (sUI _seed);
 
 /* @method SwitchToThread
