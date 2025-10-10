@@ -252,7 +252,7 @@ YF void YAC_CALL sdvg_Flush (void);
 
 // -------- transform --------
 /* @function sdvg_SetTransform,Matrix4f mat4
-Set modelview-projection transformation matrix 
+Set modelview-projection row-major transformation matrix 
 
 @see sdvg_GetTransformRef
 */
@@ -264,7 +264,7 @@ YF void YAC_CALL _sdvg_SetTransform (YAC_Object *_mat4);
 #endif // SHADERVG_SCRIPT_API
 
 /* @function sdvg_GetTransformRef:Matrix4f
-Get reference to modelview-projection matrix
+Get reference to modelview-projection row-major matrix
 
 @see sdvg_SetTransform
 */
@@ -274,6 +274,263 @@ Matrix4f *sdvg_GetTransformRef (void);
 #ifdef SHADERVG_SCRIPT_API
 YF YAC_Object *YAC_CALL _sdvg_GetTransformRef (void);
 #endif // SHADERVG_SCRIPT_API
+
+#ifdef SHADERVG_MATRIX_STACK
+/* @function sdvg_PushProjMatrix
+Push projection matrix onto projection matrix stack
+
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_PushProjMatrix (void);
+
+/* @function sdvg_PopProjMatrix
+Pop projection matrix from top of projection matrix stack
+
+@see sdvg_PushProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_PopProjMatrix (void);
+
+/* @function sdvg_PushModelMatrix
+Push model matrix onto model matrix stack
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_PushModelMatrix (void);
+
+/* @function sdvg_PopModelMatrix
+Pop model matrix from top of model matrix stack
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_PopModelMatrix (void);
+
+/* @function sdvg_ProjInitIdentity
+Load identity projection matrix
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ProjInitIdentity (void);
+
+/* @function sdvg_ProjInit2D,float w,float h
+Load 2D projection matrix (origin = left / top, positive y = down)
+
+@arg w Right clipping plane
+@arg h Bottom clipping plane
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ProjInit2D (sF32 _w, sF32 _h);
+
+/* @function sdvg_ProjInitOrtho,float sx,float sy
+Load orthogonal projection matrix (positive y = up)
+
+@arg sx Left / Right clipping planes
+@arg sy Bottom / Top clipping planes
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ProjInitOrtho (sF32 _sx, sF32 _sy);
+
+/* @function sdvg_ProjTranslate2f,float tx,float ty
+Translate projection matrix
+
+@arg tx X translation
+@arg ty Y translation
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ProjTranslate2f (sF32 _tx, sF32 _ty);
+
+/* @function sdvg_ModelInitIdentity
+Load identity model matrix
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ModelInitIdentity (void);
+
+/* @function sdvg_ModelTranslate2f,float tx,float ty
+Translate model matrix
+
+@arg tx X translation
+@arg ty Y translation
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ModelTranslate2f (sF32 _tx, sF32 _ty);
+
+/* @function sdvg_ModelTranslate3f,float tx,float ty,float tz
+Translate model matrix (3D)
+
+@arg tx X translation
+@arg ty Y translation
+@arg tz Z translation
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelScale2f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ModelTranslate3f (sF32 _tx, sF32 _ty, sF32 _tz);
+
+/* @function sdvg_ModelScale2f,float sx,float sy
+Scale model matrix
+
+@arg sx X scale factor
+@arg sy Y scale factor
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelRotatef
+*/
+YF void YAC_CALL sdvg_ModelScale2f (sF32 _sx, sF32 _sy);
+
+/* @function sdvg_ModelRotatef,float rad
+Rotate model matrix about z axis
+
+@arg rad Rotation angle (radian measure)
+
+@see sdvg_PushProjMatrix
+@see sdvg_PopProjMatrix
+@see sdvg_PushModelMatrix
+@see sdvg_PopModelMatrix
+@see sdvg_ProjInitIdentity
+@see sdvg_ProjInit2D
+@see sdvg_ProjInitOrtho
+@see sdvg_ProjTranslate2f
+@see sdvg_ModelInitIdentity
+@see sdvg_ModelTranslate2f
+@see sdvg_ModelTranslate3f
+@see sdvg_ModelScale2f
+*/
+YF void YAC_CALL sdvg_ModelRotatef (sF32 _rad);
+#endif // SHADERVG_MATRIX_STACK_SIZE
 
 // -------- AA --------
 /* @function sdvg_SetEnableAA,boolean bEnable
@@ -395,24 +652,58 @@ Set fill and stroke colors from packed ARGB32 integer
 */
 YF void YAC_CALL sdvg_SetColorARGB (sUI _c32);
 
-/* @function sdvg_SetStrokeWidth,float strokeW
-Set line stroke width.
+/* @function sdvg_SetStrokeRadius,float strokeRadius
+Set line stroke radius.
 
-@arg strokeW Stroke width
+@arg strokeRadius Stroke radius
 
-The total line width is (2 * strokeW)
+The total line stroke width is (2 * strokeRadius)
+
+@see sdvg_SetStrokeWidth
 */
-YF void YAC_CALL sdvg_SetStrokeWidth (sF32 _strokeW);
+YF void YAC_CALL sdvg_SetStrokeRadius (sF32 _strokeRadius);
+
+/* @function sdvg_SetStrokeWidth,float lineW
+Set line stroke width
+
+@arg lineW Line stroke width
+
+The total line width is lineW and the line stroke radius is (0.5 * lineW).
+
+@see sdvg_SetStrokeRadius
+*/
+YF void YAC_CALL sdvg_SetStrokeWidth (sF32 _lineW);
 
 /* @function sdvg_SetPointRadius,float radius
 Set point radius
 
+@arg radius Point radius
+
+The total point size is (2 * radius).
+
+@see sdvg_SetPointSize
+@see sdvg_DrawPointsSquareVBO32
+@see sdvg_DrawPointsSquareAAVBO32
+@see sdvg_DrawPointsRoundVBO32
+@see sdvg_DrawPointsRoundAAVBO32
+
+*/
+YF void YAC_CALL sdvg_SetPointRadius (sF32 _radius);
+
+/* @function sdvg_SetPointSize,float size
+Set point size (glPointSize() compatibility)
+
+@arg size Point size
+
+The total point size is (size) and the point radius is (0.5 * size).
+
+@see sdvg_SetPointRadius
 @see sdvg_DrawPointsSquareVBO32
 @see sdvg_DrawPointsSquareAAVBO32
 @see sdvg_DrawPointsRoundVBO32
 @see sdvg_DrawPointsRoundAAVBO32
 */
-YF void YAC_CALL sdvg_SetPointRadius (sF32 _radius);
+YF void YAC_CALL sdvg_SetPointSize (sF32 _size);
 
 /* @function sdvg_SetPixelScaling,float s
 Set pixel scaling for analytical anti-aliasing draw calls.
@@ -480,8 +771,11 @@ YF void YAC_CALL sdvg_ClearARGB (sUI _c32);
 Enable source-over blending
 
 @see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditive
 @see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingSrcColorKeepAlpha
 @see sdvg_EnableBlendingDstColorKeepAlpha
 @see sdvg_DisableBlending
@@ -492,20 +786,55 @@ YF void YAC_CALL sdvg_EnableBlending (void);
 Enable source-over blending (do not modify destination alpha)
 
 @see sdvg_EnableBlending
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditive
 @see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingSrcColorKeepAlpha
 @see sdvg_EnableBlendingDstColorKeepAlpha
 @see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingKeepAlpha (void);
 
+/* @function sdvg_EnableBlendingReplaceAlpha
+Enable source-over blending (replace destination alpha by source alpha)
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingPremultiplied
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
+*/
+YF void YAC_CALL sdvg_EnableBlendingReplaceAlpha (void);
+
+/* @function sdvg_EnableBlendingPremultiplied
+Enable premultiplied source-over blending
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
+*/
+YF void YAC_CALL sdvg_EnableBlendingPremultiplied (void);
+
 /* @function sdvg_EnableBlendingAdditive
 Enable additive blending
 
 @see sdvg_EnableBlending
 @see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingSrcColorKeepAlpha
 @see sdvg_EnableBlendingDstColorKeepAlpha
 @see sdvg_DisableBlending
@@ -517,19 +846,40 @@ Enable additive blending (do not modify destination alpha)
 
 @see sdvg_EnableBlending
 @see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingSrcColorKeepAlpha
 @see sdvg_EnableBlendingDstColorKeepAlpha
 @see sdvg_DisableBlending
 */
 YF void YAC_CALL sdvg_EnableBlendingAdditiveKeepAlpha (void);
 
+/* @function sdvg_EnableBlendingAdditiveReplaceAlpha
+Enable additive blending (replace destination alpha by source alpha)
+
+@see sdvg_EnableBlending
+@see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
+@see sdvg_EnableBlendingAdditive
+@see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingSrcColorKeepAlpha
+@see sdvg_EnableBlendingDstColorKeepAlpha
+@see sdvg_DisableBlending
+*/
+YF void YAC_CALL sdvg_EnableBlendingAdditiveReplaceAlpha (void);
+
 /* @function sdvg_EnableBlendingSrcColorKeepAlpha
 
 @see sdvg_EnableBlending
 @see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditive
 @see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingDstColorKeepAlpha
 @see sdvg_DisableBlending
 */
@@ -539,8 +889,11 @@ YF void YAC_CALL sdvg_EnableBlendingSrcColorKeepAlpha (void);
 
 @see sdvg_EnableBlending
 @see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditive
 @see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingSrcColorKeepAlpha
 @see sdvg_DisableBlending
 */
@@ -551,8 +904,11 @@ Disable blending
 
 @see sdvg_EnableBlending
 @see sdvg_EnableBlendingKeepAlpha
+@see sdvg_EnableBlendingReplaceAlpha
+@see sdvg_EnableBlendingPremultiplied
 @see sdvg_EnableBlendingAdditive
 @see sdvg_EnableBlendingAdditiveKeepAlpha
+@see sdvg_EnableBlendingAdditiveReplaceAlpha
 @see sdvg_EnableBlendingSrcColorKeepAlpha
 @see sdvg_EnableBlendingDstColorKeepAlpha
 */
@@ -633,7 +989,7 @@ Update vertex buffer object contents
 @arg vboId
 @arg offset Destination byte offset
 @arg numBytes Number of bytes to update (0=use data.size)
-@arg data
+@arg data 
 
 @see sdvg_CreateVBO
 @see sdvg_BindVBO
@@ -645,7 +1001,11 @@ Update vertex buffer object contents
 @see sdvg_UnbindVBO
 @see sdvg_DestroyVBO
 */
-YF void YAC_CALL sdvg_UpdateVBO (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data);
+#ifdef SHADERVG_SCRIPT_API
+YF void YAC_CALL sdvg_UpdateVBO (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Object *_data);
+#else
+void YAC_CALL sdvg_UpdateVBO (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data);
+#endif // SHADERVG_SCRIPT_API
 
 /* @function sdvg_BindVBO,int vboId
 Bind vertex buffer object

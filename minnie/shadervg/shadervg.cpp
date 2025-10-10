@@ -394,12 +394,25 @@ static sSI scissor_w;
 static sSI scissor_h;
 
 // render state
+
 #ifdef MINNIE_LIB
 static Matrix4f *mvp_matrix;
 #endif // MINNIE_LIB
 #ifdef SHADERVG_SCRIPT_API
 static YAC_Object *mvp_matrix;  // Matrix4f  row major
 #endif // SHADERVG_SCRIPT_API
+
+#ifdef SHADERVG_MATRIX_STACK
+static Matrix4f proj_stack[SHADERVG_MATRIX_STACK_SIZE];
+static sSI proj_stacki;
+static Matrix4f proj_mat;
+static sF32 proj_w_stack[SHADERVG_MATRIX_STACK_SIZE];
+static sF32 proj_w;
+static Matrix4f model_stack[SHADERVG_MATRIX_STACK_SIZE];
+static sSI model_stacki;
+static Matrix4f model_mat;
+#endif // SHADERVG_MATRIX_STACK
+
 static sBool  b_aa;
 static sF32   aa_range;
 static sF32   aa_exp;        // (todo) remove
@@ -638,6 +651,12 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    scissor_w = fb_w;
    scissor_h = fb_h;
 
+#ifdef SHADERVG_MATRIX_STACK
+   proj_stacki = SHADERVG_MATRIX_STACK_SIZE;
+   model_stacki = SHADERVG_MATRIX_STACK_SIZE;
+   proj_w = fb_w;
+#endif // SHADERVG_MATRIX_STACK
+
 #ifdef SHADERVG_TEXT
    sdvg_int_reset_font();
 #endif // SHADERVG_TEXT
@@ -736,17 +755,19 @@ sUI sdvg_CreateVBO(sUI _numBytes) {
    {
       sdvg_BindVBO(id);
       Dsdvg_glcall(zglBufferData(GL_ARRAY_BUFFER, _numBytes, NULL, GL_DYNAMIC_DRAW)); // GL_STATIC_DRAW
-      // // // Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0));
    }
    return id;
 }
 
+#ifdef SHADERVG_SCRIPT_API
+void YAC_CALL sdvg_UpdateVBO(sUI _vboId, sUI _offset, sUI _numBytes, YAC_Object *_data) {
+#else
 void YAC_CALL sdvg_UpdateVBO(sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data) {
+#endif // SHADERVG_SCRIPT_API
    Dsdvg_tracecall("[trc] sdvg_UpdateVBO: vboId=%u offset=%u numBytes=%u data=%p\n", _vboId, _offset, _numBytes, (void*)_data);
    if(current_vbo_id != _vboId)
       sdvg_BindVBO(_vboId);
    Dsdvg_glcall(zglBufferSubData(GL_ARRAY_BUFFER, _offset, _numBytes, _data));
-   // // // Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0));
 }
 
 void YAC_CALL sdvg_BindVBO(sUI _vboId) {
@@ -3145,6 +3166,15 @@ void YAC_CALL sdvg_SetFramebufferSize(sUI _w, sUI _h) {
    fb_h = _h;
 }
 
+#ifdef SHADERVG_MATRIX_STACK
+void YAC_CALL sdvg_UpdatePixelScaling(void) {
+   // calc viewport/projection dependent stroke width scaling factor
+   sF32 pixelScl = (proj_w / ((0 != viewport_w) ? viewport_w : 1));
+   // trace "xxx UpdatePixelScaling: proj_w="+proj_w+" vpw="+sdvg_GetViewportWidth()+" => pixelScl="+pixelScl;
+   sdvg_SetPixelScaling(pixelScl);
+}
+#endif // SHADERVG_MATRIX_STACK
+
 void YAC_CALL sdvg_SetViewport(sUI _x, sUI _y, sUI _w, sUI _h) {
 
    // (note) (0;0) = left/top  =>  (0;0) = left/bottom (GL)
@@ -3159,6 +3189,10 @@ void YAC_CALL sdvg_SetViewport(sUI _x, sUI _y, sUI _w, sUI _h) {
                            viewport_w, viewport_h
                            )
                 );
+
+#ifdef SHADERVG_MATRIX_STACK
+   sdvg_UpdatePixelScaling();
+#endif // SHADERVG_MATRIX_STACK
 }
 
 void YAC_CALL sdvg_PushViewport(sUI _x, sUI _y, sUI _w, sUI _h) {
@@ -3181,6 +3215,10 @@ void YAC_CALL sdvg_PushViewport(sUI _x, sUI _y, sUI _w, sUI _h) {
                               viewport_w, viewport_h
                               )
                    );
+
+#ifdef SHADERVG_MATRIX_STACK
+      sdvg_UpdatePixelScaling();
+#endif // SHADERVG_MATRIX_STACK
    }
    else
    {
@@ -3202,6 +3240,10 @@ void YAC_CALL sdvg_PopViewport(void) {
                               viewport_w, viewport_h
                               )
                    );
+
+#ifdef SHADERVG_MATRIX_STACK
+      sdvg_UpdatePixelScaling();
+#endif // SHADERVG_MATRIX_STACK
    }
    else
    {
@@ -3345,6 +3387,29 @@ void YAC_CALL sdvg_DisableScissor(void) {
    Dsdvg_glcall(glDisable(GL_SCISSOR_TEST));
 }
 
+#ifdef SHADERVG_MATRIX_STACK
+void YAC_CALL sdvg_UpdateTransform(void) {
+   // (todo) postpone until next draw call
+#ifdef MINNIE_LIB
+   minnie_matrix4f_mulr(&proj_mat, &model_mat, mvp_matrix);
+#endif
+#ifdef SHADERVG_SCRIPT_API
+   sF32 *fa = (sF32 *)mvp_matrix->yacArrayGetPointer();
+   for(sUI y = 0u; y < 4u; y++)
+   {
+      for(sUI x = 0u; x < 4u; x++)
+      {
+         M4FA(fa,y,x) =
+            M4F((&proj_mat),y,0) * M4F((&model_mat),0,x) +
+            M4F((&proj_mat),y,1) * M4F((&model_mat),1,x) +
+            M4F((&proj_mat),y,2) * M4F((&model_mat),2,x) +
+            M4F((&proj_mat),y,3) * M4F((&model_mat),3,x) ;
+      }
+   }
+#endif // SHADERVG_SCRIPT_API
+}
+#endif // SHADERVG_MATRIX_STACK
+
 void YAC_CALL sdvg_BeginFrame(void) {
 
    Dsdvg_tracecall("[trc] sdvg_BeginFrame ~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
@@ -3377,7 +3442,7 @@ void YAC_CALL sdvg_BeginFrame(void) {
 
    // ShaderVG.SetProjection2D(minnie_setup.width, minnie_setup.height);
    // ShaderVG.SetAARangeAndExp(b_aa ? aa_range : 0.01f, aa_exp);
-   // ShaderVG.SetStrokeWidth(1.5);
+   // ShaderVG.SetStrokeRadius(1.5);
    // ShaderVG.SetFillColor4f(0.1, 0.4, 0.25, 1.0 * alpha);
    // ShaderVG.SetStrokeColor4f(1.0, 1.0, 1.0, 1.0 * alpha);
    sdvg_EnableBlending();
@@ -3389,6 +3454,14 @@ void YAC_CALL sdvg_BeginFrame(void) {
    num_draw_attrib_enables = 0u;
 
    sdvg_pixel_scl = 1.0f;
+
+#ifdef SHADERVG_MATRIX_STACK
+   proj_stacki = SHADERVG_MATRIX_STACK_SIZE;
+   model_stacki = SHADERVG_MATRIX_STACK_SIZE;
+   proj_mat.initIdentity();
+   model_mat.initIdentity();
+   sdvg_UpdateTransform();
+#endif // SHADERVG_MATRIX_STACK
 
 #ifdef SHADERVG_TEXT
    sdvg_int_reset_font();
@@ -3413,9 +3486,9 @@ void YAC_CALL sdvg_ReturnToGL(void) {
    Dsdvg_tracecall("[trc] sdvg_ReturnToGL\n");
    if(0 != mapped_user_vbo_id)
       sdvg_UnmapVBO();
-   // // Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER));
-   // // Dsdvg_glcall(glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER));
-   // sdvg_BindVBO(0);
+   // // // Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER));
+   // // // Dsdvg_glcall(glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER));
+   // // sdvg_BindVBO(0);
    sdvg_UnbindVBO();
    // // Dsdvg_glcall(glUseProgram(0));
    sdvg_UnbindShader();
@@ -3456,6 +3529,123 @@ YAC_Object *YAC_CALL _sdvg_GetTransformRef(void) {
 void YAC_CALL sdvg_SetEnableAA(sBool _bEnable) {
    b_aa = _bEnable;
 }
+
+#ifdef SHADERVG_MATRIX_STACK
+void YAC_CALL sdvg_PushProjMatrix(void) {
+   if(proj_stacki > 0)
+   {
+      proj_stacki--;
+      // // trace "xxx PushProjMatrix: proj_stacki="+proj_stacki;
+      Matrix4f *matProj = &proj_stack[proj_stacki];
+      *matProj = proj_mat;
+      proj_w_stack[proj_stacki] = proj_w;
+      // // trace "xxx PushProjMatrix: proj_mat="+proj_mat+" proj_w="+proj_w;
+   }
+   else
+   {
+      Dsdvg_errorprintf("[---] sdvg_PushProjMatrix: stack overflow\n");
+   }
+}
+
+void YAC_CALL sdvg_PopProjMatrix(void) {
+   if(proj_stacki < SHADERVG_MATRIX_STACK_SIZE)
+   {
+      // // trace "xxx PopProjMatrix: proj_stacki="+proj_stacki;
+      const Matrix4f *matProj = &proj_stack[proj_stacki];
+      proj_mat = *matProj;
+      proj_w = proj_w_stack[proj_stacki];
+      // // trace "xxx PopProjMatrix: proj_mat="+proj_mat+" proj_w="+proj_w;
+      sdvg_UpdateTransform();
+      sdvg_UpdatePixelScaling();
+
+      proj_stacki++;
+   }
+   else
+   {
+      Dsdvg_errorprintf("[---] sdvg_PopProjMatrix: stack underflow (MATRIX_STACK_SIZE=%u)\n", SHADERVG_MATRIX_STACK_SIZE);
+   }
+}
+
+void YAC_CALL sdvg_PushModelMatrix(void) {
+   if(model_stacki > 0)
+   {
+      Matrix4f *matModel = &model_stack[--model_stacki];
+      *matModel = model_mat;
+   }
+   else
+   {
+      Dsdvg_errorprintf("[---] sdvg_PushModelMatrix: stack overflow\n");
+   }
+}
+
+void YAC_CALL sdvg_PopModelMatrix(void) {
+   if(model_stacki < SHADERVG_MATRIX_STACK_SIZE)
+   {
+      const Matrix4f *matModel = &model_stack[model_stacki++];
+      model_mat = *matModel;
+      sdvg_UpdateTransform();
+   }
+   else
+   {
+      Dsdvg_errorprintf("[---] sdvg_PopModelMatrix: stack underflow (MATRIX_STACK_SIZE=%u)\n", SHADERVG_MATRIX_STACK_SIZE);
+   }
+}
+
+void YAC_CALL sdvg_ProjInitIdentity(void) {
+   proj_mat.initIdentity();
+   sdvg_UpdateTransform();
+}
+
+void YAC_CALL sdvg_ProjInit2D(sF32 _w, sF32 _h) {
+   proj_mat.initOrtho(0.0f,  _w,
+                      _h,    0.0f,
+                             -1.0f, 1.0f
+                      );
+   proj_w = _w;
+   sdvg_UpdateTransform();
+   sdvg_UpdatePixelScaling();
+}
+
+void YAC_CALL sdvg_ProjInitOrtho(sF32 _sx, sF32 _sy) {
+   proj_mat.initOrtho(-_sx, _sx,
+                      -_sy, _sy,
+                      -1.0f, 1.0f
+                      );
+   proj_w = _sx * 2.0f;
+   sdvg_UpdateTransform();
+   sdvg_UpdatePixelScaling();
+}
+
+void YAC_CALL sdvg_ProjTranslate2f(sF32 _tx, sF32 _ty) {
+   proj_mat.translatef(_tx, _ty, 0.0f);
+   sdvg_UpdateTransform();
+}
+
+void YAC_CALL sdvg_ModelInitIdentity(void) {
+   model_mat.initIdentity();
+   sdvg_UpdateTransform();
+}
+
+void YAC_CALL sdvg_ModelTranslate2f(sF32 _tx, sF32 _ty) {
+   model_mat.translatef(_tx, _ty, 0.0f);
+   sdvg_UpdateTransform();
+}
+
+void YAC_CALL sdvg_ModelTranslate3f(sF32 _tx, sF32 _ty, sF32 _tz) {
+   model_mat.translatef(_tx, _ty, _tz);
+   sdvg_UpdateTransform();
+}
+
+void YAC_CALL sdvg_ModelScale2f(sF32 _sx, sF32 _sy) {
+   model_mat.scalef(_sx, _sy, 1.0f);
+   sdvg_UpdateTransform();
+}
+
+void YAC_CALL sdvg_ModelRotatef(sF32 _rad) {
+   model_mat.rotatef(0.0f, 0.0f, _rad);
+   sdvg_UpdateTransform();
+}
+#endif // SHADERVG_MATRIX_STACK
 
 void YAC_CALL sdvg_SetAARange(sF32 _aaRange) {
    aa_range = _aaRange;
@@ -3516,12 +3706,20 @@ void YAC_CALL sdvg_SetColorARGB(sUI _c32) {
    sdvg_SetStrokeColorARGB(_c32);
 }
 
-void YAC_CALL sdvg_SetStrokeWidth(sF32 _strokeW) {
-   stroke_w = _strokeW;
+void YAC_CALL sdvg_SetStrokeRadius(sF32 _strokeRadius) {
+   stroke_w = _strokeRadius;
+}
+
+void YAC_CALL sdvg_SetStrokeWidth(sF32 _lineW) {
+   stroke_w = _lineW * 0.5f;
 }
 
 void YAC_CALL sdvg_SetPointRadius(sF32 _radius) {
    point_radius = _radius;
+}
+
+void YAC_CALL sdvg_SetPointSize(sF32 _size) {
+   point_radius = _size * 0.5f;
 }
 
 void YAC_CALL sdvg_SetPixelScaling(sF32 _s) {
@@ -3580,6 +3778,19 @@ void YAC_CALL sdvg_EnableBlendingKeepAlpha(void) {
    Dsdvg_glcall(glEnable(GL_BLEND));
 }
 
+void YAC_CALL sdvg_EnableBlendingReplaceAlpha(void) {
+   Dsdvg_glcall(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                    GL_ONE, GL_ZERO
+                                    )
+                );
+   Dsdvg_glcall(glEnable(GL_BLEND));
+}
+
+void YAC_CALL sdvg_EnableBlendingPremultiplied(void) {
+   Dsdvg_glcall(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+   Dsdvg_glcall(glEnable(GL_BLEND));
+}
+
 void YAC_CALL sdvg_EnableBlendingAdditive(void) {
    Dsdvg_glcall(glBlendFunc(GL_SRC_ALPHA, GL_ONE));
    Dsdvg_glcall(glEnable(GL_BLEND));
@@ -3588,6 +3799,14 @@ void YAC_CALL sdvg_EnableBlendingAdditive(void) {
 void YAC_CALL sdvg_EnableBlendingAdditiveKeepAlpha(void) {
    Dsdvg_glcall(glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE,
                                     GL_ZERO, GL_ONE
+                                    )
+                );
+   Dsdvg_glcall(glEnable(GL_BLEND));
+}
+
+void YAC_CALL sdvg_EnableBlendingAdditiveReplaceAlpha(void) {
+   Dsdvg_glcall(glBlendFuncSeparate(GL_SRC_ALPHA,  GL_ONE,
+                                    GL_ONE, GL_ZERO
                                     )
                 );
    Dsdvg_glcall(glEnable(GL_BLEND));
@@ -3821,17 +4040,17 @@ void YAC_CALL _sdvg_UniformMatrix4(YAC_String *_name, YAC_Object *_matRowMajor) 
          }
          else
          {
-            Dprintf("[---] sdvg_UniformMatrix4: 'matRowMajor' is not a valid Object\n");
+            Dsdvg_errorprintf("[---] sdvg_UniformMatrix4: 'matRowMajor' is not a valid Object\n");
          }
       }
       else
       {
-         Dprintf("[---] sdvg_UniformMatrix4: 'name' is not a String\n");
+         Dsdvg_errorprintf("[---] sdvg_UniformMatrix4: 'name' is not a String\n");
       }
    }
    else
    {
-      Dprintf("[---] sdvg_UniformMatrix4: current_shape is NULL\n");
+      Dsdvg_errorprintf("[---] sdvg_UniformMatrix4: current_shape is NULL\n");
    }
 }
 
@@ -4123,7 +4342,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan(sUI _numVertices) {
    }
    else
    {
-      Dprintf("[---] sdvg_BeginFilledTriangleFan: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangleFan: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -5182,6 +5401,7 @@ void YAC_CALL sdvg_End(void) {
             sBool bScratch = YAC_FALSE;
             loc_get_vbo_size(bufSize, bScratch);
             bSizeOk = (current_draw_num_bytes <= bufSize);
+            // Dprintf("xxx sdvg_End: bScratch=%d bufSize=%u current_draw_num_bytes=%u bSizeOk=%d\n", bScratch, bufSize, current_draw_num_bytes, bSizeOk);
          }
       }
       else
@@ -5220,9 +5440,15 @@ void YAC_CALL sdvg_End(void) {
             switch(current_draw_mode)
             {
                default:
+                  // Dprintf("xxx sdvg_End: call UpdateShaderUniforms\n");
                   if(UpdateShaderUniforms())
                   {
+                     // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
                      Dsdvg_glcall(glDrawArrays(current_draw_mode, 0/*first*/, current_draw_vertex_index));
+                  }
+                  else
+                  {
+                     // Dprintf("xxx sdvg_End: UpdateShaderUniforms FAILED\n");
                   }
                   break;
 

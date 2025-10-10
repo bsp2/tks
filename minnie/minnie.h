@@ -313,6 +313,8 @@ typedef int             sBool;
 #define TM4F(r,c)  floats[TM4(r,c)]
 #define OM4F(r,c)  o->floats[OM4(r,c)]
 #define M4F(a,r,c) (a)->floats[M4(a,r,c)]
+#define M4FA(a,r,c) (a)[M4(a,r,c)]
+
 
 // <class.png>
 struct Vector2f {

@@ -1,6 +1,6 @@
 /// tkminnie_shared.h
 ///
-/// (c) 2014-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2025 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -33,8 +33,10 @@ extern "C" {
       void (YAC_CALL *sdvg_SetFillColor4f)       (sF32 _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA);
       void (YAC_CALL *sdvg_SetFillAlpha)         (sF32 _fillA);
       void (YAC_CALL *sdvg_SetFillColorARGB)     (sUI _c32);
-      void (YAC_CALL *sdvg_SetStrokeWidth)       (sF32 _strokeW);
+      void (YAC_CALL *sdvg_SetStrokeRadius)      (sF32 _radius);
+      void (YAC_CALL *sdvg_SetStrokeWidth)       (sF32 _width);
       void (YAC_CALL *sdvg_SetPointRadius)       (sF32 _radius);
+      void (YAC_CALL *sdvg_SetPointSize)         (sF32 _size);
       void (YAC_CALL *sdvg_SetPixelScaling)      (sF32 _s);
       void (YAC_CALL *sdvg_SetStrokeColor4f)     (sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA);
       void (YAC_CALL *sdvg_SetStrokeColorARGB)   (sU32 _c32);
@@ -54,7 +56,11 @@ extern "C" {
       void (YAC_CALL *sdvg_AlphaWrite)                      (sBool _bEnable);
       // -------- VBO --------
       sUI  (YAC_CALL *sdvg_CreateVBO)          (sUI _numBytes);
+#ifdef SHADERVG_SCRIPT_API
+      void (YAC_CALL *sdvg_UpdateVBO)          (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Object *_data);
+#else
       void (YAC_CALL *sdvg_UpdateVBO)          (sUI _vboId, sUI _offset, sUI _numBytes, YAC_Buffer *_data);
+#endif // SHADERVG_SCRIPT_API
       void (YAC_CALL *sdvg_BindVBO)            (sUI _vboId);
       sUI  (YAC_CALL *sdvg_GetVBOSize)         (void);
       sUI  (YAC_CALL *sdvg_GetMappedVBOOffset) (void);

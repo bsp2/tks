@@ -491,7 +491,7 @@ void _MinnieDrawable::draw() {
                glPrimType     = Dstream_read_i16(buf_draw);
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-rect-stroke<f32>: vbOffBorder=%u numVertsBorder=%u\n", vbOffBorder, numVertsBorder);
                sdvg_SetStrokeColorARGB(c32Stroke);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_SetAARange(aaRange);
                sdvg_DrawRectStrokeAAVBO32(gl_buf_id,
                                           vbOffBorder,
@@ -520,7 +520,7 @@ void _MinnieDrawable::draw() {
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-rect-fill-stroke<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
                sdvg_SetFillColorARGB(c32);
                sdvg_SetStrokeColorARGB(c32Stroke);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_SetAARange(aaRange);
                sdvg_DrawRectFillStrokeAAVBO32(gl_buf_id,
                                               vbOff,
@@ -571,7 +571,7 @@ void _MinnieDrawable::draw() {
                glPrimType     = Dstream_read_i16(buf_draw);
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-ellipse-stroke<f32>: vbOffBorder=%u numVertsBorder=%u\n", vbOffBorder, numVertsBorder);
                sdvg_SetStrokeColorARGB(c32Stroke);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_DrawEllipseStrokeAAVBO32(gl_buf_id,
                                              vbOffBorder,
                                              numVertsBorder,
@@ -598,7 +598,7 @@ void _MinnieDrawable::draw() {
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-ellipse-fill-stroke<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
                sdvg_SetFillColorARGB(c32);
                sdvg_SetStrokeColorARGB(c32Stroke);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_DrawEllipseFillStrokeAAVBO32(gl_buf_id,
                                                  vbOff,
                                                  numVerts,
@@ -656,7 +656,7 @@ void _MinnieDrawable::draw() {
                glPrimType     = Dstream_read_i16(buf_draw);
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-roundrect-stroke<f32>: vbOffBorder=%u numVertsBorder=%u\n", vbOffBorder, numVertsBorder);
                sdvg_SetStrokeColorARGB(c32Stroke);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_SetAARange(aaRange);
                sdvg_DrawRoundRectStrokeAAVBO32(gl_buf_id,
                                                vbOffBorder,
@@ -688,7 +688,7 @@ void _MinnieDrawable::draw() {
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-roundrect-fill-stroke<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
                sdvg_SetFillColorARGB(c32);
                sdvg_SetStrokeColorARGB(c32Stroke);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_SetAARange(aaRange);
                sdvg_DrawRoundRectFillStrokeAAVBO32(gl_buf_id,
                                                    vbOff,
@@ -782,7 +782,7 @@ void _MinnieDrawable::draw() {
                strokeW  = Dstream_read_f32(buf_draw);
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-line-strip-flat<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
                sdvg_SetStrokeColorARGB(c32);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_DrawLineStripFlatAAVBO14_2(gl_buf_id,
                                                vbOff,
                                                numVerts/*numPoints*/
@@ -797,7 +797,7 @@ void _MinnieDrawable::draw() {
                strokeW  = Dstream_read_f32(buf_draw);
                Ddebug_draw_list_printf("[trc] MinnieDrawable::draw: draw-line-strip-flat-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
                sdvg_SetStrokeColorARGB(c32);
-               sdvg_SetStrokeWidth(strokeW);
+               sdvg_SetStrokeRadius(strokeW);
                sdvg_DrawLineStripFlatBevelAAVBO14_2(gl_buf_id,
                                                     vbOff,
                                                     numVerts/*numPoints*/

@@ -573,7 +573,7 @@ void YAC_CALL sdvg_DrawTextUnderline(const char *_text, sF32 _x, sF32 _y) {
          sF32 cy = _y + shadervg_cur_font->info->ascender - (shadervg_cur_font->info->underline_position * (1.0f / 64.0f));
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
-         sdvg_SetStrokeWidth(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f));
+         sdvg_SetStrokeRadius(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f));
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
          {
@@ -646,7 +646,7 @@ void YAC_CALL sdvg_DrawTextUnderlineClipped(const char *_text, sF32 _x, sF32 _y,
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
          const sF32 strokeW = shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f);
-         sdvg_SetStrokeWidth(strokeW);
+         sdvg_SetStrokeRadius(strokeW);
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
          {
@@ -745,7 +745,7 @@ void YAC_CALL sdvg_DrawTextAccel(const char *_text, sF32 _x, sF32 _y) {
          sUI charIdx = 0u;
          sUI lineIdx = 0u;
          sBool bNextIsAccel = YAC_FALSE;
-         sdvg_SetStrokeWidth(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f));
+         sdvg_SetStrokeRadius(shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f));
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
          {
@@ -823,7 +823,7 @@ void YAC_CALL sdvg_DrawTextAccelClipped(const char *_text, sF32 _x, sF32 _y, sF3
          sUI lineIdx = 0u;
          sBool bNextIsAccel = YAC_FALSE;
          const sF32 strokeW = shadervg_cur_font->info->underline_thickness * (0.5f / 64.0f);
-         sdvg_SetStrokeWidth(strokeW);
+         sdvg_SetStrokeRadius(strokeW);
          (void)sdvg_BeginLinesAA(SHADERVG_TEXT_BATCH_SIZE * 2u);
          for(;;)
          {

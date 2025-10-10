@@ -86,8 +86,10 @@ static void loc_shared_export(void) {
    tkminnie_shared.sdvg_SetFillColor4f       = &sdvg_SetFillColor4f;
    tkminnie_shared.sdvg_SetFillAlpha         = &sdvg_SetFillAlpha;
    tkminnie_shared.sdvg_SetFillColorARGB     = &sdvg_SetFillColorARGB;
+   tkminnie_shared.sdvg_SetStrokeRadius      = &sdvg_SetStrokeRadius;
    tkminnie_shared.sdvg_SetStrokeWidth       = &sdvg_SetStrokeWidth;
    tkminnie_shared.sdvg_SetPointRadius       = &sdvg_SetPointRadius;
+   tkminnie_shared.sdvg_SetPointSize         = &sdvg_SetPointSize;
    tkminnie_shared.sdvg_SetPixelScaling      = &sdvg_SetPixelScaling;
    tkminnie_shared.sdvg_SetStrokeColor4f     = &sdvg_SetStrokeColor4f;
    tkminnie_shared.sdvg_SetStrokeColorARGB   = &sdvg_SetStrokeColorARGB;
