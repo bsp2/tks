@@ -3156,8 +3156,8 @@ void _Texture::calcAlphaSDF(_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI
       sF32 x = 0.5;
       for(sSI xloopIdx = 0; xloopIdx < (_gwidth + _sdfRadius*2); xloopIdx++)
       {
-         int c8 = _texSDF->_getXY32(_gbitmapx - _sdfRadius + (x),
-                                    _gbitmapy - _sdfRadius + (y)
+         int c8 = _texSDF->_getXY32(sSI(_gbitmapx - _sdfRadius + (x)),
+                                    sSI(_gbitmapy - _sdfRadius + (y))
                                     );
          if(255 != c8)
          {
@@ -3212,8 +3212,8 @@ void _Texture::calcAlphaSDF(_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI
                         case 0b010100000:
                         case 0b000100010:
                         case 0b000001010:
-                           dx = (ix + 0.5);
-                           dy = (iy + 0.5);
+                           dx = (ix + 0.5f);
+                           dy = (iy + 0.5f);
                            break;
 
                            // 0x0
@@ -3222,13 +3222,13 @@ void _Texture::calcAlphaSDF(_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI
                         case 0b010010010:
                            if(x < aix)
                            {
-                              dx = (ix      );
-                              dy = (iy + 0.5);
+                              dx = (ix       );
+                              dy = (iy + 0.5f);
                            }
                            else
                            {
-                              dx = ix + 1.0;
-                              dy = iy + 0.5;
+                              dx = ix + 1.0f;
+                              dy = iy + 0.5f;
                            }  
                            break;
 
@@ -3238,27 +3238,27 @@ void _Texture::calcAlphaSDF(_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI
                         case 0b000111000:
                            if(y < aiy)
                            {
-                              dx = (ix + 0.5);
-                              dy = (iy      );
+                              dx = (ix + 0.5f);
+                              dy = (iy       );
                            }
                            else
                            {
-                              dx = ix + 0.5;
-                              dy = iy + 1.0;
+                              dx = ix + 0.5f;
+                              dy = iy + 1.0f;
                            }  
                            break;
 
                         default:
                            if(c)
                            {
-                              dx = ix + 0.5;
-                              dy = iy + 0.5;
+                              dx = ix + 0.5f;
+                              dy = iy + 0.5f;
                            }
                            break;
                      }
 
-                     dx = dx + _sdfRadius - x - 0.5;
-                     dy = dy + _sdfRadius - y - 0.5;
+                     dx = dx + _sdfRadius - x - 0.5f;
+                     dy = dy + _sdfRadius - y - 0.5f;
                      // trace "xxx d=("+dx+";"+dy+")";
                      float d = sqrtf(dx*dx + dy*dy);
                      if(d < minDist)
@@ -3283,8 +3283,8 @@ void _Texture::calcAlphaSDF(_Texture *_texSDF, sSI _gbitmapx, sSI _gbitmapy, sSI
             }
             else
             {
-               _texSDF->_setXY32(_gbitmapx - _sdfRadius + (x),
-                                 _gbitmapy - _sdfRadius + (y),
+               _texSDF->_setXY32(sSI(_gbitmapx - _sdfRadius + (x)),
+                                 sSI(_gbitmapy - _sdfRadius + (y)),
                                  Dargb(minDist, minDist, minDist, 0)
                                  );
             }
