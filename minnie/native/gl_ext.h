@@ -134,9 +134,9 @@ extern glMapBuffer_t                      glMapBuffer;
 extern glMapBufferRange_t                 glMapBufferRange;
 extern glFlushMappedBufferRange_t         glFlushMappedBufferRange;
 extern glUnmapBuffer_t                    glUnmapBuffer;
-#if 0
+#ifdef YAC_WIN32
 extern glActiveTexture_t                  glActiveTexture;
-#endif
+#endif // YAC_WIN32
 extern glBlendFuncSeparate_t              glBlendFuncSeparate;
 extern glBindRenderbuffer_t               glBindRenderbuffer;
 extern glDeleteRenderbuffers_t            glDeleteRenderbuffers;

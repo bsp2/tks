@@ -63,7 +63,9 @@ glMapBuffer_t                      glMapBuffer                        = NULL;
 glMapBufferRange_t                 glMapBufferRange                   = NULL;
 glFlushMappedBufferRange_t         glFlushMappedBufferRange           = NULL;
 glUnmapBuffer_t                    glUnmapBuffer                      = NULL;
-/* glActiveTexture_t                  glActiveTexture                    = NULL; */
+#ifdef YAC_WIN32
+glActiveTexture_t                  glActiveTexture                    = NULL;
+#endif // YAC_WIN32
 glBlendFuncSeparate_t              glBlendFuncSeparate                = NULL;
 glBindRenderbuffer_t               glBindRenderbuffer                 = NULL;
 glDeleteRenderbuffers_t            glDeleteRenderbuffers              = NULL;
@@ -179,7 +181,9 @@ void load_gl_extensions(void) {
    Dresolveext(glMapBufferRange);
    Dresolveext(glFlushMappedBufferRange);
    Dresolveext(glUnmapBuffer);
-   /* Dresolveext(glActiveTexture); */
+#ifdef YAC_WIN32
+   Dresolveext(glActiveTexture);
+#endif // YAC_WIN32
    Dresolveext(glBlendFuncSeparate);
    Dresolveext(glBindRenderbuffer);
    Dresolveext(glDeleteRenderbuffers);
