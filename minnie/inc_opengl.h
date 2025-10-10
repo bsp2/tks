@@ -6,6 +6,7 @@
 #ifdef YAC_WIN32
 #include <windows.h>
 #endif // YAC_WIN32
+#define GL_GLEXT_LEGACY defined
 #include <GL/gl.h>
 #include "../tkopengl/GL_includes/glext.h" // need OpenGL 1.2+ for cube mapping and buffer objects
 #include "native/gl_ext.h"

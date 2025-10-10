@@ -30,6 +30,14 @@
 #include "../inc_yac.h"
 #include "../inc_opengl.h"
 
+#if defined(YAC_LINUX) && defined(HAVE_X11)
+#define GLX_GLXEXT_PROTOTYPES
+#include <GL/glx.h>
+#include <GL/gl.h>
+#include <GL/glext.h>
+#include <GL/glxext.h>
+#endif // YAC_LINUX (X11)
+
 
 typedef void      (APIENTRY *glanyfun_t)              (void);
 
@@ -55,7 +63,7 @@ glMapBuffer_t                      glMapBuffer                        = NULL;
 glMapBufferRange_t                 glMapBufferRange                   = NULL;
 glFlushMappedBufferRange_t         glFlushMappedBufferRange           = NULL;
 glUnmapBuffer_t                    glUnmapBuffer                      = NULL;
-glActiveTexture_t                  glActiveTexture                    = NULL;
+/* glActiveTexture_t                  glActiveTexture                    = NULL; */
 glBlendFuncSeparate_t              glBlendFuncSeparate                = NULL;
 glBindRenderbuffer_t               glBindRenderbuffer                 = NULL;
 glDeleteRenderbuffers_t            glDeleteRenderbuffers              = NULL;
@@ -155,9 +163,10 @@ static glanyfun_t int_GetProcAddressA3(const char *_name1, const char *_name2, c
    return r;
 }
 
-#define Dresolveext(a) a## = (a##_t) int_GetProcAddressA3(#a, #a "ARB", #a "EXT")
+#define Dresolveext(a) a = (a##_t) int_GetProcAddressA3(#a, #a "ARB", #a "EXT")
 
 void load_gl_extensions(void) {
+   /* printf("xxx load_gl_extensions: ENTER\n"); */
    Dresolveext(glBindBuffer);
    Dresolveext(glIsBuffer);
    Dresolveext(glDeleteBuffers);
@@ -170,7 +179,7 @@ void load_gl_extensions(void) {
    Dresolveext(glMapBufferRange);
    Dresolveext(glFlushMappedBufferRange);
    Dresolveext(glUnmapBuffer);
-   Dresolveext(glActiveTexture);
+   /* Dresolveext(glActiveTexture); */
    Dresolveext(glBlendFuncSeparate);
    Dresolveext(glBindRenderbuffer);
    Dresolveext(glDeleteRenderbuffers);
@@ -237,5 +246,5 @@ void load_gl_extensions(void) {
    Dresolveext(glRenderbufferStorage);
    Dresolveext(glFramebufferRenderbuffer);
    Dresolveext(glRenderbufferStorageMultisample);
-   // printf("xxx load_gl_extensions: LEAVE  glBindBuffer=%p glGenVertexArrays=%p\n", glBindBuffer, glGenVertexArrays);
+   /* printf("xxx load_gl_extensions: LEAVE  glBindBuffer=%p glGenVertexArrays=%p\n", glBindBuffer, glGenVertexArrays); */
 }
