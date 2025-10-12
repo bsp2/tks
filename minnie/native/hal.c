@@ -29,8 +29,8 @@
 #include <stdarg.h>
 #include <math.h>
 
-#define Dprintf       if(0);else printf
-#define Derrorprintf  if(0);else printf
+#define Dprintf       if(!MINNIE_PRINTF);else printf
+#define Derrorprintf  if(!MINNIE_PRINTF);else printf
 
 #include "../inc_yac.h"
 #include "hal.h"

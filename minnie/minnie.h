@@ -248,7 +248,7 @@ typedef int             sBool;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ rasterizer
 #if defined(MINNIE_IMPLEMENTATION) && defined(MINNIE_SW_RENDER)
-#define Dprintf if(0);else printf
+#define Dprintf if(!MINNIE_PRINTF);else printf
 #define AA_C defined
 #include "../tkopengl/tri_raster_aa.h"
 // #if 0
@@ -273,17 +273,17 @@ typedef int             sBool;
 #endif // MINNIE_IMPLEMENTATION && MINNIE_SW_RENDER
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /rasterizer
 
-#define Dprintf        if(0);else printf
-#define Derrorprintf   if(0);else printf
-#define Dtorprintf     if(1);else printf  // Constructor / Destructor debug
-#define Dinitprintf    if(1);else printf  // object init debug
-#define Dallocprintf   if(1);else printf  // object alloc debug
-#define Dedgeaaprintfv if(1);else printf
-#define Dedgeaaprintf  if(1);else printf
-#define Dexportprintf  if(1);else printf
-#define Dexportprintfv if(1);else printf
-#define Dapiprintf     if(0);else printf
-#define Dapierror      if(0);else printf
+#define Dprintf        if(!MINNIE_PRINTF);else printf
+#define Derrorprintf   if(!MINNIE_PRINTF);else printf
+#define Dtorprintf     if( MINNIE_PRINTF);else printf  // Constructor / Destructor debug
+#define Dinitprintf    if( MINNIE_PRINTF);else printf  // object init debug
+#define Dallocprintf   if( MINNIE_PRINTF);else printf  // object alloc debug
+#define Dedgeaaprintfv if( MINNIE_PRINTF);else printf
+#define Dedgeaaprintf  if( MINNIE_PRINTF);else printf
+#define Dexportprintf  if( MINNIE_PRINTF);else printf
+#define Dexportprintfv if( MINNIE_PRINTF);else printf
+#define Dapiprintf     if(!MINNIE_PRINTF);else printf
+#define Dapierror      if(!MINNIE_PRINTF);else printf
 
 #define Dkbytes(a)  (sSI(a*(100.0f/1024.0f))/100.0f)
 

@@ -30,14 +30,14 @@
 class ShaderVG_Shape;
 
 // ----------- Log helper macros -----------
-#define Dsdvg_printf        if(0);else Dyac_host_printf
-#define Dsdvg_tracecall     if(1);else Dsdvg_printf
-#define Dsdvg_tracecallv    if(1);else Dsdvg_printf
-#define Dsdvg_warnprintf    if(0);else Dsdvg_printf
-#define Dsdvg_errorprintf   if(0);else Dsdvg_printf
-#define Dsdvg_debugprintf   if(0);else Dsdvg_printf
-#define Dsdvg_debugprintfv  if(1);else Dsdvg_printf
-#define Dsdvg_debugprintfvv if(1);else Dsdvg_printf
+#define Dsdvg_printf        if(!MINNIE_PRINTF);else Dyac_host_printf
+#define Dsdvg_tracecall     if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_tracecallv    if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_warnprintf    if(!MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_errorprintf   if(!MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_debugprintf   if(!MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_debugprintfv  if( MINNIE_PRINTF);else Dsdvg_printf
+#define Dsdvg_debugprintfvv if( MINNIE_PRINTF);else Dsdvg_printf
 
 #include <stdlib.h>
 #include <new>
