@@ -69,7 +69,7 @@
 #define SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET  1.0f
 #define SHADERVG_ROUNDRECT_AA_SIZE_OFFSET       0.75f
 #define SHADERVG_ROUNDRECT_AA_STROKE_OFFSET     0.25f
-#define SHADERVG_POINTS_AA_RADIUS_OFFSET        0.75f
+#define SHADERVG_POINTS_AA_RADIUS_OFFSET        1.5f
 
 #define Dsdvg_pixel_scl(a) ((a) * sdvg_pixel_scl)
 
