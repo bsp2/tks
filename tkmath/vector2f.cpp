@@ -1139,13 +1139,13 @@ sF32 _Vector2f::intersect(YAC_Object *_v1s, YAC_Object *_v1e,
       YAC_NEW_STACK(Vector2f, vE); vE.subFrom(v1e, v1s);
       YAC_NEW_STACK(Vector2f, vF); vF.subFrom(v2e, v2s);
       YAC_NEW_STACK(Vector2f, vP); vP._init(-vE.floats[1], vE.floats[0]);
-      YAC_NEW_STACK(Vector2f, vG); vG._init(v1s->floats[0] - v2s->floats[0], v1s->floats[1] - v2s->floats[1]);
+      YAC_NEW_STACK(Vector2f, vG); vG._init(v1s->floats[0] - v2s->floats[0], v1s->floats[1] - v2s->floats[1]); // (A-C)
       sF32 h = vF.dot(&vP);
       if(0.0f != h)
          h = vG.dot(&vP) / h;
       // if(b_debug)
       //    trace "xxx intersect: h="+h+" bExtrapolate="+bExtrapolate;
-      if( _bExtrapolate || ((0.0 <= h) && (h <= 1.0)) )
+      if( _bExtrapolate || (0.0f <= h && h <= 1.0f) )
       {
          mulfFrom(&vF, h);
          add(v2s);

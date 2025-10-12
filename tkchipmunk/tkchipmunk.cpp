@@ -2,17 +2,17 @@
 ///
 /// (c) 2007 Scott Lembcke <lemb0029(at)morris(dot)umn(dot)edu or slembcke(at)gmail(dot)com>
 /// (c) 2008-2024 by Bastian Spiegel <bs@tkscript.de>
-/// 
+///
 ///  Permission is hereby granted, free of charge, to any person obtaining a copy
 ///  of this software and associated documentation files (the "Software"), to deal
 ///  in the Software without restriction, including without limitation the rights
 ///  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 ///  copies of the Software, and to permit persons to whom the Software is
 ///  furnished to do so, subject to the following conditions:
-///  
+///
 ///  The above copyright notice and this permission notice shall be included in
 ///  all copies or substantial portions of the Software.
-///  
+///
 ///  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 ///  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 ///  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -20,11 +20,11 @@
 ///  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 ///  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ///  SOFTWARE.
-///   
+///
 ///  "tkchipmunk" is a TKScript/YAC binding for Scott Lembcke's "chipmunk" 2d game physics library.
 ///
 ///  Please see <http://files.slembcke.net/chipmunk/chipmunk-docs.html>
-///   
+///
 /// created: 06May2008
 /// changed: 07May2008, 08May2008, 12Jun2018, 13Jun2018, 14Jun2018, 18Jun2018, 19Jul2018
 ///          19Sep2021, 22Sep2021, 23Sep2021, 24Sep2021, 21Dec2024
@@ -146,7 +146,7 @@ void YAC_VCALL CpVect::yacArrayGet(void *_ctx, sUI _index, YAC_Value *_value) {
 }
 
 void CpVect::yacArraySet(YAC_ContextHandle _ctx, sUI _idx, YAC_Value *_val) {
-   if(_idx < 2) 
+   if(_idx < 2)
    {
       sF32 v;
       switch(_val->type)
@@ -161,15 +161,15 @@ void CpVect::yacArraySet(YAC_ContextHandle _ctx, sUI _idx, YAC_Value *_val) {
             v = _val->value.float_val;
             break;
          case YAC_TYPE_OBJECT:
-            if(YAC_VALID(_val->value.object_val)) 
+            if(YAC_VALID(_val->value.object_val))
             {
                if (!_val->value.object_val->yacScanF32(&v))
                {
                   // Scan failed, silently assign 0.0f
                   v = 0.0f;
                }
-            } 
-            else 
+            }
+            else
             {
                // Invalid or <null> object, silently assign 0.0f
                v = 0.0f;
@@ -187,7 +187,7 @@ void CpVect::yacArraySet(YAC_ContextHandle _ctx, sUI _idx, YAC_Value *_val) {
       else
          cp_vect.y = v;
    }
-   else 
+   else
    {
       char buf[256];
       Dyac_snprintf(buf, 256, "CpVect::yacArraySet: index out of bounds (%u>1)", _idx);
@@ -1086,7 +1086,7 @@ sF32 CpArbiter::_getDepthByIndex(sSI _i) {
 //             printf("xxx delete pa[%d] validation_tag=0x%08x.\n", i, o->validation_tag);
 //          }
 //       }
-      
+
 //    }
 // }
 
@@ -1228,7 +1228,7 @@ static sBool GetWrappedObject(YAC_Object *_o, sUI _clid, YAC_Object **_retObject
          YAC_ValueObject *vo = (YAC_ValueObject*) _o;
          if(YAC_TYPE_OBJECT <= vo->type)
          {
-            // Unlink object from value container 
+            // Unlink object from value container
             *_retBDelete = vo->deleteme;
             vo->deleteme = 0;
             o = vo->value.object_val;
@@ -1525,7 +1525,7 @@ sBool CpSpace::_addCollisionHandlers(sUI _collisionTypeA,
 
          ch->collision_type_a = _collisionTypeA;
          ch->collision_type_b = _collisionTypeB;
-         
+
          // Init chipmunk cpCollisionHandler callbacks and userData
          ch->cp_collision_handler->beginFunc     = &tkchipmunk_coll_begin;
          ch->cp_collision_handler->preSolveFunc  = &tkchipmunk_coll_pre_solve;
@@ -1561,7 +1561,7 @@ static void loc_cpspace_bb_query_func(cpShape *_shape, void *_userDataCpSpace) {
 }
 
 CpShape *CpSpace::_pointQueryNearest(CpVect *_point, sF32 _maxDistance) {
-   
+
    cpShapeFilter flt;
    flt.group = 0;
    flt.categories = ~0u;
@@ -1592,7 +1592,7 @@ void CpSpace::_bbQuery(CpBB *_bb, YAC_Object *_funMatch, YAC_Object *_userData) 
 
          bb_query_fun       = _funMatch;
          bb_query_user_data = _userData;
-         
+
          cpSpaceBBQuery(cp_space, bb->cp_bb, flt, &loc_cpspace_bb_query_func, (void*)this/*userData*/);
       }
    }
@@ -1624,7 +1624,7 @@ void CpSpace::_step(sF32 _dt) {
          _removeBody( (CpBody*) body_remove_queue->elements[--body_remove_queue->num_elements].value.object_val );
       }
    }
-   
+
 }
 
 
@@ -1727,7 +1727,7 @@ void CpBody::_setPosition(CpVect *_p) {
 
 void CpBody::_setP(CpVect *_p) {
    _setPosition(_p);
-   
+
 }
 
 YAC_Object *CpBody::_getCenterOfGravity(void) {
@@ -1849,55 +1849,55 @@ void CpBody::_setT(sF32 _t) {
    _setTorque(_t);
 }
 
-sF32 CpBody::_getMass(void) { 
+sF32 CpBody::_getMass(void) {
    return cpBodyGetMass(cp_body);
 }
 
-sF32 CpBody::_getM(void) { 
+sF32 CpBody::_getM(void) {
    return _getMass();
 }
 
-void CpBody::_setMass(sF32 _m) { 
+void CpBody::_setMass(sF32 _m) {
    cpBodySetMass(cp_body, _m);
 }
 
-void CpBody::_setM(sF32 _m) { 
+void CpBody::_setM(sF32 _m) {
    _setMass(_m);
 }
 
-sF32 CpBody::_getMoment(void) { 
+sF32 CpBody::_getMoment(void) {
    return cpBodyGetMoment(cp_body);
 }
 
-sF32 CpBody::_getI(void) { 
+sF32 CpBody::_getI(void) {
    return _getMoment();
 }
 
-void CpBody::_setMoment(sF32 _inertia) { 
+void CpBody::_setMoment(sF32 _inertia) {
    cpBodySetMoment(cp_body, _inertia);
 }
 
-void CpBody::_setI(sF32 _inertia) { 
+void CpBody::_setI(sF32 _inertia) {
    _setMoment(_inertia);
 }
 
-sF32 CpBody::_getAngle(void) { 
+sF32 CpBody::_getAngle(void) {
    return cpBodyGetAngle(cp_body);
 }
 
-sF32 CpBody::_getA(void) { 
+sF32 CpBody::_getA(void) {
    return _getAngle();
 }
 
-void CpBody::_setAngle(sF32 _angle) { 
+void CpBody::_setAngle(sF32 _angle) {
    cpBodySetAngle(cp_body, _angle);
 }
 
-void CpBody::_setA(sF32 _angle) { 
+void CpBody::_setA(sF32 _angle) {
    _setAngle(_angle);
 }
 
-void CpBody::_localToWorld_YAC_RARG(CpVect *_v, CpVect *_r) { 
+void CpBody::_localToWorld_YAC_RARG(CpVect *_v, CpVect *_r) {
    _r->cp_vect = cpBodyLocalToWorld(cp_body, _v->cp_vect);
 }
 
@@ -1907,11 +1907,11 @@ void CpBody::_localToWorld_YAC_RVAL(CpVect *_v, YAC_Value *_r) {
    YAC_RETO(r, 1);
 }
 
-void CpBody::_worldToLocal_YAC_RARG(CpVect *_v, CpVect *_r) { 
+void CpBody::_worldToLocal_YAC_RARG(CpVect *_v, CpVect *_r) {
    _r->cp_vect = cpBodyWorldToLocal(cp_body, _v->cp_vect);
 }
 
-void CpBody::_worldToLocal_YAC_RVAL(CpVect *_v, YAC_Value *_r) { 
+void CpBody::_worldToLocal_YAC_RVAL(CpVect *_v, YAC_Value *_r) {
    CpVect *r = YAC_NEW_POOLED(CpVect);
    r->cp_vect = cpBodyWorldToLocal(cp_body, _v->cp_vect);
    YAC_RETO(r, 1);
@@ -1955,11 +1955,11 @@ void CpBody::getVelocityAtLocalPoint(CpVect *_point, YAC_Value *_r) {
    YAC_RETO(r, 1);
 }
 
-void CpBody::_updateVelocity(CpVect *_gravity, sF32 _damping, sF32 _dt) { 
+void CpBody::_updateVelocity(CpVect *_gravity, sF32 _damping, sF32 _dt) {
    cpBodyUpdateVelocity(cp_body, _gravity->cp_vect, _damping, _dt);
 }
 
-void CpBody::_updatePosition(sF32 _dt) { 
+void CpBody::_updatePosition(sF32 _dt) {
    cpBodyUpdatePosition(cp_body, _dt);
 }
 
@@ -2008,7 +2008,7 @@ void CpShape::_free(void) {
       cpShapeFree(cp_shape);
       cp_shape = NULL;
    }
-   
+
    body = NULL;
 
    Dsafedelete(vec_surface_v);
@@ -2356,7 +2356,7 @@ void CpPolyShape::_free(void) {
 
 static sBool DecodeVertArray(YAC_Object *_vertArray, sUI *_retNum, cpVect**_retVec, YAC_PointerArray *_pa, cpVect _offset) {
    //
-   // Note: caller must delete[] _retVec array 
+   // Note: caller must delete[] _retVec array
    //
 
    *_retNum = 0;
@@ -2376,7 +2376,7 @@ static sBool DecodeVertArray(YAC_Object *_vertArray, sUI *_retNum, cpVect**_retV
             _pa->num_elements = ne;
             _pa->max_elements = ne;
          }
-         
+
          sUI i;
          for(i=0; i<ne; i++)
          {
@@ -2420,7 +2420,7 @@ static sBool DecodeVertArray(YAC_Object *_vertArray, sUI *_retNum, cpVect**_retV
             }
             r.unsetFast();
          }
-         
+
          // Ok
          *_retNum = ne;
          *_retVec = v;
@@ -2468,7 +2468,7 @@ sBool CpPolyShape::_initPoly(CpBody *_body, YAC_Object *_vertArray, YAC_Object *
    {
       transform = cpTransformIdentity;
    }
-   
+
    sUI ne;
    cpVect *v;
    vertex_array = YAC_New_PointerArray();
@@ -2627,7 +2627,7 @@ void CpSlideJoint::_initSlide(CpBody *_a, CpBody *_b, CpVect *_anchr1, CpVect *_
 }
 
 void CpSlideJoint::_New(CpBody *_a, CpBody *_b, CpVect *_anchr1, CpVect *_anchr2, sF32 _min, sF32 _max, YAC_Value *_r) {
-   // a and b are the two bodies to connect, anchr1 and anchr2 are the anchor points on those bodies, and 
+   // a and b are the two bodies to connect, anchr1 and anchr2 are the anchor points on those bodies, and
    // min and max define the allowed distances of the anchor points.
    CpSlideJoint *j = YAC_NEW(CpSlideJoint);
    j->_initSlide(_a, _b, _anchr1, _anchr2, _min, _max);
@@ -2659,8 +2659,8 @@ void CpPivotJoint::_initPivot2(CpBody *_a, CpBody *_b, CpVect *_anchorA, CpVect 
 }
 
 void CpPivotJoint::_New(CpBody *_a, CpBody *_b, CpVect *_pivot, YAC_Value *_r) {
-   // a and b are the two bodies to connect, and pivot is the point in world coordinates of the pivot. 
-   // Because the pivot location is given in world coordinates, you must have the bodies moved into the 
+   // a and b are the two bodies to connect, and pivot is the point in world coordinates of the pivot.
+   // Because the pivot location is given in world coordinates, you must have the bodies moved into the
    // correct positions already.
    CpPivotJoint *j = YAC_NEW(CpPivotJoint);
    j->_initPivot(_a, _b, _pivot);
@@ -2973,10 +2973,10 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    YAC_Init_cp(_host);
 
    // Setup class inheritance
-   yac_host->cpp_typecast_map[clid_CpCircleShape]      [clid_CpShape] = 1;  
-   yac_host->cpp_typecast_map[clid_CpSegmentShape]     [clid_CpShape] = 1;  
-   yac_host->cpp_typecast_map[clid_CpPolyShape]        [clid_CpShape] = 1;  
-                                                       
+   yac_host->cpp_typecast_map[clid_CpCircleShape]      [clid_CpShape] = 1;
+   yac_host->cpp_typecast_map[clid_CpSegmentShape]     [clid_CpShape] = 1;
+   yac_host->cpp_typecast_map[clid_CpPolyShape]        [clid_CpShape] = 1;
+
    yac_host->cpp_typecast_map[clid_CpJoint]            [clid_CpConstraint] = 1;
    yac_host->cpp_typecast_map[clid_CpPinJoint]         [clid_CpJoint] = 1;
    yac_host->cpp_typecast_map[clid_CpPinJoint]         [clid_CpConstraint] = 1;
@@ -3009,9 +3009,9 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
    {
       yac_host->printf("[...] tkchipmunk::YAC_Exit() beg.\n");
    }
-   
+
    YAC_Exit_cp(_host);
-   
+
    if(yac_host->yacGetDebugLevel() > 0)
    {
       yac_host->printf("[...] tkchipmunk::YAC_Exit() end.\n");
@@ -3023,4 +3023,3 @@ void YAC_CALL YAC_Exit(YAC_Host *_host) {
    //printf("xxx oc_cpconstraint=%d\n", oc_cpconstraint);
 
 }
-

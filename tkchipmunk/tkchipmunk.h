@@ -2,17 +2,17 @@
 ///
 /// (c) 2007 Scott Lembcke <lemb0029(at)morris(dot)umn(dot)edu or slembcke(at)gmail(dot)com>
 /// (c) 2008-2021 Bastian Spiegel <bs@tkscript.de>
-/// 
+///
 ///  Permission is hereby granted, free of charge, to any person obtaining a copy
 ///  of this software and associated documentation files (the "Software"), to deal
 ///  in the Software without restriction, including without limitation the rights
 ///  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 ///  copies of the Software, and to permit persons to whom the Software is
 ///  furnished to do so, subject to the following conditions:
-///  
+///
 ///  The above copyright notice and this permission notice shall be included in
 ///  all copies or substantial portions of the Software.
-///  
+///
 ///  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 ///  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 ///  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -20,9 +20,9 @@
 ///  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 ///  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ///  SOFTWARE.
-///   
+///
 ///  "tkchipmunk" is a TKScript/YAC binding for Scott Lembcke's "chipmunk" 2d game physics library.
-///   
+///
 /// created: 06May2008
 /// changed: 07May2008, 08May2008, 09May2008, 12Jun2018, 13Jun2018, 14Jun2018, 19Jul2018
 ///          19Sep2021, 22Sep2021, 24Sep2021
@@ -72,7 +72,7 @@ YC class CpVect : public YAC_Object {
   public:
    CpVect(void);
    ~CpVect();
-   
+
    YAC_POOLED(CpVect, YAC_POOL_PRIORITY_MEDIUM);
 
    sUI   YAC_VCALL yacArrayGetNumElements    (void);
@@ -220,7 +220,7 @@ YC class CpBB : public YAC_Object {
   public:
    CpBB(void);
    ~CpBB();
-   
+
    YAC_POOLED(CpBB, YAC_POOL_PRIORITY_MEDIUM);
 
    void  YAC_VCALL yacOperatorAssign (YAC_Object *_o);
@@ -311,7 +311,7 @@ YC class CpTransform : public YAC_Object {
   public:
    CpTransform(void);
    ~CpTransform();
-   
+
    YAC_POOLED(CpTransform, YAC_POOL_PRIORITY_MEDIUM);
 
    void  YAC_VCALL yacOperatorAssign(YAC_Object *_o);
@@ -453,8 +453,8 @@ YC class CpArbiter : public YAC_Object {
 YC class CpSpace : public YAC_Object {
 #define CPSPACE_MAX_COLLISION_HANDLERS YCI 256
    //
-   // spaces: 
-   //   Spaces are the basic simulation unit in Chipmunk. 
+   // spaces:
+   //   Spaces are the basic simulation unit in Chipmunk.
    //   You add bodies, shapes and constraints to a space, and then update the space as a whole.
    //
   public:
@@ -496,7 +496,7 @@ YC class CpSpace : public YAC_Object {
    YM sF32 _getDamping(void);
    YM void _setDamping(sF32 _damping);
 
-   // The number of iterations to use when solving constraints (collisions and joints). 
+   // The number of iterations to use when solving constraints (collisions and joints).
    // Defaults to 10.
    YM sSI  _getIterations(void);
    YM void _setIterations(sSI _iterations);
@@ -530,10 +530,10 @@ YC class CpSpace : public YAC_Object {
    YM sSI  _getCollisionPersistence (void);
    YM void _setCollisionPersistence (sSI _collisionPersistence);
 
-   // These functions add and remove shapes, bodies and joints from space. 
-   // Shapes added as static are assumed not to move. 
-   // Static shapes should be be attached to a rigid body with an infinite mass and moment of inertia. 
-   // Also, don’t add the rigid body used to the space, as that will cause it to fall under the effects of gravity.
+   // These functions add and remove shapes, bodies and joints from space.
+   // Shapes added as static are assumed not to move.
+   // Static shapes should be be attached to a rigid body with an infinite mass and moment of inertia.
+   // Also, donÂ’t add the rigid body used to the space, as that will cause it to fall under the effects of gravity.
    YM void _addShape       (YAC_Object *_shape);
    YM void _addBody        (YAC_Object *_body);
    YM void _addConstraint  (YAC_Object *_constraint);
@@ -571,13 +571,13 @@ YC class CpSpace : public YAC_Object {
 
    // Switch the space to use a spatial hash instead of the bounding box tree.
    YM void _useSpatialHash (sF32 _dim, sSI _count);
-    
+
    // Update the collision detection info for the static shapes in the space.
    YM void _reindexStatic (void);
 
-   // Update the space for the given time step. 
-   // Using a fixed time step is highly recommended. 
-   // Doing so will increase the efficiency of the contact persistence, requiring an order of magnitude fewer iterations 
+   // Update the space for the given time step.
+   // Using a fixed time step is highly recommended.
+   // Doing so will increase the efficiency of the contact persistence, requiring an order of magnitude fewer iterations
    // to resolve the collisions in the usual case.
    YM void _step (sF32 _dt);
 
@@ -587,10 +587,10 @@ YC class CpSpace : public YAC_Object {
 // ---------------------------------------------------------------------------- CpBody
 YC class CpBody : public YAC_Object {
    //
-   // rigid bodies: 
-   //   A rigid body holds the physical properties of an object. (mass, position, rotation, velocity, etc.) 
-   //   It does not have a shape by itself. 
-   //   If you’ve done physics with particles before, rigid bodies differ mostly in that they are able to rotate.
+   // rigid bodies:
+   //   A rigid body holds the physical properties of an object. (mass, position, rotation, velocity, etc.)
+   //   It does not have a shape by itself.
+   //   If youÂ’ve done physics with particles before, rigid bodies differ mostly in that they are able to rotate.
    //
 
 
@@ -615,7 +615,7 @@ YC class CpBody : public YAC_Object {
   public:
    cpBody *cp_body; // (note) userData is set to "this"
    sBool   b_delete_body;  // 0=static body
-   
+
    CpVect *vec_p; // lazy alloc
    CpVect *vec_cog;
    CpVect *vec_v;
@@ -768,12 +768,12 @@ YC class CpBody : public YAC_Object {
    // Get the velocity on a body (in world units) at a point on the body in local coordinates.
    YM void getVelocityAtLocalPoint (CpVect *_point, YAC_Value *_r);
 
-   // Updates the velocity of the body using Euler integration. 
-   // You don’t need to call this unless you are managing the object manually instead of adding it to a cpSpace.
+   // Updates the velocity of the body using Euler integration.
+   // You donÂ’t need to call this unless you are managing the object manually instead of adding it to a cpSpace.
    YM void _updateVelocity (CpVect *_gravity, sF32 _damping, sF32 _dt);
 
-   // Updates the position of the body using Euler integration. 
-   // Like cpBodyUpdateVelocity() you shouldn’t normally need to call this yourself.
+   // Updates the position of the body using Euler integration.
+   // Like cpBodyUpdateVelocity() you shouldnÂ’t normally need to call this yourself.
    YM void _updatePosition (sF32 _dt);
 
    // Get the amount of kinetic energy contained by the body.
@@ -789,9 +789,9 @@ YC class CpBody : public YAC_Object {
 // ---------------------------------------------------------------------------- CpShape
 YCR class CpShape : public YAC_Object {
    //
-   // collision shapes: 
-   //   By attaching shapes to bodies, you can define the a body’s shape. 
-   //   You can attach many shapes to a single body to define a complex shape, or none if it doesn’t require a shape.
+   // collision shapes:
+   //   By attaching shapes to bodies, you can define the a bodyÂ’s shape.
+   //   You can attach many shapes to a single body to define a complex shape, or none if it doesnÂ’t require a shape.
    //
 
 // Export shape type constants:
@@ -801,7 +801,7 @@ YCR class CpShape : public YAC_Object {
 
   public:
    cpShape *cp_shape;  // (note) userData is set to "this"
-   
+
    CpBody           *body;          // The rigid body the shape is attached to.
    CpVect           *vec_surface_v; // Surface velocity (lazy alloc)
    CpVect           *vec_cog;       // Center of gravity (lazy alloc)
@@ -847,9 +847,9 @@ YCR class CpShape : public YAC_Object {
 
    // Get the centroid of this shape.
    YAC_Object *_getCenterOfGravity (void);
-  
-   // Shapes in the same non-zero group do not generate collisions. 
-   // Useful when creating an object out of many shapes that you don’t want to self collide. 
+
+   // Shapes in the same non-zero group do not generate collisions.
+   // Useful when creating an object out of many shapes that you donÂ’t want to self collide.
    // Defaults to 0;
    YM sSI         _getFilterGroup (void);
    YM sSI         _getGroup (void);  // tkchipmunk4 backwards compatibility
@@ -861,7 +861,7 @@ YCR class CpShape : public YAC_Object {
    YM sSI         _getFilterCategories(void);
    YM void        _setFilterCategories(sSI _categories);
 
-   // Shapes only collide if they are in the same bit-planes. i.e. (a->layers & b->layers) != 0 
+   // Shapes only collide if they are in the same bit-planes. i.e. (a->layers & b->layers) != 0
    // By default, a shape occupies all 32 bit-planes.
    YM sSI         _getFilterMask(void);
    YM void        _setFilterMask(sSI _layers);
@@ -870,25 +870,25 @@ YCR class CpShape : public YAC_Object {
    YM sSI         _getCollisionType(void);
    YM void        _setCollisionType(sSI _collisionType);
 
-   // The surface velocity of the object. 
-   // Useful for creating conveyor belts or players that move around. 
+   // The surface velocity of the object.
+   // Useful for creating conveyor belts or players that move around.
    // This value is only used when calculating friction, not the collision.
    YM YAC_Object *_getSurfaceVelocity(void);
    YM void        _setSurfaceVelocity(CpVect *_v);
    YM void        _setSurfaceVelocity2f(sF32 _x, sF32 _y);
 
-   // Elasticity of the shape. 
-   // A value of 0.0 gives no bounce, while a value of 1.0 will give a "perfect" bounce. 
+   // Elasticity of the shape.
+   // A value of 0.0 gives no bounce, while a value of 1.0 will give a "perfect" bounce.
    // However due to inaccuracies in the simulation using 1.0 or greater is not recommended however
    YM sF32        _getElasticity (void);
    YM sF32        _getE          (void);
    YM void        _setElasticity (sF32 _e);
    YM void        _setE          (sF32 _e);
 
-   // Friction coefficient. 
-   // Chipmunk uses the Coulomb friction model, a value of 0.0 is frictionless. 
+   // Friction coefficient.
+   // Chipmunk uses the Coulomb friction model, a value of 0.0 is frictionless.
    // see <http://www.roymech.co.uk/Useful_Tables/Tribology/co_of_frict.htm> for a table of friction coefficients.
-   YM sF32        _getFriction (void); // get friction coefficient, 0=frictionless, 
+   YM sF32        _getFriction (void); // get friction coefficient, 0=frictionless,
    YM sF32        _getU (void);
    YM void        _setFriction (sF32 _friction);
    YM void        _setU        (sF32 _friction);
@@ -923,7 +923,7 @@ YC class CpCircleShape : public CpShape {
 
    YM void _initCircle (CpBody *_body, sF32 _radius, CpVect *_offset);
 
-   // body is the body to attach the circle to, offset is the offset from the body’s center of gravity in body local coordinates.
+   // body is the body to attach the circle to, offset is the offset from the bodyÂ’s center of gravity in body local coordinates.
    YM void _New(CpBody *_body, sF32 _radius, CpVect *_offset, YAC_Value *_r);
 
    // Center. (body space coordinates)
@@ -954,7 +954,7 @@ YC class CpSegmentShape : public CpShape {
    YM void _initSegment(CpBody *_body, CpVect *_a, CpVect *_b, sF32 _radius);
 
    // body is the body to attach the segment to, a and b are the endpoints, and radius is the thickness of the segment.
-   YM void _New(CpBody *_body, CpVect *_a, CpVect *_b, sF32 _radius, YAC_Value *_r); 
+   YM void _New(CpBody *_body, CpVect *_a, CpVect *_b, sF32 _radius, YAC_Value *_r);
 
    // Endpoints and normal of the segment. (body space coordinates)
    YM YAC_Object *_getA (void);
@@ -988,8 +988,8 @@ YC class CpPolyShape : public CpShape {
    // (note) 'transform' was usually a cpvzero in chipmunk4, must use cpTransformIdentity in chipmunk7
    YM sBool _initPoly   (CpBody *_body, YAC_Object *_vertArray, YAC_Object *_transformOrVect, sF32 _radius);
 
-   // body is the body to attach the poly to, verts is an array of cpVect’s defining a convex hull with a counterclockwise
-   // winding, offset is the offset from the body’s center of gravity in body local coordinates.
+   // body is the body to attach the poly to, verts is an array of cpVectÂ’s defining a convex hull with a counterclockwise
+   // winding, offset is the offset from the bodyÂ’s center of gravity in body local coordinates.
    YM void _New(CpBody *_body, YAC_Object *_vertArray, YAC_Object *_transformOrVect, sF32 _radius, YAC_Value *_r);
 };
 
@@ -997,7 +997,7 @@ YC class CpPolyShape : public CpShape {
 // ---------------------------------------------------------------------------- CpConstraint
 YCR class CpConstraint : public YAC_Object {
    //
-   // joints: 
+   // joints:
    //   You can attach joints between two bodies to constrain their behavior.
    //
 
@@ -1013,7 +1013,7 @@ YCR class CpConstraint : public YAC_Object {
    ~CpConstraint();
 
    YAC(CpConstraint);
-   
+
    YM virtual void _free (void);
 
    void initConstraint (CpBody *_a, CpBody *_b, CpVect *_anchorAOrNull, CpVect *_anchorBOrNull);
@@ -1034,7 +1034,7 @@ YCR class CpJoint : public CpConstraint {
    ~CpJoint();
 
    YAC(CpJoint);
-  
+
 };
 
 
@@ -1046,7 +1046,7 @@ YC class CpPinJoint : public CpJoint/*CpConstraint*/ {
    ~CpPinJoint();
 
    YAC(CpPinJoint);
-   
+
    void _free (void);
 
    YM void _initPin (CpBody *_a, CpBody *_b, CpVect *_anchr1, CpVect *_anchr2);
@@ -1064,12 +1064,12 @@ YC class CpSlideJoint : public CpJoint/*CpConstraint*/ {
    ~CpSlideJoint();
 
    YAC(CpSlideJoint);
-   
+
    void _free (void);
 
    YM void _initSlide  (CpBody *_a, CpBody *_b, CpVect *_anchr1, CpVect *_anchr2, sF32 _min, sF32 _max);
 
-   // a and b are the two bodies to connect, anchr1 and anchr2 are the anchor points on those bodies, and 
+   // a and b are the two bodies to connect, anchr1 and anchr2 are the anchor points on those bodies, and
    // min and max define the allowed distances of the anchor points.
    YM void _New(CpBody *_a, CpBody *_b, CpVect *_anchr1, CpVect *_anchr2, sF32 _min, sF32 _max, YAC_Value *_r);
 };
@@ -1083,14 +1083,14 @@ YC class CpPivotJoint : public CpJoint/*CpConstraint*/ {
    ~CpPivotJoint();
 
    YAC(CpPivotJoint);
-   
+
    void _free (void);
 
    YM void _initPivot  (CpBody *_a, CpBody *_b, CpVect *_pivot);
    YM void _initPivot2 (CpBody *_a, CpBody *_b, CpVect *_anchorA, CpVect *_anchorB);
 
-   // a and b are the two bodies to connect, and pivot is the point in world coordinates of the pivot. 
-   // Because the pivot location is given in world coordinates, you must have the bodies moved into the 
+   // a and b are the two bodies to connect, and pivot is the point in world coordinates of the pivot.
+   // Because the pivot location is given in world coordinates, you must have the bodies moved into the
    // correct positions already.
    YM void _New(CpBody *_a, CpBody *_b, CpVect *_pivot, YAC_Value *_r);
 
@@ -1107,7 +1107,7 @@ YC class CpGrooveJoint : public CpJoint/*CpConstraint*/ {
    ~CpGrooveJoint();
 
    YAC(CpGrooveJoint);
-   
+
    void _free (void);
 
    YM void _initGroove (CpBody *_a, CpBody *_b, CpVect *_grooveA, CpVect *_grooveB, CpVect *_anchr2);
@@ -1126,7 +1126,7 @@ YC class CpDampedSpring : public CpJoint/*CpConstraint*/ {
    ~CpDampedSpring();
 
    YAC(CpDampedSpring);
-   
+
    void _free (void);
 
    YM void _initSpring (CpBody *_a, CpBody *_b, CpVect *_anchr1, CpVect *_anchr2, sF32 _restLen, sF32 _stiffness, sF32 _damping);
@@ -1144,7 +1144,7 @@ YC class CpGearJoint : public CpJoint/*CpConstraint*/ {
    ~CpGearJoint();
 
    YAC(CpGearJoint);
-   
+
    void _free (void);
 
    YM void _initGear (CpBody *_a, CpBody *_b, sF32 _phase, sF32 _ratio);
@@ -1161,7 +1161,7 @@ YC class CpRotaryLimitJoint : public CpJoint/*CpConstraint*/ {
    ~CpRotaryLimitJoint();
 
    YAC(CpRotaryLimitJoint);
-   
+
    void _free (void);
 
    YM void _initRotaryLimit (CpBody *_a, CpBody *_b, sF32 _min, sF32 _max);
@@ -1178,7 +1178,7 @@ YC class CpRatchetJoint : public CpJoint/*CpConstraint*/ {
    ~CpRatchetJoint();
 
    YAC(CpRatchetJoint);
-   
+
    void _free (void);
 
    YM void _initRatchet (CpBody *_a, CpBody *_b, sF32 _phase, sF32 _ratchet);
@@ -1235,24 +1235,24 @@ YF sF32 YAC_CALL _cpvtoangle(CpVect *_v1);
 // Vector dot product.
 YF sF32 YAC_CALL _cpvdot(CpVect *_v1, CpVect *_v2);
 
-// 2D vector cross product analog. 
+// 2D vector cross product analog.
 // The cross product of 2D vectors exists only in the z component, so only that value is returned.
 YF sF32 YAC_CALL _cpvcross(CpVect *_v1, CpVect *_v2);
 
 // Returns the length of v.
 YF sF32 YAC_CALL _cpvlength(CpVect *_v1);
 
-// Returns the squared length of v. 
+// Returns the squared length of v.
 // Faster than cpvlength() when you only need to compare lengths.
 YF sF32 YAC_CALL _cpvlengthsq(CpVect *_v1);
 
-// Calculate the moment of inertia for a circle. Arguments are similar to cpCircleShapeInit(). m_ is the mass, 
-// _r1 and r2 define an inner and outer radius, and offset is the offset of the center from the center of gravity 
+// Calculate the moment of inertia for a circle. Arguments are similar to cpCircleShapeInit(). m_ is the mass,
+// _r1 and r2 define an inner and outer radius, and offset is the offset of the center from the center of gravity
 // of the rigid body.
 YF sF32 YAC_CALL _cpMomentForCircle(sF32 _m, sF32 _r1, sF32 _r2, CpVect *_offset);
 
-// Calculate the moment of inertia for a poly. Arguments are similar to cpPolyShapeInit() m_ is the mass, 
-// _numVerts is the number of vertexes in verts, and offset is the offset of the poly coordinates from the 
+// Calculate the moment of inertia for a poly. Arguments are similar to cpPolyShapeInit() m_ is the mass,
+// _numVerts is the number of vertexes in verts, and offset is the offset of the poly coordinates from the
 // center of gravity of the rigid body.
 YF sF32 YAC_CALL _cpMomentForPoly(sF32 _m, YAC_Object *_vertArray, CpVect *_offset, sF32 _radius);
 
