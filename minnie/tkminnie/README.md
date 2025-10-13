@@ -203,13 +203,13 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_049_begin_textured_gouraud_triangle_fan
   
   ![screenshot](tests/screenshots/test_049_begin_textured_gouraud_triangle_fan.png)
-- test_050_begin_textured_gouraud_triangle_fan_alpha.png
+- test_050_begin_textured_gouraud_triangle_fan_alpha
   
   ![screenshot](tests/screenshots/test_050_begin_textured_gouraud_triangle_fan_alpha.png)
 - test_051_begin_textured_gouraud_triangle_strip
   
   ![screenshot](tests/screenshots/test_051_begin_textured_gouraud_triangle_strip.png)
-- test_052_begin_textured_gouraud_triangle_strip_alpha.png
+- test_052_begin_textured_gouraud_triangle_strip_alpha
   
   ![screenshot](tests/screenshots/test_052_begin_textured_gouraud_triangle_strip_alpha.png)
 - test_053_text_1
@@ -328,7 +328,7 @@ See [here](../native/README.md) for the native C / C++ version of the library an
   ![screenshot](tests/screenshots/test_090_ellipse_fill_stroke_aa_conic.png)
 - test_091_ellipse_fill_aa_pattern
   
-  ![screenshot](tests/screenshots/test_091_ellipse_fill_aa_pattern.png
+  ![screenshot](tests/screenshots/test_091_ellipse_fill_aa_pattern.png)
 - test_092_ellipse_fill_stroke_aa_pattern
   
   ![screenshot](tests/screenshots/test_092_ellipse_fill_stroke_aa_pattern.png)

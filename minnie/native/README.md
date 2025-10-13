@@ -184,13 +184,13 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_049_begin_textured_gouraud_triangle_fan
   
   ![screenshot](../tkminnie/tests/screenshots/test_049_begin_textured_gouraud_triangle_fan.png)
-- test_050_begin_textured_gouraud_triangle_fan_alpha.png
+- test_050_begin_textured_gouraud_triangle_fan_alpha
   
   ![screenshot](../tkminnie/tests/screenshots/test_050_begin_textured_gouraud_triangle_fan_alpha.png)
 - test_051_begin_textured_gouraud_triangle_strip
   
   ![screenshot](../tkminnie/tests/screenshots/test_051_begin_textured_gouraud_triangle_strip.png)
-- test_052_begin_textured_gouraud_triangle_strip_alpha.png
+- test_052_begin_textured_gouraud_triangle_strip_alpha
   
   ![screenshot](../tkminnie/tests/screenshots/test_052_begin_textured_gouraud_triangle_strip_alpha.png)
 - test_053_text_1
@@ -309,7 +309,7 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
   ![screenshot](../tkminnie/tests/screenshots/test_090_ellipse_fill_stroke_aa_conic.png)
 - test_091_ellipse_fill_aa_pattern
   
-  ![screenshot](../tkminnie/tests/screenshots/test_091_ellipse_fill_aa_pattern.png
+  ![screenshot](../tkminnie/tests/screenshots/test_091_ellipse_fill_aa_pattern.png)
 - test_092_ellipse_fill_stroke_aa_pattern
   
   ![screenshot](../tkminnie/tests/screenshots/test_092_ellipse_fill_stroke_aa_pattern.png)
