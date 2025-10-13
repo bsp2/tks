@@ -1,5 +1,5 @@
 // ----
-// ---- file   : TrianglesFillFlat32Pattern.h
+// ---- file   : EllipseFillAAPatternDecalAlpha.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025 by bsp
@@ -24,21 +24,23 @@
 // ----
 // ----
 
-class TrianglesFillFlat32PatternAlpha : public ShaderVG_Shape {
+class EllipseFillAAPatternDecalAlpha : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
-      "uniform mat4  u_transform; \n"
-      "uniform vec2  u_paint_start; \n"
-      "uniform vec2  u_paint_ob_size; \n"
+      "uniform mat4 u_transform; \n"
+      "uniform vec2 u_paint_start; \n"
+      "uniform vec2 u_paint_ob_size; \n"
       "uniform float u_paint_ob_len; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
+      "VARYING_OUT vec2 v_p; \n"
       "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
+      "  v_p = a_vertex; \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
       "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
       "} \n"
@@ -46,33 +48,64 @@ class TrianglesFillFlat32PatternAlpha : public ShaderVG_Shape {
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform vec4 u_color_fill; \n"
+      "uniform vec2  u_center; \n"
+      "uniform vec2  u_radius; \n"
+      "uniform vec2  u_ob_radius; \n"
+      "uniform float u_radius_max; \n"
+      "uniform float u_ob_radius_max; \n"
+      "uniform float u_aa_range; \n"
+      "uniform float u_aa_exp; \n"
+      "uniform vec4  u_color_fill; \n"
+      "uniform vec4  u_color_stroke; \n"
+      "uniform float u_debug; \n"
       "uniform sampler2D u_paint_tex; \n"
       "uniform vec2 u_paint_ndir; \n"
+      "uniform float u_decal_alpha; \n"
       " \n"
       "VARYING_IN vec2 v_paint_uv; \n"
       " \n"
+      "VARYING_IN vec2 v_p; \n"
+      " \n"
       "void main(void) { \n"
+      "  float aRect = 0.0; \n"
+      "  float aRound = 1.0; \n"
+      "  vec4 color = vec4(0,0,0,0); \n"
+      " \n"
+      "  // outer \n"
+      "  vec2 vd = abs(v_p - u_center); \n"
+      "  if(vd.x < u_radius.x && vd.y < u_radius.y) \n"
+      "  { \n"
+      "     aRect  = 1.0 - smoothstep(u_radius.x - u_aa_range, u_radius.x, vd.x); \n"
+      "     aRect *= 1.0 - smoothstep(u_radius.y - u_aa_range, u_radius.y, vd.y); \n"
+      "     color = u_color_fill; \n"
+      "     aRect = 1.0; \n"
+      "   \n"
+      "     // // if(vd.x > 0.0 && vd.y > 0.0) \n"
+      "     { \n"
+      "        vec2 vdn = vd * u_ob_radius; \n"
+      "        float as = asin(vdn.x) * (1.0 / 3.14159265359); \n"
+      "        float r = mix(u_radius.y, u_radius.x, as); \n"
+      "        float r2 = r * u_ob_radius_max; \n"
+      "        float aaR = u_aa_range * r2; \n"
+      "        aRound = 1.0 - smoothstep( (u_radius_max - aaR) * u_ob_radius_max, 1.0, length(vdn)); \n"
+      "     } \n"
+      "  } \n"
+      "   \n"
+      "  float a = aRect * aRound; \n"
+      "   \n"
+      "#if 1 \n"
+      "  a = pow(a, u_aa_exp); \n"
+      "#endif \n"
+      " \n"
       "  vec2 uv; \n"
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
-      "  float a = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(u_color_fill.rgb, u_color_fill.a * a); \n"
+      "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
+      "  FRAGCOLOR = vec4(mix(color.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), color.a * a); \n"
+      "  if(u_debug > 0.0) \n"
+      "    FRAGCOLOR = vec4(1,0,0,1); \n"
       "} \n"
       ;
-
-   sBool validateShapeShader(void) {
-      return
-         (-1 != shape_a_vertex)
-         && (-1 != shape_u_transform)
-         && (-1 != shape_u_color_fill)
-         && (-1 != shape_u_paint_start)
-         && (-1 != shape_u_paint_ob_size)
-         && (-1 != shape_u_paint_ob_len)
-         && (-1 != shape_u_paint_ndir)
-         && (-1 != shape_u_paint_tex)
-         ;
-   }
 
    sBool onOpen(void) {
       if(createShapeShader(vs_src, fs_src))
@@ -81,35 +114,5 @@ class TrianglesFillFlat32PatternAlpha : public ShaderVG_Shape {
       }
       return YAC_FALSE;
    }
-
-#if 0
-   void drawTrianglesFillFlatVBO32PatternAlpha(sUI              _vboId,
-                                               sUI              _byteOffset,
-                                               sUI              _numVerts,
-                                               Dsdvg_mat4_ref_t _mvpMatrix,
-                                               sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
-                                               ) {
-      //
-      // VBO vertex format (8 bytes per vertex):
-      //   +0 f32 x
-      //   +4 f32 y
-      //
-
-      sdvg_BindVBO(_vboId);
-
-      shape_shader.bind();
-
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-      // (todo) paint uniforms
-
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
-      Dsdvg_attrib_enable(shape_a_vertex);
-
-      Dsdvg_draw_triangles(0, _numVerts);
-
-      Dsdvg_attrib_disable(shape_a_vertex);
-   }
-#endif // 0
 
 };

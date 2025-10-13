@@ -157,6 +157,20 @@ class ShaderVG_Shape {
    void updatePaintUniforms (const shadervg_paint_t *_paint);
 
    virtual sBool onOpen (void);
+
+   sSI bindAndReturnVertexAttrib (void);
+
+   void drawEllipseFillAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
+                                Dsdvg_mat4_ref_t _mvpMatrix,
+                                sF32 _centerX, sF32 _centerY,
+                                sF32 _radiusX, sF32 _radiusY,
+                                sF32 _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
+                                sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                sF32 _aaRange,
+                                sF32 _aaExp,
+                                const shadervg_paint_t *_paint,
+                                sF32 _textureDecalAlpha
+                                );
 };
 
 

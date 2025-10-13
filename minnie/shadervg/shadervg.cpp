@@ -102,6 +102,13 @@
 #include "RectStrokeAA.h"
 #include "RectFillStrokeAA.h"
 #include "EllipseFillAA.h"
+#include "EllipseFillAALinear.h"
+#include "EllipseFillAARadial.h"
+#include "EllipseFillAAConic.h"
+#include "EllipseFillAAPattern.h"
+#include "EllipseFillAAPatternAlpha.h"
+#include "EllipseFillAAPatternDecal.h"
+#include "EllipseFillAAPatternDecalAlpha.h"
 #include "EllipseStrokeAA.h"
 #include "EllipseFillStrokeAA.h"
 #include "RoundRectFillAA.h"
@@ -193,6 +200,13 @@ static RectFillAA                           rect_fill_aa;
 static RectStrokeAA                         rect_stroke_aa;
 static RectFillStrokeAA                     rect_fill_stroke_aa;
 static EllipseFillAA                        ellipse_fill_aa;
+static EllipseFillAALinear                  ellipse_fill_aa_linear;
+static EllipseFillAARadial                  ellipse_fill_aa_radial;
+static EllipseFillAAConic                   ellipse_fill_aa_conic;
+static EllipseFillAAPattern                 ellipse_fill_aa_pattern;
+static EllipseFillAAPatternAlpha            ellipse_fill_aa_pattern_alpha;
+static EllipseFillAAPatternDecal            ellipse_fill_aa_pattern_decal;
+static EllipseFillAAPatternDecalAlpha       ellipse_fill_aa_pattern_decal_alpha;
 static EllipseStrokeAA                      ellipse_stroke_aa;
 static EllipseFillStrokeAA                  ellipse_fill_stroke_aa;
 static RoundRectFillAA                      roundrect_fill_aa;
@@ -264,6 +278,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_stroke_aa,
    &rect_fill_stroke_aa,
    &ellipse_fill_aa,
+   &ellipse_fill_aa_linear,
+   &ellipse_fill_aa_radial,
+   &ellipse_fill_aa_conic,
+   &ellipse_fill_aa_pattern,
+   &ellipse_fill_aa_pattern_alpha,
+   &ellipse_fill_aa_pattern_decal,
+   &ellipse_fill_aa_pattern_decal_alpha,
    &ellipse_stroke_aa,
    &ellipse_fill_stroke_aa,
    &roundrect_fill_aa,
@@ -462,32 +483,6 @@ static YAC_String s_glsl_texturecube;
 static YAC_String s_glsl_tex_alpha;
 #endif // SHADERVG_SCRIPT_API
 
-// solid-fill shader, shared among all render classes
-static ShaderVG_Shader fill_shader;
-static sSI fill_a_vertex;
-static sSI fill_u_transform;
-static sSI fill_u_color;
-
-// ------------ fill vertex shader --------------
-static const char *fill_vs_src =
-   "uniform mat4 u_transform; \n"
-   " \n"
-   "ATTRIBUTE vec2 a_vertex; \n"
-   " \n"
-   "void main(void) { \n"
-   "   gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-   "} \n"
-   ;
-
-// ------------ fill fragment shader ------------
-static const char *fill_fs_src =
-   "uniform vec4 u_color; \n"
-   " \n"
-   "void main(void) { \n"
-   "  FRAGCOLOR = u_color; \n"
-   "} \n"
-   ;
-
 
 #ifdef SHADERVG_SCRIPT_API
 static void loc_alloc_glsl_strings(void) {
@@ -654,7 +649,7 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 #ifdef SHADERVG_MATRIX_STACK
    proj_stacki = SHADERVG_MATRIX_STACK_SIZE;
    model_stacki = SHADERVG_MATRIX_STACK_SIZE;
-   proj_w = fb_w;
+   proj_w = (sF32)fb_w;
 #endif // SHADERVG_MATRIX_STACK
 
 #ifdef SHADERVG_TEXT
@@ -1817,14 +1812,30 @@ void YAC_CALL sdvg_DrawEllipseFillAA(sF32 _centerX, sF32 _centerY,
                                      sF32 _sizeX,   sF32 _sizeY
                                      ) {
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_FILL_AA_SIZE_OFFSET) : 0.0f;
-   ellipse_fill_aa.drawEllipseFillAA(scratch_buffer,
-                                     mvp_matrix,
-                                     _centerX, _centerY,
-                                     _sizeX + aaOff, _sizeY + aaOff,
-                                     fill_r, fill_g, fill_b, fill_a * global_a,
-                                     b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                     aa_exp
-                                     );
+   ShaderVG_Shape *shape;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &ellipse_fill_aa;                     break;
+      case PAINT_LINEAR:              shape = &ellipse_fill_aa_linear;              break;
+      case PAINT_RADIAL:              shape = &ellipse_fill_aa_radial;              break;
+      case PAINT_CONIC:               shape = &ellipse_fill_aa_conic;               break;
+      case PAINT_PATTERN:             shape = &ellipse_fill_aa_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &ellipse_fill_aa_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &ellipse_fill_aa_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &ellipse_fill_aa_pattern_decal_alpha; break;
+   }
+   shape->drawEllipseFillAAPaint(scratch_buffer,
+                                 mvp_matrix,
+                                 _centerX, _centerY,
+                                 _sizeX + aaOff, _sizeY + aaOff,
+                                 fill_r, fill_g, fill_b, fill_a * global_a,
+                                 stroke_r, stroke_g, stroke_b, stroke_a,  // (note) do _not_ multiply by global_a
+                                 b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                 aa_exp,
+                                 &paint,
+                                 texture_decal_alpha
+                                 );
 }
 
 void YAC_CALL sdvg_SetupEllipseFillStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
@@ -2994,29 +3005,6 @@ void FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
 #endif // SHADERVG_SCRIPT_API
 }
 
-static sBool loc_CreateFillShader() {
-   sBool ret = YAC_FALSE;
-   Dsdvg_debugprintfvv("[trc] sdvg:loc_CreateFillShader: ENTER\n");
-
-   if(fill_shader.create(fill_vs_src, fill_fs_src))
-   {
-      fill_a_vertex = fill_shader.getAttribLocation("a_vertex");
-
-      fill_u_transform = fill_shader.getUniformLocation("u_transform");
-      fill_u_color     = fill_shader.getUniformLocation("u_color");
-
-      // Succeeded
-      ret = YAC_TRUE;
-   }
-   else
-   {
-      Dsdvg_errorprintf("[---] shadervg:loc_CreateFillShader: fill_shader.create() failed\n");
-   }
-
-   Dsdvg_debugprintfvv("[trc] loc_CreateFillShader: LEAVE ret=%d\n", ret);
-   return ret;
-}
-
 #ifdef SHADERVG_SCRIPT_API
 void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
    // 'o' is row-major matrix object (e.g. Matrix4f or FloatArray)
@@ -3071,31 +3059,70 @@ void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
 }
 #endif // SHADERVG_SCRIPT_API
 
-sSI BindFillShader(void) {
-   // returns vertex attribute id (for allocScratchBuffer() calls)
-   fill_shader.bind();
+static ShaderVG_Shape *loc_get_default_triangles_fill_flat_shape(void) {
+   ShaderVG_Shape *shape;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &triangles_fill_flat_32;                     break;
+      case PAINT_LINEAR:              shape = &triangles_fill_flat_32_linear;              break;
+      case PAINT_RADIAL:              shape = &triangles_fill_flat_32_radial;              break;
+      case PAINT_CONIC:               shape = &triangles_fill_flat_32_conic;               break;
+      case PAINT_PATTERN:             shape = &triangles_fill_flat_32_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &triangles_fill_flat_32_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &triangles_fill_flat_32_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &triangles_fill_flat_32_pattern_decal_alpha; break;
+   }
+   return shape;
+}
+
+static sSI loc_BindFillShader(ShaderVG_Shape *_shape) {
+
+   sSI aVertexFill = _shape->bindAndReturnVertexAttrib();
 
    if(NULL != mvp_matrix)
    {
-      Dsdvg_uniform_mat4(fill_u_transform, mvp_matrix);
-      Dsdvg_uniform_4f(fill_u_color, fill_r, fill_g, fill_b, fill_a * global_a);
-      Dsdvg_attrib_enable(fill_a_vertex);
+      Dsdvg_uniform_mat4(_shape->shape_u_transform, mvp_matrix);
+      Dsdvg_uniform_4f(_shape->shape_u_color_fill, fill_r, fill_g, fill_b, fill_a * global_a);
+      Dsdvg_attrib_enable(aVertexFill);
+
+      if(-1 != _shape->shape_u_color_stroke)
+      {
+         Dsdvg_uniform_4f(_shape->shape_u_color_stroke, stroke_r, stroke_g, stroke_b, stroke_a);  // (note) do _not_ multiply by global_a
+      }
+
+      if(-1 != _shape->shape_u_decal_alpha)
+      {
+         Dsdvg_uniform_1f(_shape->shape_u_decal_alpha, texture_decal_alpha);
+      }
+
+      if(PAINT_SOLID != paint.mode)
+         _shape->updatePaintUniforms(&paint);
    }
    else
    {
       Dsdvg_errorprintf("[---] BindFillShader: mvp_matrix is NULL !!\n");
    }
 
-   return fill_a_vertex;
+   return aVertexFill;
+}
+
+sSI BindFillShader(void) {
+   // returns vertex attribute id (for allocScratchBuffer() calls)
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+   return loc_BindFillShader(shape);
 }
 
 void EndFillShader(void) {
-   Dsdvg_attrib_disable(fill_a_vertex);
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+   Dsdvg_attrib_disable(shape->shape_a_vertex);
 }
 
 void UnbindFillShader(void) {
+   // (todo) unused, remove ?
    EndFillShader();
-   fill_shader.unbind();
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+   shape->shape_shader.unbind();
 }
 
 sBool YAC_CALL sdvg_OnOpen(void) {
@@ -3118,12 +3145,6 @@ sBool YAC_CALL sdvg_OnOpen(void) {
    if(Dyac_host_yacGetDebugLevel() >= 1u)
    {
       Dsdvg_debugprintfv("[dbg] sdvg_OnOpen 2\n");
-   }
-
-   if(!loc_CreateFillShader())
-   {
-      Dsdvg_errorprintf("[---] sdvg_OnOpen: CreateFillShader() failed\n");
-      return YAC_FALSE;
    }
 
    if(Dyac_host_yacGetDebugLevel() >= 1u)
@@ -4261,19 +4282,7 @@ sBool YAC_CALL sdvg_BeginTriangleStrip(sUI _numVertices, sUI _stride) {
 }
 
 static void loc_bind_default_triangles_fill_flat_shape(void) {
-   ShaderVG_Shape *shape;
-   switch(paint.mode)
-   {
-      default:
-      case PAINT_SOLID:               shape = &triangles_fill_flat_32;                     break;
-      case PAINT_LINEAR:              shape = &triangles_fill_flat_32_linear;              break;
-      case PAINT_RADIAL:              shape = &triangles_fill_flat_32_radial;              break;
-      case PAINT_CONIC:               shape = &triangles_fill_flat_32_conic;               break;
-      case PAINT_PATTERN:             shape = &triangles_fill_flat_32_pattern;             break;
-      case PAINT_PATTERN_ALPHA:       shape = &triangles_fill_flat_32_pattern_alpha;       break;
-      case PAINT_PATTERN_DECAL:       shape = &triangles_fill_flat_32_pattern_decal;       break;
-      case PAINT_PATTERN_DECAL_ALPHA: shape = &triangles_fill_flat_32_pattern_decal_alpha; break;
-   }
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
    BindShape(shape);
 }
 
@@ -4966,7 +4975,9 @@ static void loc_DrawLineStripFlatAAVBOGradient(sUI _byteOffset, sUI _numPoints, 
    {
       Dsdvg_uniform_1f(current_shape->shape_u_debug, current_shape->b_debug ? 1.0f : 0.0f);
    }
-   current_shape->updatePaintUniforms(&paint);
+
+   if(PAINT_SOLID != paint.mode)
+      current_shape->updatePaintUniforms(&paint);
 
    if(_b14_2)
    {
@@ -5343,7 +5354,8 @@ static sBool UpdateShaderUniforms(void) {
          Dsdvg_uniform_1f(loc, alpha_sdf_exp);
       }
 
-      current_shape->updatePaintUniforms(&paint);
+      if(PAINT_SOLID != paint.mode)
+         current_shape->updatePaintUniforms(&paint);
 
       loc = current_shape->shape_u_transform;
       Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_transform=%d\n", current_shape->shape_u_transform);
