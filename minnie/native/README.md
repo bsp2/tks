@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of ~90 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of ~100 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -289,3 +289,45 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_084_begin_polygon_pattern_decal_alpha_aa
   
  ![screenshot](../tkminnie/tests/screenshots/test_084_begin_polygon_pattern_decal_alpha_aa.png)
+- test_085_ellipse_fill_aa_linear
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_085_ellipse_fill_aa_linear.png)
+- test_086_ellipse_fill_stroke_aa_linear
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_086_ellipse_fill_stroke_aa_linear.png)
+- test_087_ellipse_fill_aa_radial
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_087_ellipse_fill_aa_radial.png)
+- test_088_ellipse_fill_stroke_aa_radial
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_088_ellipse_fill_stroke_aa_radial.png)
+- test_089_ellipse_fill_aa_conic
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_089_ellipse_fill_aa_conic.png)
+- test_090_ellipse_fill_stroke_aa_conic
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_090_ellipse_fill_stroke_aa_conic.png)
+- test_091_ellipse_fill_aa_pattern
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_091_ellipse_fill_aa_pattern.png
+- test_092_ellipse_fill_stroke_aa_pattern
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_092_ellipse_fill_stroke_aa_pattern.png)
+- test_093_ellipse_fill_aa_pattern_alpha
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_093_ellipse_fill_aa_pattern_alpha.png)
+- test_094_ellipse_fill_stroke_aa_pattern_alpha
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_094_ellipse_fill_stroke_aa_pattern_alpha.png)
+- test_095_ellipse_fill_aa_pattern_decal
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_095_ellipse_fill_aa_pattern_decal.png)
+- test_096_ellipse_fill_stroke_aa_pattern_decal
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_096_ellipse_fill_stroke_aa_pattern_decal.png)
+- test_097_ellipse_fill_aa_pattern_decal_alpha
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_097_ellipse_fill_aa_pattern_decal_alpha.png)
+- test_098_ellipse_fill_stroke_aa_pattern_decal_alpha
+  
+  ![screenshot](../tkminnie/tests/screenshots/test_098_ellipse_fill_stroke_aa_pattern_decal_alpha.png)
