@@ -184,6 +184,18 @@ class ShaderVG_Shape {
                                   sF32 _aaExp,
                                   const shadervg_paint_t *_paint
                                   );
+
+   void drawRectFillAAPaint (Dsdvg_buffer_ref_t _scratchBuf,
+                             Dsdvg_mat4_ref_t _mvpMatrix,
+                             sF32 _centerX, sF32 _centerY,
+                             sF32 _sizeX,   sF32 _sizeY,
+                             sF32 _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
+                             sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                             sF32 _decalAlpha,
+                             sF32 _aaRange,
+                             sF32 _aaExp,
+                             const shadervg_paint_t *_paint
+                             );
 };
 
 

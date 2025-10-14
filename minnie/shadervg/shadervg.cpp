@@ -99,6 +99,13 @@
 #include "PolygonFillGouraud14_2.h"
 #endif // SHADERVG_STENCIL_POLYGONS
 #include "RectFillAA.h"
+#include "RectFillAALinear.h"
+#include "RectFillAARadial.h"
+#include "RectFillAAConic.h"
+#include "RectFillAAPattern.h"
+#include "RectFillAAPatternAlpha.h"
+#include "RectFillAAPatternDecal.h"
+#include "RectFillAAPatternDecalAlpha.h"
 #include "RectStrokeAA.h"
 #include "RectFillStrokeAA.h"
 #include "EllipseFillAA.h"
@@ -204,6 +211,13 @@ static PolygonFillGouraud32                 polygon_fill_gouraud_32;
 static PolygonFillGouraud14_2               polygon_fill_gouraud_14_2;
 #endif // SHADERVG_STENCIL_POLYGONS
 static RectFillAA                           rect_fill_aa;
+static RectFillAALinear                     rect_fill_aa_linear;
+static RectFillAARadial                     rect_fill_aa_radial;
+static RectFillAAConic                      rect_fill_aa_conic;
+static RectFillAAPattern                    rect_fill_aa_pattern;
+static RectFillAAPatternAlpha               rect_fill_aa_pattern_alpha;
+static RectFillAAPatternDecal               rect_fill_aa_pattern_decal;
+static RectFillAAPatternDecalAlpha          rect_fill_aa_pattern_decal_alpha;
 static RectStrokeAA                         rect_stroke_aa;
 static RectFillStrokeAA                     rect_fill_stroke_aa;
 static EllipseFillAA                        ellipse_fill_aa;
@@ -289,6 +303,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &polygon_fill_gouraud_14_2,
 #endif // SHADERVG_STENCIL_POLYGONS
    &rect_fill_aa,
+   &rect_fill_aa_linear,
+   &rect_fill_aa_radial,
+   &rect_fill_aa_conic,
+   &rect_fill_aa_pattern,
+   &rect_fill_aa_pattern_alpha,
+   &rect_fill_aa_pattern_decal,
+   &rect_fill_aa_pattern_decal_alpha,
    &rect_stroke_aa,
    &rect_fill_stroke_aa,
    &ellipse_fill_aa,
@@ -376,6 +397,7 @@ public:
 
    sBool onOpen(void) {
       shape_shader.destroy();
+      // (note) app must re-create shader after GL context was lost (e.g. after window resize)
       return YAC_TRUE;
    }
 };
@@ -1667,14 +1689,30 @@ void YAC_CALL sdvg_DrawRectFillAA(sF32 _centerX, sF32 _centerY,
                                   sF32 _sizeX,   sF32 _sizeY
                                   ) {
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_FILL_AA_SIZE_OFFSET) : 0.0f;
-   rect_fill_aa.drawRectFillAA(scratch_buffer,
-                               mvp_matrix,
-                               _centerX, _centerY,
-                               _sizeX + aaOff, _sizeY + aaOff,
-                               fill_r, fill_g, fill_b, fill_a * global_a,
-                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                               aa_exp
-                               );
+   ShaderVG_Shape *shape;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &rect_fill_aa;                     break;
+      case PAINT_LINEAR:              shape = &rect_fill_aa_linear;              break;
+      case PAINT_RADIAL:              shape = &rect_fill_aa_radial;              break;
+      case PAINT_CONIC:               shape = &rect_fill_aa_conic;               break;
+      case PAINT_PATTERN:             shape = &rect_fill_aa_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &rect_fill_aa_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &rect_fill_aa_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &rect_fill_aa_pattern_decal_alpha; break;
+   }
+   shape->drawRectFillAAPaint(scratch_buffer,
+                              mvp_matrix,
+                              _centerX, _centerY,
+                              _sizeX + aaOff, _sizeY + aaOff,
+                              fill_r, fill_g, fill_b, fill_a * global_a,
+                              stroke_r, stroke_g, stroke_b, stroke_a,  // (note) do _not_ multiply by global_a
+                              texture_decal_alpha,
+                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                              aa_exp,
+                              &paint
+                              );
 }
 
 void YAC_CALL sdvg_SetupRectFillStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
@@ -3201,18 +3239,14 @@ sBool YAC_CALL sdvg_OnOpen(void) {
    }
    Dsdvg_debugprintf("[dbg] sdvg_OnOpen: (re-)loaded %u built-in shaders\n", sUI(SHADERVG_NUM_SHAPES));
 
-   // (re-)load custom shaders
+   // destroy custom shaders
+   //  (todo) GL context already gone => this raises GL errors
    {
-      sUI numOpened = 0u;
       for(sUI shaderIdx = 0u; shaderIdx < SHADERVG_MAX_CUSTOM_SHADERS; shaderIdx++)
       {
          ShaderVG_CustomShape *cs = &custom_shapes[shaderIdx];
-         if(cs->onOpen())
-         {
-            numOpened++;
-         }
+         cs->onOpen();
       }
-      Dsdvg_debugprintf("[dbg] sdvg_OnOpen: (re-)loaded %u custom shaders\n", numOpened);
    }
    current_shape = NULL;
 
