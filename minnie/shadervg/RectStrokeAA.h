@@ -199,6 +199,8 @@ class RectStrokeAA : public ShaderVG_Shape {
       }
    }
 
+#if 0
+   // (todo) remove (see Shape::drawRectStrokeAAPaint())
    void drawRectStrokeAA(Dsdvg_buffer_ref_t _scratchBuf,
                          Dsdvg_mat4_ref_t _mvpMatrix,
                          sF32 _centerX, sF32 _centerY,
@@ -263,5 +265,6 @@ class RectStrokeAA : public ShaderVG_Shape {
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }
+#endif // 0
 
 };
