@@ -58,209 +58,237 @@ static sF32 ang_h = 0.0f;
 static sF32 ang_c = 0.0f;
 
 // (note) UP/DOWN
-#define RENDER_RECT_FILL_AA                                 0
-#define RENDER_RECT_FILL_STROKE_AA                          1
-#define RENDER_RECT_STROKE_AA                               2
-#define RENDER_ELLIPSE_FILL_AA                              3
-#define RENDER_ELLIPSE_FILL_STROKE_AA                       4
-#define RENDER_ELLIPSE_STROKE_AA                            5
-#define RENDER_ROUNDRECT_FILL_AA                            6
-#define RENDER_ROUNDRECT_FILL_STROKE_AA                     7
-#define RENDER_ROUNDRECT_STROKE_AA                          8
-#define RENDER_TRIANGLES_TEX_UV_FLAT                        9
-#define RENDER_TRIANGLES_TEX_UV_GOURAUD                    10
-#define RENDER_TRIANGLES_TEX_UV_FLAT_DECAL                 11
-#define RENDER_TRIANGLES_TEX_UV_GOURAUD_DECAL              12
-#define RENDER_LINE_STRIP_FLAT_1                           13
-#define RENDER_LINE_STRIP_FLAT_2                           14
-#define RENDER_LINE_STRIP_FLAT_AA_1                        15
-#define RENDER_LINE_STRIP_FLAT_AA_2                        16
-#define RENDER_LINE_STRIP_FLAT_BEVEL                       17
-#define RENDER_LINE_STRIP_FLAT_BEVEL_AA                    18
-#define RENDER_CUSTOM_SHADER_1                             19
-#define RENDER_CUSTOM_SHADER_2                             20
-#define RENDER_CUSTOM_SHADER_3_VBO                         21
-#define RENDER_LINES                                       22
-#define RENDER_LINES_AA                                    23
-#define RENDER_BEGIN_LINE_STRIP                            24
-#define RENDER_BEGIN_LINE_STRIP_AA                         25
-#define RENDER_BEGIN_LINE_STRIP_BEVEL                      26
-#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA                   27
-#define RENDER_BEGIN_LINES                                 28
-#define RENDER_BEGIN_LINES_AA                              29
-#define RENDER_FILLED_RECTANGLE                            30
-#define RENDER_BEGIN_POINTS_SQUARE                         31
-#define RENDER_BEGIN_POINTS_SQUARE_AA                      32
-#define RENDER_BEGIN_POINTS_ROUND                          33
-#define RENDER_BEGIN_POINTS_ROUND_AA                       34
-#define RENDER_BEGIN_FILLED_TRIANGLES                      35
-#define RENDER_BEGIN_FILLED_TRIANGLE_FAN                   36
-#define RENDER_BEGIN_FILLED_TRIANGLE_STRIP                 37
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLES              38
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_FAN           39
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_STRIP         40
-#define RENDER_BEGIN_TEXTURED_TRIANGLES                    41
-#define RENDER_BEGIN_TEXTURED_TRIANGLES_ALPHA              42
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN                 43
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN_ALPHA           44
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP               45
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP_ALPHA         46
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES            47
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES_ALPHA      48
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN         49
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN_ALPHA   50
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP       51
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP_ALPHA 52
-#define RENDER_TEXT_1                                      53
-#define RENDER_TEXT_2_CLIP                                 54
-#define RENDER_TEXT_3_SWIRL                                55
-#define RENDER_TEXT_4_UL                                   56
-#define RENDER_TEXT_5_UL_CLIP                              57
-#define RENDER_TEXT_6_ACCEL                                58
-#define RENDER_TEXT_7_ACCEL_CLIP                           59
-#define RENDER_TEXT_8_ZOOM                                 60
-#define RENDER_TEXT_9_ZOOM_SDF                             61
-#define RENDER_GRADIENT_TO_TEXTURE                         62
-#define RENDER_TRIANGLES_GRADIENT_LINEAR                   63
-#define RENDER_TRIANGLES_GRADIENT_RADIAL                   64
-#define RENDER_TRIANGLES_GRADIENT_CONIC                    65
-#define RENDER_POLYGON_VBO                                 66
-#define RENDER_POLYGON_AA_VBO                              67
-#define RENDER_BEGIN_POLYGON                               68
-#define RENDER_BEGIN_POLYGON_AA                            69
-#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR               70
-#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR_AA            71
-#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL               72
-#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA            73
-#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC                74
-#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA             75
-#define RENDER_BEGIN_POLYGON_CUSTOM_SHADER                 76
-#define RENDER_BEGIN_POLYGON_PATTERN                       77
-#define RENDER_BEGIN_POLYGON_PATTERN_AA                    78
-#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA                 79
-#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA              80
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL                 81
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA              82
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA           83
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA        84
-#define RENDER_ELLIPSE_FILL_AA_LINEAR                      85
-#define RENDER_ELLIPSE_FILL_STROKE_AA_LINEAR               86
-#define RENDER_ELLIPSE_FILL_AA_RADIAL                      87
-#define RENDER_ELLIPSE_FILL_STROKE_AA_RADIAL               88
-#define RENDER_ELLIPSE_FILL_AA_CONIC                       89
-#define RENDER_ELLIPSE_FILL_STROKE_AA_CONIC                90
-#define RENDER_ELLIPSE_FILL_AA_PATTERN                     91
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN              92
-#define RENDER_ELLIPSE_FILL_AA_PATTERN_ALPHA               93
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_ALPHA        94
-#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL               95
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL        96
-#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL_ALPHA         97
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL_ALPHA  98
-#define NUM_RENDER_MODES                                   99  // UP/DOWN
+#define RENDER_RECT_FILL_AA                                   0
+#define RENDER_RECT_FILL_STROKE_AA                            1
+#define RENDER_RECT_STROKE_AA                                 2
+#define RENDER_ELLIPSE_FILL_AA                                3
+#define RENDER_ELLIPSE_FILL_STROKE_AA                         4
+#define RENDER_ELLIPSE_STROKE_AA                              5
+#define RENDER_ROUNDRECT_FILL_AA                              6
+#define RENDER_ROUNDRECT_FILL_STROKE_AA                       7
+#define RENDER_ROUNDRECT_STROKE_AA                            8
+#define RENDER_TRIANGLES_TEX_UV_FLAT                          9
+#define RENDER_TRIANGLES_TEX_UV_GOURAUD                      10
+#define RENDER_TRIANGLES_TEX_UV_FLAT_DECAL                   11
+#define RENDER_TRIANGLES_TEX_UV_GOURAUD_DECAL                12
+#define RENDER_LINE_STRIP_FLAT_1                             13
+#define RENDER_LINE_STRIP_FLAT_2                             14
+#define RENDER_LINE_STRIP_FLAT_AA_1                          15
+#define RENDER_LINE_STRIP_FLAT_AA_2                          16
+#define RENDER_LINE_STRIP_FLAT_BEVEL                         17
+#define RENDER_LINE_STRIP_FLAT_BEVEL_AA                      18
+#define RENDER_CUSTOM_SHADER_1                               19
+#define RENDER_CUSTOM_SHADER_2                               20
+#define RENDER_CUSTOM_SHADER_3_VBO                           21
+#define RENDER_LINES                                         22
+#define RENDER_LINES_AA                                      23
+#define RENDER_BEGIN_LINE_STRIP                              24
+#define RENDER_BEGIN_LINE_STRIP_AA                           25
+#define RENDER_BEGIN_LINE_STRIP_BEVEL                        26
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA                     27
+#define RENDER_BEGIN_LINES                                   28
+#define RENDER_BEGIN_LINES_AA                                29
+#define RENDER_FILLED_RECTANGLE                              30
+#define RENDER_BEGIN_POINTS_SQUARE                           31
+#define RENDER_BEGIN_POINTS_SQUARE_AA                        32
+#define RENDER_BEGIN_POINTS_ROUND                            33
+#define RENDER_BEGIN_POINTS_ROUND_AA                         34
+#define RENDER_BEGIN_FILLED_TRIANGLES                        35
+#define RENDER_BEGIN_FILLED_TRIANGLE_FAN                     36
+#define RENDER_BEGIN_FILLED_TRIANGLE_STRIP                   37
+#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLES                38
+#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_FAN             39
+#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_STRIP           40
+#define RENDER_BEGIN_TEXTURED_TRIANGLES                      41
+#define RENDER_BEGIN_TEXTURED_TRIANGLES_ALPHA                42
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN                   43
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN_ALPHA             44
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP                 45
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP_ALPHA           46
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES              47
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES_ALPHA        48
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN           49
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN_ALPHA     50
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP         51
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP_ALPHA   52
+#define RENDER_TEXT_1                                        53
+#define RENDER_TEXT_2_CLIP                                   54
+#define RENDER_TEXT_3_SWIRL                                  55
+#define RENDER_TEXT_4_UL                                     56
+#define RENDER_TEXT_5_UL_CLIP                                57
+#define RENDER_TEXT_6_ACCEL                                  58
+#define RENDER_TEXT_7_ACCEL_CLIP                             59
+#define RENDER_TEXT_8_ZOOM                                   60
+#define RENDER_TEXT_9_ZOOM_SDF                               61
+#define RENDER_GRADIENT_TO_TEXTURE                           62
+#define RENDER_TRIANGLES_GRADIENT_LINEAR                     63
+#define RENDER_TRIANGLES_GRADIENT_RADIAL                     64
+#define RENDER_TRIANGLES_GRADIENT_CONIC                      65
+#define RENDER_POLYGON_VBO                                   66
+#define RENDER_POLYGON_AA_VBO                                67
+#define RENDER_BEGIN_POLYGON                                 68
+#define RENDER_BEGIN_POLYGON_AA                              69
+#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR                 70
+#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR_AA              71
+#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL                 72
+#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA              73
+#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC                  74
+#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA               75
+#define RENDER_BEGIN_POLYGON_CUSTOM_SHADER                   76
+#define RENDER_BEGIN_POLYGON_PATTERN                         77
+#define RENDER_BEGIN_POLYGON_PATTERN_AA                      78
+#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA                   79
+#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA                80
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL                   81
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA                82
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA             83
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA          84
+#define RENDER_ELLIPSE_FILL_AA_LINEAR                        85
+#define RENDER_ELLIPSE_FILL_STROKE_AA_LINEAR                 86
+#define RENDER_ELLIPSE_FILL_AA_RADIAL                        87
+#define RENDER_ELLIPSE_FILL_STROKE_AA_RADIAL                 88
+#define RENDER_ELLIPSE_FILL_AA_CONIC                         89
+#define RENDER_ELLIPSE_FILL_STROKE_AA_CONIC                  90
+#define RENDER_ELLIPSE_FILL_AA_PATTERN                       91
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN                92
+#define RENDER_ELLIPSE_FILL_AA_PATTERN_ALPHA                 93
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_ALPHA          94
+#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL                 95
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL          96
+#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL_ALPHA           97
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL_ALPHA    98
+#define RENDER_ROUNDRECT_FILL_AA_LINEAR                      99
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_LINEAR              100
+#define RENDER_ROUNDRECT_FILL_AA_RADIAL                     101
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_RADIAL              102
+#define RENDER_ROUNDRECT_FILL_AA_CONIC                      103
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_CONIC               104
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN                    105
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN             106
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN_ALPHA              107
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_ALPHA       108
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL              109
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL       110
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL_ALPHA        111
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL_ALPHA 112
+#define NUM_RENDER_MODES                                    113  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
 static const char *mode_names[NUM_RENDER_MODES] = {
-   /*  0 */ "rect_fill_aa",
-   /*  1 */ "rect_fill_stroke_aa",
-   /*  2 */ "rect_stroke_aa",
-   /*  3 */ "ellipse_fill_aa",
-   /*  4 */ "ellipse_fill_stroke_aa",
-   /*  5 */ "ellipse_stroke_aa",
-   /*  6 */ "roundrect_fill_aa",
-   /*  7 */ "roundrect_fill_stroke_aa",
-   /*  8 */ "roundrect_stroke_aa",
-   /*  9 */ "triangles_tex_uv_flat",
-   /* 10 */ "triangles_tex_uv_gouraud",
-   /* 11 */ "triangles_tex_uv_flat_decal",
-   /* 12 */ "triangles_tex_uv_gouraud_decal",
-   /* 13 */ "line_strip_flat_1",
-   /* 14 */ "line_strip_flat_2",
-   /* 15 */ "line_strip_flat_aa_1",
-   /* 16 */ "line_strip_flat_aa_2",
-   /* 17 */ "line_strip_flat_bevel",
-   /* 18 */ "line_strip_flat_bevel_aa",
-   /* 19 */ "custom_shader_1",
-   /* 20 */ "custom_shader_2",
-   /* 21 */ "custom_shader_3(vbo)",
-   /* 22 */ "lines",
-   /* 23 */ "lines_aa",
-   /* 24 */ "begin_line_strip",
-   /* 25 */ "begin_line_strip_aa",
-   /* 26 */ "begin_line_strip_bevel",
-   /* 27 */ "begin_line_strip_bevel_aa",
-   /* 28 */ "begin_lines",
-   /* 29 */ "begin_lines_aa",
-   /* 30 */ "draw_filled_rectangle",
-   /* 31 */ "begin_points_square",
-   /* 32 */ "begin_points_square_aa",
-   /* 33 */ "begin_points_round",
-   /* 34 */ "begin_points_round_aa",
-   /* 35 */ "begin_filled_triangles",
-   /* 36 */ "begin_filled_triangle_fan",
-   /* 37 */ "begin_filled_triangle_strip",
-   /* 38 */ "begin_filled_gouraud_triangles",
-   /* 39 */ "begin_filled_gouraud_triangle_fan",
-   /* 40 */ "begin_filled_gouraud_triangle_strip",
-   /* 41 */ "begin_textured_triangles",
-   /* 42 */ "begin_textured_triangles_alpha",
-   /* 43 */ "begin_textured_triangle_fan",
-   /* 44 */ "begin_textured_triangle_fan_alpha",
-   /* 45 */ "begin_textured_triangle_strip",
-   /* 46 */ "begin_textured_triangle_strip_alpha",
-   /* 47 */ "begin_textured_gouraud_triangles",
-   /* 48 */ "begin_textured_gouraud_triangles_alpha",
-   /* 49 */ "begin_textured_gouraud_triangle_fan",
-   /* 50 */ "begin_textured_gouraud_triangle_fan_alpha",
-   /* 51 */ "begin_textured_gouraud_triangle_strip",
-   /* 52 */ "begin_textured_gouraud_triangle_strip_alpha",
-   /* 53 */ "text_1",
-   /* 54 */ "text_2_clip",
-   /* 55 */ "text_3_swirl",
-   /* 56 */ "text_4_ul",
-   /* 57 */ "text_5_ul_clip",
-   /* 58 */ "text_6_accel",
-   /* 59 */ "text_7_accel_clip",
-   /* 60 */ "text_8_zoom",
-   /* 61 */ "text_9_zoom_sdf",
-   /* 62 */ "gradient_to_texture",
-   /* 63 */ "triangles_gradient_linear",
-   /* 64 */ "triangles_gradient_radial",
-   /* 65 */ "triangles_gradient_conic",
-   /* 66 */ "polygon_vbo",
-   /* 67 */ "polygon_aa_vbo",
-   /* 68 */ "begin_polygon",
-   /* 69 */ "begin_polygon_aa",
-   /* 70 */ "begin_polygon_gradient_linear",
-   /* 71 */ "begin_polygon_gradient_linear_aa",
-   /* 72 */ "begin_polygon_gradient_radial",
-   /* 73 */ "begin_polygon_gradient_radial_aa",
-   /* 74 */ "begin_polygon_gradient_conic",
-   /* 75 */ "begin_polygon_gradient_conic_aa",
-   /* 76 */ "begin_polygon_custom_shader",
-   /* 77 */ "begin_polygon_pattern",
-   /* 78 */ "begin_polygon_pattern_aa",
-   /* 79 */ "begin_polygon_pattern_alpha",
-   /* 80 */ "begin_polygon_pattern_alpha_aa",
-   /* 81 */ "begin_polygon_pattern_decal",
-   /* 82 */ "begin_polygon_pattern_decal_aa",
-   /* 83 */ "begin_polygon_pattern_decal_alpha",
-   /* 84 */ "begin_polygon_pattern_decal_alpha_aa",
-   /* 85 */ "ellipse_fill_aa_linear",
-   /* 86 */ "ellipse_fill_stroke_aa_linear",
-   /* 87 */ "ellipse_fill_aa_radial",
-   /* 88 */ "ellipse_fill_stroke_aa_radial",
-   /* 89 */ "ellipse_fill_aa_conic",
-   /* 90 */ "ellipse_fill_stroke_aa_conic",
-   /* 91 */ "ellipse_fill_aa_pattern",
-   /* 92 */ "ellipse_fill_stroke_aa_pattern",
-   /* 93 */ "ellipse_fill_aa_pattern_alpha",
-   /* 94 */ "ellipse_fill_stroke_aa_pattern_alpha",
-   /* 95 */ "ellipse_fill_aa_pattern_decal",
-   /* 96 */ "ellipse_fill_stroke_aa_pattern_decal",
-   /* 97 */ "ellipse_fill_aa_pattern_decal_alpha",
-   /* 98 */ "ellipse_fill_stroke_aa_pattern_decal_alpha",
+   /*   0 */ "rect_fill_aa",
+   /*   1 */ "rect_fill_stroke_aa",
+   /*   2 */ "rect_stroke_aa",
+   /*   3 */ "ellipse_fill_aa",
+   /*   4 */ "ellipse_fill_stroke_aa",
+   /*   5 */ "ellipse_stroke_aa",
+   /*   6 */ "roundrect_fill_aa",
+   /*   7 */ "roundrect_fill_stroke_aa",
+   /*   8 */ "roundrect_stroke_aa",
+   /*   9 */ "triangles_tex_uv_flat",
+   /*  10 */ "triangles_tex_uv_gouraud",
+   /*  11 */ "triangles_tex_uv_flat_decal",
+   /*  12 */ "triangles_tex_uv_gouraud_decal",
+   /*  13 */ "line_strip_flat_1",
+   /*  14 */ "line_strip_flat_2",
+   /*  15 */ "line_strip_flat_aa_1",
+   /*  16 */ "line_strip_flat_aa_2",
+   /*  17 */ "line_strip_flat_bevel",
+   /*  18 */ "line_strip_flat_bevel_aa",
+   /*  19 */ "custom_shader_1",
+   /*  20 */ "custom_shader_2",
+   /*  21 */ "custom_shader_3(vbo)",
+   /*  22 */ "lines",
+   /*  23 */ "lines_aa",
+   /*  24 */ "begin_line_strip",
+   /*  25 */ "begin_line_strip_aa",
+   /*  26 */ "begin_line_strip_bevel",
+   /*  27 */ "begin_line_strip_bevel_aa",
+   /*  28 */ "begin_lines",
+   /*  29 */ "begin_lines_aa",
+   /*  30 */ "draw_filled_rectangle",
+   /*  31 */ "begin_points_square",
+   /*  32 */ "begin_points_square_aa",
+   /*  33 */ "begin_points_round",
+   /*  34 */ "begin_points_round_aa",
+   /*  35 */ "begin_filled_triangles",
+   /*  36 */ "begin_filled_triangle_fan",
+   /*  37 */ "begin_filled_triangle_strip",
+   /*  38 */ "begin_filled_gouraud_triangles",
+   /*  39 */ "begin_filled_gouraud_triangle_fan",
+   /*  40 */ "begin_filled_gouraud_triangle_strip",
+   /*  41 */ "begin_textured_triangles",
+   /*  42 */ "begin_textured_triangles_alpha",
+   /*  43 */ "begin_textured_triangle_fan",
+   /*  44 */ "begin_textured_triangle_fan_alpha",
+   /*  45 */ "begin_textured_triangle_strip",
+   /*  46 */ "begin_textured_triangle_strip_alpha",
+   /*  47 */ "begin_textured_gouraud_triangles",
+   /*  48 */ "begin_textured_gouraud_triangles_alpha",
+   /*  49 */ "begin_textured_gouraud_triangle_fan",
+   /*  50 */ "begin_textured_gouraud_triangle_fan_alpha",
+   /*  51 */ "begin_textured_gouraud_triangle_strip",
+   /*  52 */ "begin_textured_gouraud_triangle_strip_alpha",
+   /*  53 */ "text_1",
+   /*  54 */ "text_2_clip",
+   /*  55 */ "text_3_swirl",
+   /*  56 */ "text_4_ul",
+   /*  57 */ "text_5_ul_clip",
+   /*  58 */ "text_6_accel",
+   /*  59 */ "text_7_accel_clip",
+   /*  60 */ "text_8_zoom",
+   /*  61 */ "text_9_zoom_sdf",
+   /*  62 */ "gradient_to_texture",
+   /*  63 */ "triangles_gradient_linear",
+   /*  64 */ "triangles_gradient_radial",
+   /*  65 */ "triangles_gradient_conic",
+   /*  66 */ "polygon_vbo",
+   /*  67 */ "polygon_aa_vbo",
+   /*  68 */ "begin_polygon",
+   /*  69 */ "begin_polygon_aa",
+   /*  70 */ "begin_polygon_gradient_linear",
+   /*  71 */ "begin_polygon_gradient_linear_aa",
+   /*  72 */ "begin_polygon_gradient_radial",
+   /*  73 */ "begin_polygon_gradient_radial_aa",
+   /*  74 */ "begin_polygon_gradient_conic",
+   /*  75 */ "begin_polygon_gradient_conic_aa",
+   /*  76 */ "begin_polygon_custom_shader",
+   /*  77 */ "begin_polygon_pattern",
+   /*  78 */ "begin_polygon_pattern_aa",
+   /*  79 */ "begin_polygon_pattern_alpha",
+   /*  80 */ "begin_polygon_pattern_alpha_aa",
+   /*  81 */ "begin_polygon_pattern_decal",
+   /*  82 */ "begin_polygon_pattern_decal_aa",
+   /*  83 */ "begin_polygon_pattern_decal_alpha",
+   /*  84 */ "begin_polygon_pattern_decal_alpha_aa",
+   /*  85 */ "ellipse_fill_aa_linear",
+   /*  86 */ "ellipse_fill_stroke_aa_linear",
+   /*  87 */ "ellipse_fill_aa_radial",
+   /*  88 */ "ellipse_fill_stroke_aa_radial",
+   /*  89 */ "ellipse_fill_aa_conic",
+   /*  90 */ "ellipse_fill_stroke_aa_conic",
+   /*  91 */ "ellipse_fill_aa_pattern",
+   /*  92 */ "ellipse_fill_stroke_aa_pattern",
+   /*  93 */ "ellipse_fill_aa_pattern_alpha",
+   /*  94 */ "ellipse_fill_stroke_aa_pattern_alpha",
+   /*  95 */ "ellipse_fill_aa_pattern_decal",
+   /*  96 */ "ellipse_fill_stroke_aa_pattern_decal",
+   /*  97 */ "ellipse_fill_aa_pattern_decal_alpha",
+   /*  98 */ "ellipse_fill_stroke_aa_pattern_decal_alpha",
+   /*  99 */ "roundrect_fill_aa_linear",
+   /* 100 */ "roundrect_fill_stroke_aa_linear",
+   /* 101 */ "roundrect_fill_aa_radial",
+   /* 102 */ "roundrect_fill_stroke_aa_radial",
+   /* 103 */ "roundrect_fill_aa_conic",
+   /* 104 */ "roundrect_fill_stroke_aa_conic",
+   /* 105 */ "roundrect_fill_aa_pattern",
+   /* 106 */ "roundrect_fill_stroke_aa_pattern",
+   /* 107 */ "roundrect_fill_aa_pattern_alpha",
+   /* 108 */ "roundrect_fill_stroke_aa_pattern_alpha",
+   /* 109 */ "roundrect_fill_aa_pattern_decal",
+   /* 110 */ "roundrect_fill_stroke_aa_pattern_decal",
+   /* 111 */ "roundrect_fill_aa_pattern_decal_alpha",
+   /* 112 */ "roundrect_fill_stroke_aa_pattern_decal_alpha",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2712,6 +2740,238 @@ void hal_on_draw(void) {
          sdvg_DrawEllipseStrokeAA(centerX, centerY,
                                   sizeX * size_sclx, sizeY * size_scly
                                   );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_LINEAR: // 99
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientLinear();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_LINEAR: // 100
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientLinear();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_RADIAL: // 101
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientRadial();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_RADIAL: // 102
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientRadial();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_CONIC: // 103
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientConic();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_CONIC: // 104
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientConic();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_PATTERN: // 105
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPattern();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN: // 106
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPattern();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_PATTERN_ALPHA: // 107
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternAlpha();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_ALPHA: // 108
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternAlpha();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL: // 109
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecal();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL: // 110
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecal();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL_ALPHA: // 111
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColor4f(0.2f, 0.25f, 0.5f, 1.0f);
+         sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         break;
+
+      case RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL_ALPHA: // 112
+         sdvg_BindShader(0);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColor4f(0.2f, 0.25f, 0.5f, 1.0f);
+         sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_DrawRoundRectFillAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly,
+                                  cornerX * radius_sclx, cornerY * radius_scly
+                                  );
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
          break;
    }
 
