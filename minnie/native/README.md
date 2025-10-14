@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of ~100 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of ~110 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -331,3 +331,45 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_098_ellipse_fill_stroke_aa_pattern_decal_alpha
   
   ![screenshot](../tkminnie/tests/screenshots/test_098_ellipse_fill_stroke_aa_pattern_decal_alpha.png)
+- test_099_roundrect_fill_aa_linear
+  
+  ![screenshot](tests/screenshots/test_099_roundrect_fill_aa_linear.png)
+- test_100_roundrect_fill_stroke_aa_linear
+  
+  ![screenshot](tests/screenshots/test_100_roundrect_fill_stroke_aa_linear.png)
+- test_101_roundrect_fill_aa_radial
+  
+  ![screenshot](tests/screenshots/test_101_roundrect_fill_aa_radial.png)
+- test_102_roundrect_fill_stroke_aa_radial
+  
+  ![screenshot](tests/screenshots/test_102_roundrect_fill_stroke_aa_radial.png)
+- test_103_roundrect_fill_aa_conic
+  
+  ![screenshot](tests/screenshots/test_103_roundrect_fill_aa_conic.png)
+- test_104_roundrect_fill_stroke_aa_conic
+  
+  ![screenshot](tests/screenshots/test_104_roundrect_fill_stroke_aa_conic.png)
+- test_105_roundrect_fill_aa_pattern
+  
+  ![screenshot](tests/screenshots/test_105_roundrect_fill_aa_pattern.png)
+- test_106_roundrect_fill_stroke_aa_pattern
+  
+  ![screenshot](tests/screenshots/test_106_roundrect_fill_stroke_aa_pattern.png)
+- test_107_roundrect_fill_aa_pattern_alpha
+  
+  ![screenshot](tests/screenshots/test_107_roundrect_fill_aa_pattern_alpha.png)
+- test_108_roundrect_fill_stroke_aa_pattern_alpha
+  
+  ![screenshot](tests/screenshots/test_108_roundrect_fill_stroke_aa_pattern_alpha.png)
+- test_109_roundrect_fill_aa_pattern_decal
+  
+  ![screenshot](tests/screenshots/test_109_roundrect_fill_aa_pattern_decal.png)
+- test_110_roundrect_fill_stroke_aa_pattern_decal
+  
+  ![screenshot](tests/screenshots/test_110_roundrect_fill_stroke_aa_pattern_decal.png)
+- test_111_roundrect_fill_aa_pattern_decal_alpha
+  
+  ![screenshot](tests/screenshots/test_111_roundrect_fill_aa_pattern_decal_alpha.png)
+- test_112_roundrect_fill_stroke_aa_pattern_decal_alpha
+  
+  ![screenshot](tests/screenshots/test_112_roundrect_fill_stroke_aa_pattern_decal_alpha.png)
