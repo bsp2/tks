@@ -141,6 +141,13 @@
 #include "RoundRectFillAAPatternDecal.h"
 #include "RoundRectFillAAPatternDecalAlpha.h"
 #include "RoundRectStrokeAA.h"
+#include "RoundRectStrokeAALinear.h"
+#include "RoundRectStrokeAARadial.h"
+#include "RoundRectStrokeAAConic.h"
+#include "RoundRectStrokeAAPattern.h"
+#include "RoundRectStrokeAAPatternAlpha.h"
+#include "RoundRectStrokeAAPatternDecal.h"
+#include "RoundRectStrokeAAPatternDecalAlpha.h"
 #include "RoundRectFillStrokeAA.h"
 // #include "RoundRectFillStrokeSymAA.h"
 #include "TrianglesTexUVFlat32.h"
@@ -267,6 +274,13 @@ static RoundRectFillAAPatternAlpha          roundrect_fill_aa_pattern_alpha;
 static RoundRectFillAAPatternDecal          roundrect_fill_aa_pattern_decal;
 static RoundRectFillAAPatternDecalAlpha     roundrect_fill_aa_pattern_decal_alpha;
 static RoundRectStrokeAA                    roundrect_stroke_aa;
+static RoundRectStrokeAALinear              roundrect_stroke_aa_linear;
+static RoundRectStrokeAARadial              roundrect_stroke_aa_radial;
+static RoundRectStrokeAAConic               roundrect_stroke_aa_conic;
+static RoundRectStrokeAAPattern             roundrect_stroke_aa_pattern;
+static RoundRectStrokeAAPatternAlpha        roundrect_stroke_aa_pattern_alpha;
+static RoundRectStrokeAAPatternDecal        roundrect_stroke_aa_pattern_decal;
+static RoundRectStrokeAAPatternDecalAlpha   roundrect_stroke_aa_pattern_decal_alpha;
 static RoundRectFillStrokeAA                roundrect_fill_stroke_aa;
 // static RoundRectFillStrokeSym            roundrect_fill_stroke_sym;
 static TrianglesTexUVFlat32                 triangles_tex_uv_flat_32;
@@ -373,6 +387,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &roundrect_fill_aa_pattern_decal,
    &roundrect_fill_aa_pattern_decal_alpha,
    &roundrect_stroke_aa,
+   &roundrect_stroke_aa_linear,
+   &roundrect_stroke_aa_radial,
+   &roundrect_stroke_aa_conic,
+   &roundrect_stroke_aa_pattern,
+   &roundrect_stroke_aa_pattern_alpha,
+   &roundrect_stroke_aa_pattern_decal,
+   &roundrect_stroke_aa_pattern_decal_alpha,
    &roundrect_fill_stroke_aa,
    // &roundrect_fill_stroke_sym_aa,
    &triangles_tex_uv_flat_32,
@@ -2274,16 +2295,34 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                          ) {
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
-   roundrect_stroke_aa.drawRoundRectStrokeAA(scratch_buffer,
-                                             mvp_matrix,
-                                             _centerX, _centerY,
-                                             _sizeX + aaOffSize, _sizeY + aaOffSize,
-                                             _radiusX, _radiusY,
-                                             stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                             Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
-                                             b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                             aa_exp
-                                             );
+   ShaderVG_Shape *shape;
+   sF32 fillA = fill_a;
+   sF32 strokeA = stroke_a * global_a;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &roundrect_stroke_aa;                     break;
+      case PAINT_LINEAR:              shape = &roundrect_stroke_aa_linear;              break;
+      case PAINT_RADIAL:              shape = &roundrect_stroke_aa_radial;              break;
+      case PAINT_CONIC:               shape = &roundrect_stroke_aa_conic;               break;
+      case PAINT_PATTERN:             shape = &roundrect_stroke_aa_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &roundrect_stroke_aa_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &roundrect_stroke_aa_pattern_decal;       fillA = fill_a * global_a; strokeA = stroke_a; break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &roundrect_stroke_aa_pattern_decal_alpha; fillA = fill_a * global_a; strokeA = stroke_a; break;
+   }
+   shape->drawRoundRectStrokeAAPaint(scratch_buffer,
+                                     mvp_matrix,
+                                     _centerX, _centerY,
+                                     _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                     _radiusX, _radiusY,
+                                     fill_r, fill_g, fill_b, fillA,
+                                     stroke_r, stroke_g, stroke_b, strokeA,
+                                     Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                     texture_decal_alpha,
+                                     b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                     aa_exp,
+                                     &paint
+                                     );
 }
 
 void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
