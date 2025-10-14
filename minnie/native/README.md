@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 127 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 134 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -418,3 +418,24 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_126_rect_fill_stroke_aa_pattern_decal_alpha
   
   ![screenhots](../tkminnie/tests/screenshots/test_126_rect_fill_stroke_aa_pattern_decal_alpha.png)
+- test_127_rect_stroke_aa_linear
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_127_rect_stroke_aa_linear.png)
+- test_128_rect_stroke_aa_radial
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_128_rect_stroke_aa_radial.png)
+- test_129_rect_stroke_aa_conic
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_129_rect_stroke_aa_conic.png)
+- test_130_rect_stroke_aa_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_130_rect_stroke_aa_pattern.png)
+- test_131_rect_stroke_aa_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_131_rect_stroke_aa_pattern_alpha.png)
+- test_132_rect_stroke_aa_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_132_rect_stroke_aa_pattern_decal.png)
+- test_133_rect_stroke_aa_pattern_decal_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_133_rect_stroke_aa_pattern_decal_alpha.png)

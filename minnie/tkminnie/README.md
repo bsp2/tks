@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 127 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 134 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -437,3 +437,24 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_126_rect_fill_stroke_aa_pattern_decal_alpha
   
   ![screenhots](tests/screenshots/test_126_rect_fill_stroke_aa_pattern_decal_alpha.png)
+- test_127_rect_stroke_aa_linear
+  
+  ![screenhots](tests/screenshots/test_127_rect_stroke_aa_linear.png)
+- test_128_rect_stroke_aa_radial
+  
+  ![screenhots](tests/screenshots/test_128_rect_stroke_aa_radial.png)
+- test_129_rect_stroke_aa_conic
+  
+  ![screenhots](tests/screenshots/test_129_rect_stroke_aa_conic.png)
+- test_130_rect_stroke_aa_pattern
+  
+  ![screenhots](tests/screenshots/test_130_rect_stroke_aa_pattern.png)
+- test_131_rect_stroke_aa_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_131_rect_stroke_aa_pattern_alpha.png)
+- test_132_rect_stroke_aa_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_132_rect_stroke_aa_pattern_decal.png)
+- test_133_rect_stroke_aa_pattern_decal_alpha
+  
+  ![screenhots](tests/screenshots/test_133_rect_stroke_aa_pattern_decal_alpha.png)
