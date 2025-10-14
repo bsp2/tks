@@ -192,7 +192,14 @@ static sF32 ang_c = 0.0f;
 #define RENDER_RECT_STROKE_AA_PATTERN_ALPHA                 131
 #define RENDER_RECT_STROKE_AA_PATTERN_DECAL                 132
 #define RENDER_RECT_STROKE_AA_PATTERN_DECAL_ALPHA           133
-#define NUM_RENDER_MODES                                    134  // UP/DOWN
+#define RENDER_ELLIPSE_STROKE_AA_LINEAR                     134
+#define RENDER_ELLIPSE_STROKE_AA_RADIAL                     135
+#define RENDER_ELLIPSE_STROKE_AA_CONIC                      136
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN                    137
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN_ALPHA              138
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL              139
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL_ALPHA        140
+#define NUM_RENDER_MODES                                    141  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -331,6 +338,13 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 131 */ "rect_stroke_aa_pattern_alpha",
    /* 132 */ "rect_stroke_aa_pattern_decal",
    /* 133 */ "rect_stroke_aa_pattern_decal_alpha",
+   /* 134 */ "ellipse_stroke_aa_linear",
+   /* 135 */ "ellipse_stroke_aa_radial",
+   /* 136 */ "ellipse_stroke_aa_conic",
+   /* 137 */ "ellipse_stroke_aa_pattern",
+   /* 138 */ "ellipse_stroke_aa_pattern_alpha",
+   /* 139 */ "ellipse_stroke_aa_pattern_decal",
+   /* 140 */ "ellipse_stroke_aa_pattern_decal_alpha",
 };
 
 static YAC_Buffer buf_vbo;
@@ -3326,6 +3340,107 @@ void hal_on_draw(void) {
          sdvg_DrawRectStrokeAA(centerX, centerY,
                                sizeX * size_sclx, sizeY * size_scly
                                );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_LINEAR: // 134
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientLinear();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_RADIAL: // 135
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientRadial();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_CONIC: // 136
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientConic();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_PATTERN: // 137
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPattern();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_PATTERN_ALPHA: // 138
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternAlpha();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL: // 139
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecal();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
+         break;
+
+      case RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL_ALPHA: // 140
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColor4f(0.2f, 0.25f, 0.5f, 1.0f);
+         sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.6f, 0.6f, 0.8f, fill_alpha);
+         sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawEllipseStrokeAA(centerX, centerY,
+                                  sizeX * size_sclx, sizeY * size_scly
+                                  );
          break;
    }
 
