@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of ~110 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 127 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -373,3 +373,48 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_112_roundrect_fill_stroke_aa_pattern_decal_alpha
   
   ![screenshot](../tkminnie/tests/screenshots/test_112_roundrect_fill_stroke_aa_pattern_decal_alpha.png)
+- test_001_rect_fill_stroke_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_001_rect_fill_stroke_aa.png)
+- test_113_rect_fill_aa_linear
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_113_rect_fill_aa_linear.png)
+- test_114_rect_fill_stroke_aa_linear
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_114_rect_fill_stroke_aa_linear.png)
+- test_115_rect_fill_aa_radial
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_115_rect_fill_aa_radial.png)
+- test_116_rect_fill_stroke_aa_radial
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_116_rect_fill_stroke_aa_radial.png)
+- test_117_rect_fill_aa_conic
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_117_rect_fill_aa_conic.png)
+- test_118_rect_fill_stroke_aa_conic
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_118_rect_fill_stroke_aa_conic.png)
+- test_119_rect_fill_aa_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_119_rect_fill_aa_pattern.png)
+- test_120_rect_fill_stroke_aa_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_120_rect_fill_stroke_aa_pattern.png)
+- test_121_rect_fill_aa_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_121_rect_fill_aa_pattern_alpha.png)
+- test_122_rect_fill_stroke_aa_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_122_rect_fill_stroke_aa_pattern_alpha.png)
+- test_123_rect_fill_aa_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_123_rect_fill_aa_pattern_decal.png)
+- test_124_rect_fill_stroke_aa_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_124_rect_fill_stroke_aa_pattern_decal.png)
+- test_125_rect_fill_aa_pattern_decal_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_125_rect_fill_aa_pattern_decal_alpha.png)
+- test_126_rect_fill_stroke_aa_pattern_decal_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_126_rect_fill_stroke_aa_pattern_decal_alpha.png)

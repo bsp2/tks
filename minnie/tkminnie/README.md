@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of ~110 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 127 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -392,3 +392,48 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_112_roundrect_fill_stroke_aa_pattern_decal_alpha
   
   ![screenshot](tests/screenshots/test_112_roundrect_fill_stroke_aa_pattern_decal_alpha.png)
+- test_001_rect_fill_stroke_aa
+  
+  ![screenhots](tests/screenshots/test_001_rect_fill_stroke_aa.png)
+- test_113_rect_fill_aa_linear
+  
+  ![screenhots](tests/screenshots/test_113_rect_fill_aa_linear.png)
+- test_114_rect_fill_stroke_aa_linear
+  
+  ![screenhots](tests/screenshots/test_114_rect_fill_stroke_aa_linear.png)
+- test_115_rect_fill_aa_radial
+  
+  ![screenhots](tests/screenshots/test_115_rect_fill_aa_radial.png)
+- test_116_rect_fill_stroke_aa_radial
+  
+  ![screenhots](tests/screenshots/test_116_rect_fill_stroke_aa_radial.png)
+- test_117_rect_fill_aa_conic
+  
+  ![screenhots](tests/screenshots/test_117_rect_fill_aa_conic.png)
+- test_118_rect_fill_stroke_aa_conic
+  
+  ![screenhots](tests/screenshots/test_118_rect_fill_stroke_aa_conic.png)
+- test_119_rect_fill_aa_pattern
+  
+  ![screenhots](tests/screenshots/test_119_rect_fill_aa_pattern.png)
+- test_120_rect_fill_stroke_aa_pattern
+  
+  ![screenhots](tests/screenshots/test_120_rect_fill_stroke_aa_pattern.png)
+- test_121_rect_fill_aa_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_121_rect_fill_aa_pattern_alpha.png)
+- test_122_rect_fill_stroke_aa_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_122_rect_fill_stroke_aa_pattern_alpha.png)
+- test_123_rect_fill_aa_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_123_rect_fill_aa_pattern_decal.png)
+- test_124_rect_fill_stroke_aa_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_124_rect_fill_stroke_aa_pattern_decal.png)
+- test_125_rect_fill_aa_pattern_decal_alpha
+  
+  ![screenhots](tests/screenshots/test_125_rect_fill_aa_pattern_decal_alpha.png)
+- test_126_rect_fill_stroke_aa_pattern_decal_alpha
+  
+  ![screenhots](tests/screenshots/test_126_rect_fill_stroke_aa_pattern_decal_alpha.png)
