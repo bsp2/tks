@@ -439,3 +439,24 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_133_rect_stroke_aa_pattern_decal_alpha
   
   ![screenhots](../tkminnie/tests/screenshots/test_133_rect_stroke_aa_pattern_decal_alpha.png)
+- test_134_ellipse_stroke_aa_linear
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_134_ellipse_stroke_aa_linear.png)
+- test_135_ellipse_stroke_aa_radial
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_135_ellipse_stroke_aa_radial.png)
+- test_136_ellipse_stroke_aa_conic
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_136_ellipse_stroke_aa_conic.png)
+- test_137_ellipse_stroke_aa_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_137_ellipse_stroke_aa_pattern.png)
+- test_138_ellipse_stroke_aa_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_138_ellipse_stroke_aa_pattern_alpha.png)
+- test_139_ellipse_stroke_aa_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_139_ellipse_stroke_aa_pattern_decal.png)
+- test_140_ellipse_stroke_aa_pattern_decal_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_140_ellipse_stroke_aa_pattern_decal_alpha.png)

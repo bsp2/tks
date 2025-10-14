@@ -458,3 +458,24 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_133_rect_stroke_aa_pattern_decal_alpha
   
   ![screenhots](tests/screenshots/test_133_rect_stroke_aa_pattern_decal_alpha.png)
+- test_134_ellipse_stroke_aa_linear
+  
+  ![screenhots](tests/screenshots/test_134_ellipse_stroke_aa_linear.png)
+- test_135_ellipse_stroke_aa_radial
+  
+  ![screenhots](tests/screenshots/test_135_ellipse_stroke_aa_radial.png)
+- test_136_ellipse_stroke_aa_conic
+  
+  ![screenhots](tests/screenshots/test_136_ellipse_stroke_aa_conic.png)
+- test_137_ellipse_stroke_aa_pattern
+  
+  ![screenhots](tests/screenshots/test_137_ellipse_stroke_aa_pattern.png)
+- test_138_ellipse_stroke_aa_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_138_ellipse_stroke_aa_pattern_alpha.png)
+- test_139_ellipse_stroke_aa_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_139_ellipse_stroke_aa_pattern_decal.png)
+- test_140_ellipse_stroke_aa_pattern_decal_alpha
+  
+  ![screenhots](tests/screenshots/test_140_ellipse_stroke_aa_pattern_decal_alpha.png)
