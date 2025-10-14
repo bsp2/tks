@@ -112,6 +112,13 @@
 #include "EllipseStrokeAA.h"
 #include "EllipseFillStrokeAA.h"
 #include "RoundRectFillAA.h"
+#include "RoundRectFillAALinear.h"
+#include "RoundRectFillAARadial.h"
+#include "RoundRectFillAAConic.h"
+#include "RoundRectFillAAPattern.h"
+#include "RoundRectFillAAPatternAlpha.h"
+#include "RoundRectFillAAPatternDecal.h"
+#include "RoundRectFillAAPatternDecalAlpha.h"
 #include "RoundRectStrokeAA.h"
 #include "RoundRectFillStrokeAA.h"
 // #include "RoundRectFillStrokeSymAA.h"
@@ -210,6 +217,13 @@ static EllipseFillAAPatternDecalAlpha       ellipse_fill_aa_pattern_decal_alpha;
 static EllipseStrokeAA                      ellipse_stroke_aa;
 static EllipseFillStrokeAA                  ellipse_fill_stroke_aa;
 static RoundRectFillAA                      roundrect_fill_aa;
+static RoundRectFillAALinear                roundrect_fill_aa_linear;
+static RoundRectFillAARadial                roundrect_fill_aa_radial;
+static RoundRectFillAAConic                 roundrect_fill_aa_conic;
+static RoundRectFillAAPattern               roundrect_fill_aa_pattern;
+static RoundRectFillAAPatternAlpha          roundrect_fill_aa_pattern_alpha;
+static RoundRectFillAAPatternDecal          roundrect_fill_aa_pattern_decal;
+static RoundRectFillAAPatternDecalAlpha     roundrect_fill_aa_pattern_decal_alpha;
 static RoundRectStrokeAA                    roundrect_stroke_aa;
 static RoundRectFillStrokeAA                roundrect_fill_stroke_aa;
 // static RoundRectFillStrokeSym            roundrect_fill_stroke_sym;
@@ -288,6 +302,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_stroke_aa,
    &ellipse_fill_stroke_aa,
    &roundrect_fill_aa,
+   &roundrect_fill_aa_linear,
+   &roundrect_fill_aa_radial,
+   &roundrect_fill_aa_conic,
+   &roundrect_fill_aa_pattern,
+   &roundrect_fill_aa_pattern_alpha,
+   &roundrect_fill_aa_pattern_decal,
+   &roundrect_fill_aa_pattern_decal_alpha,
    &roundrect_stroke_aa,
    &roundrect_fill_stroke_aa,
    // &roundrect_fill_stroke_sym_aa,
@@ -1831,10 +1852,10 @@ void YAC_CALL sdvg_DrawEllipseFillAA(sF32 _centerX, sF32 _centerY,
                                  _sizeX + aaOff, _sizeY + aaOff,
                                  fill_r, fill_g, fill_b, fill_a * global_a,
                                  stroke_r, stroke_g, stroke_b, stroke_a,  // (note) do _not_ multiply by global_a
+                                 texture_decal_alpha,
                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                  aa_exp,
-                                 &paint,
-                                 texture_decal_alpha
+                                 &paint
                                  );
 }
 
@@ -1996,15 +2017,31 @@ void YAC_CALL sdvg_DrawRoundRectFillAA(sF32 _centerX, sF32 _centerY,
                                        sF32 _radiusX, sF32 _radiusY
                                        ) {
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET) : 0.0f;
-   roundrect_fill_aa.drawRoundRectFillAA(scratch_buffer,
-                                         mvp_matrix,
-                                         _centerX, _centerY,
-                                         _sizeX + aaOff, _sizeY + aaOff,
-                                         _radiusX, _radiusY,
-                                         fill_r, fill_g, fill_b, fill_a * global_a,
-                                         b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                         aa_exp
-                                         );
+   ShaderVG_Shape *shape;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &roundrect_fill_aa;                     break;
+      case PAINT_LINEAR:              shape = &roundrect_fill_aa_linear;              break;
+      case PAINT_RADIAL:              shape = &roundrect_fill_aa_radial;              break;
+      case PAINT_CONIC:               shape = &roundrect_fill_aa_conic;               break;
+      case PAINT_PATTERN:             shape = &roundrect_fill_aa_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &roundrect_fill_aa_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &roundrect_fill_aa_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &roundrect_fill_aa_pattern_decal_alpha; break;
+   }
+   shape->drawRoundRectFillAAPaint(scratch_buffer,
+                                   mvp_matrix,
+                                   _centerX, _centerY,
+                                   _sizeX + aaOff, _sizeY + aaOff,
+                                   _radiusX, _radiusY,
+                                   fill_r, fill_g, fill_b, fill_a * global_a,
+                                   stroke_r, stroke_g, stroke_b, stroke_a,  // (note) do _not_ multiply by global_a
+                                   texture_decal_alpha,
+                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                   aa_exp,
+                                   &paint
+                                   );
 }
 
 void YAC_CALL sdvg_SetupRoundRectFillStrokeAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
@@ -3152,6 +3189,7 @@ sBool YAC_CALL sdvg_OnOpen(void) {
       Dsdvg_debugprintfv("[dbg] sdvg_OnOpen 3\n");
    }
 
+   // (re-)load built-in shaders
    for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++)
    {
       ShaderVG_Shape *shape = all_shapes[i];
@@ -3161,12 +3199,20 @@ sBool YAC_CALL sdvg_OnOpen(void) {
          return YAC_FALSE;
       }
    }
+   Dsdvg_debugprintf("[dbg] sdvg_OnOpen: (re-)loaded %u built-in shaders\n", sUI(SHADERVG_NUM_SHAPES));
 
-   // unload / destroy custom shaders (app must re-create them)
-   for(sUI shaderIdx = 0u; shaderIdx < SHADERVG_MAX_CUSTOM_SHADERS; shaderIdx++)
+   // (re-)load custom shaders
    {
-      ShaderVG_CustomShape *cs = &custom_shapes[shaderIdx];
-      cs->onOpen();
+      sUI numOpened = 0u;
+      for(sUI shaderIdx = 0u; shaderIdx < SHADERVG_MAX_CUSTOM_SHADERS; shaderIdx++)
+      {
+         ShaderVG_CustomShape *cs = &custom_shapes[shaderIdx];
+         if(cs->onOpen())
+         {
+            numOpened++;
+         }
+      }
+      Dsdvg_debugprintf("[dbg] sdvg_OnOpen: (re-)loaded %u custom shaders\n", numOpened);
    }
    current_shape = NULL;
 

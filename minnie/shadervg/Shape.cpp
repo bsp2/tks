@@ -677,10 +677,10 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                             sF32 _radiusX, sF32 _radiusY,
                                             sF32 _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
                                             sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                            sF32 _decalAlpha,
                                             sF32 _aaRange,
                                             sF32 _aaExp,
-                                            const shadervg_paint_t *_paint,
-                                            sF32 _textureDecalAlpha
+                                            const shadervg_paint_t *_paint
                                             ) {
 
    BindScratchBuffer();
@@ -756,7 +756,7 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
 
    if(-1 != shape_u_decal_alpha)
    {
-      Dsdvg_uniform_1f(shape_u_decal_alpha, _textureDecalAlpha);
+      Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
    if(-1 != shape_u_debug)
@@ -818,3 +818,118 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
 
    Dsdvg_attrib_disable(shape_a_vertex);
 }
+
+void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
+                                              Dsdvg_mat4_ref_t _mvpMatrix,
+                                              sF32 _centerX, sF32 _centerY,
+                                              sF32 _sizeX,   sF32 _sizeY,
+                                              sF32 _radiusX, sF32 _radiusY,
+                                              sF32 _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
+                                              sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                              sF32 _decalAlpha,
+                                              sF32 _aaRange,
+                                              sF32 _aaExp,
+                                              const shadervg_paint_t *_paint
+                                              ) {
+
+      BindScratchBuffer();
+
+      if(_radiusX > _sizeX)
+         _radiusX = _sizeX;
+
+      if(_radiusY > _sizeY)
+         _radiusY = _sizeY;
+
+      sUI numTris;
+
+      sBool bSingle = ((_sizeX*_sizeY) <= ROUNDRECT_SINGLE_AREA_THRESHOLD);
+
+      // Inner
+      sBool bInner = !bSingle && b_draw_inner;
+      if(bInner)
+      {
+         sSI aVertexFill = BindFillShader();
+
+         numTris = 14u;
+         allocScratchBuffer(aVertexFill, _scratchBuf, (numTris*3*2/*xy*/*4/*float*/));
+
+         numTris = EmitRoundRectInnerVertices(_scratchBuf,
+                                              _centerX, _centerY,
+                                              _sizeX,   _sizeY,
+                                              _radiusX, _radiusY,
+                                              0.0f/*strokeW*/,
+                                              _aaRange
+                                              );
+
+         Dsdvg_draw_triangles(0, numTris*3);
+
+         EndFillShader();
+      }
+
+      // Outer corners
+      shape_shader.bind();
+
+      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+      Dsdvg_uniform_2f(shape_u_center,        _centerX, _centerY);
+      Dsdvg_uniform_2f(shape_u_size,          _sizeX, _sizeY);
+      Dsdvg_uniform_2f(shape_u_radius,        _radiusX, _radiusY);
+      Dsdvg_uniform_2f(shape_u_ob_radius,     1.0f / _radiusX, 1.0f / _radiusY);
+      Dsdvg_uniform_1f(shape_u_ob_radius_max, (_radiusX > _radiusY) ? (1.0f / _radiusX) : (1.0f / _radiusY));
+      Dsdvg_uniform_1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
+      Dsdvg_uniform_1f(shape_u_aa_range,      _aaRange);
+
+      if(-1 != shape_u_aa_exp)
+      {
+         Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
+      }
+
+      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+
+      if(-1 != shape_u_color_stroke)
+      {
+         Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+      }
+
+      if(-1 != shape_u_decal_alpha)
+      {
+         Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
+      }
+
+      if(-1 != shape_u_debug)
+      {
+         Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
+      }
+
+      updatePaintUniforms(_paint);
+
+      Dsdvg_attrib_enable(shape_a_vertex);
+
+      if(bSingle)
+      {
+         setQuadVertices(shape_a_vertex, _scratchBuf,
+                         _centerX - _sizeX,
+                         _centerY - _sizeY,
+                         _sizeX * 2.0f,
+                         _sizeY * 2.0f
+                         );
+
+         Dsdvg_draw_triangle_fan(0, 4);
+      }
+      else if(b_draw_border)
+      {
+         numTris = 28u;  // 24..28
+         allocScratchBuffer(shape_a_vertex, _scratchBuf, (numTris*3*2/*xy*/*4/*float*/));
+
+         numTris = EmitRoundRectBorderVertices(_scratchBuf,
+                                               _centerX, _centerY,
+                                               _sizeX,   _sizeY,
+                                               _radiusX, _radiusY,
+                                               0.0f/*strokeW*/,
+                                               _aaRange
+                                               );
+
+         Dsdvg_draw_triangles(0, numTris * 3u);
+      }
+
+      Dsdvg_attrib_disable(shape_a_vertex);
+   }
