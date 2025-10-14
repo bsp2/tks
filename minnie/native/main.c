@@ -3164,7 +3164,7 @@ void hal_on_draw(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupPaintPatternAlpha();
-         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetColor4f(0.7f, 0.7f, 0.7f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
@@ -3177,7 +3177,7 @@ void hal_on_draw(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupPaintPatternAlpha();
-         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
@@ -3229,8 +3229,8 @@ void hal_on_draw(void) {
          sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
-         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
-         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.2f, 0.2f, 0.5f, 1.0f);
          sdvg_DrawRectFillAA(centerX, centerY,
                              sizeX * size_sclx, sizeY * size_scly
                              );
@@ -3244,8 +3244,8 @@ void hal_on_draw(void) {
          sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
-         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
-         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_SetFillColor4f(0.8f, 0.8f, 0.8f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.2f, 0.2f, 0.5f, 1.0f);
          sdvg_DrawRectFillAA(centerX, centerY,
                              sizeX * size_sclx, sizeY * size_scly
                              );
@@ -3318,7 +3318,7 @@ void hal_on_draw(void) {
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
-         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetColor4f(0.0f, 0.0f, 0.0f, fill_alpha);
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
          sdvg_DrawRectStrokeAA(centerX, centerY,
                                sizeX * size_sclx, sizeY * size_scly
@@ -3348,8 +3348,8 @@ void hal_on_draw(void) {
          sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
-         sdvg_SetFillColor4f(0.6f, 0.6f, 0.8f, fill_alpha);
-         sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetFillColor4f(0.5f, 0.55f, 0.75f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.2f, 0.25f, 0.5f, 1.0f);
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
          sdvg_DrawRectStrokeAA(centerX, centerY,
                                sizeX * size_sclx, sizeY * size_scly
@@ -3416,7 +3416,7 @@ void hal_on_draw(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupPaintPatternAlpha();
-         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 0.1f);
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
@@ -3449,8 +3449,8 @@ void hal_on_draw(void) {
          sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
-         sdvg_SetFillColor4f(0.6f, 0.6f, 0.8f, fill_alpha);
-         sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.2f, 0.25f, 0.5f, 1.0f);
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
          sdvg_DrawEllipseStrokeAA(centerX, centerY,
                                   sizeX * size_sclx, sizeY * size_scly
@@ -3521,7 +3521,7 @@ void hal_on_draw(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupPaintPatternAlpha();
-         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 0.1f);
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
@@ -3552,12 +3552,12 @@ void hal_on_draw(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          SetupPaintPatternDecalAlpha();
-         sdvg_SetFillColor4f(0.2f, 0.25f, 0.5f, 1.0f);
+         sdvg_SetFillColor4f(0.2f, 0.25f, 0.5f, 0.3f);
          sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
-         sdvg_SetFillColor4f(0.6f, 0.6f, 0.8f, fill_alpha);
-         sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.2f, 0.25f, 0.5f, 1.0f);
          sdvg_SetStrokeWidth(stroke_w * 4.0f);
          sdvg_DrawRoundRectStrokeAA(centerX, centerY,
                                     sizeX * size_sclx, sizeY * size_scly,
