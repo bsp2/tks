@@ -199,7 +199,14 @@ static sF32 ang_c = 0.0f;
 #define RENDER_ELLIPSE_STROKE_AA_PATTERN_ALPHA              138
 #define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL              139
 #define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL_ALPHA        140
-#define NUM_RENDER_MODES                                    141  // UP/DOWN
+#define RENDER_ROUNDRECT_STROKE_AA_LINEAR                   141
+#define RENDER_ROUNDRECT_STROKE_AA_RADIAL                   142
+#define RENDER_ROUNDRECT_STROKE_AA_CONIC                    143
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN                  144
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_ALPHA            145
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL            146
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL_ALPHA      147
+#define NUM_RENDER_MODES                                    148  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -345,6 +352,13 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 138 */ "ellipse_stroke_aa_pattern_alpha",
    /* 139 */ "ellipse_stroke_aa_pattern_decal",
    /* 140 */ "ellipse_stroke_aa_pattern_decal_alpha",
+   /* 141 */ "roundrect_stroke_aa_linear",
+   /* 142 */ "roundrect_stroke_aa_radial",
+   /* 143 */ "roundrect_stroke_aa_conic",
+   /* 144 */ "roundrect_stroke_aa_pattern",
+   /* 145 */ "roundrect_stroke_aa_pattern_alpha",
+   /* 146 */ "roundrect_stroke_aa_pattern_decal",
+   /* 147 */ "roundrect_stroke_aa_pattern_decal_alpha",
 };
 
 static YAC_Buffer buf_vbo;
@@ -3441,6 +3455,114 @@ void hal_on_draw(void) {
          sdvg_DrawEllipseStrokeAA(centerX, centerY,
                                   sizeX * size_sclx, sizeY * size_scly
                                   );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_LINEAR: // 141
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientLinear();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_RADIAL: // 142
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientRadial();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_CONIC: // 143
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupGradientConic();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_PATTERN: // 144
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPattern();
+         sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_PATTERN_ALPHA: // 145
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternAlpha();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL: // 146
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecal();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.5f, 0.5f, 0.5f, 1.0f);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
+         break;
+
+      case RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL_ALPHA: // 147
+         sdvg_BindShader(0u);  // use built-in shader
+         sdvg_EnableBlending();
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColor4f(0.2f, 0.25f, 0.5f, 1.0f);
+         sdvg_SetStrokeColor4f(0.5f, 0.55f, 0.75f, 1.0f);
+         DrawPaintBackground();
+         SetupRotateMVP();
+         sdvg_SetFillColor4f(0.6f, 0.6f, 0.8f, fill_alpha);
+         sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         sdvg_DrawRoundRectStrokeAA(centerX, centerY,
+                                    sizeX * size_sclx, sizeY * size_scly,
+                                    cornerX * radius_sclx, cornerY * radius_scly
+                                    );
          break;
    }
 
