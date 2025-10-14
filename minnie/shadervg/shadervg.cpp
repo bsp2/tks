@@ -124,6 +124,13 @@
 #include "EllipseFillAAPatternDecal.h"
 #include "EllipseFillAAPatternDecalAlpha.h"
 #include "EllipseStrokeAA.h"
+#include "EllipseStrokeAALinear.h"
+#include "EllipseStrokeAARadial.h"
+#include "EllipseStrokeAAConic.h"
+#include "EllipseStrokeAAPattern.h"
+#include "EllipseStrokeAAPatternAlpha.h"
+#include "EllipseStrokeAAPatternDecal.h"
+#include "EllipseStrokeAAPatternDecalAlpha.h"
 #include "EllipseFillStrokeAA.h"
 #include "RoundRectFillAA.h"
 #include "RoundRectFillAALinear.h"
@@ -243,6 +250,13 @@ static EllipseFillAAPatternAlpha            ellipse_fill_aa_pattern_alpha;
 static EllipseFillAAPatternDecal            ellipse_fill_aa_pattern_decal;
 static EllipseFillAAPatternDecalAlpha       ellipse_fill_aa_pattern_decal_alpha;
 static EllipseStrokeAA                      ellipse_stroke_aa;
+static EllipseStrokeAALinear                ellipse_stroke_aa_linear;
+static EllipseStrokeAARadial                ellipse_stroke_aa_radial;
+static EllipseStrokeAAConic                 ellipse_stroke_aa_conic;
+static EllipseStrokeAAPattern               ellipse_stroke_aa_pattern;
+static EllipseStrokeAAPatternAlpha          ellipse_stroke_aa_pattern_alpha;
+static EllipseStrokeAAPatternDecal          ellipse_stroke_aa_pattern_decal;
+static EllipseStrokeAAPatternDecalAlpha     ellipse_stroke_aa_pattern_decal_alpha;
 static EllipseFillStrokeAA                  ellipse_fill_stroke_aa;
 static RoundRectFillAA                      roundrect_fill_aa;
 static RoundRectFillAALinear                roundrect_fill_aa_linear;
@@ -342,6 +356,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_fill_aa_pattern_decal,
    &ellipse_fill_aa_pattern_decal_alpha,
    &ellipse_stroke_aa,
+   &ellipse_stroke_aa_linear,
+   &ellipse_stroke_aa_radial,
+   &ellipse_stroke_aa_conic,
+   &ellipse_stroke_aa_pattern,
+   &ellipse_stroke_aa_pattern_alpha,
+   &ellipse_stroke_aa_pattern_decal,
+   &ellipse_stroke_aa_pattern_decal_alpha,
    &ellipse_fill_stroke_aa,
    &roundrect_fill_aa,
    &roundrect_fill_aa_linear,
@@ -2037,15 +2058,33 @@ void YAC_CALL sdvg_DrawEllipseStrokeAA(sF32 _centerX, sF32 _centerY,
                                        ) {
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
-   ellipse_stroke_aa.drawEllipseStrokeAA(scratch_buffer,
-                                         mvp_matrix,
-                                         _centerX, _centerY,
-                                         _sizeX + aaOffSize, _sizeY + aaOffSize,
-                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                         Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
-                                         b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                         aa_exp
-                                         );
+   ShaderVG_Shape *shape;
+   sF32 fillA = fill_a;
+   sF32 strokeA = stroke_a * global_a;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &ellipse_stroke_aa;                     break;
+      case PAINT_LINEAR:              shape = &ellipse_stroke_aa_linear;              break;
+      case PAINT_RADIAL:              shape = &ellipse_stroke_aa_radial;              break;
+      case PAINT_CONIC:               shape = &ellipse_stroke_aa_conic;               break;
+      case PAINT_PATTERN:             shape = &ellipse_stroke_aa_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &ellipse_stroke_aa_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &ellipse_stroke_aa_pattern_decal;       fillA = fill_a * global_a; strokeA = stroke_a; break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &ellipse_stroke_aa_pattern_decal_alpha; fillA = fill_a * global_a; strokeA = stroke_a; break;
+   }
+   shape->drawEllipseStrokeAAPaint(scratch_buffer,
+                                   mvp_matrix,
+                                   _centerX, _centerY,
+                                   _sizeX + aaOffSize, _sizeY + aaOffSize,
+                                   fill_r, fill_g, fill_b, fillA,
+                                   stroke_r, stroke_g, stroke_b, strokeA,
+                                   Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                   texture_decal_alpha,
+                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                   aa_exp,
+                                   &paint
+                                   );
 }
 
 void YAC_CALL sdvg_SetupRoundRectFillAAVBO32(YAC_Buffer *_vb, YAC_Buffer *_dl,
