@@ -210,7 +210,11 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_AA                  149
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL               150
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_AA            151
-#define NUM_RENDER_MODES                                    152  // UP/DOWN
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL               152
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_AA            153
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL         154
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_AA      155
+#define NUM_RENDER_MODES                                    156  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -367,6 +371,10 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 149 */ "begin_line_strip_pattern_aa",
    /* 150 */ "begin_line_strip_pattern_bevel",
    /* 151 */ "begin_line_strip_pattern_bevel_aa",
+   /* 152 */ "begin_line_strip_pattern_decal",
+   /* 153 */ "begin_line_strip_pattern_decal_aa",
+   /* 154 */ "begin_line_strip_pattern_decal_bevel",
+   /* 155 */ "begin_line_strip_pattern_decal_bevel_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2079,6 +2087,63 @@ void TestBeginLineStripPatternBevel(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDecal(152+153)
+void TestBeginLineStripPatternDecal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternScale(1.0f / 112.0f);
+   sdvg_SetFillColor4f(0.9f, 0.6f, 0.2f, fill_alpha);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 1;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternDecalAA(numPoints)
+      : sdvg_BeginLineStripPatternDecal(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalBevel (154+155)
+void TestBeginLineStripPatternDecalBevel(sBool _bAA) {
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternScale(0.5f / 112.0f);
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sdvg_SetFillColor4f(0.9f, 0.6f, 0.2f, fill_alpha);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 2;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternDecalBevelAA(numPoints)
+      : sdvg_BeginLineStripPatternDecalBevel(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
@@ -3679,6 +3744,22 @@ void hal_on_draw(void) {
 
       case RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_AA: // 151
          TestBeginLineStripPatternBevel(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL: // 152
+         TestBeginLineStripPatternDecal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_AA: // 153
+         TestBeginLineStripPatternDecal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL: // 154
+         TestBeginLineStripPatternDecalBevel(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_AA: // 155
+         TestBeginLineStripPatternDecalBevel(YAC_TRUE/*bAA*/);
          break;
    }
 
