@@ -1,5 +1,5 @@
 // ----
-// ---- file   : LineStripFlatBevelAA32.h
+// ---- file   : LineStripPatternBevelAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2014-2025 by bsp
@@ -24,29 +24,34 @@
 // ----
 // ----
 
-class LineStripFlatBevelAA32 : public ShaderVG_Shape {
+class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform float u_stroke_w; \n"
+      "uniform float u_line_pattern_scl; \n"
+      "uniform float u_line_pattern_off; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
       "ATTRIBUTE vec2  a_vertex_nn; \n"
+      "ATTRIBUTE float a_pattern; \n"
+      "ATTRIBUTE float a_pattern_n; \n"
 #ifndef USE_VERTEX_ATTRIB_DIVISOR
       "ATTRIBUTE float a_index; \n"
 #endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
-      "VARYING_OUT vec2 v_vertex_mp; \n"
-      "VARYING_OUT vec2 v_plane_n; \n"
+      "VARYING_OUT vec2  v_vertex_mp; \n"
+      "VARYING_OUT vec2  v_plane_n; \n"
       "VARYING_OUT float v_join; \n"
+      "VARYING_OUT float v_pat; \n"
       " \n"
       "void main(void) { \n"
-      "  vec2 v1 = a_vertex; \n"
-      "  vec2 v2 = a_vertex_n; \n"
-      "  vec2 v3 = a_vertex_nn; \n"
+      "  vec2 v1 = a_vertex * 0.25; \n"
+      "  vec2 v2 = a_vertex_n * 0.25; \n"
+      "  vec2 v3 = a_vertex_nn * 0.25; \n"
       " \n"
       "  vec2 v12 = v2 - v1; \n"
       "  vec2 vN = normalize(v12); \n"
@@ -67,6 +72,9 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       "  float cz = v12.x * v23.y - v12.y * v23.x; \n"
       " \n"
       "  vec2 v; \n"
+      "  float pat1 = a_pattern; \n"
+      "  float pat2 = a_pattern_n; \n"
+      "  float pat; \n"
       " \n"
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
       "  float index = float(gl_VertexID % 9); \n"
@@ -76,30 +84,38 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       " \n"
       "  if(index > 7.9) { \n"
       "    v = v2; \n"
+      "    pat = pat2; \n"
       "  } \n"
       "  else if(index > 6.9) { \n"
       "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
+      "    pat = pat2; \n"
       "  } \n"
       "  else if(index > 5.9) { \n"
       "    v = (cz > 0.0) ? v2L : v2R; \n"
       "  } \n"
       "  else if(index > 4.9) { \n"
       "    v = v1R; \n"
+      "    pat = pat1; \n"
       "  } \n"
       "  else if(index > 3.9) { \n"
       "    v = v2R; \n"
+      "    pat = pat2; \n"
       "  } \n"
       "  else if(index > 2.9) { \n"
       "    v = v1L; \n"
+      "    pat = pat1; \n"
       "  } \n"
       "  else if(index > 1.9) { \n"
       "    v = v2R; \n"
+      "    pat = pat2; \n"
       "  } \n"
       "  else if(index > 0.9) { \n"
       "    v = v2L; \n"
+      "    pat = pat2; \n"
       "  } \n"
       "  else { \n"
       "    v = v1L; \n"
+      "    pat = pat1; \n"
       "  } \n"
       " \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
@@ -114,19 +130,24 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       "    v_plane_n   = vec2(vN.y, -vN.x); \n"
       "    v_join = 0.0; \n"
       "  } \n"
+      "  pat *= u_line_pattern_scl; \n"
+      "  pat += u_line_pattern_off; \n"
+      "  v_pat = pat; \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform vec4  u_color_stroke; \n"
-      "uniform float u_stroke_w; \n"
-      "uniform float u_aa_range; \n"
-      "uniform float u_debug; \n"
+      "uniform vec4      u_color_stroke; \n"
+      "uniform float     u_stroke_w; \n"
+      "uniform float     u_aa_range; \n"
+      "uniform float     u_debug; \n"
+      "uniform sampler2D u_sampler; \n"
       " \n"
-      "VARYING_IN vec2 v_vertex_mp; \n"
-      "VARYING_IN vec2 v_plane_n; \n"
+      "VARYING_IN vec2  v_vertex_mp; \n"
+      "VARYING_IN vec2  v_plane_n; \n"
       "VARYING_IN float v_join; \n"
+      "VARYING_IN float v_pat; \n"
       " \n"
       "void main(void) { \n"
       "  float a; \n"
@@ -138,9 +159,10 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       "    float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  } \n"
-      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
+      "  float patA = TEXTURE2D(u_sampler, vec2(v_pat, 0)).TEX_ALPHA; \n"
+      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
+      "    FRAGCOLOR = vec4(a, fract(v_pat), fract(v_pat), 1); \n"
       "  } \n"
       "} \n"
       ;
@@ -157,6 +179,8 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
+         && (-1 != shape_a_pattern)
+         && (-1 != shape_a_pattern_n)
          ;
    }
 
@@ -168,25 +192,28 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawLineStripFlatBevelAAVBO32(sUI              _vboId,
-                                      sUI              _byteOffset,
-                                      sUI              _numPoints,
-                                      Dsdvg_mat4_ref_t _mvpMatrix,
-                                      sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                                      sF32             _strokeW,
-                                      sF32             _aaRange
-                                      ) {
+   void drawLineStripPatternBevelAAVBO14_2(sUI              _vboId,
+                                           sUI              _byteOffset,
+                                           sUI              _numPoints,
+                                           Dsdvg_mat4_ref_t _mvpMatrix,
+                                           sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                           sF32             _strokeW,
+                                           sF32             _aaRange,
+                                           sF32             _linePatternScale,
+                                           sF32             _linePatternOffset
+                                           ) {
       //
-      // VBO vertex format (10 bytes per vertex w/o attrib divisor, else 8):
-      //   +0 f32 x
-      //   +4 f32 y
-      //   +8 i16 index
+      // VBO vertex format (6 bytes per vertex w/o attrib divisor, else 8):
+      //   +0  s14.2 x
+      //   +2  s14.2 y
+      //   +4  s14.2 patternOff
+      //   +6  i16   index
       //
       // (note) duplicate vertices * 9 when !defined(USE_VERTEX_ATTRIB_DIVISOR)
       // (note) numVerts         = (numPoints * 9)
       // (note) numSeg           = (numPoints - 1)
       // (note) numTri           = (numPoints - 1) * 2 + (numPoints - 2)
-      // (note) numBytesPerPoint = 9*10 = 90
+      // (note) numBytesPerPoint = 9*8 = 72
       //
 
       sdvg_BindVBO(_vboId);
@@ -201,25 +228,36 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+      Dsdvg_uniform_1i(shape_u_sampler, 0);
+      Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale * 0.25f);
+      Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
-      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +    0);
-      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +    8);
-      Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  2*8);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   0);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   6);
+      Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  12);
+      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   4);
+      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  10);
 #else
-      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +    0);
-      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +   90);
-      Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 2*90);
-      Dsdvg_attrib_offset(shape_a_index,     1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +    8);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +   0);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  72);
+      Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 144);
+      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +   4);
+      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  76);
+      Dsdvg_attrib_offset(shape_a_index,     1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +   6);
 #endif // USE_VERTEX_ATTRIB_DIVISOR
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
       Dsdvg_attrib_enable(shape_a_vertex_nn);
+      Dsdvg_attrib_enable(shape_a_pattern);
+      Dsdvg_attrib_enable(shape_a_pattern_n);
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
       Dsdvg_attrib_divisor(shape_a_vertex, 1);
       Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
       Dsdvg_attrib_divisor(shape_a_vertex_nn, 1);
+      Dsdvg_attrib_divisor(shape_a_pattern, 1);
+      Dsdvg_attrib_divisor(shape_a_pattern_n, 1);
 #else
       Dsdvg_attrib_enable(shape_a_index);
 #endif // USE_VERTEX_ATTRIB_DIVISOR
@@ -236,10 +274,14 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
       Dsdvg_attrib_disable(shape_a_vertex_nn);
       Dsdvg_attrib_disable(shape_a_vertex_n);
       Dsdvg_attrib_disable(shape_a_vertex);
+      Dsdvg_attrib_disable(shape_a_pattern_n);
+      Dsdvg_attrib_disable(shape_a_pattern);
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_nn);
+      Dsdvg_attrib_divisor_reset(shape_a_pattern);
+      Dsdvg_attrib_divisor_reset(shape_a_pattern_n);
 #else
       Dsdvg_attrib_disable(shape_a_index);
 #endif // USE_VERTEX_ATTRIB_DIVISOR

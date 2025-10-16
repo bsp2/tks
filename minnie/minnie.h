@@ -3723,7 +3723,7 @@ class Path {
 namespace setup {
    static minnie_allocator_handle_t allocator;
 
-   static void *loc_vb_export_ofs;
+   static void *loc_vb_export_ofs;  // YAC_Object* in script-plugin build, YAC_Buffer* in native-library build
    static void *loc_dl_export_ofs;
 
    static sF32 stroke_scale;

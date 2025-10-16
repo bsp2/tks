@@ -50,6 +50,8 @@ class ShaderVG_Shape {
    sSI shape_a_vertex;
    sSI shape_a_vertex_n;   // optional
    sSI shape_a_vertex_nn;  // optional
+   sSI shape_a_pattern;    // optional
+   sSI shape_a_pattern_n;  // optional
    sSI shape_a_index;      // optional
    sSI shape_a_color;      // optional
    sSI shape_a_edge;       // optional
@@ -84,6 +86,8 @@ class ShaderVG_Shape {
    sSI shape_u_decal_alpha;      // optional
    sSI shape_u_sampler;          // optional
    sSI shape_u_stroke_w;         // optional
+   sSI shape_u_line_pattern_scl; // optional
+   sSI shape_u_line_pattern_off; // optional
    sSI shape_u_debug;            // optional
    sSI shape_u_tex_0;            // optional
    sSI shape_u_tex_1;            // optional
