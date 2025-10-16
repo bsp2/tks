@@ -1876,6 +1876,16 @@ Draw previously prepared vertex buffer as patterned line strip (32 bit float for
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
+/* @function sdvg_DrawLineStripPatternDecalVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as patterned line strip (32 bit float format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
 /* @function sdvg_DrawLineStripPatternAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
 */
@@ -1885,6 +1895,16 @@ YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2 (sUI _vboId, sUI _byteOffset
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32 bit float format)
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalAAVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32 bit float format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripFlatBevelVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
@@ -1920,10 +1940,25 @@ Draw previously prepared vertex buffer as anti-aliased line strip with bevel lin
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
+/* @function sdvg_DrawLineStripPatternBevelVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
 /* @function sdvg_DrawLineStripPatternBevelVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip with bevel line joints (32 bit float format)
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalBevelVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalBevelVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as patterned line strip with bevel line joints (32 bit float format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripPatternBevelAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (14.2 fixed point format)
@@ -1934,6 +1969,16 @@ YF void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2 (sUI _vboId, sUI _byteO
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (32 bit float format)
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalBevelAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalBevelAAVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (32 bit float format)
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line segments (14.2 fixed point format)
@@ -2474,6 +2519,10 @@ Begin preparation or rendering of patterned line strip.
 @see sdvg_SetLinePatternScale
 @see sdvg_SetLinePatternOffset
 @see sdvg_BeginLineStripPatternAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPattern (sUI _numPoints);
 
@@ -2490,8 +2539,52 @@ Begin preparation or rendering of anti-aliased, patterned line strip.
 @see sdvg_BeginLineStripPattern
 @see sdvg_BeginLineStripPatternBevel
 @see sdvg_BeginLineStripPatternBevelAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPatternAA (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecal,int numPoints:boolean
+Begin preparation or rendering of patterned line strip.
+
+@arg numPoints Number of vertices
+
+@see sdvg_SetFillColorARGB
+@see sdvg_SetFillColor4f
+@see sdvg_SetStrokeRadius
+@see sdvg_SetStrokeWidth
+@see sdvg_BindTexture2D
+@see sdvg_SetLinePatternScale
+@see sdvg_SetLinePatternOffset
+@see sdvg_BeginLineStripPatternAA
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecal (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, patterned line strip.
+
+@arg numPoints Number of points
+
+@see sdvg_SetFillColorARGB
+@see sdvg_SetFillColor4f
+@see sdvg_SetStrokeRadius
+@see sdvg_SetStrokeWidth
+@see sdvg_BindTexture2D
+@see sdvg_SetLinePatternScale
+@see sdvg_SetLinePatternOffset
+@see sdvg_BeginLineStripPattern
+@see sdvg_BeginLineStripPatternBevel
+@see sdvg_BeginLineStripPatternBevelAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalAA (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripBevel,int numPoints:boolean
 Begin preparation or rendering of line strip with bevel line joints
@@ -2503,6 +2596,10 @@ Begin preparation or rendering of line strip with bevel line joints
 @see sdvg_BeginLineStripBevelAA
 @see sdvg_BeginLineStripPatternBevel
 @see sdvg_BeginLineStripPatternBevelAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
 */
 YF sBool YAC_CALL sdvg_BeginLineStripBevel (sUI _numPoints);
 
@@ -2516,6 +2613,10 @@ Begin preparation or rendering of anti-aliased line strip with bevel line joints
 @see sdvg_BeginLineStripBevel
 @see sdvg_BeginLineStripPatternBevel
 @see sdvg_BeginLineStripPatternBevelAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
 */
 YF sBool YAC_CALL sdvg_BeginLineStripBevelAA (sUI _numPoints);
 
@@ -2531,6 +2632,10 @@ Begin preparation or rendering of patterned line strip with bevel line joints.
 @see sdvg_SetLinePatternOffset
 @see sdvg_BeginLineStripPatternBevelAA
 @see sdvg_BeginLineStripPatternAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPatternBevel (sUI _numPoints);
 
@@ -2546,8 +2651,52 @@ Begin preparation or rendering of anti-aliased, patterned line strip with bevel 
 @see sdvg_SetLinePatternOffset
 @see sdvg_BeginLineStripPatternBevel
 @see sdvg_BeginLineStripBevel
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+@see sdvg_BeginLineStripPatternDecalBevelAA
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPatternBevelAA (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalBevel,int numPoints:boolean
+Begin preparation or rendering of patterned line strip with bevel line joints.
+
+@arg numPoints Number of vertices
+
+@see sdvg_SetFillColorARGB
+@see sdvg_SetFillColor4f
+@see sdvg_SetStrokeRadius
+@see sdvg_SetStrokeWidth
+@see sdvg_BindTexture2D
+@see sdvg_SetLinePatternScale
+@see sdvg_SetLinePatternOffset
+@see sdvg_BeginLineStripPatternBevelAA
+@see sdvg_BeginLineStripPatternAA
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevelAA
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevel (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalBevelAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, patterned line strip with bevel line joints.
+
+@arg numPoints Number of points
+
+@see sdvg_SetFillColorARGB
+@see sdvg_SetFillColor4f
+@see sdvg_SetStrokeRadius
+@see sdvg_SetStrokeWidth
+@see sdvg_BindTexture2D
+@see sdvg_SetLinePatternScale
+@see sdvg_SetLinePatternOffset
+@see sdvg_BeginLineStripPatternBevel
+@see sdvg_BeginLineStripBevel
+@see sdvg_BeginLineStripPatternDecal
+@see sdvg_BeginLineStripPatternDecalAA
+@see sdvg_BeginLineStripPatternDecalBevel
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAA (sUI _numPoints);
 
 /* @function sdvg_BeginLines,int numPoints:boolean
 Begin preparation or rendering of line segments
