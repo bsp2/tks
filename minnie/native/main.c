@@ -2091,8 +2091,8 @@ void TestBeginLineStripPatternBevel(sBool _bAA) {
 void TestBeginLineStripPatternDecal(sBool _bAA) {
    sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
    sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
-   sdvg_SetLinePatternScale(1.0f / 112.0f);
-   sdvg_SetFillColor4f(0.9f, 0.6f, 0.2f, fill_alpha);
+   sdvg_SetLinePatternScale(0.5f / 112.0f);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5*fill_alpha);
    sSI numSeg = 64;
    sSI numPoints = numSeg + 1;
    sF32 w = (sM_2PI / numSeg);
