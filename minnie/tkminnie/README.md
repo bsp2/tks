@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 148 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 152 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -500,3 +500,15 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_147_roundrect_stroke_aa_pattern_decal_alpha
   
   ![screenhots](tests/screenshots/test_147_roundrect_stroke_aa_pattern_decal_alpha.png)
+- test_148_begin_line_strip_pattern
+  
+  ![screenhots](tests/screenshots/test_148_begin_line_strip_pattern.png)
+- test_149_begin_line_strip_pattern_aa
+  
+  ![screenhots](tests/screenshots/test_149_begin_line_strip_pattern_aa.png)
+- test_150_begin_line_strip_pattern_bevel
+  
+  ![screenhots](tests/screenshots/test_150_begin_line_strip_pattern_bevel.png)
+- test_151_begin_line_strip_pattern_bevel_aa
+  
+  ![screenhots](tests/screenshots/test_151_begin_line_strip_pattern_bevel_aa.png)
