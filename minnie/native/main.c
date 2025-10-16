@@ -206,7 +206,11 @@ static sF32 ang_c = 0.0f;
 #define RENDER_ROUNDRECT_STROKE_AA_PATTERN_ALPHA            145
 #define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL            146
 #define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL_ALPHA      147
-#define NUM_RENDER_MODES                                    148  // UP/DOWN
+#define RENDER_BEGIN_LINE_STRIP_PATTERN                     148
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_AA                  149
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL               150
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_AA            151
+#define NUM_RENDER_MODES                                    152  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -359,6 +363,10 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 145 */ "roundrect_stroke_aa_pattern_alpha",
    /* 146 */ "roundrect_stroke_aa_pattern_decal",
    /* 147 */ "roundrect_stroke_aa_pattern_decal_alpha",
+   /* 148 */ "begin_line_strip_pattern",
+   /* 149 */ "begin_line_strip_pattern_aa",
+   /* 150 */ "begin_line_strip_pattern_bevel",
+   /* 151 */ "begin_line_strip_pattern_bevel_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -391,6 +399,22 @@ static sU32 gradient_colors[5] = {0xFF00ffffu, 0xFF10cf40u, 0xFFefdf30u, 0xFF204
 static sSI  gradient_starts[5] = {0,           200,         400,         500,         1000};
 static sU32 tex_gradient[256];
 static sUI tex_gradient_id = 0u;
+
+static sUI tex_line_pattern_alpha_id;
+static sU8 tex_line_pattern_alpha_data[112];
+static sUI line_patterns[] = {
+   16u, 0x00000FFu /* 0b0000000011111111 */,
+   16u, 0x0000F0Fu /* 0b0000111100001111 */,
+   16u, 0x0003333u /* 0b0011001100110011 */,
+   16u, 0x0005555u /* 0b0101010101010101 */,
+   14u, 0x0000CF3u /* 0b0000110011110011 */,
+   14u, 0x0000E73u /* 0b0000111001110011 */,
+   28u, 0x0FC3F0Fu /* 0b0000111111000011111100001111 */,
+   28u, 0x333CF33u /* 0b0011001100111100111100110011 */,
+   28u, 0x0F00C30u /* 0b0000111100000000110000110000 */,
+   16u, 0x0000C30u /* 0b0000110000110000 */,
+};
+static sSI line_pattern_idx = 0;
 
 
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
@@ -1299,8 +1323,8 @@ static void TestText_2_Clip(void) {
 // ---------------------------------------------------------------------------- TestText_3_Swirl (55)
 static sUI test_text_3_shader_idx = 0u;
 static void TestText_3_draw(const char *_s, sF32 _scl, sF32 _ang, sF32 _deltaC, sU8 _a, sF32 _hue) {
-   char sFloor[256]; 
-   char sCeil[256]; 
+   char sFloor[256];
+   char sCeil[256];
    sSI i = 0;
    sF32 deltaCF = 0;
    if(_deltaC >= 0.5f)
@@ -1996,6 +2020,61 @@ static void TestBeginPolygon(sBool _bAA) {
       sdvg_Vertex2f(300.0f, 470.0f);
       sdvg_Vertex2f(120.0f, 300.0f);
 
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPattern (148+149)
+void TestBeginLineStripPattern(sBool _bAA) {
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternScale(1.0f / 112.0f);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 1;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternAA(numPoints)
+      : sdvg_BeginLineStripPattern(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternBevel (150+151)
+void TestBeginLineStripPatternBevel(sBool _bAA) {
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternScale(0.5f / 112.0f);
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 2;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternBevelAA(numPoints)
+      : sdvg_BeginLineStripPatternBevel(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
       sdvg_End();
    }
 }
@@ -3585,6 +3664,22 @@ void hal_on_draw(void) {
                                     cornerX * radius_sclx, cornerY * radius_scly
                                     );
          break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN: // 148
+         TestBeginLineStripPattern(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_AA: // 149
+         TestBeginLineStripPattern(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL: // 150
+         TestBeginLineStripPatternBevel(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_AA: // 151
+         TestBeginLineStripPatternBevel(YAC_TRUE/*bAA*/);
+         break;
    }
 
    sdvg_Flush();
@@ -3617,6 +3712,23 @@ void hal_on_draw(void) {
    }
 }
 
+// ---------------------------------------------------------------------------- CalcLinePatternTex
+void CalcLinePatternTex(sU8 *_tex, sUI _patLen, sUI _pattern) {
+   for(sUI x = 0u; x < 112u; x++)
+      _tex[x] = (_pattern & (1u << (x % _patLen))) ? 255u : 0u;
+}
+
+// ---------------------------------------------------------------------------- UpdateLinePatternTex
+void UpdateLinePatternTex(void) {
+   CalcLinePatternTex(tex_line_pattern_alpha_data,
+                      line_patterns[(sUI)(line_pattern_idx*2+0)],
+                      line_patterns[(sUI)(line_pattern_idx*2+1)]
+                      );
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+   sdvg_UpdateTexture2D(SDVG_TEXFMT_ALPHA8, 112u, 1u, tex_line_pattern_alpha_data, 112u);
+   sdvg_UnbindTexture2D();
+}
+
 // ---------------------------------------------------------------------------- ResetParams
 static void ResetParams(void) {
    aa_range    = 2.5f;// / vp_scale;
@@ -3637,6 +3749,9 @@ static void ResetParams(void) {
    //    stroke_w = 0.375f;
    //    aa_range = 0.75f;
    // }
+
+   line_pattern_idx = 0u;
+   UpdateLinePatternTex();
 }
 
 // ---------------------------------------------------------------------------- SelectRenderMode
@@ -3752,6 +3867,23 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
             Dprintf("[...] fill_alpha is %f\n", fill_alpha);
          }
          break;
+
+      case 'u':
+         if(_mod)
+         {
+            line_pattern_idx--;
+            if(line_pattern_idx < 0)
+               line_pattern_idx += sizeof(line_patterns) / (sizeof(sUI) * 2u);
+         }
+         else
+         {
+            line_pattern_idx++;
+            if(line_pattern_idx >= sizeof(line_patterns) / (sizeof(sUI) * 2u))
+               line_pattern_idx = 0u;
+         }
+         UpdateLinePatternTex();
+         Dprintf("[...] line_pattern_idx is %u\n", line_pattern_idx);
+         break;
    }
 }
 
@@ -3812,7 +3944,7 @@ int main(int argc, char**argv) {
                                           mem_size_tex_escher_alpha
                                           );
 
-      tex_pattern_1_alpha_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 256, 256,
+      tex_pattern_1_alpha_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 256u, 256u,
                                                     (const void*)mem_base_tex_pattern_1_alpha,
                                                     mem_size_tex_pattern_1_alpha
                                                     );
@@ -3823,6 +3955,12 @@ int main(int argc, char**argv) {
                              YAC_TRUE/*bSmoothStep*/
                              );
       tex_gradient_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ARGB32, 256u, 1u, (const void*)tex_gradient, 256*sizeof(sU32));
+
+      CalcLinePatternTex(tex_line_pattern_alpha_data,
+                         line_patterns[(sUI)(line_pattern_idx*2+0)],
+                         line_patterns[(sUI)(line_pattern_idx*2+1)]
+                         );
+      tex_line_pattern_alpha_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 112u, 1u, tex_line_pattern_alpha_data, 112u);
 
       sdvg_FontOnOpen(&font);
       sdvg_FontOnOpen(&font_zoom);
