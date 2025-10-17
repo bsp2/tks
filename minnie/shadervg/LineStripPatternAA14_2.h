@@ -2,7 +2,7 @@
 // ---- file   : LineStripPatternAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2025 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -42,9 +42,9 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "ATTRIBUTE float a_index; \n"
 #endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
-      "VARYING_OUT vec2  v_vertex_mp; \n"
-      "VARYING_OUT vec2  v_plane_n; \n"
-      "VARYING_OUT float v_pat; \n"
+      "VARYING_OUT vec2 v_vertex_mp; \n"
+      "VARYING_OUT vec2 v_plane_n; \n"
+      "VARYING_OUT vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 v1 = a_vertex * 0.25; \n"
@@ -58,7 +58,7 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "  vec2 v; \n"
       "  float pat1 = a_pattern; \n"
       "  float pat2 = a_pattern_n; \n"
-      "  float pat; \n"
+      "  vec2 uv; \n"
       " \n"
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
       "  float index = float(gl_VertexID % 6); \n"
@@ -68,35 +68,35 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
-      "    pat = pat1; \n"
+      "    uv = vec2(pat1, 1.0); \n"
       "  } \n"
       "  else if(index > 3.9) { \n"
       "    v = v2R; \n"
-      "    pat = pat2; \n"
+      "    uv = vec2(pat2, 1.0); \n"
       "  } \n"
       "  else if(index > 2.9) { \n"
       "    v = v1L; \n"
-      "    pat = pat1; \n"
+      "    uv = vec2(pat1, 0.0); \n"
       "  } \n"
       "  else if(index > 1.9) { \n"
       "    v = v2R; \n"
-      "    pat = pat2; \n"
+      "    uv = vec2(pat2, 1.0); \n"
       "  } \n"
       "  else if(index > 0.9) { \n"
       "    v = v2L; \n"
-      "    pat = pat2; \n"
+      "    uv = vec2(pat2, 0.0); \n"
       "  } \n"
       "  else { \n"
       "    v = v1L; \n"
-      "    pat = pat1; \n"
+      "    uv = vec2(pat1, 0.0); \n"
       "  } \n"
       " \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - v1; \n"
       "  v_plane_n   = vec2(vN.y, -vN.x); \n"
-      "  pat *= u_line_pattern_scl; \n"
-      "  pat += u_line_pattern_off; \n"
-      "  v_pat       = pat; \n"
+      "  uv.x *= u_line_pattern_scl; \n"
+      "  uv.x += u_line_pattern_off; \n"
+      "  v_uv = uv; \n"
       "} \n"
       ;
 
@@ -108,17 +108,17 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "uniform float     u_debug; \n"
       "uniform sampler2D u_sampler; \n"
       " \n"
-      "VARYING_IN vec2  v_vertex_mp; \n"
-      "VARYING_IN vec2  v_plane_n; \n"
-      "VARYING_IN float v_pat; \n"
+      "VARYING_IN vec2 v_vertex_mp; \n"
+      "VARYING_IN vec2 v_plane_n; \n"
+      "VARYING_IN vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"
       "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "  float a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
-      "  float patA = TEXTURE2D(u_sampler, vec2(v_pat, 0)).TEX_ALPHA; \n"
+      "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(a, fract(v_pat), fract(v_pat), 1); \n"
+      "    FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
       "  } \n"
       "} \n"
       ;
@@ -134,6 +134,7 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
+         && (-1 != shape_u_sampler)
          && (-1 != shape_a_pattern)
          && (-1 != shape_a_pattern_n)
          ;
