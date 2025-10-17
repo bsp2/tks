@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 156 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 164 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -524,3 +524,27 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_155_begin_line_strip_pattern_decal_bevel_aa
   
   ![screenhots](tests/screenshots/test_155_begin_line_strip_pattern_decal_bevel_aa.png)
+- test_156_begin_line_strip_pattern_diagonal
+  
+  ![screenhots](tests/screenshots/test_156_begin_line_strip_pattern_diagonal.png)
+- test_157_begin_line_strip_pattern_diagonal_aa
+  
+  ![screenhots](tests/screenshots/test_157_begin_line_strip_pattern_diagonal_aa.png)
+- test_158_begin_line_strip_pattern_bevel_diagonal
+  
+  ![screenhots](tests/screenshots/test_158_begin_line_strip_pattern_bevel_diagonal.png)
+- test_159_begin_line_strip_pattern_bevel_diagonal_aa
+  
+  ![screenhots](tests/screenshots/test_159_begin_line_strip_pattern_bevel_diagonal_aa.png)
+- test_160_begin_line_strip_pattern_decal_diagonal
+  
+  ![screenhots](tests/screenshots/test_160_begin_line_strip_pattern_decal_diagonal.png)
+- test_161_begin_line_strip_pattern_decal_diagonal_aa
+  
+  ![screenhots](tests/screenshots/test_161_begin_line_strip_pattern_decal_diagonal_aa.png)
+- test_162_begin_line_strip_pattern_decal_bevel_diagonal
+  
+  ![screenhots](tests/screenshots/test_162_begin_line_strip_pattern_decal_bevel_diagonal.png)
+- test_163_begin_line_strip_pattern_decal_bevel_diagonal_aa
+  
+  ![screenhots](tests/screenshots/test_163_begin_line_strip_pattern_decal_bevel_diagonal_aa.png)
