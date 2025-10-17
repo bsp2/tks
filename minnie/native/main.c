@@ -58,163 +58,171 @@ static sF32 ang_h = 0.0f;
 static sF32 ang_c = 0.0f;
 
 // (note) UP/DOWN
-#define RENDER_RECT_FILL_AA                                   0
-#define RENDER_RECT_FILL_STROKE_AA                            1
-#define RENDER_RECT_STROKE_AA                                 2
-#define RENDER_ELLIPSE_FILL_AA                                3
-#define RENDER_ELLIPSE_FILL_STROKE_AA                         4
-#define RENDER_ELLIPSE_STROKE_AA                              5
-#define RENDER_ROUNDRECT_FILL_AA                              6
-#define RENDER_ROUNDRECT_FILL_STROKE_AA                       7
-#define RENDER_ROUNDRECT_STROKE_AA                            8
-#define RENDER_TRIANGLES_TEX_UV_FLAT                          9
-#define RENDER_TRIANGLES_TEX_UV_GOURAUD                      10
-#define RENDER_TRIANGLES_TEX_UV_FLAT_DECAL                   11
-#define RENDER_TRIANGLES_TEX_UV_GOURAUD_DECAL                12
-#define RENDER_LINE_STRIP_FLAT_1                             13
-#define RENDER_LINE_STRIP_FLAT_2                             14
-#define RENDER_LINE_STRIP_FLAT_AA_1                          15
-#define RENDER_LINE_STRIP_FLAT_AA_2                          16
-#define RENDER_LINE_STRIP_FLAT_BEVEL                         17
-#define RENDER_LINE_STRIP_FLAT_BEVEL_AA                      18
-#define RENDER_CUSTOM_SHADER_1                               19
-#define RENDER_CUSTOM_SHADER_2                               20
-#define RENDER_CUSTOM_SHADER_3_VBO                           21
-#define RENDER_LINES                                         22
-#define RENDER_LINES_AA                                      23
-#define RENDER_BEGIN_LINE_STRIP                              24
-#define RENDER_BEGIN_LINE_STRIP_AA                           25
-#define RENDER_BEGIN_LINE_STRIP_BEVEL                        26
-#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA                     27
-#define RENDER_BEGIN_LINES                                   28
-#define RENDER_BEGIN_LINES_AA                                29
-#define RENDER_FILLED_RECTANGLE                              30
-#define RENDER_BEGIN_POINTS_SQUARE                           31
-#define RENDER_BEGIN_POINTS_SQUARE_AA                        32
-#define RENDER_BEGIN_POINTS_ROUND                            33
-#define RENDER_BEGIN_POINTS_ROUND_AA                         34
-#define RENDER_BEGIN_FILLED_TRIANGLES                        35
-#define RENDER_BEGIN_FILLED_TRIANGLE_FAN                     36
-#define RENDER_BEGIN_FILLED_TRIANGLE_STRIP                   37
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLES                38
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_FAN             39
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_STRIP           40
-#define RENDER_BEGIN_TEXTURED_TRIANGLES                      41
-#define RENDER_BEGIN_TEXTURED_TRIANGLES_ALPHA                42
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN                   43
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN_ALPHA             44
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP                 45
-#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP_ALPHA           46
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES              47
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES_ALPHA        48
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN           49
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN_ALPHA     50
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP         51
-#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP_ALPHA   52
-#define RENDER_TEXT_1                                        53
-#define RENDER_TEXT_2_CLIP                                   54
-#define RENDER_TEXT_3_SWIRL                                  55
-#define RENDER_TEXT_4_UL                                     56
-#define RENDER_TEXT_5_UL_CLIP                                57
-#define RENDER_TEXT_6_ACCEL                                  58
-#define RENDER_TEXT_7_ACCEL_CLIP                             59
-#define RENDER_TEXT_8_ZOOM                                   60
-#define RENDER_TEXT_9_ZOOM_SDF                               61
-#define RENDER_GRADIENT_TO_TEXTURE                           62
-#define RENDER_TRIANGLES_GRADIENT_LINEAR                     63
-#define RENDER_TRIANGLES_GRADIENT_RADIAL                     64
-#define RENDER_TRIANGLES_GRADIENT_CONIC                      65
-#define RENDER_POLYGON_VBO                                   66
-#define RENDER_POLYGON_AA_VBO                                67
-#define RENDER_BEGIN_POLYGON                                 68
-#define RENDER_BEGIN_POLYGON_AA                              69
-#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR                 70
-#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR_AA              71
-#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL                 72
-#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA              73
-#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC                  74
-#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA               75
-#define RENDER_BEGIN_POLYGON_CUSTOM_SHADER                   76
-#define RENDER_BEGIN_POLYGON_PATTERN                         77
-#define RENDER_BEGIN_POLYGON_PATTERN_AA                      78
-#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA                   79
-#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA                80
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL                   81
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA                82
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA             83
-#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA          84
-#define RENDER_ELLIPSE_FILL_AA_LINEAR                        85
-#define RENDER_ELLIPSE_FILL_STROKE_AA_LINEAR                 86
-#define RENDER_ELLIPSE_FILL_AA_RADIAL                        87
-#define RENDER_ELLIPSE_FILL_STROKE_AA_RADIAL                 88
-#define RENDER_ELLIPSE_FILL_AA_CONIC                         89
-#define RENDER_ELLIPSE_FILL_STROKE_AA_CONIC                  90
-#define RENDER_ELLIPSE_FILL_AA_PATTERN                       91
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN                92
-#define RENDER_ELLIPSE_FILL_AA_PATTERN_ALPHA                 93
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_ALPHA          94
-#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL                 95
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL          96
-#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL_ALPHA           97
-#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL_ALPHA    98
-#define RENDER_ROUNDRECT_FILL_AA_LINEAR                      99
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_LINEAR              100
-#define RENDER_ROUNDRECT_FILL_AA_RADIAL                     101
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_RADIAL              102
-#define RENDER_ROUNDRECT_FILL_AA_CONIC                      103
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_CONIC               104
-#define RENDER_ROUNDRECT_FILL_AA_PATTERN                    105
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN             106
-#define RENDER_ROUNDRECT_FILL_AA_PATTERN_ALPHA              107
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_ALPHA       108
-#define RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL              109
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL       110
-#define RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL_ALPHA        111
-#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL_ALPHA 112
-#define RENDER_RECT_FILL_AA_LINEAR                          113
-#define RENDER_RECT_FILL_STROKE_AA_LINEAR                   114
-#define RENDER_RECT_FILL_AA_RADIAL                          115
-#define RENDER_RECT_FILL_STROKE_AA_RADIAL                   116
-#define RENDER_RECT_FILL_AA_CONIC                           117
-#define RENDER_RECT_FILL_STROKE_AA_CONIC                    118
-#define RENDER_RECT_FILL_AA_PATTERN                         119
-#define RENDER_RECT_FILL_STROKE_AA_PATTERN                  120
-#define RENDER_RECT_FILL_AA_PATTERN_ALPHA                   121
-#define RENDER_RECT_FILL_STROKE_AA_PATTERN_ALPHA            122
-#define RENDER_RECT_FILL_AA_PATTERN_DECAL                   123
-#define RENDER_RECT_FILL_STROKE_AA_PATTERN_DECAL            124
-#define RENDER_RECT_FILL_AA_PATTERN_DECAL_ALPHA             125
-#define RENDER_RECT_FILL_STROKE_AA_PATTERN_DECAL_ALPHA      126
-#define RENDER_RECT_STROKE_AA_LINEAR                        127
-#define RENDER_RECT_STROKE_AA_RADIAL                        128
-#define RENDER_RECT_STROKE_AA_CONIC                         129
-#define RENDER_RECT_STROKE_AA_PATTERN                       130
-#define RENDER_RECT_STROKE_AA_PATTERN_ALPHA                 131
-#define RENDER_RECT_STROKE_AA_PATTERN_DECAL                 132
-#define RENDER_RECT_STROKE_AA_PATTERN_DECAL_ALPHA           133
-#define RENDER_ELLIPSE_STROKE_AA_LINEAR                     134
-#define RENDER_ELLIPSE_STROKE_AA_RADIAL                     135
-#define RENDER_ELLIPSE_STROKE_AA_CONIC                      136
-#define RENDER_ELLIPSE_STROKE_AA_PATTERN                    137
-#define RENDER_ELLIPSE_STROKE_AA_PATTERN_ALPHA              138
-#define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL              139
-#define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL_ALPHA        140
-#define RENDER_ROUNDRECT_STROKE_AA_LINEAR                   141
-#define RENDER_ROUNDRECT_STROKE_AA_RADIAL                   142
-#define RENDER_ROUNDRECT_STROKE_AA_CONIC                    143
-#define RENDER_ROUNDRECT_STROKE_AA_PATTERN                  144
-#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_ALPHA            145
-#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL            146
-#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL_ALPHA      147
-#define RENDER_BEGIN_LINE_STRIP_PATTERN                     148
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_AA                  149
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL               150
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_AA            151
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL               152
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_AA            153
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL         154
-#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_AA      155
-#define NUM_RENDER_MODES                                    156  // UP/DOWN
+#define RENDER_RECT_FILL_AA                                        0
+#define RENDER_RECT_FILL_STROKE_AA                                 1
+#define RENDER_RECT_STROKE_AA                                      2
+#define RENDER_ELLIPSE_FILL_AA                                     3
+#define RENDER_ELLIPSE_FILL_STROKE_AA                              4
+#define RENDER_ELLIPSE_STROKE_AA                                   5
+#define RENDER_ROUNDRECT_FILL_AA                                   6
+#define RENDER_ROUNDRECT_FILL_STROKE_AA                            7
+#define RENDER_ROUNDRECT_STROKE_AA                                 8
+#define RENDER_TRIANGLES_TEX_UV_FLAT                               9
+#define RENDER_TRIANGLES_TEX_UV_GOURAUD                           10
+#define RENDER_TRIANGLES_TEX_UV_FLAT_DECAL                        11
+#define RENDER_TRIANGLES_TEX_UV_GOURAUD_DECAL                     12
+#define RENDER_LINE_STRIP_FLAT_1                                  13
+#define RENDER_LINE_STRIP_FLAT_2                                  14
+#define RENDER_LINE_STRIP_FLAT_AA_1                               15
+#define RENDER_LINE_STRIP_FLAT_AA_2                               16
+#define RENDER_LINE_STRIP_FLAT_BEVEL                              17
+#define RENDER_LINE_STRIP_FLAT_BEVEL_AA                           18
+#define RENDER_CUSTOM_SHADER_1                                    19
+#define RENDER_CUSTOM_SHADER_2                                    20
+#define RENDER_CUSTOM_SHADER_3_VBO                                21
+#define RENDER_LINES                                              22
+#define RENDER_LINES_AA                                           23
+#define RENDER_BEGIN_LINE_STRIP                                   24
+#define RENDER_BEGIN_LINE_STRIP_AA                                25
+#define RENDER_BEGIN_LINE_STRIP_BEVEL                             26
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA                          27
+#define RENDER_BEGIN_LINES                                        28
+#define RENDER_BEGIN_LINES_AA                                     29
+#define RENDER_FILLED_RECTANGLE                                   30
+#define RENDER_BEGIN_POINTS_SQUARE                                31
+#define RENDER_BEGIN_POINTS_SQUARE_AA                             32
+#define RENDER_BEGIN_POINTS_ROUND                                 33
+#define RENDER_BEGIN_POINTS_ROUND_AA                              34
+#define RENDER_BEGIN_FILLED_TRIANGLES                             35
+#define RENDER_BEGIN_FILLED_TRIANGLE_FAN                          36
+#define RENDER_BEGIN_FILLED_TRIANGLE_STRIP                        37
+#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLES                     38
+#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_FAN                  39
+#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_STRIP                40
+#define RENDER_BEGIN_TEXTURED_TRIANGLES                           41
+#define RENDER_BEGIN_TEXTURED_TRIANGLES_ALPHA                     42
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN                        43
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN_ALPHA                  44
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP                      45
+#define RENDER_BEGIN_TEXTURED_TRIANGLE_STRIP_ALPHA                46
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES                   47
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLES_ALPHA             48
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN                49
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_FAN_ALPHA          50
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP              51
+#define RENDER_BEGIN_TEXTURED_GOURAUD_TRIANGLE_STRIP_ALPHA        52
+#define RENDER_TEXT_1                                             53
+#define RENDER_TEXT_2_CLIP                                        54
+#define RENDER_TEXT_3_SWIRL                                       55
+#define RENDER_TEXT_4_UL                                          56
+#define RENDER_TEXT_5_UL_CLIP                                     57
+#define RENDER_TEXT_6_ACCEL                                       58
+#define RENDER_TEXT_7_ACCEL_CLIP                                  59
+#define RENDER_TEXT_8_ZOOM                                        60
+#define RENDER_TEXT_9_ZOOM_SDF                                    61
+#define RENDER_GRADIENT_TO_TEXTURE                                62
+#define RENDER_TRIANGLES_GRADIENT_LINEAR                          63
+#define RENDER_TRIANGLES_GRADIENT_RADIAL                          64
+#define RENDER_TRIANGLES_GRADIENT_CONIC                           65
+#define RENDER_POLYGON_VBO                                        66
+#define RENDER_POLYGON_AA_VBO                                     67
+#define RENDER_BEGIN_POLYGON                                      68
+#define RENDER_BEGIN_POLYGON_AA                                   69
+#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR                      70
+#define RENDER_BEGIN_POLYGON_GRADIENT_LINEAR_AA                   71
+#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL                      72
+#define RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA                   73
+#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC                       74
+#define RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA                    75
+#define RENDER_BEGIN_POLYGON_CUSTOM_SHADER                        76
+#define RENDER_BEGIN_POLYGON_PATTERN                              77
+#define RENDER_BEGIN_POLYGON_PATTERN_AA                           78
+#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA                        79
+#define RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA                     80
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL                        81
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA                     82
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA                  83
+#define RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA               84
+#define RENDER_ELLIPSE_FILL_AA_LINEAR                             85
+#define RENDER_ELLIPSE_FILL_STROKE_AA_LINEAR                      86
+#define RENDER_ELLIPSE_FILL_AA_RADIAL                             87
+#define RENDER_ELLIPSE_FILL_STROKE_AA_RADIAL                      88
+#define RENDER_ELLIPSE_FILL_AA_CONIC                              89
+#define RENDER_ELLIPSE_FILL_STROKE_AA_CONIC                       90
+#define RENDER_ELLIPSE_FILL_AA_PATTERN                            91
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN                     92
+#define RENDER_ELLIPSE_FILL_AA_PATTERN_ALPHA                      93
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_ALPHA               94
+#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL                      95
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL               96
+#define RENDER_ELLIPSE_FILL_AA_PATTERN_DECAL_ALPHA                97
+#define RENDER_ELLIPSE_FILL_STROKE_AA_PATTERN_DECAL_ALPHA         98
+#define RENDER_ROUNDRECT_FILL_AA_LINEAR                           99
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_LINEAR                   100
+#define RENDER_ROUNDRECT_FILL_AA_RADIAL                          101
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_RADIAL                   102
+#define RENDER_ROUNDRECT_FILL_AA_CONIC                           103
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_CONIC                    104
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN                         105
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN                  106
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN_ALPHA                   107
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_ALPHA            108
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL                   109
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL            110
+#define RENDER_ROUNDRECT_FILL_AA_PATTERN_DECAL_ALPHA             111
+#define RENDER_ROUNDRECT_FILL_STROKE_AA_PATTERN_DECAL_ALPHA      112
+#define RENDER_RECT_FILL_AA_LINEAR                               113
+#define RENDER_RECT_FILL_STROKE_AA_LINEAR                        114
+#define RENDER_RECT_FILL_AA_RADIAL                               115
+#define RENDER_RECT_FILL_STROKE_AA_RADIAL                        116
+#define RENDER_RECT_FILL_AA_CONIC                                117
+#define RENDER_RECT_FILL_STROKE_AA_CONIC                         118
+#define RENDER_RECT_FILL_AA_PATTERN                              119
+#define RENDER_RECT_FILL_STROKE_AA_PATTERN                       120
+#define RENDER_RECT_FILL_AA_PATTERN_ALPHA                        121
+#define RENDER_RECT_FILL_STROKE_AA_PATTERN_ALPHA                 122
+#define RENDER_RECT_FILL_AA_PATTERN_DECAL                        123
+#define RENDER_RECT_FILL_STROKE_AA_PATTERN_DECAL                 124
+#define RENDER_RECT_FILL_AA_PATTERN_DECAL_ALPHA                  125
+#define RENDER_RECT_FILL_STROKE_AA_PATTERN_DECAL_ALPHA           126
+#define RENDER_RECT_STROKE_AA_LINEAR                             127
+#define RENDER_RECT_STROKE_AA_RADIAL                             128
+#define RENDER_RECT_STROKE_AA_CONIC                              129
+#define RENDER_RECT_STROKE_AA_PATTERN                            130
+#define RENDER_RECT_STROKE_AA_PATTERN_ALPHA                      131
+#define RENDER_RECT_STROKE_AA_PATTERN_DECAL                      132
+#define RENDER_RECT_STROKE_AA_PATTERN_DECAL_ALPHA                133
+#define RENDER_ELLIPSE_STROKE_AA_LINEAR                          134
+#define RENDER_ELLIPSE_STROKE_AA_RADIAL                          135
+#define RENDER_ELLIPSE_STROKE_AA_CONIC                           136
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN                         137
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN_ALPHA                   138
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL                   139
+#define RENDER_ELLIPSE_STROKE_AA_PATTERN_DECAL_ALPHA             140
+#define RENDER_ROUNDRECT_STROKE_AA_LINEAR                        141
+#define RENDER_ROUNDRECT_STROKE_AA_RADIAL                        142
+#define RENDER_ROUNDRECT_STROKE_AA_CONIC                         143
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN                       144
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_ALPHA                 145
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL                 146
+#define RENDER_ROUNDRECT_STROKE_AA_PATTERN_DECAL_ALPHA           147
+#define RENDER_BEGIN_LINE_STRIP_PATTERN                          148
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_AA                       149
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL                    150
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_AA                 151
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL                    152
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_AA                 153
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL              154
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_AA           155
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DIAGONAL                 156
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DIAGONAL_AA              157
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_DIAGONAL           158
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_DIAGONAL_AA        159
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_DIAGONAL           160
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_DIAGONAL_AA        161
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL     162
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL_AA  163
+#define NUM_RENDER_MODES                                         164  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -375,6 +383,14 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 153 */ "begin_line_strip_pattern_decal_aa",
    /* 154 */ "begin_line_strip_pattern_decal_bevel",
    /* 155 */ "begin_line_strip_pattern_decal_bevel_aa",
+   /* 156 */ "begin_line_strip_pattern_diagonal",
+   /* 157 */ "begin_line_strip_pattern_diagonal_aa",
+   /* 158 */ "begin_line_strip_pattern_bevel_diagonal",
+   /* 159 */ "begin_line_strip_pattern_bevel_diagonal_aa",
+   /* 160 */ "begin_line_strip_pattern_decal_diagonal",
+   /* 161 */ "begin_line_strip_pattern_decal_diagonal_aa",
+   /* 162 */ "begin_line_strip_pattern_decal_bevel_diagonal",
+   /* 163 */ "begin_line_strip_pattern_decal_bevel_diagonal_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -422,7 +438,19 @@ static sUI line_patterns[] = {
    28u, 0x0F00C30u /* 0b0000111100000000110000110000 */,
    16u, 0x0000C30u /* 0b0000110000110000 */,
 };
-static sSI line_pattern_idx = 0;
+static sSI line_pattern_idx = 0;  // 'u' / lctrl-u
+
+static sUI tex_diagonal_line_pattern_alpha_id;
+static sU8 tex_diagonal_line_pattern_alpha_data[16*16];
+static sUI diagonal_line_patterns[] ={
+   16u, 1u, 0x00FFu /* 0b0000000011111111 */,
+   16u, 2u, 0x00FFu /* 0b0000000011111111 */,
+   16u, 4u, 0x0F0Fu /* 0b0000111100001111 */,
+   16u, 4u, 0x3333u /* 0b0011001100110011 */,
+   16u, 5u, 0x5555u /* 0b0101010101010101 */,
+   16u, 5u, 0x3CCFu /* 0b0011110011001111 */,
+};
+static sSI diagonal_line_pattern_idx = 0;  // 's' / lctrl-s
 
 
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
@@ -2144,6 +2172,126 @@ void TestBeginLineStripPatternDecalBevel(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDiagonal (156+157)
+void TestBeginLineStripPatternDiagonal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
+   sdvg_SetStrokeWidth(stroke_w * 2.0f);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 1;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternAA(numPoints)
+      : sdvg_BeginLineStripPattern(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternBevelDiagonal (158+159)
+void TestBeginLineStripPatternBevelDiagonal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 2;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternBevelAA(numPoints)
+      : sdvg_BeginLineStripPatternBevel(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalDiagonal(160+161)
+void TestBeginLineStripPatternDecalDiagonal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
+   sdvg_SetStrokeWidth(stroke_w);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5*fill_alpha);
+   sSI numSeg = 64;
+   sSI numPoints = numSeg + 1;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternDecalAA(numPoints)
+      : sdvg_BeginLineStripPatternDecal(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalBevelDiagonal (162+163)
+void TestBeginLineStripPatternDecalBevelDiagonal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternScale(0.5f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sdvg_SetFillColorARGB(sdvg_RGBAlpha(0xa6d475u, (sU8)(fill_alpha*255)));
+   sSI numSeg = 192;
+   sSI numPoints = numSeg + 2;
+   sF32 w = (sM_2PI / numSeg);
+   sF32 a = ang_x * 0.5f;
+   sF32 wd = ((3.0f*sM_2PI) / numSeg);
+   sF32 ad = ang_y;
+   sF32 ctrX = VP_W*0.5f;
+   sF32 ctrY = VP_H*0.5f;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternDecalBevelAA(numPoints)
+      : sdvg_BeginLineStripPatternDecalBevel(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 dist = sinf(ad) * sinf(a*4.0f) * 75.0f + 150.0f;
+         sF32 x = cosf(a) * dist + ctrX;
+         sF32 y = sinf(a) * dist + ctrY;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         ad += wd;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
@@ -3761,6 +3909,38 @@ void hal_on_draw(void) {
       case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_AA: // 155
          TestBeginLineStripPatternDecalBevel(YAC_TRUE/*bAA*/);
          break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DIAGONAL: // 156
+         TestBeginLineStripPatternDiagonal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DIAGONAL_AA: // 157
+         TestBeginLineStripPatternDiagonal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_DIAGONAL: // 158
+         TestBeginLineStripPatternBevelDiagonal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_BEVEL_DIAGONAL_AA: // 159
+         TestBeginLineStripPatternBevelDiagonal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_DIAGONAL: // 160
+         TestBeginLineStripPatternDecalDiagonal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_DIAGONAL_AA: // 161
+         TestBeginLineStripPatternDecalDiagonal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL: // 162
+         TestBeginLineStripPatternDecalBevelDiagonal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL_AA: // 163
+         TestBeginLineStripPatternDecalBevelDiagonal(YAC_TRUE/*bAA*/);
+         break;
    }
 
    sdvg_Flush();
@@ -3810,11 +3990,35 @@ void UpdateLinePatternTex(void) {
    sdvg_UnbindTexture2D();
 }
 
+// ---------------------------------------------------------------------------- CalcDiagonalLinePatternTex
+void CalcDiagonalLinePatternTex(sU8 *_tex, sUI _patLen, sUI _pattern) {
+   sUI k = 0u;
+   for(sUI y = 0u; y < 16u; y++)
+   {
+      for(sUI x = 0u; x < 16u; x++)
+      {
+         sUI patBit = (x + y) & 15u;
+         _tex[k++] = (_pattern & (1u << patBit)) ? 255u : 0u;
+      }
+   }
+}
+
+// ---------------------------------------------------------------------------- UpdateDiagonalLinePatternTex
+void UpdateDiagonalLinePatternTex(void) {
+   CalcDiagonalLinePatternTex(tex_diagonal_line_pattern_alpha_data,
+                              diagonal_line_patterns[(sUI)(diagonal_line_pattern_idx*3+0)],
+                              diagonal_line_patterns[(sUI)(diagonal_line_pattern_idx*3+2)]
+                              );
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+   sdvg_UpdateTexture2D(SDVG_TEXFMT_ALPHA8, 16u, 16u, tex_diagonal_line_pattern_alpha_data, 256u);
+   sdvg_UnbindTexture2D();
+}
+
 // ---------------------------------------------------------------------------- ResetParams
 static void ResetParams(void) {
-   aa_range    = 2.5f;// / vp_scale;
+   aa_range    = 2.5f;
    aa_exp      = 1.0f;
-   stroke_w    = 1.5f;
+   stroke_w    = 4.0f;
    fill_alpha  = 1.0f;
    decal_alpha = 1.0f;
    radius_sclx = 1.0f;
@@ -3825,14 +4029,12 @@ static void ResetParams(void) {
    ang_h       = 0.0f;
    ang_c       = 0.0f;
    Dprintf("[...] reset\n");
-   // if(2 == test_idx)
-   // {
-   //    stroke_w = 0.375f;
-   //    aa_range = 0.75f;
-   // }
 
-   line_pattern_idx = 0u;
+   line_pattern_idx = 0;
    UpdateLinePatternTex();
+
+   diagonal_line_pattern_idx = 0;
+   UpdateDiagonalLinePatternTex();
 }
 
 // ---------------------------------------------------------------------------- SelectRenderMode
@@ -3936,6 +4138,23 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          }
          break;
 
+      case 's':
+         if(_mod)
+         {
+            diagonal_line_pattern_idx--;
+            if(diagonal_line_pattern_idx < 0)
+               diagonal_line_pattern_idx += sizeof(diagonal_line_patterns) / (sizeof(sUI) * 3u);
+         }
+         else
+         {
+            diagonal_line_pattern_idx++;
+            if(diagonal_line_pattern_idx >= sizeof(diagonal_line_patterns) / (sizeof(sUI) * 3u))
+               diagonal_line_pattern_idx = 0u;
+         }
+         UpdateDiagonalLinePatternTex();
+         Dprintf("[...] diagonal_line_pattern_idx is %u\n", diagonal_line_pattern_idx);
+         break;
+
       case 't':
          if(_mod)
          {
@@ -3994,7 +4213,7 @@ int main(int argc, char**argv) {
       sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
       sdvg_Init(1/*b_glcore*/);
 
-      Dprintf("[...] init OK, initializing fonts..\n");
+      Dprintf("[...] init OK, initializing textures..\n");
 
       sdvg_InitFont(&font,
                     mem_base_font_default_30, mem_size_font_default_30,
@@ -4041,7 +4260,19 @@ int main(int argc, char**argv) {
                          line_patterns[(sUI)(line_pattern_idx*2+0)],
                          line_patterns[(sUI)(line_pattern_idx*2+1)]
                          );
-      tex_line_pattern_alpha_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 112u, 1u, tex_line_pattern_alpha_data, 112u);
+      tex_line_pattern_alpha_id =
+         sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 112u, 1u,
+                              tex_line_pattern_alpha_data, 112u
+                              );
+
+      CalcDiagonalLinePatternTex(tex_diagonal_line_pattern_alpha_data,
+                                 diagonal_line_patterns[(sUI)(diagonal_line_pattern_idx*3+0)],
+                                 diagonal_line_patterns[(sUI)(diagonal_line_pattern_idx*3+2)]
+                                 );
+      tex_diagonal_line_pattern_alpha_id =
+         sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, 16u, 16u,
+                              tex_diagonal_line_pattern_alpha_data, 256u
+                              );
 
       sdvg_FontOnOpen(&font);
       sdvg_FontOnOpen(&font_zoom);
