@@ -60,6 +60,7 @@ float   size_sclx      = 1.0;  // 'q', 'w'
 float   size_scly      = 1.0;  // 'z', 'x'
 boolean b_vsync        = 1;    // 'v'
 boolean b_msaa         = 0;    // 'm'
+boolean b_benchmark    = 0;
 
 int test_idx = 0;  // '1', '2', '3'
 
@@ -473,6 +474,13 @@ IntArray diagonal_line_patterns = [ 16, 1, /* 0x00FF */ 0b0000000011111111,
 int diagonal_line_pattern_idx = 0;
 
 boolean b_queued_screenshot;
+
+int BENCHMARK_NUM_FRAMES = 10000;
+int BENCHMARK_NUM_FRAMES_BASELINE = 10000;
+int benchmark_frames_left = BENCHMARK_NUM_FRAMES_BASELINE;
+float benchmark_ms_start = 0;
+float benchmark_ms_avg = 0;
+float benchmark_ms_avg_baseline = 0;
 
 
 // ---------------------------------------------------------------------------- SaveScreenShotPNG
@@ -2443,7 +2451,25 @@ function onDraw() {
    float dt = FPS.precision;
 
    if( !(++num_frames_rendered&127) )
-      trace "FPS.real="+FPS.real;
+   {
+      if(!b_benchmark)
+      {
+         trace "FPS.real="+FPS.real;
+      }
+   }
+
+   if(b_benchmark)
+   {
+      if(BENCHMARK_NUM_FRAMES_BASELINE == benchmark_frames_left)
+      {
+         benchmark_ms_start = milliSeconds();
+      }
+
+      if(0.0f == benchmark_ms_avg_baseline)
+      {
+         render_mode = -1;
+      }
+   }
 
    float centerX;
    float centerY;
@@ -2544,6 +2570,8 @@ function onDraw() {
    switch(render_mode)
    {
       default:
+         break;
+
       case RENDER_RECT_FILL_AA: // 0
          sdvg_DrawRectFillAA(centerX, centerY,
                              sizeX * size_sclx, sizeY * size_scly
@@ -4136,6 +4164,8 @@ function onDraw() {
    sdvg_EndFrame();
 
    float spd = b_anim ? b_slomo ? 0.1 : 1.0 : 0.0;
+   if(b_benchmark)
+      spd = 0.0f;
 
    if(b_anim_xy)
    {
@@ -4165,6 +4195,35 @@ function onDraw() {
       b_queued_screenshot = false;
       Integer io = render_mode;
       SaveScreenShotPNG("screenshots/test_"+io.printf("%03d")+"_"+mode_names.get(render_mode)+".png");
+   }
+
+   if(b_benchmark)
+   {
+      if(0 == --benchmark_frames_left)
+      {
+         glFinish();
+         float deltaMS;
+         if(0.0f == benchmark_ms_avg_baseline)
+         {
+            deltaMS = (milliSeconds() - benchmark_ms_start);
+            benchmark_ms_avg = deltaMS / ((float)BENCHMARK_NUM_FRAMES_BASELINE);
+            benchmark_ms_avg_baseline = benchmark_ms_avg;
+            render_mode = 0;
+            trace "[...] benchmark: deltaMS="+deltaMS+" benchmark_ms_avg_baseline="+benchmark_ms_avg_baseline+" ("+(1000.0/benchmark_ms_avg_baseline)+" fps)";
+         }
+         else
+         {
+            deltaMS = (milliSeconds() - benchmark_ms_start);
+            benchmark_ms_avg = deltaMS / ((float)BENCHMARK_NUM_FRAMES);
+            // benchmark_ms_avg -= benchmark_ms_avg_baseline;
+            trace "[...] benchmark: render mode "+render_mode+" \""+mode_names.get(render_mode)+"\" deltaMS="+deltaMS+" ms_avg="+(int(100*benchmark_ms_avg)*0.01)+" ("+(1000.0/benchmark_ms_avg)+" fps)";
+            render_mode++;
+            if(render_mode >= NUM_RENDER_MODES)
+               SDL.exitEventLoop();
+         }
+         benchmark_ms_start = milliSeconds();
+         benchmark_frames_left = BENCHMARK_NUM_FRAMES;
+      }
    }
 }
 
@@ -4500,6 +4559,7 @@ function onKeyboard(Key _k) {
          b_vsync = !b_vsync;
          trace "[...] b_vsync is "+b_vsync;
          Viewport.swapInterval(b_vsync);
+         // FPS.limit = 0;
          break;
 
       case 'w':
@@ -4691,7 +4751,13 @@ function LoadFont(String _pathPrefix, ShaderVG_Font _font, Buffer _fontBin, Text
 function main() {
 
    if(Arguments.numElements > 0)
-      render_mode = mathClampi(Arguments[0], 0, NUM_RENDER_MODES);
+   {
+      render_mode = mathClampi(Arguments[0], -1, NUM_RENDER_MODES);
+      if(render_mode < 0)
+      {
+         b_benchmark = 1;
+      }
+   }
 
    // Load texture(s)
    if(!tex_data.loadLocalImage("res/escher.png", 0,0,4))
@@ -4713,7 +4779,7 @@ function main() {
    use callbacks;
 
    FPS.tickInterval = 1000.0/60;
-   FPS.limit = 60;
+   FPS.limit = 0;
 
    SDL.eventPolling = false; // tksdl default is "true" (do not block while waiting for an SDL event)
    SDL.timerInterval = 1;
@@ -4734,7 +4800,7 @@ function main() {
    }
 
    Viewport.openWindow(640*vp_scale, 480*vp_scale);
-   Viewport.swapInterval(b_vsync);
+   Viewport.swapInterval(b_vsync && !b_benchmark);
 
    trace "[...] entering eventloop";
 

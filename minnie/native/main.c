@@ -48,6 +48,7 @@ static sBool b_sym_radius = 0;     // 'l'
 static sBool b_sym_size   = 0;     // lctrl-'l'
 static sF32  size_sclx    = 1.0f;  // 'q', 'w'
 static sF32  size_scly    = 1.0f;  // 'z', 'x'
+static sBool b_benchmark  = 0;
 
 static sU32 last_sdl_ticks = 0u;
 
@@ -451,6 +452,13 @@ static sUI diagonal_line_patterns[] ={
    16u, 5u, 0x3CCFu /* 0b0011110011001111 */,
 };
 static sSI diagonal_line_pattern_idx = 0;  // 's' / lctrl-s
+
+#define BENCHMARK_NUM_FRAMES  10000
+#define BENCHMARK_NUM_FRAMES_BASELINE  10000
+static sSI benchmark_frames_left = BENCHMARK_NUM_FRAMES_BASELINE;
+static sF32 benchmark_ms_start = 0.0f;
+static sF32 benchmark_ms_avg = 0.0f;
+static sF32 benchmark_ms_avg_baseline = 0.0f;
 
 
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
@@ -2305,6 +2313,19 @@ void hal_on_draw(void) {
    last_sdl_ticks = ticks;
    // Dprintf("xxx hal_on_draw dt=%f\n", dt);
 
+   if(b_benchmark)
+   {
+      if(BENCHMARK_NUM_FRAMES_BASELINE == benchmark_frames_left)
+      {
+         benchmark_ms_start = (float)SDL_GetTicks();
+      }
+
+      if(0.0f == benchmark_ms_avg_baseline)
+      {
+         render_mode = -1;
+      }
+   }
+
    sdvg_SetFramebufferSize(VP_W, VP_H);
    sdvg_BeginFrame();
 
@@ -3943,11 +3964,11 @@ void hal_on_draw(void) {
          break;
    }
 
-   sdvg_Flush();
    sdvg_EndFrame();
-   hal_window_swap();
 
    sF32 spd = b_anim ? b_slomo ? 0.1f : 1.0f : 0.0f;
+   if(b_benchmark)
+      spd = 0.0f;
 
    if(b_anim_xy)
    {
@@ -3971,6 +3992,37 @@ void hal_on_draw(void) {
       if(ang_c >= sM_2PIf)
          ang_c -= sM_2PIf;
    }
+
+   if(b_benchmark)
+   {
+      if(0 == --benchmark_frames_left)
+      {
+         glFinish();
+         sF32 deltaMS;
+         if(0.0f == benchmark_ms_avg_baseline)
+         {
+            deltaMS = (SDL_GetTicks() - benchmark_ms_start);
+            benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES_BASELINE);
+            benchmark_ms_avg_baseline = benchmark_ms_avg;
+            render_mode = 0;
+            Dprintf("[...] benchmark: deltaMS=%f benchmark_ms_avg_baseline=%f (%f fps)\n", deltaMS, benchmark_ms_avg_baseline, (1000.0/benchmark_ms_avg_baseline));
+         }
+         else
+         {
+            deltaMS = (SDL_GetTicks() - benchmark_ms_start);
+            benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES);
+            // benchmark_ms_avg -= benchmark_ms_avg_baseline;
+            Dprintf("[...] benchmark: render mode %d \"%s\" deltaMS=%f ms_avg=%f (%f fps)\n", render_mode, mode_names[render_mode], deltaMS, (((sSI)(100*benchmark_ms_avg))*0.01f), (1000.0f/benchmark_ms_avg));
+            render_mode++;
+            if(render_mode >= NUM_RENDER_MODES)
+               b_hal_running = YAC_FALSE;
+         }
+         benchmark_ms_start = SDL_GetTicks();
+         benchmark_frames_left = BENCHMARK_NUM_FRAMES;
+      }
+   }
+
+   hal_window_swap();
 }
 
 // ---------------------------------------------------------------------------- CalcLinePatternTex
@@ -4040,9 +4092,12 @@ static void ResetParams(void) {
 // ---------------------------------------------------------------------------- SelectRenderMode
 static void SelectRenderMode(sSI _mode) {
    render_mode = _mode;
-   char buf[256];
-   snprintf(buf,256,"%d:%s",render_mode,mode_names[render_mode]);
-   SDL_SetWindowTitle(sdl_window, buf);
+   if(render_mode >= 0)
+   {
+      char buf[256];
+      snprintf(buf,256,"%d:%s",render_mode,mode_names[render_mode]);
+      SDL_SetWindowTitle(sdl_window, buf);
+   }
 }
 
 // ---------------------------------------------------------------------------- hal_on_key_down
@@ -4197,7 +4252,7 @@ int main(int argc, char**argv) {
       if(render_mode >= NUM_RENDER_MODES)
          render_mode = 0;
       else if(render_mode < 0)
-         render_mode = 0;
+         b_benchmark = 1;
    }
 
    if(hal_window_init())
@@ -4284,6 +4339,8 @@ int main(int argc, char**argv) {
       test_text_3_shader_idx = 0u;
       custom_vbo_id_3 = 0u;
       polygon_vbo_id = 0u;
+
+      SDL_GL_SetSwapInterval(b_benchmark ? 0 : 1);
 
       hal_window_loop();
 
