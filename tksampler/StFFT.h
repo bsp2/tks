@@ -51,6 +51,8 @@ YC class StFFT_BandParams : public YAC_Object {
 };
 
 
+/* @class StFFT,Object
+*/
 YC class StFFT : public YAC_Object {
   public:
    sF32 *in_real;       // real / cosines

@@ -20,6 +20,8 @@
 
 YG("tksampler")
 
+/* @class StADSR,Object
+*/
 YC class StADSR : public YAC_Object {
 
 #define STADSR_STAGEOP_MUL           YCI 0

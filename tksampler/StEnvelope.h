@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StEnvelope.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2010-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -25,6 +25,8 @@ YG("tksampler")
 #define STENVELOPE_MAX_TIMESCALE_MS (100000.0f)
 
 
+/* @class StEnvelope
+*/
 YC class StEnvelope : public YAC_Object {
    //
    // Note: this is primarily used in the StADSR class

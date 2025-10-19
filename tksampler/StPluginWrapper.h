@@ -33,6 +33,8 @@ struct st_plugin_cache_entry_t {
 
 
 // <class.png>
+/* @class StPluginInfo,Object
+ */
 YC class StPluginInfo : public YAC_Object {
 
   public:
@@ -85,6 +87,8 @@ YC class StPluginInfo : public YAC_Object {
 
 
 // <class.png>
+/* @class StPluginShared,Object
+ */
 YC class StPluginShared : public YAC_Object {
 
   public:
@@ -134,6 +138,8 @@ YC class StPluginShared : public YAC_Object {
 
 
 // <class.png>
+/* @class StPluginSharedMissing,Object
+ */
 YC class StPluginSharedMissing : public YAC_Object {
 
    static const sUI MAX_MISSING_PARAMS = 32u;
@@ -180,6 +186,8 @@ YC class StPluginSharedMissing : public YAC_Object {
 
 
 // <class.png>
+/* @class StPluginVoice,Object
+ */
 YC class StPluginVoice : public YAC_Object {
    // (note) used by ModDelay
    // (note) calls note_on() during init
@@ -213,6 +221,8 @@ YC class StPluginVoice : public YAC_Object {
 
 
 // <class.png>
+/* @class StPluginLibrary,Object
+ */
 YC class StPluginLibrary : public YAC_Object {
 
   protected:

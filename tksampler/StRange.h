@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StRange.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -19,6 +19,8 @@
 YG("tksampler")
 
 
+/* @class StRange,Object
+ */
 YC class StRange : public YAC_Object {
   public:
    sF32 lo;

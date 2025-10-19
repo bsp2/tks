@@ -33,7 +33,7 @@
 // -- midiInCallback                                                         --
 // --                                                                        --
 // ----------------------------------------------------------------------------
-static void CALLBACK midiInCallback(HMIDIIN handle, UINT uMsg, MIDIIn *thiz, DWORD* dwParam1, DWORD* dwParam2) 
+static void CALLBACK midiInCallback(HMIDIIN handle, UINT uMsg, MIDIIn *thiz, DWORD* dwParam1, DWORD* dwParam2)
 {
    // yac_host->printf("xxx midiInCallback\n");
 
@@ -62,7 +62,7 @@ static void CALLBACK midiInCallback(HMIDIIN handle, UINT uMsg, MIDIIn *thiz, DWO
          sU8 midich = (((DWORD)dwParam1)&0x0F);
          sU8 midimapType = 0; // (note) see MIDIMapEventType.tks for type enumeration
          sU16 nRpn = 0;       // (note) (N)RPN parameter id
-         
+
          // (note) running status is handled by MIDI driver
          // if(!(status & 0x80))
          // {
@@ -315,7 +315,7 @@ static void CALLBACK midiInCallback(HMIDIIN handle, UINT uMsg, MIDIIn *thiz, DWO
             size = 1;
             midimapType = 14;
             break;
-            
+
          case 0xF9:
             // undefined
             bFiltered = 1;
@@ -328,19 +328,19 @@ static void CALLBACK midiInCallback(HMIDIIN handle, UINT uMsg, MIDIIn *thiz, DWO
             size = 1;
             midimapType = 16;
             break;
-            
+
          case 0xFB:
             bFiltered = thiz->b_filter_rt_continue;
             size = 1;
             midimapType = 17;
             break;
-            
+
          case 0xFC:
             bFiltered = thiz->b_filter_rt_stop;
             size = 1;
             midimapType = 18;
             break;
-            
+
          case 0xFD:
             // undefined
             bFiltered = 1;
@@ -353,7 +353,7 @@ static void CALLBACK midiInCallback(HMIDIIN handle, UINT uMsg, MIDIIn *thiz, DWO
             size = 1;
             midimapType = 20;
             break;
-            
+
          case 0xFF:
             bFiltered = thiz->b_filter_rt_system_reset;
             size = 1;
@@ -485,19 +485,19 @@ void RecordedMIDIEvent::classifyShortMessage(MIDIIn *thiz, sBool *bFiltered) {
          *bFiltered = thiz->b_filter_note_off;
          midimap_event_type = 0;
          break;
-         
+
       case 0x90:
          size = 3;
          *bFiltered = thiz->b_filter_note_on;
          midimap_event_type = 1;
          break;
-         
+
       case 0xA0:
          size = 3;
          *bFiltered = thiz->b_filter_poly_pressure; // polyphonic aftertouch
          midimap_event_type = 2;
          break;
-         
+
       case 0xB0:
          size = 3;
          *bFiltered = thiz->b_filter_control_change;
@@ -505,13 +505,13 @@ void RecordedMIDIEvent::classifyShortMessage(MIDIIn *thiz, sBool *bFiltered) {
 
          // also see classifyCtlChange()
          break;
-         
+
       case 0xC0:
          size = 2;
          *bFiltered = thiz->b_filter_program_change;
          midimap_event_type = 4;
          break;
-         
+
       case 0xD0:
          size = 2;
          *bFiltered = thiz->b_filter_channel_pressure; // aftertouch
@@ -579,7 +579,7 @@ void RecordedMIDIEvent::classifyShortMessage(MIDIIn *thiz, sBool *bFiltered) {
                size = 1;
                midimap_event_type = 14;
                break;
-            
+
             case 0xF9:
                // undefined
                *bFiltered = YAC_TRUE;
@@ -592,19 +592,19 @@ void RecordedMIDIEvent::classifyShortMessage(MIDIIn *thiz, sBool *bFiltered) {
                size = 1;
                midimap_event_type = 16;
                break;
-            
+
             case 0xFB:
                *bFiltered = thiz->b_filter_rt_continue;
                size = 1;
                midimap_event_type = 17;
                break;
-            
+
             case 0xFC:
                *bFiltered = thiz->b_filter_rt_stop;
                size = 1;
                midimap_event_type = 18;
                break;
-            
+
             case 0xFD:
                // undefined
                *bFiltered = YAC_TRUE;
@@ -617,7 +617,7 @@ void RecordedMIDIEvent::classifyShortMessage(MIDIIn *thiz, sBool *bFiltered) {
                size = 1;
                midimap_event_type = 20;
                break;
-            
+
             case 0xFF:
                *bFiltered = thiz->b_filter_rt_system_reset;
                size = 1;
@@ -637,7 +637,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
    sU8 midich = data.bytes[0] & 0x0Fu;
    sU8 ccNr   = data.bytes[1];
    sU8 ccVal  = data.bytes[2];
-   
+
    DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: ch=%u ccNr=%u ccVal=%u b_parse=%d\n", midich, ccNr, ccVal, thiz->b_parse_param[midich]);
 
    if(thiz->b_parse_param[midich])
@@ -658,7 +658,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
 
             DP("[trc] MIDIIn<portmidi>::RecordedMIDIEvent::classifyCtlChange: thiz->data_entry_mode[midich]=%u\n", thiz->data_entry_mode[midich]);
             // yac_host->printf("xxx recv (N)RPN data entry MSB\n");
-         
+
             if(MIDI_DATAENTRYMODE_MSB == thiz->data_entry_mode[midich])
             {
                // Synth only supports MSB data, write to _lower_ param bits
@@ -717,7 +717,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
 #endif // YAC_MACOS
             }
             break;
-         
+
          case 38:  // (N)RPN value LSB
 
             if(MIDI_DATAENTRYMODE_MSB == thiz->data_entry_mode[midich])
@@ -751,7 +751,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
                }
             }
             break;
-         
+
          case 101: // RPN select MSB
             if(-1 == thiz->rpn[midich])
             {
@@ -764,7 +764,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
             thiz->nrpn[midich] = -1;
             *bFiltered = thiz->b_filter_rpn_select;
             break;
-         
+
          case 100: // RPN select LSB
             if(-1 == thiz->rpn[midich])
             {
@@ -777,7 +777,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
             thiz->nrpn[midich] = -1;
             *bFiltered = thiz->b_filter_rpn_select;
             break;
-         
+
          case 99:  // NRPN select MSB
             if(-1 == thiz->nrpn[midich])
             {
@@ -790,7 +790,7 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
             thiz->rpn[midich] = -1;
             *bFiltered = thiz->b_filter_nrpn_select;
             break;
-         
+
          case 98:  // NRPN select MSB
             if(-1 == thiz->nrpn[midich])
             {
@@ -803,9 +803,9 @@ void RecordedMIDIEvent::classifyCtlChange(MIDIIn *thiz, sBool *bFiltered) {
             thiz->rpn[midich] = -1;
             *bFiltered = thiz->b_filter_nrpn_select;
             break;
-         
+
       } // switch ccNr
-   }  
+   }
 }
 
 
@@ -1000,7 +1000,7 @@ YAC_Object *MIDIIn::_waitNextEvent(sUI _timeout) {
    if(isOpen())
    {
       ::WaitForSingleObject(event_recv, _timeout);
-      
+
       return _getNextEvent();
    }
    else
@@ -1229,9 +1229,9 @@ sBool MIDIIn::_openByName(YAC_Object *_devName) {
             {
                if(yac_host->yacGetDebugLevel() > 1)
                {
-                  yac_host->printf("[trc] MIDIIn[%i]: name=\"%s\"\n", 
+                  yac_host->printf("[trc] MIDIIn[%i]: name=\"%s\"\n",
                                    i,
-                                   midiin_caps.szPname 
+                                   midiin_caps.szPname
                                    );
                }
 
@@ -1252,7 +1252,7 @@ sBool MIDIIn::_openByName(YAC_Object *_devName) {
                      device_name.copy((sChar*)MIDIIn_device_name);
 
                      device_idx = (sSI)i;
-                     
+
                      open2();
 
                      return YAC_TRUE;
@@ -1310,7 +1310,7 @@ sBool MIDIIn::_openByIdx(sUI _idx) {
          yac_host->printf("[...] MIDIIn::open: MIDI device #%u \"%s\" opened.\n", _idx, midiin_caps.szPname);
 
          open2();
-        
+
          return YAC_TRUE;
       }
       else
@@ -1978,7 +1978,7 @@ void MIDIIn::parseBuffer(YAC_Buffer *_buffer) {
       for(sUI i = 0u; i < num; i++)
       {
          sU8 c = _buffer->yacStreamReadI8();
-         parseMIDIByte(c, virt_state);         
+         parseMIDIByte(c, virt_state);
       }
    }
 }

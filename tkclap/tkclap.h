@@ -1,18 +1,18 @@
 /// tkclap.h
 ///
-/// (c) 2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 01Jul2024
-/// changed: 05Jul2024
+/// changed: 05Jul2024, 17Oct2025
 ///
 ///
 ///
 
-#ifndef __TKCLAP_H__
-#define __TKCLAP_H__
+#ifndef TKCLAP_H__
+#define TKCLAP_H__
 
 #include "clap-main/include/clap/all.h"
 
@@ -20,7 +20,7 @@
 #include <yac.h>
 
 #if defined(YAC_MACOS) || defined(YAC_LINUX)
-#include <pthread.h> 
+#include <pthread.h>
 #endif
 
 #ifdef YAC_MACOS
@@ -45,7 +45,12 @@ extern sF32  tkclap_bpm;
 extern sF32  tkclap_song_pos_beats;  // #quarter notes since replay start
 extern sBool tkclap_song_playing;
 
+/* @function tkclap_set_bpm,float bpm
+ */
 YF void YAC_CALL tkclap_set_bpm (sF32 _bpm);
+
+/* @function tkclap_set_song_pos_beats,float songPosBeats,boolean bPlaying
+ */
 YF void YAC_CALL tkclap_set_song_pos_beats (sF32 _songPosBeats, sBool _bPlaying);
 
 #define Dprintf         if(0);else yac_host->printf
@@ -54,4 +59,4 @@ YF void YAC_CALL tkclap_set_song_pos_beats (sF32 _songPosBeats, sBool _bPlaying)
 #define Dprintf_debug   if(b_debug) yac_host->printf
 
 
-#endif // __TKCLAP_H__
+#endif // TKCLAP_H__

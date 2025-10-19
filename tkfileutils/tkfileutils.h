@@ -15,15 +15,24 @@ YG("fileutils")
 */
 YF void YAC_CALL tkfileutils_read_directory (YAC_String *_pathname, YAC_Value *_r);
 
-
+/* @function tkfileutils_getcwd:String
+ */
 YF void YAC_CALL tkfileutils_getcwd (YAC_Value *_r);
 
+/* @function tkfileutils_setcwd,String pathName:boolean
+ */
 YF sBool YAC_CALL tkfileutils_setcwd (YAC_String *_pathName);
 
+/* @function tkfileutils_mkdir,String pathName:boolean
+ */
 YF sBool YAC_CALL tkfileutils_mkdir (YAC_String *_pathName);
 
+/* @function tkfileutils_rm,String pathName:boolean
+ */
 YF sBool YAC_CALL tkfileutils_rm (YAC_String *_pathName);
 
+/* @function tkfileutils_rename,String pathNameOld,String pathNameNew:boolean
+ */
 YF sBool YAC_CALL tkfileutils_rename (YAC_String *_pathNameOld, YAC_String *_pathNameNew);
 
 

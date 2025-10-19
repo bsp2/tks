@@ -1,6 +1,6 @@
 /// tkclap.cpp
 ///
-/// (c) 2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2025 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -37,10 +37,10 @@ void tkclap_set_song_pos_beats(sF32 _songPosBeats, sBool _bPlaying) {
 
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
-   
-	if(yac_host->yacGetDebugLevel()) 
+
+	if(yac_host->yacGetDebugLevel())
       yac_host->printf("[dbg] tkclap::YAC_Init called.\n");
-   
+
    YAC_Init_clap(_host);
 
    for(sUI i = 0u; i < CLAPPLUGIN_NUM_SIGNALS; i++)

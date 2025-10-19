@@ -68,6 +68,8 @@ struct st_plugin_slot_t {
 };
 
 
+/* @class StSample,Object
+ */
 YC class StSample : public YAC_Object {
 
 /* @constant STSAMPLE_DEFAULT_MAXVOICES,int
