@@ -96,6 +96,7 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
       "void main(void) { \n"
       "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "  float a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
+      /* "  a = pow(a,4.0); \n" */
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
@@ -152,6 +153,7 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+      /* Dprintf("xxx LineStripFlatAA: strokeW=%f stroke=(%f;%f;%f;%f) aaRange=%f\n", _strokeW, _strokeR, _strokeG, _strokeB, _strokeA, _aaRange); */
       Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
       if(-1 != shape_u_debug)
