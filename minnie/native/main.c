@@ -223,7 +223,9 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_DIAGONAL_AA        161
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL     162
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL_AA  163
-#define NUM_RENDER_MODES                                         164  // UP/DOWN
+#define RENDER_BEGIN_LINES_GOURAUD                               164
+#define RENDER_BEGIN_LINES_GOURAUD_AA                            165
+#define NUM_RENDER_MODES                                         166  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -392,6 +394,8 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 161 */ "begin_line_strip_pattern_decal_diagonal_aa",
    /* 162 */ "begin_line_strip_pattern_decal_bevel_diagonal",
    /* 163 */ "begin_line_strip_pattern_decal_bevel_diagonal_aa",
+   /* 164 */ "begin_lines_gouraud",
+   /* 165 */ "begin_lines_gouraud_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2300,6 +2304,32 @@ void TestBeginLineStripPatternDecalBevelDiagonal(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginLinesGouraud (164+165)
+void TestBeginLinesGouraud(sBool _bAA) {
+   sF32 y = 30.0f;
+   sF32 gb = 1.0f;
+
+   if(_bAA
+      ? sdvg_BeginLinesGouraudAA(4u*2u)
+      : sdvg_BeginLinesGouraud(4u*2u)
+      )
+   {
+      for(sUI lineIdx = 0u; lineIdx < 4u; lineIdx++)
+      {
+         sdvg_ColorARGB(sdvg_ARGBf(1.0f,1.0f,gb,gb));
+         sdvg_Vertex2f(10.0f, y);
+
+         sdvg_ColorARGB(sdvg_ARGBf(1.0f,1.0f-gb,1.0f,gb));
+         sdvg_Vertex2f(630.0f, y+330.0f);
+
+         y += 30.0f;
+         gb -= 0.25f;
+      }
+      sdvg_End();
+   }
+
+}
+
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
@@ -3961,6 +3991,14 @@ void hal_on_draw(void) {
 
       case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL_AA: // 163
          TestBeginLineStripPatternDecalBevelDiagonal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINES_GOURAUD: // 164
+         TestBeginLinesGouraud(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINES_GOURAUD_AA: // 165
+         TestBeginLinesGouraud(YAC_TRUE/*bAA*/);
          break;
    }
 
