@@ -63,10 +63,7 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       "  float index = a_index; \n"
 #endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
-      "  if(index > 5.9) { \n"
-      "    v = vec2(0,0); \n"
-      "  } \n"
-      "  else if(index > 4.9) { \n"
+      "  if(index > 4.9) { \n"
       "    v = v1R; \n"
       "  } \n"
       "  else if(index > 3.9) { \n"
@@ -164,7 +161,6 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
       // (note) numSeg           = (numPoints / 2)
       // (note) numTri           = (numPoints-1) * 2
       // (note) numBytesPerPoint = 6*6 = 36
-      // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
       //
 
       sdvg_BindVBO(_vboId);

@@ -63,10 +63,7 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       "  float index = a_index; \n"
 #endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
-      "  if(index > 5.9) { \n"
-      "    v = vec2(0,0); \n"
-      "  } \n"
-      "  else if(index > 4.9) { \n"
+      "  if(index > 4.9) { \n"
       "    v = v1R; \n"
       "  } \n"
       "  else if(index > 3.9) { \n"
@@ -164,7 +161,6 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       // (note) numSeg           = (numPoints / 2)
       // (note) numTri           = (numPoints-1) * 2
       // (note) numBytesPerPoint = 6*10 = 60
-      // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
       //
 
       sdvg_BindVBO(_vboId);
@@ -200,7 +196,7 @@ class LinesFlatAA32 : public ShaderVG_Shape {
 
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
       const sUI numInstances = (_numPoints / 2u);
-      Dsdvg_draw_triangles_instanced_vbo(12, numInstances);
+      Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
 #else
       const sUI numVerts = (_numPoints - 1u) * 6u;
       Dsdvg_draw_triangles_vbo(0, numVerts);
