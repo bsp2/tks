@@ -54,6 +54,7 @@ class ShaderVG_Shape {
    sSI shape_a_pattern_n;  // optional
    sSI shape_a_index;      // optional
    sSI shape_a_color;      // optional
+   sSI shape_a_color_n;    // optional
    sSI shape_a_edge;       // optional
    sSI shape_a_scale;      // optional
    sSI shape_a_bc;         // optional

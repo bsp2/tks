@@ -53,6 +53,7 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_a_pattern_n  = -1;
    shape_a_index      = -1;
    shape_a_color      = -1;
+   shape_a_color_n    = -1;
    shape_a_edge       = -1;
    shape_a_scale      = -1;
    shape_a_bc         = -1;
@@ -536,6 +537,7 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_a_pattern_n = shape_shader.getAttribLocation("a_pattern_n");  // optional
    shape_a_index     = shape_shader.getAttribLocation("a_index");      // optional
    shape_a_color     = shape_shader.getAttribLocation("a_color");      // optional
+   shape_a_color_n   = shape_shader.getAttribLocation("a_color_n");    // optional
    shape_a_edge      = shape_shader.getAttribLocation("a_edge");       // optional
    shape_a_scale     = shape_shader.getAttribLocation("a_scale");      // optional
    shape_a_bc        = shape_shader.getAttribLocation("a_bc");         // optional

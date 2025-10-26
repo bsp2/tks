@@ -189,6 +189,7 @@
 #include "LineStripPatternDecalBevelAA32.h"
 #include "LinesFlatAA14_2.h"
 #include "LinesFlatAA32.h"
+#include "LinesGouraudAA32.h"
 #include "PointsSquareAA32.h"
 #include "PointsRoundAA32.h"
 
@@ -330,6 +331,7 @@ static LineStripPatternDecalBevelAA14_2     line_strip_pattern_decal_bevel_aa_14
 static LineStripPatternDecalBevelAA32       line_strip_pattern_decal_bevel_aa_32;
 static LinesFlatAA14_2                      lines_flat_aa_14_2;
 static LinesFlatAA32                        lines_flat_aa_32;
+static LinesGouraudAA32                     lines_gouraud_aa_32;
 static PointsSquareAA32                     points_square_aa_32;
 static PointsRoundAA32                      points_round_aa_32;
 
@@ -451,6 +453,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_pattern_decal_bevel_aa_32,
    &lines_flat_aa_14_2,
    &lines_flat_aa_32,
+   &lines_gouraud_aa_32,
    &points_square_aa_32,
    &points_round_aa_32,
 };
@@ -513,12 +516,14 @@ static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 #define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA  7011
 #define DRAW_MODE_LINES                              7012
 #define DRAW_MODE_LINES_AA                           7013
-#define DRAW_MODE_POINTS_SQUARE                      7014
-#define DRAW_MODE_POINTS_SQUARE_AA                   7015
-#define DRAW_MODE_POINTS_ROUND                       7016
-#define DRAW_MODE_POINTS_ROUND_AA                    7017
-#define DRAW_MODE_POLYGON                            7018
-#define DRAW_MODE_POLYGON_AA                         7019
+#define DRAW_MODE_LINES_GOURAUD                      7014
+#define DRAW_MODE_LINES_GOURAUD_AA                   7015
+#define DRAW_MODE_POINTS_SQUARE                      7016
+#define DRAW_MODE_POINTS_SQUARE_AA                   7017
+#define DRAW_MODE_POINTS_ROUND                       7018
+#define DRAW_MODE_POINTS_ROUND_AA                    7019
+#define DRAW_MODE_POLYGON                            7020
+#define DRAW_MODE_POLYGON_AA                         7021
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
 
 static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
@@ -3258,7 +3263,6 @@ void YAC_CALL sdvg_DrawLinesFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numSeg           = (numPoints / 2)
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*6 = 36
-   // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
    //
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
                                              _byteOffset,
@@ -3281,7 +3285,6 @@ void YAC_CALL sdvg_DrawLinesFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoint
    // (note) numSeg           = (numPoints / 2)
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*10 = 60
-   // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
    //
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
                                          _byteOffset,
@@ -3304,7 +3307,6 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
    // (note) numSeg           = (numPoints / 2)
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*6 = 36
-   // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
@@ -3328,7 +3330,6 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numSeg           = (numPoints / 2)
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*10 = 60
-   // (note) 2 visible tris are followed by 2 degenerated tris (before next segment)
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
@@ -3339,6 +3340,51 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
                                          Dsdvg_pixel_scl(stroke_w) + aaOff,
                                          b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                          );
+}
+
+void YAC_CALL sdvg_DrawLinesGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //    +0 f32 x
+   //    +4 f32 y
+   //    +8 u8  r
+   //    +9 u8  g
+   //   +10 u8  b
+   //   +11 u8  a
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
+                                               _byteOffset,
+                                               _numPoints,
+                                               mvp_matrix,
+                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                               Dsdvg_pixel_scl(stroke_w),
+                                               SHADERVG_AA_RANGE_OFF
+                                               );
+}
+
+void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //    +0 f32 x
+   //    +4 f32 y
+   //    +8 u8  r
+   //    +9 u8  g
+   //   +10 u8  b
+   //   +11 u8  a
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
+                                               _byteOffset,
+                                               _numPoints,
+                                               mvp_matrix,
+                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                               Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                               );
 }
 
 void YAC_CALL sdvg_DrawPointsSquareVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -5699,6 +5745,23 @@ sBool YAC_CALL sdvg_BeginLinesAA(sUI _numPoints) {
    return loc_BeginLines(DRAW_MODE_LINES_AA, _numPoints);
 }
 
+static sBool loc_BeginLinesGouraud(GLenum _mode, sUI _numPoints) {
+   current_draw_mode = _mode;
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+   return BeginDraw(_numPoints, 8u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 12u/*stride*/);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+}
+
+sBool YAC_CALL sdvg_BeginLinesGouraud(sUI _numPoints) {
+   return loc_BeginLinesGouraud(DRAW_MODE_LINES_GOURAUD, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginLinesGouraudAA(sUI _numPoints) {
+   return loc_BeginLinesGouraud(DRAW_MODE_LINES_GOURAUD_AA, _numPoints);
+}
+
 static sBool loc_BeginPoints(GLenum _mode, sUI _numPoints) {
    current_draw_mode = _mode;
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
@@ -6011,6 +6074,7 @@ void YAC_CALL sdvg_Attrib2fi16 (sF32 _x, sF32 _y) {
 }
 
 void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
+   // Dprintf("xxx Vertex2f: (%f;%f)\n", _x, _y);
 
    // (todo) use fxnptr ?
    switch(current_draw_mode)
@@ -6041,6 +6105,8 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
 
       case DRAW_MODE_LINES:
       case DRAW_MODE_LINES_AA:
+      case DRAW_MODE_LINES_GOURAUD:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+      case DRAW_MODE_LINES_GOURAUD_AA:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
          loc_BufferAddLinesPointFlat14_2(attrib_write_buffer, _x, _y);
 #else
@@ -6333,7 +6399,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatVBO14_2(current_vbo_id,
                                                 current_draw_start_offset,
-                                                current_draw_num_vertices
+                                                current_draw_vertex_index
                                                 );
 #else
                   sdvg_DrawLineStripFlatVBO32(current_vbo_id,
@@ -6347,7 +6413,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatAAVBO14_2(current_vbo_id,
                                                   current_draw_start_offset,
-                                                  current_draw_num_vertices
+                                                  current_draw_vertex_index
                                                   );
 #else
                   sdvg_DrawLineStripFlatAAVBO32(current_vbo_id,
@@ -6361,7 +6427,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternVBO14_2(current_vbo_id,
                                                    current_draw_start_offset,
-                                                   current_draw_num_vertices
+                                                   current_draw_vertex_index
                                                    );
 #else
                   sdvg_DrawLineStripPatternVBO32(current_vbo_id,
@@ -6375,7 +6441,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternAAVBO14_2(current_vbo_id,
                                                      current_draw_start_offset,
-                                                     current_draw_num_vertices
+                                                     current_draw_vertex_index
                                                      );
 #else
                   sdvg_DrawLineStripPatternAAVBO32(current_vbo_id,
@@ -6389,7 +6455,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternDecalVBO14_2(current_vbo_id,
                                                         current_draw_start_offset,
-                                                        current_draw_num_vertices
+                                                        current_draw_vertex_index
                                                         );
 #else
                   sdvg_DrawLineStripPatternDecalVBO32(current_vbo_id,
@@ -6403,7 +6469,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternDecalAAVBO14_2(current_vbo_id,
                                                           current_draw_start_offset,
-                                                          current_draw_num_vertices
+                                                          current_draw_vertex_index
                                                           );
 #else
                   sdvg_DrawLineStripPatternDecalAAVBO32(current_vbo_id,
@@ -6417,7 +6483,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatBevelVBO14_2(current_vbo_id,
                                                      current_draw_start_offset,
-                                                     current_draw_num_vertices
+                                                     current_draw_vertex_index
                                                      );
 #else
                   sdvg_DrawLineStripFlatBevelVBO32(current_vbo_id,
@@ -6431,7 +6497,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatBevelAAVBO14_2(current_vbo_id,
                                                        current_draw_start_offset,
-                                                       current_draw_num_vertices
+                                                       current_draw_vertex_index
                                                        );
 #else
                   sdvg_DrawLineStripFlatBevelAAVBO32(current_vbo_id,
@@ -6445,7 +6511,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternBevelVBO14_2(current_vbo_id,
                                                         current_draw_start_offset,
-                                                        current_draw_num_vertices
+                                                        current_draw_vertex_index
                                                         );
 #else
                   sdvg_DrawLineStripPatternBevelVBO32(current_vbo_id,
@@ -6459,7 +6525,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternBevelAAVBO14_2(current_vbo_id,
                                                           current_draw_start_offset,
-                                                          current_draw_num_vertices
+                                                          current_draw_vertex_index
                                                           );
 #else
                   sdvg_DrawLineStripPatternBevelAAVBO32(current_vbo_id,
@@ -6473,7 +6539,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternDecalBevelVBO14_2(current_vbo_id,
                                                              current_draw_start_offset,
-                                                             current_draw_num_vertices
+                                                             current_draw_vertex_index
                                                              );
 #else
                   sdvg_DrawLineStripPatternDecalBevelVBO32(current_vbo_id,
@@ -6487,7 +6553,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(current_vbo_id,
                                                                current_draw_start_offset,
-                                                               current_draw_num_vertices
+                                                               current_draw_vertex_index
                                                                );
 #else
                   sdvg_DrawLineStripPatternDecalBevelAAVBO32(current_vbo_id,
@@ -6501,7 +6567,7 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLinesFlatVBO14_2(current_vbo_id,
                                             current_draw_start_offset,
-                                            current_draw_num_vertices
+                                            current_draw_vertex_index
                                             );
 #else
                   sdvg_DrawLinesFlatVBO32(current_vbo_id,
@@ -6515,13 +6581,41 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLinesFlatAAVBO14_2(current_vbo_id,
                                               current_draw_start_offset,
-                                              current_draw_num_vertices
+                                              current_draw_vertex_index
                                               );
 #else
                   sdvg_DrawLinesFlatAAVBO32(current_vbo_id,
                                             current_draw_start_offset,
                                             current_draw_vertex_index
                                             );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINES_GOURAUD:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLinesGouraudVBO14_2(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
+#else
+                  sdvg_DrawLinesGouraudVBO32(current_vbo_id,
+                                             current_draw_start_offset,
+                                             current_draw_vertex_index
+                                             );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINES_GOURAUD_AA:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLinesGouraudAAVBO14_2(current_vbo_id,
+                                                 current_draw_start_offset,
+                                                 current_draw_vertex_index
+                                                 );
+#else
+                  sdvg_DrawLinesGouraudAAVBO32(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
 

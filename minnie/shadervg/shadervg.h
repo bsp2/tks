@@ -2720,6 +2720,32 @@ Begin preparation or rendering of anti-aliased line segments
 */
 YF sBool YAC_CALL sdvg_BeginLinesAA (sUI _numPoints);
 
+/* @function sdvg_BeginLinesGouraud,int numPoints:boolean
+Begin preparation or rendering of gouraud-shaded line segments
+
+Requires library to be built with USE_VERTEX_ATTRIB_DIVISOR.
+
+@arg numPoints Number of points
+
+@see sdvg_BeginLinesGouraudAA
+@see sdvg_SetStrokeRadius
+@see sdvg_SetStrokeWidth
+*/
+YF sBool YAC_CALL sdvg_BeginLinesGouraud (sUI _numPoints);
+
+/* @function sdvg_BeginLinesGouraudAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, gouraud-shaded line segments
+
+Requires library to be built with USE_VERTEX_ATTRIB_DIVISOR.
+
+@arg numPoints Number of points
+
+@see sdvg_BeginLinesGouraud
+@see sdvg_SetStrokeRadius
+@see sdvg_SetStrokeWidth
+*/
+YF sBool YAC_CALL sdvg_BeginLinesGouraudAA (sUI _numPoints);
+
 /* @function sdvg_BeginPointsSquare,int numPoints:boolean
 Begin preparation or rendering of square points
 
@@ -3034,7 +3060,7 @@ sU32 sdvg_TintRGBAlpha (sU32 _x, sU32 _y, sU8 _a8);
 Replace alpha channel of packed ARGB32 color
 
 @arg c32 Packed RGB24 color
-@arg a8 Alpha channel (0..25) to be inserted into returned color
+@arg a8 Alpha channel (0..255) to be inserted into returned color
 
 @return Packed ARGB32 color
 */
