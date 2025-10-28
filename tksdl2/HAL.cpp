@@ -920,7 +920,7 @@ void _HAL::openJoysticks(void) {
    // ---- do not open twice ----
    if(!joysticks.enabled)
    {
-      SDL_InitSubSystem(SDL_INIT_JOYSTICK);
+      SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 
       joysticks.enabled = YAC_TRUE;
       joysticks.num     = ::SDL_NumJoysticks();
