@@ -225,7 +225,11 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_BEVEL_DIAGONAL_AA  163
 #define RENDER_BEGIN_LINES_GOURAUD                               164
 #define RENDER_BEGIN_LINES_GOURAUD_AA                            165
-#define NUM_RENDER_MODES                                         166  // UP/DOWN
+#define RENDER_BEGIN_POINTS_SQUARE_GOURAUD                       166
+#define RENDER_BEGIN_POINTS_SQUARE_GOURAUD_AA                    167
+#define RENDER_BEGIN_POINTS_ROUND_GOURAUD                        168
+#define RENDER_BEGIN_POINTS_ROUND_GOURAUD_AA                     169
+#define NUM_RENDER_MODES                                         170  // UP/DOWN
 
 static sSI render_mode = RENDER_RECT_FILL_AA;
 
@@ -396,6 +400,10 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 163 */ "begin_line_strip_pattern_decal_bevel_diagonal_aa",
    /* 164 */ "begin_lines_gouraud",
    /* 165 */ "begin_lines_gouraud_aa",
+   /* 166 */ "begin_points_square_gouraud",
+   /* 167 */ "begin_points_square_gouraud_aa",
+   /* 168 */ "begin_points_round_gouraud",
+   /* 169 */ "begin_points_round_gouraud_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2330,6 +2338,74 @@ void TestBeginLinesGouraud(sBool _bAA) {
 
 }
 
+// ---------------------------------------------------------------------------- TestBeginPointsSquareGouraud (166+167)
+void TestBeginPointsSquareGouraud(sBool _bAA) {
+   sdvg_SetPointRadius(stroke_w * 2.0f);
+   sUI numPoints = 32u;
+   sF32 w = (sM_2PI / numPoints);
+   sF32 a = ang_x * 0.5f;
+   sF32 as = ang_w * 0.5f;
+   sF32 aa = ang_h * 12.0f;
+   if(_bAA
+      ? sdvg_BeginPointsSquareGouraudAA(numPoints)
+      : sdvg_BeginPointsSquareGouraud(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 x = sinf(a) * 200.0f + (VP_W*0.5f);
+         sF32 y = cosf(a) * 200.0f + (VP_H*0.5f);
+         sF32 s = sinf(as) * 0.5f + 0.5f;
+         sF32 a8 = sinf(aa);
+         a8 *= a8;
+         a8 *= a8;
+         a8 = a8 * 127.0f + 128.0f;
+         sUI c32 = sdvg_HSVAToARGB(a*(360.0f/sM_2PI), s, 1.0f/*v*/, (sU8)a8);
+         sdvg_ColorARGB(c32);
+         sdvg_Vertex2f(x, y);
+
+         a  += w;
+         as += w;
+         aa += w * 3.0f;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginPointsRoundGouraud (168+169)
+void TestBeginPointsRoundGouraud(sBool _bAA) {
+   sdvg_SetPointRadius(stroke_w * 2.0f);
+   sUI numPoints = 32u;
+   sF32 w = (sM_2PI / numPoints);
+   sF32 a = ang_x * 0.5f;
+   sF32 as = ang_w * 0.5f;
+   sF32 aa = ang_h * 12.0f;
+   if(_bAA
+      ? sdvg_BeginPointsRoundGouraudAA(numPoints)
+      : sdvg_BeginPointsRoundGouraud(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 x = sinf(a) * 200.0f + (VP_W*0.5f);
+         sF32 y = cosf(a) * 200.0f + (VP_H*0.5f);
+         sF32 s = sinf(as) * 0.5f + 0.5f;
+         sF32 a8 = sinf(aa);
+         a8 *= a8;
+         a8 *= a8;
+         a8 = a8 * 127.0f + 128.0f;
+         sUI c32 = sdvg_HSVAToARGB(a*(360.0f/sM_2PI), s, 1.0f/*v*/, (sU8)a8);
+         sdvg_ColorARGB(c32);
+         sdvg_Vertex2f(x, y);
+
+         a  += w;
+         as += w;
+         aa += w * 3.0f;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
@@ -3999,6 +4075,22 @@ void hal_on_draw(void) {
 
       case RENDER_BEGIN_LINES_GOURAUD_AA: // 165
          TestBeginLinesGouraud(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_SQUARE_GOURAUD: // 166
+         TestBeginPointsSquareGouraud(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_SQUARE_GOURAUD_AA: // 167
+         TestBeginPointsSquareGouraud(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_GOURAUD: // 168
+         TestBeginPointsRoundGouraud(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_GOURAUD_AA: // 169
+         TestBeginPointsRoundGouraud(YAC_TRUE/*bAA*/);
          break;
    }
 
