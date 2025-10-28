@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 166 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 170 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -535,3 +535,15 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_165_begin_lines_gouraud_aa
   
   ![screenhots](../tkminnie/tests/screenshots/test_165_begin_lines_gouraud_aa.png)
+- test_166_begin_points_square_gouraud
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_166_begin_points_square_gouraud.png)
+- test_167_begin_points_square_gouraud_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_167_begin_points_square_gouraud_aa.png)
+- test_168_begin_points_round_gouraud
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_168_begin_points_round_gouraud.png)
+- test_169_begin_points_round_gouraud_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_169_begin_points_round_gouraud_aa.png)
