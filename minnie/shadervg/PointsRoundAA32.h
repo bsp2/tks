@@ -49,10 +49,7 @@ class PointsRoundAA32 : public ShaderVG_Shape {
       "  float index = a_index; \n"
 #endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
-      "  if(index > 5.9) { \n"
-      "    v = vec2(0,0); \n"
-      "  } \n"
-      "  else if(index > 4.9) { \n"
+      "  if(index > 4.9) { \n"
       "    v = vec2(vCtr.x - u_point_radius, vCtr.y + u_point_radius); \n"  // LB
       "  } \n"
       "  else if(index > 3.9) { \n"

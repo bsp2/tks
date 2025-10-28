@@ -2010,9 +2010,19 @@ VBO vertex format (6 bytes per vertex):<br>
 YF void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesFlatAAVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-alised line segments (32 bit float format)
+Draw previously prepared vertex buffer as anti-aliased line segments (32 bit float format)
 */
 YF void YAC_CALL sdvg_DrawLinesFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLinesGouraudVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as gouraud-shaded line segments (32 bit float format)
+*/
+YF void YAC_CALL sdvg_DrawLinesGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLinesGouraudAAVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded line segments (32 bit float format)
+*/
+YF void YAC_CALL sdvg_DrawLinesGouraudAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsSquareVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as square points (32 bit float format)
@@ -2038,6 +2048,35 @@ VBO vertex format (10 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPointsSquareAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
+/* @function sdvg_DrawPointsSquareGouraudVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as gouraud-shaded square points (32 bit float format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 f32 x<br>
+  +8 f32 y<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawPointsSquareGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsSquareGouraudAAVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded square points (32 bit float format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 f32 x<br>
+  +8 f32 y<br>
+*/
+YF void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
 /* @function sdvg_DrawPointsRoundVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as round points (32 bit float format)
 
@@ -2061,6 +2100,36 @@ VBO vertex format (10 bytes per vertex):<br>
 </pre>
 */
 YF void YAC_CALL sdvg_DrawPointsRoundAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundGouraudVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as gouraud-shaded round points (32 bit float format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 f32 x<br>
+  +8 f32 y<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundGouraudAAVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded round points (32 bit float format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 f32 x<br>
+  +8 f32 y<br>
+</pre>
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 // ----------- custom shaders and (scratch) draw functions ------------
 /* @function sdvg_CreateShader,String vs,String fs:int
@@ -2766,6 +2835,32 @@ Begin preparation or rendering of anti-aliased, square points
 */
 YF sBool YAC_CALL sdvg_BeginPointsSquareAA (sUI _numPoints);
 
+/* @function sdvg_BeginPointsSquareGouraud,int numPoints:boolean
+Begin preparation or rendering of gouraud-shaded square points
+
+@arg numPoints Number of points
+
+@see sdvg_SetPointRadius
+@see sdvg_SetPointSize
+@see sdvg_BeginPointsSquareGouraudAA
+@see sdvg_BeginPointsSquare
+@see sdvg_BeginPointsSquareAA
+*/
+YF sBool YAC_CALL sdvg_BeginPointsSquareGouraud (sUI _numPoints);
+
+/* @function sdvg_BeginPointsSquareGouraudAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, gouraud-shaded square points
+
+@arg numPoints Number of points
+
+@see sdvg_SetPointRadius
+@see sdvg_SetPointSize
+@see sdvg_BeginPointsSquareGouraud
+@see sdvg_BeginPointsSquare
+@see sdvg_BeginPointsSquareAA
+*/
+YF sBool YAC_CALL sdvg_BeginPointsSquareGouraudAA (sUI _numPoints);
+
 /* @function sdvg_BeginPointsRound,int numPoints:boolean
 Begin preparation or rendering of round points
 
@@ -2773,6 +2868,13 @@ Begin preparation or rendering of round points
 
 @see sdvg_SetPointRadius
 @see sdvg_SetPointSize
+@see sdvg_BeginPointsRoundAA
+@see sdvg_BeginPointsRoundGouraud
+@see sdvg_BeginPointsRoundGouraudAA
+@see sdvg_BeginPointsSquare
+@see sdvg_BeginPointsSquareAA
+@see sdvg_BeginPointsSquareGouraud
+@see sdvg_BeginPointsSquareGouraudAA
 */
 YF sBool YAC_CALL sdvg_BeginPointsRound (sUI _numPoints);
 
@@ -2783,8 +2885,49 @@ Begin preparation or rendering of anti-aliased, round points
 
 @see sdvg_SetPointRadius
 @see sdvg_SetPointSize
+@see sdvg_BeginPointsRound
+@see sdvg_BeginPointsRoundGouraud
+@see sdvg_BeginPointsRoundGouraudAA
+@see sdvg_BeginPointsSquare
+@see sdvg_BeginPointsSquareAA
+@see sdvg_BeginPointsSquareGouraud
+@see sdvg_BeginPointsSquareGouraudAA
 */
 YF sBool YAC_CALL sdvg_BeginPointsRoundAA (sUI _numPoints);
+
+/* @function sdvg_BeginPointsRoundGouraud,int numPoints:boolean
+Begin preparation or rendering of gouraud-shaded round points
+
+@arg numPoints Number of points
+
+@see sdvg_SetPointRadius
+@see sdvg_SetPointSize
+@see sdvg_BeginPointsRoundGouraudAA
+@see sdvg_BeginPointsRound
+@see sdvg_BeginPointsRoundAA
+@see sdvg_BeginPointsSquare
+@see sdvg_BeginPointsSquareAA
+@see sdvg_BeginPointsSquareGouraud
+@see sdvg_BeginPointsSquareGouraudAA
+*/
+YF sBool YAC_CALL sdvg_BeginPointsRoundGouraud (sUI _numPoints);
+
+/* @function sdvg_BeginPointsRoundGouraudAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, gouraud-shaded round points
+
+@arg numPoints Number of points
+
+@see sdvg_SetPointRadius
+@see sdvg_SetPointSize
+@see sdvg_BeginPointsRoundGouraud
+@see sdvg_BeginPointsRound
+@see sdvg_BeginPointsRoundAA
+@see sdvg_BeginPointsSquare
+@see sdvg_BeginPointsSquareAA
+@see sdvg_BeginPointsSquareGouraud
+@see sdvg_BeginPointsSquareGouraudAA
+*/
+YF sBool YAC_CALL sdvg_BeginPointsRoundGouraudAA (sUI _numPoints);
 
 /* @function sdvg_BeginPolygon,int numVertices,int stride:boolean
 Begin preparation or rendering of polygon via user-defined shader

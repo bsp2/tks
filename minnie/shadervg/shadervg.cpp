@@ -191,7 +191,9 @@
 #include "LinesFlatAA32.h"
 #include "LinesGouraudAA32.h"
 #include "PointsSquareAA32.h"
+#include "PointsSquareGouraudAA32.h"
 #include "PointsRoundAA32.h"
+#include "PointsRoundGouraudAA32.h"
 
 // Currently bound VBO (0=none)
 static sUI current_vbo_id = 0u;
@@ -333,7 +335,9 @@ static LinesFlatAA14_2                      lines_flat_aa_14_2;
 static LinesFlatAA32                        lines_flat_aa_32;
 static LinesGouraudAA32                     lines_gouraud_aa_32;
 static PointsSquareAA32                     points_square_aa_32;
+static PointsSquareGouraudAA32              points_square_gouraud_aa_32;
 static PointsRoundAA32                      points_round_aa_32;
+static PointsRoundGouraudAA32               points_round_gouraud_aa_32;
 
 static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_32,
@@ -455,7 +459,9 @@ static ShaderVG_Shape *all_shapes[] = {
    &lines_flat_aa_32,
    &lines_gouraud_aa_32,
    &points_square_aa_32,
+   &points_square_gouraud_aa_32,
    &points_round_aa_32,
+   &points_round_gouraud_aa_32,
 };
 #define SHADERVG_NUM_SHAPES  (sizeof(all_shapes)/sizeof(ShaderVG_Shape*))
 
@@ -520,10 +526,14 @@ static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 #define DRAW_MODE_LINES_GOURAUD_AA                   7015
 #define DRAW_MODE_POINTS_SQUARE                      7016
 #define DRAW_MODE_POINTS_SQUARE_AA                   7017
-#define DRAW_MODE_POINTS_ROUND                       7018
-#define DRAW_MODE_POINTS_ROUND_AA                    7019
-#define DRAW_MODE_POLYGON                            7020
-#define DRAW_MODE_POLYGON_AA                         7021
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD              7018
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA           7019
+#define DRAW_MODE_POINTS_ROUND                       7020
+#define DRAW_MODE_POINTS_ROUND_AA                    7021
+#define DRAW_MODE_POINTS_ROUND_GOURAUD               7022
+#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA            7023
+#define DRAW_MODE_POLYGON                            7024
+#define DRAW_MODE_POLYGON_AA                         7025
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
 
 static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
@@ -3264,6 +3274,7 @@ void YAC_CALL sdvg_DrawLinesFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*6 = 36
    //
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
                                              _byteOffset,
                                              _numPoints,
@@ -3286,6 +3297,7 @@ void YAC_CALL sdvg_DrawLinesFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoint
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*10 = 60
    //
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
                                          _byteOffset,
                                          _numPoints,
@@ -3309,6 +3321,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
    // (note) numBytesPerPoint = 6*6 = 36
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
                                              _byteOffset,
                                              _numPoints,
@@ -3332,6 +3345,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numBytesPerPoint = 6*10 = 60
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
                                          _byteOffset,
                                          _numPoints,
@@ -3354,6 +3368,7 @@ void YAC_CALL sdvg_DrawLinesGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
    //
    // (note) requires USE_VERTEX_ATTRIB_DIVISOR
    //
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -3377,6 +3392,7 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
    // (note) requires USE_VERTEX_ATTRIB_DIVISOR
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -3398,6 +3414,7 @@ void YAC_CALL sdvg_DrawPointsSquareVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
    // (note) numTri            = numPoints * 4
    // (note) numBytesPerPoint  = 6*10 = 60
    //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_aa_32.drawPointsSquareAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -3420,6 +3437,7 @@ void YAC_CALL sdvg_DrawPointsSquareAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
    // (note) numBytesPerPoint  = 6*10 = 60
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_square_aa_32.drawPointsSquareAAVBO32(_vboId,
                                                _byteOffset,
                                                _numPoints,
@@ -3428,6 +3446,53 @@ void YAC_CALL sdvg_DrawPointsSquareAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
                                                Dsdvg_pixel_scl(point_radius) + aaOff,
                                                b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                );
+}
+
+void YAC_CALL sdvg_DrawPointsSquareGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 u8  r
+   //   +1 u8  g
+   //   +2 u8  b
+   //   +3 u8  a
+   //   +4 f32 x
+   //   +8 f32 y
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_square_gouraud_aa_32.drawPointsSquareGouraudAAVBO32(_vboId,
+                                                              _byteOffset,
+                                                              _numPoints,
+                                                              mvp_matrix,
+                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                              Dsdvg_pixel_scl(point_radius),
+                                                              SHADERVG_AA_RANGE_OFF
+                                                              );
+}
+
+void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 u8  r
+   //   +1 u8  g
+   //   +2 u8  b
+   //   +3 u8  a
+   //   +4 f32 x
+   //   +8 f32 y
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_square_gouraud_aa_32.drawPointsSquareGouraudAAVBO32(_vboId,
+                                                              _byteOffset,
+                                                              _numPoints,
+                                                              mvp_matrix,
+                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                              Dsdvg_pixel_scl(point_radius) + aaOff,
+                                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                              );
 }
 
 void YAC_CALL sdvg_DrawPointsRoundVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -3441,6 +3506,7 @@ void YAC_CALL sdvg_DrawPointsRoundVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numTri            = numPoints * 4
    // (note) numBytesPerPoint  = 6*10 = 60
    //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
    points_round_aa_32.drawPointsRoundAAVBO32(_vboId,
                                              _byteOffset,
                                              _numPoints,
@@ -3472,6 +3538,53 @@ void YAC_CALL sdvg_DrawPointsRoundAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numP
                                              Dsdvg_pixel_scl(point_radius) + aaOff,
                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                              );
+}
+
+void YAC_CALL sdvg_DrawPointsRoundGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0  u8  r
+   //   +1  u8  g
+   //   +2  u8  b
+   //   +3  u8  a
+   //   +4  f32 x
+   //   +8  f32 y
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_round_gouraud_aa_32.drawPointsRoundGouraudAAVBO32(_vboId,
+                                                            _byteOffset,
+                                                            _numPoints,
+                                                            mvp_matrix,
+                                                            stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                            Dsdvg_pixel_scl(point_radius),
+                                                            SHADERVG_AA_RANGE_OFF
+                                                            );
+}
+
+void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0  u8  r
+   //   +1  u8  g
+   //   +2  u8  b
+   //   +3  u8  a
+   //   +4  f32 x
+   //   +8  f32 y
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_round_gouraud_aa_32.drawPointsRoundGouraudAAVBO32(_vboId,
+                                                            _byteOffset,
+                                                            _numPoints,
+                                                            mvp_matrix,
+                                                            stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                            Dsdvg_pixel_scl(point_radius) + aaOff,
+                                                            b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                            );
 }
 
 static void loc_CreateScratchBuffer(void) {
@@ -5771,6 +5884,15 @@ static sBool loc_BeginPoints(GLenum _mode, sUI _numPoints) {
 #endif // USE_VERTEX_ATTRIB_DIVISOR
 }
 
+static sBool loc_BeginPointsGouraud(GLenum _mode, sUI _numPoints) {
+   current_draw_mode = _mode;
+#ifdef USE_VERTEX_ATTRIB_DIVISOR
+   return BeginDraw(_numPoints, 12u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 72u/*stride*/);
+#endif // USE_VERTEX_ATTRIB_DIVISOR
+}
+
 sBool YAC_CALL sdvg_BeginPointsSquare(sUI _numPoints) {
    return loc_BeginPoints(DRAW_MODE_POINTS_SQUARE, _numPoints);
 }
@@ -5779,12 +5901,28 @@ sBool YAC_CALL sdvg_BeginPointsSquareAA(sUI _numPoints) {
    return loc_BeginPoints(DRAW_MODE_POINTS_SQUARE_AA, _numPoints);
 }
 
+sBool YAC_CALL sdvg_BeginPointsSquareGouraud(sUI _numPoints) {
+   return loc_BeginPointsGouraud(DRAW_MODE_POINTS_SQUARE_GOURAUD, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginPointsSquareGouraudAA(sUI _numPoints) {
+   return loc_BeginPointsGouraud(DRAW_MODE_POINTS_SQUARE_GOURAUD_AA, _numPoints);
+}
+
 sBool YAC_CALL sdvg_BeginPointsRound(sUI _numPoints) {
    return loc_BeginPoints(DRAW_MODE_POINTS_ROUND, _numPoints);
 }
 
 sBool YAC_CALL sdvg_BeginPointsRoundAA(sUI _numPoints) {
    return loc_BeginPoints(DRAW_MODE_POINTS_ROUND_AA, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginPointsRoundGouraud(sUI _numPoints) {
+   return loc_BeginPointsGouraud(DRAW_MODE_POINTS_ROUND_GOURAUD, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginPointsRoundGouraudAA(sUI _numPoints) {
+   return loc_BeginPointsGouraud(DRAW_MODE_POINTS_ROUND_GOURAUD_AA, _numPoints);
 }
 
 sBool YAC_CALL sdvg_BeginPolygon(sUI _numVertices, sUI _stride) {
@@ -6136,8 +6274,12 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
 
       case DRAW_MODE_POINTS_SQUARE:
       case DRAW_MODE_POINTS_SQUARE_AA:
+      case DRAW_MODE_POINTS_SQUARE_GOURAUD:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+      case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
       case DRAW_MODE_POINTS_ROUND:
       case DRAW_MODE_POINTS_ROUND_AA:
+      case DRAW_MODE_POINTS_ROUND_GOURAUD:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+      case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
          sdvg_BufferAddLinePointFlat32(attrib_write_buffer, _x, _y);
          break;
 
@@ -6633,6 +6775,20 @@ void YAC_CALL sdvg_End(void) {
                                                );
                   break;
 
+               case DRAW_MODE_POINTS_SQUARE_GOURAUD:
+                  sdvg_DrawPointsSquareGouraudVBO32(current_vbo_id,
+                                                    current_draw_start_offset,
+                                                    current_draw_vertex_index
+                                                    );
+                  break;
+
+               case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:
+                  sdvg_DrawPointsSquareGouraudAAVBO32(current_vbo_id,
+                                                      current_draw_start_offset,
+                                                      current_draw_vertex_index
+                                                      );
+                  break;
+
                case DRAW_MODE_POINTS_ROUND:
                   sdvg_DrawPointsRoundVBO32(current_vbo_id,
                                             current_draw_start_offset,
@@ -6645,6 +6801,20 @@ void YAC_CALL sdvg_End(void) {
                                               current_draw_start_offset,
                                               current_draw_vertex_index
                                               );
+                  break;
+
+               case DRAW_MODE_POINTS_ROUND_GOURAUD:
+                  sdvg_DrawPointsRoundGouraudVBO32(current_vbo_id,
+                                                   current_draw_start_offset,
+                                                   current_draw_vertex_index
+                                                   );
+                  break;
+
+               case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:
+                  sdvg_DrawPointsRoundGouraudAAVBO32(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index
+                                                     );
                   break;
 
                case DRAW_MODE_POLYGON:
