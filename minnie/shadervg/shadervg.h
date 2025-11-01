@@ -1058,6 +1058,7 @@ YF sUI YAC_CALL sdvg_GetVBOSize (void);
 /* @function sdvg_GetMappedVBOOffset:int
 Query write offset of currently mapped vertex buffer object
 
+@see sdvg_GetMappedVBORef
 @see sdvg_CreateVBO
 @see sdvg_BindVBO
 @see sdvg_UpdateVBO
@@ -1069,6 +1070,19 @@ Query write offset of currently mapped vertex buffer object
 @see sdvg_DestroyVBO
 */
 YF sUI YAC_CALL sdvg_GetMappedVBOOffset (void);
+
+/* @function sdvg_GetMappedVBORef,Buffer ret:boolean
+Return reference to currently mapped vertex buffer object data.
+
+@arg ret Returns reference to mapped buffer data (valid as long as VBO is mapped). Offset is set to current write offset.
+@return true if return Object has been set to mapped buffer
+
+@see sdvg_GetMappedVBOOffset
+ */
+sBool YAC_CALL sdvg_GetMappedVBORef (Dsdvg_buffer_ref_t _ret);
+#ifdef SHADERVG_SCRIPT_API
+YF sBool YAC_CALL _sdvg_GetMappedVBORef (YAC_Buffer *_ret);
+#endif // SHADERVG_SCRIPT_API
 
 /* @function sdvg_MapVBO,int vboId
 Map vertex buffer object VRAM into virtual address space.

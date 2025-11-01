@@ -955,6 +955,36 @@ sUI YAC_CALL sdvg_GetMappedVBOOffset(void) {
    return 0u;
 }
 
+sBool YAC_CALL sdvg_GetMappedVBORef(Dsdvg_buffer_ref_t _ret) {
+   if(0u != mapped_user_vbo_id)
+   {
+      _ret->buffer    = user_vbo_buffer->buffer;
+      _ret->deleteme  = YAC_FALSE;
+      _ret->size      = user_vbo_buffer->size;
+      _ret->io_offset = user_vbo_buffer->io_offset;
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
+#ifdef SHADERVG_SCRIPT_API
+sBool YAC_CALL _sdvg_GetMappedVBORef(YAC_Buffer *_ret) {
+   if(0u != mapped_user_vbo_id)
+   {
+      if(YAC_Is_Buffer(_ret))
+      {
+         _ret->yacArrayAlloc(0,0,0,0);
+         _ret->buffer    = user_vbo_buffer->buffer;
+         _ret->deleteme  = YAC_FALSE;
+         _ret->size      = user_vbo_buffer->size;
+         _ret->io_offset = user_vbo_buffer->io_offset;
+         return YAC_TRUE;
+      }
+   }
+   return YAC_FALSE;
+}
+#endif // SHADERVG_SCRIPT_API
+
 static void loc_map_buffer(Dsdvg_buffer_ref_t _buf, sUI _size) {
    if(sdvg_b_glcore)
    {
