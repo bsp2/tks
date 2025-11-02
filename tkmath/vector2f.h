@@ -161,6 +161,24 @@ YC class _Vector2f : public YAC_Object {
     */
    YM sF32 _dot (YAC_Object *_o);
 
+   /* @method cross,Vector2f v:float
+      Returns the z component of the orthogonal vector of the cross product
+      @arg v Other vector (2f or 3f)
+      @return Z component of orthogonal cross product vector (this X v)
+   */
+   YM sF32 _cross (YAC_Object *_o) const;
+
+   /* @method getAngle:float
+      Returns angular direction (in radians) (0=north/0;1)
+      @return angle
+   */
+   YM sF32 _getAngle (void) const;
+
+   /* @method initAngle
+      Initializes vector from angle (in radians) (0=north/0;1)
+   */
+   YM void _initAngle (sF32 _angle);
+
    /* @method tensor,Vector2f v:Matrix2f
       Create resulting matrix of tensor product from this instance and v
       @arg v Vector2f instance
@@ -252,6 +270,26 @@ YC class _Vector2f : public YAC_Object {
       @arg s scale to multiply
     */
    YM void _initScalef (YAC_Object *_v, sF32 _s);
+
+   /* @method clamp,float l
+      Clamp to length
+      @arg l Maximum length of vector
+
+      @see getAbs
+      @see unitScale
+    */
+   YM void _clamp_YAC_RSELF (sF32 _l);
+   YM void _clamp_YAC_RVAL (sF32 _l, YAC_Value *) const;
+   YM void _clamp_YAC_RARG (sF32 _l, YAC_Object *) const;
+
+   /* @method lerp,Vector2f o
+      Linear interpolate to another vector
+      @arg o Vector2f to interpolate to
+      @arg t Time (0..1)
+    */
+   YM void _lerp_YAC_RSELF (YAC_Object *_o, sF32 _t);
+   YM void _lerp_YAC_RVAL (YAC_Object *_o, sF32 _t, YAC_Value *);
+   YM void _lerp_YAC_RARG (YAC_Object *_o, sF32 _t, YAC_Object *) const;
 
    /* @method distanceToPlane,Vector2f q,Vector2f n:float
       Calc distance of vertex to plane defined by Vector2f q (on plane) and plane normal n

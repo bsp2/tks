@@ -484,7 +484,6 @@ void _Vector2f::_getString(YAC_Value *_r) const {
 void _Vector2f::_add_YAC_RSELF(YAC_Object *_o) {
    if(YAC_BCHK(_o, clid_Vector2f))
    {
-      // add two vector2f
       YAC_CAST_ARG(_Vector2f, o, _o);
       floats[0] += o->floats[0];
       floats[1] += o->floats[1];
@@ -502,7 +501,6 @@ void _Vector2f::_add_YAC_RSELF(YAC_Object *_o) {
 }
 
 void _Vector2f::_add_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
-   // add two vector2f
    if(YAC_BCHK(_o, clid_Vector2f))
    {
       YAC_CAST_ARG(_Vector2f, o, _o);
@@ -524,7 +522,6 @@ void _Vector2f::_add_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
 }
 
 void _Vector2f::_add_YAC_RARG(YAC_Object *_o, YAC_Object *_r) const {
-   // add two vector2f
    if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector2f))
    {
       YAC_CAST_ARG(_Vector2f, o, _o);
@@ -626,6 +623,40 @@ sF32 _Vector2f::_dot(YAC_Object *_o) {
       t.assignGeneric(NULL, _o);
       return (floats[0] * t.floats[0] + floats[1] * t.floats[1]);
    }*/
+}
+
+sF32 _Vector2f::_cross(YAC_Object *_o) const {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      return floats[0]*o->floats[1] - floats[1]*o->floats[0];
+   }
+   else if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      return floats[0]*o->floats[1] - floats[1]*o->floats[0];
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector2f::cross: Object not of type Vector[23]f");
+   }
+   return 0.0f;
+}
+
+sF32 _Vector2f::_getAngle(void) const {
+   sF32 l = _getAbs();
+   if(0.0f != l)
+   {
+      l = (1.0f / l);
+      return ::atan2f(floats[0]*l, floats[1]*l);
+   }
+   // error: division by zero
+   return 0.0f;
+}
+
+void _Vector2f::_initAngle(sF32 _angle) {
+   floats[0] = ::sinf(_angle);
+   floats[1] = ::cosf(_angle);
 }
 
 void _Vector2f::_tensor_YAC_RVAL(YAC_Object *_o, YAC_Value *_r) {
@@ -1084,6 +1115,123 @@ void _Vector2f::_initScalef(YAC_Object *_o, sF32 _s) {
    else
    {
       Dyac_throw_def(InvalidPointer, "tkmath::Vector2f::initScalef: invalid object parameter");
+   }
+}
+
+void _Vector2f::_clamp_YAC_RSELF(sF32 _l) {
+   sF32 len = _getAbs();
+   if(Dfltnonzero(len) && Dfltnonzero(_l))
+   {
+      if(len > _l)
+      {
+         const float s = _l / len;
+         floats[0] *= s;
+         floats[1] *= s;
+      }
+   }
+   else
+   {
+      floats[0] = 0.0f;
+      floats[1] = 0.0f;
+   }
+}
+
+void _Vector2f::_clamp_YAC_RVAL(sF32 _l, YAC_Value *_r) const {
+   _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+   _r->initObject(r, YAC_TRUE);
+   sF32 len = _getAbs();
+   if(Dfltnonzero(len) && Dfltnonzero(_l))
+   {
+      if(len > _l)
+      {
+         const float s = _l / len;
+         r->floats[0] = floats[0] * s;
+         r->floats[1] = floats[1] * s;
+      }
+      else
+      {
+         r->floats[0] = floats[0];
+         r->floats[1] = floats[1];
+      }
+   }
+   else
+   {
+      r->floats[0] = 0.0f;
+      r->floats[1] = 0.0f;
+   }
+}
+
+void _Vector2f::_clamp_YAC_RARG(sF32 _l, YAC_Object *_r) const {
+   if(YAC_BCHK(_r, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+
+      sF32 len = _getAbs();
+      if(Dfltnonzero(len) && Dfltnonzero(_l))
+      {
+         if(len > _l)
+         {
+            const float s = _l / len;
+            r->floats[0] = floats[0] * s;
+            r->floats[1] = floats[1] * s;
+         }
+         else
+         {
+            r->floats[0] = floats[0];
+            r->floats[1] = floats[1];
+         }
+      }
+      else
+      {
+         r->floats[0] = 0.0f;
+         r->floats[1] = 0.0f;
+      }
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector2f::clamp_ARG Return object not of type Vector2f");
+   }
+}
+
+void _Vector2f::_lerp_YAC_RSELF(YAC_Object *_o, sF32 _t) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      floats[0] += (o->floats[0] - floats[0]) * _t;
+      floats[1] += (o->floats[1] - floats[1]) * _t;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::lerp_SELF: invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_lerp_YAC_RVAL(YAC_Object *_o, sF32 _t, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+      r->floats[0] = floats[0] + (o->floats[0] - floats[0]) * _t;
+      r->floats[1] = floats[1] + (o->floats[1] - floats[1]) * _t;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::lerp_VAL: invalid Vector2f object");
+   }
+}
+
+void _Vector2f::_lerp_YAC_RARG(YAC_Object *_o, sF32 _t, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector2f) && YAC_BCHK(_r, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, o, _o);
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      r->floats[0] = floats[0] + (o->floats[0] - floats[0]) * _t;
+      r->floats[1] = floats[1] + (o->floats[1] - floats[1]) * _t;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector2f::lerp_ARG: invalid Vector2f object");
    }
 }
 
