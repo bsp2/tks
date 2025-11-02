@@ -32,7 +32,6 @@ extern void _glEnableVertexAttribArray_int_vao (sUI _index);
 extern void _glDisableVertexAttribArray_int_vao (sUI _index);
 
 
-
 extern sBool *tksdl_b_glcore;
 extern void tkopengl_lazyinit_tksdl_b_glcore(void);
 

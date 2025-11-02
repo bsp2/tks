@@ -6172,4 +6172,8 @@ extern void YAC_CALL _glDrawArrays_priv(sSI _mode, sSI _first, sSI _count, sBool
 extern void YAC_CALL _glDrawElements_priv(GLenum _mode, GLsizei _count, GLenum _type, const GLvoid *_indices, sBool _bAllowImm);
 extern void YAC_CALL _glPointParameterfv_int(sSI _pname, const sF32 *_params);
 
+// for WIP game project (todo: move elsewhere?)
+YF void YAC_CALL _tkopengl_FindOuterEdges2D (YAC_Object *_edgeIndices, YAC_Object *_outerEdges);
+
+
 #endif // __TKSOPENGL_H__

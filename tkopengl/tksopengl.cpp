@@ -7341,3 +7341,54 @@ void YAC_CALL _glCallList(sSI _a) {
 #endif // DX_GLES
 #endif // DX_EMU_DLIST
 }
+
+// --------------------------------------------------------------------------- FindOuterEdges2D
+void YAC_CALL _tkopengl_FindOuterEdges2D(YAC_Object *_edgeIndices, YAC_Object *_outerEdges) {
+   // for WIP game project (todo: move elsewhere? add ARM64 JIT ?)
+   //  (note) script implementation takes several seconds
+   if(YAC_Is_IntArray(_edgeIndices))
+   {
+      if(YAC_Is_IntArray(_outerEdges))
+      {
+         YAC_CAST_ARG(YAC_IntArray,edgeIndices,_edgeIndices);
+         YAC_CAST_ARG(YAC_IntArray,outerEdges,_outerEdges);
+
+         sUI edgeOff = 0u;
+         sUI edgeOffI;
+         sUI idxA;
+         sUI idxB;
+         sUI maxEdgeOff = edgeIndices->yacArrayGetNumElements();
+         while(edgeOff < maxEdgeOff)
+         {
+            idxA = edgeIndices->elements[edgeOff+0u];
+            idxB = edgeIndices->elements[edgeOff+1u];
+            sBool bShared = YAC_FALSE;
+            edgeOffI = 0u;
+            while(edgeOffI < maxEdgeOff)
+            {
+               if(edgeOffI != edgeOff)
+               {
+                  if(edgeIndices->elements[edgeOffI+0u] == idxA &&
+                     edgeIndices->elements[edgeOffI+1u] == idxB
+                     )
+                  {
+                     bShared = YAC_TRUE;
+                     break;
+                  }
+               }
+               edgeOffI += 2u;
+            }
+            YAC_Value v; v.type = YAC_TYPE_INT;
+            if(!bShared)
+            {
+               v.value.int_val = sSI(idxA);
+               outerEdges->yacArraySet(NULL/*context*/, outerEdges->num_elements, &v);
+
+               v.value.int_val = sSI(idxB);
+               outerEdges->yacArraySet(NULL/*context*/, outerEdges->num_elements, &v);
+            }
+            edgeOff += 2u;
+         }
+      }
+   }
+}
