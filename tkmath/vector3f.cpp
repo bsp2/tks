@@ -1149,6 +1149,43 @@ void _Vector3f::_unitScale_YAC_RARG(sF32 s, YAC_Object *_r) const {
    }
 }
 
+void _Vector3f::_unitSphere_YAC_RSELF(void) {
+   const sF32 x2 = floats[0] * floats[0];
+   const sF32 y2 = floats[1] * floats[1];
+   const sF32 z2 = floats[2] * floats[2];
+   floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0/3.0f));
+   floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0/3.0f));
+   floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0/3.0f));
+}
+
+void _Vector3f::_unitSphere_YAC_RVAL(YAC_Value *_r) const {
+   _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+   _r->initObject(r, YAC_TRUE);
+   const sF32 x2 = floats[0] * floats[0];
+   const sF32 y2 = floats[1] * floats[1];
+   const sF32 z2 = floats[2] * floats[2];
+   r->floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0/3.0f));
+   r->floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0/3.0f));
+   r->floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0/3.0f));
+}
+
+void _Vector3f::_unitSphere_YAC_RARG(YAC_Object *_r) const {
+   if(YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      const sF32 x2 = floats[0] * floats[0];
+      const sF32 y2 = floats[1] * floats[1];
+      const sF32 z2 = floats[2] * floats[2];
+      r->floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0/3.0f));
+      r->floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0/3.0f));
+      r->floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0/3.0f));
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector3f::unitSphere_ARG Return object not of type Vector3f");
+   }
+}
+
 void _Vector3f::_initScalef(YAC_Object *_o, sF32 _s) {
    if(YAC_BCHK(_o, clid_Vector3f))
    {
@@ -1160,6 +1197,134 @@ void _Vector3f::_initScalef(YAC_Object *_o, sF32 _s) {
    else
    {
       Dyac_throw_def(InvalidPointer, "tkmath::Vector3f::initScalef: invalid object parameter");
+   }
+}
+
+void _Vector3f::_clamp_YAC_RSELF(sF32 _l) {
+   const sF32 len = _getAbs();
+   if(Dfltnonzero(len) && Dfltnonzero(_l))
+   {
+      if(len > _l)
+      {
+         const float s = _l / len;
+         floats[0] *= s;
+         floats[1] *= s;
+         floats[2] *= s;
+      }
+   }
+   else
+   {
+      floats[0] = 0.0f;
+      floats[1] = 0.0f;
+      floats[2] = 0.0f;
+   }
+}
+
+void _Vector3f::_clamp_YAC_RVAL(sF32 _l, YAC_Value *_r) const {
+   _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+   _r->initObject(r, YAC_TRUE);
+   const sF32 len = _getAbs();
+   if(Dfltnonzero(len) && Dfltnonzero(_l))
+   {
+      if(len > _l)
+      {
+         const float s = _l / len;
+         r->floats[0] = floats[0] * s;
+         r->floats[1] = floats[1] * s;
+         r->floats[2] = floats[2] * s;
+      }
+      else
+      {
+         r->floats[0] = floats[0];
+         r->floats[1] = floats[1];
+         r->floats[2] = floats[2];
+      }
+   }
+   else
+   {
+      r->floats[0] = 0.0f;
+      r->floats[1] = 0.0f;
+      r->floats[2] = 0.0f;
+   }
+}
+
+void _Vector3f::_clamp_YAC_RARG(sF32 _l, YAC_Object *_r) const {
+   if(YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, r, _r);
+
+      sF32 len = _getAbs();
+      if(Dfltnonzero(len) && Dfltnonzero(_l))
+      {
+         if(len > _l)
+         {
+            const float s = _l / len;
+            r->floats[0] = floats[0] * s;
+            r->floats[1] = floats[1] * s;
+            r->floats[2] = floats[2] * s;
+         }
+         else
+         {
+            r->floats[0] = floats[0];
+            r->floats[1] = floats[1];
+            r->floats[2] = floats[2];
+         }
+      }
+      else
+      {
+         r->floats[0] = 0.0f;
+         r->floats[1] = 0.0f;
+         r->floats[2] = 0.0f;
+      }
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector3f::clamp_ARG Return object not of type Vector3f");
+   }
+}
+
+void _Vector3f::_lerp_YAC_RSELF(YAC_Object *_o, sF32 _t) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      floats[0] += (o->floats[0] - floats[0]) * _t;
+      floats[1] += (o->floats[1] - floats[1]) * _t;
+      floats[2] += (o->floats[2] - floats[2]) * _t;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::lerp_SELF: invalid Vector3f object");
+   }
+}
+
+void _Vector3f::_lerp_YAC_RVAL(YAC_Object *_o, sF32 _t, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      _Vector3f *r = YAC_NEW_POOLED(Vector3f);
+      r->floats[0] = floats[0] + (o->floats[0] - floats[0]) * _t;
+      r->floats[1] = floats[1] + (o->floats[1] - floats[1]) * _t;
+      r->floats[2] = floats[2] + (o->floats[2] - floats[2]) * _t;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::lerp_VAL: invalid Vector3f object");
+   }
+}
+
+void _Vector3f::_lerp_YAC_RARG(YAC_Object *_o, sF32 _t, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector3f) && YAC_BCHK(_r, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, o, _o);
+      YAC_CAST_ARG(_Vector3f, r, _r);
+      r->floats[0] = floats[0] + (o->floats[0] - floats[0]) * _t;
+      r->floats[1] = floats[1] + (o->floats[1] - floats[1]) * _t;
+      r->floats[2] = floats[2] + (o->floats[2] - floats[2]) * _t;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector3f::lerp_ARG: invalid Vector3f object");
    }
 }
 

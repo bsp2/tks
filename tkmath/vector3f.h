@@ -1,6 +1,6 @@
 /// vector3f.h
 ///
-/// (c) 2008-2024 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -296,12 +296,41 @@ YC class _Vector3f : public YAC_Object {
    YM void _unitScale_YAC_RVAL (sF32, YAC_Value *);
    YM void _unitScale_YAC_RARG (sF32, YAC_Object *) const;
 
+   /* @method unitSphere
+      Map to point on sphere 
+        http://mathproofs.blogspot.com/2005/07/mapping-cube-to-sphere.html
+         via https://youtu.be/sLqXFF8mlEU
+    */
+   YM void _unitSphere_YAC_RSELF (void);
+   YM void _unitSphere_YAC_RVAL (YAC_Value *) const;
+   YM void _unitSphere_YAC_RARG (YAC_Object *) const;
+
    /* @method initScalef,Vector3f v,float s
       Initialize vector to s*v
       @arg v Vector3f instance
       @arg s scale to multiply
     */
    YM void _initScalef (YAC_Object *_o, sF32 _s);
+
+   /* @method clamp,float l
+      Clamp to length
+      @arg l Maximum length of vector
+
+      @see getAbs
+      @see unitScale
+    */
+   YM void _clamp_YAC_RSELF (sF32 _l);
+   YM void _clamp_YAC_RVAL (sF32 _l, YAC_Value *) const;
+   YM void _clamp_YAC_RARG (sF32 _l, YAC_Object *) const;
+
+   /* @method lerp,Vector3f o
+      Linear interpolate to another vector
+      @arg o Vector3f to interpolate to
+      @arg t Time (0..1)
+    */
+   YM void _lerp_YAC_RSELF (YAC_Object *_o, sF32 _t);
+   YM void _lerp_YAC_RVAL (YAC_Object *_o, sF32 _t, YAC_Value *);
+   YM void _lerp_YAC_RARG (YAC_Object *_o, sF32 _t, YAC_Object *) const;
 
    /* @method distanceToPlane,Vector3f q,Vector3f n:float
       Calc distance of vertex to plane defined by Vector3f q (on plane) and plane normal n
