@@ -1045,7 +1045,9 @@ void YAC_CALL sdvg_UnmapVBO(void) {
 void YAC_CALL sdvg_UnbindVBO(void) {
    Dsdvg_tracecall("[trc] sdvg_UnbindVBO  current_vbo_id=%u\n", current_vbo_id);
    if(current_vbo_id == scratch_vbo_id)
+   {
       Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER));
+   }
    Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0u));
    current_vbo_id = 0u;
 }

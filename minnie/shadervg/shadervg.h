@@ -514,7 +514,7 @@ YF void YAC_CALL sdvg_ModelScale2f (sF32 _sx, sF32 _sy);
 /* @function sdvg_ModelRotatef,float rad
 Rotate model matrix about z axis
 
-@arg rad Rotation angle (radian measure)
+@arg rad Rotation angle (radian measure). Positive values rotate counter-clockwise, and negative values rotate clockwise (like in OpenGL).
 
 @see sdvg_PushProjMatrix
 @see sdvg_PopProjMatrix

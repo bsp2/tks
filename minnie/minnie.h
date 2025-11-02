@@ -728,6 +728,7 @@ typedef struct Matrix4f_s {
    }
 
    void rotatef(sF32 _x, sF32 _y, sF32 _z) {
+      // (note) positive values rotate counter-clockwise, and negative values rotate clockwise (like in OpenGL)
       Matrix4f t;
       t.initRotatef(_x, _y, _z);
       mul(&t);
