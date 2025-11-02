@@ -1,6 +1,6 @@
 /// vector4f.cpp
 ///
-/// (c) 2008-2024 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -1317,6 +1317,97 @@ void _Vector4f::_initScalef(YAC_Object *_o, sF32 _s) {
    }
 }
 
+void _Vector4f::_clamp_YAC_RSELF(sF32 _l) {
+   const sF32 len = _getAbs();
+   if(Dfltnonzero(len) && Dfltnonzero(_l))
+   {
+      if(len > _l)
+      {
+         const float s = _l / len;
+         floats[0] *= s;
+         floats[1] *= s;
+         floats[2] *= s;
+         floats[3] *= s;
+      }
+   }
+   else
+   {
+      floats[0] = 0.0f;
+      floats[1] = 0.0f;
+      floats[2] = 0.0f;
+      floats[3] = 1.0f;
+   }
+}
+
+void _Vector4f::_clamp_YAC_RVAL(sF32 _l, YAC_Value *_r) const {
+   _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+   _r->initObject(r, YAC_TRUE);
+   const sF32 len = _getAbs();
+   if(Dfltnonzero(len) && Dfltnonzero(_l))
+   {
+      if(len > _l)
+      {
+         const float s = _l / len;
+         r->floats[0] = floats[0] * s;
+         r->floats[1] = floats[1] * s;
+         r->floats[2] = floats[2] * s;
+         r->floats[3] = floats[3] * s;
+      }
+      else
+      {
+         r->floats[0] = floats[0];
+         r->floats[1] = floats[1];
+         r->floats[2] = floats[2];
+         r->floats[3] = floats[3];
+      }
+   }
+   else
+   {
+      r->floats[0] = 0.0f;
+      r->floats[1] = 0.0f;
+      r->floats[2] = 0.0f;
+      r->floats[3] = 1.0f;
+   }
+}
+
+void _Vector4f::_clamp_YAC_RARG(sF32 _l, YAC_Object *_r) const {
+   if(YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, r, _r);
+
+      sF32 len = _getAbs();
+      if(Dfltnonzero(len) && Dfltnonzero(_l))
+      {
+         if(len > _l)
+         {
+            const float s = _l / len;
+            r->floats[0] = floats[0] * s;
+            r->floats[1] = floats[1] * s;
+            r->floats[2] = floats[2] * s;
+            r->floats[3] = floats[3] * s;
+         }
+         else
+         {
+            r->floats[0] = floats[0];
+            r->floats[1] = floats[1];
+            r->floats[2] = floats[2];
+            r->floats[3] = floats[3];
+         }
+      }
+      else
+      {
+         r->floats[0] = 0.0f;
+         r->floats[1] = 0.0f;
+         r->floats[2] = 0.0f;
+         r->floats[3] = 1.0f;
+      }
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector4f::clamp_ARG Return object not of type Vector4f");
+   }
+}
+
 void _Vector4f::_rotate(YAC_Object *_m) {
    if(YAC_CHK(_m, clid_Matrix4f))
    {
@@ -1328,6 +1419,54 @@ void _Vector4f::_rotate(YAC_Object *_m) {
    else
    {
       Dyac_throw_def(NativeClassTypeMismatch, "tkmath::Vector4f::rotate: arg #1 is not a valid Matrix4f object");
+   }
+}
+
+void _Vector4f::_lerp_YAC_RSELF(YAC_Object *_o, sF32 _t) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      floats[0] += (o->floats[0] - floats[0]) * _t;
+      floats[1] += (o->floats[1] - floats[1]) * _t;
+      floats[2] += (o->floats[2] - floats[2]) * _t;
+      floats[3] += (o->floats[3] - floats[3]) * _t;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::lerp_SELF: invalid Vector4f object");
+   }
+}
+
+void _Vector4f::_lerp_YAC_RVAL(YAC_Object *_o, sF32 _t, YAC_Value *_r) {
+   if(YAC_BCHK(_o, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      _Vector4f *r = YAC_NEW_POOLED(Vector4f);
+      r->floats[0] = floats[0] + (o->floats[0] - floats[0]) * _t;
+      r->floats[1] = floats[1] + (o->floats[1] - floats[1]) * _t;
+      r->floats[2] = floats[2] + (o->floats[2] - floats[2]) * _t;
+      r->floats[3] = floats[3] + (o->floats[3] - floats[3]) * _t;
+      _r->initObject(r, YAC_TRUE);
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::lerp_VAL: invalid Vector4f object");
+   }
+}
+
+void _Vector4f::_lerp_YAC_RARG(YAC_Object *_o, sF32 _t, YAC_Object *_r) const {
+   if(YAC_BCHK(_o, clid_Vector4f) && YAC_BCHK(_r, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, o, _o);
+      YAC_CAST_ARG(_Vector4f, r, _r);
+      r->floats[0] = floats[0] + (o->floats[0] - floats[0]) * _t;
+      r->floats[1] = floats[1] + (o->floats[1] - floats[1]) * _t;
+      r->floats[2] = floats[2] + (o->floats[2] - floats[2]) * _t;
+      r->floats[3] = floats[3] + (o->floats[3] - floats[3]) * _t;
+   }
+   else
+   {
+      Dyac_throw_def(NativeClassTypeMismatch,"tkmath::Vector4f::lerp_ARG: invalid Vector4f object");
    }
 }
 
