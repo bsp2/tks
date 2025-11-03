@@ -2083,11 +2083,11 @@ static void TestBeginPolygon(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPattern (148+149)
 void TestBeginLineStripPattern(sBool _bAA) {
    sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PIf));
    sdvg_SetLinePatternScale(1.0f / 112.0f);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 1;
-   sF32 w = (sM_2PI / numSeg);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2110,12 +2110,12 @@ void TestBeginLineStripPattern(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternBevel (150+151)
 void TestBeginLineStripPatternBevel(sBool _bAA) {
    sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PIf));
    sdvg_SetLinePatternScale(0.5f / 112.0f);
    sdvg_SetStrokeWidth(stroke_w * 4.0f);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 2;
-   sF32 w = (sM_2PI / numSeg);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2138,12 +2138,12 @@ void TestBeginLineStripPatternBevel(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternDecal(152+153)
 void TestBeginLineStripPatternDecal(sBool _bAA) {
    sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PIf));
    sdvg_SetLinePatternScale(0.5f / 112.0f);
-   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5*fill_alpha);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 1;
-   sF32 w = (sM_2PI / numSeg);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2166,13 +2166,13 @@ void TestBeginLineStripPatternDecal(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalBevel (154+155)
 void TestBeginLineStripPatternDecalBevel(sBool _bAA) {
    sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PIf));
    sdvg_SetLinePatternScale(0.5f / 112.0f);
    sdvg_SetStrokeWidth(stroke_w * 4.0f);
    sdvg_SetFillColor4f(0.9f, 0.6f, 0.2f, fill_alpha);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 2;
-   sF32 w = (sM_2PI / numSeg);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2195,13 +2195,13 @@ void TestBeginLineStripPatternDecalBevel(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternDiagonal (156+157)
 void TestBeginLineStripPatternDiagonal(sBool _bAA) {
    sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PIf));
    sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
    sdvg_SetStrokeWidth(stroke_w * 2.0f);
    sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 1;
-   sF32 w = (sM_2PI / numSeg);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2224,13 +2224,13 @@ void TestBeginLineStripPatternDiagonal(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternBevelDiagonal (158+159)
 void TestBeginLineStripPatternBevelDiagonal(sBool _bAA) {
    sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PIf));
    sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
    sdvg_SetStrokeWidth(stroke_w * 4.0f);
    sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 2;
-   sF32 w = (sM_2PI / numSeg);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2253,13 +2253,13 @@ void TestBeginLineStripPatternBevelDiagonal(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalDiagonal(160+161)
 void TestBeginLineStripPatternDecalDiagonal(sBool _bAA) {
    sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PIf));
    sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
    sdvg_SetStrokeWidth(stroke_w);
-   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5*fill_alpha);
-   sSI numSeg = 64;
-   sSI numPoints = numSeg + 1;
-   sF32 w = (sM_2PI / numSeg);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
@@ -2282,15 +2282,15 @@ void TestBeginLineStripPatternDecalDiagonal(sBool _bAA) {
 // ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalBevelDiagonal (162+163)
 void TestBeginLineStripPatternDecalBevelDiagonal(sBool _bAA) {
    sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
-   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PI));
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PIf));
    sdvg_SetLinePatternScale(0.5f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
    sdvg_SetStrokeWidth(stroke_w * 4.0f);
    sdvg_SetFillColorARGB(sdvg_RGBAlpha(0xa6d475u, (sU8)(fill_alpha*255)));
-   sSI numSeg = 192;
-   sSI numPoints = numSeg + 2;
-   sF32 w = (sM_2PI / numSeg);
+   sUI numSeg = 192u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x * 0.5f;
-   sF32 wd = ((3.0f*sM_2PI) / numSeg);
+   sF32 wd = ((3.0f*sM_2PIf) / numSeg);
    sF32 ad = ang_y;
    sF32 ctrX = VP_W*0.5f;
    sF32 ctrY = VP_H*0.5f;
@@ -2342,7 +2342,7 @@ void TestBeginLinesGouraud(sBool _bAA) {
 void TestBeginPointsSquareGouraud(sBool _bAA) {
    sdvg_SetPointRadius(stroke_w * 2.0f);
    sUI numPoints = 32u;
-   sF32 w = (sM_2PI / numPoints);
+   sF32 w = (sM_2PIf / numPoints);
    sF32 a = ang_x * 0.5f;
    sF32 as = ang_w * 0.5f;
    sF32 aa = ang_h * 12.0f;
@@ -2360,7 +2360,7 @@ void TestBeginPointsSquareGouraud(sBool _bAA) {
          a8 *= a8;
          a8 *= a8;
          a8 = a8 * 127.0f + 128.0f;
-         sUI c32 = sdvg_HSVAToARGB(a*(360.0f/sM_2PI), s, 1.0f/*v*/, (sU8)a8);
+         sUI c32 = sdvg_HSVAToARGB(a*(360.0f/sM_2PIf), s, 1.0f/*v*/, (sU8)a8);
          sdvg_ColorARGB(c32);
          sdvg_Vertex2f(x, y);
 
@@ -2376,7 +2376,7 @@ void TestBeginPointsSquareGouraud(sBool _bAA) {
 void TestBeginPointsRoundGouraud(sBool _bAA) {
    sdvg_SetPointRadius(stroke_w * 2.0f);
    sUI numPoints = 32u;
-   sF32 w = (sM_2PI / numPoints);
+   sF32 w = (sM_2PIf / numPoints);
    sF32 a = ang_x * 0.5f;
    sF32 as = ang_w * 0.5f;
    sF32 aa = ang_h * 12.0f;
@@ -2394,7 +2394,7 @@ void TestBeginPointsRoundGouraud(sBool _bAA) {
          a8 *= a8;
          a8 *= a8;
          a8 = a8 * 127.0f + 128.0f;
-         sUI c32 = sdvg_HSVAToARGB(a*(360.0f/sM_2PI), s, 1.0f/*v*/, (sU8)a8);
+         sUI c32 = sdvg_HSVAToARGB(a*(360.0f/sM_2PIf), s, 1.0f/*v*/, (sU8)a8);
          sdvg_ColorARGB(c32);
          sdvg_Vertex2f(x, y);
 
@@ -4147,7 +4147,7 @@ void hal_on_draw(void) {
             if(render_mode >= NUM_RENDER_MODES)
                b_hal_running = YAC_FALSE;
          }
-         benchmark_ms_start = SDL_GetTicks();
+         benchmark_ms_start = (sF32)SDL_GetTicks();
          benchmark_frames_left = BENCHMARK_NUM_FRAMES;
       }
    }
