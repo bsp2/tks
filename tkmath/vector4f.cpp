@@ -1486,6 +1486,34 @@ sF32 _Vector4f::_distanceToPlane(YAC_Object *_q, YAC_Object *_n) const {
 	return 0.0f;
 }
 
+sF32 _Vector4f::_distanceToSphere(YAC_Object *_p, sF32 _radius) {
+   if(YAC_BCHK(_p, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, p, _p);
+      const sF32 dx = p->floats[0] - floats[0];
+      const sF32 dy = p->floats[1] - floats[1];
+      const sF32 dz = p->floats[2] - floats[2];
+      const sF32 dw = p->floats[3] - floats[3];
+      const sF32 d = sqrtf(dx * dx + dy * dy + dz * dz + dw * dw);
+      return d;
+   }
+   return -1.0f;
+}
+
+sBool _Vector4f::_isWithinSphere(YAC_Object *_p, sF32 _radiusSquared) {
+   if(YAC_BCHK(_p, clid_Vector4f))
+   {
+      YAC_CAST_ARG(_Vector4f, p, _p);
+      const sF32 dx = p->floats[0] - floats[0];
+      const sF32 dy = p->floats[1] - floats[1];
+      const sF32 dz = p->floats[2] - floats[2];
+      const sF32 dw = p->floats[3] - floats[3];
+      const sF32 d = dx * dx + dy * dy + dz * dz + dw * dw;
+      return (d < _radiusSquared);
+   }
+   return YAC_FALSE;
+}
+
 sBool _Vector4f::_intersectPlane(YAC_Object *_q, YAC_Object *_n, YAC_Object *_p1, YAC_Object *_p2) {
    // <https://stackoverflow.com/questions/5666222/3d-line-plane-intersection>
    //   double t = (planeNormal.dot(planePoint) - planeNormal.dot(linePoint)) / planeNormal.dot(lineDirection.normalize());

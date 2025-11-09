@@ -1251,6 +1251,30 @@ sF32 _Vector2f::_distanceToPlane(YAC_Object *_q, YAC_Object *_n) const {
 	return 0.0f;
 }
 
+sF32 _Vector2f::_distanceToSphere(YAC_Object *_p, sF32 _radius) {
+   if(YAC_BCHK(_p, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, p, _p);
+      const sF32 dx = p->floats[0] - floats[0];
+      const sF32 dy = p->floats[1] - floats[1];
+      const sF32 d = sqrtf(dx * dx + dy * dy);
+      return d;
+   }
+   return -1.0f;
+}
+
+sBool _Vector2f::_isWithinSphere(YAC_Object *_p, sF32 _radiusSquared) {
+   if(YAC_BCHK(_p, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, p, _p);
+      const sF32 dx = p->floats[0] - floats[0];
+      const sF32 dy = p->floats[1] - floats[1];
+      const sF32 d = dx * dx + dy * dy;
+      return (d < _radiusSquared);
+   }
+   return YAC_FALSE;
+}
+
 sF32 _Vector2f::intersect(YAC_Object *_v1s, YAC_Object *_v1e,
                           YAC_Object *_v2s, YAC_Object *_v2e,
                           sBool _bExtrapolate
@@ -1327,7 +1351,7 @@ void _Vector2f::_bilinearQuadPos(YAC_Object *_vLT, YAC_Object *_vRT, YAC_Object 
 
       floats[0] = tx + (bx - tx) * _ny;
       floats[1] = ty + (by - ty) * _ny;
-   }      
+   }
 }
 
 void _Vector2f::_rotateCW90_YAC_RSELF(void) {

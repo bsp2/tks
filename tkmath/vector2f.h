@@ -300,6 +300,22 @@ YC class _Vector2f : public YAC_Object {
    /*  */
    YM sF32 _distanceToPlane (YAC_Object *_q, YAC_Object *_n) const;
 
+   /* @method distanceToSphere,Vector2f p,float radius:float
+    Calc distance of vertex to sphere defined by Vector2f p (sphere center) and sphere radius.
+    @arg p Sphere center
+    @arg radius Sphere radius
+    @return Distance to sphere center (within sphere when less than radius)
+   */
+   YM sF32 _distanceToSphere (YAC_Object *_p, sF32 _radius);
+
+   /* @method isWithinSphere,Vector2f p,float radiusSquared:boolean
+      Check if vertex is located within sphere defined by Vector2f p (sphere center) and squared sphere radius 'radiusSquared'.
+    @arg p Sphere center
+    @arg radiusSquared Squared sphere radius
+    @return true if squared distance to sphere center is less than squared radius
+   */
+   YM sBool _isWithinSphere (YAC_Object *_p, sF32 _radiusSquared);
+
    /* @method intersect,Vector2f v,float s
       Returns intersection point in 'this'
       Returns normalized position on edge v2s<>v2e.

@@ -340,6 +340,22 @@ YC class _Vector3f : public YAC_Object {
     */
    YM sF32 _distanceToPlane (YAC_Object *_q, YAC_Object *_n) const;
 
+   /* @method distanceToSphere,Vector3f p,float radius:float
+    Calc distance of vertex to sphere defined by Vector3f p (sphere center) and sphere radius.
+    @arg p Sphere center
+    @arg radius Sphere radius
+    @return Distance to sphere center (within sphere when less than radius)
+   */
+   YM sF32 _distanceToSphere (YAC_Object *_p, sF32 _radius);
+
+   /* @method isWithinSphere,Vector3f p,float radiusSquared:boolean
+      Check if vertex is located within sphere defined by Vector3f p (sphere center) and squared sphere radius 'radiusSquared'.
+    @arg p Sphere center
+    @arg radiusSquared Squared sphere radius
+    @return true if squared distance to sphere center is less than squared radius
+   */
+   YM sBool _isWithinSphere (YAC_Object *_p, sF32 _radiusSquared);
+
    /* @method intersectPlane,Vector3f q,Vector3f n,Vector3f p1,Vector3f p2:boolean
       Calc intersection between line (p1->p2) and plane (q,n).
       @arg q Point on plane

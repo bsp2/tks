@@ -1,6 +1,6 @@
 /// vector3f.cpp
 ///
-/// (c) 2008-2024 by Carsten Busse <carsten.busse@googlemail.com>,
+/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>,
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -1342,6 +1342,32 @@ sF32 _Vector3f::_distanceToPlane(YAC_Object *_q, YAC_Object *_n) const {
       }
    }
 	return 0.0f;
+}
+
+sF32 _Vector3f::_distanceToSphere(YAC_Object *_p, sF32 _radius) {
+   if(YAC_BCHK(_p, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, p, _p);
+      const sF32 dx = p->floats[0] - floats[0];
+      const sF32 dy = p->floats[1] - floats[1];
+      const sF32 dz = p->floats[2] - floats[2];
+      const sF32 d = sqrtf(dx * dx + dy * dy + dz * dz);
+      return d;
+   }
+   return -1.0f;
+}
+
+sBool _Vector3f::_isWithinSphere(YAC_Object *_p, sF32 _radiusSquared) {
+   if(YAC_BCHK(_p, clid_Vector3f))
+   {
+      YAC_CAST_ARG(_Vector3f, p, _p);
+      const sF32 dx = p->floats[0] - floats[0];
+      const sF32 dy = p->floats[1] - floats[1];
+      const sF32 dz = p->floats[2] - floats[2];
+      const sF32 d = dx * dx + dy * dy + dz * dz;
+      return (d < _radiusSquared);
+   }
+   return YAC_FALSE;
 }
 
 sBool _Vector3f::_intersectPlane(YAC_Object *_q, YAC_Object *_n, YAC_Object *_p1, YAC_Object *_p2) {
