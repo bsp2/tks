@@ -30,7 +30,7 @@ YG("tksampler");
 
 
 /* @class StSamplePlayer,Object
-  Manages a finite number of §StSampleVoice objects
+  Manages a finite number of %StSampleVoice objects
  */
 
 YC class StSamplePlayer : public YAC_Object {
@@ -308,7 +308,7 @@ YC class StSamplePlayer : public YAC_Object {
    /* @method setDefaultFreqTable,FloatArray freqTable
       Set default frequency table for new sample voices
 
-      This table is used when the freqTable argument in calls to §startSample or §startSampleBank is null
+      This table is used when the freqTable argument in calls to %startSample or %startSampleBank is null
        and the sample bank's default_tuning_table_idx / forced_tuning_table_idx does ot map to a valid table.
    */
    YM void setDefaultFreqTable (YAC_Object *_freqTable);
@@ -341,7 +341,7 @@ YC class StSamplePlayer : public YAC_Object {
    /* @method getPolyMode:int
       Query voice allocation strategy
 
-      @return Current poly mode (default = §STSAMPLEPLAYER_POLYMODE_OLDEST)
+      @return Current poly mode (default = %STSAMPLEPLAYER_POLYMODE_OLDEST)
    */
    YM sUI getPolyMode (void);
 

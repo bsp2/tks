@@ -101,7 +101,7 @@ YC class RecordedMIDIEvent : public YAC_Object {
 
 
       /* @method copyToStream,Stream stream
-       Copy message data to stream object (e.g. §Buffer, §File etc..)
+       Copy message data to stream object (e.g. %Buffer, %File etc..)
 
       @arg stream Where to write the message data
       */
@@ -109,7 +109,7 @@ YC class RecordedMIDIEvent : public YAC_Object {
 
 
       /* @method getMidiMapEventType:byte
-        Return §MIDIMapEventType type id
+        Return %MIDIMapEventType type id
 
        @return Event type
       */

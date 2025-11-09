@@ -148,10 +148,10 @@ Some of the classes are also available (as a stripped-down version) in the <code
 This is the baseclass for all scriptengine objects.
 
 Please notice that normally you will not need to use these methods
-directly but rather through specialized API classes like e.g. §File, §String, §Buffer
+directly but rather through specialized API classes like e.g. %File, %String, %Buffer
 etc.
 These methods are mostly useful when dealing with "generic" objects but please make
-sure to also look at the §TKS class API.
+sure to also look at the %TKS class API.
 
 */
 
@@ -214,7 +214,7 @@ Return the C++ member names.
 
 Return the C++ member types.
 
-The §Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object, 4=String.
+The %Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object, 4=String.
 
 @return New IntArray object that holds the member types.
 @see yacMemberGetNames
@@ -290,7 +290,7 @@ Return the number of parameters to each C++ method exposed to the scriptengine,
 
 Return the parameter types arrays for each C++ method exposed to the scriptengine.
 
-The §Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object, 4=String.
+The %Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object, 4=String.
 
 @return new ValueArray that holds the parameters types (IntArray) for each C++ method.
 @see yacMethodGetNum
@@ -318,7 +318,7 @@ Return the object parameter class names for each C++ method exposed to the scrip
 
 Return the return types for each C++ method exposed to the scriptengine.
 
-The §Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object with the exception
+The %Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object with the exception
 that the return type 4 means "variable".
 The last parameter to a variable return type method must be <code>YAC_Value *_r</code>.
 Methods that want to return <i>deletable</i> objects must also use return type 4.
@@ -369,7 +369,7 @@ Return the names of the C++ constants.
 
 Return the types of the C++ constants.
 
-The §Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object, 4=String.
+The %Value type encoding is used, i.e. 0=void, 1=int, 2=float, 3=Object, 4=String.
 
 @return new IntArray that holds the constant types.
 @see yacConstantGetNum
@@ -657,7 +657,7 @@ Convert this object to a script-parsable String and write to return object "r".
 
 Invoke integer operator.
 
-Also see §yacOperator
+Also see %yacOperator
 
 @arg cmd Command, see <code>YAC_OP_xxx</code>
 @arg i Righthandside integer value
@@ -678,7 +678,7 @@ Also see §yacOperator
 
 Invoke float operator.
 
-Also see §yacOperator
+Also see %yacOperator
 
 @arg cmd Command, see <code>YAC_OP_xxx</code>
 @arg f Righthandside float value
@@ -723,7 +723,7 @@ Initialize from 32bit float value.
 
 /* @method yacIsStream:boolean
 
-Check whether object is a §Stream.
+Check whether object is a %Stream.
 
 @return true if the object implements the stream interface, false otherwise.
 @see yacIsStream
@@ -1119,7 +1119,7 @@ Set the current stream offset.
 
 Query the total stream size.
 
-This obviously will only work for limited-size streams like e.g. §File.
+This obviously will only work for limited-size streams like e.g. %File.
 
 @return Stream size or 0 (unknown)
 @see yacIsStream
@@ -1158,11 +1158,11 @@ This obviously will only work for limited-size streams like e.g. §File.
 
 /* @method yacStreamRead,Buffer r,int num:int
 
-Read "num" bytes from the stream into §Buffer r.
+Read "num" bytes from the stream into %Buffer r.
 
-@arg r Destination §Buffer
+@arg r Destination %Buffer
 @arg num Number of bytes to read
-@return Number of bytes read from §Stream.
+@return Number of bytes read from %Stream.
 @see yacIsStream
 @see yacStreamClose
 @see yacStreamOpenLocal
@@ -1511,12 +1511,12 @@ Read a single String from the stream and write to "r".
 
 /* @method yacStreamReadBuffer,Buffer r,int off,int num,boolean resize:int
 
-Read a sequence of bytes from the stream and write to §Buffer "r".
+Read a sequence of bytes from the stream and write to %Buffer "r".
 
-@arg r Destination §Buffer
+@arg r Destination %Buffer
 @arg off Destination offset in buffer
 @arg num Number of bytes to read
-@arg resize If true, resize the §Buffer as required
+@arg resize If true, resize the %Buffer as required
 @return Number of bytes read
 @see yacIsStream
 @see yacStreamClose
@@ -1554,9 +1554,9 @@ Read a sequence of bytes from the stream and write to §Buffer "r".
 
 /* @method yacStreamReadLine,String r,int maxlen:int
 
-Read a String from the stream and write to §String "r".
+Read a String from the stream and write to %String "r".
 
-@arg r Destination §String
+@arg r Destination %String
 @arg maxlen Maximum number of chars to read
 @return Number of chars read.
 @see yacIsStream
@@ -1881,7 +1881,7 @@ Write a single 64bit float to the stream.
 
 Write a sequence of characters to the stream.
 
-@arg s Source §String
+@arg s Source %String
 @arg off Source offset
 @arg len Number of characters to write
 @return Number of characters written
@@ -1923,7 +1923,7 @@ Write a sequence of characters to the stream.
 
 Write a sequence of bytes to the stream.
 
-@arg b Source §Buffer
+@arg b Source %Buffer
 @arg off Source offset
 @arg len Number of bytes to write
 @return Number of bytes written
@@ -2105,7 +2105,7 @@ Most arrays will only use the first argument ("sx").
 
 @arg sx Array width
 @arg sy Array height (e.g. for texture objects).
-@arg type Array element type (see §Value type encoding)
+@arg type Array element type (see %Value type encoding)
 @arg elementByteSize Size of an array element
 @return true if elements were allocated successfully, false otherwise.
 @see yacArrayCopySize
@@ -2134,7 +2134,7 @@ Most arrays will only use the first argument ("sx").
 
 @arg sx Array width
 @arg sy Array height (e.g. for texture objects).
-@arg type Array element type (see §Value type encoding)
+@arg type Array element type (see %Value type encoding)
 @arg elementByteSize Size of an array element
 @return true if elements were allocated successfully, false otherwise.
 @see yacArrayAlloc
@@ -2351,7 +2351,7 @@ Return the array height.
 
 Return the array element type.
 
-@return Element type. The type is encoded using the §Value type encoding except that 0 means variable type.
+@return Element type. The type is encoded using the %Value type encoding except that 0 means variable type.
 @see yacArrayAlloc
 @see yacArrayCopySize
 @see yacArrayGet
@@ -2468,7 +2468,7 @@ Set the array height.
 
 Set the template object to use for allocation of new array elements.
 
-This is mostly used by e.g. the §ObjectArray or §ClassArray classes.
+This is mostly used by e.g. the %ObjectArray or %ClassArray classes.
 
 @arg template The new array element template object
 @see yacArrayAlloc
@@ -2537,7 +2537,7 @@ For an example, take a look at the tksdl plugin.
 
 Return object meta class name.
 
-This is mostly used with script classes. See §Class.
+This is mostly used with script classes. See %Class.
 
 @return Meta class name
 @see yacClassName
@@ -2603,7 +2603,7 @@ Return access key to meta class member by name.
 
 Return meta class member type.
 
-The member type is encoded using the §Value type encoding.
+The member type is encoded using the %Value type encoding.
 
 @arg ak Access key
 @return Member type
@@ -3504,7 +3504,7 @@ Add the given object value to this arraylist.
 
 The array will be reallocated if necessary.
 
-@arg o If o is of type §Value, try to release the object from the value container, add an object reference otherwise.
+@arg o If o is of type %Value, try to release the object from the value container, add an object reference otherwise.
 @return true if the Object has been added, false otherwise.
 @see delete
 @see insert
@@ -3531,7 +3531,7 @@ Insert the given object before the given index.
 The array will be reallocated if necessary.
 
 @arg index Where to insert the object
-@arg o Object to insert. Similar to add, §Value object receive a special treatment.
+@arg o Object to insert. Similar to add, %Value object receive a special treatment.
 @return true if the Object was inserted successfully, false otherwise
 @see add
 @see delete
@@ -3732,7 +3732,7 @@ Return the index of the element that equals the given object.
 
 Check whether array contains an object that equals the given object.
 
-@arg o The object to compare with. §Object.yacEquals is used for comparisons.
+@arg o The object to compare with. %Object.yacEquals is used for comparisons.
 @return true if a matching object was found, false otherwise.
 @see indexOfObject
 */
@@ -4809,35 +4809,35 @@ DprebufFloatArray(128);
 
 /* @class FloatArray8,FloatArray
 
-A §FloatArray that can store 8 elements without (re-)allocation.
+A %FloatArray that can store 8 elements without (re-)allocation.
 
 @see FloatArray
 */
 
 /* @class FloatArray16,FloatArray
 
-A §FloatArray that can store 16 elements without (re-)allocation.
+A %FloatArray that can store 16 elements without (re-)allocation.
 
 @see FloatArray
 */
 
 /* @class FloatArray32,FloatArray
 
-A §FloatArray that can store 32 elements without (re-)allocation.
+A %FloatArray that can store 32 elements without (re-)allocation.
 
 @see FloatArray
 */
 
 /* @class FloatArray64,FloatArray
 
-A §FloatArray that can store 64 elements without (re-)allocation.
+A %FloatArray that can store 64 elements without (re-)allocation.
 
 @see FloatArray
 */
 
 /* @class FloatArray128,FloatArray
 
-A §FloatArray that can store 128 elements without (re-)allocation.
+A %FloatArray that can store 128 elements without (re-)allocation.
 
 @see FloatArray
 */
@@ -5121,7 +5121,7 @@ Return a copy of an array element.
 
 Return a reference to the array element at 'index', or return 'valOrVO' when index is out of bounds.
 
-If 'valOrVO' is a §Value object, take the ownership of the stored object and return it.
+If 'valOrVO' is a %Value object, take the ownership of the stored object and return it.
 
 @arg index Array index
 @return Array element or default value
@@ -5237,8 +5237,8 @@ Merge all strings into one and optionally insert separator string between the el
 
 No separator will be inserted before the first or after the last element.
 
-@arg separatorOrNull optional separator §String
-@return merged §String
+@arg separatorOrNull optional separator %String
+@return merged %String
 */
    YM //void        _mergeToString  (YAC_String *_separatorOrNull, YAC_Value *_r) const;
 };
@@ -5364,7 +5364,7 @@ Add the given scriptclass instance to this array.
 
 The array will be resized if necessary.
 
-@arg c Scriptclass instance to add. If c is a §Value object, try to release the scriptclass instance pointer from the value container.
+@arg c Scriptclass instance to add. If c is a %Value object, try to release the scriptclass instance pointer from the value container.
 @return true if the scriptclass instance has been added successfully, false otherwise.
 @see delete
 @see insert
@@ -5386,7 +5386,7 @@ Delete the first element whose pointer equals the given scriptclass instance.
 Insert the given scriptclass instance into the array.
 
 @arg index Where to insert the scriptclass instance
-@arg c Scriptclass instance to insert. If c is a §Value object, try to release the scriptclass instance pointer from the value container.
+@arg c Scriptclass instance to insert. If c is a %Value object, try to release the scriptclass instance pointer from the value container.
 @return true if the scriptclassinstance has been inserted successfully, false otherwise.
 @see add
 @see delete
@@ -5500,7 +5500,7 @@ Return the index of the element that equals the given object.
 
 Check whether array contains an object that equals the given object.
 
-@arg o The object to compare with. §Object.yacEquals is used for comparisons.
+@arg o The object to compare with. %Object.yacEquals is used for comparisons.
 @return true if a matching object was found, false otherwise.
 @see indexOfObject
 */
@@ -5567,7 +5567,7 @@ Add the given object to the arraylist.
 
 The array will be resized as required.
 
-@arg o The object to add to the arraylist. If o is a §Value object, the contained (deletable) object will be released from the Value container.
+@arg o The object to add to the arraylist. If o is a %Value object, the contained (deletable) object will be released from the Value container.
 @return true if the object has been added successfully, false otherwise.
 @see delete
 @see insert
@@ -5596,7 +5596,7 @@ Insert the given object into the arraylist.
 The array will be resized as required.
 
 @arg index Where to insert the object
-@arg o The object to add. If "o" is a §Value object, the contained (deletable) object will be released from the Value container.
+@arg o The object to add. If "o" is a %Value object, the contained (deletable) object will be released from the Value container.
 @return true if the object has been inserted successfully, false otherwise.
 @see add
 @see delete
@@ -5801,7 +5801,7 @@ Return the index of the element that equals the given object.
 
 Check whether array contains an object that equals the given object.
 
-@arg o The object to compare with. §Object.yacEquals is used for comparisons.
+@arg o The object to compare with. %Object.yacEquals is used for comparisons.
 @return true if a matching object was found, false otherwise.
 @see indexOfObject
 */
@@ -5882,7 +5882,7 @@ If none of the copy/unlink flags is set, object values will be copied by referen
 
 In case that 'a' or 'b' is 'this', object values will always be unlinked ("deref").
 
-The §joinCC, §joinCR, §joinCD, §joinRR, §joinRC, §joinRC, §joinRD, §joinDD, §joinDC, §joinDC are provided
+The %joinCC, %joinCR, %joinCD, %joinRR, %joinRC, %joinRC, %joinRD, %joinDD, %joinDC, %joinDC are provided
 for reasons of convenience (permutations of the copyA/copyB/unlinkA/unlinkB arguments).
 
 (C=copy, R=reference, D=deref (unlink))
@@ -6114,7 +6114,7 @@ Return the current value.
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -6131,7 +6131,7 @@ Create a new Boolean object and initialize it with the given value.
 
 Create a new Boolean object and initialize it with the given String.
 
-The §String will be converted to an integer number before assignment.
+The %String will be converted to an integer number before assignment.
 
 The strings "true","1" and "false","0" will map to 1 resp. 0.
 
@@ -6304,7 +6304,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -6482,7 +6482,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -6660,7 +6660,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -6839,7 +6839,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
    YM //void  _getString       (YAC_Value *_r);
 
@@ -7018,7 +7018,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -7197,7 +7197,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -7376,7 +7376,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
    YM //void  _getString       (YAC_Value *_r);
 
@@ -7393,7 +7393,7 @@ Create a new UnsignedLong object and initialize it with the given value.
 
 Create a new UnsignedLong object and initialize it with the given String.
 
-The §String will be converted to an unsigned 64bit integer number before assignment.
+The %String will be converted to an unsigned 64bit integer number before assignment.
 
 @return new UnsignedLong object
 */
@@ -7565,7 +7565,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -7582,7 +7582,7 @@ Create a new Long object and initialize it with the given value.
 
 Create a new Long object and initialize it with the given String.
 
-The §String will be converted to a signed 64bit integer number before assignment.
+The %String will be converted to a signed 64bit integer number before assignment.
 
 @return new Long object
 */
@@ -7770,7 +7770,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
       YM //void  _getString       (YAC_Value *_r);
 
@@ -7966,7 +7966,7 @@ Return a string representation of this number object that is formatted using the
 
 Return a string representation of this number object.
 
-@return a new §String instance holding a string representation of this number object
+@return a new %String instance holding a string representation of this number object
 */
    YM //void  _getString       (YAC_Value *_r);
 
@@ -7992,7 +7992,7 @@ Create a new Double object and initialize it with the given value.
 
 Create a new Double object and initialize it with the given String.
 
-The §String will be converted to a 64bit double precision floating point value before assignment.
+The %String will be converted to a 64bit double precision floating point value before assignment.
 
 @return new Double object
 */
@@ -8186,7 +8186,7 @@ Fill the entire buffer with byte 'c'.
 
 Extract 0 terminated string from buffer.
 
-The result will be written to §String "r".
+The result will be written to %String "r".
 At most "max" characters will be written.
 
 @arg r Receives the extracted string
@@ -8268,7 +8268,7 @@ Make sure to keep the source buffer alive as long as the visited data in this bu
       YM //sBool visit     (YAC_Buffer *_buffer, sUI _off, sUI _len);
 
 /* @method base64Encode:String out:int
-Base64-encode buffer region 0..io_offset and write to out §String.
+Base64-encode buffer region 0..io_offset and write to out %String.
 
 @return Number of encoded chars (excluding ASCIIZ)
 */
@@ -8364,7 +8364,7 @@ YAC_C_CORE_POOLED(_Buffer, "Buffer", YAC_CLID_BUFFER);
 
 A shared memory buffer.
 
-Use §peekI32, §pokeI32, §ringReadBuffer, §ringWriteBuffer to atomatically read / write 32bit integers.
+Use %peekI32, %pokeI32, %ringReadBuffer, %ringWriteBuffer to atomatically read / write 32bit integers.
 
 Ring buffer sizes must be dword-aligned (but support un-aligned read/write offsets and sizes).
 
@@ -8462,7 +8462,7 @@ Most of the methods assume that time is actually a number of ticks, i.e. an inte
 
 The current time offset may be a fractional number resulting in a smooth interpolation of
 successive event values if the current interpolation function is set to something other than
-§ENV_SHRESET or §ENV_SH.
+%ENV_SHRESET or %ENV_SH.
 
 */
 YC class _Envelope : public TKS_Envelope {
@@ -8550,7 +8550,7 @@ Reset time offset
 
 Set the interpolation function.
 
-@arg interpol Interpolation function id. Must be one of §ENV_SH, §ENV_LINEAR, §ENV_COSINE, §ENV_QUADRATIC, §ENV_CUBIC, §ENV_QUINTIC, §ENV_SHRESET.
+@arg interpol Interpolation function id. Must be one of %ENV_SH, %ENV_LINEAR, %ENV_COSINE, %ENV_QUADRATIC, %ENV_CUBIC, %ENV_QUINTIC, %ENV_SHRESET.
 */
       YM //void setInterpolation      (sSI _funid);
 
@@ -8630,7 +8630,7 @@ Return delta time to the next event
 
 /* @method isNewEvent:boolean
 
-Check whether the last §tickPrecise call hit a new key event.
+Check whether the last %tickPrecise call hit a new key event.
 
 @return true If a new event has been reached, false otherwise
 */
@@ -8801,7 +8801,7 @@ Remove range until next event and keep abstime of following event (if any)
 /* @method removeRangeSH,float t,float len
 Remove range of sample&hold style envelope.
 
-In contrary to §removeRange, events will only be delete if they are
+In contrary to %removeRange, events will only be delete if they are
 entirely with the given range. If only covered partly, their delta
 times will be adjusted.
 
@@ -8938,7 +8938,7 @@ Seek relative to end of file.
 Open a file in the local file system.
 
 @arg name Which file to open (pathname)
-@arg accessFlags §IOS_OUT for writing, §IOS_IN for reading and §IOS_INOUT for read-write access
+@arg accessFlags %IOS_OUT for writing, %IOS_IN for reading and %IOS_INOUT for read-write access
 @return true if the file has been opened successfully, false otherwise
 
 @see openLocal
@@ -8953,7 +8953,7 @@ Open a file in the local file system.
 
 @deprecated
 @arg name Which file to open (pathname)
-@arg accessFlags §IOS_OUT for writing, §IOS_IN for reading and §IOS_INOUT for read-write access
+@arg accessFlags %IOS_OUT for writing, %IOS_IN for reading and %IOS_INOUT for read-write access
 @return true if the file has been opened successfully, false otherwise
 
 @see open
@@ -8987,7 +8987,7 @@ Seek to the given absolute file offset (bytes).
 Seek to the given file offset.
 
 @arg offset Byte offset
-@arg mode One of §SEEK_SET, §SEEK_CUR, §SEEK_END
+@arg mode One of %SEEK_SET, %SEEK_CUR, %SEEK_END
 */
       YM //void _seek     (sSI, sSI);
 
@@ -9111,7 +9111,7 @@ public:
 
 /* @method isOpen:boolean
 
-Check whether the last §open call has succeeded.
+Check whether the last %open call has succeeded.
 
 @return True if there is valid file handle, false otherwise
 */
@@ -9213,145 +9213,145 @@ Stream byteorder (MSB first)
 
 /* @constant YAC_OP_ASSIGN,int
 
-§Object.yacOperator command id (assign)
+%Object.yacOperator command id (assign)
 */
    //#define YAC_OP_ASSIGN YCI 0
 
 /* @constant YAC_OP_ADD,int
 
-§Object.yacOperator command id (add)
+%Object.yacOperator command id (add)
 */
    //#define YAC_OP_ADD YCI 1
 
 /* @constant YAC_OP_SUB,int
 
-§Object.yacOperator command id (subtract)
+%Object.yacOperator command id (subtract)
 */
    //#define YAC_OP_SUB YCI 2
 
 /* @constant YAC_OP_MUL,int
 
-§Object.yacOperator command id (multiply)
+%Object.yacOperator command id (multiply)
 */
    //#define YAC_OP_MUL YCI 3
 
 /* @constant YAC_OP_DIV,int
 
-§Object.yacOperator command id (divide)
+%Object.yacOperator command id (divide)
 */
    //#define YAC_OP_DIV YCI 4
 
 /* @constant YAC_OP_MOD,int
 
-§Object.yacOperator command id (modulo)
+%Object.yacOperator command id (modulo)
 */
    //#define YAC_OP_MOD YCI 5
 
 /* @constant YAC_OP_SHL,int
 
-§Object.yacOperator command id (shift left)
+%Object.yacOperator command id (shift left)
 */
    //#define YAC_OP_SHL YCI 6
 
 /* @constant YAC_OP_SHR,int
 
-§Object.yacOperator command id (shift right)
+%Object.yacOperator command id (shift right)
 */
    //#define YAC_OP_SHR YCI 7
 
 /* @constant YAC_OP_CEQ,int
 
-§Object.yacOperator command id (compare equal)
+%Object.yacOperator command id (compare equal)
 */
    //#define YAC_OP_CEQ YCI 8
 
 /* @constant YAC_OP_CNE,int
 
-§Object.yacOperator command id (compare not equal)
+%Object.yacOperator command id (compare not equal)
 */
    //#define YAC_OP_CNE YCI 9
 
 /* @constant YAC_OP_CLE,int
 
-§Object.yacOperator command id (compare less equal)
+%Object.yacOperator command id (compare less equal)
 */
    //#define YAC_OP_CLE YCI 10
 
 /* @constant YAC_OP_CLT,int
 
-§Object.yacOperator command id (compare less than)
+%Object.yacOperator command id (compare less than)
 */
    //#define YAC_OP_CLT YCI 11
 
 /* @constant YAC_OP_CGE,int
 
-§Object.yacOperator command id (compare greater equal)
+%Object.yacOperator command id (compare greater equal)
 */
    //#define YAC_OP_CGE YCI 12
 
 /* @constant YAC_OP_CGT,int
 
-§Object.yacOperator command id (compare greater than)
+%Object.yacOperator command id (compare greater than)
 */
    //#define YAC_OP_CGT YCI 13
 
 /* @constant YAC_OP_AND,int
 
-§Object.yacOperator command id (bitwise and)
+%Object.yacOperator command id (bitwise and)
 */
    //#define YAC_OP_AND YCI 14
 
 /* @constant YAC_OP_OR,int
 
-§Object.yacOperator command id (bitwise or)
+%Object.yacOperator command id (bitwise or)
 */
    //#define YAC_OP_OR YCI 15
 
 /* @constant YAC_OP_EOR,int
 
-§Object.yacOperator command id (bitwise exclusive or)
+%Object.yacOperator command id (bitwise exclusive or)
 */
    //#define YAC_OP_EOR YCI 16
 
 /* @constant YAC_OP_NOT,int
 
-§Object.yacOperator command id (logical not)
+%Object.yacOperator command id (logical not)
 */
    //#define YAC_OP_NOT YCI 17
 
 /* @constant YAC_OP_BITNOT,int
 
-§Object.yacOperator command id (bitwise not)
+%Object.yacOperator command id (bitwise not)
 */
    //#define YAC_OP_BITNOT YCI 18
 
 /* @constant YAC_OP_LAND,int
 
-§Object.yacOperator command id (logical and)
+%Object.yacOperator command id (logical and)
 */
    //#define YAC_OP_LAND YCI 19
 
 /* @constant YAC_OP_LOR,int
 
-§Object.yacOperator command id (logical or)
+%Object.yacOperator command id (logical or)
 */
    //#define YAC_OP_LOR YCI 20
 
 /* @constant YAC_OP_LEOR,int
 
-§Object.yacOperator command id (logical exclusive or)
+%Object.yacOperator command id (logical exclusive or)
 */
    //#define YAC_OP_LEOR YCI 21
 
 /* @constant YAC_OP_NEG,int
 
-§Object.yacOperator command id (negate)
+%Object.yacOperator command id (negate)
 */
    //#define YAC_OP_NEG YCI 22
 
 /* @constant YAC_OP_INIT,int
 
-§Object.yacOperator command id (init)
+%Object.yacOperator command id (init)
 */
    //#define YAC_OP_INIT YCI 23
 
@@ -9368,8 +9368,8 @@ Try to map a constant integer value to a literal.
 
 Try to map a constant to script class constant name.
 
-@arg vo §ValueObject that the constants are compared with
-@arg clazz §Class in which to search
+@arg vo %ValueObject that the constants are compared with
+@arg clazz %Class in which to search
 @arg prefix Prefix of constant name
 */
    YM //YAC_String *scriptClassConstantToString (YAC_Object *_vo, YAC_Object *_sci, YAC_String *_strmatch);
@@ -9600,9 +9600,9 @@ Create a new instance of a script or C++ class.
 
 Resolve object name and create an empty array of equally typed objects.
 
-If the object class has a special array object (see §Object.yacArrayNew), an instance of the
+If the object class has a special array object (see %Object.yacArrayNew), an instance of the
 given array object class will be returned.
-A generic §ObjectArray will be created, otherwise.
+A generic %ObjectArray will be created, otherwise.
 
 @arg nspace Namespace name or null
 @arg name Name of the element object class
@@ -9846,7 +9846,7 @@ Query current working directory
 /* @method getExtraFiles:StringArray
 Query array of extra files added to script engine startup (e.g. local config files).
 
-@return §StringArray of extra files
+@return %StringArray of extra files
 */
       YM //void getExtraFiles (YAC_Value *_r);
 
@@ -9863,7 +9863,7 @@ Dynamically load TSL (library) file
 /* @method evalScript,String src:String
 Compile and evaluate script and return output string buffer (trace/print/stdout/stderr/..).
 
-This allocates a new §Script object, installs a print hook, loads the given source, eval()s the global statements, and returns the print hook output buffer.
+This allocates a new %Script object, installs a print hook, loads the given source, eval()s the global statements, and returns the print hook output buffer.
 
 @arg src Script source (e.g. 'trace "hello, world.";')
 @return a deletable copy of the output string buffer (never null)
@@ -10251,7 +10251,7 @@ This method supports the => operator.
 
 /* @method split,char delimiter:int
 
-@deprecated Use §splitChar instead
+@deprecated Use %splitChar instead
 @arg delimiter
 @return
 */
@@ -10259,7 +10259,7 @@ This method supports the => operator.
 
 /* @method words,boolean bQuotes:int
 
-@deprecated Use §splitSpace instead
+@deprecated Use %splitSpace instead
 @arg bQuotes
 @return
 */
@@ -10367,7 +10367,7 @@ This method supports the => operator.
 
 /* @method getWord,int wordNr:String
 
-@deprecated Use §splitSpace, §splitChar, §splitCharset, §tokenize instead
+@deprecated Use %splitSpace, %splitChar, %splitCharset, %tokenize instead
 @arg wordNr
 @return
 */
@@ -10426,7 +10426,7 @@ This method supports the => operator.
 
 /* @method appendRepeat,String s,int numRepeats
 
-Append the given §String 'numRepeats' times.
+Append the given %String 'numRepeats' times.
 
 Does nothing when 's' is empty or numRepeats is <= 0.
 
@@ -10502,7 +10502,7 @@ Split string at delimiter chars and return substring array.
 
 This method supports the => operator.
 
-Unlike §splitCharset, the result array will contain the delimiter chars and this method will consider quoted strings.
+Unlike %splitCharset, the result array will contain the delimiter chars and this method will consider quoted strings.
 
 @arg delimiterCharset
 @return
@@ -10516,7 +10516,7 @@ Split string at delimiter chars and return substring and startoffset+numchars ar
 
 This method supports the => operator.
 
-Unlike §splitCharset, the result array will contain the delimiter chars and this method will consider quoted strings.
+Unlike %splitCharset, the result array will contain the delimiter chars and this method will consider quoted strings.
 
 @arg delimiterCharset
 @arg retRanges returns the substring start offsets and lengths (two elements for each substring)
@@ -10921,7 +10921,7 @@ Check if string starts with UTF-8 byte order mark (U+FEFF encoded as 0xEF 0xBB 0
       YM // sBool       _hasUTF8BOM (void) const;
 
 /* @method isUTF8:boolean
-Check if string starts with UTF-8 byte order mark (see §hasUTF8BOM) or if it contains any UTF-8 multi-byte chars
+Check if string starts with UTF-8 byte order mark (see %hasUTF8BOM) or if it contains any UTF-8 multi-byte chars
 
 @return True if BOM or UTF-8 multi-byte chars are present
 */
@@ -11037,7 +11037,7 @@ A String that can store 128 characters without (re-)allocation.
 
 Used to iterate a String word stack.
 
-@deprecated Use §String.splitSpace, §String.splitChar, §String.splitCharset, §String.tokenize instead
+@deprecated Use %String.splitSpace, %String.splitChar, %String.splitCharset, %String.tokenize instead
 @see String
 */
 YC class _StringIterator : public TKS_StringIterator {
@@ -11410,7 +11410,7 @@ public:
 /* @method create,boolean bManualReset:int
    Initialize condition object.
 
-@arg bManualReset - 1=all waiting threads return (must call §reset after §wait), 0=one thread returns, auto-reset condition to 0
+@arg bManualReset - 1=all waiting threads return (must call %reset after %wait), 0=one thread returns, auto-reset condition to 0
 
 @return 0 (success) or error code
 */
@@ -11428,7 +11428,7 @@ public:
 /* @method wait,int timeout:int
    Wait for condition to be raised.
 
-   Auto-reset condition to 0 (false) if this not a manual reset condition (see §create).
+   Auto-reset condition to 0 (false) if this not a manual reset condition (see %create).
 
 @arg timeout 0=wait forever, millisec. otherwise
 
@@ -11900,7 +11900,7 @@ public:
 
 /* @method create,Function entryFunction:boolean
 
-@arg entryFunction §Function object to be used for thread startup. The arbitrary user argument can be accessed by using the §Thread.getUserData getter function.
+@arg entryFunction %Function object to be used for thread startup. The arbitrary user argument can be accessed by using the %Thread.getUserData getter function.
 @return
 
 */
@@ -11960,7 +11960,7 @@ Query thread name (debug)
 /* @method setPriority,int prio
 Set thread priority
 
-@arg prio Thread priority (§THREAD_PRIORITY_ABOVE_NORMAL, §THREAD_PRIORITY_BELOW_NORMAL, §THREAD_PRIORITY_HIGHEST, §THREAD_PRIORITY_IDLE, §THREAD_PRIORITY_LOWEST, §THREAD_PRIORITY_NORMAL, §THREAD_PRIORITY_TIME_CRITICAL (root only)
+@arg prio Thread priority (%THREAD_PRIORITY_ABOVE_NORMAL, %THREAD_PRIORITY_BELOW_NORMAL, %THREAD_PRIORITY_HIGHEST, %THREAD_PRIORITY_IDLE, %THREAD_PRIORITY_LOWEST, %THREAD_PRIORITY_NORMAL, %THREAD_PRIORITY_TIME_CRITICAL (root only)
 */
    YM //void        _setPriority       (sSI _priority);
 
@@ -12022,7 +12022,7 @@ Pseudo-static method. Queries maximum supported affinity mask ( (1<<numProcessor
 Set thread affinity mask.
 
 Keep in mind that this call will fail on Windows if the mask contains bits for non-available processor cores.
-Please use §GetMaxAffinityMask32 to query the maximum supported mask.
+Please use %GetMaxAffinityMask32 to query the maximum supported mask.
 
 This method is not supported on macOS.
 
@@ -12037,9 +12037,9 @@ Set thread affinity mask.
 The mask is currently limited to 64 logical processors (todo: support processor groups).
 
 Keep in mind that this call will fail on Windows if the mask contains bits for non-available processor cores.
-Please use §GetMaxAffinityMask32 to query the maximum supported mask.
+Please use %GetMaxAffinityMask32 to query the maximum supported mask.
 
-On macOS the mask should contain only a single set bit and the method will fall back to §setCPUCore.
+On macOS the mask should contain only a single set bit and the method will fall back to %setCPUCore.
 
 @arg mask Logical processor core bit mask. 'x' denotes set bits, '.' denotes cleared bits, space/tab/CR/LF are ignored and can be used for grouping logical processors
 @return true when affinity mask has been updated
@@ -12050,7 +12050,7 @@ On macOS the mask should contain only a single set bit and the method will fall 
 /* @method setCPUCore,int coreIdx
   Assign thread to specified CPU core.
 
-  Fall back to §setAffinityMask32 when tks was not compiled with HAVE_WIN10 define.
+  Fall back to %setAffinityMask32 when tks was not compiled with HAVE_WIN10 define.
 
 @arg coreIdx Logical CPU core index
 */
@@ -12068,7 +12068,7 @@ On macOS the mask should contain only a single set bit and the method will fall 
 /* @method sendEvent,Event ev
   Post new message in mailbox.
 
-  This will clone the given §Event object and unlink any deletable userdata object from "ev".
+  This will clone the given %Event object and unlink any deletable userdata object from "ev".
 
 @arg ev New message
 */
@@ -12131,7 +12131,7 @@ Schedule next waiting thread.
    YM //sBool       _SwitchToThread  (void);
 
 /* @method Yield
-Schedule next waiting thread (same as §SwitchToThread)
+Schedule next waiting thread (same as %SwitchToThread)
 
 Can cause high CPU load when no other threads are waiting to be scheduled.
  */
@@ -12221,7 +12221,7 @@ The standard output (and error output) can be accessed by reading data from the 
 
 The stream size indicates how many bytes can be read from the child process.
 
-The §waitAvail() method supports an additional timeout parameter (uses select() on Linux and a polling loop on Windows).
+The %waitAvail() method supports an additional timeout parameter (uses select() on Linux and a polling loop on Windows).
 
 @see Stream
 */
@@ -12233,7 +12233,7 @@ public:
       Create new process and execute command
 
       @arg cmd Command pathname (e.g. "/bin/ls").
-      @arg args Command arguments. §StringArray or null.
+      @arg args Command arguments. %StringArray or null.
       @return true when the process has been started.
    */
    YM // sBool exec (YAC_String *_cmd, YAC_Object *_args);
@@ -12603,7 +12603,7 @@ Assign value and keep original value type (typecast if necessary).
 
 /* @method pointerAssign,Value v
 
-Assign/Dereference §Object pointer. Both values must have type §Object or §String.
+Assign/Dereference %Object pointer. Both values must have type %Object or %String.
 */
    YM //void        _pointerAssign     (YAC_Object *_valueObject);
 
@@ -12626,13 +12626,13 @@ Assign/Dereference §Object pointer. Both values must have type §Object or §Strin
 
 
    /* @method isObject:boolean
-      @return true when value has type §Object
+      @return true when value has type %Object
     */
    YM //sBool       _isObject          (void);
 
 
    /* @method isString:boolean
-      @return true when value has type §String or has type §Object and object is a §String
+      @return true when value has type %String or has type %Object and object is a %String
     */
    YM //sBool       _isString          (void);
 };
@@ -12727,7 +12727,7 @@ public:
 /* @method setClassNamespace,String nspName
 Set namespace name for classes declared in this (temporary) script module.
 
-(note) a unique namespace must be set in case the script source is loaded in multiple §Script instances
+(note) a unique namespace must be set in case the script source is loaded in multiple %Script instances
 @arg nspName Unique namespace name
 @return true if namespace was set
 */
@@ -12857,7 +12857,7 @@ public:
 
 /* @method appendValue,Value v:ListNode
 
-@deprecated superceeded by §append
+@deprecated superceeded by %append
 @arg v
 @return
 */
@@ -12866,7 +12866,7 @@ public:
 /* @method append,Object value:ListNode
 Append empty list node and copy value.
 
-@arg value Which value to copy. Will grab deletable objects if argument is a §Value object.
+@arg value Which value to copy. Will grab deletable objects if argument is a %Value object.
 @return
 */
    YM //YAC_ListNode *_append          (YAC_Object *_v);
@@ -13181,7 +13181,7 @@ Check if array is empty (numElements == 0).
 
 /* @method add,Value val
 
-Add new §Value.
+Add new %Value.
 */
    YM //sBool _add            (YAC_Object *_valueObject);
 
@@ -13193,13 +13193,13 @@ Add void value.
 
 /* @method insert
 
-Insert §Value at index
+Insert %Value at index
 */
    YM //sBool _insert         (sSI _index, YAC_Object *_valueObject);
 
 /* @method delete
 
-Delete §Value at index
+Delete %Value at index
 */
    YM //sBool _delete         (sSI _index);
 
@@ -13245,7 +13245,7 @@ Return the index of the element that equals the given object.
 
 Check whether array contains an object that equals the given object.
 
-@arg o The object to compare with. §Object.yacEquals is used for comparisons.
+@arg o The object to compare with. %Object.yacEquals is used for comparisons.
 @return true if a matching object was found, false otherwise.
 @see indexOfObject
 */
@@ -13276,7 +13276,7 @@ Return the given array element.
 Silently return <code>void</code> if the given index is out of bounds.
 
 @arg index Which array element to return
-@return element value (non-deletable reference if the element holds an §Object)
+@return element value (non-deletable reference if the element holds an %Object)
 @see getDeref
 */
    YM //void  get            (sSI, YAC_Value *_r);
@@ -13288,7 +13288,7 @@ Updates numElements when index exceeds it (>=).
 
 Silently do nothing when index exceed array size (>= maxElements).
 
-Transfers pointer ownership if "val" is a §Value object which stores a deletable object.
+Transfers pointer ownership if "val" is a %Value object which stores a deletable object.
 
 @arg index Array index
 @arg val New value
@@ -13302,7 +13302,7 @@ Return the array element at (numElements - 1 - index).
 Silently return <code>void</code> if the given index is out of bounds.
 
 @arg index Which array element to return
-@return element value (non-deletable reference if the element holds an §Object)
+@return element value (non-deletable reference if the element holds an %Object)
 @see getDeref
 */
    YM //void  _getRev        (sSI, YAC_Value *_r);
@@ -13313,7 +13313,7 @@ Set element at (numElements - 1 - index) to "val".
 
 Silently do nothing when index exceed array size (>= maxElements).
 
-Transfers pointer ownership if "val" is a §Value object which stores a deletable object.
+Transfers pointer ownership if "val" is a %Value object which stores a deletable object.
 
 @arg index Array index
 @arg val New value
@@ -13327,7 +13327,7 @@ Return the given (deletable) array element.
 Silently return <code>void</code> if the given index is out of bounds.
 
 @arg index Which array element to return
-@return element value (deletable reference if the elements holds an §Object)
+@return element value (deletable reference if the elements holds an %Object)
 @see get
 */
    YM //void  getDeref       (sSI, YAC_Value *_r);
@@ -13375,7 +13375,7 @@ If none of the copy/unlink flags is set, object values will be copied by referen
 
 In case that 'a' or 'b' is 'this', object values will always be unlinked ("deref").
 
-The §joinCC, §joinCR, §joinCD, §joinRR, §joinRC, §joinRC, §joinRD, §joinDD, §joinDC, §joinDC are provided
+The %joinCC, %joinCR, %joinCD, %joinRR, %joinRC, %joinRC, %joinRD, %joinDD, %joinDC, %joinDC are provided
 for reasons of convenience (permutations of the copyA/copyB/unlinkA/unlinkB arguments).
 
 (C=copy, R=reference, D=deref (unlink))
@@ -13506,7 +13506,7 @@ YAC_C_CORE_POOLED(_Exception, "Exception", TKS_CLID_EXCEPTION);
 //------------------------------------------------------------------------------------- DummyStream
 /* @class DummyStream,Object
 
-A no-op §Stream that can be used to determine buffer sizes for real write ops.
+A no-op %Stream that can be used to determine buffer sizes for real write ops.
 
 */
 YC class _DummyStream: public TKS_DummyStream {
@@ -13622,10 +13622,9 @@ static void YAC_CALL _APIC_exit(yacmemptr _args) { APIC_exit(_args.mem[0].si); }
 /* @function GetCurrentThread:Thread
 Query current thread object
 
-TkScript must have been compiled with thread local storage support (HAVE_TLS)
-or this function will always return null.
+TkScript must have been compiled with thread local storage support (HAVE_TLS) or this function will always return null.
 
-@return Current §Thread object
+@return Current %Thread object
 @see Thread
 */
 static YAC_Object *YAC_CALL APIC_GetCurrentThread(void) {
@@ -14157,7 +14156,7 @@ static sF32 YAC_CALL _APIC_mathSmoothStepNf(yacmemptr _args) { return APIC_mathS
 
 
 
-/* @function mathClampf,float a,float b,float t:float
+/* @function mathClampf,float a,float b,float c:float
 Clamp value to min/max range
 */
 static sF32 YAC_CALL APIC_mathClampf(sF32 _a, sF32 _b, sF32 _c) {

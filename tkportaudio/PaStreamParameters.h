@@ -71,13 +71,13 @@ YC class _PaStreamParameters : public YAC_Object {
 
 
    /* @method getSampleFormat:int
-      See PA_xxx constants, e.g. §PA_INT24.
+      See PA_xxx constants, e.g. %PA_INT24.
    */
    YM sSI _getSampleFormat(void);
 
 
    /* @method setSampleFormat,int sampleFormat
-      See PA_xxx constants, e.g. §PA_INT24.
+      See PA_xxx constants, e.g. %PA_INT24.
     */
    YM void _setSampleFormat(sSI _sampleFormat);
 
