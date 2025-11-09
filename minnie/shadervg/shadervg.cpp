@@ -508,32 +508,32 @@ static sUI current_draw_attrib_offset;       // incs with each AttribOffset*() c
 static sUI current_draw_lines_vertex_index;  // incs with each Vertex2f() call in DRAW_MODE_LINES* (0, 6)
 static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 
-#define DRAW_MODE_LINE_STRIP                         7000
-#define DRAW_MODE_LINE_STRIP_AA                      7001
-#define DRAW_MODE_LINE_STRIP_PATTERN                 7002
-#define DRAW_MODE_LINE_STRIP_PATTERN_AA              7003
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL           7004
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_AA        7005
-#define DRAW_MODE_LINE_STRIP_BEVEL                   7006
-#define DRAW_MODE_LINE_STRIP_BEVEL_AA                7007
-#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL           7008
-#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA        7009
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL     7010
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA  7011
-#define DRAW_MODE_LINES                              7012
-#define DRAW_MODE_LINES_AA                           7013
-#define DRAW_MODE_LINES_GOURAUD                      7014
-#define DRAW_MODE_LINES_GOURAUD_AA                   7015
-#define DRAW_MODE_POINTS_SQUARE                      7016
-#define DRAW_MODE_POINTS_SQUARE_AA                   7017
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD              7018
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA           7019
-#define DRAW_MODE_POINTS_ROUND                       7020
-#define DRAW_MODE_POINTS_ROUND_AA                    7021
-#define DRAW_MODE_POINTS_ROUND_GOURAUD               7022
-#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA            7023
-#define DRAW_MODE_POLYGON                            7024
-#define DRAW_MODE_POLYGON_AA                         7025
+#define DRAW_MODE_POLYGON                            7000
+#define DRAW_MODE_POLYGON_AA                         7001
+#define DRAW_MODE_LINE_STRIP                         7002
+#define DRAW_MODE_LINE_STRIP_AA                      7003
+#define DRAW_MODE_LINE_STRIP_PATTERN                 7004
+#define DRAW_MODE_LINE_STRIP_PATTERN_AA              7005
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL           7006
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_AA        7007
+#define DRAW_MODE_LINE_STRIP_BEVEL                   7008
+#define DRAW_MODE_LINE_STRIP_BEVEL_AA                7009
+#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL           7010
+#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA        7011
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL     7012
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA  7013
+#define DRAW_MODE_LINES                              7014
+#define DRAW_MODE_LINES_AA                           7015
+#define DRAW_MODE_LINES_GOURAUD                      7016
+#define DRAW_MODE_LINES_GOURAUD_AA                   7017
+#define DRAW_MODE_POINTS_SQUARE                      7018
+#define DRAW_MODE_POINTS_SQUARE_AA                   7019
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD              7020
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA           7021
+#define DRAW_MODE_POINTS_ROUND                       7022
+#define DRAW_MODE_POINTS_ROUND_AA                    7023
+#define DRAW_MODE_POINTS_ROUND_GOURAUD               7024
+#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA            7025
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
 
 static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
@@ -6253,6 +6253,27 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
          sdvg_Attrib2f(_x, _y);
          break;
 
+      case DRAW_MODE_POLYGON:
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+         sdvg_Attrib2fi16(_x, _y);
+#else
+         sdvg_Attrib2f(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+         break;
+
+      case DRAW_MODE_POLYGON_AA:
+         if(-99999999.0f == draw_first_x)
+         {
+            draw_first_x = _x;
+            draw_first_y = _y;
+         }
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+         sdvg_Attrib2fi16(_x, _y);
+#else
+         sdvg_Attrib2f(_x, _y);
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+         break;
+
       case DRAW_MODE_LINE_STRIP:
       case DRAW_MODE_LINE_STRIP_AA:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
@@ -6313,27 +6334,6 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
       case DRAW_MODE_POINTS_ROUND_GOURAUD:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
       case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
          sdvg_BufferAddLinePointFlat32(attrib_write_buffer, _x, _y);
-         break;
-
-      case DRAW_MODE_POLYGON:
-#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
-         sdvg_Attrib2fi16(_x, _y);
-#else
-         sdvg_Attrib2f(_x, _y);
-#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
-         break;
-
-      case DRAW_MODE_POLYGON_AA:
-         if(-99999999.0f == draw_first_x)
-         {
-            draw_first_x = _x;
-            draw_first_y = _y;
-         }
-#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
-         sdvg_Attrib2fi16(_x, _y);
-#else
-         sdvg_Attrib2f(_x, _y);
-#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
          break;
    }
 
@@ -6544,7 +6544,9 @@ void YAC_CALL sdvg_End(void) {
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
                {
                   if(sdvg_b_glcore && 0u != mapped_user_vbo_id)
+                  {
                      Dsdvg_glcall(glFlushMappedBufferRange(GL_ARRAY_BUFFER, current_draw_start_offset, bytesAvail));
+                  }
                }
             }
          }
@@ -6566,6 +6568,51 @@ void YAC_CALL sdvg_End(void) {
                   else
                   {
                      // Dprintf("xxx sdvg_End: UpdateShaderUniforms FAILED\n");
+                  }
+                  break;
+
+               case DRAW_MODE_POLYGON:
+                  if(UpdateShaderUniforms())
+                  {
+#ifdef SHADERVG_STENCIL_POLYGONS
+                     loc_drawStencilPolygon(current_draw_vertex_index/*numVerts*/);
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+                  }
+                  break;
+
+               case DRAW_MODE_POLYGON_AA:
+                  if(UpdateShaderUniforms())
+                  {
+#ifdef SHADERVG_STENCIL_POLYGONS
+                     if(current_draw_vertex_index >= 4u)
+                     {
+                        // Draw interior
+                        loc_drawStencilPolygon(current_draw_vertex_index - 1u/*numVerts*/);
+                        // Draw AA outline
+                        sF32 oldStrokeW = stroke_w;
+                        ShaderVG_Shape *oldShape = current_shape;
+                        stroke_w = 1.0f;
+#ifdef USE_VERTEX_ATTRIB_DIVISOR
+                        loc_bind_default_polygon_trianglestrip_flat_aa_shape();
+                        loc_DrawLineStripFlatAAVBOGradient(current_draw_start_offset,
+                                                           current_draw_num_vertices,
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+                                                           true/*b14_2*/
+#else
+                                                           false/*b14_2*/
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
+                                                           );
+#else
+#error AA stencil polygons require -DUSE_VERTEX_ATTRIB_DIVISOR build option
+#endif // USE_VERTEX_ATTRIB_DIVISOR
+                        stroke_w = oldStrokeW;
+                        BindShape(oldShape);
+                     }
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
                   }
                   break;
 
@@ -6847,51 +6894,6 @@ void YAC_CALL sdvg_End(void) {
                                                      current_draw_start_offset,
                                                      current_draw_vertex_index
                                                      );
-                  break;
-
-               case DRAW_MODE_POLYGON:
-                  if(UpdateShaderUniforms())
-                  {
-#ifdef SHADERVG_STENCIL_POLYGONS
-                     loc_drawStencilPolygon(current_draw_vertex_index/*numVerts*/);
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
-                  }
-                  break;
-
-               case DRAW_MODE_POLYGON_AA:
-                  if(UpdateShaderUniforms())
-                  {
-#ifdef SHADERVG_STENCIL_POLYGONS
-                     if(current_draw_vertex_index >= 4u)
-                     {
-                        // Draw interior
-                        loc_drawStencilPolygon(current_draw_vertex_index - 1u/*numVerts*/);
-                        // Draw AA outline
-                        sF32 oldStrokeW = stroke_w;
-                        ShaderVG_Shape *oldShape = current_shape;
-                        stroke_w = 1.0f;
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
-                        loc_bind_default_polygon_trianglestrip_flat_aa_shape();
-                        loc_DrawLineStripFlatAAVBOGradient(current_draw_start_offset,
-                                                           current_draw_num_vertices,
-#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
-                                                           true/*b14_2*/
-#else
-                                                           false/*b14_2*/
-#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
-                                                           );
-#else
-#error AA stencil polygons require -DUSE_VERTEX_ATTRIB_DIVISOR build option
-#endif // USE_VERTEX_ATTRIB_DIVISOR
-                        stroke_w = oldStrokeW;
-                        BindShape(oldShape);
-                     }
-#else
-#error polygon rasterizer n/a
-#endif // SHADERVG_STENCIL_POLYGONS
-                  }
                   break;
 
             } // switch draw_mode
