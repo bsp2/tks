@@ -235,7 +235,7 @@ typedef int             sBool;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // (note) must match shadervg settings
-#define MINNIE_LINE_STROKE_W_OFFSET           0.75f
+#define MINNIE_LINE_AA_STROKE_W_OFFSET        0.75f
 #define MINNIE_RECT_FILL_AA_SIZE_OFFSET       1.0f
 #define MINNIE_RECT_AA_SIZE_OFFSET            0.75f
 #define MINNIE_RECT_AA_STROKE_OFFSET          0.25f

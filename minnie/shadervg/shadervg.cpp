@@ -59,7 +59,7 @@
 
 // (note) must match minnie.h settings
 #define SHADERVG_AA_RANGE_OFF  0.001f   // forced aa_range when b_aa = false
-#define SHADERVG_LINE_STROKE_W_OFFSET           1.5f
+#define SHADERVG_LINE_AA_STROKE_W_OFFSET        0.75f
 #define SHADERVG_RECT_FILL_AA_SIZE_OFFSET       1.0f
 #define SHADERVG_RECT_AA_SIZE_OFFSET            0.75f
 #define SHADERVG_RECT_AA_STROKE_OFFSET          0.25f
@@ -598,7 +598,8 @@ static sF32   alpha_sdf_min;
 static sF32   alpha_sdf_max;
 static sF32   alpha_sdf_maxmin_scale;
 static sF32   alpha_sdf_exp;
-static sF32   stroke_w;      // px
+static sF32   stroke_w;      // px. total line width = 2*stroke_w
+static sF32   stroke_w_aa_off;  // def=SHADERVG_LINE_AA_STROKE_W_OFFSET
 static sF32   line_pattern_scale;
 static sF32   line_pattern_offset;  // 0..1
 static sF32   point_radius;  // px
@@ -765,6 +766,7 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    aa_range            = 1.5f;
    aa_exp              = 1.0f;
    stroke_w            = 2.0f;
+   stroke_w_aa_off     = SHADERVG_LINE_AA_STROKE_W_OFFSET;
    line_pattern_scale  = 1.0f / 256.0f;
    line_pattern_offset = 0.0f;
    fill_r              = 0.1f;
@@ -2742,7 +2744,7 @@ void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _
    // (note) numVerts = 6*numPoints
    // (note) numSeg   = (numPoints - 1)
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_flat_aa_14_2.drawLineStripFlatAAVBO14_2(_vboId,
                                                       _byteOffset,
                                                       _numPoints,
@@ -2765,7 +2767,7 @@ void YAC_CALL sdvg_DrawLineStripFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _nu
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*10 = 60
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_flat_aa_32.drawLineStripFlatAAVBO32(_vboId,
                                                   _byteOffset,
                                                   _numPoints,
@@ -2896,7 +2898,7 @@ void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sU
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*8 = 48
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_aa_14_2.drawLineStripPatternAAVBO14_2(_vboId,
                                                             _byteOffset,
                                                             _numPoints,
@@ -2923,7 +2925,7 @@ void YAC_CALL sdvg_DrawLineStripPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI 
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*14 = 84
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_aa_32.drawLineStripPatternAAVBO32(_vboId,
                                                         _byteOffset,
                                                         _numPoints,
@@ -2950,7 +2952,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2(sUI _vboId, sUI _byteOffse
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*8 = 48
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_decal_aa_14_2.drawLineStripPatternDecalAAVBO14_2(_vboId,
                                                                        _byteOffset,
                                                                        _numPoints,
@@ -2978,7 +2980,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32(sUI _vboId, sUI _byteOffset,
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 6*14 = 84
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_decal_aa_32.drawLineStripPatternDecalAAVBO32(_vboId,
                                                                    _byteOffset,
                                                                    _numPoints,
@@ -3044,7 +3046,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, 
    // (note) numVerts = 9*numPoints
    // (note) numSeg   = (numPoints - 1)
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_flat_bevel_aa_14_2.drawLineStripFlatBevelAAVBO14_2(_vboId,
                                                                  _byteOffset,
                                                                  _numPoints,
@@ -3067,7 +3069,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sU
    // (note) numTri           = (numPoints - 1) * 2 + (numPoints - 2)
    // (note) numBytesPerPoint = 9*10 = 90
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_flat_bevel_aa_32.drawLineStripFlatBevelAAVBO32(_vboId,
                                                              _byteOffset,
                                                              _numPoints,
@@ -3198,7 +3200,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffse
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 9*8 = 72
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_bevel_aa_14_2.drawLineStripPatternBevelAAVBO14_2(_vboId,
                                                                        _byteOffset,
                                                                        _numPoints,
@@ -3225,7 +3227,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset,
    // (note) numTri           = (numPoints - 1) * 2 + (numPoints - 2)
    // (note) numBytesPerPoint = 9*14 = 126
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_bevel_aa_32.drawLineStripPatternBevelAAVBO32(_vboId,
                                                                    _byteOffset,
                                                                    _numPoints,
@@ -3252,7 +3254,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byte
    // (note) numTri           = (numPoints - 1) * 6
    // (note) numBytesPerPoint = 9*8 = 72
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_decal_bevel_aa_14_2.drawLineStripPatternDecalBevelAAVBO14_2(_vboId,
                                                                                   _byteOffset,
                                                                                   _numPoints,
@@ -3280,7 +3282,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOf
    // (note) numTri           = (numPoints - 1) * 2 + (numPoints - 2)
    // (note) numBytesPerPoint = 9*14 = 126
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    line_strip_pattern_decal_bevel_aa_32.drawLineStripPatternDecalBevelAAVBO32(_vboId,
                                                                               _byteOffset,
                                                                               _numPoints,
@@ -3352,7 +3354,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*6 = 36
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_14_2.drawLinesFlatAAVBO14_2(_vboId,
                                              _byteOffset,
@@ -3376,7 +3378,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
    // (note) numTri           = (numPoints-1) * 2
    // (note) numBytesPerPoint = 6*10 = 60
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_flat_aa_32.drawLinesFlatAAVBO32(_vboId,
                                          _byteOffset,
@@ -3423,7 +3425,7 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
    //
    // (note) requires USE_VERTEX_ATTRIB_DIVISOR
    //
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
    Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
    lines_gouraud_aa_32.drawLinesGouraudAAVBO32(_vboId,
                                                _byteOffset,
@@ -4693,6 +4695,10 @@ void YAC_CALL sdvg_SetColor4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
 void YAC_CALL sdvg_SetColorARGB(sUI _c32) {
    sdvg_SetFillColorARGB(_c32);
    sdvg_SetStrokeColorARGB(_c32);
+}
+
+void YAC_CALL sdvg_SetStrokeRadiusAAOffset(sF32 _offset) {
+   stroke_w_aa_off = _offset;
 }
 
 void YAC_CALL sdvg_SetStrokeRadius(sF32 _strokeRadius) {
@@ -6033,7 +6039,7 @@ static void loc_DrawLineStripFlatAAVBOGradient(sUI _byteOffset, sUI _numPoints, 
 
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
 
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_LINE_STROKE_W_OFFSET) : 0.0f;
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
 
    Dsdvg_uniform_mat4(current_shape->shape_u_transform, mvp_matrix);
    Dsdvg_uniform_4f(current_shape->shape_u_color_stroke, stroke_r, stroke_g, stroke_b, stroke_a * global_a);

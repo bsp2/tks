@@ -194,8 +194,8 @@ debug:
 #	rm mib/test077_giraffe.mib; make mib/test077_giraffe.mib ; tks draw 77
 #	rm mib/test078_butterfly.mib; make mib/test078_butterfly.mib ; tks draw 78
 #	rm mib/test079_minimal.mib; make mib/test079_minimal.mib ; tks draw 79
-#	rm mib/test080_debug_l1.mib; make mib/test080_debug_l1.mib 
-	rm mib/test081_debug_l2.mib; make mib/test081_debug_l2.mib 
+	rm mib/test080_debug_l1.mib; make mib/test080_debug_l1.mib 
+#	rm mib/test081_debug_l2.mib; make mib/test081_debug_l2.mib 
 #	rm mib/test082_circle.mib; make mib/test082_circle.mib ; tks draw 82
 #	rm mib/test083_ellipse_fill.mib; make mib/test083_ellipse_fill.mib #; tks draw 83
 #	rm mib/test084_ellipse_stroke.mib; make mib/test084_ellipse_stroke.mib #; tks draw 84

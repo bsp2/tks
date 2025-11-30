@@ -4397,6 +4397,7 @@ int main(int argc, char**argv) {
       sdvg_SetScratchBufferSize(4096*1024);
       sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
       sdvg_Init(1/*b_glcore*/);
+      sdvg_SetStrokeRadiusAAOffset(1.5f);
 
       Dprintf("[...] init OK, initializing textures..\n");
 

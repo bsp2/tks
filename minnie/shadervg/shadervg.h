@@ -510,6 +510,19 @@ The total line width is lineW and the line stroke radius is (0.5 * lineW).
 */
 YF void YAC_CALL sdvg_SetStrokeWidth (sF32 _lineW);
 
+/* @function sdvg_SetStrokeRadiusAAOffset,float offset
+Set AA line stroke radius offset.
+
+Intended to be used to globally finetune the width of anti-aliased lines (i.e. set once during init).
+
+@arg offset AA stroke radius offset (default=0.75. 1.5 better aligns with non-AA lines but does not allow for very thin lines)
+
+The total line stroke width is (2 * (strokeRadius+offset))
+
+@group Stroke
+*/
+YF void YAC_CALL sdvg_SetStrokeRadiusAAOffset (sF32 _offset);
+
 /* @function sdvg_SetLinePatternScale,float scale
 Set line pattern scale.
 
