@@ -247,7 +247,7 @@ typedef int             sBool;
 #define MINNIE_ROUNDRECT_AA_STROKE_OFFSET     0.25f
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ rasterizer
-#if defined(MINNIE_IMPLEMENTATION) && defined(MINNIE_SW_RENDER)
+#if defined(MINNIE_IMPLEMENTATION) && MINNIE_SW_RENDER
 #define Dprintf if(!MINNIE_PRINTF);else printf
 #define AA_C defined
 #include "../tkopengl/tri_raster_aa.h"

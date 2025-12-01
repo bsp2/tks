@@ -30,9 +30,9 @@
 
 #include "../../tksdl2/inc_sdl.h"
 
-#ifdef YAC_WIN32
+#ifndef YAC_MACOS
 extern void load_gl_extensions (void);
-#endif // YAC_WIN32
+#endif // !YAC_MACOS
 
 extern SDL_Window    *sdl_window;
 extern SDL_GLContext  sdl_glcontext;
