@@ -290,30 +290,24 @@ typedef int             sBool;
 // row major matrix access helpers
 //   0 1 2
 //   3 4 5
-#define M2x3(a, row, col) (((row)*3)+(col))
-#define M3(a, row, col)   (((row)*3)+(col))
-#define M4(a, row, col)   (((row)<<2)+(col))
+#define M2x3(row, col) (((row)*3)+(col))
+#define M3(row, col)   (((row)*3)+(col))
+#define M4(row, col)   (((row)<<2)+(col))
 
-#define TM2x3(row, col)  M2x3(this,row,col)
-#define TM3(row, col)    M3(this,row,col)
-#define TM4(row, col)    M4(this,row,col)
+#define TM2x3F(r,c)  floats[M2x3(r,c)]
+#define OM2x3F(r,c)  o->floats[M2x3(r,c)]
+#define M2x3F(a,r,c) (a)->floats[M2x3(r,c)]
 
-#define OM2x3(row, col)  M2x3(o,row,col)
-#define OM3(row, col)    M3(o,row,col)
-#define OM4(row, col)    M4(o,row,col)
+#define TM3F(r,c)  floats[M3(r,c)]
+#define OM3F(r,c)  o->floats[M3(r,c)]
+#define M3F(a,r,c) (a)->floats[M3(r,c)]
 
-#define TM2x3F(r,c)  floats[TM2x3(r,c)]
-#define OM2x3F(r,c)  o->floats[OM2x3(r,c)]
-#define M2x3F(a,r,c) (a)->floats[M2x3(a,r,c)]
-
-#define TM3F(r,c)  floats[TM3(r,c)]
-#define OM3F(r,c)  o->floats[OM3(r,c)]
-#define M3F(a,r,c) (a)->floats[M3(a,r,c)]
-
-#define TM4F(r,c)  floats[TM4(r,c)]
-#define OM4F(r,c)  o->floats[OM4(r,c)]
-#define M4F(a,r,c) (a)->floats[M4(a,r,c)]
-#define M4FA(a,r,c) (a)[M4(a,r,c)]
+#define TM4F(r,c)  floats[M4(r,c)]
+#define OM4F(r,c)  o->floats[M4(r,c)]
+#define M4F(a,r,c) (a)->floats[M4(r,c)]
+#define M4FA(a,r,c) (a)[M4(r,c)]
+#define TM4FA(r,c) _floats[M4(r,c)]
+#define OM4FA(r,c) _oFloats[M4(r,c)]
 
 
 // <class.png>
@@ -553,6 +547,11 @@ typedef struct Matrix4f_s {
    sF32 floats[4*4];
 
 #ifdef __cplusplus
+
+   static void CopyFromA(sF32 *_floats, const sF32 *_oFloats) {
+      ::memcpy(_floats, _oFloats, sizeof(sF32)*4*4);
+   }
+
    void copyFrom(const Matrix4f *_o) {
       ::memcpy(floats, _o->floats, sizeof(floats));
    }
@@ -572,17 +571,22 @@ typedef struct Matrix4f_s {
       floats[12] = m;  floats[13] = n;  floats[14] = o;  floats[15] = p;
    }
 
-   void initIdentity(void) {
-      TM4F(0,0) = 1.0f;  TM4F(0,1) = 0.0f;  TM4F(0,2) = 0.0f;  TM4F(0,3) = 0.0f;
-      TM4F(1,0) = 0.0f;  TM4F(1,1) = 1.0f;  TM4F(1,2) = 0.0f;  TM4F(1,3) = 0.0f;
-      TM4F(2,0) = 0.0f;  TM4F(2,1) = 0.0f;  TM4F(2,2) = 1.0f;  TM4F(2,3) = 0.0f;
-      TM4F(3,0) = 0.0f;  TM4F(3,1) = 0.0f;  TM4F(3,2) = 0.0f;  TM4F(3,3) = 1.0f;
+   static void InitIdentityA(sF32 *_floats) {
+      TM4FA(0,0) = 1.0f;  TM4FA(0,1) = 0.0f;  TM4FA(0,2) = 0.0f;  TM4FA(0,3) = 0.0f;
+      TM4FA(1,0) = 0.0f;  TM4FA(1,1) = 1.0f;  TM4FA(1,2) = 0.0f;  TM4FA(1,3) = 0.0f;
+      TM4FA(2,0) = 0.0f;  TM4FA(2,1) = 0.0f;  TM4FA(2,2) = 1.0f;  TM4FA(2,3) = 0.0f;
+      TM4FA(3,0) = 0.0f;  TM4FA(3,1) = 0.0f;  TM4FA(3,2) = 0.0f;  TM4FA(3,3) = 1.0f;
    }
 
-   void initOrtho(sF32 _left,   sF32 _right,
-                  sF32 _bottom, sF32 _top,
-                  sF32 _znear,  sF32 _zfar
-                  ) {
+   void initIdentity(void) {
+      InitIdentityA(floats);
+   }
+
+   static void InitOrthoA(sF32 *_floats,
+                          sF32 _left,   sF32 _right,
+                          sF32 _bottom, sF32 _top,
+                          sF32 _znear,  sF32 _zfar
+                          ) {
       /*
        *  2/(r-l)   0        0         -(r+l)/(r-l)
        *  0         2/(t-b)  0         -(t+b)/(t-b)
@@ -596,26 +600,33 @@ typedef struct Matrix4f_s {
 
       if(0.0f != rml && tmb != 0.0f && fmn != 0.0f)
       {
-         TM4F(0, 0) = 2.0f / rml;
-         TM4F(0, 1) = 0.0f;
-         TM4F(0, 2) = 0.0f;
-         TM4F(0, 3) = -(_right + _left) / rml;
+         TM4FA(0, 0) = 2.0f / rml;
+         TM4FA(0, 1) = 0.0f;
+         TM4FA(0, 2) = 0.0f;
+         TM4FA(0, 3) = -(_right + _left) / rml;
 
-         TM4F(1, 0) = 0.0f;
-         TM4F(1, 1) = 2.0f / tmb;
-         TM4F(1, 2) = 0.0f;
-         TM4F(1, 3) = -(_top + _bottom) / tmb;
+         TM4FA(1, 0) = 0.0f;
+         TM4FA(1, 1) = 2.0f / tmb;
+         TM4FA(1, 2) = 0.0f;
+         TM4FA(1, 3) = -(_top + _bottom) / tmb;
 
-         TM4F(2, 0) = 0.0f;
-         TM4F(2, 1) = 0.0f;
-         TM4F(2, 2) = -2.0f / fmn;
-         TM4F(2, 3) = -(_zfar + _znear) / fmn;
+         TM4FA(2, 0) = 0.0f;
+         TM4FA(2, 1) = 0.0f;
+         TM4FA(2, 2) = -2.0f / fmn;
+         TM4FA(2, 3) = -(_zfar + _znear) / fmn;
 
-         TM4F(3, 0) = 0.0f;
-         TM4F(3, 1) = 0.0f;
-         TM4F(3, 2) = 0.0f;
-         TM4F(3, 3) = 1.0f;
+         TM4FA(3, 0) = 0.0f;
+         TM4FA(3, 1) = 0.0f;
+         TM4FA(3, 2) = 0.0f;
+         TM4FA(3, 3) = 1.0f;
       }
+   }
+
+   void initOrtho(sF32 _left,   sF32 _right,
+                  sF32 _bottom, sF32 _top,
+                  sF32 _znear,  sF32 _zfar
+                  ) {
+      InitOrthoA(floats, _left, _right, _bottom, _top, _znear, _zfar);
    }
 
    void initScalef(sF32 _x, sF32 _y, sF32 _z) {
@@ -676,62 +687,65 @@ typedef struct Matrix4f_s {
       _v->w = t[3];
    }
 
-   void mulr(const Matrix4f *o, Matrix4f *r) const {
+   static void MulrA(const sF32 *_floats, const sF32 *_oFloats, sF32 *_rFloats) {
       // Multiply by matrix o (this * o) and store in r
       for(sUI y = 0u; y < 4u; y++)
       {
          for(sUI x = 0u; x < 4u; x++)
          {
-            M4F(r,y,x) =
-               TM4F(y,0) * OM4F(0,x) +
-               TM4F(y,1) * OM4F(1,x) +
-               TM4F(y,2) * OM4F(2,x) +
-               TM4F(y,3) * OM4F(3,x) ;
+            M4FA(_rFloats,y,x) =
+               TM4FA(y,0) * OM4FA(0,x) +
+               TM4FA(y,1) * OM4FA(1,x) +
+               TM4FA(y,2) * OM4FA(2,x) +
+               TM4FA(y,3) * OM4FA(3,x) ;
          }
       }
+   }
+
+   void mulr(const Matrix4f *o, Matrix4f *r) const {
+      MulrA(floats, o->floats, r->floats);
+   }
+
+   static void MulA(sF32 *_floats, const sF32 *_oFloats) {
+      // Multiply by matrix o (this * o)
+      sF32 t[4*4];
+      MulrA(_floats, _oFloats, t);
+      CopyFromA(_floats, t);
    }
 
    void mul(const Matrix4f *o) {
-      // Multiply by matrix o (this * o)
-      sF32 t[4][4];
+      MulA(floats, o->floats);
+   }
 
-      for(sUI y = 0u; y < 4u; y++)
-      {
-         for(sUI x = 0u; x < 4u; x++)
-         {
-            t[y][x] =
-               TM4F(y,0) * OM4F(0,x) +
-               TM4F(y,1) * OM4F(1,x) +
-               TM4F(y,2) * OM4F(2,x) +
-               TM4F(y,3) * OM4F(3,x) ;
-         }
-      }
-      for(sUI y = 0u; y < 4u; y++)
-      {
-         for(sUI x = 0u; x < 4u; x++)
-         {
-            TM4F(y,x) = t[y][x];
-         }
-      }
+   static void ScalefA(sF32 *_floats, sF32 _x, sF32 _y, sF32 _z) {
+      Matrix4f t;
+      t.initScalef(_x, _y, _z);
+      MulA(_floats, t.floats);
    }
 
    void scalef(sF32 _x, sF32 _y, sF32 _z) {
+      ScalefA(floats, _x, _y, _z);
+   }
+
+   static void TranslatefA(sF32 *_floats, sF32 _x, sF32 _y, sF32 _z) {
       Matrix4f t;
-      t.initScalef(_x, _y, _z);
-      mul(&t);
+      t.initTranslatef(_x, _y, _z);
+      MulA(_floats, t.floats);
    }
 
    void translatef(sF32 _x, sF32 _y, sF32 _z) {
-      Matrix4f t;
-      t.initTranslatef(_x, _y, _z);
-      mul(&t);
+      TranslatefA(floats, _x, _y, _z);
    }
 
-   void rotatef(sF32 _x, sF32 _y, sF32 _z) {
+   static void RotatefA(sF32 *_floats, sF32 _x, sF32 _y, sF32 _z) {
       // (note) positive values rotate counter-clockwise, and negative values rotate clockwise (like in OpenGL)
       Matrix4f t;
       t.initRotatef(_x, _y, _z);
-      mul(&t);
+      MulA(_floats, t.floats);
+   }
+
+   void rotatef(sF32 _x, sF32 _y, sF32 _z) {
+      RotatefA(floats, _x, _y, _z);
    }
 #endif // __cplusplus
 
