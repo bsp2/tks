@@ -573,22 +573,33 @@ static sSI scissor_h;
 
 // render state
 
-#ifdef MINNIE_LIB
-static Matrix4f *mvp_matrix;
-#endif // MINNIE_LIB
 #ifdef SHADERVG_SCRIPT_API
-static YAC_Object *mvp_matrix;  // Matrix4f  row major
+static YAC_Object *mvp_matrix;  // _Matrix4f  (row major)
+#define Dmata(m) (sF32*)(m)->yacArrayGetPointer()
+#define Dprojmata Dmata(proj_mat)
+#define Dmodelmata Dmata(model_mat)
+#else
+// MINNIE_LIB build
+static Matrix4f *mvp_matrix;
+#define Dmata(m) (sF32*)(m)->floats
+#define Dprojmata Dmata(&proj_mat)
+#define Dmodelmata Dmata(&model_mat)
 #endif // SHADERVG_SCRIPT_API
 
 #ifdef SHADERVG_MATRIX_STACK
 static Matrix4f proj_stack[SHADERVG_MATRIX_STACK_SIZE];
-static sSI proj_stacki;
+static Matrix4f model_stack[SHADERVG_MATRIX_STACK_SIZE];
+#ifdef SHADERVG_SCRIPT_API
+static YAC_Object *proj_mat;   // _Matrix4f
+static YAC_Object *model_mat;  // _Matrix4f
+#else
 static Matrix4f proj_mat;
+static Matrix4f model_mat;
+#endif // MINNIE_LIB
+static sSI proj_stacki;
 static sF32 proj_w_stack[SHADERVG_MATRIX_STACK_SIZE];
 static sF32 proj_w;
-static Matrix4f model_stack[SHADERVG_MATRIX_STACK_SIZE];
 static sSI model_stacki;
-static Matrix4f model_mat;
 #endif // SHADERVG_MATRIX_STACK
 
 static sBool  b_aa;
@@ -754,12 +765,10 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 
    attrib_write_buffer = scratch_buffer;
 
-#ifdef MINNIE_LIB
-   mvp_matrix = new Matrix4f();
-#endif // MINNIE_LIB
-
 #ifdef SHADERVG_SCRIPT_API
    mvp_matrix = yac_host->yacNew(NULL/*nsp*/, "Matrix4f");
+#else
+   mvp_matrix = new(std::nothrow) Matrix4f();
 #endif // SHADERVG_SCRIPT_API
 
    b_aa                = YAC_TRUE;
@@ -810,6 +819,10 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    scissor_h = fb_h;
 
 #ifdef SHADERVG_MATRIX_STACK
+#ifdef SHADERVG_SCRIPT_API
+   proj_mat = yac_host->yacNew(NULL/*nsp*/, "Matrix4f");
+   model_mat = yac_host->yacNew(NULL/*nsp*/, "Matrix4f");
+#endif // SHADERVG_SCRIPT_API
    proj_stacki = SHADERVG_MATRIX_STACK_SIZE;
    model_stacki = SHADERVG_MATRIX_STACK_SIZE;
    proj_w = (sF32)fb_w;
@@ -841,6 +854,13 @@ void YAC_CALL sdvg_Exit(void) {
    }
 
    YAC_DELETE_SAFE(mvp_matrix);
+
+#ifdef SHADERVG_MATRIX_STACK
+#ifdef SHADERVG_SCRIPT_API
+   YAC_DELETE_SAFE(model_mat);
+   YAC_DELETE_SAFE(proj_mat);
+#endif // SHADERVG_SCRIPT_API
+#endif // SHADERVG_MATRIX_STACK
 
    YAC_DELETE_SAFE(scratch_buffer);
    YAC_DELETE_SAFE(user_vbo_buffer);
@@ -4380,23 +4400,11 @@ void YAC_CALL sdvg_DisableScissor(void) {
 
 #ifdef SHADERVG_MATRIX_STACK
 void YAC_CALL sdvg_UpdateTransform(void) {
-   // (todo) postpone until next draw call
-#ifdef MINNIE_LIB
-   minnie_matrix4f_mulr(&proj_mat, &model_mat, mvp_matrix);
-#endif
+   // (todo) postpone until next draw call (or matrix query)
 #ifdef SHADERVG_SCRIPT_API
-   sF32 *fa = (sF32 *)mvp_matrix->yacArrayGetPointer();
-   for(sUI y = 0u; y < 4u; y++)
-   {
-      for(sUI x = 0u; x < 4u; x++)
-      {
-         M4FA(fa,y,x) =
-            M4F((&proj_mat),y,0) * M4F((&model_mat),0,x) +
-            M4F((&proj_mat),y,1) * M4F((&model_mat),1,x) +
-            M4F((&proj_mat),y,2) * M4F((&model_mat),2,x) +
-            M4F((&proj_mat),y,3) * M4F((&model_mat),3,x) ;
-      }
-   }
+   Matrix4f::MulrA(Dprojmata, Dmodelmata, Dmata(mvp_matrix));
+#else
+   minnie_matrix4f_mulr(&proj_mat, &model_mat, mvp_matrix);
 #endif // SHADERVG_SCRIPT_API
 }
 #endif // SHADERVG_MATRIX_STACK
@@ -4431,11 +4439,6 @@ void YAC_CALL sdvg_BeginFrame(void) {
    Dsdvg_glcall(glFrontFace(GL_CW));
    Dsdvg_glcall(glDisable(GL_CULL_FACE));
 
-   // ShaderVG.SetProjection2D(minnie_setup.width, minnie_setup.height);
-   // ShaderVG.SetAARangeAndExp(b_aa ? aa_range : 0.01f, aa_exp);
-   // ShaderVG.SetStrokeRadius(1.5);
-   // ShaderVG.SetFillColor4f(0.1, 0.4, 0.25, 1.0 * alpha);
-   // ShaderVG.SetStrokeColor4f(1.0, 1.0, 1.0, 1.0 * alpha);
    sdvg_EnableBlending();
 
    sdvg_UnbindVBO();
@@ -4449,8 +4452,8 @@ void YAC_CALL sdvg_BeginFrame(void) {
 #ifdef SHADERVG_MATRIX_STACK
    proj_stacki = SHADERVG_MATRIX_STACK_SIZE;
    model_stacki = SHADERVG_MATRIX_STACK_SIZE;
-   proj_mat.initIdentity();
-   model_mat.initIdentity();
+   Matrix4f::InitIdentityA(Dprojmata);
+   Matrix4f::InitIdentityA(Dmodelmata);
    sdvg_UpdateTransform();
 #endif // SHADERVG_MATRIX_STACK
 
@@ -4477,11 +4480,7 @@ void YAC_CALL sdvg_ReturnToGL(void) {
    Dsdvg_tracecall("[trc] sdvg_ReturnToGL\n");
    if(0 != mapped_user_vbo_id)
       sdvg_UnmapVBO();
-   // // // Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER));
-   // // // Dsdvg_glcall(glUnmapBuffer(GL_ELEMENT_ARRAY_BUFFER));
-   // // sdvg_BindVBO(0);
    sdvg_UnbindVBO();
-   // // Dsdvg_glcall(glUseProgram(0));
    sdvg_UnbindShader();
    if(sdvg_b_glcore)
       Dsdvg_glcall(glBindVertexArray(vao_id));
@@ -4497,16 +4496,6 @@ void YAC_CALL sdvg_EndFrame(void) {
    Dsdvg_glcall(glDisable(GL_SCISSOR_TEST));
 }
 
-#ifdef MINNIE_LIB
-void sdvg_SetTransform(Matrix4f *_mat4) {
-   ::memcpy((void*)mvp_matrix->floats, (const void*)_mat4->floats, sizeof(sF32)*4*4);
-}
-
-Matrix4f *sdvg_GetTransformRef(void) {
-   return mvp_matrix;
-}
-#endif // MINNIE_LIB
-
 #ifdef SHADERVG_SCRIPT_API
 void YAC_CALL _sdvg_SetTransform(YAC_Object *_mat4) {
    mvp_matrix->yacOperatorAssign(_mat4);
@@ -4514,6 +4503,31 @@ void YAC_CALL _sdvg_SetTransform(YAC_Object *_mat4) {
 
 YAC_Object *YAC_CALL _sdvg_GetTransformRef(void) {
    return mvp_matrix;
+}
+
+YAC_Object *YAC_CALL _sdvg_GetModelTransformRef(void) {
+   return model_mat;
+}
+
+YAC_Object *YAC_CALL _sdvg_GetProjTransformRef(void) {
+   return proj_mat;
+}
+#else
+// MINNIE_LIB build
+void sdvg_SetTransform(Matrix4f *_mat4) {
+   ::memcpy((void*)mvp_matrix->floats, (const void*)_mat4->floats, sizeof(sF32)*4*4);
+}
+
+Matrix4f *sdvg_GetTransformRef(void) {
+   return mvp_matrix;
+}
+
+Matrix4f *sdvg_GetModelTransformRef(void) {
+   return &model_mat;
+}
+
+Matrix4f *sdvg_GetProjTransformRef(void) {
+   return &proj_mat;
 }
 #endif // SHADERVG_SCRIPT_API
 
@@ -4525,10 +4539,7 @@ void YAC_CALL sdvg_SetEnableAA(sBool _bEnable) {
 void YAC_CALL sdvg_PushProjMatrix(void) {
    if(proj_stacki > 0)
    {
-      proj_stacki--;
-      // // trace "xxx PushProjMatrix: proj_stacki="+proj_stacki;
-      Matrix4f *matProj = &proj_stack[proj_stacki];
-      *matProj = proj_mat;
+      Matrix4f::CopyFromA(proj_stack[--proj_stacki].floats, Dprojmata);
       proj_w_stack[proj_stacki] = proj_w;
       // // trace "xxx PushProjMatrix: proj_mat="+proj_mat+" proj_w="+proj_w;
    }
@@ -4542,14 +4553,11 @@ void YAC_CALL sdvg_PopProjMatrix(void) {
    if(proj_stacki < SHADERVG_MATRIX_STACK_SIZE)
    {
       // // trace "xxx PopProjMatrix: proj_stacki="+proj_stacki;
-      const Matrix4f *matProj = &proj_stack[proj_stacki];
-      proj_mat = *matProj;
-      proj_w = proj_w_stack[proj_stacki];
+      Matrix4f::CopyFromA(Dprojmata, proj_stack[proj_stacki].floats);
+      proj_w = proj_w_stack[proj_stacki++];
       // // trace "xxx PopProjMatrix: proj_mat="+proj_mat+" proj_w="+proj_w;
       sdvg_UpdateTransform();
       sdvg_UpdatePixelScaling();
-
-      proj_stacki++;
    }
    else
    {
@@ -4560,8 +4568,7 @@ void YAC_CALL sdvg_PopProjMatrix(void) {
 void YAC_CALL sdvg_PushModelMatrix(void) {
    if(model_stacki > 0)
    {
-      Matrix4f *matModel = &model_stack[--model_stacki];
-      *matModel = model_mat;
+      Matrix4f::CopyFromA(model_stack[--model_stacki].floats, Dmodelmata);
    }
    else
    {
@@ -4572,8 +4579,7 @@ void YAC_CALL sdvg_PushModelMatrix(void) {
 void YAC_CALL sdvg_PopModelMatrix(void) {
    if(model_stacki < SHADERVG_MATRIX_STACK_SIZE)
    {
-      const Matrix4f *matModel = &model_stack[model_stacki++];
-      model_mat = *matModel;
+      Matrix4f::CopyFromA(Dmodelmata, model_stack[model_stacki++].floats);
       sdvg_UpdateTransform();
    }
    else
@@ -4583,57 +4589,59 @@ void YAC_CALL sdvg_PopModelMatrix(void) {
 }
 
 void YAC_CALL sdvg_ProjInitIdentity(void) {
-   proj_mat.initIdentity();
+   Matrix4f::InitIdentityA(Dprojmata);
    sdvg_UpdateTransform();
 }
 
 void YAC_CALL sdvg_ProjInit2D(sF32 _w, sF32 _h) {
-   proj_mat.initOrtho(0.0f,  _w,
-                      _h,    0.0f,
-                             -1.0f, 1.0f
-                      );
+   Matrix4f::InitOrthoA(Dprojmata,
+                        0.0f/*left*/,   _w/*right*/,
+                        _h/*bottom*/,   0.0f/*top*/,
+                        -1.0f/*znear*/, 1.0f/*zfar*/
+                        );
    proj_w = _w;
    sdvg_UpdateTransform();
    sdvg_UpdatePixelScaling();
 }
 
 void YAC_CALL sdvg_ProjInitOrtho(sF32 _sx, sF32 _sy) {
-   proj_mat.initOrtho(-_sx, _sx,
-                      -_sy, _sy,
-                      -1.0f, 1.0f
-                      );
+   Matrix4f::InitOrthoA(Dprojmata,
+                        -_sx, _sx,
+                        -_sy, _sy,
+                        -1.0f, 1.0f
+                        );
    proj_w = _sx * 2.0f;
    sdvg_UpdateTransform();
    sdvg_UpdatePixelScaling();
 }
 
 void YAC_CALL sdvg_ProjTranslate2f(sF32 _tx, sF32 _ty) {
-   proj_mat.translatef(_tx, _ty, 0.0f);
+   Matrix4f::TranslatefA(Dprojmata, _tx, _ty, 0.0f);
    sdvg_UpdateTransform();
 }
 
 void YAC_CALL sdvg_ModelInitIdentity(void) {
-   model_mat.initIdentity();
+   Matrix4f::InitIdentityA(Dmodelmata);
    sdvg_UpdateTransform();
 }
 
 void YAC_CALL sdvg_ModelTranslate2f(sF32 _tx, sF32 _ty) {
-   model_mat.translatef(_tx, _ty, 0.0f);
+   Matrix4f::TranslatefA(Dmodelmata, _tx, _ty, 0.0f);
    sdvg_UpdateTransform();
 }
 
 void YAC_CALL sdvg_ModelTranslate3f(sF32 _tx, sF32 _ty, sF32 _tz) {
-   model_mat.translatef(_tx, _ty, _tz);
+   Matrix4f::TranslatefA(Dmodelmata, _tx, _ty, _tz);
    sdvg_UpdateTransform();
 }
 
 void YAC_CALL sdvg_ModelScale2f(sF32 _sx, sF32 _sy) {
-   model_mat.scalef(_sx, _sy, 1.0f);
+   Matrix4f::ScalefA(Dmodelmata, _sx, _sy, 1.0f);
    sdvg_UpdateTransform();
 }
 
 void YAC_CALL sdvg_ModelRotatef(sF32 _rad) {
-   model_mat.rotatef(0.0f, 0.0f, _rad);
+   Matrix4f::RotatefA(Dmodelmata, 0.0f, 0.0f, _rad);
    sdvg_UpdateTransform();
 }
 #endif // SHADERVG_MATRIX_STACK

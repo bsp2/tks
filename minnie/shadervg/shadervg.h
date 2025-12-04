@@ -244,7 +244,7 @@ YF void YAC_CALL sdvg_Flush (void);
 
 // -------- transform --------
 /* @function sdvg_SetTransform,Matrix4f mat4
-Set modelview-projection row-major transformation matrix
+Set row-major modelview-projection transformation matrix
 
 @group Transform
 */
@@ -256,7 +256,7 @@ YF void YAC_CALL _sdvg_SetTransform (YAC_Object *_mat4);
 #endif // SHADERVG_SCRIPT_API
 
 /* @function sdvg_GetTransformRef:Matrix4f
-Get reference to modelview-projection row-major matrix
+Get reference to row-major modelview-projection matrix.
 
 @group Transform
 */
@@ -266,6 +266,42 @@ Matrix4f *sdvg_GetTransformRef (void);
 #ifdef SHADERVG_SCRIPT_API
 YF YAC_Object *YAC_CALL _sdvg_GetTransformRef (void);
 #endif // SHADERVG_SCRIPT_API
+
+
+/* @function sdvg_GetProjTransformRef:Matrix4f
+Get reference to row-major projection matrix
+
+Applications must call %sdvg_UpdateTransform after the matrix is changed.
+
+@group Transform
+*/
+#ifdef SHADERVG_SCRIPT_API
+YF YAC_Object *YAC_CALL _sdvg_GetProjTransformRef (void);
+#else
+Matrix4f *sdvg_GetProjTransformRef (void);
+#endif // SHADERVG_SCRIPT_API
+
+/* @function sdvg_GetModelTransformRef:Matrix4f
+Get reference to row-major model matrix
+
+Applications must call %sdvg_UpdateTransform after the matrix is changed.
+
+@group Transform
+*/
+#ifdef SHADERVG_SCRIPT_API
+YF YAC_Object *YAC_CALL _sdvg_GetModelTransformRef (void);
+#else
+Matrix4f *sdvg_GetModelTransformRef (void);
+#endif // SHADERVG_SCRIPT_API
+
+/* @function sdvg_UpdateTransform
+Recalculate combined modelview-projection transform matrix.
+
+This is usually done automatically when modifying the projection / model matrices via the ShaderVG API functions.
+
+However, when an application obtains references to the matrices and modifies them directly, it must call this function afterwards.
+*/
+YF void YAC_CALL sdvg_UpdateTransform (void);
 
 #ifdef SHADERVG_MATRIX_STACK
 /* @function sdvg_PushProjMatrix
