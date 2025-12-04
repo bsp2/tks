@@ -12004,7 +12004,7 @@ sSI minBeginPathEvenOdd(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_EVENODD);
 }
 
-/* @function minBeginPathImmediate:int
+/* @function minBeginImmediate:int
 Begin new Immediate path definition.
 
 Graphics elements within immediate paths are rendered immediately, i.e. they do not require separate draw-path calls.
