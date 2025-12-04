@@ -12,8 +12,6 @@
 #ifndef MINNIE_DRAWABLE_H__
 #define MINNIE_DRAWABLE_H__
 
-#ifdef USE_MINNIE_MIB_SETUP
-
 YG("minnie")
 
 
@@ -159,6 +157,5 @@ struct MinnieDrawable {
 
 };
 
-#endif // USE_MINNIE_MIB_SETUP
 
 #endif // MINNIE_DRAWABLE_H__

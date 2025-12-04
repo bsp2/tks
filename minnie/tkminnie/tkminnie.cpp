@@ -49,6 +49,8 @@ YAC_Host *yac_host;
 #include "../shadervg/Shape.h"
 #include "../shadervg/text.h"
 
+#include "../minnie_exec.h"
+
 #include "ying_minnie.h"
 #include "ying_minnie_MinnieDrawable.cpp"
 #include "ying_minnie.cpp"

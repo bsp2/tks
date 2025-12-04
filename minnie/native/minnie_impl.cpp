@@ -35,6 +35,9 @@
 #include "../inc_minnie.h"
 #endif // USE_MINNIE_MIB_SETUP
 
+#include "../minnie_exec.h"
+
+
 sUI yac_host_yacGetDebugLevel(void) {
    return 4u;
 }
