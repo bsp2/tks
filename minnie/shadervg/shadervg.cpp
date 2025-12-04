@@ -1440,16 +1440,16 @@ void YAC_CALL sdvg_BufferAddLinePointPattern14_2(YAC_Buffer *_b, sF32 _x, sF32 _
    draw_last_y = _y;
 
 #ifndef TKMINNIE_DUPLICATE_POINT_VERTICES
-   Dstream_write_s16(_b, _x * 4.0f);
-   Dstream_write_s16(_b, _y * 4.0f);
-   Dstream_write_s16(_b, draw_last_pattern * 4.0f);
+   Dstream_write_s16(_b, sS16(_x * 4.0f));
+   Dstream_write_s16(_b, sS16(_y * 4.0f));
+   Dstream_write_s16(_b, sS16(draw_last_pattern * 4.0f));
 #else
    sU16 vtxIdx = 0u;
    for(sUI i = 0u; i < 6u; i++)
    {
-      Dstream_write_s16(_b, _x * 4.0f);
-      Dstream_write_s16(_b, _y * 4.0f);
-      Dstream_write_s16(_b, draw_last_pattern * 4.0f);
+      Dstream_write_s16(_b, sS16(_x * 4.0f));
+      Dstream_write_s16(_b, sS16(_y * 4.0f));
+      Dstream_write_s16(_b, sS16(draw_last_pattern * 4.0f));
       Dstream_write_i16(_b, vtxIdx++);
    }
 #endif // TKMINNIE_DUPLICATE_POINT_VERTICES
@@ -1525,16 +1525,16 @@ void YAC_CALL sdvg_BufferAddLinePointPatternBevel14_2(YAC_Buffer *_b, sF32 _x, s
    draw_last_x = _x;
    draw_last_y = _y;
 #ifndef TKMINNIE_DUPLICATE_POINT_VERTICES
-   Dstream_write_s16(_b, _x * 4.0f);
-   Dstream_write_s16(_b, _y * 4.0f);
-   Dstream_write_s16(_b, draw_last_pattern * 4.0f);
+   Dstream_write_s16(_b, sS16(_x * 4.0f));
+   Dstream_write_s16(_b, sS16(_y * 4.0f));
+   Dstream_write_s16(_b, sS16(draw_last_pattern * 4.0f));
 #else
    sU16 vtxIdx = 0u;
    for(sUI i = 0u; i < 9u; i++)
    {
-      Dstream_write_s16(_b, _x * 4.0f);
-      Dstream_write_s16(_b, _y * 4.0f);
-      Dstream_write_s16(_b, draw_last_pattern * 4.0f);
+      Dstream_write_s16(_b, sS16(_x * 4.0f));
+      Dstream_write_s16(_b, sS16(_y * 4.0f));
+      Dstream_write_s16(_b, sS16(draw_last_pattern * 4.0f));
       Dstream_write_i16(_b, vtxIdx++);
    }
 #endif // TKMINNIE_DUPLICATE_POINT_VERTICES
