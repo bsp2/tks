@@ -5,6 +5,7 @@ export BUILD_ARM=n
 
 # use clang instead of gcc
 #  (note) arm32 (raspberrypi): clang14 ~10% slower than GCC12 (sieve)
+#  (note) the 'Eureka' DAW performs much better when built with Clang
 #export BUILD_CLANG=y
 
 if [ "${BUILD_ARM}" = "y" ]; then
