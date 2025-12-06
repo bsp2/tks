@@ -560,7 +560,9 @@ The total line stroke width is (2 * (strokeRadius+offset))
 YF void YAC_CALL sdvg_SetStrokeRadiusAAOffset (sF32 _offset);
 
 /* @function sdvg_SetLinePatternScale,float scale
-Set line pattern scale.
+Set line pattern scaling factor.
+
+This maps pixel distances to normalized (0..1) texture coordinates.
 
 @arg scale Pattern scaling factor (default = 1/256, suitable for pattern texture width = 256)
 
@@ -569,9 +571,11 @@ Set line pattern scale.
 YF void YAC_CALL sdvg_SetLinePatternScale (sF32 _scale);
 
 /* @function sdvg_SetLinePatternOffset,float offset
-Set line pattern start offset
+Set line pattern start offset.
 
-@arg offset Pattern offset (default = 0)
+The offset is applied after the line pattern scaling factor.
+
+@arg offset Normalized pattern offset (range 0..1) (default = 0)
 
 @group LinePattern
 */
