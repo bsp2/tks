@@ -2,7 +2,7 @@
 include $(TKS_ROOT)/install_msvc.mk
 
 ifeq ($(TARGET_DIR),)
-TARGET_DIR:=$(TKS_ROOT)/tks-projects/eureka/voice_plugins/
+TARGET_DIR:=$(TKS_ROOT)/tks-projects/apps/eureka/voice_plugins/
 endif
 
-EXTRALIBS += -DLL -MAP 
+EXTRALIBS += -DLL -MAP
