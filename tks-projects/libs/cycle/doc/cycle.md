@@ -2135,7 +2135,7 @@ note: [#frc][] does the opposite and discards all integer bits
   - scale input by 127 (normalized float to MIDI note), add `(current_note - 64 + (off * 12))`, clamp to 0..127 (when `clamp=1`), then convert the note to its corresponding frequency and divides it by the sample rate (back to normalized 0..1 range).
   - ignore `ctr` input (can use `off` instead)
   - useful for filter cutoff frequencies (linear to exponential).
-  - factors in current sample_rate and oversample_factor
+  - factors in current sample\_rate and oversample\_factor
      - caution when passing the output to another module which also does this !
 
 `mode=1`:
