@@ -63,4 +63,4 @@ ee::	$(EE_RULES)
 #
 .PHONY: realclean
 realclean: $(REALCLEAN_RULES) clean
-	$(RM) `$(FIND) . -name \*\~` *.map
+	$(RM) `$(FIND) . -name \*\~ -o -name .DS_Store` *.map

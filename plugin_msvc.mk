@@ -82,4 +82,4 @@ ee::	$(EE_RULES)
 #
 .PHONY: realclean
 realclean: $(REALCLEAN_RULES) clean
-	$(RM) `$(FIND) . -name \*\~` $(TARGET) *.exp *.lib *.plg *.ncb *.map *.manifest
+	$(RM) `$(FIND) . -name \*\~ -o -name .DS_Store` $(TARGET) *.exp *.lib *.plg *.ncb *.map *.manifest
