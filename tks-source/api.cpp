@@ -13835,7 +13835,7 @@ static sF32 YAC_CALL _APIC_mathMinf(yacmemptr _args) { return APIC_mathMinf(_arg
 
 
 /* @function mathAbsMaxf,float x,float y:float
-Return absolutely bigger value
+Return the bigger absolute float value
 */
 static sF32 YAC_CALL APIC_mathAbsMaxf(sF32 _x, sF32 _y) {
    return ( ( (_x<0)?-_x:_x)>((_y<0)?-_y:_y)?_x:_y );
@@ -13848,7 +13848,7 @@ static sF32 YAC_CALL _APIC_mathAbsMaxf(yacmemptr _args) { return APIC_mathAbsMax
 
 
 /* @function mathAbsMinf,float x,float y:float
-Return absolutely smaller value
+Return the smaller absolute float value
 */
 static sF32 YAC_CALL APIC_mathAbsMinf(sF32 _x, sF32 _y) {
    return ( ((_x<0)?-_x:_x)<((_y<0)?-_y:_y)?_x:_y );
@@ -13898,7 +13898,7 @@ static sSI YAC_CALL _APIC_mathMini(yacmemptr _args) { return APIC_mathMini(_args
 
 
 /* @function mathAbsMini,int x,int y:int
-Return absolutely bigger value
+Return the bigger absolute integer value
 */
 static sSI YAC_CALL APIC_mathAbsMaxi(sSI _x, sSI _y) {
    return ( ((_x<0)?-_x:_x)>((_y<0)?-_y:_y)?_x:_y );
@@ -13911,7 +13911,7 @@ static sSI YAC_CALL _APIC_mathAbsMaxi(yacmemptr _args) { return APIC_mathAbsMaxi
 
 
 /* @function mathAbsMini,int x,int y:int
-Return absolutely smaller value
+Return the smaller absolute integer value
 */
 static sSI YAC_CALL APIC_mathAbsMini(sSI _x, sSI _y) {
    return ( ((_x<0)?-_x:_x)<((_y<0)?-_y:_y)?_x:_y );
