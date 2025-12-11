@@ -189,6 +189,7 @@
 #include "LineStripPatternDecalBevelAA32.h"
 #include "LinesFlatAA14_2.h"
 #include "LinesFlatAA32.h"
+#include "LinesGouraudAA14_2.h"
 #include "LinesGouraudAA32.h"
 #include "LinesPatternAA14_2.h"
 #include "LinesPatternAA32.h"
@@ -335,6 +336,7 @@ static LineStripPatternDecalBevelAA14_2     line_strip_pattern_decal_bevel_aa_14
 static LineStripPatternDecalBevelAA32       line_strip_pattern_decal_bevel_aa_32;
 static LinesFlatAA14_2                      lines_flat_aa_14_2;
 static LinesFlatAA32                        lines_flat_aa_32;
+static LinesGouraudAA14_2                   lines_gouraud_aa_14_2;
 static LinesGouraudAA32                     lines_gouraud_aa_32;
 static LinesPatternAA14_2                   lines_pattern_aa_14_2;
 static LinesPatternAA32                     lines_pattern_aa_32;
@@ -461,7 +463,9 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_pattern_decal_bevel_aa_32,
    &lines_flat_aa_14_2,
    &lines_flat_aa_32,
+   &lines_gouraud_aa_14_2,
    &lines_gouraud_aa_32,
+   &lines_pattern_aa_14_2,
    &lines_pattern_aa_32,
    &points_square_aa_32,
    &points_square_gouraud_aa_32,
@@ -3470,15 +3474,38 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
                                          );
 }
 
+void YAC_CALL sdvg_DrawLinesGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //    +0 u8    r
+   //    +1 u8    g
+   //    +2 u8    b
+   //    +3 u8    a
+   //    +4 s14.2 x
+   //    +6 s14.2 y
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   lines_gouraud_aa_14_2.drawLinesGouraudAAVBO14_2(_vboId,
+                                                   _byteOffset,
+                                                   _numPoints,
+                                                   mvp_matrix,
+                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                   Dsdvg_pixel_scl(stroke_w),
+                                                   SHADERVG_AA_RANGE_OFF
+                                                   );
+}
+
 void YAC_CALL sdvg_DrawLinesGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
    //
    // VBO vertex format (12 bytes per vertex):
-   //    +0 f32 x
-   //    +4 f32 y
-   //    +8 u8  r
-   //    +9 u8  g
-   //   +10 u8  b
-   //   +11 u8  a
+   //    +0 u8  r
+   //    +1 u8  g
+   //    +2 u8  b
+   //    +3 u8  a
+   //    +4 f32 x
+   //    +8 f32 y
    //
    // (note) requires USE_VERTEX_ATTRIB_DIVISOR
    //
@@ -3493,15 +3520,39 @@ void YAC_CALL sdvg_DrawLinesGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
                                                );
 }
 
+void YAC_CALL sdvg_DrawLinesGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //    +0 u8    r
+   //    +1 u8    g
+   //    +2 u8    b
+   //    +3 u8    a
+   //    +4 s14.2 x
+   //    +6 s14.2 y
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesGouraudAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   lines_gouraud_aa_14_2.drawLinesGouraudAAVBO14_2(_vboId,
+                                                   _byteOffset,
+                                                   _numPoints,
+                                                   mvp_matrix,
+                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                   Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                   );
+}
+
 void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
    //
    // VBO vertex format (12 bytes per vertex):
-   //    +0 f32 x
-   //    +4 f32 y
-   //    +8 u8  r
-   //    +9 u8  g
-   //   +10 u8  b
-   //   +11 u8  a
+   //    +0 u8  r
+   //    +1 u8  g
+   //    +2 u8  b
+   //    +3 u8  a
+   //    +4 f32 x
+   //    +8 f32 y
    //
    // (note) requires USE_VERTEX_ATTRIB_DIVISOR
    //

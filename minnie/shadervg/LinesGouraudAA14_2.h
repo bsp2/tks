@@ -1,5 +1,5 @@
 // ----
-// ---- file   : LinesGouraudAA32.h
+// ---- file   : LinesGouraudAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025 by bsp
@@ -24,7 +24,7 @@
 // ----
 // ----
 
-class LinesGouraudAA32 : public ShaderVG_Shape {
+class LinesGouraudAA14_2 : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
@@ -45,8 +45,8 @@ class LinesGouraudAA32 : public ShaderVG_Shape {
       "VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  vec2 v1 = a_vertex; \n"
-      "  vec2 v2 = a_vertex_n; \n"
+      "  vec2 v1 = a_vertex * 0.25; \n"
+      "  vec2 v2 = a_vertex_n * 0.25; \n"
       "  vec2 vN = normalize(v2 - v1); \n"
       "  vec2 vD = vN * u_stroke_w; \n"
       "  vec2 v1L = vec2(v1.x + vD.y, v1.y - vD.x); \n"
@@ -144,22 +144,22 @@ class LinesGouraudAA32 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawLinesGouraudAAVBO32(sUI              _vboId,
-                                sUI              _byteOffset,
-                                sUI              _numPoints,
-                                Dsdvg_mat4_ref_t _mvpMatrix,
-                                sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                                sF32             _strokeW,
-                                sF32             _aaRange
-                                ) {
+   void drawLinesGouraudAAVBO14_2(sUI              _vboId,
+                                  sUI              _byteOffset,
+                                  sUI              _numPoints,
+                                  Dsdvg_mat4_ref_t _mvpMatrix,
+                                  sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                  sF32             _strokeW,
+                                  sF32             _aaRange
+                                  ) {
       //
-      // VBO vertex format (12 bytes per vertex):
+      // VBO vertex format (8 bytes per vertex):
       //    +0 u8  r
       //    +1 u8  g
       //    +2 u8  b
       //    +3 u8  a
-      //    +4 f32 x
-      //    +8 f32 y
+      //    +4 s14.2 x
+      //    +6 s14.2 y
       //
       // (note) requires USE_VERTEX_ATTRIB_DIVISOR
       //
@@ -177,10 +177,10 @@ class LinesGouraudAA32 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
 
-      Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 24/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_color_n,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 24/*stride*/, _byteOffset + 12);
-      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 24/*stride*/, _byteOffset +  4);
-      Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 24/*stride*/, _byteOffset + 16);
+      Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 16/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_color_n,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 16/*stride*/, _byteOffset +  8);
+      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_SHORT,         GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset +  4);
+      Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_SHORT,         GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 12);
 
       Dsdvg_attrib_enable(shape_a_color);
       Dsdvg_attrib_enable(shape_a_color_n);
