@@ -190,6 +190,8 @@
 #include "LinesFlatAA14_2.h"
 #include "LinesFlatAA32.h"
 #include "LinesGouraudAA32.h"
+#include "LinesPatternAA14_2.h"
+#include "LinesPatternAA32.h"
 #include "PointsSquareAA32.h"
 #include "PointsSquareGouraudAA32.h"
 #include "PointsRoundAA32.h"
@@ -334,6 +336,8 @@ static LineStripPatternDecalBevelAA32       line_strip_pattern_decal_bevel_aa_32
 static LinesFlatAA14_2                      lines_flat_aa_14_2;
 static LinesFlatAA32                        lines_flat_aa_32;
 static LinesGouraudAA32                     lines_gouraud_aa_32;
+static LinesPatternAA14_2                   lines_pattern_aa_14_2;
+static LinesPatternAA32                     lines_pattern_aa_32;
 static PointsSquareAA32                     points_square_aa_32;
 static PointsSquareGouraudAA32              points_square_gouraud_aa_32;
 static PointsRoundAA32                      points_round_aa_32;
@@ -458,6 +462,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &lines_flat_aa_14_2,
    &lines_flat_aa_32,
    &lines_gouraud_aa_32,
+   &lines_pattern_aa_32,
    &points_square_aa_32,
    &points_square_gouraud_aa_32,
    &points_round_aa_32,
@@ -526,14 +531,16 @@ static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 #define DRAW_MODE_LINES_AA                           7015
 #define DRAW_MODE_LINES_GOURAUD                      7016
 #define DRAW_MODE_LINES_GOURAUD_AA                   7017
-#define DRAW_MODE_POINTS_SQUARE                      7018
-#define DRAW_MODE_POINTS_SQUARE_AA                   7019
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD              7020
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA           7021
-#define DRAW_MODE_POINTS_ROUND                       7022
-#define DRAW_MODE_POINTS_ROUND_AA                    7023
-#define DRAW_MODE_POINTS_ROUND_GOURAUD               7024
-#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA            7025
+#define DRAW_MODE_LINES_PATTERN                      7018
+#define DRAW_MODE_LINES_PATTERN_AA                   7019
+#define DRAW_MODE_POINTS_SQUARE                      7020
+#define DRAW_MODE_POINTS_SQUARE_AA                   7021
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD              7022
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA           7023
+#define DRAW_MODE_POINTS_ROUND                       7024
+#define DRAW_MODE_POINTS_ROUND_AA                    7025
+#define DRAW_MODE_POINTS_ROUND_GOURAUD               7026
+#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA            7027
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
 
 static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
@@ -1658,6 +1665,59 @@ static void loc_BufferAddLinesPointFlat32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
    if(current_draw_lines_vertex_index >= 12u)
       current_draw_lines_vertex_index = 0u;
 #endif // TKMINNIE_DUPLICATE_POINT_VERTICES
+}
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+
+
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+static void loc_BufferAddLinesPointPattern14_2(YAC_Buffer *_b, sF32 _x, sF32 _y) {
+   // called by sdvg_Vertex2f() in DRAW_MODE_LINES_PATTERN*
+   if(-99999999.0f != draw_last_x)
+   {
+      sF32 dx = _x - draw_last_x;
+      sF32 dy = _y - draw_last_y;
+      sF32 d = sqrtf(dx*dx + dy*dy);
+      draw_last_pattern += d;
+      // // Dprintf("xxx draw_last_pattern=%f  dxy=(%f;%f) d=%f\n", draw_last_pattern, dx, dy, d);
+   }
+   draw_last_x = _x;
+   draw_last_y = _y;
+
+   Dstream_write_s16(_b, sS16(_x * 4.0f));
+   Dstream_write_s16(_b, sS16(_y * 4.0f));
+   Dstream_write_s16(_b, sS16(draw_last_pattern * 4.0f));
+   current_draw_lines_vertex_index += 1u;
+   if(current_draw_lines_vertex_index >= 2u)
+   {
+      current_draw_lines_vertex_index = 0u;
+      draw_last_x = -99999999.0f;
+      draw_last_pattern = 0.0f;
+   }
+}
+#else
+static void loc_BufferAddLinesPointPattern32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
+   // called by sdvg_Vertex2f() in DRAW_MODE_LINES*
+   if(-99999999.0f != draw_last_x)
+   {
+      sF32 dx = _x - draw_last_x;
+      sF32 dy = _y - draw_last_y;
+      sF32 d = sqrtf(dx*dx + dy*dy);
+      draw_last_pattern += d;
+      // // Dprintf("xxx draw_last_pattern=%f  dxy=(%f;%f) d=%f\n", draw_last_pattern, dx, dy, d);
+   }
+   draw_last_x = _x;
+   draw_last_y = _y;
+
+   Dstream_write_f32(_b, _x);
+   Dstream_write_f32(_b, _y);
+   Dstream_write_f32(_b, draw_last_pattern);
+   current_draw_lines_vertex_index += 1u;
+   if(current_draw_lines_vertex_index >= 2u)
+   {
+      current_draw_lines_vertex_index = 0u;
+      draw_last_x = -99999999.0f;
+      draw_last_pattern = 0.0f;
+   }
 }
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
 
@@ -3454,6 +3514,112 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                Dsdvg_pixel_scl(stroke_w) + aaOff,
                                                b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                               );
+}
+
+void YAC_CALL sdvg_DrawLinesPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (6 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //   +4 s14.2 patternOff
+   //
+   // (note) numVerts         = (numPoints-1) * 6
+   // (note) numSeg           = (numPoints / 2)
+   // (note) numTri           = (numPoints-1) * 2
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesPatternVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   lines_pattern_aa_14_2.drawLinesPatternAAVBO14_2(_vboId,
+                                                   _byteOffset,
+                                                   _numPoints,
+                                                   mvp_matrix,
+                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                   Dsdvg_pixel_scl(stroke_w),
+                                                   SHADERVG_AA_RANGE_OFF,
+                                                   line_pattern_scale,
+                                                   line_pattern_offset
+                                                   );
+}
+
+void YAC_CALL sdvg_DrawLinesPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 f32 x
+   //   +4 f32 y
+   //   +8 f32 patternOff
+   //
+   // (note) numVerts         = (numPoints-1) * 6
+   // (note) numSeg           = (numPoints / 2)
+   // (note) numTri           = (numPoints-1) * 2
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesPatternVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   lines_pattern_aa_32.drawLinesPatternAAVBO32(_vboId,
+                                               _byteOffset,
+                                               _numPoints,
+                                               mvp_matrix,
+                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                               Dsdvg_pixel_scl(stroke_w),
+                                               SHADERVG_AA_RANGE_OFF,
+                                               line_pattern_scale,
+                                               line_pattern_offset
+                                               );
+}
+
+void YAC_CALL sdvg_DrawLinesPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (6 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //   +4 s14.2 patternOff
+   //
+   // (note) numVerts         = (numPoints-1) * 6
+   // (note) numSeg           = (numPoints / 2)
+   // (note) numTri           = (numPoints-1) * 2
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesFlatAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   lines_pattern_aa_14_2.drawLinesPatternAAVBO14_2(_vboId,
+                                                   _byteOffset,
+                                                   _numPoints,
+                                                   mvp_matrix,
+                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                   Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                                   line_pattern_scale,
+                                                   line_pattern_offset
+                                                   );
+}
+
+void YAC_CALL sdvg_DrawLinesPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 f32 x
+   //   +4 f32 y
+   //   +8 f32 patternOff
+   //
+   // (note) numVerts         = (numPoints-1) * 6
+   // (note) numSeg           = (numPoints / 2)
+   // (note) numTri           = (numPoints-1) * 2
+   //
+   // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawLinesPatternAAVBO32: vboId=%u byteOffset=%u numPoints=%u stroke_w=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, stroke_w, Dsdvg_pixel_scl(stroke_w));
+   lines_pattern_aa_32.drawLinesPatternAAVBO32(_vboId,
+                                               _byteOffset,
+                                               _numPoints,
+                                               mvp_matrix,
+                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                               Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                               line_pattern_scale,
+                                               line_pattern_offset
                                                );
 }
 
@@ -5921,6 +6087,23 @@ sBool YAC_CALL sdvg_BeginLinesGouraudAA(sUI _numPoints) {
    return loc_BeginLinesGouraud(DRAW_MODE_LINES_GOURAUD_AA, _numPoints);
 }
 
+static sBool loc_BeginLinesPattern(GLenum _mode, sUI _numPoints) {
+   current_draw_mode = _mode;
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+   return BeginDraw(_numPoints, 6u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 12u/*stride*/);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+}
+
+sBool YAC_CALL sdvg_BeginLinesPattern(sUI _numPoints) {
+   return loc_BeginLinesPattern(DRAW_MODE_LINES_PATTERN, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginLinesPatternAA(sUI _numPoints) {
+   return loc_BeginLinesPattern(DRAW_MODE_LINES_PATTERN_AA, _numPoints);
+}
+
 static sBool loc_BeginPoints(GLenum _mode, sUI _numPoints) {
    current_draw_mode = _mode;
 #ifdef USE_VERTEX_ATTRIB_DIVISOR
@@ -6316,6 +6499,15 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
          loc_BufferAddLinesPointFlat14_2(attrib_write_buffer, _x, _y);
 #else
          loc_BufferAddLinesPointFlat32(attrib_write_buffer, _x, _y);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+         break;
+
+      case DRAW_MODE_LINES_PATTERN:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+      case DRAW_MODE_LINES_PATTERN_AA:  // (note) requires USE_VERTEX_ATTRIB_DIVISOR
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+         loc_BufferAddLinesPointPattern14_2(attrib_write_buffer, _x, _y);
+#else
+         loc_BufferAddLinesPointPattern32(attrib_write_buffer, _x, _y);
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
          break;
 
@@ -6848,6 +7040,34 @@ void YAC_CALL sdvg_End(void) {
                                                  );
 #else
                   sdvg_DrawLinesGouraudAAVBO32(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINES_PATTERN:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLinesPatternVBO14_2(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
+#else
+                  sdvg_DrawLinesPatternVBO32(current_vbo_id,
+                                             current_draw_start_offset,
+                                             current_draw_vertex_index
+                                             );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINES_PATTERN_AA:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLinesPatternAAVBO14_2(current_vbo_id,
+                                                 current_draw_start_offset,
+                                                 current_draw_vertex_index
+                                                 );
+#else
+                  sdvg_DrawLinesPatternAAVBO32(current_vbo_id,
                                                current_draw_start_offset,
                                                current_draw_vertex_index
                                                );
