@@ -11014,8 +11014,8 @@ YF void YAC_CALL minRectTexUVFlat (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul,
 YF void YAC_CALL minRectTexUVFlatDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb);
 YF void YAC_CALL minRectTexUVGouraud (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
 YF void YAC_CALL minRectTexUVGouraudDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
-YF void minExecDrawListEx (YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug);
-YF void minExecDrawList (YAC_Buffer *_bufDraw, sUI _glBufId);
+YF void YAC_CALL minExecDrawListEx (YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug);
+YF void YAC_CALL minExecDrawList (YAC_Buffer *_bufDraw, sUI _glBufId);
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
