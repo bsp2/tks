@@ -231,7 +231,9 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_POINTS_ROUND_GOURAUD_AA                     169
 #define RENDER_BEGIN_LINES_PATTERN                               170
 #define RENDER_BEGIN_LINES_PATTERN_AA                            171
-#define NUM_RENDER_MODES                                         172
+#define RENDER_BEGIN_LINE_STRIP_MITER                            172
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA                         173
+#define NUM_RENDER_MODES                                         174
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 
@@ -408,6 +410,8 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 169 */ "begin_points_round_gouraud_aa",
    /* 170 */ "begin_lines_pattern",
    /* 171 */ "begin_lines_pattern_aa",
+   /* 172 */ "begin_line_strip_miter",
+   /* 173 */ "begin_line_strip_miter_aa",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2459,6 +2463,34 @@ void TestBeginLinesPattern(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginLineStripFlatMiter (172+173)
+void TestBeginLineStripFlatMiter(sBool _bAA) {
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   sdvg_SetLineMiterLimit(1 ? 10.0f : 32.0f);
+   sUI numSeg = 3u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 h = sin(ang_h) * 220.0f;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   sF32 y;
+   if(_bAA
+      ? sdvg_BeginLineStripMiterAA(numPoints)
+      : sdvg_BeginLineStripMiter(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         y = sinf(a) * h + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
@@ -4152,6 +4184,14 @@ void hal_on_draw(void) {
 
       case RENDER_BEGIN_LINES_PATTERN_AA: // 171
          TestBeginLinesPattern(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER: // 172
+         TestBeginLineStripFlatMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA: // 173
+         TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
          break;
    }
 
