@@ -16,6 +16,7 @@
 // ----          28Nov2018, 11Dec2018, 22Sep2019, 01Nov2019, 14Apr2020, 22Jun2020, 05Oct2022
 // ----          06Oct2023, 09Oct2023, 22Oct2023, 27Oct2023, 28Oct2023, 01Nov2023, 02Nov2023
 // ----          30Nov2023, 22Mar2024, 05Oct2024, 23Jan2025, 09Feb2025, 10Sep2025, 10Oct2025
+// ----          13Dec2025
 // ----
 // ----
 // ----
@@ -30,6 +31,7 @@ class CheckBox extends Label, ActionProvider {
    define int TEXT_POS_X = 1;
 
    define String ACTION_TOGGLE;
+   define String ACTION_RIGHT_TOGGLE;
    define String ACTION_HOLD_CLICK;
    define String ACTION_KEY;
 
@@ -52,6 +54,7 @@ class CheckBox extends Label, ActionProvider {
    protected int c32tint_checked;
    protected int c32tint_unchecked;
 
+   protected boolean b_provide_right_toggle;
    protected boolean b_provide_cursor_key_action; // 1=provide action when cursor keys are pressed. 0=let layer handle cursor keys (focus selection)
 
    protected boolean b_hold;  // true=send ACTION_HOLD_CLICK
@@ -83,23 +86,18 @@ class CheckBox extends Label, ActionProvider {
    }
 
    public virtual setDefaultInnerPadding() {
-      // if(!b_xfm_ipad)
-      //    setInnerPadding4f(2-2, 2, 2-2, 2);  // old "win9x" icons
-
-      // trace "xxx saedikfojsdlkfjsdoikfjiksldljkfsdjlkfjskldfjlk b_xfm_ipad="+b_xfm_ipad;
+      // // if(!b_xfm_ipad)
+      // //    setInnerPadding4f(2-2, 2, 2-2, 2);  // old "win9x" icons
 
       if(!b_xfm_ipad)
          setInnerPadding4f(4, 2, 2-2, 2);  // using "dark" icons
 
-      // // ipad_icon_t = 2*UI.icon_scaling;
       ipad_icon_r = 2*UI.icon_scaling;
-      // // ipad_icon_b = 3;
-
       ipad_icon_t = 1.5 * UI.font_scaling;
    }
 
    public virtual onLookAndFeelChanged() {
-      // trace "xxx CheckBox::onLookAndFeelChanged: caption=\""+caption+"\" this="+#(this)+" icon_blend_c32="+icon_blend_c32;
+      // trace "[trc] CheckBox::onLookAndFeelChanged: caption=\""+caption+"\" this="+#(this)+" icon_blend_c32="+icon_blend_c32;
       Layer::onLookAndFeelChanged();
 
       setEnableCaptionDim(false);
@@ -134,6 +132,10 @@ class CheckBox extends Label, ActionProvider {
       return Label::calcSizeX();
    }
 
+   public method setEnableProvideRightToggle(boolean _bEnable) {
+      b_provide_right_toggle = _bEnable;
+   }
+
    public method setEnableMixedState(boolean _bMixed) {
       b_mixed = _bMixed;
       setSelected(b_selected);
@@ -144,7 +146,7 @@ class CheckBox extends Label, ActionProvider {
    }
 
    public virtual getProvidedActionNames() : StringArray {
-      return [ACTION_TOGGLE, ACTION_HOLD_CLICK, ACTION_KEY];
+      return [ACTION_TOGGLE, ACTION_RIGHT_TOGGLE, ACTION_HOLD_CLICK, ACTION_KEY];
    }
 
    public method setCaption(String _caption) {
@@ -222,12 +224,17 @@ class CheckBox extends Label, ActionProvider {
          handleToggleSelection();
    }
 
+   public method toggleSelectionActionRMB() {
+      if(isEditable())
+         handleToggleSelectionEx(true/*bRMB*/);
+   }
+
    public method toggleSelectionActionTrueOrFalse() {
       // e.g. slow motion checkbox in gledit
       if(isEditable())
       {
          setSelected(false == b_selected);
-         provideActionToggle();
+         provideActionToggle(false/*bRMB*/);
       }
    }
 
@@ -236,7 +243,7 @@ class CheckBox extends Label, ActionProvider {
       if(isEditable())
       {
          setSelected( (maybe == b_selected) ? true : maybe );
-         provideActionToggle();
+         provideActionToggle(false/*bRMB*/);
       }
    }
 
@@ -262,11 +269,17 @@ class CheckBox extends Label, ActionProvider {
    }
 
    public virtual onMouseClick(MouseEvent _ev) : boolean {
-      if(_ev.isLeftButton())
+      // unreachable ?!
+      // // trace "[trc] CheckBox::onMouseClick: b_provide_right_toggle="+b_provide_right_toggle;
+      boolean bRight = b_provide_right_toggle && _ev.isRightButton();
+      if( _ev.isLeftButton() || bRight )
       {
          force_icon_name_selected <= null;
          b_pressed = false;
-         toggleSelectionAction();
+         if(bRight)
+            toggleSelectionActionRMB();
+         else
+            toggleSelectionAction();
          return true;
       }
       return false;
@@ -301,12 +314,13 @@ class CheckBox extends Label, ActionProvider {
       return true;
    }
 
-   protected method provideActionToggle() {
-      IntAction ia <= IntAction.New(getProvidedActionAlias(ACTION_TOGGLE), this, b_selected);
+   protected method provideActionToggle(boolean _bRMB) {
+      IntAction ia <= IntAction.New(getProvidedActionAlias(_bRMB ? ACTION_RIGHT_TOGGLE : ACTION_TOGGLE), this, b_selected);
       provideAction(ia);
    }
 
-   protected method handleToggleSelection() {
+   protected method handleToggleSelectionEx(boolean _bRMB) {
+      // trace "[trc] handleToggleSelectionEx: bRMB="+_bRMB+" b_mixed="+b_mixed+" b_selected="+b_selected;
       if(b_mixed)
       {
          switch(b_selected)
@@ -330,25 +344,40 @@ class CheckBox extends Label, ActionProvider {
          b_selected = !b_selected;
       }
 
-      provideActionToggle();
+      provideActionToggle(_bRMB);
       redraw();
    }
 
+   protected method handleToggleSelection() {
+      // (note) overridden in RadioButton
+      handleToggleSelectionEx(false/*bRMB*/);
+   }
+
    public virtual onMouseHold(MouseEvent _ev) : boolean {
-      b_hold_active = true;
+      if(b_hold)
+      {
+         b_hold_active = true;
+         return true;
+      }
+      else if(b_provide_right_toggle && _ev.isRightButtonDown())
+      {
+         return true;
+      }
       return false;
    }
 
    public virtual onMouse(MouseEvent _ev) : boolean {
-      ////trace "xxx CheckBox::onMouse: ns="+_ev.changed_state+" cs="+_ev.current_state+" b_pressed="+b_pressed;
+      // trace "[trc] CheckBox::onMouse: ns="+_ev.changed_state+" cs="+_ev.current_state+" b_pressed="+b_pressed+" b_provide_right_toggle="+b_provide_right_toggle+" b_editable="+b_editable;
 
       if(b_editable)
       {
-         if(_ev.changed_state & MOUSE_LBUTTON)
+         boolean bRight = b_provide_right_toggle && (_ev.changed_state & MOUSE_RBUTTON);
+
+         if( (_ev.changed_state & MOUSE_LBUTTON) || bRight )
          {
             redraw();
 
-            if(!(_ev.current_state & MOUSE_LBUTTON))
+            if( bRight ? !(_ev.current_state & MOUSE_RBUTTON) : !(_ev.current_state & MOUSE_LBUTTON) )
             {
                if(b_pressed)
                {
@@ -356,6 +385,8 @@ class CheckBox extends Label, ActionProvider {
 
                   if(b_hold && b_hold_active)
                      handleHold();
+                  else if(bRight)
+                     handleToggleSelectionEx(true/*RMB*/);
                   else
                      handleToggleSelection();
                   // Don't add code below this line because the CheckBox instance may have already been deleted!
@@ -373,7 +404,7 @@ class CheckBox extends Label, ActionProvider {
          }
       }
 
-      return (MOUSE_LBUTTON == (_ev.changed_state & MOUSE_LBUTTON));
+      return bRight || (MOUSE_LBUTTON == (_ev.changed_state & MOUSE_LBUTTON));
    }
 
    public virtual isTabCycleMember() : boolean {
@@ -453,7 +484,7 @@ class CheckBox extends Label, ActionProvider {
    }
 
    protected method getCurrentIconName() : String {
-      ////trace "xxx CheckBox::getCurrentIconName: b_mixed="+b_mixed+" b_selected="+b_selected;
+      // // trace "xxx CheckBox::getCurrentIconName: b_mixed="+b_mixed+" b_selected="+b_selected;
       if(!b_pressed && b_selected && (null != force_icon_name_selected))
          return force_icon_name_selected;
 
@@ -661,6 +692,10 @@ class CheckBox extends Label, ActionProvider {
 
                case "tintunchecked":
                   c32tint_unchecked = int(atval);
+                  break;
+
+               case "providerighttoggle":
+                  setEnableProvideRightToggle(int(atval));
                   break;
 
                case "providecursorkeyaction":
