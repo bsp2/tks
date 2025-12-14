@@ -618,7 +618,7 @@ tip: $(buf!note_numberedit)
    |+LMB double click     |+show Project page
    ].kbd_table Track Page keyboard shortcuts
 
-   note: hold-click lane enable button to solo lane, lshift-click to mutex-mute right-hand side lane
+   note: hold-click lane enable button to solo lane, RMB-click OR lshift-click to mutex-mute right-hand side lane
 
 lane modules:
 

@@ -1,14 +1,14 @@
 // ----
 // ---- file   : Output.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : This is part of the "syntracker" sequencer.
 // ----
 // ---- changed: 12Feb2018, 15Feb2018, 16Feb2018, 17Feb2018, 20Feb2018, 28Feb2018, 21Jul2018
-// ----          22Feb2019, 04Feb2021, 31May2021, 24Nov2023, 20Sep2024
+// ----          22Feb2019, 04Feb2021, 31May2021, 24Nov2023, 20Sep2024, 13Dec2025
 // ----
 // ----
 // ----
@@ -47,13 +47,14 @@ class Output {
    define int PAN_COS     = 3;
    define int PAN_POW     = 4;
 
-   int   type;        // TYPE_xxx
-   int   channel_idx;
-   int   track_idx;   // -1=self
-   int   lane_idx;
-   float level;
-   int   pan_type;    // PAN_xxx
-   float pan;
+   int     type;        // TYPE_xxx
+   int     channel_idx;
+   int     track_idx;   // -1=self
+   int     lane_idx;
+   boolean b_enable;
+   float   level;
+   int     pan_type;    // PAN_xxx
+   float   pan;
 
    float level_l;     // see updateLevelLR()
    float level_r;
@@ -62,6 +63,7 @@ class Output {
    // <method_init.png>
    public method init() {
       type        = TYPE_DEFAULT;
+      b_enable    = true;
       level       = 1.0;
       pan         = 0.0;
       pan_type    = STConfig.default_pan_law;
@@ -242,44 +244,51 @@ class Output {
 
    // <method_update.png>
    protected method updateLevelLR() {
-      float t;
-
-      switch(pan_type)
+      if(b_enable)
       {
-         default:
-         case PAN_LINEAR:
-            t = pan;
-            level_l = (t < 0.0f) ? 1.0f : (1.0f - t);
-            level_r = (t > 0.0f) ? 1.0f : (1.0f + t);
-            break;
+         float t;
+         switch(pan_type)
+         {
+            default:
+            case PAN_LINEAR:
+               t = pan;
+               level_l = (t < 0.0f) ? 1.0f : (1.0f - t);
+               level_r = (t > 0.0f) ? 1.0f : (1.0f + t);
+               break;
 
-         case PAN_LERP:
-            t = ((1.0f - pan) * 0.5f);
-            level_l = t;
-            level_r = (1.0f - t);
-            break;
+            case PAN_LERP:
+               t = ((1.0f - pan) * 0.5f);
+               level_l = t;
+               level_r = (1.0f - t);
+               break;
 
-         case PAN_SQRT:
-            t = (0.5f + pan*0.5f);
-            level_l = sqrt(1.0f - t);
-            level_r = sqrt(t);
-            break;
+            case PAN_SQRT:
+               t = (0.5f + pan*0.5f);
+               level_l = sqrt(1.0f - t);
+               level_r = sqrt(t);
+               break;
 
-         case PAN_COS:
-            t = (0.25f + pan*0.25f) * PI;
-            level_l = cos(t);
-            level_r = cos(PI*0.5 - t);
-            break;
+            case PAN_COS:
+               t = (0.25f + pan*0.25f) * PI;
+               level_l = cos(t);
+               level_r = cos(PI*0.5 - t);
+               break;
 
-         case PAN_POW:
-            t = (0.5f + pan*0.5f);
-            level_l = mathPowerf(E, (1.0f - t) * 0.6931) - 1.0f;
-            level_r = mathPowerf(E, t * 0.6931) - 1.0f;
-            break;
+            case PAN_POW:
+               t = (0.5f + pan*0.5f);
+               level_l = mathPowerf(E, (1.0f - t) * 0.6931) - 1.0f;
+               level_r = mathPowerf(E, t * 0.6931) - 1.0f;
+               break;
+         }
+
+         level_l *= level;
+         level_r *= level;
       }
-
-      level_l *= level;
-      level_r *= level;
+      else
+      {
+         level_l = 0.0f;
+         level_r = 0.0f;
+      }
 
       // trace "[dbg] Output::updateLevelLR: type="+pan_type+" levels=("+level_l+";"+level_r+")";
    }
@@ -289,7 +298,6 @@ class Output {
       pan = _pan;
 
       updateLevelLR();
-
       current_project.markAsModified();
    }
 
@@ -298,7 +306,14 @@ class Output {
       pan_type = _type;
 
       updateLevelLR();
+      current_project.markAsModified();
+   }
 
+   // <method_set.png>
+   public =replay= method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+
+      updateLevelLR();
       current_project.markAsModified();
    }
 
@@ -307,7 +322,6 @@ class Output {
       level = _level;
 
       updateLevelLR();
-
       current_project.markAsModified();
    }
 
@@ -339,6 +353,7 @@ class Output {
       channel_idx = _o.channel_idx;
       track_idx   = _o.track_idx;
       lane_idx    = _o.lane_idx;
+      b_enable    = _o.b_enable;
       level       = _o.level;
       pan_type    = _o.pan_type;
       pan         = _o.pan;
@@ -349,7 +364,7 @@ class Output {
    public method saveState(Stream ofs) {
 
       // Version
-      ofs.i16 = 4;
+      ofs.i16 = 5;
 
       // Type
       ofs.i8 = type;
@@ -362,6 +377,9 @@ class Output {
 
       // Lane idx (v3+)
       ofs.i8 = lane_idx;
+
+      // Enable (v5+)
+      ofs.i8 = b_enable;
 
       // Level
       ofs.f32 = level;
@@ -403,6 +421,16 @@ class Output {
          {
             // Lane idx (v3+)
             lane_idx = ifs.u8;
+         }
+
+         if(ver >= 5)
+         {
+            // Enable (v5+)
+            b_enable = ifs.b8;
+         }
+         else
+         {
+            b_enable = true;
          }
 
          // Level
