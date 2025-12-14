@@ -38,9 +38,6 @@ class LineStripPatternDecalAA14_2 : public ShaderVG_Shape {
       "ATTRIBUTE vec2  a_vertex_n; \n"
       "ATTRIBUTE float a_pattern; \n"
       "ATTRIBUTE float a_pattern_n; \n"
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-      "ATTRIBUTE float a_index; \n"
-#endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_OUT vec2 v_plane_n; \n"
@@ -60,11 +57,7 @@ class LineStripPatternDecalAA14_2 : public ShaderVG_Shape {
       "  float pat2 = a_pattern_n; \n"
       "  vec2 uv; \n"
       " \n"
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
-      "  float index = float(gl_VertexID % 6); \n"
-#else
-      "  float index = a_index; \n"
-#endif // USE_VERTEX_ATTRIB_DIVISOR
+      "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -129,9 +122,6 @@ class LineStripPatternDecalAA14_2 : public ShaderVG_Shape {
       return
             (-1 != shape_a_vertex)
          && (-1 != shape_a_vertex_n)
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-         && (-1 != shape_a_index)
-#endif // USE_VERTEX_ATTRIB_DIVISOR
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_color_stroke)
@@ -163,17 +153,13 @@ class LineStripPatternDecalAA14_2 : public ShaderVG_Shape {
                                            sF32             _linePatternOffset
                                            ) {
       //
-      // VBO vertex format (8 bytes per vertex w/o attrib divisor, else 6):
+      // VBO vertex format (6 bytes per vertex):
       //   +0  s14.2 x
       //   +2  s14.2 y
       //   +4  s14.2 patternOff
-      //   +6  i16   index
       //
-      // (note) duplicate vertices * 6 when !defined(USE_VERTEX_ATTRIB_DIVISOR)
-      // (note) numVerts         = (numPoints * 6)
-      // (note) numSeg           = (numPoints - 1)
-      // (note) numTri           = (numPoints - 1) * 6
-      // (note) numBytesPerPoint = 6*8 = 48
+      // (note) numSeg = (numPoints - 1)
+      // (note) numTri = numSeg * 2
       //
 
       sdvg_BindVBO(_vboId);
@@ -193,52 +179,33 @@ class LineStripPatternDecalAA14_2 : public ShaderVG_Shape {
       Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale * 0.25f);
       Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
-      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  6);
-      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  4);
-      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 10);
-#else
-      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 48);
-      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  4);
-      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 52);
-      Dsdvg_attrib_offset(shape_a_index,     1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  6);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  6);
+      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  4);
+      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset + 10);
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
       Dsdvg_attrib_enable(shape_a_pattern);
       Dsdvg_attrib_enable(shape_a_pattern_n);
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
+
       Dsdvg_attrib_divisor(shape_a_vertex, 1);
       Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
       Dsdvg_attrib_divisor(shape_a_pattern, 1);
       Dsdvg_attrib_divisor(shape_a_pattern_n, 1);
-#else
-      Dsdvg_attrib_enable(shape_a_index);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
       const sUI numInstances = (_numPoints - 1);
       Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
-#else
-      const sUI numVerts = (_numPoints - 1) * 6;
-      Dsdvg_draw_triangles_vbo(0, numVerts);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 
       Dsdvg_attrib_disable(shape_a_vertex_n);
       Dsdvg_attrib_disable(shape_a_vertex);
       Dsdvg_attrib_disable(shape_a_pattern_n);
       Dsdvg_attrib_disable(shape_a_pattern);
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
+
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
       Dsdvg_attrib_divisor_reset(shape_a_pattern);
       Dsdvg_attrib_divisor_reset(shape_a_pattern_n);
-#else
-      Dsdvg_attrib_disable(shape_a_index);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
    }
 
 };

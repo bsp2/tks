@@ -37,9 +37,6 @@ class LineStripFlatAA32PatternDecalAlpha : public ShaderVG_Shape {
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-      "ATTRIBUTE float a_index; \n"  // (todo) remove
-#endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_OUT vec2 v_plane_n; \n"
@@ -56,11 +53,7 @@ class LineStripFlatAA32PatternDecalAlpha : public ShaderVG_Shape {
       "  vec2 v2R = vec2(v2.x - vD.y, v2.y + vD.x); \n"
       "  vec2 v; \n"
       " \n"
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
-      "  float index = float(gl_VertexID % 6); \n"
-#else
-      "  float index = a_index; \n"  // (todo) remove
-#endif // USE_VERTEX_ATTRIB_DIVISOR
+      "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -110,7 +103,7 @@ class LineStripFlatAA32PatternDecalAlpha : public ShaderVG_Shape {
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), u_color_fill.a); \n"
+      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), u_color_fill.a * a); \n"
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
@@ -121,9 +114,6 @@ class LineStripFlatAA32PatternDecalAlpha : public ShaderVG_Shape {
       return
             (-1 != shape_a_vertex)
          && (-1 != shape_a_vertex_n)
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-         && (-1 != shape_a_index)  // (todo) remove
-#endif // USE_VERTEX_ATTRIB_DIVISOR
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_color_stroke)

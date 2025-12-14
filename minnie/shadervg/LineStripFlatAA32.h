@@ -34,9 +34,6 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-      "ATTRIBUTE float a_index; \n"
-#endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_OUT vec2 v_plane_n; \n"
@@ -52,11 +49,7 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
       "  vec2 v2R = vec2(v2.x - vD.y, v2.y + vD.x); \n"
       "  vec2 v; \n"
       " \n"
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
-      "  float index = float(gl_VertexID % 6); \n"
-#else
-      "  float index = a_index; \n"
-#endif // USE_VERTEX_ATTRIB_DIVISOR
+      "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -108,9 +101,6 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
       return
             (-1 != shape_a_vertex)
          && (-1 != shape_a_vertex_n)
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-         && (-1 != shape_a_index)
-#endif // USE_VERTEX_ATTRIB_DIVISOR
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_stroke_w)
@@ -135,16 +125,11 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
                                  sF32             _aaRange
                                  ) {
       //
-      // VBO vertex format (10 bytes per vertex w/o attrib divisor, else 8):
+      // VBO vertex format (8 bytes per vertex):
       //   +0 f32 x
       //   +4 f32 y
-      //   +8 i16 index
       //
-      // (note) duplicate vertices * 6 when !defined(USE_VERTEX_ATTRIB_DIVISOR)
-      // (note) numVerts         = (numPoints * 6)
-      // (note) numSeg           = (numPoints - 1)
-      // (note) numTri           = (numPoints - 1) * 6
-      // (note) numBytesPerPoint = 6*10 = 60
+      // (note) numSeg = (numPoints - 1)
       //
 
       sdvg_BindVBO(_vboId);
@@ -161,40 +146,23 @@ class LineStripFlatAA32 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
 
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  0);
       Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  8);
-#else
-      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset + 60);
-      Dsdvg_attrib_offset(shape_a_index,    1/*size*/, GL_UNSIGNED_SHORT, GL_FALSE/*normalize*/, 10/*stride*/, _byteOffset +  8);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
+
       Dsdvg_attrib_divisor(shape_a_vertex, 1);
       Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
-#else
-      Dsdvg_attrib_enable(shape_a_index);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
       const sUI numInstances = (_numPoints - 1);
       Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
-#else
-      const sUI numVerts = (_numPoints - 1) * 6;
-      Dsdvg_draw_triangles_vbo(0, numVerts);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 
       Dsdvg_attrib_disable(shape_a_vertex_n);
       Dsdvg_attrib_disable(shape_a_vertex);
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
+
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
-#else
-      Dsdvg_attrib_disable(shape_a_index);
-#endif // USE_VERTEX_ATTRIB_DIVISOR
    }
 
 };

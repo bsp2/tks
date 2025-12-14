@@ -1,5 +1,5 @@
 // ----
-// ---- file   : LineStripFlatBevelAA14_2.h
+// ---- file   : LineStripFlatMiterAA32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2014-2025 by bsp
@@ -24,14 +24,15 @@
 // ----
 // ----
 
-class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
+class LineStripFlatMiterAA32 : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4  u_transform; \n"
-      "uniform float u_stroke_w; \n"
       "uniform float u_last_instance; \n"
+      "uniform float u_stroke_w; \n"
+      "uniform float u_line_miter_limit; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -41,10 +42,22 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       "VARYING_OUT vec2 v_plane_n; \n"
       "VARYING_OUT float v_join; \n"
       " \n"
+      "float intersect(vec2 _v1s, vec2 _v1e, vec2 _v2s, vec2 _v2e, out vec2 _r) { \n"
+      "  vec2 vE = _v1e - _v1s; \n"
+      "  vec2 vF = _v2e - _v2s; \n"
+      "  vec2 vP = vec2(-vE.y, vE.x); \n"
+      "  vec2 vG = _v1s - _v2s; \n"
+      "  float h = dot(vF, vP); \n"
+      "  h = dot(vG, vP) / h; \n"
+      "  _r = vF * h; \n"
+      "  _r += _v2s; \n"
+      "  return h; \n"  // (todo) remove return value
+      "} \n"
+      " \n"
       "void main(void) { \n"
-      "  vec2 v1 = a_vertex * 0.25; \n"
-      "  vec2 v2 = a_vertex_n * 0.25; \n"
-      "  vec2 v3 = a_vertex_nn * 0.25; \n"
+      "  vec2 v1 = a_vertex; \n"
+      "  vec2 v2 = a_vertex_n; \n"
+      "  vec2 v3 = a_vertex_nn; \n"
       " \n"
       "  vec2 v12 = v2 - v1; \n"
       "  vec2 vN = normalize(v12); \n"
@@ -58,21 +71,73 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       "  vec2 vN2 = normalize(v23); \n"
       "  vec2 vD2 = vN2 * u_stroke_w; \n"
       "  vec2 v2L2 = vec2(v2.x + vD2.y, v2.y - vD2.x); \n"
-      // "  vec2 v3L = vec2(v3.x + vD2.y, v3.y - vD2.x); \n"
+      "  vec2 v3L = vec2(v3.x + vD2.y, v3.y - vD2.x); \n"
       "  vec2 v2R2 = vec2(v2.x - vD2.y, v2.y + vD2.x); \n"
-      // "  vec2 v3R = vec2(v3.x - vD2.y, v3.y + vD2.x); \n"
+      "  vec2 v3R = vec2(v3.x - vD2.y, v3.y + vD2.x); \n"
       " \n"
       "  float cz = v12.x * v23.y - v12.y * v23.x; \n"
       " \n"
+      "  vec2 vMiterOrig; \n"
+      "  vec2 vMiter; \n"
+      "  vec2 vMiterL; \n"
+      "  vec2 vMiterR; \n"
+      "  vec2 vTmp; \n"
+      "  float h; \n"
+      "  float lenMiter; \n"
+      "  float lenMiterRel; \n"
+      "  if(cz > 0.0) { \n"
+      "    h = intersect(v1L, v2L, v3L, v2L2, vMiterOrig); \n"
+      "    vTmp = vMiterOrig - v2; \n"
+      "    lenMiter = length(vTmp); \n"
+      "    if(lenMiter > u_line_miter_limit) { \n"
+      //"      vMiter = normalize(vTmp) * u_line_miter_limit + v2; \n"
+      "      lenMiterRel = (u_line_miter_limit / lenMiter); \n"
+      "      vMiterL = (vMiterOrig - v2L) * lenMiterRel + v2L; \n"
+      "      vMiterR = (vMiterOrig - v2L2) * lenMiterRel + v2L2; \n"
+      "    } else { \n"
+      "      vMiterL = vMiterOrig; \n"
+      "      vMiterR = vMiterOrig; \n"
+      "    } \n"
+      "  } else { \n"
+      "    h = intersect(v1R, v2R, v3R, v2R2, vMiterOrig); \n"
+      "    vTmp = vMiterOrig - v2; \n"
+      "    lenMiter = length(vTmp); \n"
+      "    if(lenMiter > u_line_miter_limit) { \n"
+      "      lenMiterRel = (u_line_miter_limit / lenMiter); \n"
+      "      vMiterL = (vMiterOrig - v2R) * lenMiterRel + v2R; \n"
+      "      vMiterR = (vMiterOrig - v2R2) * lenMiterRel + v2R2; \n"
+      "    } else { \n"
+      "      vMiterL = vMiterOrig; \n"
+      "      vMiterR = vMiterOrig; \n"
+      "    } \n"
+      "  } \n"
       "  vec2 v; \n"
       " \n"
       "  float index = float(gl_VertexID); \n"
       " \n"
-      "  if(index > 7.9) { \n"
+      "  if(index > 13.9) { \n"
+      "    v = v2; \n"
+      "  } \n"
+      "  else if(index > 12.9) { \n"
+      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
+      "  } \n"
+      "  else if(index > 11.9) { \n"
+      "    v = vMiterR; \n"
+      "  } \n"
+      "  else if(index > 10.9) { \n"
+      "    v = v2; \n"
+      "  } \n"
+      "  else if(index > 9.9) { \n"
+      "    v = vMiterR; \n"
+      "  } \n"
+      "  else if(index > 8.9) { \n"
+      "    v = vMiterL; \n"
+      "  } \n"
+      "  else if(index > 7.9) { \n"
       "    v = v2; \n"
       "  } \n"
       "  else if(index > 6.9) { \n"
-      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
+      "    v = vMiterL; \n"
       "  } \n"
       "  else if(index > 5.9) { \n"
       "    v = (cz > 0.0) ? v2L : v2R; \n"
@@ -100,9 +165,14 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       "    gl_Position = vec4(v1,0,1); \n"  // skip last line joint
       "  } else { \n"
       "    gl_Position = u_transform * vec4(v,0,1); \n"
-      "    if(index > 5.9) { \n"
-      "      v_vertex_mp = v - ((cz > 0.0) ? v2L : v2R); \n"
-      "      vec2 vNB = normalize( (cz > 0.0) ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
+      "    if(index > 11.9) { \n"
+      "      v_vertex_mp = v - v2; \n"
+      "      v_plane_n   = vec2(vN2.y, -vN2.x); \n"
+      "      v_join = 0.0; \n"
+      "    } \n"
+      "    else if(index > 8.9 && index < 11.9) { \n"
+      "      v_vertex_mp = v - vMiterL; \n"
+      "      vec2 vNB = normalize( vMiterR - vMiterL ); \n"
       "      v_plane_n   = vec2(vNB.y, -vNB.x); \n"
       "      v_join = 1.0; \n"
       "    } \n"
@@ -131,14 +201,12 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       "  if(v_join > 0.0) { \n"
       "    float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "    a = smoothstep(0.0, u_aa_range, d); \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
-      // "    FRAGCOLOR = vec4(a,0,0,1); \n"
       "  } \n"
       "  else { \n"
       "    float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
-      "    FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
       "  } \n"
+      "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
@@ -155,6 +223,7 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
+         && (-1 != shape_u_line_miter_limit)
          ;
    }
 
@@ -166,26 +235,26 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawLineStripFlatBevelAAVBO14_2(sUI              _vboId,
-                                        sUI              _byteOffset,
-                                        sUI              _numPoints,
-                                        Dsdvg_mat4_ref_t _mvpMatrix,
-                                        sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                                        sF32             _strokeW,
-                                        sF32             _aaRange
-                                        ) {
+   void drawLineStripFlatMiterAAVBO32(sUI              _vboId,
+                                      sUI              _byteOffset,
+                                      sUI              _numPoints,
+                                      Dsdvg_mat4_ref_t _mvpMatrix,
+                                      sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                      sF32             _strokeW,
+                                      sF32             _aaRange,
+                                      sF32             _lineMiterLimit
+                                      ) {
       //
-      // VBO vertex format (4 bytes per vertex):
-      //   +0 s14.2 x
-      //   +2 s14.2 y
+      // VBO vertex format (8 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
       //
-      // (note) numSeg = (numPoints - 2)
-      // (note) numTri = numSeg * 3 - 1
+      // (note) numSeg = (numPoints - 1)
+      // (note) numTri = (numPoints - 1) * 2 + (numPoints - 2) * 3
       //
 
-      if(_numPoints >= 3u)
+      if(_numPoints >= 3)
       {
-
          sdvg_BindVBO(_vboId);
 
          shape_shader.bind();
@@ -198,10 +267,11 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
          {
             Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
          }
+         Dsdvg_uniform_1f(shape_u_line_miter_limit, _lineMiterLimit);
 
-         Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset +    0);
-         Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset +    4);
-         Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset +  2*4);
+         Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +    0);
+         Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +    8);
+         Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset +  2*8);
 
          Dsdvg_attrib_enable(shape_a_vertex);
          Dsdvg_attrib_enable(shape_a_vertex_n);
@@ -212,17 +282,15 @@ class LineStripFlatBevelAA14_2 : public ShaderVG_Shape {
 
          const sSI numSeg = (_numPoints - 2);
          Dsdvg_uniform_1f(shape_u_last_instance, numSeg - 1);
-         Dsdvg_draw_triangles_instanced_vbo(9, numSeg);
+         Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
 
          Dsdvg_attrib_disable(shape_a_vertex_nn);
          Dsdvg_attrib_disable(shape_a_vertex_n);
          Dsdvg_attrib_disable(shape_a_vertex);
-
          Dsdvg_attrib_divisor_reset(shape_a_vertex);
          Dsdvg_attrib_divisor_reset(shape_a_vertex_n);
          Dsdvg_attrib_divisor_reset(shape_a_vertex_nn);
-
-      } // if numPoints >= 3
+      }
    }
 
 };

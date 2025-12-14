@@ -26,16 +26,6 @@ EXTRAFLAGS+= -DSHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
 # (note) slower than mapping the scratch buffer
 ##EXTRAFLAGS+= -DSHADERVG_USE_SCRATCHBUFFERSUBDATA
 
-# (note) **EXPERIMENTAL** when not defined, use glDrawElements to repeat 6 or 9(linestripbevel) vertices
-# (note) mutual exclusive to USE_VERTEX_ATTRIB_DIVISOR
-#EXTRAFLAGS += -DTKMINNIE_DUPLICATE_POINT_VERTICES
-
-# (todo) line strips, also requires gl_VertexID (GLES3+, GL3+(GLSL1.30), GL4.1core on macOS)
-# (todo) need a GL extensions that advances vertex attributes every 'n' vertices
-#         (glVertexAttribDivisor is used for instanced rendering only)
-# (note) mutual exclusive to TKMINNIE_DUPLICATE_POINT_VERTICES
-EXTRAFLAGS+= -DUSE_VERTEX_ATTRIB_DIVISOR
-
 # redirect VG_tesselator malloc/free to vgtess_malloc/free functions and track memory usage
 EXTRAFLAGS += -DVGTESSELATE_MALLOC_DEBUG
 

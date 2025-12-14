@@ -161,8 +161,6 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       //    +4 s14.2 x
       //    +6 s14.2 y
       //
-      // (note) requires USE_VERTEX_ATTRIB_DIVISOR
-      //
 
       sdvg_BindVBO(_vboId);
 
@@ -186,6 +184,7 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_color_n);
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
+
       Dsdvg_attrib_divisor(shape_a_color, 1);
       Dsdvg_attrib_divisor(shape_a_color_n, 1);
       Dsdvg_attrib_divisor(shape_a_vertex, 1);
@@ -198,6 +197,7 @@ class LinesGouraudAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_disable(shape_a_color);
       Dsdvg_attrib_disable(shape_a_vertex_n);
       Dsdvg_attrib_disable(shape_a_vertex);
+
       Dsdvg_attrib_divisor_reset(shape_a_color);
       Dsdvg_attrib_divisor_reset(shape_a_color_n);
       Dsdvg_attrib_divisor_reset(shape_a_vertex);

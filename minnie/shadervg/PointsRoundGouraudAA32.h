@@ -127,8 +127,6 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
       //   +4  f32 x
       //   +8  f32 y
       //
-      // (note) requires USE_VERTEX_ATTRIB_DIVISOR
-      //
 
       sdvg_BindVBO(_vboId);
 
@@ -148,6 +146,7 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
 
       Dsdvg_attrib_enable(shape_a_color);
       Dsdvg_attrib_enable(shape_a_vertex);
+
       Dsdvg_attrib_divisor(shape_a_color, 1);
       Dsdvg_attrib_divisor(shape_a_vertex, 1);
 
@@ -156,6 +155,7 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
 
       Dsdvg_attrib_disable(shape_a_color);
       Dsdvg_attrib_disable(shape_a_vertex);
+
       Dsdvg_attrib_divisor_reset(shape_a_color);
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
    }

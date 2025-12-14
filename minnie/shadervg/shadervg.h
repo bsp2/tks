@@ -581,6 +581,15 @@ The offset is applied after the line pattern scaling factor.
 */
 YF void YAC_CALL sdvg_SetLinePatternOffset (sF32 _offset);
 
+/* @function sdvg_SetMiterLimit,float miterLimit
+Set line miter limit
+
+@arg miterLimit Line Miter limit (at which line joint reverts to bevel) (def=32)
+
+@group Stroke
+*/
+YF void YAC_CALL sdvg_SetLineMiterLimit (sF32 _miterLimit);
+
 /* @function sdvg_SetPointRadius,float radius
 Set point radius
 
@@ -1156,12 +1165,12 @@ Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bi
 
 <pre>
 VBO vertex format (12 bytes per vertex):<br>
-  f32 x<br>
-  f32 y<br>
   u8  r<br>
   u8  g<br>
   u8  b<br>
   u8  a<br>
+  f32 x<br>
+  f32 y<br>
 </pre>
 
 @group Triangle
@@ -1174,12 +1183,12 @@ Draw previously prepared vertex buffer as filled, gouraud shaded triangles (14.2
 
 <pre>
 VBO vertex format (8 bytes per vertex):<br>
-  +0 s14.2 x<br>
-  +2 s14.2 y<br>
   +4 u8    r<br>
   +5 u8    g<br>
   +6 u8    b<br>
   +7 u8    a<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
 </pre>
 
 @group Triangle
@@ -1693,10 +1702,9 @@ YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF (sUI _vboId, sUI _byte
 Draw previously prepared vertex buffer as line strip (14.2 fixed point format)
 
 <pre>
-VBO vertex format (6 bytes per vertex):<br>
+VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
-  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Line
@@ -1716,10 +1724,9 @@ YF void YAC_CALL sdvg_DrawLineStripFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _
 Draw previously prepared vertex buffer as anti-aliased line strip (14.2 fixed point format)
 
 <pre>
-VBO vertex format (6 bytes per vertex):<br>
+VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
-  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Line
@@ -1823,10 +1830,9 @@ YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32 (sUI _vboId, sUI _byteOff
 Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
 
 <pre>
-VBO vertex format (6 bytes per vertex):<br>
+VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
-  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Line
@@ -1846,10 +1852,9 @@ YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32 (sUI _vboId, sUI _byteOffset, 
 Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (14.2 fixed point format)
 
 <pre>
-VBO vertex format (6 bytes per vertex):<br>
+VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
-  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Line
@@ -1946,14 +1951,45 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
+/* @function sdvg_DrawLineStripFlatMiterVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as line strip with miter line joints (14.2 fixed point format)
+
+@group Line
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripFlatMiterVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as line strip with miter line joints (32 bit float format)
+
+@group Line
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripFlatMiterAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (14.2 fixed point format)
+
+@group Line
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripFlatMiterAAVBO32,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (32 bit float format)
+
+@group Line
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
 /* @function sdvg_DrawLinesFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line segments (14.2 fixed point format)
 
 <pre>
-VBO vertex format (6 bytes per vertex):<br>
+VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
-  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Line
@@ -1973,10 +2009,9 @@ YF void YAC_CALL sdvg_DrawLinesFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numP
 Draw previously prepared vertex buffer as anti-aliased line segments (14.2 fixed point format)
 
 <pre>
-VBO vertex format (6 bytes per vertex):<br>
+VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
-  +4 i16   index (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Line
@@ -2054,10 +2089,9 @@ YF void YAC_CALL sdvg_DrawLinesPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI _
 Draw previously prepared vertex buffer as square points (32 bit float format)
 
 <pre>
-VBO vertex format (10 bytes per vertex):<br>
+VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
   +4 f32 y<br>
-  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Point
@@ -2069,10 +2103,9 @@ YF void YAC_CALL sdvg_DrawPointsSquareVBO32 (sUI _vboId, sUI _byteOffset, sUI _n
 Draw previously prepared vertex buffer as anti-aliased, square points (32 bit float format)
 
 <pre>
-VBO vertex format (10 bytes per vertex):<br>
+VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
   +4 f32 y<br>
-  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Point
@@ -2121,10 +2154,9 @@ YF void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32 (sUI _vboId, sUI _byteOffse
 Draw previously prepared vertex buffer as round points (32 bit float format)
 
 <pre>
-VBO vertex format (10 bytes per vertex):<br>
+VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
   +4 f32 y<br>
-  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Point
@@ -2136,10 +2168,9 @@ YF void YAC_CALL sdvg_DrawPointsRoundVBO32 (sUI _vboId, sUI _byteOffset, sUI _nu
 Draw previously prepared vertex buffer as anti-aliased, round points (32 bit float format)
 
 <pre>
-VBO vertex format (10 bytes per vertex):<br>
+VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
   +4 f32 y<br>
-  +8 i16   index (0..5) (when !defined(USE_VERTEX_ATTRIB_DIVISOR))<br>
 </pre>
 
 @group Point
@@ -2861,6 +2892,30 @@ Begin preparation or rendering of anti-aliased, patterned line strip with bevel 
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAA (sUI _numPoints);
 
+/* @function sdvg_BeginLineStripMiter,int numPoints:boolean
+Begin preparation or rendering of line strip with miter line joints
+
+@arg numPoints Number of points
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripMiter(sUI _numPoints);
+
+/* @function sdvg_BeginLineStripMiterAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased line strip with miter line joints
+
+@arg numPoints Number of points
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripMiterAA(sUI _numPoints);
+
 /* @function sdvg_BeginLines,int numPoints:boolean
 Begin preparation or rendering of line segments
 
@@ -2886,8 +2941,6 @@ YF sBool YAC_CALL sdvg_BeginLinesAA (sUI _numPoints);
 /* @function sdvg_BeginLinesGouraud,int numPoints:boolean
 Begin preparation or rendering of gouraud-shaded line segments
 
-Requires library to be built with USE_VERTEX_ATTRIB_DIVISOR.
-
 @arg numPoints Number of points
 
 @group Begin
@@ -2899,8 +2952,6 @@ YF sBool YAC_CALL sdvg_BeginLinesGouraud (sUI _numPoints);
 
 /* @function sdvg_BeginLinesGouraudAA,int numPoints:boolean
 Begin preparation or rendering of anti-aliased, gouraud-shaded line segments
-
-Requires library to be built with USE_VERTEX_ATTRIB_DIVISOR.
 
 @arg numPoints Number of points
 
@@ -2914,8 +2965,6 @@ YF sBool YAC_CALL sdvg_BeginLinesGouraudAA (sUI _numPoints);
 /* @function sdvg_BeginLinesPattern,int numPoints:boolean
 Begin preparation or rendering of patterned line segments
 
-Requires library to be built with USE_VERTEX_ATTRIB_DIVISOR.
-
 @arg numPoints Number of points
 
 @group Begin
@@ -2928,8 +2977,6 @@ YF sBool YAC_CALL sdvg_BeginLinesPattern (sUI _numPoints);
 
 /* @function sdvg_BeginLinesPatternAA,int numPoints:boolean
 Begin preparation or rendering of anti-aliased, patterned line segments
-
-Requires library to be built with USE_VERTEX_ATTRIB_DIVISOR.
 
 @arg numPoints Number of points
 

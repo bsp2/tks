@@ -60,6 +60,7 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_a_uv         = -1;
 
    shape_u_transform        = -1;
+   shape_u_last_instance    = -1;
    shape_u_aa               = -1;
    shape_u_aa_range         = -1;
    shape_u_aa_exp           = -1;
@@ -88,6 +89,7 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_stroke_w         = -1;
    shape_u_line_pattern_scl = -1;
    shape_u_line_pattern_off = -1;
+   shape_u_line_miter_limit = -1;
    shape_u_debug            = -1;
    shape_u_tex_0            = -1;
    shape_u_tex_1            = -1;
@@ -544,6 +546,7 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_a_uv        = shape_shader.getAttribLocation("a_uv");         // optional
 
    shape_u_transform        = shape_shader.getUniformLocation("u_transform");
+   shape_u_last_instance    = shape_shader.getUniformLocation("u_last_instance");     // optional
    shape_u_aa               = shape_shader.getUniformLocation("u_aa");                // optional
    shape_u_aa_range         = shape_shader.getUniformLocation("u_aa_range");          // optional for non-AA shader
    shape_u_aa_exp           = shape_shader.getUniformLocation("u_aa_exp");            // optional
@@ -572,6 +575,7 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_stroke_w         = shape_shader.getUniformLocation("u_stroke_w");          // optional
    shape_u_line_pattern_scl = shape_shader.getUniformLocation("u_line_pattern_scl");  // optional
    shape_u_line_pattern_off = shape_shader.getUniformLocation("u_line_pattern_off");  // optional
+   shape_u_line_miter_limit = shape_shader.getUniformLocation("u_line_miter_limit");  // optional
    shape_u_debug            = shape_shader.getUniformLocation("u_debug");             // optional
    shape_u_tex_0            = shape_shader.getUniformLocation("u_tex_0");             // optional
    shape_u_tex_1            = shape_shader.getUniformLocation("u_tex_1");             // optional

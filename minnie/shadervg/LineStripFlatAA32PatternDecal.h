@@ -38,9 +38,6 @@ class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-      "ATTRIBUTE float a_index; \n"  // (todo) remove
-#endif // USE_VERTEX_ATTRIB_DIVISOR
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
       "VARYING_OUT vec2 v_plane_n; \n"
@@ -57,11 +54,7 @@ class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
       "  vec2 v2R = vec2(v2.x - vD.y, v2.y + vD.x); \n"
       "  vec2 v; \n"
       " \n"
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
-      "  float index = float(gl_VertexID % 6); \n"
-#else
-      "  float index = a_index; \n"  // (todo) remove
-#endif // USE_VERTEX_ATTRIB_DIVISOR
+      "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 4.9) { \n"
       "    v = v1R; \n"
@@ -124,9 +117,6 @@ class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
       return
             (-1 != shape_a_vertex)
          && (-1 != shape_a_vertex_n)
-#ifndef USE_VERTEX_ATTRIB_DIVISOR
-         && (-1 != shape_a_index)  // (todo) remove
-#endif // USE_VERTEX_ATTRIB_DIVISOR
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_decal_alpha)

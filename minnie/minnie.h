@@ -8369,19 +8369,8 @@ namespace setup {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
          const sF32 x = _va->elements.f32[idxOff + 0u];
          const sF32 y = _va->elements.f32[idxOff + 1u];
-#ifndef TKMINNIE_DUPLICATE_POINT_VERTICES
-         const sSI dupNum = 1;
-#else
-         const sSI dupNum = _bBevel ? 9 : 6;
-#endif // TKMINNIE_DUPLICATE_POINT_VERTICES
-         for(sSI vtxIdx = 0; vtxIdx < dupNum; vtxIdx++)
-         {
-            Dexport_vb_i16(sSI(x * 4.0f));
-            Dexport_vb_i16(sSI(y * 4.0f));
-#ifdef TKMINNIE_DUPLICATE_POINT_VERTICES
-            Dexport_vb_i16(vtxIdx);
-#endif // TKMINNIE_DUPLICATE_POINT_VERTICES
-         }
+         Dexport_vb_i16(sSI(x * 4.0f));
+         Dexport_vb_i16(sSI(y * 4.0f));
       }
    }
 
@@ -8410,19 +8399,8 @@ namespace setup {
          const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
          const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale;
          /* Dprintf("xxx exportLineStripPointsTranslateScale: idxOff=%u p=(%f; %f)\n", idxOff, x, y); */
-#ifndef TKMINNIE_DUPLICATE_POINT_VERTICES
-         const sSI dupNum = 1;
-#else
-         const sSI dupNum = _bBevel ? 9 : 6;
-#endif // TKMINNIE_DUPLICATE_POINT_VERTICES
-         for(sSI vtxIdx = 0; vtxIdx < dupNum; vtxIdx++)
-         {
-            Dexport_vb_i16(sSI(x * 4.0f));
-            Dexport_vb_i16(sSI(y * 4.0f));
-#ifdef TKMINNIE_DUPLICATE_POINT_VERTICES
-            Dexport_vb_i16(vtxIdx);
-#endif // TKMINNIE_DUPLICATE_POINT_VERTICES
-         }
+         Dexport_vb_i16(sSI(x * 4.0f));
+         Dexport_vb_i16(sSI(y * 4.0f));
       }
    }
 

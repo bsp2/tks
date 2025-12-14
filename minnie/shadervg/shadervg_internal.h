@@ -111,12 +111,8 @@ void sdvg_remap_scratch_after_draw (void);
 #define Dsdvg_attrib_pointer(a,s,t,n,d,p) Dsdvg_glcall(glVertexAttribPointer(a,s,t,n,d,p))
 #define Dsdvg_attrib_enable(a) Dsdvg_glcall(glEnableVertexAttribArray(a))
 #define Dsdvg_attrib_disable(a) Dsdvg_glcall(glDisableVertexAttribArray(a))
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
 #define Dsdvg_attrib_divisor(a, n) Dsdvg_glcall(glVertexAttribDivisor((a), (n)))
 #define Dsdvg_attrib_divisor_reset(a) Dsdvg_glcall(glVertexAttribDivisor((a), 0))
-#else
-#define Dsdvg_attrib_divisor_reset(a) while(0)
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 #define Dsdvg_stencil_poly_pass1()                                   \
    Dsdvg_glcall(glEnable(GL_STENCIL_TEST));                          \
    Dsdvg_glcall(glStencilMask(1));                                   \
@@ -161,10 +157,7 @@ void sdvg_remap_scratch_after_draw (void);
 #define Dsdvg_draw_triangles_vbo(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLES,f,c))
 #define Dsdvg_draw_triangle_fan_vbo(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_FAN,f,c))
 #define Dsdvg_draw_triangle_strip_vbo(f,c) Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_STRIP,f,c))
-
-#ifdef USE_VERTEX_ATTRIB_DIVISOR
 #define Dsdvg_draw_triangles_instanced_vbo(c,ic) Dsdvg_glcall(glDrawArraysInstanced(GL_TRIANGLES, 0, (c), (ic)))
-#endif // USE_VERTEX_ATTRIB_DIVISOR
 
 
 #endif // SHADERVG_INTERNAL_H__
