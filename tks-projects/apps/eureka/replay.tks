@@ -17,7 +17,7 @@
 // ----          13May2022, 14May2022, 13Feb2023, 19Feb2023, 18Mar2023, 06May2023, 14Jun2023
 // ----          22Jul2023, 26Jul2023, 29Jul2023, 08Sep2023, 02Oct2023, 03Oct2023, 04Oct2023
 // ----          05Nov2023, 01Jul2024, 05Jul2024, 07Jul2024, 17Sep2024, 18Sep2024, 23Sep2024
-// ----          24Sep2024, 14Jan2025, 29May2025, 21Jun2025, 22Jun2025
+// ----          24Sep2024, 14Jan2025, 29May2025, 21Jun2025, 22Jun2025, 16Dec2025, 17Dec2025
 // ----
 // ----
 // ----
@@ -333,6 +333,8 @@ class Replay {
    FloatArray mix_buffer;  // interleaved channels. ref to current ring_mix_buffers in ringbuffer mode
    FloatArray temp_mix_buffer;  // interleaved stereo channels (temp sample player)
 
+   protected Mutex *[] mix_buffer_channel_mutices;  // when multiple tracks write to same audio output (concurrently)
+
    // (note) the following fields are also used in standalone ring buffer mode
    //         (todo) rename them (ring_size, ring_mix_buffers, ..)
    int            ring_size;                      // number of ring buffers
@@ -452,6 +454,10 @@ class Replay {
       temp_mix_buffer.allocAndFill(Audio.STREAM_MAX_FRAMES * 2, 0.0f);
       temp_mix_buffer.useAll();
 
+      mix_buffer_channel_mutices.alloc(Audio.STREAM_MAX_OUTPUT_CHANNELS);
+      loop(num_out_ch)
+         mix_buffer_channel_mutices.add(#(new Mutex));
+
       // Allocate input ringbuffers (mono)
       loop(num_in_ch)
       {
@@ -534,11 +540,6 @@ class Replay {
       ring_mix_buffer_next_calc_idx  = 0;
       ring_mix_buffer_next_out_idx   = 0;
       ring_mix_buffer_fill_level     = 0;
-   }
-
-   // <replay.png>
-   public method tickAudio(float _millisec) {
-      // Called by audio thread every "n" frames
    }
 
    // <method_init.png>
@@ -743,6 +744,30 @@ class Replay {
    }
 
    // <method.png>
+   public method lockMixBufferChannels(local int _channelStart, local int _numChannels) {
+      // (note) when sending to audio interface from track lane(s)
+      local int ch = _channelStart;
+      loop(_numChannels)
+      {
+         local Mutex mtx <= mix_buffer_channel_mutices.get(ch++);
+         // trace "xxx lock mtx="+#(mtx)+" ch="+ch;
+         if(null != mtx)
+            mtx.lock();
+      }
+   }
+
+   // <method.png>
+   public method unlockMixBufferChannels(local int _channelStart, local int _numChannels) {
+      local int ch = _channelStart;
+      loop(_numChannels)
+      {
+         local Mutex mtx <= mix_buffer_channel_mutices.get(ch++);
+         if(null != mtx)
+            mtx.unlock();
+      }
+   }
+
+   // <method.png>
    public method queueProcess() {
       // Called from audio thread
       if(replay.b_running)
@@ -757,7 +782,6 @@ class Replay {
          }
          else
          {
-            // trace "xxx Replay::queueProcess<single>";
             // (note) tracks are always processed in <chunk_sz> frame chunks but the ASIO buffer may differ
             Audio.buffer_size = chunk_sz;
 
@@ -1333,50 +1357,56 @@ class Replay {
                         break;
 
                      case Output.TYPE_AUDIO_LEFT:
-                        if(STConfig.b_databridge)
+                        if(output.b_enable)
                         {
-                           // Copy chunk to databridge output (left channel to mono)
-                           //  (note) numFrames must be <chunk_sz>
-                           k = 0;
-                           j = 0;
-                           tksampleedit_add_pan_mono_adv_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
-                           // trace "xxx db process num="+_num;
-                        }
-                        else
-                        {
-                           // Add track output to mix buffer
-                           k = _off * num_out_ch + (output.channel_idx % num_out_ch);
-                           j = 0;
-                           // // tksampleedit_add_pan_mono_adv_to_stereo(mix_buffer, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
-                           tksampleedit_add_amp_mono_adv_to_mono_adv(mix_buffer, k, num_out_ch,
-                                                                     trackMixBuf, j, 2,
-                                                                     output.level,
-                                                                     _numFrames
-                                                                     );
+                           if(STConfig.b_databridge)
+                           {
+                              // Copy chunk to databridge output (left channel to mono)
+                              //  (note) numFrames must be <chunk_sz>
+                              k = 0;
+                              j = 0;
+                              tksampleedit_add_pan_mono_adv_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                              // trace "xxx db process num="+_num;
+                           }
+                           else
+                           {
+                              // Add track output to mix buffer
+                              k = _off * num_out_ch + (output.channel_idx % num_out_ch);
+                              j = 0;
+                              // // tksampleedit_add_pan_mono_adv_to_stereo(mix_buffer, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                              tksampleedit_add_amp_mono_adv_to_mono_adv(mix_buffer, k, num_out_ch,
+                                                                        trackMixBuf, j, 2,
+                                                                        output.level,
+                                                                        _numFrames
+                                                                        );
+                           }
                         }
                         break;
 
                      case Output.TYPE_AUDIO_RIGHT:
-                        if(STConfig.b_databridge)
+                        if(output.b_enable)
                         {
-                           // Copy chunk to databridge output (right channel to mono)
-                           //  (note) numFrames must be <chunk_sz>
-                           k = 0;
-                           j = 1;
-                           tksampleedit_add_pan_mono_adv_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
-                           // trace "xxx db process num="+_num;
-                        }
-                        else
-                        {
-                           // Add track output to mix buffer
-                           k = _off * num_out_ch + (output.channel_idx % num_out_ch);
-                           j = 1;
-                           // // tksampleedit_add_pan_mono_adv_to_stereo(mix_buffer, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
-                           tksampleedit_add_amp_mono_adv_to_mono_adv(mix_buffer, k, num_out_ch,
-                                                                     trackMixBuf, j, 2,
-                                                                     output.level,
-                                                                     _numFrames
-                                                                     );
+                           if(STConfig.b_databridge)
+                           {
+                              // Copy chunk to databridge output (right channel to mono)
+                              //  (note) numFrames must be <chunk_sz>
+                              k = 0;
+                              j = 1;
+                              tksampleedit_add_pan_mono_adv_to_dualmono(dbOutL, dbOutR, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                              // trace "xxx db process num="+_num;
+                           }
+                           else
+                           {
+                              // Add track output to mix buffer
+                              k = _off * num_out_ch + (output.channel_idx % num_out_ch);
+                              j = 1;
+                              // // tksampleedit_add_pan_mono_adv_to_stereo(mix_buffer, k, trackMixBuf, j, 2, lvlL, lvlR, _numFrames);
+                              tksampleedit_add_amp_mono_adv_to_mono_adv(mix_buffer, k, num_out_ch,
+                                                                        trackMixBuf, j, 2,
+                                                                        output.level,
+                                                                        _numFrames
+                                                                        );
+                           }
                         }
                         break;
 
@@ -1397,9 +1427,12 @@ class Replay {
                            trackInputBuf <= current_project.getTrackInputBuffer(curTrackIdx, outTrackIdx);
                            if(null != trackInputBuf)
                            {
-                              k = 0;
-                              j = 0;
-                              tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                              if(output.b_enable)
+                              {
+                                 k = 0;
+                                 j = 0;
+                                 tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                              }
                            }
                         }
                         // else: already handled in track thread
@@ -1422,9 +1455,12 @@ class Replay {
                            trackInputBuf <= current_project.getTrackSCInputBuffer(curTrackIdx, outTrackIdx);
                            if(null != trackInputBuf)
                            {
-                              k = 0;
-                              j = 0;
-                              tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                              if(output.b_enable)
+                              {
+                                 k = 0;
+                                 j = 0;
+                                 tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                              }
                            }
                         }
                         // else: already handled in track thread
@@ -1440,9 +1476,12 @@ class Replay {
                      trackInputBuf <= current_project.getTrackInputBuffer(curTrackIdx, Track.focus_send_track_idx);
                      if(null != trackInputBuf)
                      {
-                        k = 0;
-                        j = 0;
-                        tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                        if(output.b_enable)
+                        {
+                           k = 0;
+                           j = 0;
+                           tksampleedit_add_pan_stereo_to_stereo(trackInputBuf, k, trackMixBuf, j, lvlL, lvlR, _numFrames);
+                        }
                      }
                   }
                }
@@ -1775,7 +1814,6 @@ class Replay {
       if(STConfig.b_enable_midi)
       {
          // Temporary sampleplayer
-         // // SysEx.ParseMIDIInputEvents();
          if(-1 == redirect_remote_to_dev_idx)
             parseMIDIInputEventsSysExAndTempSample();
          parseMIDIInputEvents();
