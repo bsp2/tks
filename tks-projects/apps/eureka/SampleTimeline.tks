@@ -11,7 +11,7 @@
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
 // ----          04Apr2025, 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 01May2025, 04May2025
 // ----          06May2025, 20May2025, 22May2025, 29May2025, 30May2025, 04Jun2025, 14Jun2025
-// ----          22Jun2025
+// ----          22Jun2025, 20Dec2025
 // ----
 // ----
 // ----
@@ -588,7 +588,7 @@ class SampleTimeline {
    }
 
    // <replay.png>
-   public method process(local Track _curTrack, local int _curTrackIdx, local int _numFrames) {
+   public method process(local Track _curTrack, local int _curTrackIdx, local int _numFrames, local MIDIPipeFrame _frInput) {
       local SampleTimelineReplayTrack *replayTrack;
       local boolean bDebug = 0;
 
@@ -601,13 +601,12 @@ class SampleTimeline {
 
       if(replay.b_have_events)
       {
-         local MIDIPipeFrame fr <= replay.midi_input_frame;
          local int  devIdx = _curTrack.dev_idx;
          local byte midiCh = _curTrack.midi_ch;  // -1=MIDI channel per timeline replay track (perf.ctl)
 
          if(bDebug) trace "[>>>] SampleTimeline: have events";
 
-         if(fr.getFilteredNoteOffVelocity(_curTrack.dev_idx, _curTrack.midi_ch, SEQ_TRIG_NOTE) >= 0.0f)
+         if(_frInput.getFilteredNoteOffVelocity(_curTrack.dev_idx, _curTrack.midi_ch, SEQ_TRIG_NOTE) >= 0.0f)
          {
             // Stop timeline
             if(bDebug) trace "[>>>] SampleTimeline: SEQ_TRIG_NOTE-off (stop)";
@@ -615,7 +614,7 @@ class SampleTimeline {
             allNotesOff(true/*bRelease*/);
          }
 
-         if(fr.getFilteredNoteOnVelocity(_curTrack.dev_idx, _curTrack.midi_ch, SEQ_TRIG_NOTE) > 0.0f)
+         if(_frInput.getFilteredNoteOnVelocity(_curTrack.dev_idx, _curTrack.midi_ch, SEQ_TRIG_NOTE) > 0.0f)
          {
             // Start timeline
             if(bDebug) trace "[>>>] SampleTimeline: SEQ_TRIG_NOTE loop_start="+loop_start;
@@ -628,7 +627,7 @@ class SampleTimeline {
             b_update_lane_sends = true;
          }
 
-         local int prg = fr.getFilteredPrgChg(_curTrack.dev_idx, _curTrack.midi_ch);
+         local int prg = _frInput.getFilteredPrgChg(_curTrack.dev_idx, _curTrack.midi_ch);
          if(prg >= 0)
          {
             local int curPrg = (null != replay_model) ? all_models.indexOfPointer(replay_model, 0) : -1;
@@ -649,11 +648,11 @@ class SampleTimeline {
          local int evIdx;
 
          // CC
-         numEv = fr.getNumEventsCCByFlt(devIdx, midiCh);
+         numEv = _frInput.getNumEventsCCByFlt(devIdx, midiCh);
          evIdx = 0;
          loop(numEv)
          {
-            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, devIdx, midiCh))
+            if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, devIdx, midiCh))
             {
                local int replayTrackIdx = (-1 == midiCh) ? pev.midiCh : -1;
 
@@ -799,11 +798,11 @@ class SampleTimeline {
          }
 
          // Pitchbend
-         numEv = fr.getNumEventsPitchbendByFlt(devIdx, midiCh);
+         numEv = _frInput.getNumEventsPitchbendByFlt(devIdx, midiCh);
          evIdx = 0;
          loop(numEv)
          {
-            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PITCHBEND, devIdx, midiCh))
+            if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PITCHBEND, devIdx, midiCh))
             {
                // pitchbend = pev.pitchbend;
                // pitchbend_norm = ((pitchbend - 8192) < 0) ? (pitchbend - 8192) / 8192.0 : (pitchbend - 8192) / 8191.0;
@@ -831,14 +830,14 @@ class SampleTimeline {
       {
          // Seek
          //  (note) expects low offset to be sent first
-         local short smpOffLo = fr.getFilteredRPN(_curTrack.dev_idx, _curTrack.midi_ch, ModSample.RPN_SMP_OFFMS_LO/*88*/);
+         local short smpOffLo = _frInput.getFilteredRPN(_curTrack.dev_idx, _curTrack.midi_ch, ModSample.RPN_SMP_OFFMS_LO/*88*/);
          if(-1 != smpOffLo)
          {
             seek_ms_lo = smpOffLo;  // 1/64 ms units
          }
 
          // (note) high offset may arrive in a different MIDIPipeFrame than OFFMS_LO
-         local short smpOffHi = fr.getFilteredRPN(_curTrack.dev_idx, _curTrack.midi_ch, ModSample.RPN_SMP_OFFMS_HI/*89*/);
+         local short smpOffHi = _frInput.getFilteredRPN(_curTrack.dev_idx, _curTrack.midi_ch, ModSample.RPN_SMP_OFFMS_HI/*89*/);
          if(-1 != smpOffHi)
          {
             local float seekMS =

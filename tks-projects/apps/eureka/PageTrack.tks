@@ -20,7 +20,7 @@
 // ----          05Jul2024, 06Jul2024, 07Jul2024, 12Aug2024, 13Sep2024, 15Sep2024, 20Sep2024
 // ----          21Sep2024, 22Sep2024, 24Sep2024, 04Oct2024, 05Oct2024, 22Dec2024, 29Dec2024
 // ----          30Dec2024, 01Jan2025, 04Apr2025, 06Apr2025, 10Apr2025, 01May2025, 10Jun2025
-// ----          13Jun2025, 14Jun2025, 09Sep2025
+// ----          13Jun2025, 14Jun2025, 09Sep2025, 18Dec2025
 // ----
 // ----
 // ----
@@ -350,6 +350,7 @@ class PageTrack : Page {
 
       track <= _track;
 
+      int oldTrackFocusIdx =  PageProject.focus_idx;
       PageProject.focus_idx = current_project.getTrackIdx(track);
 
       modgrid.showTrack(track);
@@ -452,6 +453,9 @@ class PageTrack : Page {
       }
 
       // // modgrid.debugPrintChildLayers();
+
+      if(oldTrackFocusIdx != PageProject.focus_idx)
+         SysEx.QueueSendTrackChanged();
    }
 
    // <method.png>
@@ -632,6 +636,22 @@ class PageTrack : Page {
          pgSample.setLastSelectedSampleIdx(autoSampleIdx);
          if(-1 != autoNspIdx)
             pgSample.setAutoSelectNamespaceIdx(autoNspIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackNameChanged() {
+      local String sName <= tf_track_name.getText();
+      track.setName(sName);
+      if(track.trySetPortFromString(sName))
+      {
+         Global.Print("Track port "+tcchar('a'+track.dev_idx)+":"+(track.midi_ch+1)+" name is \""+track.name+"\"");
+         cm_dev.setSelectedOption(track.dev_idx);
+         cm_ch.setSelectedOption(track.midi_ch + 1);
+      }
+      else
+      {
+         Global.Print("Track name is \""+track.name+"\"");
       }
    }
 
@@ -1104,6 +1124,7 @@ class PageTrack : Page {
          {
             tpv.copyPatchVariationFrom(tpvCur, false/*bCopyName*/);
             track.updateRefsFromCurrentPatchVariation();  // update track_mode, multi_*
+            track.queueReloadCtls();
          }
          else
          {
@@ -1136,6 +1157,7 @@ class PageTrack : Page {
          {
             track.deletePatchVariationAndSelectNextOrPrev(cursorIdx);
             tv_patch_variations.tableModelChanged();
+            track.queueReloadCtls();
             showTrack(track);
             redraw();
             Global.Print("Delete patch variation");
@@ -1244,6 +1266,16 @@ class PageTrack : Page {
          Project.QueueTrackFormUpdate();
          showTrack(current_project.getTrackByIdx(trackIdx));
          Global.Print("Show next track "+(trackIdx+1)+"/"+(current_project.tracks.numElements));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleShowTrack(int _trackIdx) {
+      if(0 <= _trackIdx < (current_project.tracks.numElements))
+      {
+         Project.QueueTrackFormUpdate();
+         showTrack(current_project.getTrackByIdx(_trackIdx));
+         Global.Print("Show track "+(_trackIdx+1)+"/"+(current_project.tracks.numElements));
       }
    }
 
@@ -1746,7 +1778,14 @@ class PageTrack : Page {
    }
 
    // <ui_timer.png>
-   public method pageHandleIdleTimer() {
+   public virtual pageHandleIdleTimer() {
+
+      if(-1 != PageProject.queued_focus_idx)
+      {
+         handleShowTrack(PageProject.queued_focus_idx);
+         PageProject.queued_focus_idx = -1;
+      }
+
       modgrid.handleIdleTimer();
       load_indicator.setLoadPercentage(track.getAverageLoadPercentage());
 
@@ -2341,8 +2380,7 @@ class PageTrack : Page {
             return true;
 
          case @(tf_track_name):
-            track.setName(tf_track_name.getText());
-            Global.Print("Track name is \""+track.name+"\"");
+            handleTrackNameChanged();
             if(TextField.ACTION_TEXTENTERED == acName) // return
             {
                pageFocusDefault();

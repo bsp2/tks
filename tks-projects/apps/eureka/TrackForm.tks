@@ -12,7 +12,8 @@
 // ----          07Mar2018, 09Apr2018, 20May2018, 23Jun2018, 11Jul2019, 20Jul2019, 10Jan2022
 // ----          05Feb2022, 06Feb2022, 11Feb2022, 19Feb2023, 21Sep2023, 02Oct2023, 30Oct2023
 // ----          31Oct2023, 04Nov2023, 16Nov2023, 18Nov2023, 24Nov2023, 02Dec2023, 22Mar2024
-// ----          07Jul2024, 19Sep2024, 22Sep2024, 03Jan2025, 07Mar2025
+// ----          07Jul2024, 19Sep2024, 22Sep2024, 03Jan2025, 07Mar2025, 17Dec2025, 18Dec2025
+// ----          20Dec2025
 // ----
 // ----
 // ----
@@ -310,23 +311,24 @@ class TrackForm : XMLForm, ActionProvider {
    // <ui_update.png>
    public method updateMuteSolo() {
       // trace "xxx TrackForm::updateMuteSolo: play_state="+track.play_state+" b_force_mute="+track.b_force_mute;
+      int soloDefBg = track.b_solo_lock ? #800060c0 : 0;
       if((Track.STATE_MUTE == track.play_state) || track.b_force_mute)
       {
          bt_mute.setBackgroundTint(#60ff0000);
          bt_mute.setEditable(!track.b_force_mute);
-         bt_solo.setBackgroundTint(0);
+         bt_solo.setBackgroundTint(soloDefBg);
       }
       else if(Track.STATE_SOLO == track.play_state)
       {
          bt_mute.setBackgroundTint(#4000ff00);
-         bt_solo.setBackgroundTint(#a0ffff00);
+         bt_solo.setBackgroundTint(track.b_solo_lock ? #a0efefb0 : #a0ffff00);
          bt_mute.setEditable(false);
       }
       else
       {
          bt_mute.setBackgroundTint(#4000a000);
          bt_mute.setEditable(true);
-         bt_solo.setBackgroundTint(0);
+         bt_solo.setBackgroundTint(soloDefBg);
       }
       bt_mute.redraw();
       bt_solo.redraw();
@@ -378,7 +380,25 @@ class TrackForm : XMLForm, ActionProvider {
    }
 
    // <ui_handle.png>
+   public method handleToggleSoloLock() {
+      track.b_solo_lock = !track.b_solo_lock;
+      Global.Print("Solo-lock is "+Utils.GetEnableString(track.b_solo_lock));
+      current_project.markAsModified();
+      updateMuteSolo();
+   }
+
+   // <ui_handle.png>
    protected method handleDragHandleClicked() {
+   }
+
+   // <ui_handle.png>
+   public method handleSelectLayout(int _layout) {
+      // layout: 0..3  (4/5 should be removed)
+
+      track.selectLayout(_layout);
+      updateLayout();
+
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_RELAYOUT), this));
    }
 
    // <ui_handle.png>
@@ -400,8 +420,17 @@ class TrackForm : XMLForm, ActionProvider {
 
    // <ui_handle.png>
    protected method handleNameChanged() {
-      track.setName(tf_name.getText());
-      Global.Print("Track name is \""+track.name+"\"");
+      String sName <= tf_name.getText();
+      if(track.trySetPortFromString(sName))
+      {
+         Global.Print("Track port "+tcchar('a'+track.dev_idx)+":"+(track.midi_ch+1)+" name is \""+track.name+"\"");
+         cm_dev.setSelectedOption(track.dev_idx);
+         cm_ch.setSelectedOption(track.midi_ch + 1);
+      }
+      else
+      {
+         Global.Print("Track name is \""+track.name+"\"");
+      }
       provideAction(Action.New(getProvidedActionAlias(ACTION_TRACK_RENAMED), this));
    }
 
@@ -561,6 +590,8 @@ class TrackForm : XMLForm, ActionProvider {
       level_indicator.setSmpLR(track.getSmpPeakL(), track.getSmpPeakR(),
                                track.getSmpAvgL(),  track.getSmpAvgR()
                                );
+
+      c_outputs.handleIdleTimer();
    }
 
    // <ui_kbd.png>
@@ -733,7 +764,10 @@ class TrackForm : XMLForm, ActionProvider {
             return true;
 
          case @(bt_solo):
-            handleToggleSolo();
+            if(Button.ACTION_RIGHT_CLICK == acName)
+               handleToggleSoloLock();
+            else
+               handleToggleSolo();
             return true;
 
          case @(dh_track):

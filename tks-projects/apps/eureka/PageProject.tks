@@ -14,7 +14,7 @@
 // ----          16Aug2023, 21Sep2023, 04Oct2023, 06Oct2023, 31Oct2023, 04Nov2023, 05Nov2023
 // ----          08Nov2023, 16Nov2023, 17Nov2023, 18Nov2023, 02Dec2023, 15Dec2023, 05Jul2024
 // ----          07Jul2024, 12Aug2024, 19Sep2024, 20Sep2024, 05Oct2024, 23Dec2024, 30Dec2024
-// ----          16Mar2025, 09Sep2025
+// ----          16Mar2025, 09Sep2025, 18Dec2025
 // ----
 // ----
 // ----
@@ -46,6 +46,7 @@ class PageProject : Page {
    protected PopupMenu *pm_context;
 
    public static int focus_idx;
+   public static int queued_focus_idx;  // -1=none. when changing tracks via SYX_MSGID_TRACK_SELECT
 
    protected boolean b_add_track_v;  // after updateTrackForms(). true=add button below tracks, false=right next to last track
 
@@ -59,6 +60,8 @@ class PageProject : Page {
       autoResolveIds(this);
 
       recursiveSetEnableCursorKeyTabCycling(false);
+
+      queued_focus_idx = -1;
 
       return true;
    }
@@ -610,6 +613,7 @@ class PageProject : Page {
       makeTrackVisible(focus_idx);
       updateFocusColors();
       RedirectRemoteEventsToCurrentTrack();
+      SysEx.QueueSendTrackChanged();
    }
 
    // <ui_handle.png>
@@ -1127,7 +1131,14 @@ class PageProject : Page {
    }
 
    // <ui_timer.png>
-   public method pageHandleIdleTimer() {
+   public virtual pageHandleIdleTimer() {
+
+      if(-1 != queued_focus_idx)
+      {
+         handleFocusTrack(queued_focus_idx);
+         queued_focus_idx = -1;
+      }
+
       TrackForm *tf;
       foreach tf in track_forms
       {
@@ -1175,6 +1186,7 @@ class PageProject : Page {
    // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
       // trace "[>>>] PageProject: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod+" keyboard_focus="+#(UI.GetKeyboardFocus());
+      TrackForm *tf;
 
       switch(_k.pressed)
       {
@@ -1225,6 +1237,7 @@ class PageProject : Page {
             handleAddTrackAutoOrder(false/*bAtEnd*/, true/*bClone*/);
             if(_k.modCtrl())
                handleEditFocusTrack();
+            SysEx.QueueSendTrackChanged();
             return true;
 
          case 'n':
@@ -1248,6 +1261,7 @@ class PageProject : Page {
             }
             if(_k.modCtrl())
                handleEditFocusTrack();
+            SysEx.QueueSendTrackChanged();
             return true;
 
          case VKEY_F1:
@@ -1260,7 +1274,7 @@ class PageProject : Page {
                showAudioTracks();
                return true;
             }
-            else if(0 == _k.mod)
+            else if(_k.modNone())
             {
                cm_track_layout_all.setSelectedOptionAction(0);
                return true;
@@ -1272,7 +1286,7 @@ class PageProject : Page {
             return true;
 
          case '2':
-            if(0 == _k.mod)
+            if(_k.modNone())
             {
                cm_track_layout_all.setSelectedOptionAction(1);
                return true;
@@ -1285,7 +1299,7 @@ class PageProject : Page {
                handleEditFocusTrack();
                return true;
             }
-            else if(0 == _k.mod)
+            else if(_k.modNone())
             {
                cm_track_layout_all.setSelectedOptionAction(2);
                return true;
@@ -1293,7 +1307,7 @@ class PageProject : Page {
             break;
 
          case '4':
-            if(0 == _k.mod)
+            if(_k.modNone())
             {
                cm_track_layout_all.setSelectedOptionAction(3);
                return true;
@@ -1310,17 +1324,37 @@ class PageProject : Page {
                showSamples();
                return true;
             }
-            else if(0 == _k.mod)
+            else if(_k.modNone())
             {
-               cm_track_layout_all.setSelectedOptionAction(4);
+               tf <= track_forms.get(focus_idx);
+               tf.handleSelectLayout(0);
                return true;
             }
             break;
 
          case '6':
-            if(0 == _k.mod)
+            if(_k.modNone())
             {
-               cm_track_layout_all.setSelectedOptionAction(5);
+               tf <= track_forms.get(focus_idx);
+               tf.handleSelectLayout(1);
+               return true;
+            }
+            break;
+
+         case '7':
+            if(_k.modNone())
+            {
+               tf <= track_forms.get(focus_idx);
+               tf.handleSelectLayout(2);
+               return true;
+            }
+            break;
+
+         case '8':
+            if(_k.modNone())
+            {
+               tf <= track_forms.get(focus_idx);
+               tf.handleSelectLayout(3);
                return true;
             }
             break;
@@ -1341,7 +1375,10 @@ class PageProject : Page {
          )
       {
          if(focus_idx >= (current_project.tracks.numElements))
+         {
             focus_idx--;
+            SysEx.QueueSendTrackChanged();
+         }
 
          updateTrackForms();
          return true;
@@ -1380,6 +1417,7 @@ class PageProject : Page {
             focus_idx = 0; // should not be reachable
          updateFocusColors();
          RedirectRemoteEventsToCurrentTrack();
+         SysEx.QueueSendTrackChanged();
          return true;
       }
 
@@ -1390,6 +1428,7 @@ class PageProject : Page {
             focus_idx = 0; // should not be reachable
          updateFocusColors();
          RedirectRemoteEventsToCurrentTrack();
+         SysEx.QueueSendTrackChanged();
 
          handleEditFocusTrackFirstMod(-1/*noteIdxHint*/);
          return true;
@@ -1410,15 +1449,18 @@ class PageProject : Page {
 
                case "create_new":
                   handleAddTrackAutoOrder(false/*bAtEnd*/, false/*bClone*/);
+                  SysEx.QueueSendTrackChanged();
                   return true;
 
                case "create_clone":
                   handleAddTrackAutoOrder(false/*bAtEnd*/, true/*bClone*/);
+                  SysEx.QueueSendTrackChanged();
                   return true;
 
                case "create_master":
                   handleAppendTrack(STConfig.track_autoroute_master_name);
                   pageFocusDefault();
+                  SysEx.QueueSendTrackChanged();
                   return true;
 
                case "create_focus":
@@ -1445,10 +1487,12 @@ class PageProject : Page {
 
          case @(bt_add_track_v):  // small "+" button
             handleAddTrackAutoOrder(true/*bAtEnd*/, (Button.ACTION_HOLD_CLICK == acName)/*bClone*/);
+            SysEx.QueueSendTrackChanged();
             return true;
 
          case @(bt_add):  // "New track" button
             handleAddTrackAutoOrder(false/*bAtEnd*/, (Button.ACTION_HOLD_CLICK == acName)/*bClone*/);
+            SysEx.QueueSendTrackChanged();
             return true;
 
          case @(cb_overview):

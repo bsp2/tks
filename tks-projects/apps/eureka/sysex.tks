@@ -14,7 +14,7 @@
 // ----          05Feb2022, 06Feb2022, 13Feb2022, 10Aug2022, 11Aug2022, 12Aug2022, 13Aug2022
 // ----          01Dec2022, 18Dec2022, 23Feb2023, 22Jul2023, 29Jul2023, 16Nov2023, 17Nov2023
 // ----          18Nov2023, 02Dec2023, 03Dec2023, 05Jul2024, 07Jul2024, 15Nov2024, 07Jan2025
-// ----          22May2025, 13Jun2025
+// ----          22May2025, 13Jun2025, 18Dec2025
 // ----
 // ----
 // ----
@@ -114,8 +114,8 @@ class SysEx {
    define int SYX_MSGID_REPLY_SMP_ZONES_TO_MIDI        = 52;  // OUT    send with cue point millisecs/notes/velocities
    define int SYX_MSGID_QUERY_SMP_NAMESPACES           = 53;  // IN     query sample namespace names
    define int SYX_MSGID_REPLY_SMP_NAMESPACES           = 54;  // OUT    return sample namespace names
-   define int SYX_MSGID_QUERY_AUDIO_PORT_AND_NAMESPACE = 55;  // IN    query audio dev/ch and preferred sample namespace for midi dev/ch
-   define int SYX_MSGID_REPLY_AUDIO_PORT_AND_NAMESPACE = 56;  // OUT   return audio dev/ch and preferred sample namespace for midi dev/ch
+   define int SYX_MSGID_QUERY_AUDIO_PORT_AND_NAMESPACE = 55;  // IN     query audio dev/ch and preferred sample namespace for midi dev/ch
+   define int SYX_MSGID_REPLY_AUDIO_PORT_AND_NAMESPACE = 56;  // OUT    return audio dev/ch and preferred sample namespace for midi dev/ch
    define int SYX_MSGID_SMP_EDIT                       = 57;  // IN     find first ModSample that plays the given smp_uid and show editor (PageSample)
    define int SYX_MSGID_SMP_EDIT_REPLY                 = 58;  // OUT    sample editor shown (ack)
    define int SYX_MSGID_TRACK_SHOW_BY_MIDI_PORT        = 59;  // IN     show track page + select first track that listens on the given MIDI port
@@ -132,8 +132,10 @@ class SysEx {
    define int SYX_MSGID_UI_WINDOW_SHOW                 = 70;  // IN     Show application window (+gain kbd focus)
    define int SYX_MSGID_SMP_UPLOAD_SEQ                 = 71;  // OUT    set proc.sample seq from 'proc_track_seq.dat' tmp file
    define int SYX_MSGID_SMP_UPLOAD_SEQ_ACK             = 72;  // IN     
-   define int SYX_MSGID_SMP_DOWNLOAD_SEQ               = 73;  // IN    set 'proc_track_seq.dat' tmp file to proc.sample seq
+   define int SYX_MSGID_SMP_DOWNLOAD_SEQ               = 73;  // IN     set 'proc_track_seq.dat' tmp file to proc.sample seq
    define int SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY         = 74;  // OUT     
+   define int SYX_MSGID_TRACK_SELECT                   = 75;  // IN     select focus track (don't change page)
+   define int SYX_MSGID_TRACK_CHANGED                  = 76;  // OUT    focus track change notification
 
 
    // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
@@ -263,6 +265,14 @@ class SysEx {
 
    static int     queued_send_smp_download_seq_reply_smp_uid;
    static boolean b_queued_send_smp_download_seq_reply;
+
+   static int     queued_recv_track_select_idx_abs;  // 0..numtracks-1, or -1
+   static float   queued_recv_track_select_idx_rel;  // 0..1, or -1
+   static boolean b_queued_recv_track_select;
+
+   static int     queued_send_track_changed_idx_abs;  // 0..numtracks-1, or -1
+   static float   queued_send_track_changed_idx_rel;  // 0..1, or -1
+   static boolean b_queued_send_track_changed;
 
 
    // <method_init.png>
@@ -1000,6 +1010,13 @@ class SysEx {
                queued_recv_smp_download_seq_smp_uid = raw.i32;
                b_queued_recv_smp_download_seq = true;
                break;
+
+            case SYX_MSGID_TRACK_SELECT:
+               raw.offset = 0;
+               queued_recv_track_select_idx_abs = raw.s8;
+               queued_recv_track_select_idx_rel = raw.f32;
+               b_queued_recv_track_select = true;
+               break;
          }
       }
 
@@ -1325,6 +1342,23 @@ class SysEx {
    }
 
    // <method.png>
+   public =sysexqueue= static QueueSendTrackChanged() {
+      queued_send_track_changed_idx_abs = PageProject.focus_idx;
+      queued_send_track_changed_idx_rel = PageProject.focus_idx / float(current_project.tracks.numElements - 1);
+      b_queued_send_track_changed = true;
+   }
+
+   // <method.png>
+   public static SendTrackChanged() {
+      trace "[trc] SysEx::SendTrackChanged: trackIdxAbs="+queued_send_track_changed_idx_abs+" trackIdxRel="+queued_send_track_changed_idx_rel;
+      send_raw.offset = 0;
+      send_raw.i8  = queued_send_track_changed_idx_abs;
+      send_raw.f32 = queued_send_track_changed_idx_rel;
+      Send(SYX_MSGID_TRACK_CHANGED, send_raw/*payload*/);
+      b_queued_send_track_changed = false;
+   }
+
+   // <method.png>
    public static TestEncodeDecode() {
       Buffer syx;
       Buffer raw;
@@ -1465,6 +1499,9 @@ class SysEx {
 
             if(b_queued_send_smp_download_seq_reply)
                SendSmpDownloadSeqReply();
+
+            if(b_queued_send_track_changed)
+               SendTrackChanged();
          }
 
          // Send queued "ModAudio2RPN" events
@@ -1894,6 +1931,14 @@ class SysEx {
       {
          current_project.handleDownloadProcSampleSeq(queued_recv_smp_download_seq_smp_uid);
          b_queued_recv_smp_download_seq = false;
+      }
+
+      if(b_queued_recv_track_select)
+      {
+         current_project.handleSysExTrackSelect(queued_recv_track_select_idx_abs,
+                                                queued_recv_track_select_idx_rel
+                                                );
+         b_queued_recv_track_select = false;
       }
 
    }

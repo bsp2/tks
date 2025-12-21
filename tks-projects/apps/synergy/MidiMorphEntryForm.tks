@@ -1,7 +1,7 @@
 // ----
 // ---- file   : MidiMorphEntryForm.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2014-2023 by Bastian Spiegel.
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- changed: 19Aug2014, 20Aug2014, 21Aug2014, 22Aug2014, 04Sep2014, 17Oct2014, 18Feb2015
 // ----          26Feb2015, 02Mar2015, 17May2015, 19Mar2016, 21Mar2016, 08Jul2016, 01Jul2017
-// ----          20Sep2019, 05Oct2019, 10Nov2020, 17Dec2021, 14Jun2023
+// ----          20Sep2019, 05Oct2019, 10Nov2020, 17Dec2021, 14Jun2023, 17Dec2025
 // ----
 // ----
 // ----
@@ -79,6 +79,8 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
 
    public int last_orig_dev_idx;  // used for LALT "update all"
    public int last_orig_ch;
+   public int last_orig_type;
+   public int last_orig_ext_type;  // (N)RPN / CC # / NoteNr
 
    public int last_orig_faderport_bank;
    public int last_new_faderport_bank;
@@ -321,6 +323,13 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
    // <method_get.png>
    public method getMidiCh() : int {
       return cm_ch.getSelectedOption() - 1;
+   }
+
+   // <method_get.png>
+   public method getType() : int {
+      if(null != current_ev)
+         return current_ev.type;
+      return TYPE_CC;
    }
 
    // <method_update.png>
@@ -900,37 +909,48 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
    // <ui_handle.png>
    protected method handleTypeChanged() {
 
+      last_orig_type = current_ev.type;
+      last_orig_ext_type = current_ev.ext_type;
+
       int opt = cm_type.getSelectedOption();
 
-      if(0 == opt)
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
       {
-         current_ev.b_morph_all_types = true;
-         current_ev.setType(-1);
-      }
-      else
-      {
-         current_ev.b_morph_all_types = false;
-         current_ev.setType(opt - 1);
-      }
+         if(0 == opt)
+         {
+            ev.b_morph_all_types = true;
+            ev.setType(-1);
+         }
+         else
+         {
+            ev.b_morph_all_types = false;
+            ev.setType(opt - 1);
+         }
 
-      // Update "morph all subtypes"
-      switch(current_ev.type)
-      {
-         default:
-            current_ev.b_morph_all_subtypes = false;
-            break;
+         // Update "morph all subtypes"
+         switch(ev.type)
+         {
+            default:
+               ev.b_morph_all_subtypes = false;
+               break;
 
-         case TYPE_CC:
-            current_ev.b_morph_all_subtypes = (0 == cm_ext_cc.getSelectedOption());
-            break;
+            case TYPE_CC:
+               ev.b_morph_all_subtypes = (0 == cm_ext_cc.getSelectedOption());
+               break;
 
-         case TYPE_RPN:
-            current_ev.b_morph_all_subtypes = (0 == cm_ext_rpn.getSelectedOption());
-            break;
+            case TYPE_RPN:
+               ev.b_morph_all_subtypes = (0 == cm_ext_rpn.getSelectedOption());
+               break;
 
-         case TYPE_NRPN:
-            current_ev.b_morph_all_subtypes = (0 == cm_ext_nrpn.getSelectedOption());
-            break;
+            case TYPE_NRPN:
+               ev.b_morph_all_subtypes = (0 == cm_ext_nrpn.getSelectedOption());
+               break;
+         }
       }
 
       updateTypeChanged();
@@ -940,14 +960,32 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
 
    // <ui_handle.png>
    protected method handleExtNoteChanged() {
-      current_ev.setExtType(cm_ext_note.getSelectedOption());
+
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
+      {
+         ev.setExtType(cm_ext_note.getSelectedOption());
+      }
 
       handleEntryEdited(EDIT_EXT_NOTE);
    }
 
    // <ui_handle.png>
    protected method handleExtNoteOnOffChanged() {
-      current_ev.setMorphNoteOnOff(cb_ext_note_onoff.isSelected());
+
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
+      {
+         ev.setMorphNoteOnOff(cb_ext_note_onoff.isSelected());
+      }
 
       handleEntryEdited(EDIT_EXT_NOTE_ON_OFF);
    }
@@ -956,14 +994,22 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
    protected method handleExtCCChanged() {
       int ccNr = cm_ext_cc.getSelectedOption();
 
-      if(ccNr > 0)
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
       {
-         current_ev.setExtType(ccNr - 1);
-         current_ev.b_morph_all_subtypes = false;
-      }
-      else
-      {
-         current_ev.b_morph_all_subtypes = true;
+         if(ccNr > 0)
+         {
+            ev.setExtType(ccNr - 1);
+            ev.b_morph_all_subtypes = false;
+         }
+         else
+         {
+            ev.b_morph_all_subtypes = true;
+         }
       }
 
       handleEntryEdited(EDIT_EXT_CC);
@@ -971,8 +1017,17 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
 
    // <ui_handle.png>
    protected method handleExtRPNFPChanged() {
-      current_ev.setExtType(fp_ext_rpn.getFloatValue());
-      current_ev.b_morph_all_subtypes = false;
+
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
+      {
+         ev.setExtType(fp_ext_rpn.getFloatValue());
+         ev.b_morph_all_subtypes = false;
+      }
 
       MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
 
@@ -987,14 +1042,22 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
 
       int rpn = cm_ext_rpn.getSelectedOption();
 
-      if(rpn > 0)
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
       {
-         current_ev.setExtType(msp.getRPNByCaptionIndex(rpn - 1));
-         current_ev.b_morph_all_subtypes = false;
-      }
-      else
-      {
-         current_ev.b_morph_all_subtypes = true;
+         if(rpn > 0)
+         {
+            ev.setExtType(msp.getRPNByCaptionIndex(rpn - 1));
+            ev.b_morph_all_subtypes = false;
+         }
+         else
+         {
+            ev.b_morph_all_subtypes = true;
+         }
       }
 
       fp_ext_rpn.setValue(current_ev.ext_type);
@@ -1005,8 +1068,16 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
    // <ui_handle.png>
    protected method handleExtNRPNFPChanged() {
 
-      current_ev.setExtType(fp_ext_nrpn.getFloatValue());
-      current_ev.b_morph_all_subtypes = false;
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
+      {
+         ev.setExtType(fp_ext_nrpn.getFloatValue());
+         ev.b_morph_all_subtypes = false;
+      }
 
       MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
 
@@ -1023,14 +1094,22 @@ class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
 
       // trace "xxx nrpn="+nrpn;
 
-      if(nrpn > 0)
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
       {
-         current_ev.setExtType(msp.getNRPNByCaptionIndex(nrpn - 1));
-         current_ev.b_morph_all_subtypes = false;
-      }
-      else
-      {
-         current_ev.b_morph_all_subtypes = true;
+         if(nrpn > 0)
+         {
+            ev.setExtType(msp.getNRPNByCaptionIndex(nrpn - 1));
+            ev.b_morph_all_subtypes = false;
+         }
+         else
+         {
+            ev.b_morph_all_subtypes = true;
+         }
       }
 
       fp_ext_nrpn.setValue(current_ev.ext_type);

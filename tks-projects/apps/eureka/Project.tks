@@ -27,6 +27,7 @@
 // ----          19Apr2024, 20Apr2024, 28Apr2024, 03Jul2024, 05Jul2024, 07Aug2024, 12Aug2024
 // ----          19Sep2024, 23Sep2024, 08Nov2024, 15Nov2024, 22Nov2024, 30Dec2024, 07Jan2025
 // ----          14Jan2025, 04Apr2025, 06Apr2025, 12Jun2025, 13Jun2025, 09Dec2025, 13Dec2025
+// ----          18Dec2025, 19Dec2025, 20Dec2025
 // ----
 // ----
 // ----
@@ -300,7 +301,7 @@ class Project {
       {
          if(bAnySolo)
          {
-            if(bAllowMute && track.name != STConfig.track_autoroute_master_name)  // exclude "master" output track
+            if(bAllowMute && !track.b_solo_lock)  // exclude "master" output track
                track.b_force_mute = (Track.STATE_SOLO != track.play_state);
             else
                bAllowMute = false;  // don't solo-mute any tracks after 'master' track (e.g. external master FX return)
@@ -2459,6 +2460,8 @@ class Project {
                atf.updateTracks();
                atf.handleSelectTrack(queuedAudioTrackIdx);
             }
+
+            SysEx.QueueSendTrackChanged();
 
             // ignore CLAP automation events for a short while so project does not immediately gets marked as modified
             last_load_ms = milliSeconds();
@@ -5199,6 +5202,9 @@ class Project {
       // Number of tracks
       ofs.i8 = tracks.numElements;
 
+      // Current focus track index (abs)
+      ofs.i8 = PageProject.focus_idx;
+
       // Track infos
       Track *track;
       foreach track in tracks
@@ -5242,6 +5248,14 @@ class Project {
 
          // Audio timeline mode flag
          ofs.i8 = track.isTimelineMode();
+
+         // Output levels
+         int outputIdx = 0;
+         loop(8)
+            ofs.i8 = track.getOutputLevelByIndex(outputIdx++) * 127;
+
+         TrackCtlState ctlState <= track.ctl_state;
+         ctlState.writeDataToStream(ofs);
       }
    }
 
@@ -5398,7 +5412,6 @@ class Project {
       return false;
    }
 
-
    // <method.png>
    public =replay= method handleDownloadProcSampleSeq(int _smpUID) : boolean {
       // (note) see Synergy NodeTrackerEditor::cmd_pattern_capture_download_from_eureka()
@@ -5465,6 +5478,26 @@ class Project {
          trace "[---] Project::handleDownloadProcSampleSeq: smpUID="+_smpUID+" not found, skipping..";
       }
       return false;
+   }
+
+   // <method.png>
+   public method handleSysExTrackSelect(int _trackIdxAbs, float _trackIdxRel) {
+      if(-1 != _trackIdxAbs)
+      {
+         PageProject.queued_focus_idx = mathClampi(_trackIdxAbs, 0, tracks.numElements-1);
+      }
+      else if(_trackIdxRel >= 0.0f)
+      {
+         PageProject.queued_focus_idx = mathClampi(_trackIdxRel * (tracks.numElements-1), 0, tracks.numElements-1);
+      }
+      trace "[trc] Project::handleSysExTrackSelect: trackIdxAbs="+_trackIdxAbs+" trackIdxRel="+_trackIdxRel+" => queued_focus_idx="+PageProject.queued_focus_idx;
+   }
+
+   // <method.png>
+   public method queueReloadCtls() {
+      Track *track;
+      foreach track in tracks
+         track.queueReloadCtls();
    }
 
 }

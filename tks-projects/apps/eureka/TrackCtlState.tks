@@ -1,0 +1,222 @@
+// ----
+// ---- file   : TrackCtlState.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 20Dec2025
+// ---- changed:
+// ----
+// ----
+// ----
+
+module MTrackCtlState;
+
+use namespace ui;
+
+namespace st2;
+
+
+// <class.png>
+class TrackCtlState {
+   IntArray cc_status;                // 128 CCs (persistent: mw,bc,fc,ex,gp1,gp2,gp3,gp4)
+   IntArray ctl_status;               // ctl_1..ctl_16
+   IntArray last_param_set_abs;       // RPN#70..74   7bit
+   IntArray last_param_set_smooth;    // RPN#75..79  14bit
+   short    last_lane_fade_nr;        // RPN#86       5bit in abs mode, 14bit in rel mode
+
+
+   // <method_init.png>
+   public method init() {
+      cc_status.allocAndFill(128, 0);
+      ctl_status.allocAndFill(16, 0);
+      last_param_set_abs.allocAndFill(5, 0);
+      last_param_set_smooth.allocAndFill(5, 0);
+   }
+
+   // <method.png>
+   public method reset() {
+      // Reset last seen performance controllers
+      cc_status.fill(0);
+
+      // Reset ctl_1..16 (modmatrix)
+      ctl_status.fill(0);
+   }
+
+   // <method.png>
+   public method trackCtls(local MIDIPipeFrame _frInput, local int _devIdx, local byte _midiCh, local MIDIPipeEvent pev) {
+      local int numEv;
+      local int evIdx;
+
+      // Track output 1..8 levels (RPNs 300..307, see Synergy remote.msp)
+      numEv = _frInput.getNumEventsRPNByFlt(_devIdx, _midiCh);
+      if(numEv > 0)
+      {
+         evIdx = 0;
+         loop(numEv)
+         {
+            if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_RPN, _devIdx, _midiCh))
+            {
+               if(70 <= pev.rpn <= 74)
+               {
+                  last_param_set_abs[pev.rpn - 70] = pev.rpnValue;
+               }
+               else if(75 <= pev.rpn <= 79)
+               {
+                  last_param_set_smooth[pev.rpn - 75] = pev.rpnValue;
+               }
+               else if(86 == pev.rpn)
+               {
+                  last_lane_fade_nr = pev.rpnValue;
+               }
+               else if(100 <= pev.rpn < 116)
+               {
+                  // trace "xxx update ctl_status["+(pev.rpn - 100)+"] = "+pev.rpnValue;
+                  ctl_status[pev.rpn - 100] = pev.rpnValue;
+               }
+            }
+         }
+      }
+
+      // Performance controllers
+      //  (note) for recall / HW controller update in Synergy
+      //  (note) queried via SYX_MSGID_QUERY_TRACKS
+      numEv = _frInput.getNumEventsCCByFlt(_devIdx, _midiCh);
+      if(numEv > 0)
+      {
+         evIdx = 0;
+         loop(numEv)
+         {
+            if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, _devIdx, _midiCh))
+            {
+               cc_status[pev.ccId] = pev.ccValue;
+            }
+            evIdx++;
+         }
+      }
+
+      // Lane fade nr
+      local short laneFadeNr = _frInput.getFilteredRPN(_devIdx, _midiCh, Track.RPN_LANE_FADE_NR/*86*/);
+      if(laneFadeNr >= 0)
+      {
+         last_lane_fade_nr = laneFadeNr;
+      }
+
+   }
+
+   // <method.png>
+   public method reload(local MIDIPipeFrame _fr, local int _devIdx, local byte _midiCh) {
+      local int ctlIdx;
+
+      // Performance controller status (v20+)
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh,  1/*mw*/,  cc_status.get( 1));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh,  2/*bc*/,  cc_status.get( 2));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh,  4/*fc*/,  cc_status.get( 4));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh, 11/*ex*/,  cc_status.get(11));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh, 16/*gp1*/, cc_status.get(16));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh, 17/*gp2*/, cc_status.get(17));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh, 18/*gp3*/, cc_status.get(18));
+      _fr.cc(true/*bSet*/, _devIdx, _midiCh, 19/*gp4*/, cc_status.get(19));
+
+      // RPN ctl_1..16 status (v20+)
+      ctlIdx = 0;
+      loop(16)
+      {
+         _fr.rpn(true/*bSet*/, _devIdx, _midiCh, 100 + ctlIdx, ctl_status.get(ctlIdx));
+         ctlIdx++;
+      }
+
+      // Paramset 1..5 status (v20+)
+      ctlIdx = 0;
+      loop(5)
+      {
+         _fr.rpn(true/*bSet*/, _devIdx, _midiCh, 70 + ctlIdx, last_param_set_abs.get(ctlIdx));
+         _fr.rpn(true/*bSet*/, _devIdx, _midiCh, 75 + ctlIdx, last_param_set_smooth.get(ctlIdx));
+         ctlIdx++;
+      }
+
+      // Lane fade nr RPN#86 (v20+)
+      _fr.rpn(true/*bSet*/, _devIdx, _midiCh, 86/*lane_fade_nr*/, last_lane_fade_nr);
+   }
+
+   // <method_write.png>
+   public method writeDataToStream(Stream ofs) {
+      // (note) called by saveState() and Project::queryTrackPropertiesForSysEx()
+      local int ctlIdx;
+
+      // Performance controller status (v1+, track v20+)
+      ofs.i8 = cc_status.get( 1);  // mw
+      ofs.i8 = cc_status.get( 2);  // bc
+      ofs.i8 = cc_status.get( 4);  // fc
+      ofs.i8 = cc_status.get(11);  // ex
+      ofs.i8 = cc_status.get(16);  // gp1
+      ofs.i8 = cc_status.get(17);  // gp2
+      ofs.i8 = cc_status.get(18);  // gp3
+      ofs.i8 = cc_status.get(19);  // gp4
+
+      // RPN ctl_1..16 status (v1+, track v20+)
+      ctlIdx = 0;
+      loop(16)
+         ofs.i16 = ctl_status.get(ctlIdx++);
+
+      // Paramset 1..5 status (v1+, track v20+)
+      ctlIdx = 0;
+      loop(5)
+      {
+         ofs.i8  = last_param_set_abs   .get(ctlIdx);
+         ofs.i16 = last_param_set_smooth.get(ctlIdx);
+         ctlIdx++;
+      }
+
+      // Lane fade nr RPN#86 (v1+, track v20+)
+      ofs.i16 = last_lane_fade_nr;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Ver (track v21+)
+      ofs.i16 = 1;
+
+      writeDataToStream(ofs);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bVer) {
+
+      short ver = 1;
+      if(_bVer) // track v21+
+         ver = ifs.u16;
+
+      // Performance controller status (v1+, track v20+)
+      cc_status[ 1] = ifs.u8;  // mw
+      cc_status[ 2] = ifs.u8;  // bc
+      cc_status[ 4] = ifs.u8;  // fc
+      cc_status[11] = ifs.u8;  // ex
+      cc_status[16] = ifs.u8;  // gp1
+      cc_status[17] = ifs.u8;  // gp2
+      cc_status[18] = ifs.u8;  // gp3
+      cc_status[19] = ifs.u8;  // gp4
+
+      // RPN ctl_1..16 status (v1+, v20+, track v20+)
+      int ctlIdx = 0;
+      loop(16)
+         ctl_status[ctlIdx++] = ifs.u16;
+
+      // Paramset 1..5 status (v1+, track v20+)
+      ctlIdx = 0;
+      loop(5)
+      {
+         last_param_set_abs   [ctlIdx] = ifs.u8;
+         last_param_set_smooth[ctlIdx] = ifs.u16;
+         ctlIdx++;
+      }
+
+      // Lane fade nr RPN#86 (v1+, track v20+)
+      last_lane_fade_nr = ifs.u16;
+   }
+
+}

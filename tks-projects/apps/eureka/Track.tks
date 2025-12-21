@@ -19,7 +19,8 @@
 // ----          04Oct2023, 06Oct2023, 05Nov2023, 09Nov2023, 18Nov2023, 03Jul2024, 05Jul2024
 // ----          12Aug2024, 11Sep2024, 12Sep2024, 13Sep2024, 18Sep2024, 21Sep2024, 22Sep2024
 // ----          23Sep2024, 04Oct2024, 03Jan2025, 07Jan2025, 04Apr2025, 05Apr2025, 03May2025
-// ----          22May2025, 29May2025, 30May2025, 10Jun2025, 13Jun2025, 21Jun2025
+// ----          22May2025, 29May2025, 30May2025, 10Jun2025, 13Jun2025, 21Jun2025, 16Dec2025
+// ----          17Dec2025, 18Dec2025, 19Dec2025, 20Dec2025
 // ----
 // ----
 // ----
@@ -87,7 +88,7 @@ function track_writer_thread_entry(local Thread _th) {
                      {
                         // // if(@(thiz) != @(ctrack))
                         // //    trace "xxx process shared track";
-                        ctrack.process(curTrackIdx, replay.process_size);
+                        ctrack.process(curTrackIdx, replay.process_size, replay.midi_input_frame);
                      }
                      else
                      {
@@ -224,7 +225,7 @@ class TrackPatchVariation {
 
       b_lane_fade          = false;
       lane_fade_cc         = 70;  // CC#070 (Sound Ctl 1: Variation)
-      b_lane_fade_ctl_rel  = false;
+      b_lane_fade_ctl_rel  = true;
       lane_fade_slew_up    = 0.1f;
       lane_fade_slew_down  = 0.8f;
    }
@@ -702,7 +703,7 @@ class Track {
    String patch_name;  // usually longer than track name, e.g. "synthmaster_keys_1_a"
    String patch_suggested_pathname;
 
-   boolean b_force_mute;  // calculated.
+   boolean b_force_mute;  // calculated from play_state (SOLO)
 
    String name;      // e.g. "keys"
    int    cpu_core;  // -1=any, 0..63 = specific CPU core
@@ -711,6 +712,8 @@ class Track {
 
    byte   parent_midi_track_dev_idx_hint;  // Hint, filled after "Create audio track"
    byte   parent_midi_track_midi_ch_hint;
+
+   boolean b_solo_lock;  // true=don't solo tracks after (and including) this one (fx / master tracks)
 
    define int LAYOUT_ALL                 = 0;
    define int LAYOUT_ALL_EXCEPT_EDIT     = 1;
@@ -783,6 +786,13 @@ class Track {
 
    static int focus_send_track_idx;  // updated in prepareProcess()
 
+   MIDIPipeEvent pev;  // temporary during process()
+
+   TrackCtlState ctl_state;
+   boolean       b_reload_ctls;            // true=inject CC/RPN ctl state into MIDIPipeFrame on next replay tick
+   MIDIPipeFrame reload_midi_input_frame;  // current input events merged with reload events
+
+
 
    // <method_init.png>
    public method init() {
@@ -829,6 +839,8 @@ class Track {
       cur_lane_fade_framecount = 0;
 
       vrr_next_voice_idx = 0;
+
+      ctl_state.init();
 
       initMainPatchVariation();
 
@@ -1180,6 +1192,14 @@ class Track {
    }
 
    // <method_set.png>
+   public method selectLayout(int _layout) {
+      layout = mathClampi(_layout, 0, NUM_LAYOUTS-1);
+
+      current_project.markAsModified();
+      Project.QueueTrackFormUpdate();
+   }
+
+   // <method_set.png>
    public method selectNextLayout(int _dir) {
       layout = mathWrapi(layout + _dir, 0, NUM_LAYOUTS);
 
@@ -1266,9 +1286,42 @@ class Track {
       current_project.markAsModified();
    }
 
+   // <method_set.png>
+      public method trySetPortFromString(String _s) : boolean {
+      local StringArray aWords <= _s.splitSpace(false);
+      if(aWords.numElements >= 1)
+      {
+         String s <= aWords.get(0);
+         if(2 <= s.numChars <= 3)  // 'a1'..'p16'
+         {
+            char c = s.getc(0);
+            if('a' <= c <= 'p')
+            {
+               s.substring(1,3);
+               int midiCh = s;
+               if(1 <= midiCh <= 16)
+               {
+                  setDevIdx(c - 'a');
+                  setMidiCh(midiCh - 1);
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
    // <method_get.png>
    public method getOutputByIdx(int _idx) : Output {
       return outputs.get(_idx);
+   }
+
+   // <method_get.png>
+   public method getOutputLevelByIndex(int _idx) : float {
+      Output out <= outputs.get(_idx);
+      if(null != out)
+         return out.level;
+      return 0.0f;
    }
 
    // <method_find.png>
@@ -1438,7 +1491,7 @@ class Track {
          // Single-thread rendering (process immediately)
          if(doProcessAny())  // not muted or process while muted ?
          {
-            process(_curTrackIdx, replay.process_size);
+            process(_curTrackIdx, replay.process_size, replay.midi_input_frame);
          }
          else
          {
@@ -1787,10 +1840,13 @@ class Track {
    public method saveState(Stream ofs) {
 
       // Version
-      ofs.i16 = 18;
+      ofs.i16 = 21;
 
       // Play state (v8+)
       ofs.i8 = play_state;
+
+      // Solo-lock (v19+)
+      ofs.i8 = b_solo_lock;
 
       // Layout (v6+)
       ofs.i8 = layout;
@@ -1870,6 +1926,9 @@ class Track {
 
       // UI: browser visible (v7+)
       ofs.i8 = b_ui_browser_visible;
+
+      // Controller state (v20+)
+      ctl_state.saveState(ofs);      
    }
 
    // <method.png>
@@ -2073,6 +2132,12 @@ class Track {
             play_state = ifs.u8;
          }
 
+         if(ver >= 19)
+         {
+            // Solo-lock (v19+)
+            b_solo_lock = ifs.b8;
+         }
+
          if(ver >= 6)
          {
             // Layout (v6+)
@@ -2272,6 +2337,14 @@ class Track {
          {
             // UI: browser visible (v7+)
             b_ui_browser_visible = ifs.b8;
+         }
+
+         if(ver >= 20)
+         {
+            ctl_state.loadState(ifs, (ver >= 21)/*bVer*/);
+
+            // Inject CC/RPN ctl state into MIDIPipeFrame on next replay tick
+            b_reload_ctls = true;
          }
 
          if(r)
@@ -2590,6 +2663,8 @@ class Track {
          //  (note) must be done after autoLoadSamples()
          //          (updates ModSample::preferred_namespace_idx from selected sample)
          loadStatePost(false/*bThreaded*/);
+
+         b_reload_ctls = true;
       }
 
       Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
@@ -2888,6 +2963,8 @@ class Track {
       // Instantiate VST/CLAP/STFX plugins, restore patch/bank chunks
       loadStatePost(false/*bThreaded*/);
 
+      b_reload_ctls = true;
+
       CLAP.PopIgnoreAutomation(bIgnoreAutoCLAPOrig);
       VST2.PopIgnoreAutomation(bIgnoreAutoVST2Orig);
    }
@@ -3165,11 +3242,17 @@ class Track {
    }
 
    // <replay.png>
-   protected method process_int(local int _curTrackIdx, local int _numFrames) {
+   public =replay= method queueReloadCtls() {
+      b_reload_ctls = true;
+   }
+
+   // <replay.png>
+   protected method process_int(local int _curTrackIdx, local int _numFrames, local MIDIPipeFrame _frInput) {
       local Lane *lane;
       local boolean bFirstLane = true;
       local int j;
       local int k;
+      local int evIdx;
 
       milliSecondsDouble(profile_process_t_start);
 
@@ -3183,38 +3266,77 @@ class Track {
             lane.lane_fade_vol_cur  = 1.0f;
             lane.lane_fade_vol_next = 1.0f;
          }
+
+         ctl_state.reset();
       }
 
-      if(b_lane_fade && replay.b_have_events)
+      if(b_reload_ctls)
       {
-         local MIDIPipeFrame fr <= replay.midi_input_frame;
+         b_reload_ctls = false;
+         reload_midi_input_frame = replay.midi_input_frame;
+         _frInput <= reload_midi_input_frame;
 
-         local short laneFadeMask = fr.getFilteredRPN(dev_idx, midi_ch, RPN_LANE_FADE_MASK);
-         if(laneFadeMask >= 0)
-            cur_lane_fade_mask = laneFadeMask;
+         ctl_state.reload(_frInput, dev_idx, (midi_ch < 0) ? 0 : midi_ch);
 
-         local short laneFadeNr = fr.getFilteredRPN(dev_idx, midi_ch, RPN_LANE_FADE_NR);
-         if(laneFadeNr >= 0)
+         replay.b_have_events = true;  // (todo) unsychronized write
+      }
+
+      if(replay.b_have_events)
+      {
+         ctl_state.trackCtls(_frInput, dev_idx, midi_ch, pev);
+
+         if(b_lane_fade)
          {
-            if(b_lane_fade_ctl_rel)
-               laneFadeNr = 1 + ( (laneFadeNr*multi_num_channels) / 16384 );
-            if(0 == laneFadeNr)
-               cur_lane_fade_mask = 16383;  // reset (enable 14 lanes)
-            else
-               cur_lane_fade_mask = (1 << (laneFadeNr-1));
+            local short laneFadeMask = _frInput.getFilteredRPN(dev_idx, midi_ch, RPN_LANE_FADE_MASK);
+            if(laneFadeMask >= 0)
+               cur_lane_fade_mask = laneFadeMask;
+
+            local short laneFadeNr = _frInput.getFilteredRPN(dev_idx, midi_ch, RPN_LANE_FADE_NR);
+            if(laneFadeNr >= 0)
+            {
+               if(b_lane_fade_ctl_rel)
+                  laneFadeNr = 1 + ( (laneFadeNr*multi_num_channels) / 16384 );
+               if(0 == laneFadeNr)
+                  cur_lane_fade_mask = 16383;  // reset (enable 14 lanes)
+               else
+                  cur_lane_fade_mask = (1 << (laneFadeNr-1));
+            }
+
+            local byte laneFadeNrCC = _frInput.getFilteredCC(dev_idx, midi_ch, lane_fade_cc);
+            if(laneFadeNrCC >= 0)
+            {
+               if(b_lane_fade_ctl_rel)
+                  laneFadeNrCC = 1 + ( (laneFadeNrCC*multi_num_channels) / 128 );
+               if(0 == laneFadeNrCC)
+                  cur_lane_fade_mask = 16383; // reset (enable 14 lanes)
+               else
+                  cur_lane_fade_mask = (1 << (laneFadeNrCC-1));
+               // // trace "xxx track CC laneFadeNrCC="+laneFadeNrCC;
+            }
          }
 
-         local byte laneFadeNrCC = fr.getFilteredCC(dev_idx, midi_ch, lane_fade_cc);
-         if(laneFadeNrCC >= 0)
+         // Track output 1..8 levels (RPNs 300..307, see Synergy remote.msp)
+         local int numEvRPN = _frInput.getNumEventsRPNByFlt(dev_idx, midi_ch);
+         if(numEvRPN > 0)
          {
-            if(b_lane_fade_ctl_rel)
-               laneFadeNrCC = 1 + ( (laneFadeNrCC*multi_num_channels) / 128 );
-            if(0 == laneFadeNrCC)
-               cur_lane_fade_mask = 16383; // reset (enable 14 lanes)
-            else
-               cur_lane_fade_mask = (1 << (laneFadeNrCC-1));
-            // // trace "xxx track CC laneFadeNrCC="+laneFadeNrCC;
+            evIdx = 0;
+            loop(numEvRPN)
+            {
+               if(_frInput.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_RPN, dev_idx, midi_ch))
+               {
+                  if(300 <= pev.rpn <= 307) // see remote.msp trk_out_<n>_lvl RPNs
+                  {
+                     local Output out <= outputs.get(pev.rpn - 300/*trk_out_1_lvl*/);
+                     if(null != out)
+                     {
+                        out.setLevelFromReplay(pev.rpnValue / 16383.0);
+                     }
+                  }
+               }
+               evIdx++;
+            }
          }
+
       }
 
       foreach lane in lanes
@@ -3225,11 +3347,11 @@ class Track {
 
       if(sample_pad_kit.b_edited && isDrumMode())
       {
-         sample_pad_kit.process(_curTrackIdx, _numFrames);
+         sample_pad_kit.process(_curTrackIdx, _numFrames, _frInput);
       }
       else if(sample_timeline.b_edited && isTimelineMode())
       {
-         sample_timeline.process(this, _curTrackIdx, _numFrames);
+         sample_timeline.process(this, _curTrackIdx, _numFrames, _frInput);
       }
 
       // // trace "xxx Track::process: numLanes="+lanes.numElements;
@@ -3242,10 +3364,7 @@ class Track {
       local int vrrNumEvNoteOn;
       local int vrrNoteOnIdx = 0;
       if(bVRR)
-      {
-         local MIDIPipeFrame inputFrame <= replay.midi_input_frame;
-         vrrNumEvNoteOn = inputFrame.getNumEventsNoteOnByFlt(dev_idx, midi_ch);
-      }
+         vrrNumEvNoteOn = _frInput.getNumEventsNoteOnByFlt(dev_idx, midi_ch);
 
       // Process and accumulate lane outputs
       local int laneIdx = 0;
@@ -3309,6 +3428,7 @@ class Track {
 
             lane.process(cur_track_idx,
                          _numFrames,
+                         _frInput,
                          dev_idx, midiCh, forceCh, globalCh,
                          this,
                          laneIdx,
@@ -3525,11 +3645,11 @@ class Track {
    }
 
    // <replay.png>
-   public method process(local int _curTrackIdx, local int _numFrames) {
+   public method process(local int _curTrackIdx, local int _numFrames, local MIDIPipeFrame _frInput) {
       try
       {
          if(STConfig.b_process_tracks)
-            process_int(_curTrackIdx, _numFrames);
+            process_int(_curTrackIdx, _numFrames, _frInput);
       }
       catch(Error e)
       {

@@ -2,7 +2,7 @@
 % bsp
 % 20-Jun-2025
 >>>
-17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025
+17Nov2019, 15May2020, 30Oct2020, 19Apr2021, 13May2021, 14May2021, 02Jun2021, 13Feb2022, 24Feb2022, 07May2022, 08May2022, 24Jun2022, 19Nov2022, 04Feb2023, 18Mar2023, 24Mar2023, 23Jun2023, 24Jun2023, 17Aug2023, 31Oct2023, 03Nov2023, 10Nov2023, 14Nov2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 16Dec2023, 02Feb2024, 03Feb2024, 01Oct2024, 05Oct2024, 06Oct2024, 02Nov2024, 07Jan2025, 16Jan2025, 25Jan2025, 26Jan2025, 28Feb2025, 07Mar2025, 09Mar2025, 28May2025, 01Jun2025, 12Jun2025, 13Jun2025, 20Jun2025, 18Dec2025
 <<<
 $(var:header)
 
@@ -232,6 +232,7 @@ As root, edit `/usr/share/X11/xkb/symbols/<your country code>` (e.g. `de`) and r
 | r                   | Show pipe root
 | a                   | Show pipe or node context menu
 | lctrl - a           | Show root context menu
+| lctrl - x a         | Query audio samples + tracks
 | s                   | Toggle pipe or node solo
 | lctrl - s           | Toggle pipe solo
 | d                   | Toggle pipe or node mute

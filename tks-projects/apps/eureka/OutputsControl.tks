@@ -9,7 +9,7 @@
 // ----
 // ---- created: 16Feb2018
 // ---- changed: 17Feb2018, 29Jul2023, 03Oct2023, 09Nov2023, 22Mar2024, 15Sep2024, 21Sep2024
-// ----          04Apr2025, 13Dec2025
+// ----          04Apr2025, 13Dec2025, 17Dec2025, 21Dec2025
 // ----
 // ----
 // ----
@@ -32,6 +32,8 @@ class OutputsControl : Control, ActionConsumer {
 
    Track *parent_track;
    int lane_idx;  // -1=track
+
+   static int copy_src_track_idx = -1;  // 'Copy outputs' context menu item (handleOutputsCopy())
 
 
    // <ui_init.png>
@@ -125,6 +127,11 @@ class OutputsControl : Control, ActionConsumer {
       outputs.add(#(deref _output));
    }
 
+   // <method.png>
+   protected method provideOutputsChanged() {
+      provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, outputs.numElements-1));
+   }
+
    // <ui_handle.png>
    protected method handleAddOutput(boolean _bQuiet) : Output {
       if(outputs.numElements < Output.MAX_OUTPUTS)
@@ -144,7 +151,7 @@ class OutputsControl : Control, ActionConsumer {
          current_project.markAsModified();
 
          if(!_bQuiet)
-            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OUTPUTS_CHANGED), this, outputs.numElements-1));
+            provideOutputsChanged();
 
          return output;
       }
@@ -297,6 +304,74 @@ class OutputsControl : Control, ActionConsumer {
       else
       {
          Global.Warning("Cannot move output "+(_idx+1)+"/"+outputs.numElements+" down");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleOutputsCopy() {
+      copy_src_track_idx = current_project.getTrackIdx(parent_track);
+      Global.Print("Copy outputs: set source track nr="+(copy_src_track_idx+1));
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleOutputsPaste() {
+      Track srcTrack <= current_project.getTrackByIdx(copy_src_track_idx);
+      if(null != srcTrack)
+      {
+         boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+         int numCopied = 0;
+         Output *srcOut;
+         foreach srcOut in srcTrack.outputs
+         {
+            // Check if output already exists
+            Output *dstOut;
+            boolean bExists = false;
+            foreach dstOut in parent_track.outputs
+            {
+               if(dstOut.matchesOutputTarget(srcOut))
+               {
+                  bExists = true;
+                  break;
+               }
+            }
+            if(!bExists)
+            {
+               dstOut <= handleAddOutput(true/*bQuiet*/);
+               dstOut.copyOutputTargetFrom(srcOut);
+               numCopied++;
+            }
+         }
+
+         if(numCopied)
+         {
+            provideOutputsChanged();
+            // // showOutputs(parent_track.outputs, 0/*maxLanes*/);
+         }
+         Global.Print("Copied "+numCopied+" output"+Utils.GetPluralString(numCopied)+" from track \""+srcTrack.name+"\"");
+
+         Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+      }
+      else
+      {
+         Global.Warning("Paste outputs: invalid source track nr="+(copy_src_track_idx+1));
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleIdleTimer() {
+      OutputForm of;
+      foreach of in output_forms
+      {
+         Output out <= outputs.get(of.output_idx);
+         if(null != out)  // should not be null
+         {
+            if(out.checkResetQueuedUIUpdate())
+            {
+               of.updateLevelSlider();
+               of.redraw();
+               current_project.markAsModified();
+            }
+         }
       }
    }
 

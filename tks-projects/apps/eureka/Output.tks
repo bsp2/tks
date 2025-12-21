@@ -8,7 +8,8 @@
 // ---- info   : This is part of the "syntracker" sequencer.
 // ----
 // ---- changed: 12Feb2018, 15Feb2018, 16Feb2018, 17Feb2018, 20Feb2018, 28Feb2018, 21Jul2018
-// ----          22Feb2019, 04Feb2021, 31May2021, 24Nov2023, 20Sep2024, 13Dec2025
+// ----          22Feb2019, 04Feb2021, 31May2021, 24Nov2023, 20Sep2024, 13Dec2025, 17Dec2025
+// ----          21Dec2025
 // ----
 // ----
 // ----
@@ -58,6 +59,9 @@ class Output {
 
    float level_l;     // see updateLevelLR()
    float level_r;
+
+   boolean b_queued_ui_update;  // true after param change when widget(s) need to be updated
+   Mutex mtx_ui_update;
 
 
    // <method_init.png>
@@ -246,7 +250,7 @@ class Output {
    protected method updateLevelLR() {
       if(b_enable)
       {
-         float t;
+         local float t;
          switch(pan_type)
          {
             default:
@@ -325,6 +329,15 @@ class Output {
       current_project.markAsModified();
    }
 
+   // <method_set.png>
+   public method setLevelFromReplay(local float _level) {
+      // when setting track output levels via MIDI
+      //  (note) called from Track replay thread
+      level = _level;
+      updateLevelLR();
+      queueUIUpdate();
+   }
+
    // <method.png>
    public method handleTrackReorder(IntArray _reorderMap) {
       if(track_idx >= 0)
@@ -358,6 +371,41 @@ class Output {
       pan_type    = _o.pan_type;
       pan         = _o.pan;
       updateLevelLR();
+   }
+
+   // <method.png>
+   public method matchesOutputTarget(Output _o) : boolean {
+      if(type == _o.type)
+      {
+         if(getIdx() == _o.getIdx())
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method copyOutputTargetFrom(Output _o) {
+      type = _o.type;
+      setIdx(_o.getIdx());
+   }
+
+   // <method.png>
+   public method queueUIUpdate() {
+      // called when automating track output level via MIDI
+      mtx_ui_update.lock();
+      b_queued_ui_update = true;
+      mtx_ui_update.unlock();
+   }
+
+   // <method.png>
+   public method checkResetQueuedUIUpdate() {
+      mtx_ui_update.lock();
+      local boolean r = b_queued_ui_update;
+      b_queued_ui_update = false;
+      mtx_ui_update.unlock();
+      return r;
    }
 
    // <save.png>

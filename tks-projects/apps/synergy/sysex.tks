@@ -13,7 +13,8 @@
 // ----          20Jul2021, 22Jul2021, 07Dec2021, 09Dec2021, 11Dec2021, 05Feb2022, 06Feb2022
 // ----          13Feb2022, 10Aug2022, 11Aug2022, 12Aug2022, 13Aug2022, 01Dec2022, 18Dec2022
 // ----          23Feb2023, 22Jul2023, 29Jul2023, 17Nov2023, 18Nov2023, 02Dec2023, 03Dec2023
-// ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025
+// ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025, 18Dec2025, 19Dec2025
+// ----          20Dec2025
 // ----
 // ----
 // ----
@@ -121,18 +122,31 @@ class SysExSample {
 
 // <class.png>
 class SysExTrack {
-   byte    dev_idx;  // 0..25 => a..z
-   byte    midi_ch;  // -1=all, 0..15
-   String  name;
-   int     modsample_instance_id;   // -1=none
-   short   modsample_namespace_id;  // 0=none
-   short   smp_uid;                 // -1=non
-   byte    first_liverec_zone_idx;  // sample first liverec zone idx. -1=none
-   boolean b_stereo_input;          // true=Eureka track uses stereo input
-   boolean b_audio_timeline;        // true=Eureka track is in 'timeline' mode
+   byte       dev_idx;  // 0..25 => a..z
+   byte       midi_ch;  // -1=all, 0..15
+   String     name;
+   int        modsample_instance_id;   // -1=none
+   short      modsample_namespace_id;  // 0=none
+   short      smp_uid;                 // -1=non
+   byte       first_liverec_zone_idx;  // sample first liverec zone idx. -1=none
+   boolean    b_stereo_input;          // true=Eureka track uses stereo input
+   boolean    b_audio_timeline;        // true=Eureka track is in 'timeline' mode
+   FloatArray levels;                  // Output levels (up to 8 outputs)
+   byte       cc_mw;                   // Performance controllers
+   byte       cc_bc;
+   byte       cc_fc;
+   byte       cc_ex;
+   byte       cc_gp1;
+   byte       cc_gp2;
+   byte       cc_gp3;
+   byte       cc_gp4;
+   IntArray   ctl_status;             // 16*14bit (ctl_1..16)
+   IntArray   last_param_set_abs;     //  7bit
+   IntArray   last_param_set_smooth;  // 14bit
+   short      last_lane_fade_nr;      //  5bit in abs mode, 14bit in rel mode (default)
 
    debugPrint(String _msgHdr) {
-      trace _msgHdr+"devIdx="+dev_idx+" midiCh="+midi_ch+" name=\""+name+"\" modsample_instance_id="+modsample_instance_id+" smp_uid="+smp_uid+" first_liverec_zone_idx="+first_liverec_zone_idx+" b_stereo_input="+b_stereo_input+" b_audio_timeline="+b_audio_timeline;
+      trace _msgHdr+"devIdx="+dev_idx+" midiCh="+midi_ch+" name=\""+name+"\" modsample_instance_id="+modsample_instance_id+" smp_uid="+smp_uid+" first_liverec_zone_idx="+first_liverec_zone_idx+" b_stereo_input="+b_stereo_input+" b_audio_timeline="+b_audio_timeline+" levels="+levels+" cc MW="+cc_mw+" BC="+cc_bc+" FC="+cc_fc+" EX="+cc_ex+" GP1="+cc_gp1+" GP2="+cc_gp2+" GP3="+cc_gp3+" GP4="+cc_gp4;
    }
 }
 
@@ -227,6 +241,8 @@ class SysEx {
    define int SYX_MSGID_SMP_UPLOAD_SEQ_ACK             = 72;  // IN     
    define int SYX_MSGID_SMP_DOWNLOAD_SEQ               = 73;  // OUT    set 'proc_track_seq.dat' tmp file to proc.sample seq
    define int SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY         = 74;  // IN     
+   define int SYX_MSGID_TRACK_SELECT                   = 75;  // OUT    select focus track (don't change page)
+   define int SYX_MSGID_TRACK_CHANGED                  = 76;  // IN     focus track change notification
 
 
    // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
@@ -403,6 +419,7 @@ class SysEx {
    static boolean b_queued_recv_smp_clone;
 
    static boolean b_queued_send_query_tracks;
+   static int     queued_recv_tracks_focus_idx;  // 0..numtracks-1
    static SysExTrack *[] queued_recv_tracks;
    static boolean b_queued_recv_tracks;
 
@@ -431,6 +448,14 @@ class SysEx {
 
    static int     queued_recv_smp_download_seq_reply_smp_uid;
    static boolean b_queued_recv_smp_download_seq_reply;
+
+   static int     queued_send_track_select_idx_abs;  // 0..numtracks-1, or -1
+   static float   queued_send_track_select_idx_rel;  // 0..1, or -1
+   static boolean b_queued_send_track_select;
+
+   static int     queued_recv_track_changed_idx_abs;  // 0..numtracks-1
+   static float   queued_recv_track_changed_idx_rel;  // 0..1
+   static boolean b_queued_recv_track_changed;
 
 
    // <method_init.png>
@@ -980,11 +1005,13 @@ class SysEx {
             case SYX_MSGID_REPLY_TRACKS:
                raw.offset = 0;
                int numTracks = raw.u8;
-               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_TRACKS: numTracks="+numTracks);
+               queued_recv_tracks_focus_idx = raw.u8;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_TRACKS: numTracks="+numTracks+" focusIdx="+queued_recv_tracks_focus_idx);
                queued_recv_tracks.free();
                loop(numTracks)
                {
                   SysExTrack track <= new SysExTrack;
+
                   track.dev_idx                = raw.u8;
                   track.midi_ch                = raw.s8;
                   Utils.ReadString(raw, track.name);
@@ -994,6 +1021,37 @@ class SysEx {
                   track.first_liverec_zone_idx = raw.s8;
                   track.b_stereo_input         = raw.b8;
                   track.b_audio_timeline       = raw.b8;
+
+                  FloatArray trackLevels <= track.levels;
+                  trackLevels.alloc(8);
+                  loop(trackLevels.maxElements)
+                     trackLevels.add(raw.i8 / 127.0f);
+                  track.cc_mw  = raw.u8;
+                  track.cc_bc  = raw.u8;
+                  track.cc_fc  = raw.u8;
+                  track.cc_ex  = raw.u8;
+                  track.cc_gp1 = raw.u8;
+                  track.cc_gp2 = raw.u8;
+                  track.cc_gp3 = raw.u8;
+                  track.cc_gp4 = raw.u8;
+
+                  IntArray aCtl <= track.ctl_status;
+                  aCtl.alloc(16);
+                  loop(16)
+                     aCtl.add(raw.u16);
+
+                  IntArray aParamSetAbs <= track.last_param_set_abs;
+                  aParamSetAbs.alloc(5);
+                  loop(5)
+                     aParamSetAbs.add(raw.u8);
+
+                  IntArray aParamSetSmooth <= track.last_param_set_smooth;
+                  aParamSetSmooth.alloc(5);
+                  loop(5)
+                     aParamSetSmooth.add(raw.u16);
+
+                  track.last_lane_fade_nr = raw.u16;
+
                   track.debugPrint("[dbg] SysEx::Handle: SYX_MSGID_REPLY_TRACKS: ");
                   queued_recv_tracks.add(#(deref track));
                }
@@ -1022,6 +1080,13 @@ class SysEx {
                queued_recv_smp_download_seq_reply_smp_uid = raw.i32;
                trace "xxx SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY smpUID="+queued_recv_smp_download_seq_reply_smp_uid;
                b_queued_recv_smp_download_seq_reply = true;
+               break;
+
+            case SYX_MSGID_TRACK_CHANGED:
+               raw.offset = 0;
+               queued_recv_track_changed_idx_abs = raw.i8;
+               queued_recv_track_changed_idx_rel = raw.f32;
+               b_queued_recv_track_changed = true;
                break;
          }
       }
@@ -1745,6 +1810,23 @@ class SysEx {
    }
 
    // <method.png>
+   public =sysexqueue= static QueueSendTrackSelect(int _trackIdxAbs, float _trackIdxRel) {
+      queued_send_track_select_idx_abs = _trackIdxAbs;  // -1=use rel
+      queued_send_track_select_idx_rel = _trackIdxRel;  // -1=use abs
+      b_queued_send_track_select = true;
+   }
+
+   // <method.png>
+   public static SendTrackSelect() {
+      trace "[trc] SysEx::SendTrackSelect: trackIdxAbs="+queued_send_track_select_idx_abs+" trackIdxRel="+queued_send_track_select_idx_rel;
+      send_raw.offset = 0;
+      send_raw.i8  = queued_send_track_select_idx_abs;
+      send_raw.f32 = queued_send_track_select_idx_rel;
+      Send(SYX_MSGID_TRACK_SELECT, send_raw/*payload*/);
+      b_queued_send_track_select = false;
+   }
+
+   // <method.png>
    public static TestEncodeDecode() {
       Buffer syx;
       Buffer raw;
@@ -2013,6 +2095,9 @@ class SysEx {
             if(b_queued_send_smp_download_seq)
                SendSmpDownloadSeq();
 
+            if(b_queued_send_track_select)
+               SendTrackSelect();
+
          } // if b_audio_connected
          else if(STConfig.b_enable_localmidi)
          {
@@ -2175,6 +2260,14 @@ class SysEx {
          b_queued_recv_ui_window_show = false;
          Global.Debug2("SysEx<UI_WINDOW_SHOW>: window to front");
          SDL.showNativeWindow(SDL.nativeWindowHandle, true/*bFocus*/);
+      }
+
+      if(b_queued_recv_track_changed)
+      {
+         root_form.queueSysExTrackChanged(queued_recv_track_changed_idx_abs,
+                                          queued_recv_track_changed_idx_rel
+                                          );
+         b_queued_recv_track_changed = false;
       }
 
    }
