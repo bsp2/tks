@@ -578,6 +578,11 @@ tip: $(buf!note_numberedit)
    |:lctrl WHEEL UP     |:decrease track size
    |:lctrl WHEEL DOWN   |:increase track size
    |:1..6               |:select track size 1..6
+   |:lshift - c         |:set copy-outputs source track
+   |:lshift - v         |:copy unique outputs from source track
+   |:INSERT             |:add new track
+   |:lshift - INSERT    |:
+   |:c                  |+clone current track
    |:e                  |:
    |+LMB double-click   |+edit focused track
    |:f                  |:edit first ModSample or ModCLAP or ModVST2 of focused track
@@ -585,7 +590,8 @@ tip: $(buf!note_numberedit)
    |:s                  |:solo focused track
    |:n                  |:add new track
    |:lctrl - n          |:add new track and edit it
-   |:lshift - n         |:add new audio track for selected MIDI track and edit it
+   |:lshift - n         |:add new mono audio track for selected MIDI track
+   |:lctrl - lshift - n |:add new stereo audio track for selected MIDI track
    |                    |+e.g. "drums" => "a_drums"
    ].kbd_table Project Page keyboard shortcuts
 
