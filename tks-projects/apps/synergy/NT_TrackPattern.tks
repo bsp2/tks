@@ -21,7 +21,7 @@
 // ----          05Mar2017, 06Jun2017, 01Jul2017, 04Oct2017, 04Jan2018, 03Mar2018, 07Mar2018
 // ----          01Jun2018, 12Jan2019, 25Jun2019, 02Aug2019, 22Sep2019, 24Oct2019, 06Mar2020
 // ----          25Apr2020, 28Apr2020, 01Sep2020, 24Sep2020, 31Jan2021, 04Jan2022, 16Apr2022
-// ----          13Jun2025
+// ----          13Jun2025, 27Dec2025
 // ----
 // ----
 // ----
@@ -768,6 +768,7 @@ class NT_TrackPattern : NT_Defs {
                       boolean _bMuted,
                       boolean _bPlaySeq,   // read events, send noteons+ctls
                       boolean _bAdvSeq,    // advance to next event
+                      boolean _bPolyStep,
                       boolean _bAllowDelayBegin
                       ) {
 
@@ -779,7 +780,9 @@ class NT_TrackPattern : NT_Defs {
       float f;
       int ctl;
       boolean bSelInstr = parent_track.checkResetQueuedInstrumentSelected();
-      local STX_MIDIOutDevice *instrOutDev;
+      STX_MIDIOutDevice *instrOutDev;
+      // // boolean bResetNew = _bAdvSeq;
+      boolean bResetNew = _bAdvSeq || _bPolyStep;   // (todo) new-event-flag reset probably not needed during polystep replay
 
       // // boolean bPlayNote = false;
 
@@ -822,7 +825,7 @@ class NT_TrackPattern : NT_Defs {
                val = INVALID_VALUE;
                if(haveNewEvent(CTL_DELAY))
                {
-                  val = getNewEvent(CTL_DELAY, _bAdvSeq);
+                  val = getNewEvent(CTL_DELAY, _bAdvSeq/*bResetNew*/);
                   // trace "xxx read CTL_DELAY val="+val+" @offset="+offset+" this="+#(this);
                   // Utils.Backtrace();
                }
@@ -842,7 +845,7 @@ class NT_TrackPattern : NT_Defs {
          val = INVALID_VALUE;
          if(haveNewEvent(CTL_SEEK))
          {
-            val = getNewEvent(CTL_SEEK, _bAdvSeq);
+            val = getNewEvent(CTL_SEEK, _bAdvSeq/*bResetNew*/);
             // trace "xxx read CTL_SEEK val="+val+" @offset="+offset+" this="+#(this);
             if(MAGIC_SEEK_STOP != int(val)) // 255
             {
@@ -869,7 +872,7 @@ class NT_TrackPattern : NT_Defs {
          val = INVALID_VALUE;
          if(haveNewEvent(CTL_BPM))
          {
-            val = getNewEvent(CTL_BPM, _bAdvSeq);
+            val = getNewEvent(CTL_BPM, _bAdvSeq/*bResetNew*/);
             ////trace "xxx ctl_bpm val="+val+" env.time="+env.time;
          }
 
@@ -888,7 +891,7 @@ class NT_TrackPattern : NT_Defs {
          val = INVALID_VALUE;
          if(haveNewEvent(CTL_BPM_MUL))
          {
-            val = getNewEvent(CTL_BPM_MUL, _bAdvSeq);
+            val = getNewEvent(CTL_BPM_MUL, _bAdvSeq/*bResetNew*/);
             ////trace "xxx ctl_bpm_mul val="+val+" env.time="+env.time;
          }
 
@@ -913,7 +916,7 @@ class NT_TrackPattern : NT_Defs {
          val = INVALID_VALUE;
          if(haveNewEvent(CTL_GROOVE))
          {
-            val = getNewEvent(CTL_GROOVE, _bAdvSeq);
+            val = getNewEvent(CTL_GROOVE, _bAdvSeq/*bResetNew*/);
             ////trace "xxx ctl_groove val="+val+" env.time="+env.time;
             if(!_bMuted)
                current_pipe_root.pipeDelay = int(val);
@@ -923,7 +926,7 @@ class NT_TrackPattern : NT_Defs {
          // Handle mute/unmute self
          if(haveNewEvent(CTL_MUTE))
          {
-            val = getNewEvent(CTL_MUTE, _bAdvSeq);
+            val = getNewEvent(CTL_MUTE, bResetNew);
 
             if(val > 0)
             {
@@ -959,15 +962,15 @@ class NT_TrackPattern : NT_Defs {
       //
       // Process CTL_INSTR
       //
-      if(_bAdvSeq)
+      if(_bAdvSeq || _bPolyStep)
       {
-         val = getMostRecentEventOrZero(CTL_INSTR, true/*bResetNew*/);///_bAdvSeq);
+         // val = getMostRecentEventOrZero(CTL_INSTR, true/*bResetNew*/);
+         val = getMostRecentEventOrZero(CTL_INSTR, bResetNew);
 
          // (todo) handle instr midi msg
 
-         if(val > 0) /// velocity=0 is interpreted as note off by all (tested) synths :/
+         if(val > 0)
          {
-            // if(!_bMuted)
             // trace "xxx nt: select instr "+val;
             parent_track.current_instrument_nr = val;
 
@@ -1013,6 +1016,7 @@ class NT_TrackPattern : NT_Defs {
       if(bSelInstr)
       {
          // Instrument was selected during this tick
+         // trace "xxx NT_TrackPattern: bSelInstr instr="+#(instr)+" _bMuted="+_bMuted+" _bPlaySeq="+_bPlaySeq;
          if(null != instr)
          {
             if(!_bMuted && _bPlaySeq)
@@ -1060,7 +1064,7 @@ class NT_TrackPattern : NT_Defs {
 
       loop(NUM_NOTESLOTS)
       {
-         val = getMostRecentEventOrZero(ctl, _bAdvSeq);
+         val = getMostRecentEventOrZero(ctl, bResetNew);
          // // val = getMostRecentEventOrInv(ctl, _bAdvSeq);  // [15Oct2017] allow zero velocity
 
          // // if(val != INVALID_VALUE)
@@ -1092,7 +1096,7 @@ class NT_TrackPattern : NT_Defs {
 
       loop(NUM_NOTESLOTS)
       {
-         val = getMostRecentEventOrInv(ctl, _bAdvSeq);
+         val = getMostRecentEventOrInv(ctl, bResetNew);
 
          if(INVALID_VALUE != val)
          {
@@ -1139,7 +1143,7 @@ class NT_TrackPattern : NT_Defs {
 
       if(haveNewEvent(CTL_SLIDE))
       {
-         val = getNewEvent(CTL_SLIDE, _bAdvSeq);
+         val = getNewEvent(CTL_SLIDE, bResetNew);
 
          parent_track.slide_speed = val;
 
@@ -1156,7 +1160,7 @@ class NT_TrackPattern : NT_Defs {
          //
          if(haveNewEvent(CTL_PC))
          {
-            val = getNewEvent(CTL_PC, _bAdvSeq);
+            val = getNewEvent(CTL_PC, bResetNew);
 
             // trace "xxx TrackPat: send prgchg val="+val;
             if(null != instr)
@@ -1372,7 +1376,7 @@ class NT_TrackPattern : NT_Defs {
 
                if(haveNewEvent(ctl))
                {
-                  val = getNewEvent(ctl, _bAdvSeq);
+                  val = getNewEvent(ctl, bResetNew);
 
                   if(parent_node.b_arp)
                   {
@@ -1561,7 +1565,7 @@ class NT_TrackPattern : NT_Defs {
             val = INVALID_VALUE;
             if(haveNewEvent(CTL_RETRIG))
             {
-               val = getNewEvent(CTL_RETRIG, _bAdvSeq);
+               val = getNewEvent(CTL_RETRIG, bResetNew);
             }
          }
 
@@ -1591,7 +1595,7 @@ class NT_TrackPattern : NT_Defs {
             {
                // trace "xxx injected CTL_AT parent_track.injected_ctl_states[CTL_AT]="+parent_track.injected_ctl_states[CTL_AT];
 
-               val = getNewEvent(CTL_AT, _bAdvSeq);
+               val = getNewEvent(CTL_AT, bResetNew);
 
                instr.emitChannelPressure(_framePlay, val);
             }
@@ -1609,7 +1613,7 @@ class NT_TrackPattern : NT_Defs {
                {
                   if(haveNewEvent(ctl))
                   {
-                     val = getNewEvent(ctl, _bAdvSeq);
+                     val = getNewEvent(ctl, bResetNew);
 
                      instr.emitPolyPressure(_framePlay, curNotes[noteIdx], val);
                   }
@@ -1634,7 +1638,7 @@ class NT_TrackPattern : NT_Defs {
 
                if(haveNewEvent(ctl))
                {
-                  val = getNewEvent(ctl, _bAdvSeq);
+                  val = getNewEvent(ctl, bResetNew);
 
                   // trace "xxx NT_TrackPattern::emitUsrCtl: ctl="+ctl+" val="+val;
                   instr.emitUsrCtl(_framePlay, i, val);
@@ -1690,7 +1694,7 @@ class NT_TrackPattern : NT_Defs {
 
          if(haveNewEvent(ctl))
          {
-            val = getNewEvent(ctl, _bAdvSeq);
+            val = getNewEvent(ctl, bResetNew);
             // trace "xxx have new PB val="+val;
 
             val = (val - 64.0) / 64.0f;
@@ -1792,12 +1796,12 @@ class NT_TrackPattern : NT_Defs {
          offset++;
       }
 
-      // [05Oct2024] reset injected_ctl_status at end of replay tick (after polystep replay)
-      // // if(_bAdvSeq)
-      // // {
-      // //    // (note) don't reset inject state when playing polysteps
-      // //    parent_track.injected_ctl_states.fill(false);
-      // // }
+      // // [05Oct2024] reset injected_ctl_status at end of replay tick (after polystep replay)
+      // // // if(_bAdvSeq)
+      // // // {
+      // // //    // (note) don't reset inject state when playing polysteps
+      // // //    parent_track.injected_ctl_states.fill(false);
+      // // // }
 
       parent_track.injected_ctl_values.set(CTL_INSTR, INVALID_VALUE);
    }
