@@ -161,8 +161,8 @@ class LinesFlatAA14_2 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
 
-      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  4);
+      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 4);
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
