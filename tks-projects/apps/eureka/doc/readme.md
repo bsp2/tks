@@ -689,12 +689,22 @@ when CLAP / VST2 editor window is focused:
    |:lctrl - lshift - mouse wheel |: zoom in / out
    |:lctrl - mouse wheel  |:inc / dec track height
    |:lshift - mouse wheel |:scroll horizontally
-   |:LMB-drag             |:select region / clips within region
+   |:LMB-drag             |:select region / clips within region / move selected clips (when drag start is over clip)
+   |:LMB-lctrl-drag       |:select region / clips within region (never move clips, e.g. for selecting regions in SampleView)
+   |:LMB-lshift-drag      |:resize clips (same as LMB-drag on clip start/end)
    |:LMB-click            |:select clip
+   |:LMB-holdclick        |:split clip at cursor position
    |:LMB-dblclick         |:toggle clip zoom
    |:RMB-click            |:edit clip sample
    |+                     |+ while dragging clip position or length: mini undo
    ].kbd_table Timeline keyboard shortcuts
+
+tip: MIDI note C-3 (36) starts / stops timeline playback
+tip: MIDI prgchg 0..127 selects timeline 0..127
+note: supported MIDI 14bit CCs: MW(1),BC(2),FC(4),EX(11),GP1..8(16..19,80..83),AllNotesOff(123)
+tip: when parent track midich is set to `*`, MIDI channels 1..16 map to tracks 1..16 (otherwise modulation is applied to all tracks)
+tip: Eureka sample-timelines can also be sequenced in Synergy Arranger (create audio track, select timeline MIDI port, click `Query` to update arranger track modes and query clip names (timeline names))
+note: RPNs 88(offms_lo)/89(offms_hi) set start position (seek) (1/64 ms resolution) (usually calculated by Synergy Arranger)
 
 
 ## Sample View
