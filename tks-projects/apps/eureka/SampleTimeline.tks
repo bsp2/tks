@@ -11,7 +11,7 @@
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
 // ----          04Apr2025, 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 01May2025, 04May2025
 // ----          06May2025, 20May2025, 22May2025, 29May2025, 30May2025, 04Jun2025, 14Jun2025
-// ----          22Jun2025, 20Dec2025, 02Jan2026
+// ----          22Jun2025, 20Dec2025, 02Jan2026, 03Jan2026
 // ----
 // ----
 // ----
@@ -42,7 +42,7 @@ class SampleTimeline {
    // current play position in timeline units (1024 ticks per beat/quarter, see SampleTimelineModel.DEFAULT_NUM_UNITS_PER_BEAT)
    int   play_pos;
    float num_tick_frames_left;
-   int   loop_start;
+   int   loop_start;  // copied from last selected SampleTimelineModel
    int   loop_len;
 
    float   beats_per_minute;
@@ -69,7 +69,7 @@ class SampleTimeline {
       all_models.useAll();
 
       edit_model <= newModelAt(0, false/*bLoad*/);
-      replay_model <= edit_model;
+      selectReplayModelByIndex_NoSync(0);
 
       loop(MAX_REPLAY_TRACKS)
       {
@@ -92,13 +92,33 @@ class SampleTimeline {
    }
 
    // <method.png>
-   public =replay= method selectEditModel(int _idx) {
+   public =replay= method selectEditModelByIndex(int _idx) {
       edit_model <= all_models.get(_idx);
    }
 
    // <method.png>
-   public =replay= method selectReplayModel(int _idx) {
+   public method selectReplayModelByIndex_NoSync(local int _idx) {
+      allNotesOff(true/*bRelease*/);
       replay_model <= all_models.get(_idx);
+      if(null != replay_model)
+      {
+         local int relPlayPos = play_pos - loop_start;
+         if(relPlayPos < 0) relPlayPos = 0;
+
+         loop_start = replay_model.loop_start;
+         loop_len   = replay_model.loop_len;
+
+         relPlayPos = (relPlayPos % loop_len);
+         play_pos = loop_start + relPlayPos;
+
+         replay_model.invalidateClipIndexHints();
+         b_update_lane_sends = true;
+      }
+   }
+
+   // <method.png>
+   public =replay= method selectReplayModelByIndex_Sync(local int _idx) {
+      selectReplayModelByIndex_NoSync(_idx);
    }
 
    // <method_get.png
@@ -791,6 +811,21 @@ class SampleTimeline {
             allNotesOff(true/*bRelease*/);
          }
 
+         // Change active timeline via MIDI program change
+         local int prg = _frInput.getFilteredPrgChg(_curTrack.dev_idx, _curTrack.midi_ch);
+         if(prg >= 0)
+         {
+            local int curPrg = (null != replay_model) ? all_models.indexOfPointer(replay_model, 0) : -1;
+            // if(bDebug)
+               trace "[>>>] SampleTimeline: select replay model idx="+prg+" cur="+curPrg;
+            if(prg != curPrg)
+            {
+               if(bDebug) trace "[>>>] SampleTimeline: switch to new replay model idx="+prg;
+               selectReplayModelByIndex_NoSync(prg);  // also updates loop_start/len (copy from model)
+            }
+         }
+
+         // (Re-)start timeline replay
          if(noteOnVel > 0.0f)
          {
             // Start timeline
@@ -804,22 +839,6 @@ class SampleTimeline {
             b_update_lane_sends = true;
          }
 
-         local int prg = _frInput.getFilteredPrgChg(_curTrack.dev_idx, _curTrack.midi_ch);
-         if(prg >= 0)
-         {
-            local int curPrg = (null != replay_model) ? all_models.indexOfPointer(replay_model, 0) : -1;
-            if(bDebug) trace "[>>>] SampleTimeline: select replay model idx="+prg+" cur="+curPrg;
-            if(prg != curPrg)
-            {
-               if(bDebug) trace "[>>>] SampleTimeline: switch to new replay model idx="+prg;
-               allNotesOff(true/*bRelease*/);
-               replay_model <= all_models.get(prg);
-               if(null != replay_model)
-                  replay_model.invalidateClipIndexHints();
-               b_update_lane_sends = true;
-            }
-         }
-
          // Process performance controllers and relay to track sampleplayers
          local int numEv;
          local int evIdx;
@@ -828,6 +847,7 @@ class SampleTimeline {
          processCCs(_frInput, devIdx, midiCh, -1/*fltReplayTrackIdx*/, true/*bAllowReset*/);
 
          // Pitchbend
+         //  (todo) implement or remove
          numEv = _frInput.getNumEventsPitchbendByFlt(devIdx, midiCh);
          evIdx = 0;
          loop(numEv)
@@ -1050,7 +1070,7 @@ class SampleTimeline {
       loop(replay_tracks.numElements)
       {
          replayTrack <= replay_tracks.get(trackIdx);
-         track <= replay_model.tracks.get(trackIdx);
+         track <= (null != replay_model) ? replay_model.tracks.get(trackIdx) : null;
          if( null != track && (b_update_lane_sends || track.lane_sends_slew_amt < 1.0) )
          {
             local FloatArray aClipLevelMod <= null;
