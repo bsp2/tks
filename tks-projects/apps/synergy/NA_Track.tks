@@ -1,7 +1,7 @@
 // ----
 // ---- file   : NA_Track.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2015-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -17,7 +17,7 @@
 // ----          06Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 30Oct2020, 12Nov2020, 22May2021
 // ----          01Jan2022, 13Feb2022, 11Aug2022, 12Aug2022, 13Aug2022, 06Jan2023, 13Oct2023
 // ----          14Oct2023, 16Nov2023, 18Nov2023, 02Feb2024, 03Feb2024, 07Jul2024, 15Nov2024
-// ----          25Jan2025, 26Jan2025, 22May2025, 30May2025
+// ----          25Jan2025, 26Jan2025, 22May2025, 30May2025, 03Jan2026
 // ----
 // ----
 // ----
@@ -32,7 +32,6 @@ use namespace st2;
 class NA_Track : NA_Defs {
 
    // see Eureka SampleTimeline.tks
-   // // define int AUDIO_TIMELINE_SEQ_TRIG_NOTE = (2*12 + 5)/*F-2*/;  // which externally sent note starts the replay
    define int AUDIO_TIMELINE_SEQ_TRIG_NOTE = (3*12)/*C-3*/;  // which externally sent note starts the replay
 
    int node_gid;  // only valid when track is not the marker track, NODE_GID_MARKER if it's the marker track, NODE_GID_AUDIO if it's an audio track
@@ -116,6 +115,23 @@ class NA_Track : NA_Defs {
          if(!_retSmpUIDs.contains(clip.audio_smp_uid))
             _retSmpUIDs.add(clip.audio_smp_uid);
       }
+   }
+
+   // <method_find.png>
+   public =replay= method findSysExTrack() : SysExTrack {
+      // (note) assumes successful Query()
+      SysExTrack *syxTrack;
+      foreach syxTrack in SysEx.queued_recv_tracks
+      {
+         if(audio_dev_idx == syxTrack.dev_idx)
+         {
+            if( (-1 == audio_midi_ch) || (-1 == syxTrack.midi_ch) || (audio_midi_ch == syxTrack.midi_ch) )
+            {
+               return syxTrack;
+            }
+         }
+      }
+      return null;
    }
 
    // <method_set.png>
@@ -275,6 +291,7 @@ class NA_Track : NA_Defs {
       Global.Debug2("NA_Track::newClip: start="+_startTicks+" end="+_endTicks+" node_gid="+node_gid);
       local NA_Clip clip;
       clip.init(_startTicks, _endTicks, next_clip_uid++, node_gid);
+      clip.b_audio_timeline = b_audio_timeline;
 
       if(clip.isMarker())
       {
@@ -840,6 +857,21 @@ class NA_Track : NA_Defs {
       // trace "xxx save track gid="+node_gid+" ch="+audio_midi_ch+" prevTrackGIDHint="+_prevTrackGIDHint;
    }
 
+   // <method.png>
+   public method updateClipsAudioTimelineFlag() {
+      NA_Clip *clip;
+      foreach clip in clips_main
+         clip.b_audio_timeline = b_audio_timeline;
+      foreach clip in clips_scratch
+         clip.b_audio_timeline = b_audio_timeline;
+   }
+
+   // <method_set.png>
+   public method setEnableAudioTimeline(boolean _bEnable) {
+      b_audio_timeline = _bEnable;
+      updateClipsAudioTimelineFlag();
+   }
+
    // <load.png>
    public method loadState(Stream ifs, boolean _bLoadUIDs) : boolean {
       short ver = ifs.u16;
@@ -959,6 +991,9 @@ class NA_Track : NA_Defs {
                // Audio multi-track timeline mode (Eureka) (v8+)
                b_audio_timeline = ifs.b8;
             }
+
+            // update b_audio_timeline flag
+            updateClipsAudioTimelineFlag();
          }
 
          if(ver >= 7)

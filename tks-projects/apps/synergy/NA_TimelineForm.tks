@@ -1,7 +1,7 @@
 // ----
 // ---- file   : NA_TimelineForm.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2017-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -18,7 +18,7 @@
 // ----          11Aug2022, 12Aug2022, 11Feb2023, 15Mar2023, 21Sep2023, 03Oct2023, 05Oct2023
 // ----          08Oct2023, 19Oct2023, 21Oct2023, 29Oct2023, 11Nov2023, 16Nov2023, 17Nov2023
 // ----          02Feb2024, 03Feb2024, 22Mar2024, 24Mar2024, 02Oct2024, 15Nov2024, 06Jan2025
-// ----          07Jan2025, 24Jan2025, 25Jan2025, 26Jan2025, 22May2025
+// ----          07Jan2025, 24Jan2025, 25Jan2025, 26Jan2025, 22May2025, 03Jan2026
 // ----
 // ----
 // ----
@@ -37,6 +37,9 @@ class NA_TimelineForm : XMLForm, ActionProvider {
    NA_State *tstate;
 
    NA_TimelineData *data;
+
+   define String TA_TRACK_CHANGED;
+   protected TimerAction *ta_track_changed;
 
    protected LayerSwitch *ls_data_scroll;
    protected Slider      *sl_data_scroll;
@@ -123,7 +126,7 @@ class NA_TimelineForm : XMLForm, ActionProvider {
             cm_play_mode          .setToolTipCaptions(NA_TimelineData.play_mode_tooltips);
 
             cm_clip_offset_unit.setOptions(NA_TimelineData.grid_unit_names);
-            cm_clip_pattern    .setOptions(Node.patnr_options);
+            cm_clip_pattern    .setOptions(Node.patnr_options);  // (note) updated in handleTrackChangedTimer()
             cm_clip_pattern    .setOptionBGColors(Node.patnr_colors);
 
             sl_data_scroll.setEnableFlatHighContrast(false);
@@ -140,6 +143,12 @@ class NA_TimelineForm : XMLForm, ActionProvider {
 
    // <ui_timer.png>
    protected method initTimers() {
+      ta_track_changed <= TimerAction.New(TA_TRACK_CHANGED, this, 150);
+   }
+
+   // <ui_timer.png>
+   public method rescheduleTrackChanged() {
+      ta_track_changed.reschedule();
    }
 
    // <ui_kbd.png>
@@ -230,6 +239,11 @@ class NA_TimelineForm : XMLForm, ActionProvider {
       updateClipStartEndStep();
 
       updateMuteSoloLockStates();
+
+      if(SysEx.IsAudioConnected())
+      {
+         handleQueryPost();  // update clip names, ..
+      }
    }
 
    // <method.png>
@@ -242,6 +256,8 @@ class NA_TimelineForm : XMLForm, ActionProvider {
    // <ui_hide.png>
    public method leaveNode() {
       Global.Debug("NA_TimelineForm::leaveNode");
+
+      ta_track_changed.cancel();
 
       parent_node <= null;
       data.leaveNode();
@@ -1262,7 +1278,21 @@ class NA_TimelineForm : XMLForm, ActionProvider {
                clip <= track.findClipByUID(clipUID);
 
                if(null != clip)
+               {
                   clip.pattern_nr = cm_clip_pattern.getSelectedOption();
+
+                  if(track.isAudioTimeline())
+                  {
+                     // Try to sync clip name from Eureka sample timeline name
+                     SysExTrack syxTrack <= track.findSysExTrack();
+                     if(null != syxTrack)
+                     {
+                        StringArray aTimelineNames <= syxTrack.timeline_names;
+                        clip.pat_name = aTimelineNames.get(clip.pattern_nr);
+                        tf_clip_name.setText(clip.pat_name);
+                     }
+                  }
+               }
             }
 
             // Next selected clip
@@ -1282,7 +1312,7 @@ class NA_TimelineForm : XMLForm, ActionProvider {
    protected method handleClipNameChanged() {
       NA_Clip clip <= data.getFirstSelectedClip();
 
-      if(null != clip) // paranoia
+      if(null != clip) // should not be null
       {
          clip.setName(tf_clip_name.getText());
 
@@ -1755,6 +1785,7 @@ class NA_TimelineForm : XMLForm, ActionProvider {
 
    // <ui_cmd.png>
    public method refreshAudioClipNamesFromSampleNames2() {
+      // (note) called by AudioLiveRecForm::handleQuery()
       int numUpdated = 0;
       NA_Track *track;
       foreach track in tstate.tracks
@@ -1791,6 +1822,151 @@ class NA_TimelineForm : XMLForm, ActionProvider {
       refreshAudioClipNamesFromSampleNames2();
    }
 
+   // <ui_update.png>
+   public method updateClipPatNrOptions() {
+      // (note) called by handleTr#ackChangedTimer()
+      // (note) called by AudioLiveRecForm::handleQuery()
+
+      // Fallback / default
+      local StringArray aOpt = Node.patnr_options;
+      local StringArray aOptLong = aOpt;
+
+      // Track-type dependent options
+      int trackIdx = data.drag_start_track_sorted;
+      Global.Debug2("NA_TimelineForm::updateClipPatNrOptions: cursorTrackIdx="+trackIdx);
+      NA_Track track <= tstate.getTrackByIdx(trackIdx);
+      if(null != track) // should not be null
+      {
+         int patIdx;
+         Integer ioPatNr;
+         String *sOpt;
+         String *sOptLong;
+         SysExTrack syxTrack <= track.findSysExTrack();
+         if(null != syxTrack)  // null if Query() did not succeed (e.g. Eureka host not connected)
+         {
+            if(track.isAudio())
+            {
+               if(track.isAudioTimeline())
+               {
+                  // play via Eureka-Track SampleTimeline
+                  StringArray aTimelineNames <= syxTrack.timeline_names;
+                  Global.Debug2("NA_TimelineForm::updateClipPatNrOptions: audio_timeline names="+aTimelineNames);
+                  patIdx = 0;
+                  ioPatNr = 1;
+                  loop(aTimelineNames.numElements)  // 128 elements
+                  {
+                     String sTimelineName <= aTimelineNames.get(patIdx);
+
+                     sOpt <= aOpt.get(patIdx);
+                     sOpt = ioPatNr.printf("%03d"); //+"/"+ioPatNr.printf("0x%02x")
+                     sOpt.append(":");
+
+                     sOptLong <= aOptLong.get(patIdx);
+                     sOptLong = ioPatNr.printf("%03d")+":";
+                     if(null != sTimelineName && !sTimelineName.isBlank())
+                     {
+                        sOpt.append(sTimelineName.substring(0,4));
+                        sOptLong.append(sTimelineName);
+                     }
+                     else
+                     {
+                        sOpt.append("-");
+                        sOptLong.append("-");
+                     }
+
+                     patIdx++;
+                     ioPatNr++;
+                  }
+               }
+               else
+               {
+                  // play via Eureka-Track ModSample instances
+                  //  (todo) list all samples ?
+               }
+            }
+         }
+      }
+
+      cm_clip_pattern.setOptions(aOpt);
+      cm_clip_pattern.setOptionsLong(aOptLong);
+      cm_clip_pattern.setOptionBGColors(Node.patnr_colors);
+   }
+
+   // <method_update.png>
+   protected method updateClipNamesFromTimelineNames(PointerArray _aClips, StringArray _aTimelineNames) : int {
+      int numUpdated = 0;
+      NA_Clip *clip;
+      foreach clip in _aClips
+      {
+         String sTimelineName <= _aTimelineNames.get(clip.pattern_nr);
+         if(null != sTimelineName)
+         {
+            if(clip.pat_name != sTimelineName)
+            {
+               clip.pat_name = sTimelineName;
+               numUpdated++;
+            }
+         }
+         else
+         {
+            if(clip.pat_name != "")
+            {
+               clip.pat_name = "";
+               numUpdated++;
+            }
+         }
+      } // foreach clip
+      return numUpdated;
+   }
+
+   // <method_update.png>
+   public method refreshAudioClipNamesFromTimelineNames() {
+      Global.Debug2("NA_TimelineForm::refreshAudioClipNamesFromTimelineNames: ENTER");
+
+      int numUpdated = 0;
+      NA_Track *track;
+      int trackIdx = 0;
+      foreach track in tstate.tracks
+      {
+         SysExTrack syxTrack <= track.findSysExTrack();
+         if(null != syxTrack)  // null if Query() did not succeed (e.g. Eureka host not connected)
+         {
+            if(track.isAudio())
+            {
+               if(track.isAudioTimeline())
+               {
+                  // Eureka-Track SampleTimeline
+                  numUpdated += updateClipNamesFromTimelineNames(track.clips_main,    syxTrack.timeline_names);
+                  numUpdated += updateClipNamesFromTimelineNames(track.clips_scratch, syxTrack.timeline_names);
+
+               } // if isAudioTimeline
+            } // if isAudio
+         } // if syxTrack
+
+         // Next track
+         trackIdx++;
+
+      } // foreach track
+
+      Global.Debug2("NA_TimelineForm::refreshAudioClipNamesFromTimelineNames: updated "+numUpdated+" clip(s)");
+   }
+
+   // <method.png>
+   public method handleQueryPost() {
+      // Called by AudioLiveRecForm::handleQuery()
+      refreshAudioClipNamesFromSampleNames2();
+      updateAudioTimelineTrackModesFromSysEx(AudioLiveRecForm.all_tracks);
+      updateClipPatNrOptions();
+      refreshAudioClipNamesFromTimelineNames();
+      data.handleSelectionChanged(); // update clip widgets
+   }
+
+   // <ui_timer.png>
+   protected method handleTrackChangedTimer() {
+      trace "[trc] NA_TimelineForm::handleTrackChangedTimer";
+      updateClipPatNrOptions();
+   }
+
    // <method.png>
    public =replay= method updateAudioTimelineTrackModesFromSysEx(PointerArray _aSysExTracks) {
       Global.Debug("[dbg] NA_TimelineForm::updateAudioTimelineTrackModesFromSysEx: ENTER");
@@ -1810,7 +1986,7 @@ class NA_TimelineForm : XMLForm, ActionProvider {
                   {
                      if(track.b_audio_timeline != syxTrack.b_audio_timeline)
                      {
-                        track.b_audio_timeline = syxTrack.b_audio_timeline;
+                        track.setEnableAudioTimeline(syxTrack.b_audio_timeline);
                         bChanged = true;
                      }
                   }
@@ -2126,6 +2302,13 @@ class NA_TimelineForm : XMLForm, ActionProvider {
       PagePipeMap pgPipeMap <= root_form.pg_pipemap;
 
       // // trace "[>>>] NodeTrackerEnvelopeView::consumeAction: acName="+acName+" ap="+#(ap);
+
+      switch(acName)
+      {
+         case TA_TRACK_CHANGED:
+            handleTrackChangedTimer();
+            return true;
+      }
 
       switch(@(ap))
       {
