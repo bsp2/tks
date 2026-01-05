@@ -2,7 +2,7 @@
 // ---- file   : LineStripFlatMiterAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -281,7 +281,7 @@ class LineStripFlatMiterAA14_2 : public ShaderVG_Shape {
          Dsdvg_attrib_divisor(shape_a_vertex_nn, 1);
 
          const sSI numSeg = (_numPoints - 2);
-         Dsdvg_uniform_1f(shape_u_last_instance, numSeg - 1);
+         Dsdvg_uniform_1f(shape_u_last_instance, sF32(numSeg - 1));
          Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
 
          Dsdvg_attrib_disable(shape_a_vertex_nn);
