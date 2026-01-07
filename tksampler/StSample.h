@@ -847,8 +847,8 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_DST_PLUGIN_2_LEVEL              YCI   192
 #define STSAMPLE_MM_DST_PLUGIN_3_LEVEL              YCI   193
 #define STSAMPLE_MM_DST_PLUGIN_4_LEVEL              YCI   194
-#define STSAMPLE_MM_DST_SYNC_SPEED                  YCI   195
-#define STSAMPLE_MM_DST_SYNC_SLEW                   YCI   196
+#define STSAMPLE_MM_DST_SYNC_SPEED                  YCI   195  // e.g. 25% (0.25) via SRC_CONST_1
+#define STSAMPLE_MM_DST_SYNC_SLEW                   YCI   196  // e.g. 50% (0.50) via SRC_CONST_1
 #define STSAMPLE_MM_DST_SAMPLE_RATE_REDUCTION       YCI   197
 #define STSAMPLE_MM_DST_BIT_REDUCTION               YCI   198
 #define STSAMPLE_MM_DST_WT_ADDITIVE_CFG             YCI   199
