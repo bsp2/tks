@@ -50,7 +50,7 @@ static sF32  size_sclx    = 1.0f;  // 'q', 'w'
 static sF32  size_scly    = 1.0f;  // 'z', 'x'
 static sBool b_benchmark  = 0;
 
-static sU32 last_sdl_ticks = 0u;
+static sU32 last_ticks = 0u;  // 1000 ticks per second
 
 static sF32 ang_x = 0.0f;
 static sF32 ang_y = 0.0f;
@@ -2494,21 +2494,21 @@ void TestBeginLineStripFlatMiter(sBool _bAA) {
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
-   sU32 ticks = SDL_GetTicks();
-   // Dprintf("xxx ticks=%u last_sdl_ticks=%u\n", ticks, last_sdl_ticks);
+   sU32 ticks = hal_get_ticks();
+   // Dprintf("xxx ticks=%u last_ticks=%u\n", ticks, last_ticks);
    sF32 dt;
-   if(0u != last_sdl_ticks)
-      dt = (ticks - last_sdl_ticks) / (1000.0f / 60.0f);
+   if(0u != last_ticks)
+      dt = (ticks - last_ticks) / (1000.0f / 60.0f);
    else
       dt = 01.0f;
-   last_sdl_ticks = ticks;
+   last_ticks = ticks;
    // Dprintf("xxx hal_on_draw dt=%f\n", dt);
 
    if(b_benchmark)
    {
       if(BENCHMARK_NUM_FRAMES_BASELINE == benchmark_frames_left)
       {
-         benchmark_ms_start = (float)SDL_GetTicks();
+         benchmark_ms_start = (float)hal_get_ticks();
       }
 
       if(0.0f == benchmark_ms_avg_baseline)
@@ -4232,7 +4232,7 @@ void hal_on_draw(void) {
          sF32 deltaMS;
          if(0.0f == benchmark_ms_avg_baseline)
          {
-            deltaMS = (SDL_GetTicks() - benchmark_ms_start);
+            deltaMS = (hal_get_ticks() - benchmark_ms_start);
             benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES_BASELINE);
             benchmark_ms_avg_baseline = benchmark_ms_avg;
             render_mode = 0;
@@ -4240,15 +4240,15 @@ void hal_on_draw(void) {
          }
          else
          {
-            deltaMS = (SDL_GetTicks() - benchmark_ms_start);
+            deltaMS = (hal_get_ticks() - benchmark_ms_start);
             benchmark_ms_avg = deltaMS / ((sF32)BENCHMARK_NUM_FRAMES);
             // benchmark_ms_avg -= benchmark_ms_avg_baseline;
             Dprintf("[...] benchmark: render mode %d \"%s\" deltaMS=%f ms_avg=%f (%f fps)\n", render_mode, mode_names[render_mode], deltaMS, (((sSI)(100*benchmark_ms_avg))*0.01f), (1000.0f/benchmark_ms_avg));
             render_mode++;
             if(render_mode >= NUM_RENDER_MODES)
-               b_hal_running = YAC_FALSE;
+               hal_window_quit();
          }
-         benchmark_ms_start = (sF32)SDL_GetTicks();
+         benchmark_ms_start = (sF32)hal_get_ticks();
          benchmark_frames_left = BENCHMARK_NUM_FRAMES;
       }
    }
@@ -4327,20 +4327,21 @@ static void SelectRenderMode(sSI _mode) {
    {
       char buf[256];
       snprintf(buf,256,"%d:%s",render_mode,mode_names[render_mode]);
-      SDL_SetWindowTitle(sdl_window, buf);
+      hal_window_set_title(buf);
    }
 }
 
 // ---------------------------------------------------------------------------- hal_on_key_down
 void hal_on_key_down(sU32 _code, sU32 _mod) {
+   // Dprintf("xxx hal_on_key_down: code=0x%08x  mod=0x%08x\n", _code, _mod);
    switch(_code)
    {
-      case SDLK_ESCAPE:
-         Dprintf("[dbg] SDLK_ESCAPE, exiting..\n");
-         b_hal_running = YAC_FALSE;
+      case VKEY_ESCAPE:
+         Dprintf("[dbg] ESCAPE, exiting..\n");
+         hal_window_quit();
          break;
 
-      case SDLK_SPACE:
+      case VKEY_SPACE:
          if(_mod)
          {
             b_slomo = !b_slomo;
@@ -4353,11 +4354,11 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          }
          break;
 
-      case SDLK_RETURN:
+      case VKEY_RETURN:
          ResetParams();
          break;
 
-      case SDLK_TAB:
+      case VKEY_TAB:
          if(_mod)
          {
             b_anim_whc = !b_anim_whc;
@@ -4370,20 +4371,20 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          }
          break;
 
-      case SDLK_UP:
+      case VKEY_UP:
          SelectRenderMode(sWRAP(render_mode + 1, 0, NUM_RENDER_MODES));
          break;
 
-      case SDLK_DOWN:
+      case VKEY_DOWN:
          SelectRenderMode(sWRAP(render_mode - 1, 0, NUM_RENDER_MODES));
          break;
 
-      case SDLK_RIGHT:
+      case VKEY_RIGHT:
          stroke_w = sMIN(stroke_w + 0.125f, 16.0f);
          Dprintf("[...] stroke_w is %f\n", stroke_w);
          break;
 
-      case SDLK_LEFT:
+      case VKEY_LEFT:
          stroke_w = sMAX(stroke_w - 0.125f, 0.125f);
          Dprintf("[...] stroke_w is %f\n", stroke_w);
          break;
@@ -4572,7 +4573,7 @@ int main(int argc, char**argv) {
       custom_vbo_id_3 = 0u;
       polygon_vbo_id = 0u;
 
-      SDL_GL_SetSwapInterval(b_benchmark ? 0 : 1);
+      hal_set_swap_interval(b_benchmark ? 0 : 1);
 
       hal_window_loop();
 

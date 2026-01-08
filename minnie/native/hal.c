@@ -2,7 +2,7 @@
 // ---- file   : hal.c
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -33,11 +33,48 @@
 #define Derrorprintf  if(!MINNIE_PRINTF);else printf
 
 #include "../inc_yac.h"
+#include "../../tksdl2/inc_sdl.h"
 #include "hal.h"
 
 SDL_Window    *sdl_window = NULL;
 SDL_GLContext  sdl_glcontext = NULL;
 sBool          b_hal_running = YAC_FALSE;
+
+// ---------------------------------------------------------------------------- loc_map_key_sym
+static sU32 loc_map_key_sym(sU32 _sym) {
+   switch(_sym)
+   {
+      case SDLK_BACKSPACE: _sym = VKEY_BACKSPACE; break;
+      case SDLK_TAB:       _sym = VKEY_TAB;       break;
+      case SDLK_RETURN:    _sym = VKEY_RETURN;    break;
+      case SDLK_ESCAPE:    _sym = VKEY_ESCAPE;    break;
+      case SDLK_SPACE:     _sym = VKEY_SPACE;     break;
+      case SDLK_UP:        _sym = VKEY_UP;        break;
+      case SDLK_DOWN:      _sym = VKEY_DOWN;      break;
+      case SDLK_RIGHT:     _sym = VKEY_RIGHT;     break;
+      case SDLK_LEFT:      _sym = VKEY_LEFT;      break;
+      case SDLK_INSERT:    _sym = VKEY_INSERT;    break;
+      case SDLK_HOME:      _sym = VKEY_HOME;      break;
+      case SDLK_END:       _sym = VKEY_END;       break;
+      case SDLK_PAGEUP:    _sym = VKEY_PAGEUP;    break;
+      case SDLK_PAGEDOWN:  _sym = VKEY_PAGEDOWN;  break;
+   }
+   return _sym;
+}
+
+// ---------------------------------------------------------------------------- loc_map_key_mod
+static sU32 loc_map_key_mod(sU32 _mod) {
+   switch(_mod)
+   {
+      case KMOD_LSHIFT:  _mod = VMOD_LSHIFT; break;
+      case KMOD_RSHIFT:  _mod = VMOD_RSHIFT; break;
+      case KMOD_LCTRL:   _mod = VMOD_LCTRL; break;
+      case KMOD_RCTRL:   _mod = VMOD_RCTRL; break;
+      case KMOD_LALT:    _mod = VMOD_LALT; break;
+      case KMOD_RALT:    _mod = VMOD_RALT; break;
+   }
+   return _mod;
+}
 
 // ---------------------------------------------------------------------------- hal_window_init
 sBool hal_window_init(void) {
@@ -45,11 +82,11 @@ sBool hal_window_init(void) {
 
    SDL_InitSubSystem(SDL_INIT_VIDEO);
    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-   SDL_GL_SetAttribute( SDL_GL_RED_SIZE, 5 );   // require at least 5 bits per channel
-   SDL_GL_SetAttribute( SDL_GL_GREEN_SIZE, 5);
-   SDL_GL_SetAttribute( SDL_GL_BLUE_SIZE, 5);
-   SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE, 16);
-   SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER, 1);
+   SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5 );   // require at least 5 bits per channel
+   SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 5);
+   SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5);
+   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -96,6 +133,21 @@ sBool hal_window_init(void) {
    return ret;
 }
 
+// ---------------------------------------------------------------------------- hal_window_set_title
+void hal_window_set_title(const char *_s) {
+   SDL_SetWindowTitle(sdl_window, _s);
+}
+
+// ---------------------------------------------------------------------------- hal_get_ticks
+sU32 hal_get_ticks(void) {
+   return SDL_GetTicks();
+}
+
+// ---------------------------------------------------------------------------- hal_set_swap_interval
+void hal_set_swap_interval(sU32 _interval) {
+   SDL_GL_SetSwapInterval(_interval);
+}
+
 // ---------------------------------------------------------------------------- hal_window_loop
 void hal_window_loop(void) {
    Dprintf("[...] hal: entering event loop..\n");
@@ -113,7 +165,7 @@ void hal_window_loop(void) {
                break;
 
             case SDL_KEYDOWN:
-               hal_on_key_down(ev.key.keysym.sym, ev.key.keysym.mod);
+               hal_on_key_down(loc_map_key_sym(ev.key.keysym.sym), loc_map_key_mod(ev.key.keysym.mod));
                break;
 
             case SDL_QUIT:
@@ -131,6 +183,11 @@ void hal_window_loop(void) {
 // ---------------------------------------------------------------------------- hal_window_swap
 void hal_window_swap(void) {
    SDL_GL_SwapWindow(sdl_window);
+}
+
+// ---------------------------------------------------------------------------- hal_window_quit
+void hal_window_quit(void) {
+   b_hal_running = YAC_FALSE;
 }
 
 // ---------------------------------------------------------------------------- hal_window_exit
