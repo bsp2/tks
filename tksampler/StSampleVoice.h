@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSampleVoice.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -24,7 +24,7 @@
 // ----          28Dec2022, 29Dec2022, 30Dec2022, 31Dec2022, 09Mar2023, 03Apr2023, 14Aug2023
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
-// ----          03Jan2025, 04Jan2025
+// ----          03Jan2025, 04Jan2025, 09Jan2026
 // ----
 // ----
 // ----
@@ -619,6 +619,8 @@ YC class StSampleVoice : public YAC_Object {
    void calcModMatrix (tksampler_mmdst_t &mmdst);
 
    void lazyAllocOverrideSmpDat (sUI _sz);
+
+   void adjustPlayOffsetToNextZeroCrossing (const sF32 *_smpDat);
 
   public:
    static sF32 BitReduce (sF32 f, const sF32 _brPreAmp, const sU16 _brMask);

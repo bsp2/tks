@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSample.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -26,7 +26,7 @@
 // ----          11Aug2023, 16Aug2023, 13Sep2023, 19Sep2023, 22Sep2023, 17Nov2023, 18Nov2023
 // ----          10Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 01Oct2024, 03Oct2024, 05Oct2024, 13Oct2024
-// ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025
+// ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026
 // ----
 // ----
 // ----
@@ -177,6 +177,7 @@ void StSample::reinit(void) {
    b_invert_sampleoffset_velocity_amount = YAC_TRUE;
    sampleoffset_rand_amount              = 0.0f;
    sampleoffset_rel                      = 0.0f;
+   b_initial_sampleoffset_zc             = YAC_FALSE;  // (note) true for samples created in UI (newZone())
 
    b_timestretch                  = YAC_FALSE;
    b_timestretch_additive         = YAC_FALSE;
@@ -1500,6 +1501,14 @@ void StSample::_setSampleOffsetRel(sF32 _pct) {
 
 sF32 StSample::_getSampleOffsetRel(void) {
    return sampleoffset_rel;
+}
+
+void StSample::_setEnableSampleOffsetZC(sBool _bEnable) {
+   b_initial_sampleoffset_zc = _bEnable;
+}
+
+sBool StSample::_getEnableSampleOffsetZC(void) {
+   return b_initial_sampleoffset_zc;
 }
 
 sF32 StSample::_getSampleRateRatio(void) {

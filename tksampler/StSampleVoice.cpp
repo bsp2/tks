@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSampleVoice.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -31,7 +31,7 @@
 // ----          07Sep2023, 14Sep2023, 17Sep2023, 18Nov2023, 09Jan2024, 10Jan2024, 13Jan2024
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
-// ----          12Jan2025
+// ----          12Jan2025, 09Jan2026
 // ----
 // ----
 // ----
@@ -1584,7 +1584,6 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       modseq[i].mod_numsteps = _params->_modseq_numsteps[i];
       modseq[i].mod_advance  = _params->_modseq_advance[i];
       modseq[i].mmdst_speed    = 1.0f;
-      // // modseq[i].mmdst_level    = 0.0f;  // relative
       modseq[i].mmdst_numsteps = 0.0f;  // relative
       modseq[i].mmdst_advance  = 0.0f;  // relative
 
@@ -1593,7 +1592,6 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
       sample->modseq_global[i].mod_numsteps = _params->_modseq_numsteps[i];
       sample->modseq_global[i].mod_advance  = _params->_modseq_advance[i];
       sample->modseq_global[i].mmdst_speed    = 1.0f;
-      // // sample->modseq_global[i].mmdst_level    = 0.0f;  // relative
       sample->modseq_global[i].mmdst_numsteps = 0.0f;  // relative
       sample->modseq_global[i].mmdst_advance  = 0.0f;  // relative
    }
@@ -1815,10 +1813,6 @@ void StSampleVoice::softStopVoice(void) {
       queued_noteon.b_valid = 0;
 
       b_used = YAC_FALSE; // => can allocate
-
-      // //xxx workaround to prevent clicks in "14Sep2010" testcase (bassline)
-      //    ==> should be fixed now
-      // //stopVoice();
 
       // stop after volume ramp fadeout
       if(b_playing && (NULL != sample))
@@ -5225,7 +5219,6 @@ void StSampleVoice::calcCurrentOffset(void) {
    // (note) current_play_offset is relative to current sample/loop start
    //
 
-   // // sF32 relSmpOff = (sample->sampleoffset_velocity_amount * queued_noteon._vel) + mod_sampleoff + mod_sampleoff2 + sample_player->mod_sampleoff;
    sF32 relSmpOff = mod_sampleoff + mod_sampleoff2 + mod_sampleoff_wt2d + mmdst_sampleoff + sample_player->mod_sampleoff + sample->sampleoffset_rel;
 
    // Dyac_host_printf("xxx relSmpOff=%f current_play_offset=%f\n", relSmpOff, current_play_offset);
@@ -10118,6 +10111,52 @@ sUI StSampleVoice::renderBlockNormal(sF32 *     buf,
    return 0;
 }
 
+void StSampleVoice::adjustPlayOffsetToNextZeroCrossing(const sF32 *_smpDat) {
+   if(1u == sample->waveform->num_channels)
+   {
+      sUI curOff = sUI(current_play_offset);
+      const sUI offMax = sMIN(current_sample_len, 512u) + curOff;
+      sF32 c = _smpDat[curOff];
+      sBool bZC = Dfltzero(c);
+      // Dyac_host_printf("xxx adjustPlayOffsetToNextZeroCrossing: curOff=%u bZC=%d\n", curOff, bZC);
+      if(!bZC)
+      {
+         sF32 l;
+         if(current_sample_offset > 0u || curOff > 0u)
+         {
+            l = _smpDat[sSI(curOff) - 1];
+            bZC =
+               ((l >= 0.0f) && (c <= 0.0f)) ||
+               ((l <= 0.0f) && (c >= 0.0f))
+               ;
+            // Dyac_host_printf("xxx adjustPlayOffsetToNextZeroCrossing: bZC2=%d l=%f c=%f\n", bZC, l, c);
+         }
+         if(!bZC)
+         {
+            // Find next zero-crossing
+            sUI off = curOff + 1u;
+            while(off < offMax)
+            {
+               l = c;
+               c = _smpDat[off];
+               // Dyac_host_printf("xxx adjustPlayOffsetToNextZeroCrossing: off=%u l=%f c=%f\n", off, l, c);
+               if(Dfltzero(c) ||
+                  ((l >= 0.0f) && (c <= 0.0f)) ||
+                  ((l <= 0.0f) && (c >= 0.0f))
+                  )
+               {
+                  current_play_offset = off;
+                  // Dyac_host_printf("[>>>] adjust initial play_offset to zc at off=%u (l=%f c=%f)\n", off, l, c);
+                  return;
+               }
+               
+               // Next frame
+               off++;
+            }
+         }
+      }
+   }
+}
 
 sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volScale, const sF32**_inputsOrNull/*sz=STSAMPLE_MAX_INPUTS*/) {
 
@@ -10246,6 +10285,13 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
    }
    else
    {
+      if(sample->b_initial_sampleoffset_zc && 0.0 == play_offset_actual)
+      {
+         // Adjust current_play_offset(0) to next zero crossing
+         // Dyac_host_printf("xxx voice first block  current_sample_offset=%u current_sample_len=%u current_play_offset=%f\n", current_sample_offset, current_sample_len, current_play_offset);
+         adjustPlayOffsetToNextZeroCrossing(smpDat);
+      }
+
       // Dyac_host_printf("xxx voice renderBlockNormal 1\n");
       blkLeft = renderBlockNormal(buf, blkSz, smpDat, smpDatLRX, a, b, cVolL, cVolR, sVolL, sVolR, _inputsOrNull);
       // Dyac_host_printf("xxx voice renderBlockNormal 2\n");

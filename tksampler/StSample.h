@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSample.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -27,7 +27,7 @@
 // ----          11Aug2023, 14Aug2023, 16Aug2023, 20Aug2023, 08Sep2023, 13Sep2023, 19Sep2023
 // ----          22Sep2023, 17Nov2023, 18Nov2023, 08Jan2024, 10Jan2024, 13Jan2024, 14Jan2024
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
-// ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025
+// ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026
 // ----
 // ----
 // ----
@@ -213,6 +213,8 @@ YC class StSample : public YAC_Object {
 
    // 0..1
    sF32 sampleoffset_rand_amount;
+
+   sBool b_initial_sampleoffset_zc;  // 1=snap initial sample offset to zero-crossing (in normal playback mode)
 
    // (todo) rename 'timestretch' => 'wavetable' (it can be used as a lo-fi timestretch, though)
    sBool b_timestretch;                  // 1=enable timestretch
@@ -1273,6 +1275,9 @@ YC class StSample : public YAC_Object {
 
    YM sF32 _getSampleOffsetRandAmount (void);
    YM void _setSampleOffsetRandAmount (sF32 _amt);
+
+   YM void  _setEnableSampleOffsetZC (sBool _bEnable);
+   YM sBool _getEnableSampleOffsetZC (void);
 
    YM sF32 _getPan (void);
    YM void _setPan (sF32 _pan);
