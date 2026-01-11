@@ -31,7 +31,7 @@
 // ----          07Sep2023, 14Sep2023, 17Sep2023, 18Nov2023, 09Jan2024, 10Jan2024, 13Jan2024
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
-// ----          12Jan2025, 09Jan2026
+// ----          12Jan2025, 09Jan2026, 11Jan2026
 // ----
 // ----
 // ----
@@ -10285,7 +10285,7 @@ sUI StSampleVoice::renderBlock(sF32 *buf, sUI blkSz, sF32 a, sF32 b, sF32 _volSc
    }
    else
    {
-      if(sample->b_initial_sampleoffset_zc && 0.0 == play_offset_actual)
+      if(sample->b_initial_sampleoffset_zc && 0.0 == play_offset_actual && b_allow_smpoff)
       {
          // Adjust current_play_offset(0) to next zero crossing
          // Dyac_host_printf("xxx voice first block  current_sample_offset=%u current_sample_len=%u current_play_offset=%f\n", current_sample_offset, current_sample_len, current_play_offset);
