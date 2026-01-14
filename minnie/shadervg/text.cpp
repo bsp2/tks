@@ -2,7 +2,7 @@
 // ---- file   : text.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -90,9 +90,6 @@ sBool YAC_CALL sdvg_InitFont(sdvg_font_t *_font,
       ::memset((void*)_font, 0, sizeof(sdvg_font_t));
       _font->info = (sdvg_font_info_t*)_binData;
       _font->glyphs = (sdvg_glyph_t*)(_font->info + 1);
-      // _font->data.buffer   = (sU8*)_binData;
-      // _font->data.size     = _binDataSz;
-      // _font->data.deleteme = YAC_FALSE;
       _font->tex_w    = _texW;
       _font->tex_h    = _texH;
       _font->tex_data = _texData;

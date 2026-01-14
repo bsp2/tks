@@ -2,7 +2,7 @@
 // ---- file   : text.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -60,7 +60,6 @@ typedef struct sdvg_glyph_s {  // 14 bytes (ROM)
 typedef struct sdvg_font_s {  // RAM
    const sdvg_font_info_t *info;
    const sdvg_glyph_t     *glyphs;
-   /* YAC_Buffer data;  // dynamically allocated when loaded from stream / file, static ref when initialized from ROM address */
    sUI         tex_w;
    sUI         tex_h;
    sF32        ob_tex_w;
@@ -91,6 +90,13 @@ extern "C" {
 extern void sdvg_int_reset_font (void); // internal
 
 /* @function sdvg_InitFont,ShaderVG_Font,Object data,Object texData,int texW,int texH:boolean
+
+@arg font Preallocated font data structure. Will be initialized by this function.
+@arg data sdvg_font_info_t followed by sdvg_glyph_t array
+@arg dataSz Size of data buffer in bytes
+@arg texData Alpha8 texture data
+@arg texW Texture width (px)
+@arg texH Texture height (px)
 */
 sBool YAC_CALL sdvg_InitFont (sdvg_font_t *_font, const void *_data, sUI _dataSz, const void *_texData, sUI _texW, sUI _texH);
 
