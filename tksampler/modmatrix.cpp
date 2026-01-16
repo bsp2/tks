@@ -1,7 +1,7 @@
 // ----
 // ---- file   : modmatrix.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -23,7 +23,7 @@
 // ----          30Aug2021, 05Sep2021, 24Nov2022, 20Dec2022, 21Dec2022, 22Dec2022, 23Dec2022
 // ----          27Dec2022, 30Dec2022, 07Apr2023, 12Apr2023, 18Jul2023, 01Sep2023, 08Sep2023
 // ----          19Sep2023, 18Nov2023, 08Jan2024, 10Jan2024, 15Jan2024, 16Jan2024, 26Apr2024
-// ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025
+// ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026
 // ----
 // ----
 // ----
@@ -95,8 +95,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    sBool bPanLFOGlobal  = YAC_FALSE;
    sBool bAuxLFOGlobal  = YAC_FALSE;
 
+   sBool bPerfCtlSP = (!b_release || ((NULL == sample->parent_samplebank) || !sample->parent_samplebank->b_perfctl_freeze_noteoff));
    const sF32 *perfCtl =
-      (!b_release || ((NULL == sample->parent_samplebank) || !sample->parent_samplebank->b_perfctl_freeze_noteoff))
+      bPerfCtlSP
       ? sample_player->perf_ctl
       : perf_ctl_off
       ;
@@ -262,8 +263,9 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    }
 
 
-   mmdst.vol          = 0.0f;
-   mmdst.pan          = 0.0f;
+   mmdst.vol     = 0.0f;
+   mmdst.vol_mul = 1.0f;
+   mmdst.pan     = 0.0f;
 
    mmdst.freq           = 0.0f;
    mmdst.freq_oct       = 0.0f;
@@ -953,6 +955,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC1_MODWHEEL_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC1_MODWHEEL] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC2_BREATHCTL:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL] >= 0.0f)
                {
@@ -1024,6 +1041,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC2_BREATHCTL_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC2_BREATHCTL] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC4_FOOTCTL:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL] >= 0.0f)
                {
@@ -1087,6 +1119,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                {
                   srcVal = perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL] * (1.0f / 127.0f);
                   srcVal = (srcVal * 2.0f) - 1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
+            case STSAMPLE_MM_SRC_CC4_FOOTCTL_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC4_FOOTCTL] = -1.0f;
                }
                else
                {
@@ -1230,6 +1277,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC11_EXPR_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC11_EXPRESSION] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC16_GENERAL_1:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] >= 0.0f)
                {
@@ -1245,6 +1307,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                if(perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] >= 0.0f)
                {
                   srcVal = perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] * (1.0f / 127.0f);
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
+            case STSAMPLE_MM_SRC_CC16_GENERAL_1_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC16_GENERAL_1] = -1.0f;
                }
                else
                {
@@ -1274,6 +1351,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC17_GENERAL_2_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC17_GENERAL_2] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC18_GENERAL_3:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3] >= 0.0f)
                {
@@ -1296,6 +1388,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC18_GENERAL_3_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC18_GENERAL_3] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC19_GENERAL_4:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] >= 0.0f)
                {
@@ -1311,6 +1418,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                if(perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] >= 0.0f)
                {
                   srcVal = perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] * (1.0f / 127.0f);
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
+            case STSAMPLE_MM_SRC_CC19_GENERAL_4_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC19_GENERAL_4] = -1.0f;
                }
                else
                {
@@ -1362,6 +1484,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC80_GENERAL_5_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC80_GENERAL_5] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC81_GENERAL_6:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] >= 0.0f)
                {
@@ -1377,6 +1514,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                if(perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] >= 0.0f)
                {
                   srcVal = perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] * (1.0f / 127.0f);
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
+            case STSAMPLE_MM_SRC_CC81_GENERAL_6_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC81_GENERAL_6] = -1.0f;
                }
                else
                {
@@ -1406,6 +1558,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                break;
 
+            case STSAMPLE_MM_SRC_CC82_GENERAL_7_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC82_GENERAL_7] = -1.0f;
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
             case STSAMPLE_MM_SRC_CC83_GENERAL_8:
                if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] >= 0.0f)
                {
@@ -1421,6 +1588,21 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                if(perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] >= 0.0f)
                {
                   srcVal = perf_ctl_on[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] * (1.0f / 127.0f);
+               }
+               else
+               {
+                  bSrcValid = YAC_FALSE;
+               }
+               break;
+
+            case STSAMPLE_MM_SRC_CC83_GENERAL_8_TRIG:
+               if(perfCtl[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] >= 0.0f)
+               {
+                  srcVal = perfCtl[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] * (1.0f / 127.0f);
+                  if(bPerfCtlSP)
+                     sample_player->perf_ctl_reset_mask |= (1u << STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8);
+                  else
+                     perf_ctl_off[STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8] = -1.0f;
                }
                else
                {
@@ -2055,6 +2237,15 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   mmdst.vol *= srcValDef;
                Delse_mm_lerp(mmdst.vol);
                Dsignaltap(mmdst.vol);
+               break;
+
+               case STSAMPLE_MM_DST_VOLUME_MUL:
+               if(bAutoMul)
+                  mmdst.vol_mul *= srcValDef;
+               else if(bAutoAdd)
+                  mmdst.vol_mul += srcValDef;
+               Delse_mm_lerp(mmdst.vol_mul);
+               Dsignaltap(mmdst.vol_mul);
                break;
 
                case STSAMPLE_MM_DST_PAN:

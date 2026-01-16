@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSamplePlayer.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -19,7 +19,7 @@
 // ----          12Sep2020, 28Apr2021, 20May2021, 26Jun2021, 17Jul2021, 01Aug2021, 10Aug2021
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
-// ----          14Jan2025, 28May2025, 30May2025, 13Jun2025
+// ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026
 // ----
 // ----
 // ----
@@ -121,6 +121,8 @@ StSamplePlayer::StSamplePlayer(void) {
       b_voice_bus_null_buffer_init = YAC_TRUE;
       ::memset((void*)sp_voice_bus_null_buffer, 0, sizeof(sp_voice_bus_null_buffer));
    }
+
+   perf_ctl_reset_mask = 0u;
 }
 
 StSamplePlayer::~StSamplePlayer() {
@@ -2122,6 +2124,8 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
 
    // Dyac_host_printf("xxx StSamplePlayer::inputsOrNull=%p\n", _inputsOrNull);
 
+   perf_ctl_reset_mask = 0u;
+
    // Dyac_host_printf("xxx sp.renderInt() debug 1\n");
    sUI bufNumFrames = (buf->num_elements >> 1);
    if(bufNumFrames <= STSAMPLEVOICE_MAX_VOICE_BUS_FRAMES)
@@ -2181,6 +2185,22 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
          {
             // No more active voices
             break;
+         }
+      }
+
+      // Handle MM_SRC_CC*_TRIG ctl reset
+      if(0u != perf_ctl_reset_mask)
+      {
+         // (note) to be precise, the reset would have to occur at the end of a voice block
+         //         if the SP block size is much larger, a retrig may occur more than once
+         // (note) when called from Eureka, the block size is 64 frames (i.e. rather small)
+
+         sUI perfCtlMask = 1u;
+         for(sUI perfCtlIdx = 0u; perfCtlIdx < STSAMPLEPLAYER_NUM_PERFCTL; perfCtlIdx++)
+         {
+            if(perf_ctl_reset_mask & perfCtlMask)
+               perf_ctl[perfCtlIdx] = -1.0f;
+            perfCtlMask = perfCtlMask << 1;
          }
       }
 

@@ -2679,6 +2679,9 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
    // Aux LFO
    next_aux_lfo += mmdst.lfo.aux;
 
+   // Modmatrix volume multiplication
+   next_vol *= mmdst.vol_mul;
+
    // Volume block ramping
    // if(volramp_fade_vol < 1.0f)
    //    Dyac_host_printf("xxx volramp_fade_vol=%f\n", volramp_fade_vol);

@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSamplePlayer.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -18,7 +18,7 @@
 // ----          28Apr2021, 20May2021, 17Jul2021, 01Aug2021, 10Aug2021, 30Aug2021, 10Dec2022
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
-// ----          13Jun2025
+// ----          13Jun2025, 16Jan2026
 // ----
 // ----
 // ----
@@ -160,6 +160,7 @@ YC class StSamplePlayer : public YAC_Object {
 #endif // LIBSYNERGY_BUILD
 
    sF32 perf_ctl[STSAMPLEPLAYER_NUM_PERFCTL];  // see StSampleVoice
+   sUI  perf_ctl_reset_mask;  // valid during render(), used for MM_SRC_CC*_TRIG
 
    sBool sustain_pedal;
    sBool soft_pedal;

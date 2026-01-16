@@ -24,7 +24,7 @@
 // ----          28Dec2022, 29Dec2022, 30Dec2022, 31Dec2022, 09Mar2023, 03Apr2023, 14Aug2023
 // ----          16Aug2023, 14Sep2023, 10Jan2024, 11Jan2024, 13Jan2024, 14Jan2024, 15Jan2024
 // ----          16Jan2024, 05Aug2024, 28Sep2024, 01Oct2024, 02Oct2024, 03Oct2024, 03Nov2024
-// ----          03Jan2025, 04Jan2025, 09Jan2026
+// ----          03Jan2025, 04Jan2025, 09Jan2026, 16Jan2026
 // ----
 // ----
 // ----
@@ -144,6 +144,7 @@ class StSampleVoiceNoteOnParams {
 
 struct tksampler_mmdst_t {
    sF32  vol;
+   sF32  vol_mul;
    sF32  pan;
 
    sF32  freq;            // -1..1 => -48.0..+48.0

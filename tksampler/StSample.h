@@ -27,7 +27,7 @@
 // ----          11Aug2023, 14Aug2023, 16Aug2023, 20Aug2023, 08Sep2023, 13Sep2023, 19Sep2023
 // ----          22Sep2023, 17Nov2023, 18Nov2023, 08Jan2024, 10Jan2024, 13Jan2024, 14Jan2024
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
-// ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026
+// ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
 // ----
 // ----
 // ----
@@ -537,122 +537,134 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_SRC_CC1_MODWHEEL_INV_ON   YCI   65  // added in MM v28
 #define STSAMPLE_MM_SRC_CC1_MODWHEEL_BIP      YCI   66  // added in MM v28
 #define STSAMPLE_MM_SRC_CC1_MODWHEEL_BIP_ON   YCI   67  // added in MM v28
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL         YCI   68
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_ON      YCI   69
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV     YCI   70  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV_ON  YCI   71  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP     YCI   72  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP_ON  YCI   73  // added in MM v29
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL           YCI   74
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_ON        YCI   75
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV       YCI   76  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV_ON    YCI   77  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP       YCI   78  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP_ON    YCI   79  // added in MM v30
-#define STSAMPLE_MM_SRC_CC7_VOLUME            YCI   80
-#define STSAMPLE_MM_SRC_CC7_VOLUME_ON         YCI   81
-#define STSAMPLE_MM_SRC_CC8_BALANCE           YCI   82
-#define STSAMPLE_MM_SRC_CC8_BALANCE_ON        YCI   83
-#define STSAMPLE_MM_SRC_CC10_PAN              YCI   84
-#define STSAMPLE_MM_SRC_CC10_PAN_ON           YCI   85
-#define STSAMPLE_MM_SRC_CC11_EXPR             YCI   86
-#define STSAMPLE_MM_SRC_CC11_EXPR_ON          YCI   87
-#define STSAMPLE_MM_SRC_CC11_EXPR_INV         YCI   88  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_INV_ON      YCI   89  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_BIP         YCI   90  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_BIP_ON      YCI   91  // added in MM v31
-#define STSAMPLE_MM_SRC_CC16_GENERAL_1        YCI   92
-#define STSAMPLE_MM_SRC_CC16_GENERAL_1_ON     YCI   93
-#define STSAMPLE_MM_SRC_CC17_GENERAL_2        YCI   94
-#define STSAMPLE_MM_SRC_CC17_GENERAL_2_ON     YCI   95
-#define STSAMPLE_MM_SRC_CC18_GENERAL_3        YCI   96
-#define STSAMPLE_MM_SRC_CC18_GENERAL_3_ON     YCI   97
-#define STSAMPLE_MM_SRC_CC19_GENERAL_4        YCI   98
-#define STSAMPLE_MM_SRC_CC19_GENERAL_4_ON     YCI   99
-#define STSAMPLE_MM_SRC_CC74_BRIGHT           YCI  100
-#define STSAMPLE_MM_SRC_CC74_BRIGHT_ON        YCI  101
-#define STSAMPLE_MM_SRC_CC80_GENERAL_5        YCI  102
-#define STSAMPLE_MM_SRC_CC80_GENERAL_5_ON     YCI  103
-#define STSAMPLE_MM_SRC_CC81_GENERAL_6        YCI  104
-#define STSAMPLE_MM_SRC_CC81_GENERAL_6_ON     YCI  105
-#define STSAMPLE_MM_SRC_CC82_GENERAL_7        YCI  106
-#define STSAMPLE_MM_SRC_CC82_GENERAL_7_ON     YCI  107
-#define STSAMPLE_MM_SRC_CC83_GENERAL_8        YCI  108
-#define STSAMPLE_MM_SRC_CC83_GENERAL_8_ON     YCI  109
-#define STSAMPLE_MM_SRC_LFO_FREQ              YCI  110
-#define STSAMPLE_MM_SRC_LFO_VOL               YCI  111
-#define STSAMPLE_MM_SRC_LFO_PAN               YCI  112
-#define STSAMPLE_MM_SRC_LFO_AUX               YCI  113
-#define STSAMPLE_MM_SRC_ENV_FREQ              YCI  114
-#define STSAMPLE_MM_SRC_ENV_VOL               YCI  115
-#define STSAMPLE_MM_SRC_ENV_PAN               YCI  116
-#define STSAMPLE_MM_SRC_ENV_AUX               YCI  117
-#define STSAMPLE_MM_SRC_MODSEQ1               YCI  118
-#define STSAMPLE_MM_SRC_MODSEQ2               YCI  119
-#define STSAMPLE_MM_SRC_MODSEQ3               YCI  120
-#define STSAMPLE_MM_SRC_MODSEQ4               YCI  121
-#define STSAMPLE_MM_SRC_MODSEQ1_BY_VOICEKEY   YCI  122
-#define STSAMPLE_MM_SRC_MODSEQ2_BY_VOICEKEY   YCI  123
-#define STSAMPLE_MM_SRC_MODSEQ3_BY_VOICEKEY   YCI  124
-#define STSAMPLE_MM_SRC_MODSEQ4_BY_VOICEKEY   YCI  125
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_1        YCI  126  // v36+
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_2        YCI  127  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_3        YCI  128  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_4        YCI  129  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_5        YCI  130  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_6        YCI  131  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_7        YCI  132  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_8        YCI  133  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_9        YCI  134  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_10       YCI  135  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_11       YCI  136  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_12       YCI  137  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_13       YCI  138  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_14       YCI  139  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_15       YCI  140  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_16       YCI  141  // ..
-#define STSAMPLE_MM_SRC_REG1                  YCI  142
-#define STSAMPLE_MM_SRC_REG2                  YCI  143
-#define STSAMPLE_MM_SRC_REG3                  YCI  144
-#define STSAMPLE_MM_SRC_REG4                  YCI  145
-#define STSAMPLE_MM_SRC_CC                    YCI  146
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1   YCI  147
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1_R YCI  148
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2   YCI  149
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2_R YCI  150
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3   YCI  151
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3_R YCI  152
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4   YCI  153
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4_R YCI  154
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5   YCI  155
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5_R YCI  156
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6   YCI  157
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6_R YCI  158
-#define STSAMPLE_MM_SRC_PLAYPOS_Z1            YCI  159
-#define STSAMPLE_MM_SRC_PLAYPOS_Z2            YCI  160
-#define STSAMPLE_MM_SRC_PLAYPOS_Z3            YCI  161
-#define STSAMPLE_MM_SRC_PLAYPOS_Z4            YCI  162
-#define STSAMPLE_MM_SRC_GLIDE_TIME            YCI  163  // 0..1 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_GLIDE_TIME_INV        YCI  164  // 1..0 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI        YCI  165  // 0..1..0 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI_INV    YCI  166  // 1..0..1 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_VOICE_BUS_1           YCI  167  // VOICE_BUS_1..8(_ABS) added in MM v34
-#define STSAMPLE_MM_SRC_VOICE_BUS_1_ABS       YCI  168
-#define STSAMPLE_MM_SRC_VOICE_BUS_2           YCI  169
-#define STSAMPLE_MM_SRC_VOICE_BUS_2_ABS       YCI  170
-#define STSAMPLE_MM_SRC_VOICE_BUS_3           YCI  171
-#define STSAMPLE_MM_SRC_VOICE_BUS_3_ABS       YCI  172
-#define STSAMPLE_MM_SRC_VOICE_BUS_4           YCI  173
-#define STSAMPLE_MM_SRC_VOICE_BUS_4_ABS       YCI  174
-#define STSAMPLE_MM_SRC_VOICE_BUS_5           YCI  175
-#define STSAMPLE_MM_SRC_VOICE_BUS_5_ABS       YCI  176
-#define STSAMPLE_MM_SRC_VOICE_BUS_6           YCI  177
-#define STSAMPLE_MM_SRC_VOICE_BUS_6_ABS       YCI  178
-#define STSAMPLE_MM_SRC_VOICE_BUS_7           YCI  179
-#define STSAMPLE_MM_SRC_VOICE_BUS_7_ABS       YCI  180
-#define STSAMPLE_MM_SRC_VOICE_BUS_8           YCI  181
-#define STSAMPLE_MM_SRC_VOICE_BUS_8_ABS       YCI  182
-#define STSAMPLE_MM_NUM_SRC                   YCI  183
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_TRIG     YCI   68  // added in MM v41
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL         YCI   69 
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_ON      YCI   70
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV     YCI   71  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV_ON  YCI   72  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP     YCI   73  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP_ON  YCI   74  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_TRIG    YCI   75  // added in MM v41
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL           YCI   76 
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_ON        YCI   77
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV       YCI   78  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV_ON    YCI   79  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP       YCI   80  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP_ON    YCI   81  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_TRIG      YCI   82  // added in MM v41
+#define STSAMPLE_MM_SRC_CC7_VOLUME            YCI   83 
+#define STSAMPLE_MM_SRC_CC7_VOLUME_ON         YCI   84
+#define STSAMPLE_MM_SRC_CC8_BALANCE           YCI   85
+#define STSAMPLE_MM_SRC_CC8_BALANCE_ON        YCI   86
+#define STSAMPLE_MM_SRC_CC10_PAN              YCI   87
+#define STSAMPLE_MM_SRC_CC10_PAN_ON           YCI   88
+#define STSAMPLE_MM_SRC_CC11_EXPR             YCI   89
+#define STSAMPLE_MM_SRC_CC11_EXPR_ON          YCI   90
+#define STSAMPLE_MM_SRC_CC11_EXPR_INV         YCI   91  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_INV_ON      YCI   92  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_BIP         YCI   93  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_BIP_ON      YCI   94  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_TRIG        YCI   95  // added in MM v41
+#define STSAMPLE_MM_SRC_CC16_GENERAL_1        YCI   96 
+#define STSAMPLE_MM_SRC_CC16_GENERAL_1_ON     YCI   97
+#define STSAMPLE_MM_SRC_CC16_GENERAL_1_TRIG   YCI   98  // added in MM v41
+#define STSAMPLE_MM_SRC_CC17_GENERAL_2        YCI   99 
+#define STSAMPLE_MM_SRC_CC17_GENERAL_2_ON     YCI  100
+#define STSAMPLE_MM_SRC_CC17_GENERAL_2_TRIG   YCI  101  // added in MM v41
+#define STSAMPLE_MM_SRC_CC18_GENERAL_3        YCI  102
+#define STSAMPLE_MM_SRC_CC18_GENERAL_3_ON     YCI  103
+#define STSAMPLE_MM_SRC_CC18_GENERAL_3_TRIG   YCI  104  // added in MM v41
+#define STSAMPLE_MM_SRC_CC19_GENERAL_4        YCI  105
+#define STSAMPLE_MM_SRC_CC19_GENERAL_4_ON     YCI  106
+#define STSAMPLE_MM_SRC_CC19_GENERAL_4_TRIG   YCI  107  // added in MM v41
+#define STSAMPLE_MM_SRC_CC74_BRIGHT           YCI  108
+#define STSAMPLE_MM_SRC_CC74_BRIGHT_ON        YCI  109
+#define STSAMPLE_MM_SRC_CC80_GENERAL_5        YCI  110
+#define STSAMPLE_MM_SRC_CC80_GENERAL_5_ON     YCI  111
+#define STSAMPLE_MM_SRC_CC80_GENERAL_5_TRIG   YCI  112  // added in MM v41
+#define STSAMPLE_MM_SRC_CC81_GENERAL_6        YCI  113
+#define STSAMPLE_MM_SRC_CC81_GENERAL_6_ON     YCI  114
+#define STSAMPLE_MM_SRC_CC81_GENERAL_6_TRIG   YCI  115  // added in MM v41
+#define STSAMPLE_MM_SRC_CC82_GENERAL_7        YCI  116
+#define STSAMPLE_MM_SRC_CC82_GENERAL_7_ON     YCI  117
+#define STSAMPLE_MM_SRC_CC82_GENERAL_7_TRIG   YCI  118  // added in MM v41
+#define STSAMPLE_MM_SRC_CC83_GENERAL_8        YCI  119
+#define STSAMPLE_MM_SRC_CC83_GENERAL_8_ON     YCI  120
+#define STSAMPLE_MM_SRC_CC83_GENERAL_8_TRIG   YCI  121  // added in MM v41
+#define STSAMPLE_MM_SRC_LFO_FREQ              YCI  122
+#define STSAMPLE_MM_SRC_LFO_VOL               YCI  123
+#define STSAMPLE_MM_SRC_LFO_PAN               YCI  124
+#define STSAMPLE_MM_SRC_LFO_AUX               YCI  125
+#define STSAMPLE_MM_SRC_ENV_FREQ              YCI  126
+#define STSAMPLE_MM_SRC_ENV_VOL               YCI  127
+#define STSAMPLE_MM_SRC_ENV_PAN               YCI  128
+#define STSAMPLE_MM_SRC_ENV_AUX               YCI  129
+#define STSAMPLE_MM_SRC_MODSEQ1               YCI  130
+#define STSAMPLE_MM_SRC_MODSEQ2               YCI  131
+#define STSAMPLE_MM_SRC_MODSEQ3               YCI  132
+#define STSAMPLE_MM_SRC_MODSEQ4               YCI  133
+#define STSAMPLE_MM_SRC_MODSEQ1_BY_VOICEKEY   YCI  134
+#define STSAMPLE_MM_SRC_MODSEQ2_BY_VOICEKEY   YCI  135
+#define STSAMPLE_MM_SRC_MODSEQ3_BY_VOICEKEY   YCI  136
+#define STSAMPLE_MM_SRC_MODSEQ4_BY_VOICEKEY   YCI  137
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_1        YCI  138  // v36+
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_2        YCI  139  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_3        YCI  140  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_4        YCI  141  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_5        YCI  142  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_6        YCI  143  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_7        YCI  144  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_8        YCI  145  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_9        YCI  146  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_10       YCI  147  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_11       YCI  148  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_12       YCI  149  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_13       YCI  150  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_14       YCI  151  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_15       YCI  152  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_16       YCI  153  // ..
+#define STSAMPLE_MM_SRC_REG1                  YCI  154
+#define STSAMPLE_MM_SRC_REG2                  YCI  155
+#define STSAMPLE_MM_SRC_REG3                  YCI  156
+#define STSAMPLE_MM_SRC_REG4                  YCI  157
+#define STSAMPLE_MM_SRC_CC                    YCI  158
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1   YCI  159
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1_R YCI  160
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2   YCI  161
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2_R YCI  162
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3   YCI  163
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3_R YCI  164
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4   YCI  165
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4_R YCI  166
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5   YCI  167
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5_R YCI  168
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6   YCI  169
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6_R YCI  170
+#define STSAMPLE_MM_SRC_PLAYPOS_Z1            YCI  171
+#define STSAMPLE_MM_SRC_PLAYPOS_Z2            YCI  172
+#define STSAMPLE_MM_SRC_PLAYPOS_Z3            YCI  173
+#define STSAMPLE_MM_SRC_PLAYPOS_Z4            YCI  174
+#define STSAMPLE_MM_SRC_GLIDE_TIME            YCI  175  // 0..1 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_GLIDE_TIME_INV        YCI  176  // 1..0 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI        YCI  177  // 0..1..0 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI_INV    YCI  178  // 1..0..1 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_VOICE_BUS_1           YCI  179  // VOICE_BUS_1..8(_ABS) added in MM v34
+#define STSAMPLE_MM_SRC_VOICE_BUS_1_ABS       YCI  180
+#define STSAMPLE_MM_SRC_VOICE_BUS_2           YCI  181
+#define STSAMPLE_MM_SRC_VOICE_BUS_2_ABS       YCI  182
+#define STSAMPLE_MM_SRC_VOICE_BUS_3           YCI  183
+#define STSAMPLE_MM_SRC_VOICE_BUS_3_ABS       YCI  184
+#define STSAMPLE_MM_SRC_VOICE_BUS_4           YCI  185
+#define STSAMPLE_MM_SRC_VOICE_BUS_4_ABS       YCI  186
+#define STSAMPLE_MM_SRC_VOICE_BUS_5           YCI  187
+#define STSAMPLE_MM_SRC_VOICE_BUS_5_ABS       YCI  188
+#define STSAMPLE_MM_SRC_VOICE_BUS_6           YCI  189
+#define STSAMPLE_MM_SRC_VOICE_BUS_6_ABS       YCI  190
+#define STSAMPLE_MM_SRC_VOICE_BUS_7           YCI  191
+#define STSAMPLE_MM_SRC_VOICE_BUS_7_ABS       YCI  192
+#define STSAMPLE_MM_SRC_VOICE_BUS_8           YCI  193
+#define STSAMPLE_MM_SRC_VOICE_BUS_8_ABS       YCI  194
+#define STSAMPLE_MM_NUM_SRC                   YCI  195
 
 #define STSAMPLE_MM_DST_NONE                        YCI   0
 #define STSAMPLE_MM_DST_FREQ                        YCI   1
@@ -662,202 +674,203 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_DST_FREQ_SEMI                   YCI   5
 #define STSAMPLE_MM_DST_FREQ_FINE                   YCI   6
 #define STSAMPLE_MM_DST_FREQ_BEAT                   YCI   7
-#define STSAMPLE_MM_DST_TUNING_TBL_ABS              YCI   8  // v35+
-#define STSAMPLE_MM_DST_TUNING_TBL_REL              YCI   9  // v35+
-#define STSAMPLE_MM_DST_NOTE_2                      YCI   10 // v37+
-#define STSAMPLE_MM_DST_FREQ_2                      YCI   11 // v37+
+#define STSAMPLE_MM_DST_TUNING_TBL_ABS              YCI   8   // v35+
+#define STSAMPLE_MM_DST_TUNING_TBL_REL              YCI   9   // v35+
+#define STSAMPLE_MM_DST_NOTE_2                      YCI   10  // v37+
+#define STSAMPLE_MM_DST_FREQ_2                      YCI   11  // v37+
 #define STSAMPLE_MM_DST_VOLUME                      YCI   12   
-#define STSAMPLE_MM_DST_PAN                         YCI   13   
-#define STSAMPLE_MM_DST_FILTER_CUTOFF               YCI   14 
-#define STSAMPLE_MM_DST_FILTER_PAN                  YCI   15 
-#define STSAMPLE_MM_DST_FILTER_OFFSET               YCI   16 
-#define STSAMPLE_MM_DST_FILTER_RESONANCE            YCI   17 
-#define STSAMPLE_MM_DST_SAMPLE_OFFSET               YCI   18 
-#define STSAMPLE_MM_DST_SAMPLE_SHIFT                YCI   19 
-#define STSAMPLE_MM_DST_SAMPLE_SHIFT_EOL            YCI   20 
-#define STSAMPLE_MM_DST_LOOP_RESTART                YCI   21 // v7+
-#define STSAMPLE_MM_DST_CYCLE_LEN                   YCI   22 
-#define STSAMPLE_MM_DST_CYCLE_LEN_EOL               YCI   23 // v26+
-#define STSAMPLE_MM_DST_CYCLE_LEN_SAMPLE_OFFSET     YCI   24 // v17+
-#define STSAMPLE_MM_DST_WT_2D_X_ABS                 YCI   25 // v21+
-#define STSAMPLE_MM_DST_WT_2D_X_REL                 YCI   26 // v21+
-#define STSAMPLE_MM_DST_WT_2D_Y_ABS                 YCI   27 // v21+
-#define STSAMPLE_MM_DST_WT_2D_Y_REL                 YCI   28 // v21+
-#define STSAMPLE_MM_DST_LOOP_REPEATS_SCALE          YCI   29 // v15+
-#define STSAMPLE_MM_DST_JUMPTOLOOP_REL              YCI   30 
-#define STSAMPLE_MM_DST_JUMPTOLOOP_ABS127           YCI   31 // v6+   [02Dec2023]: *127 prescaling now done in modmatrix code (modamt should now be 100%)
-#define STSAMPLE_MM_DST_JUMPTOLOOP_ABS              YCI   32 // v34+  [26Apr2024]: re-add unscaled (non-127-scaled) destination
-#define STSAMPLE_MM_DST_FREQ_LFO_SPEED              YCI   33 
-#define STSAMPLE_MM_DST_FREQ_LFO_SPEED_ABS          YCI   34 
-#define STSAMPLE_MM_DST_FREQ_LFO_LEVEL              YCI   35 
-#define STSAMPLE_MM_DST_FREQ_LFO_FREQ_AMT           YCI   36 // v4+
-#define STSAMPLE_MM_DST_VOL_LFO_SPEED               YCI   37 
-#define STSAMPLE_MM_DST_VOL_LFO_SPEED_ABS           YCI   38 
-#define STSAMPLE_MM_DST_VOL_LFO_LEVEL               YCI   39 
-#define STSAMPLE_MM_DST_VOL_LFO_VOL_AMT             YCI   40 // v4+
-#define STSAMPLE_MM_DST_PAN_LFO_SPEED               YCI   41 
-#define STSAMPLE_MM_DST_PAN_LFO_SPEED_ABS           YCI   42 
-#define STSAMPLE_MM_DST_PAN_LFO_LEVEL               YCI   43 
-#define STSAMPLE_MM_DST_PAN_LFO_PAN_AMT             YCI   44 // v4+
-#define STSAMPLE_MM_DST_AUX_LFO_SPEED               YCI   45 
-#define STSAMPLE_MM_DST_AUX_LFO_SPEED_ABS           YCI   46 
-#define STSAMPLE_MM_DST_AUX_LFO_LEVEL               YCI   47 
-#define STSAMPLE_MM_DST_AUX_LFO_FLT_AMT             YCI   48 // v4+
-#define STSAMPLE_MM_DST_FREQ_ENV_SPEED              YCI   49 
-#define STSAMPLE_MM_DST_FREQ_ENV_SPEED_ABS          YCI   50 
-#define STSAMPLE_MM_DST_FREQ_ENV_LEVEL              YCI   51 
-#define STSAMPLE_MM_DST_FREQ_ENV_INTENSITY          YCI   52 
-#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED       YCI   53 
-#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED_ABS   YCI   54 
-#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED      YCI   55 
-#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED_ABS  YCI   56 
-#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED      YCI   57 
-#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED_ABS  YCI   58 
-#define STSAMPLE_MM_DST_VOL_ENV_SPEED               YCI   59 
-#define STSAMPLE_MM_DST_VOL_ENV_SPEED_ABS           YCI   60 
-#define STSAMPLE_MM_DST_VOL_ENV_LEVEL               YCI   61 
-#define STSAMPLE_MM_DST_VOL_ENV_INTENSITY           YCI   62 
-#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED        YCI   63 
-#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED_ABS    YCI   64 
-#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED       YCI   65 
-#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED_ABS   YCI   66 
-#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED       YCI   67 
-#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED_ABS   YCI   68 
-#define STSAMPLE_MM_DST_PAN_ENV_SPEED               YCI   69 
-#define STSAMPLE_MM_DST_PAN_ENV_SPEED_ABS           YCI   70 
-#define STSAMPLE_MM_DST_PAN_ENV_LEVEL               YCI   71 
-#define STSAMPLE_MM_DST_PAN_ENV_INTENSITY           YCI   72 
-#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED        YCI   73 
-#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED_ABS    YCI   74 
-#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED       YCI   75 
-#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED_ABS   YCI   76 
-#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED       YCI   77 
-#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED_ABS   YCI   78 
-#define STSAMPLE_MM_DST_AUX_ENV_SPEED               YCI   79 
-#define STSAMPLE_MM_DST_AUX_ENV_SPEED_ABS           YCI   80 
-#define STSAMPLE_MM_DST_AUX_ENV_LEVEL               YCI   81 
-#define STSAMPLE_MM_DST_AUX_ENV_INTENSITY           YCI   82 
-#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED        YCI   83 
-#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED_ABS    YCI   84 
-#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED       YCI   85 
-#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED_ABS   YCI   86 
-#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED       YCI   87 
-#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED_ABS   YCI   88 
-#define STSAMPLE_MM_DST_MOD_1_AMOUNT                YCI   89 
-#define STSAMPLE_MM_DST_MOD_2_AMOUNT                YCI   90 
-#define STSAMPLE_MM_DST_MOD_3_AMOUNT                YCI   91 
-#define STSAMPLE_MM_DST_MOD_4_AMOUNT                YCI   92 
-#define STSAMPLE_MM_DST_MOD_5_AMOUNT                YCI   93 
-#define STSAMPLE_MM_DST_MOD_6_AMOUNT                YCI   94 
-#define STSAMPLE_MM_DST_MOD_7_AMOUNT                YCI   95 
-#define STSAMPLE_MM_DST_MOD_8_AMOUNT                YCI   96 
-#define STSAMPLE_MM_DST_MOD_9_AMOUNT                YCI   97 
-#define STSAMPLE_MM_DST_MOD_10_AMOUNT               YCI   98 
-#define STSAMPLE_MM_DST_MOD_11_AMOUNT               YCI   99 
-#define STSAMPLE_MM_DST_MOD_12_AMOUNT               YCI   100
-#define STSAMPLE_MM_DST_MOD_13_AMOUNT               YCI   101
-#define STSAMPLE_MM_DST_MOD_14_AMOUNT               YCI   102
-#define STSAMPLE_MM_DST_MOD_15_AMOUNT               YCI   103
-#define STSAMPLE_MM_DST_MOD_16_AMOUNT               YCI   104
-#define STSAMPLE_MM_DST_GLIDE_SPEED                 YCI   105
-#define STSAMPLE_MM_DST_TIMESTRETCH                 YCI   106
-#define STSAMPLE_MM_DST_TIMESTRETCH_BEND            YCI   107
-#define STSAMPLE_MM_DST_MODSEQ1_PATCH               YCI   108
-#define STSAMPLE_MM_DST_MODSEQ1_SPEED               YCI   109
-#define STSAMPLE_MM_DST_MODSEQ1_SPEED_ABS           YCI   110
-#define STSAMPLE_MM_DST_MODSEQ1_LEVEL               YCI   111
-#define STSAMPLE_MM_DST_MODSEQ1_NUMSTEPS            YCI   112
-#define STSAMPLE_MM_DST_MODSEQ1_ADVANCE             YCI   113
-#define STSAMPLE_MM_DST_MODSEQ1_STEP                YCI   114
-#define STSAMPLE_MM_DST_MODSEQ2_PATCH               YCI   115
-#define STSAMPLE_MM_DST_MODSEQ2_SPEED               YCI   116
-#define STSAMPLE_MM_DST_MODSEQ2_SPEED_ABS           YCI   117
-#define STSAMPLE_MM_DST_MODSEQ2_LEVEL               YCI   118
-#define STSAMPLE_MM_DST_MODSEQ2_NUMSTEPS            YCI   119
-#define STSAMPLE_MM_DST_MODSEQ2_ADVANCE             YCI   120
-#define STSAMPLE_MM_DST_MODSEQ2_STEP                YCI   121
-#define STSAMPLE_MM_DST_MODSEQ3_PATCH               YCI   122
-#define STSAMPLE_MM_DST_MODSEQ3_SPEED               YCI   123
-#define STSAMPLE_MM_DST_MODSEQ3_SPEED_ABS           YCI   124
-#define STSAMPLE_MM_DST_MODSEQ3_LEVEL               YCI   125
-#define STSAMPLE_MM_DST_MODSEQ3_NUMSTEPS            YCI   126
-#define STSAMPLE_MM_DST_MODSEQ3_ADVANCE             YCI   127
-#define STSAMPLE_MM_DST_MODSEQ3_STEP                YCI   128
-#define STSAMPLE_MM_DST_MODSEQ4_PATCH               YCI   129
-#define STSAMPLE_MM_DST_MODSEQ4_SPEED               YCI   130
-#define STSAMPLE_MM_DST_MODSEQ4_SPEED_ABS           YCI   131
-#define STSAMPLE_MM_DST_MODSEQ4_LEVEL               YCI   132
-#define STSAMPLE_MM_DST_MODSEQ4_NUMSTEPS            YCI   133
-#define STSAMPLE_MM_DST_MODSEQ4_ADVANCE             YCI   134
-#define STSAMPLE_MM_DST_MODSEQ4_STEP                YCI   135
-#define STSAMPLE_MM_DST_RETRIG_FREQ_ENV             YCI   136
-#define STSAMPLE_MM_DST_RETRIG_VOL_ENV              YCI   137
-#define STSAMPLE_MM_DST_RETRIG_PAN_ENV              YCI   138
-#define STSAMPLE_MM_DST_RETRIG_AUX_ENV              YCI   139
-#define STSAMPLE_MM_DST_RETRIG_FREQ_LFO             YCI   140
-#define STSAMPLE_MM_DST_RETRIG_VOL_LFO              YCI   141
-#define STSAMPLE_MM_DST_RETRIG_PAN_LFO              YCI   142
-#define STSAMPLE_MM_DST_RETRIG_AUX_LFO              YCI   143
-#define STSAMPLE_MM_DST_RETRIG_MODSEQ1              YCI   144
-#define STSAMPLE_MM_DST_RETRIG_MODSEQ2              YCI   145
-#define STSAMPLE_MM_DST_RETRIG_MODSEQ3              YCI   146
-#define STSAMPLE_MM_DST_RETRIG_MODSEQ4              YCI   147
-#define STSAMPLE_MM_DST_REG_1_ON                    YCI   148  // updates register only on first tick (0 == replay_ticks, reset at note on, also in glide mode)
-#define STSAMPLE_MM_DST_REG_2_ON                    YCI   149
-#define STSAMPLE_MM_DST_REG_3_ON                    YCI   150
-#define STSAMPLE_MM_DST_REG_4_ON                    YCI   151
-#define STSAMPLE_MM_DST_REG_1                       YCI   152
-#define STSAMPLE_MM_DST_REG_2                       YCI   153
-#define STSAMPLE_MM_DST_REG_3                       YCI   154
-#define STSAMPLE_MM_DST_REG_4                       YCI   155
-#define STSAMPLE_MM_DST_LIVEREC_START               YCI   156
-#define STSAMPLE_MM_DST_LIVEREC_CONTINUE            YCI   157
-#define STSAMPLE_MM_DST_LIVEREC_STOP                YCI   158
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_1              YCI   159
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_2              YCI   160
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_3              YCI   161
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_4              YCI   162
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_5              YCI   163
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_6              YCI   164
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_7              YCI   165
-#define STSAMPLE_MM_DST_PLUGIN_1_MOD_8              YCI   166
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_1              YCI   167
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_2              YCI   168
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_3              YCI   169
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_4              YCI   170
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_5              YCI   171
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_6              YCI   172
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_7              YCI   173
-#define STSAMPLE_MM_DST_PLUGIN_2_MOD_8              YCI   174
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_1              YCI   175
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_2              YCI   176
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_3              YCI   177
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_4              YCI   178
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_5              YCI   179
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_6              YCI   180
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_7              YCI   181
-#define STSAMPLE_MM_DST_PLUGIN_3_MOD_8              YCI   182
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_1              YCI   183
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_2              YCI   184
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_3              YCI   185
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_4              YCI   186
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_5              YCI   187
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_6              YCI   188
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_7              YCI   189
-#define STSAMPLE_MM_DST_PLUGIN_4_MOD_8              YCI   190
-#define STSAMPLE_MM_DST_PLUGIN_1_LEVEL              YCI   191  // DST:level AM:intensity
-#define STSAMPLE_MM_DST_PLUGIN_2_LEVEL              YCI   192
-#define STSAMPLE_MM_DST_PLUGIN_3_LEVEL              YCI   193
-#define STSAMPLE_MM_DST_PLUGIN_4_LEVEL              YCI   194
-#define STSAMPLE_MM_DST_SYNC_SPEED                  YCI   195  // e.g. 25% (0.25) via SRC_CONST_1
-#define STSAMPLE_MM_DST_SYNC_SLEW                   YCI   196  // e.g. 50% (0.50) via SRC_CONST_1
-#define STSAMPLE_MM_DST_SAMPLE_RATE_REDUCTION       YCI   197
-#define STSAMPLE_MM_DST_BIT_REDUCTION               YCI   198
-#define STSAMPLE_MM_DST_WT_ADDITIVE_CFG             YCI   199
-#define STSAMPLE_MM_DST_WT_ADDITIVE_STEREO_SPREAD   YCI   200
-#define STSAMPLE_MM_DST_WT_ADDITIVE_PARTIALS        YCI   201
-#define STSAMPLE_MM_DST_VARIATION                   YCI   202  // should be first MM entry (when StSample::b_mmvar_enable=1)
-#define STSAMPLE_MM_NUM_DST                         YCI   203
+#define STSAMPLE_MM_DST_VOLUME_MUL                  YCI   13  // v40+
+#define STSAMPLE_MM_DST_PAN                         YCI   14   
+#define STSAMPLE_MM_DST_FILTER_CUTOFF               YCI   15 
+#define STSAMPLE_MM_DST_FILTER_PAN                  YCI   16 
+#define STSAMPLE_MM_DST_FILTER_OFFSET               YCI   17 
+#define STSAMPLE_MM_DST_FILTER_RESONANCE            YCI   18 
+#define STSAMPLE_MM_DST_SAMPLE_OFFSET               YCI   19 
+#define STSAMPLE_MM_DST_SAMPLE_SHIFT                YCI   20 
+#define STSAMPLE_MM_DST_SAMPLE_SHIFT_EOL            YCI   21 
+#define STSAMPLE_MM_DST_LOOP_RESTART                YCI   22  // v7+
+#define STSAMPLE_MM_DST_CYCLE_LEN                   YCI   23 
+#define STSAMPLE_MM_DST_CYCLE_LEN_EOL               YCI   24  // v26+
+#define STSAMPLE_MM_DST_CYCLE_LEN_SAMPLE_OFFSET     YCI   25  // v17+
+#define STSAMPLE_MM_DST_WT_2D_X_ABS                 YCI   26  // v21+
+#define STSAMPLE_MM_DST_WT_2D_X_REL                 YCI   27  // v21+
+#define STSAMPLE_MM_DST_WT_2D_Y_ABS                 YCI   28  // v21+
+#define STSAMPLE_MM_DST_WT_2D_Y_REL                 YCI   29  // v21+
+#define STSAMPLE_MM_DST_LOOP_REPEATS_SCALE          YCI   30  // v15+
+#define STSAMPLE_MM_DST_JUMPTOLOOP_REL              YCI   31 
+#define STSAMPLE_MM_DST_JUMPTOLOOP_ABS127           YCI   32  // v6+   [02Dec2023]: *127 prescaling now done in modmatrix code (modamt should now be 100%)
+#define STSAMPLE_MM_DST_JUMPTOLOOP_ABS              YCI   33  // v34+  [26Apr2024]: re-add unscaled (non-127-scaled) destination
+#define STSAMPLE_MM_DST_FREQ_LFO_SPEED              YCI   34 
+#define STSAMPLE_MM_DST_FREQ_LFO_SPEED_ABS          YCI   35 
+#define STSAMPLE_MM_DST_FREQ_LFO_LEVEL              YCI   36 
+#define STSAMPLE_MM_DST_FREQ_LFO_FREQ_AMT           YCI   37  // v4+
+#define STSAMPLE_MM_DST_VOL_LFO_SPEED               YCI   38 
+#define STSAMPLE_MM_DST_VOL_LFO_SPEED_ABS           YCI   39 
+#define STSAMPLE_MM_DST_VOL_LFO_LEVEL               YCI   40 
+#define STSAMPLE_MM_DST_VOL_LFO_VOL_AMT             YCI   41  // v4+
+#define STSAMPLE_MM_DST_PAN_LFO_SPEED               YCI   42 
+#define STSAMPLE_MM_DST_PAN_LFO_SPEED_ABS           YCI   43 
+#define STSAMPLE_MM_DST_PAN_LFO_LEVEL               YCI   44 
+#define STSAMPLE_MM_DST_PAN_LFO_PAN_AMT             YCI   45  // v4+
+#define STSAMPLE_MM_DST_AUX_LFO_SPEED               YCI   46 
+#define STSAMPLE_MM_DST_AUX_LFO_SPEED_ABS           YCI   47 
+#define STSAMPLE_MM_DST_AUX_LFO_LEVEL               YCI   48 
+#define STSAMPLE_MM_DST_AUX_LFO_FLT_AMT             YCI   49  // v4+
+#define STSAMPLE_MM_DST_FREQ_ENV_SPEED              YCI   50 
+#define STSAMPLE_MM_DST_FREQ_ENV_SPEED_ABS          YCI   51 
+#define STSAMPLE_MM_DST_FREQ_ENV_LEVEL              YCI   52 
+#define STSAMPLE_MM_DST_FREQ_ENV_INTENSITY          YCI   53 
+#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED       YCI   54 
+#define STSAMPLE_MM_DST_FREQ_ENV_ATTACK_SPEED_ABS   YCI   55 
+#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED      YCI   56 
+#define STSAMPLE_MM_DST_FREQ_ENV_SUSTAIN_SPEED_ABS  YCI   57 
+#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED      YCI   58 
+#define STSAMPLE_MM_DST_FREQ_ENV_RELEASE_SPEED_ABS  YCI   59 
+#define STSAMPLE_MM_DST_VOL_ENV_SPEED               YCI   60 
+#define STSAMPLE_MM_DST_VOL_ENV_SPEED_ABS           YCI   61 
+#define STSAMPLE_MM_DST_VOL_ENV_LEVEL               YCI   62 
+#define STSAMPLE_MM_DST_VOL_ENV_INTENSITY           YCI   63 
+#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED        YCI   64 
+#define STSAMPLE_MM_DST_VOL_ENV_ATTACK_SPEED_ABS    YCI   65 
+#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED       YCI   66 
+#define STSAMPLE_MM_DST_VOL_ENV_SUSTAIN_SPEED_ABS   YCI   67 
+#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED       YCI   68 
+#define STSAMPLE_MM_DST_VOL_ENV_RELEASE_SPEED_ABS   YCI   69 
+#define STSAMPLE_MM_DST_PAN_ENV_SPEED               YCI   70 
+#define STSAMPLE_MM_DST_PAN_ENV_SPEED_ABS           YCI   71 
+#define STSAMPLE_MM_DST_PAN_ENV_LEVEL               YCI   72 
+#define STSAMPLE_MM_DST_PAN_ENV_INTENSITY           YCI   73 
+#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED        YCI   74 
+#define STSAMPLE_MM_DST_PAN_ENV_ATTACK_SPEED_ABS    YCI   75 
+#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED       YCI   76 
+#define STSAMPLE_MM_DST_PAN_ENV_SUSTAIN_SPEED_ABS   YCI   77 
+#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED       YCI   78 
+#define STSAMPLE_MM_DST_PAN_ENV_RELEASE_SPEED_ABS   YCI   79 
+#define STSAMPLE_MM_DST_AUX_ENV_SPEED               YCI   80 
+#define STSAMPLE_MM_DST_AUX_ENV_SPEED_ABS           YCI   81 
+#define STSAMPLE_MM_DST_AUX_ENV_LEVEL               YCI   82 
+#define STSAMPLE_MM_DST_AUX_ENV_INTENSITY           YCI   83 
+#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED        YCI   84 
+#define STSAMPLE_MM_DST_AUX_ENV_ATTACK_SPEED_ABS    YCI   85 
+#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED       YCI   86 
+#define STSAMPLE_MM_DST_AUX_ENV_SUSTAIN_SPEED_ABS   YCI   87 
+#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED       YCI   88 
+#define STSAMPLE_MM_DST_AUX_ENV_RELEASE_SPEED_ABS   YCI   89 
+#define STSAMPLE_MM_DST_MOD_1_AMOUNT                YCI   90 
+#define STSAMPLE_MM_DST_MOD_2_AMOUNT                YCI   91 
+#define STSAMPLE_MM_DST_MOD_3_AMOUNT                YCI   92 
+#define STSAMPLE_MM_DST_MOD_4_AMOUNT                YCI   93 
+#define STSAMPLE_MM_DST_MOD_5_AMOUNT                YCI   94 
+#define STSAMPLE_MM_DST_MOD_6_AMOUNT                YCI   95 
+#define STSAMPLE_MM_DST_MOD_7_AMOUNT                YCI   96 
+#define STSAMPLE_MM_DST_MOD_8_AMOUNT                YCI   97 
+#define STSAMPLE_MM_DST_MOD_9_AMOUNT                YCI   98 
+#define STSAMPLE_MM_DST_MOD_10_AMOUNT               YCI   99 
+#define STSAMPLE_MM_DST_MOD_11_AMOUNT               YCI   100
+#define STSAMPLE_MM_DST_MOD_12_AMOUNT               YCI   101
+#define STSAMPLE_MM_DST_MOD_13_AMOUNT               YCI   102
+#define STSAMPLE_MM_DST_MOD_14_AMOUNT               YCI   103
+#define STSAMPLE_MM_DST_MOD_15_AMOUNT               YCI   104
+#define STSAMPLE_MM_DST_MOD_16_AMOUNT               YCI   105
+#define STSAMPLE_MM_DST_GLIDE_SPEED                 YCI   106
+#define STSAMPLE_MM_DST_TIMESTRETCH                 YCI   107
+#define STSAMPLE_MM_DST_TIMESTRETCH_BEND            YCI   108
+#define STSAMPLE_MM_DST_MODSEQ1_PATCH               YCI   109
+#define STSAMPLE_MM_DST_MODSEQ1_SPEED               YCI   110
+#define STSAMPLE_MM_DST_MODSEQ1_SPEED_ABS           YCI   111
+#define STSAMPLE_MM_DST_MODSEQ1_LEVEL               YCI   112
+#define STSAMPLE_MM_DST_MODSEQ1_NUMSTEPS            YCI   113
+#define STSAMPLE_MM_DST_MODSEQ1_ADVANCE             YCI   114
+#define STSAMPLE_MM_DST_MODSEQ1_STEP                YCI   115
+#define STSAMPLE_MM_DST_MODSEQ2_PATCH               YCI   116
+#define STSAMPLE_MM_DST_MODSEQ2_SPEED               YCI   117
+#define STSAMPLE_MM_DST_MODSEQ2_SPEED_ABS           YCI   118
+#define STSAMPLE_MM_DST_MODSEQ2_LEVEL               YCI   119
+#define STSAMPLE_MM_DST_MODSEQ2_NUMSTEPS            YCI   120
+#define STSAMPLE_MM_DST_MODSEQ2_ADVANCE             YCI   121
+#define STSAMPLE_MM_DST_MODSEQ2_STEP                YCI   122
+#define STSAMPLE_MM_DST_MODSEQ3_PATCH               YCI   123
+#define STSAMPLE_MM_DST_MODSEQ3_SPEED               YCI   124
+#define STSAMPLE_MM_DST_MODSEQ3_SPEED_ABS           YCI   125
+#define STSAMPLE_MM_DST_MODSEQ3_LEVEL               YCI   126
+#define STSAMPLE_MM_DST_MODSEQ3_NUMSTEPS            YCI   127
+#define STSAMPLE_MM_DST_MODSEQ3_ADVANCE             YCI   128
+#define STSAMPLE_MM_DST_MODSEQ3_STEP                YCI   129
+#define STSAMPLE_MM_DST_MODSEQ4_PATCH               YCI   130
+#define STSAMPLE_MM_DST_MODSEQ4_SPEED               YCI   131
+#define STSAMPLE_MM_DST_MODSEQ4_SPEED_ABS           YCI   132
+#define STSAMPLE_MM_DST_MODSEQ4_LEVEL               YCI   133
+#define STSAMPLE_MM_DST_MODSEQ4_NUMSTEPS            YCI   134
+#define STSAMPLE_MM_DST_MODSEQ4_ADVANCE             YCI   135
+#define STSAMPLE_MM_DST_MODSEQ4_STEP                YCI   136
+#define STSAMPLE_MM_DST_RETRIG_FREQ_ENV             YCI   137
+#define STSAMPLE_MM_DST_RETRIG_VOL_ENV              YCI   138
+#define STSAMPLE_MM_DST_RETRIG_PAN_ENV              YCI   139
+#define STSAMPLE_MM_DST_RETRIG_AUX_ENV              YCI   140
+#define STSAMPLE_MM_DST_RETRIG_FREQ_LFO             YCI   141
+#define STSAMPLE_MM_DST_RETRIG_VOL_LFO              YCI   142
+#define STSAMPLE_MM_DST_RETRIG_PAN_LFO              YCI   143
+#define STSAMPLE_MM_DST_RETRIG_AUX_LFO              YCI   144
+#define STSAMPLE_MM_DST_RETRIG_MODSEQ1              YCI   145
+#define STSAMPLE_MM_DST_RETRIG_MODSEQ2              YCI   146
+#define STSAMPLE_MM_DST_RETRIG_MODSEQ3              YCI   147
+#define STSAMPLE_MM_DST_RETRIG_MODSEQ4              YCI   148
+#define STSAMPLE_MM_DST_REG_1_ON                    YCI   149  // updates register only on first tick (0 == replay_ticks, reset at note on, also in glide mode)
+#define STSAMPLE_MM_DST_REG_2_ON                    YCI   150
+#define STSAMPLE_MM_DST_REG_3_ON                    YCI   151
+#define STSAMPLE_MM_DST_REG_4_ON                    YCI   152
+#define STSAMPLE_MM_DST_REG_1                       YCI   153
+#define STSAMPLE_MM_DST_REG_2                       YCI   154
+#define STSAMPLE_MM_DST_REG_3                       YCI   155
+#define STSAMPLE_MM_DST_REG_4                       YCI   156
+#define STSAMPLE_MM_DST_LIVEREC_START               YCI   157
+#define STSAMPLE_MM_DST_LIVEREC_CONTINUE            YCI   158
+#define STSAMPLE_MM_DST_LIVEREC_STOP                YCI   159
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_1              YCI   160
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_2              YCI   161
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_3              YCI   162
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_4              YCI   163
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_5              YCI   164
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_6              YCI   165
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_7              YCI   166
+#define STSAMPLE_MM_DST_PLUGIN_1_MOD_8              YCI   167
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_1              YCI   168
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_2              YCI   169
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_3              YCI   170
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_4              YCI   171
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_5              YCI   172
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_6              YCI   173
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_7              YCI   174
+#define STSAMPLE_MM_DST_PLUGIN_2_MOD_8              YCI   175
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_1              YCI   176
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_2              YCI   177
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_3              YCI   178
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_4              YCI   179
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_5              YCI   180
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_6              YCI   181
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_7              YCI   182
+#define STSAMPLE_MM_DST_PLUGIN_3_MOD_8              YCI   183
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_1              YCI   184
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_2              YCI   185
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_3              YCI   186
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_4              YCI   187
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_5              YCI   188
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_6              YCI   189
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_7              YCI   190
+#define STSAMPLE_MM_DST_PLUGIN_4_MOD_8              YCI   191
+#define STSAMPLE_MM_DST_PLUGIN_1_LEVEL              YCI   192  // DST:level AM:intensity
+#define STSAMPLE_MM_DST_PLUGIN_2_LEVEL              YCI   193
+#define STSAMPLE_MM_DST_PLUGIN_3_LEVEL              YCI   194
+#define STSAMPLE_MM_DST_PLUGIN_4_LEVEL              YCI   195
+#define STSAMPLE_MM_DST_SYNC_SPEED                  YCI   196  // e.g. 25% (0.25) via SRC_CONST_1
+#define STSAMPLE_MM_DST_SYNC_SLEW                   YCI   197  // e.g. 50% (0.50) via SRC_CONST_1
+#define STSAMPLE_MM_DST_SAMPLE_RATE_REDUCTION       YCI   198
+#define STSAMPLE_MM_DST_BIT_REDUCTION               YCI   199
+#define STSAMPLE_MM_DST_WT_ADDITIVE_CFG             YCI   200
+#define STSAMPLE_MM_DST_WT_ADDITIVE_STEREO_SPREAD   YCI   201
+#define STSAMPLE_MM_DST_WT_ADDITIVE_PARTIALS        YCI   202
+#define STSAMPLE_MM_DST_VARIATION                   YCI   203  // should be first MM entry (when StSample::b_mmvar_enable=1)
+#define STSAMPLE_MM_NUM_DST                         YCI   204
 
    sF32 mm_keyboard_center;  // MM_SRC_KEYBOARD_*  def=60(C-5). Quantized to multiples of 0.5 in standalone replay.
    sF32 mm_keyboard_min;     // min note = center - min
