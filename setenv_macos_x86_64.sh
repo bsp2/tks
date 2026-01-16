@@ -18,4 +18,7 @@ export TKS_TARGET_SITE_PREFIX=/usr/local/homebrew/lib/tks/
 export TKS_PREFIX=${TKS_TARGET_PREFIX}
 export TKS_SITE_PREFIX=${TKS_TARGET_SITE_PREFIX}
 
+# for all_install target
+export PATH="$PATH:${TKS_PREFIX}"
+
 m() { make -j10 -f makefile.macos $* ; }

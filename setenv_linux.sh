@@ -31,3 +31,6 @@ if [ "" = "`alias m 2>/dev/null`" ] ; then
  m() { make -j10 -f makefile.linux $* ; }
 #  alias m="make -j4 -f makefile.linux" 
 fi
+
+# for all_install target
+export PATH="$PATH:${TKS_PREFIX}"

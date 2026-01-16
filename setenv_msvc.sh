@@ -12,6 +12,7 @@
 #VCTK="c:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.37.32822"
 #VCTK="c:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519"
 #VCTK="c:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207"
+# vs2026:
 VCTK="c:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717"
 export VCTK_MSYS=`cygpath "${VCTK}"`
 
@@ -59,7 +60,7 @@ else
 fi
 
 # when not set, use "Program Files" / "Program Files (x86)" in x64 / x86 builds
-#export TKS_PREFIX=/c/Program Files/tks
+##export TKS_PREFIX=/c/Program Files/tks
 
 # installation path, as seen on target
 export TKS_TARGET_PREFIX=/c/Program\ Files/tks/
@@ -69,5 +70,7 @@ export TKS_TARGET_SITE_PREFIX=/c/Program\ Files/tks/
 export TKS_PREFIX=${TKS_TARGET_PREFIX}
 export TKS_SITE_PREFIX=${TKS_TARGET_SITE_PREFIX}
 
-
 export TKS_ZIP_PREFIX=/f/Projects/zipped/
+
+# for all_install target
+export PATH="$PATH:${TKS_PREFIX}"
