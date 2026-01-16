@@ -1,8 +1,8 @@
 // ----
 // ---- file   : ws_fm.c
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2024 by Bastian Spiegel. 
-// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ---- legal  : (c) 2020-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : a sine / FM waveshaper that supports per-sample-frame parameter interpolation
@@ -135,10 +135,10 @@ static void biquad_init(biquad_t *_f) {
 
 static float biquad_filter(biquad_t *_f, const float _inSmp) {
    float outSmp = (float)(
-      _f->a0 * _inSmp + 
-      _f->a1 * _f->x1 + 
+      _f->a0 * _inSmp +
+      _f->a1 * _f->x1 +
       _f->a2 * _f->x2 -
-      _f->a3 * _f->y1 - 
+      _f->a3 * _f->y1 -
       _f->a4 * _f->y2
                           );
 
@@ -293,7 +293,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    // Ring modulate at (modulated) note frequency
@@ -308,7 +308,7 @@ static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
       for(unsigned int i = 0u; i < _numFrames; i++)
       {
          float l = _samplesIn[k];
-         float a = 
+         float a =
             sinf( (voice->mod_phase_cur + (sinf(voice->lfo_phase) * voice->lfo_level) + l * voice->mod_freq_cur) * ST_PLUGIN_PI2_F
                   ) * voice->mod_level_cur;
          ws_fm_fi_u lm; lm.f = l; lm.u &= 0x7FFFffffu;
@@ -335,7 +335,7 @@ static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
       for(unsigned int i = 0u; i < _numFrames; i++)
       {
          float l = _samplesIn[k];
-         float al = 
+         float al =
             sinf( (voice->mod_phase_cur + (sinf(voice->lfo_phase) * voice->lfo_level) + l * voice->mod_freq_cur) * ST_PLUGIN_PI2_F
                   ) * voice->mod_level_cur;
          ws_fm_fi_u lm; lm.f = l; lm.u &= 0x7FFFffffu;
