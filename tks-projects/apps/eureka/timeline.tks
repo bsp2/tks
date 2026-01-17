@@ -11,6 +11,7 @@
 // ---- changed: 25Jun2022, 26Jun2022, 04Apr2025, 04Apr2025, 05Apr2025, 06Apr2025, 10Apr2025
 // ----          01May2025, 06May2025, 20May2025, 22May2025, 31May2025, 13Jun2025, 14Jun2025
 // ----          15Jun2025, 22Jun2025, 26Jun2025, 13Sep2025, 17Sep2025, 10Oct2025, 02Jan2026
+// ----          17Jan2026
 // ----
 // ----
 // ----
@@ -221,6 +222,28 @@ class TimelineClip : Layer {
       return false;
    }
 
+   public method timelineClipEdit(int _mouseRelX, int _mouseRelY, boolean _bSelectClipUnderMouse) {
+      // implemented by derived classes (e.g. edit sample associated with clip)
+   }
+
+   public method zoomInToClipKbd() {
+      float relX;
+      float relY = 0.0f;
+      int clipStart = timelineClipGetStart();
+      int clipEnd = timelineClipGetEnd();
+      int clipLen = clipEnd - clipStart;
+      trace "[trc] TimelineClip::zoomInToClipKbd: cursor_units="+parent_timeline.cursor_units+" clipStart="+clipStart+" clipLen="+clipLen;
+      clipStart -= parent_timeline.cursor_units;
+      relX = mathClampf(float(clipStart) / clipLen, 0.0f, 1.0f);
+            
+      parent_timeline.zoomInToClip(this,
+                                   relX,
+                                   relY,
+                                   true/*bAllowResetView*/
+                                   );
+      grabKeyboardFocus();
+   }
+
    public virtual onMouseEnter(MouseEvent _ev) : boolean {
       // trace "xxx TimelineClip::onMouseEnter";
       redraw();
@@ -282,6 +305,11 @@ class TimelineClip : Layer {
             timelineClipToggleSelect();
             return true;
          }
+      }
+      else if(_ev.isRightButton())
+      {
+         timelineClipEdit(_ev.mouse_rel_x, _ev.mouse_rel_y, true/*bSelectClipUnderMouse*/);
+         return true;
       }
       return false;
    }
@@ -825,19 +853,19 @@ class TimelineClip : Layer {
             break;
 
          case 'c':
-            if(_k.modCtrlOnly())
-            {
-               if(!parent_timeline.timelineHaveSelection())
-               {
-                  if(isMouseOver())
-                  {
-                     parent_timeline.timelineCopy(this/*singleClipOrNull*/);
-                  }
-                  return true;
-               }
-               // else: fall through to TimelineData:onKey()
-            }
-            else if(_k.modNone() || _k.modShiftOnly())
+            // // if(_k.modCtrlOnly())
+            // // {
+            // //    if(!parent_timeline.timelineHaveSelection())
+            // //    {
+            // //       if(isMouseOver())
+            // //       {
+            // //          parent_timeline.timelineCopy(this/*singleClipOrNull*/);
+            // //       }
+            // //       return true;
+            // //    }
+            // //    // else: fall through to TimelineData:onKey()
+            // // }
+            if(_k.modNone() || _k.modShiftOnly())
             {
                parent_timeline.handleSetLoop(_k.modShift()/*bPreferRegion*/);
                return true;
@@ -1089,9 +1117,18 @@ class TimelineData : Composite {
       b_editable = true;
    }
 
+   protected method toggleClipZoomFromKbd() {
+      if(!parent_timeline.timelineHaveSelection())
+         parent_timeline.timelineSelectClipUnderCursor();
+      TimelineClip clip <= parent_timeline.timelineGetFirstSelectedClip();
+      if(null != clip)
+         clip.zoomInToClipKbd();
+   }
+
    public method selectClipFromMouseEvent(int _x, int _y) {
       // trace "xxx TimelineData::selectClipFromMouseEvent: p=("+_x+","+_y+")";
-      parent_timeline.timelineSelectNone();
+      // // parent_timeline.timelineSelectNone();
+      parent_timeline.timelineClipSelectNone();
       parent_timeline.timelineCursorSetPositionFromPix(_x, _y);
       parent_timeline.timelineShowCursorClipDetails();
    }
@@ -1103,6 +1140,7 @@ class TimelineData : Composite {
 
       if(_ev.isLeftButton())
       {
+         parent_timeline.timelineKbdSelectNone();
          selectClipFromMouseEvent(_ev.mouse_rel_x, _ev.mouse_rel_y);
          return true;
       }
@@ -1317,7 +1355,7 @@ class TimelineData : Composite {
    }
 
    public virtual onKey(Key _k) : boolean {
-      // trace "xxx _k.pressed="+_k.name;
+      // trace "xxx TimelineData::onKey: k.name="+_k.name;
       switch(_k.pressed)
       {
          case VKEY_INSERT:
@@ -1413,6 +1451,10 @@ class TimelineData : Composite {
                return true;
             }
             break;
+
+         case 'f':
+            toggleClipZoomFromKbd();
+            return true;
 
          case 'l':
             if(0 == _k.mod)
@@ -2293,7 +2335,7 @@ class Timeline : Composite {
    }
 
    public method zoomInToClip(TimelineClip _clip, float _relX, float _relY, boolean _bAllowResetView) {
-      // (note) relX/Y are in range 0..visibleWidgetW/H (not including edges)
+      // (note) relX/Y are in normalized range 0..1 (not including edges)
 
       int oldViewOffX = sp_clips.getViewOffsetX();
       int oldViewOffY = sp_clips.getViewOffsetY();
@@ -2669,7 +2711,7 @@ class Timeline : Composite {
    }
 
    public method timelineKbdSelectionFromClipSelection() {
-      trace "xxx timelineKbdSelectionFromClipSelection: timelineHaveSelection()="+timelineHaveSelection();
+      // trace "xxx timelineKbdSelectionFromClipSelection: timelineHaveSelection()="+timelineHaveSelection();
       if(timelineHaveSelection())
       {
          local Integer unitsMin, unitsMax;
@@ -2690,6 +2732,14 @@ class Timeline : Composite {
       kbd_selection_units_start = -1;
       kbd_selection_units_start_sorted = -1;
       timelineHandleKbdSelectionChanged();
+   }
+
+   public method timelineClipSelectNone() {
+      // if(b_debug)
+      //    trace "[dbg] timelineClipSelectNone()";
+      clip_selection.empty();
+      b_selection_copied = false;
+      redraw();
    }
 
    public method timelineSelectNone() {
@@ -2881,6 +2931,13 @@ class Timeline : Composite {
       return deref r;
    }
 
+   public method timelineGetFirstSelectedClip() : TimelineClip {
+      local PointerArray aClips <= timelineGetSelectedClips();
+      if(null != aClips && aClips.numElements > 0)
+         return aClips.first;
+      return null;
+   }
+
    public method timelineRaySelect(float _x) {
       // local IntArray oldSelection = clip_selection;
       local Rectangle2f rect;
@@ -3016,6 +3073,7 @@ class Timeline : Composite {
       _state.view_units      = timelinePixToUnits(sp_clips.getViewOffsetX());
       _state.view_tracks     = sp_clips.getViewOffsetY() / float(track_size_y);
       // trace "xxx timelineStoreEditorState: view_units="+_state.view_units+" view_tracks="+_state.view_tracks;
+      // trace "xxx timelineStoreEditorState: cursor_track="+cursor_track+" cursor_units="+cursor_units;
       _state.clip_selection  = clip_selection;
       _state.b_snap          = b_snap;
       _state.snap_tbl_idx    = snap_tbl_idx;
@@ -3056,6 +3114,7 @@ class Timeline : Composite {
       kbd_selection_units_end_sorted   = _state.kbd_selection_units_end_sorted;
       kbd_selection_track_end_sorted   = _state.kbd_selection_track_end_sorted;
       b_selection_copied               = _state.b_selection_copied;
+      // trace "xxx timelineRestoreEditorState: cursor_track="+cursor_track+" cursor_units="+cursor_units;
    }
 
    public method timelineModelGetEditorState() : TimelineEditorState {
@@ -3322,6 +3381,7 @@ class Timeline : Composite {
       {
          timelineShowClipDetails(clipCur);
       }
+      timelineHandleKbdSelectionChanged();
    }
 
    public method timelineCursorMoveRight(boolean _bSelect) {
@@ -3354,6 +3414,7 @@ class Timeline : Composite {
       {
          timelineShowClipDetails(clipCur);
       }
+      timelineHandleKbdSelectionChanged();
    }
 
    public method timelineCursorMoveUp(boolean _bSelect) {
@@ -3379,7 +3440,10 @@ class Timeline : Composite {
          timelineSelectNone();
       }
       if(oldCursorTrack != cursor_track)
+      {
          timelineHandleCursorTrackChanged();
+         timelineHandleKbdSelectionChanged();
+      }
    }
 
    public method timelineCursorMoveDown(boolean _bSelect) {
@@ -3405,7 +3469,10 @@ class Timeline : Composite {
          timelineSelectNone();
       }
       if(oldCursorTrack != cursor_track)
+      {
          timelineHandleCursorTrackChanged();
+         timelineHandleKbdSelectionChanged();
+      }
    }
 
    public method timelineModelCopyClipSelectionToClipboard(IntArray _clipUIDs) {
@@ -3739,10 +3806,27 @@ class Timeline : Composite {
       }
    }
 
+   public method tryEditFirstSelectedClip() {
+      if(!timelineHaveSelection())
+         timelineSelectClipUnderCursor();
+      if(timelineHaveSelection())
+      {
+         TimelineClip clip <= timelineGetFirstSelectedClip();
+         if(null != clip)
+         {
+            clip.timelineClipEdit(0/*relX*/, 0/*relY*/, false/*bSelectClipUnderMouse*/);
+         }
+      }
+   }
+
    public method timelineEditModeExec(int _editMode) {
       // via RETURN key
       switch(_editMode)
       {
+         case EDIT_SELECT:
+            tryEditFirstSelectedClip();
+            break;
+
          case EDIT_DRAW:
             if(timelineHaveKbdSelection())
             {
