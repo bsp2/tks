@@ -2199,7 +2199,7 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
          for(sUI perfCtlIdx = 0u; perfCtlIdx < STSAMPLEPLAYER_NUM_PERFCTL; perfCtlIdx++)
          {
             if(perf_ctl_reset_mask & perfCtlMask)
-               perf_ctl[perfCtlIdx] = -1.0f;
+               perf_ctl[perfCtlIdx] = 0.0f;  // reset to 0 instead of -1 to allow slew mini-envs
             perfCtlMask = perfCtlMask << 1;
          }
       }
