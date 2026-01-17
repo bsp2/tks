@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 02-Jan-2026
+% 17-Jan-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026
 <<<
 $(var:header)
 
@@ -60,8 +60,8 @@ $(buf!toc)
    - extensive (per voice) mod matrix
       - up to 16 entries per sample zone
       - up to 16 matrix variations per sample zone
-      - 183 sources
-      - 203 destinations
+      - 195 sources
+      - 204 destinations
       - log / lin / exp curve per entry
       - slew per entry
          - can also be used to generate attack / decay mini-envelopes
@@ -572,34 +572,42 @@ tip: $(buf!note_numberedit)
 ## "Project" page
 
    |noheader
-   |:WHEEL UP           |:select previous track
-   |:WHEEL DOWN         |:select next track
-   |:cursor keys        |:select track
-   |:lctrl WHEEL UP     |:decrease track size
-   |:lctrl WHEEL DOWN   |:increase track size
-   |:1..6               |:select track size 1..6
-   |:lshift - c         |:set copy-outputs source track
-   |:lshift - v         |:copy unique outputs from source track
-   |:INSERT             |:add new track
-   |:lshift - INSERT    |:
-   |:c                  |+clone current track
-   |:e                  |:
-   |+LMB double-click   |+edit focused track
-   |:f                  |:edit first ModSample or ModCLAP or ModVST2 of focused track
-   |:d                  |:mute focused track
-   |:s                  |:solo focused track
-   |:n                  |:add new track
-   |:lctrl - n          |:add new track and edit it
-   |:lshift - n         |:add new mono audio track for selected MIDI track
-   |:lctrl - lshift - n |:add new stereo audio track for selected MIDI track
-   |                    |+e.g. "drums" => "a_drums"
+   |:WHEEL UP                  |:select previous track
+   |:WHEEL DOWN                |:select next track
+   |:cursor keys               |:select track
+   |:lctrl WHEEL UP            |:decrease track size
+   |:lctrl WHEEL DOWN          |:increase track size
+   |:1..6                      |:select track size 1..6
+   |:lshift - c                |:set copy-outputs source track
+   |:lshift - v                |:copy unique outputs from source track
+   |:INSERT                    |:add new track
+   |:lshift - INSERT           |:
+   |+c                         |+clone current track
+   |:a                         |+
+   |+RMB click                 |+show context menu
+   |:LMB click                 |:focus track
+   |:e                         |:
+   |+LMB double-click          |+
+   |+RMB hold click            |+
+   |+RMB click drag handle bar |+
+   |+RMB hold click            |+edit focused track
+   |:f                         |:edit first ModSample or ModCLAP or ModVST2 of focused track
+   |:d                         |:mute focused track
+   |:s                         |:solo focused track
+   |:n                         |:add new track
+   |:lctrl - n                 |:add new track and edit it
+   |:lshift - n                |:add new mono audio track for selected MIDI track
+   |:lctrl - lshift - n        |:add new stereo audio track for selected MIDI track
+   |                           |+e.g. "drums" => "a_drums"
    ].kbd_table Project Page keyboard shortcuts
 
 ## "Track" page
 
    |noheader
-   |:LEFT                 |:select previous track
-   |:RIGHT                |:select next track
+   |:LEFT                 |:
+   |+WHEELUP              |+select previous track
+   |:RIGHT                |:
+   |+WHEELDOWN            |+select next track
    |:F3                   |:show/hide plugin browser
    |:RETURN               |:edit first or last selected mod
    |:lctrl - TAB          |:
@@ -621,7 +629,8 @@ tip: $(buf!note_numberedit)
    |:lctrl - y            |+show CLAP plugin browser
    |:lctrl - 1            |:show Audio Tracks page
    |:lctrl - 2            |:
-   |+LMB double click     |+show Project page
+   |+LMB double click     |+
+   |+RMB hold click       |+show Project page
    ].kbd_table Track Page keyboard shortcuts
 
    note: hold-click lane enable button to solo lane, RMB-click OR lshift-click to mutex-mute right-hand side lane
@@ -694,8 +703,10 @@ when CLAP / VST2 editor window is focused:
    |:LMB-lshift-drag      |:resize clips (same as LMB-drag on clip start/end)
    |:LMB-click            |:select clip
    |:LMB-holdclick        |:split clip at cursor position
-   |:LMB-dblclick         |:toggle clip zoom
-   |:RMB-click            |:edit clip sample
+   |:LMB-dblclick         |:
+   |+f                    |+toggle clip zoom
+   |:RMB-click            |:
+   |+RETURN               |+edit clip sample
    |+                     |+ while dragging clip position or length: mini undo
    ].kbd_table Timeline keyboard shortcuts
 
