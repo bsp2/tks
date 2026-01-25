@@ -1,7 +1,7 @@
 /// tkchipmunk.h
 ///
 /// (c) 2007 Scott Lembcke <lemb0029(at)morris(dot)umn(dot)edu or slembcke(at)gmail(dot)com>
-/// (c) 2008-2021 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2008-2026 Bastian Spiegel <bs@tkscript.de>
 ///
 ///  Permission is hereby granted, free of charge, to any person obtaining a copy
 ///  of this software and associated documentation files (the "Software"), to deal
@@ -539,6 +539,9 @@ YC class CpSpace : public YAC_Object {
    YM void _addConstraint  (YAC_Object *_constraint);
    // tkchipmunk4 backwards compatibility (redirects to addConstraint)
    YM void _addJoint       (YAC_Object *_joint);
+
+   YM void _moveBodyToSpace (CpBody *_body, CpSpace *_space);
+   YM void _moveShapeToSpace (CpShape *_shape, CpSpace *_space);
 
    YM void _removeShape       (CpShape *_shape);
    YM void _queueRemoveShapeAndBody (CpShape *_shape);  // to be used in collision callback, remove after step()

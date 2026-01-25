@@ -1,7 +1,7 @@
 /// tkchipmunk.cpp
 ///
 /// (c) 2007 Scott Lembcke <lemb0029(at)morris(dot)umn(dot)edu or slembcke(at)gmail(dot)com>
-/// (c) 2008-2024 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2008-2026 by Bastian Spiegel <bs@tkscript.de>
 ///
 ///  Permission is hereby granted, free of charge, to any person obtaining a copy
 ///  of this software and associated documentation files (the "Software"), to deal
@@ -1306,18 +1306,57 @@ void CpSpace::_addJoint(YAC_Object *_joint) {
    _addConstraint(_joint);
 }
 
+void CpSpace::_moveBodyToSpace(CpBody *_body, CpSpace *_space) {
+   if(YAC_VALID(_body) && YAC_VALID(_space))
+   {
+      sSI bodyIdx = bodies->indexOfPointer(_body, 0u);
+      if(bodyIdx >= 0)
+      {
+         cpSpaceRemoveBody(cp_space, _body->cp_body);
+         sBool bDelete = bodies->elements[bodyIdx].deleteme;
+         bodies->elements[bodyIdx].deleteme = YAC_FALSE;
+         bodies->removeIndex(bodyIdx);
+
+         cpSpaceAddBody(_space->cp_space, _body->cp_body);
+         _space->bodies->add(_body, bDelete);
+      }
+   }
+}
+
+void CpSpace::_moveShapeToSpace(CpShape *_shape, CpSpace *_space) {
+   if(YAC_VALID(_shape) && YAC_VALID(_space))
+   {
+      sSI shapeIdx = shapes->indexOfPointer(_shape, 0u);
+      if(shapeIdx >= 0)
+      {
+         cpSpaceRemoveShape(cp_space, _shape->cp_shape);
+         sBool bDelete = shapes->elements[shapeIdx].deleteme;
+         shapes->elements[shapeIdx].deleteme = YAC_FALSE;
+         shapes->removeIndex(shapeIdx);
+
+         cpSpaceAddShape(_space->cp_space, _shape->cp_shape);
+         _space->shapes->add(_shape, bDelete);
+      }
+   }
+}
+
 void CpSpace::_removeShape(CpShape *_shape) {
+   // Dyac_host_printf("xxx CpSpace::removeShape: shape=%p index=%u YAC_VALID=%d\n", _shape, shapes->indexOfPointer(_shape, 0), YAC_VALID(_shape));
    if(YAC_VALID(_shape))
    {
-      cpSpaceRemoveShape(cp_space, _shape->cp_shape);
-      shapes->removeIndex(shapes->indexOfPointer(_shape, 0));
+      sSI shapeIndex = shapes->indexOfPointer(_shape, 0);
+      if(shapeIndex >= 0)
+      {
+         cpSpaceRemoveShape(cp_space, _shape->cp_shape);
+         shapes->removeIndex(shapeIndex);
+         // Dyac_host_printf("xxx removed shape=%p index=%u\n", _shape, shapeIndex);
+      }
    }
 }
 
 void CpSpace::_queueRemoveShapeAndBody(CpShape *_shape) {
    if(NULL == shape_remove_queue)
       shape_remove_queue = YAC_New_PointerArray();
-
    shape_remove_queue->add(_shape, YAC_FALSE/*bDelete*/);
 
    if(NULL == body_remove_queue)
@@ -1328,37 +1367,47 @@ void CpSpace::_queueRemoveShapeAndBody(CpShape *_shape) {
 void CpSpace::_removeBody(CpBody *_body) {
    if(YAC_VALID(_body))
    {
-      cpSpaceRemoveBody(cp_space, _body->cp_body);
-      bodies->removeIndex(bodies->indexOfPointer(_body, 0));
+      sSI bodyIndex = bodies->indexOfPointer(_body, 0);
+      if(bodyIndex >= 0)
+      {
+         cpSpaceRemoveBody(cp_space, _body->cp_body);
+         bodies->removeIndex(bodyIndex);
+      }
    }
 }
 
 void CpSpace::_removeConstraint(CpConstraint *_constraint) {
    if(YAC_VALID(_constraint))
    {
-      cpSpaceRemoveConstraint(cp_space, _constraint->cp_constraint);
-      constraints->removeIndex(constraints->indexOfPointer(_constraint, 0));
+      sSI constraintIndex = constraints->indexOfPointer(_constraint, 0);
+      if(constraintIndex >= 0)
+      {
+         cpSpaceRemoveConstraint(cp_space, _constraint->cp_constraint);
+         constraints->removeIndex(constraintIndex);
+      }
    }
 }
 
 void CpSpace::_freeChildren(void) {
+   // Dyac_host_printf("xxx CpSpace::freeChildren: #shapes=%u #constraints=%u #bodies=%u\n", shapes->num_elements, constraints->num_elements, bodies->num_elements);
 
    // Remove (active) shapes
-   while(0 != shapes->num_elements)
+   while(0u != shapes->num_elements)
    {
-      _removeShape( (CpShape*) shapes->elements[--shapes->num_elements].value.object_val );
+      CpShape *shape = (CpShape*) shapes->elements[shapes->num_elements - 1u].value.object_val;
+      _removeShape(shape);
    }
 
    // Remove constraints
-   while(0 != constraints->num_elements)
+   while(0u != constraints->num_elements)
    {
-      _removeConstraint( (CpConstraint*) constraints->elements[--constraints->num_elements].value.object_val );
+      _removeConstraint( (CpConstraint*) constraints->elements[constraints->num_elements - 1u].value.object_val );
    }
 
    // Remove bodies
-   while(0 != bodies->num_elements)
+   while(0u != bodies->num_elements)
    {
-      _removeBody( (CpBody*) bodies->elements[--bodies->num_elements].value.object_val );
+      _removeBody( (CpBody*) bodies->elements[bodies->num_elements - 1u].value.object_val );
    }
 }
 
