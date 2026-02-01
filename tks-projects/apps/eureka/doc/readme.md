@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 17-Jan-2026
+% 26-Jan-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026
 <<<
 $(var:header)
 
@@ -425,6 +425,32 @@ note: shortcuts assume a US keyboard layout (unless stated otherwise).
    ].kbd_table Samples Page Plugin Table keyboard shortcuts
 
 note: see Cycle curve editor for all bezier editor shortcuts
+
+..in sample modseq curve dialog:
+note: LMB-click modseq editor panel to set keyboard focus
+   |noheader
+   |:RMB-click    | 
+   |+a            |+show context menu
+   |:LMB          | draw values
+   |:lshift - LMB | detail-edit values
+   |:lctrl - LMB  | draw values (snap to integer when scale>1.0 or snap to 1/8)
+   |:RMB          | clear values
+   |:i            | rotate steps left
+   |:o            | rotate steps right
+   |:f            | flip x
+   |:lshift - f   | flip y
+   |:x            | cut pattern to clipboard
+   |:c            | copy pattern to clipboard
+   |:v            | paste clipboard to pattern
+   |:r            | randomize value order
+   |:lshift - r   | randomize values
+   |:s            | smoothen values
+   |:lshift - s   | boost values
+   |:e            | exp-ify values (unipolar)
+   |:lshift - e   | log-ify values (unipolar)
+   |:d            | exp-ify values (bipolar)
+   |:lshift - d   | log-ify values (bipolar)
+   ].kbd_table Samples Page ModSeq keyboard shortcuts
 
 ..in Cycle synth patch main dialog:
    |noheader
