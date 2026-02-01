@@ -28,6 +28,7 @@
 // ----          22Sep2023, 17Nov2023, 18Nov2023, 08Jan2024, 10Jan2024, 13Jan2024, 14Jan2024
 // ----          15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024, 15Aug2024, 28Sep2024, 30Sep2024
 // ----          02Oct2024, 03Oct2024, 13Oct2024, 09Nov2024, 03Jan2025, 09Jan2026, 16Jan2026
+// ----          26Jan2026
 // ----
 // ----
 // ----
@@ -1587,6 +1588,8 @@ YC class StSample : public YAC_Object {
 
    YM void  _setMMSignalTap (sUI _idx, sBool _bEnable);
    YM sBool _getMMSignalTap (sUI _idx);
+
+   YM sSI _findUnusedMMEntry (sUI _startIdx);
 
    YM void  _setLiveRecEnable (sBool _bEnable);
    YM sBool _getLiveRecEnable (void);

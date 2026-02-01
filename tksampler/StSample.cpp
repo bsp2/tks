@@ -2537,6 +2537,17 @@ sBool StSample::_getMMSignalTap(sUI _idx) {
    return YAC_FALSE;
 }
 
+sSI StSample::_findUnusedMMEntry(sUI _startIdx) {
+   sUI idx = _startIdx;
+   while(idx < STSAMPLE_NUM_MODMATRIX_ENTRIES)
+   {
+      if(!modmatrix[idx].b_enable)
+         return sSI(idx);
+      idx++;
+   }
+   return -1;
+}
+
 void StSample::_setLiveRecEnable(sBool _bEnable) {
    b_liverec = _bEnable;
 }
