@@ -4802,7 +4802,11 @@ void YAC_CALL sdvg_Clear4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
    Dsdvg_glcall(glClearColor(_r, _g, _b, _a));
 #ifndef SHADERVG_NO_ZS
    Dsdvg_glcall(glClearStencil(0));
+#ifdef SHADERVG_GLES
    Dsdvg_glcall(glClearDepthf(1.0f));
+#else
+   Dsdvg_glcall(glClearDepth(1.0f));
+#endif // SHADERVG_GLES
    Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
 #else
    Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT));
