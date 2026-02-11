@@ -63,6 +63,7 @@ inline sSI zglGetBufferParameter(sSI _target, sSI _value) {
    return r;
 }
 
+#ifndef SHADERVG_GLES
 inline void zglMapBuffer(sSI _target, sSI _access, YAC_Buffer *_buffer, sUI _byteSize) {
    // Map buffer object into client address space
    void *data = glMapBuffer(_target, _access);
@@ -78,6 +79,7 @@ inline void zglMapBuffer(sSI _target, sSI _access, YAC_Buffer *_buffer, sUI _byt
       _buffer->io_offset = 0u;
    }
 }
+#endif // SHADERVG_GLES
 
 inline void zglMapBufferRange(sSI _target, sUI _offset, sUI _length, sSI _access, YAC_Buffer *_buffer) {
    void *data = glMapBufferRange(_target, _offset, _length, _access);

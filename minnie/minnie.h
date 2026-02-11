@@ -2,7 +2,7 @@
 // ---- file   : minnie.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -3351,7 +3351,7 @@ class Path {
                   otherIdx++;
                }
 
-               if(otherIdx == numVerts)
+               if(otherIdx == (sSI)numVerts)
                {
                   // no other vertex inside of tri => add triangle and remove center vertex
                   // if(9 == idxA && 1 == idxB && 2 == idxC)
@@ -4209,7 +4209,7 @@ namespace setup {
    // <method.png>
    static void Clip3DZNear(const FloatArray *_vaIn3, const sF32 _zNear, FloatArray *_vaOut3) {
       // <https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm>
-      /* if(b_debug_clip3d) trace "[dbg] Clip3DZNear ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"; */
+      if(b_debug_clip3d) { Dprintf("[dbg] Clip3DZNear ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"); };
 
       _vaOut3->empty();
       Vector3f vQ; vQ.init(0.0f, 0.0f, _zNear);

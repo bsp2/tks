@@ -54,8 +54,8 @@
 
 #define SHADERVG_MAX_FBOS             16u
 #define SHADERVG_MAX_CUSTOM_SHADERS   32u
-#define SHADERVG_VIEWPORT_STACK_SIZE   8u
-#define SHADERVG_SCISSOR_STACK_SIZE    8u
+#define SHADERVG_VIEWPORT_STACK_SIZE   8
+#define SHADERVG_SCISSOR_STACK_SIZE    8
 
 // (note) must match minnie.h settings
 #define SHADERVG_AA_RANGE_OFF  0.001f   // forced aa_range when b_aa = false
@@ -365,7 +365,7 @@ static ShaderVG_Shape *all_shapes[] = {
    // &triangles_fill_flat_14_2_pattern,
    // &triangles_fill_flat_14_2_pattern_alpha,
    &triangles_fill_gouraud_32,
-   &triangles_fill_gouraud_14_2,
+   /*10*/ &triangles_fill_gouraud_14_2,
    &triangles_fill_flat_edgeaa_32,
    &triangles_fill_flat_edgeaa_14_2,
    &triangles_fill_gouraud_edgeaa_32,
@@ -381,7 +381,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_fill_aa_radial,
    &rect_fill_aa_conic,
    &rect_fill_aa_pattern,
-   &rect_fill_aa_pattern_alpha,
+   /*20*/&rect_fill_aa_pattern_alpha,
    &rect_fill_aa_pattern_decal,
    &rect_fill_aa_pattern_decal_alpha,
    &rect_stroke_aa,
@@ -391,7 +391,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_stroke_aa_pattern,
    &rect_stroke_aa_pattern_alpha,
    &rect_stroke_aa_pattern_decal,
-   &rect_stroke_aa_pattern_decal_alpha,
+   /*30*/&rect_stroke_aa_pattern_decal_alpha,
    &rect_fill_stroke_aa,
    &ellipse_fill_aa,
    &ellipse_fill_aa_linear,
@@ -401,7 +401,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_fill_aa_pattern_alpha,
    &ellipse_fill_aa_pattern_decal,
    &ellipse_fill_aa_pattern_decal_alpha,
-   &ellipse_stroke_aa,
+   /*40*/&ellipse_stroke_aa,
    &ellipse_stroke_aa_linear,
    &ellipse_stroke_aa_radial,
    &ellipse_stroke_aa_conic,
@@ -411,7 +411,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_stroke_aa_pattern_decal_alpha,
    &ellipse_fill_stroke_aa,
    &roundrect_fill_aa,
-   &roundrect_fill_aa_linear,
+   /*50*/&roundrect_fill_aa_linear,
    &roundrect_fill_aa_radial,
    &roundrect_fill_aa_conic,
    &roundrect_fill_aa_pattern,
@@ -421,7 +421,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &roundrect_stroke_aa,
    &roundrect_stroke_aa_linear,
    &roundrect_stroke_aa_radial,
-   &roundrect_stroke_aa_conic,
+   /*60*/&roundrect_stroke_aa_conic,
    &roundrect_stroke_aa_pattern,
    &roundrect_stroke_aa_pattern_alpha,
    &roundrect_stroke_aa_pattern_decal,
@@ -432,7 +432,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_tex_uv_gouraud_32,
    &triangles_tex_uv_flat_decal_32,
    &triangles_tex_uv_gouraud_decal_32,
-   &triangles_tex_uv_flat_32_alpha,
+   /*70*/&triangles_tex_uv_flat_32_alpha,
    &triangles_tex_uv_gouraud_32_alpha,
    &triangles_tex_uv_flat_decal_32_alpha,
    &triangles_tex_uv_gouraud_decal_32_alpha,
@@ -444,7 +444,7 @@ static ShaderVG_Shape *all_shapes[] = {
    // &line_strip_flat_aa_14_2_linear,
    &line_strip_flat_aa_32_linear,
    // &line_strip_flat_aa_14_2_radial,
-   &line_strip_flat_aa_32_radial,
+   /*80*/&line_strip_flat_aa_32_radial,
    // &line_strip_flat_aa_14_2_conic,
    &line_strip_flat_aa_32_conic,
    // &line_strip_flat_aa_14_2_pattern,
@@ -459,7 +459,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_pattern_aa_32,
    &line_strip_pattern_decal_aa_14_2,
    &line_strip_pattern_decal_aa_32,
-   &line_strip_flat_bevel_aa_14_2,
+   /*90*/&line_strip_flat_bevel_aa_14_2,
    &line_strip_flat_bevel_aa_32,
    &line_strip_pattern_bevel_aa_14_2,
    &line_strip_pattern_bevel_aa_32,
@@ -469,7 +469,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_miter_aa_32,
    &lines_flat_aa_14_2,
    &lines_flat_aa_32,
-   &lines_gouraud_aa_14_2,
+   /*100*/&lines_gouraud_aa_14_2,
    &lines_gouraud_aa_32,
    &lines_pattern_aa_14_2,
    &lines_pattern_aa_32,
@@ -693,6 +693,7 @@ static void loc_alloc_glsl_strings(void) {
 
 // (note) must be called before sdvg_Init() (or this defaults to Desktop GL 2.x)
 void YAC_CALL sdvg_SetGLSLVersion(sBool _bV3, sBool _bGLES, YAC_String *_sVersionStringOrNull) {
+   // printf("xxx sdvg_SetGLSLVersion bV3=%d bGLES=%d\n", _bV3, _bGLES);
 
 #ifdef SHADERVG_SCRIPT_API
    if(NULL == s_glsl_version)
@@ -737,7 +738,7 @@ void YAC_CALL sdvg_SetGLSLVersion(sBool _bV3, sBool _bGLES, YAC_String *_sVersio
    Ds_glsl(s_glsl_texture2dproj)visit(_bV3 ? "textureProj"         : "texture2DProj");
    Ds_glsl(s_glsl_texture3d    )visit(_bV3 ? "texture"             : "texture3D");
    Ds_glsl(s_glsl_texturecube  )visit(_bV3 ? "texture"             : "textureCube");
-   Ds_glsl(s_glsl_tex_alpha    )visit(_bV3 ? "r"                   : "a");
+   Ds_glsl(s_glsl_tex_alpha    )visit((_bV3 && !_bGLES) ? "r"      : "a");
 }
 
 void YAC_CALL sdvg_SetScratchBufferSize(sUI _szBytes) {
@@ -768,7 +769,12 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 #endif // SHADERVG_SCRIPT_API
    {
       sdvg_SetGLSLVersion(sdvg_b_glcore/*bV3*/,
+#ifdef SHADERVG_GLES
+                          YAC_TRUE/*bGLES*/,
+#else
                           YAC_FALSE/*bGLES*/,
+#endif // SHADERVG_GLES
+
                           NULL/*sVersionStringOrNull*/
                           );
    }
@@ -1040,10 +1046,12 @@ static void loc_map_buffer(Dsdvg_buffer_ref_t _buf, sUI _size) {
                    );
       _buf->io_offset = 0u;
    }
+#ifndef SHADERVG_GLES
    else
    {
       Dsdvg_glcall(zglMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY, _buf, _size));
    }
+#endif // SHADERVG_GLES
 }
 
 #ifdef SHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
@@ -1065,7 +1073,7 @@ void sdvg_remap_scratch_after_draw(void) {
 #endif // SHADERVG_UNMAP_SCRATCHVBO_DURING_DRAW
 
 void YAC_CALL sdvg_MapVBO(sUI _vboId) {
-   if(mapped_user_vbo_id != _vboId)
+   if(mapped_user_vbo_id != sSI(_vboId))
    {
       sdvg_BindVBO(_vboId);
       // map GPU buffer to virtual address and reset io_offset
@@ -1151,8 +1159,13 @@ sUI YAC_CALL sdvg_CreateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_data
       case SDVG_TEXFMT_BGRA8888:
          bytesPerPixel = 4u;
 #ifdef SHADERVG_GLES
-         intFormat = GL_BGRA8_EXT;
+#if 0
+         intFormat = GL_BGRA8_EXT;  // (note) internal format only ?
          pixFormat = GL_BGRA8_EXT;
+#else
+         intFormat = GL_BGRA_EXT;
+         pixFormat = GL_BGRA_EXT;   // (note) external format
+#endif
          type      = GL_UNSIGNED_BYTE;
 #else
          intFormat = GL_RGBA;
@@ -1268,7 +1281,11 @@ void YAC_CALL sdvg_UpdateTexture2D(sUI _texfmt, sUI _w, sUI _h, const void *_dat
          bytesPerPixel = 4u;
 #ifdef SHADERVG_GLES
          // intFormat = GL_BGRA8_EXT;
+#if 0
          pixFormat = GL_BGRA8_EXT;
+#else
+         pixFormat = GL_BGRA_EXT;
+#endif
          type      = GL_UNSIGNED_BYTE;
 #else
          // intFormat = GL_RGBA;
@@ -2525,6 +2542,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset,
                                                                    _numVerts,
                                                                    mvp_matrix,
                                                                    fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                    texture_decal_alpha
                                                                    );
 }
@@ -2546,6 +2564,7 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffs
                                                                          _numVerts,
                                                                          mvp_matrix,
                                                                          fill_r, fill_g, fill_b, fill_a * global_a,
+                                                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                          texture_decal_alpha
                                                                          );
 }
@@ -4153,6 +4172,7 @@ sBool YAC_CALL sdvg_OnOpen(void) {
    for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++)
    {
       ShaderVG_Shape *shape = all_shapes[i];
+      Dsdvg_debugprintfv("[trc] sdvg_OnOpen: call shape[%u].onOpen()\n", i);
       if(!shape->onOpen())
       {
          Dsdvg_errorprintf("[---] sdvg_OnOpen: shape[%u].onOpen() failed\n", i);
@@ -4447,6 +4467,7 @@ void YAC_CALL sdvg_BeginFrame(void) {
    Dsdvg_glcall(glEnable(GL_SCISSOR_TEST));
 
    Dsdvg_glcall(glDisable(GL_DEPTH_TEST));
+   Dsdvg_glcall(glDisable(GL_STENCIL_TEST));
    Dsdvg_glcall(glCullFace(GL_BACK));
    Dsdvg_glcall(glFrontFace(GL_CW));
    Dsdvg_glcall(glDisable(GL_CULL_FACE));
@@ -4779,9 +4800,13 @@ void YAC_CALL sdvg_SetTextureDecalAlpha(sF32 _decalAlpha) {
 
 void YAC_CALL sdvg_Clear4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
    Dsdvg_glcall(glClearColor(_r, _g, _b, _a));
+#ifndef SHADERVG_NO_ZS
    Dsdvg_glcall(glClearStencil(0));
-   Dsdvg_glcall(glClearDepth(1.0f));
+   Dsdvg_glcall(glClearDepthf(1.0f));
    Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
+#else
+   Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT));
+#endif // SHADERVG_NO_ZS
 }
 
 void YAC_CALL sdvg_ClearARGB(sUI _c32) {
@@ -6508,7 +6533,7 @@ void UpdateScratchOffset(void) {
 void YAC_CALL sdvg_End(void) {
    if(GL_NONE != current_draw_mode || 0u != mapped_user_vbo_id)
    {
-      sUI bytesAvail;
+      sUI bytesAvail = 0u;
       sBool bSizeOk;
 
       if(DRAW_MODE_POLYGON_AA == current_draw_mode)

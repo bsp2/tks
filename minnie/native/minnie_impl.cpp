@@ -39,6 +39,7 @@
 
 
 sUI yac_host_yacGetDebugLevel(void) {
+   // return 20u;
    return 4u;
 }
 

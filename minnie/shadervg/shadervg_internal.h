@@ -2,7 +2,7 @@
 // ---- file   : shadervg_internal.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -102,6 +102,7 @@ void sdvg_remap_scratch_after_draw (void);
 #define Dsdvg_glcall(f) tkopengl_shared->_##f
 #endif // MINNIE_LIB
 #define Dsdvg_uniform_1i(a,v) Dsdvg_glcall(glUniform1i(a,v))
+#define Dsdvg_uniform_1ui(a,v) Dsdvg_glcall(glUniform1ui(a,v))
 #define Dsdvg_uniform_1f(a,v) Dsdvg_glcall(glUniform1f(a,v))
 #define Dsdvg_uniform_2f(a,v1,v2) Dsdvg_glcall(glUniform2f(a,v1,v2))
 #define Dsdvg_uniform_3f(a,v1,v2,v3) Dsdvg_glcall(glUniform3f(a,v1,v2,v3))

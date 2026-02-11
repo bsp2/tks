@@ -25,6 +25,9 @@
 // ----
 // ----
 
+/// When defined (in Makefile), auto-exit after <n> frames (benchmark single test)
+// #define SHADERVG_AUTO_EXIT_FRAMES  100
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
@@ -51,6 +54,8 @@ static sF32  size_scly    = 1.0f;  // 'z', 'x'
 static sBool b_benchmark  = 0;
 
 static sU32 last_ticks = 0u;  // 1000 ticks per second
+static sU32 num_frames_rendered = 0u;
+static sU32 ticks_start = 0u;
 
 static sF32 ang_x = 0.0f;
 static sF32 ang_y = 0.0f;
@@ -474,8 +479,13 @@ static sUI diagonal_line_patterns[] ={
 static sSI diagonal_line_pattern_idx = 0;  // 's' / lctrl-s
 
 #define BENCHMARK_NUM_FRAMES                    1
+#ifdef DNX_POKY
+#define BENCHMARK_NUM_FRAMES_BASELINE          10
+#define BENCHMARK_NUM_ITERATIONS_PER_FRAME    100
+#else
 #define BENCHMARK_NUM_FRAMES_BASELINE       10000
 #define BENCHMARK_NUM_ITERATIONS_PER_FRAME  10000
+#endif // DNX_POKY
 static sSI benchmark_frames_left = BENCHMARK_NUM_FRAMES_BASELINE;
 static sF32 benchmark_ms_start = 0.0f;
 static sF32 benchmark_ms_avg = 0.0f;
@@ -2539,6 +2549,7 @@ void hal_on_draw(void) {
       sdvg_PaintSolid();
 
       sdvg_ClearARGB(0xff000064u);
+#if 1
 
       Matrix4f *mProj = sdvg_GetTransformRef();
       sF32 aspect = (((sF32)(VP_W)) / VP_H) / 1.333f;
@@ -2766,10 +2777,10 @@ void hal_on_draw(void) {
 
          case RENDER_FILLED_RECTANGLE: // 30
             sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-            sdvg_DrawFilledRectangle(centerX - sizeX * size_sclx * 0.5f,
-                                     centerY - sizeY * size_scly * 0.5f,
-                                     sizeX * size_sclx,
-                                     sizeY * size_scly
+            sdvg_DrawFilledRectangle(centerX - sizeX * size_sclx,  // top/left
+                                     centerY - sizeY * size_scly,
+                                     sizeX * size_sclx * 2.0f,     // note: same size as RENDER_RECT_FILL_AA(0)
+                                     sizeY * size_scly * 2.0f
                                      );
             break;
 
@@ -4204,6 +4215,7 @@ void hal_on_draw(void) {
             break;
       }
 
+#endif // 0
       sdvg_EndFrame();
 
    } // loop numIter
@@ -4264,7 +4276,23 @@ void hal_on_draw(void) {
       }
    }
 
+#ifdef SHADERVG_NO_DISPLAY
+   glFlush();
+#else
    hal_window_swap();
+#endif // SHADERVG_NO_DISPLAY
+
+   num_frames_rendered++;
+#ifdef SHADERVG_AUTO_EXIT_FRAMES
+   if(SHADERVG_AUTO_EXIT_FRAMES == num_frames_rendered)
+   {
+      glFinish();
+      sU32 tDelta = hal_get_ticks() - ticks_start;
+      sF32 fps = (1000.0 * SHADERVG_AUTO_EXIT_FRAMES) / tDelta;
+      Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
+      hal_window_quit();
+   }
+#endif // SHADERVG_AUTO_EXIT_FRAMES
 }
 
 // ---------------------------------------------------------------------------- CalcLinePatternTex
@@ -4508,7 +4536,9 @@ int main(int argc, char**argv) {
 #endif // USE_MINNIE_MIB_SETUP
 
       sdvg_SetScratchBufferSize(4096*1024);
+#if 0
       sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
+#endif // 0
       sdvg_Init(1/*b_glcore*/);
       sdvg_SetStrokeRadiusAAOffset(1.5f);
 
@@ -4527,8 +4557,13 @@ int main(int argc, char**argv) {
                     mem_base_font_default_256_sdf_tex, 1024, 292
                     );
 
-      Dprintf("[...] initializing textures and VBOs..\n");
-      sdvg_OnOpen();
+      Dprintf("[...] initializing shaders, textures and VBOs..\n");
+      {
+         sUI t = hal_get_ticks();
+         sdvg_OnOpen();
+         t = hal_get_ticks() - t;
+         Dprintf("[...] sdvg_onOpen took %u ms\n", t);
+      }
 
       yac_buffer_alloc(&buf_vbo, 16384u);
       buf_vbo_id = sdvg_CreateVBO(buf_vbo.size);
@@ -4584,8 +4619,14 @@ int main(int argc, char**argv) {
       custom_vbo_id_3 = 0u;
       polygon_vbo_id = 0u;
 
+#ifdef SHADERVG_AUTO_EXIT_FRAMES
+      hal_set_swap_interval(0);
+      b_anim = YAC_FALSE;
+#else
       hal_set_swap_interval(b_benchmark ? 0 : 1);
+#endif // SHADERVG_AUTO_EXIT_FRAMES
 
+      ticks_start = hal_get_ticks();
       hal_window_loop();
 
 #ifdef USE_MINNIE_MIB_SETUP

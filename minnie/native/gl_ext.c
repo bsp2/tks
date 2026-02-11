@@ -30,7 +30,7 @@
 #include "../inc_yac.h"
 #include "../inc_opengl.h"
 
-#if defined(YAC_LINUX) && defined(HAVE_X11)
+#if defined(YAC_LINUX) && defined(SHADERVG_X11)
 #define GLX_GLXEXT_PROTOTYPES
 #include <GL/glx.h>
 #include <GL/gl.h>
@@ -39,6 +39,7 @@
 #endif // YAC_LINUX (X11)
 
 
+#ifndef SHADERVG_GLES
 typedef void      (APIENTRY *glanyfun_t)              (void);
 
 static glanyfun_t int_GetProcAddress(const char *_name) {
@@ -46,6 +47,8 @@ static glanyfun_t int_GetProcAddress(const char *_name) {
    return (glanyfun_t) wglGetProcAddress(_name);
 #elif defined(YAC_MACOS)
    return (glanyfun_t) MyNSGLGetProcAddress(_name);
+#elif defined(SHADERVG_GLES)
+   return (glanyfun_t) eglGetProcAddress((const char*)_name);
 #else
    return (glanyfun_t) glXGetProcAddress((const GLubyte*)_name);
 #endif // YAC_WIN32
@@ -252,3 +255,8 @@ void load_gl_extensions(void) {
    Dresolveext(glRenderbufferStorageMultisample);
    /* printf("xxx load_gl_extensions: LEAVE  glBindBuffer=%p glGenVertexArrays=%p\n", glBindBuffer, glGenVertexArrays); */
 }
+
+#else
+void load_gl_extensions(void) {
+}
+#endif // SHADERVG_GLES

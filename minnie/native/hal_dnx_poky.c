@@ -1,5 +1,5 @@
 // ----
-// ---- file   : hal.c
+// ---- file   : hal_dnx_poky.c
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025-2026 by bsp
@@ -20,7 +20,7 @@
 // ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : "minnie" test hardware abstraction layer
-// ---- note   : via SDL2
+// ---- note   : 
 // ----
 // ----
 // ----
@@ -28,20 +28,52 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+
+#ifdef SOFTNX_EVAL_KIT
+#include <display/display.h>
+#else
+#include <display.h>
+#endif // SOFTNX_EVAL_KIT
+
+#define DISPLAY_WIDTH   800
+#define DISPLAY_HEIGHT  600
 
 #define Dprintf       if(!MINNIE_PRINTF);else printf
 #define Derrorprintf  if(!MINNIE_PRINTF);else printf
 
 #include "../inc_yac.h"
-#include "../../tksdl2/inc_sdl.h"
+#include "../inc_opengl.h"
+#include <EGL/egl.h>
 #include "hal.h"
 
-SDL_Window    *sdl_window = NULL;
-SDL_GLContext  sdl_glcontext = NULL;
-sBool          b_hal_running = YAC_FALSE;
+static EGLBoolean loc_config_init    (EGLDisplay _display, EGLConfig *_config);
+static EGLBoolean loc_egl_init       (EGLDisplay _display);
+static EGLSurface loc_surface_create (EGLDisplay _display, EGLConfig _config);
+static EGLContext loc_context_create (EGLDisplay _display, EGLConfig _config);
+
+static EGLDisplay display;
+static EGLConfig  config;
+static EGLContext context;
+static EGLSurface surface;
+
+sBool b_hal_running = YAC_FALSE;
+
+// ---------------------------------------------------------------------------- time_get_milliseconds_f64
+static sF64 loc_ms_start = 0.0;
+static sF64 loc_time_get_milliseconds_f64(void) {
+
+   struct timeval tvnano; gettimeofday(&tvnano, NULL);
+   sF64 ret = (tvnano.tv_usec/1000.0) + ((sF64)(tvnano.tv_sec)) * 1000.0;
+
+   return ret;
+}
 
 // ---------------------------------------------------------------------------- loc_map_key_sym
 static sU32 loc_map_key_sym(sU32 _sym) {
+#if 0
    switch(_sym)
    {
       case SDLK_BACKSPACE: _sym = VKEY_BACKSPACE; break;
@@ -59,11 +91,13 @@ static sU32 loc_map_key_sym(sU32 _sym) {
       case SDLK_PAGEUP:    _sym = VKEY_PAGEUP;    break;
       case SDLK_PAGEDOWN:  _sym = VKEY_PAGEDOWN;  break;
    }
+#endif
    return _sym;
 }
 
 // ---------------------------------------------------------------------------- loc_map_key_mod
 static sU32 loc_map_key_mod(sU32 _mod) {
+#if 0
    switch(_mod)
    {
       case KMOD_LSHIFT:  _mod = VMOD_LSHIFT; break;
@@ -73,79 +107,143 @@ static sU32 loc_map_key_mod(sU32 _mod) {
       case KMOD_LALT:    _mod = VMOD_LALT; break;
       case KMOD_RALT:    _mod = VMOD_RALT; break;
    }
+#endif
    return _mod;
+}
+
+
+// ---------------------------------------------------------------------------- loc_config_init
+static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
+   EGLint attribs[] = {
+      EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+      EGL_BUFFER_SIZE,     32,
+      EGL_RED_SIZE,        5,
+      EGL_GREEN_SIZE,      6,
+      EGL_BLUE_SIZE,       5,
+      EGL_ALPHA_SIZE,      0,
+      EGL_DEPTH_SIZE,      0,
+      EGL_STENCIL_SIZE,    0,
+      EGL_SAMPLE_BUFFERS,  0,
+#ifdef SHADERVG_MSAA
+      EGL_SAMPLES,         4,
+#else
+      EGL_SAMPLES,         1,
+#endif // SHADERVG_MSAA
+      EGL_NONE
+   };
+
+   EGLConfig configs[1];
+   EGLint numCfgs;
+
+   if(EGL_TRUE == eglChooseConfig(_display, attribs, configs, 1, &numCfgs)) {
+
+      if(numCfgs > 0) {
+         *_config = configs[0];
+         return EGL_TRUE;
+      }
+   }
+
+   return EGL_FALSE;
+}
+
+// ---------------------------------------------------------------------------- loc_egl_init
+static EGLBoolean loc_egl_init(EGLDisplay _display) {
+   EGLint verMajor = -1;
+   EGLint verMinor = -1;
+
+   if(EGL_FALSE == eglInitialize(_display, &verMajor, &verMinor)) {
+      return EGL_FALSE;
+   }
+
+   printf("EGL verMajor=%d verMinor=%d\n", verMajor, verMinor);
+   printf("EGL version=\"%s\".\n",     (const char*)eglQueryString(_display, EGL_VERSION));
+
+   return EGL_TRUE;
+}
+
+// ---------------------------------------------------------------------------- loc_surface_create
+static EGLSurface loc_surface_create(EGLDisplay _display, EGLConfig _config) {
+   EGLSurface surf;
+   EGLint attribs[] = {
+      EGL_RENDER_BUFFER,  EGL_BACK_BUFFER,
+      EGL_WIDTH,          DISPLAY_WIDTH,
+      EGL_HEIGHT,         DISPLAY_HEIGHT,
+      EGL_NONE,           EGL_NONE
+   };
+
+   surf = eglCreateWindowSurface(_display, _config, (EGLNativeWindowType)NULL, attribs);
+   return surf;
+}
+
+// ---------------------------------------------------------------------------- loc_context_create
+static EGLContext loc_context_create(EGLDisplay _display, EGLConfig _config) {
+   EGLContext ctx;
+   static EGLint attribs[] = {
+      EGL_CONTEXT_CLIENT_VERSION, 2,
+      EGL_NONE
+   };
+
+   ctx = eglCreateContext(_display, _config, NULL/*share_context*/, attribs);
+   return ctx;
 }
 
 // ---------------------------------------------------------------------------- hal_window_init
 sBool hal_window_init(void) {
-   sBool ret = YAC_FALSE;
 
-   SDL_InitSubSystem(SDL_INIT_VIDEO);
-   SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-   SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5 );   // require at least 5 bits per channel
-   SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 5);
-   SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5);
-   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-#if 0
-   SDL_GL_SetAttribute( SDL_GL_MULTISAMPLEBUFFERS, multisample_buffers);
-   SDL_GL_SetAttribute( SDL_GL_MULTISAMPLESAMPLES, multisample_samples);
-#endif
-   SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, 8);
-   sUI flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
-   sdl_window = SDL_CreateWindow("minnie",
-                                 SDL_WINDOWPOS_UNDEFINED,
-                                 SDL_WINDOWPOS_UNDEFINED,
-                                 VP_W, VP_H,
-                                 flags
-                                 );
-   if(NULL != sdl_window)
-   {
-      sdl_glcontext = SDL_GL_CreateContext(sdl_window);
-      Dprintf("[dbg] hal_window_init: SDL_GL_CreateContext -> sdl_glcontext=%p\n", sdl_glcontext);
-      if(NULL != sdl_glcontext)
-      {
-         SDL_GL_MakeCurrent(sdl_window, sdl_glcontext);
-         SDL_GL_SetSwapInterval(1);
-
-#ifndef YAC_MACOS
-         load_gl_extensions();
-#endif // !YAC_MACOS
-
-         ret = YAC_TRUE;
-      }
-      else
-      {
-         Derrorprintf("[---] hal_window_init: SDL_GL_CreateContext() failed\n");
-
-         SDL_DestroyWindow(sdl_window);
-         sdl_window = NULL;
-      }
-   }
-   else
-   {
-      Derrorprintf("[---] hal_window_init: SDL_CreateWindow() failed\n");
+   display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+   if(EGL_NO_DISPLAY == display) {
+      printf("EGL: failed to get display\n");
+      return YAC_FALSE;
    }
 
-   return ret;
+   if(EGL_FALSE == loc_egl_init(display)) {
+      printf("EGL: failed to initialize EGL\n");
+      return YAC_FALSE;
+   }
+
+   if(EGL_FALSE == loc_config_init(display, &config)) {
+      printf("EGL: failed to find config\n");
+      return YAC_FALSE;
+   }
+
+   surface = loc_surface_create(display, config);
+   if(EGL_NO_SURFACE == surface) {
+      printf("EGL: failed to create window surface\n");
+      return YAC_FALSE;
+   }
+
+   context = loc_context_create(display, config);
+   if(EGL_NO_CONTEXT == context) {
+      printf("EGL: failed to create window surface\n");
+      return YAC_FALSE;
+   }
+
+   eglMakeCurrent(display, surface/*draw*/, surface/*read*/, context);
+
+   printf("GLES version=\"%s\".\n",    (const char*)glGetString(GL_VERSION));
+   printf("GLES extensions=\"%s\".\n", (const char*)glGetString(GL_EXTENSIONS));
+
+   return YAC_TRUE;
 }
 
 // ---------------------------------------------------------------------------- hal_window_set_title
 void hal_window_set_title(const char *_s) {
-   SDL_SetWindowTitle(sdl_window, _s);
+   (void)_s;
 }
 
 // ---------------------------------------------------------------------------- hal_get_ticks
 sU32 hal_get_ticks(void) {
-   return SDL_GetTicks();
+   if(0.0 == loc_ms_start)
+   {
+      loc_ms_start = loc_time_get_milliseconds_f64();
+      return 0u;
+   }
+   return (sU32)(loc_time_get_milliseconds_f64() - loc_ms_start);
 }
 
 // ---------------------------------------------------------------------------- hal_set_swap_interval
 void hal_set_swap_interval(sU32 _interval) {
-   SDL_GL_SetSwapInterval(_interval);
+   eglSwapInterval(display, _interval);
 }
 
 // ---------------------------------------------------------------------------- hal_window_loop
@@ -154,6 +252,7 @@ void hal_window_loop(void) {
    b_hal_running = YAC_TRUE;
    while(b_hal_running)
    {
+#if 0
       SDL_Event ev;
       int r;
       r = SDL_PollEvent(&ev);
@@ -175,6 +274,7 @@ void hal_window_loop(void) {
          }
 
       }
+#endif
 
       hal_on_draw();
    }
@@ -182,7 +282,7 @@ void hal_window_loop(void) {
 
 // ---------------------------------------------------------------------------- hal_window_swap
 void hal_window_swap(void) {
-   SDL_GL_SwapWindow(sdl_window);
+   eglSwapBuffers(display, surface);
 }
 
 // ---------------------------------------------------------------------------- hal_window_quit
@@ -192,17 +292,5 @@ void hal_window_quit(void) {
 
 // ---------------------------------------------------------------------------- hal_window_exit
 void hal_window_exit(void) {
-   if(NULL != sdl_glcontext)
-   {
-      SDL_GL_DeleteContext(sdl_glcontext);
-      sdl_glcontext = NULL;
-   }
-
-   if(NULL != sdl_window)
-   {
-      SDL_DestroyWindow(sdl_window);
-      sdl_window = NULL;
-   }
-
-   SDL_QuitSubSystem(SDL_INIT_VIDEO);
+   eglTerminate(display);
 }
