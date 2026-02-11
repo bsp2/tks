@@ -2,7 +2,7 @@
 // ---- file   : TrianglesTexUVFlatDecal32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -81,7 +81,8 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
                                          sUI              _byteOffset,
                                          sUI              _numVerts,
                                          Dsdvg_mat4_ref_t _mvpMatrix,
-                                         sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
+                                         sF32             _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
+                                         sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                          sF32             _decalAlpha
                                          ) {
       //
@@ -97,7 +98,8 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
       shape_shader.bind();
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+      Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
+      Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
       Dsdvg_uniform_1i(shape_u_sampler, 0);
 
