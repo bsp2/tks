@@ -31,7 +31,7 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform float u_stroke_w; \n"
-      "uniform float u_last_instance; \n"
+      "uniform int   u_last_instance; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"
@@ -213,7 +213,7 @@ class LineStripFlatBevelAA32 : public ShaderVG_Shape {
          const sSI numVerts = numTri * 3;
          printf("xxx shape_u_last_instance=%d  numPoints=%d numSeg=%d numTri=%d numVerts=%d\n", shape_u_last_instance, _numPoints, numSeg, numTri, numVerts);
 #endif
-         Dsdvg_uniform_1f(shape_u_last_instance, sF32(numSeg - 1));
+         Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - 1));
          Dsdvg_draw_triangles_instanced_vbo(9, numSeg);
 
          Dsdvg_attrib_disable(shape_a_vertex_nn);

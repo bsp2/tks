@@ -30,7 +30,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4  u_transform; \n"
-      "uniform float u_last_instance; \n"
+      "uniform int   u_last_instance; \n"
       "uniform float u_stroke_w; \n"
       "uniform float u_line_pattern_scl; \n"
       "uniform float u_line_pattern_off; \n"
@@ -233,11 +233,11 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale * 0.25f);
          Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 
-         Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   0);
-         Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   6);
-         Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  12);
-         Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   4);
-         Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  10);
+         Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   0);
+         Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   6);
+         Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  12);
+         Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   4);
+         Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  10);
 
          Dsdvg_attrib_enable(shape_a_vertex);
          Dsdvg_attrib_enable(shape_a_vertex_n);
@@ -252,7 +252,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
          Dsdvg_attrib_divisor(shape_a_pattern_n, 1);
 
          const sSI numSeg = (_numPoints - 2);
-         Dsdvg_uniform_1f(shape_u_last_instance, sF32(numSeg - 1));
+         Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - 1));
          Dsdvg_draw_triangles_instanced_vbo(9, numSeg);
 
          Dsdvg_attrib_disable(shape_a_vertex_nn);
