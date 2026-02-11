@@ -238,7 +238,8 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINES_PATTERN_AA                            171
 #define RENDER_BEGIN_LINE_STRIP_MITER                            172
 #define RENDER_BEGIN_LINE_STRIP_MITER_AA                         173
-#define NUM_RENDER_MODES                                         174
+#define RENDER_LINES_RAND_AA_VBO                                 174
+#define NUM_RENDER_MODES                                         175
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 
@@ -417,6 +418,7 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 171 */ "begin_lines_pattern_aa",
    /* 172 */ "begin_line_strip_miter",
    /* 173 */ "begin_line_strip_miter_aa",
+   /* 174 */ "lines_rand_aa_vbo",
 };
 
 static YAC_Buffer buf_vbo;
@@ -491,6 +493,39 @@ static sF32 benchmark_ms_start = 0.0f;
 static sF32 benchmark_ms_avg = 0.0f;
 static sF32 benchmark_ms_avg_baseline = 0.0f;
 
+
+// ---------------------------------------------------------------------------- rand
+static sU32 loc_rand = 0u;
+static void loc_rand_seed(sU32 _seed) {
+   loc_rand = _seed ^ 78163u;
+}
+
+static sU32 loc_randu(void) {
+   sU32 x = ( (loc_rand >> 16) + 3715436908ul ) * 0x1fd8dae7u;
+   loc_rand += x;
+   return loc_rand;
+}
+
+#if 0
+static sS32 loc_rands(void) {
+   union {
+      sU32 u32;
+      sS32 s32;
+   } ret;
+   ret.u32 = loc_randu();
+   return ret.s32;
+}
+#endif
+
+static sF32 loc_randf(sF32 _max) {
+   union {
+      sU32 u32;
+      sF32 f32;
+   } ret;
+   ret.u32 = 0x3f800000u | (loc_randu() & ((1u << 23) - 1u));
+   ret.f32 = (ret.f32 - 1.0f) * _max;
+   return ret.f32;
+}
 
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
 static void TestLineStripFlat_1(sBool _bAA) {
@@ -2502,6 +2537,35 @@ void TestBeginLineStripFlatMiter(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestLinesRand (174)
+static void TestLinesRandAAVBO(void) {
+   // (note) same coordinates+colors as test264_line_benchmark
+   const sUI numLines = 1000u;
+   if(0 == buf_vbo.io_offset)
+   {
+      loc_rand_seed(0x9C82F83Bu);
+      yacmemptr d; d.u8 = buf_vbo.buffer;
+
+      for(sUI i = 0u; i < numLines; i++)
+      {
+         for(sUI j = 0u; j < 2u; j++)
+         {
+            sS16 x = (sS16)(4.0f * ((loc_randf(2.0f) - 1.0f) * (VP_W* 0.5f) + (VP_W*0.5f)));
+            sS16 y = (sS16)(4.0f * ((loc_randf(2.0f) - 1.0f) * (VP_H*-0.5f) + (VP_H*0.5f)));
+            *d.u8++ = loc_randu() & 255u;          // r
+            *d.u8++ = loc_randu() & 255u;          // g
+            *d.u8++ = loc_randu() & 255u;          // b
+            *d.u8++ = (loc_randu() & 127u) + 128u; // a
+            *d.s16++ = x;
+            *d.s16++ = y;
+         }
+      }
+      sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
+   }
+   sdvg_SetStrokeWidth(1.0f);
+   sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0u/*offset*/, numLines << 1);
+}
+
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
 
@@ -4213,6 +4277,10 @@ void hal_on_draw(void) {
          case RENDER_BEGIN_LINE_STRIP_MITER_AA: // 173
             TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
             break;
+
+         case RENDER_LINES_RAND_AA_VBO: // 174
+            TestLinesRandAAVBO();
+            break;
       }
 
 #endif // 0
@@ -4366,6 +4434,7 @@ static void SelectRenderMode(sSI _mode) {
    {
       char buf[256];
       snprintf(buf,256,"%d:%s",render_mode,mode_names[render_mode]);
+      buf_vbo.io_offset = 0;
       hal_window_set_title(buf);
    }
 }

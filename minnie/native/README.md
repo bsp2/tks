@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 174 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 175 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -553,9 +553,12 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_171_begin_lines_pattern_aa
   
   ![screenhots](../tkminnie/tests/screenshots/test_171_begin_lines_pattern_aa.png)
-- screenshots/test_172_begin_line_strip_miter
+- test_172_begin_line_strip_miter
   
   ![screenhots](../tkminnie/tests/screenshots/test_172_begin_line_strip_miter.png)
-- screenshots/test_173_begin_line_strip_miter_aa
+- test_173_begin_line_strip_miter_aa
   
   ![screenhots](../tkminnie/tests/screenshots/test_173_begin_line_strip_miter_aa.png)
+- test_174_lines_rand_aa_vbo
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_174_lines_rand_aa_vbo.png)

@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 174 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 175 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -578,3 +578,6 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_173_begin_line_strip_miter_aa
   
   ![screenhots](tests/screenshots/test_173_begin_line_strip_miter_aa.png)
+- test_174_lines_rand_aa_vbo
+  
+  ![screenhots](tests/screenshots/test_174_lines_rand_aa_vbo.png)

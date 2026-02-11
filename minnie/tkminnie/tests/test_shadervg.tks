@@ -257,7 +257,8 @@ int RENDER_BEGIN_LINES_PATTERN                              = 170;
 int RENDER_BEGIN_LINES_PATTERN_AA                           = 171;
 int RENDER_BEGIN_LINE_STRIP_MITER                           = 172;
 int RENDER_BEGIN_LINE_STRIP_MITER_AA                        = 173;
-int NUM_RENDER_MODES                                        = 174;
+int RENDER_LINES_RAND_AA_VBO                                = 174;
+int NUM_RENDER_MODES                                        = 175;
 
 int render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 
@@ -435,6 +436,7 @@ StringArray mode_names = [/*   0 */ "rect_fill_aa",
                           /* 171 */ "begin_lines_pattern_aa",
                           /* 172 */ "begin_line_strip_miter",
                           /* 173 */ "begin_line_strip_miter_aa",
+                          /* 174 */ "lines_rand_aa_vbo",
                           ];
 
 Buffer buf_vbo; buf_vbo.size = 16384;
@@ -527,6 +529,26 @@ function SaveScreenShotPNG(String _pathName) {
       }
    }
    return ret;
+}
+
+// ---------------------------------------------------------------------------- rand
+UnsignedInteger loc_rand = 0;
+Buffer b_f2i; b_f2i.size = 4;
+function loc_rand_seed(int _seed) {
+   loc_rand = _seed ^ 78163;
+}
+
+function loc_randu() {
+   UnsignedInteger x = ( (loc_rand >> 16) + 3715436908 ) * 0x1fd8dae7;
+   loc_rand += x;
+   return loc_rand;
+}
+
+function loc_randf(float _max) {
+   UnsignedInteger r = 0x3f800000;
+   r |= (loc_randu() & ((1 << 23) - 1));
+   b_f2i.pokeI32(0, r);
+   return (b_f2i.peekF32(0) - 1.0f) * _max;
 }
 
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
@@ -2640,6 +2662,34 @@ function TestBeginLineStripFlatMiter(boolean _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestLinesRand (174)
+function TestLinesRandAAVBO() {
+   // (note) same coordinates+colors as test264_line_benchmark
+   int numLines = 1000;
+   if(0 == buf_vbo.offset)
+   {
+      loc_rand_seed(0x9C82F83B);
+
+      loop(numLines)
+      {
+         loop(2)
+         {
+            int x = (int)(4.0f * ((loc_randf(2.0f) - 1.0f) * (VP_W* 0.5f) + (VP_W*0.5f)));
+            int y = (int)(4.0f * ((loc_randf(2.0f) - 1.0f) * (VP_H*-0.5f) + (VP_H*0.5f)));
+            buf_vbo.i8 = loc_randu() & 255;          // r
+            buf_vbo.i8 = loc_randu() & 255;          // g
+            buf_vbo.i8 = loc_randu() & 255;          // b
+            buf_vbo.i8 = (loc_randu() & 127) + 128;  // a
+            buf_vbo.i16 = x;
+            buf_vbo.i16 = y;
+         }
+      }
+      sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.offset/*size*/, buf_vbo);
+   }
+   sdvg_SetStrokeWidth(1.0f);
+   sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0/*offset*/, numLines << 1);
+}
+
 // ---------------------------------------------------------------------------- onDraw
 function onDraw() {
 
@@ -4401,6 +4451,10 @@ function onDraw() {
          case RENDER_BEGIN_LINE_STRIP_MITER_AA: // 173
             TestBeginLineStripFlatMiter(true/*bAA*/);
             break;
+
+         case RENDER_LINES_RAND_AA_VBO: // 174
+            TestLinesRandAAVBO();
+            break;
       }
 
       sdvg_EndFrame();
@@ -4557,6 +4611,7 @@ function SelectRenderMode(int _mode) {
    render_mode = _mode;
    Viewport.caption = render_mode+":"+mode_names.get(render_mode);
    trace "[...] render_mode is "+render_mode+" (\""+mode_names.get(render_mode)+"\")";
+   buf_vbo.offset = 0;
 }
 
 // ---------------------------------------------------------------------------- onMouse
