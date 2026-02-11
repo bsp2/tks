@@ -2,7 +2,7 @@
 // ---- file   : shadervg.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -2026,6 +2026,24 @@ Draw previously prepared vertex buffer as anti-aliased line segments (32 bit flo
 @groupref Stroke
 */
 YF void YAC_CALL sdvg_DrawLinesFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLinesGouraudVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as gouraud-shaded line segments (14.2 fixed point format)
+
+@group Line
+@groupref Stroke
+@group Gouraud
+*/
+YF void YAC_CALL sdvg_DrawLinesGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLinesGouraudAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded line segments (14.2 fixed point format)
+
+@group Line
+@groupref Stroke
+@group Gouraud
+*/
+YF void YAC_CALL sdvg_DrawLinesGouraudAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesGouraudVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as gouraud-shaded line segments (32 bit float format)
