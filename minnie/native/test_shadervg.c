@@ -2517,7 +2517,7 @@ void TestBeginLineStripFlatMiter(sBool _bAA) {
    sUI numPoints = numSeg + 2u;
    sF32 w = (sM_2PIf / numSeg);
    sF32 a = ang_x;
-   sF32 h = sin(ang_h) * 220.0f;
+   sF32 h = sinf(ang_h) * 220.0f;
    sF32 x = 100.0f;
    sF32 xStep = 440.0f / numSeg;
    sF32 y;
@@ -2560,10 +2560,40 @@ static void TestLinesRandAAVBO(void) {
             *d.s16++ = y;
          }
       }
+      buf_vbo.io_offset = (8u * numLines * 2u);
+      /* Dprintf("xxx updatevbo buf_vbo.io_offset=%u\n", buf_vbo.io_offset); */
       sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
    }
    sdvg_SetStrokeWidth(1.0f);
    sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0u/*offset*/, numLines << 1);
+}
+
+// ---------------------------------------------------------------------------- TestBeginLinesRandAAVBO (174 alt)
+static void TestBeginLinesRandAAVBO(void) {
+   // (note) same coordinates+colors as test264_line_benchmark
+   // (note) same performance as TestLinesRandAAVBO()
+   const sUI numLines = 1000u;
+   sdvg_SetStrokeWidth(1.0f);
+   if(sdvg_BeginLinesGouraudAA(numLines*2u))
+   {
+      loc_rand_seed(0x9C82F83Bu);
+      for(sUI lineIdx = 0u; lineIdx < numLines; lineIdx++)
+      {
+         for(sUI i = 0u; i < 2u; i++)
+         {
+            sF32 x = (loc_randf(2.0f) - 1.0f) * (VP_W* 0.5f) + (VP_W*0.5f);
+            sF32 y = (loc_randf(2.0f) - 1.0f) * (VP_H* 0.5f) + (VP_H*0.5f);
+            sdvg_ColorARGB(sdvg_ARGB((loc_randu() & 127u) + 128u,
+                                     loc_randu() & 255u,
+                                     loc_randu() & 255u,
+                                     loc_randu() & 255u
+                                     )
+                           );
+            sdvg_Vertex2f(x, y);
+         }
+      }
+      sdvg_End();
+   }
 }
 
 // ---------------------------------------------------------------------------- hal_on_draw
@@ -2579,7 +2609,7 @@ void hal_on_draw(void) {
    last_ticks = ticks;
    // Dprintf("xxx hal_on_draw dt=%f\n", dt);
 
-   int numIter = 1;
+   sUI numIter = 1u;
 
    if(b_benchmark)
    {
@@ -4279,7 +4309,11 @@ void hal_on_draw(void) {
             break;
 
          case RENDER_LINES_RAND_AA_VBO: // 174
+#if 1
             TestLinesRandAAVBO();
+#else
+            TestBeginLinesRandAAVBO();
+#endif
             break;
       }
 
