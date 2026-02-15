@@ -35,7 +35,7 @@
 // ----          03Oct2024, 13Oct2024, 12Nov2024, 21Dec2024, 26Dec2024, 29Dec2024, 31Dec2024
 // ----          03Jan2025, 04Jan2025, 12Jan2025, 15Jan2025, 03Apr2025, 05Apr2025, 06May2025
 // ----          20May2025, 28May2025, 05Jun2025, 12Jun2025, 13Jun2025, 14Jun2025, 22Dec2025
-// ----          09Jan2026, 13Jan2026, 16Jan2026
+// ----          09Jan2026, 13Jan2026, 16Jan2026, 14Feb2026
 // ----
 // ----
 // ----
@@ -137,6 +137,10 @@ class Sample {
    static IntArray white_key_adv_tbl = [
       2,2,1,2,2,2,1
                                     ];
+
+   static IntArray drumkit_note_tbl = [
+      0,2,4,5,7,9,10,11,  // C,D,E,F,G,A,A#,B (see drum_layout.txt)
+                                       ];
 
    byte  transpose_oct;    // -4..4
    byte  transpose_semi;   // -12..12
@@ -1335,6 +1339,8 @@ class Sample {
       sample_bank.enableUniqueNotes = false;
       StSampleMutexGroup *mgrp;
 
+      solo_zone_idx = -1;
+
       mgrp <= new StSampleMutexGroup;
       mgrp.name = "A";
       sample_bank.addMutexGroup(#(deref mgrp));
@@ -1975,6 +1981,43 @@ class Sample {
       sample_bank.pan = 0.0f;
    }
 
+   // <method.png>
+   public method transposeZones(float _transpose) {
+      // when merging first sample (PageTrack::handleMergeSamples2())
+      StSample zone <= sample_bank.firstSample;
+      while(null != zone)
+      {
+         zone.setTransposeAndUpdateOctSemiCents(zone.transpose + _transpose);
+         zone <= zone.next;
+      }
+   }
+
+   // <method.png>
+   public method applyNoteInputFilterToZones(int _noteMin, int _noteMax) {
+      // when merging first sample (PageTrack::handleMergeSamples2())
+      StSample zone <= sample_bank.firstSample;
+      while(null != zone)
+      {
+         StRange range <= zone.getOrCreateKeyRange();
+         range.lo = _noteMin;
+         range.hi = _noteMax;
+         zone <= zone.next;
+      }
+   }
+
+   // <method.png>
+   public method applyVelocityInputFilterToZones(int _velMin, int _velMax) {
+      // when merging first sample (PageTrack::handleMergeSamples2())
+      StSample zone <= sample_bank.firstSample;
+      while(null != zone)
+      {
+         StRange range <= zone.getOrCreateVelRange();
+         range.lo = _velMin;
+         range.hi = _velMax;
+         zone <= zone.next;
+      }
+   }
+
    // <method_get.png>
    public static ZoneHasValidKeyAndVelocityRanges(StSample s) : boolean {
       StRange range <= s.getKeyRange();
@@ -2309,6 +2352,11 @@ class Sample {
 
       // Swap synthpatch target zones
       cycle_state.swapTargetZones(_idxLeft);
+   }
+
+   // <method.png>
+   public =replay= method updateAltGroups() {
+      sample_bank.updateAltGroups();
    }
 
    // <method.png>
@@ -3146,7 +3194,7 @@ class Sample {
          s <= s.next;
       }
 
-      sample_bank.updateAltGroups();
+      updateAltGroups();
    }
 
    // <method_init.png>
@@ -4123,7 +4171,7 @@ class Sample {
             break;
       }
 
-      sample_bank.updateAltGroups();
+      updateAltGroups();
    }
 
    // <method_init.png>
@@ -4175,7 +4223,7 @@ class Sample {
             loops[2] = 0; // inf
          }
 
-         sample_bank.updateAltGroups();
+         updateAltGroups();
       }
    }
 
@@ -9208,7 +9256,7 @@ class Sample {
             zoneIdx++;
          }
 
-         sample_bank.updateAltGroups();
+         updateAltGroups();
 
          if(ver >= 6)
          {
@@ -10203,7 +10251,11 @@ class Sample {
    }
 
    // <method.png>
-   public method mergeSample(Sample _o, float _volumeScl, float _pan) {
+   public method mergeSample(Sample _o, float _volumeScl, float _pan,
+                             int _noteTranspose,
+                             int _noteMin, int _noteMax,
+                             int _velMin, int _velMax
+                             ) {
       // called by PageSample.handleMergeNextSample() and PageTrack.handleMergeSamples2()
       //  (note) 'this' sample volume should be 1.0 (see multiplyZoneVolumesBySampleVolumeAndReplaceByOne())
       //  (note) 'this' sample pan should be 0.0 (see addSamplePanToZonesAndReplaceByZero())
@@ -10251,7 +10303,7 @@ class Sample {
       }
 
       StSample zoneO <= _o.getZoneByIdx(0);
-      float tr = _o.getTranspose() - getTranspose();
+      float tr = _o.getTranspose() - getTranspose() + _noteTranspose;
       // // float thisVol = getVolume();
       float oVol = _o.getVolume();
       float oPan = _o.getPan();
@@ -10275,6 +10327,20 @@ class Sample {
             Global.Debug2("Sample::mergeSample: zone.name=\""+zone.name+"\" zone.transpose="+zone.transpose+" tr="+tr+"   update to (zone.transpose + tr)="+(zone.transpose + tr));
             zone.setTransposeAndUpdateOctSemiCents(zone.transpose + tr);
             Global.Debug2("Sample::mergeSample:    => zone.transpose="+zone.transpose);
+         }
+
+         if(0 != _noteMin || 127 != _noteMax)
+         {
+            StRange keyRange <= zone.getOrCreateKeyRange();
+            keyRange.lo = _noteMin;
+            keyRange.hi = _noteMax;
+         }
+
+         if(1 != _velMin || 127 != _velMax)
+         {
+            StRange velRange <= zone.getOrCreateVelRange();
+            velRange.lo = _velMin;
+            velRange.hi = _velMax;
          }
 
          // Merge Cycle patches

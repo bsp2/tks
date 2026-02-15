@@ -1,7 +1,7 @@
 // ----
 // ---- file   : PageTrack.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -20,7 +20,7 @@
 // ----          05Jul2024, 06Jul2024, 07Jul2024, 12Aug2024, 13Sep2024, 15Sep2024, 20Sep2024
 // ----          21Sep2024, 22Sep2024, 24Sep2024, 04Oct2024, 05Oct2024, 22Dec2024, 29Dec2024
 // ----          30Dec2024, 01Jan2025, 04Apr2025, 06Apr2025, 10Apr2025, 01May2025, 10Jun2025
-// ----          13Jun2025, 14Jun2025, 09Sep2025, 18Dec2025
+// ----          13Jun2025, 14Jun2025, 09Sep2025, 18Dec2025, 14Feb2026, 15Feb2026
 // ----
 // ----
 // ----
@@ -1419,6 +1419,8 @@ class PageTrack : Page {
       {
          boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
 
+         handleAddPatchVariation(true/*bClone*/);
+
          int sampleNr = 1;
          Lane *lane;
          foreach lane in track.lanes
@@ -1438,6 +1440,7 @@ class PageTrack : Page {
                      sampleNew.copyFrom(sampleSrc);
                      sampleNew.analyzeAndUpdatePartials();
                      sampleNew.markWaveformAsModified();
+                     modSample.setSampleIdx(current_project.getSampleIdx(sampleNew));
                      sampleNr++;
                   }
                }
@@ -1445,6 +1448,8 @@ class PageTrack : Page {
          }
 
          Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+         showTrack(track);
 
          sampleNr--;
          Global.Print("Clone "+sampleNr+" sample"+Utils.GetPluralString(sampleNr)+" with prefix \""+_prefix+"\"");
@@ -1479,6 +1484,7 @@ class PageTrack : Page {
          {
             boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
 
+            ModSample *modSample;
             local IntArray samplesDone;
             Lane *lane;
             int numMerged = 0;
@@ -1486,7 +1492,6 @@ class PageTrack : Page {
             {
                if(lane.b_enable)
                {
-                  ModSample *modSample;
                   foreach modSample in lane.mods
                   {
                      if(modSample instanceof ModSample)
@@ -1502,18 +1507,40 @@ class PageTrack : Page {
                                  float laneDefVolume = lane.estimateDefaultVolumeAfterMod(modSample);
                                  float laneDefPan    = lane.estimateDefaultPanAfterMod(modSample);
                                  ModEQ3 modEQ3 <= lane.findModEQ3AfterMod(modSample);
+                                 ModInputFilter modSampleInputFilter <= modSample.input_filter;
                                  if(0 == numMerged++)
                                  {
                                     newSample.copyFrom(sampleSrc);
                                     newSample.multiplyZoneVolumesBySampleVolumeAndReplaceByOne(laneDefVolume);
                                     newSample.addSamplePanToZonesAndReplaceByZero(laneDefPan);
+                                    newSample.transposeZones(newSample.getTranspose() + modSampleInputFilter.noteTranspose);
+                                    newSample.setTransposeAndUpdateOctSemiCents(0.0f);
+                                    newSample.setSoloZoneIdx(-1);
+                                    if(0 != modSampleInputFilter.noteMin || 127 != modSampleInputFilter.noteMax)
+                                    {
+                                       newSample.applyNoteInputFilterToZones(modSampleInputFilter.noteMin,
+                                                                             modSampleInputFilter.noteMax
+                                                                             );
+                                    }
+                                    if(1 != modSampleInputFilter.velocityMin || 127 != modSampleInputFilter.velocityMax)
+                                    {
+                                       newSample.applyVelocityInputFilterToZones(modSampleInputFilter.velocityMin,
+                                                                                 modSampleInputFilter.velocityMax
+                                                                                 );
+                                    }
 
                                     // StSample firstZone <= newSample.getZoneByIdx(0);
                                     // trace "xxx merge first, newSample.volume="+newSample.getVolume()+" firstZone.volume="+firstZone.getVolume();
                                  }
                                  else
                                  {
-                                    newSample.mergeSample(sampleSrc, laneDefVolume, laneDefPan);
+                                    newSample.mergeSample(sampleSrc, laneDefVolume, laneDefPan,
+                                                          modSampleInputFilter.noteTranspose,
+                                                          modSampleInputFilter.noteMin,
+                                                          modSampleInputFilter.noteMax,
+                                                          modSampleInputFilter.velocityMin,
+                                                          modSampleInputFilter.velocityMax
+                                                          );
                                  }
 
                                  // Copy lane ModEQ3 to merged sample zones (if exists)
@@ -1563,8 +1590,6 @@ class PageTrack : Page {
                } // if lane.b_enable
             }
 
-            Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
-
             if(0 == numMerged)
             {
                // no samples found, delete newSample
@@ -1576,26 +1601,245 @@ class PageTrack : Page {
             {
                newSample.analyzeAndUpdatePartials();
                newSample.markWaveformAsModified();
+               newSample.updateAltGroups();
 
-               // Edit new sample
-               PageSample pgSample <= root_form.pg_sample;
-               pgSample.autoselect_sample_idx = current_project.getSampleIdx(newSample);
-               pgSample.ui_parent_track_nr = current_project.getTrackIdx(track) + 1;
-               pgSample.mod_sample <= null;
-               pgSample.sample_pad_common <= null;
-               pgSample.sample_pad        <= null;
-               pgSample.sample_pad_kit    <= null;
-               root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+               if(0)
+               {
+                  // Edit new sample (old behaviour)
+                  PageSample pgSample <= root_form.pg_sample;
+                  pgSample.autoselect_sample_idx = current_project.getSampleIdx(newSample);
+                  pgSample.ui_parent_track_nr = current_project.getTrackIdx(track) + 1;
+                  pgSample.mod_sample <= null;
+                  pgSample.sample_pad_common <= null;
+                  pgSample.sample_pad        <= null;
+                  pgSample.sample_pad_kit    <= null;
+                  root_form.showPage(RootForm.PAGE_SAMPLE, true/*bAllowHistory*/);
+               }
+               else
+               {
+                  // Create new TrackPatchVariation ([14Feb2026])
+                  TrackPatchVariation tpv <= track.newPatchVariationAndSelect();  // unloads old lanes/mods
+                  Lane newLane <= track.newLane();
+                  modSample <= newLane.newMod("Sample");
+                  modSample.setSampleIdx(current_project.getSampleIdx(newSample));
+
+                  showTrack(track);
+               }
 
                Global.Print("Merged "+numMerged+" sample"+Utils.GetPluralString(numMerged)+" to \""+newSample.unique_name+"\"");
             }
 
+            Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
          }
          else
             Global.Warning("Merge Samples: failed to create sample");
       }
       else
          Global.Warning("Merge Samples: name is blank");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAssignDrumKitKeyRanges() {
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      Lane *lane;
+      int noteIdx = 0;
+      IntArray noteTbl <= Sample.drumkit_note_tbl;
+      
+      foreach lane in track.lanes
+      {
+         ModSample *modSample;
+         foreach modSample in lane.mods
+         {
+            if(modSample instanceof ModSample)
+            {
+               int note = STConfig.pgsample_reinit_drummap_base_note + noteTbl.get(noteIdx & 7) + (noteIdx/8)*12;
+               ModInputFilter f <= modSample.input_filter;
+               f.noteMin = note;
+               f.noteMax = note;
+               f.noteTranspose = Sample.KEY_MIDDLE_C - note;
+
+               noteIdx++;
+               break;
+            }
+         }
+      }
+
+      showTrack(track);
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+      Global.Print("Update "+noteIdx+" drumkit keyrange"+Utils.GetPluralString(noteIdx));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleConvertDrumPadsToModSampleLanes1() {
+    
+      PointerArray aSrcLanes <= track.lanes;
+
+      SamplePadKit spk <= track.sample_pad_kit;
+      SamplePadKitVariation ekv <= spk.getEditKitVariation();
+
+      TrackPatchVariation tpv <= track.newPatchVariationAndSelect();  // unloads old lanes/mods
+
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+
+      SamplePad *pad;
+      int padIdx = 0;
+      FloatArray *laneLevelMod;
+      FloatArray *laneLevel;
+      FloatArray *lanePanMod;
+      FloatArray *lanePan;
+      SamplePadCommon *padCommon;
+      int sendIdx;
+      float level;
+
+      // Find used lane sends
+      local IntArray aUsedLaneSends;
+      aUsedLaneSends.allocAndFill(SamplePadCommon.NUM_LANE_SENDS/*8*/, false);
+      padIdx = 0;
+      int numUsedLaneSends = 0;
+      foreach pad in ekv.pads
+      {
+         if(-1 != pad.sample_idx)
+         {
+            padCommon <= spk.getPadCommonByIndex(padIdx);
+            laneLevel <= padCommon.lane_level;
+            laneLevelMod <= pad.lane_level_mod;
+            sendIdx = 0;
+            loop(SamplePadCommon.NUM_LANE_SENDS/*8*/)
+            {
+               level = mathClampf(laneLevel.get(sendIdx) + laneLevelMod.get(sendIdx), 0.0f, 1.0f);
+               if(level > 0.0f)
+               {
+                  if(false == aUsedLaneSends[sendIdx])
+                     numUsedLaneSends++;
+                  aUsedLaneSends[sendIdx] = true;
+               }
+               sendIdx++;
+            }
+         }
+         padIdx++;
+      }
+   
+      // Create pad lanes
+      int numPadLanes = 0;
+      Lane *newLane;
+      padIdx = 0;
+      foreach pad in ekv.pads
+      {
+         if(-1 != pad.sample_idx)
+         {
+            padCommon <= spk.getPadCommonByIndex(padIdx);
+
+            newLane <= track.newLane();
+            newLane.lane_name = padCommon.name;
+            Global.Debug2("handleConvertDrumPadsToModSampleLanes: padIdx="+padIdx+" newLane.lane_name=\""+newLane.lane_name+"\"");
+            ModSample modSample <= newLane.newMod("Sample");
+            modSample.setSampleIdx(pad.sample_idx);
+            ModInputFilter f <= modSample.input_filter;
+            if(-1 != pad.root_key)  // not chromatic ?
+            {
+               f.noteMin = padCommon.note_nr;
+               f.noteMax = padCommon.note_nr;
+               f.noteTranspose = pad.root_key - padCommon.note_nr;
+            }
+            numPadLanes++;
+         }
+         padIdx++;
+      }
+
+      local IntArray sendToLaneMap;
+      sendToLaneMap.allocAndFill(8, -1);
+      sendIdx = 0;
+      int laneIdx = 0;
+      loop(SamplePadCommon.NUM_LANE_SENDS/*8*/)
+      {
+         if(aUsedLaneSends[sendIdx])
+            sendToLaneMap[sendIdx] = laneIdx++;
+         sendIdx++;
+      }
+      Global.Debug("handleConvertDrumPadsToModSampleLanes: numUsedLaneSends="+numUsedLaneSends+" sendToLaneMap="+sendToLaneMap);
+
+      // Create send lanes (usually at least 1)
+      if(numUsedLaneSends > 0)
+      {
+         int dstLaneIdx;
+
+         sendIdx = 0;
+         loop(SamplePadCommon.NUM_LANE_SENDS/*8*/)
+         {
+            if(aUsedLaneSends[sendIdx])
+            {
+               // Create send lane
+               newLane <= track.newLane();
+               Lane srcLane <= aSrcLanes.get(sendIdx);
+               newLane.copyModsFrom(srcLane, true/*bFullInit*/, true/*bCopyModMatrix*/);
+               newLane.copyOutputsFrom(srcLane);
+               newLane.lane_name = srcLane.lane_name;
+            }
+            sendIdx++;
+         }
+
+         // Create outputs
+         laneIdx = 0;
+         padIdx = 0;
+         foreach pad in ekv.pads
+         {
+            if(-1 != pad.sample_idx)
+            {
+               padCommon <= spk.getPadCommonByIndex(padIdx);
+               Lane padLane <= track.getLaneByIdx(laneIdx);
+               laneLevel    <= padCommon.lane_level;
+               laneLevelMod <= pad.lane_level_mod;
+               lanePan      <= padCommon.lane_pan;
+               lanePanMod   <= pad.lane_pan_mod;
+
+               Output *output;
+
+               sendIdx = 0;
+               loop(numUsedLaneSends)
+               {
+                  output <= padLane.getOutputByIdx(sendIdx);
+                  if(null == output)
+                     output <= padLane.newOutput();
+                  output.setType(Output.TYPE_LANE);
+                  sendIdx++;
+               }
+
+               sendIdx = 0;
+               loop(SamplePadCommon.NUM_LANE_SENDS/*8*/)
+               {
+                  dstLaneIdx = sendToLaneMap.get(sendIdx);  // 0..n (-1 = unused)
+                  if(dstLaneIdx >= 0)
+                  {
+                     level = mathClampf(laneLevel.get(sendIdx) + laneLevelMod.get(sendIdx), 0.0f, 1.0f);
+                     float pan = mathClampf(lanePan.get(sendIdx) + lanePanMod.get(sendIdx), -1.0f, 1.0f);
+                     output <= padLane.getOutputByIdx(dstLaneIdx);
+                     output.setLaneIdx(numPadLanes + dstLaneIdx);
+                     output.setLevel(level);
+                     output.setPan(pan);
+                  }
+
+                  sendIdx++;
+               }
+
+               laneIdx++;
+            }  // if -1 != pad.sample_idx
+            padIdx++;
+         }
+      }
+
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+
+      Global.Print("Convert "+numPadLanes+" drumkit pad"+Utils.GetPluralString(numPadLanes)+" to ModSample instances");
+   }
+
+   // <ui_handle.png>
+   protected method handleConvertDrumPadsToModSampleLanes() {
+      handleConvertDrumPadsToModSampleLanes1();
+      showTrack(track);
    }
 
    // <ui_show.png>
@@ -1630,19 +1874,35 @@ class PageTrack : Page {
                                     "autoroute_lane"
                                     );
          pmb.setToolTipCaption("Add lane and individual output send to last lane according to STConfig.track_autoroute_map_lane");
+
+         pm.addSeparator();
       }
 
+      pmb <= pm.addDefaultButton("Assign drum-kit key-ranges..",
+                                 "assign_drumkit_key_ranges"
+                                 );
+      pmb.setToolTipCaption("Assign unique key-range to first ModSample instance of each lane (C,D,E,F,G,A,A#,B,..)");
+
       pm.addSeparator();
-      pmb <= pm.addDefaultButton("Clone selected samples with prefix..",
+
+      pmb <= pm.addDefaultButton("Clone selected samples with prefix and create new TrackPatchVariation..",
                                  "clone_samples"
                                  );
       pmb.setToolTipCaption("Prompt for sample name prefix and clone selected samples (ModSample instances)\n\n (note) e.g. when preparing drumkit samples");
 
       pm.addSeparator();
-      pmb <= pm.addDefaultButton("Merge selected samples to new sample..",
+      pmb <= pm.addDefaultButton("Merge selected samples to new sample and create new TrackPatchVariation..",
                                  "merge_samples"
                                  );
       pmb.setToolTipCaption("Prompt for new sample name and merge selected samples (ModSample instances)\n\n (note) e.g. when merging layered samples\n\n (note) applies lane ModGain + ModEQ3 + Default output volume + pan");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Convert drumpads to ModSample lanes and create new TrackPatchVariation..",
+                                 "convert_drumpads_to_modsample_lanes"
+                                 );
+      pmb.setToolTipCaption("Assign unique key-range to first ModSample instance of each lane (C,D,E,F,G,A,A#,B,..)");
+      pmb.setActive(track.isDrumMode());
+
 
       pm.resizeToMinimum();
       pm.showNearMouse(-10, -10);
@@ -2349,12 +2609,20 @@ class PageTrack : Page {
                   pageFocusDefault();
                   return true;
 
+               case "assign_drumkit_key_ranges":
+                  handleAssignDrumKitKeyRanges();
+                  return true;
+
                case "clone_samples":
                   handleCloneSamples1();
                   return true;
 
                case "merge_samples":
                   handleMergeSamples1();
+                  return true;
+
+               case "convert_drumpads_to_modsample_lanes":
+                  handleConvertDrumPadsToModSampleLanes();
                   return true;
             }
             return true;
