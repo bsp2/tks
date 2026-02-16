@@ -178,10 +178,10 @@ class LineStripPatternDecalAA32 : public ShaderVG_Shape {
       Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale);
       Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 
-      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 12);
-      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  8);
-      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 20);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 12);
+      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  8);
+      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 20);
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);

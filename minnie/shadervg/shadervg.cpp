@@ -523,36 +523,42 @@ static sUI current_draw_attrib_offset;       // incs with each AttribOffset*() c
 static sUI current_draw_lines_vertex_index;  // incs with each Vertex2f() call in DRAW_MODE_LINES* (0, 6)
 static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 
-#define DRAW_MODE_POLYGON                            7000
-#define DRAW_MODE_POLYGON_AA                         7001
-#define DRAW_MODE_LINE_STRIP                         7002
-#define DRAW_MODE_LINE_STRIP_AA                      7003
-#define DRAW_MODE_LINE_STRIP_PATTERN                 7004
-#define DRAW_MODE_LINE_STRIP_PATTERN_AA              7005
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL           7006
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_AA        7007
-#define DRAW_MODE_LINE_STRIP_BEVEL                   7008
-#define DRAW_MODE_LINE_STRIP_BEVEL_AA                7009
-#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL           7010
-#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA        7011
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL     7012
-#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA  7013
-#define DRAW_MODE_LINE_STRIP_MITER                   7014
-#define DRAW_MODE_LINE_STRIP_MITER_AA                7015
-#define DRAW_MODE_LINES                              7016
-#define DRAW_MODE_LINES_AA                           7017
-#define DRAW_MODE_LINES_GOURAUD                      7018
-#define DRAW_MODE_LINES_GOURAUD_AA                   7019
-#define DRAW_MODE_LINES_PATTERN                      7020
-#define DRAW_MODE_LINES_PATTERN_AA                   7021
-#define DRAW_MODE_POINTS_SQUARE                      7022
-#define DRAW_MODE_POINTS_SQUARE_AA                   7023
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD              7024
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA           7025
-#define DRAW_MODE_POINTS_ROUND                       7026
-#define DRAW_MODE_POINTS_ROUND_AA                    7027
-#define DRAW_MODE_POINTS_ROUND_GOURAUD               7028
-#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA            7029
+#define DRAW_MODE_POLYGON                                   7000
+#define DRAW_MODE_POLYGON_AA                                7001
+#define DRAW_MODE_LINE_STRIP                                7002
+#define DRAW_MODE_LINE_STRIP_AA                             7003
+#define DRAW_MODE_LINE_STRIP_PATTERN                        7004
+#define DRAW_MODE_LINE_STRIP_PATTERN_AA                     7005
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL                  7006
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_AA               7007
+#define DRAW_MODE_LINE_STRIP_BEVEL                          7008
+#define DRAW_MODE_LINE_STRIP_BEVEL_CLOSED                   7009
+#define DRAW_MODE_LINE_STRIP_BEVEL_AA                       7010
+#define DRAW_MODE_LINE_STRIP_BEVEL_AA_CLOSED                7011
+#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL                  7012
+#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_CLOSED           7013
+#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA               7014
+#define DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA_CLOSED        7015
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL            7016
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_CLOSED     7017
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA         7018
+#define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA_CLOSED  7019
+#define DRAW_MODE_LINE_STRIP_MITER                          7020
+#define DRAW_MODE_LINE_STRIP_MITER_AA                       7021
+#define DRAW_MODE_LINES                                     7022
+#define DRAW_MODE_LINES_AA                                  7023
+#define DRAW_MODE_LINES_GOURAUD                             7024
+#define DRAW_MODE_LINES_GOURAUD_AA                          7025
+#define DRAW_MODE_LINES_PATTERN                             7026
+#define DRAW_MODE_LINES_PATTERN_AA                          7027
+#define DRAW_MODE_POINTS_SQUARE                             7028
+#define DRAW_MODE_POINTS_SQUARE_AA                          7029
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD                     7030
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA                  7031
+#define DRAW_MODE_POINTS_ROUND                              7032
+#define DRAW_MODE_POINTS_ROUND_AA                           7033
+#define DRAW_MODE_POINTS_ROUND_GOURAUD                      7034
+#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA                   7035
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
 
 static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
@@ -2918,7 +2924,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32(sUI _vboId, sUI _byteOffset,
                                                                    );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   +0 s14.2 x
@@ -2929,6 +2935,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2(sUI _vboId, sUI _byteOffset, sU
    line_strip_flat_bevel_aa_14_2.drawLineStripFlatBevelAAVBO14_2(_vboId,
                                                                  _byteOffset,
                                                                  _numPoints,
+                                                                 _bSkipLastLineJoint,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                  Dsdvg_pixel_scl(stroke_w),
@@ -2936,7 +2943,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2(sUI _vboId, sUI _byteOffset, sU
                                                                  );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0 f32 x
@@ -2947,6 +2954,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32(sUI _vboId, sUI _byteOffset, sUI 
    line_strip_flat_bevel_aa_32.drawLineStripFlatBevelAAVBO32(_vboId,
                                                              _byteOffset,
                                                              _numPoints,
+                                                             _bSkipLastLineJoint,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                              Dsdvg_pixel_scl(stroke_w),
@@ -2954,7 +2962,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32(sUI _vboId, sUI _byteOffset, sUI 
                                                              );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   +0 s14.2 x
@@ -2966,6 +2974,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, 
    line_strip_flat_bevel_aa_14_2.drawLineStripFlatBevelAAVBO14_2(_vboId,
                                                                  _byteOffset,
                                                                  _numPoints,
+                                                                 _bSkipLastLineJoint,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                  Dsdvg_pixel_scl(stroke_w) + aaOff,
@@ -2973,7 +2982,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, 
                                                                  );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0 f32 x
@@ -2985,6 +2994,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sU
    line_strip_flat_bevel_aa_32.drawLineStripFlatBevelAAVBO32(_vboId,
                                                              _byteOffset,
                                                              _numPoints,
+                                                             _bSkipLastLineJoint,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                              Dsdvg_pixel_scl(stroke_w) + aaOff,
@@ -2992,7 +3002,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sU
                                                              );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (6 bytes per vertex):
    //   +0  s14.2 x
@@ -3005,6 +3015,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset,
    line_strip_pattern_bevel_aa_14_2.drawLineStripPatternBevelAAVBO14_2(_vboId,
                                                                        _byteOffset,
                                                                        _numPoints,
+                                                                       _bSkipLastLineJoint,
                                                                        mvp_matrix,
                                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                        Dsdvg_pixel_scl(stroke_w),
@@ -3014,7 +3025,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset,
                                                                        );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (12 bytes per vertex):
    //   +0  f32 x
@@ -3027,6 +3038,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, s
    line_strip_pattern_bevel_aa_32.drawLineStripPatternBevelAAVBO32(_vboId,
                                                                    _byteOffset,
                                                                    _numPoints,
+                                                                   _bSkipLastLineJoint,
                                                                    mvp_matrix,
                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                    Dsdvg_pixel_scl(stroke_w),
@@ -3036,7 +3048,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, s
                                                                    );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (6 bytes per vertex):
    //   +0  s14.2 x
@@ -3049,6 +3061,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOf
    line_strip_pattern_decal_bevel_aa_14_2.drawLineStripPatternDecalBevelAAVBO14_2(_vboId,
                                                                                   _byteOffset,
                                                                                   _numPoints,
+                                                                                  _bSkipLastLineJoint,
                                                                                   mvp_matrix,
                                                                                   fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
@@ -3059,7 +3072,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOf
                                                                                   );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (12 bytes per vertex):
    //   +0  f32 x
@@ -3072,6 +3085,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffs
    line_strip_pattern_decal_bevel_aa_32.drawLineStripPatternDecalBevelAAVBO32(_vboId,
                                                                               _byteOffset,
                                                                               _numPoints,
+                                                                              _bSkipLastLineJoint,
                                                                               mvp_matrix,
                                                                               fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
@@ -3082,7 +3096,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffs
                                                                               );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (6 bytes per vertex):
    //   +0  s14.2 x
@@ -3096,6 +3110,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffse
    line_strip_pattern_bevel_aa_14_2.drawLineStripPatternBevelAAVBO14_2(_vboId,
                                                                        _byteOffset,
                                                                        _numPoints,
+                                                                       _bSkipLastLineJoint,
                                                                        mvp_matrix,
                                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                        Dsdvg_pixel_scl(stroke_w) + aaOff,
@@ -3105,7 +3120,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffse
                                                                        );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (12 bytes per vertex):
    //   +0  f32 x
@@ -3119,6 +3134,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset,
    line_strip_pattern_bevel_aa_32.drawLineStripPatternBevelAAVBO32(_vboId,
                                                                    _byteOffset,
                                                                    _numPoints,
+                                                                   _bSkipLastLineJoint,
                                                                    mvp_matrix,
                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                    Dsdvg_pixel_scl(stroke_w) + aaOff,
@@ -3128,7 +3144,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset,
                                                                    );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (6 bytes per vertex):
    //   +0  s14.2 x
@@ -3142,6 +3158,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byte
    line_strip_pattern_decal_bevel_aa_14_2.drawLineStripPatternDecalBevelAAVBO14_2(_vboId,
                                                                                   _byteOffset,
                                                                                   _numPoints,
+                                                                                  _bSkipLastLineJoint,
                                                                                   mvp_matrix,
                                                                                   fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
@@ -3152,7 +3169,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byte
                                                                                   );
 }
 
-void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (12 bytes per vertex):
    //   +0  f32 x
@@ -3166,6 +3183,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOf
    line_strip_pattern_decal_bevel_aa_32.drawLineStripPatternDecalBevelAAVBO32(_vboId,
                                                                               _byteOffset,
                                                                               _numPoints,
+                                                                              _bSkipLastLineJoint,
                                                                               mvp_matrix,
                                                                               fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
@@ -5840,8 +5858,26 @@ sBool YAC_CALL sdvg_BeginLineStripBevel(sUI _numPoints) {
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
 }
 
+sBool YAC_CALL sdvg_BeginLineStripBevelClosed(sUI _numPoints) {
+   current_draw_mode = DRAW_MODE_LINE_STRIP_BEVEL_CLOSED;
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+   return BeginDraw(_numPoints, 4u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 8u/*stride*/);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+}
+
 sBool YAC_CALL sdvg_BeginLineStripBevelAA(sUI _numPoints) {
    current_draw_mode = DRAW_MODE_LINE_STRIP_BEVEL_AA;
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+   return BeginDraw(_numPoints, 4u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 8u/*stride*/);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+}
+
+sBool YAC_CALL sdvg_BeginLineStripBevelAAClosed(sUI _numPoints) {
+   current_draw_mode = DRAW_MODE_LINE_STRIP_BEVEL_AA_CLOSED;
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
    return BeginDraw(_numPoints, 4u/*stride*/);
 #else
@@ -5864,16 +5900,32 @@ sBool YAC_CALL sdvg_BeginLineStripPatternBevel(sUI _numPoints) {
    return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_BEVEL, _numPoints);
 }
 
+sBool YAC_CALL sdvg_BeginLineStripPatternBevelClosed(sUI _numPoints) {
+   return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_CLOSED, _numPoints);
+}
+
 sBool YAC_CALL sdvg_BeginLineStripPatternBevelAA(sUI _numPoints) {
    return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginLineStripPatternBevelAAClosed(sUI _numPoints) {
+   return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA_CLOSED, _numPoints);
 }
 
 sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevel(sUI _numPoints) {
    return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL, _numPoints);
 }
 
+sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelClosed(sUI _numPoints) {
+   return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_CLOSED, _numPoints);
+}
+
 sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAA(sUI _numPoints) {
    return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA, _numPoints);
+}
+
+sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAAClosed(sUI _numPoints) {
+   return loc_BeginLineStripPatternBevel(DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA_CLOSED, _numPoints);
 }
 
 sBool YAC_CALL sdvg_BeginLineStripMiter(sUI _numPoints) {
@@ -6339,7 +6391,9 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
          break;
 
       case DRAW_MODE_LINE_STRIP_BEVEL:
+      case DRAW_MODE_LINE_STRIP_BEVEL_CLOSED:
       case DRAW_MODE_LINE_STRIP_BEVEL_AA:
+      case DRAW_MODE_LINE_STRIP_BEVEL_AA_CLOSED:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
          sdvg_BufferAddLinePointFlatBevel14_2(attrib_write_buffer, _x, _y);
 #else
@@ -6348,9 +6402,13 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
          break;
 
       case DRAW_MODE_LINE_STRIP_PATTERN_BEVEL:
+      case DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_CLOSED:
       case DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA:
+      case DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA_CLOSED:
       case DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL:
+      case DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_CLOSED:
       case DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA:
+      case DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA_CLOSED:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
          sdvg_BufferAddLinePointPatternBevel14_2(attrib_write_buffer, _x, _y);
 #else
@@ -6742,12 +6800,30 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatBevelVBO14_2(current_vbo_id,
                                                      current_draw_start_offset,
-                                                     current_draw_vertex_index
+                                                     current_draw_vertex_index,
+                                                     YAC_TRUE/*bSkipLastLineJoint*/
                                                      );
 #else
                   sdvg_DrawLineStripFlatBevelVBO32(current_vbo_id,
                                                    current_draw_start_offset,
-                                                   current_draw_vertex_index
+                                                   current_draw_vertex_index,
+                                                   YAC_TRUE/*bSkipLastLineJoint*/
+                                                   );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_BEVEL_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripFlatBevelVBO14_2(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index,
+                                                     YAC_FALSE/*bSkipLastLineJoint*/
+                                                     );
+#else
+                  sdvg_DrawLineStripFlatBevelVBO32(current_vbo_id,
+                                                   current_draw_start_offset,
+                                                   current_draw_vertex_index,
+                                                   YAC_FALSE/*bSkipLastLineJoint*/
                                                    );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
@@ -6756,12 +6832,30 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatBevelAAVBO14_2(current_vbo_id,
                                                        current_draw_start_offset,
-                                                       current_draw_vertex_index
+                                                       current_draw_vertex_index,
+                                                       YAC_TRUE/*bSkipLastLineJoint*/
                                                        );
 #else
                   sdvg_DrawLineStripFlatBevelAAVBO32(current_vbo_id,
                                                      current_draw_start_offset,
-                                                     current_draw_vertex_index
+                                                     current_draw_vertex_index,
+                                                     YAC_TRUE/*bSkipLastLineJoint*/
+                                                     );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_BEVEL_AA_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripFlatBevelAAVBO14_2(current_vbo_id,
+                                                       current_draw_start_offset,
+                                                       current_draw_vertex_index,
+                                                       YAC_FALSE/*bSkipLastLineJoint*/
+                                                       );
+#else
+                  sdvg_DrawLineStripFlatBevelAAVBO32(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index,
+                                                     YAC_FALSE/*bSkipLastLineJoint*/
                                                      );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
@@ -6770,12 +6864,30 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternBevelVBO14_2(current_vbo_id,
                                                         current_draw_start_offset,
-                                                        current_draw_vertex_index
+                                                        current_draw_vertex_index,
+                                                        YAC_TRUE/*bSkipLastLineJoint*/
                                                         );
 #else
                   sdvg_DrawLineStripPatternBevelVBO32(current_vbo_id,
                                                       current_draw_start_offset,
-                                                      current_draw_vertex_index
+                                                      current_draw_vertex_index,
+                                                      YAC_TRUE/*bSkipLastLineJoint*/
+                                                      );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripPatternBevelVBO14_2(current_vbo_id,
+                                                        current_draw_start_offset,
+                                                        current_draw_vertex_index,
+                                                        YAC_FALSE/*bSkipLastLineJoint*/
+                                                        );
+#else
+                  sdvg_DrawLineStripPatternBevelVBO32(current_vbo_id,
+                                                      current_draw_start_offset,
+                                                      current_draw_vertex_index,
+                                                      YAC_FALSE/*bSkipLastLineJoint*/
                                                       );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
@@ -6784,12 +6896,30 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternBevelAAVBO14_2(current_vbo_id,
                                                           current_draw_start_offset,
-                                                          current_draw_vertex_index
+                                                          current_draw_vertex_index,
+                                                          YAC_TRUE/*bSkipLastLineJoint*/
                                                           );
 #else
                   sdvg_DrawLineStripPatternBevelAAVBO32(current_vbo_id,
                                                         current_draw_start_offset,
-                                                        current_draw_vertex_index
+                                                        current_draw_vertex_index,
+                                                        YAC_TRUE/*bSkipLastLineJoint*/
+                                                        );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_PATTERN_BEVEL_AA_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripPatternBevelAAVBO14_2(current_vbo_id,
+                                                          current_draw_start_offset,
+                                                          current_draw_vertex_index,
+                                                          YAC_FALSE/*bSkipLastLineJoint*/
+                                                          );
+#else
+                  sdvg_DrawLineStripPatternBevelAAVBO32(current_vbo_id,
+                                                        current_draw_start_offset,
+                                                        current_draw_vertex_index,
+                                                        YAC_FALSE/*bSkipLastLineJoint*/
                                                         );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
@@ -6798,12 +6928,30 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternDecalBevelVBO14_2(current_vbo_id,
                                                              current_draw_start_offset,
-                                                             current_draw_vertex_index
+                                                             current_draw_vertex_index,
+                                                             YAC_TRUE/*bSkipLastLineJoint*/
                                                              );
 #else
                   sdvg_DrawLineStripPatternDecalBevelVBO32(current_vbo_id,
                                                            current_draw_start_offset,
-                                                           current_draw_vertex_index
+                                                           current_draw_vertex_index,
+                                                           YAC_TRUE/*bSkipLastLineJoint*/
+                                                           );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripPatternDecalBevelVBO14_2(current_vbo_id,
+                                                             current_draw_start_offset,
+                                                             current_draw_vertex_index,
+                                                             YAC_FALSE/*bSkipLastLineJoint*/
+                                                             );
+#else
+                  sdvg_DrawLineStripPatternDecalBevelVBO32(current_vbo_id,
+                                                           current_draw_start_offset,
+                                                           current_draw_vertex_index,
+                                                           YAC_FALSE/*bSkipLastLineJoint*/
                                                            );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
@@ -6812,12 +6960,30 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(current_vbo_id,
                                                                current_draw_start_offset,
-                                                               current_draw_vertex_index
+                                                               current_draw_vertex_index,
+                                                               YAC_TRUE/*bSkipLastLineJoint*/
                                                                );
 #else
                   sdvg_DrawLineStripPatternDecalBevelAAVBO32(current_vbo_id,
                                                              current_draw_start_offset,
-                                                             current_draw_vertex_index
+                                                             current_draw_vertex_index,
+                                                             YAC_TRUE/*bSkipLastLineJoint*/
+                                                             );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(current_vbo_id,
+                                                               current_draw_start_offset,
+                                                               current_draw_vertex_index,
+                                                               YAC_FALSE/*bSkipLastLineJoint*/
+                                                               );
+#else
+                  sdvg_DrawLineStripPatternDecalBevelAAVBO32(current_vbo_id,
+                                                             current_draw_start_offset,
+                                                             current_draw_vertex_index,
+                                                             YAC_FALSE/*bSkipLastLineJoint*/
                                                              );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;

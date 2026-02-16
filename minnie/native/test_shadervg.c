@@ -580,9 +580,9 @@ static void TestLineStripFlatBevel(sBool _bAA) {
    }
    sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
    if(_bAA)
-      sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0u, numPoints);
+      sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0u, numPoints, YAC_TRUE/*bSkipLastLineJoint*/);
    else
-      sdvg_DrawLineStripFlatBevelVBO14_2(buf_vbo_id, 0u, numPoints);
+      sdvg_DrawLineStripFlatBevelVBO14_2(buf_vbo_id, 0u, numPoints, YAC_TRUE/*bSkipLastLineJoint*/);
 }
 
 // ---------------------------------------------------------------------------- TestCustomShader_1 (19)
@@ -2349,8 +2349,8 @@ void TestBeginLineStripPatternDecalBevelDiagonal(sBool _bAA) {
    sF32 ctrX = VP_W*0.5f;
    sF32 ctrY = VP_H*0.5f;
    if(_bAA
-      ? sdvg_BeginLineStripPatternDecalBevelAA(numPoints)
-      : sdvg_BeginLineStripPatternDecalBevel(numPoints)
+      ? sdvg_BeginLineStripPatternDecalBevelAAClosed(numPoints)
+      : sdvg_BeginLineStripPatternDecalBevelClosed(numPoints)
       )
    {
       for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
@@ -4309,11 +4309,10 @@ void hal_on_draw(void) {
             break;
 
          case RENDER_LINES_RAND_AA_VBO: // 174
-#if 1
-            TestLinesRandAAVBO();
-#else
-            TestBeginLinesRandAAVBO();
-#endif
+            if(1)
+               TestLinesRandAAVBO();
+            else
+               TestBeginLinesRandAAVBO();
             break;
       }
 

@@ -114,7 +114,7 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       "  } \n"
       " \n"
       "  if(gl_InstanceID == u_last_instance && index > 5.9) { \n"
-      "    gl_Position = vec4(v1,0,1); \n"  // skip last line joint
+      "    gl_Position = vec4(9999,0,0,1); \n"  // skip last line joint
       "  } else { \n"
       "    gl_Position = u_transform * vec4(v,0,1); \n"
       "    if(index > 5.9) { \n"
@@ -193,6 +193,7 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
    void drawLineStripPatternBevelAAVBO14_2(sUI              _vboId,
                                            sUI              _byteOffset,
                                            sUI              _numPoints,
+                                           sBool            _bSkipLastLineJoint,
                                            Dsdvg_mat4_ref_t _mvpMatrix,
                                            sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                            sF32             _strokeW,
@@ -226,11 +227,11 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale * 0.25f);
       Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);
 
-      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   0);
-      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   6);
-      Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  12);
-      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   4);
-      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  10);
+      Dsdvg_attrib_offset(shape_a_vertex,    2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   0);
+      Dsdvg_attrib_offset(shape_a_vertex_n,  2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   6);
+      Dsdvg_attrib_offset(shape_a_vertex_nn, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  12);
+      Dsdvg_attrib_offset(shape_a_pattern,   1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +   4);
+      Dsdvg_attrib_offset(shape_a_pattern_n, 1/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 6/*stride*/, _byteOffset +  10);
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_vertex_n);
@@ -245,7 +246,7 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_divisor(shape_a_pattern_n, 1);
 
       const sSI numSeg = (_numPoints - 2);
-      Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - 1));
+      Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - sSI(_bSkipLastLineJoint)));
       Dsdvg_draw_triangles_instanced_vbo(9, numSeg);
 
       Dsdvg_attrib_disable(shape_a_vertex_nn);
