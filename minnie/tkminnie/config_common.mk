@@ -17,7 +17,10 @@ EXTRAFLAGS+= -DSHADERVG_UNDERLINE_TEXT_BATCH_SIZE=16
 EXTRAFLAGS+= -DSHADERVG_MATRIX_STACK
 EXTRAFLAGS+= -DSHADERVG_MATRIX_STACK_SIZE=16
 
-## (todo)
+# fixes t-junctions in bevel line strips but increases triangle-count by ~67% (5/3)
+EXTRAFLAGS+= -DSHADERVG_HIRES_GEO
+
+# must be defined for OpenGL ES 3.x targets
 #EXTRAFLAGS+= -DSHADERVG_GLES
 
 # required on NVidia / not on macOS

@@ -76,6 +76,89 @@ class LineStripPatternBevelAA32 : public ShaderVG_Shape {
       " \n"
       "  float index = float(gl_VertexID); \n"
       " \n"
+#ifdef SHADERVG_HIRES_GEO
+      "  if(index > 13.9) { \n"
+      "    v = v2; \n"
+      "    uv = vec2(pat2, 0.5); \n"
+      "  } \n"
+      "  else if(index > 12.9) { \n"
+      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
+      "    uv = vec2(pat2, (cz > 0.0) ? 0.0 : 1.0); \n"
+      "  } \n"
+      "  else if(index > 11.9) { \n"
+      "    v = (cz > 0.0) ? v2L : v2R; \n"
+      "    uv = vec2(pat2, (cz > 0.0) ? 0.0 : 1.0); \n"
+      "  } \n"
+      "  else if(index > 10.9) { \n"
+      "    v = v1R; \n"
+      "    uv = vec2(pat1, 1.0); \n"
+      "  } \n"
+      "  else if(index > 9.9) { \n"
+      "    v = v2R; \n"
+      "    uv = vec2(pat2, 1.0); \n"
+      "  } \n"
+      "  else if(index > 8.9) { \n"
+      "    v = v1; \n"
+      "    uv = vec2(pat1, 0.5); \n"
+      "  } \n"
+      "  else if(index > 7.9) { \n"
+      "    v = v2R; \n"
+      "    uv = vec2(pat2, 1.0); \n"
+      "  } \n"
+      "  else if(index > 6.9) { \n"
+      "    v = v2; \n"
+      "    uv = vec2(pat2, 0.5); \n"
+      "  } \n"
+      "  else if(index > 5.9) { \n"
+      "    v = v1; \n"
+      "    uv = vec2(pat1, 0.5); \n"
+      "  } \n"
+      "  else if(index > 4.9) { \n"
+      "    v = v1; \n"
+      "    uv = vec2(pat1, 0.5); \n"
+      "  } \n"
+      "  else if(index > 3.9) { \n"
+      "    v = v2; \n"
+      "    uv = vec2(pat2, 0.5); \n"
+      "  } \n"
+      "  else if(index > 2.9) { \n"
+      "    v = v1L; \n"
+      "    uv = vec2(pat1, 0.0); \n"
+      "  } \n"
+      "  else if(index > 1.9) { \n"
+      "    v = v2; \n"
+      "    uv = vec2(pat2, 0.5); \n"
+      "  } \n"
+      "  else if(index > 0.9) { \n"
+      "    v = v2L; \n"
+      "    uv = vec2(pat2, 0.0); \n"
+      "  } \n"
+      "  else { \n"
+      "    v = v1L; \n"
+      "    uv = vec2(pat1, 0.0); \n"
+      "  } \n"
+      " \n"
+      "  if(gl_InstanceID == u_last_instance && index > 11.9) { \n"
+      "    gl_Position = vec4(9999,0,0,1); \n"  // skip last line joint
+      "  } else { \n"
+      "    gl_Position = u_transform * vec4(v,0,1); \n"
+      "    if(index > 11.9) { \n"
+      "      v_vertex_mp = v - ((cz > 0.0) ? v2L : v2R); \n"
+      "      vec2 vNB = normalize( (cz > 0.0) ? (v2L2 - v2L) : (v2R2 - v2R) ); \n"
+      "      v_plane_n   = vec2(vNB.y, -vNB.x); \n"
+      "      v_join = 1.0; \n"
+      "    } \n"
+      "    else { \n"
+      "      v_vertex_mp = v - v1; \n"
+      "      v_plane_n   = vec2(vN.y, -vN.x); \n"
+      "      v_join = 0.0; \n"
+      "    } \n"
+      "    uv.x *= u_line_pattern_scl; \n"
+      "    uv.x += u_line_pattern_off; \n"
+      "    v_uv = uv; \n"
+      "  } \n"
+      "} \n"
+#else
       "  if(index > 7.9) { \n"
       "    v = v2; \n"
       "    uv = vec2(pat2, 0.5); \n"
@@ -133,6 +216,7 @@ class LineStripPatternBevelAA32 : public ShaderVG_Shape {
       "    v_uv = uv; \n"
       "  } \n"
       "} \n"
+#endif // SHADERVG_HIRES_GEO
       ;
 
    // ------------ fragment shader ------------
@@ -209,6 +293,7 @@ class LineStripPatternBevelAA32 : public ShaderVG_Shape {
       //
       // (note) numSeg = (numPoints - 2)
       // (note) numTri = numSeg * 3 - 1
+      // (note)          SHADERVG_HIRES_GEO: (numSeg * 5 - 1)
       //
 
       sdvg_BindVBO(_vboId);
@@ -247,7 +332,11 @@ class LineStripPatternBevelAA32 : public ShaderVG_Shape {
 
       const sSI numSeg = (_numPoints - 2);
       Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - sSI(_bSkipLastLineJoint)));
+#ifdef SHADERVG_HIRES_GEO
+      Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
+#else
       Dsdvg_draw_triangles_instanced_vbo(9, numSeg);
+#endif // SHADERVG_HIRES_GEO
 
       Dsdvg_attrib_disable(shape_a_vertex_nn);
       Dsdvg_attrib_disable(shape_a_vertex_n);
