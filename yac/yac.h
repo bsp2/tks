@@ -1,7 +1,7 @@
 /// ----
 /// ---- file   : yac.h
 /// ----
-/// ---- author : (c) 2003 - 2025 by bsp
+/// ---- author : (c) 2003 - 2026 by bsp
 /// ----
 /// ---- date   : 21-Nov-2003 /  8-Jun-2003 /  1-Aug-2003 / 24-Dec-2003 / 15-Jan-2004 /  9-Feb-2004
 /// ----          17-Feb-2004 / 19-Feb-2004 / 28-Feb-2004 / 26-Mar-2004 / 27-Mar-2004 / 19-Sep-2004
@@ -20,7 +20,7 @@
 /// ----          06-Jan-2023 / 16-Jan-2023 / 26-Jan-2023 / 05-Feb-2023 / 12-Apr-2023 / 14-Apr-2023
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
-/// ----          03-Oct-2025
+/// ----          03-Oct-2025 / 22-Feb-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -797,6 +797,8 @@ typedef union _yacmem {
    sS32               si;
    sBool              b;
    sF32               f32;
+   sU8                au8[4];
+   sU8                as8[4];
 
 #if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
    YAC_Object        *o ;
@@ -822,6 +824,8 @@ typedef union _yacmem32 {
    sS32               si;
    sBool              b;
    sF32               f32;
+   sU8                au8[4];
+   sU8                as8[4];
 } yacmem32;
 
 typedef union _yacmem64 {
@@ -838,6 +842,8 @@ typedef union _yacmem64 {
    sS64               s64;
    sF32               f32;
    sF64               f64;
+   sU8                au8[8];
+   sU8                as8[8];
 
 #if defined(__cplusplus) && !defined(YAC_C_STRUCTS)
    YAC_Object         *o;
