@@ -1144,16 +1144,38 @@ struct StreamReader {
    }
 
    sS16 getS16(void) {
-      return *data.s16++;
+      union {
+         sS16 s16;
+         sU8  u8[2];
+      } u;
+#ifdef YAC_LITTLE_ENDIAN
+      u.u8[0] = *data.u8++;
+      u.u8[1] = *data.u8++;
+#else
+      u.u8[1] = *data.u8++;
+      u.u8[0] = *data.u8++;
+#endif // YAC_LITTLE_ENDIAN
+      return u.s16;
    }
 
    sU16 getU16(void) {
-      return *data.u16++;
+      union {
+         sU16 u16;
+         sU8  u8[2];
+      } u;
+#ifdef YAC_LITTLE_ENDIAN
+      u.u8[0] = *data.u8++;
+      u.u8[1] = *data.u8++;
+#else
+      u.u8[1] = *data.u8++;
+      u.u8[0] = *data.u8++;
+#endif // YAC_LITTLE_ENDIAN
+      return u.u16;
    }
 
    sF32 getF32(void) {
       /* yac_host->printf("xxx getF32: data.u8=%p\n", data.u8); */
-#if 0
+#if 1
       union {
          sF32 f32;
          sU8  u8[4];
@@ -3840,6 +3862,7 @@ namespace setup {
    static sBool b_edge_aa;              // def=1  can be enabled/disabled per-path
    static sBool b_tesselate_concave;    // def=1 (tesselate to triangles).  0=export as-is (and later tesselate via GPU)
    static sBool b_force_concave_evenodd;  // def=0  (1=treat concave paths as evenodd paths via SGI tesselator)
+   static sBool b_force_evenodd_concave;  // def=0  (1=treat evenodd (sub-)paths as concave paths)
    static sUI   sw_tesselate_size_threshold;
    static sBool b_render_strokes;
    static sBool b_render_join_cap;
@@ -3858,6 +3881,7 @@ namespace setup {
       b_edge_aa                     = YAC_FALSE;
       b_tesselate_concave           = YAC_TRUE;
       b_force_concave_evenodd       = YAC_FALSE;
+      b_force_evenodd_concave       = YAC_FALSE;
       sw_tesselate_size_threshold   = 0u;
       b_render_strokes              = YAC_TRUE;
       b_render_join_cap             = YAC_TRUE;
@@ -4107,6 +4131,16 @@ namespace setup {
    // <method_get.png>
    static sBool getEnableForceConcaveEvenOdd(void) {
       return b_force_concave_evenodd;
+   }
+
+   // <method_set.png>
+   static void setEnableForceEvenOddConcave(sBool _bEnable) {
+      b_force_evenodd_concave = _bEnable;
+   }
+
+   // <method_get.png>
+   static sBool getEnableForceEvenOddConcave(void) {
+      return b_force_evenodd_concave;
    }
 
    // <method.png>
@@ -8855,7 +8889,7 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPath(Path *p, int mode, const sUI _forcedPathTypeOr0) {
+   static void drawPath(Path *p, sSI mode, const sUI _forcedPathTypeOr0) {
       if(b_debug_fill) { Dprintf("[dbg] drawPath: mode=%d p->path_idx=%u p->type=%u cur_stroke_w=%f\n", mode, p->path_idx, p->type, cur_stroke_w); }
 
       if(p->points.num_elements >= (2u*2u))
@@ -8927,6 +8961,7 @@ namespace setup {
                         }
                         else
                         {
+                           /* Dprintf("xxx b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa); */
                            if( !(b_tesselate_concave || b_edge_aa) )
                            {
                               // Start draw-concave op
@@ -9222,7 +9257,7 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawMultiPath(Path *p, int mode) {
+   static void drawMultiPath(Path *p, sSI mode) {
 
       debug_num_paths++;
 
@@ -9234,10 +9269,17 @@ namespace setup {
          {
             if(0u == p->sub_paths.num_elements)
             {
+               /* Dprintf("xxx p->type=%d\n", p->type); */
                if(MINNIE_PATH_TYPE_EVENODD == p->type || MINNIE_PATH_TYPE_CONCAVE == p->type)
                {
-                  const sUI bbNumPixels = Path::CalcBBoxNumPixels(&p->points);
-                  if(bbNumPixels <= sw_tesselate_size_threshold)
+                  sBool bConcave = b_force_evenodd_concave;
+                  if(!bConcave)
+                  {
+                     const sUI bbNumPixels = Path::CalcBBoxNumPixels(&p->points);
+                     bConcave =  (bbNumPixels <= sw_tesselate_size_threshold);
+                     // Dprintf("xxx bbNumPixels=%u bConcave=%d sw_tesselate_size_threshold=%u\n", bbNumPixels, bConcave, sw_tesselate_size_threshold);
+                  }
+                  if(bConcave)
                   {
                      debug_num_small_paths++;
                      debug_num_small_path_points += (p->points.num_elements >> 1);
@@ -9252,6 +9294,22 @@ namespace setup {
                      return;
                   }
                }
+            }
+            else if(b_force_evenodd_concave)
+            {
+               // (todo) join paths
+               for(sUI spIdx = 0u; spIdx < p->sub_paths.num_elements; spIdx++)
+               {
+                  Path *sp = p->sub_paths.elements[spIdx];
+                  drawPath(sp, mode, MINNIE_PATH_TYPE_CONCAVE/*forcedPathTypeOr0*/);
+               }
+               return;
+            }
+            else
+            {
+#if 0
+               Dprintf("xxx drawMultiPath: p->sub_paths.num_elements=%u\n", p->sub_paths.num_elements);
+#endif
             }
          }
       }
@@ -10136,6 +10194,7 @@ namespace setup {
 
             case 0x87u:  // ph <idx>  (evenodd)
                if(!newPath(MINNIE_PATH_TYPE_EVENODD, "ph", "evenodd"))
+               /* /\* if(!newPath(b_force_evenodd_concave ? MINNIE_PATH_TYPE_CONCAVE : MINNIE_PATH_TYPE_EVENODD, "ph", "evenodd")) *\/ */
                   return YAC_FALSE;
                break;
 
@@ -10928,6 +10987,8 @@ YF void YAC_CALL minSetSwTesselateSizeThreshold (sUI _sizeThreshold);
 YF sUI YAC_CALL minGetSwTesselateSizeThreshold (void);
 YF void YAC_CALL minSetEnableForceConcaveEvenOdd (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableForceConcaveEvenOdd (void);
+YF void YAC_CALL minSetEnableForceEvenOddConcave (sBool _bEnable);
+YF sBool YAC_CALL minGetEnableForceEvenOddConcave (void);
 YF void YAC_CALL minSetEnableUniformColors (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableUniformColors (void);
 YF void YAC_CALL minSetStrokeWLineStripThreshold (sF32 _threshold);
@@ -11489,6 +11550,26 @@ sBool minGetEnableForceConcaveEvenOdd(void) {
    return minnie::setup::getEnableForceConcaveEvenOdd();
 }
 
+/* @function minSetEnableForceEvenOddConcave,boolean bEnable
+Force enve-odd polygons to be rendered using the concave code paths
+
+@see minGetEnableForceEvenOddConcave
+@group Config
+*/
+void minSetEnableForceEvenOddConcave(sBool _bEnable) {
+   minnie::setup::setEnableForceEvenOddConcave(_bEnable);
+}
+
+/* @function minGetEnableForceEvenOddConcave:boolean
+Query concave-polygons-via-concave-code-path enable-state
+
+@see minSetEnableForceEvenOddConcave
+@group Config
+*/
+sBool minGetEnableForceEvenOddConcave(void) {
+   return minnie::setup::getEnableForceEvenOddConcave();
+}
+
 /* @function minSetEnableUniformColors,boolean bEnable
 Enable or disable uniform colors.
 
@@ -11982,14 +12063,12 @@ sSI minBeginPathEvenOdd(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_EVENODD);
 }
 
-/* @function minBeginImmediate:int
+/* @function minBeginImmediate
 Begin new Immediate path definition.
 
 Graphics elements within immediate paths are rendered immediately, i.e. they do not require separate draw-path calls.
 
 Immediate paths are particularly useful for graphics elements like UV-textured triangles and rectangles, which cannot be added to regular paths.
-
-@return Path id
 
 @see minEndImmediate
 @group Path

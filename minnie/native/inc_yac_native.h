@@ -2,7 +2,7 @@
 // ---- file   : inc_yac_native.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -416,7 +416,7 @@ typedef struct YAC_Buffer_s {
             delete [] buffer;
             deleteme = YAC_FALSE;
          }
-         buffer    = NULL;
+         buffer = NULL;
       }
       size      = 0u;
       io_offset = 0u;
@@ -482,14 +482,23 @@ typedef struct YAC_Buffer_s {
          buffer[io_offset++] = (sU8)(_value & 255u);
 #endif // YAC_LITTLE_ENDIAN
       }
+#if 0
+      else
+      {
+         printf("[---] YAC_Buffer::writeI32: out of bounds (io_offset=%u size=%u)\n", io_offset, size);
+      }
+#endif
    }
 
    void writeF32(sF32 _value) {
       if(io_offset + 3u < size)
       {
-         // if(0u == (io_offset & 1u)) ?
+         yacmem v; v.f32 = _value;
          yacmemptr m; m.u8 = buffer + io_offset;
-         *m.f32 = _value;
+         m.u8[0] = v.au8[0];
+         m.u8[1] = v.au8[1];
+         m.u8[2] = v.au8[2];
+         m.u8[3] = v.au8[3];
          io_offset += 4u;
       }
    }
@@ -522,20 +531,20 @@ typedef struct YAC_Buffer_s {
       return r;
    }
 
-   sU16 readI32(void) {
+   sU32 readI32(void) {
       sU32 r;
       if(io_offset + 3u < size)
       {
 #ifdef YAC_LITTLE_ENDIAN
-         r  = (sU16)buffer[io_offset++];
-         r |= (sU16)(buffer[io_offset++] << 8);
-         r |= (sU16)(buffer[io_offset++] << 16);
-         r |= (sU16)(buffer[io_offset++] << 24);
+         r  = (sU32)buffer[io_offset++];
+         r |= (sU32)(buffer[io_offset++] << 8);
+         r |= (sU32)(buffer[io_offset++] << 16);
+         r |= (sU32)(buffer[io_offset++] << 24);
 #else
-         r  = (sU16)(buffer[io_offset++] << 24);
-         r |= (sU16)(buffer[io_offset++] << 16);
-         r |= (sU16)(buffer[io_offset++] << 8);
-         r |= (sU16)buffer[io_offset++];
+         r  = (sU32)(buffer[io_offset++] << 24);
+         r |= (sU32)(buffer[io_offset++] << 16);
+         r |= (sU32)(buffer[io_offset++] << 8);
+         r |= (sU32)buffer[io_offset++];
 #endif // YAC_LITTLE_ENDIAN
       }
       else
@@ -546,18 +555,21 @@ typedef struct YAC_Buffer_s {
    }
 
    sF32 readF32(void) {
-      sF32 r;
+      yacmem r;
       if(io_offset + 3u < size)
       {
-         // if(0u == (io_offset & 1u)) ?
          yacmemptr m; m.u8 = buffer + io_offset;
-         r = *m.f32;
+         r.au8[0] = m.u8[0];
+         r.au8[1] = m.u8[1];
+         r.au8[2] = m.u8[2];
+         r.au8[3] = m.u8[3];
+         io_offset += 4u;
       }
       else
       {
-         r = 0.0f;
+         r.f32 = 0.0f;
       }
-      return r;
+      return r.f32;
    }
 #endif // __cplusplus
 
