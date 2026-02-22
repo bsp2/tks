@@ -49,7 +49,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
    // Parse draw-list
    sUI dlSize = Dstream_get_offset(_bufDraw);
    Dstream_set_offset(_bufDraw, 0u);
-   Ddebug_draw_list_printfv("[trc] ~~~~~~~~~~~~~~~~~~~~~~~~~~ draw-list");
+   Ddebug_draw_list_printfv("[trc] ~~~~~~~~~~~~~~~~~~~~~~~~~~ draw-list dlSize=%u\n", dlSize);
    sUI numOpsPoly                = 0u;
    sUI numOpsTri                 = 0u;
    sUI numOpsTriTex              = 0u;
@@ -508,7 +508,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
             c32      = Dstream_read_i32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-flat<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-flat<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d c32=#%08x\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter, c32);
             sdvg_SetFillColorARGB(c32);
             sdvg_DrawTrianglesTexUVFlatVBO32(_glBufId,
                                              vbOff,
@@ -582,7 +582,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             sdvg_DrawLineStripFlatBevelAAVBO14_2(_glBufId,
                                                  vbOff,
                                                  numVerts/*numPoints*/,
-                                                 YAC_TRUE/*bSkipLastLineJoint*/
+                                                 YAC_FALSE/*bSkipLastLineJoint*/
                                                  );
             numOpsLineStripBevel++;
             break;
