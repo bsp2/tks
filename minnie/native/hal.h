@@ -25,6 +25,12 @@
 // ----
 // ----
 
+#pragma once
+
+#if defined(__cplusplus)
+extern "C" {
+#endif // __cplusplus
+
 #ifndef VP_W
 #define VP_W  640
 #endif
@@ -60,13 +66,17 @@
 extern void load_gl_extensions (void);
 #endif // !YAC_MACOS
 
-extern sBool hal_window_init (void);   // initialize
-extern void  hal_window_exit (void);   // shutdown
-extern void  hal_window_swap (void);   // swap front/back buffers
-extern void  hal_window_loop (void);   // enter event loop
-extern void  hal_window_quit (void);   // exit event loop
-extern void  hal_window_set_title (const char *_s);
-extern sU32  hal_get_ticks (void);     // query milliseconds
-extern void  hal_set_swap_interval (sU32 _interval);   // 0=vsync off, 1=vsync on
-extern void  hal_on_draw (void);  // implemented by app
-extern void  hal_on_key_down (sU32 _code, sU32 _mod);  // implemented by app
+extern sBool hal_window_init       (sUI _w, sUI _h);         // initialize
+extern void  hal_window_exit       (void);                   // shutdown
+extern void  hal_window_swap       (void);                   // swap front/back buffers
+extern void  hal_window_loop       (void);                   // enter event loop
+extern void  hal_window_quit       (void);                   // exit event loop
+extern void  hal_window_set_title  (const char *_s);         // update window title caption
+extern sU32  hal_get_ticks         (void);                   // query milliseconds
+extern void  hal_set_swap_interval (sU32 _interval);         // 0=vsync off, 1=vsync on
+extern void  hal_on_draw           (void);                   // implemented by app
+extern void  hal_on_key_down       (sU32 _code, sU32 _mod);  // implemented by app
+
+#ifdef __cplusplus
+} // extern "C"
+#endif // __cplusplus

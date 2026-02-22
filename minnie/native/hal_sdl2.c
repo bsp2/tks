@@ -36,9 +36,10 @@
 #include "../../tksdl2/inc_sdl.h"
 #include "hal.h"
 
-SDL_Window    *sdl_window = NULL;
-SDL_GLContext  sdl_glcontext = NULL;
-sBool          b_hal_running = YAC_FALSE;
+static SDL_Window    *sdl_window = NULL;
+static SDL_GLContext  sdl_glcontext = NULL;
+static sBool          b_hal_running = YAC_FALSE;
+
 
 // ---------------------------------------------------------------------------- loc_map_key_sym
 static sU32 loc_map_key_sym(sU32 _sym) {
@@ -77,7 +78,7 @@ static sU32 loc_map_key_mod(sU32 _mod) {
 }
 
 // ---------------------------------------------------------------------------- hal_window_init
-sBool hal_window_init(void) {
+sBool hal_window_init(sUI _w, sUI _h) {
    sBool ret = YAC_FALSE;
 
    SDL_InitSubSystem(SDL_INIT_VIDEO);
@@ -104,7 +105,7 @@ sBool hal_window_init(void) {
    sdl_window = SDL_CreateWindow("minnie",
                                  SDL_WINDOWPOS_UNDEFINED,
                                  SDL_WINDOWPOS_UNDEFINED,
-                                 VP_W, VP_H,
+                                 _w, _h,
                                  flags
                                  );
    if(NULL != sdl_window)

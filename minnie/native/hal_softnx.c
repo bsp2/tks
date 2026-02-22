@@ -1,5 +1,5 @@
 // ----
-// ---- file   : hal_egl_fbcon.c
+// ---- file   : hal_softnx.c
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025-2026 by bsp
@@ -29,16 +29,16 @@
 #include <stdarg.h>
 #include <math.h>
 
-#ifdef _MSC_VER
 #define WIN32_LEAN_AND_MEAN defined
 #define VC_EXTRALEAN defined
 #include <windows.h>
 #include <time.h>
+
+#ifdef SOFTNX_EVAL_KIT
+#include <display/display.h>
 #else
-#include <sys/time.h>
-#include <time.h>
-#include <unistd.h>
-#endif
+#include <display.h>
+#endif // SOFTNX_EVAL_KIT
 
 #define Dprintf       if(!MINNIE_PRINTF);else printf
 #define Derrorprintf  if(!MINNIE_PRINTF);else printf
@@ -58,13 +58,11 @@ static EGLConfig  config;
 static EGLContext context;
 static EGLSurface surface;
 
-sBool b_hal_running = YAC_FALSE;
+static sBool b_hal_running = YAC_FALSE;
 
 // ---------------------------------------------------------------------------- time_get_milliseconds_f64
 static sF64 loc_ms_start = 0.0;
 static sF64 loc_time_get_milliseconds_f64(void) {
-
-#ifdef _MSC_VER
    LARGE_INTEGER pfcFrequency;
 
    if(0 == QueryPerformanceFrequency(&pfcFrequency)) {
@@ -77,10 +75,6 @@ static sF64 loc_time_get_milliseconds_f64(void) {
    QueryPerformanceCounter(&pfcCurrent);
 
    sF64 ret = (1000.0 * (sF64)pfcCurrent.QuadPart) / ((sF64)pfcFrequency.QuadPart);
-#else
-   struct timeval tvnano; gettimeofday(&tvnano, NULL);
-   sF64 ret = (tvnano.tv_usec/1000.0) + ((sF64)(tvnano.tv_sec)) * 1000.0;
-#endif // _MSC_VER
 
    return ret;
 }

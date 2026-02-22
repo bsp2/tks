@@ -38,9 +38,6 @@
 #include <display.h>
 #endif // SOFTNX_EVAL_KIT
 
-#define DISPLAY_WIDTH   800
-#define DISPLAY_HEIGHT  600
-
 #define Dprintf       if(!MINNIE_PRINTF);else printf
 #define Derrorprintf  if(!MINNIE_PRINTF);else printf
 
@@ -51,7 +48,7 @@
 
 static EGLBoolean loc_config_init    (EGLDisplay _display, EGLConfig *_config);
 static EGLBoolean loc_egl_init       (EGLDisplay _display);
-static EGLSurface loc_surface_create (EGLDisplay _display, EGLConfig _config);
+static EGLSurface loc_surface_create (EGLDisplay _display, EGLConfig _config, sUI _w, sUI _h);
 static EGLContext loc_context_create (EGLDisplay _display, EGLConfig _config);
 
 static EGLDisplay display;
@@ -59,7 +56,7 @@ static EGLConfig  config;
 static EGLContext context;
 static EGLSurface surface;
 
-sBool b_hal_running = YAC_FALSE;
+static sBool b_hal_running = YAC_FALSE;
 
 // ---------------------------------------------------------------------------- time_get_milliseconds_f64
 static sF64 loc_ms_start = 0.0;
@@ -121,8 +118,13 @@ static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
       EGL_GREEN_SIZE,      6,
       EGL_BLUE_SIZE,       5,
       EGL_ALPHA_SIZE,      0,
+#ifdef SHADERVG_NO_ZS
       EGL_DEPTH_SIZE,      0,
       EGL_STENCIL_SIZE,    0,
+#else
+      EGL_DEPTH_SIZE,      16,
+      EGL_STENCIL_SIZE,    8,
+#endif // SHADERVG_NO_ZS
       EGL_SAMPLE_BUFFERS,  0,
 #ifdef SHADERVG_MSAA
       EGL_SAMPLES,         4,
@@ -162,12 +164,12 @@ static EGLBoolean loc_egl_init(EGLDisplay _display) {
 }
 
 // ---------------------------------------------------------------------------- loc_surface_create
-static EGLSurface loc_surface_create(EGLDisplay _display, EGLConfig _config) {
+static EGLSurface loc_surface_create(EGLDisplay _display, EGLConfig _config, sUI _w, sUI _h) {
    EGLSurface surf;
    EGLint attribs[] = {
       EGL_RENDER_BUFFER,  EGL_BACK_BUFFER,
-      EGL_WIDTH,          DISPLAY_WIDTH,
-      EGL_HEIGHT,         DISPLAY_HEIGHT,
+      EGL_WIDTH,          _w,
+      EGL_HEIGHT,         _h,
       EGL_NONE,           EGL_NONE
    };
 
@@ -188,7 +190,7 @@ static EGLContext loc_context_create(EGLDisplay _display, EGLConfig _config) {
 }
 
 // ---------------------------------------------------------------------------- hal_window_init
-sBool hal_window_init(void) {
+sBool hal_window_init(sUI _w, sUI _h) {
 
    display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
    if(EGL_NO_DISPLAY == display) {
@@ -206,7 +208,7 @@ sBool hal_window_init(void) {
       return YAC_FALSE;
    }
 
-   surface = loc_surface_create(display, config);
+   surface = loc_surface_create(display, config, _w, _h);
    if(EGL_NO_SURFACE == surface) {
       printf("EGL: failed to create window surface\n");
       return YAC_FALSE;
