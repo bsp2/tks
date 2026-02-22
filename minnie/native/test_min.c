@@ -956,6 +956,8 @@ int main(int argc, char**argv) {
       sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
 #endif // 0
       sdvg_Init(1/*b_glcore*/);
+      sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+      sdvg_SetViewport(0, 0, VP_W, VP_H);
       sdvg_SetStrokeRadiusAAOffset(1.5f);
 
       MinnieVG_Init();
