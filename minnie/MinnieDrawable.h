@@ -1,10 +1,25 @@
 // ----
 // ---- file   : MinnieDrawable.h
-// ---- author : bsp
-// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025-2026 by bsp
 // ----
-// ---- info   : "minnie" API
-// ---- note   :
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : "minnie" VBO/DisplayList drawable utility class
 // ----
 // ----
 // ----
@@ -15,8 +30,13 @@
 YG("minnie")
 
 
+#if defined(__cplusplus)
+#define MinnieDrawable _MinnieDrawable
+YC class _MinnieDrawable
 #ifdef SHADERVG_SCRIPT_API
-YC class _MinnieDrawable : public YAC_Object {
+: public YAC_Object
+#endif // SHADERVG_SCRIPT_API
+{
 
   public:
 //#define MINNIE_PATH_TYPE_DRAW     YCI 0
@@ -69,9 +89,10 @@ YC class _MinnieDrawable : public YAC_Object {
 
 #else
    // MINNIE_LIB
-struct MinnieDrawable {
-#define _MinnieDrawable MinnieDrawable
-#endif // SHADERVG_SCRIPT_API
+struct MinnieDrawable_s;
+typedef struct MinnieDrawable_s MinnieDrawable;
+struct MinnieDrawable_s {
+#endif // defined(__cplusplus)
 
 #define MINNIE_DEFAULT_GL_BUF_SIZE    (128 * 1024)
 #define MINNIE_DEFAULT_DRAW_BUF_SIZE  (  2 * 1024)
@@ -111,9 +132,9 @@ struct MinnieDrawable {
 	_MinnieDrawable(void);
 	~_MinnieDrawable();
 
-#ifndef YAC_NO_HOST
+#if defined(SHADERVG_SCRIPT_API) && !defined(YAC_NO_HOST)
 	YAC(_MinnieDrawable);
-#endif // YAC_NO_HOST
+#endif
 
    YM void init (void);
 
@@ -150,12 +171,60 @@ struct MinnieDrawable {
    YM sF32 getTranslateX (void);
    YM sF32 getTranslateY (void);
    YM void queueGLBufUpdate (void);
-   YM sBool isComplete(void);
+   YM sBool isComplete (void);
+   YM void begin (void);
+   YM void end (void);
    YM void draw (void);
-
 #endif // __cplusplus
 
 };
 
+#ifndef MINNIE_SKIP_DRAWABLE_C_API
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+MinnieDrawable *minDrawableNew (void);
+void minDrawableInit (MinnieDrawable *_drawable);
+void minDrawableDelete (MinnieDrawable *_drawable);
+sBool minDrawableAlloc (MinnieDrawable *_drawable, sUI _maxGLBufSize, sUI _maxDrawBufSize);
+void minDrawableReset (MinnieDrawable *_drawable);
+void minDrawableSetEnableDebug (MinnieDrawable *_drawable, sBool _bEnable);
+sBool minDrawableGetEnableDebug (MinnieDrawable *_drawable);
+void minDrawableFreeGL (MinnieDrawable *_drawable);
+void minDrawableFree (MinnieDrawable *_drawable);
+void minDrawableLazyAllocGL (MinnieDrawable *_drawable);
+YAC_Buffer *minDrawableGetGLBuffer (MinnieDrawable *_drawable);
+sUI minDrawableGetGLOffset (MinnieDrawable *_drawable);
+YAC_Buffer *minDrawableGetDrawBuffer (MinnieDrawable *_drawable);
+sUI minDrawableGetDrawOffset (MinnieDrawable *_drawable);
+void minDrawableOnOpen (MinnieDrawable *_drawable);
+void minDrawableSetSize2f (MinnieDrawable *_drawable, sF32 _w, sF32 _h);
+void minDrawableSetSizeX (MinnieDrawable *_drawable, sF32 _w);
+void minDrawableSetSizeY (MinnieDrawable *_drawable, sF32 _h);
+sF32 minDrawableGetSizeX (MinnieDrawable *_drawable);
+sF32 minDrawableGetSizeY (MinnieDrawable *_drawable);
+void minDrawableSetBackgroundColor (MinnieDrawable *_drawable, sUI _c32);
+sUI minDrawableGetBackgroundColor (MinnieDrawable *_drawable);
+void minDrawableSetScale2f (MinnieDrawable *_drawable, sF32 _sx, sF32 _sy);
+void minDrawableSetScaleX (MinnieDrawable *_drawable, sF32 _s);
+void minDrawableSetScaleY (MinnieDrawable *_drawable, sF32 _s);
+sF32 minDrawableGetScaleX (MinnieDrawable *_drawable);
+sF32 minDrawableGetScaleY (MinnieDrawable *_drawable);
+void minDrawableSetRotation (MinnieDrawable *_drawable, sF32 _a);
+sF32 minDrawableGetRotation (MinnieDrawable *_drawable);
+void minDrawableSetTranslate2f (MinnieDrawable *_drawable, sF32 _tx, sF32 _ty);
+void minDrawableSetTranslateX (MinnieDrawable *_drawable, sF32 _tx);
+void minDrawableSetTranslateY (MinnieDrawable *_drawable, sF32 _ty);
+sF32 minDrawableGetTranslateX (MinnieDrawable *_drawable);
+sF32 minDrawableGetTranslateY (MinnieDrawable *_drawable);
+void minDrawableQueueGLBufUpdate (MinnieDrawable *_drawable);
+sBool minDrawableIsComplete (MinnieDrawable *_drawable);
+void minDrawableBegin (MinnieDrawable *_drawable);
+void minDrawableEnd (MinnieDrawable *_drawable);
+void minDrawableDraw (MinnieDrawable *_drawable);
+#ifdef __cplusplus
+} // extern "C"
+#endif // __cplusplus
+#endif // MINNIE_SKIP_DRAWABLE_C_API
 
 #endif // MINNIE_DRAWABLE_H__

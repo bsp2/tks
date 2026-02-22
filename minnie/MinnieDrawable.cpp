@@ -1,10 +1,25 @@
 // ----
 // ---- file   : MinnieDrawable.cpp
-// ---- author : bsp
-// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025-2026 by bsp
 // ----
-// ---- info   : "minnie" API
-// ---- note   :
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : "minnie" VBO/DisplayList drawable utility class
 // ----
 // ----
 // ----
@@ -12,6 +27,10 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
+
+#if defined(__cplusplus)
+#include <new>
+#endif
 
 #include "inc_yac.h"
 
@@ -244,11 +263,28 @@ sBool _MinnieDrawable::isComplete(void) {
    return (Dstream_get_offset(buf_gl) > 0u) && (Dstream_get_offset(buf_draw) > 0u);
 }
 
+void _MinnieDrawable::begin(void) {
+   minFreeDynamic();
+   // minDebugPrintAllocStats();
+   minResetAllocStats();
+   reset();
+   minSetVertexBufferExportOFS(getGLBuffer());
+   minSetDrawListExportOFS(getDrawBuffer());
+   minBegin();
+}
+
+void _MinnieDrawable::end(void) {
+   minEnd();
+   setSize2f(minGetWidth(), minGetHeight());
+   setBackgroundColor(minGetColorByIndex(0));
+   queueGLBufUpdate();
+}
+
 void _MinnieDrawable::draw() {
    // Dyac_host_printf("xxx _MinnieDrawable::draw()\n");
    lazyAllocGL();
 
-   if(0 != gl_buf_id && isComplete())
+   if(0u != gl_buf_id && isComplete())
    {
       if(b_gl_buf_update_pending)
       {
@@ -261,3 +297,167 @@ void _MinnieDrawable::draw() {
       minExecDrawListEx(buf_draw, gl_buf_id, b_debug);
    }
 }
+
+// ---------------------------------------------------------------------------- C API
+#ifndef MINNIE_SKIP_DRAWABLE_C_API
+
+MinnieDrawable *minDrawableNew(void) {
+   return (MinnieDrawable*)new(std::nothrow)_MinnieDrawable();
+}
+
+void minDrawableInit(MinnieDrawable *_drawable) {
+   _drawable->init();
+}
+
+void minDrawableDelete(MinnieDrawable *_drawable) {
+   if(NULL != _drawable)
+   {
+      delete _drawable;
+   }
+}
+
+sBool minDrawableAlloc(MinnieDrawable *_drawable, sUI _maxGLBufSize, sUI _maxDrawBufSize) {
+   return _drawable->alloc(_maxGLBufSize, _maxDrawBufSize);
+}
+
+void minDrawableReset(MinnieDrawable *_drawable) {
+   _drawable->reset();
+}
+
+void minDrawableSetEnableDebug(MinnieDrawable *_drawable, sBool _bEnable) {
+   _drawable->setEnableDebug(_bEnable);
+}
+
+sBool minDrawableGetEnableDebug(MinnieDrawable *_drawable) {
+   return _drawable->getEnableDebug();
+}
+
+void minDrawableFreeGL(MinnieDrawable *_drawable) {
+   _drawable->freeGL();
+}
+
+void minDrawableFree(MinnieDrawable *_drawable) {
+   _drawable->free();
+}
+
+void minDrawableLazyAllocGL(MinnieDrawable *_drawable) {
+   _drawable->lazyAllocGL();
+}
+
+YAC_Buffer *minDrawableGetGLBuffer(MinnieDrawable *_drawable) {
+   return _drawable->getGLBuffer();
+}
+
+sUI minDrawableGetGLOffset(MinnieDrawable *_drawable) {
+   return _drawable->getGLOffset();
+}
+
+YAC_Buffer *minDrawableGetDrawBuffer(MinnieDrawable *_drawable) {
+   return _drawable->getDrawBuffer();
+}
+
+sUI minDrawableGetDrawOffset(MinnieDrawable *_drawable) {
+   return _drawable->getDrawOffset();
+}
+
+void minDrawableOnOpen(MinnieDrawable *_drawable) {
+   _drawable->onOpen();
+}
+
+void minDrawableSetSize2f(MinnieDrawable *_drawable, sF32 _w, sF32 _h) {
+   _drawable->setSize2f(_w, _h);
+}
+
+void minDrawableSetSizeX(MinnieDrawable *_drawable, sF32 _w) {
+   _drawable->setSizeX(_w);
+}
+
+void minDrawableSetSizeY(MinnieDrawable *_drawable, sF32 _h) {
+   _drawable->setSizeY(_h);
+}
+
+sF32 minDrawableGetSizeX(MinnieDrawable *_drawable) {
+   return _drawable->getSizeX();
+}
+
+sF32 minDrawableGetSizeY(MinnieDrawable *_drawable) {
+   return _drawable->getSizeY();
+}
+
+void minDrawableSetBackgroundColor(MinnieDrawable *_drawable, sUI _c32) {
+   return _drawable->setBackgroundColor(_c32);
+}
+
+sUI minDrawableGetBackgroundColor(MinnieDrawable *_drawable) {
+   return _drawable->getBackgroundColor();
+}
+
+void minDrawableSetScale2f(MinnieDrawable *_drawable, sF32 _sx, sF32 _sy) {
+   _drawable->setScale2f(_sx, _sy);
+}
+
+void minDrawableSetScaleX(MinnieDrawable *_drawable, sF32 _s) {
+   _drawable->setScaleX(_s);
+}
+
+void minDrawableSetScaleY(MinnieDrawable *_drawable, sF32 _s) {
+   _drawable->setScaleY(_s);
+}
+
+sF32 minDrawableGetScaleX(MinnieDrawable *_drawable) {
+   return _drawable->getScaleX();
+}
+
+sF32 minDrawableGetScaleY(MinnieDrawable *_drawable) {
+   return _drawable->getScaleY();
+}
+
+void minDrawableSetRotation(MinnieDrawable *_drawable, sF32 _a) {
+   _drawable->setRotation(_a);
+}
+
+sF32 minDrawableGetRotation(MinnieDrawable *_drawable) {
+   return _drawable->getRotation();
+}
+
+void minDrawableSetTranslate2f(MinnieDrawable *_drawable, sF32 _tx, sF32 _ty) {
+   _drawable->setTranslate2f(_tx, _ty);
+}
+
+void minDrawableSetTranslateX(MinnieDrawable *_drawable, sF32 _tx) {
+   _drawable->setTranslateX(_tx);
+}
+
+void minDrawableSetTranslateY(MinnieDrawable *_drawable, sF32 _ty) {
+   _drawable->setTranslateY(_ty);
+}
+
+sF32 minDrawableGetTranslateX(MinnieDrawable *_drawable) {
+   return _drawable->getTranslateX();
+}
+
+sF32 minDrawableGetTranslateY(MinnieDrawable *_drawable) {
+   return _drawable->getTranslateY();
+}
+
+void minDrawableQueueGLBufUpdate(MinnieDrawable *_drawable) {
+   _drawable->queueGLBufUpdate();
+}
+
+sBool minDrawableIsComplete(MinnieDrawable *_drawable) {
+   return _drawable->isComplete();
+}
+
+void minDrawableBegin(MinnieDrawable *_drawable) {
+   _drawable->begin();
+}
+
+void minDrawableEnd(MinnieDrawable *_drawable) {
+   _drawable->end();
+}
+
+void minDrawableDraw(MinnieDrawable *_drawable) {
+   _drawable->draw();
+}
+
+#endif // MINNIE_SKIP_DRAWABLE_C_API

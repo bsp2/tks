@@ -1,7 +1,23 @@
 // ----
 // ---- file   : MinnieVG.tks
-// ---- author : bsp
-// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025-2026 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : "minnie" test case utilities
 // ---- note   :
@@ -22,13 +38,32 @@ class MinnieVG {
 
    static boolean b_profile = 1;
 
-   static boolean b_gl_aa = 1;
+   static boolean b_aa     = 1;
+   static float   aa_range = 2.5 / 1/*vp_scale*/;  // (todo) m/lshift-m
+   static float   aa_exp   = 1.0;             // 'k', lshift-k
 
 
    public static Init(boolean _bGLCore) {
       InitShaderVG(_bGLCore);
       InitMinnie();
       InitMinnieScratchBuffers();
+   }
+
+   public static OnOpen() : boolean {
+
+      zglLoadExtensions();
+
+      if(sdvg_OnOpen())
+      {
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] MinnieVG::OnOpen: sdvg_OnOpen() failed";
+      }
+
+      return false;
    }
 
    public static Exit() {
@@ -53,10 +88,11 @@ class MinnieVG {
       minSetStrokeWLineJoinThreshold(0.0f);
       minSetEnableUniformColors(0);           // 'u'
 
-      if(0)
+      if(1)
       {
          // (note) 27Oct2025 used for mixed cpu/gpu benchmarks
          minSetEnableForceConcaveEvenOdd(0);       // 'h'  (note) concave tesselator does not handle all paths (=> force SGI tesselator)
+         minSetEnableForceEvenOddConcave(0);
          minSetEnableTesselateConcave(0);          // 'i'  0=GPU tesselation  1=CPU tesselation
          minSetSwTesselateSizeThreshold(128*8*8);  // 0=disable   >0: force concave path if concave or evenodd-without-subpaths bbox is <= sizeThreshold, else force evenodd path (SW tesselate)
       }
@@ -64,6 +100,7 @@ class MinnieVG {
       {
          // use SW tesselator for all path types
          minSetEnableForceConcaveEvenOdd(1);
+         minSetEnableForceEvenOddConcave(0);
          minSetEnableTesselateConcave(1);
          minSetSwTesselateSizeThreshold(0);
       }
@@ -71,6 +108,7 @@ class MinnieVG {
       {
          // use GPU tesselator for all path types
          minSetEnableForceConcaveEvenOdd(0);
+         minSetEnableForceEvenOddConcave(0);
          minSetEnableTesselateConcave(0);
          minSetSwTesselateSizeThreshold(0);
       }
@@ -157,33 +195,11 @@ class MinnieVG {
       return false;
    }
 
-   public static BeginDrawable(MinnieDrawable _drawable) {
-      minFreeDynamic();
-      // minDebugPrintAllocStats();
-      minResetAllocStats();
-
-      _drawable.reset();
-
-      minSetVertexBufferExportOFS(_drawable.getGLBuffer());
-      minSetDrawListExportOFS(_drawable.getDrawBuffer());
-
-      minBegin();
-   }
-
-   public static EndDrawable(MinnieDrawable _drawable) {
-
-      minEnd();
-
-      _drawable.setSize2f(minGetWidth(), minGetHeight());
-      _drawable.setBackgroundColor(minGetColorByIndex(0));
-      _drawable.queueGLBufUpdate();
-   }
-
    public static SetupDrawableFromBuffer(MinnieDrawable _drawable, Buffer _mib) : boolean {
 
       int tStart = milliSeconds();
 
-      BeginDrawable(_drawable);
+      _drawable.begin();
 
       _mib.offset = 0;
       if(minParseBuffer(_mib))
@@ -192,13 +208,28 @@ class MinnieVG {
 
          if(b_profile) trace "[...] MinnieVG::SetupDrawableFromBuffer: MIB stream processed in "+tDelta+" ms. total #points="+minGetTotalNumPoints()+" #lines="+minGetTotalNumLines()+" #lineStrips="+minGetTotalNumLineStrips()+" #tris="+minGetTotalNumTris()+" #trisTex="+minGetTotalNumTrisTex()+" #ellipses="+minGetTotalNumEllipses()+" buf_gl.offset="+(_drawable.getGLOffset())+" buf_draw.offset="+(_drawable.getDrawOffset());
 
-         EndDrawable(_drawable);
+         _drawable.end();
 
          // Succeeded
          return true;
       }
 
       return false;
+   }
+
+   public static BeginFrame() {
+      int vgFbW = Viewport.width;
+      int vgFbH = Viewport.height;
+      sdvg_SetFramebufferSize(vgFbW, vgFbH);
+      sdvg_BeginFrame();
+      sdvg_SetEnableAA(b_aa);
+      sdvg_SetAARange(b_aa ? aa_range : 0.01f);
+      sdvg_SetAAExp(aa_exp);
+      sdvg_SetViewport(0, 0, vgFbW, vgFbH);
+   }
+
+   public static EndFrame() {
+      sdvg_EndFrame();
    }
 
    public static DebugPrintMinnieAndDrawableStats(MinnieDrawable _drawable) {
@@ -208,11 +239,6 @@ class MinnieVG {
       }
       minDebugPrintAllocStats();
       minDebugPrintPathStats();
-   }
-
-   public static BeginFrame() {
-      sdvg_SetEnableAA(b_gl_aa);
-      sdvg_BeginFrame();
    }
 
    public static CalcModelTransform(MinnieDrawable _d, Matrix4f _mat) {
@@ -252,74 +278,61 @@ class MinnieVG {
       return ret;
    }
 
-   public static EndFrame() {
-      sdvg_EndFrame();
-   }
-
-   public static OnOpen() : boolean {
-
-      zglLoadExtensions();
-
-      if(sdvg_OnOpen())
-      {
-         // Succeeded
-         return true;
-      }
-      else
-      {
-         trace "[---] MinnieVG::OnOpen: sdvg_OnOpen() failed";
-      }
-
-      return false;
-   }
-
    public static HandleDebugKey(Key _k) : boolean {
       // trace "[dbg] MinnieVG::HandleDebugKey k.name="+_k.name+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
       switch(_k.pressed)
       {
          case '1':
             minSetEnableRenderFillConcave(!minGetEnableRenderFillConcave());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderFillConcave is "+minGetEnableRenderFillConcave();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableRenderFillConcave is "+minGetEnableRenderFillConcave();
             return true;
 
          case '2':
             minSetEnableRenderFillEvenOdd(!minGetEnableRenderFillEvenOdd());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderFillEvenOdd is "+minGetEnableRenderFillEvenOdd();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableRenderFillEvenOdd is "+minGetEnableRenderFillEvenOdd();
             return true;
 
          case '3':
             minSetEnableRenderStrokes(!minGetEnableRenderStrokes());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderStrokes is "+minGetEnableRenderStrokes();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableRenderStrokes is "+minGetEnableRenderStrokes();
             return true;
 
          case '4':
             minSetEnableRenderJoinCap(!minGetEnableRenderJoinCap());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderJoinCap is "+minGetEnableRenderJoinCap();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableRenderJoinCap is "+minGetEnableRenderJoinCap();
             return true;
 
          case 'a':
-            b_gl_aa = !b_gl_aa;
-            trace "[...] MinnieVG::handleDebugKey: b_gl_aa is "+b_gl_aa;
+            b_aa = !b_aa;
+            trace "[...] MinnieVG::HandleDebugKey: b_aa is "+b_aa;
             break;
 
          case 'd':
             sdvg_SetEnableDebug(!sdvg_GetEnableDebug());
-            trace "[...] MinnieVG::handleDebugKey: sdvg_GetEnableDebug() is "+sdvg_GetEnableDebug();
+            trace "[...] MinnieVG::HandleDebugKey: sdvg_GetEnableDebug() is "+sdvg_GetEnableDebug();
             return true;
 
          case 'e':
             minSetEnableEdgeAA(!minGetEnableEdgeAA());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableEdgeAA is "+minGetEnableEdgeAA();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableEdgeAA is "+minGetEnableEdgeAA();
             return true;
 
          case 'h':
             minSetEnableForceConcaveEvenOdd(!minGetEnableForceConcaveEvenOdd());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableForceConcaveEvenOdd is "+minGetEnableForceConcaveEvenOdd();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableForceConcaveEvenOdd is "+minGetEnableForceConcaveEvenOdd();
             return true;
+
+         case 'k':
+            if(_k.mod)
+               aa_exp = mathMaxf(aa_exp - 0.03125f, 0.03125f);
+            else
+               aa_exp = mathMinf(aa_exp + 0.03125f, 1.5f);
+            trace "[...] MinnieVG::HandleDebugKey: aa_exp is "+aa_exp;
+            break;
 
          case 'i':
             minSetEnableTesselateConcave(!minGetEnableTesselateConcave());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableTesselateConcave is "+minGetEnableTesselateConcave();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableTesselateConcave is "+minGetEnableTesselateConcave();
             return true;
 
          case 's':
@@ -327,12 +340,12 @@ class MinnieVG {
                minSetStrokeWLineStripThreshold(99.0f);
             else
                minSetStrokeWLineStripThreshold(0.0f);
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.strokeWLineStripThreshold is "+minGetStrokeWLineStripThreshold();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.strokeWLineStripThreshold is "+minGetStrokeWLineStripThreshold();
             return true;
 
          case 'u':
             minSetEnableUniformColors(!minGetEnableUniformColors());
-            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableUniformColors is "+minGetEnableUniformColors();
+            trace "[...] MinnieVG::HandleDebugKey: minnie_setup.enableUniformColors is "+minGetEnableUniformColors();
             return true;
       }
       return false;
