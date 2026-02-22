@@ -47,6 +47,7 @@ SCP_USER=root
 SCP_HOST=${BOARD_IP}
 SCP_PLUGIN_PATH=/usr/lib/tks/plugins/
 SCP_TKS_PREFIX=/usr/
+RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 
 
 

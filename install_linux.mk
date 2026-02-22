@@ -47,7 +47,7 @@ SCP_USER=root
 SCP_HOST=$(BOARD_IP)
 SCP_PLUGIN_PATH=/usr/lib/tks/plugins/
 SCP_TKS_PREFIX=/usr/
-
+RSYNC_CMD=rsync -a -v -e ssh -u -r -l -z --exclude=\*.ini
 
 
 #
@@ -306,6 +306,11 @@ ifeq ($(DEBUG),y)
 DBGFLAGS += -g
 #DBGFLAGS= -g -pg
 #DBGFLAGS= -ggdb3
+ifneq ($(CROSS_ROOT),)
+CFLAGS  += $(MFLAGS) --sysroot=$(CROSS_ROOT)
+CPPFLAGS+= $(MFLAGS) --sysroot=$(CROSS_ROOT)
+LDFLAGS += $(MFLAGS) --sysroot=$(CROSS_ROOT)
+endif
 endif
 
 
