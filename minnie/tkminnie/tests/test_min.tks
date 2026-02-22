@@ -1,10 +1,25 @@
 // ----
 // ---- file   : test_min.tks
-// ---- author : bsp
-// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025-2026 by bsp
 // ----
-// ---- info   : "minnie" path API test
-// ---- note   :
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+// ----
+// ---- info   : "minnie" high-level API test case / benchmark
 // ----
 // ----
 // ----
@@ -51,14 +66,15 @@ boolean b_vsync         = 1;  // 'v'
 boolean b_rotate        = 1;  // SPACE  (RETURN resets rot_angle)
 boolean b_msaa          = 0;  // 1=use MSAA
 
-boolean b_anim          = 0;  // SPACE
+boolean b_anim          = 1;  // SPACE
 boolean b_slomo         = 0;  // lctrl-SPACE
 int     fill_mode       = 3;  // 'o'  bit0:fill bit1:stroke
 int     test_idx        = 0;  // UP/DOWN
+int     auto_cycle_num_frames = 0; //200;  // >0:auto-cycle tests (any key stroke interrupts this)
 
 boolean b_sym_radius    = 1;     // 'l'  (rx=ry)
 float   stroke_scale    = 1.0f;  // LEFT/RIGHT
-boolean b_line_strip    = 0;     // 's'  (0=tesselate via CPU)
+boolean b_line_strip    = 1;     // 's'  (0=tesselate via CPU)
 boolean b_tex_filter    = 1;     // 't'
 boolean b_copy          = 0;     // 'c'  draw shifted copy (mvp translatef)
 
@@ -79,19 +95,6 @@ boolean b_reopen;  // 1=reopen window after exiting event loop (e.g. toggle MSAA
 
 // ---------------------------------------------------------------------------- vars
 int num_frames_rendered = 0;
-
-int gl_prog_id;
-int gl_vert_id;
-int gl_frag_id;
-
-int u_transform;
-int u_aa;
-
-int a_vertex;
-int a_color;
-int a_edge;
-int a_scale;
-int a_bc;
 
 float anim_1;
 float anim_2;
@@ -157,14 +160,20 @@ function Test_00() {
 
    minEndPath(true/*bClosed*/);
 
-   minFill();
-   minColor(#ff324f75);  // green=6bd2b7
-   minDrawPath(pid);
+   if(fill_mode & 1)
+   {
+      minFill();
+      minColor(#ff324f75);  // green=6bd2b7
+      minDrawPath(pid);
+   }
 
-   minStrokeWidth(sin(anim_3)*2+3);
-   minColor(#ffffffff);
-   minJoinBevel();
-   minDrawPath(pid);
+   if(fill_mode & 2)
+   {
+      minStrokeWidth(sin(anim_3)*2+3);
+      minColor(#ffffffff);
+      minJoinBevel();
+      minDrawPath(pid);
+   }
 }
 
 // ----------------------------------------------------------------------------
@@ -418,7 +427,7 @@ function Test_06(boolean _bFill, boolean _bStroke) {
    if(ry > (sy*0.495))
       ry = (sy*0.495);
 
-   int pid = minBeginImmediate();
+   minBeginImmediate();
    minMoveTo(400-sx*0.5, 300-sy*0.5);
 
    if(_bFill)
@@ -500,7 +509,7 @@ function Test_12(boolean _bFill, boolean _bStroke) {
    if(ry > (sy*0.495))
       ry = (sy*0.495);
 
-   int pid = minBeginImmediate();
+   minBeginImmediate();
    minMoveTo(400-sx*0.5, 300-sy*0.5);
 
    if(_bFill)
@@ -588,7 +597,7 @@ function Test_18(boolean _bFill, boolean _bStroke) {
    if(ry > (sy*0.495))
       ry = (sy*0.495);
 
-   int pid = minBeginImmediate();
+   minBeginImmediate();
    minMoveTo(400, 300);
 
    if(_bFill)
@@ -668,12 +677,8 @@ function onDraw() {
 
    int t = milliSeconds();
 
-   int vgFbW = Viewport.width;
-   int vgFbH = Viewport.height;
-
-   sdvg_SetFramebufferSize(vgFbW, vgFbH);
    MinnieVG.BeginFrame();
-   sdvg_SetViewport(0, 0, vgFbW, vgFbH);
+
    // sdvg_ClearARGB(#00ffffff);
    // sdvg_ClearARGB(#00e1cdb7);
    sdvg_ClearARGB(drawable.getBackgroundColor());  // clear color+stencil
@@ -685,8 +690,7 @@ function onDraw() {
       minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
-      // (todo) minBeginDrawable() ?
-      MinnieVG.BeginDrawable(drawable);
+      drawable.begin();
 
       switch(test_idx)
       {
@@ -718,7 +722,7 @@ function onDraw() {
          case 25: Test_23(true/*bFill*/, true/*bStroke*/); break;   // arc filled+stroked
       }
 
-      MinnieVG.EndDrawable(drawable);
+      drawable.end();
 
       if(0 == (num_frames_rendered & 255))
       {
@@ -772,6 +776,14 @@ function onDraw() {
       anim_5 = mathWrapf(anim_5 + spd * 0.3*0.112, 0, 2PI*4);
       anim_6 = mathWrapf(anim_6 + spd * 0.1*0.1,   0, 2PI*4);
    }
+
+   if(auto_cycle_num_frames > 0)
+   {
+      if(0 == (num_frames_rendered % auto_cycle_num_frames))
+      {
+         SelectTest(mathWrapi(test_idx + 1, 0, test_names.numElements));
+      }
+   }
 }
 
 // ---------------------------------------------------------------------------- onOpen
@@ -792,11 +804,13 @@ function onOpen() {
 
 // ---------------------------------------------------------------------------- onKeyboard
 function onKeyboard(Key _k) {
+   if('v' != _k.code)
+      auto_cycle_num_frames = 0;
 
    switch(_k.pressed)
    {
       default:
-         if(MinnieVG.HandleDebugKey(_k))  // 'a', 'd', 'e', 'h', 'i', 'u', '1', '2', '3', '4', ..
+         if(MinnieVG.HandleDebugKey(_k))  // 'a', 'd', 'e', 'h', 'k', 'i', 'u', '1', '2', '3', '4', ..
          {
             drawable.reset();
             num_frames_rendered = 0;

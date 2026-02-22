@@ -1,10 +1,25 @@
 // ----
 // ---- file   : test_mib.tks
-// ---- author : bsp
-// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
+// ----          Copyright 2025-2026 by bsp
+// ----
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
+// ----          without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// ----          copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to
+// ----          the following conditions:
+// ----
+// ----          The above copyright notice and this permission notice shall be included in all copies or substantial
+// ----          portions of the Software.
+// ----
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+// ----          NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// ----          IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// ----          WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+// ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : "minnie" binary (.mib) loader + OpenGL viewer
-// ---- note   :
 // ----
 // ----
 // ----
@@ -59,6 +74,7 @@ boolean b_fbo             = 0;  // 'f'
 boolean b_fbo_filter      = 1;  // 't'
 boolean b_rotate          = 1;  // SPACE  (RETURN resets rot_angle)
 boolean b_msaa            = 0;  // 'm'  1=use MSAA
+boolean b_line_strip      = 1;  // 's'  (0=tesselate via CPU)
 
 
 // ---------------------------------------------------------------------------- tests
@@ -161,6 +177,7 @@ StringArray tests = [
                      ];
 
 int test_idx = -1;
+int auto_cycle_num_frames = 0; //200;  // >0:auto-cycle tests (any key stroke interrupts this)
 
 
 // ---------------------------------------------------------------------------- vars
@@ -285,6 +302,22 @@ uniform sampler2D u_sampler;
 "} \n"
 ;
 
+// ---------------------------------------------------------------------------- SelectNextTest
+function SelectNextTest() {
+   test_idx = mathWrapi(test_idx + 1, 0, tests.numElements);
+   pathNameIn = tests.get(test_idx);
+   LoadFileBuf();
+   trace "[...] test_idx is "+test_idx+" (\""+pathNameIn+"\")";
+}
+
+// ---------------------------------------------------------------------------- SelectPreviousTest
+function SelectPreviousTest() {
+   test_idx = mathWrapi(test_idx - 1, 0, tests.numElements);
+   pathNameIn = tests.get(test_idx);
+   LoadFileBuf();
+   trace "[...] test_idx is "+test_idx+" (\""+pathNameIn+"\")";
+}
+
 // ---------------------------------------------------------------------------- onDraw
 function onDraw() {
    // trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw";
@@ -309,6 +342,8 @@ function onDraw() {
 
    if(!b_gl_buf_once || !drawable.isComplete())
    {
+      minSetStrokeWLineStripThreshold(b_line_strip*99);  // 0=tesselate to triangles
+      minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
       if(MinnieVG.SetupDrawableFromBuffer(drawable, fileBuf))
@@ -408,22 +443,14 @@ function onDraw() {
 
    if(b_single_frame)
       SDL.exitEventLoop();
-}
 
-// ---------------------------------------------------------------------------- SelectNextTest
-function SelectNextTest() {
-   test_idx = mathWrapi(test_idx + 1, 0, tests.numElements);
-   pathNameIn = tests.get(test_idx);
-   LoadFileBuf();
-   trace "[...] test_idx is "+test_idx+" (\""+pathNameIn+"\")";
-}
-
-// ---------------------------------------------------------------------------- SelectPreviousTest
-function SelectPreviousTest() {
-   test_idx = mathWrapi(test_idx - 1, 0, tests.numElements);
-   pathNameIn = tests.get(test_idx);
-   LoadFileBuf();
-   trace "[...] test_idx is "+test_idx+" (\""+pathNameIn+"\")";
+   if(auto_cycle_num_frames > 0)
+   {
+      if(0 == (num_frames_rendered % auto_cycle_num_frames))
+      {
+         SelectNextTest();
+      }
+   }
 }
 
 // ---------------------------------------------------------------------------- InitFBO
@@ -490,6 +517,7 @@ function onOpen() {
    InitFBO();
 }
 
+// ---------------------------------------------------------------------------- onMouse
 function onMouse(int _x, int _y, int _cbs, int _nbs) {
    if(_cbs & (MOUSE_WHEELDOWN | MOUSE_WHEELUP))
    {
@@ -506,6 +534,8 @@ function onMouse(int _x, int _y, int _cbs, int _nbs) {
 
 // ---------------------------------------------------------------------------- onKeyboard
 function onKeyboard(Key _k) {
+   if('v' != _k.code)
+      auto_cycle_num_frames = 0;
 
    // trace "xxxx onKeyboard k.name="+_k.name+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
 
@@ -560,6 +590,13 @@ function onKeyboard(Key _k) {
       case 'p':
          b_queued_screenshot = true;
          trace "[...] queue screenshot";
+         break;
+
+      case 's':
+         b_line_strip = !b_line_strip;
+         trace "[...] b_line_strip is "+b_line_strip;
+         drawable.reset();
+         num_frames_rendered = 0;
          break;
 
       case 't':
