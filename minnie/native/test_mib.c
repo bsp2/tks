@@ -50,18 +50,26 @@
 #define VP_W  800
 #define VP_H  600
 
+#if 1
+#define NUM_ITER 1
+#else
+// benchmark
+#define NUM_ITER 10000
+#endif
+
 #include "../inc_minnie.h"
 #include "hal.h"
 #include "MinnieVG.h"
 
 
 // ---------------------------------------------------------------------------- config
-static sBool b_draw_gl         = 1;     // 'g'
-static sBool b_gl_buf_once     = 1;     // 'o'  (0=update Drawable each frame)
-static sBool b_vsync           = 1;     // 'v'
-static sBool b_rotate          = 1;     // SPACE  (RETURN resets rot_angle)
-static sF32  stroke_scale      = 1.0f;  // LEFT/RIGHT
-static sBool b_line_strip      = 1;     // 's'  (0=tesselate via CPU)
+static sBool b_draw_gl     = 1;     // 'g'
+static sBool b_gl_buf_once = 1;     // 'o'  (0=update Drawable each frame)
+static sBool b_vsync       = 1;     // 'v'
+static sBool b_rotate      = 1;     // SPACE  (RETURN resets rot_angle)
+static sF32  stroke_scale  = 1.0f;  // LEFT/RIGHT
+static sBool b_line_strip  = 1;     // 's'  (0=tesselate via CPU)
+static sBool b_benchmark   = (NUM_ITER > 1);
 
 
 // ---------------------------------------------------------------------------- tests
@@ -266,6 +274,11 @@ void hal_on_draw(void) {
       {
          // Dprintf("xxx drawable.sz=(%f; %f)\n", minDrawableGetSizeX(drawable), minDrawableGetSizeY(drawable));
       }
+
+      if(b_benchmark)
+      {
+         ticks_start = hal_get_ticks();
+      }
    }
 
    MinnieVG_BeginFrame();
@@ -299,9 +312,12 @@ void hal_on_draw(void) {
       minDrawableSetTranslate2f(drawable, 0.0f, 0.0f);
       MinnieVG_SetTransformForDrawable(drawable);
 
-      minDrawableSetEnableDebug(drawable, (0u == (num_frames_rendered & 255u)));
+      minDrawableSetEnableDebug(drawable, !b_benchmark && (0u == (num_frames_rendered & 255u)));
 
-      minDrawableDraw(drawable);
+      for(sUI iter = 0u; iter < NUM_ITER; iter++)
+      {
+         minDrawableDraw(drawable);
+      }
    }
    else
    {
@@ -327,12 +343,15 @@ void hal_on_draw(void) {
       MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
    }
 
-   if(0u == (total_num_frames_rendered & 127u))
+   if(b_benchmark)
+      glFinish();
+
+   if(b_benchmark || 0u == (total_num_frames_rendered & 127u))
    {
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
       {
-         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered) / tDelta);
+         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * NUM_ITER) / tDelta);
          Dprintf("[...] FPS=%f\n", fps);
       }
    }
@@ -357,7 +376,7 @@ void hal_on_draw(void) {
    }
 #endif // SHADERVG_AUTO_EXIT_FRAMES
 
-   if(b_rotate)
+   if(!b_benchmark && b_rotate)
    {
       rot_ang += dt * 0.0001023f;
       rot_ang = sWRAP(rot_ang, 0.0f, sM_2PIf);
@@ -457,7 +476,7 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
       case 'v':
          b_vsync = !b_vsync;
          Dprintf("[...] b_vsync is %d\n", b_vsync);
-         hal_set_swap_interval(b_vsync ? 1 : 0);
+         hal_set_swap_interval((b_vsync && !b_benchmark) ? 1 : 0);
          break;
 
       case VKEY_UP:
@@ -541,7 +560,7 @@ int main(int argc, char**argv) {
       // Main loop
       Dprintf("[...] entering event loop\n");
 
-      hal_set_swap_interval(b_vsync ? 1 : 0);
+      hal_set_swap_interval((b_vsync && !b_benchmark) ? 1 : 0);
 
       ticks_start = hal_get_ticks();
       hal_window_loop();

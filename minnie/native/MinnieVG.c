@@ -58,7 +58,7 @@ void MinnieVG_Init(void) {
    minSetStrokeWLineJoinThreshold(0.0f);
    minSetEnableUniformColors(0);           // 'u'
 
-   if(1)
+   if(0)
    {
       // (note) 27Oct2025 used for mixed cpu/gpu benchmarks
       minSetEnableForceConcaveEvenOdd(0);       // 'h'  (note) concave tesselator does not handle all paths (=> force SGI tesselator)
@@ -66,7 +66,7 @@ void MinnieVG_Init(void) {
       minSetEnableTesselateConcave(0);          // 'i'  0=GPU tesselation  1=CPU tesselation
       minSetSwTesselateSizeThreshold(128*8*8);  // 0=disable   >0: force concave path if concave or evenodd-without-subpaths bbox is <= sizeThreshold, else force evenodd path (SW tesselate)
    }
-   else if(0)
+   else if(1)
    {
       // use SW tesselator for all path types
       minSetEnableForceConcaveEvenOdd(1);
