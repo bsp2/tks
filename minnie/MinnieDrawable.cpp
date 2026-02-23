@@ -275,7 +275,7 @@ void _MinnieDrawable::begin(void) {
 
 void _MinnieDrawable::end(void) {
    minEnd();
-   setSize2f(minGetWidth(), minGetHeight());
+   setSize2f((sF32)minGetWidth(), (sF32)minGetHeight());
    setBackgroundColor(minGetColorByIndex(0));
    queueGLBufUpdate();
 }

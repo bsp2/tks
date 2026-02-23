@@ -262,7 +262,7 @@ static void Test_02(void) {
          nx = 2.0f * nx - 1.0f;
          ny = 2.0f * ny - 1.0f;
 
-         ang4 = sM_PI_2;
+         ang4 = sM_PI_2f;
          ang5 = 0.0f;
          sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
          sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
@@ -283,8 +283,8 @@ static void Test_02(void) {
 static sU32 Test_03_calc_c32_at(sF32 x, sF32 y) {
    sF32 nx = sABS((x - 400.0f) / 400.0f);  // => -1..1
    sF32 ny = sABS((y - 300.0f) / 300.0f);
-   nx = sMAX(0.0f, cosf(nx * sM_PI_2));
-   ny = sMAX(0.0f, cosf(ny * sM_PI_2));
+   nx = sMAX(0.0f, cosf(nx * sM_PI_2f));
+   ny = sMAX(0.0f, cosf(ny * sM_PI_2f));
    sF32 a = sRANGE(nx * ny, 0.0f, 1.0f);
    return sdvg_ARGB((sU8)(a*255u), 255u, 255u, 255u);
 }
@@ -312,7 +312,7 @@ static void Test_03(void) {
          nx = 2.0f * nx - 1.0f;
          ny = 2.0f * ny - 1.0f;
 
-         ang4 = sM_PI_2;
+         ang4 = sM_PI_2f;
          ang5 = 0.0f;
          sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
          sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
@@ -341,7 +341,7 @@ static void Test_04(void) {
 
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
-   sF32 w = (sM_2PI / numSeg);
+   sF32 w = (sM_2PIf / numSeg);
    sF32 a = anim_1;
    sF32 x = 100.0f;
    sF32 xStep = 600.0f / numSeg;
@@ -693,7 +693,7 @@ void hal_on_draw(void) {
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
       minSetSwTesselateSizeThreshold(1*99999999);  // bounding box size
-      minSetStrokeWLineStripThreshold(b_line_strip*99);  // 0=tesselate to triangles
+      minSetStrokeWLineStripThreshold(b_line_strip*99.0f);  // 0=tesselate to triangles
       minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
@@ -802,12 +802,12 @@ void hal_on_draw(void) {
    if(b_anim)
    {
       sF32 spd = b_slomo ? 0.1f : 0.7f;
-      anim_1 = sWRAP(anim_1 + spd * 0.23f*0.1f,   0.0f, sM_2PI*4.0f);
-      anim_2 = sWRAP(anim_2 + spd * 0.23f*0.134f, 0.0f, sM_2PI*4.0f);
-      anim_3 = sWRAP(anim_3 + spd * 0.3f*0.173f,  0.0f, sM_2PI*4.0f);
-      anim_4 = sWRAP(anim_4 + spd * 0.3f*0.123f,  0.0f, sM_2PI*4.0f);
-      anim_5 = sWRAP(anim_5 + spd * 0.3f*0.112f,  0.0f, sM_2PI*4.0f);
-      anim_6 = sWRAP(anim_6 + spd * 0.1f*0.1f,    0.0f, sM_2PI*4.0f);
+      anim_1 = sWRAP(anim_1 + spd * 0.23f*0.1f,   0.0f, sM_2PIf*4.0f);
+      anim_2 = sWRAP(anim_2 + spd * 0.23f*0.134f, 0.0f, sM_2PIf*4.0f);
+      anim_3 = sWRAP(anim_3 + spd * 0.3f*0.173f,  0.0f, sM_2PIf*4.0f);
+      anim_4 = sWRAP(anim_4 + spd * 0.3f*0.123f,  0.0f, sM_2PIf*4.0f);
+      anim_5 = sWRAP(anim_5 + spd * 0.3f*0.112f,  0.0f, sM_2PIf*4.0f);
+      anim_6 = sWRAP(anim_6 + spd * 0.1f*0.1f,    0.0f, sM_2PIf*4.0f);
    }
 
    if(auto_cycle_num_frames > 0u)
