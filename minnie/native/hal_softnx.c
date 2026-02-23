@@ -296,6 +296,7 @@ void hal_window_loop(void) {
 // ---------------------------------------------------------------------------- hal_window_swap
 void hal_window_swap(void) {
    eglSwapBuffers(display, surface);
+   display_events();
 }
 
 // ---------------------------------------------------------------------------- hal_window_quit
