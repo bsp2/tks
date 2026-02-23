@@ -634,13 +634,14 @@ static sF32   alpha_sdf_min;
 static sF32   alpha_sdf_max;
 static sF32   alpha_sdf_maxmin_scale;
 static sF32   alpha_sdf_exp;
-static sF32   stroke_w;      // px. total line width = 2*stroke_w
+static sF32   stroke_w;         // px. total line width = 2*stroke_w
 static sF32   stroke_w_aa_off;  // def=SHADERVG_LINE_AA_STROKE_W_OFFSET
+static sF32   stroke_w_scale;
 static sF32   line_pattern_scale;
 static sF32   line_pattern_offset;  // 0..1
 static sF32   line_miter_limit;
 static sF32   point_radius;  // px
-sF32 sdvg_pixel_scl;         // vp/proj (aa_range, stroke_w)
+static sF32   sdvg_pixel_scl;       // vp/proj (aa_range, stroke_w)
 static sF32   fill_r;
 static sF32   fill_g;
 static sF32   fill_b;
@@ -808,6 +809,7 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    aa_exp              = 1.0f;
    stroke_w            = 2.0f;
    stroke_w_aa_off     = SHADERVG_LINE_AA_STROKE_W_OFFSET;
+   stroke_w_scale      = 1.0f;
    line_pattern_scale  = 1.0f / 256.0f;
    line_pattern_offset = 0.0f;
    line_miter_limit    = 32.0f;
@@ -1990,7 +1992,7 @@ void YAC_CALL sdvg_DrawRectFillStrokeAAVBO32(sUI _vboId,
                                                  _sizeX + aaOffSize, _sizeY + aaOffSize,
                                                  fill_r, fill_g, fill_b, fill_a * global_a,
                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                 Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                                 Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                  aa_exp
                                                  );
@@ -2007,7 +2009,7 @@ void YAC_CALL sdvg_DrawRectFillStrokeAA(sF32 _centerX, sF32 _centerY,
                                             _sizeX + aaOffSize, _sizeY + aaOffSize,
                                             fill_r, fill_g, fill_b, fill_a * global_a,
                                             stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                            Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                            Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                             b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                             aa_exp
                                             );
@@ -2046,7 +2048,7 @@ void YAC_CALL sdvg_DrawRectStrokeAAVBO32(sUI _vboId,
                                         _centerX, _centerY,
                                         _sizeX + aaOffSize, _sizeY + aaOffSize,
                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                        Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                        Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                         b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                         aa_exp
                                         );
@@ -2078,7 +2080,7 @@ void YAC_CALL sdvg_DrawRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                 _sizeX + aaOffSize, _sizeY + aaOffSize,
                                 fill_r, fill_g, fill_b, fillA,
                                 stroke_r, stroke_g, stroke_b, strokeA,
-                                Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                 texture_decal_alpha,
                                 b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                 aa_exp,
@@ -2188,7 +2190,7 @@ void YAC_CALL sdvg_DrawEllipseFillStrokeAAVBO32(sUI _vboId,
                                                        _radiusX + aaOffSize, _radiusY + aaOffSize,
                                                        fill_r,   fill_g,   fill_b,   fill_a * global_a,
                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                       Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                                       Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                        b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                        aa_exp
                                                        );
@@ -2205,7 +2207,7 @@ void YAC_CALL sdvg_DrawEllipseFillStrokeAA(sF32 _centerX, sF32 _centerY,
                                                   _sizeX + aaOffSize, _sizeY + aaOffSize,
                                                   fill_r, fill_g, fill_b, fill_a * global_a,
                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                  Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                   aa_exp
                                                   );
@@ -2242,7 +2244,7 @@ void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32(sUI _vboId,
                                               _centerX, _centerY,
                                               _radiusX + aaOffSize, _radiusY + aaOffSize,
                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                              Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                              Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                               aa_exp
                                               );
@@ -2274,7 +2276,7 @@ void YAC_CALL sdvg_DrawEllipseStrokeAA(sF32 _centerX, sF32 _centerY,
                                    _sizeX + aaOffSize, _sizeY + aaOffSize,
                                    fill_r, fill_g, fill_b, fillA,
                                    stroke_r, stroke_g, stroke_b, strokeA,
-                                   Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                    texture_decal_alpha,
                                    b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                    aa_exp,
@@ -2396,7 +2398,7 @@ void YAC_CALL sdvg_DrawRoundRectFillStrokeAAVBO32(sUI _vboId,
                                                            _radiusX, _radiusY,
                                                            fill_r, fill_g, fill_b, fill_a * global_a,
                                                            stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                           Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                                           Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                            b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                            aa_exp
                                                            );
@@ -2415,7 +2417,7 @@ void YAC_CALL sdvg_DrawRoundRectFillStrokeAA(sF32 _centerX, sF32 _centerY,
                                                       _radiusX, _radiusY,
                                                       fill_r, fill_g, fill_b, fill_a * global_a,
                                                       stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                      Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                                      Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                       b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                       aa_exp
                                                       );
@@ -2457,7 +2459,7 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32(sUI _vboId,
                                                   _sizeX + aaOffSize, _sizeY + aaOffSize,
                                                   _radiusX, _radiusY,
                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                  Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                   aa_exp
                                                   );
@@ -2491,7 +2493,7 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                      _radiusX, _radiusY,
                                      fill_r, fill_g, fill_b, fillA,
                                      stroke_r, stroke_g, stroke_b, strokeA,
-                                     Dsdvg_pixel_scl(stroke_w) + aaOffStroke,
+                                     Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
                                      texture_decal_alpha,
                                      b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                      aa_exp,
@@ -2684,7 +2686,7 @@ void YAC_CALL sdvg_DrawLineStripFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _nu
                                                  _numPoints,
                                                  mvp_matrix,
                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                 Dsdvg_pixel_scl(stroke_w)
+                                                 Dsdvg_pixel_scl(stroke_w * stroke_w_scale)
                                                  );
 }
 
@@ -2704,7 +2706,7 @@ void YAC_CALL sdvg_DrawLineStripFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numP
                                              _numPoints,
                                              mvp_matrix,
                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                             Dsdvg_pixel_scl(stroke_w)
+                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale)
                                              );
 }
 
@@ -2722,7 +2724,7 @@ void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _
                                                       _numPoints,
                                                       mvp_matrix,
                                                       stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                      Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                      Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                       b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                       );
 }
@@ -2741,7 +2743,7 @@ void YAC_CALL sdvg_DrawLineStripFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _nu
                                                   _numPoints,
                                                   mvp_matrix,
                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                  Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                   );
 }
@@ -2762,7 +2764,7 @@ void YAC_CALL sdvg_DrawLineStripPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI 
                                                             _numPoints,
                                                             mvp_matrix,
                                                             stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                            Dsdvg_pixel_scl(stroke_w),
+                                                            Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                             SHADERVG_AA_RANGE_OFF,
                                                             line_pattern_scale,
                                                             line_pattern_offset
@@ -2783,7 +2785,7 @@ void YAC_CALL sdvg_DrawLineStripPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _n
                                                         _numPoints,
                                                         mvp_matrix,
                                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                        Dsdvg_pixel_scl(stroke_w),
+                                                        Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                         SHADERVG_AA_RANGE_OFF,
                                                         line_pattern_scale,
                                                         line_pattern_offset
@@ -2805,7 +2807,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalVBO14_2(sUI _vboId, sUI _byteOffset,
                                                                        mvp_matrix,
                                                                        fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                       Dsdvg_pixel_scl(stroke_w),
+                                                                       Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                        SHADERVG_AA_RANGE_OFF,
                                                                        line_pattern_scale,
                                                                        line_pattern_offset
@@ -2827,7 +2829,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalVBO32(sUI _vboId, sUI _byteOffset, s
                                                                    mvp_matrix,
                                                                    fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                   Dsdvg_pixel_scl(stroke_w),
+                                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                    SHADERVG_AA_RANGE_OFF,
                                                                    line_pattern_scale,
                                                                    line_pattern_offset
@@ -2849,7 +2851,7 @@ void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sU
                                                             _numPoints,
                                                             mvp_matrix,
                                                             stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                            Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                            Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                             b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                             line_pattern_scale,
                                                             line_pattern_offset
@@ -2871,7 +2873,7 @@ void YAC_CALL sdvg_DrawLineStripPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI 
                                                         _numPoints,
                                                         mvp_matrix,
                                                         stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                        Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                        Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                         b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                         line_pattern_scale,
                                                         line_pattern_offset
@@ -2894,7 +2896,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2(sUI _vboId, sUI _byteOffse
                                                                        mvp_matrix,
                                                                        fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                       Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                       Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                        b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                        line_pattern_scale,
                                                                        line_pattern_offset
@@ -2917,7 +2919,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32(sUI _vboId, sUI _byteOffset,
                                                                    mvp_matrix,
                                                                    fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                   Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                    b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                    line_pattern_scale,
                                                                    line_pattern_offset
@@ -2938,7 +2940,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2(sUI _vboId, sUI _byteOffset, sU
                                                                  _bSkipLastLineJoint,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                 Dsdvg_pixel_scl(stroke_w),
+                                                                 Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                  SHADERVG_AA_RANGE_OFF
                                                                  );
 }
@@ -2957,7 +2959,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32(sUI _vboId, sUI _byteOffset, sUI 
                                                              _bSkipLastLineJoint,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                             Dsdvg_pixel_scl(stroke_w),
+                                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                              SHADERVG_AA_RANGE_OFF
                                                              );
 }
@@ -2977,7 +2979,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2(sUI _vboId, sUI _byteOffset, 
                                                                  _bSkipLastLineJoint,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                 Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                 Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                                  );
 }
@@ -2997,7 +2999,7 @@ void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32(sUI _vboId, sUI _byteOffset, sU
                                                              _bSkipLastLineJoint,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                             Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                              );
 }
@@ -3018,7 +3020,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2(sUI _vboId, sUI _byteOffset,
                                                                        _bSkipLastLineJoint,
                                                                        mvp_matrix,
                                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                       Dsdvg_pixel_scl(stroke_w),
+                                                                       Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                        SHADERVG_AA_RANGE_OFF,
                                                                        line_pattern_scale,
                                                                        line_pattern_offset
@@ -3041,7 +3043,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32(sUI _vboId, sUI _byteOffset, s
                                                                    _bSkipLastLineJoint,
                                                                    mvp_matrix,
                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                   Dsdvg_pixel_scl(stroke_w),
+                                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                    SHADERVG_AA_RANGE_OFF,
                                                                    line_pattern_scale,
                                                                    line_pattern_offset
@@ -3065,7 +3067,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2(sUI _vboId, sUI _byteOf
                                                                                   mvp_matrix,
                                                                                   fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                                  Dsdvg_pixel_scl(stroke_w),
+                                                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                                   SHADERVG_AA_RANGE_OFF,
                                                                                   line_pattern_scale,
                                                                                   line_pattern_offset
@@ -3089,7 +3091,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32(sUI _vboId, sUI _byteOffs
                                                                               mvp_matrix,
                                                                               fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                              Dsdvg_pixel_scl(stroke_w),
+                                                                              Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                               SHADERVG_AA_RANGE_OFF,
                                                                               line_pattern_scale,
                                                                               line_pattern_offset
@@ -3113,7 +3115,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2(sUI _vboId, sUI _byteOffse
                                                                        _bSkipLastLineJoint,
                                                                        mvp_matrix,
                                                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                       Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                       Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                        b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                        line_pattern_scale,
                                                                        line_pattern_offset
@@ -3137,7 +3139,7 @@ void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32(sUI _vboId, sUI _byteOffset,
                                                                    _bSkipLastLineJoint,
                                                                    mvp_matrix,
                                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                   Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                    b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                    line_pattern_scale,
                                                                    line_pattern_offset
@@ -3162,7 +3164,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2(sUI _vboId, sUI _byte
                                                                                   mvp_matrix,
                                                                                   fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                                  Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                                   line_pattern_scale,
                                                                                   line_pattern_offset
@@ -3187,7 +3189,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOf
                                                                               mvp_matrix,
                                                                               fill_r,   fill_g,   fill_b,   fill_a   * global_a,
                                                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                              Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                              Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                               line_pattern_scale,
                                                                               line_pattern_offset
@@ -3208,7 +3210,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sU
                                                                  _numPoints,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                 Dsdvg_pixel_scl(stroke_w),
+                                                                 Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                                  SHADERVG_AA_RANGE_OFF,
                                                                  line_miter_limit
                                                                  );
@@ -3228,7 +3230,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI 
                                                              _numPoints,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                             Dsdvg_pixel_scl(stroke_w),
+                                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                              SHADERVG_AA_RANGE_OFF,
                                                              line_miter_limit
                                                              );
@@ -3249,7 +3251,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, 
                                                                  _numPoints,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                                 Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                                 Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                                  line_miter_limit
                                                                  );
@@ -3270,7 +3272,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32(sUI _vboId, sUI _byteOffset, sU
                                                              _numPoints,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                             Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                              line_miter_limit
                                                              );
@@ -3290,7 +3292,7 @@ void YAC_CALL sdvg_DrawLinesFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoi
                                              _numPoints,
                                              mvp_matrix,
                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                             Dsdvg_pixel_scl(stroke_w),
+                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                              SHADERVG_AA_RANGE_OFF
                                              );
 }
@@ -3309,7 +3311,7 @@ void YAC_CALL sdvg_DrawLinesFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoint
                                          _numPoints,
                                          mvp_matrix,
                                          stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                         Dsdvg_pixel_scl(stroke_w),
+                                         Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                          SHADERVG_AA_RANGE_OFF
                                          );
 }
@@ -3329,7 +3331,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
                                              _numPoints,
                                              mvp_matrix,
                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                             Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                             Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                              );
 }
@@ -3349,7 +3351,7 @@ void YAC_CALL sdvg_DrawLinesFlatAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
                                          _numPoints,
                                          mvp_matrix,
                                          stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                         Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                         Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                          b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                          );
 }
@@ -3370,7 +3372,7 @@ void YAC_CALL sdvg_DrawLinesGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _num
                                                    _numPoints,
                                                    mvp_matrix,
                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                   Dsdvg_pixel_scl(stroke_w),
+                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                    SHADERVG_AA_RANGE_OFF
                                                    );
 }
@@ -3391,7 +3393,7 @@ void YAC_CALL sdvg_DrawLinesGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
                                                _numPoints,
                                                mvp_matrix,
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                               Dsdvg_pixel_scl(stroke_w),
+                                               Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                SHADERVG_AA_RANGE_OFF
                                                );
 }
@@ -3413,7 +3415,7 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _n
                                                    _numPoints,
                                                    mvp_matrix,
                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                   Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                    b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                    );
 }
@@ -3435,7 +3437,7 @@ void YAC_CALL sdvg_DrawLinesGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
                                                _numPoints,
                                                mvp_matrix,
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                               Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                               Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                );
 }
@@ -3457,7 +3459,7 @@ void YAC_CALL sdvg_DrawLinesPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI _num
                                                    _numPoints,
                                                    mvp_matrix,
                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                   Dsdvg_pixel_scl(stroke_w),
+                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                    SHADERVG_AA_RANGE_OFF,
                                                    line_pattern_scale,
                                                    line_pattern_offset
@@ -3481,7 +3483,7 @@ void YAC_CALL sdvg_DrawLinesPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
                                                _numPoints,
                                                mvp_matrix,
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                               Dsdvg_pixel_scl(stroke_w),
+                                               Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
                                                SHADERVG_AA_RANGE_OFF,
                                                line_pattern_scale,
                                                line_pattern_offset
@@ -3506,7 +3508,7 @@ void YAC_CALL sdvg_DrawLinesPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _n
                                                    _numPoints,
                                                    mvp_matrix,
                                                    stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                   Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                                   Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                    b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                    line_pattern_scale,
                                                    line_pattern_offset
@@ -3531,7 +3533,7 @@ void YAC_CALL sdvg_DrawLinesPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
                                                _numPoints,
                                                mvp_matrix,
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                               Dsdvg_pixel_scl(stroke_w) + aaOff,
+                                               Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
                                                b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
                                                line_pattern_scale,
                                                line_pattern_offset
@@ -4766,6 +4768,10 @@ void YAC_CALL sdvg_SetStrokeRadius(sF32 _strokeRadius) {
 
 void YAC_CALL sdvg_SetStrokeWidth(sF32 _lineW) {
    stroke_w = _lineW * 0.5f;
+}
+
+void YAC_CALL sdvg_SetStrokeScale(sF32 _scale) {
+   stroke_w_scale = _scale;
 }
 
 void YAC_CALL sdvg_SetLinePatternScale(sF32 _scale) {

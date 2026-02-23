@@ -559,6 +559,17 @@ The total line stroke width is (2 * (strokeRadius+offset))
 */
 YF void YAC_CALL sdvg_SetStrokeRadiusAAOffset (sF32 _offset);
 
+/* @function sdvg_SetStrokeScale,float scale
+Set AA line stroke width scaling factor.
+
+@arg scale AA line stroke scaling factor (default=1.0)
+
+The total line stroke width is (2 * (strokeRadius*strokeScale+strokeOffset))
+
+@group Stroke
+*/
+YF void YAC_CALL sdvg_SetStrokeScale (sF32 _scale);
+
 /* @function sdvg_SetLinePatternScale,float scale
 Set line pattern scaling factor.
 

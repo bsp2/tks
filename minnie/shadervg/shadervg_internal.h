@@ -42,7 +42,6 @@ class ShaderVG_Shape;
 #include <stdlib.h>
 #include <new>
 
-extern sF32 sdvg_pixel_scl;  // vp/proj (aa_range, stroke_w)
 extern sBool sdvg_b_glcore;
 
 typedef struct shadervg_paint_s {
