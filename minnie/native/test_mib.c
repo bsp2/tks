@@ -258,7 +258,7 @@ void hal_on_draw(void) {
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
-      minSetStrokeWLineStripThreshold(b_line_strip*99);  // 0=tesselate to triangles
+      minSetStrokeWLineStripThreshold(b_line_strip*99.0f);  // 0=tesselate to triangles
       minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
@@ -277,12 +277,17 @@ void hal_on_draw(void) {
 
    if(1 && b_draw_gl)
    {
+      sF32 dw = minDrawableGetSizeX(drawable);
+      sF32 dh = minDrawableGetSizeY(drawable);
       if(1)
-         sdvg_ProjInit2D(minDrawableGetSizeX(drawable),
-                         minDrawableGetSizeY(drawable)
-                         );
+         sdvg_ProjInit2D(dw, dh);
       else
          sdvg_ProjInit2D(VP_W, VP_H);
+      if(dw > 0.0f)
+      {
+         sF32 strokeScale = ((sF32)DISPLAY_WIDTH) / dw;
+         sdvg_SetStrokeScale(strokeScale);
+      }
       minDrawableSetScale2f(drawable, 1.0f, 1.0f);
       minDrawableSetRotation(drawable, rot_ang);
       minDrawableSetTranslate2f(drawable, 0.0f, 0.0f);
@@ -349,7 +354,7 @@ void hal_on_draw(void) {
    if(b_rotate)
    {
       rot_ang += dt * 0.0001023f;
-      rot_ang = sWRAP(rot_ang, 0.0f, sM_2PI);
+      rot_ang = sWRAP(rot_ang, 0.0f, sM_2PIf);
    }
 
    if(auto_cycle_num_frames > 0u)
@@ -524,7 +529,8 @@ int main(int argc, char**argv) {
       }
 
       memset(&fileBuf, 0, sizeof(YAC_Buffer));
-      LoadFileBuf();
+      if(!LoadFileBuf())
+          exit(10);
 
       // Main loop
       Dprintf("[...] entering event loop\n");
