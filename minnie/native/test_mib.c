@@ -285,6 +285,12 @@ void hal_on_draw(void) {
          sdvg_ProjInit2D(VP_W, VP_H);
       if(dw > 0.0f)
       {
+         // (note) low-level "sdvg" API line widths are in viewport/pixel coordinate system
+         //         (independent of projection matrix, similar to OpenGL)
+         //         (e.g. Bezier01Edit widget uses normalized (1;1) orthographic projection matrix and stroke width = 1.0f)
+         // (note) high-level "min" API SW-tesselated lines (triangles) are in drawable/projection coordinate system
+         // (note) => align low-level and high-level line widths
+         //            (e.g. inc line widths when drawable size is (640;480) but viewport size is (800;600))
          sF32 strokeScale = ((sF32)DISPLAY_WIDTH) / dw;
          sdvg_SetStrokeScale(strokeScale);
       }
