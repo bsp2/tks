@@ -1,8 +1,8 @@
 // ----
-// ---- file   : TrianglesFillFlat32PatternDecal.h
+// ---- file   : TrianglesFillFlatUniform32PatternDecal.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -24,14 +24,14 @@
 // ----
 // ----
 
-class TrianglesFillFlat32PatternDecal : public ShaderVG_Shape {
+class TrianglesFillFlatUniform32PatternDecal : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
-      "uniform mat4 u_transform; \n"
-      "uniform vec2 u_paint_start; \n"
-      "uniform vec2 u_paint_ob_size; \n"
+      "uniform mat4  u_transform; \n"
+      "uniform vec2  u_paint_start; \n"
+      "uniform vec2  u_paint_ob_size; \n"
       "uniform float u_paint_ob_len; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
@@ -46,11 +46,11 @@ class TrianglesFillFlat32PatternDecal : public ShaderVG_Shape {
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform vec4 u_color_fill; \n"
-      "uniform vec4 u_color_stroke; \n"
-      "uniform float u_decal_alpha; \n"
+      "uniform vec4      u_color_fill; \n"
+      "uniform vec4      u_color_stroke; \n"
+      "uniform float     u_decal_alpha; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform vec2 u_paint_ndir; \n"
+      "uniform vec2      u_paint_ndir; \n"
       " \n"
       "VARYING_IN vec2 v_paint_uv; \n"
       " \n"
@@ -65,7 +65,7 @@ class TrianglesFillFlat32PatternDecal : public ShaderVG_Shape {
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)
+            (-1 != shape_a_vertex)
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_color_stroke)
@@ -87,7 +87,7 @@ class TrianglesFillFlat32PatternDecal : public ShaderVG_Shape {
    }
 
 #if 0
-   void drawTrianglesFillFlatVBO32Pattern(sUI              _vboId,
+   void drawTrianglesFillFlatVBO32Pattern(sUI             _vboId,
                                          sUI              _byteOffset,
                                          sUI              _numVerts,
                                          Dsdvg_mat4_ref_t _mvpMatrix,

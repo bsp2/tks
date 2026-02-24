@@ -1,8 +1,8 @@
 // ----
-// ---- file   : TrianglesFillFlat32Radial.h
+// ---- file   : TrianglesFillFlatUniform32Conic.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -24,13 +24,14 @@
 // ----
 // ----
 
-class TrianglesFillFlat32Radial : public ShaderVG_Shape {
+class TrianglesFillFlatUniform32Conic : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       "uniform vec2 u_paint_start; \n"
+      "uniform vec2 u_paint_scale; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -38,7 +39,7 @@ class TrianglesFillFlat32Radial : public ShaderVG_Shape {
       " \n"
       "void main(void) { \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_pos = (a_vertex - u_paint_start); \n"
+      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_scale; \n"
       "} \n"
       ;
 
@@ -46,26 +47,43 @@ class TrianglesFillFlat32Radial : public ShaderVG_Shape {
    const char *fs_src =
       "uniform vec4 u_color_fill; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform float u_paint_ob_len; \n"
+      "uniform float u_paint_angle01; \n"
       " \n"
       "VARYING_IN vec2 v_paint_pos; \n"
       " \n"
       "void main(void) { \n"
-      "  float d = length(v_paint_pos) * u_paint_ob_len; \n"
-      "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
+      "  vec2 n = normalize(abs(v_paint_pos)); \n"
+      "  float a = atan(n.y / n.x) * (1.0 / 6.2831853071795864); \n"
+      "  if(v_paint_pos.x > 0.0) {\n"
+      "    if(v_paint_pos.y < 0.0) { \n"
+      "      a = 1.0 - a; \n"
+      "    } \n"
+      "  } \n"
+      "  else if(v_paint_pos.y < 0.0) { \n"
+      "      a += 0.5; \n"
+      "  } \n"
+      "  else { \n"
+      "    a = 0.5 - a; \n"
+      "  } \n"
+      "  a += u_paint_angle01; \n"
+      "  if(a >= 1.0) a -= 1.0; \n"   // (note) use texture repeat ?
+      "  else if(a < 0.0) a += 1.0; \n"
+      "  vec4 c = TEXTURE2D(u_paint_tex, vec2(a, 0.0)); \n"
       "  FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)
-         && (-1 != shape_u_transform)
-         && (-1 != shape_u_color_fill)
-         && (-1 != shape_u_paint_tex)
-         && (-1 != shape_u_paint_start)
-         && (-1 != shape_u_paint_ob_len)
+         (-1 != shape_a_vertex)        &&
+         (-1 != shape_u_transform)     &&
+         (-1 != shape_u_color_fill)    &&
+         (-1 != shape_u_paint_tex)     &&
+         (-1 != shape_u_paint_start)   &&
+         (-1 != shape_u_paint_scale)   &&
+         (-1 != shape_u_paint_angle01)
          ;
+      return YAC_TRUE;
    }
 
    sBool onOpen(void) {
@@ -77,12 +95,12 @@ class TrianglesFillFlat32Radial : public ShaderVG_Shape {
    }
 
 #if 0
-   void drawTrianglesFillFlatVBO32Radial(sUI              _vboId,
-                                         sUI              _byteOffset,
-                                         sUI              _numVerts,
-                                         Dsdvg_mat4_ref_t _mvpMatrix,
-                                         sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
-                                         ) {
+   void drawTrianglesFillFlatVBO32Conic(sUI              _vboId,
+                                        sUI              _byteOffset,
+                                        sUI              _numVerts,
+                                        Dsdvg_mat4_ref_t _mvpMatrix,
+                                        sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                        ) {
       //
       // VBO vertex format (8 bytes per vertex):
       //   +0 f32 x

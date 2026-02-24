@@ -110,9 +110,9 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_FILLED_TRIANGLES                             35
 #define RENDER_BEGIN_FILLED_TRIANGLE_FAN                          36
 #define RENDER_BEGIN_FILLED_TRIANGLE_STRIP                        37
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLES                     38
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_FAN                  39
-#define RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_STRIP                40
+#define RENDER_BEGIN_FILLED_GOURAUD_MODULATE_TRIANGLES            38
+#define RENDER_BEGIN_FILLED_GOURAUD_MODULATE_TRIANGLE_FAN         39
+#define RENDER_BEGIN_FILLED_GOURAUD_MODULATE_TRIANGLE_STRIP       40
 #define RENDER_BEGIN_TEXTURED_TRIANGLES                           41
 #define RENDER_BEGIN_TEXTURED_TRIANGLES_ALPHA                     42
 #define RENDER_BEGIN_TEXTURED_TRIANGLE_FAN                        43
@@ -297,9 +297,9 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /*  35 */ "begin_filled_triangles",
    /*  36 */ "begin_filled_triangle_fan",
    /*  37 */ "begin_filled_triangle_strip",
-   /*  38 */ "begin_filled_gouraud_triangles",
-   /*  39 */ "begin_filled_gouraud_triangle_fan",
-   /*  40 */ "begin_filled_gouraud_triangle_strip",
+   /*  38 */ "begin_filled_gouraud_modulate_triangles",
+   /*  39 */ "begin_filled_gouraud_modulate_triangle_fan",
+   /*  40 */ "begin_filled_gouraud_modulate_triangle_strip",
    /*  41 */ "begin_textured_triangles",
    /*  42 */ "begin_textured_triangles_alpha",
    /*  43 */ "begin_textured_triangle_fan",
@@ -1081,8 +1081,9 @@ static void TestBeginFilledTriangleStrip(void) {
    }
 }
 
-// ---------------------------------------------------------------------------- TestBeginFilledGouraudTriangles (38)
-static void TestBeginFilledGouraudTriangles(void) {
+// ---------------------------------------------------------------------------- TestBeginFilledGouraudModulateTriangles (38)
+static void TestBeginFilledGouraudModulateTriangles(void) {
+   sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, 1.0f);
    sdvg_SetGlobalAlpha(fill_alpha);
    sF32 a = ang_x * 0.5f;
    sF32 w = 240.0f;
@@ -1116,8 +1117,9 @@ static void TestBeginFilledGouraudTriangles(void) {
    }
 }
 
-// ---------------------------------------------------------------------------- TestBeginFilledGouraudTriangleFan (39)
-static void TestBeginFilledGouraudTriangleFan() {
+// ---------------------------------------------------------------------------- TestBeginFilledGouraudModulateTriangleFan (39)
+static void TestBeginFilledGouraudModulateTriangleFan() {
+   sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, 1.0f);
    sdvg_SetGlobalAlpha(fill_alpha);
    sF32 a = ang_x * 0.5f;
    sF32 w = 240.0f;
@@ -1143,8 +1145,9 @@ static void TestBeginFilledGouraudTriangleFan() {
    }
 }
 
-// ---------------------------------------------------------------------------- TestBeginFilledGouraudTriangleStrip (40)
-static void TestBeginFilledGouraudTriangleStrip(void) {
+// ---------------------------------------------------------------------------- TestBeginFilledGouraudModulateTriangleStrip (40)
+static void TestBeginFilledGouraudModulateTriangleStrip(void) {
+   sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, 1.0f);
    sdvg_SetGlobalAlpha(fill_alpha);
    sF32 a = ang_x * 0.5f;
    sF32 w = 240.0f;
@@ -2113,7 +2116,7 @@ static void TestPolygon_VBO(sBool _bAA) {
       sdvg_SetFillColor4f(0.1f, 0.7f, _bAA ? 0.7f : 0.6f, fill_alpha);
 
       // Draw pre-initialized VBO
-      sdvg_DrawPolygonFillFlatVBO32(polygon_vbo_id, 0u/*byteOffset*/, 8u/*numVerts*/);
+      sdvg_DrawPolygonFillFlatUniformVBO32(polygon_vbo_id, 0u/*byteOffset*/, 8u/*numVerts*/);
       sdvg_BindVBO(0);
 
       if(_bAA)
@@ -2888,16 +2891,16 @@ static void DrawTest(void) {
          TestBeginFilledTriangleStrip();
          break;
 
-      case RENDER_BEGIN_FILLED_GOURAUD_TRIANGLES: // 38
-         TestBeginFilledGouraudTriangles();
+      case RENDER_BEGIN_FILLED_GOURAUD_MODULATE_TRIANGLES: // 38
+         TestBeginFilledGouraudModulateTriangles();
          break;
 
-      case RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_FAN: // 39
-         TestBeginFilledGouraudTriangleFan();
+      case RENDER_BEGIN_FILLED_GOURAUD_MODULATE_TRIANGLE_FAN: // 39
+         TestBeginFilledGouraudModulateTriangleFan();
          break;
 
-      case RENDER_BEGIN_FILLED_GOURAUD_TRIANGLE_STRIP: // 40
-         TestBeginFilledGouraudTriangleStrip();
+      case RENDER_BEGIN_FILLED_GOURAUD_MODULATE_TRIANGLE_STRIP: // 40
+         TestBeginFilledGouraudModulateTriangleStrip();
          break;
 
       case RENDER_BEGIN_TEXTURED_TRIANGLES: // 41

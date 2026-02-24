@@ -2,7 +2,7 @@
 // ---- file   : shadervg.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -74,16 +74,22 @@
 #define Dsdvg_pixel_scl(a) ((a) * sdvg_pixel_scl)
 
 #include "TrianglesFillFlat32.h"
-#include "TrianglesFillFlat32Linear.h"
-#include "TrianglesFillFlat32Radial.h"
-#include "TrianglesFillFlat32Conic.h"
-#include "TrianglesFillFlat32Pattern.h"
-#include "TrianglesFillFlat32PatternAlpha.h"
-#include "TrianglesFillFlat32PatternDecal.h"
-#include "TrianglesFillFlat32PatternDecalAlpha.h"
 #include "TrianglesFillFlat14_2.h"
+#include "TrianglesFillFlatModulate32.h"
+#include "TrianglesFillFlatModulate14_2.h"
+#include "TrianglesFillFlatUniform32.h"
+#include "TrianglesFillFlatUniform14_2.h"
+#include "TrianglesFillFlatUniform32Linear.h"
+#include "TrianglesFillFlatUniform32Radial.h"
+#include "TrianglesFillFlatUniform32Conic.h"
+#include "TrianglesFillFlatUniform32Pattern.h"
+#include "TrianglesFillFlatUniform32PatternAlpha.h"
+#include "TrianglesFillFlatUniform32PatternDecal.h"
+#include "TrianglesFillFlatUniform32PatternDecalAlpha.h"
 #include "TrianglesFillGouraud32.h"
 #include "TrianglesFillGouraud14_2.h"
+#include "TrianglesFillGouraudModulate32.h"
+#include "TrianglesFillGouraudModulate14_2.h"
 #include "TrianglesFillFlatEdgeAA32.h"
 #include "TrianglesFillFlatEdgeAA14_2.h"
 #include "TrianglesFillGouraudEdgeAA32.h"
@@ -95,8 +101,6 @@
 #include "PolygonFillFlat32Radial.h"  // (todo)
 #include "PolygonFillFlat32Conic.h"  // (todo)
 #include "PolygonFillFlat14_2.h"
-#include "PolygonFillGouraud32.h"
-#include "PolygonFillGouraud14_2.h"
 #endif // SHADERVG_STENCIL_POLYGONS
 #include "RectFillAA.h"
 #include "RectFillAALinear.h"
@@ -227,16 +231,22 @@ static int mapped_user_vbo_id;
 static Dsdvg_buffer_ref_t attrib_write_buffer = NULL;
 
 static TrianglesFillFlat32                  triangles_fill_flat_32;
-static TrianglesFillFlat32Linear            triangles_fill_flat_32_linear;
-static TrianglesFillFlat32Radial            triangles_fill_flat_32_radial;
-static TrianglesFillFlat32Conic             triangles_fill_flat_32_conic;
-static TrianglesFillFlat32Pattern           triangles_fill_flat_32_pattern;
-static TrianglesFillFlat32PatternAlpha      triangles_fill_flat_32_pattern_alpha;
-static TrianglesFillFlat32PatternDecal      triangles_fill_flat_32_pattern_decal;
-static TrianglesFillFlat32PatternDecalAlpha triangles_fill_flat_32_pattern_decal_alpha;
 static TrianglesFillFlat14_2                triangles_fill_flat_14_2;
+static TrianglesFillFlatModulate32          triangles_fill_flat_modulate_32;
+static TrianglesFillFlatModulate14_2        triangles_fill_flat_modulate_14_2;
+static TrianglesFillFlatUniform32                  triangles_fill_flat_uniform_32;
+static TrianglesFillFlatUniform32Linear            triangles_fill_flat_uniform_32_linear;
+static TrianglesFillFlatUniform32Radial            triangles_fill_flat_uniform_32_radial;
+static TrianglesFillFlatUniform32Conic             triangles_fill_flat_uniform_32_conic;
+static TrianglesFillFlatUniform32Pattern           triangles_fill_flat_uniform_32_pattern;
+static TrianglesFillFlatUniform32PatternAlpha      triangles_fill_flat_uniform_32_pattern_alpha;
+static TrianglesFillFlatUniform32PatternDecal      triangles_fill_flat_uniform_32_pattern_decal;
+static TrianglesFillFlatUniform32PatternDecalAlpha triangles_fill_flat_uniform_32_pattern_decal_alpha;
+static TrianglesFillFlatUniform14_2         triangles_fill_flat_uniform_14_2;
 static TrianglesFillGouraud32               triangles_fill_gouraud_32;
 static TrianglesFillGouraud14_2             triangles_fill_gouraud_14_2;
+static TrianglesFillGouraudModulate32       triangles_fill_gouraud_modulate_32;
+static TrianglesFillGouraudModulate14_2     triangles_fill_gouraud_modulate_14_2;
 static TrianglesFillFlatEdgeAA32            triangles_fill_flat_edgeaa_32;
 static TrianglesFillFlatEdgeAA14_2          triangles_fill_flat_edgeaa_14_2;
 static TrianglesFillGouraudEdgeAA32         triangles_fill_gouraud_edgeaa_32;
@@ -244,8 +254,6 @@ static TrianglesFillGouraudEdgeAA14_2       triangles_fill_gouraud_edgeaa_14_2;
 #ifndef SHADERVG_STENCIL_POLYGONS
 static PolygonFillFlat32                    polygon_fill_flat_32;
 static PolygonFillFlat14_2                  polygon_fill_flat_14_2;
-static PolygonFillGouraud32                 polygon_fill_gouraud_32;
-static PolygonFillGouraud14_2               polygon_fill_gouraud_14_2;
 #endif // SHADERVG_STENCIL_POLYGONS
 static RectFillAA                           rect_fill_aa;
 static RectFillAALinear                     rect_fill_aa_linear;
@@ -351,21 +359,27 @@ static PointsRoundGouraudAA32               points_round_gouraud_aa_32;
 
 static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_32,
-   &triangles_fill_flat_32_linear,
-   &triangles_fill_flat_32_radial,
-   &triangles_fill_flat_32_conic,
-   &triangles_fill_flat_32_pattern,
-   &triangles_fill_flat_32_pattern_alpha,
-   &triangles_fill_flat_32_pattern_decal,
-   &triangles_fill_flat_32_pattern_decal_alpha,
    &triangles_fill_flat_14_2,
-   // &triangles_fill_flat_14_2_linear,
-   // &triangles_fill_flat_14_2_radial,
-   // &triangles_fill_flat_14_2_conic,
-   // &triangles_fill_flat_14_2_pattern,
-   // &triangles_fill_flat_14_2_pattern_alpha,
+   &triangles_fill_flat_uniform_32,
+   &triangles_fill_flat_uniform_14_2,
+   &triangles_fill_flat_uniform_32_linear,
+   // &triangles_fill_flat_uniform_14_2_linear,
+   &triangles_fill_flat_uniform_32_radial,
+   // &triangles_fill_flat_uniform_14_2_radial,
+   &triangles_fill_flat_uniform_32_conic,
+   // &triangles_fill_flat_uniform_14_2_conic,
+   &triangles_fill_flat_uniform_32_pattern,
+   // &triangles_fill_flat_uniform_14_2_pattern,
+   &triangles_fill_flat_uniform_32_pattern_alpha,
+   // &triangles_fill_flat_uniform_14_2_pattern_alpha,
+   &triangles_fill_flat_uniform_32_pattern_decal,
+   // &triangles_fill_flat_uniform_14_2_pattern_decal,
+   &triangles_fill_flat_uniform_32_pattern_decal_alpha,
+   // &triangles_fill_flat_uniform_14_2_pattern_decal_alpha,
    &triangles_fill_gouraud_32,
-   /*10*/ &triangles_fill_gouraud_14_2,
+   &triangles_fill_gouraud_14_2,
+   &triangles_fill_gouraud_modulate_32,
+   &triangles_fill_gouraud_modulate_14_2,
    &triangles_fill_flat_edgeaa_32,
    &triangles_fill_flat_edgeaa_14_2,
    &triangles_fill_gouraud_edgeaa_32,
@@ -381,7 +395,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_fill_aa_radial,
    &rect_fill_aa_conic,
    &rect_fill_aa_pattern,
-   /*20*/&rect_fill_aa_pattern_alpha,
+   &rect_fill_aa_pattern_alpha,
    &rect_fill_aa_pattern_decal,
    &rect_fill_aa_pattern_decal_alpha,
    &rect_stroke_aa,
@@ -391,7 +405,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_stroke_aa_pattern,
    &rect_stroke_aa_pattern_alpha,
    &rect_stroke_aa_pattern_decal,
-   /*30*/&rect_stroke_aa_pattern_decal_alpha,
+   &rect_stroke_aa_pattern_decal_alpha,
    &rect_fill_stroke_aa,
    &ellipse_fill_aa,
    &ellipse_fill_aa_linear,
@@ -401,7 +415,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_fill_aa_pattern_alpha,
    &ellipse_fill_aa_pattern_decal,
    &ellipse_fill_aa_pattern_decal_alpha,
-   /*40*/&ellipse_stroke_aa,
+   &ellipse_stroke_aa,
    &ellipse_stroke_aa_linear,
    &ellipse_stroke_aa_radial,
    &ellipse_stroke_aa_conic,
@@ -411,7 +425,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_stroke_aa_pattern_decal_alpha,
    &ellipse_fill_stroke_aa,
    &roundrect_fill_aa,
-   /*50*/&roundrect_fill_aa_linear,
+   &roundrect_fill_aa_linear,
    &roundrect_fill_aa_radial,
    &roundrect_fill_aa_conic,
    &roundrect_fill_aa_pattern,
@@ -421,7 +435,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &roundrect_stroke_aa,
    &roundrect_stroke_aa_linear,
    &roundrect_stroke_aa_radial,
-   /*60*/&roundrect_stroke_aa_conic,
+   &roundrect_stroke_aa_conic,
    &roundrect_stroke_aa_pattern,
    &roundrect_stroke_aa_pattern_alpha,
    &roundrect_stroke_aa_pattern_decal,
@@ -432,7 +446,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_tex_uv_gouraud_32,
    &triangles_tex_uv_flat_decal_32,
    &triangles_tex_uv_gouraud_decal_32,
-   /*70*/&triangles_tex_uv_flat_32_alpha,
+   &triangles_tex_uv_flat_32_alpha,
    &triangles_tex_uv_gouraud_32_alpha,
    &triangles_tex_uv_flat_decal_32_alpha,
    &triangles_tex_uv_gouraud_decal_32_alpha,
@@ -444,7 +458,7 @@ static ShaderVG_Shape *all_shapes[] = {
    // &line_strip_flat_aa_14_2_linear,
    &line_strip_flat_aa_32_linear,
    // &line_strip_flat_aa_14_2_radial,
-   /*80*/&line_strip_flat_aa_32_radial,
+   &line_strip_flat_aa_32_radial,
    // &line_strip_flat_aa_14_2_conic,
    &line_strip_flat_aa_32_conic,
    // &line_strip_flat_aa_14_2_pattern,
@@ -459,7 +473,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_pattern_aa_32,
    &line_strip_pattern_decal_aa_14_2,
    &line_strip_pattern_decal_aa_32,
-   /*90*/&line_strip_flat_bevel_aa_14_2,
+   &line_strip_flat_bevel_aa_14_2,
    &line_strip_flat_bevel_aa_32,
    &line_strip_pattern_bevel_aa_14_2,
    &line_strip_pattern_bevel_aa_32,
@@ -469,7 +483,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_miter_aa_32,
    &lines_flat_aa_14_2,
    &lines_flat_aa_32,
-   /*100*/&lines_gouraud_aa_14_2,
+   &lines_gouraud_aa_14_2,
    &lines_gouraud_aa_32,
    &lines_pattern_aa_14_2,
    &lines_pattern_aa_32,
@@ -1386,23 +1400,23 @@ void YAC_CALL sdvg_DestroyTexture2D(sUI _texId) {
 }
 
 void YAC_CALL sdvg_BufferAddRectTexUVFlat32(YAC_Buffer *_b, sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb) {
-   Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y);
    Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _vt);
+   Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y);
 
-   Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y);
    Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _vt);
+   Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y);
 
-   Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y + _h);
    Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _vb);
+   Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y + _h);
 
-   Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y);
    Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _vt);
+   Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y);
 
-   Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y + _h);
    Dstream_write_f32(_b, _ur);      Dstream_write_f32(_b, _vb);
+   Dstream_write_f32(_b, _x + _w);  Dstream_write_f32(_b, _y + _h);
 
-   Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y + _h);
    Dstream_write_f32(_b, _ul);      Dstream_write_f32(_b, _vb);
+   Dstream_write_f32(_b, _x);       Dstream_write_f32(_b, _y + _h);
 }
 
 void YAC_CALL sdvg_WriteC32AsRGBA8(YAC_Buffer *_b, sUI _c32) {
@@ -1418,29 +1432,29 @@ void YAC_CALL sdvg_BufferAddRectTexUVGouraud32(YAC_Buffer *_b,
                                                sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb,
                                                sUI _c32LT, sUI _c32RT, sUI _c32LB, sUI _c32RB
                                                ) {
-   Dstream_write_2f(_b, _x,  _y);
    Dstream_write_2f(_b, _ul, _vt);
    sdvg_WriteC32AsRGBA8(_b, _c32LT);
+   Dstream_write_2f(_b, _x,  _y);
 
-   Dstream_write_2f(_b, _x + _w, _y);
    Dstream_write_2f(_b, _ur, _vt);
    sdvg_WriteC32AsRGBA8(_b, _c32RT);
+   Dstream_write_2f(_b, _x + _w, _y);
 
-   Dstream_write_2f(_b, _x + _w, _y + _h);
    Dstream_write_2f(_b, _ur, _vb);
    sdvg_WriteC32AsRGBA8(_b, _c32RB);
+   Dstream_write_2f(_b, _x + _w, _y + _h);
 
-   Dstream_write_2f(_b, _x, _y);
    Dstream_write_2f(_b, _ul, _vt);
    sdvg_WriteC32AsRGBA8(_b, _c32LT);
+   Dstream_write_2f(_b, _x, _y);
 
-   Dstream_write_2f(_b, _x + _w, _y + _h);
    Dstream_write_2f(_b, _ur, _vb);
    sdvg_WriteC32AsRGBA8(_b, _c32RB);
+   Dstream_write_2f(_b, _x + _w, _y + _h);
 
-   Dstream_write_2f(_b, _x, _y + _h);
    Dstream_write_2f(_b, _ul, _vb);
    sdvg_WriteC32AsRGBA8(_b, _c32LB);
+   Dstream_write_2f(_b, _x, _y + _h);
 }
 
 void YAC_CALL sdvg_BufferAddLinePointFlat14_2(YAC_Buffer *_b, sF32 _x, sF32 _y) {
@@ -1618,66 +1632,166 @@ static void loc_BufferAddLinesPointPattern32(YAC_Buffer *_b, sF32 _x, sF32 _y) {
 }
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
 
-void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0 f32 x
    //   +4 f32 y
    //
-   triangles_fill_flat_32.drawTrianglesFillFlatVBO32(_vboId,
-                                                     _byteOffset,
-                                                     _numVerts,
-                                                     mvp_matrix,
-                                                     fill_r, fill_g, fill_b, fill_a * global_a
-                                                     );
+   triangles_fill_flat_uniform_32.drawTrianglesFillFlatUniformVBO32(_vboId,
+                                                                    _byteOffset,
+                                                                    _numVerts,
+                                                                    mvp_matrix,
+                                                                    fill_r, fill_g, fill_b, fill_a * global_a
+                                                                    );
 }
 
-void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   s14.2 x
    //   s14.2 y
    //
+   triangles_fill_flat_uniform_14_2.drawTrianglesFillFlatUniformVBO14_2(_vboId,
+                                                                        _byteOffset,
+                                                                        _numVerts,
+                                                                        mvp_matrix,
+                                                                        fill_r, fill_g, fill_b, fill_a * global_a
+                                                                        );
+}
+
+void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 u8  r
+   //   +1 u8  g
+   //   +2 u8  b
+   //   +3 u8  a
+   //   +4 f32 x
+   //   +8 f32 y
+   //
+   triangles_fill_flat_32.drawTrianglesFillFlatVBO32(_vboId,
+                                                     _byteOffset,
+                                                     _numVerts,
+                                                     mvp_matrix
+                                                     );
+}
+
+void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 u8    r
+   //   +1 u8    g
+   //   +2 u8    b
+   //   +3 u8    a
+   //   +4 s14.2 x
+   //   +6 s14.2 y
+   //
    triangles_fill_flat_14_2.drawTrianglesFillFlatVBO14_2(_vboId,
                                                          _byteOffset,
                                                          _numVerts,
-                                                         mvp_matrix,
-                                                         fill_r, fill_g, fill_b, fill_a * global_a
+                                                         mvp_matrix
                                                          );
+}
+
+void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 u8  r
+   //   +1 u8  g
+   //   +2 u8  b
+   //   +3 u8  a
+   //   +4 f32 x
+   //   +8 f32 y
+   //
+   triangles_fill_flat_modulate_32.drawTrianglesFillFlatModulateVBO32(_vboId,
+                                                                      _byteOffset,
+                                                                      _numVerts,
+                                                                      mvp_matrix,
+                                                                      fill_r, fill_g, fill_b, fill_a * global_a
+                                                                      );
+}
+
+void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 u8    r
+   //   +1 u8    g
+   //   +2 u8    b
+   //   +3 u8    a
+   //   +4 s14.2 x
+   //   +6 s14.2 y
+   //
+   triangles_fill_flat_modulate_14_2.drawTrianglesFillFlatModulateVBO14_2(_vboId,
+                                                                          _byteOffset,
+                                                                          _numVerts,
+                                                                          mvp_matrix,
+                                                                          fill_r, fill_g, fill_b, fill_a * global_a
+                                                                          );
 }
 
 void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    // VBO vertex format (12 bytes per vertex):
-   //   f32 x
-   //   f32 y
-   //   u8  r
-   //   u8  g
-   //   u8  b
-   //   u8  a
+   //   +0 u8  r
+   //   +1 u8  g
+   //   +2 u8  b
+   //   +3 u8  a
+   //   +4 f32 x
+   //   +8 f32 y
    triangles_fill_gouraud_32.drawTrianglesFillGouraudVBO32(_vboId,
                                                            _byteOffset,
                                                            _numVerts,
-                                                           mvp_matrix,
-                                                           global_a
+                                                           mvp_matrix
                                                            );
 }
 
 void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (8 bytes per vertex):
-   //   +0 s14.2 x
-   //   +2 s14.2 y
-   //   +4 u8    r
-   //   +5 u8    g
-   //   +6 u8    b
-   //   +7 u8    a
+   //   +0 u8    r
+   //   +1 u8    g
+   //   +2 u8    b
+   //   +3 u8    a
+   //   +4 s14.2 x
+   //   +6 s14.2 y
    //
    triangles_fill_gouraud_14_2.drawTrianglesFillGouraudVBO14_2(_vboId,
                                                                _byteOffset,
                                                                _numVerts,
-                                                               mvp_matrix,
-                                                               global_a
+                                                               mvp_matrix
                                                                );
+}
+
+void YAC_CALL sdvg_DrawTrianglesFillGouraudModulateVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   // VBO vertex format (12 bytes per vertex):
+   //   +0 u8  r
+   //   +1 u8  g
+   //   +2 u8  b
+   //   +3 u8  a
+   //   +4 f32 x
+   //   +8 f32 y
+   triangles_fill_gouraud_modulate_32.drawTrianglesFillGouraudModulateVBO32(_vboId,
+                                                                            _byteOffset,
+                                                                            _numVerts,
+                                                                            mvp_matrix,
+                                                                            fill_r, fill_g, fill_b, fill_a * global_a
+                                                                            );
+}
+
+void YAC_CALL sdvg_DrawTrianglesFillGouraudModulateVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 u8    r
+   //   +1 u8    g
+   //   +2 u8    b
+   //   +3 u8    a
+   //   +4 s14.2 x
+   //   +6 s14.2 y
+   triangles_fill_gouraud_modulate_32.drawTrianglesFillGouraudModulateVBO32(_vboId,
+                                                                            _byteOffset,
+                                                                            _numVerts,
+                                                                            mvp_matrix,
+                                                                            fill_r, fill_g, fill_b, fill_a * global_a
+                                                                            );
 }
 
 void YAC_CALL sdvg_DrawTrianglesFillFlatEdgeAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
@@ -1784,105 +1898,51 @@ void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2(sUI _vboId, sUI _byteOf
                                                                             );
 }
 
-void YAC_CALL sdvg_DrawPolygonFillFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0 f32 x
    //   +4 f32 y
    //
 #ifdef SHADERVG_STENCIL_POLYGONS
-   triangles_fill_flat_32.drawPolygonFillFlatVBO32(_vboId,
-                                                   _byteOffset,
-                                                   _numVerts,
-                                                   mvp_matrix,
-                                                   fill_r, fill_g, fill_b, fill_a * global_a
-                                                   );
+   triangles_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
+                                                                  _byteOffset,
+                                                                  _numVerts,
+                                                                  mvp_matrix,
+                                                                  fill_r, fill_g, fill_b, fill_a * global_a
+                                                                  );
 #else
 #error polygon rasterizer n/a
-   polygon_fill_flat_32.drawPolygonFillFlatVBO32(_vboId,
-                                                 _byteOffset,
-                                                 _numVerts,
-                                                 mvp_matrix,
-                                                 fill_r, fill_g, fill_b, fill_a * global_a
-                                                 );
+   polygon_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
+                                                                _byteOffset,
+                                                                _numVerts,
+                                                                mvp_matrix,
+                                                                fill_r, fill_g, fill_b, fill_a * global_a
+                                                                );
 #endif // SHADERVG_STENCIL_POLYGONS
 }
 
-void YAC_CALL sdvg_DrawPolygonFillFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   s14.2 x
    //   s14.2 y
    //
 #ifdef SHADERVG_STENCIL_POLYGONS
-   triangles_fill_flat_14_2.drawPolygonFillFlatVBO14_2(_vboId,
-                                                       _byteOffset,
-                                                       _numVerts,
-                                                       mvp_matrix,
-                                                       fill_r, fill_g, fill_b, fill_a * global_a
-                                                       );
+   triangles_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
+                                                                      _byteOffset,
+                                                                      _numVerts,
+                                                                      mvp_matrix,
+                                                                      fill_r, fill_g, fill_b, fill_a * global_a
+                                                                      );
 #else
 #error polygon rasterizer n/a
-   polygon_fill_flat_14_2.drawPolygonFillFlatVBO14_2(_vboId,
-                                                     _byteOffset,
-                                                     _numVerts,
-                                                     mvp_matrix,
-                                                     fill_r, fill_g, fill_b, fill_a * global_a
-                                                     );
-#endif // SHADERVG_STENCIL_POLYGONS
-}
-
-void YAC_CALL sdvg_DrawPolygonFillGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
-   //
-   // VBO vertex format (12 bytes per vertex):
-   //   f32 x
-   //   f32 y
-   //   u8  r
-   //   u8  g
-   //   u8  b
-   //   u8  a
-   //
-#ifdef SHADERVG_STENCIL_POLYGONS
-   triangles_fill_gouraud_32.drawPolygonFillGouraudVBO32(_vboId,
-                                                         _byteOffset,
-                                                         _numVerts,
-                                                         mvp_matrix,
-                                                         global_a
-                                                         );
-#else
-   polygon_fill_gouraud_32.drawPolygonFillGouraudVBO32(_vboId,
-                                                       _byteOffset,
-                                                       _numVerts,
-                                                       mvp_matrix,
-                                                       global_a
-                                                       );
-#endif // SHADERVG_STENCIL_POLYGONS
-}
-
-void YAC_CALL sdvg_DrawPolygonFillGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
-   //
-   // VBO vertex format (8 bytes per vertex):
-   //   s14.2 x
-   //   s14.2 y
-   //   u8    r
-   //   u8    g
-   //   u8    b
-   //   u8    a
-   //
-#ifdef SHADERVG_STENCIL_POLYGONS
-   triangles_fill_gouraud_14_2.drawPolygonFillGouraudVBO14_2(_vboId,
-                                                             _byteOffset,
-                                                             _numVerts,
-                                                             mvp_matrix,
-                                                             global_a
-                                                             );
-#else
-   polygon_fill_gouraud_14_2.drawPolygonFillGouraudVBO14_2(_vboId,
-                                                           _byteOffset,
-                                                           _numVerts,
-                                                           mvp_matrix,
-                                                           global_a
-                                                           );
+   polygon_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
+                                                                    _byteOffset,
+                                                                    _numVerts,
+                                                                    mvp_matrix,
+                                                                    fill_r, fill_g, fill_b, fill_a * global_a
+                                                                    );
 #endif // SHADERVG_STENCIL_POLYGONS
 }
 
@@ -2504,10 +2564,10 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAA(sF32 _centerX, sF32 _centerY,
 void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  f32 x
+   //     +12 f32 y
    //
    triangles_tex_uv_flat_32.drawTrianglesTexUVFlatVBO32(_vboId,
                                                         _byteOffset,
@@ -2520,14 +2580,14 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32(sUI _vboId, sUI _byteOffset, sUI 
 void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
-   //     +16  u8 r
-   //     +17  u8 g
-   //     +18  u8 b
-   //     +19  u8 a
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  u8  r
+   //     +9  u8  g
+   //     +10 u8  b
+   //     +11 u8  a
+   //     +12 f32 x
+   //     +16 f32 y
    //
    triangles_tex_uv_gouraud_32.drawTrianglesTexUVGouraudVBO32(_vboId,
                                                               _byteOffset,
@@ -2540,10 +2600,10 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32(sUI _vboId, sUI _byteOffset, s
 void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  f32 x
+   //     +12 f32 y
    //
    triangles_tex_uv_flat_decal_32.drawTrianglesTexUVFlatDecalVBO32(_vboId,
                                                                    _byteOffset,
@@ -2558,14 +2618,14 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32(sUI _vboId, sUI _byteOffset,
 void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
-   //     +16  u8 r
-   //     +17  u8 g
-   //     +18  u8 b
-   //     +19  u8 a
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  u8  r
+   //     +9  u8  g
+   //     +10 u8  b
+   //     +11 u8  a
+   //     +12 f32 x
+   //     +16 f32 y
    //
    triangles_tex_uv_gouraud_decal_32.drawTrianglesTexUVGouraudDecalVBO32(_vboId,
                                                                          _byteOffset,
@@ -2580,10 +2640,10 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32(sUI _vboId, sUI _byteOffs
 void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  f32 x
+   //     +12 f32 y
    //
    triangles_tex_uv_flat_32_alpha.drawTrianglesTexUVFlatVBO32Alpha(_vboId,
                                                                    _byteOffset,
@@ -2596,14 +2656,14 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha(sUI _vboId, sUI _byteOffset,
 void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
-   //     +16  u8 r
-   //     +17  u8 g
-   //     +18  u8 b
-   //     +19  u8 a
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  u8  r
+   //     +9  u8  g
+   //     +10 u8  b
+   //     +11 u8  a
+   //     +12 f32 x
+   //     +16 f32 y
    //
    triangles_tex_uv_gouraud_32_alpha.drawTrianglesTexUVGouraudVBO32Alpha(_vboId,
                                                                          _byteOffset,
@@ -2616,10 +2676,10 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha(sUI _vboId, sUI _byteOffs
 void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  f32 x
+   //     +12 f32 y
    //
    triangles_tex_uv_flat_decal_32_alpha.drawTrianglesTexUVFlatDecalVBO32Alpha(_vboId,
                                                                               _byteOffset,
@@ -2634,14 +2694,14 @@ void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha(sUI _vboId, sUI _byteOf
 void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (20 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
-   //     +16  u8 r
-   //     +17  u8 g
-   //     +18  u8 b
-   //     +19  u8 a
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  u8  r
+   //     +9  u8  g
+   //     +10 u8  b
+   //     +11 u8  a
+   //     +12 f32 x
+   //     +16 f32 y
    //
    triangles_tex_uv_gouraud_decal_32_alpha.drawTrianglesTexUVGouraudDecalVBO32Alpha(_vboId,
                                                                                     _byteOffset,
@@ -2656,10 +2716,10 @@ void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha(sUI _vboId, sUI _byt
 void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (16 bytes per vertex):
-   //     +0  f32 x
-   //     +4  f32 y
-   //     +8  f32 u
-   //     +12 f32 v
+   //     +0  f32 u
+   //     +4  f32 v
+   //     +8  f32 x
+   //     +12 f32 y
    //
    triangles_tex_uv_flat_32_alpha_sdf.drawTrianglesTexUVFlatVBO32AlphaSDF(_vboId,
                                                                           _byteOffset,
@@ -4095,19 +4155,19 @@ void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
 }
 #endif // SHADERVG_SCRIPT_API
 
-static ShaderVG_Shape *loc_get_default_triangles_fill_flat_shape(void) {
+static ShaderVG_Shape *loc_get_default_triangles_fill_flat_uniform_shape(void) {
    ShaderVG_Shape *shape;
    switch(paint.mode)
    {
       default:
-      case PAINT_SOLID:               shape = &triangles_fill_flat_32;                     break;
-      case PAINT_LINEAR:              shape = &triangles_fill_flat_32_linear;              break;
-      case PAINT_RADIAL:              shape = &triangles_fill_flat_32_radial;              break;
-      case PAINT_CONIC:               shape = &triangles_fill_flat_32_conic;               break;
-      case PAINT_PATTERN:             shape = &triangles_fill_flat_32_pattern;             break;
-      case PAINT_PATTERN_ALPHA:       shape = &triangles_fill_flat_32_pattern_alpha;       break;
-      case PAINT_PATTERN_DECAL:       shape = &triangles_fill_flat_32_pattern_decal;       break;
-      case PAINT_PATTERN_DECAL_ALPHA: shape = &triangles_fill_flat_32_pattern_decal_alpha; break;
+      case PAINT_SOLID:               shape = &triangles_fill_flat_uniform_32;                     break;
+      case PAINT_LINEAR:              shape = &triangles_fill_flat_uniform_32_linear;              break;
+      case PAINT_RADIAL:              shape = &triangles_fill_flat_uniform_32_radial;              break;
+      case PAINT_CONIC:               shape = &triangles_fill_flat_uniform_32_conic;               break;
+      case PAINT_PATTERN:             shape = &triangles_fill_flat_uniform_32_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &triangles_fill_flat_uniform_32_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &triangles_fill_flat_uniform_32_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &triangles_fill_flat_uniform_32_pattern_decal_alpha; break;
    }
    return shape;
 }
@@ -4145,19 +4205,19 @@ static sSI loc_BindFillShader(ShaderVG_Shape *_shape) {
 
 sSI BindFillShader(void) {
    // returns vertex attribute id (for allocScratchBuffer() calls)
-   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape();
    return loc_BindFillShader(shape);
 }
 
 void EndFillShader(void) {
-   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape();
    Dsdvg_attrib_disable(shape->shape_a_vertex);
 }
 
 void UnbindFillShader(void) {
    // (todo) unused, remove ?
    EndFillShader();
-   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape();
    shape->shape_shader.unbind();
 }
 
@@ -4177,16 +4237,6 @@ sBool YAC_CALL sdvg_OnOpen(void) {
       vao_id = Dsdvg_glcall(zglGenVertexArray());
 
    loc_CreateScratchBuffer();
-
-   if(Dyac_host_yacGetDebugLevel() >= 1u)
-   {
-      Dsdvg_debugprintfv("[dbg] sdvg_OnOpen 2\n");
-   }
-
-   if(Dyac_host_yacGetDebugLevel() >= 1u)
-   {
-      Dsdvg_debugprintfv("[dbg] sdvg_OnOpen 3\n");
-   }
 
    // (re-)load built-in shaders
    for(sUI i = 0u; i < SHADERVG_NUM_SHAPES; i++)
@@ -5340,8 +5390,8 @@ sBool YAC_CALL sdvg_BeginTriangleStrip(sUI _numVertices, sUI _stride) {
    return BeginDraw(_numVertices, _stride);
 }
 
-static void loc_bind_default_triangles_fill_flat_shape(void) {
-   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_shape();
+static void loc_bind_default_triangles_fill_flat_uniform_shape(void) {
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape();
    BindShape(shape);
 }
 
@@ -5383,7 +5433,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangles(sUI _numVertices) {
    //
 
    if(NULL == current_shape)
-      loc_bind_default_triangles_fill_flat_shape();
+      loc_bind_default_triangles_fill_flat_uniform_shape();
 
    if(sdvg_BeginTriangles(_numVertices, (2u*sizeof(sF32))/*stride*/))
    {
@@ -5401,7 +5451,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan(sUI _numVertices) {
    //
 
    if(NULL == current_shape)
-      loc_bind_default_triangles_fill_flat_shape();
+      loc_bind_default_triangles_fill_flat_uniform_shape();
 
    if(sdvg_BeginTriangleFan(_numVertices, (2u*sizeof(sF32))/*stride*/))
    {
@@ -5423,7 +5473,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleStrip(sUI _numVertices) {
    //
 
    if(NULL == current_shape)
-      loc_bind_default_triangles_fill_flat_shape();
+      loc_bind_default_triangles_fill_flat_uniform_shape();
 
    if(sdvg_BeginTriangleStrip(_numVertices, (2u*sizeof(sF32))/*stride*/))
    {
@@ -5446,6 +5496,29 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangles(sUI _numVertices) {
    if(NULL == current_shape)
    {
       BindShape(&triangles_fill_gouraud_32);
+   }
+   if(sdvg_BeginTriangles(_numVertices, 4u+(2u*sizeof(sF32))/*stride*/))
+   {
+      sdvg_AttribOffsetARGB("a_color");
+      sdvg_VertexOffset2f();
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles(sUI _numVertices) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //     +0 u8  r
+   //     +1 u8  g
+   //     +2 u8  b
+   //     +3 u8  a
+   //     +4 f32 x
+   //     +8 f32 y
+   //
+   if(NULL == current_shape)
+   {
+      BindShape(&triangles_fill_gouraud_modulate_32);
    }
    if(sdvg_BeginTriangles(_numVertices, 4u+(2u*sizeof(sF32))/*stride*/))
    {
@@ -5479,6 +5552,29 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan(sUI _numVertices) {
    return YAC_FALSE;
 }
 
+sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan(sUI _numVertices) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //     +0 u8  r
+   //     +1 u8  g
+   //     +2 u8  b
+   //     +3 u8  a
+   //     +4 f32 x
+   //     +8 f32 y
+   //
+   if(NULL == current_shape)
+   {
+      BindShape(&triangles_fill_gouraud_modulate_32);
+   }
+   if(sdvg_BeginTriangleFan(_numVertices, 4+(2u*sizeof(sF32))/*stride*/))
+   {
+      sdvg_AttribOffsetARGB("a_color");
+      sdvg_VertexOffset2f();
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
 sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip(sUI _numVertices) {
    //
    // VBO vertex format (12 bytes per vertex):
@@ -5492,6 +5588,29 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip(sUI _numVertices) {
    if(NULL == current_shape)
    {
       BindShape(&triangles_fill_gouraud_32);
+   }
+   if(sdvg_BeginTriangleStrip(_numVertices, 4+(2u*sizeof(sF32))/*stride*/))
+   {
+      sdvg_AttribOffsetARGB("a_color");
+      sdvg_VertexOffset2f();
+      return YAC_TRUE;
+   }
+   return YAC_FALSE;
+}
+
+sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip(sUI _numVertices) {
+   //
+   // VBO vertex format (12 bytes per vertex):
+   //     +0 u8  r
+   //     +1 u8  g
+   //     +2 u8  b
+   //     +3 u8  a
+   //     +4 f32 x
+   //     +8 f32 y
+   //
+   if(NULL == current_shape)
+   {
+      BindShape(&triangles_fill_gouraud_modulate_32);
    }
    if(sdvg_BeginTriangleStrip(_numVertices, 4+(2u*sizeof(sF32))/*stride*/))
    {
@@ -6065,7 +6184,7 @@ static sBool loc_BeginFilledPolygon(sUI _numVertices, sBool _bAA) {
    if(NULL == current_shape)
    {
 #ifdef SHADERVG_STENCIL_POLYGONS
-      loc_bind_default_triangles_fill_flat_shape();
+      loc_bind_default_triangles_fill_flat_uniform_shape();
 #else
 #error polygon rasterizer n/a
 #endif // SHADERVG_STENCIL_POLYGONS
@@ -6102,7 +6221,7 @@ sBool YAC_CALL sdvg_BeginFilledPolygonAA(sUI _numVertices) {
 
 static void loc_drawStencilPolygon(sUI _numVerts) {
    // (note) for use with sdvg_BeginFilledPolygon()
-   // (note) shader is selected in loc_bind_default_triangles_fill_flat_shape() (or use custom shader)
+   // (note) shader is selected in loc_bind_default_triangles_fill_flat_uniform_shape() (or use custom shader)
    // (note) uniforms are set in UpdateShaderUniforms()
 
    Dsdvg_stencil_poly_pass1();

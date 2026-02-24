@@ -2,7 +2,7 @@
 // ---- file   : TrianglesFillGouraud32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -31,8 +31,8 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       " \n"
-      "ATTRIBUTE vec2 a_vertex; \n"
       "ATTRIBUTE vec4 a_color; \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
       "VARYING_OUT vec4 v_color; \n"
       " \n"
@@ -44,21 +44,18 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform float u_global_alpha; \n"
-      " \n"
       "VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = vec4(v_color.rgb, v_color.a * u_global_alpha); \n"
+      "  FRAGCOLOR = v_color; \n"
       "} \n"
       ;
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)       &&
-         (-1 != shape_a_color)        &&
-         (-1 != shape_u_transform)    &&
-         (-1 != shape_u_global_alpha)
+         (-1 != shape_a_color)      &&
+         (-1 != shape_a_vertex)     &&
+         (-1 != shape_u_transform)
          ;
    }
 
@@ -73,17 +70,16 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
    void drawTrianglesFillGouraudVBO32(sUI              _vboId,
                                       sUI              _byteOffset,
                                       sUI              _numVerts,
-                                      Dsdvg_mat4_ref_t _projMatrix,
-                                      sF32             _alpha
+                                      Dsdvg_mat4_ref_t _projMatrix
                                       ) {
       //
       // VBO vertex format (12 bytes per vertex):
-      //    +0 f32 x
-      //    +4 f32 y
-      //    +8 u8  r
-      //    +9 u8  g
-      //   +10 u8  b
-      //   +11 u8  a
+      //    +0 u8  r
+      //    +1 u8  g
+      //    +2 u8  b
+      //    +3 u8  a
+      //    +4 f32 x
+      //    +8 f32 y
       //
 
       sdvg_BindVBO(_vboId);
@@ -91,10 +87,9 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       shape_shader.bind();
 
       Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
-      Dsdvg_uniform_1f(shape_u_global_alpha, _alpha);
 
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 0);
-      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 8);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 4);
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_color);
@@ -109,17 +104,16 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
    void drawPolygonFillGouraudVBO32(sUI              _vboId,
                                     sUI              _byteOffset,
                                     sUI              _numVerts,
-                                    Dsdvg_mat4_ref_t _projMatrix,
-                                    sF32             _alpha
+                                    Dsdvg_mat4_ref_t _projMatrix
                                     ) {
       //
       // VBO vertex format (12 bytes per vertex):
-      //    +0 f32 x
-      //    +4 f32 y
-      //    +8 u8  r
-      //    +9 u8  g
-      //   +10 u8  b
-      //   +11 u8  a
+      //    +0 u8  r
+      //    +1 u8  g
+      //    +2 u8  b
+      //    +3 u8  a
+      //    +4 f32 x
+      //    +8 f32 y
       //
 
       sdvg_BindVBO(_vboId);
@@ -127,10 +121,9 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       shape_shader.bind();
 
       Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
-      Dsdvg_uniform_1f(shape_u_global_alpha, _alpha);
 
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 0);
-      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 8);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset + 4);
 
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_color);

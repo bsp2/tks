@@ -1149,27 +1149,120 @@ YF void YAC_CALL sdvg_BufferAddLinesPointsFlat32 (YAC_Buffer *_b, sF32 _x1, sF32
 /* @function sdvg_DrawTrianglesFillFlatVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (32bit float format)
 
+Uses vertex colors.
+
 <pre>
-VBO vertex format (8 bytes per vertex):<br>
-  +0 f32 x<br>
-  +4 f32 y<br>
+VBO vertex format (12 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 f32 x<br>
+  +8 f32 y<br>
 </pre>
+
+@group Triangle
+@groupref Fill
+@groupref Color
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawTrianglesFillFlatVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
 
+Uses vertex colors.
+
 <pre>
-VBO vertex format (4 bytes per vertex):<br>
-  s14.2 x<br>
-  s14.2 y<br>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 u8    r<br>
+  +1 u8    g<br>
+  +2 u8    b<br>
+  +3 u8    a<br>
+  +4 s14.2 x<br>
+  +6 s14.2 y<br>
 </pre>
 
 @group Triangle
 @groupref Fill
+@groupref Color
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawTrianglesFillFlatModulateVBO32,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled triangles (32bit float format)
+
+Uses vertex colors, modulated by current fill color.
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 f32 x<br>
+  +8 f32 y<br>
+</pre>
+
+@group Triangle
+@groupref Fill
+@groupref Color
+*/
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawTrianglesFillFlatModulateVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
+
+Uses vertex colors, modulated by current fill color.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 u8  r<br>
+  +1 u8  g<br>
+  +2 u8  b<br>
+  +3 u8  a<br>
+  +4 s14.2 x<br>
+  +6 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Fill
+@groupref Color
+*/
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawTrianglesFillFlatUniformVBO32,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled triangles (32bit float format)
+
+Uses uniform color.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@group Triangle
+@groupref Fill
+@groupref Color
+*/
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawTrianglesFillFlatUniformVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
+
+Uses uniform color.
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Fill
+@groupref Color
+*/
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawTrianglesFillGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bit float format)
@@ -1207,6 +1300,46 @@ VBO vertex format (8 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesFillGouraudModulateVBO32,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bit float format)
+
+The vertex colors are modulated by the current fill color and global alpha.
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+  u8  r<br>
+  u8  g<br>
+  u8  b<br>
+  u8  a<br>
+  f32 x<br>
+  f32 y<br>
+</pre>
+
+@group Triangle
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawTrianglesFillGouraudModulateVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawTrianglesFillGouraudModulateVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled, gouraud shaded triangles (14.2 fixed point format)
+
+The vertex colors are modulated by the current fill color and global alpha.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +4 u8    r<br>
+  +5 u8    g<br>
+  +6 u8    b<br>
+  +7 u8    a<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawTrianglesFillGouraudModulateVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesFillFlatEdgeAAVBO32,int vboId,int byteOffset,int numVerts
 experimental
 
@@ -1236,7 +1369,7 @@ experimental
 */
 YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawPolygonFillFlatVBO32,int vboId,int byteOffset,int numVerts
+/* @function sdvg_DrawPolygonFillFlatUniformVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (32bit float format)
 
 <pre>
@@ -1248,9 +1381,9 @@ VBO vertex format (8 bytes per vertex):<br>
 @group Polygon
 @groupref Fill
 */
-YF void YAC_CALL sdvg_DrawPolygonFillFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_DrawPolygonFillFlatVBO14_2,int vboId,int byteOffset,int numVerts
+/* @function sdvg_DrawPolygonFillFlatUniformVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (14.2 fixed point format)
 
 <pre>
@@ -1262,43 +1395,7 @@ VBO vertex format (4 bytes per vertex):<br>
 @group Polygon
 @groupref Fill
 */
-YF void YAC_CALL sdvg_DrawPolygonFillFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
-
-/* @function sdvg_DrawPolygonFillGouraudVBO32,int vboId,int byteOffset,int numVerts
-Draw previously prepared vertex buffer as filled n-polygon (32bit float format).
-
-<pre>
-VBO vertex format (12 bytes per vertex):<br>
-  f32 x<br>
-  f32 y<br>
-  u8  r<br>
-  u8  g<br>
-  u8  b<br>
-  u8  a<br>
-</pre>
-
-@group Polygon
-@groupref Fill
-*/
-YF void YAC_CALL sdvg_DrawPolygonFillGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
-
-/* @function sdvg_DrawPolygonFillGouraudVBO14_2,int vboId,int byteOffset,int numVerts
-Draw previously prepared vertex buffer as filled n-polygon (14.2 fixed point format).
-
-<pre>
-VBO vertex format (8 bytes per vertex):<br>
-  s14.2 x<br>
-  s14.2 y<br>
-  u8    r<br>
-  u8    g<br>
-  u8    b<br>
-  u8    a<br>
-</pre>
-
-@group Polygon
-@groupref Fill
-*/
-YF void YAC_CALL sdvg_DrawPolygonFillGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_SetupRectFillAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float sizeX,float sizeY
 Set up vertex buffer and draw list for filled, anti-aliased rectangle (32bit float format)
@@ -2650,6 +2747,42 @@ Begin preparation or rendering of filled, gouraud shaded triangle-strip
 @group Gouraud
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangles,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangles
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangleFan,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-fan
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangleStrip,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-strip
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedTriangles,int numVertices:boolean
 Begin preparation or rendering of textured triangles

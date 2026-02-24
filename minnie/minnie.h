@@ -202,18 +202,18 @@ typedef int             sBool;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ draw ops
 #define MINNIE_DRAWOP_END                                  0x00
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32               0x01
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2             0x02
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32            0x03
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2          0x04
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32        0x05
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2      0x06
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32     0x07
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2   0x08
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_32                 0x09
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_14_2               0x0A
-#define MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_32              0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2            0x0C
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32       0x01
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2     0x02
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32               0x03
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2             0x04
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32            0x05
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2          0x06
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32        0x07
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2      0x08
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32     0x09
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2   0x0A
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32         0x0B
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2       0x0C
 #define MINNIE_DRAWOP_RECT_FILL                            0x0D
 #define MINNIE_DRAWOP_RECT_STROKE                          0x0E
 #define MINNIE_DRAWOP_RECT_FILL_STROKE                     0x0F
@@ -3178,6 +3178,14 @@ class Path {
          Dexportprintfv("[trc] minnie::Path::exportConcaveVertices: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
+            if(!_bUniformColors)
+            {
+               Dstream_write_i8(_ofs, (_c32 >> 16) & 255 );  // r
+               Dstream_write_i8(_ofs, (_c32 >>  8) & 255 );  // g
+               Dstream_write_i8(_ofs, (_c32      ) & 255 );  // b
+               Dstream_write_i8(_ofs, (_c32 >> 24) & 255 );  // a
+            }
+
             sF32 x = (va[0] + _tx) * _geoScale;
             sF32 y = (va[1] + _ty) * _geoScale;
 
@@ -3188,14 +3196,6 @@ class Path {
             Dstream_write_f32(_ofs, x);
             Dstream_write_f32(_ofs, y);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
-
-            if(!_bUniformColors)
-            {
-               Dstream_write_i8(_ofs, (_c32 >> 16) & 255 );  // r
-               Dstream_write_i8(_ofs, (_c32 >>  8) & 255 );  // g
-               Dstream_write_i8(_ofs, (_c32      ) & 255 );  // b
-               Dstream_write_i8(_ofs, (_c32 >> 24) & 255 );  // a
-            }
 
             // Next vertex
             va += 2;
@@ -3216,6 +3216,14 @@ class Path {
          Dexportprintfv("[trc] minnie::Path::exportConcaveVerticesTransform2d: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
+            if(!_bUniformColors)
+            {
+               Dstream_write_i8(_ofs, (_c32 >> 16) & 255 );  // r
+               Dstream_write_i8(_ofs, (_c32 >>  8) & 255 );  // g
+               Dstream_write_i8(_ofs, (_c32      ) & 255 );  // b
+               Dstream_write_i8(_ofs, (_c32 >> 24) & 255 );  // a
+            }
+
             Vector2f v; v.init(va[0], va[1]);
             _mat2d->mulv(&v);
             v.x += _tx;
@@ -3229,14 +3237,6 @@ class Path {
             Dstream_write_f32(_ofs, v.x);
             Dstream_write_f32(_ofs, v.y);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
-
-            if(!_bUniformColors)
-            {
-               Dstream_write_i8(_ofs, (_c32 >> 16) & 255 );  // r
-               Dstream_write_i8(_ofs, (_c32 >>  8) & 255 );  // g
-               Dstream_write_i8(_ofs, (_c32      ) & 255 );  // b
-               Dstream_write_i8(_ofs, (_c32 >> 24) & 255 );  // a
-            }
 
             // Next vertex
             va += 2;
@@ -5852,8 +5852,8 @@ namespace setup {
          case MINNIE_DRAWOP_END:
             break;
 
-         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32:
-         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2:
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32:
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2:
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32:
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2:
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%02x<tri_flat> start_offset=%u num_tris=%u c32=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32);
@@ -5869,6 +5869,8 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32:
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2:
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32:
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2:
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32:
@@ -5882,9 +5884,9 @@ namespace setup {
             }
             break;
 
-         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_32:
-         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_flat> start_offset=%u num_verts=%u c32=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32);
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32:
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly> start_offset=%u num_verts=%u c32=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32);
             if(active_dl_num_verts >= 3u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -5894,17 +5896,6 @@ namespace setup {
                Dexport_dl_f32( ((active_dl_c32 >>  8) & 255) * (1.0f / 255.0f) );  // g
                Dexport_dl_f32( ((active_dl_c32      ) & 255) * (1.0f / 255.0f) );  // b
                Dexport_dl_f32( ((active_dl_c32 >> 24) & 255) * (1.0f / 255.0f) );  // a
-            }
-            break;
-
-         case MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_32:
-         case MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly> start_offset=%u num_verts=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_verts);
-            if(active_dl_num_verts >= 3u)
-            {
-               Dexport_dl_i16(active_dl_op);
-               Dexport_dl_i32(active_dl_start_offset);
-               Dexport_dl_i32(active_dl_num_verts);
             }
             break;
 
@@ -6234,17 +6225,17 @@ namespace setup {
       if(b_uniform_colors)
       {
 #if MINNIE_EXPORT_VERTEX_16BIT
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2;
+         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2;
 #else
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32;
+         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
       }
       else
       {
 #if MINNIE_EXPORT_VERTEX_16BIT
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2;
+         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2;
 #else
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32;
+         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
       }
 
@@ -6266,22 +6257,11 @@ namespace setup {
    static void beginDrawListOpPolygon(void) {
       sUI op = 0u;
 
-      if(b_uniform_colors)
-      {
 #if MINNIE_EXPORT_VERTEX_16BIT
-         op = MINNIE_DRAWOP_POLYGON_FILL_FLAT_14_2;
+      op = MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2;
 #else
-         op = MINNIE_DRAWOP_POLYGON_FILL_FLAT_32;
+      op = MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
-      }
-      else
-      {
-#if MINNIE_EXPORT_VERTEX_16BIT
-         op = MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2;
-#else
-         op = MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_32;
-#endif // MINNIE_EXPORT_VERTEX_16BIT
-      }
 
       beginDrawListOp(op);
    }
@@ -6857,6 +6837,14 @@ namespace setup {
             active_dl_num_tris  += 1u;
             active_dl_num_verts += 3u;  // not used by draw-triangles ops, counting it anyway
 
+            if(!b_uniform_colors)
+            {
+               Dexport_vb_i8( (_c32 >> 16) & 255 );  // r
+               Dexport_vb_i8( (_c32 >>  8) & 255 );  // g
+               Dexport_vb_i8( (_c32      ) & 255 );  // b
+               Dexport_vb_i8( (_c32 >> 24) & 255 );  // a
+            }
+
 #if MINNIE_EXPORT_VERTEX_16BIT
             // 8 bytes per vertex, 24 bytes per triangle
             Dexport_vb_i16(sS16(_v1->x * 4.0f));
@@ -6898,13 +6886,6 @@ namespace setup {
             Dexport_vb_f32(_v3->y);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
 
-            if(!b_uniform_colors)
-            {
-               Dexport_vb_i8( (_c32 >> 16) & 255 );  // r
-               Dexport_vb_i8( (_c32 >>  8) & 255 );  // g
-               Dexport_vb_i8( (_c32      ) & 255 );  // b
-               Dexport_vb_i8( (_c32 >> 24) & 255 );  // a
-            }
          }
 #endif // MINNIE_EXPORT_TRIS_SIMPLE
 #if MINNIE_EXPORT_TRIS_EDGEAA
@@ -7280,7 +7261,9 @@ namespace setup {
       /* Dprintf("xxx drawPathFillConcave: b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa); */
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( !(active_dl_op >= MINNIE_DRAWOP_POLYGON_FILL_FLAT_32) || !(active_dl_op <= MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2) )
+         if( (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
+             (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
+             )
          {
             Dprintf("[!!!] Minnie::drawPathFillConcave: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -7391,7 +7374,9 @@ namespace setup {
 
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( !(active_dl_op >= MINNIE_DRAWOP_POLYGON_FILL_FLAT_32) || !(active_dl_op <= MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2) )
+         if( (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
+             (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
+             )
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -7562,7 +7547,9 @@ namespace setup {
 
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( !(active_dl_op >= MINNIE_DRAWOP_POLYGON_FILL_FLAT_32) || !(active_dl_op <= MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2) )
+         if( (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
+             (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
+             )
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -7682,7 +7669,9 @@ namespace setup {
 
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( !(active_dl_op >= MINNIE_DRAWOP_POLYGON_FILL_FLAT_32) || !(active_dl_op <= MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2) )
+         if( !(active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
+             !(active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
+             )
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -12532,14 +12521,14 @@ void minTriangleTexUVFlat(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
                           ) {
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
    {
-      Dexport_vb_add2f(_x1, _y1);
       Dexport_vb_add2f(_u1, _v1);
+      Dexport_vb_add2f(_x1, _y1);
 
-      Dexport_vb_add2f(_x2, _y2);
       Dexport_vb_add2f(_u2, _v2);
+      Dexport_vb_add2f(_x2, _y2);
 
-      Dexport_vb_add2f(_x3, _y3);
       Dexport_vb_add2f(_u3, _v3);
+      Dexport_vb_add2f(_x3, _y3);
 
       minnie::setup::active_dl_num_tris++;
    }
@@ -12574,14 +12563,14 @@ void minTriangleTexUVFlatDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
                                ) {
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
    {
-      Dexport_vb_add2f(_x1, _y1);
       Dexport_vb_add2f(_u1, _v1);
+      Dexport_vb_add2f(_x1, _y1);
 
-      Dexport_vb_add2f(_x2, _y2);
       Dexport_vb_add2f(_u2, _v2);
+      Dexport_vb_add2f(_x2, _y2);
 
-      Dexport_vb_add2f(_x3, _y3);
       Dexport_vb_add2f(_u3, _v3);
+      Dexport_vb_add2f(_x3, _y3);
 
       minnie::setup::active_dl_num_tris++;
    }
@@ -12619,17 +12608,17 @@ void minTriangleTexUVGouraud(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1
                              ) {
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
    {
-      Dexport_vb_add2f(_x1, _y1);
       Dexport_vb_add2f(_u1, _v1);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v1));
+      Dexport_vb_add2f(_x1, _y1);
 
-      Dexport_vb_add2f(_x2, _y2);
       Dexport_vb_add2f(_u2, _v2);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v2));
+      Dexport_vb_add2f(_x2, _y2);
 
-      Dexport_vb_add2f(_x3, _y3);
       Dexport_vb_add2f(_u3, _v3);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v3));
+      Dexport_vb_add2f(_x3, _y3);
 
       minnie::setup::active_dl_num_tris++;
    }
@@ -12667,17 +12656,17 @@ void minTriangleTexUVGouraudDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _
                                   ) {
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
    {
-      Dexport_vb_add2f(_x1, _y1);
       Dexport_vb_add2f(_u1, _v1);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v1));
+      Dexport_vb_add2f(_x1, _y1);
 
-      Dexport_vb_add2f(_x2, _y2);
       Dexport_vb_add2f(_u2, _v2);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v2));
+      Dexport_vb_add2f(_x2, _y2);
 
-      Dexport_vb_add2f(_x3, _y3);
       Dexport_vb_add2f(_u3, _v3);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v3));
+      Dexport_vb_add2f(_x3, _y3);
 
       minnie::setup::active_dl_num_tris++;
    }
@@ -12708,24 +12697,24 @@ void minRectTexUVFlat(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
    {
       // tri 1
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y );
       Dexport_vb_add2f(_ur,     _vt);
+      Dexport_vb_add2f(_x + _w, _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
       // tri 2
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
-      Dexport_vb_add2f(_x,      _y + _h);
       Dexport_vb_add2f(_ul,     _vb    );
+      Dexport_vb_add2f(_x,      _y + _h);
 
       minnie::setup::active_dl_num_tris += 2u;
    }
@@ -12756,24 +12745,24 @@ void minRectTexUVFlatDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
    {
       // tri 1
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y );
       Dexport_vb_add2f(_ur,     _vt);
+      Dexport_vb_add2f(_x + _w, _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
       // tri 2
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
-      Dexport_vb_add2f(_x,      _y + _h);
       Dexport_vb_add2f(_ul,     _vb    );
+      Dexport_vb_add2f(_x,      _y + _h);
 
       minnie::setup::active_dl_num_tris += 2u;
    }
@@ -12809,30 +12798,30 @@ void minRectTexUVGouraud(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
    {
       // tri 1
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lt));
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y );
       Dexport_vb_add2f(_ur,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32rt));
+      Dexport_vb_add2f(_x + _w, _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32rb));
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
       // tri 2
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lt));
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32rb));
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
-      Dexport_vb_add2f(_x,      _y + _h);
       Dexport_vb_add2f(_ul,     _vb    );
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lb));
+      Dexport_vb_add2f(_x,      _y + _h);
 
       minnie::setup::active_dl_num_tris += 2u;
    }
@@ -12868,30 +12857,30 @@ void minRectTexUVGouraudDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
    {
       // tri 1
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lt));
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y );
       Dexport_vb_add2f(_ur,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32rt));
+      Dexport_vb_add2f(_x + _w, _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32rb));
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
       // tri 2
-      Dexport_vb_add2f(_x,      _y );
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lt));
+      Dexport_vb_add2f(_x,      _y );
 
-      Dexport_vb_add2f(_x + _w, _y + _h);
       Dexport_vb_add2f(_ur,     _vb    );
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32rb));
+      Dexport_vb_add2f(_x + _w, _y + _h);
 
-      Dexport_vb_add2f(_x,      _y + _h);
       Dexport_vb_add2f(_ul,     _vb    );
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lb));
+      Dexport_vb_add2f(_x,      _y + _h);
 
       minnie::setup::active_dl_num_tris += 2u;
    }

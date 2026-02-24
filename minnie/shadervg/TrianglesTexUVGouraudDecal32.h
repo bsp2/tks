@@ -31,9 +31,9 @@ class TrianglesTexUVGouraudDecal32 : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       " \n"
-      "ATTRIBUTE vec2 a_vertex; \n"
       "ATTRIBUTE vec2 a_uv; \n"
       "ATTRIBUTE vec4 a_color; \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
       "VARYING_OUT vec2 v_uv; \n"
       "VARYING_OUT vec4 v_color; \n"
@@ -63,8 +63,9 @@ class TrianglesTexUVGouraudDecal32 : public ShaderVG_Shape {
 
    sBool validateShapeShader(void) {
       return
-            (-1 != shape_a_vertex)
-         && (-1 != shape_a_uv)
+            (-1 != shape_a_uv)
+         && (-1 != shape_a_color)
+         && (-1 != shape_a_vertex)
          && (-1 != shape_u_transform)
          && (-1 != shape_u_sampler)
          && (-1 != shape_u_decal_alpha)
@@ -90,15 +91,15 @@ class TrianglesTexUVGouraudDecal32 : public ShaderVG_Shape {
                                             sF32             _decalAlpha
                                             ) {
       //
-      // VBO vertex format (16 bytes per vertex):
-      //     +0  f32 x
-      //     +4  f32 y
-      //     +8  f32 u
-      //     +12 f32 v
-      //     +16  u8 r
-      //     +17  u8 g
-      //     +18  u8 b
-      //     +19  u8 a
+      // VBO vertex format (20 bytes per vertex):
+      //     +0  f32 u
+      //     +4  f32 v
+      //     +8  u8  r
+      //     +9  u8  g
+      //     +10 u8  b
+      //     +11 u8  a
+      //     +12 f32 x
+      //     +16 f32 y
       //
 
       sdvg_BindVBO(_vboId);
@@ -111,18 +112,18 @@ class TrianglesTexUVGouraudDecal32 : public ShaderVG_Shape {
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
       Dsdvg_uniform_1i(shape_u_sampler, 0);
 
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset +  8);
-      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 20/*stride*/, _byteOffset + 16);
+      Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 20/*stride*/, _byteOffset +  8);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 20/*stride*/, _byteOffset + 12);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_uv);
       Dsdvg_attrib_enable(shape_a_color);
+      Dsdvg_attrib_enable(shape_a_vertex);
 
       Dsdvg_draw_triangles_vbo(0, _numVerts);
 
-      Dsdvg_attrib_disable(shape_a_color);
       Dsdvg_attrib_disable(shape_a_uv);
+      Dsdvg_attrib_disable(shape_a_color);
       Dsdvg_attrib_disable(shape_a_vertex);
    }
 

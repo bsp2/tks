@@ -31,8 +31,8 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4 u_transform; \n"
       " \n"
-      "ATTRIBUTE vec2 a_vertex; \n"
       "ATTRIBUTE vec2 a_uv; \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
       "VARYING_OUT vec2 v_uv; \n"
       " \n"
@@ -59,8 +59,8 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
 
    sBool validateShapeShader(void) {
       return
-            (-1 != shape_a_vertex)
-         && (-1 != shape_a_uv)
+            (-1 != shape_a_uv)
+         && (-1 != shape_a_vertex)
          && (-1 != shape_u_transform)
          && (-1 != shape_u_sampler)
          && (-1 != shape_u_decal_alpha)
@@ -87,10 +87,10 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
                                          ) {
       //
       // VBO vertex format (16 bytes per vertex):
-      //     +0  f32 x
-      //     +4  f32 y
-      //     +8  f32 u
-      //     +12 f32 v
+      //     +0  f32 u
+      //     +4  f32 v
+      //     +8  f32 x
+      //     +12 f32 y
       //
 
       sdvg_BindVBO(_vboId);
@@ -103,11 +103,11 @@ class TrianglesTexUVFlatDecal32 : public ShaderVG_Shape {
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
       Dsdvg_uniform_1i(shape_u_sampler, 0);
 
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
-      Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);
+      Dsdvg_attrib_offset(shape_a_uv,     2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);
 
-      Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_uv);
+      Dsdvg_attrib_enable(shape_a_vertex);
 
       Dsdvg_draw_triangles_vbo(0, _numVerts);
 

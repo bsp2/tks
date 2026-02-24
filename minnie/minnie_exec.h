@@ -102,15 +102,42 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             Dstream_set_offset(_bufDraw, dlSize);
             break;
 
-         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32:
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
             r        = Dstream_read_f32(_bufDraw);
             g        = Dstream_read_f32(_bufDraw);
             b        = Dstream_read_f32(_bufDraw);
             a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat-uniform<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
             sdvg_SetFillColor4f(r, g, b, a);
+            sdvg_DrawTrianglesFillFlatUniformVBO32(_glBufId,
+                                                   vbOff,
+                                                   numVerts
+                                                   );
+            numOpsTri++;
+            break;
+
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2:
+            vbOff    = Dstream_read_i32(_bufDraw);
+            numVerts = Dstream_read_i32(_bufDraw);
+            r        = Dstream_read_f32(_bufDraw);
+            g        = Dstream_read_f32(_bufDraw);
+            b        = Dstream_read_f32(_bufDraw);
+            a        = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat-uniform<14_2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            sdvg_SetFillColor4f(r, g, b, a);
+            sdvg_DrawTrianglesFillFlatUniformVBO14_2(_glBufId,
+                                                     vbOff,
+                                                     numVerts
+                                                     );
+            numOpsTri++;
+            break;
+
+         case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32:
+            vbOff    = Dstream_read_i32(_bufDraw);
+            numVerts = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
             sdvg_DrawTrianglesFillFlatVBO32(_glBufId,
                                             vbOff,
                                             numVerts
@@ -121,12 +148,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
-            r        = Dstream_read_f32(_bufDraw);
-            g        = Dstream_read_f32(_bufDraw);
-            b        = Dstream_read_f32(_bufDraw);
-            a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat<14_2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
-            sdvg_SetFillColor4f(r, g, b, a);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat<s14.2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
             sdvg_DrawTrianglesFillFlatVBO14_2(_glBufId,
                                               vbOff,
                                               numVerts
@@ -178,7 +200,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numOpsTri++;
             break;
 
-         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_32:
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
             r        = Dstream_read_f32(_bufDraw);
@@ -187,14 +209,14 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             a        = Dstream_read_f32(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
             sdvg_SetFillColor4f(r, g, b, a);
-            sdvg_DrawPolygonFillFlatVBO32(_glBufId,
-                                          vbOff,
-                                          numVerts
-                                          );
+            sdvg_DrawPolygonFillFlatUniformVBO32(_glBufId,
+                                                 vbOff,
+                                                 numVerts
+                                                 );
             numOpsPoly++;
             break;
 
-         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_14_2:
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
             r        = Dstream_read_f32(_bufDraw);
@@ -203,32 +225,10 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             a        = Dstream_read_f32(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<14.2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
             sdvg_SetFillColor4f(r, g, b, a);
-            sdvg_DrawPolygonFillFlatVBO14_2(_glBufId,
-                                            vbOff,
-                                            numVerts
-                                            );
-            numOpsPoly++;
-            break;
-
-         case MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_32:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-gouraud<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
-            sdvg_DrawPolygonFillGouraudVBO32(_glBufId,
-                                             vbOff,
-                                             numVerts
-                                             );
-            numOpsPoly++;
-            break;
-
-         case MINNIE_DRAWOP_POLYGON_FILL_GOURAUD_14_2:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-gouraud<s14.2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
-            sdvg_DrawPolygonFillGouraudVBO14_2(_glBufId,
-                                               vbOff,
-                                               numVerts
-                                               );
+            sdvg_DrawPolygonFillFlatUniformVBO14_2(_glBufId,
+                                                   vbOff,
+                                                   numVerts
+                                                   );
             numOpsPoly++;
             break;
 

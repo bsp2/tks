@@ -1,8 +1,8 @@
 // ----
-// ---- file   : TrianglesFillFlat32Conic.h
+// ---- file   : TrianglesFillFlatUniform32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -24,66 +24,35 @@
 // ----
 // ----
 
-class TrianglesFillFlat32Conic : public ShaderVG_Shape {
+class TrianglesFillFlatUniform32 : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4 u_transform; \n"
-      "uniform vec2 u_paint_start; \n"
-      "uniform vec2 u_paint_scale; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
-      "VARYING_OUT vec2 v_paint_pos; \n"
-      " \n"
       "void main(void) { \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_pos = (a_vertex - u_paint_start) * u_paint_scale; \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
       "uniform vec4 u_color_fill; \n"
-      "uniform sampler2D u_paint_tex; \n"
-      "uniform float u_paint_angle01; \n"
-      " \n"
-      "VARYING_IN vec2 v_paint_pos; \n"
       " \n"
       "void main(void) { \n"
-      "  vec2 n = normalize(abs(v_paint_pos)); \n"
-      "  float a = atan(n.y / n.x) * (1.0 / 6.2831853071795864); \n"
-      "  if(v_paint_pos.x > 0.0) {\n"
-      "    if(v_paint_pos.y < 0.0) { \n"
-      "      a = 1.0 - a; \n"
-      "    } \n"
-      "  } \n"
-      "  else if(v_paint_pos.y < 0.0) { \n"
-      "      a += 0.5; \n"
-      "  } \n"
-      "  else { \n"
-      "    a = 0.5 - a; \n"
-      "  } \n"
-      "  a += u_paint_angle01; \n"
-      "  if(a >= 1.0) a -= 1.0; \n"   // (note) use texture repeat ?
-      "  else if(a < 0.0) a += 1.0; \n"
-      "  vec4 c = TEXTURE2D(u_paint_tex, vec2(a, 0.0)); \n"
-      "  FRAGCOLOR = c * u_color_fill; \n"
+      "  FRAGCOLOR = u_color_fill; \n"
       "} \n"
       ;
 
    sBool validateShapeShader(void) {
       return
-         (-1 != shape_a_vertex)        &&
-         (-1 != shape_u_transform)     &&
-         (-1 != shape_u_color_fill)    &&
-         (-1 != shape_u_paint_tex)     &&
-         (-1 != shape_u_paint_start)   &&
-         (-1 != shape_u_paint_scale)   &&
-         (-1 != shape_u_paint_angle01)
+         (-1 != shape_a_vertex)       &&
+         (-1 != shape_u_transform)    &&
+         (-1 != shape_u_color_fill)
          ;
-      return YAC_TRUE;
    }
 
    sBool onOpen(void) {
@@ -94,13 +63,12 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-#if 0
-   void drawTrianglesFillFlatVBO32Conic(sUI              _vboId,
-                                        sUI              _byteOffset,
-                                        sUI              _numVerts,
-                                        Dsdvg_mat4_ref_t _mvpMatrix,
-                                        sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
-                                        ) {
+   void drawTrianglesFillFlatUniformVBO32(sUI              _vboId,
+                                          sUI              _byteOffset,
+                                          sUI              _numVerts,
+                                          Dsdvg_mat4_ref_t _mvpMatrix,
+                                          sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                          ) {
       //
       // VBO vertex format (8 bytes per vertex):
       //   +0 f32 x
@@ -113,7 +81,6 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
 
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-      // (todo) paint uniforms
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
@@ -122,6 +89,40 @@ class TrianglesFillFlat32Conic : public ShaderVG_Shape {
 
       Dsdvg_attrib_disable(shape_a_vertex);
    }
-#endif // 0
+
+#ifdef SHADERVG_STENCIL_POLYGONS
+   void drawPolygonFillFlatUniformVBO32(sUI              _vboId,
+                                        sUI              _byteOffset,
+                                        sUI              _numVerts,
+                                        Dsdvg_mat4_ref_t _projMatrix,
+                                        sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                        ) {
+      //
+      // VBO vertex format (8 bytes per vertex):
+      //   +0 f32 x
+      //   +4 f32 y
+      //
+
+      sdvg_BindVBO(_vboId);
+
+      shape_shader.bind();
+
+      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
+      Dsdvg_attrib_enable(shape_a_vertex);
+
+      Dsdvg_stencil_poly_pass1();
+      Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+      Dsdvg_stencil_poly_pass2();
+      Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+      Dsdvg_stencil_poly_end();
+
+      Dsdvg_attrib_disable(shape_a_vertex);
+   }
+#endif // SHADERVG_STENCIL_POLYGONS
 
 };
