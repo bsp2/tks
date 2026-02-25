@@ -207,7 +207,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             g        = Dstream_read_f32(_bufDraw);
             b        = Dstream_read_f32(_bufDraw);
             a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<f32>: vbOff=%u numVerts=%u rgba=(%f;%f;%f;%f)\n", vbOff, numVerts, r,g,b,a);
             sdvg_SetFillColor4f(r, g, b, a);
             sdvg_DrawPolygonFillFlatUniformVBO32(_glBufId,
                                                  vbOff,
@@ -223,7 +223,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             g        = Dstream_read_f32(_bufDraw);
             b        = Dstream_read_f32(_bufDraw);
             a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<14.2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<14.2>: vbOff=%u numVerts=%u rgba=(%f;%f;%f;%f)\n", vbOff, numVerts, r,g,b,a);
             sdvg_SetFillColor4f(r, g, b, a);
             sdvg_DrawPolygonFillFlatUniformVBO14_2(_glBufId,
                                                    vbOff,

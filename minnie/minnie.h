@@ -6828,7 +6828,6 @@ namespace setup {
          {
             Dprintf("[trc] drawTri: v1=(%f;%f) v2=(%f; %f) v3=(%f; %f) c32=#%08x c32Mask=#%08x b_aa=%d\n", _v1->x, _v1->y, _v2->x, _v2->y, _v3->x, _v3->y, _c32, _c32Mask, b_aa);
          }
-         /* return; // xxxxxxxxxx */
 
          /* Dprintf("xxx drawTri: b_edge_aa=%d\n", b_edge_aa); */
          if(!b_edge_aa)
@@ -7267,7 +7266,14 @@ namespace setup {
          {
             Dprintf("[!!!] Minnie::drawPathFillConcave: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
-         p->exportConcaveVertices(loc_vb_export_ofs, &p->points, cur_c32, cur_x, cur_y, geo_scale, b_uniform_colors);
+         p->exportConcaveVertices(loc_vb_export_ofs,
+                                  &p->points,
+                                  cur_c32,
+                                  cur_x,
+                                  cur_y,
+                                  geo_scale,
+                                  YAC_TRUE/*bUniformColors*/
+                                  );
          active_dl_num_verts += p->points.num_elements >> 1u;
          return;
       }
@@ -7381,7 +7387,14 @@ namespace setup {
             Dprintf("[!!!] Minnie::drawPathFillConcaveClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          // (note) translation + scaling already applied in translateAndScalePoints()
-         p->exportConcaveVertices(loc_vb_export_ofs, va, cur_c32, 0.0f/*tx*/, 0.0f/*ty*/, 1.0f/*geoScale*/, b_uniform_colors);
+         p->exportConcaveVertices(loc_vb_export_ofs,
+                                  va,
+                                  cur_c32,
+                                  0.0f/*tx*/,
+                                  0.0f/*ty*/,
+                                  1.0f/*geoScale*/,
+                                  YAC_TRUE/*bUniformColors*/
+                                  );
          active_dl_num_verts += va->num_elements >> 1u;
          return;
       }
@@ -7553,7 +7566,15 @@ namespace setup {
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
-         p->exportConcaveVerticesTransform2d(loc_vb_export_ofs, &p->points, cur_c32, &cur_mat_2d, cur_x, cur_y, geo_scale, b_uniform_colors);
+         p->exportConcaveVerticesTransform2d(loc_vb_export_ofs,
+                                             &p->points,
+                                             cur_c32,
+                                             &cur_mat_2d,
+                                             cur_x,
+                                             cur_y,
+                                             geo_scale,
+                                             YAC_TRUE/*bUniformColors*/
+                                             );
          active_dl_num_verts += p->points.num_elements >> 1u;
          return;
       }
@@ -7676,7 +7697,14 @@ namespace setup {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          // (note) translation and scaling already applied in transform2DAndTranslateAndScale()
-         p->exportConcaveVertices(loc_vb_export_ofs, vaClip, cur_c32, cur_x, cur_y, geo_scale, b_uniform_colors);
+         p->exportConcaveVertices(loc_vb_export_ofs,
+                                  vaClip,
+                                  cur_c32,
+                                  cur_x,
+                                  cur_y,
+                                  geo_scale,
+                                  YAC_TRUE/*bUniformColors*/
+                                  );
          active_dl_num_verts += vaClip->num_elements >> 1u;
          return;
       }
