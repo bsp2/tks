@@ -1815,6 +1815,10 @@ VBO vertex format (4 bytes per vertex):<br>
   +2 s14.2 y<br>
 </pre>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref Stroke
 */
@@ -1822,6 +1826,10 @@ YF void YAC_CALL sdvg_DrawLineStripFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI
 
 /* @function sdvg_DrawLineStripFlatVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
 
 @group Line
 @groupref Stroke
@@ -1837,6 +1845,10 @@ VBO vertex format (4 bytes per vertex):<br>
   +2 s14.2 y<br>
 </pre>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref Stroke
 */
@@ -1845,6 +1857,10 @@ YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, s
 /* @function sdvg_DrawLineStripFlatAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line strip (32 bit float format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref Stroke
 */
@@ -1852,6 +1868,10 @@ YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI
 
 /* @function sdvg_DrawLineStripPatternVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
 
 @group Line
 @groupref LinePattern
@@ -1862,6 +1882,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternVBO14_2 (sUI _vboId, sUI _byteOffset, 
 /* @function sdvg_DrawLineStripPatternVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (32 bit float format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref LinePattern
 @groupref Stroke
@@ -1870,6 +1894,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternVBO32 (sUI _vboId, sUI _byteOffset, sU
 
 /* @function sdvg_DrawLineStripPatternDecalVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
 
 @group Line
 @groupref LinePattern
@@ -1882,6 +1910,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO14_2 (sUI _vboId, sUI _byteOff
 /* @function sdvg_DrawLineStripPatternDecalVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (32 bit float format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref LinePattern
 @groupref Stroke
@@ -1892,6 +1924,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO32 (sUI _vboId, sUI _byteOffse
 
 /* @function sdvg_DrawLineStripPatternAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
 
 @group Line
 @groupref LinePattern
@@ -1904,6 +1940,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2 (sUI _vboId, sUI _byteOffset
 /* @function sdvg_DrawLineStripPatternAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32 bit float format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref LinePattern
 @groupref Stroke
@@ -1915,6 +1955,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO32 (sUI _vboId, sUI _byteOffset, 
 /* @function sdvg_DrawLineStripPatternDecalAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
 @group Line
 @groupref LinePattern
 @groupref Stroke
@@ -1925,6 +1969,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2 (sUI _vboId, sUI _byteO
 
 /* @function sdvg_DrawLineStripPatternDecalAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
 
 @group Line
 @groupref LinePattern
@@ -1945,7 +1993,7 @@ VBO vertex format (4 bytes per vertex):<br>
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -1958,7 +2006,7 @@ Draw previously prepared vertex buffer as line strip with bevel line joints (32 
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -1977,7 +2025,7 @@ VBO vertex format (4 bytes per vertex):<br>
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -1987,6 +2035,10 @@ YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2 (sUI _vboId, sUI _byteOffs
 
 /* @function sdvg_DrawLineStripFlatBevelAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 
 @group Line
 @groupref Stroke
@@ -1998,7 +2050,7 @@ Draw previously prepared vertex buffer as patterned line strip with bevel line j
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2012,7 +2064,7 @@ Draw previously prepared vertex buffer as patterned line strip with bevel line j
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2026,7 +2078,7 @@ Draw previously prepared vertex buffer as patterned line strip with bevel line j
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2040,7 +2092,7 @@ Draw previously prepared vertex buffer as patterned line strip with bevel line j
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2055,7 +2107,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2070,7 +2122,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2085,7 +2137,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2102,7 +2154,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 will be drawn). For closed line loops, the last two points must equal the first two.
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
@@ -2117,6 +2169,10 @@ YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32 (sUI _vboId, sUI _by
 /* @function sdvg_DrawLineStripFlatMiterVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip with miter line joints (14.2 fixed point format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+
 @group Line
 @groupref Stroke
 */
@@ -2124,6 +2180,10 @@ YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2 (sUI _vboId, sUI _byteOffset
 
 /* @function sdvg_DrawLineStripFlatMiterVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip with miter line joints (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
 
 @group Line
 @groupref Stroke
@@ -2133,6 +2193,10 @@ YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32 (sUI _vboId, sUI _byteOffset, 
 /* @function sdvg_DrawLineStripFlatMiterAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (14.2 fixed point format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+
 @group Line
 @groupref Stroke
 */
@@ -2141,19 +2205,27 @@ YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2 (sUI _vboId, sUI _byteOffs
 /* @function sdvg_DrawLineStripFlatMiterAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (32 bit float format)
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+
 @group Line
 @groupref Stroke
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesFlatVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as line segments (14.2 fixed point format)
+Draw previously prepared vertex buffer as lines (14.2 fixed point format)
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
   +0 s14.2 x<br>
   +2 s14.2 y<br>
 </pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2161,7 +2233,11 @@ VBO vertex format (4 bytes per vertex):<br>
 YF void YAC_CALL sdvg_DrawLinesFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesFlatVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as line segments (32 bit float format)
+Draw previously prepared vertex buffer as lines (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2169,7 +2245,7 @@ Draw previously prepared vertex buffer as line segments (32 bit float format)
 YF void YAC_CALL sdvg_DrawLinesFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesFlatAAVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased line segments (14.2 fixed point format)
+Draw previously prepared vertex buffer as anti-aliased lines (14.2 fixed point format)
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
@@ -2177,13 +2253,21 @@ VBO vertex format (4 bytes per vertex):<br>
   +2 s14.2 y<br>
 </pre>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
+
 @group Line
 @groupref Stroke
 */
 YF void YAC_CALL sdvg_DrawLinesFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesFlatAAVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased line segments (32 bit float format)
+Draw previously prepared vertex buffer as anti-aliased lines (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2191,7 +2275,11 @@ Draw previously prepared vertex buffer as anti-aliased line segments (32 bit flo
 YF void YAC_CALL sdvg_DrawLinesFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesGouraudVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as gouraud-shaded line segments (14.2 fixed point format)
+Draw previously prepared vertex buffer as gouraud-shaded lines (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2200,7 +2288,11 @@ Draw previously prepared vertex buffer as gouraud-shaded line segments (14.2 fix
 YF void YAC_CALL sdvg_DrawLinesGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesGouraudAAVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded line segments (14.2 fixed point format)
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded lines (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2209,7 +2301,11 @@ Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded line segm
 YF void YAC_CALL sdvg_DrawLinesGouraudAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesGouraudVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as gouraud-shaded line segments (32 bit float format)
+Draw previously prepared vertex buffer as gouraud-shaded lines (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2218,7 +2314,11 @@ Draw previously prepared vertex buffer as gouraud-shaded line segments (32 bit f
 YF void YAC_CALL sdvg_DrawLinesGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesGouraudAAVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded line segments (32 bit float format)
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded lines (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2227,7 +2327,11 @@ Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded line segm
 YF void YAC_CALL sdvg_DrawLinesGouraudAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as patterned line segments (14.2 fixed point format)
+Draw previously prepared vertex buffer as patterned lines (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2237,7 +2341,11 @@ Draw previously prepared vertex buffer as patterned line segments (14.2 fixed po
 YF void YAC_CALL sdvg_DrawLinesPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternAAVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased, patterned line segments (14.2 fixed point format)
+Draw previously prepared vertex buffer as anti-aliased, patterned lines (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2247,7 +2355,11 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line segments 
 YF void YAC_CALL sdvg_DrawLinesPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as patterned line segments (32 bit float format)
+Draw previously prepared vertex buffer as patterned lines (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2257,7 +2369,11 @@ Draw previously prepared vertex buffer as patterned line segments (32 bit float 
 YF void YAC_CALL sdvg_DrawLinesPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternAAVBO32,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased, patterned line segments (32 bit float format)
+Draw previously prepared vertex buffer as anti-aliased, patterned lines (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints/2 lines will be drawn).
 
 @group Line
 @groupref Stroke
@@ -2275,6 +2391,10 @@ VBO vertex format (8 bytes per vertex):<br>
   +4 f32 y<br>
 </pre>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
 @group Point
 @groupref Stroke
 */
@@ -2288,6 +2408,10 @@ VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
   +4 f32 y<br>
 </pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
 
 @group Point
 @groupref Stroke
@@ -2307,6 +2431,10 @@ VBO vertex format (12 bytes per vertex):<br>
   +8 f32 y<br>
 </pre>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
 @group Point
 @groupref Stroke
 @group Gouraud
@@ -2325,6 +2453,10 @@ VBO vertex format (12 bytes per vertex):<br>
   +4 f32 x<br>
   +8 f32 y<br>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
 @group Point
 @groupref Stroke
 @group Gouraud
@@ -2339,6 +2471,10 @@ VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
   +4 f32 y<br>
 </pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
 
 @group Point
 @groupref Stroke
@@ -2372,6 +2508,10 @@ VBO vertex format (12 bytes per vertex):<br>
   +8 f32 y<br>
 </pre>
 
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
 @group Point
 @groupref Stroke
 @group Gouraud
@@ -2390,6 +2530,10 @@ VBO vertex format (12 bytes per vertex):<br>
   +4 f32 x<br>
   +8 f32 y<br>
 </pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
 
 @group Point
 @groupref Stroke
@@ -3232,7 +3376,7 @@ YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAAClosed (sUI _numPoints);
 /* @function sdvg_BeginLineStripMiter,int numPoints:boolean
 Begin preparation or rendering of line strip with miter line joints
 
-@arg numPoints Number of points
+@arg numPoints Number of points (numPoints-2 line segments will be drawn)
 
 @group Begin
 @group Line
@@ -3244,7 +3388,7 @@ YF sBool YAC_CALL sdvg_BeginLineStripMiter(sUI _numPoints);
 /* @function sdvg_BeginLineStripMiterAA,int numPoints:boolean
 Begin preparation or rendering of anti-aliased line strip with miter line joints
 
-@arg numPoints Number of points
+@arg numPoints Number of points (numPoints-2 line segments will be drawn)
 
 @group Begin
 @group Line
@@ -3256,7 +3400,7 @@ YF sBool YAC_CALL sdvg_BeginLineStripMiterAA(sUI _numPoints);
 /* @function sdvg_BeginLines,int numPoints:boolean
 Begin preparation or rendering of line segments
 
-@arg numPoints Number of points
+@arg numPoints Number of points (numPoints-2 line segments will be drawn)
 
 @group Begin
 @group Line
