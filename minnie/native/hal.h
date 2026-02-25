@@ -49,6 +49,7 @@ extern "C" {
 #define VKEY_RIGHT      275
 #define VKEY_LEFT       276
 #define VKEY_INSERT     277
+#define VKEY_DELETE     127
 #define VKEY_HOME       278
 #define VKEY_END        279
 #define VKEY_PAGEUP     280

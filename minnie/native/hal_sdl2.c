@@ -55,6 +55,7 @@ static sU32 loc_map_key_sym(sU32 _sym) {
       case SDLK_RIGHT:     _sym = VKEY_RIGHT;     break;
       case SDLK_LEFT:      _sym = VKEY_LEFT;      break;
       case SDLK_INSERT:    _sym = VKEY_INSERT;    break;
+      case SDLK_DELETE:    _sym = VKEY_DELETE;    break;
       case SDLK_HOME:      _sym = VKEY_HOME;      break;
       case SDLK_END:       _sym = VKEY_END;       break;
       case SDLK_PAGEUP:    _sym = VKEY_PAGEUP;    break;

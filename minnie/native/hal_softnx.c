@@ -81,31 +81,33 @@ static sF64 loc_time_get_milliseconds_f64(void) {
 
 // ---------------------------------------------------------------------------- loc_map_key_sym
 static sU32 loc_map_key_sym(sU32 _sym) {
-#if 0
+   // printf("xxx loc_map_key_sym: sym=%u (0x%08x)\n", _sym, _sym);
+   if(_sym >= 65 && _sym <= 91)
+      _sym |= 32;  // to lowercase
    switch(_sym)
    {
-      case SDLK_BACKSPACE: _sym = VKEY_BACKSPACE; break;
-      case SDLK_TAB:       _sym = VKEY_TAB;       break;
-      case SDLK_RETURN:    _sym = VKEY_RETURN;    break;
-      case SDLK_ESCAPE:    _sym = VKEY_ESCAPE;    break;
-      case SDLK_SPACE:     _sym = VKEY_SPACE;     break;
-      case SDLK_UP:        _sym = VKEY_UP;        break;
-      case SDLK_DOWN:      _sym = VKEY_DOWN;      break;
-      case SDLK_RIGHT:     _sym = VKEY_RIGHT;     break;
-      case SDLK_LEFT:      _sym = VKEY_LEFT;      break;
-      case SDLK_INSERT:    _sym = VKEY_INSERT;    break;
-      case SDLK_HOME:      _sym = VKEY_HOME;      break;
-      case SDLK_END:       _sym = VKEY_END;       break;
-      case SDLK_PAGEUP:    _sym = VKEY_PAGEUP;    break;
-      case SDLK_PAGEDOWN:  _sym = VKEY_PAGEDOWN;  break;
+      case 8:  _sym = VKEY_BACKSPACE; break;
+      case 9:  _sym = VKEY_TAB;       break;
+      case 13: _sym = VKEY_RETURN;    break;
+      case 27: _sym = VKEY_ESCAPE;    break;
+      case 32: _sym = VKEY_SPACE;     break;
+      case 38: _sym = VKEY_UP;        break;
+      case 40: _sym = VKEY_DOWN;      break;
+      case 39: _sym = VKEY_RIGHT;     break;
+      case 37: _sym = VKEY_LEFT;      break;
+      case 45: _sym = VKEY_INSERT;    break;
+      case 46: _sym = VKEY_DELETE;    break;
+      case 36: _sym = VKEY_HOME;      break;
+      case 35: _sym = VKEY_END;       break;
+      case 33: _sym = VKEY_PAGEUP;    break;
+      case 34: _sym = VKEY_PAGEDOWN;  break;
    }
-#endif
    return _sym;
 }
 
 // ---------------------------------------------------------------------------- loc_map_key_mod
-static sU32 loc_map_key_mod(sU32 _mod) {
 #if 0
+static sU32 loc_map_key_mod(sU32 _mod) {
    switch(_mod)
    {
       case KMOD_LSHIFT:  _mod = VMOD_LSHIFT; break;
@@ -115,10 +117,25 @@ static sU32 loc_map_key_mod(sU32 _mod) {
       case KMOD_LALT:    _mod = VMOD_LALT; break;
       case KMOD_RALT:    _mod = VMOD_RALT; break;
    }
-#endif
    return _mod;
 }
+#endif
 
+
+// ---------------------------------------------------------------------------- loc_keyboard_handler
+void loc_keyboard_handler(uint32_t _keyUp, uint32_t _keyDown) {
+   (void)_keyUp;
+   sUI code = loc_map_key_sym(_keyDown);
+   hal_on_key_down(code, 0u/*mod*/);
+}
+
+
+// ---------------------------------------------------------------------------- loc_mouse_handler
+void loc_mouse_handler(int32_t _mouseX, int32_t _mouseY, uint32_t _mouseButtons) {
+   (void)_mouseX;
+   (void)_mouseY;
+   (void)_mouseButtons;
+}
 
 // ---------------------------------------------------------------------------- loc_config_init
 static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
@@ -236,12 +253,14 @@ sBool hal_window_init(sUI _w, sUI _h) {
    printf("GLES version=\"%s\".\n",    (const char*)glGetString(GL_VERSION));
    printf("GLES extensions=\"%s\".\n", (const char*)glGetString(GL_EXTENSIONS));
 
+   display_callbacks(&loc_keyboard_handler, &loc_mouse_handler);
+
    return YAC_TRUE;
 }
 
 // ---------------------------------------------------------------------------- hal_window_set_title
 void hal_window_set_title(const char *_s) {
-   (void)_s;
+   display_set_window_title(_s);
 }
 
 // ---------------------------------------------------------------------------- hal_get_ticks
