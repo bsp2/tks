@@ -31,6 +31,7 @@ class TrianglesFillFlatModulate14_2 : public ShaderVG_Shape {
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4 u_transform; \n"
+      "uniform vec4 u_color_fill; \n"
       " \n"
       "ATTRIBUTE vec4 a_color; \n"
       "ATTRIBUTE vec2 a_vertex; \n"
@@ -38,19 +39,17 @@ class TrianglesFillFlatModulate14_2 : public ShaderVG_Shape {
       "VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  v_color = a_color; \n"
+      "  v_color = a_color * u_color_fill; \n"
       "  gl_Position = u_transform * vec4(a_vertex*0.25,0,1); \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform vec4 u_color_fill; \n"
-      " \n"
       "VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = v_color * u_color_fill; \n"
+      "  FRAGCOLOR = v_color; \n"
       "} \n"
       ;
 

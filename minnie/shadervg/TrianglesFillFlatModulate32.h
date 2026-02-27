@@ -37,7 +37,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
       "flat VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  v_color = a_color; \n"
+      "  v_color = a_color * u_color_fill; \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
       "} \n"
       ;
@@ -49,7 +49,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
       "flat VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = v_color * u_color_fill; \n"
+      "  FRAGCOLOR = v_color; \n"
       "} \n"
       ;
 
@@ -73,7 +73,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
    void drawTrianglesFillFlatModulateVBO32(sUI              _vboId,
                                            sUI              _byteOffset,
                                            sUI              _numVerts,
-                                           Dsdvg_mat4_ref_t _projMatrix,
+                                           Dsdvg_mat4_ref_t _mvpMatrix,
                                            sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
                                            ) {
       //
@@ -90,7 +90,7 @@ class TrianglesFillFlatModulate32 : public ShaderVG_Shape {
 
       shape_shader.bind();
 
-      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);

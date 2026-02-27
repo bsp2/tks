@@ -30,6 +30,7 @@ class TrianglesFillGouraudModulate32 : public ShaderVG_Shape {
    // ------------ vertex shader --------------
    const char *vs_src =
       "uniform mat4 u_transform; \n"
+      "uniform vec4 u_color_fill; \n"
       " \n"
       "ATTRIBUTE vec4 a_color; \n"
       "ATTRIBUTE vec2 a_vertex; \n"
@@ -37,19 +38,17 @@ class TrianglesFillGouraudModulate32 : public ShaderVG_Shape {
       "VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  v_color = a_color; \n"
+      "  v_color = a_color * u_color_fill; \n"
       "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform vec4 u_color_fill; \n"
-      " \n"
       "VARYING_IN vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  FRAGCOLOR = v_color * u_color_fill; \n"
+      "  FRAGCOLOR = v_color; \n"
       "} \n"
       ;
 
@@ -73,7 +72,7 @@ class TrianglesFillGouraudModulate32 : public ShaderVG_Shape {
    void drawTrianglesFillGouraudModulateVBO32(sUI              _vboId,
                                               sUI              _byteOffset,
                                               sUI              _numVerts,
-                                              Dsdvg_mat4_ref_t _projMatrix,
+                                              Dsdvg_mat4_ref_t _mvpMatrix,
                                               sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
                                               ) {
       //
@@ -90,7 +89,7 @@ class TrianglesFillGouraudModulate32 : public ShaderVG_Shape {
 
       shape_shader.bind();
 
-      Dsdvg_uniform_mat4(shape_u_transform, _projMatrix);
+      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
       Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE /*normalize*/, 12/*stride*/, _byteOffset + 0);
