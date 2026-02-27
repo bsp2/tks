@@ -247,7 +247,9 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_MITER                            172
 #define RENDER_BEGIN_LINE_STRIP_MITER_AA                         173
 #define RENDER_LINES_RAND_AA_VBO                                 174
-#define NUM_RENDER_MODES                                         175
+#define RENDER_BEGIN_LINE_STRIP_MITER_CLOSED                     175
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED                  176
+#define NUM_RENDER_MODES                                         177
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -434,6 +436,8 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 172 */ "begin_line_strip_miter",
    /* 173 */ "begin_line_strip_miter_aa",
    /* 174 */ "lines_rand_aa_vbo",
+   /* 175 */ "begin_line_strip_miter_closed",
+   /* 176 */ "begin_line_strip_miter_aa_closed",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2555,6 +2559,34 @@ static void TestBeginLineStripFlatMiter(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginLineStripFlatMiterClosed (175+176)
+static void TestBeginLineStripFlatMiterClosed(sBool _bAA) {
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   sdvg_SetLineMiterLimit(12.0f);
+   sUI numSeg = 17u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x * 0.5f;
+   sF32 wd = ((3.0f * sM_2PIf) / numSeg);
+   sF32 ad = ang_y * 0.5f;
+   if(_bAA
+      ? sdvg_BeginLineStripMiterAAClosed(numPoints)
+      : sdvg_BeginLineStripMiterClosed(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 d = sinf(ad) * 100.0f + 120.0f;
+         sF32 x = sinf(a) * d  + VP_W*0.5f;
+         sF32 y = cosf(a) * d  + VP_H*0.5f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         ad += wd;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- TestLinesRand (174)
 static void TestLinesRandAAVBO(void) {
    // (note) same coordinates+colors as test264_line_benchmark
@@ -4298,6 +4330,14 @@ static void DrawTest(void) {
             TestLinesRandAAVBO();
          else
             TestBeginLinesRandAAVBO();
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_CLOSED: // 175
+         TestBeginLineStripFlatMiterClosed(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED: // 176
+         TestBeginLineStripFlatMiterClosed(YAC_TRUE/*bAA*/);
          break;
    }
 }
