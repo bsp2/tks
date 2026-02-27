@@ -232,6 +232,7 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32    0x1C
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                 0x1D
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2           0x1E
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2           0x1F
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // (note) must match shadervg settings
@@ -6186,6 +6187,19 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_14_2> start_offset=%u num_verts=%u c32=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32);
+            if(active_dl_num_verts >= 2u)
+            {
+               Dexport_dl_i16(active_dl_op);
+               Dexport_dl_i32(active_dl_start_offset);
+               Dexport_dl_i32(active_dl_num_verts);
+               Dexport_dl_i32(active_dl_c32);  // ARGB32
+               Dexport_dl_f32(active_dl_stroke_w);
+               total_num_line_strips++;
+            }
+            break;
+
       }
       active_dl_op = 0x00u;
    }
@@ -6283,10 +6297,24 @@ namespace setup {
    static void beginDrawListOpLineStrip(void) {
       const sUI curJoinCap = calcCurJoinCap();
       // Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w);
-      beginDrawListOp( (MINNIE_LINEJOIN_NONE != (curJoinCap & 15u))
-                       ? MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2
-                       : MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2
-                       );
+      sUI op;
+      switch(curJoinCap & 15u)
+      {
+         default:
+         case MINNIE_LINEJOIN_NONE:
+         case MINNIE_LINEJOIN_ROUND:
+            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
+            break;
+
+         case MINNIE_LINEJOIN_BEVEL:
+            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2;
+            break;
+
+         case MINNIE_LINEJOIN_MITER:
+            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2;
+            break;
+      }
+      beginDrawListOp(op);
    }
 
    // <method.png>

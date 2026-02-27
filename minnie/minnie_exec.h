@@ -55,6 +55,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
    sUI numOpsTriTex              = 0u;
    sUI numOpsLineStrip           = 0u;
    sUI numOpsLineStripBevel      = 0u;
+   sUI numOpsLineStripMiter      = 0u;
    sUI numOpsRectFill            = 0u;
    sUI numOpsRectStroke          = 0u;
    sUI numOpsRectFillStroke      = 0u;
@@ -587,12 +588,28 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numOpsLineStripBevel++;
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
+            vbOff    = Dstream_read_i32(_bufDraw);
+            numVerts = Dstream_read_i32(_bufDraw);
+            c32      = Dstream_read_i32(_bufDraw);
+            strokeW  = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-miter<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
+            sdvg_SetStrokeColorARGB(c32);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripFlatMiterAAVBO14_2(_glBufId,
+                                                 vbOff,
+                                                 numVerts/*numPoints*/,
+                                                 YAC_FALSE/*bSkipLastLineJoint*/
+                                                 );
+            numOpsLineStripMiter++;
+            break;
+
       } // switch op
    } // iterate draw ops
 
    if(_bDebug)
    {
-      Dprintf("[dbg] minExecDrawList: #Tri=%u #Poly=%u #TriTex=%u #LineStrip=%u #LineStripBevel=%u #RectFill=%u #RectStroke=%u #RectFillStroke=%u #EllipseFill=%u #EllipseStroke=%u #EllipseFillStroke=%u #RoundRectFill=%u #RoundRectStroke=%u #RoundRectFillStroke=%u dl-size=%u\n", numOpsTri, numOpsPoly, numOpsTriTex, numOpsLineStrip, numOpsLineStripBevel, numOpsRectFill, numOpsRectStroke, numOpsRectFillStroke, numOpsEllipseFill, numOpsEllipseStroke, numOpsEllipseFillStroke, numOpsRoundRectFill, numOpsRoundRectStroke, numOpsRoundRectFillStroke, Dstream_get_offset(_bufDraw));
+      Dprintf("[dbg] minExecDrawList: #Tri=%u #Poly=%u #TriTex=%u #LineStrip=%u #LineStripBevel=%u #LineStripMiter=%u #RectFill=%u #RectStroke=%u #RectFillStroke=%u #EllipseFill=%u #EllipseStroke=%u #EllipseFillStroke=%u #RoundRectFill=%u #RoundRectStroke=%u #RoundRectFillStroke=%u dl-size=%u\n", numOpsTri, numOpsPoly, numOpsTriTex, numOpsLineStrip, numOpsLineStripBevel, numOpsLineStripMiter, numOpsRectFill, numOpsRectStroke, numOpsRectFillStroke, numOpsEllipseFill, numOpsEllipseStroke, numOpsEllipseFillStroke, numOpsRoundRectFill, numOpsRoundRectStroke, numOpsRoundRectFillStroke, Dstream_get_offset(_bufDraw));
    }
 }
 

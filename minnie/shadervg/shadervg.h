@@ -2166,53 +2166,57 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatMiterVBO14_2,int vboId,int byteOffset,int numPoints
+/* @function sdvg_DrawLineStripFlatMiterVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as line strip with miter line joints (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
 @groupref Stroke
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatMiterVBO32,int vboId,int byteOffset,int numPoints
+/* @function sdvg_DrawLineStripFlatMiterVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as line strip with miter line joints (32 bit float format)
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
 @groupref Stroke
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatMiterAAVBO14_2,int vboId,int byteOffset,int numPoints
+/* @function sdvg_DrawLineStripFlatMiterAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
 @groupref Stroke
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatMiterAAVBO32,int vboId,int byteOffset,int numPoints
+/* @function sdvg_DrawLineStripFlatMiterAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (32 bit float format)
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
 @groupref Stroke
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLinesFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as lines (14.2 fixed point format)

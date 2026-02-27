@@ -3256,7 +3256,7 @@ void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32(sUI _vboId, sUI _byteOf
                                                                               );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   +0  s14.2 x
@@ -3268,6 +3268,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sU
    line_strip_flat_miter_aa_14_2.drawLineStripFlatMiterAAVBO14_2(_vboId,
                                                                  _byteOffset,
                                                                  _numPoints,
+                                                                 _bSkipLastLineJoint,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
@@ -3276,7 +3277,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2(sUI _vboId, sUI _byteOffset, sU
                                                                  );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0  f32 x
@@ -3288,6 +3289,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI 
    line_strip_flat_miter_aa_32.drawLineStripFlatMiterAAVBO32(_vboId,
                                                              _byteOffset,
                                                              _numPoints,
+                                                             _bSkipLastLineJoint,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                              Dsdvg_pixel_scl(stroke_w * stroke_w_scale),
@@ -3296,7 +3298,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32(sUI _vboId, sUI _byteOffset, sUI 
                                                              );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (4 bytes per vertex):
    //   +0  s14.2 x
@@ -3309,6 +3311,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, 
    line_strip_flat_miter_aa_14_2.drawLineStripFlatMiterAAVBO14_2(_vboId,
                                                                  _byteOffset,
                                                                  _numPoints,
+                                                                 _bSkipLastLineJoint,
                                                                  mvp_matrix,
                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
@@ -3317,7 +3320,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2(sUI _vboId, sUI _byteOffset, 
                                                                  );
 }
 
-void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint) {
    //
    // VBO vertex format (8 bytes per vertex):
    //   +0  f32 x
@@ -3330,6 +3333,7 @@ void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32(sUI _vboId, sUI _byteOffset, sU
    line_strip_flat_miter_aa_32.drawLineStripFlatMiterAAVBO32(_vboId,
                                                              _byteOffset,
                                                              _numPoints,
+                                                             _bSkipLastLineJoint,
                                                              mvp_matrix,
                                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
                                                              Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff,
@@ -7117,12 +7121,14 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatMiterVBO14_2(current_vbo_id,
                                                      current_draw_start_offset,
-                                                     current_draw_vertex_index
+                                                     current_draw_vertex_index,
+                                                     YAC_FALSE/*bSkipLastLineJoint*/
                                                      );
 #else
                   sdvg_DrawLineStripFlatMiterVBO32(current_vbo_id,
                                                    current_draw_start_offset,
-                                                   current_draw_vertex_index
+                                                   current_draw_vertex_index,
+                                                   YAC_FALSE/*bSkipLastLineJoint*/
                                                    );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;
@@ -7131,12 +7137,14 @@ void YAC_CALL sdvg_End(void) {
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatMiterAAVBO14_2(current_vbo_id,
                                                        current_draw_start_offset,
-                                                       current_draw_vertex_index
+                                                       current_draw_vertex_index,
+                                                       YAC_FALSE/*bSkipLastLineJoint*/
                                                        );
 #else
                   sdvg_DrawLineStripFlatMiterAAVBO32(current_vbo_id,
                                                      current_draw_start_offset,
-                                                     current_draw_vertex_index
+                                                     current_draw_vertex_index,
+                                                     YAC_FALSE/*bSkipLastLineJoint*/
                                                      );
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
                   break;

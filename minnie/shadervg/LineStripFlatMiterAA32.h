@@ -399,6 +399,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
    void drawLineStripFlatMiterAAVBO32(sUI              _vboId,
                                       sUI              _byteOffset,
                                       sUI              _numPoints,
+                                      sBool            _bSkipLastLineJoint,
                                       Dsdvg_mat4_ref_t _mvpMatrix,
                                       sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
                                       sF32             _strokeW,
@@ -414,7 +415,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       // (note) numTri = (numPoints - 1) * 2 + (numPoints - 2) * 3
       //
 
-      if(_numPoints >= 3)
+      if(_numPoints >= 3u)
       {
          sdvg_BindVBO(_vboId);
 
@@ -441,8 +442,9 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
          Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
          Dsdvg_attrib_divisor(shape_a_vertex_nn, 1);
 
+         // (todo) SHADERVG_HIRES_GEO
          const sSI numSeg = (_numPoints - 2);
-         Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - 1));
+         Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - sSI(_bSkipLastLineJoint)));
          Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
 
          Dsdvg_attrib_disable(shape_a_vertex_nn);
