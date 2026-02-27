@@ -3378,7 +3378,10 @@ Renders line joint after last segment.
 YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAAClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripMiter,int numPoints:boolean
-Begin preparation or rendering of line strip with miter line joints
+Begin preparation or rendering of line strip with miter line joints (open polyline)
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
 
 @arg numPoints Number of points (numPoints-2 line segments will be drawn)
 
@@ -3387,10 +3390,28 @@ Begin preparation or rendering of line strip with miter line joints
 @groupref Stroke
 @group LineJoint
 */
-YF sBool YAC_CALL sdvg_BeginLineStripMiter(sUI _numPoints);
+YF sBool YAC_CALL sdvg_BeginLineStripMiter (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripMiterClosed,int numPoints:boolean
+Begin preparation or rendering of line strip with miter line joints (closed polyline)
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+@arg numPoints Number of points (numPoints-2 line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripMiterClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripMiterAA,int numPoints:boolean
-Begin preparation or rendering of anti-aliased line strip with miter line joints
+Begin preparation or rendering of anti-aliased line strip with miter line joints (open polyline)
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
 
 @arg numPoints Number of points (numPoints-2 line segments will be drawn)
 
@@ -3399,7 +3420,22 @@ Begin preparation or rendering of anti-aliased line strip with miter line joints
 @groupref Stroke
 @group LineJoint
 */
-YF sBool YAC_CALL sdvg_BeginLineStripMiterAA(sUI _numPoints);
+YF sBool YAC_CALL sdvg_BeginLineStripMiterAA (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripMiterAAClosed,int numPoints:boolean
+Begin preparation or rendering of anti-aliased line strip with miter line joints (closed polyline)
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+@arg numPoints Number of points (numPoints-2 line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripMiterAAClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLines,int numPoints:boolean
 Begin preparation or rendering of line segments

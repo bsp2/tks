@@ -28,8 +28,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
-#if 0
-   // orig
+#ifdef SHADERVG_HIRES_GEO
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform int   u_last_instance; \n"
@@ -44,7 +43,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "VARYING_OUT vec2 v_plane_n; \n"
       "VARYING_OUT float v_join; \n"
       " \n"
-      "float intersect(vec2 _v1s, vec2 _v1e, vec2 _v2s, vec2 _v2e, out vec2 _r) { \n"
+      "void intersect(vec2 _v1s, vec2 _v1e, vec2 _v2s, vec2 _v2e, out vec2 _r) { \n"
       "  vec2 vE = _v1e - _v1s; \n"
       "  vec2 vF = _v2e - _v2s; \n"
       "  vec2 vP = vec2(-vE.y, vE.x); \n"
@@ -53,7 +52,6 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "  h = dot(vG, vP) / h; \n"
       "  _r = vF * h; \n"
       "  _r += _v2s; \n"
-      "  return h; \n"  // (todo) remove return value
       "} \n"
       " \n"
       "void main(void) { \n"
@@ -88,7 +86,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "  float lenMiter; \n"
       "  float lenMiterRel; \n"
       "  if(cz > 0.0) { \n"
-      "    h = intersect(v1L, v2L, v3L, v2L2, vMiterOrig); \n"
+      "    intersect(v1L, v2L, v3L, v2L2, vMiterOrig); \n"
       "    vTmp = vMiterOrig - v2; \n"
       "    lenMiter = length(vTmp); \n"
       "    if(lenMiter > u_line_miter_limit) { \n"
@@ -101,7 +99,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "      vMiterR = vMiterOrig; \n"
       "    } \n"
       "  } else { \n"
-      "    h = intersect(v1R, v2R, v3R, v2R2, vMiterOrig); \n"
+      "    intersect(v1R, v2R, v3R, v2R2, vMiterOrig); \n"
       "    vTmp = vMiterOrig - v2; \n"
       "    lenMiter = length(vTmp); \n"
       "    if(lenMiter > u_line_miter_limit) { \n"
@@ -117,44 +115,62 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       " \n"
       "  float index = float(gl_VertexID); \n"
       " \n"
-      "  if(index > 13.9) { \n"
+      "  if(index > 19.9) { \n"
+      "    v = v2; \n"
+      "  } \n"
+      "  else if(index > 18.9) { \n"
+      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
+      "  } \n"
+      "  else if(index > 17.9) { \n"
+      "    v = vMiterR; \n"
+      "  } \n"
+      "  else if(index > 16.9) { \n"
+      "    v = v2; \n"
+      "  } \n"
+      "  else if(index > 15.9) { \n"
+      "    v = vMiterR; \n"
+      "  } \n"
+      "  else if(index > 14.9) { \n"
+      "    v = vMiterL; \n"
+      "  } \n"
+      "  else if(index > 13.9) { \n"
       "    v = v2; \n"
       "  } \n"
       "  else if(index > 12.9) { \n"
-      "    v = (cz > 0.0) ? v2L2 : v2R2; \n"
+      "    v = vMiterL; \n"
       "  } \n"
       "  else if(index > 11.9) { \n"
-      "    v = vMiterR; \n"
-      "  } \n"
-      "  else if(index > 10.9) { \n"
-      "    v = v2; \n"
-      "  } \n"
-      "  else if(index > 9.9) { \n"
-      "    v = vMiterR; \n"
-      "  } \n"
-      "  else if(index > 8.9) { \n"
-      "    v = vMiterL; \n"
-      "  } \n"
-      "  else if(index > 7.9) { \n"
-      "    v = v2; \n"
-      "  } \n"
-      "  else if(index > 6.9) { \n"
-      "    v = vMiterL; \n"
-      "  } \n"
-      "  else if(index > 5.9) { \n"
       "    v = (cz > 0.0) ? v2L : v2R; \n"
       "  } \n"
-      "  else if(index > 4.9) { \n"
+      "  else if(index > 10.9) { \n"
       "    v = v1R; \n"
       "  } \n"
-      "  else if(index > 3.9) { \n"
+      "  else if(index > 9.9) { \n"
       "    v = v2R; \n"
+      "  } \n"
+      "  else if(index > 8.9) { \n"
+      "    v = v1; \n"
+      "  } \n"
+      "  else if(index > 7.9) { \n"
+      "    v = v2R; \n"
+      "  } \n"
+      "  else if(index > 6.9) { \n"
+      "    v = v2; \n"
+      "  } \n"
+      "  else if(index > 5.9) { \n"
+      "    v = v1; \n"
+      "  } \n"
+      "  else if(index > 4.9) { \n"
+      "    v = v1; \n"
+      "  } \n"
+      "  else if(index > 3.9) { \n"
+      "    v = v2; \n"
       "  } \n"
       "  else if(index > 2.9) { \n"
       "    v = v1L; \n"
       "  } \n"
       "  else if(index > 1.9) { \n"
-      "    v = v2R; \n"
+      "    v = v2; \n"
       "  } \n"
       "  else if(index > 0.9) { \n"
       "    v = v2L; \n"
@@ -163,16 +179,16 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "    v = v1L; \n"
       "  } \n"
       " \n"
-      "  if(gl_InstanceID == u_last_instance && index > 5.9) { \n"
+      "  if(gl_InstanceID == u_last_instance && index > 11.9) { \n"
       "    gl_Position = vec4(0,0,0,1); \n"  // skip last line joint
       "  } else { \n"
       "    gl_Position = u_transform * vec4(v,0,1); \n"
-      "    if(index > 11.9) { \n"
+      "    if(index > 17.9) { \n"
       "      v_vertex_mp = v - v2; \n"
       "      v_plane_n   = vec2(vN2.y, -vN2.x); \n"
       "      v_join = 0.0; \n"
       "    } \n"
-      "    else if(index > 8.9 && index < 11.9) { \n"
+      "    else if(index > 14.9 && index < 17.9) { \n"
       "      v_vertex_mp = v - vMiterL; \n"
       "      vec2 vNB = normalize( vMiterR - vMiterL ); \n"
       "      v_plane_n   = vec2(vNB.y, -vNB.x); \n"
@@ -186,9 +202,9 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "  } \n"
       "} \n"
       ;
-#else
 
-   // debug
+#else
+   // lores
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform int   u_last_instance; \n"
@@ -344,7 +360,7 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
       "  } \n"
       "} \n"
       ;
-#endif
+#endif // SHADERVG_HIRES_GEO
 
    // ------------ fragment shader ------------
    const char *fs_src =
@@ -442,10 +458,13 @@ class LineStripFlatMiterAA32 : public ShaderVG_Shape {
          Dsdvg_attrib_divisor(shape_a_vertex_n, 1);
          Dsdvg_attrib_divisor(shape_a_vertex_nn, 1);
 
-         // (todo) SHADERVG_HIRES_GEO
          const sSI numSeg = (_numPoints - 2);
          Dsdvg_uniform_1i(shape_u_last_instance, sSI(numSeg - sSI(_bSkipLastLineJoint)));
+#ifdef SHADERVG_HIRES_GEO
+         Dsdvg_draw_triangles_instanced_vbo(21, numSeg);
+#else
          Dsdvg_draw_triangles_instanced_vbo(15, numSeg);
+#endif // SHADERVG_HIRES_GEO
 
          Dsdvg_attrib_disable(shape_a_vertex_nn);
          Dsdvg_attrib_disable(shape_a_vertex_n);

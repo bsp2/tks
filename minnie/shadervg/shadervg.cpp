@@ -558,21 +558,23 @@ static sUI current_draw_vertex_index;        // incs with each Vertex2f() call
 #define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA         7018
 #define DRAW_MODE_LINE_STRIP_PATTERN_DECAL_BEVEL_AA_CLOSED  7019
 #define DRAW_MODE_LINE_STRIP_MITER                          7020
-#define DRAW_MODE_LINE_STRIP_MITER_AA                       7021
-#define DRAW_MODE_LINES                                     7022
-#define DRAW_MODE_LINES_AA                                  7023
-#define DRAW_MODE_LINES_GOURAUD                             7024
-#define DRAW_MODE_LINES_GOURAUD_AA                          7025
-#define DRAW_MODE_LINES_PATTERN                             7026
-#define DRAW_MODE_LINES_PATTERN_AA                          7027
-#define DRAW_MODE_POINTS_SQUARE                             7028
-#define DRAW_MODE_POINTS_SQUARE_AA                          7029
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD                     7030
-#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA                  7031
-#define DRAW_MODE_POINTS_ROUND                              7032
-#define DRAW_MODE_POINTS_ROUND_AA                           7033
-#define DRAW_MODE_POINTS_ROUND_GOURAUD                      7034
-#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA                   7035
+#define DRAW_MODE_LINE_STRIP_MITER_CLOSED                   7021
+#define DRAW_MODE_LINE_STRIP_MITER_AA                       7022
+#define DRAW_MODE_LINE_STRIP_MITER_AA_CLOSED                7023
+#define DRAW_MODE_LINES                                     7024
+#define DRAW_MODE_LINES_AA                                  7025
+#define DRAW_MODE_LINES_GOURAUD                             7026
+#define DRAW_MODE_LINES_GOURAUD_AA                          7027
+#define DRAW_MODE_LINES_PATTERN                             7028
+#define DRAW_MODE_LINES_PATTERN_AA                          7029
+#define DRAW_MODE_POINTS_SQUARE                             7030
+#define DRAW_MODE_POINTS_SQUARE_AA                          7031
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD                     7032
+#define DRAW_MODE_POINTS_SQUARE_GOURAUD_AA                  7033
+#define DRAW_MODE_POINTS_ROUND                              7034
+#define DRAW_MODE_POINTS_ROUND_AA                           7035
+#define DRAW_MODE_POINTS_ROUND_GOURAUD                      7036
+#define DRAW_MODE_POINTS_ROUND_GOURAUD_AA                   7037
 static GLenum current_draw_mode;  // GL_TRIANGLES=0x0004, GL_TRIANGLE_STRIP=0x0005, GL_TRIANGLE_FAN=0x0006
 
 static sF32 draw_first_x;  // for sdvg_BeginFilledPolygonAA()
@@ -6066,8 +6068,26 @@ sBool YAC_CALL sdvg_BeginLineStripMiter(sUI _numPoints) {
 #endif // SHADERVG_USE_DEFAULT_LINE_14_2
 }
 
+sBool YAC_CALL sdvg_BeginLineStripMiterClosed(sUI _numPoints) {
+   current_draw_mode = DRAW_MODE_LINE_STRIP_MITER_CLOSED;
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+   return BeginDraw(_numPoints, 4u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 8u/*stride*/);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+}
+
 sBool YAC_CALL sdvg_BeginLineStripMiterAA(sUI _numPoints) {
    current_draw_mode = DRAW_MODE_LINE_STRIP_MITER_AA;
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+   return BeginDraw(_numPoints, 4u/*stride*/);
+#else
+   return BeginDraw(_numPoints, 8u/*stride*/);
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+}
+
+sBool YAC_CALL sdvg_BeginLineStripMiterAAClosed(sUI _numPoints) {
+   current_draw_mode = DRAW_MODE_LINE_STRIP_MITER_AA_CLOSED;
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
    return BeginDraw(_numPoints, 4u/*stride*/);
 #else
@@ -6546,7 +6566,9 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
          break;
 
       case DRAW_MODE_LINE_STRIP_MITER:
+      case DRAW_MODE_LINE_STRIP_MITER_CLOSED:
       case DRAW_MODE_LINE_STRIP_MITER_AA:
+      case DRAW_MODE_LINE_STRIP_MITER_AA_CLOSED:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
          sdvg_BufferAddLinePointFlat14_2(attrib_write_buffer, _x, _y);
 #else
@@ -7122,6 +7144,22 @@ void YAC_CALL sdvg_End(void) {
                   sdvg_DrawLineStripFlatMiterVBO14_2(current_vbo_id,
                                                      current_draw_start_offset,
                                                      current_draw_vertex_index,
+                                                     YAC_TRUE/*bSkipLastLineJoint*/
+                                                     );
+#else
+                  sdvg_DrawLineStripFlatMiterVBO32(current_vbo_id,
+                                                   current_draw_start_offset,
+                                                   current_draw_vertex_index,
+                                                   YAC_TRUE/*bSkipLastLineJoint*/
+                                                   );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_MITER_CLOSED:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripFlatMiterVBO14_2(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index,
                                                      YAC_FALSE/*bSkipLastLineJoint*/
                                                      );
 #else
@@ -7134,6 +7172,22 @@ void YAC_CALL sdvg_End(void) {
                   break;
 
                case DRAW_MODE_LINE_STRIP_MITER_AA:
+#ifdef SHADERVG_USE_DEFAULT_LINE_14_2
+                  sdvg_DrawLineStripFlatMiterAAVBO14_2(current_vbo_id,
+                                                       current_draw_start_offset,
+                                                       current_draw_vertex_index,
+                                                       YAC_TRUE/*bSkipLastLineJoint*/
+                                                       );
+#else
+                  sdvg_DrawLineStripFlatMiterAAVBO32(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index,
+                                                     YAC_TRUE/*bSkipLastLineJoint*/
+                                                     );
+#endif // SHADERVG_USE_DEFAULT_LINE_14_2
+                  break;
+
+               case DRAW_MODE_LINE_STRIP_MITER_AA_CLOSED:
 #ifdef SHADERVG_USE_DEFAULT_LINE_14_2
                   sdvg_DrawLineStripFlatMiterAAVBO14_2(current_vbo_id,
                                                        current_draw_start_offset,
