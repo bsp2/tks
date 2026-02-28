@@ -66,6 +66,8 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
    sUI numOpsEllipseStroke       = 0u;
    sUI numOpsEllipseFillStroke   = 0u;
 
+   sBool bClosed;
+
    sUI dlTexId = 0;
    sBool dlTexRepeat;
    sBool dlTexFilter;
@@ -577,13 +579,14 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVerts = Dstream_read_i32(_bufDraw);
             c32      = Dstream_read_i32(_bufDraw);
             strokeW  = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
+            bClosed  = (sBool)Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f bClosed=%d\n", vbOff, numVerts, strokeW, bClosed);
             sdvg_SetStrokeColorARGB(c32);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_DrawLineStripFlatBevelAAVBO14_2(_glBufId,
                                                  vbOff,
                                                  numVerts/*numPoints*/,
-                                                 YAC_FALSE/*bSkipLastLineJoint*/
+                                                 !bClosed/*bSkipLastLineJoint*/
                                                  );
             numOpsLineStripBevel++;
             break;
@@ -593,13 +596,14 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVerts = Dstream_read_i32(_bufDraw);
             c32      = Dstream_read_i32(_bufDraw);
             strokeW  = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-miter<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
+            bClosed  = (sBool)Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-miter<s14.2>: vbOff=%u numVerts=%u strokeW=%f bClosed=%d\n", vbOff, numVerts, strokeW, bClosed);
             sdvg_SetStrokeColorARGB(c32);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_DrawLineStripFlatMiterAAVBO14_2(_glBufId,
                                                  vbOff,
                                                  numVerts/*numPoints*/,
-                                                 YAC_FALSE/*bSkipLastLineJoint*/
+                                                 !bClosed/*bSkipLastLineJoint*/
                                                  );
             numOpsLineStripMiter++;
             break;

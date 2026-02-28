@@ -3779,19 +3779,20 @@ namespace setup {
 #define MINNIE_ELLIPSE_SINGLE_RADIUS_THRESHOLD  10.0f
 
 
-   static sUI  active_dl_op;            // MINNIE_DRAWOP_xxx
-   static sUI  active_dl_num_tris;
-   static sUI  active_dl_num_verts;
-   static sUI  active_dl_start_offset;  // VB byte offset
-   static sUI  active_dl_c32;
-   static sUI  active_dl_c32_stroke;
-   static sF32 active_dl_stroke_w;
-   static sF32 active_dl_cx;
-   static sF32 active_dl_cy;
-   static sF32 active_dl_rx;
-   static sF32 active_dl_ry;
-   static sF32 active_dl_sx;
-   static sF32 active_dl_sy;
+   static sUI   active_dl_op;            // MINNIE_DRAWOP_xxx
+   static sUI   active_dl_num_tris;
+   static sUI   active_dl_num_verts;
+   static sUI   active_dl_start_offset;  // VB byte offset
+   static sUI   active_dl_c32;
+   static sUI   active_dl_c32_stroke;
+   static sF32  active_dl_stroke_w;
+   static sBool active_dl_closed;        // LINE_STRIP_FLAT_BEVEL|MITER
+   static sF32  active_dl_cx;
+   static sF32  active_dl_cy;
+   static sF32  active_dl_rx;
+   static sF32  active_dl_ry;
+   static sF32  active_dl_sx;
+   static sF32  active_dl_sy;
 
    static sSI   dl_tex_id;
    static sBool dl_tex_repeat;
@@ -6175,7 +6176,7 @@ namespace setup {
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_bevel_14_2> start_offset=%u num_verts=%u c32=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_bevel_14_2> start_offset=%u num_verts=%u c32=#%08x closed=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32, active_dl_closed);
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6183,12 +6184,13 @@ namespace setup {
                Dexport_dl_i32(active_dl_num_verts);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
+               Dexport_dl_i8(sU8(active_dl_closed));
                total_num_line_strips++;
             }
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_14_2> start_offset=%u num_verts=%u c32=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_14_2> start_offset=%u num_verts=%u c32=#%08x closed=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32, active_dl_closed);
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6196,6 +6198,7 @@ namespace setup {
                Dexport_dl_i32(active_dl_num_verts);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
+               Dexport_dl_i8(sU8(active_dl_closed));
                total_num_line_strips++;
             }
             break;
@@ -6284,29 +6287,26 @@ namespace setup {
    static sUI calcCurJoinCap(void) {
       if(cur_stroke_w <= stroke_w_line_join_threshold)
       {
-         const sUI jointType = (cur_join_cap & 15u);
-         if(MINNIE_LINEJOIN_ROUND == jointType ||
-            MINNIE_LINEJOIN_BEVEL == jointType
-            )
-            return (cur_join_cap & 0xF0u);
+         return (cur_join_cap & 0xF0u);
       }
       return cur_join_cap;
    }
 
    // <method.png>
-   static void beginDrawListOpLineStrip(void) {
+   static void beginDrawListOpLineStrip(sBool _bClosed) {
       const sUI curJoinCap = calcCurJoinCap();
       // Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w);
+      active_dl_closed = _bClosed;
       sUI op;
       switch(curJoinCap & 15u)
       {
          default:
          case MINNIE_LINEJOIN_NONE:
-         case MINNIE_LINEJOIN_ROUND:
             op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
             break;
 
          case MINNIE_LINEJOIN_BEVEL:
+         case MINNIE_LINEJOIN_ROUND:
             op = MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2;
             break;
 
@@ -8426,7 +8426,13 @@ namespace setup {
    }
 
    // <method.png>
-   static void exportLineStripPoints(const FloatArray *_va, sBool _bClosed, sBool _bBevel) {
+   static sBool isLineJoinBevelOrMiter(void) {
+      const sUI curJoin = calcCurJoinCap() & 15u;
+      return (MINNIE_LINEJOIN_BEVEL == curJoin) || (MINNIE_LINEJOIN_MITER == curJoin);
+   }
+
+   // <method.png>
+   static void exportLineStripPoints(const FloatArray *_va, sBool _bClosed) {
       // (note) when path is closed, last vertex may equal first vertex (=> skip it)
       // (todo) this is the case for regular paths but currently not for ellipses
       sUI vaNum = (_va->num_elements >> 1);
@@ -8440,7 +8446,8 @@ namespace setup {
          }
       }
       const sUI vaWrap = (vaNum << 1);
-      sUI num = vaNum + sUI(_bClosed) + (sUI(_bClosed && _bBevel));
+      const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
+      sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
       active_dl_num_verts += num;
       num = (num << 1);
       for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
@@ -8454,7 +8461,7 @@ namespace setup {
    }
 
    // <method.png>
-   static void exportLineStripPointsTranslateScale(const FloatArray *_va, sBool _bClosed, sBool _bBevel) {
+   static void exportLineStripPointsTranslateScale(const FloatArray *_va, sBool _bClosed) {
       // (note) when path is closed, last vertex may equal first vertex (=> skip it)
       // (todo) this is the case for regular paths but currently not for ellipses
       sUI vaNum = (_va->num_elements >> 1);
@@ -8468,8 +8475,9 @@ namespace setup {
          }
       }
       const sUI vaWrap = (vaNum << 1);
-      sUI num = vaNum + sUI(_bClosed) + (sUI(_bClosed && _bBevel));
-      // Dprintf("xxx exportLineStripPointsTranslateScale: bClosed=%d bBevel=%d vaNum=%u => num=%u\n", _bClosed, _bBevel, vaNum, num);
+      const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
+      sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
+      /* Dprintf("xxx exportLineStripPointsTranslateScale: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num); */
       active_dl_num_verts += num;
       num = (num << 1);
       for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
@@ -8487,8 +8495,7 @@ namespace setup {
    static void drawPathLineStrip(Path *p) {
       if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStrip: path_idx=%u #points=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32, cur_mask_idx); }
 
-      const sUI curJoinCap = calcCurJoinCap();
-      exportLineStripPointsTranslateScale(&p->points, p->b_closed, (MINNIE_LINEJOIN_NONE != (curJoinCap & 15u)));
+      exportLineStripPointsTranslateScale(&p->points, p->b_closed);
    }
 
    // <method.png>
@@ -8543,8 +8550,7 @@ namespace setup {
          FloatArray *vaOut = &tmpfa_clip2;
          Clip2D(vaPoints, _vaClip, vaOut);
 
-         const sUI curJoinCap = calcCurJoinCap();
-         exportLineStripPoints(vaOut, p->b_closed, (MINNIE_LINEJOIN_NONE != (curJoinCap & 15u)));
+         exportLineStripPoints(vaOut, p->b_closed);
       }
    }
 
@@ -8624,8 +8630,7 @@ namespace setup {
          FloatArray *vaPoints = &tmpfa_points2;
          transform2DAndTranslateAndScale(&p->points, vaPoints);
 
-         const sUI curJoinCap = calcCurJoinCap();
-         exportLineStripPoints(vaPoints, p->b_closed, (MINNIE_LINEJOIN_NONE != (curJoinCap & 15u)));
+         exportLineStripPoints(vaPoints, p->b_closed);
       }
    }
 
@@ -8688,8 +8693,7 @@ namespace setup {
          FloatArray *vaClip = &tmpfa_clip2;
          Clip2D(vaPoints, _vaClip, vaClip/*out*/);
 
-         const sUI curJoinCap = calcCurJoinCap();
-         exportLineStripPoints(vaClip, p->b_closed, (MINNIE_LINEJOIN_NONE != (curJoinCap & 15u)));
+         exportLineStripPoints(vaClip, p->b_closed);
       }
    }
 
@@ -9052,7 +9056,7 @@ namespace setup {
                         {
                            if(cur_stroke_w < stroke_w_line_strip_threshold)
                            {
-                              beginDrawListOpLineStrip();
+                              beginDrawListOpLineStrip(p->b_closed);
                               drawPathLineStripClipPre(p, &cur_clip2d_path->points);
                               /* finishActiveDrawListOp(); */
                            }
@@ -9070,7 +9074,7 @@ namespace setup {
                      {
                         if(cur_stroke_w < stroke_w_line_strip_threshold)
                         {
-                           beginDrawListOpLineStrip();
+                           beginDrawListOpLineStrip(p->b_closed);
                            drawPathLineStrip(p);
                            /* finishActiveDrawListOp(); */
                         }
@@ -9176,7 +9180,7 @@ namespace setup {
                         {
                            if(cur_stroke_w < stroke_w_line_strip_threshold)
                            {
-                              beginDrawListOpLineStrip();
+                              beginDrawListOpLineStrip(p->b_closed);
                               drawPathLineStripTransform2dClipPre(p, &cur_clip2d_path->points);
                               /* finishActiveDrawListOp(); */
                            }
@@ -9194,7 +9198,7 @@ namespace setup {
                      {
                         if(cur_stroke_w < stroke_w_line_strip_threshold)
                         {
-                           beginDrawListOpLineStrip();
+                           beginDrawListOpLineStrip(p->b_closed);
                            drawPathLineStripTransform2d(p);
                            /* finishActiveDrawListOp(); */
                         }
