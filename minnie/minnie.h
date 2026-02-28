@@ -114,6 +114,12 @@ extern "C" {
 /* /\* #endif // MINNIE_EXPORT_TRIS_EDGEAA *\/ */
 #endif // MINNIE_EXPORT_TRIS_EDGEAA
 
+#ifndef MINNIE_MIN_DIV_ROUND_LINE_JOINT
+#define MINNIE_MIN_DIV_ROUND_LINE_JOINT 7
+#endif // MINNIE_MIN_DIV_ROUND_LINE_JOINT
+
+#define MINNIE_CAP_BEZIER2 defined
+
 #ifndef MINNIE_PROCEDURAL_API
 // include procedural API (api*() methods)
 #define MINNIE_PROCEDURAL_API  1
@@ -233,6 +239,12 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                 0x1D
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2           0x1E
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2           0x1F
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE           0x00
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED               0x01
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP            0x02
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN           0x04
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // (note) must match shadervg settings
@@ -380,6 +392,11 @@ struct Vector2f {
    void mulfFrom(const Vector2f *_o, const sF32 _s) {
       x = _o->x * _s;
       y = _o->y * _s;
+   }
+
+   void lerpFrom(const Vector2f *_a, const Vector2f *_b, const sF32 _s) {
+      x = _a->x + (_b->x - _a->x) * _s;
+      y = _a->y + (_b->y - _a->y) * _s;
    }
 
    sF32 getAbs(void) const {
@@ -1952,7 +1969,7 @@ class ShapePolyline {
    }
 
    void setNumDivRoundLineJoint(sUI _num) {
-      num_div_round_line_joint = _num;
+      num_div_round_line_joint = sMAX(MINNIE_MIN_DIV_ROUND_LINE_JOINT, _num);
    }
 
    void setLinePattern (sU16 _pattern) {
@@ -1960,13 +1977,20 @@ class ShapePolyline {
    }
 
   protected:
-   void addTri(const Vector2f *_vLT, const Vector2f *_vRT, const Vector2f *_vRB) {
+   void addTri(const Vector2f *_vLT,
+               const Vector2f *_vRT,
+               const Vector2f *_vRB
+               ) {
       v_tri->add2(_vLT->x, _vLT->y);
       v_tri->add2(_vRT->x, _vRT->y);
       v_tri->add2(_vRB->x, _vRB->y);
    }
 
-   void addQuad(const Vector2f *_vLT, const Vector2f *_vRT, const Vector2f *_vRB, const Vector2f *_vLB) {
+   void addQuad(const Vector2f *_vLT,
+                const Vector2f *_vRT,
+                const Vector2f *_vRB,
+                const Vector2f *_vLB
+                ) {
       v_tri->add2(_vLT->x, _vLT->y);
       v_tri->add2(_vRT->x, _vRT->y);
       v_tri->add2(_vRB->x, _vRB->y);
@@ -2014,10 +2038,50 @@ class ShapePolyline {
       }
    }
 
-   void addRoundLineCap_bezier(const Vector2f *_vL, const Vector2f *_vMiter, const Vector2f *_vR,
+#ifdef MINNIE_CAP_BEZIER2
+   void addRoundLineCap_bezier2(const Vector2f *_vL,
+                                const Vector2f *_vDir,
+                                const Vector2f *_vR,
+                                const sUI _numDiv
+                                ) {
+      // cubic
+      const sF32 aStep = 1.0f / (_numDiv - 1u);
+      sF32 a = aStep;
+
+      Vector2f vPrev; vPrev = _vL;
+      Vector2f vCur;
+
+      Vector2f vMidL;
+      Vector2f vMidC;
+      Vector2f vMidR;
+      Vector2f vC1; vC1.addFrom(_vL, _vDir);
+      Vector2f vC2; vC2.addFrom(_vR, _vDir);
+      Vector2f vQ0;
+      Vector2f vQ1;
+
+      for(sUI divIdx = 0u; divIdx < _numDiv - 1u; divIdx++)
+      {
+         vMidL.lerpFrom(_vL,    &vC1  , a);
+         vMidC.lerpFrom(&vC1,   &vC2,   a);
+         vMidR.lerpFrom(&vC2,   _vR,    a);
+         vQ0  .lerpFrom(&vMidL, &vMidC, a);
+         vQ1  .lerpFrom(&vMidC, &vMidR, a);
+         vCur .lerpFrom(&vQ0,   &vQ1,   a);
+
+         addTri(&vPrev, &vCur, _vR);
+
+         // Next vertex
+         vPrev = vCur;
+         a += aStep;
+      }
+   }
+#else
+   void addRoundLineCap_bezier(const Vector2f *_vL,
+                               const Vector2f *_vMiter,
+                               const Vector2f *_vR,
                                const sUI _numDiv
                                ) {
-
+      // quadratic
       const sF32 aStep = 1.0f / (_numDiv - 1u);
       sF32 a = aStep;
 
@@ -2047,6 +2111,7 @@ class ShapePolyline {
          a += aStep;
       }
    }
+#endif // MINNIE_CAP_BEZIER2
 
    // (todo) remove pattern ?
    void tesselatePolyline(const FloatArray *_vertices,
@@ -2147,8 +2212,11 @@ class ShapePolyline {
       /* sF32 wISSclFirst; */
 
       sBool bFirstQuad = YAC_TRUE;
+
+#ifndef MINNIE_CAP_BEZIER2
       Vector2f vCapCtr;
       Vector2f vCapOuter;
+#endif // MINNIE_CAP_BEZIER2
 
       const sBool bMiter = (MINNIE_LINEJOIN_MITER == line_joint_type);
       const sBool bRound = (MINNIE_LINEJOIN_ROUND == line_joint_type);
@@ -2173,6 +2241,7 @@ class ShapePolyline {
          vEndR.init(vEnd.x + nLine.x, vEnd.y + nLine.y);
 
          Vector2f vDir; vDir.init(vEnd.x - vStart.x, vEnd.y - vStart.y);
+         Vector2f vDirCap;
 
          if(0u == vertexIdx)
             patternBit = 1u;
@@ -2628,7 +2697,7 @@ class ShapePolyline {
             } // if !bLastVertex
 
             // Draw (previous) line segment
-            // trace "xxx skipQuad="+skipQuad;
+            /* Dprintf("xxx vertexIdx=%u skipQuad=%d\n", vertexIdx, skipQuad); */
             if(!skipQuad)
             {
                // trace "xxx drawSeg: vertexIterIdx="+vertexIterIdx;
@@ -2637,9 +2706,18 @@ class ShapePolyline {
                {
                   if(!b_line_closed && (MINNIE_LINECAP_ROUND == line_cap_type))
                   {
+                     /* Dprintf("xxx bFirstQuad=%d vertexIdx=%u numVertices=%u\n", bFirstQuad, vertexIdx, numVertices); */
                      if(bFirstQuad)
                      {
                         bFirstQuad = YAC_FALSE;
+#ifdef MINNIE_CAP_BEZIER2
+                        /* vDirCap.unitScaleFrom(&vDir, const_line_width*-2.0f); */
+                        vDirCap.subFrom(&vEndLastL, &vStartLastL);
+                        vDirCap.unitScale(const_line_width*-1.33f);
+                        addRoundLineCap_bezier2(&vStartLastL, &vDirCap, &vStartLastR,
+                                                num_div_round_line_joint
+                                                );
+#else
                         vCapCtr.init( (vStartLastL.x + vStartLastR.x) * 0.5f,
                                       (vStartLastL.y + vStartLastR.y) * 0.5f
                                       );
@@ -2649,13 +2727,21 @@ class ShapePolyline {
                         // vCapOuter.unitScale2f(-const_line_width*(2.0f*1.5f), -const_line_width*(2.0f*0.5f));
                         vCapOuter.add(&vCapCtr);
 
-                        // trace "xxx first vCapCtr="+vCapCtr;
                         addRoundLineCap_bezier(&vStartLastL, &vCapOuter, &vStartLastR,
                                                num_div_round_line_joint
                                                );
+#endif // MINNIE_CAP_BEZIER2
                      }
-                     else if(vertexIdx == numVertices-1u)
+                     if(vertexIdx == numVertices-1u)
                      {
+#ifdef MINNIE_CAP_BEZIER2
+                        /* vDirCap.unitScaleFrom(&vDir, const_line_width*2.0f); */
+                        vDirCap.subFrom(&vEndL, &vStartL);
+                        vDirCap.unitScale(const_line_width*1.33f);
+                        addRoundLineCap_bezier2(&vEndL, &vDirCap, &vEndR,
+                                                num_div_round_line_joint
+                                                );
+#else
                         vCapCtr.init( (vEndL.x + vEndR.x) * 0.5f,
                                       (vEndL.y + vEndR.y) * 0.5f
                                       );
@@ -2663,12 +2749,12 @@ class ShapePolyline {
                         vCapOuter = vEndL;
                         vCapOuter.sub(&vStartL);
                         vCapOuter.unitScale(const_line_width*2.0f);
-                        // vCapOuter.unitScale2f(const_line_width*(2.0f*1.5f), const_line_width*(2.0f*0.5f));
                         vCapOuter.add(&vCapCtr);
 
                         addRoundLineCap_bezier(&vEndL, &vCapOuter, &vEndR,
                                                num_div_round_line_joint
                                                );
+#endif // MINNIE_CAP_BEZIER2
                      }
                   }
 
@@ -3786,7 +3872,8 @@ namespace setup {
    static sUI   active_dl_c32;
    static sUI   active_dl_c32_stroke;
    static sF32  active_dl_stroke_w;
-   static sBool active_dl_closed;        // LINE_STRIP_FLAT_BEVEL|MITER
+   static sF32  active_dl_miter_limit;
+   static sBool active_dl_line_strip_flags;  // MINNIE_DRAWOP_LINE_STRIP_FLAG_xxx
    static sF32  active_dl_cx;
    static sF32  active_dl_cy;
    static sF32  active_dl_rx;
@@ -3975,6 +4062,7 @@ namespace setup {
       active_dl_c32          = 0x12CD34EFu;
       active_dl_c32_stroke   = 0x12CD34EFu;
       active_dl_stroke_w     = 0.0f;
+      active_dl_miter_limit  = 32.0f;
       active_dl_cx           = 0.0f;
       active_dl_cy           = 0.0f;
       active_dl_rx           = 0.0f;
@@ -6171,12 +6259,13 @@ namespace setup {
                Dexport_dl_i32(active_dl_num_verts);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
+               Dexport_dl_i8(active_dl_line_strip_flags);
                total_num_line_strips++;
             }
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_bevel_14_2> start_offset=%u num_verts=%u c32=#%08x closed=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32, active_dl_closed);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_bevel_14_2> start_offset=%u num_verts=%u c32=#%08x flags=0x%02x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32, active_dl_line_strip_flags);
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6184,13 +6273,13 @@ namespace setup {
                Dexport_dl_i32(active_dl_num_verts);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
-               Dexport_dl_i8(sU8(active_dl_closed));
+               Dexport_dl_i8(active_dl_line_strip_flags);
                total_num_line_strips++;
             }
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_14_2> start_offset=%u num_verts=%u c32=#%08x closed=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32, active_dl_closed);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_14_2> start_offset=%u num_verts=%u c32=#%08x flags=0x%02x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32, active_dl_line_strip_flags);
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6198,7 +6287,8 @@ namespace setup {
                Dexport_dl_i32(active_dl_num_verts);
                Dexport_dl_i32(active_dl_c32);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
-               Dexport_dl_i8(sU8(active_dl_closed));
+               Dexport_dl_f32(active_dl_miter_limit);
+               Dexport_dl_i8(active_dl_line_strip_flags);
                total_num_line_strips++;
             }
             break;
@@ -6230,6 +6320,7 @@ namespace setup {
          active_dl_num_verts    = 0u;
          active_dl_c32          = cur_c32;
          active_dl_stroke_w     = cur_stroke_w;
+         active_dl_miter_limit  = cur_miter_limit;
 
          return YAC_TRUE;
       }
@@ -6296,7 +6387,8 @@ namespace setup {
    static void beginDrawListOpLineStrip(sBool _bClosed) {
       const sUI curJoinCap = calcCurJoinCap();
       // Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w);
-      active_dl_closed = _bClosed;
+      active_dl_line_strip_flags = _bClosed ? MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED : 0u;
+
       sUI op;
       switch(curJoinCap & 15u)
       {
@@ -6305,8 +6397,12 @@ namespace setup {
             op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
             break;
 
-         case MINNIE_LINEJOIN_BEVEL:
          case MINNIE_LINEJOIN_ROUND:
+            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
+            active_dl_line_strip_flags |= MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN;
+            break;
+
+         case MINNIE_LINEJOIN_BEVEL:
             op = MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2;
             break;
 
@@ -6314,6 +6410,10 @@ namespace setup {
             op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2;
             break;
       }
+
+      if( MINNIE_LINECAP_ROUND == (curJoinCap >> 4) )
+         active_dl_line_strip_flags |= MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP;
+
       beginDrawListOp(op);
    }
 
@@ -8505,7 +8605,7 @@ namespace setup {
       // Dprintf("xxx drawPathExtrudeShape: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold);
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8565,7 +8665,7 @@ namespace setup {
       Clip2D(vaPoints, _vaClip, vaOut);
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(vaOut, cur_stroke_w, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(vaOut, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8608,7 +8708,7 @@ namespace setup {
       // Dprintf("xxx vaPoints->num_elements=%u\n", vaPoints->num_elements);
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(vaPoints, cur_stroke_w * geo_scale, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(vaPoints, cur_stroke_w * geo_scale, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       // Dprintf("xxx ia_extrude.num_elements=%u\n", p->ia_extrude.num_elements);
       // Dprintf("xxx _vaClip->num_elements=%u\n", _vaClip->num_elements);
@@ -8639,7 +8739,7 @@ namespace setup {
       if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2d: path_idx=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32, cur_mask_idx); }
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8708,7 +8808,7 @@ namespace setup {
       Clip2D(vaPoints, _vaClip, vaClip/*out*/);
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(vaClip, cur_stroke_w * geo_scale, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(vaClip, cur_stroke_w * geo_scale, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8744,7 +8844,7 @@ namespace setup {
 
       // Create va_extrude / ia_extrude
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       // Transform points from 2D to 3D
       FloatArray *va = &p->va_extrude;
@@ -8785,7 +8885,7 @@ namespace setup {
       if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3d: path_idx=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32, cur_mask_idx); }
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8843,7 +8943,7 @@ namespace setup {
 
       // Create va_extrude / ia_extrude
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg, cur_miter_limit);
+      p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       // Transform points from 2D to 3D
       FloatArray *vaPoints = &p->va_extrude;

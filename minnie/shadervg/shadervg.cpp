@@ -69,7 +69,7 @@
 #define SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET  1.0f
 #define SHADERVG_ROUNDRECT_AA_SIZE_OFFSET       0.75f
 #define SHADERVG_ROUNDRECT_AA_STROKE_OFFSET     0.25f
-#define SHADERVG_POINTS_AA_RADIUS_OFFSET        1.5f
+#define SHADERVG_POINTS_AA_RADIUS_OFFSET        0.5f  // 1.5f
 
 #define Dsdvg_pixel_scl(a) ((a) * sdvg_pixel_scl)
 
@@ -202,6 +202,7 @@
 #include "PointsSquareAA32.h"
 #include "PointsSquareGouraudAA32.h"
 #include "PointsRoundAA32.h"
+#include "PointsRoundAA14_2.h"
 #include "PointsRoundGouraudAA32.h"
 
 // Currently bound VBO (0=none)
@@ -355,6 +356,7 @@ static LinesPatternAA32                     lines_pattern_aa_32;
 static PointsSquareAA32                     points_square_aa_32;
 static PointsSquareGouraudAA32              points_square_gouraud_aa_32;
 static PointsRoundAA32                      points_round_aa_32;
+static PointsRoundAA14_2                    points_round_aa_14_2;
 static PointsRoundGouraudAA32               points_round_gouraud_aa_32;
 
 static ShaderVG_Shape *all_shapes[] = {
@@ -490,6 +492,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &points_square_aa_32,
    &points_square_gouraud_aa_32,
    &points_round_aa_32,
+   &points_round_aa_14_2,
    &points_round_gouraud_aa_32,
 };
 #define SHADERVG_NUM_SHAPES  (sizeof(all_shapes)/sizeof(ShaderVG_Shape*))
@@ -657,6 +660,7 @@ static sF32   line_pattern_scale;
 static sF32   line_pattern_offset;  // 0..1
 static sF32   line_miter_limit;
 static sF32   point_radius;  // px
+static sF32   point_scale;
 static sF32   sdvg_pixel_scl;       // vp/proj (aa_range, stroke_w)
 static sF32   fill_r;
 static sF32   fill_g;
@@ -826,6 +830,8 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    stroke_w            = 2.0f;
    stroke_w_aa_off     = SHADERVG_LINE_AA_STROKE_W_OFFSET;
    stroke_w_scale      = 1.0f;
+   point_radius        = 2.0f;
+   point_scale         = 1.0f;
    line_pattern_scale  = 1.0f / 256.0f;
    line_pattern_offset = 0.0f;
    line_miter_limit    = 32.0f;
@@ -3618,7 +3624,7 @@ void YAC_CALL sdvg_DrawPointsSquareVBO32(sUI _vboId, sUI _byteOffset, sUI _numPo
                                                _numPoints,
                                                mvp_matrix,
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                               Dsdvg_pixel_scl(point_radius),
+                                               Dsdvg_pixel_scl(point_radius * point_scale),
                                                SHADERVG_AA_RANGE_OFF
                                                );
 }
@@ -3636,7 +3642,7 @@ void YAC_CALL sdvg_DrawPointsSquareAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
                                                _numPoints,
                                                mvp_matrix,
                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                               Dsdvg_pixel_scl(point_radius) + aaOff,
+                                               Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
                                                b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                );
 }
@@ -3657,7 +3663,7 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI
                                                               _numPoints,
                                                               mvp_matrix,
                                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                              Dsdvg_pixel_scl(point_radius),
+                                                              Dsdvg_pixel_scl(point_radius * point_scale),
                                                               SHADERVG_AA_RANGE_OFF
                                                               );
 }
@@ -3679,7 +3685,7 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32(sUI _vboId, sUI _byteOffset, s
                                                               _numPoints,
                                                               mvp_matrix,
                                                               stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                              Dsdvg_pixel_scl(point_radius) + aaOff,
+                                                              Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
                                                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                               );
 }
@@ -3696,7 +3702,7 @@ void YAC_CALL sdvg_DrawPointsRoundVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoi
                                              _numPoints,
                                              mvp_matrix,
                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                             Dsdvg_pixel_scl(point_radius),
+                                             Dsdvg_pixel_scl(point_radius * point_scale),
                                              SHADERVG_AA_RANGE_OFF
                                              );
 }
@@ -3714,9 +3720,44 @@ void YAC_CALL sdvg_DrawPointsRoundAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numP
                                              _numPoints,
                                              mvp_matrix,
                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                             Dsdvg_pixel_scl(point_radius) + aaOff,
+                                             Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                              );
+}
+
+void YAC_CALL sdvg_DrawPointsRoundVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_round_aa_14_2.drawPointsRoundAAVBO14_2(_vboId,
+                                                 _byteOffset,
+                                                 _numPoints,
+                                                 mvp_matrix,
+                                                 stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                 Dsdvg_pixel_scl(point_radius * point_scale),
+                                                 SHADERVG_AA_RANGE_OFF
+                                                 );
+}
+
+void YAC_CALL sdvg_DrawPointsRoundAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_round_aa_14_2.drawPointsRoundAAVBO14_2(_vboId,
+                                                 _byteOffset,
+                                                 _numPoints,
+                                                 mvp_matrix,
+                                                 stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                 Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
+                                                 b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                 );
 }
 
 void YAC_CALL sdvg_DrawPointsRoundGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -3735,7 +3776,7 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI 
                                                             _numPoints,
                                                             mvp_matrix,
                                                             stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                            Dsdvg_pixel_scl(point_radius),
+                                                            Dsdvg_pixel_scl(point_radius * point_scale),
                                                             SHADERVG_AA_RANGE_OFF
                                                             );
 }
@@ -3757,7 +3798,7 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sU
                                                             _numPoints,
                                                             mvp_matrix,
                                                             stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                            Dsdvg_pixel_scl(point_radius) + aaOff,
+                                                            Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
                                                             b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                             );
 }
@@ -4848,6 +4889,10 @@ void YAC_CALL sdvg_SetPointRadius(sF32 _radius) {
 
 void YAC_CALL sdvg_SetPointSize(sF32 _size) {
    point_radius = _size * 0.5f;
+}
+
+void YAC_CALL sdvg_SetPointScale(sF32 _scale) {
+   point_scale = _scale;
 }
 
 void YAC_CALL sdvg_SetPixelScaling(sF32 _s) {

@@ -623,6 +623,15 @@ The total point size is (size) and the point radius is (0.5 * size).
 */
 YF void YAC_CALL sdvg_SetPointSize (sF32 _size);
 
+/* @function sdvg_SetPointScale,float scale
+Set AA point size scaling factor.
+
+@arg scale AA point size scaling factor (default=1.0)
+
+@group Point
+*/
+YF void YAC_CALL sdvg_SetPointScale (sF32 _scale);
+
 /* @function sdvg_SetPixelScaling,float s
 Set pixel scaling for analytical anti-aliasing draw calls.
 
@@ -2498,6 +2507,38 @@ VBO vertex format (8 bytes per vertex):<br>
 @groupref Stroke
 */
 YF void YAC_CALL sdvg_DrawPointsRoundAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as round points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, round points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@group Point
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsRoundGouraudVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as gouraud-shaded round points (32 bit float format)
