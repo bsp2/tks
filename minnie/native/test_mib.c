@@ -170,6 +170,7 @@ static const char *tests[] = {
    MIB_PATH "test089_roundrect_fill_stroke.mib", //
    MIB_PATH "test090_roundrect_fill.mib",        //
    MIB_PATH "test091_roundrect_stroke.mib",      //
+   MIB_PATH "test092_linejoin_round.mib",        // 
 };
 #define NUM_TESTS  (sizeof(tests) / sizeof(const char*))
 
@@ -306,6 +307,7 @@ void hal_on_draw(void) {
          //            (e.g. inc line widths when drawable size is (640;480) but viewport size is (800;600))
          sF32 strokeScale = ((sF32)DISPLAY_WIDTH) / dw;
          sdvg_SetStrokeScale(strokeScale);
+         sdvg_SetPointScale(strokeScale);
       }
       minDrawableSetScale2f(drawable, 1.0f, 1.0f);
       minDrawableSetRotation(drawable, rot_ang);

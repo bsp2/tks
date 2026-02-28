@@ -103,7 +103,8 @@ ALL_MIB= \
    mib/test088_rect_stroke.mib    \
    mib/test089_roundrect_fill_stroke.mib \
    mib/test090_roundrect_fill.mib \
-   mib/test091_roundrect_stroke.mib
+   mib/test091_roundrect_stroke.mib \
+   mib/test092_linejoin_round.mib
 
 
 # (note) paths are reversed when (SW-)AA is enabled
@@ -194,7 +195,7 @@ debug:
 #	rm mib/test077_giraffe.mib; make mib/test077_giraffe.mib ; tks draw 77
 #	rm mib/test078_butterfly.mib; make mib/test078_butterfly.mib ; tks draw 78
 #	rm mib/test079_minimal.mib; make mib/test079_minimal.mib ; tks draw 79
-	rm mib/test080_debug_l1.mib; make mib/test080_debug_l1.mib 
+#	rm mib/test080_debug_l1.mib; make mib/test080_debug_l1.mib 
 #	rm mib/test081_debug_l2.mib; make mib/test081_debug_l2.mib 
 #	rm mib/test082_circle.mib; make mib/test082_circle.mib ; tks draw 82
 #	rm mib/test083_ellipse_fill.mib; make mib/test083_ellipse_fill.mib #; tks draw 83
@@ -206,3 +207,4 @@ debug:
 #	rm mib/test089_roundrect_fill_stroke.mib; make mib/test089_roundrect_fill_stroke.mib #; tks draw 89
 #	rm mib/test090_roundrect_fill.mib; make mib/test090_roundrect_fill.mib #; tks draw 90
 #	rm mib/test091_roundrect_stroke.mib; make mib/test091_roundrect_stroke.mib #; tks draw 91
+	rm mib/test092_linejoin_round.mib; make mib/test092_linejoin_round.mib ; tks draw 92
