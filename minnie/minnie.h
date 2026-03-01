@@ -1924,7 +1924,7 @@ class ShapePolyline {
    const FloatArray *line_vertices;
    FloatArray *v_tri;  // triangle mesh vertices (out)
 
-   sF32  const_line_width;
+   sF32  const_line_width;           // radius (total_w = const_line_width*2)
    sBool b_line_closed;
    sF32  line_miter_limit;           // [def=32.0]
 #define LINE_BEVEL_FB_DIST  4.0f
@@ -2254,6 +2254,9 @@ class ShapePolyline {
             patternBitNext = mathWrapi(patternBit << 1, 0, 65535);
          sBool bDrawQuadNext = (0u != (_pattern & patternBitNext));
          sBool bAllowJoint = bDrawQuad && bDrawQuadNext;
+
+         Vector2f vCapL;
+         Vector2f vCapR;
 
          if(vertexIterIdx > 0u)
          {
@@ -2704,59 +2707,79 @@ class ShapePolyline {
                // // boolean bDrawSeg = (vertexIterIdx >= (0 + _bClosed));
                if(bDrawSeg)
                {
-                  if(!b_line_closed && (MINNIE_LINECAP_ROUND == line_cap_type))
+                  if(!b_line_closed)
                   {
-                     /* Dprintf("xxx bFirstQuad=%d vertexIdx=%u numVertices=%u\n", bFirstQuad, vertexIdx, numVertices); */
-                     if(bFirstQuad)
+                     if(MINNIE_LINECAP_ROUND == line_cap_type)
                      {
-                        bFirstQuad = YAC_FALSE;
+                        /* Dprintf("xxx bFirstQuad=%d vertexIdx=%u numVertices=%u\n", bFirstQuad, vertexIdx, numVertices); */
+                        if(bFirstQuad)
+                        {
+                           bFirstQuad = YAC_FALSE;
 #ifdef MINNIE_CAP_BEZIER2
-                        /* vDirCap.unitScaleFrom(&vDir, const_line_width*-2.0f); */
-                        vDirCap.subFrom(&vEndLastL, &vStartLastL);
-                        vDirCap.unitScale(const_line_width*-1.33f);
-                        addRoundLineCap_bezier2(&vStartLastL, &vDirCap, &vStartLastR,
-                                                num_div_round_line_joint
-                                                );
+                           vDirCap.subFrom(&vEndLastL, &vStartLastL);
+                           vDirCap.unitScale(const_line_width*-1.33f);
+                           addRoundLineCap_bezier2(&vStartLastL, &vDirCap, &vStartLastR,
+                                                   num_div_round_line_joint
+                                                   );
 #else
-                        vCapCtr.init( (vStartLastL.x + vStartLastR.x) * 0.5f,
-                                      (vStartLastL.y + vStartLastR.y) * 0.5f
-                                      );
-                        vCapOuter = vEndLastL;
-                        vCapOuter.sub(&vStartLastL);
-                        vCapOuter.unitScale(-const_line_width*2.0f);
-                        // vCapOuter.unitScale2f(-const_line_width*(2.0f*1.5f), -const_line_width*(2.0f*0.5f));
-                        vCapOuter.add(&vCapCtr);
+                           vCapCtr.init( (vStartLastL.x + vStartLastR.x) * 0.5f,
+                                         (vStartLastL.y + vStartLastR.y) * 0.5f
+                                         );
+                           vCapOuter = vEndLastL;
+                           vCapOuter.sub(&vStartLastL);
+                           vCapOuter.unitScale(-const_line_width*2.0f);
+                           vCapOuter.add(&vCapCtr);
 
-                        addRoundLineCap_bezier(&vStartLastL, &vCapOuter, &vStartLastR,
-                                               num_div_round_line_joint
-                                               );
+                           addRoundLineCap_bezier(&vStartLastL, &vCapOuter, &vStartLastR,
+                                                  num_div_round_line_joint
+                                                  );
 #endif // MINNIE_CAP_BEZIER2
-                     }
-                     if(vertexIdx == numVertices-1u)
+                        }
+                        if(vertexIdx == numVertices-1u)
+                        {
+#ifdef MINNIE_CAP_BEZIER2
+                           vDirCap.subFrom(&vEndL, &vStartL);
+                           vDirCap.unitScale(const_line_width*1.33f);
+                           addRoundLineCap_bezier2(&vEndL, &vDirCap, &vEndR,
+                                                   num_div_round_line_joint
+                                                   );
+#else
+                           vCapCtr.init( (vEndL.x + vEndR.x) * 0.5f,
+                                         (vEndL.y + vEndR.y) * 0.5f
+                                         );
+                           // vDir ?
+                           vCapOuter = vEndL;
+                           vCapOuter.sub(&vStartL);
+                           vCapOuter.unitScale(const_line_width*2.0f);
+                           vCapOuter.add(&vCapCtr);
+
+                           addRoundLineCap_bezier(&vEndL, &vCapOuter, &vEndR,
+                                                  num_div_round_line_joint
+                                                  );
+#endif // MINNIE_CAP_BEZIER2
+                        }
+                     } // LINECAP_ROUND
+                     else if(MINNIE_LINECAP_SQUARE == line_cap_type)
                      {
-#ifdef MINNIE_CAP_BEZIER2
-                        /* vDirCap.unitScaleFrom(&vDir, const_line_width*2.0f); */
-                        vDirCap.subFrom(&vEndL, &vStartL);
-                        vDirCap.unitScale(const_line_width*1.33f);
-                        addRoundLineCap_bezier2(&vEndL, &vDirCap, &vEndR,
-                                                num_div_round_line_joint
-                                                );
-#else
-                        vCapCtr.init( (vEndL.x + vEndR.x) * 0.5f,
-                                      (vEndL.y + vEndR.y) * 0.5f
-                                      );
-                        // vDir ?
-                        vCapOuter = vEndL;
-                        vCapOuter.sub(&vStartL);
-                        vCapOuter.unitScale(const_line_width*2.0f);
-                        vCapOuter.add(&vCapCtr);
-
-                        addRoundLineCap_bezier(&vEndL, &vCapOuter, &vEndR,
-                                               num_div_round_line_joint
-                                               );
-#endif // MINNIE_CAP_BEZIER2
+                        if(bFirstQuad)
+                        {
+                           bFirstQuad = YAC_FALSE;
+                           vDirCap.subFrom(&vEndLastL, &vStartLastL);
+                           vDirCap.unitScale(-const_line_width);
+                           vCapL.addFrom(&vStartLastL, &vDirCap);
+                           vCapR.addFrom(&vStartLastR, &vDirCap);
+                           addQuad(&vCapR, &vCapL, &vStartLastL, &vStartLastR);
+                        }
+                        if(vertexIdx == numVertices-1u)
+                        {
+                           vDirCap.subFrom(&vEndL, &vStartL);
+                           vDirCap.unitScale(const_line_width);
+                           vCapL.addFrom(&vEndL, &vDirCap);
+                           vCapR.addFrom(&vEndR, &vDirCap);
+                           addQuad(&vCapL, &vCapR, &vEndR, &vEndL);
+                        }
                      }
-                  }
+                  } // if !b_line_closed
 
                   // trace "xxx drawSeg: vertexIdx="+vertexIdx;
                   addQuad(&vStartLastL, &vEndLastL, &vEndLastR, &vStartLastR);
