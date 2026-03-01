@@ -200,10 +200,13 @@
 #include "LinesPatternAA14_2.h"
 #include "LinesPatternAA32.h"
 #include "PointsSquareAA32.h"
+#include "PointsSquareAA14_2.h"
 #include "PointsSquareGouraudAA32.h"
+#include "PointsSquareGouraudAA14_2.h"
 #include "PointsRoundAA32.h"
 #include "PointsRoundAA14_2.h"
 #include "PointsRoundGouraudAA32.h"
+#include "PointsRoundGouraudAA14_2.h"
 
 // Currently bound VBO (0=none)
 static sUI current_vbo_id = 0u;
@@ -354,10 +357,13 @@ static LinesGouraudAA32                     lines_gouraud_aa_32;
 static LinesPatternAA14_2                   lines_pattern_aa_14_2;
 static LinesPatternAA32                     lines_pattern_aa_32;
 static PointsSquareAA32                     points_square_aa_32;
+static PointsSquareAA14_2                   points_square_aa_14_2;
 static PointsSquareGouraudAA32              points_square_gouraud_aa_32;
+static PointsSquareGouraudAA14_2            points_square_gouraud_aa_14_2;
 static PointsRoundAA32                      points_round_aa_32;
 static PointsRoundAA14_2                    points_round_aa_14_2;
 static PointsRoundGouraudAA32               points_round_gouraud_aa_32;
+static PointsRoundGouraudAA14_2             points_round_gouraud_aa_14_2;
 
 static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_32,
@@ -490,10 +496,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &lines_pattern_aa_14_2,
    &lines_pattern_aa_32,
    &points_square_aa_32,
+   &points_square_aa_14_2,
    &points_square_gouraud_aa_32,
+   &points_square_gouraud_aa_14_2,
    &points_round_aa_32,
    &points_round_aa_14_2,
    &points_round_gouraud_aa_32,
+   &points_round_gouraud_aa_14_2,
 };
 #define SHADERVG_NUM_SHAPES  (sizeof(all_shapes)/sizeof(ShaderVG_Shape*))
 
@@ -3647,6 +3656,41 @@ void YAC_CALL sdvg_DrawPointsSquareAAVBO32(sUI _vboId, sUI _byteOffset, sUI _num
                                                );
 }
 
+void YAC_CALL sdvg_DrawPointsSquareVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_square_aa_14_2.drawPointsSquareAAVBO14_2(_vboId,
+                                                   _byteOffset,
+                                                   _numPoints,
+                                                   mvp_matrix,
+                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                   Dsdvg_pixel_scl(point_radius * point_scale),
+                                                   SHADERVG_AA_RANGE_OFF
+                                                   );
+}
+
+void YAC_CALL sdvg_DrawPointsSquareAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +2 s14.2 y
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_square_aa_14_2.drawPointsSquareAAVBO14_2(_vboId,
+                                                   _byteOffset,
+                                                   _numPoints,
+                                                   mvp_matrix,
+                                                   stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                   Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
+                                                   b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                   );
+}
+
 void YAC_CALL sdvg_DrawPointsSquareGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
    //
    // VBO vertex format (12 bytes per vertex):
@@ -3688,6 +3732,49 @@ void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32(sUI _vboId, sUI _byteOffset, s
                                                               Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
                                                               b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                               );
+}
+
+void YAC_CALL sdvg_DrawPointsSquareGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 u8    r
+   //   +1 u8    g
+   //   +2 u8    b
+   //   +3 u8    a
+   //   +4 s14.2 x
+   //   +6 s14.2 y
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_square_gouraud_aa_14_2.drawPointsSquareGouraudAAVBO14_2(_vboId,
+                                                                  _byteOffset,
+                                                                  _numPoints,
+                                                                  mvp_matrix,
+                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                  Dsdvg_pixel_scl(point_radius * point_scale),
+                                                                  SHADERVG_AA_RANGE_OFF
+                                                                  );
+}
+
+void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 u8    r
+   //   +1 u8    g
+   //   +2 u8    b
+   //   +3 u8    a
+   //   +4 s14.2 x
+   //   +6 s14.2 y
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsSquareGouraudAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_square_gouraud_aa_14_2.drawPointsSquareGouraudAAVBO14_2(_vboId,
+                                                                  _byteOffset,
+                                                                  _numPoints,
+                                                                  mvp_matrix,
+                                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                  Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
+                                                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                                  );
 }
 
 void YAC_CALL sdvg_DrawPointsRoundVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -3801,6 +3888,49 @@ void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO32(sUI _vboId, sUI _byteOffset, sU
                                                             Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
                                                             b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
                                                             );
+}
+
+void YAC_CALL sdvg_DrawPointsRoundGouraudVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0  u8    r
+   //   +1  u8    g
+   //   +2  u8    b
+   //   +3  u8    a
+   //   +4  s14.2 x
+   //   +6  s14.2 y
+   //
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_round_gouraud_aa_14_2.drawPointsRoundGouraudAAVBO14_2(_vboId,
+                                                                _byteOffset,
+                                                                _numPoints,
+                                                                mvp_matrix,
+                                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                Dsdvg_pixel_scl(point_radius * point_scale),
+                                                                SHADERVG_AA_RANGE_OFF
+                                                                );
+}
+
+void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0  u8    r
+   //   +1  u8    g
+   //   +2  u8    b
+   //   +3  u8    a
+   //   +4  s14.2 x
+   //   +6  s14.2 y
+   //
+   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
+   Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundGouraudAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
+   points_round_gouraud_aa_14_2.drawPointsRoundGouraudAAVBO14_2(_vboId,
+                                                                _byteOffset,
+                                                                _numPoints,
+                                                                mvp_matrix,
+                                                                stroke_r, stroke_g, stroke_b, stroke_a * global_a,
+                                                                Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
+                                                                b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
+                                                                );
 }
 
 static void loc_CreateScratchBuffer(void) {
@@ -6629,7 +6759,11 @@ void YAC_CALL sdvg_Vertex2f(sF32 _x, sF32 _y) {
       case DRAW_MODE_POINTS_ROUND_AA:
       case DRAW_MODE_POINTS_ROUND_GOURAUD:
       case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+         sdvg_BufferAddLinePointFlat14_2(attrib_write_buffer, _x, _y);
+#else
          sdvg_BufferAddLinePointFlat32(attrib_write_buffer, _x, _y);
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
          break;
    }
 
@@ -7333,59 +7467,115 @@ void YAC_CALL sdvg_End(void) {
                   break;
 
                case DRAW_MODE_POINTS_SQUARE:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsSquareVBO14_2(current_vbo_id,
+                                               current_draw_start_offset,
+                                               current_draw_vertex_index
+                                               );
+#else
                   sdvg_DrawPointsSquareVBO32(current_vbo_id,
                                              current_draw_start_offset,
                                              current_draw_vertex_index
                                              );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_SQUARE_AA:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsSquareAAVBO14_2(current_vbo_id,
+                                                 current_draw_start_offset,
+                                                 current_draw_vertex_index
+                                                 );
+#else
                   sdvg_DrawPointsSquareAAVBO32(current_vbo_id,
                                                current_draw_start_offset,
                                                current_draw_vertex_index
                                                );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_SQUARE_GOURAUD:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsSquareGouraudVBO14_2(current_vbo_id,
+                                                      current_draw_start_offset,
+                                                      current_draw_vertex_index
+                                                      );
+#else
                   sdvg_DrawPointsSquareGouraudVBO32(current_vbo_id,
                                                     current_draw_start_offset,
                                                     current_draw_vertex_index
                                                     );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_SQUARE_GOURAUD_AA:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsSquareGouraudAAVBO14_2(current_vbo_id,
+                                                        current_draw_start_offset,
+                                                        current_draw_vertex_index
+                                                        );
+#else
                   sdvg_DrawPointsSquareGouraudAAVBO32(current_vbo_id,
                                                       current_draw_start_offset,
                                                       current_draw_vertex_index
                                                       );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_ROUND:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsRoundVBO14_2(current_vbo_id,
+                                              current_draw_start_offset,
+                                              current_draw_vertex_index
+                                              );
+#else
                   sdvg_DrawPointsRoundVBO32(current_vbo_id,
                                             current_draw_start_offset,
                                             current_draw_vertex_index
                                             );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_ROUND_AA:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsRoundAAVBO14_2(current_vbo_id,
+                                                current_draw_start_offset,
+                                                current_draw_vertex_index
+                                                );
+#else
                   sdvg_DrawPointsRoundAAVBO32(current_vbo_id,
                                               current_draw_start_offset,
                                               current_draw_vertex_index
                                               );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_ROUND_GOURAUD:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsRoundGouraudVBO14_2(current_vbo_id,
+                                                     current_draw_start_offset,
+                                                     current_draw_vertex_index
+                                                     );
+#else
                   sdvg_DrawPointsRoundGouraudVBO32(current_vbo_id,
                                                    current_draw_start_offset,
                                                    current_draw_vertex_index
                                                    );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
                case DRAW_MODE_POINTS_ROUND_GOURAUD_AA:
+#ifdef SHADERVG_USE_DEFAULT_POINT_14_2
+                  sdvg_DrawPointsRoundGouraudAAVBO14_2(current_vbo_id,
+                                                       current_draw_start_offset,
+                                                       current_draw_vertex_index
+                                                       );
+#else
                   sdvg_DrawPointsRoundGouraudAAVBO32(current_vbo_id,
                                                      current_draw_start_offset,
                                                      current_draw_vertex_index
                                                      );
+#endif // SHADERVG_USE_DEFAULT_POINT_14_2
                   break;
 
             } // switch draw_mode

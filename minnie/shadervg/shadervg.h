@@ -2431,6 +2431,42 @@ VBO vertex format (8 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPointsSquareAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
+/* @function sdvg_DrawPointsSquareVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as square points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawPointsSquareVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsSquareAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, square points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawPointsSquareAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
 /* @function sdvg_DrawPointsSquareGouraudVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as gouraud-shaded square points (32 bit float format)
 
@@ -2465,6 +2501,7 @@ VBO vertex format (12 bytes per vertex):<br>
   +3 u8  a<br>
   +4 f32 x<br>
   +8 f32 y<br>
+</pre>
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
@@ -2475,6 +2512,52 @@ VBO vertex format (12 bytes per vertex):<br>
 @group Gouraud
 */
 YF void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsSquareGouraudVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as gouraud-shaded square points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 u8    r<br>
+  +1 u8    g<br>
+  +2 u8    b<br>
+  +3 u8    a<br>
+  +4 s14.2 x<br>
+  +6 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+@group Gouraud
+*/
+YF void YAC_CALL sdvg_DrawPointsSquareGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsSquareGouraudAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded square points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 u8    r<br>
+  +1 u8    g<br>
+  +2 u8    b<br>
+  +3 u8    a<br>
+  +4 s14.2 x<br>
+  +6 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+@group Gouraud
+*/
+YF void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsRoundVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as round points (32 bit float format)
@@ -2585,6 +2668,52 @@ VBO vertex format (12 bytes per vertex):<br>
 @group Gouraud
 */
 YF void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundGouraudVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as gouraud-shaded round points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 u8    r<br>
+  +1 u8    g<br>
+  +2 u8    b<br>
+  +3 u8    a<br>
+  +4 s14.2 x<br>
+  +6 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+@group Gouraud
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundGouraudAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, gouraud-shaded round points (14.2 fixed point format)
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 u8    r<br>
+  +1 u8    g<br>
+  +2 u8    b<br>
+  +3 u8    a<br>
+  +4 s14.2 x<br>
+  +8 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints points will be drawn).
+
+@group Point
+@groupref Stroke
+@group Gouraud
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 // ----------- custom shaders and (scratch) draw functions ------------
 /* @function sdvg_CreateShader,String vs,String fs:int

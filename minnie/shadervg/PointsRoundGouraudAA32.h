@@ -42,7 +42,7 @@ class PointsRoundGouraudAA32 : public ShaderVG_Shape {
       "  vec2 vCtr = a_vertex; \n"
       "  vec2 v; \n"
       " \n"
-      "  float index = float(gl_VertexID % 6); \n"
+      "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 4.9) { \n"
       "    v = vec2(vCtr.x - u_point_radius, vCtr.y + u_point_radius); \n"  // LB

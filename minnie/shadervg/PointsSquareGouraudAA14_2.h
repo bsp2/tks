@@ -1,8 +1,8 @@
 // ----
-// ---- file   : PointsSquareGouraudAA32.h
+// ---- file   : PointsSquareGouraudAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -24,7 +24,7 @@
 // ----
 // ----
 
-class PointsSquareGouraudAA32 : public ShaderVG_Shape {
+class PointsSquareGouraudAA14_2 : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
@@ -39,7 +39,7 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
       "VARYING_OUT vec4 v_color; \n"
       " \n"
       "void main(void) { \n"
-      "  vec2 vCtr = a_vertex; \n"
+      "  vec2 vCtr = a_vertex * 0.25; \n"
       "  vec2 v; \n"
       " \n"
       "  float index = float(gl_VertexID); \n"
@@ -114,22 +114,22 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   void drawPointsSquareGouraudAAVBO32(sUI              _vboId,
-                                       sUI              _byteOffset,
-                                       sUI              _numPoints,
-                                       Dsdvg_mat4_ref_t _mvpMatrix,
-                                       sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                                       sF32             _pointRadius,
-                                       sF32             _aaRange
-                                       ) {
+   void drawPointsSquareGouraudAAVBO14_2(sUI              _vboId,
+                                         sUI              _byteOffset,
+                                         sUI              _numPoints,
+                                         Dsdvg_mat4_ref_t _mvpMatrix,
+                                         sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                         sF32             _pointRadius,
+                                         sF32             _aaRange
+                                         ) {
       //
-      // VBO vertex format (12 bytes per vertex):
-      //   +0  u8  r
-      //   +1  u8  g
-      //   +2  u8  b
-      //   +3  u8  a
-      //   +4  f32 x
-      //   +8  f32 y
+      // VBO vertex format (8 bytes per vertex):
+      //   +0  u8    r
+      //   +1  u8    g
+      //   +2  u8    b
+      //   +3  u8    a
+      //   +4  s14.2 x
+      //   +6  s14.2 y
       //
 
       sdvg_BindVBO(_vboId);
@@ -145,8 +145,8 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
 
-      Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  12/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  4);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  8/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT,          GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset +  4);
 
       Dsdvg_attrib_enable(shape_a_color);
       Dsdvg_attrib_enable(shape_a_vertex);
