@@ -1,6 +1,6 @@
 /// tkopengl.cpp
 ///
-/// (c) 2001-2025 by Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 by Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -188,8 +188,10 @@ static void loc_shared_export(void) {
    tkopengl_shared._glShadeModel               = &_glShadeModel;
    tkopengl_shared._glShaderSource             = &_glShaderSource_int;
    tkopengl_shared._glStencilFunc              = &_glStencilFunc;
+   tkopengl_shared._glStencilFuncSeparate      = &_glStencilFuncSeparate;
    tkopengl_shared._glStencilMask              = &_glStencilMask;
    tkopengl_shared._glStencilOp                = &_glStencilOp;
+   tkopengl_shared._glStencilOpSeparate        = &_glStencilOpSeparate;
    tkopengl_shared._glTexCoord1f               = &_glTexCoord1f;
    tkopengl_shared._glTexCoord2f               = &_glTexCoord2f;
    tkopengl_shared._glTexCoord3f               = &_glTexCoord3f;

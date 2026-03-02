@@ -1,6 +1,6 @@
 /// tkopengl_shared.h
 ///
-/// (c) 2013-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2013-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -94,8 +94,10 @@ extern "C" {
       void   (YAC_CALL *_glShadeModel)               (sSI);
       void   (YAC_CALL *_glShaderSource)             (GLuint _shader, GLsizei _count, const char *const*_src, const GLint *_lengths);
       void   (YAC_CALL *_glStencilFunc)              (sSI _func, sSI _ref, sUI _mask);
+      void   (YAC_CALL *_glStencilFuncSeparate)      (sSI _face, sSI _func, sSI _ref, sUI _mask);
       void   (YAC_CALL *_glStencilMask)              (sUI _mask);
       void   (YAC_CALL *_glStencilOp)                (sSI _sfail, sSI _dpfail, sSI _dppass);
+      void   (YAC_CALL *_glStencilOpSeparate)        (sSI _face, sSI _sfail, sSI _dpfail, sSI _dppass);
       void   (YAC_CALL *_glTexCoord1f)               (sF32 _v0);
       void   (YAC_CALL *_glTexCoord2f)               (sF32 _v0, sF32 _v1);
       void   (YAC_CALL *_glTexCoord3f)               (sF32 _v0, sF32 _v1, sF32 _v2);

@@ -1,6 +1,6 @@
 /// tksopengl.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -118,6 +118,8 @@ glMultiTexCoord3f_t         glMultiTexCoord3f_xref         = NULL;
 glBlendFuncSeparate_t       glBlendFuncSeparate_xref       = NULL;
 glBlendEquation_t           glBlendEquation_xref           = NULL;
 glBlendColor_t              glBlendColor_xref              = NULL;
+glStencilFuncSeparate_t     glStencilFuncSeparate_xref     = NULL;
+glStencilOpSeparate_t       glStencilOpSeparate_xref       = NULL;
 
 // --- Framebuffer objects (FBO) ----
 glIsRenderbuffer_t                      glIsRenderbuffer_xref                      = NULL;
@@ -410,6 +412,15 @@ void YAC_CALL _zglLoadExtensions(void) {
       Dresolveext(glBlendFuncSeparate);
       Dresolveext(glBlendEquation);
       Dresolveext(glBlendColor);
+#endif // DX_GLES
+
+      // Stencil func/op separate
+#ifdef DX_GLES
+      Dglesbuiltin(glStencilFuncSeparate);
+      Dglesbuiltin(glStencilOpSeparate);
+#else
+      Dresolveext(glStencilFuncSeparate);
+      Dresolveext(glStencilOpSeparate);
 #endif // DX_GLES
 
       Ddbghaveext(glBlendFuncSeparate, "               blend func");
@@ -3035,10 +3046,28 @@ void YAC_CALL _glStencilFunc(sSI _func, sSI _ref, sUI _mask) {
    Dtraceglerror("glStencilFunc");
 }
 
+// ---------------------------------------------------------------------------- glStencilFunc
+void YAC_CALL _glStencilFuncSeparate(sSI _face, sSI _func, sSI _ref, sUI _mask) {
+   Dcheckext(glStencilFuncSeparate)
+   {
+      ::glStencilFuncSeparate_xref(_face, _func, _ref, _mask);
+      Dtraceglerror("glStencilFuncSeparate");
+   }
+}
+
 // ---------------------------------------------------------------------------- glStencilOp
 void YAC_CALL _glStencilOp(sSI _sfail, sSI _dpfail, sSI _dppass) {
    ::glStencilOp(_sfail, _dpfail, _dppass);
    Dtraceglerror("glStencilOp");
+}
+
+// ---------------------------------------------------------------------------- glStencilOpSeparate
+void YAC_CALL _glStencilOpSeparate(sSI _face, sSI _sfail, sSI _dpfail, sSI _dppass) {
+   Dcheckext(glStencilOpSeparate)
+   {
+      ::glStencilOpSeparate_xref(_face,_sfail, _dpfail, _dppass);
+      Dtraceglerror("glStencilOpSeparate");
+   }
 }
 
 // ---------------------------------------------------------------------------- glStencilMask

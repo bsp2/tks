@@ -1,6 +1,6 @@
 /// tksopengl.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL)
 ///
 ///
@@ -43,6 +43,8 @@ typedef void      (APIENTRY *glBlendFuncSeparate_t)   (GLenum, GLenum, GLenum, G
 typedef void      (APIENTRY *glBlendEquation_t)       (GLenum);
 typedef void      (APIENTRY *glBlendColor_t)          (GLfloat, GLfloat, GLfloat, GLfloat);
 ////typedef void      (APIENTRY *glGenerateMipmap_t)      (GLenum);
+typedef void      (APIENTRY *glStencilFuncSeparate_t) (GLenum, GLenum, GLint, GLuint);
+typedef void      (APIENTRY *glStencilOpSeparate_t)   (GLenum, GLenum, GLenum, GLenum);
 
 // --- Framebuffer object (FBO) extensions ---
 typedef GLboolean (APIENTRY *glIsRenderbuffer_t)             (GLuint renderbuffer);
@@ -1137,6 +1139,19 @@ Set function and reference value for stencil testing
 YF void        YAC_CALL _glStencilFunc          (sSI, sSI, sUI);
 
 
+/* @function glStencilFuncSeparate,int face,int func,float ref,int mask
+Set front and/or back function and reference value for stencil testing
+
+@arg face Specifies whether front and/or back stencil state is updated. Three symbolic constants are valid: §GL_FRONT, §GL_BACK, and §GL_FRONT_AND_BACK. 
+@arg func Specifies the test function. Eight tokens are valid: §GL_NEVER, §GL_LESS, §GL_LEQUAL, §GL_GREATER, §GL_GEQUAL, §GL_EQUAL, §GL_NOTEQUAL, and §GL_ALWAYS. The initial value is §GL_ALWAYS.
+@arg ref Specifies the reference	value for the stencil test. ref is clamped to the range [0,2n-1], where n is the number of bitplanes in the stencil buffer. The initial value is 0.
+@arg mask Specifies a mask that is ANDed with both the reference value and the stored stencil value when	the test is done. The initial value	is all 1's.
+
+@see http://www.opengl.org/sdk/docs/man/html/glStencilFunc.xhtml
+*/
+YF void        YAC_CALL _glStencilFuncSeparate  (sSI,sSI, sSI, sUI);
+
+
 /* @function glStencilOp,int fail,int zfail,int zpass
 Set stencil test actions
 
@@ -1147,6 +1162,19 @@ Set stencil test actions
 @see http://www.opengl.org/sdk/docs/man/html/glStencilOp.xhtml
 */
 YF void        YAC_CALL _glStencilOp            (sSI, sSI, sSI);
+
+
+/* @function glStencilOpSeparate,int face,int fail,int zfail,int zpass
+set front and/or back stencil test actions
+
+@arg face Specifies whether front and/or back stencil state is updated. Three symbolic constants are valid: §GL_FRONT, §GL_BACK, and §GL_FRONT_AND_BACK
+@arg fail Specifies the action to take when the stencil test fails. Six symbolic constants are accepted: §GL_KEEP, §GL_ZERO, §GL_REPLACE, §GL_INCR, §GL_DECR, and §GL_INVERT. The initial value is §GL_KEEP.
+@arg zfail Specifies the stencil action when the stencil test passes, but the depth test fails. zfail accepts the same symbolic constants as fail. The initial value is §GL_KEEP.
+@arg zpass Specifies the stencil action when both the stencil test and the depth test pass, or when the stencil test passes and either	there is no depth buffer or depth testing is not enabled. zpass accepts the same symbolic constants as fail. The initial value is §GL_KEEP.
+
+@see http://www.opengl.org/sdk/docs/man/html/glStencilOp.xhtml
+*/
+YF void        YAC_CALL _glStencilOpSeparate    (sSI,sSI, sSI, sSI);
 
 
 /* @function glStencilMask,int mask
