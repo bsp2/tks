@@ -1,8 +1,8 @@
 // ----
-// ---- file   : gl_ext.cpp
+// ---- file   : gl_ext.c
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2001-2025 by bsp
+// ----          Copyright 2001-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -135,6 +135,8 @@ glUniformMatrix4fv_t               glUniformMatrix4fv                 = NULL;
 glRenderbufferStorage_t            glRenderbufferStorage              = NULL;
 glFramebufferRenderbuffer_t        glFramebufferRenderbuffer          = NULL;
 glRenderbufferStorageMultisample_t glRenderbufferStorageMultisample   = NULL;
+glStencilFuncSeparate_t            glStencilFuncSeparate              = NULL;
+glStencilOpSeparate_t              glStencilOpSeparate                = NULL;
 
 static glanyfun_t int_GetProcAddressA3(const char *_name1, const char *_name2, const char *_name3) {
    glanyfun_t r = NULL;
@@ -253,6 +255,8 @@ void load_gl_extensions(void) {
    Dresolveext(glRenderbufferStorage);
    Dresolveext(glFramebufferRenderbuffer);
    Dresolveext(glRenderbufferStorageMultisample);
+   Dresolveext(glStencilFuncSeparate);
+   Dresolveext(glStencilOpSeparate);
    /* printf("xxx load_gl_extensions: LEAVE  glBindBuffer=%p glGenVertexArrays=%p\n", glBindBuffer, glGenVertexArrays); */
 }
 

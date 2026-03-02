@@ -2,7 +2,7 @@
 // ---- file   : gl_ext.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2001-2025 by bsp
+// ----          Copyright 2001-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -121,6 +121,8 @@ typedef void      (APIENTRY *glDeleteVertexArrays_t)         (GLsizei n, const G
 typedef void      (APIENTRY *glGenVertexArrays_t)            (GLsizei n, GLuint *arrays);
 typedef GLboolean (APIENTRY *glIsVertexArray_t)              (GLuint array);
 typedef void      (APIENTRY *glVertexAttribDivisor_t)        (GLuint index, GLuint divisor);
+typedef void      (APIENTRY *glStencilFuncSeparate_t)        (GLenum, GLenum, GLint, GLuint);
+typedef void      (APIENTRY *glStencilOpSeparate_t)          (GLenum, GLenum, GLenum, GLenum);
 
 extern glBindBuffer_t                     glBindBuffer;
 extern glIsBuffer_t                       glIsBuffer;
@@ -203,6 +205,9 @@ extern glUniformMatrix4fv_t               glUniformMatrix4fv;
 extern glRenderbufferStorage_t            glRenderbufferStorage;
 extern glFramebufferRenderbuffer_t        glFramebufferRenderbuffer;
 extern glRenderbufferStorageMultisample_t glRenderbufferStorageMultisample;
+extern glStencilFuncSeparate_t            glStencilFuncSeparate;
+extern glStencilOpSeparate_t              glStencilOpSeparate;
+
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
