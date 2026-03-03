@@ -1871,6 +1871,13 @@ struct Vector3f {
          z = _p1->z + pDir.z * t;
          return YAC_TRUE;
       }
+      else
+      {
+         // fix GCC warning
+         x = 0.0f;
+         y = 0.0f;
+         z = 0.0f;
+      }
 
       // colinear
       return YAC_FALSE;
@@ -2156,7 +2163,9 @@ class ShapePolyline {
       Vector2f vStartLastL;
       Vector2f vStartLastR;
       Vector2f vEndLastL;
+      vEndLastL.init(0.0f, 0.0f); // fix GCC warning
       Vector2f vEndLastR;
+      vEndLastR.init(0.0f, 0.0f); // fix GCC warning
 
       Vector2f vDirLast;
       int skipQuad = 0;
@@ -2209,6 +2218,7 @@ class ShapePolyline {
       sUI vertexIterIdx = 0u;
 
       Vector2f vISFirst;
+      vISFirst.init(0.0f, 0.0f); // fix GCC warning
       /* sF32 wISSclFirst; */
 
       sBool bFirstQuad = YAC_TRUE;
