@@ -1,0 +1,202 @@
+
+boolean b_glcore = 1;
+if(b_glcore) putenv("TKSDL_GLCORE=1");   // select 4.1 core profile on macOS
+putenv("TKSDL_GLERROR=1");
+
+use tksdl;
+use tkopengl;
+use tkmath;
+use tkminnie;
+
+float VP_W = 512;
+float VP_H = 384;
+float VP_ZOOM = 2;
+
+float frot = 0;
+boolean b_rot = true;
+int num_frames_rendered = 0;
+int read_x = -1;
+int read_y;
+boolean b_queued_screenshot;
+
+
+function SaveScreenShotPNG(String _pathName) : boolean {
+   local Texture tex;
+   boolean ret = false;
+   if(tex.alloc(Viewport.width, Viewport.height, 4))
+   {
+      glReadBuffer(GL_BACK);
+      int off = 0;
+      int y = Viewport.height - 1;
+      loop(Viewport.height)
+      {
+         zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+         y--;
+         off += Viewport.width;
+      }
+      ret = tex.saveImage(_pathName);
+   }
+   return ret;
+}
+
+function onDraw() {
+   // trace "[...] onDraw";
+
+   float dt = FPS.precision;
+
+   sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
+
+   sdvg_BeginFrame();
+   sdvg_SetViewport(0, 0, Viewport.width, Viewport.height);
+   sdvg_SetScissor(0, 0, Viewport.width, Viewport.height);
+
+   sdvg_Clear4f(0.1,0.15,0.3,1.0);
+
+   sdvg_SetStrokeWidth(1.0f);
+   sdvg_SetFillColor4f(0.1f, 0.4f, 0.25f, 1.0f);
+   sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+   sdvg_SetGlobalAlpha(1.0f);
+   sdvg_PaintSolid();
+
+   if( !(++num_frames_rendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   sdvg_ProjInitOrtho(VP_W*0.5, VP_H*0.5);
+   sdvg_ModelInitIdentity();
+   sdvg_ModelRotatef(frot);
+   sdvg_SetColorARGB(#FFe6e6e6);
+
+   float s = 128;
+   if(sdvg_BeginFilledTriangles(2*3))
+   {
+      sdvg_Vertex2f(-s,  s);
+      sdvg_Vertex2f( s,  s);
+      sdvg_Vertex2f( s, -s);
+
+      sdvg_Vertex2f(-s,  s);
+      sdvg_Vertex2f( s, -s);
+      sdvg_Vertex2f(-s, -s);
+
+      sdvg_End();
+   }
+
+   sdvg_EndFrame();
+
+   if(-1 != read_x)
+   {
+      glReadBuffer(GL_BACK);
+      // glReadBuffer(GL_COLOR_ATTACHMENT0);
+      glFinish();
+      Integer c32 = zglReadColorPixel(read_x, read_y);
+      trace "ReadPixel ("+read_x+";"+read_y+") = ABGR(#"+c32.printf("%08x")+")";
+      read_x = -1;
+   }
+
+   if(b_queued_screenshot)
+   {
+      b_queued_screenshot = false;
+      SaveScreenShotPNG("screenshots/minimal_sdvg.png");
+   }
+
+   if(b_rot)
+   {
+      frot = mathWrapf(frot + dt * (1.0 / 360), 0, 2PI);
+   }
+
+   // SDL.exitEventLoop();
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   read_x = _x;
+   read_y = _y;
+
+   // if(_cbs & MOUSE_LBUTTON)
+   //    Mouse.grab();
+   // else if(_nbs & MOUSE_LBUTTON)
+   //    Mouse.ungrab();
+}
+
+function onKeyboard(Key _k) {
+   trace "[...] onKeyboard: k.code="+_k.code+" ("+TKS.constantToString(_k.code, "VKEY_")+") mod="+_k.mod+" pressed="+_k.pressed+" released="+_k.released+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case 'f':
+         Viewport.toggleFullScreen();
+         break;
+
+      case 'p':
+         b_queued_screenshot = true;
+         trace "[...] queue screenshot";
+         break;
+
+      case VKEY_SPACE:
+         b_rot = !b_rot;
+         trace "[...] b_rot="+b_rot;
+         break;
+
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+int tim_count = 0;
+function onTimer() {
+   // trace "[...] onTimer";
+   // if(++tim_count > 100)
+   //    SDL.exitEventLoop();
+}
+
+function onOpen() {
+   // trace "[...] onOpen";
+   zglEnableGLCore(b_glcore);
+   if(!sdvg_OnOpen())
+   {
+      die "sdvg_OnOpen() failed";
+   }
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval = 1000.0f / 60;
+   FPS.limit = 60;
+
+   SDL.eventPolling = false; // tksdl default is "true" (do not block while waiting for an SDL event)
+   SDL.timerInterval = 20;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   // SDL.dpiAwareness = false;  // assume 96dpi and let OS scale window to actual DPI
+
+   SDL.touchInput = true;  // enable WM_POINTER* messages
+
+   sdvg_SetScratchBufferSize(4096*1024);
+   sdvg_SetGLSLVersion(b_glcore/*bV3*/, false/*bGLES*/, null/*sVersionStringOrNull*/);
+   sdvg_Init(b_glcore);
+
+   // Viewport.multisampleSamples = 4;
+   // Viewport.multisampleBuffers = 1;
+   // Viewport.stencilBits = 8;
+   // Viewport.setScreenResolution(1920, 1200, 32);
+   Viewport.openWindow(VP_W*VP_ZOOM, VP_H*VP_ZOOM);
+   // Viewport.openScreen(640, 480, 32);
+   // Viewport.swapInterval(1);
+
+   // // trace "xxx #texunits: "+zglGetInteger(GL_MAX_TEXTURE_UNITS);
+   trace "[dbg] GL extensions: "+glGetString(GL_EXTENSIONS);
+   trace "[dbg] #texunits: "+zglGetInteger(GL_MAX_TEXTURE_IMAGE_UNITS);
+   trace "[dbg] max_texture_size: "+zglGetInteger(GL_MAX_TEXTURE_SIZE);
+   trace "[dbg] max_samples: "+zglGetInteger(GL_MAX_SAMPLES);  // (note) 4 on macOS 14 (m2pro)
+   trace "[dbg] version = "+zglGetInteger(GL_MAJOR_VERSION)+"."+zglGetInteger(GL_MINOR_VERSION);  // GL3.x+
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(0,0);
+
+   trace "[dbg] Viewport.dpi="+Viewport.dpi;
+   trace "[...] entering eventloop";
+
+   SDL.eventLoop();
+
+   sdvg_Exit();
+}
