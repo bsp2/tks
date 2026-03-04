@@ -1,6 +1,6 @@
 /// Network.cpp
 ///
-/// (c) 2002-2009 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2002-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -30,7 +30,7 @@ _Network::~_Network(void) {
 }
 
 void _Network::_getError(YAC_Value *_r) {
-	char *e = SDLNet_GetError();
+	const char *e = SDLNet_GetError();
 	YAC_String *s = YAC_New_String();
 	if(e != NULL)
    {
