@@ -1153,9 +1153,9 @@ void _Vector3f::_unitSphere_YAC_RSELF(void) {
    const sF32 x2 = floats[0] * floats[0];
    const sF32 y2 = floats[1] * floats[1];
    const sF32 z2 = floats[2] * floats[2];
-   floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0/3.0f));
-   floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0/3.0f));
-   floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0/3.0f));
+   floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0f/3.0f));
+   floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0f/3.0f));
+   floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0f/3.0f));
 }
 
 void _Vector3f::_unitSphere_YAC_RVAL(YAC_Value *_r) const {
@@ -1164,9 +1164,9 @@ void _Vector3f::_unitSphere_YAC_RVAL(YAC_Value *_r) const {
    const sF32 x2 = floats[0] * floats[0];
    const sF32 y2 = floats[1] * floats[1];
    const sF32 z2 = floats[2] * floats[2];
-   r->floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0/3.0f));
-   r->floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0/3.0f));
-   r->floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0/3.0f));
+   r->floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0f/3.0f));
+   r->floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0f/3.0f));
+   r->floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0f/3.0f));
 }
 
 void _Vector3f::_unitSphere_YAC_RARG(YAC_Object *_r) const {
@@ -1176,9 +1176,9 @@ void _Vector3f::_unitSphere_YAC_RARG(YAC_Object *_r) const {
       const sF32 x2 = floats[0] * floats[0];
       const sF32 y2 = floats[1] * floats[1];
       const sF32 z2 = floats[2] * floats[2];
-      r->floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0/3.0f));
-      r->floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0/3.0f));
-      r->floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0/3.0f));
+      r->floats[0] = floats[0] * ::sqrtf(1.0f - (y2 + z2) * 0.5f + (y2 * z2) * (1.0f/3.0f));
+      r->floats[1] = floats[1] * ::sqrtf(1.0f - (z2 + x2) * 0.5f + (z2 * x2) * (1.0f/3.0f));
+      r->floats[2] = floats[2] * ::sqrtf(1.0f - (x2 + y2) * 0.5f + (x2 * y2) * (1.0f/3.0f));
    }
    else
    {
