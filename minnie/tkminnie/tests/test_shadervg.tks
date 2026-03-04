@@ -20,6 +20,12 @@
 // ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : "minnie" low-level render utilities (ShaderVG) test case / benchmark
+// ----          $ tks test_shadervg [[<testidx_or_-1=benchmark_all> [<single_test_benchmark_num_frames> <num_iter>]]]
+// ----
+// ----          e.g.:
+// ----          $ tks test_shadervg 177 10 50000
+// ----          [...] auto_exit after 10 frames (50000 iteration(s)) / 5836 millisec => 85675.1 fps
+// ----          => (1000*85675.1)=> 85.6751 million lines per second
 // ----
 // ----
 // ----
@@ -63,6 +69,8 @@ boolean b_msaa         = 0;    // 'm'
 boolean b_benchmark    = 0;
 
 int test_idx = 0;  // '1', '2', '3'
+int auto_exit_frames = 0;  // single test benchmark
+int auto_exit_num_iter = 1;
 
 float ang_x = 0;
 float ang_y = 0;
@@ -80,6 +88,8 @@ stroke_w = 4.0;
 // ang_c = 0;
 
 int num_frames_rendered = 0;
+int total_num_frames_rendered = 0;
+int ticks_start = 0;
 boolean b_reopen;
 
 // (note) UP/DOWN
@@ -260,7 +270,8 @@ int RENDER_BEGIN_LINE_STRIP_MITER_AA                        = 173;
 int RENDER_LINES_RAND_AA_VBO                                = 174;
 int RENDER_BEGIN_LINE_STRIP_MITER_CLOSED                    = 175;
 int RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED                 = 176;
-int NUM_RENDER_MODES                                        = 177;
+int RENDER_LINES_RAND2_AA_VBO                               = 177;
+int NUM_RENDER_MODES                                        = 178;
 
 int render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 int auto_cycle_num_frames = 0;//200;  // >0:auto-cycle tests (any key stroke interrupts this)
@@ -442,6 +453,7 @@ StringArray mode_names = [/*   0 */ "rect_fill_aa",
                           /* 174 */ "lines_rand_aa_vbo",
                           /* 175 */ "begin_line_strip_miter_closed",
                           /* 176 */ "begin_line_strip_miter_aa_closed",
+                          /* 177 */ "lines_rand2_aa_vbo",
                           ];
 
 Buffer buf_vbo; buf_vbo.size = 16384;
@@ -2724,6 +2736,46 @@ function TestLinesRandAAVBO() {
    sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0/*offset*/, numLines << 1);
 }
 
+// ---------------------------------------------------------------------------- TestLinesRand2 (177)
+function TestLinesRand2AAVBO() {
+   int numVerts = 1000+2;
+   if(0 == buf_vbo.offset)
+   {
+      loc_rand_seed(0x9C82F83B);
+      int x = (int)loc_randf(VP_W);
+      int y = (int)loc_randf(VP_H);
+
+      buf_vbo.i16 = (4 * x);
+      buf_vbo.i16 = (4 * y);
+
+      int i = 1;
+
+      loop(numVerts-1)
+      {
+         x += i % 29;
+         y += 23 - i % 23;
+
+         x %= VP_W * 2;
+         y %= VP_H * 2;
+
+         int xCoord = (x >= VP_W) ? (2 * VP_W - x) : x;
+         int yCoord = (y >= VP_H) ? (2 * VP_H - y) : y;
+
+         buf_vbo.i16 = (4 * xCoord);
+         buf_vbo.i16 = (4 * yCoord);
+
+         i++;
+      }
+      sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.offset/*size*/, buf_vbo);
+   }
+   sdvg_SetStrokeWidth(3.0f);
+   sdvg_SetColorARGB(#FFffffff);
+   if(0)
+      sdvg_DrawLineStripFlatAAVBO14_2(buf_vbo_id, 0/*offset*/, numVerts);
+   else
+      sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0/*offset*/, numVerts, true/*bSkipLastLineJoint*/);
+}
+
 // ---------------------------------------------------------------------------- DrawTest
 function DrawTest() {
    float centerX;
@@ -4448,6 +4500,10 @@ function DrawTest() {
       case RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED: // 176
          TestBeginLineStripFlatMiterClosed(true/*bAA*/);
          break;
+
+      case RENDER_LINES_RAND2_AA_VBO: // 177
+         TestLinesRand2AAVBO();
+         break;
    }
 }
 
@@ -4457,13 +4513,8 @@ function onDraw() {
    float dt = FPS.precision;
    int numIter = 1;
 
-   if( !(++num_frames_rendered&127) )
-   {
-      if(!b_benchmark)
-      {
-         trace "FPS.real="+FPS.real;
-      }
-   }
+   num_frames_rendered++;
+   total_num_frames_rendered++;
 
    if(b_benchmark)
    {
@@ -4481,7 +4532,22 @@ function onDraw() {
          numIter = BENCHMARK_NUM_ITERATIONS_PER_FRAME;
       }
    }
+   else if(auto_exit_frames > 0)
+   {
+      numIter = auto_exit_num_iter;
+   }
 
+   if( !(num_frames_rendered&127) )
+   {
+      if(!b_benchmark && 0 == auto_exit_frames)
+      {
+         trace "FPS.real="+(FPS.real * numIter);
+      }
+   }
+
+   // trace "[trc] b_benchmark="+b_benchmark+" auto_exit_frames="+auto_exit_frames+" numIter="+numIter;
+
+   int iter = 0;
    loop(numIter)
    {
       sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
@@ -4491,7 +4557,8 @@ function onDraw() {
       sdvg_SetViewport(0, 0, Viewport.width, Viewport.height);
       sdvg_SetScissor(0, 0, Viewport.width, Viewport.height);
 
-      sdvg_Clear4f(0.1,0.15,0.3,1.0);
+      if(0 == iter)
+         sdvg_Clear4f(0.1,0.15,0.3,1.0);
 
       sdvg_SetEnableAA(b_aa);
       sdvg_SetAARange(b_aa ? aa_range : 0.01f);
@@ -4506,6 +4573,7 @@ function onDraw() {
 
       sdvg_EndFrame();
 
+      iter++;
    } // loop numIter
 
    float spd = b_anim ? b_slomo ? 0.1 : 1.0 : 0.0;
@@ -4569,6 +4637,15 @@ function onDraw() {
          benchmark_ms_start = milliSeconds();
          benchmark_frames_left = BENCHMARK_NUM_FRAMES;
       }
+   }
+
+   if(auto_exit_frames > 0 && auto_exit_frames == num_frames_rendered)
+   {
+      glFinish();
+      int tDelta = milliSeconds() - ticks_start;
+      float fps = (1000.0 * auto_exit_frames * numIter) / tDelta;
+      trace "[...] auto_exit after "+num_frames_rendered+" frames ("+auto_exit_num_iter+" iteration(s)) / "+tDelta+" millisec => "+(int(fps*100)/100.0f)+" fps\n";
+      SDL.exitEventLoop();
    }
 
    if(auto_cycle_num_frames > 0)
@@ -5114,6 +5191,22 @@ function main() {
       {
          b_benchmark = 1;
       }
+
+      if(Arguments.numElements > 1)
+      {
+         auto_exit_frames = Arguments[1];
+         if(auto_exit_frames > 0)
+         {
+            b_vsync = false;
+            auto_cycle_num_frames = 0;
+         }
+
+         if(Arguments.numElements > 2)
+         {
+            auto_exit_num_iter = Arguments[2];
+         }
+      }
+
    }
 
    // Load texture(s)
@@ -5164,6 +5257,7 @@ function main() {
 
    for(;;)
    {
+      ticks_start = milliSeconds();
       SDL.eventLoop();
 
       if(b_reopen)

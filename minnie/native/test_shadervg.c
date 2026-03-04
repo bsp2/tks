@@ -21,12 +21,18 @@
 // ----
 // ---- info   : "minnie" low-level render utilities (ShaderVG) test case / benchmark
 // ---- note   : C99
+// ----          $ ./test_shadervg [[<testidx_or_-1=benchmark_all> [<single_test_benchmark_num_frames> <num_iter>]]]
+// ----
+// ----          e.g.:
+// ----          $ m clean; m bin && ./test_shadervg 177 10 50000
+// ----          [...] auto_exit after 10 frames (50000 iteration(s)) / 5853 millisec => 85426.27 fps
+// ----          => (1000*85426.27)=> 85.42627 million lines per second
 // ----
 // ----
 // ----
 
 /// When defined (in Makefile), auto-exit after <n> frames (benchmark single test)
-// #define SHADERVG_AUTO_EXIT_FRAMES  100
+// #define SHADERVG_AUTO_EXIT_FRAMES  10000
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -59,6 +65,15 @@ static sBool b_sym_size   = 0;     // lctrl-'l'
 static sF32  size_sclx    = 1.0f;  // 'q', 'w'
 static sF32  size_scly    = 1.0f;  // 'z', 'x'
 static sBool b_benchmark  = 0;
+
+static sUI auto_exit_frames =
+#ifdef AUTO_EXIT_FRAMES
+   AUTO_EXIT_FRAMES
+#else
+   0u
+#endif // AUTO_EXIT_FRAMES
+   ;
+static sUI auto_exit_num_iter = 1u;
 
 static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 num_frames_rendered = 0u;
@@ -249,7 +264,8 @@ static sF32 ang_c = 0.0f;
 #define RENDER_LINES_RAND_AA_VBO                                 174
 #define RENDER_BEGIN_LINE_STRIP_MITER_CLOSED                     175
 #define RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED                  176
-#define NUM_RENDER_MODES                                         177
+#define RENDER_LINES_RAND2_AA_VBO                                177
+#define NUM_RENDER_MODES                                         178
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -438,6 +454,7 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 174 */ "lines_rand_aa_vbo",
    /* 175 */ "begin_line_strip_miter_closed",
    /* 176 */ "begin_line_strip_miter_aa_closed",
+   /* 177 */ "lines_rand2_aa_vbo",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2618,6 +2635,50 @@ static void TestLinesRandAAVBO(void) {
    sdvg_DrawLinesGouraudAAVBO14_2(buf_vbo_id, 0u/*offset*/, numLines << 1);
 }
 
+// ---------------------------------------------------------------------------- TestLinesRand2 (177)
+static void TestLinesRand2AAVBO() {
+   int numVerts = 1000u + 2u;
+   if(0 == buf_vbo.io_offset)
+   {
+      loc_rand_seed(0x9C82F83B);
+      sSI x = (int)loc_randf(VP_W);
+      sSI y = (int)loc_randf(VP_H);
+
+      yacmemptr d; d.u8 = buf_vbo.buffer;
+
+      *d.s16++ = (sS16)(4 * x);
+      *d.s16++ = (sS16)(4 * y);
+
+      sSI i = 1;
+
+      for(sUI vertIdx = 1u; vertIdx < numVerts; vertIdx++)
+      {
+         x += i % 29;
+         y += 23 - i % 23;
+
+         x %= VP_W * 2;
+         y %= VP_H * 2;
+
+         sSI xCoord = (x >= VP_W) ? (2 * VP_W - x) : x;
+         sSI yCoord = (y >= VP_H) ? (2 * VP_H - y) : y;
+
+         *d.s16++ = (sS16)(4 * xCoord);
+         *d.s16++ = (sS16)(4 * yCoord);
+
+         i++;
+      }
+      buf_vbo.io_offset = (4u * numVerts);
+      sdvg_UpdateVBO(buf_vbo_id, 0/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
+   }
+   sdvg_SetStrokeWidth(3.0f);
+   sdvg_SetColorARGB(0xFFffffffu);
+#if 0
+   sdvg_DrawLineStripFlatAAVBO14_2(buf_vbo_id, 0/*offset*/, numVerts);
+#else
+   sdvg_DrawLineStripFlatBevelAAVBO14_2(buf_vbo_id, 0/*offset*/, numVerts, YAC_TRUE/*bSkipLastLineJoint*/);
+#endif
+}
+
 // ---------------------------------------------------------------------------- TestBeginLinesRandAAVBO (174 alt)
 static void TestBeginLinesRandAAVBO(void) {
    // (note) same coordinates+colors as test264_line_benchmark
@@ -4339,6 +4400,10 @@ static void DrawTest(void) {
       case RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED: // 176
          TestBeginLineStripFlatMiterClosed(YAC_TRUE/*bAA*/);
          break;
+
+      case RENDER_LINES_RAND2_AA_VBO: // 177
+         TestLinesRand2AAVBO();
+         break;
    }
 }
 
@@ -4373,6 +4438,12 @@ void hal_on_draw(void) {
          numIter = BENCHMARK_NUM_ITERATIONS_PER_FRAME;
       }
    }
+   else if(auto_exit_frames > 0)
+   {
+      numIter = auto_exit_num_iter;
+   }
+
+   // Dprintf("[trc] b_benchmark=%d auto_exit_frames=%u numIter=%u\n", b_benchmark, auto_exit_frames, numIter);
 
    for(sUI iter = 0u; iter < numIter; iter++)
    {
@@ -4387,7 +4458,9 @@ void hal_on_draw(void) {
       sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
       sdvg_SetGlobalAlpha(1.0f);
       sdvg_PaintSolid();
-      sdvg_ClearARGB(0xff000064u);
+
+      if(0u == iter)
+         sdvg_ClearARGB(0xff000064u);
 
       DrawTest();
 
@@ -4451,11 +4524,18 @@ void hal_on_draw(void) {
       }
    }
 
+   if(0u == auto_exit_frames)
+   {
 #ifdef SHADERVG_NO_DISPLAY
-   glFlush();
+      glFlush();
 #else
-   hal_window_swap();
+      hal_window_swap();
 #endif // SHADERVG_NO_DISPLAY
+   }
+   else if(0 == num_frames_rendered)
+   {
+      hal_window_swap();
+   }
 
    num_frames_rendered++;
    total_num_frames_rendered++;
@@ -4465,21 +4545,19 @@ void hal_on_draw(void) {
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
       {
-         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered) / tDelta);
+         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * numIter) / tDelta);
          Dprintf("[...] FPS=%f\n", fps);
       }
    }
 
-#ifdef SHADERVG_AUTO_EXIT_FRAMES
-   if(SHADERVG_AUTO_EXIT_FRAMES == num_frames_rendered)
+   if(auto_exit_frames > 0u && auto_exit_frames == num_frames_rendered)
    {
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (1000.0 * SHADERVG_AUTO_EXIT_FRAMES) / tDelta;
-      Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
+      sF32 fps = (1000.0 * auto_exit_frames * numIter) / tDelta;
+      Dprintf("[...] auto_exit after %u frames (%u iteration(s)) / %u millisec => %3.2f fps\n", num_frames_rendered, auto_exit_num_iter, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
-#endif // SHADERVG_AUTO_EXIT_FRAMES
 
    if(auto_cycle_num_frames > 0u)
    {
@@ -4723,6 +4801,21 @@ int main(int argc, char**argv) {
          b_vsync = YAC_FALSE;
          auto_cycle_num_frames = 0u;
       }
+
+      if(argc >= 3)
+      {
+         auto_exit_frames = (sUI)atoi(argv[2]);
+         if(auto_exit_frames > 0u)
+         {
+            b_vsync = YAC_FALSE;
+            auto_cycle_num_frames = 0u;
+         }
+
+         if(argc >= 4)
+         {
+            auto_exit_num_iter = (sUI)atoi(argv[3]);
+         }
+      }
    }
 
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
@@ -4822,12 +4915,15 @@ int main(int argc, char**argv) {
       custom_vbo_id_3 = 0u;
       polygon_vbo_id = 0u;
 
-#ifdef SHADERVG_AUTO_EXIT_FRAMES
-      hal_set_swap_interval(0);
-      b_anim = YAC_FALSE;
-#else
-      hal_set_swap_interval(b_benchmark ? 0 : b_vsync ? 1 : 0);
-#endif // SHADERVG_AUTO_EXIT_FRAMES
+      if(auto_exit_frames > 0u)
+      {
+         hal_set_swap_interval(0);
+         b_anim = YAC_FALSE;
+      }
+      else
+      {
+         hal_set_swap_interval(b_benchmark ? 0 : b_vsync ? 1 : 0);
+      }
 
       ticks_start = hal_get_ticks();
       hal_window_loop();
