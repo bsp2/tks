@@ -25,6 +25,7 @@ class CurveImageColorPreview extends Layer {
 
    public virtual onDraw() {
       int numColors = colors.numElements;
+      trace "[trc] CurveImageColorPreview::onDraw: numColors="+numColors;
       float availW = getSizeX() - (numColors-1)*2;
       float w = (availW / numColors);
       float cx = 0;
@@ -202,11 +203,103 @@ class CurveImageImportDialog extends Dialog {
          icon_tex.visitIconTexture(tex_import);
          calcColors();
          redraw();
+
+         bt_tex.setIconScaleX(bt_tex.getRequiredSizeX() / tex_import.sx);
+         bt_tex.setIconScaleY(bt_tex.getRequiredSizeY() / tex_import.sy);
+         relayout();
       }
       else
       {
          Global.Error("Failed to load image \""+_pathname+"\"");
       }
+   }
+
+   // <method.png>
+   protected method pickColorFromHueSlot(IntArray hueSlotColors, int hueSlotIdx, int numHueSlots,
+                                         Integer retC32
+                                         ) : boolean {
+      // experimental / unfinished
+      trace "xx pickColorFromHueSlot: hueSlotIdx="+hueSlotIdx+" numHueSlots="+numHueSlots+" #hueSlotColors="+hueSlotColors.numElements;
+      if(hueSlotColors.numElements > 0)
+      {
+         // pick color that has max h/s/v distance to existing colors
+         Float hSlot;
+         Float sSlot;
+         Float vSlot;
+         int c32Slot;
+         float bestHDist = 0;
+         float bestSDist = 0;
+         float bestVDist = 0;
+         int bestIdx = -1;
+
+         if(cur_colors.numElements > 0)
+         {
+            int palIdx = 0;
+            boolean bHaveColorInHueSlot = false;
+            loop(cur_colors.numElements)
+            {
+               float palH, palS, palV;
+               int c32Pal = cur_colors[palIdx];
+               UI.RGB32TOHSV(c32Slot, palH, palS, palV);
+               int palSlotIdx = palH / (360.0 / numHueSlots);
+               if(palSlotIdx == hueSlotIdx)
+               {
+                  bHaveColorInHueSlot = true;
+                  int idx = 0;
+                  loop(hueSlotColors.numElements)
+                  {
+                     c32Slot = hueSlotColors[idx];
+                     UI.RGB32TOHSV(c32Slot, hSlot, sSlot, vSlot);
+
+                     float hDist = (hSlot - palH);
+                     if(hDist < -180)
+                        hDist += 360;
+                     else if(hDist > 180)
+                        hDist = abs(hDist - 360);
+                     else
+                        hDist = abs(hDist);
+                     float sDist = abs(sSlot - palS);
+                     float vDist = abs(vSlot - palV);
+
+                     if(hDist > bestHDist ||
+                        sDist > bestSDist ||
+                        vDist > bestVDist
+                        )
+                     {
+                        bestHDist = hDist;
+                        bestSDist = sDist;
+                        bestVDist = vDist;
+                        bestIdx = idx;
+                        // trace "xxx new hueSlotIdx="+hueSlotIdx+" bestIdx="+bestIdx+" hDist="+hDist+" sDist="+sDist+" vDist="+vDist;
+                     }
+         
+                     idx++;
+                  } // loop hueSlotColors
+               } // if same hue slot
+
+               palIdx++;
+            } // loop pal
+
+            if(!bHaveColorInHueSlot)
+            {
+               bestIdx = 0;  // add first (highest freq) color
+            }
+
+         } // if pal not empty
+         else
+         {
+            bestIdx = 0;  // add first (highest freq) color
+         }
+
+         if(-1 != bestIdx)
+         {
+            retC32 = hueSlotColors[bestIdx];
+            hueSlotColors.delete(bestIdx);
+            trace "xxx return bestIdx="+bestIdx;
+            return true;
+         }
+      }
+      return false;
    }
 
    // <method.png>
@@ -225,6 +318,7 @@ class CurveImageImportDialog extends Dialog {
       float vMax = fp_v_max.getFloatValue();
 
       local PointerArray hueSlots;  // array of IntArrays
+      local IntArray hueSlotsFreq;
       local IntArray *colors;
       local IntArray uniqueColors;
       local IntArray colorFreq;
@@ -239,6 +333,8 @@ class CurveImageImportDialog extends Dialog {
       local IntArray ia;
 
       cur_colors.empty();
+
+      hueSlotsFreq.allocAndFill(numHueSlots, 0);
 
       hueSlotIdx = 0;
       loop(numHueSlots)
@@ -264,18 +360,22 @@ class CurveImageImportDialog extends Dialog {
                   idx = uniqueColors.numElements;
                   uniqueColors.add(c32);
                }
+               hueSlotIdx = h / (360.0 / numHueSlots);
+               hueSlotsFreq[hueSlotIdx] = hueSlotsFreq[hueSlotIdx] + 1;
+
                colorFreq[idx] = colorFreq.get(idx) + 1;
             }
             x++;
          }
          y++;
       }
+
+      // Sort uniqueColors by frequency
       colorFreq.sortByValue(ia);
-      ia.reverse();
-      colorFreq.rearrange(ia); // debug
+      ia.reverse();  // most frequent first
+      // colorFreq.rearrange(ia); // debug
       // trace "xxx colorFreq="+#(colorFreq);
       uniqueColors.rearrange(ia);
-      // uniqueColors.reverse();
       trace "xxx #uniqueColors="+uniqueColors.numElements;
 
       if(0)
@@ -294,9 +394,15 @@ class CurveImageImportDialog extends Dialog {
       {
          UI.RGB32TOHSV(c32, h, s, v);
          hueSlotIdx = h / (360.0 / numHueSlots);
+         // trace "xxx hueSlotIdx="+hueSlotIdx;
          colors <= hueSlots[hueSlotIdx];
          colors.add(c32);
       }
+
+      // Sort hueSlots by frequency
+      hueSlotsFreq.sortByValue(ia);
+      ia.reverse(); // most frequent first
+      hueSlots.rearrange(ia);
 
       // Pick 'maxColors' from hue slots
       int hueSubIdx = 0;
@@ -307,8 +413,16 @@ class CurveImageImportDialog extends Dialog {
          int oldNumLeft = numLeft;
          loop(hueSlots.numElements)
          {
+            // trace "xxx iter hueSlotIdx="+hueSlotIdx;
             if(numLeft > 0)
             {
+               // Integer pickedC32;
+               // if(pickColorFromHueSlot(hueSlots[hueSlotIdx], hueSlotIdx, numHueSlots, pickedC32))
+               // {
+               //    cur_colors.add(pickedC32);
+               //    numLeft--;
+               // }
+
                colors <= hueSlots[hueSlotIdx];
                if(hueSubIdx < colors.numElements)
                {
