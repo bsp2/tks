@@ -1,12 +1,12 @@
-// TKS_LFSR.cpp 
-/// 
-/// (c) 2020-2023 by Bastian Spiegel <bs@tkscript.de> 
-///     - distributed under terms of the GNU general public license (GPL). 
-/// 
+// TKS_LFSR.cpp
+///
+/// (c) 2020-2023 by Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the GNU general public license (GPL).
+///
 
-#include "tks.h" 
+#include "tks.h"
 
-#include "TKS_LFSR.h" 
+#include "TKS_LFSR.h"
 
 
 TKS_LFSR::TKS_LFSR(void) {
@@ -246,7 +246,7 @@ void TKS_LFSR_NR::genValues(void) {
             }
          }
          while(bRep);
-         values[i] = r;     
+         values[i] = r;
          // dbgTotalNumRep += numRep;
       }
    }
@@ -267,4 +267,3 @@ void TKS_LFSR_NR::genValues(void) {
    next_idx = 0u;
    // yac_host->printf("xxx TKS_LFSR_NR::genValues: LEAVE\n");
 }
-

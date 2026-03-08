@@ -1,6 +1,6 @@
 /// api.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///    published under terms of the GNU general public license (GPL).
 ///
 /// Note: the ying_* files (except for ying_core_Object) are created with
@@ -13556,6 +13556,18 @@ public:
 @return Pseudo-random float between 0..max
 */
    YM //sF32 randf       (sF32 _max);
+
+/* @method getState:int
+Query current store
+@return state
+*/
+   YM //sUI  getState    (void);
+
+/* @method setState,int state
+Restore store
+@arg state
+*/
+   YM //void setState    (sUI _state);
 
 };
 #include "ying_core_LFSR.cpp"

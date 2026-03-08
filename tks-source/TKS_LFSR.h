@@ -1,10 +1,10 @@
 /// TKS_LFSR.h
 ///
-/// (c) 2020-2022 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2020-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
-#ifndef __TKS_LFSR_H__
-#define __TKS_LFSR_H__
+#ifndef TKS_LFSR_H__
+#define TKS_LFSR_H__
 
 
 class TKS_LFSR : public YAC_Object {
@@ -20,6 +20,9 @@ public:
    sSI rands (void);
    sUI randu (void);
    sF32 randf (sF32 _max);
+
+   sUI getState (void) { return state; }
+   void setState (sUI _state) { state = _state; };
 
 };
 
