@@ -1407,6 +1407,31 @@ void _Vector2f::_rotateCCW90_YAC_RARG(YAC_Object *_r) const {
    }
 }
 
+void _Vector2f::_rotatef_YAC_RSELF(sF32 _ang) {
+   _Vector2f t;
+   t.class_ID = clid_Vector2f;
+   t.floats[0] = floats[0];
+   t.floats[1] = floats[1];
+   t._rotatef_YAC_RARG(_ang, this);
+}
+
+void _Vector2f::_rotatef_YAC_RVAL(sF32 _ang, YAC_Value *_r) {
+   _Vector2f *r = YAC_NEW_POOLED(Vector2f);
+   _r->initObject(r, YAC_TRUE);
+   _rotatef_YAC_RARG(_ang, r);
+}
+
+void _Vector2f::_rotatef_YAC_RARG(sF32 _ang, YAC_Object *_r) const {
+   if(YAC_BCHK(_r, clid_Vector2f))
+   {
+      YAC_CAST_ARG(_Vector2f, r, _r);
+      const sF32 ca = cosf(_ang);
+      const sF32 sa = sinf(_ang);
+      r->floats[0] = floats[0]*ca - floats[1]*sa;
+      r->floats[1] = floats[0]*sa + floats[1]*ca;
+   }
+}
+
 void _Vector2f::_New(sF32 _x, sF32 _y, YAC_Value *_r) {
    _Vector2f *r = YAC_NEW_POOLED(Vector2f);
    _r->initObject(r, YAC_TRUE);

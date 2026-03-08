@@ -1,6 +1,6 @@
 /// vector2f.h
 ///
-/// (c) 2008-2025 by Carsten Busse <carsten.busse@googlemail.com>
+/// (c) 2008-2026 by Carsten Busse <carsten.busse@googlemail.com>
 ///                  Bastian Spiegel <bs@tkscript.de> (additional coding)
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
@@ -344,6 +344,14 @@ YC class _Vector2f : public YAC_Object {
    YM void _rotateCCW90_YAC_RSELF (void);
    YM void _rotateCCW90_YAC_RVAL (YAC_Value *_r);
    YM void _rotateCCW90_YAC_RARG (YAC_Object *_r) const;
+
+   /* @method rotatef
+      Rotate about z axis
+      @arg ang Rotation angle (radian measure)
+   */
+   YM void _rotatef_YAC_RSELF (sF32 _ang);
+   YM void _rotatef_YAC_RVAL (sF32 _ang, YAC_Value *_r);
+   YM void _rotatef_YAC_RARG (sF32 _ang, YAC_Object *_r) const;
 };
 
 /* @function vector2f,float a,float b:Vector2f
