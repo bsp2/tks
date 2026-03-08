@@ -1,6 +1,6 @@
 /// tkstexture.h
 ///
-/// (c) 1999-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 1999-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - published under terms of the GNU general public license (GPL)
 ///
 ///
@@ -129,10 +129,24 @@ Upload 8bit texture in INTENSITY format
 */
 #define TEX_CLAMPTOEDGE_T      YCI (1<<19)
 
+/* @constant TEX_POINTSPRITE,int
+*/
+#define TEX_POINTSPRITE        YCI (1<<20)
+
+/* @constant TEX_MIRRORED_REPEAT_S,int
+Mirrored-Repeat texels along the x axis
+*/
+#define TEX_MIRRORED_REPEAT_S           YCI (1<<21)
+
+
+/* @constant TEX_MIRRORED_REPEAT_T,int
+Mirrored-Repeat texels along the y axis
+*/
+#define TEX_MIRRORED_REPEAT_T           YCI (1<<22)
 
 /* @constant TEX_REPEATMASK,int
 */
-#define TEX_REPEATMASK         YCI (TEX_REPEAT_S|TEX_REPEAT_T|TEX_CLAMPTOEDGE_S|TEX_CLAMPTOEDGE_T)
+#define TEX_REPEATMASK         YCI (TEX_REPEAT_S|TEX_REPEAT_T|TEX_MIRRORED_REPEAT_S|TEX_MIRRORED_REPEAT_T|TEX_CLAMPTOEDGE_S|TEX_CLAMPTOEDGE_T)
 
 
 /* @constant TEX_ENVMASK,int
@@ -143,11 +157,6 @@ Upload 8bit texture in INTENSITY format
 /* @constant TEX_FILTERMASK,int
 */
 #define TEX_FILTERMASK         YCI (TEX_MINFILTERLINEAR|TEX_MINFILTERTRILINEAR|TEX_MAGFILTERLINEAR|TEX_MAGFILTERTRILINEAR)
-
-
-/* @constant TEX_POINTSPRITE,int
-*/
-#define TEX_POINTSPRITE        YCI (1<<20)
 
 
 public:
@@ -475,8 +484,15 @@ public:
 
 
     /* @method adjustBrightness,float brightness
+       @arg b 0..1
     */
 	 YM void _adjustBrightness     (sF32);
+
+
+    /* @method adjustContrast,float c
+       @arg c -1..1
+    */
+	 YM void _adjustContrast     (sF32);
 
 
     /* @method blend,Texture srca,Texture srcb,byte ratio
@@ -522,6 +538,7 @@ public:
     /* @method getUVVec4,float u,float v,Object retVec4
     Query pixel via normalized u/v coordinates and store (normalized) result in 'retVec4' array/vector. Clamp u/v to (0;0)..(1;1) range.
     Texel center is left/top and u/v (0;0) refers to top/left texel.
+    Single channel format value is returned in 'z' component (blue).
     @arg u X-Position (0..1)
     @arg v Y-Position (0..1)
     @arg retVec4 Array-like Object that receives the texel rgba vector.
@@ -532,6 +549,7 @@ public:
     /* @method getUVFilterVec4,float u,float v,Object retVec4
     Query pixel via normalized u/v coordinates and store (normalized) result in 'retVec4' array/vector. Clamp u/v to (0;0)..(1;1) range.
     Texel center is left/top and u/v (0;0) refers to top/left texel.
+    Single channel format value is returned in 'z' component (blue).
     @arg u X-Position (0..1)
     @arg v Y-Position (0..1)
     @arg retVec4 Array-like Object that receives the texel rgba vector.
@@ -542,6 +560,7 @@ public:
     /* @method getUVRepeatVec4,float u,float v,Object retVec4
     Query pixel via normalized u/v coordinates and store (normalized) result in 'retVec4' array/vector. Repeat u/v outside of (0;0)..(1;1) range.
     Texel center is left/top and u/v (0;0) refers to top/left texel.
+    Single channel format value is returned in 'z' component (blue).
     @arg u X-Position (0..1)
     @arg v Y-Position (0..1)
     @arg retVec4 Array-like Object that receives the texel rgba vector.
@@ -551,6 +570,7 @@ public:
     /* @method getUVFilterRepeatVec4,float u,float v,Object retVec4
     Query pixel via normalized u/v coordinates and store (normalized) result in 'retVec4' array/vector. Repeat u/v outside of (0;0)..(1;1) range.
     Texel center is left/top and u/v (0;0) refers to top/left texel.
+    Single channel format value is returned in 'z' component (blue).
     @arg u X-Position (0..1)
     @arg v Y-Position (0..1)
     @arg retVec4 Array-like Object that receives the texel rgba vector.

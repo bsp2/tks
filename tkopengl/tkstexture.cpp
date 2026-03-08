@@ -1,6 +1,6 @@
 // tkstexture.cpp
 ///
-/// (c) 1999-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 1999-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -267,16 +267,16 @@ void _Texture::fixFlags(void) {
          break;
 
       case GL_TEXTURE_RECTANGLE:
-         if(0 != (flags & TEX_REPEAT_S))
+         if(0 != (flags & (TEX_REPEAT_S | TEX_MIRRORED_REPEAT_S)))
          {
-            flags &= ~TEX_REPEAT_S;
-            yac_host->printf("[~~~] Texture::fixFlags: REPEAT_S not supported for GL_TEXTURE_RECTANGLE, removing..\n");
+            flags &= ~(TEX_REPEAT_S | TEX_MIRRORED_REPEAT_S);
+            yac_host->printf("[~~~] Texture::fixFlags: *REPEAT_S not supported for GL_TEXTURE_RECTANGLE, removing..\n");
          }
 
-         if(0 != (flags & TEX_REPEAT_T))
+         if(0 != (flags & (TEX_REPEAT_T | TEX_MIRRORED_REPEAT_T)))
          {
-            flags &= ~TEX_REPEAT_T;
-            yac_host->printf("[~~~] Texture::fixFlags: REPEAT_T not supported for GL_TEXTURE_RECTANGLE, removing..\n");
+            flags &= ~(TEX_REPEAT_T | TEX_MIRRORED_REPEAT_T);
+            yac_host->printf("[~~~] Texture::fixFlags: *REPEAT_T not supported for GL_TEXTURE_RECTANGLE, removing..\n");
          }
 
          flags |= TEX_CLAMPTOEDGE_S;
@@ -594,69 +594,6 @@ void _Texture::upload(sBool need_newname, sUI _x, sUI _y, sUI _w, sUI _h) {
             break;
       }
 
-      if(0u != (flags & TEX_REPEAT_S))
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_REPEAT);
-      }
-      else if(0u != (flags & TEX_CLAMPTOEDGE_S))
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      }
-      else //if(flags&TEX_CLAMP_S)
-      {
-// // #if defined(DX_GLES) || !DX_GL_COMPATIBILITY
-         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-// // #else
-// //          _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
-// // #endif // DX_GLES
-      }
-
-      if(0u != (flags & TEX_REPEAT_T))
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_REPEAT);
-      }
-      else if(0u != (flags & TEX_CLAMPTOEDGE_T))
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      }
-      else //if(flags&TEX_CLAMP_T)
-      {
-// // #if defined(DX_GLES) || !DX_GL_COMPATIBILITY
-         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-// // #else
-// //          _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
-// // #endif // DX_GLES
-      }
-
-      // (note) there's currently [26Nov2018] no flag for TEX_REPEAT_R => use clamp
-      _glTexParameteri(texTarget, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-
-
-      // (todo) n/a in GL4core profile (-DDX_GL4_CORE)
-#if DX_GL_COMPATIBILITY
-      if(!tkopengl_b_glcore)
-      {
-         if(0u != (flags & TEX_MODULATE))
-         {
-            _glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-         }
-         else if(0u != (flags & TEX_BLEND)) // slow (2001)
-         {
-            _glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_BLEND);
-         }
-         else if(0u != (flags & TEX_DECAL))
-         {
-            _glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
-         }
-         else
-         {
-            _glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-         }
-
-         //glTexEnviv(GL_TEXTURE_2D, GL_TEXTURE_ENV_COLOR, envcol);
-      }
-#endif // DX_GL_COMPATIBILITY
-
 
       if(bSwapRB)
       {
@@ -870,34 +807,6 @@ void _Texture::upload(sBool need_newname, sUI _x, sUI _y, sUI _w, sUI _h) {
          }
       }
 
-
-      if(flags & TEX_MINFILTERLINEAR)
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-      }
-      else if(flags & TEX_MINFILTERTRILINEAR)
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-      }
-      else
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-      }
-
-      if(flags & TEX_MAGFILTERLINEAR)
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      }
-      else if(flags & TEX_MAGFILTERTRILINEAR)
-      {
-         // Note: Actually, there is no such such as a trilinear magfilter..
-         _glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-      }
-      else
-      {
-         _glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-      }
-
 #ifndef DX_GLES
       if(priority > 0.0f)
       {
@@ -988,6 +897,52 @@ void _Texture::_bind(void) {
             _glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
          }
       }
+
+      if(0u != (flags & TEX_REPEAT_S))
+      {
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_REPEAT);
+      }
+      else if(0u != (flags & TEX_MIRRORED_REPEAT_S))
+      {
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+      }
+      else if(0u != (flags & TEX_CLAMPTOEDGE_S))
+      {
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      }
+      else //if(flags&TEX_CLAMP_S)
+      {
+// // #if defined(DX_GLES) || !DX_GL_COMPATIBILITY
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+// // #else
+// //          _glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
+// // #endif // DX_GLES
+      }
+
+      if(0u != (flags & TEX_REPEAT_T))
+      {
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_REPEAT);
+      }
+      else if(0u != (flags & TEX_MIRRORED_REPEAT_T))
+      {
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+      }
+      else if(0u != (flags & TEX_CLAMPTOEDGE_T))
+      {
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      }
+      else //if(flags&TEX_CLAMP_T)
+      {
+// // #if defined(DX_GLES) || !DX_GL_COMPATIBILITY
+         _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+// // #else
+// //          _glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
+// // #endif // DX_GLES
+      }
+
+      // (note) there's currently [26Nov2018] no flag for TEX_REPEAT_R => use clamp
+      _glTexParameteri(texTarget, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
 
       // How to filter when texture is scaled down
       if(0 != (flags & TEX_MINFILTERLINEAR))
@@ -1805,7 +1760,6 @@ void _Texture::_adjustGamma(sF32 _g) {
    }
 }
 
-
 void _Texture::_adjustBrightness(sF32 _g) {
 
    if(image.screen)
@@ -1875,6 +1829,98 @@ void _Texture::_adjustBrightness(sF32 _g) {
 
                      c8=(255-d.u8[x2+3])*_g;
                      d.u8[x2+3]+=(sU8)c8;
+                  }
+               }
+            }
+            break;
+         }
+      }
+   }
+}
+
+void _Texture::_adjustContrast(sF32 _c) {
+   // 'c': -1..1
+
+   if(image.screen)
+   {
+      if(image.screen->data.any)
+      {
+         if(_c > 1.0f) _c = 1.0f;
+         else if(_c < -1.0f) _c = -1.0f;
+
+         const sF32 c = _c * 255.0f;
+         const sF32 cf = (259.0f*(255.0f+c)) / (255.0f*(259.0f-c)); // <https://ie.nitk.ac.in/blog/2020/01/19/algorithms-for-adjusting-brightness-and-contrast-of-an-image/>
+
+         sU16 x,y;
+         yacmemptr d;
+         sF32 c8;
+         switch(image.screen->z)
+         {
+            case 1:
+               for(y=0; y<image.screen->s.y; y++)
+               {
+                  d.u8=image.screen->data.u8+y*image.screen->stride;
+                  for(x=0; x<image.screen->s.x; x++)
+                  {
+                     c8 = (sF32)d.u8[x];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+                  }
+               }
+               break;
+            case 3:
+            {
+               sF32 c8;
+               sU16 x2;
+               for(y=0; y<image.screen->s.y; y++)
+               {
+                  x2=0;
+                  d.u8=image.screen->data.u8+y*image.screen->stride;
+                  for(x=0; x<image.screen->s.x; x++, x2+=3)
+                  {
+                     //red
+                     c8 = (sF32)d.u8[x2+0];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+0] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+
+                     //green
+                     c8 = (sF32)d.u8[x2+1];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+1] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+
+                     //blue
+                     c8 = (sF32)d.u8[x2+2];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+2] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+                  }
+               }
+            }
+            break;
+            case 4:
+            {
+               sU16 x2;
+               sF32 c8;
+               for(y=0; y<image.screen->s.y; y++)
+               {
+                  x2=0;
+                  d.u8=image.screen->data.u8+y*image.screen->stride;
+                  for(x=0; x<image.screen->s.x; x++, x2+=4)
+                  {
+                     c8 = (sF32)d.u8[x2+0];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+0] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+
+                     c8 = (sF32)d.u8[x2+1];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+1] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+
+                     c8 = (sF32)d.u8[x2+2];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+2] = (sU8)sRANGE(c8, 0.0f, 255.0f);
+
+                     c8 = (sF32)d.u8[x2+3];
+                     c8 = cf*(c8-0.5f)+0.5f;
+                     d.u8[x2+3] = (sU8)sRANGE(c8, 0.0f, 255.0f);
                   }
                }
             }
@@ -2313,7 +2359,7 @@ void _Texture::_getUVVec4(sF32 _u, sF32 _v, YAC_Object *_retVec4) {
       if((NULL != image.screen) && (image.screen->s.x > 0))
       {
          yacmemptr d; d.any = _retVec4->yacArrayGetPointer();
-         if((4u == _retVec4->yacArrayGetElementByteSize()) && (_retVec4->yacArrayGetMaxElements() >= 4u))
+         if((_retVec4->yacArrayGetElementByteSize() >= 1u) && (_retVec4->yacArrayGetMaxElements() >= 4u))
          {
             _u = sRANGE(_u, 0.0f, 1.0f);
             _v = sRANGE(_v, 0.0f, 1.0f);
@@ -2332,7 +2378,7 @@ void _Texture::_getUVFilterVec4(sF32 _u, sF32 _v, YAC_Object *_retVec4) {
       if((NULL != image.screen) && (image.screen->s.x > 0))
       {
          yacmemptr d; d.any = _retVec4->yacArrayGetPointer();
-         if((4u == _retVec4->yacArrayGetElementByteSize()) && (_retVec4->yacArrayGetMaxElements() >= 4u))
+         if((_retVec4->yacArrayGetElementByteSize() >= 1u) && (_retVec4->yacArrayGetMaxElements() >= 4u))
          {
             _u = sRANGE(_u, 0.0f, 1.0f);
             _v = sRANGE(_v, 0.0f, 1.0f);
@@ -2388,7 +2434,7 @@ void _Texture::_getUVRepeatVec4(sF32 _u, sF32 _v, YAC_Object *_retVec4) {
       if((NULL != image.screen) && (image.screen->s.x > 0))
       {
          yacmemptr d; d.any = _retVec4->yacArrayGetPointer();
-         if((4u == _retVec4->yacArrayGetElementByteSize()) && (_retVec4->yacArrayGetMaxElements() >= 4u))
+         if((_retVec4->yacArrayGetElementByteSize() >= 1u) && (_retVec4->yacArrayGetMaxElements() >= 4u))
          {
             sSI x = sSI((image.screen->s.x) * _u);
             sSI y = sSI((image.screen->s.y) * _v);
@@ -2407,7 +2453,7 @@ void _Texture::_getUVFilterRepeatVec4(sF32 _u, sF32 _v, YAC_Object *_retVec4) {
       if((NULL != image.screen) && (image.screen->s.x > 0))
       {
          yacmemptr d; d.any = _retVec4->yacArrayGetPointer();
-         if((4u == _retVec4->yacArrayGetElementByteSize()) && (_retVec4->yacArrayGetMaxElements() >= 4u))
+         if((_retVec4->yacArrayGetElementByteSize() >= 1u) && (_retVec4->yacArrayGetMaxElements() >= 4u))
          {
             sF32 fx = (image.screen->s.x) * _u;
             sF32 fy = (image.screen->s.y) * _v;
