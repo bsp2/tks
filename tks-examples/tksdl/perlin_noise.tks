@@ -1,0 +1,705 @@
+
+boolean b_glcore = 1;
+if(b_glcore) putenv("TKSDL_GLCORE=1");   // select 4.1 core profile on macOS
+putenv("TKSDL_GLERROR=1");
+
+use tksdl;
+use tkopengl;
+use tkmath;
+use tkminnie;
+
+float VP_W = 512;
+float VP_H = 384;
+float VP_ZOOM = 2;
+
+int     subdiv_bits   = 3;           // UP/DOWN
+boolean b_filter      = 1;           // 't'
+int     seed          = 1592728821;  // SPACE  // 0x44894489 1258624817
+boolean b_normalize   = 1;           // 'n'
+boolean b_smoothstep  = 0;           // 's'
+int     tex_size_bits = 4;           // LEFT/RIGHT
+boolean b_rotate      = 1;           // 'r'
+boolean b_pattern     = 0;           // 'e'
+boolean b_debug       = 0;           // 'd'
+boolean b_vsync       = 1;           // 'v'
+boolean b_mirror      = 0;           // 'm'  (mirrored repeat in pattern mode)
+boolean b_contrast    = 0;           // 'c'
+boolean b_slomo       = 0;           // lctrl-SPACE
+boolean b_arc         = 0;           // 'a'
+boolean b_lf          = 1;           // '1'
+boolean b_mf          = 1;           // '2'
+boolean b_hf          = 1;           // '3'
+float   g_amp         = 0.625f;      // PAGEUP/DOWN
+
+int num_frames_rendered = 0;
+float ang = 0;
+int read_x = -1;
+int read_y;
+boolean b_queued_screenshot;
+
+Texture tex_noise;
+
+class PerlinNoise {
+   // (todo) use indexed gradients
+   //         (the original implementation used 12 unique vectors)
+   Vector2f *[] a_grid;
+   int grid_w;
+   int grid_h;
+   LFSR lfsr;
+
+
+   public method init(int _gridW, int _gridH, int _seed) {
+      lfsr.init(_seed, 1);
+      Vector2f *v;
+      if(a_grid.numElements != _gridW * _gridH)
+      {
+         a_grid.alloc(_gridW * _gridH);
+         loop(_gridW * _gridH)
+         {
+            v <= new Vector2f;
+            a_grid.add(#(deref v));
+         }
+      }
+      grid_w = _gridW;
+      grid_h = _gridH;
+      int k = 0;
+      loop(_gridW * _gridH)
+      {
+         v <= a_grid.get(k++);
+         v.init(lfsr.randf(2.0f)-1.0f,
+                lfsr.randf(2.0f)-1.0f
+                );
+         v.unit();
+         // v.unitScale(1.4f);  // (note) may cause overflows
+      }
+
+      if(b_pattern)
+      {
+         int y = 0;
+         loop(grid_h)
+         {
+            Vector2f vl <= a_grid[y*grid_w];
+            Vector2f vr <= a_grid[y*grid_w + grid_w-1];
+            vr = vl;
+            y++;
+         }
+         int x = 0;
+         loop(grid_w)
+         {
+            Vector2f vt <= a_grid[x];
+            Vector2f vb <= a_grid[(grid_h-1)*grid_w + x];
+            vb = vt;
+            x++;
+         }
+      }
+   }
+
+   public static Interpolate(float _a, float _b, float _t) {
+      // (note) minimum jerk trajectory curve
+      float t2 = _t * _t;
+      float t3 = t2 * _t;
+      float t4 = t2 * t2;
+      float t5 = t2 * t3;
+      float t = 6.0f*t5 - 15.0f*t4 + 10.0f*t3;
+      return
+         b_smoothstep
+         ? mathSmoothStepf(_a, _b, _t)
+         : mathLerpf(_a, _b, t)
+         ;
+   }
+
+   public method calc(float _px, float _py) {
+      // px: 0..grid_w
+      // py: 0..grid_h
+
+      int gridX = floor(_px);
+      int gridY = floor(_py);
+      float relX = frac(_px);
+      float relY = frac(_py);
+
+      // Calc offset vectors from grid points to current point
+      Vector2f vOff1, vOff2, vOff3, vOff4;
+      vOff1.init(relX,      relY);
+      vOff2.init(relX-1.0f, relY);
+      vOff3.init(relX-1.0f, relY-1.0f);
+      vOff4.init(relX,      relY-1.0f);
+
+      // Get random grid vectors
+      Vector2f vGrid1 <= a_grid[mathClampi((gridY+0) * grid_w + gridX+0, 0, a_grid.numElements-1)];
+      Vector2f vGrid2 <= a_grid[mathClampi((gridY+0) * grid_w + gridX+1, 0, a_grid.numElements-1)];
+      Vector2f vGrid3 <= a_grid[mathClampi((gridY+1) * grid_w + gridX+1, 0, a_grid.numElements-1)];
+      Vector2f vGrid4 <= a_grid[mathClampi((gridY+1) * grid_w + gridX+0, 0, a_grid.numElements-1)];
+
+      // Calc dot products between offset and grid vectors
+      float dot1 = b_rotate ? vOff1.dot(vGrid1.rotatef(ang)) : vOff1.dot(vGrid1);
+      float dot2 = b_rotate ? vOff2.dot(vGrid2.rotatef(ang)) : vOff2.dot(vGrid2);
+      float dot3 = b_rotate ? vOff3.dot(vGrid3.rotatef(ang)) : vOff3.dot(vGrid3);
+      float dot4 = b_rotate ? vOff4.dot(vGrid4.rotatef(ang)) : vOff4.dot(vGrid4);
+
+      // trace "xxx ang="+ang+" dot1="+dot1;
+
+      // Interpolate dot products
+      float dotT = Interpolate(dot1, dot2, relX);
+      float dotB = Interpolate(dot4, dot3, relX);
+      float r = Interpolate(dotT, dotB, relY);
+
+      return r;
+   }
+
+   public method calcTexture8(Texture _tex, int _subdiv, int _seed, boolean _bNormalize) {
+      init((_tex.sx / _subdiv)+1,
+           (_tex.sy / _subdiv)+1,
+           _seed
+           );
+      float stepX = 1.0f / _subdiv;
+      float stepY = 1.0f / _subdiv;
+      float cy = 0.0f;
+      float cx;
+      int iy = 0;
+      int ix;
+      float r;
+      float scl = 127.0f;
+
+      if(_bNormalize)
+      {
+         float fMin =  99.0f;
+         float fMax = -99.0f;
+
+         cy = 0.0f;
+         loop(_tex.sy)
+         {
+            cx = 0.0f;
+            loop(_tex.sx)
+            {
+               r = calc(cx, cy);
+               fMin = mathMinf(r, fMin);
+               fMax = mathMaxf(r, fMax);
+
+               cx += stepX;
+            }
+            cy += stepY;
+         }
+
+         // trace "xxx fMin="+fMin+" fMax="+fMax;
+         scl *= 1.0f / abs(mathAbsMaxf(fMin, fMax));
+      }
+
+      cy = 0.0f;
+      loop(_tex.sy)
+      {
+         cx = 0.0f;
+         ix = 0;
+         loop(_tex.sx)
+         {
+            r = calc(cx, cy);
+            _tex.setXY32(ix, iy, (r*scl)+128);
+
+            cx += stepX;
+            ix++;
+         }
+         cy += stepY;
+         iy++;
+      }
+
+   }
+
+   public method calcTexture() {
+      int sz = (1 << tex_size_bits);
+      tex_noise.alloc(sz, sz, 1);
+      tex_noise.flags = TEX_ALPHA;
+      calcTexture8(tex_noise, (1 << subdiv_bits), seed, b_normalize);
+
+      // tex_noise.saveImage("t.png");
+      // exit(10);
+
+      if(b_contrast)
+         tex_noise.adjustContrast(0.067);
+
+      tex_noise.unload();
+      tex_noise.upload();
+
+      if(b_debug)
+         trace "[...] CalcTexture: sz="+sz+" subdiv="+(1 << subdiv_bits)+" seed="+seed+" ang="+ang+" b_smoothstep="+b_smoothstep+" b_normalize="+b_normalize;
+
+      if(b_filter)
+         tex_noise.flags |= TEX_MAGFILTERLINEAR; 
+
+      if(b_pattern)
+      {
+         if(b_mirror)
+            tex_noise.flags |= TEX_MIRRORED_REPEAT_S | TEX_MIRRORED_REPEAT_T;
+         else
+            tex_noise.flags |= TEX_REPEAT_S | TEX_REPEAT_T;
+      }
+   }
+
+
+}
+
+
+PerlinNoise pn;
+pn.init(2,2, seed);
+trace pn.calc(0.99, 0.99);
+
+
+class Arc {
+
+   float l_u;
+   float m_u;
+   float h_u;
+
+   float l_y;
+   float m_y;
+   float h_y;
+
+   public method draw(float _dt) {
+      Texture tex <= tex_noise;
+
+      Vector4f lv; float lf;
+      Vector4f mv; float mf;
+      Vector4f hv; float hf;
+
+      // sdvg_SetColorARGB(#3fFFFFFF);
+      sdvg_SetColorARGB(sdvg_MixARGBx(#FF1A264D,#FFFFFFFF,#2f));
+      sdvg_SetStrokeWidth(12.0f);
+
+      float lastY2;
+      float lastY1;
+      float lastY0;
+
+      loop(2)
+      {
+         float tx = -VP_W*0.35;
+         float ty = -VP_H * 0.37;
+         int NUM_SEG = 64;
+         float lcu = l_u;
+         float mcu = m_u;
+         float hcu = h_u;
+         float stepUl = 1.0f / NUM_SEG;
+         float stepUm = 2.5f / NUM_SEG;
+         float stepUh = 5.7f / NUM_SEG;
+         float cx = tx;
+         float stepX = float(VP_W*0.7) / NUM_SEG;
+         float a = 0.0f;
+         float w = PI2 / NUM_SEG;
+
+         if(sdvg_BeginLineStripMiterAA(200+2))
+         {
+            loop(NUM_SEG+2)
+            {
+               tex.getUVFilterRepeatVec4(lcu, l_y, lv); lf = (lv.z - 0.5) / 0.5f;
+               tex.getUVFilterRepeatVec4(mcu, m_y, mv); mf = (mv.z - 0.5) / 0.5f;
+               tex.getUVFilterRepeatVec4(hcu, h_y, hv); hf = (hv.z - 0.5) / 0.5f;
+
+               float cy = 0.0f;
+               if(b_lf)
+                  cy += lf*25.0f;
+               if(b_mf)
+                  cy += mf*11.0f;
+               if(b_hf)
+                  cy += hf*7.0f;
+               float amp = 1.0f-sin(a); amp *= amp; amp = 1.0f - amp;
+               cy *= amp * g_amp;
+               // cy *= (0.1f + a*0.5f);
+               // trace "xxx lcu="+lcu+" cx="+cx+" cy="+cy+" lf="+lf+" lv="+lv;
+               sdvg_Vertex2f(cx, ty+cy);
+
+               cx += stepX;
+               lcu += stepUl;
+               mcu += stepUm;
+               hcu += stepUh;
+               a += w;
+
+               lastY2 = lastY1;
+               lastY1 = lastY0;
+               lastY0 = ty+cy;
+            }
+
+            sdvg_End();
+         }
+
+         sdvg_SetColorARGB(#ffffffff);
+         sdvg_SetStrokeWidth(1.0f);
+      }
+
+      // trace "xxx cx="+cx;
+
+      sdvg_SetColorARGB(#ffcfcfcf);
+      sdvg_SetPointRadius(4.0f);
+      if(sdvg_BeginPointsRoundAA(2))
+      {
+         sdvg_Vertex2f(tx, ty);
+         sdvg_Vertex2f(-tx, lastY1);
+         sdvg_End();
+      }
+
+      float spdu = 2.0f;
+      float spdy = 3.0f;
+
+      l_u = mathWrapf(l_u + _dt * -0.005f * spdu, 0.0f, 1.0f);
+      m_u = mathWrapf(m_u + _dt * -0.009f * spdu, 0.0f, 1.0f);
+      h_u = mathWrapf(h_u + _dt * 0.021f * spdu, 0.0f, 1.0f);
+
+      l_y = mathWrapf(l_y + _dt * 0.007f * spdy, 0.0f, 1.0f);
+      m_y = mathWrapf(m_y + _dt * 0.015f * spdy, 0.0f, 1.0f);
+      h_y = mathWrapf(h_y + _dt * 0.029f * spdy, 0.0f, 1.0f);
+   }
+   
+}
+
+Arc arc;
+
+
+
+function SaveScreenShotPNG(String _pathName) : boolean {
+   local Texture tex;
+   boolean ret = false;
+   if(tex.alloc(Viewport.width, Viewport.height, 4))
+   {
+      glReadBuffer(GL_BACK);
+      int off = 0;
+      int y = Viewport.height - 1;
+      loop(Viewport.height)
+      {
+         zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+         y--;
+         off += Viewport.width;
+      }
+      ret = tex.saveImage(_pathName);
+   }
+   return ret;
+}
+
+function RGB32TOHSV(int _c32, Float h, Float s, Float v) {
+
+   float r = ( (_c32 >> 16) & 255 ) * (1.0f / 255);
+   float g = ( (_c32 >>  8) & 255 ) * (1.0f / 255);
+   float b = ( (_c32      ) & 255 ) * (1.0f / 255);
+
+   v = mathMaxf(r, g);
+   v = mathMaxf(v, b);
+
+   float t = mathMinf(r, g);
+   t = mathMinf(t, b);
+
+   if(0 == v)
+      s = 0;
+   else
+      s = (v - t) / v;
+
+   float cr = (v - r) / (v - t);
+   float cg = (v - g) / (v - t);
+   float cb = (v - b) / (v - t);
+
+   if(r == v)
+      h = cb - cg;
+   else if(g == v)
+      h = 2 + cr - cb;
+   else if(b == v)
+      h = 4 + cg - cr;
+
+   h *= 60;
+
+   if(h < 0)
+      h += 360;
+   return (_c32 >> 24) & 255;
+
+}
+
+function ColorTest() {
+   // int c32 = #FFffffff;
+   // int c32 = #FFff0000;
+   // int c32 = #FF00ff00;
+   // int c32 = #FF0000ff;
+   // int c32 = #FF00ffff;
+   // int c32 = #FFffff00;
+   // int c32 = #FF3f7fff;
+   int c32 = #FFcfbd89;
+   Float nh,ns,nv;
+   Float h,s,v;
+   RGB32TOHSV(c32, nh, ns, nv);
+   sdvg_ARGBToHSVA(c32, h, s, v);
+   trace "h="+h+" s="+s+" v="+v;
+   trace "nh="+nh+" ns="+ns+" nv="+nv;
+}
+ColorTest();
+exit(10);
+
+function onDraw() {
+   // trace "[...] onDraw";
+
+   float dt = FPS.precision * (b_slomo ? 0.1f : 1.0f);
+
+   sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
+
+   sdvg_BeginFrame();
+   sdvg_SetViewport(0, 0, Viewport.width, Viewport.height);
+   sdvg_SetScissor(0, 0, Viewport.width, Viewport.height);
+
+   sdvg_ClearARGB(#FF1A264D);
+
+   sdvg_SetStrokeWidth(1.0f);
+   sdvg_SetFillColor4f(0.1f, 0.4f, 0.25f, 1.0f);
+   sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+   sdvg_SetGlobalAlpha(1.0f);
+   sdvg_PaintSolid();
+
+   if( !(++num_frames_rendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   sdvg_ProjInitOrtho(VP_W*0.5, VP_H*0.5);
+   sdvg_ModelInitIdentity();
+   // sdvg_ModelRotatef(frot);
+   sdvg_SetColorARGB(#FFffffff);
+
+   if(1)
+   {
+      tex_noise.bind();
+
+      float yshift = b_arc ? 30 : 0;
+      float s = b_pattern ? 256 : 128;
+      float u = b_pattern ? 3.0f : 1.0f;
+      if(sdvg_BeginTexturedTriangleFanAlpha(4))
+      {
+         sdvg_TexCoord2f(0.0f, 0.0f);
+         sdvg_Vertex2f(-s,  s+yshift);
+
+         sdvg_TexCoord2f(u, 0.0f);
+         sdvg_Vertex2f( s,  s+yshift);
+
+         sdvg_TexCoord2f(u, u);
+         sdvg_Vertex2f( s, -s+yshift);
+
+         sdvg_TexCoord2f(0.0f, u);
+         sdvg_Vertex2f(-s, -s+yshift);
+
+         sdvg_End();
+      }
+   }
+
+   if(b_arc)
+      arc.draw(dt);
+
+   sdvg_EndFrame();
+
+   if(b_rotate)
+   {
+      ang = mathWrapf(ang + 0.03f*dt, 0, 2PI);
+      pn.calcTexture();
+   }
+
+   if(-1 != read_x)
+   {
+      glReadBuffer(GL_BACK);
+      // glReadBuffer(GL_COLOR_ATTACHMENT0);
+      glFinish();
+      Integer c32 = zglReadColorPixel(read_x, read_y);
+      trace "ReadPixel ("+read_x+";"+read_y+") = ABGR(#"+c32.printf("%08x")+")";
+      read_x = -1;
+   }
+
+   if(b_queued_screenshot)
+   {
+      b_queued_screenshot = false;
+      SaveScreenShotPNG("screenshots/perlin_noise.png");
+   }
+
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   read_x = _x;
+   read_y = _y;
+
+   // if(_cbs & MOUSE_LBUTTON)
+   //    Mouse.grab();
+   // else if(_nbs & MOUSE_LBUTTON)
+   //    Mouse.ungrab();
+}
+
+function onKeyboard(Key _k) {
+   // trace "[...] onKeyboard: k.code="+_k.code+" ("+TKS.constantToString(_k.code, "VKEY_")+") mod="+_k.mod+" pressed="+_k.pressed+" released="+_k.released+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case 'f':
+         Viewport.toggleFullScreen();
+         break;
+
+      case 'p':
+         b_queued_screenshot = true;
+         trace "[...] queue screenshot";
+         break;
+
+      case VKEY_SPACE:
+         if(_k.mod)
+         {
+            b_slomo = !b_slomo;
+            trace "[...] b_slomo is "+b_slomo;
+         }
+         else
+         {
+            seed ^= rand(0xDC13FDB7);
+            trace "[...] seed is "+seed;
+            pn.calcTexture();
+         }
+         break;
+
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_UP:
+         subdiv_bits = mathMini(subdiv_bits + 1, 6);
+         trace "[...] subdiv_bits is "+subdiv_bits;
+         pn.calcTexture();
+         break;
+
+      case VKEY_DOWN:
+         subdiv_bits = mathMaxi(subdiv_bits - 1, 0);
+         trace "[...] subdiv_bits is "+subdiv_bits;
+         pn.calcTexture();
+         break;
+
+      case VKEY_RIGHT:
+         tex_size_bits = mathMini(tex_size_bits + 1, 8);
+         trace "[...] tex_size_bits is "+tex_size_bits;
+         pn.calcTexture();
+         break;
+
+      case VKEY_LEFT:
+         tex_size_bits = mathMaxi(tex_size_bits - 1, 4);
+         trace "[...] tex_size_bits is "+tex_size_bits;
+         pn.calcTexture();
+         break;
+
+      case VKEY_PAGEUP:
+         g_amp = mathMinf(g_amp + 0.0625, 2);
+         trace "[...] g_amp is "+g_amp;
+         pn.calcTexture();
+         break;
+
+      case VKEY_PAGEDOWN:
+         g_amp = mathMaxf(g_amp - 0.0625, 0.0625);
+         trace "[...] g_amp is "+g_amp;
+         pn.calcTexture();
+         break;
+
+      case '1':
+         b_lf = !b_lf;
+         trace "[...] b_lf is "+b_lf;
+         break;
+
+      case '2':
+         b_mf = !b_mf;
+         trace "[...] b_mf is "+b_mf;
+         break;
+
+      case '3':
+         b_hf = !b_hf;
+         trace "[...] b_hf is "+b_hf;
+         break;
+
+      case 'a':
+         b_arc = !b_arc;
+         trace "[...] b_arc is "+b_arc;
+         break;
+
+      case 'c':
+         b_contrast = !b_contrast;
+         trace "[...] b_contrast is "+b_contrast;
+         pn.calcTexture();
+         break;
+
+      case 'd':
+         b_debug = !b_debug;
+         trace "[...] b_debug is "+b_debug;
+         break;
+
+      case 'm':
+         b_mirror = !b_mirror;
+         trace "[...] b_mirror is "+b_mirror;
+         pn.calcTexture();
+         break;
+
+      case 'n':
+         b_normalize = !b_normalize;
+         trace "[...] b_normalize is "+b_normalize;
+         pn.calcTexture();
+         break;
+
+      case 'e':
+         b_pattern = !b_pattern;
+         trace "[...] b_pattern is "+b_pattern;
+         pn.calcTexture();
+         break;
+
+      case 'r':
+         b_rotate = !b_rotate;
+         trace "[...] b_rotate is "+b_rotate;
+         pn.calcTexture();
+         break;
+
+      case 's':
+         b_smoothstep = !b_smoothstep;
+         trace "[...] b_smoothstep is "+b_smoothstep;
+         pn.calcTexture();
+         break;
+
+      case 't':
+         b_filter = !b_filter;
+         trace "[...] b_filter is "+b_filter;
+         pn.calcTexture();
+         break;
+
+      case 'v':
+         b_vsync = !b_vsync;
+         trace "[...] b_vsync is "+b_vsync;
+         Viewport.swapInterval(b_vsync);
+         break;
+
+   }
+}
+
+function onOpen() {
+   trace "[...] onOpen";
+   zglEnableGLCore(b_glcore);
+   if(!sdvg_OnOpen())
+   {
+      die "sdvg_OnOpen() failed";
+   }
+   pn.calcTexture();
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval = 1000.0f / 60;
+   FPS.limit = 0;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   // SDL.dpiAwareness = false;  // assume 96dpi and let OS scale window to actual DPI
+
+   SDL.touchInput = true;  // enable WM_POINTER* messages
+
+   sdvg_SetScratchBufferSize(64*1024);
+   sdvg_SetGLSLVersion(b_glcore/*bV3*/, false/*bGLES*/, null/*sVersionStringOrNull*/);
+   sdvg_Init(b_glcore);
+
+   // Viewport.multisampleSamples = 4;
+   // Viewport.multisampleBuffers = 1;
+   // Viewport.stencilBits = 8;
+   // Viewport.setScreenResolution(1920, 1200, 32);
+   Viewport.openWindow(VP_W*VP_ZOOM, VP_H*VP_ZOOM);
+   // Viewport.openScreen(640, 480, 32);
+   Viewport.swapInterval(b_vsync);
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(10,10);
+
+   trace "[dbg] Viewport.dpi="+Viewport.dpi;
+   trace "[...] entering eventloop";
+
+   SDL.eventLoop();
+
+   sdvg_Exit();
+}
