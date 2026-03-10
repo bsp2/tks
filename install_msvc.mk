@@ -325,7 +325,7 @@ CFLAGS+= -DBUILD_64
 endif # BUILD_64
 CFLAGS+= -I"$(WINSDK_INC_UCRT)" -I"$(WINSDK_INC_SHARED)"
 ifeq ($(DEBUG),y)
-CFLAGS+= -ZI
+CFLAGS+= -ZI -FS
 endif # DEBUG
 
 # workaround for windows sdk sal_supp.h __useHeader/__on_failure macro redefinitions
