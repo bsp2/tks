@@ -237,25 +237,26 @@ AFLAGS=
 
 #
 # Linker flags
+#  (note) GNU_HASH needed for Yocto build
 #
-LDFLAGS=
+LDFLAGS=-Wl,--hash-style=gnu
 
 
 #
 # Extra includes
 #
-#EXTRA_INCLUDES=
+EXTRA_INCLUDES=
 #EXTRA_INCLUDES= -I/home/bsp/omap35x/zlib-1.2.3
-EXTRA_INCLUDES= -I$(CROSS_ROOT)/usr/include
+#EXTRA_INCLUDES= -I$(CROSS_ROOT)/usr/include
 
 
 
 #
 # Extra library paths
 #
-#EXTRA_LIBS=
+EXTRA_LIBS=
 #EXTRA_LIBS= -L/home/bsp/omap35x/zlib-1.2.3
-EXTRA_LIBS= -L$(CROSS_ROOT)/usr/lib
+#EXTRA_LIBS= -L$(CROSS_ROOT)/usr/lib
 
 
 #
@@ -283,18 +284,16 @@ ifeq ($(BUILD_64),n)
 CFLAGS  += -march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard
 CPPFLAGS+= -march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard
 LDFLAGS += -march=armv7-a -mthumb -mfpu=neon -mfloat-abi=hard
+endif # /BUILD_64
 ifneq ($(CROSS_ROOT),)
 CFLAGS  += --sysroot=$(CROSS_ROOT)
 CPPFLAGS+= --sysroot=$(CROSS_ROOT)
 LDFLAGS += --sysroot=$(CROSS_ROOT)
-endif
+endif # /CROSS_ROOT
+endif # /BUILD_ARM
+endif # /CROSS_TARGET
 
-endif
-endif
-
-endif
-
-endif
+endif # /RELEASE
 
 
 #
