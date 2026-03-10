@@ -416,7 +416,8 @@ ifeq ($(RELEASE),y)
 OPTFLAGS= -O2 -Oy
 #OPTFLAGS += -arch:AVX2
 else ifeq ($(DEBUG),y)
-OPTFLAGS= -Od -D_DEBUG
+OPTFLAGS_DEBUG= -Od -D_DEBUG
+OPTFLAGS=$(OPTFLAGS_DEBUG)
 endif # RELEASE
 
 #-Ox
@@ -498,7 +499,11 @@ else
 SHARED_MSVCRT_CFLAGS = -MD
 endif # TKS_LIB_DEBUG
 else
+ifeq ($(DEBUG),y)
+SHARED_MSVCRT_CFLAGS = -MTd
+else
 SHARED_MSVCRT_CFLAGS = -MT
+endif # DEBUG
 endif # TKS_LIB
 SHARED_MSVCRT_CFLAGS += -I"$(VCTK)/include" -I"$(W32API_INC)"
 ifeq ($(BUILD_64),y)
