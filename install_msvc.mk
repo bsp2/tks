@@ -18,6 +18,22 @@ BUILD_64=y
 BUILD_ARM=n
 
 
+#
+# Enable optimizations 
+#
+ifeq ($(RELEASE),)
+RELEASE=y
+endif
+
+
+#
+# Enable debug symbols.
+#
+ifeq ($(DEBUG),)
+DEBUG=n
+endif
+
+
 # y=use Windows 10 SDK
 # n=use Windows 7 SDK
 ifeq ($(BUILD_64),y)
@@ -306,8 +322,11 @@ UPX=/f/fli/tools/dev/upx303w/upx.exe -q
 CFLAGS= -nologo -W3 -Zp8 -GR- -EHs-c- -D_CRT_SECURE_NO_DEPRECATE -DWIN32 
 ifeq ($(BUILD_64),y)
 CFLAGS+= -DBUILD_64
-endif
+endif # BUILD_64
 CFLAGS+= -I"$(WINSDK_INC_UCRT)" -I"$(WINSDK_INC_SHARED)"
+ifeq ($(DEBUG),y)
+CFLAGS+= -ZI
+endif # DEBUG
 
 # workaround for windows sdk sal_supp.h __useHeader/__on_failure macro redefinitions
 CFLAGS += -D_USING_V110_SDK71_
@@ -333,14 +352,14 @@ ifeq ($(BUILD_64),y)
 ARCHFLAGS+= -DARCH_ARM64
 else
 ARCHLAGS+= -DARCH_ARM32
-endif
+endif # BUILD_64
 else
 ifeq ($(BUILD_64),y)
 ARCHFLAGS+= -DARCH_X64
 else
 ARCHFLAGS+= -DARCH_X86
-endif
-endif
+endif # BUILD_64
+endif # BUILD_ARM
 
 CFLAGS+= $(ARCHFLAGS)
 CPPFLAGS+= $(ARCHFLAGS)
@@ -349,13 +368,16 @@ CPPFLAGS+= $(ARCHFLAGS)
 #
 # Default linker flags
 #
-LDFLAGS= -INCREMENTAL:NO -VERSION:0.9 
+LDFLAGS= -INCREMENTAL:NO -VERSION:0.9
+ifeq ($(DEBUG),y)
+LDFLAGS += -DEBUG
+endif # DEBUG
 #LDFLAGS= -INCREMENTAL:NO -MACHINE:X86 -VERSION:0.9 -DEBUG -FIXED:NO
 ifeq ($(BUILD_64),y)
 LDFLAGS += -MACHINE:X64 
 else
 LDFLAGS += -MACHINE:X86 
-endif
+endif # BUILD_64
 
 
 #
@@ -366,6 +388,9 @@ LDFLAGS_SIZE=
 #####-FORCE 
 #####-NODEFAULTLIB:LIBCMT 
 #####-OPT:NOWIN98 -NODEFAULTLIB
+ifeq ($(DEBUG),y)
+LDFLAGS_SIZE += -DEBUG
+endif # DEBUG
 
 
 #
@@ -385,10 +410,14 @@ EXTRA_LIBS+= -LIBPATH:"$(WINSDK_LIB_UCRT)"
 #
 # Default Optimization flags
 #
+OPTFLAGS=
+ifeq ($(RELEASE),y)
 #OPTFLAGS= -Ox -Ot
 OPTFLAGS= -O2 -Oy
-#OPTFLAGS= -Od -D_DEBUG
 #OPTFLAGS += -arch:AVX2
+else ifeq ($(DEBUG),y)
+OPTFLAGS= -Od -D_DEBUG
+endif # RELEASE
 
 #-Ox
 #OPTFLAGS  = /Os /O1
@@ -399,7 +428,11 @@ OPTFLAGS= -O2 -Oy
 #
 # Size optimization flags (used by plugins)
 #
+ifeq ($(RELEASE),y)
 OPTFLAGS_SIZE= -Os -GL -GF -Gy -GA
+else ifeq ($(DEBUG),y)
+OPTFLAGS_SIZE= -Od -D_DEBUG -GF
+endif
 
 
 #
@@ -463,10 +496,10 @@ ifeq ($(TKS_LIB_DEBUG),y)
 SHARED_MSVCRT_CFLAGS = -MDd
 else
 SHARED_MSVCRT_CFLAGS = -MD
-endif
+endif # TKS_LIB_DEBUG
 else
 SHARED_MSVCRT_CFLAGS = -MT
-endif
+endif # TKS_LIB
 SHARED_MSVCRT_CFLAGS += -I"$(VCTK)/include" -I"$(W32API_INC)"
 ifeq ($(BUILD_64),y)
 # vs2017:
