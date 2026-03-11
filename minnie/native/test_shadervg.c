@@ -265,7 +265,16 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_MITER_CLOSED                     175
 #define RENDER_BEGIN_LINE_STRIP_MITER_AA_CLOSED                  176
 #define RENDER_LINES_RAND2_AA_VBO                                177
-#define NUM_RENDER_MODES                                         178
+#define RENDER_LINE_STRIP_FLAT_BEVEL_32_PATTERN                  178
+#define RENDER_LINE_STRIP_FLAT_BEVEL_AA_32_PATTERN               179
+#define RENDER_LINE_STRIP_FLAT_BEVEL_14_2_PATTERN                180
+#define RENDER_LINE_STRIP_FLAT_BEVEL_AA_14_2_PATTERN             181
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_PATTERN                    182
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_PATTERN                 183
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_PATTERN_CLOSED             184
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_PATTERN_CLOSED          185
+
+#define NUM_RENDER_MODES                                         186
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -455,6 +464,14 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 175 */ "begin_line_strip_miter_closed",
    /* 176 */ "begin_line_strip_miter_aa_closed",
    /* 177 */ "lines_rand2_aa_vbo",
+   /* 178 */ "line_strip_flat_bevel_32_pattern",
+   /* 179 */ "line_strip_flat_bevel_aa_32_pattern",
+   /* 180 */ "line_strip_flat_bevel_14_2_pattern",
+   /* 181 */ "line_strip_flat_bevel_aa_14_2_pattern",
+   /* 182 */ "begin_line_strip_bevel_pattern",
+   /* 183 */ "begin_line_strip_bevel_aa_pattern",
+   /* 184 */ "begin_line_strip_bevel_pattern_closed",
+   /* 185 */ "begin_line_strip_bevel_aa_pattern_closed",
 };
 
 static YAC_Buffer buf_vbo;
@@ -1984,6 +2001,39 @@ void SetupPaintPatternDecalAlpha(void) {
    sdvg_SetTextureDecalAlpha(decal_alpha);
 }
 
+void SetupPaintPatternGradientStatic(void) {
+   sF32 rx = VP_W;
+   sF32 ry = 0.0f;
+
+   sF32 x = 0.0f;
+   sF32 y = 0.0f;
+
+   sdvg_PaintPattern(x, y, x+rx, y+ry, 1.0f, 1.0f);
+   sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintPatternStatic(void) {
+   sF32 rx = 1.0f;
+   sF32 ry = 0.0f;
+
+   sF32 x = 0.0f;
+   sF32 y = 0.0f;
+
+   sdvg_PaintPattern(x, y, x+rx, y+ry, VP_W, VP_H);
+   sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintPatternGradientStaticDiagonal(void) {
+   sF32 rx = VP_W;
+   sF32 ry = VP_W;
+
+   sF32 x = 0.0f;
+   sF32 y = 0.0f;
+
+   sdvg_PaintPattern(x, y, x+rx, y+ry, 1.0f, 1.0f);
+   sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
 // ---------------------------------------------------------------------------- DrawPaintBackground
 void DrawPaintBackground(void) {
    if(sdvg_BeginFilledTriangles(2u*3u))
@@ -2608,7 +2658,7 @@ static void TestBeginLineStripFlatMiterClosed(sBool _bAA) {
 static void TestLinesRandAAVBO(void) {
    // (note) same coordinates+colors as test264_line_benchmark
    const sUI numLines = 1000u;
-   if(0 == buf_vbo.io_offset)
+   if(0u == buf_vbo.io_offset)
    {
       loc_rand_seed(0x9C82F83Bu);
       yacmemptr d; d.u8 = buf_vbo.buffer;
@@ -2638,7 +2688,7 @@ static void TestLinesRandAAVBO(void) {
 // ---------------------------------------------------------------------------- TestLinesRand2 (177)
 static void TestLinesRand2AAVBO() {
    sUI numVerts = 1000u + 2u;
-   if(0 == buf_vbo.io_offset)
+   if(0u == buf_vbo.io_offset)
    {
       loc_rand_seed(0x9C82F83B);
       sSI x = (int)loc_randf(VP_W);
@@ -2702,6 +2752,108 @@ static void TestBeginLinesRandAAVBO(void) {
                            );
             sdvg_Vertex2f(x, y);
          }
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestLineStripFlatBevel32Paint (178+179)
+static void TestLineStripFlatBevel32Paint(sBool _bAA) {
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   buf_vbo.io_offset = 0u;
+   for(sUI i = 0u; i < numPoints; i++)
+   {
+      sF32 y = sinf(a) * 120.0f + 240.0f;
+      sdvg_BufferAddLinePointFlatBevel32(&buf_vbo, x, y);
+      a += w;
+      x += xStep;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   if(_bAA)
+      sdvg_DrawLineStripFlatBevelAAVBO32Paint(buf_vbo_id, 0u, numPoints, YAC_TRUE/*bSkipLastLineJoint*/);
+   else
+      sdvg_DrawLineStripFlatBevelVBO32Paint(buf_vbo_id, 0u, numPoints, YAC_TRUE/*bSkipLastLineJoint*/);
+}
+
+// ---------------------------------------------------------------------------- TestLineStripFlatBevel14_2Paint (180+181)
+static void TestLineStripFlatBevel14_2Paint(sBool _bAA) {
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   buf_vbo.io_offset = 0u;
+   for(sUI i = 0u; i < numPoints; i++)
+   {
+      sF32 y = sinf(a) * 120.0f + 240.0f;
+      sdvg_BufferAddLinePointFlatBevel14_2(&buf_vbo, x, y);
+      a += w;
+      x += xStep;
+   }
+   sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   if(_bAA)
+      sdvg_DrawLineStripFlatBevelAAVBO14_2Paint(buf_vbo_id, 0u, numPoints, YAC_TRUE/*bSkipLastLineJoint*/);
+   else
+      sdvg_DrawLineStripFlatBevelVBO14_2Paint(buf_vbo_id, 0u, numPoints, YAC_TRUE/*bSkipLastLineJoint*/);
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripFlatBevelPaint (182+183)
+static void TestBeginLineStripFlatBevelPaint(sBool _bAA) {
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   sdvg_SetStrokeWidth(stroke_w * 4);
+   if(_bAA
+      ? sdvg_BeginLineStripBevelAAPaint(numPoints)
+      : sdvg_BeginLineStripBevelPaint(numPoints)
+      )
+   {
+      for(sUI i = 0u; i < numPoints; i++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripBevelPaintClosed (184+185)
+static void TestBeginLineStripBevelPaintClosed(sBool _bAA) {
+   sdvg_SetStrokeWidth(stroke_w * 8.0f);
+   sUI numSeg = 192u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x * 0.5f;
+   sF32 wd = ((3.0f*sM_2PIf) / numSeg);
+   sF32 ad = ang_y;
+   sF32 ctrX = VP_W*0.5f;
+   sF32 ctrY = VP_H*0.5f;
+   if(_bAA
+      ? sdvg_BeginLineStripBevelAAPaintClosed(numPoints)
+      : sdvg_BeginLineStripBevelPaintClosed(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 dist = sinf(ad) * sinf(a*4.0f) * 75.0f + 150.0f;
+         sF32 x = cosf(a) * dist + ctrX;
+         sF32 y = sinf(a) * dist + ctrY;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         ad += wd;
       }
       sdvg_End();
    }
@@ -4404,6 +4556,50 @@ static void DrawTest(void) {
       case RENDER_LINES_RAND2_AA_VBO: // 177
          TestLinesRand2AAVBO();
          break;
+
+      case RENDER_LINE_STRIP_FLAT_BEVEL_32_PATTERN: // 178
+         SetupPaintPatternGradientStatic();
+         TestLineStripFlatBevel32Paint(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_LINE_STRIP_FLAT_BEVEL_AA_32_PATTERN: // 179
+         SetupPaintPatternGradientStatic();
+         TestLineStripFlatBevel32Paint(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_LINE_STRIP_FLAT_BEVEL_14_2_PATTERN: // 180
+         SetupPaintPatternGradientStatic();
+         TestLineStripFlatBevel14_2Paint(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_LINE_STRIP_FLAT_BEVEL_AA_14_2_PATTERN: // 181
+         SetupPaintPatternGradientStatic();
+         TestLineStripFlatBevel14_2Paint(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_PATTERN: // 182
+         SetupPaintPatternGradientStatic();
+         TestBeginLineStripFlatBevelPaint(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_AA_PATTERN: // 183
+         SetupPaintPatternGradientStatic();
+         TestBeginLineStripFlatBevelPaint(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_PATTERN_CLOSED: // 184
+         SetupPaintPatternGradientStaticDiagonal();
+         TestBeginLineStripBevelPaintClosed(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_AA_PATTERN_CLOSED: // 185
+#if 0
+         SetupPaintPatternStatic();
+#else
+         SetupPaintPatternGradientStaticDiagonal();
+#endif
+         TestBeginLineStripBevelPaintClosed(YAC_TRUE/*bAA*/);
+         break;
    }
 }
 
@@ -4827,7 +5023,9 @@ int main(int argc, char**argv) {
       minnie_impl_init();
 #endif // USE_MINNIE_MIB_SETUP
 
-      sdvg_SetScratchBufferSize(4096*1024);
+      // sdvg_SetScratchBufferSize(64*1024);  // TC183: 60253 fps
+      sdvg_SetScratchBufferSize(256*1024);  // TC183: 73655 fps
+      // sdvg_SetScratchBufferSize(4096*1024);  // TC183: 94132 fps
 #if 0
       sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
 #endif // 0

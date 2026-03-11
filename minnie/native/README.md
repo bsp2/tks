@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 178 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 186 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -571,3 +571,27 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_177_lines_rand2_aa_vbo
   
   ![screenhots](../tkminnie/tests/screenshots/test_177_lines_rand2_aa_vbo.png)
+- test_178_line_strip_flat_bevel_32_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_178_line_strip_flat_bevel_32_pattern.png)
+- test_179_line_strip_flat_bevel_aa_32_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_179_line_strip_flat_bevel_aa_32_pattern.png)
+- test_180_line_strip_flat_bevel_14_2_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_180_line_strip_flat_bevel_14_2_pattern.png)
+- test_181_line_strip_flat_bevel_aa_14_2_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_181_line_strip_flat_bevel_aa_14_2_pattern.png)
+- test_182_begin_line_strip_bevel_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_182_begin_line_strip_bevel_pattern.png)
+- test_183_begin_line_strip_bevel_aa_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_183_begin_line_strip_bevel_aa_pattern.png)
+- test_184_begin_line_strip_bevel_pattern_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_184_begin_line_strip_bevel_pattern_closed.png)
+- test_185_begin_line_strip_bevel_aa_pattern_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_185_begin_line_strip_bevel_aa_pattern_closed.png)
