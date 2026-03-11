@@ -41,6 +41,8 @@
 #include "Shader.h"
 #include "Shape.h"
 
+#define Dpaintprintf if( MINNIE_PRINTF);else Dsdvg_printf
+
 
 ShaderVG_Shape::ShaderVG_Shape(void) {
 
@@ -611,12 +613,14 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
    loc = shape_u_paint_start;
    if(loc >= 0)
    {
+      Dpaintprintf("[trc] paint_start=(%f;%f)\n", _paint->start_x, _paint->start_y);
       Dsdvg_uniform_2f(loc, _paint->start_x, _paint->start_y);
    }
 
    loc = shape_u_paint_end;
    if(loc >= 0)
    {
+      Dpaintprintf("[trc] paint_end=(%f;%f)\n", _paint->end_x, _paint->end_y);
       Dsdvg_uniform_2f(loc, _paint->end_x, _paint->end_y);
    }
 
@@ -625,6 +629,7 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
    {
       const sF32 sclX = (_paint->end_x - _paint->start_x != 0.0f) ? (1.0f / (_paint->end_x - _paint->start_x)) : 0.0f;
       const sF32 sclY = (_paint->end_y - _paint->start_y != 0.0f) ? (1.0f / (_paint->end_y - _paint->start_y)) : 0.0f;
+      Dpaintprintf("[trc] paint_scale=(%f;%f)\n", sclX, sclY);
       Dsdvg_uniform_2f(loc, sclX, sclY);
    }
 
@@ -645,8 +650,8 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
          dx = 0.0f;
          dy = 0.0f;
       }
-      // Dprintf("xxx paint_ndir=(%f; %f)\n", dx, dy);
-      Dsdvg_uniform_2f(loc, dx, dy);
+      Dpaintprintf("[trc] paint_ndir=(%f; %f)  (start=(%f;%f) end=(%f;%f))\n", dx, dy, _paint->start_x, _paint->start_y, _paint->end_x, _paint->end_y);
+      Dsdvg_uniform_2f(loc, dx, -dy);
    }
 
    loc = shape_u_paint_ob_len;
@@ -659,18 +664,21 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
       {
          l = 1.0f / l;
       }
+      Dpaintprintf("[trc] paint_ob_len=%f\n", l);
       Dsdvg_uniform_1f(loc, l);
    }
 
    loc = shape_u_paint_angle01;
    if(loc >= 0)
    {
+      Dpaintprintf("[trc] paint_angle01=%f\n", _paint->angle01);
       Dsdvg_uniform_1f(loc, _paint->angle01);
    }
 
    loc = shape_u_paint_ob_size;
    if(loc >= 0)
    {
+      Dpaintprintf("[trc] paint_ob_size(%f;%f)\n", _paint->ob_size_x, _paint->ob_size_y);
       Dsdvg_uniform_2f(loc, _paint->ob_size_x, _paint->ob_size_y);
    }
 }
