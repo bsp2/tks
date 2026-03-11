@@ -2048,11 +2048,100 @@ Draw previously prepared vertex buffer as anti-aliased line strip with bevel lin
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
 @groupref Stroke
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripFlatBevelVBO32Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as line strip with bevel line joints (32 bit float format)
+
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripFlatBevelVBO14_2Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
+
+Apply current paint.
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripFlatBevelAAVBO32Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (32 bit float format)
+
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripFlatBevelAAVBO14_2Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (14.2 fixed point format)
+
+Apply current paint.
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripPatternBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
@@ -3546,6 +3635,78 @@ Renders line joint after last segment.
 @group Decal
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAAClosed (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripBevelPaint,int numPoints:boolean
+Begin preparation or rendering of line strip with bevel line joints (open polyline).
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
+
+Apply current paint.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref Paint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripBevelPaint (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripBevelPaintClosed,int numPoints:boolean
+Begin preparation or rendering of line strip with bevel line joints (closed polyline).
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+Apply current paint.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref Paint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripBevelPaintClosed (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripBevelAAPaint,int numPoints:boolean
+Begin preparation or rendering of anti-aliased line strip with bevel line joints (open polyline).
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
+
+Apply current paint.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref Paint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripBevelAAPaint (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripBevelAAPaintClosed,int numPoints:boolean
+Begin preparation or rendering of anti-aliased line strip with bevel line joints (closed polyline).
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+Apply current paint.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref Paint
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripBevelAAPaintClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripMiter,int numPoints:boolean
 Begin preparation or rendering of line strip with miter line joints (open polyline)

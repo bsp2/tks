@@ -2,7 +2,7 @@
 // ---- file   : LineStripFlatAA32Conic.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -142,6 +142,6 @@ class LineStripFlatAA32Conic : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOGradient()
+   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOPaint()
 
 };

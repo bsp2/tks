@@ -132,6 +132,6 @@ class LineStripFlatAA32Pattern : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOGradient()
+   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOPaint()
 
 };

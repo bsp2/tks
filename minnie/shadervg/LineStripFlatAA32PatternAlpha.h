@@ -2,7 +2,7 @@
 // ---- file   : LineStripFlatAA32PatternAlpha.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -132,6 +132,6 @@ class LineStripFlatAA32PatternAlpha : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOGradient()
+   // (note) see also: shadervg.cpp:loc_DrawLineStripFlatAAVBOPaint()
 
 };
