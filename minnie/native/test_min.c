@@ -50,11 +50,20 @@
 #include <stdarg.h>
 #include <math.h>
 
+#if 0
 #define DISPLAY_WIDTH  800
 #define DISPLAY_HEIGHT 600
 
 #define VP_W 800
 #define VP_H 600
+
+#else
+#define DISPLAY_WIDTH  454
+#define DISPLAY_HEIGHT 454
+
+#define VP_W DISPLAY_WIDTH
+#define VP_H DISPLAY_HEIGHT
+#endif
 
 #include "../inc_minnie.h"
 #include "hal.h"
@@ -136,6 +145,7 @@ static const char *test_names[] = {
    "23: arc filled",
    "24: arc stroked",
    "25: arc filled+stroked",
+   "26: arc stroke+pattern",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -146,21 +156,24 @@ static void Test_00(void) {
    sSI pid = minBeginPath();
    minSeg(32u);
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sF32 rx = sinf(anim_1) *  40.0f;
    sF32 ry = cosf(anim_2) *  30.0f;
    sF32 sx = sinf(anim_4) * 140.0f;
    sF32 sy = cosf(anim_5) * 130.0f;
 
-   minMoveTo(100.0f+rx, 300.0f+ry);
+   minMoveTo((100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY);
 
-   minCubicTo(300.0f+sx, 100.0f+sy,  // c1
-              500.0f-sy, 100.0f-sx,  // c2
-              700.0f-ry, 300.0f-rx   // dst
+   minCubicTo((300.0f+sx)*vpSclX, (100.0f+sy)*vpSclY,  // c1
+              (500.0f-sy)*vpSclX, (100.0f-sx)*vpSclY,  // c2
+              (700.0f-ry)*vpSclX, (300.0f-rx)*vpSclY   // dst
               );
 
-   minCubicTo(500.0f+sx, 300.0f+sy,  // c1
-              250.0f-sy, 500.0f-sx,  // c2
-              100.0f+rx, 300.0f+ry   // dst
+   minCubicTo((500.0f+sx)*vpSclX, (300.0f+sy)*vpSclY,  // c1
+              (250.0f-sy)*vpSclX, (500.0f-sx)*vpSclY,  // c2
+              (100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY   // dst
               );
 
    minEndPath(YAC_TRUE/*bClosed*/);
@@ -174,7 +187,7 @@ static void Test_00(void) {
 
    if(fill_mode & 2)
    {
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -192,32 +205,35 @@ static void Test_01(void) {
    segAmt *= segAmt;
    minSeg((sUI)(8 + 120*segAmt));
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sF32 rx = sinf(anim_1) *  40.0f;
    sF32 ry = cosf(anim_2) *  30.0f;
    sF32 sx = sinf(anim_4) * 140.0f;
    sF32 sy = cosf(anim_5) * 130.0f;
 
    // main
-   minMoveTo(100.0f+rx, 300.0f+ry);
+   minMoveTo((100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY);
 
    sF32 relx1 = (300.0f+sx) - (100.0f+rx);
    sF32 rely1 = (100.0f+sy) - (300.0f+ry);
-   minCubicTo(300.0f+sx, 100.0f+sy,
-              500.0f-sy, 100.0f-sx,
-              700.0f-ry, 300.0f-rx
+   minCubicTo((300.0f+sx)*vpSclX, (100.0f+sy)*vpSclY,
+              (500.0f-sy)*vpSclX, (100.0f-sx)*vpSclY,
+              (700.0f-ry)*vpSclX, (300.0f-rx)*vpSclY
               );
 
    sF32 relx2 = (700.0f-ry) - (500.0f-sy);
    sF32 rely2 = (300.0f-rx) - (100.0f-sx);
-   minCubicTo(700.0f-ry+relx2, 300.0f-rx+rely2,
-              100.0f+rx-relx1, 300.0f+ry-rely1,
-              100.0f+rx,       300.0f+ry
+   minCubicTo((700.0f-ry+relx2)*vpSclX, (300.0f-rx+rely2)*vpSclY,
+              (100.0f+rx-relx1)*vpSclX, (300.0f+ry-rely1)*vpSclY,
+              (100.0f+rx)*vpSclX,       (300.0f+ry)*vpSclY
               );
 
    // sub 1
    minBeginSub();
-   minMoveTo(300.0f-ry, 250.0f+rx);
-   minEllipse(150.0f, 150.0f);
+   minMoveTo((300.0f-ry)*vpSclX, (250.0f+rx)*vpSclY);
+   minEllipse(150.0f*vpSclX, 150.0f*vpSclY);
    minEndSubClosed();
 
    minEndPathClosed();
@@ -231,7 +247,7 @@ static void Test_01(void) {
 
    if(fill_mode & 2)
    {
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f) * vpSclX );
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -244,6 +260,9 @@ static void Test_02(void) {
 
    minBindTexture(tex_id, YAC_FALSE/*bRepeat*/, b_tex_filter);
    minColor(0xffffffffu);
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 x = sinf(anim_1) * 400.0f - 400.0f + 125.0f/4;
    sF32 y = cosf(anim_2) * 300.0f - 300.0f + 100.0f/4;
@@ -267,7 +286,7 @@ static void Test_02(void) {
          sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
          sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
 
-         minRectTexUVFlat(tx - w*0.5f, ty - h*0.5f, w, h,
+         minRectTexUVFlat( (tx - w*0.5f)*vpSclX, (ty - h*0.5f)*vpSclY, w*vpSclX, h*vpSclY,
                           0.0f, 0.0f,
                           1.0f, 1.0f
                           );
@@ -295,6 +314,9 @@ static void Test_03(void) {
    minBindTexture(tex_id, YAC_FALSE/*bRepeat*/, b_tex_filter);
    minColor(0xffffffffu);
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sF32 x = sinf(anim_1) * 400.0f - 400.0f + 125.0f/4;
    sF32 y = cosf(anim_2) * 300.0f - 300.0f + 100.0f/4;
    sF32 ty = y;
@@ -317,7 +339,7 @@ static void Test_03(void) {
          sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
          sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
 
-         minRectTexUVGouraud(tx - w*0.5f, ty - h*0.5f, w, h,
+         minRectTexUVGouraud((tx - w*0.5f)*vpSclX, (ty - h*0.5f)*vpSclY, w*vpSclX, h*vpSclY,
                              0.0f, 0.0f,
                              1.0f, 1.0f,
                              Test_03_calc_c32_at(tx - w*0.5f, ty - h*0.5f),  // lt
@@ -337,6 +359,9 @@ static void Test_03(void) {
 static void Test_04(void) {
    // sine lines
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sSI pid = minBeginPath();
 
    sUI numSeg = 64u;
@@ -349,9 +374,9 @@ static void Test_04(void) {
    {
       sF32 y = sinf(a) * 150.0f + 300.0f;
       if(0u == segIdx)
-         minMoveTo(x, y);
+         minMoveTo(x*vpSclX, y*vpSclY);
       else
-         minLineTo(x, y);
+         minLineTo(x*vpSclX, y*vpSclY);
       a += w;
       x += xStep;
    }
@@ -359,7 +384,7 @@ static void Test_04(void) {
    minEndPathOpen();
 
    minColor(0xffffffffu);
-   minStrokeWidth(4.0f);
+   minStrokeWidth(4.0f*vpSclX);
    minJoinBevel();
    minCapNone();
    minDrawPath(pid);
@@ -369,6 +394,9 @@ static void Test_04(void) {
 static void Test_05(sBool _bFill, sBool _bStroke) {
    // round-rect filled+stroked (tesselated)
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
    sF32 sx = 320.0f + sinf(anim_4*0.25f) * 200.0f;
@@ -387,8 +415,8 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
 
    sSI pid = minBeginPath();
    minSeg(8u);
-   minMoveTo(400.0f-sx*0.5f, 300.0f-sy*0.5f);
-   minRoundRect(sx, sy, rx, ry);
+   minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
+   minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
    minEndPath(YAC_TRUE/*bClosed*/);
 
    if(_bFill)
@@ -401,7 +429,7 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
+      minStrokeWidth((sinf(anim_3)*2.0f+3.0f)*vpSclX);
       minJoinMiter();
       minDrawPath(pid);
    }
@@ -411,6 +439,9 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
 static void Test_06(sBool _bFill, sBool _bStroke) {
    // round-rect filled+stroked (shadervg)
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
    sF32 sx = 320.0f + sinf(anim_4*0.25f) * 200.0f;
@@ -428,20 +459,20 @@ static void Test_06(sBool _bFill, sBool _bStroke) {
       ry = (sy*0.495f);
 
    minBeginImmediate();
-   minMoveTo(400.0f-sx*0.5f, 300.0f-sy*0.5f);
+   minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
 
    if(_bFill)
    {
       minColor(0xff324f75u);
       minFill();
-      minRoundRect(sx, sy, rx, ry);
+      minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
    }
 
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
-      minRoundRect(sx, sy, rx, ry);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
    }
 
    minEndImmediate();
@@ -450,6 +481,9 @@ static void Test_06(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_11(sBool _bFill, sBool _bStroke) {
    // rect filled+stroked (tesselated)
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -469,8 +503,8 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
 
    sSI pid = minBeginPath();
    minSeg(8u);
-   minMoveTo(400.0f-sx*0.5f, 300.0f-sy*0.5f);
-   minRect(sx, sy);
+   minMoveTo( (400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY );
+   minRect(sx*vpSclX, sy*vpSclY);
    minEndPath(YAC_TRUE/*bClosed*/);
 
    if(_bFill)
@@ -483,7 +517,7 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minJoinMiter();
       minDrawPath(pid);
    }
@@ -492,6 +526,9 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_12(sBool _bFill, sBool _bStroke) {
    // rect filled+stroked (shadervg)
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -510,20 +547,20 @@ static void Test_12(sBool _bFill, sBool _bStroke) {
       ry = (sy*0.495f);
 
    minBeginImmediate();
-   minMoveTo(400.0f-sx*0.5f, 300.0f-sy*0.5f);
+   minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
 
    if(_bFill)
    {
       minColor(0xff324f75u);
       minFill();
-      minRect(sx, sy);
+      minRect(sx*vpSclX, sy*vpSclY);
    }
 
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
-      minRect(sx, sy);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minRect(sx*vpSclX, sy*vpSclY);
    }
 
    minEndImmediate();
@@ -532,6 +569,9 @@ static void Test_12(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_17(sBool _bFill, sBool _bStroke) {
    // ellipse filled+stroked (tesselated)
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -554,8 +594,8 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
 
    sSI pid = minBeginPath();
    minSeg(64u);
-   minMoveTo(400.0f, 300.0f);
-   minEllipse(sx*0.5f, sy*0.5f);
+   minMoveTo(400.0f*vpSclX, 300.0f*vpSclY);
+   minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
    minEndPath(YAC_TRUE/*bClosed*/);
 
    if(_bFill)
@@ -568,7 +608,7 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minJoinBevel();
       minDrawPath(pid);
    }
@@ -577,6 +617,9 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_18(sBool _bFill, sBool _bStroke) {
    // ellipse filled+stroked (shadervg)
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -598,20 +641,20 @@ static void Test_18(sBool _bFill, sBool _bStroke) {
       ry = (sy*0.495f);
 
    minBeginImmediate();
-   minMoveTo(400.0f, 300.0f);
+   minMoveTo(400.0f*vpSclX, 300.0f*vpSclY);
 
    if(_bFill)
    {
       minColor(0xff324f75u);
       minFill();
-      minEllipse(sx*0.5f, sy*0.5f);
+      minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
    }
 
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth(sinf(anim_3)*2.0f+3.0f);
-      minEllipse(sx*0.5f, sy*0.5f);
+      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
    }
 
    minEndImmediate();
@@ -624,6 +667,9 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
    sSI pid = minBeginPath();
    minSeg(32u);
 
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
    sF32 rx = sinf(anim_1) * 40.0f + 41.0f;
    sF32 ry = cosf(anim_2) * 30.0f + 31.0f;
    sF32 sx = sinf(anim_4) * 240.0f;
@@ -632,15 +678,15 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
    sF32 px = 800.0f/2;
    sF32 py = 400.0f/2;
 
-   minMoveTo(px, py);
+   minMoveTo(px*vpSclX, py*vpSclY);
 
    sF32 rot = 0.0f;
 
-   minArcTo(rx, ry,
+   minArcTo(rx*vpSclX, ry*vpSclY,
             rot,
             YAC_FALSE/*bLargeArc*/,
             YAC_FALSE/*bArcSweep*/,
-            px + sx, py + sy
+            (px + sx)*vpSclX, (py + sy)*vpSclY
             );
 
    minEndPath(YAC_TRUE/*bClosed*/);
@@ -654,11 +700,50 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 
    if(_bStroke)
    {
-      minStrokeWidth(2.0f);
+      minStrokeWidth(2.0f*vpSclX);
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
    }
+}
+
+// ----------------------------------------------------------------------------
+static void Test_26(void) {
+   // arc stroke+pattern (WIP)
+
+   const sF32 vpSclX = VP_W / 454.0f;
+   const sF32 vpSclY = VP_H / 454.0f;
+
+   sSI pid = minBeginPath();
+   minSeg(20);
+
+   const sF32 px =  71;
+   const sF32 py =  71;
+   const sF32 rx = 229;
+   const sF32 ry = 244;
+   const sF32 dx = 385;
+   const sF32 dy =  71;
+
+   minMoveTo(px, py);
+
+   // trace "xxx p=("+px+";"+py+") r=("+rx+";"+ry+") q=("+(px+sx)+";"+(py+sy)+")";
+
+   float rot = 0;
+
+   minArcTo(rx*vpSclX, ry*vpSclY,
+            rot,
+            YAC_FALSE/*bLargeArc*/,
+            YAC_TRUE/*bArcSweep*/,
+            dx*vpSclX, dy*vpSclY
+            );
+
+   minEndPath(YAC_FALSE/*bClosed*/);
+
+   minStrokeWidth(3.5f*vpSclX);
+   minColor(0xffffffffu);
+   minJoinBevel();
+   minCapNone();
+   minDrawPath(pid);
 }
 
 // ---------------------------------------------------------------------------- SelectTest
@@ -727,6 +812,7 @@ void hal_on_draw(void) {
          case 23: Test_23(YAC_TRUE/*bFill*/, YAC_FALSE/*bStroke*/); break;  // arc filled
          case 24: Test_23(YAC_FALSE/*bFill*/, YAC_TRUE/*bStroke*/); break;  // arc stroked
          case 25: Test_23(YAC_TRUE/*bFill*/, YAC_TRUE/*bStroke*/); break;   // arc filled+stroked
+         case 26: Test_26(); break;                          // arc stroke+pattern (WIP)
       }
 
       minDrawableEnd(drawable);
@@ -746,7 +832,7 @@ void hal_on_draw(void) {
          }
       }
 
-      minDrawableSetSize2f(drawable, 800.0f, 600.0f);
+      minDrawableSetSize2f(drawable, VP_W, VP_H);
    }
 
    if(b_draw_gl)
