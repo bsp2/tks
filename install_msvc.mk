@@ -450,14 +450,6 @@ DBGFLAGS=
 
 
 #
-# Do not define if msvcrt is missing hypotf() (old versions only)
-# Set to 'y' if it has.
-#
-#HAVE_HYPOTF=y
-
-
-
-#
 # Nothing to change after this line-----------------------------
 #
 CFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
@@ -523,12 +515,3 @@ CPPFLAGS += $(SHARED_MSVCRT_CFLAGS)
 
 # for plugins only:
 LDFLAGS_SIZE += -LIBPATH:"$(WINSDK_LIB_UCRT)"
-
-
-#
-# HYPOTF emulation (tkmath)
-#
-ifeq ($(HAVE_HYPOTF),y)
-CFLAGS += -DHAVE_HYPOTF
-CPPFLAGS += -DHAVE_HYPOTF
-endif

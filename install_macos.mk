@@ -313,21 +313,8 @@ endif
 
 
 #
-# Do not define if libgcc is missing hypotf() (old versions only)
-# Set to 'y' if it has.
-#
-HAVE_HYPOTF=y
-
-
-
-#
 # Nothing to change after this line-----------------------------
 #
 CFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
 CPPFLAGS+= $(EXTRA_INCLUDES) $(DBGFLAGS)
 LDFLAGS+= $(EXTRA_LIBS)
-
-ifeq ($(HAVE_HYPOTF),y)
-CFLAGS += -DHAVE_HYPOTF
-CPPFLAGS += -DHAVE_HYPOTF
-endif
