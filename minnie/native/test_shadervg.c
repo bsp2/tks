@@ -2637,7 +2637,7 @@ static void TestLinesRandAAVBO(void) {
 
 // ---------------------------------------------------------------------------- TestLinesRand2 (177)
 static void TestLinesRand2AAVBO() {
-   int numVerts = 1000u + 2u;
+   sUI numVerts = 1000u + 2u;
    if(0 == buf_vbo.io_offset)
    {
       loc_rand_seed(0x9C82F83B);
