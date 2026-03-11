@@ -163,42 +163,42 @@
 #include "TrianglesTexUVFlatDecal32Alpha.h"
 #include "TrianglesTexUVGouraudDecal32Alpha.h"
 #include "TrianglesTexUVFlat32AlphaSDF.h"
-#include "LineStripFlat14_2.h"
 #include "LineStripFlat32.h"
-#include "LineStripFlatAA14_2.h"
+#include "LineStripFlat14_2.h"
 #include "LineStripFlatAA32.h"
-// #include "LineStripFlatAA14_2Linear.h"
+#include "LineStripFlatAA14_2.h"
 #include "LineStripFlatAA32Linear.h"
-// #include "LineStripFlatAA14_2Radial.h"
+// #include "LineStripFlatAA14_2Linear.h"
 #include "LineStripFlatAA32Radial.h"
-// #include "LineStripFlatAA14_2Conic.h"
+// #include "LineStripFlatAA14_2Radial.h"
 #include "LineStripFlatAA32Conic.h"
-// #include "LineStripFlatAA14_2Pattern.h"
+// #include "LineStripFlatAA14_2Conic.h"
 #include "LineStripFlatAA32Pattern.h"
-// #include "LineStripFlatAA14_2PatternAlpha.h"
+// #include "LineStripFlatAA14_2Pattern.h"
 #include "LineStripFlatAA32PatternAlpha.h"
-// #include "LineStripFlatAA14_2PatternDecal.h"
+// #include "LineStripFlatAA14_2PatternAlpha.h"
 #include "LineStripFlatAA32PatternDecal.h"
-// #include "LineStripFlatAA14_2PatternDecalAlpha.h"
+// #include "LineStripFlatAA14_2PatternDecal.h"
 #include "LineStripFlatAA32PatternDecalAlpha.h"
-#include "LineStripPatternAA14_2.h"
+// #include "LineStripFlatAA14_2PatternDecalAlpha.h"
 #include "LineStripPatternAA32.h"
-#include "LineStripPatternDecalAA14_2.h"
+#include "LineStripPatternAA14_2.h"
 #include "LineStripPatternDecalAA32.h"
-#include "LineStripFlatBevelAA14_2.h"
+#include "LineStripPatternDecalAA14_2.h"
 #include "LineStripFlatBevelAA32.h"
-#include "LineStripPatternBevelAA14_2.h"
+#include "LineStripFlatBevelAA14_2.h"
 #include "LineStripPatternBevelAA32.h"
-#include "LineStripPatternDecalBevelAA14_2.h"
+#include "LineStripPatternBevelAA14_2.h"
 #include "LineStripPatternDecalBevelAA32.h"
-#include "LineStripFlatMiterAA14_2.h"
+#include "LineStripPatternDecalBevelAA14_2.h"
 #include "LineStripFlatMiterAA32.h"
-#include "LinesFlatAA14_2.h"
+#include "LineStripFlatMiterAA14_2.h"
 #include "LinesFlatAA32.h"
-#include "LinesGouraudAA14_2.h"
+#include "LinesFlatAA14_2.h"
 #include "LinesGouraudAA32.h"
-#include "LinesPatternAA14_2.h"
+#include "LinesGouraudAA14_2.h"
 #include "LinesPatternAA32.h"
+#include "LinesPatternAA14_2.h"
 #include "PointsSquareAA32.h"
 #include "PointsSquareAA14_2.h"
 #include "PointsSquareGouraudAA32.h"
@@ -320,42 +320,42 @@ static TrianglesTexUVGouraud32Alpha         triangles_tex_uv_gouraud_32_alpha;
 static TrianglesTexUVFlatDecal32Alpha       triangles_tex_uv_flat_decal_32_alpha;
 static TrianglesTexUVGouraudDecal32Alpha    triangles_tex_uv_gouraud_decal_32_alpha;
 static TrianglesTexUVFlat32AlphaSDF         triangles_tex_uv_flat_32_alpha_sdf;
-static LineStripFlat14_2                    line_strip_flat_14_2;
 static LineStripFlat32                      line_strip_flat_32;
-static LineStripFlatAA14_2                  line_strip_flat_aa_14_2;
+static LineStripFlat14_2                    line_strip_flat_14_2;
 static LineStripFlatAA32                    line_strip_flat_aa_32;
-// static LineStripFlatAA14_2Linear            line_strip_flat_aa_14_2_linear;
+static LineStripFlatAA14_2                  line_strip_flat_aa_14_2;
 static LineStripFlatAA32Linear              line_strip_flat_aa_32_linear;
-// static LineStripFlatAA14_2Radial            line_strip_flat_aa_14_2_radial;
+// static LineStripFlatAA14_2Linear            line_strip_flat_aa_14_2_linear;
 static LineStripFlatAA32Radial              line_strip_flat_aa_32_radial;
-// static LineStripFlatAA14_2Conic             line_strip_flat_aa_14_2_conic;
+// static LineStripFlatAA14_2Radial            line_strip_flat_aa_14_2_radial;
 static LineStripFlatAA32Conic               line_strip_flat_aa_32_conic;
-// static LineStripFlatAA14_2Pattern           line_strip_flat_aa_14_2_pattern;
+// static LineStripFlatAA14_2Conic             line_strip_flat_aa_14_2_conic;
 static LineStripFlatAA32Pattern             line_strip_flat_aa_32_pattern;
-// static LineStripFlatAA14_2PatternAlpha      line_strip_flat_aa_14_2_pattern_alpha;
+// static LineStripFlatAA14_2Pattern           line_strip_flat_aa_14_2_pattern;
 static LineStripFlatAA32PatternAlpha        line_strip_flat_aa_32_pattern_alpha;
-// static LineStripFlatAA14_2PatternDecal      line_strip_flat_aa_14_2_pattern_decal;
+// static LineStripFlatAA14_2PatternAlpha      line_strip_flat_aa_14_2_pattern_alpha;
 static LineStripFlatAA32PatternDecal        line_strip_flat_aa_32_pattern_decal;
-// static LineStripFlatAA14_2PatternDecalAlpha line_strip_flat_aa_14_2_pattern_decal_alpha;
+// static LineStripFlatAA14_2PatternDecal      line_strip_flat_aa_14_2_pattern_decal;
 static LineStripFlatAA32PatternDecalAlpha   line_strip_flat_aa_32_pattern_decal_alpha;
-static LineStripPatternAA14_2               line_strip_pattern_aa_14_2;
+// static LineStripFlatAA14_2PatternDecalAlpha line_strip_flat_aa_14_2_pattern_decal_alpha;
 static LineStripPatternAA32                 line_strip_pattern_aa_32;
-static LineStripPatternDecalAA14_2          line_strip_pattern_decal_aa_14_2;
+static LineStripPatternAA14_2               line_strip_pattern_aa_14_2;
 static LineStripPatternDecalAA32            line_strip_pattern_decal_aa_32;
-static LineStripFlatBevelAA14_2             line_strip_flat_bevel_aa_14_2;
+static LineStripPatternDecalAA14_2          line_strip_pattern_decal_aa_14_2;
 static LineStripFlatBevelAA32               line_strip_flat_bevel_aa_32;
-static LineStripPatternBevelAA14_2          line_strip_pattern_bevel_aa_14_2;
+static LineStripFlatBevelAA14_2             line_strip_flat_bevel_aa_14_2;
 static LineStripPatternBevelAA32            line_strip_pattern_bevel_aa_32;
-static LineStripPatternDecalBevelAA14_2     line_strip_pattern_decal_bevel_aa_14_2;
+static LineStripPatternBevelAA14_2          line_strip_pattern_bevel_aa_14_2;
 static LineStripPatternDecalBevelAA32       line_strip_pattern_decal_bevel_aa_32;
-static LineStripFlatMiterAA14_2             line_strip_flat_miter_aa_14_2;
+static LineStripPatternDecalBevelAA14_2     line_strip_pattern_decal_bevel_aa_14_2;
 static LineStripFlatMiterAA32               line_strip_flat_miter_aa_32;
-static LinesFlatAA14_2                      lines_flat_aa_14_2;
+static LineStripFlatMiterAA14_2             line_strip_flat_miter_aa_14_2;
 static LinesFlatAA32                        lines_flat_aa_32;
-static LinesGouraudAA14_2                   lines_gouraud_aa_14_2;
+static LinesFlatAA14_2                      lines_flat_aa_14_2;
 static LinesGouraudAA32                     lines_gouraud_aa_32;
-static LinesPatternAA14_2                   lines_pattern_aa_14_2;
+static LinesGouraudAA14_2                   lines_gouraud_aa_14_2;
 static LinesPatternAA32                     lines_pattern_aa_32;
+static LinesPatternAA14_2                   lines_pattern_aa_14_2;
 static PointsSquareAA32                     points_square_aa_32;
 static PointsSquareAA14_2                   points_square_aa_14_2;
 static PointsSquareGouraudAA32              points_square_gouraud_aa_32;
@@ -459,42 +459,42 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_tex_uv_flat_decal_32_alpha,
    &triangles_tex_uv_gouraud_decal_32_alpha,
    &triangles_tex_uv_flat_32_alpha_sdf,
-   &line_strip_flat_14_2,
    &line_strip_flat_32,
-   &line_strip_flat_aa_14_2,
+   &line_strip_flat_14_2,
    &line_strip_flat_aa_32,
-   // &line_strip_flat_aa_14_2_linear,
+   &line_strip_flat_aa_14_2,
    &line_strip_flat_aa_32_linear,
-   // &line_strip_flat_aa_14_2_radial,
+   // &line_strip_flat_aa_14_2_linear,
    &line_strip_flat_aa_32_radial,
-   // &line_strip_flat_aa_14_2_conic,
+   // &line_strip_flat_aa_14_2_radial,
    &line_strip_flat_aa_32_conic,
-   // &line_strip_flat_aa_14_2_pattern,
+   // &line_strip_flat_aa_14_2_conic,
    &line_strip_flat_aa_32_pattern,
-   // &line_strip_flat_aa_14_2_pattern_alpha,
+   // &line_strip_flat_aa_14_2_pattern,
    &line_strip_flat_aa_32_pattern_alpha,
-   // &line_strip_flat_aa_14_2_pattern_decal,
+   // &line_strip_flat_aa_14_2_pattern_alpha,
    &line_strip_flat_aa_32_pattern_decal,
-   // &line_strip_flat_aa_14_2_pattern_decal_alpha,
+   // &line_strip_flat_aa_14_2_pattern_decal,
    &line_strip_flat_aa_32_pattern_decal_alpha,
-   &line_strip_pattern_aa_14_2,
+   // &line_strip_flat_aa_14_2_pattern_decal_alpha,
    &line_strip_pattern_aa_32,
-   &line_strip_pattern_decal_aa_14_2,
+   &line_strip_pattern_aa_14_2,
    &line_strip_pattern_decal_aa_32,
-   &line_strip_flat_bevel_aa_14_2,
+   &line_strip_pattern_decal_aa_14_2,
    &line_strip_flat_bevel_aa_32,
-   &line_strip_pattern_bevel_aa_14_2,
+   &line_strip_flat_bevel_aa_14_2,
    &line_strip_pattern_bevel_aa_32,
-   &line_strip_pattern_decal_bevel_aa_14_2,
+   &line_strip_pattern_bevel_aa_14_2,
    &line_strip_pattern_decal_bevel_aa_32,
-   &line_strip_flat_miter_aa_14_2,
+   &line_strip_pattern_decal_bevel_aa_14_2,
    &line_strip_flat_miter_aa_32,
-   &lines_flat_aa_14_2,
+   &line_strip_flat_miter_aa_14_2,
    &lines_flat_aa_32,
-   &lines_gouraud_aa_14_2,
+   &lines_flat_aa_14_2,
    &lines_gouraud_aa_32,
-   &lines_pattern_aa_14_2,
+   &lines_gouraud_aa_14_2,
    &lines_pattern_aa_32,
+   &lines_pattern_aa_14_2,
    &points_square_aa_32,
    &points_square_aa_14_2,
    &points_square_gouraud_aa_32,
