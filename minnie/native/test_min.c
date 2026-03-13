@@ -50,7 +50,7 @@
 #include <stdarg.h>
 #include <math.h>
 
-#if 0
+#if 1
 #define DISPLAY_WIDTH  800
 #define DISPLAY_HEIGHT 600
 
@@ -773,7 +773,8 @@ void hal_on_draw(void) {
 
    // sdvg_ClearARGB(0x00ffffffu);
    // sdvg_ClearARGB(0x00e1cdb7u);
-   sdvg_ClearARGB(minDrawableGetBackgroundColor(drawable));  // clear color+stencil
+   sdvg_ClearARGB(minDrawableGetBackgroundColor(drawable));
+   sdvg_ClearStencil(0);
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
