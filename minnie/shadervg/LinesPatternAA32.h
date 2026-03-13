@@ -2,7 +2,7 @@
 // ---- file   : LinesPatternAA32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -41,9 +41,9 @@ class LinesPatternAA32 : public ShaderVG_Shape {
       " \n"
       "VARYING_OUT vec2 v_vertex_mp_1; \n"
       "VARYING_OUT vec2 v_vertex_mp_2; \n"
-      "VARYING_OUT vec2 v_plane_n; \n"
-      "VARYING_OUT vec2 v_plane_n_1; \n"
-      "VARYING_OUT vec2 v_plane_n_2; \n"
+      "flat VARYING_OUT vec2 v_plane_n; \n"
+      "flat VARYING_OUT vec2 v_plane_n_1; \n"
+      "flat VARYING_OUT vec2 v_plane_n_2; \n"
       "VARYING_OUT vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -109,9 +109,9 @@ class LinesPatternAA32 : public ShaderVG_Shape {
       " \n"
       "VARYING_IN vec2 v_vertex_mp_1; \n"
       "VARYING_IN vec2 v_vertex_mp_2; \n"
-      "VARYING_IN vec2 v_plane_n; \n"
-      "VARYING_IN vec2 v_plane_n_1; \n"
-      "VARYING_IN vec2 v_plane_n_2; \n"
+      "flat VARYING_IN vec2 v_plane_n; \n"
+      "flat VARYING_IN vec2 v_plane_n_1; \n"
+      "flat VARYING_IN vec2 v_plane_n_2; \n"
       "VARYING_IN vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -120,8 +120,8 @@ class LinesPatternAA32 : public ShaderVG_Shape {
       "  float d1 = abs(dot(v_vertex_mp_1, v_plane_n_1)); \n"
       "  float a1 = smoothstep(0.0, u_aa_range, d1); \n"
       "  float d2 = abs(dot(v_vertex_mp_2, v_plane_n_2)); \n"
-      "  float a2 = smoothstep(0.0, u_aa_range, d2); \n"
       "  a *= a1; \n"
+      "  float a2 = smoothstep(0.0, u_aa_range, d2); \n"
       "  a *= a2; \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"

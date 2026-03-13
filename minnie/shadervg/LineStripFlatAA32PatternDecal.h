@@ -40,7 +40,7 @@ class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
       "ATTRIBUTE vec2  a_vertex_n; \n"
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
-      "VARYING_OUT vec2 v_plane_n; \n"
+      "flat VARYING_OUT vec2 v_plane_n; \n"
       "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -94,7 +94,7 @@ class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
       "uniform vec2      u_paint_ndir; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
-      "VARYING_IN vec2 v_plane_n; \n"
+      "flat VARYING_IN vec2 v_plane_n; \n"
       "VARYING_IN vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -119,6 +119,7 @@ class LineStripFlatAA32PatternDecal : public ShaderVG_Shape {
          && (-1 != shape_a_vertex_n)
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
+         && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_decal_alpha)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)

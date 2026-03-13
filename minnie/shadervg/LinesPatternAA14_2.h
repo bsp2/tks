@@ -2,7 +2,7 @@
 // ---- file   : LinesPatternAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -41,9 +41,9 @@ class LinesPatternAA14_2 : public ShaderVG_Shape {
       " \n"
       "VARYING_OUT vec2 v_vertex_mp_1; \n"
       "VARYING_OUT vec2 v_vertex_mp_2; \n"
-      "VARYING_OUT vec2 v_plane_n; \n"
-      "VARYING_OUT vec2 v_plane_n_1; \n"
-      "VARYING_OUT vec2 v_plane_n_2; \n"
+      "flat VARYING_OUT vec2 v_plane_n; \n"
+      "flat VARYING_OUT vec2 v_plane_n_1; \n"
+      "flat VARYING_OUT vec2 v_plane_n_2; \n"
       "VARYING_OUT vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"
@@ -109,9 +109,9 @@ class LinesPatternAA14_2 : public ShaderVG_Shape {
       " \n"
       "VARYING_IN vec2 v_vertex_mp_1; \n"
       "VARYING_IN vec2 v_vertex_mp_2; \n"
-      "VARYING_IN vec2 v_plane_n; \n"
-      "VARYING_IN vec2 v_plane_n_1; \n"
-      "VARYING_IN vec2 v_plane_n_2; \n"
+      "flat VARYING_IN vec2 v_plane_n; \n"
+      "flat VARYING_IN vec2 v_plane_n_1; \n"
+      "flat VARYING_IN vec2 v_plane_n_2; \n"
       "VARYING_IN vec2 v_uv; \n"
       " \n"
       "void main(void) { \n"

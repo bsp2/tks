@@ -2,7 +2,7 @@
 // ---- file   : LineStripFlatAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -36,7 +36,7 @@ class LineStripFlatAA14_2 : public ShaderVG_Shape {
       "ATTRIBUTE vec2  a_vertex_n; \n"
       " \n"
       "VARYING_OUT vec2 v_vertex_mp; \n"
-      "VARYING_OUT vec2 v_plane_n; \n"
+      "flat VARYING_OUT vec2 v_plane_n; \n"
       " \n"
       "void main(void) { \n"
       "  vec2 v1 = a_vertex * 0.25; \n"
@@ -84,7 +84,7 @@ class LineStripFlatAA14_2 : public ShaderVG_Shape {
       "uniform float u_debug; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
-      "VARYING_IN vec2 v_plane_n; \n"
+      "flat VARYING_IN vec2 v_plane_n; \n"
       " \n"
       "void main(void) { \n"
       "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
