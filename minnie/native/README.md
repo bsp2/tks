@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 186 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 194 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -595,3 +595,27 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_185_begin_line_strip_bevel_aa_pattern_closed
   
   ![screenhots](../tkminnie/tests/screenshots/test_185_begin_line_strip_bevel_aa_pattern_closed.png)
+- test_186_begin_line_strip_bevel_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_186_begin_line_strip_bevel_pattern_alpha.png)
+- test_187_begin_line_strip_bevel_aa_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_187_begin_line_strip_bevel_aa_pattern_alpha.png)
+- test_188_begin_line_strip_bevel_pattern_alpha_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_188_begin_line_strip_bevel_pattern_alpha_closed.png)
+- test_189_begin_line_strip_bevel_aa_pattern_alpha_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_189_begin_line_strip_bevel_aa_pattern_alpha_closed.png)
+- test_190_begin_line_strip_bevel_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_190_begin_line_strip_bevel_pattern_decal.png)
+- test_191_begin_line_strip_bevel_aa_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_191_begin_line_strip_bevel_aa_pattern_decal.png)
+- test_192_begin_line_strip_bevel_pattern_decal_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_192_begin_line_strip_bevel_pattern_decal_closed.png)
+- test_193_begin_line_strip_bevel_aa_pattern_decal_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_193_begin_line_strip_bevel_aa_pattern_decal_closed.png)
