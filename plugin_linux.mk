@@ -9,7 +9,7 @@ ifneq ("$(STATIC_TARGET)","")
 CLEAN_RULES+= clean_static_target
 endif
 
-include $(YAC_ROOTPATH)/plugin_common.mk
+include ${TKS_ROOT}/plugin_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known
@@ -20,7 +20,7 @@ TARGET=$(PLUGIN).so
 endif
 endif
 
-EXTRAFLAGS += -I"$(YAC_ROOTPATH)/yac"
+EXTRAFLAGS += -I"${TKS_ROOT}/yac"
 CPPFLAGS += -fPIC $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
 CFLAGS += -fPIC $(EXTRAFLAGS) $(EXTRAFLAGS_C)
 EXTRALIBS += -L$(CROSS_ROOT)/usr/lib -lm
@@ -35,7 +35,7 @@ install: $(INSTALL_RULES)
 	@echo "[...] $(TARGET) installed to \"$(TKS_SITE_PREFIX)/plugins/\".";
 
 
-include $(YAC_ROOTPATH)/plugin_common_gcc.mk
+include ${TKS_ROOT}/plugin_common_gcc.mk
 
 
 #

@@ -7,7 +7,7 @@ ifneq ("$(STATIC_TARGET)","")
 CLEAN_RULES+= clean_static_target
 endif
 
-include $(YAC_ROOTPATH)/plugin_common.mk
+include ${TKS_ROOT}/plugin_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known
@@ -18,7 +18,7 @@ TARGET=$(PLUGIN).dll
 endif
 endif
 
-CPPFLAGS += -I"$(YAC_ROOTPATH)/yac" -DWIN32 $(EXTRAFLAGS) $(EXTRAFLAGS_CPP) -DYAC_FORCE_NO_TLS
+CPPFLAGS += -I"${TKS_ROOT}/yac" -DWIN32 $(EXTRAFLAGS) $(EXTRAFLAGS_CPP) -DYAC_FORCE_NO_TLS
 CFLAGS += $(EXTRAFLAGS_C)
 
 
@@ -74,7 +74,7 @@ yac: $(YAC_RULES)
 #
 .PHONY: ee
 ee::	$(EE_RULES)
-	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"$(YAC_ROOTPATH)/apidocs/ee/$(PLUGIN).ee"
+	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"${TKS_ROOT}/apidocs/ee/$(PLUGIN).ee"
 
 
 #

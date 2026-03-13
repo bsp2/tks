@@ -9,7 +9,7 @@ ifneq ("$(STATIC_TARGET)","")
 CLEAN_RULES+= clean_static_target
 endif
 
-include $(YAC_ROOTPATH)/plugin_common.mk
+include ${TKS_ROOT}/plugin_common.mk
 
 #
 # Determine TARGET filename if only PLUGIN name is known
@@ -30,9 +30,9 @@ EXTRAFLAGS += -I/usr/local/homebrew/include
 EXTRAFLAGS_CPP += -I/usr/local/homebrew/include
 endif
 
-CPPFLAGS += -Wall -fPIC -I"$(YAC_ROOTPATH)/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
-CFLAGS += -Wall -fPIC -I"$(YAC_ROOTPATH)/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_C)
-OBJCFLAGS += -fPIC -I"$(YAC_ROOTPATH)/yac"
+CPPFLAGS += -Wall -fPIC -I"${TKS_ROOT}/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_CPP)
+CFLAGS += -Wall -fPIC -I"${TKS_ROOT}/yac" $(EXTRAFLAGS) $(EXTRAFLAGS_C)
+OBJCFLAGS += -fPIC -I"${TKS_ROOT}/yac"
 EXTRALIBS += -L$(CROSS_ROOT)/usr/lib -lm
 ifeq ($(BUILD_ARM),y)
 # arm64
@@ -119,7 +119,7 @@ endif
 ifneq ("$(PLUGIN)","")
 .PHONY: ee
 ee::	$(EE_RULES)
-	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"$(YAC_ROOTPATH)/apidocs/ee/$(PLUGIN).ee"
+	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"${TKS_ROOT}/apidocs/ee/$(PLUGIN).ee"
 endif
 
 #

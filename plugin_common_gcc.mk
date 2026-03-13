@@ -2,7 +2,7 @@
 # Plugin targets for all (Linux-like) GCC based platforms
 #
 
-CPPFLAGS += -I$(YAC_ROOTPATH)/yac
+CPPFLAGS += -I${TKS_ROOT}/yac
 # -Wall -I$(CROSS_ROOT)/usr/include
 #CFLAGS += -Wall
 # -Wall-I$(CROSS_ROOT)/usr/include
@@ -55,7 +55,7 @@ yac: $(YAC_RULES)
 #
 .PHONY: ee
 ee::	$(EE_RULES)
-	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"$(YAC_ROOTPATH)/apidocs/ee/$(PLUGIN).ee"
+	$(TKS) app:dog++ -pn $(PLUGIN) -mn $(PLUGIN) *.h >"${TKS_ROOT}/apidocs/ee/$(PLUGIN).ee"
 
 
 #

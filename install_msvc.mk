@@ -3,14 +3,6 @@
 #  (requires MSYS shell, MSVC and GNU make)
 #
 
-#
-# Location of "*.mk" files and "yac/" subdir
-#  (absolute or relative to plugin dir)
-#
-ifeq ($(YAC_ROOTPATH),)
-YAC_ROOTPATH=../
-endif
-
 
 # n=32bit build ("x86", jit)
 # y=64bit build ("amd64", no jit)
