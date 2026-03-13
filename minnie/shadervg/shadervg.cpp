@@ -193,6 +193,10 @@
 #include "LineStripPatternDecalBevelAA14_2.h"
 #include "LineStripFlatBevelAA32Pattern.h"
 #include "LineStripFlatBevelAA14_2Pattern.h"
+#include "LineStripFlatBevelAA32PatternAlpha.h"
+#include "LineStripFlatBevelAA14_2PatternAlpha.h"
+#include "LineStripFlatBevelAA32PatternDecal.h"
+#include "LineStripFlatBevelAA14_2PatternDecal.h"
 #include "LineStripFlatMiterAA32.h"
 #include "LineStripFlatMiterAA14_2.h"
 #include "LinesFlatAA32.h"
@@ -352,6 +356,10 @@ static LineStripPatternDecalBevelAA32       line_strip_pattern_decal_bevel_aa_32
 static LineStripPatternDecalBevelAA14_2     line_strip_pattern_decal_bevel_aa_14_2;
 static LineStripFlatBevelAA32Pattern        line_strip_flat_bevel_aa_32_pattern;
 static LineStripFlatBevelAA14_2Pattern      line_strip_flat_bevel_aa_14_2_pattern;
+static LineStripFlatBevelAA32PatternAlpha   line_strip_flat_bevel_aa_32_pattern_alpha;
+static LineStripFlatBevelAA14_2PatternAlpha line_strip_flat_bevel_aa_14_2_pattern_alpha;
+static LineStripFlatBevelAA32PatternDecal   line_strip_flat_bevel_aa_32_pattern_decal;
+static LineStripFlatBevelAA14_2PatternDecal line_strip_flat_bevel_aa_14_2_pattern_decal;
 static LineStripFlatMiterAA32               line_strip_flat_miter_aa_32;
 static LineStripFlatMiterAA14_2             line_strip_flat_miter_aa_14_2;
 static LinesFlatAA32                        lines_flat_aa_32;
@@ -493,6 +501,10 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_pattern_decal_bevel_aa_14_2,
    &line_strip_flat_bevel_aa_32_pattern,
    &line_strip_flat_bevel_aa_14_2_pattern,
+   &line_strip_flat_bevel_aa_32_pattern_alpha,
+   &line_strip_flat_bevel_aa_14_2_pattern_alpha,
+   &line_strip_flat_bevel_aa_32_pattern_decal,
+   &line_strip_flat_bevel_aa_14_2_pattern_decal,
    &line_strip_flat_miter_aa_32,
    &line_strip_flat_miter_aa_14_2,
    &lines_flat_aa_32,
@@ -2766,14 +2778,14 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_32_uniform_shape
    switch(paint.mode)
    {
       default:
-      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_32;          break;
-      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_32;          break;  // (todo)
-      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_32;          break;  // (todo)
-      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_32;          break;  // (todo)
-      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_32_pattern;  break;
-      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_32;          break;  // (todo)
-      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_32;          break;  // (todo)
-      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_32;          break;  // (todo)
+      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_32;               break;
+      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
+      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
+      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
+      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_32_pattern;       break;
+      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_32_pattern_alpha; break;
+      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_32_pattern_decal; break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
    }
    return shape;
 }
@@ -2783,14 +2795,14 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_14_2_uniform_sha
    switch(paint.mode)
    {
       default:
-      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_14_2;          break;
-      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_14_2;          break;  // (todo)
-      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_14_2;          break;  // (todo)
-      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_14_2;          break;  // (todo)
-      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_14_2_pattern;  break;
-      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_14_2;          break;  // (todo)
-      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_14_2;          break;  // (todo)
-      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_14_2;          break;  // (todo)
+      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_14_2;               break;
+      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
+      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
+      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
+      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_14_2_pattern;       break;
+      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_14_2_pattern_alpha; break;
+      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_14_2_pattern_decal; break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
    }
    return shape;
 }
@@ -5279,13 +5291,12 @@ void YAC_CALL sdvg_SetTextureDecalAlpha(sF32 _decalAlpha) {
 void YAC_CALL sdvg_Clear4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
    Dsdvg_glcall(glClearColor(_r, _g, _b, _a));
 #ifndef SHADERVG_NO_ZS
-   Dsdvg_glcall(glClearStencil(0));
 #ifdef SHADERVG_GLES
    Dsdvg_glcall(glClearDepthf(1.0f));
 #else
    Dsdvg_glcall(glClearDepth(1.0f));
 #endif // SHADERVG_GLES
-   Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
+   Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
 #else
    Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT));
 #endif // SHADERVG_NO_ZS
@@ -5297,6 +5308,24 @@ void YAC_CALL sdvg_ClearARGB(sUI _c32) {
    sF32 b = ((_c32      ) & 255) * (1.0f / 255.0f);
    sF32 a = ((_c32 >> 24) & 255) * (1.0f / 255.0f);
    sdvg_Clear4f(r, g, b, a);
+}
+
+void YAC_CALL sdvg_ClearStencil(sUI _v) {
+#ifndef SHADERVG_NO_ZS
+   Dsdvg_glcall(glClearStencil(_v));
+   Dsdvg_glcall(glClear(GL_STENCIL_BUFFER_BIT));
+#endif // SHADERVG_NO_ZS
+}
+
+void YAC_CALL sdvg_ClearDepth(sF32 _v) {
+#ifndef SHADERVG_NO_ZS
+#ifdef SHADERVG_GLES
+   Dsdvg_glcall(glClearDepthf(_v));
+#else
+   Dsdvg_glcall(glClearDepth(_v));
+#endif // SHADERVG_GLES
+   Dsdvg_glcall(glClear(GL_DEPTH_BUFFER_BIT));
+#endif // SHADERVG_NO_ZS
 }
 
 void YAC_CALL sdvg_EnableBlending(void) {
@@ -5368,6 +5397,20 @@ void YAC_CALL sdvg_DisableBlending(void) {
 
 void YAC_CALL sdvg_AlphaWrite(sBool _bEnable) {
    Dsdvg_glcall(glColorMask(1,1,1, _bEnable));
+}
+
+void YAC_CALL sdvg_EnableStencilMask(void) {
+#ifndef SHADERVG_NO_ZS
+   Dsdvg_glcall(glStencilFunc(GL_NOTEQUAL, 1/*ref*/, 1/*mask*/));
+   Dsdvg_glcall(glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE));
+   Dsdvg_glcall(glEnable(GL_STENCIL_TEST));
+#endif // SHADERVG_NO_ZS
+}
+
+void YAC_CALL sdvg_DisableStencilMask(void) {
+#ifndef SHADERVG_NO_ZS
+   Dsdvg_glcall(glDisable(GL_STENCIL_TEST));
+#endif // SHADERVG_NO_ZS
 }
 
 // ----------- custom shaders ------------

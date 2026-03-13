@@ -685,7 +685,7 @@ YF void YAC_CALL sdvg_SetTextureDecalAlpha (sF32 _decalAlpha);
 
 // -------- clear --------
 /* @function sdvg_Clear4f,float r,float g,float b,float a
-Clear screen (scissor clipping rectangle)
+Clear color buffer (scissor clipping rectangle)
 
 @arg r Normalized red value
 @arg g Normalized green value
@@ -697,13 +697,33 @@ Clear screen (scissor clipping rectangle)
 YF void YAC_CALL sdvg_Clear4f (sF32 _r, sF32 _g, sF32 _b, sF32 _a);
 
 /* @function sdvg_ClearARGB,int c32
-Clear screen (scissor clipping rectangle)
+Clear color buffer (scissor clipping rectangle)
 
 @arg c32 Packed ARGB32 color
 
 @group Clear
 */
 YF void YAC_CALL sdvg_ClearARGB (sUI _c32);
+
+/* @function sdvg_ClearStencil,int s8
+Clear stencil buffer
+
+@arg s8 Stencil clear value (0..255, def=0)
+
+@group Clear
+@group Stencil
+*/
+YF void YAC_CALL sdvg_ClearStencil (sUI _s8);
+
+/* @function sdvg_ClearDepth,float f
+Clear depth buffer
+
+@arg f Depth clear value (def=1.0)
+
+@group Clear
+@group Depth
+*/
+YF void YAC_CALL sdvg_ClearDepth (sF32 _v);
 
 // -------- blending --------
 /* @function sdvg_EnableBlending
@@ -780,6 +800,22 @@ Enable or disable alpha channel writes
 @arg bEnable Alpha channel write state
 */
 YF void YAC_CALL sdvg_AlphaWrite (sBool _bEnable);
+
+/* @function sdvg_EnableStencilMask
+Enable write-once stencil test mode.
+
+Avoids overdraws when enabled. Stencil buffer must be cleared to 0 prior to this call.
+
+@group Stencil
+*/
+YF void YAC_CALL sdvg_EnableStencilMask (void);
+
+/* @function sdvg_DisableStencilMask
+Disable write-once stencil test mode.
+
+@group Stencil
+*/
+YF void YAC_CALL sdvg_DisableStencilMask (void);
 
 // -------- configuration / debug --------
 /* @function sdvg_GetEnableDebug:boolean
