@@ -281,8 +281,14 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_PATTERN_DECAL           191
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_PATTERN_DECAL_CLOSED       192
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_PATTERN_DECAL_CLOSED    193
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_LINEAR                     194
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_LINEAR                  195
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_RADIAL                     196
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_RADIAL                  197
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_CONIC_CLOSED               198
+#define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_CONIC_CLOSED            199
 
-#define NUM_RENDER_MODES                                         194
+#define NUM_RENDER_MODES                                         200
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -488,6 +494,12 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 191 */ "begin_line_strip_bevel_aa_pattern_decal",
    /* 192 */ "begin_line_strip_bevel_pattern_decal_closed",
    /* 193 */ "begin_line_strip_bevel_aa_pattern_decal_closed",
+   /* 194 */ "begin_line_strip_bevel_linear",
+   /* 195 */ "begin_line_strip_bevel_aa_linear",
+   /* 196 */ "begin_line_strip_bevel_radial",
+   /* 197 */ "begin_line_strip_bevel_aa_radial",
+   /* 198 */ "begin_line_strip_bevel_conic_closed",
+   /* 199 */ "begin_line_strip_bevel_aa_conic_closed",
 };
 
 static YAC_Buffer buf_vbo;
@@ -1936,8 +1948,8 @@ static void TestGradientToTexture(void) {
    sdvg_UnbindTexture2D();
 }
 
-// ---------------------------------------------------------------------------- SetupGradient*
-void SetupGradientLinear(void) {
+// ---------------------------------------------------------------------------- SetupPaint*
+void SetupPaintLinear(void) {
    sF32 pdx = VP_W;
    sF32 pdy = VP_H;
    sF32 sa = sinf(ang_w*0.5f);
@@ -1949,7 +1961,7 @@ void SetupGradientLinear(void) {
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
-void SetupGradientRadial(void) {
+void SetupPaintRadial(void) {
    sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
    sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
 
@@ -1957,7 +1969,7 @@ void SetupGradientRadial(void) {
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
-void SetupGradientConic(void) {
+void SetupPaintConic(void) {
    sF32 px = sinf(ang_w*2.0f)*(VP_W*0.5f) + (VP_W*0.5f);
    sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
 
@@ -2071,7 +2083,7 @@ void DrawPaintBackground(void) {
 // ---------------------------------------------------------------------------- TestTrianglesGradientLinear (63)
 static void TestTrianglesGradientLinear(void) {
 
-   SetupGradientLinear();
+   SetupPaintLinear();
    sdvg_BindShader(0u);  // use built-in shader
    sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
    DrawPaintBackground();
@@ -2103,7 +2115,7 @@ static void TestTrianglesGradientLinear(void) {
 // ---------------------------------------------------------------------------- TestTrianglesGradientRadial (64)
 static void TestTrianglesGradientRadial(void) {
 
-   SetupGradientRadial();
+   SetupPaintRadial();
    sdvg_BindShader(0u);  // use built-in shader
    sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
    DrawPaintBackground();
@@ -2135,7 +2147,7 @@ static void TestTrianglesGradientRadial(void) {
 // ---------------------------------------------------------------------------- TestTrianglesGradientConic (65)
 static void TestTrianglesGradientConic(void) {
 
-   SetupGradientConic();
+   SetupPaintConic();
    sdvg_BindShader(0u);  // use built-in shader
    sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
    DrawPaintBackground();
@@ -3295,7 +3307,7 @@ static void DrawTest(void) {
       case RENDER_BEGIN_POLYGON_GRADIENT_LINEAR: // 70
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3306,7 +3318,7 @@ static void DrawTest(void) {
       case RENDER_BEGIN_POLYGON_GRADIENT_LINEAR_AA: // 71
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3317,7 +3329,7 @@ static void DrawTest(void) {
       case RENDER_BEGIN_POLYGON_GRADIENT_RADIAL: // 72
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3328,7 +3340,7 @@ static void DrawTest(void) {
       case RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA: // 73
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3339,7 +3351,7 @@ static void DrawTest(void) {
       case RENDER_BEGIN_POLYGON_GRADIENT_CONIC: // 74
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3350,7 +3362,7 @@ static void DrawTest(void) {
       case RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA: // 75
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3466,7 +3478,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_FILL_AA_LINEAR: // 85
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3479,7 +3491,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_FILL_STROKE_AA_LINEAR: // 86
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3496,7 +3508,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_FILL_AA_RADIAL: // 87
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3509,7 +3521,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_FILL_STROKE_AA_RADIAL: // 88
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3526,7 +3538,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_FILL_AA_CONIC: // 89
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3539,7 +3551,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_FILL_STROKE_AA_CONIC: // 90
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3684,7 +3696,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_FILL_AA_LINEAR: // 99
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3698,7 +3710,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_FILL_STROKE_AA_LINEAR: // 100
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3717,7 +3729,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_FILL_AA_RADIAL: // 101
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3731,7 +3743,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_FILL_STROKE_AA_RADIAL: // 102
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3750,7 +3762,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_FILL_AA_CONIC: // 103
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3764,7 +3776,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_FILL_STROKE_AA_CONIC: // 104
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3923,7 +3935,7 @@ static void DrawTest(void) {
       case RENDER_RECT_FILL_AA_LINEAR: // 113
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3936,7 +3948,7 @@ static void DrawTest(void) {
       case RENDER_RECT_FILL_STROKE_AA_LINEAR: // 114
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3953,7 +3965,7 @@ static void DrawTest(void) {
       case RENDER_RECT_FILL_AA_RADIAL: // 115
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3966,7 +3978,7 @@ static void DrawTest(void) {
       case RENDER_RECT_FILL_STROKE_AA_RADIAL: // 116
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3983,7 +3995,7 @@ static void DrawTest(void) {
       case RENDER_RECT_FILL_AA_CONIC: // 117
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -3996,7 +4008,7 @@ static void DrawTest(void) {
       case RENDER_RECT_FILL_STROKE_AA_CONIC: // 118
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4141,7 +4153,7 @@ static void DrawTest(void) {
       case RENDER_RECT_STROKE_AA_LINEAR: // 127
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4155,7 +4167,7 @@ static void DrawTest(void) {
       case RENDER_RECT_STROKE_AA_RADIAL: // 128
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4169,7 +4181,7 @@ static void DrawTest(void) {
       case RENDER_RECT_STROKE_AA_CONIC: // 129
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4242,7 +4254,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_STROKE_AA_LINEAR: // 134
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4256,7 +4268,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_STROKE_AA_RADIAL: // 135
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4270,7 +4282,7 @@ static void DrawTest(void) {
       case RENDER_ELLIPSE_STROKE_AA_CONIC: // 136
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4343,7 +4355,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_STROKE_AA_LINEAR: // 141
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientLinear();
+         SetupPaintLinear();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4358,7 +4370,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_STROKE_AA_RADIAL: // 142
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientRadial();
+         SetupPaintRadial();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4373,7 +4385,7 @@ static void DrawTest(void) {
       case RENDER_ROUNDRECT_STROKE_AA_CONIC: // 143
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
-         SetupGradientConic();
+         SetupPaintConic();
          sdvg_SetFillColor4f(0.5f, 0.5f, 0.5f, 1.0f);
          DrawPaintBackground();
          SetupRotateMVP();
@@ -4684,6 +4696,42 @@ static void DrawTest(void) {
          sdvg_SetStrokeWidth(stroke_w * 16.0f);
          sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
          sdvg_SetStrokeColor4f(0.75f, 1.0f, 1.0f, 1.0f);
+         TestBeginLineStripBevelPaintClosed(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_LINEAR: // 194
+         SetupPaintLinear();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatBevelPaint(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_AA_LINEAR: // 195
+         SetupPaintLinear();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatBevelPaint(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_RADIAL: // 196
+         SetupPaintRadial();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatBevelPaint(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_AA_RADIAL: // 197
+         SetupPaintRadial();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatBevelPaint(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_CONIC_CLOSED: // 198
+         SetupPaintConic();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         TestBeginLineStripBevelPaintClosed(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_BEVEL_AA_CONIC_CLOSED: // 199
+         SetupPaintConic();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
          TestBeginLineStripBevelPaintClosed(YAC_TRUE/*bAA*/);
          break;
    }

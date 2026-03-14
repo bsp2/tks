@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 194 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 200 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -638,3 +638,21 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_193_begin_line_strip_bevel_aa_pattern_decal_closed
   
   ![screenhots](tests/screenshots/test_193_begin_line_strip_bevel_aa_pattern_decal_closed.png)
+- test_194_begin_line_strip_bevel_linear
+  
+  ![screenhots](tests/screenshots/test_194_begin_line_strip_bevel_linear.png)
+- test_195_begin_line_strip_bevel_aa_linear
+  
+  ![screenhots](tests/screenshots/test_195_begin_line_strip_bevel_aa_linear.png)
+- test_196_begin_line_strip_bevel_radial
+  
+  ![screenhots](tests/screenshots/test_196_begin_line_strip_bevel_radial.png)
+- test_197_begin_line_strip_bevel_aa_radial
+  
+  ![screenhots](tests/screenshots/test_197_begin_line_strip_bevel_aa_radial.png)
+- test_198_begin_line_strip_bevel_conic_closed
+  
+  ![screenhots](tests/screenshots/test_198_begin_line_strip_bevel_conic_closed.png)
+- test_199_begin_line_strip_bevel_aa_conic_closed
+  
+  ![screenhots](tests/screenshots/test_199_begin_line_strip_bevel_aa_conic_closed.png)
