@@ -578,9 +578,33 @@ typedef struct YAC_Buffer_s {
 extern "C" {
 extern sBool yac_buffer_alloc (YAC_Buffer *_buffer, sU32 _size);
 extern void yac_buffer_free (YAC_Buffer *_buffer);
+extern void yac_buffer_write_s16 (YAC_Buffer *_buffer, sS16 _x);
+extern void yac_buffer_write_2s16 (YAC_Buffer *_buffer, sS16 _x, sS16 _y);
+extern void yac_buffer_write_3s16 (YAC_Buffer *_buffer, sS16 _x, sS16 _y, sS16 _z);
+extern void yac_buffer_write_4s16 (YAC_Buffer *_buffer, sS16 _x, sS16 _y, sS16 _z, sS16 _w);
+extern void yac_buffer_write_1fx (YAC_Buffer *_buffer, sF32 _x);
+extern void yac_buffer_write_2fx (YAC_Buffer *_buffer, sF32 _x, sF32 _y);
+extern void yac_buffer_write_3fx (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w);
+extern void yac_buffer_write_4fx (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w);
+extern void yac_buffer_write_f32 (YAC_Buffer *_buffer, sF32 _x);
+extern void yac_buffer_write_2f (YAC_Buffer *_buffer, sF32 _x, sF32 _y);
+extern void yac_buffer_write_3f (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z);
+extern void yac_buffer_write_4f (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w);
 }
 #else
 } YAC_Buffer;
 extern sBool yac_buffer_alloc (YAC_Buffer *_buffer, sU32 _size);
 extern void yac_buffer_free (YAC_Buffer *_buffer);
+extern void yac_buffer_write_s16 (YAC_Buffer *_buffer, sS16 _x);
+extern void yac_buffer_write_2s16 (YAC_Buffer *_buffer, sS16 _x, sS16 _y);
+extern void yac_buffer_write_3s16 (YAC_Buffer *_buffer, sS16 _x, sS16 _y, sS16 _z);
+extern void yac_buffer_write_4s16 (YAC_Buffer *_buffer, sS16 _x, sS16 _y, sS16 _z, sS16 _w);
+extern void yac_buffer_write_1fx (YAC_Buffer *_buffer, sF32 _x);
+extern void yac_buffer_write_2fx (YAC_Buffer *_buffer, sF32 _x, sF32 _y);
+extern void yac_buffer_write_3fx (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w);
+extern void yac_buffer_write_4fx (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w);
+extern void yac_buffer_write_f32 (YAC_Buffer *_buffer, sF32 _x);
+extern void yac_buffer_write_2f (YAC_Buffer *_buffer, sF32 _x, sF32 _y);
+extern void yac_buffer_write_3f (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z);
+extern void yac_buffer_write_4f (YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w);
 #endif

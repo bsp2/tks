@@ -2,7 +2,7 @@
 // ---- file   : minnie_impl.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -49,6 +49,72 @@ sBool yac_buffer_alloc(YAC_Buffer *_buffer, sU32 _size) {
 
 void yac_buffer_free(YAC_Buffer *_buffer) {
    _buffer->free();
+}
+
+void yac_buffer_write_s16(YAC_Buffer *_buffer, sS16 _x) {
+   _buffer->writeI16(_x);
+}
+
+void yac_buffer_write_2s16(YAC_Buffer *_buffer, sS16 _x, sS16 _y) {
+   _buffer->writeI16(_x);
+   _buffer->writeI16(_y);
+}
+
+void yac_buffer_write_3s16(YAC_Buffer *_buffer, sS16 _x, sS16 _y, sS16 _z) {
+   _buffer->writeI16(_x);
+   _buffer->writeI16(_y);
+   _buffer->writeI16(_z);
+}
+
+void yac_buffer_write_4s16(YAC_Buffer *_buffer, sS16 _x, sS16 _y, sS16 _z, sS16 _w) {
+   _buffer->writeI16(_x);
+   _buffer->writeI16(_y);
+   _buffer->writeI16(_z);
+   _buffer->writeI16(_w);
+}
+
+void yac_buffer_write_1fx(YAC_Buffer *_buffer, sF32 _x) {
+   _buffer->writeI16(sS16(_x*4.0f));
+}
+
+void yac_buffer_write_2fx(YAC_Buffer *_buffer, sF32 _x, sF32 _y) {
+   _buffer->writeI16(sS16(_x*4.0f));
+   _buffer->writeI16(sS16(_y*4.0f));
+}
+
+void yac_buffer_write_3fx(YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z) {
+   _buffer->writeI16(sS16(_x*4.0f));
+   _buffer->writeI16(sS16(_y*4.0f));
+   _buffer->writeI16(sS16(_z*4.0f));
+}
+
+void yac_buffer_write_4fx(YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w) {
+   _buffer->writeI16(sS16(_x*4.0f));
+   _buffer->writeI16(sS16(_y*4.0f));
+   _buffer->writeI16(sS16(_z*4.0f));
+   _buffer->writeI16(sS16(_w*4.0f));
+}
+
+void yac_buffer_write_f32(YAC_Buffer *_buffer, sF32 _x) {
+   _buffer->writeF32(_x);
+}
+
+void yac_buffer_write_2f(YAC_Buffer *_buffer, sF32 _x, sF32 _y) {
+   _buffer->writeF32(_x);
+   _buffer->writeF32(_y);
+}
+
+void yac_buffer_write_3f(YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z) {
+   _buffer->writeF32(_x);
+   _buffer->writeF32(_y);
+   _buffer->writeF32(_z);
+}
+
+void yac_buffer_write_4f(YAC_Buffer *_buffer, sF32 _x, sF32 _y, sF32 _z, sF32 _w) {
+   _buffer->writeF32(_x);
+   _buffer->writeF32(_y);
+   _buffer->writeF32(_z);
+   _buffer->writeF32(_w);
 }
 
 #ifdef USE_MINNIE_MIB_SETUP

@@ -1,5 +1,5 @@
 // ----
-// ---- file   : TrianglesFillFlatUniform32PatternDecalAlpha.h
+// ---- file   : TrianglesFillFlatUniform14_2PatternDecal.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025-2026 by bsp
@@ -24,7 +24,7 @@
 // ----
 // ----
 
-class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
+class TrianglesFillFlatUniform14_2PatternDecal : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
@@ -39,8 +39,9 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
-      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  vec2 v = a_vertex * 0.25; \n"
+      "  gl_Position = u_transform * vec4(v,0,1); \n"
+      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
       "} \n"
       ;
 
@@ -58,8 +59,8 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       "  vec2 uv; \n"
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
-      "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), u_color_fill.a); \n"
+      "  vec4 cp = TEXTURE2D(u_paint_tex, uv); \n"
+      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, cp.rgb * u_color_stroke.rgb, u_color_stroke.a * cp.a * u_decal_alpha), u_color_fill.a); \n"
       "} \n"
       ;
 

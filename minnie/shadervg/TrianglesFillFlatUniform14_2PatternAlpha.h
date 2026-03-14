@@ -1,5 +1,5 @@
 // ----
-// ---- file   : TrianglesFillFlatUniform32PatternDecalAlpha.h
+// ---- file   : TrianglesFillFlatUniform14_2Pattern.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025-2026 by bsp
@@ -24,7 +24,7 @@
 // ----
 // ----
 
-class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
+class TrianglesFillFlatUniform14_2PatternAlpha : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
@@ -39,16 +39,15 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
-      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  vec2 v = a_vertex * 0.25; \n"
+      "  gl_Position = u_transform * vec4(v,0,1); \n"
+      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
       "uniform vec4      u_color_fill; \n"
-      "uniform vec4      u_color_stroke; \n"
-      "uniform float     u_decal_alpha; \n"
       "uniform sampler2D u_paint_tex; \n"
       "uniform vec2      u_paint_ndir; \n"
       " \n"
@@ -58,8 +57,8 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       "  vec2 uv; \n"
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
-      "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), u_color_fill.a); \n"
+      "  float a = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
+      "  FRAGCOLOR = vec4(u_color_fill.rgb, u_color_fill.a * a); \n"
       "} \n"
       ;
 
@@ -68,8 +67,6 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
             (-1 != shape_a_vertex)
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
-         && (-1 != shape_u_color_stroke)
-         && (-1 != shape_u_decal_alpha)
          && (-1 != shape_u_paint_start)
          && (-1 != shape_u_paint_ob_size)
          && (-1 != shape_u_paint_ob_len)

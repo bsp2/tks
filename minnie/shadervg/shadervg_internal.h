@@ -74,11 +74,11 @@ void AllocScratchBuffer (sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numB
 void FixShaderSourceVert (YAC_String *_s, YAC_String *_r);
 void FixShaderSourceFrag (YAC_String *_s, YAC_String *_d);
 void UniformMatrix4 (sSI _location, Dsdvg_mat4_ref_t _o);
-sSI BindFillShader (void);
-void EndFillShader (void);
-void UnbindFillShader (void);
-void BindShape (ShaderVG_Shape *_shape);
-void UnsetShapeIfBuiltIn (void);
+sSI sdvg_int_BindFillShader (void);
+void sdvg_int_EndFillShader (void);
+void sdvg_int_UnbindFillShader (void);
+void sdvg_int_BindShape (ShaderVG_Shape *_shape);
+void sdvg_int_UnsetShapeIfBuiltIn (void);
 /* #ifndef TKMINNIE_DUPLICATE_POINT_VERTICES */
 /* void BindPointEBO6 (void); */
 /* void BindPointEBO9 (void); */

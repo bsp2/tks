@@ -2,7 +2,7 @@
 // ---- file   : RectFillStrokeAA.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -219,12 +219,12 @@ class RectFillStrokeAA : public ShaderVG_Shape {
 
       if(_numVertsInner > 0u)
       {
-         sSI aVertexFill = BindFillShader();
+         sSI aVertexFill = sdvg_int_BindFillShader();
 
          Dsdvg_attrib_offset(aVertexFill, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetInner);
          Dsdvg_draw_triangles_vbo(0, _numVertsInner);
 
-         EndFillShader();
+         sdvg_int_EndFillShader();
       }
 
       // Outer border
@@ -279,7 +279,7 @@ class RectFillStrokeAA : public ShaderVG_Shape {
       sBool bInner = !bSingle && b_draw_inner;
       if(bInner)
       {
-         sSI aVertexFill = BindFillShader();
+         sSI aVertexFill = sdvg_int_BindFillShader();
 
          sUI numTris = 2u;
          allocScratchBuffer(aVertexFill, _scratchBuf, (numTris*3*2/*xy*/*4/*float*/));
@@ -306,7 +306,7 @@ class RectFillStrokeAA : public ShaderVG_Shape {
 
          Dsdvg_draw_triangles(0, numTris*3);
 
-         EndFillShader();
+         sdvg_int_EndFillShader();
       }
 
       // Outer corners

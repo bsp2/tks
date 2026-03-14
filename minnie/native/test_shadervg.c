@@ -611,8 +611,8 @@ static sF32 loc_randf(sF32 _max) {
 // ---------------------------------------------------------------------------- TestLineStripFlat_1 (13+15)
 static void TestLineStripFlat_1(sBool _bAA) {
    buf_vbo.io_offset = 0u;
-   sdvg_BufferAddLinePointFlat14_2(&buf_vbo, 100.0f, 360.0f);
-   sdvg_BufferAddLinePointFlat14_2(&buf_vbo, 540.0f, 120.0f);
+   yac_buffer_write_2fx(&buf_vbo, 100.0f, 360.0f);
+   yac_buffer_write_2fx(&buf_vbo, 540.0f, 120.0f);
    sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
    if(_bAA)
       sdvg_DrawLineStripFlatAAVBO14_2(buf_vbo_id, 0u/*offset*/, 2u/*numPoints*/);
@@ -632,7 +632,7 @@ static void TestLineStripFlat_2(sBool _bAA) {
    for(sUI i = 0u; i < numPoints; i++)
    {
       sF32 y = sinf(a) * 120.0f + 240.0f;
-      sdvg_BufferAddLinePointFlat14_2(&buf_vbo, x, y);
+      yac_buffer_write_2fx(&buf_vbo, x, y);
       a += w;
       x += xStep;
    }
@@ -655,7 +655,7 @@ static void TestLineStripFlatBevel(sBool _bAA) {
    for(sUI i = 0u; i < numPoints; i++)
    {
       sF32 y = sinf(a) * 120.0f + 240.0f;
-      sdvg_BufferAddLinePointFlatBevel14_2(&buf_vbo, x, y);
+      yac_buffer_write_2fx(&buf_vbo, x, y);
       a += w;
       x += xStep;
    }
@@ -726,7 +726,7 @@ static void TestCustomShader_1(sF32 sizeX, sF32 sizeY) {
    LazyCreateCustomShader_1();
    if(BindCustomShader_1())
    {
-      if(sdvg_BeginTriangles(6u, 2u*4u))
+      if(sdvg_BeginTriangles32(6u, 2u*4u))
       {
          sizeX *= 2.0f;
          sizeY *= 2.0f;
@@ -784,7 +784,7 @@ static void TestCustomShader_2(sF32 sizeX, sF32 sizeY) {
       sdvg_BindShader(custom_shader_idx_2);
       sdvg_SetGlobalAlpha( (sinf(ang_w) * 0.5f + 0.5f) * fill_alpha );
 
-      if(sdvg_BeginTriangleFan(4u, 4u*1u + 2u*4u))
+      if(sdvg_BeginTriangleFan32(4u, 4u*1u + 2u*4u))
       {
          float x = sinf(ang_x*0.5f) * 170.0f + 320.0f - sizeX*0.5f;
          float y = sinf(ang_y*0.5f) * 170.0f + 240.0f - sizeY*0.5f;
@@ -842,7 +842,7 @@ static void TestCustomShader_3_VBO(Matrix4f *mProj, sF32 sizeX, sF32 sizeY) {
       // Create + initialize VBO
       custom_vbo_id_3 = sdvg_CreateVBO(256);
       sdvg_MapVBO(custom_vbo_id_3);
-      if(sdvg_BeginVBO(4u, 4u*1u + 2u*sizeof(sF32)))
+      if(sdvg_BeginVBO32(4u, 4u*1u + 2u*sizeof(sF32)))
       {
          sdvg_AttribOffsetARGB("a_color");  // ignored
          sdvg_VertexOffset2f();             // ignored
@@ -884,7 +884,7 @@ static void TestCustomShader_3_VBO(Matrix4f *mProj, sF32 sizeX, sF32 sizeY) {
 
       // Draw pre-initialized VBO
       sdvg_BindVBO(custom_vbo_id_3);
-      if(sdvg_BeginTriangleFan(4u, 4u*1u + 2u*4u))
+      if(sdvg_BeginTriangleFan32(4u, 4u*1u + 2u*4u))
       {
          sdvg_AttribOffsetARGB("a_color");
          sdvg_VertexOffset2f();
@@ -908,7 +908,7 @@ static void TestLinesFlat(sBool _bAA) {
       sF32 y1 = cosf(a) * 200.0f + (VP_H*0.5f);
       sF32 x2 = sinf(a) * 120.0f + (VP_W*0.5f);
       sF32 y2 = cosf(a) * 120.0f + (VP_H*0.5f);
-      sdvg_BufferAddLinesPointsFlat14_2(&buf_vbo, x1, y1, x2, y2);
+      yac_buffer_write_4fx(&buf_vbo, x1, y1, x2, y2);
       a += w;
    }
    sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
@@ -2192,7 +2192,7 @@ static void TestPolygon_VBO(sBool _bAA) {
       // Create + initialize VBO
       polygon_vbo_id = sdvg_CreateVBO((8u+1u)*2u*sizeof(sF32));
       sdvg_MapVBO(polygon_vbo_id);
-      if(sdvg_BeginVBO(8u+1u, 2u*sizeof(sF32)))
+      if(sdvg_BeginVBO32(8u+1u, 2u*sizeof(sF32)))
       {
          sdvg_Vertex2f( 30.0f,  90.0f);
          sdvg_Vertex2f(320.0f,  20.0f);
@@ -2231,13 +2231,35 @@ static void TestPolygon_VBO(sBool _bAA) {
    }
 }
 
-// ---------------------------------------------------------------------------- TestBeginPolygon (68+69)
-static void TestBeginPolygon(sBool _bAA) {
+// ---------------------------------------------------------------------------- TestBeginFilledPolygon (68+69+70+71+72+73+74+75+77+78+79+80+81+82+83+84)
+static void TestBeginFilledPolygon(sBool _bAA) {
    if(_bAA
       ? sdvg_BeginFilledPolygonAA(8u)
       : sdvg_BeginFilledPolygon(8u)
       )
    {
+      sdvg_Vertex2f( 30.0f,  90.0f);
+      sdvg_Vertex2f(320.0f,  20.0f);
+      sdvg_Vertex2f(640.0f,  80.0f);
+      sdvg_Vertex2f(600.0f, 200.0f);
+      sdvg_Vertex2f(300.0f, 220.0f);
+      sdvg_Vertex2f(500.0f, 360.0f);
+      sdvg_Vertex2f(300.0f, 470.0f);
+      sdvg_Vertex2f(120.0f, 300.0f);
+
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginPolygon32 (76)
+static void TestBeginPolygon32(sBool _bAA) {
+   if(_bAA
+      ? sdvg_BeginPolygonAA32(8u/*numVertices*/, 8u/*stride*/)
+      : sdvg_BeginPolygon32(8u/*numVertices*/, 8u/*stride*/)
+      )
+   {
+      sdvg_VertexOffset2f();
+
       sdvg_Vertex2f( 30.0f,  90.0f);
       sdvg_Vertex2f(320.0f,  20.0f);
       sdvg_Vertex2f(640.0f,  80.0f);
@@ -2797,7 +2819,7 @@ static void TestLineStripFlatBevel32Paint(sBool _bAA) {
    for(sUI i = 0u; i < numPoints; i++)
    {
       sF32 y = sinf(a) * 120.0f + 240.0f;
-      sdvg_BufferAddLinePointFlatBevel32(&buf_vbo, x, y);
+      yac_buffer_write_2f(&buf_vbo, x, y);
       a += w;
       x += xStep;
    }
@@ -2821,7 +2843,7 @@ static void TestLineStripFlatBevel14_2Paint(sBool _bAA) {
    for(sUI i = 0u; i < numPoints; i++)
    {
       sF32 y = sinf(a) * 120.0f + 240.0f;
-      sdvg_BufferAddLinePointFlatBevel14_2(&buf_vbo, x, y);
+      yac_buffer_write_2fx(&buf_vbo, x, y);
       a += w;
       x += xStep;
    }
@@ -2995,12 +3017,12 @@ static void DrawTest(void) {
 
       case RENDER_TRIANGLES_TEX_UV_FLAT: // 9
          buf_vbo.io_offset = 0u;
-         sdvg_BufferAddRectTexUVFlat32(&buf_vbo,
-                                       centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
-                                       sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
-                                       0.0f, 0.0f,
-                                       1.0f, 1.0f
-                                       );
+         sdvg_BufferRectTexUVFlat32(&buf_vbo,
+                                    centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
+                                    sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
+                                    0.0f, 0.0f,
+                                    1.0f, 1.0f
+                                    );
          sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, buf_vbo.io_offset/*size*/, &buf_vbo);
          sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
          sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
@@ -3010,14 +3032,14 @@ static void DrawTest(void) {
 
       case RENDER_TRIANGLES_TEX_UV_GOURAUD: // 10
          buf_vbo.io_offset = 0u;
-         sdvg_BufferAddRectTexUVGouraud32(&buf_vbo,
-                                          centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
-                                          sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
-                                          0.0f, 0.0f,
-                                          1.0f, 1.0f,
-                                          0xffffffffu, 0xFfff0000u,
-                                          0x3f00ff00u, 0x3f0000ffu
-                                          );
+         sdvg_BufferRectTexUVGouraud32(&buf_vbo,
+                                       centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
+                                       sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
+                                       0.0f, 0.0f,
+                                       1.0f, 1.0f,
+                                       0xffffffffu, 0xFfff0000u,
+                                       0x3f00ff00u, 0x3f0000ffu
+                                       );
          sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, 0u/*numBytes=buf_vbo.size*/, &buf_vbo);
          sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
          sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
@@ -3027,12 +3049,12 @@ static void DrawTest(void) {
 
       case RENDER_TRIANGLES_TEX_UV_FLAT_DECAL: // 1
          buf_vbo.io_offset = 0u;
-         sdvg_BufferAddRectTexUVFlat32(&buf_vbo,
-                                       centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
-                                       sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
-                                       0.0f, 0.0f,
-                                       1.0f, 1.0f
-                                       );
+         sdvg_BufferRectTexUVFlat32(&buf_vbo,
+                                    centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
+                                    sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
+                                    0.0f, 0.0f,
+                                    1.0f, 1.0f
+                                    );
          sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, 0u/*numBytes=buf_vbo.size*/, &buf_vbo);
          sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
          sdvg_SetTextureDecalAlpha(decal_alpha);
@@ -3042,14 +3064,14 @@ static void DrawTest(void) {
 
       case RENDER_TRIANGLES_TEX_UV_GOURAUD_DECAL: // 12
          buf_vbo.io_offset = 0u;
-         sdvg_BufferAddRectTexUVGouraud32(&buf_vbo,
-                                          centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
-                                          sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
-                                          0.0f, 0.0f,
-                                          1.0f, 1.0f,
-                                          0xffffffffu, 0xFfff0000u,
-                                          0x3f00ff00u, 0x3f0000ffu
-                                          );
+         sdvg_BufferRectTexUVGouraud32(&buf_vbo,
+                                       centerX - sizeX * size_sclx, centerY - sizeY * size_scly,
+                                       sizeX * size_sclx * 2.0f,    sizeY * size_scly * 2.0f,
+                                       0.0f, 0.0f,
+                                       1.0f, 1.0f,
+                                       0xffffffffu, 0xFfff0000u,
+                                       0x3f00ff00u, 0x3f0000ffu
+                                       );
          sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, 0u/*numBytes=buf_vbo.size*/, &buf_vbo);
          sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
          sdvg_SetTextureDecalAlpha(decal_alpha);
@@ -3293,7 +3315,7 @@ static void DrawTest(void) {
          sdvg_BindShader(0u);  // use built-in shader
          sdvg_EnableBlending();
          sdvg_SetColor4f(0.1f, 0.7f, 0.6f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_AA: // 69
@@ -3301,7 +3323,7 @@ static void DrawTest(void) {
          sdvg_EnableBlending();
          SetupRotateMVP();
          sdvg_SetColor4f(0.1f, 0.7f, 0.7f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_GRADIENT_LINEAR: // 70
@@ -3312,7 +3334,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_GRADIENT_LINEAR_AA: // 71
@@ -3323,7 +3345,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_GRADIENT_RADIAL: // 72
@@ -3334,7 +3356,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_GRADIENT_RADIAL_AA: // 73
@@ -3345,7 +3367,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_GRADIENT_CONIC: // 74
@@ -3356,7 +3378,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_GRADIENT_CONIC_AA: // 75
@@ -3367,7 +3389,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_CUSTOM_SHADER: // 76
@@ -3377,7 +3399,7 @@ static void DrawTest(void) {
             sdvg_EnableBlending();
             SetupRotateMVP();
             sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-            TestBeginPolygon(YAC_FALSE/*bAA*/);
+            TestBeginPolygon32(YAC_FALSE/*bAA*/);
          }
          break;
 
@@ -3389,7 +3411,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_AA: // 78
@@ -3400,7 +3422,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_ALPHA: // 79
@@ -3411,7 +3433,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_ALPHA_AA: // 80
@@ -3422,7 +3444,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetFillColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_DECAL: // 81
@@ -3434,7 +3456,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_DECAL_AA: // 82
@@ -3446,7 +3468,7 @@ static void DrawTest(void) {
          DrawPaintBackground();
          SetupRotateMVP();
          sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA: // 83
@@ -3459,7 +3481,7 @@ static void DrawTest(void) {
          sdvg_SetFillColorARGB(0x1c3976u | (((sUI)(fill_alpha*255))<<24));
          sdvg_SetStrokeColorARGB(0xffffffu | (((sUI)(fill_alpha*255))<<24));
          SetupRotateMVP();
-         TestBeginPolygon(YAC_FALSE/*bAA*/);
+         TestBeginFilledPolygon(YAC_FALSE/*bAA*/);
          break;
 
       case RENDER_BEGIN_POLYGON_PATTERN_DECAL_ALPHA_AA: // 84
@@ -3472,7 +3494,7 @@ static void DrawTest(void) {
          sdvg_SetFillColorARGB(0x1c3976u | (((sUI)(fill_alpha*255))<<24));
          sdvg_SetStrokeColorARGB(0xffffffu | (((sUI)(fill_alpha*255))<<24));
          SetupRotateMVP();
-         TestBeginPolygon(YAC_TRUE/*bAA*/);
+         TestBeginFilledPolygon(YAC_TRUE/*bAA*/);
          break;
 
       case RENDER_ELLIPSE_FILL_AA_LINEAR: // 85

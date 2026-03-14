@@ -1,5 +1,5 @@
 // ----
-// ---- file   : TrianglesFillFlatUniform32PatternDecalAlpha.h
+// ---- file   : TrianglesFillFlatUniform14_2PatternDecalAlpha.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025-2026 by bsp
@@ -24,7 +24,7 @@
 // ----
 // ----
 
-class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
+class TrianglesFillFlatUniform14_2PatternDecalAlpha : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
@@ -39,8 +39,9 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
       "VARYING_OUT vec2 v_paint_uv; \n"
       " \n"
       "void main(void) { \n"
-      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  vec2 v = a_vertex * 0.25; \n"
+      "  gl_Position = u_transform * vec4(v,0,1); \n"
+      "  v_paint_uv  = (v - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
       "} \n"
       ;
 

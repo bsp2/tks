@@ -78,34 +78,4 @@ class TrianglesFillFlatUniform32Linear : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
-#if 0
-   void drawTrianglesFillFlatUniformVBO32Linear(sUI              _vboId,
-                                                sUI              _byteOffset,
-                                                sUI              _numVerts,
-                                                Dsdvg_mat4_ref_t _mvpMatrix,
-                                                sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
-                                                ) {
-      //
-      // VBO vertex format (8 bytes per vertex):
-      //   +0 f32 x
-      //   +4 f32 y
-      //
-
-      sdvg_BindVBO(_vboId);
-
-      shape_shader.bind();
-
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-      // (todo) paint uniforms
-
-      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
-      Dsdvg_attrib_enable(shape_a_vertex);
-
-      Dsdvg_draw_triangles(0, _numVerts);
-
-      Dsdvg_attrib_disable(shape_a_vertex);
-   }
-#endif // 0
-
 };

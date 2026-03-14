@@ -1,5 +1,5 @@
 // ----
-// ---- file   : TrianglesFillFlatUniform32PatternDecalAlpha.h
+// ---- file   : TrianglesFillFlatUniform14_2Radial.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
 // ----          Copyright 2025-2026 by bsp
@@ -24,42 +24,37 @@
 // ----
 // ----
 
-class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
+class TrianglesFillFlatUniform14_2Radial : public ShaderVG_Shape {
 
   public:
    // ------------ vertex shader --------------
    const char *vs_src =
-      "uniform mat4  u_transform; \n"
-      "uniform vec2  u_paint_start; \n"
-      "uniform vec2  u_paint_ob_size; \n"
-      "uniform float u_paint_ob_len; \n"
+      "uniform mat4 u_transform; \n"
+      "uniform vec2 u_paint_start; \n"
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
-      "VARYING_OUT vec2 v_paint_uv; \n"
+      "VARYING_OUT vec2 v_paint_pos; \n"
       " \n"
       "void main(void) { \n"
-      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
-      "  v_paint_uv  = (a_vertex - u_paint_start) * u_paint_ob_size * u_paint_ob_len; \n"
+      "  vec2 v = a_vertex * 0.25; \n"
+      "  gl_Position = u_transform * vec4(v,0,1); \n"
+      "  v_paint_pos = (v - u_paint_start); \n"
       "} \n"
       ;
 
    // ------------ fragment shader ------------
    const char *fs_src =
-      "uniform vec4      u_color_fill; \n"
-      "uniform vec4      u_color_stroke; \n"
-      "uniform float     u_decal_alpha; \n"
+      "uniform vec4 u_color_fill; \n"
       "uniform sampler2D u_paint_tex; \n"
-      "uniform vec2      u_paint_ndir; \n"
+      "uniform float u_paint_ob_len; \n"
       " \n"
-      "VARYING_IN vec2 v_paint_uv; \n"
+      "VARYING_IN vec2 v_paint_pos; \n"
       " \n"
       "void main(void) { \n"
-      "  vec2 uv; \n"
-      "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
-      "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
-      "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
-      "  FRAGCOLOR = vec4(mix(u_color_fill.rgb, u_color_stroke.rgb, u_color_stroke.a * ap * u_decal_alpha), u_color_fill.a); \n"
+      "  float d = length(v_paint_pos) * u_paint_ob_len; \n"
+      "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
+      "  FRAGCOLOR = c * u_color_fill; \n"
       "} \n"
       ;
 
@@ -68,13 +63,9 @@ class TrianglesFillFlatUniform32PatternDecalAlpha : public ShaderVG_Shape {
             (-1 != shape_a_vertex)
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_fill)
-         && (-1 != shape_u_color_stroke)
-         && (-1 != shape_u_decal_alpha)
-         && (-1 != shape_u_paint_start)
-         && (-1 != shape_u_paint_ob_size)
-         && (-1 != shape_u_paint_ob_len)
-         && (-1 != shape_u_paint_ndir)
          && (-1 != shape_u_paint_tex)
+         && (-1 != shape_u_paint_start)
+         && (-1 != shape_u_paint_ob_len)
          ;
    }
 

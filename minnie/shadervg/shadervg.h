@@ -1096,23 +1096,23 @@ Destroy texture
 YF void YAC_CALL sdvg_DestroyTexture2D (sUI _texId);
 
 // -------- VBO utility functions --------
-/* @function sdvg_BufferAddRectTexUVFlat32,Buffer b,float x,float y,float w,float h,float ul,float vt,float ur,float vb
+/* @function sdvg_BufferRectTexUVFlat32,Buffer b,float x,float y,float w,float h,float ul,float vt,float ur,float vb
 Append textured rectangle vertex attributes to buffer
 
-@group BufferAdd
+@group Buffer
 */
-YF void YAC_CALL sdvg_BufferAddRectTexUVFlat32 (YAC_Buffer *_b, sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb);
+YF void YAC_CALL sdvg_BufferRectTexUVFlat32 (YAC_Buffer *_b, sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb);
 
 /* @function sdvg_WriteC32AsRGBA8,Buffer b,int c32
 Append r,g,b,a bytes to buffer
 
 @arg c32 Packed ARGB32 color
 
-@group BufferAdd
+@group Buffer
 */
 YF void YAC_CALL sdvg_WriteC32AsRGBA8 (YAC_Buffer *_b, sUI _c32);
 
-/* @function sdvg_BufferAddRectTexUVGouraud32,Buffer b,float x,float y,float w,float h,float ul,float vt,float ur,float vb,int c32LT,int c32RT,int c32
+/* @function sdvg_BufferRectTexUVGouraud32,Buffer b,float x,float y,float w,float h,float ul,float vt,float ur,float vb,int c32LT,int c32RT,int c32
 Append textured, gouraud shaded rectangle vertex attributes to buffer
 
 @arg x Rectangle X position
@@ -1128,67 +1128,10 @@ Append textured, gouraud shaded rectangle vertex attributes to buffer
 @arg c32LB Left/Bottom packed ARGB32 color
 @arg c32RB Right/Bottom packed ARGB32 color
 
-@group BufferAdd
+@group Buffer
 */
-YF void YAC_CALL sdvg_BufferAddRectTexUVGouraud32 (YAC_Buffer *_b,  sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sUI _c32LT, sUI _c32RT, sUI _c32LB, sUI _c32RB);
+YF void YAC_CALL sdvg_BufferRectTexUVGouraud32 (YAC_Buffer *_b,  sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sUI _c32LT, sUI _c32RT, sUI _c32LB, sUI _c32RB);
 
-/* @function sdvg_BufferAddLinePointFlat14_2,Buffer b,float x,float y
-Append line / point vertex coordinate to buffer in 14.2 fixed point format
-
-@group Point
-@group BufferAdd
-*/
-YF void YAC_CALL sdvg_BufferAddLinePointFlat14_2 (YAC_Buffer *_b, sF32 _x, sF32 _y);
-
-/* @function sdvg_BufferAddLinePointFlat32,Buffer b,float x,float y
-Append line / point vertex coordinate to buffer in 32bit float format
-
-@group Point
-@group BufferAdd
-*/
-YF void YAC_CALL sdvg_BufferAddLinePointFlat32 (YAC_Buffer *_b, sF32 _x, sF32 _y);
-
-/* @function sdvg_BufferAddLinePointFlatBevel14_2,Buffer b,float x,float y
-Append bevel line-joint vertex coordinate to buffer in 14.2 fixed point format
-
-@group Point
-@group BufferAdd
-*/
-YF void YAC_CALL sdvg_BufferAddLinePointFlatBevel14_2 (YAC_Buffer *_b, sF32 _x, sF32 _y);
-
-/* @function sdvg_BufferAddLinePointFlatBevel32,Buffer b,float x,float y
-Append bevel line-joint vertex coordinate to buffer in 32bit float format
-
-@group Point
-@group BufferAdd
-*/
-YF void YAC_CALL sdvg_BufferAddLinePointFlatBevel32 (YAC_Buffer *_b, sF32 _x, sF32 _y);
-
-/* @function sdvg_BufferAddLinesPointsFlat14_2,Buffer b,float x1,float y1,float x2,float y2
-Append line segment vertex coordinates to buffer in 14.2 fixed point format
-
-@arg x1 Line start point X
-@arg y1 Line start point Y
-@arg x2 Line end point X
-@arg y2 Line end point Y
-
-@group Point
-@group BufferAdd
-*/
-YF void YAC_CALL sdvg_BufferAddLinesPointsFlat14_2 (YAC_Buffer *_b, sF32 _x1, sF32 _y1, sF32 _x2, sF32 _y2);
-
-/* @function sdvg_BufferAddLinesPointsFlat32,Buffer b,float x1,float y1,float x2,float y2
-Append line segment vertex coordinates to buffer in 32bit float fixed point
-
-@arg x1 Line start point X
-@arg y1 Line start point Y
-@arg x2 Line end point X
-@arg y2 Line end point Y
-
-@group Point
-@group BufferAdd
-*/
-YF void YAC_CALL sdvg_BufferAddLinesPointsFlat32 (YAC_Buffer *_b, sF32 _x1, sF32 _y1, sF32 _x2, sF32 _y2);
 
 // -------- (low level) draw functions --------
 /* @function sdvg_DrawTrianglesFillFlatVBO32,int vboId,int byteOffset,int numVerts
@@ -1694,19 +1637,36 @@ VBO vertex format (16 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVFlatVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as textured mapped triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+    +0  f32   x<br>
+    +4  f32   y<br>
+    +8  s14.2 u<br>
+    +10 s14.2 v<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as textured mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
 VBO vertex format (20 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
-    +16  u8 r<br>
-    +17  u8 g<br>
-    +18  u8 b<br>
-    +19  u8 a<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  u8  r<br>
+    +9  u8  g<br>
+    +10 u8  b<br>
+    +11 u8  a<br>
+    +12 f32 x<br>
+    +16 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1715,15 +1675,36 @@ VBO vertex format (20 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVGouraudVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as textured mapped, gouraud shaded triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  u8    r<br>
+    +9  u8    g<br>
+    +10 u8    b<br>
+    +11 u8    a<br>
+    +12 s14.2 x<br>
+    +14 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as decal-textured mapped triangles (32bit float format)
 
 <pre>
 VBO vertex format (16 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  f32 x<br>
+    +12 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1733,19 +1714,37 @@ VBO vertex format (16 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as decal-textured mapped triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  s14.2 x<br>
+    +10 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as decal-textured mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
 VBO vertex format (20 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
-    +16  u8 r<br>
-    +17  u8 g<br>
-    +18  u8 b<br>
-    +19  u8 a<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  u8  r<br>
+    +9  u8  g<br>
+    +10 u8  b<br>
+    +11 u8  a<br>
+    +12 f32 x<br>
+    +16 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1755,15 +1754,37 @@ VBO vertex format (20 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as decal-textured mapped, gouraud shaded triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  u8    r<br>
+    +9  u8    g<br>
+    +10 u8    b<br>
+    +11 u8    a<br>
+    +12 s14.2 x<br>
+    +14 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVFlatVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-texture mapped triangles (32bit float format)
 
 <pre>
 VBO vertex format (16 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  f32 x<br>
+    +12 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1772,19 +1793,36 @@ VBO vertex format (16 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVFlatVBO14_2Alpha,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as alpha-texture mapped triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  s14.2 x<br>
+    +10 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO14_2Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVGouraudVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-texture mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
 VBO vertex format (20 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
-    +16  u8 r<br>
-    +17  u8 g<br>
-    +18  u8 b<br>
-    +19  u8 a<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8   u8 r<br>
+    +9   u8 g<br>
+    +10  u8 b<br>
+    +11  u8 a<br>
+    +12 f32 x<br>
+    +16 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1793,15 +1831,36 @@ VBO vertex format (20 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVGouraudVBO32Alpha,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as alpha-texture mapped, gouraud shaded triangles (32bit float format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  u8    r<br>
+    +9  u8    g<br>
+    +10 u8    b<br>
+    +11 u8    a<br>
+    +12 s14.2 x<br>
+    +14 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudVBO14_2Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-decal-texture mapped triangles (32bit float format)
 
 <pre>
 VBO vertex format (16 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  f32 x<br>
+    +12 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1811,19 +1870,37 @@ VBO vertex format (16 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVFlatDecalVBO14_2Alpha,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as alpha-decal-texture mapped triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  s14.2 x<br>
+    +10 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatDecalVBO14_2Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-decal-texture mapped, gouraud shaded triangles (32bit float format)
 
 <pre>
 VBO vertex format (20 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
-    +16  u8 r<br>
-    +17  u8 g<br>
-    +18  u8 b<br>
-    +19  u8 a<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  u8  r<br>
+    +9  u8  g<br>
+    +10 u8  b<br>
+    +11 u8  a<br>
+    +12 f32 x<br>
+    +16 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1833,15 +1910,37 @@ VBO vertex format (20 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO32Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2Alpha,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as alpha-decal-texture mapped, gouraud shaded triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (16 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  u8    r<br>
+    +9  u8    g<br>
+    +10 u8    b<br>
+    +11 u8    a<br>
+    +12 s14.2 x<br>
+    +14 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVGouraudDecalVBO14_2Alpha (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as alpha-SDF-texture mapped triangles (32bit float format)
 
 <pre>
 VBO vertex format (16 bytes per vertex):<br>
-    +0  f32 x<br>
-    +4  f32 y<br>
-    +8  f32 u<br>
-    +12 f32 v<br>
+    +0  f32 u<br>
+    +4  f32 v<br>
+    +8  f32 x<br>
+    +12 f32 y<br>
 </pre>
 
 @group Triangle
@@ -1850,6 +1949,24 @@ VBO vertex format (16 bytes per vertex):<br>
 @group SDF
 */
 YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO32AlphaSDF (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawTrianglesTexUVFlatVBO14_2AlphaSDF,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as alpha-SDF-texture mapped triangles (14.2 fixed point format)
+
+<pre>
+VBO vertex format (12 bytes per vertex):<br>
+    +0  f32   u<br>
+    +4  f32   v<br>
+    +8  s14.2 x<br>
+    +10 s14.2 y<br>
+</pre>
+
+@group Triangle
+@groupref Texture
+@groupref Fill
+@group SDF
+*/
+YF void YAC_CALL sdvg_DrawTrianglesTexUVFlatVBO14_2AlphaSDF (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawLineStripFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as line strip (14.2 fixed point format)
@@ -3081,6 +3198,8 @@ YF void YAC_CALL sdvg_PaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _
 /* @function sdvg_BeginVBO,int numVertices,int stride:boolean
 Begin preparation of mapped vertex buffer
 
+The vertex format depends on the build configuration.
+
 @arg numVertices Number of vertices
 @arg stride Total number of attribute bytes per vertex
 
@@ -3089,8 +3208,32 @@ Begin preparation of mapped vertex buffer
 */
 YF sBool YAC_CALL sdvg_BeginVBO (sUI _numVertices, sUI _stride);
 
+/* @function sdvg_BeginVBO32,int numVertices,int stride:boolean
+Begin preparation of mapped vertex buffer (32bit float vertex format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group VBO
+*/
+YF sBool YAC_CALL sdvg_BeginVBO32 (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginVBO14_2,int numVertices,int stride:boolean
+Begin preparation of mapped vertex buffer (14.2 fixed point vertex format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group VBO
+*/
+YF sBool YAC_CALL sdvg_BeginVBO14_2 (sUI _numVertices, sUI _stride);
+
 /* @function sdvg_BeginTriangles,int numVertices,int stride:boolean
-Begin preparation or rendering of triangles via user-defined shader
+Begin preparation or rendering of triangles via user-defined shader.
+
+The vertex format depends on the build configuration.
 
 @arg numVertices Number of vertices
 @arg stride Total number of attribute bytes per vertex
@@ -3100,8 +3243,32 @@ Begin preparation or rendering of triangles via user-defined shader
 */
 YF sBool YAC_CALL sdvg_BeginTriangles (sUI _numVertices, sUI _stride);
 
+/* @function sdvg_BeginTriangles32,int numVertices,int stride:boolean
+Begin preparation or rendering of triangles via user-defined shader (32bit float format).
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Triangle
+*/
+YF sBool YAC_CALL sdvg_BeginTriangles32 (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginTriangles14_2,int numVertices,int stride:boolean
+Begin preparation or rendering of triangles via user-defined shader (14.2 fixed point format).
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Triangle
+*/
+YF sBool YAC_CALL sdvg_BeginTriangles14_2 (sUI _numVertices, sUI _stride);
+
 /* @function sdvg_BeginTriangleFan,int numVertices,int stride:boolean
 Begin preparation or rendering of triangle-fan via user-defined shader
+
+The vertex format depends on the build configuration.
 
 @arg numVertices Number of vertices
 @arg stride Total number of attribute bytes per vertex
@@ -3110,6 +3277,28 @@ Begin preparation or rendering of triangle-fan via user-defined shader
 @group Triangle
 */
 YF sBool YAC_CALL sdvg_BeginTriangleFan (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginTriangleFan32,int numVertices,int stride:boolean
+Begin preparation or rendering of triangle-fan via user-defined shader (32bit float format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Triangle
+*/
+YF sBool YAC_CALL sdvg_BeginTriangleFan32 (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginTriangleFan14_2,int numVertices,int stride:boolean
+Begin preparation or rendering of triangle-fan via user-defined shader (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Triangle
+*/
+YF sBool YAC_CALL sdvg_BeginTriangleFan14_2 (sUI _numVertices, sUI _stride);
 
 /* @function sdvg_BeginTriangleStrip,int numVertices,int stride:boolean
 Begin preparation or rendering of triangle-strip via user-defined shader
@@ -3121,6 +3310,28 @@ Begin preparation or rendering of triangle-strip via user-defined shader
 @group Triangle
 */
 YF sBool YAC_CALL sdvg_BeginTriangleStrip (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginTriangleStrip32,int numVertices,int stride:boolean
+Begin preparation or rendering of triangle-strip via user-defined shader (32bit float format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Triangle
+*/
+YF sBool YAC_CALL sdvg_BeginTriangleStrip32 (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginTriangleStrip14_2,int numVertices,int stride:boolean
+Begin preparation or rendering of triangle-strip via user-defined shader (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Triangle
+*/
+YF sBool YAC_CALL sdvg_BeginTriangleStrip14_2 (sUI _numVertices, sUI _stride);
 
 /* @function sdvg_BeginFilledTriangles,int numVertices:boolean
 Begin preparation or rendering of filled triangles via user-defined shader
@@ -3314,6 +3525,30 @@ Begin preparation or rendering of alpha-channel-only textured triangles
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlpha (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedTrianglesAlpha32,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlpha32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTrianglesAlpha14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlpha14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedTriangleFanAlpha,int numVertices:boolean
 Begin preparation or rendering of alpha-channel-only textured triangle-fan
 
@@ -3389,6 +3624,32 @@ Begin preparation or rendering of alpha-SDF-channel-only textured triangles
 @group SDF
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlphaSDF (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTrianglesAlphaSDF32,int numVertices:boolean
+Begin preparation or rendering of alpha-SDF-channel-only textured triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group SDF
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlphaSDF32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTrianglesAlphaSDF14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-SDF-channel-only textured triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group SDF
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTrianglesAlphaSDF14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginLineStrip,int numPoints:boolean
 Begin preparation or rendering of line strip
@@ -3960,7 +4221,7 @@ Begin preparation or rendering of anti-aliased, gouraud-shaded round points
 YF sBool YAC_CALL sdvg_BeginPointsRoundGouraudAA (sUI _numPoints);
 
 /* @function sdvg_BeginPolygon,int numVertices,int stride:boolean
-Begin preparation or rendering of polygon via user-defined shader
+Begin preparation or rendering of polygon via user-defined shader.
 
 @arg numVertices Number of vertices
 @arg stride Total number of attribute bytes per vertex
@@ -3969,6 +4230,28 @@ Begin preparation or rendering of polygon via user-defined shader
 @group Polygon
 */
 YF sBool YAC_CALL sdvg_BeginPolygon (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginPolygon32,int numVertices,int stride:boolean
+Begin preparation or rendering of polygon via user-defined shader (32bit float format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Polygon
+*/
+YF sBool YAC_CALL sdvg_BeginPolygon32 (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginPolygon14_2,int numVertices,int stride:boolean
+Begin preparation or rendering of polygon via user-defined shader (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Polygon
+*/
+YF sBool YAC_CALL sdvg_BeginPolygon14_2 (sUI _numVertices, sUI _stride);
 
 /* @function sdvg_BeginPolygonAA,int numVertices,int stride:boolean
 Begin preparation or rendering of anti-aliased polygon via user-defined shader
@@ -3980,6 +4263,28 @@ Begin preparation or rendering of anti-aliased polygon via user-defined shader
 @group Polygon
 */
 YF sBool YAC_CALL sdvg_BeginPolygonAA (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginPolygonAA32,int numVertices,int stride:boolean
+Begin preparation or rendering of anti-aliased polygon via user-defined shader (32bit float format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Polygon
+*/
+YF sBool YAC_CALL sdvg_BeginPolygonAA32 (sUI _numVertices, sUI _stride);
+
+/* @function sdvg_BeginPolygonAA14_2,int numVertices,int stride:boolean
+Begin preparation or rendering of anti-aliased polygon via user-defined shader (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+@arg stride Total number of attribute bytes per vertex
+
+@group Begin
+@group Polygon
+*/
+YF sBool YAC_CALL sdvg_BeginPolygonAA14_2 (sUI _numVertices, sUI _stride);
 
 /* @function sdvg_BeginFilledPolygon,int numVertices:boolean
 Begin preparation or rendering of filled polygon
@@ -4093,63 +4398,112 @@ YF void YAC_CALL _sdvg_AttribOffset2f (YAC_String *_name);
 YF void YAC_CALL _sdvg_AttribOffset3f (YAC_String *_name);
 YF void YAC_CALL _sdvg_AttribOffset4f (YAC_String *_name);
 YF void YAC_CALL _sdvg_AttribOffsetARGB (YAC_String *_name);
-YF void YAC_CALL _sdvg_Attribi16 (sSI _i);
+YF void YAC_CALL _sdvg_Attrib1i16 (sSI _i);
+YF void YAC_CALL _sdvg_Attrib2i16 (sSI _i1, sSI _i2);
+YF void YAC_CALL _sdvg_Attrib3i16 (sSI _i1, sSI _i2, sSI _i3);
+YF void YAC_CALL _sdvg_Attrib4i16 (sSI _i1, sSI _i2, sSI _i3, sSI _i4);
+YF void YAC_CALL _sdvg_Vertex2x (sSI _x, sSI _y);
+YF void YAC_CALL _sdvg_Vertex3x (sSI _x, sSI _y, sSI _z);
 #endif // SHADERVG_SCRIPT_API
 
-/* @function sdvg_Attribi16,short i
-Emit signed 16bit short vertex attribute to currently mapped vertex buffer
-
-@arg name Attribute name
-
-@groupref Shader
-@group Attrib
-*/
-void YAC_CALL sdvg_Attribi16 (sS16 _i);
-
-/* @function sdvg_Attrib2fi16,short i
-Convert from float and emit two signed 16bit short vertex attributes to currently mapped vertex buffer
-
-@arg name Attribute name
-
-@groupref Shader
-@group Attrib
-*/
-void YAC_CALL sdvg_Attrib2fi16 (sF32 _x, sF32 _y);
-
 /* @function sdvg_Attrib1f,float f
-Emit 32bit float vertex attribute to currently mapped vertex buffer
+Emit 32bit float vertex attribute to currently mapped vertex buffer.
 
 @groupref Shader
 @group Attrib
 */
 YF void YAC_CALL sdvg_Attrib1f (sF32 _f);
 
+/* @function sdvg_Attrib1i16,short i
+Emit signed 16bit integer vertex attribute to currently mapped vertex buffer.
+
+@arg name Attribute name
+
+@groupref Shader
+@group Attrib
+*/
+void YAC_CALL sdvg_Attrib1i16 (sS16 _i);
+
+/* @function sdvg_Attrib1fx,float f
+Convert from float and emit signed 14.2 fixed point vertex attribute to currently mapped vertex buffer.
+
+@arg name Attribute name
+
+@groupref Shader
+@group Attrib
+*/
+YF void YAC_CALL sdvg_Attrib1fx (sF32 _f);
+
 /* @function sdvg_Attrib2f,float f1,float f2
-Emit two 32bit float vertex attributes to currently mapped vertex attribute buffer
+Emit two 32bit float vertex attributes to currently mapped vertex attribute buffer.
 
 @groupref Shader
 @group Attrib
 */
 YF void YAC_CALL sdvg_Attrib2f (sF32 _f1, sF32 _f2);
 
+/* @function sdvg_Attrib2i16,short i1,short i2
+Emit two 16bit signed int vertex attributes to currently mapped vertex attribute buffer.
+
+@groupref Shader
+@group Attrib
+*/
+void YAC_CALL sdvg_Attrib2i16 (sS16 _i1, sS16 _i2);
+
+/* @function sdvg_Attrib2fx,float f1,float f2
+Convert from float and emit two signed 14.2 fixed point vertex attributes to currently mapped vertex buffer
+
+@arg name Attribute name
+
+@groupref Shader
+@group Attrib
+*/
+YF void YAC_CALL sdvg_Attrib2fx (sF32 _f1, sF32 _f2);
+
 /* @function sdvg_Vertex2f,float x,float y
-Emit 2-component (xy) 32bit float vertex coordinate to currently mapped vertex buffer
+Emit 2-component (xy) 32bit float vertex coordinate to currently mapped vertex buffer.
+
+The actual data format depends on the current draw mode and the build configuration.
 
 @groupref Shader
 @group Attrib
 */
 YF void YAC_CALL sdvg_Vertex2f (sF32 _x, sF32 _y);
 
+/* @function sdvg_Vertex2x,short x,short y
+Emit 2-component (xy) signed 16bit short vertex coordinate to currently mapped vertex buffer.
+
+The actual data format depends on the current draw mode and the build configuration.
+
+@groupref Shader
+@group Attrib
+*/
+void YAC_CALL sdvg_Vertex2x (sS16 _x, sS16 _y);
+
 /* @function sdvg_Vertex3f,float x,float y,float z
-Emit 3-component (xyz) 32bit float vertex coordinate to currently mapped vertex buffer
+Emit 3-component (xyz) 32bit float vertex coordinate to currently mapped vertex buffer.
+
+The actual data format depends on the current draw mode and the build configuration.
 
 @groupref Shader
 @group Attrib
 */
 YF void YAC_CALL sdvg_Vertex3f (sF32 _x, sF32 _y, sF32 _z);
 
+/* @function sdvg_Vertex3x,short x,short y,short z
+Emit 3-component (xyz) signed 14.2 fixed point vertex coordinate to currently mapped vertex buffer.
+
+The actual data format depends on the current draw mode and the build configuration.
+
+@groupref Shader
+@group Attrib
+*/
+void YAC_CALL sdvg_Vertex3x (sS16 _x, sS16 _y, sS16 _z);
+
 /* @function sdvg_TexCoord2f,float u,float v
-Emit 2-component 32bit float UV coordinate to currently mapped vertex buffer
+Emit 2-component 32bit float UV coordinate to currently mapped vertex buffer.
+
+The actual data format depends on the current draw mode and the build configuration.
 
 @groupref Shader
 @group Attrib
@@ -4157,12 +4511,30 @@ Emit 2-component 32bit float UV coordinate to currently mapped vertex buffer
 YF void YAC_CALL sdvg_TexCoord2f (sF32 _u, sF32 _v);
 
 /* @function sdvg_Attrib3f,float f1,float f2,float f3
-Emit 3-component 32bit float vertex attribute to currently mapped vertex buffer
+Emit 3-component 32bit float vertex attribute to currently mapped vertex buffer.
+
+The actual data format depends on the current draw mode and the build configuration.
 
 @groupref Shader
 @group Attrib
 */
 YF void YAC_CALL sdvg_Attrib3f (sF32 _f1, sF32 _f2, sF32 _f3);
+
+/* @function sdvg_Attrib3i16,short f1,short f2,short f3
+Emit 3-component signed 16bit integer vertex attribute to currently mapped vertex buffer.
+
+@groupref Shader
+@group Attrib
+*/
+void YAC_CALL sdvg_Attrib3i16 (sS16 _f1, sS16 _f2, sS16 _f3);
+
+/* @function sdvg_Attrib3fx,float f1,float f2,float f3
+Convert from float and emit 3-component signed 14.2 fixed point vertex attribute to currently mapped vertex buffer.
+
+@groupref Shader
+@group Attrib
+*/
+YF void YAC_CALL sdvg_Attrib3fx (sF32 _f1, sF32 _f2, sF32 _f3);
 
 /* @function sdvg_Color3f,float r,float g,float b
 Emit 3-component 32bit float RGB color attribute to currently mapped vertex buffer
@@ -4179,6 +4551,22 @@ Emit 4-component 32bit float vertex attribute to currently mapped vertex buffer
 @group Attrib
 */
 YF void YAC_CALL sdvg_Attrib4f (sF32 _f1, sF32 _f2, sF32 _f3, sF32 _f4);
+
+/* @function sdvg_Attrib4i16,short f1,short f2,short f3,short f4
+Emit 4-component signed 16bit integer vertex attribute to currently mapped vertex buffer
+
+@groupref Shader
+@group Attrib
+*/
+void YAC_CALL sdvg_Attrib4i16 (sS16 _f1, sS16 _f2, sS16 _f3, sS16 _f4);
+
+/* @function sdvg_Attrib4fx,float f1,float f2,float f3,float f4
+Convert from float and emit 4-component signed 14.2 fixed point vertex attribute to currently mapped vertex buffer
+
+@groupref Shader
+@group Attrib
+*/
+YF void YAC_CALL sdvg_Attrib4fx (sF32 _f1, sF32 _f2, sF32 _f3, sF32 _f4);
 
 /* @function sdvg_Color4f,float r,float g,float b,float a
 Emit 4-component 32bit float RGBA color attribute to currently mapped vertex buffer

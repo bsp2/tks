@@ -156,9 +156,14 @@ typedef int             sBool;
 #define Dstream_write_i8(s,v)  ((YAC_Object*)(s))->yacStreamWriteI8(v)
 #define Dstream_write_i16(s,v) ((YAC_Object*)(s))->yacStreamWriteI16(v)
 #define Dstream_write_s16(s,v) ((YAC_Object*)(s))->yacStreamWriteI16(v)
+#define Dstream_write_1fx(s,v) ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v)*4.0f))
+#define Dstream_write_2s16(s,v1,v2) ((YAC_Object*)(s))->yacStreamWriteI16(v1); ((YAC_Object*)(s))->yacStreamWriteI16(v2)
 #define Dstream_write_i32(s,v) ((YAC_Object*)(s))->yacStreamWriteI32(v)
 #define Dstream_write_f32(s,v) ((YAC_Object*)(s))->yacStreamWriteF32(v)
 #define Dstream_write_2f(s,v1,v2) ((YAC_Object*)(s))->yacStreamWriteF32(v1); ((YAC_Object*)(s))->yacStreamWriteF32(v2)
+#define Dstream_write_2fx(s,v1,v2) ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v1)*4.0f)); ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v2)*4.0f))
+#define Dstream_write_3fx(s,v1,v2,v3) ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v1)*4.0f)); ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v2)*4.0f)); ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v3)*4.0f))
+#define Dstream_write_4fx(s,v1,v2,v3,v4) ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v1)*4.0f)); ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v2)*4.0f)); ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v3)*4.0f)); ((YAC_Object*)(s))->yacStreamWriteI16(sS16((v4)*4.0f))
 #define Dstream_get_offset(s)  ((YAC_Object*)(s))->yacStreamGetOffset()
 #define Dstream_set_offset(s,o) ((YAC_Object*)(s))->yacStreamSetOffset(o)
 
@@ -174,9 +179,13 @@ typedef int             sBool;
 #define Dstream_write_i8(s,v)  ((YAC_Buffer*)(s))->writeI8(v)
 #define Dstream_write_i16(s,v) ((YAC_Buffer*)(s))->writeI16(v)
 #define Dstream_write_s16(s,v) ((YAC_Buffer*)(s))->writeI16(v)
+#define Dstream_write_2s16(s,v1,v2) ((YAC_Buffer*)(s))->writeI16(v1); ((YAC_Buffer*)(s))->writeI16(v2)
+#define Dstream_write_1fx(s,v) ((YAC_Buffer*)(s))->writeI16(sS16((v)*4.0f))
 #define Dstream_write_i32(s,v) ((YAC_Buffer*)(s))->writeI32(v)
 #define Dstream_write_f32(s,v) ((YAC_Buffer*)(s))->writeF32(v)
 #define Dstream_write_2f(s,v1,v2) ((YAC_Buffer*)(s))->writeF32(v1); ((YAC_Buffer*)(s))->writeF32(v2)
+#define Dstream_write_2fx(s,v1,v2) ((YAC_Buffer*)(s))->writeI16(sS16((v1)*4.0f)); ((YAC_Buffer*)(s))->writeI16(sS16((v2)*4.0f))
+#define Dstream_write_3fx(s,v1,v2,v3) ((YAC_Buffer*)(s))->writeI16(sS16((v1)*4.0f)); ((YAC_Buffer*)(s))->writeI16(sS16((v2)*4.0f)); ((YAC_Buffer*)(s))->writeI16(sS16((v3)*4.0f))
 #define Dstream_get_offset(s)  ((YAC_Buffer*)(s))->io_offset
 #define Dstream_set_offset(s,o) ((YAC_Buffer*)(s))->io_offset = (o)
 
