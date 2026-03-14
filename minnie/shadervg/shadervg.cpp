@@ -191,12 +191,20 @@
 #include "LineStripPatternBevelAA14_2.h"
 #include "LineStripPatternDecalBevelAA32.h"
 #include "LineStripPatternDecalBevelAA14_2.h"
+#include "LineStripFlatBevelAA32Linear.h"
+#include "LineStripFlatBevelAA14_2Linear.h"
+#include "LineStripFlatBevelAA32Radial.h"
+#include "LineStripFlatBevelAA14_2Radial.h"
+#include "LineStripFlatBevelAA32Conic.h"
+#include "LineStripFlatBevelAA14_2Conic.h"
 #include "LineStripFlatBevelAA32Pattern.h"
 #include "LineStripFlatBevelAA14_2Pattern.h"
 #include "LineStripFlatBevelAA32PatternAlpha.h"
 #include "LineStripFlatBevelAA14_2PatternAlpha.h"
 #include "LineStripFlatBevelAA32PatternDecal.h"
 #include "LineStripFlatBevelAA14_2PatternDecal.h"
+#include "LineStripFlatBevelAA32PatternDecalAlpha.h"
+#include "LineStripFlatBevelAA14_2PatternDecalAlpha.h"
 #include "LineStripFlatMiterAA32.h"
 #include "LineStripFlatMiterAA14_2.h"
 #include "LinesFlatAA32.h"
@@ -240,10 +248,10 @@ static int mapped_user_vbo_id;
 
 static Dsdvg_buffer_ref_t attrib_write_buffer = NULL;
 
-static TrianglesFillFlat32                  triangles_fill_flat_32;
-static TrianglesFillFlat14_2                triangles_fill_flat_14_2;
-static TrianglesFillFlatModulate32          triangles_fill_flat_modulate_32;
-static TrianglesFillFlatModulate14_2        triangles_fill_flat_modulate_14_2;
+static TrianglesFillFlat32                         triangles_fill_flat_32;
+static TrianglesFillFlat14_2                       triangles_fill_flat_14_2;
+static TrianglesFillFlatModulate32                 triangles_fill_flat_modulate_32;
+static TrianglesFillFlatModulate14_2               triangles_fill_flat_modulate_14_2;
 static TrianglesFillFlatUniform32                  triangles_fill_flat_uniform_32;
 static TrianglesFillFlatUniform32Linear            triangles_fill_flat_uniform_32_linear;
 static TrianglesFillFlatUniform32Radial            triangles_fill_flat_uniform_32_radial;
@@ -252,130 +260,138 @@ static TrianglesFillFlatUniform32Pattern           triangles_fill_flat_uniform_3
 static TrianglesFillFlatUniform32PatternAlpha      triangles_fill_flat_uniform_32_pattern_alpha;
 static TrianglesFillFlatUniform32PatternDecal      triangles_fill_flat_uniform_32_pattern_decal;
 static TrianglesFillFlatUniform32PatternDecalAlpha triangles_fill_flat_uniform_32_pattern_decal_alpha;
-static TrianglesFillFlatUniform14_2         triangles_fill_flat_uniform_14_2;
-static TrianglesFillGouraud32               triangles_fill_gouraud_32;
-static TrianglesFillGouraud14_2             triangles_fill_gouraud_14_2;
-static TrianglesFillGouraudModulate32       triangles_fill_gouraud_modulate_32;
-static TrianglesFillGouraudModulate14_2     triangles_fill_gouraud_modulate_14_2;
-static TrianglesFillFlatEdgeAA32            triangles_fill_flat_edgeaa_32;
-static TrianglesFillFlatEdgeAA14_2          triangles_fill_flat_edgeaa_14_2;
-static TrianglesFillGouraudEdgeAA32         triangles_fill_gouraud_edgeaa_32;
-static TrianglesFillGouraudEdgeAA14_2       triangles_fill_gouraud_edgeaa_14_2;
+static TrianglesFillFlatUniform14_2                triangles_fill_flat_uniform_14_2;
+static TrianglesFillGouraud32                      triangles_fill_gouraud_32;
+static TrianglesFillGouraud14_2                    triangles_fill_gouraud_14_2;
+static TrianglesFillGouraudModulate32              triangles_fill_gouraud_modulate_32;
+static TrianglesFillGouraudModulate14_2            triangles_fill_gouraud_modulate_14_2;
+static TrianglesFillFlatEdgeAA32                   triangles_fill_flat_edgeaa_32;
+static TrianglesFillFlatEdgeAA14_2                 triangles_fill_flat_edgeaa_14_2;
+static TrianglesFillGouraudEdgeAA32                triangles_fill_gouraud_edgeaa_32;
+static TrianglesFillGouraudEdgeAA14_2              triangles_fill_gouraud_edgeaa_14_2;
 #ifndef SHADERVG_STENCIL_POLYGONS
-static PolygonFillFlat32                    polygon_fill_flat_32;
-static PolygonFillFlat14_2                  polygon_fill_flat_14_2;
+static PolygonFillFlat32                           polygon_fill_flat_32;
+static PolygonFillFlat14_2                         polygon_fill_flat_14_2;
 #endif // SHADERVG_STENCIL_POLYGONS
-static RectFillAA                           rect_fill_aa;
-static RectFillAALinear                     rect_fill_aa_linear;
-static RectFillAARadial                     rect_fill_aa_radial;
-static RectFillAAConic                      rect_fill_aa_conic;
-static RectFillAAPattern                    rect_fill_aa_pattern;
-static RectFillAAPatternAlpha               rect_fill_aa_pattern_alpha;
-static RectFillAAPatternDecal               rect_fill_aa_pattern_decal;
-static RectFillAAPatternDecalAlpha          rect_fill_aa_pattern_decal_alpha;
-static RectStrokeAA                         rect_stroke_aa;
-static RectStrokeAALinear                   rect_stroke_aa_linear;
-static RectStrokeAARadial                   rect_stroke_aa_radial;
-static RectStrokeAAConic                    rect_stroke_aa_conic;
-static RectStrokeAAPattern                  rect_stroke_aa_pattern;
-static RectStrokeAAPatternAlpha             rect_stroke_aa_pattern_alpha;
-static RectStrokeAAPatternDecal             rect_stroke_aa_pattern_decal;
-static RectStrokeAAPatternDecalAlpha        rect_stroke_aa_pattern_decal_alpha;
-static RectFillStrokeAA                     rect_fill_stroke_aa;
-static EllipseFillAA                        ellipse_fill_aa;
-static EllipseFillAALinear                  ellipse_fill_aa_linear;
-static EllipseFillAARadial                  ellipse_fill_aa_radial;
-static EllipseFillAAConic                   ellipse_fill_aa_conic;
-static EllipseFillAAPattern                 ellipse_fill_aa_pattern;
-static EllipseFillAAPatternAlpha            ellipse_fill_aa_pattern_alpha;
-static EllipseFillAAPatternDecal            ellipse_fill_aa_pattern_decal;
-static EllipseFillAAPatternDecalAlpha       ellipse_fill_aa_pattern_decal_alpha;
-static EllipseStrokeAA                      ellipse_stroke_aa;
-static EllipseStrokeAALinear                ellipse_stroke_aa_linear;
-static EllipseStrokeAARadial                ellipse_stroke_aa_radial;
-static EllipseStrokeAAConic                 ellipse_stroke_aa_conic;
-static EllipseStrokeAAPattern               ellipse_stroke_aa_pattern;
-static EllipseStrokeAAPatternAlpha          ellipse_stroke_aa_pattern_alpha;
-static EllipseStrokeAAPatternDecal          ellipse_stroke_aa_pattern_decal;
-static EllipseStrokeAAPatternDecalAlpha     ellipse_stroke_aa_pattern_decal_alpha;
-static EllipseFillStrokeAA                  ellipse_fill_stroke_aa;
-static RoundRectFillAA                      roundrect_fill_aa;
-static RoundRectFillAALinear                roundrect_fill_aa_linear;
-static RoundRectFillAARadial                roundrect_fill_aa_radial;
-static RoundRectFillAAConic                 roundrect_fill_aa_conic;
-static RoundRectFillAAPattern               roundrect_fill_aa_pattern;
-static RoundRectFillAAPatternAlpha          roundrect_fill_aa_pattern_alpha;
-static RoundRectFillAAPatternDecal          roundrect_fill_aa_pattern_decal;
-static RoundRectFillAAPatternDecalAlpha     roundrect_fill_aa_pattern_decal_alpha;
-static RoundRectStrokeAA                    roundrect_stroke_aa;
-static RoundRectStrokeAALinear              roundrect_stroke_aa_linear;
-static RoundRectStrokeAARadial              roundrect_stroke_aa_radial;
-static RoundRectStrokeAAConic               roundrect_stroke_aa_conic;
-static RoundRectStrokeAAPattern             roundrect_stroke_aa_pattern;
-static RoundRectStrokeAAPatternAlpha        roundrect_stroke_aa_pattern_alpha;
-static RoundRectStrokeAAPatternDecal        roundrect_stroke_aa_pattern_decal;
-static RoundRectStrokeAAPatternDecalAlpha   roundrect_stroke_aa_pattern_decal_alpha;
-static RoundRectFillStrokeAA                roundrect_fill_stroke_aa;
-// static RoundRectFillStrokeSym            roundrect_fill_stroke_sym;
-static TrianglesTexUVFlat32                 triangles_tex_uv_flat_32;
-static TrianglesTexUVGouraud32              triangles_tex_uv_gouraud_32;
-static TrianglesTexUVFlatDecal32            triangles_tex_uv_flat_decal_32;
-static TrianglesTexUVGouraudDecal32         triangles_tex_uv_gouraud_decal_32;
-static TrianglesTexUVFlat32Alpha            triangles_tex_uv_flat_32_alpha;
-static TrianglesTexUVGouraud32Alpha         triangles_tex_uv_gouraud_32_alpha;
-static TrianglesTexUVFlatDecal32Alpha       triangles_tex_uv_flat_decal_32_alpha;
-static TrianglesTexUVGouraudDecal32Alpha    triangles_tex_uv_gouraud_decal_32_alpha;
-static TrianglesTexUVFlat32AlphaSDF         triangles_tex_uv_flat_32_alpha_sdf;
-static LineStripFlat32                      line_strip_flat_32;
-static LineStripFlat14_2                    line_strip_flat_14_2;
-static LineStripFlatAA32                    line_strip_flat_aa_32;
-static LineStripFlatAA14_2                  line_strip_flat_aa_14_2;
-static LineStripFlatAA32Linear              line_strip_flat_aa_32_linear;
-// static LineStripFlatAA14_2Linear            line_strip_flat_aa_14_2_linear;
-static LineStripFlatAA32Radial              line_strip_flat_aa_32_radial;
-// static LineStripFlatAA14_2Radial            line_strip_flat_aa_14_2_radial;
-static LineStripFlatAA32Conic               line_strip_flat_aa_32_conic;
-// static LineStripFlatAA14_2Conic             line_strip_flat_aa_14_2_conic;
-static LineStripFlatAA32Pattern             line_strip_flat_aa_32_pattern;
-// static LineStripFlatAA14_2Pattern           line_strip_flat_aa_14_2_pattern;
-static LineStripFlatAA32PatternAlpha        line_strip_flat_aa_32_pattern_alpha;
-// static LineStripFlatAA14_2PatternAlpha      line_strip_flat_aa_14_2_pattern_alpha;
-static LineStripFlatAA32PatternDecal        line_strip_flat_aa_32_pattern_decal;
-// static LineStripFlatAA14_2PatternDecal      line_strip_flat_aa_14_2_pattern_decal;
-static LineStripFlatAA32PatternDecalAlpha   line_strip_flat_aa_32_pattern_decal_alpha;
-// static LineStripFlatAA14_2PatternDecalAlpha line_strip_flat_aa_14_2_pattern_decal_alpha;
-static LineStripPatternAA32                 line_strip_pattern_aa_32;
-static LineStripPatternAA14_2               line_strip_pattern_aa_14_2;
-static LineStripPatternDecalAA32            line_strip_pattern_decal_aa_32;
-static LineStripPatternDecalAA14_2          line_strip_pattern_decal_aa_14_2;
-static LineStripFlatBevelAA32               line_strip_flat_bevel_aa_32;
-static LineStripFlatBevelAA14_2             line_strip_flat_bevel_aa_14_2;
-static LineStripPatternBevelAA32            line_strip_pattern_bevel_aa_32;
-static LineStripPatternBevelAA14_2          line_strip_pattern_bevel_aa_14_2;
-static LineStripPatternDecalBevelAA32       line_strip_pattern_decal_bevel_aa_32;
-static LineStripPatternDecalBevelAA14_2     line_strip_pattern_decal_bevel_aa_14_2;
-static LineStripFlatBevelAA32Pattern        line_strip_flat_bevel_aa_32_pattern;
-static LineStripFlatBevelAA14_2Pattern      line_strip_flat_bevel_aa_14_2_pattern;
-static LineStripFlatBevelAA32PatternAlpha   line_strip_flat_bevel_aa_32_pattern_alpha;
-static LineStripFlatBevelAA14_2PatternAlpha line_strip_flat_bevel_aa_14_2_pattern_alpha;
-static LineStripFlatBevelAA32PatternDecal   line_strip_flat_bevel_aa_32_pattern_decal;
-static LineStripFlatBevelAA14_2PatternDecal line_strip_flat_bevel_aa_14_2_pattern_decal;
-static LineStripFlatMiterAA32               line_strip_flat_miter_aa_32;
-static LineStripFlatMiterAA14_2             line_strip_flat_miter_aa_14_2;
-static LinesFlatAA32                        lines_flat_aa_32;
-static LinesFlatAA14_2                      lines_flat_aa_14_2;
-static LinesGouraudAA32                     lines_gouraud_aa_32;
-static LinesGouraudAA14_2                   lines_gouraud_aa_14_2;
-static LinesPatternAA32                     lines_pattern_aa_32;
-static LinesPatternAA14_2                   lines_pattern_aa_14_2;
-static PointsSquareAA32                     points_square_aa_32;
-static PointsSquareAA14_2                   points_square_aa_14_2;
-static PointsSquareGouraudAA32              points_square_gouraud_aa_32;
-static PointsSquareGouraudAA14_2            points_square_gouraud_aa_14_2;
-static PointsRoundAA32                      points_round_aa_32;
-static PointsRoundAA14_2                    points_round_aa_14_2;
-static PointsRoundGouraudAA32               points_round_gouraud_aa_32;
-static PointsRoundGouraudAA14_2             points_round_gouraud_aa_14_2;
+static RectFillAA                                  rect_fill_aa;
+static RectFillAALinear                            rect_fill_aa_linear;
+static RectFillAARadial                            rect_fill_aa_radial;
+static RectFillAAConic                             rect_fill_aa_conic;
+static RectFillAAPattern                           rect_fill_aa_pattern;
+static RectFillAAPatternAlpha                      rect_fill_aa_pattern_alpha;
+static RectFillAAPatternDecal                      rect_fill_aa_pattern_decal;
+static RectFillAAPatternDecalAlpha                 rect_fill_aa_pattern_decal_alpha;
+static RectStrokeAA                                rect_stroke_aa;
+static RectStrokeAALinear                          rect_stroke_aa_linear;
+static RectStrokeAARadial                          rect_stroke_aa_radial;
+static RectStrokeAAConic                           rect_stroke_aa_conic;
+static RectStrokeAAPattern                         rect_stroke_aa_pattern;
+static RectStrokeAAPatternAlpha                    rect_stroke_aa_pattern_alpha;
+static RectStrokeAAPatternDecal                    rect_stroke_aa_pattern_decal;
+static RectStrokeAAPatternDecalAlpha               rect_stroke_aa_pattern_decal_alpha;
+static RectFillStrokeAA                            rect_fill_stroke_aa;
+static EllipseFillAA                               ellipse_fill_aa;
+static EllipseFillAALinear                         ellipse_fill_aa_linear;
+static EllipseFillAARadial                         ellipse_fill_aa_radial;
+static EllipseFillAAConic                          ellipse_fill_aa_conic;
+static EllipseFillAAPattern                        ellipse_fill_aa_pattern;
+static EllipseFillAAPatternAlpha                   ellipse_fill_aa_pattern_alpha;
+static EllipseFillAAPatternDecal                   ellipse_fill_aa_pattern_decal;
+static EllipseFillAAPatternDecalAlpha              ellipse_fill_aa_pattern_decal_alpha;
+static EllipseStrokeAA                             ellipse_stroke_aa;
+static EllipseStrokeAALinear                       ellipse_stroke_aa_linear;
+static EllipseStrokeAARadial                       ellipse_stroke_aa_radial;
+static EllipseStrokeAAConic                        ellipse_stroke_aa_conic;
+static EllipseStrokeAAPattern                      ellipse_stroke_aa_pattern;
+static EllipseStrokeAAPatternAlpha                 ellipse_stroke_aa_pattern_alpha;
+static EllipseStrokeAAPatternDecal                 ellipse_stroke_aa_pattern_decal;
+static EllipseStrokeAAPatternDecalAlpha            ellipse_stroke_aa_pattern_decal_alpha;
+static EllipseFillStrokeAA                         ellipse_fill_stroke_aa;
+static RoundRectFillAA                             roundrect_fill_aa;
+static RoundRectFillAALinear                       roundrect_fill_aa_linear;
+static RoundRectFillAARadial                       roundrect_fill_aa_radial;
+static RoundRectFillAAConic                        roundrect_fill_aa_conic;
+static RoundRectFillAAPattern                      roundrect_fill_aa_pattern;
+static RoundRectFillAAPatternAlpha                 roundrect_fill_aa_pattern_alpha;
+static RoundRectFillAAPatternDecal                 roundrect_fill_aa_pattern_decal;
+static RoundRectFillAAPatternDecalAlpha            roundrect_fill_aa_pattern_decal_alpha;
+static RoundRectStrokeAA                           roundrect_stroke_aa;
+static RoundRectStrokeAALinear                     roundrect_stroke_aa_linear;
+static RoundRectStrokeAARadial                     roundrect_stroke_aa_radial;
+static RoundRectStrokeAAConic                      roundrect_stroke_aa_conic;
+static RoundRectStrokeAAPattern                    roundrect_stroke_aa_pattern;
+static RoundRectStrokeAAPatternAlpha               roundrect_stroke_aa_pattern_alpha;
+static RoundRectStrokeAAPatternDecal               roundrect_stroke_aa_pattern_decal;
+static RoundRectStrokeAAPatternDecalAlpha          roundrect_stroke_aa_pattern_decal_alpha;
+static RoundRectFillStrokeAA                       roundrect_fill_stroke_aa;
+// static RoundRectFillStrokeSym                      roundrect_fill_stroke_sym;
+static TrianglesTexUVFlat32                        triangles_tex_uv_flat_32;
+static TrianglesTexUVGouraud32                     triangles_tex_uv_gouraud_32;
+static TrianglesTexUVFlatDecal32                   triangles_tex_uv_flat_decal_32;
+static TrianglesTexUVGouraudDecal32                triangles_tex_uv_gouraud_decal_32;
+static TrianglesTexUVFlat32Alpha                   triangles_tex_uv_flat_32_alpha;
+static TrianglesTexUVGouraud32Alpha                triangles_tex_uv_gouraud_32_alpha;
+static TrianglesTexUVFlatDecal32Alpha              triangles_tex_uv_flat_decal_32_alpha;
+static TrianglesTexUVGouraudDecal32Alpha           triangles_tex_uv_gouraud_decal_32_alpha;
+static TrianglesTexUVFlat32AlphaSDF                triangles_tex_uv_flat_32_alpha_sdf;
+static LineStripFlat32                             line_strip_flat_32;
+static LineStripFlat14_2                           line_strip_flat_14_2;
+static LineStripFlatAA32                           line_strip_flat_aa_32;
+static LineStripFlatAA14_2                         line_strip_flat_aa_14_2;
+static LineStripFlatAA32Linear                     line_strip_flat_aa_32_linear;
+// static LineStripFlatAA14_2Linear                   line_strip_flat_aa_14_2_linear;
+static LineStripFlatAA32Radial                     line_strip_flat_aa_32_radial;
+// static LineStripFlatAA14_2Radial                   line_strip_flat_aa_14_2_radial;
+static LineStripFlatAA32Conic                      line_strip_flat_aa_32_conic;
+// static LineStripFlatAA14_2Conic                    line_strip_flat_aa_14_2_conic;
+static LineStripFlatAA32Pattern                    line_strip_flat_aa_32_pattern;
+// static LineStripFlatAA14_2Pattern                  line_strip_flat_aa_14_2_pattern;
+static LineStripFlatAA32PatternAlpha               line_strip_flat_aa_32_pattern_alpha;
+// static LineStripFlatAA14_2PatternAlpha             line_strip_flat_aa_14_2_pattern_alpha;
+static LineStripFlatAA32PatternDecal               line_strip_flat_aa_32_pattern_decal;
+// static LineStripFlatAA14_2PatternDecal             line_strip_flat_aa_14_2_pattern_decal;
+static LineStripFlatAA32PatternDecalAlpha          line_strip_flat_aa_32_pattern_decal_alpha;
+// static LineStripFlatAA14_2PatternDecalAlpha        line_strip_flat_aa_14_2_pattern_decal_alpha;
+static LineStripPatternAA32                        line_strip_pattern_aa_32;
+static LineStripPatternAA14_2                      line_strip_pattern_aa_14_2;
+static LineStripPatternDecalAA32                   line_strip_pattern_decal_aa_32;
+static LineStripPatternDecalAA14_2                 line_strip_pattern_decal_aa_14_2;
+static LineStripFlatBevelAA32                      line_strip_flat_bevel_aa_32;
+static LineStripFlatBevelAA14_2                    line_strip_flat_bevel_aa_14_2;
+static LineStripPatternBevelAA32                   line_strip_pattern_bevel_aa_32;
+static LineStripPatternBevelAA14_2                 line_strip_pattern_bevel_aa_14_2;
+static LineStripPatternDecalBevelAA32              line_strip_pattern_decal_bevel_aa_32;
+static LineStripPatternDecalBevelAA14_2            line_strip_pattern_decal_bevel_aa_14_2;
+static LineStripFlatBevelAA32Linear                line_strip_flat_bevel_aa_32_linear;
+static LineStripFlatBevelAA14_2Linear              line_strip_flat_bevel_aa_14_2_linear;
+static LineStripFlatBevelAA32Radial                line_strip_flat_bevel_aa_32_radial;
+static LineStripFlatBevelAA14_2Radial              line_strip_flat_bevel_aa_14_2_radial;
+static LineStripFlatBevelAA32Conic                 line_strip_flat_bevel_aa_32_conic;
+static LineStripFlatBevelAA14_2Conic               line_strip_flat_bevel_aa_14_2_conic;
+static LineStripFlatBevelAA32Pattern               line_strip_flat_bevel_aa_32_pattern;
+static LineStripFlatBevelAA14_2Pattern             line_strip_flat_bevel_aa_14_2_pattern;
+static LineStripFlatBevelAA32PatternAlpha          line_strip_flat_bevel_aa_32_pattern_alpha;
+static LineStripFlatBevelAA14_2PatternAlpha        line_strip_flat_bevel_aa_14_2_pattern_alpha;
+static LineStripFlatBevelAA32PatternDecal          line_strip_flat_bevel_aa_32_pattern_decal;
+static LineStripFlatBevelAA14_2PatternDecal        line_strip_flat_bevel_aa_14_2_pattern_decal;
+static LineStripFlatBevelAA32PatternDecalAlpha     line_strip_flat_bevel_aa_32_pattern_decal_alpha;
+static LineStripFlatBevelAA14_2PatternDecalAlpha   line_strip_flat_bevel_aa_14_2_pattern_decal_alpha;
+static LineStripFlatMiterAA32                      line_strip_flat_miter_aa_32;
+static LineStripFlatMiterAA14_2                    line_strip_flat_miter_aa_14_2;
+static LinesFlatAA32                               lines_flat_aa_32;
+static LinesFlatAA14_2                             lines_flat_aa_14_2;
+static LinesGouraudAA32                            lines_gouraud_aa_32;
+static LinesGouraudAA14_2                          lines_gouraud_aa_14_2;
+static LinesPatternAA32                            lines_pattern_aa_32;
+static LinesPatternAA14_2                          lines_pattern_aa_14_2;
+static PointsSquareAA32                            points_square_aa_32;
+static PointsSquareAA14_2                          points_square_aa_14_2;
+static PointsSquareGouraudAA32                     points_square_gouraud_aa_32;
+static PointsSquareGouraudAA14_2                   points_square_gouraud_aa_14_2;
+static PointsRoundAA32                             points_round_aa_32;
+static PointsRoundAA14_2                           points_round_aa_14_2;
+static PointsRoundGouraudAA32                      points_round_gouraud_aa_32;
+static PointsRoundGouraudAA14_2                    points_round_gouraud_aa_14_2;
 
 static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_32,
@@ -499,12 +515,20 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_pattern_bevel_aa_14_2,
    &line_strip_pattern_decal_bevel_aa_32,
    &line_strip_pattern_decal_bevel_aa_14_2,
+   &line_strip_flat_bevel_aa_32_linear,
+   &line_strip_flat_bevel_aa_14_2_linear,
+   &line_strip_flat_bevel_aa_32_radial,
+   &line_strip_flat_bevel_aa_14_2_radial,
+   &line_strip_flat_bevel_aa_32_conic,
+   &line_strip_flat_bevel_aa_14_2_conic,
    &line_strip_flat_bevel_aa_32_pattern,
    &line_strip_flat_bevel_aa_14_2_pattern,
    &line_strip_flat_bevel_aa_32_pattern_alpha,
    &line_strip_flat_bevel_aa_14_2_pattern_alpha,
    &line_strip_flat_bevel_aa_32_pattern_decal,
    &line_strip_flat_bevel_aa_14_2_pattern_decal,
+   &line_strip_flat_bevel_aa_32_pattern_decal_alpha,
+   &line_strip_flat_bevel_aa_14_2_pattern_decal_alpha,
    &line_strip_flat_miter_aa_32,
    &line_strip_flat_miter_aa_14_2,
    &lines_flat_aa_32,
@@ -677,32 +701,32 @@ static sF32 proj_w;
 static sSI model_stacki;
 #endif // SHADERVG_MATRIX_STACK
 
-static sBool  b_aa;
-static sF32   aa_range;
-static sF32   aa_exp;        // (todo) remove
-static sF32   alpha_sdf_min;
-static sF32   alpha_sdf_max;
-static sF32   alpha_sdf_maxmin_scale;
-static sF32   alpha_sdf_exp;
-static sF32   stroke_w;         // px. total line width = 2*stroke_w
-static sF32   stroke_w_aa_off;  // def=SHADERVG_LINE_AA_STROKE_W_OFFSET
-static sF32   stroke_w_scale;
-static sF32   line_pattern_scale;
-static sF32   line_pattern_offset;  // 0..1
-static sF32   line_miter_limit;
-static sF32   point_radius;  // px
-static sF32   point_scale;
-static sF32   sdvg_pixel_scl;       // vp/proj (aa_range, stroke_w)
-static sF32   fill_r;
-static sF32   fill_g;
-static sF32   fill_b;
-static sF32   fill_a;
-static sF32   stroke_r;
-static sF32   stroke_g;
-static sF32   stroke_b;
-static sF32   stroke_a;
-static sF32   global_a;
-static sF32   texture_decal_alpha;
+static sBool b_aa;
+static sF32  aa_range;
+static sF32  aa_exp;        // (todo) remove
+static sF32  alpha_sdf_min;
+static sF32  alpha_sdf_max;
+static sF32  alpha_sdf_maxmin_scale;
+static sF32  alpha_sdf_exp;
+static sF32  stroke_w;         // px. total line width = 2*stroke_w
+static sF32  stroke_w_aa_off;  // def=SHADERVG_LINE_AA_STROKE_W_OFFSET
+static sF32  stroke_w_scale;
+static sF32  line_pattern_scale;
+static sF32  line_pattern_offset;  // 0..1
+static sF32  line_miter_limit;
+static sF32  point_radius;  // px
+static sF32  point_scale;
+static sF32  sdvg_pixel_scl;       // vp/proj (aa_range, stroke_w)
+static sF32  fill_r;
+static sF32  fill_g;
+static sF32  fill_b;
+static sF32  fill_a;
+static sF32  stroke_r;
+static sF32  stroke_g;
+static sF32  stroke_b;
+static sF32  stroke_a;
+static sF32  global_a;
+static sF32  texture_decal_alpha;
 
 // see SetGLSLVersion()
 #ifdef SHADERVG_SCRIPT_API
@@ -810,8 +834,8 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
 
    sdvg_b_glcore = _bGLCore;
 
-   // Import shared functions from tkopengl
 #ifndef MINNIE_LIB
+   // Import shared functions from tkopengl
    tkopengl_shared_resolve();
    if(NULL == tkopengl_shared)
    {
@@ -2778,14 +2802,14 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_32_uniform_shape
    switch(paint.mode)
    {
       default:
-      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_32;               break;
-      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
-      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
-      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
-      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_32_pattern;       break;
-      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_32_pattern_alpha; break;
-      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_32_pattern_decal; break;
-      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_32;               break;  // (todo)
+      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_32;                     break;
+      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_32_linear;              break;
+      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_32_radial;              break;
+      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_32_conic;               break;
+      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_32_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_32_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_32_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_32_pattern_decal_alpha; break;
    }
    return shape;
 }
@@ -2795,14 +2819,14 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_14_2_uniform_sha
    switch(paint.mode)
    {
       default:
-      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_14_2;               break;
-      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
-      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
-      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
-      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_14_2_pattern;       break;
-      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_14_2_pattern_alpha; break;
-      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_14_2_pattern_decal; break;
-      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_14_2;               break;  // (todo)
+      case PAINT_SOLID:               shape = &line_strip_flat_bevel_aa_14_2;                     break;
+      case PAINT_LINEAR:              shape = &line_strip_flat_bevel_aa_14_2_linear;              break;
+      case PAINT_RADIAL:              shape = &line_strip_flat_bevel_aa_14_2_radial;              break;
+      case PAINT_CONIC:               shape = &line_strip_flat_bevel_aa_14_2_conic;               break;
+      case PAINT_PATTERN:             shape = &line_strip_flat_bevel_aa_14_2_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_14_2_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_14_2_pattern_decal;       break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_14_2_pattern_decal_alpha; break;
    }
    return shape;
 }
@@ -5918,7 +5942,6 @@ sBool YAC_CALL sdvg_BeginFilledTriangleStrip(sUI _numVertices) {
    //     +0 f32 x
    //     +4 f32 y
    //
-
    if(NULL == current_shape)
       loc_bind_default_triangles_fill_flat_uniform_shape();
 

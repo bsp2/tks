@@ -3123,7 +3123,7 @@ Begin preparation or rendering of triangle-strip via user-defined shader
 YF sBool YAC_CALL sdvg_BeginTriangleStrip (sUI _numVertices, sUI _stride);
 
 /* @function sdvg_BeginFilledTriangles,int numVertices:boolean
-Begin preparation or rendering of filled triangles
+Begin preparation or rendering of filled triangles via user-defined shader
 
 @arg numVertices Number of vertices
 
