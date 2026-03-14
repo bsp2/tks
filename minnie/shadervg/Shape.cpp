@@ -118,7 +118,7 @@ ShaderVG_Shape::~ShaderVG_Shape() {
 }
 
 void ShaderVG_Shape::allocScratchBuffer(sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes) {
-   AllocScratchBuffer(_aVertex, _scratchBuf, _numBytes);
+   sdvg_int_AllocScratchBuffer(_aVertex, _scratchBuf, _numBytes);
 }
 
 void ShaderVG_Shape::EmitQuadVertices(Dsdvg_buffer_ref_t _vb,
@@ -705,7 +705,7 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                             const shadervg_paint_t *_paint
                                             ) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    /* Dprintf("xxx EllipseFillAA: c=(%f;%f) r=(%f;%f)\n", _centerX, _centerY, _radiusX, _radiusY); */
 
@@ -854,7 +854,7 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                               const shadervg_paint_t *_paint
                                               ) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    if(_radiusX > _sizeX)
       _radiusX = _sizeX;
@@ -969,7 +969,7 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                          ) {
    /* Dyac_host_printf("xxx drawRectFill center=(%f;%f) size=(%f;%f)\n", _centerX, _centerY, _sizeX, _sizeY); */
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    sBool bSingle = ((_sizeX*_sizeY) <= RECT_SINGLE_AREA_THRESHOLD);
 
@@ -1084,7 +1084,7 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                            const shadervg_paint_t *_paint
                                            ) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    sBool bSingle = ((_sizeX*_sizeY) <= RECT_SINGLE_AREA_THRESHOLD);
 
@@ -1164,7 +1164,7 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                               const shadervg_paint_t *_paint
                                               ) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    const sUI numSeg = ELLIPSE_NUM_SEG;
    const sF32 rxI = _radiusX - _strokeW - ELLIPSE_EXTRUDE_I;
@@ -1292,7 +1292,7 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
                                                 const shadervg_paint_t *_paint
                                                 ) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    if(_radiusX > _sizeX)
       _radiusX = _sizeX;

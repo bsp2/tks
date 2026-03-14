@@ -2,7 +2,7 @@
 // ---- file   : Shader.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -71,8 +71,8 @@ sBool ShaderVG_Shader::create(const char *_sVert, const char *_sFrag) {
    YAC_String sFrag; sFrag.visit(_sFrag);
    YAC_String *sVertFix = YAC_New_String();  // alloc host-side String for yacStringReplace()
    YAC_String *sFragFix = YAC_New_String();
-   FixShaderSourceVert(&sVert, sVertFix);
-   FixShaderSourceFrag(&sFrag, sFragFix);
+   sdvg_int_FixShaderSourceVert(&sVert, sVertFix);
+   sdvg_int_FixShaderSourceFrag(&sFrag, sFragFix);
 
    // Create vertex shader
    sUI vpId = Dsdvg_glcall(glCreateShader(GL_VERTEX_SHADER));

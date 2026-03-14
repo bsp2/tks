@@ -1122,7 +1122,7 @@ void YAC_CALL sdvg_BindVBO(sUI _vboId) {
    if(current_vbo_id != _vboId)
    {
       if(current_vbo_id == scratch_vbo_id && 0u != scratch_vbo_id && scratch_vbo_id != _vboId)
-         UnbindScratchBuffer();
+         sdvg_int_UnbindScratchBuffer();
 
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, _vboId));
       current_vbo_id = _vboId;
@@ -4468,25 +4468,25 @@ static void loc_CreateScratchBuffer(void) {
    scratch_vbo_id = sdvg_CreateVBO(scratch_buffer_sz);
 }
 
-void BindScratchBuffer(void) {
-   Dsdvg_tracecall("[trc] sdvg:BindScratchBuffer current_vbo_id=%u scratch_vbo_id=%u\n", current_vbo_id, scratch_vbo_id);
+void sdvg_int_BindScratchBuffer(void) {
+   Dsdvg_tracecall("[trc] sdvg_int_BindScratchBuffer current_vbo_id=%u scratch_vbo_id=%u\n", current_vbo_id, scratch_vbo_id);
    if(current_vbo_id != scratch_vbo_id)
    {
-      Dsdvg_debugprintfv("[trc] sdvg:BindScratchBuffer: scratch_vbo_id=%u\n", scratch_vbo_id);
+      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: scratch_vbo_id=%u\n", scratch_vbo_id);
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, scratch_vbo_id));
       current_vbo_id = scratch_vbo_id;
       // map GPU buffer to virtual address and reset io_offset
       sUI oldOffset = scratch_buffer->io_offset;
-      Dsdvg_debugprintfv("[trc] sdvg:BindScratchBuffer: map scratch_buffer_sz=%u\n", scratch_buffer_sz);
+      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: map scratch_buffer_sz=%u\n", scratch_buffer_sz);
 #ifndef SHADERVG_USE_SCRATCHBUFFERSUBDATA
       loc_map_buffer(scratch_buffer, scratch_buffer_sz);
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
-      Dsdvg_debugprintfv("[trc] sdvg:BindScratchBuffer: map => scratch_buffer.size=%u\n", scratch_buffer->size);
+      Dsdvg_debugprintfv("[trc] sdvg_int_BindScratchBuffer: map => scratch_buffer.size=%u\n", scratch_buffer->size);
       scratch_buffer->io_offset = oldOffset;
    }
 }
 
-void UnbindScratchBuffer(void) {
+void sdvg_int_UnbindScratchBuffer(void) {
    // called by EndFrame() via glBindVBO(0)
    if(scratch_vbo_id == current_vbo_id)
    {
@@ -4494,14 +4494,14 @@ void UnbindScratchBuffer(void) {
       Dsdvg_tracecall("[trc] sdvg: call glUnmapBuffer()\n");
       Dsdvg_glcall(glUnmapBuffer(GL_ARRAY_BUFFER));
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
-      Dsdvg_tracecall("[trc] sdvg:UnbindScratchBuffer scratch_vbo_id=%u\n", scratch_vbo_id);
+      Dsdvg_tracecall("[trc] sdvg_int_UnbindScratchBuffer scratch_vbo_id=%u\n", scratch_vbo_id);
       Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0));
       current_vbo_id = 0u;
    }
 }
 
-void AllocScratchBuffer(sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes) {
-   Dsdvg_debugprintfv("[trc] sdvg:AllocScratchBuffer: io_offset=%u size=%u numBytes=%u\n", _scratchBuf->io_offset, _scratchBuf->size, _numBytes);
+void sdvg_int_AllocScratchBuffer(sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes) {
+   Dsdvg_debugprintfv("[trc] sdvg_int_AllocScratchBuffer: io_offset=%u size=%u numBytes=%u\n", _scratchBuf->io_offset, _scratchBuf->size, _numBytes);
    if(_scratchBuf->io_offset + _numBytes > _scratchBuf->size)
    {
 #ifndef SHADERVG_USE_SCRATCHBUFFERSUBDATA
@@ -4724,7 +4724,7 @@ void YAC_CALL sdvg_DestroyFBO(sUI _fboIdx) {
    //            4.1    410
    //            4.2    420
    //            4.3    430
-void FixShaderSourceVert(YAC_String *_s, YAC_String *_r) {
+void sdvg_int_FixShaderSourceVert(YAC_String *_s, YAC_String *_r) {
 #ifdef SHADERVG_SCRIPT_API
    YAC_String t;
    t.copy(s_glsl_version);
@@ -4748,7 +4748,7 @@ void FixShaderSourceVert(YAC_String *_s, YAC_String *_r) {
    _r->alloc(_s->length + 512u);
    _r->length = 0u;
    _r->append(&s_glsl_version);
-   // Dprintf("xxx FixShaderSourceVert: s_glsl_version=\"%s\" _r=\"%s\"\n", s_glsl_version.chars, _r->chars);
+   // Dprintf("xxx sdvg_int_FixShaderSourceVert: s_glsl_version=\"%s\" _r=\"%s\"\n", s_glsl_version.chars, _r->chars);
    if(sdvg_b_glcore)
       _r->append("precision mediump float; \n");
    _r->append(" \n\n");
@@ -4761,11 +4761,11 @@ void FixShaderSourceVert(YAC_String *_s, YAC_String *_r) {
    k.visit("TEXTURE3D");     _r->overwriteReplace(&k, &s_glsl_texture3d);
    k.visit("TEXTURECUBE");   _r->overwriteReplace(&k, &s_glsl_texturecube);
    k.visit("TEX_ALPHA");     _r->overwriteReplace(&k, &s_glsl_tex_alpha);
-   // Dprintf("xxx FixShaderSourceVert: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
+   // Dprintf("xxx sdvg_int_FixShaderSourceVert: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
 #endif // SHADERVG_SCRIPT_API
 }
 
-void FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
+void sdvg_int_FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
 #ifdef SHADERVG_SCRIPT_API
    YAC_String t;
    t.copy(s_glsl_version);
@@ -4801,12 +4801,12 @@ void FixShaderSourceFrag(YAC_String *_s, YAC_String *_r) {
    k.visit("TEXTURE2D");   _r->overwriteReplace(&k, &s_glsl_texture2d);
    k.visit("TEXTURE3D");   _r->overwriteReplace(&k, &s_glsl_texture3d);
    k.visit("TEX_ALPHA");   _r->overwriteReplace(&k, &s_glsl_tex_alpha);
-   // Dprintf("xxx FixShaderSourceFrag: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
+   // Dprintf("xxx sdvg_int_FixShaderSourceFrag: return s.length=%u s=\"%s\" r=\"%s\"\n", _s->length, _s->chars, _r->chars);
 #endif // SHADERVG_SCRIPT_API
 }
 
 #ifdef SHADERVG_SCRIPT_API
-void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
+void sdvg_int_UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
    // 'o' is row-major matrix object (e.g. Matrix4f or FloatArray)
    if(NULL != _o)
    {
@@ -4818,28 +4818,28 @@ void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
          if(NULL != fa)
          {
 #if 0
-            Dsdvg_debugprintfvv("[trc] sdvg:UniformMatrix4: fa={%f;%f;%f;%f  %f;%f;%f;%f  %f;%f;%f;%f  %f;%f;%f;%f}\n", fa[0], fa[1], fa[2], fa[3], fa[4], fa[5], fa[6], fa[7], fa[8], fa[9], fa[10], fa[11], fa[12], fa[13], fa[14], fa[15]);
+            Dsdvg_debugprintfvv("[trc] sdvg_int_UniformMatrix4: fa={%f;%f;%f;%f  %f;%f;%f;%f  %f;%f;%f;%f  %f;%f;%f;%f}\n", fa[0], fa[1], fa[2], fa[3], fa[4], fa[5], fa[6], fa[7], fa[8], fa[9], fa[10], fa[11], fa[12], fa[13], fa[14], fa[15]);
 #endif
             Dsdvg_glcall(glUniformMatrix4fv(_location, 1/*count*/, GL_TRUE/*transpose*/, fa));
          }
          else
          {
-            Dsdvg_errorprintf("[---] shadervg:UniformMatrix4: yacArrayGetPointer() returned NULL !!\n");
+            Dsdvg_errorprintf("[---] sdvg_int_UniformMatrix4: yacArrayGetPointer() returned NULL !!\n");
          }
       }
       else
       {
-         Dsdvg_errorprintf("[---] shadervg:UniformMatrix4: wrong matrix element type or num_elements !!\n");
+         Dsdvg_errorprintf("[---] sdvg_int_UniformMatrix4: wrong matrix element type or num_elements !!\n");
       }
    }
    else
    {
-      Dsdvg_errorprintf("[---] shadervg:UniformMatrix4: matrix is NULL !!\n");
+      Dsdvg_errorprintf("[---] sdvg_int_UniformMatrix4: matrix is NULL !!\n");
    }
 }
 #else
 // MINNIE_LIB
-void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
+void sdvg_int_UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
    // 'o' is row-major matrix object (e.g. Matrix4f or FloatArray)
    if(NULL != _o)
    {
@@ -4853,7 +4853,7 @@ void UniformMatrix4(sSI _location, Dsdvg_mat4_ref_t _o) {
       }
       else
       {
-         Dsdvg_errorprintf("[---] shadervg:UniformMatrix4: yacArrayGetPointer() returned NULL !!\n");
+         Dsdvg_errorprintf("[---] sdvg_int_UniformMatrix4: yacArrayGetPointer() returned NULL !!\n");
       }
    }
 }
@@ -5261,7 +5261,7 @@ void YAC_CALL sdvg_Flush(void) {
    Dsdvg_tracecall("[trc] sdvg_Flush\n");
    if(scratch_buffer->io_offset > 0u)
    {
-      UnbindScratchBuffer();
+      sdvg_int_UnbindScratchBuffer();
       Dsdvg_glcall(glFinish());
    }
 }
@@ -5872,7 +5872,7 @@ void YAC_CALL _sdvg_UniformMatrix4(YAC_String *_name, YAC_Object *_matRowMajor) 
             sSI a = Dsdvg_glcall(glGetUniformLocation(shapeShader->prg_id, (const char*)name->chars));
             if(a >= 0)
             {
-               UniformMatrix4(a, _matRowMajor);
+               sdvg_int_UniformMatrix4(a, _matRowMajor);
             }
          }
          else
@@ -5955,7 +5955,7 @@ static sBool BeginDraw(sUI _numVertices, sUI _stride) {
    Dsdvg_tracecall("[trc] sdvg:BeginDraw: mapped_user_vbo_id=%u current_vbo_id=%u (scratch_vbo_id=%u)\n", mapped_user_vbo_id, current_vbo_id, scratch_vbo_id);
 
    if(0u == mapped_user_vbo_id && 0u == current_vbo_id)
-      BindScratchBuffer();
+      sdvg_int_BindScratchBuffer();
 
    current_draw_num_vertices       = _numVertices;
    current_draw_stride             = _stride;
@@ -8068,10 +8068,10 @@ static sBool UpdateShaderUniforms(void) {
 }
 
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
-void UploadScratchToVBO(void) {
+void sdvg_int_UploadScratchToVBO(void) {
    const sUI off = current_draw_start_offset;
    const sUI len = scratch_buffer->io_offset - current_draw_start_offset;
-   Dsdvg_debugprintfvv("[trc] sdvg:UploadScratchToVBO: offset=%u numBytes=%u\n", off, len);
+   Dsdvg_debugprintfvv("[trc] sdvg_int_UploadScratchToVBO: offset=%u numBytes=%u\n", off, len);
    Dsdvg_glcall(zglBufferSubDataOffset(GL_ARRAY_BUFFER,
                                        off, len,
                                        scratch_buffer, off
@@ -8079,7 +8079,7 @@ void UploadScratchToVBO(void) {
                 );
 }
 
-void UpdateScratchOffset(void) {
+void sdvg_int_UpdateScratchOffset(void) {
    current_draw_start_offset = scratch_buffer->io_offset;
 }
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
@@ -8932,11 +8932,11 @@ void YAC_CALL sdvg_End(void) {
 
 void YAC_CALL sdvg_DrawFilledRectangle(sF32 _x, sF32 _y, sF32 _w, sF32 _h) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    sSI aVertexFill = sdvg_int_BindFillShader();
 
-   AllocScratchBuffer(aVertexFill, scratch_buffer, (4*2/*xy*/*4/*float*/));
+   sdvg_int_AllocScratchBuffer(aVertexFill, scratch_buffer, (4*2/*xy*/*4/*float*/));
 
    Dstream_write_2f(scratch_buffer, _x,      _y     );
    Dstream_write_2f(scratch_buffer, _x + _w, _y     );
@@ -8950,11 +8950,11 @@ void YAC_CALL sdvg_DrawFilledRectangle(sF32 _x, sF32 _y, sF32 _w, sF32 _h) {
 
 void YAC_CALL sdvg_DrawRectangle(sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _b) {
 
-   BindScratchBuffer();
+   sdvg_int_BindScratchBuffer();
 
    sSI aVertexFill = sdvg_int_BindFillShader();
 
-   AllocScratchBuffer(aVertexFill, scratch_buffer, (8*3*2/*xy*/*4/*float*/));
+   sdvg_int_AllocScratchBuffer(aVertexFill, scratch_buffer, (8*3*2/*xy*/*4/*float*/));
 
    ShaderVG_Shape::EmitRectangleVertices(scratch_buffer,
                                          _x, _y,

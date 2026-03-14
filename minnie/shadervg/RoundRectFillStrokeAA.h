@@ -322,7 +322,7 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
                                   sF32 _aaExp
                                   ) {
 
-      BindScratchBuffer();
+      sdvg_int_BindScratchBuffer();
 
       if(_radiusX > _sizeX)
          _radiusX = _sizeX;

@@ -64,16 +64,16 @@ typedef struct shadervg_paint_s {
 } shadervg_paint_t;
 
 // -----------  internal -----------
-void BindScratchBuffer (void);
-void UnbindScratchBuffer (void);
+void sdvg_int_BindScratchBuffer (void);
+void sdvg_int_UnbindScratchBuffer (void);
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
-void UpdateScratchOffset (void);
-void UploadScratchToVBO (void);
+void sdvg_int_UpdateScratchOffset (void);
+void sdvg_int_UploadScratchToVBO (void);
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
-void AllocScratchBuffer (sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes);
-void FixShaderSourceVert (YAC_String *_s, YAC_String *_r);
-void FixShaderSourceFrag (YAC_String *_s, YAC_String *_d);
-void UniformMatrix4 (sSI _location, Dsdvg_mat4_ref_t _o);
+void sdvg_int_AllocScratchBuffer (sSI _aVertex, Dsdvg_buffer_ref_t _scratchBuf, sUI _numBytes);
+void sdvg_int_FixShaderSourceVert (YAC_String *_s, YAC_String *_r);
+void sdvg_int_FixShaderSourceFrag (YAC_String *_s, YAC_String *_d);
+void sdvg_int_UniformMatrix4 (sSI _location, Dsdvg_mat4_ref_t _o);
 sSI sdvg_int_BindFillShader (void);
 void sdvg_int_EndFillShader (void);
 void sdvg_int_UnbindFillShader (void);
@@ -91,8 +91,8 @@ void sdvg_remap_scratch_after_draw (void);
 
 // ----------- OpenGL helper macros -----------
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
-#define Dupdate_scratch_offset UpdateScratchOffset()
-#define Dupload_scratch_to_vbo UploadScratchToVBO()
+#define Dupdate_scratch_offset sdvg_int_UpdateScratchOffset()
+#define Dupload_scratch_to_vbo sdvg_int_UploadScratchToVBO()
 #else
 #endif // SHADERVG_USE_SCRATCHBUFFERSUBDATA
 #ifdef MINNIE_LIB
@@ -106,7 +106,7 @@ void sdvg_remap_scratch_after_draw (void);
 #define Dsdvg_uniform_2f(a,v1,v2) Dsdvg_glcall(glUniform2f(a,v1,v2))
 #define Dsdvg_uniform_3f(a,v1,v2,v3) Dsdvg_glcall(glUniform3f(a,v1,v2,v3))
 #define Dsdvg_uniform_4f(a,v1,v2,v3,v4) Dsdvg_glcall(glUniform4f(a,v1,v2,v3,v4))
-#define Dsdvg_uniform_mat4(a,m) UniformMatrix4(a,m)  // load row-major matrix (+convert to GL column-major)
+#define Dsdvg_uniform_mat4(a,m) sdvg_int_UniformMatrix4(a,m)  // load row-major matrix (+convert to GL column-major)
 #define Dsdvg_attrib_offset(a,s,t,n,d,o) Dsdvg_glcall(zglVertexAttribOffset(a,s,t,n,d,o))
 #define Dsdvg_attrib_pointer(a,s,t,n,d,p) Dsdvg_glcall(glVertexAttribPointer(a,s,t,n,d,p))
 #define Dsdvg_attrib_enable(a) Dsdvg_glcall(glEnableVertexAttribArray(a))

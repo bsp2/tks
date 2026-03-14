@@ -2,7 +2,7 @@
 // ---- file   : EllipseStrokeAA.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -267,120 +267,5 @@ class EllipseStrokeAA : public ShaderVG_Shape {
          shape_shader.unbind();
       }
    }
-
-#if 0
-   // (todo) remove (see Shape::drawEllipseStrokeAAPaint())
-   void drawEllipseStrokeAA(Dsdvg_buffer_ref_t _scratchBuf,
-                            Dsdvg_mat4_ref_t _mvpMatrix,
-                            sF32 _centerX, sF32 _centerY,
-                            sF32 _radiusX, sF32 _radiusY,
-                            sF32 _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
-                            sF32 _strokeW,
-                            sF32 _aaRange,
-                            sF32 _aaExp
-                            ) {
-
-      BindScratchBuffer();
-
-      const sUI numSeg = ELLIPSE_NUM_SEG;
-      const sF32 rxI = _radiusX - _strokeW - ELLIPSE_EXTRUDE_I;
-      const sF32 rxO = _radiusX + _strokeW + ELLIPSE_EXTRUDE_O;
-      const sF32 ryI = _radiusY - _strokeW - ELLIPSE_EXTRUDE_I;
-      const sF32 ryO = _radiusY + _strokeW + ELLIPSE_EXTRUDE_O;
-      const sF32 aStep = sF32(sM_2PI / numSeg);
-      sF32 a;
-      sUI numVerts;
-      sUI allocSz;
-
-      const sBool bSingle =
-         (_radiusX < ELLIPSE_SINGLE_RADIUS_THRESHOLD) ||
-         (_radiusY < ELLIPSE_SINGLE_RADIUS_THRESHOLD)
-         ;
-
-      // Outer corners
-      shape_shader.bind();
-
-      Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
-      Dsdvg_uniform_2f(shape_u_center,   _centerX, _centerY);
-      Dsdvg_uniform_2f(shape_u_size_i,   _radiusX - _strokeW, _radiusY - _strokeW);
-      Dsdvg_uniform_2f(shape_u_size_o,   _radiusX + _strokeW, _radiusY + _strokeW);
-      Dsdvg_uniform_2f(shape_u_radius,   _radiusX, _radiusY);
-      Dsdvg_uniform_2f(shape_u_radius_i, _radiusX - _strokeW, _radiusY - _strokeW);
-      Dsdvg_uniform_2f(shape_u_radius_o, _radiusX + _strokeW, _radiusY + _strokeW);
-      const sF32 radiusIx = _radiusX - _strokeW;
-      const sF32 radiusIy = _radiusY - _strokeW;
-      const sF32 radiusOx = _radiusX + _strokeW;
-      const sF32 radiusOy = _radiusY + _strokeW;
-      Dsdvg_uniform_2f(shape_u_radius_i,        radiusIx, radiusIy);
-      Dsdvg_uniform_2f(shape_u_radius_o,        radiusOx, radiusOy);
-      Dsdvg_uniform_2f(shape_u_ob_radius_i,     1.0f / radiusIx, 1.0f / radiusIy);
-      Dsdvg_uniform_2f(shape_u_ob_radius_o,     1.0f / radiusOx, 1.0f / radiusOy);
-      Dsdvg_uniform_1f(shape_u_ob_radius_i_max, (radiusIx > radiusIy) ? (1.0f / radiusIx) : (1.0f / radiusIy));
-      Dsdvg_uniform_1f(shape_u_ob_radius_o_max, (radiusOx > radiusOy) ? (1.0f / radiusOx) : (1.0f / radiusOy));
-      Dsdvg_uniform_1f(shape_u_radius_i_max,    (radiusIx > radiusIy) ? radiusIx : radiusIy);
-      Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
-      Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
-
-      if(-1 != shape_u_aa_exp)
-      {
-         Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
-      }
-
-      Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
-
-      if(-1 != shape_u_debug)
-      {
-         Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
-      }
-
-      Dsdvg_attrib_enable(shape_a_vertex);
-
-      // Calc border mesh
-      if(bSingle)
-      {
-         numVerts = 4u;
-         allocSz = numVerts * 2u/*xy*/ * 4u/*float*/;
-         allocScratchBuffer(shape_a_vertex, _scratchBuf, allocSz);
-
-         const sF32 x = _centerX - _radiusX - _strokeW;
-         const sF32 y = _centerY - _radiusY - _strokeW;
-         const sF32 w = (_radiusX + _strokeW) * 2.0f;
-         const sF32 h = (_radiusY + _strokeW) * 2.0f;
-
-         Dstream_write_f32(_scratchBuf, x);      Dstream_write_f32(_scratchBuf, y);
-         Dstream_write_f32(_scratchBuf, x + w);  Dstream_write_f32(_scratchBuf, y);
-         Dstream_write_f32(_scratchBuf, x + w);  Dstream_write_f32(_scratchBuf, y + h);
-         Dstream_write_f32(_scratchBuf, x);      Dstream_write_f32(_scratchBuf, y + h);
-
-         Dsdvg_draw_triangle_fan(0, numVerts);
-      }
-      else
-      {
-         a = aStep;
-         numVerts = (2u + numSeg * 2u);
-
-         allocSz = numVerts * 2u/*xy*/ * 4u/*float*/;
-         allocScratchBuffer(shape_a_vertex, _scratchBuf, allocSz);
-
-         Dstream_write_f32(_scratchBuf, _centerX + rxI);
-         Dstream_write_f32(_scratchBuf, _centerY +   0);
-         Dstream_write_f32(_scratchBuf, _centerX + rxO);
-         Dstream_write_f32(_scratchBuf, _centerY +   0);
-
-         for(sUI segIdx = 0u; segIdx < numSeg; segIdx++)
-         {
-            Dstream_write_f32(_scratchBuf, _centerX + rxI * cosf(a));
-            Dstream_write_f32(_scratchBuf, _centerY + ryI * sinf(a));
-            Dstream_write_f32(_scratchBuf, _centerX + rxO * cosf(a));
-            Dstream_write_f32(_scratchBuf, _centerY + ryO * sinf(a));
-            a += aStep;
-         }
-
-         Dsdvg_draw_triangle_strip(0, numVerts);
-      }
-
-      Dsdvg_attrib_disable(shape_a_vertex);
-   }
-#endif // 0
 
 };

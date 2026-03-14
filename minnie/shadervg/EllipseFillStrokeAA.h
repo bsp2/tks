@@ -324,7 +324,7 @@ class EllipseFillStrokeAA : public ShaderVG_Shape {
                                 sF32 _aaExp
                                 ) {
 
-      BindScratchBuffer();
+      sdvg_int_BindScratchBuffer();
 
       const sUI numSeg = ELLIPSE_NUM_SEG;
       const sF32 rxI = _radiusX - _strokeW - ELLIPSE_EXTRUDE_I;

@@ -271,7 +271,7 @@ class RectFillStrokeAA : public ShaderVG_Shape {
                              sF32 _aaExp
                              ) {
 
-      BindScratchBuffer();
+      sdvg_int_BindScratchBuffer();
 
       sBool bSingle = ((_sizeX*_sizeY) <= RECT_SINGLE_AREA_THRESHOLD);
 
