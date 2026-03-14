@@ -187,7 +187,7 @@ static void Test_00(void) {
 
    if(fill_mode & 2)
    {
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -247,7 +247,7 @@ static void Test_01(void) {
 
    if(fill_mode & 2)
    {
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f) * vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) * vpSclX );
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -384,7 +384,7 @@ static void Test_04(void) {
    minEndPathOpen();
 
    minColor(0xffffffffu);
-   minStrokeWidth(4.0f*vpSclX);
+   minStrokeWidth( 2.0f * 4.0f*vpSclX);
    minJoinBevel();
    minCapNone();
    minDrawPath(pid);
@@ -429,7 +429,7 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth((sinf(anim_3)*2.0f+3.0f)*vpSclX);
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minJoinMiter();
       minDrawPath(pid);
    }
@@ -471,7 +471,7 @@ static void Test_06(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
    }
 
@@ -517,7 +517,7 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minJoinMiter();
       minDrawPath(pid);
    }
@@ -559,7 +559,7 @@ static void Test_12(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minRect(sx*vpSclX, sy*vpSclY);
    }
 
@@ -608,7 +608,7 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minJoinBevel();
       minDrawPath(pid);
    }
@@ -653,7 +653,7 @@ static void Test_18(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
    }
 
@@ -700,7 +700,7 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 
    if(_bStroke)
    {
-      minStrokeWidth(2.0f*vpSclX);
+      minStrokeWidth( 2.0f * 2.0f*vpSclX);
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -724,7 +724,7 @@ static void Test_26(void) {
    const sF32 dx = 385;
    const sF32 dy =  71;
 
-   minMoveTo(px, py);
+   minMoveTo(px*vpSclX, py*vpSclY);
 
    // trace "xxx p=("+px+";"+py+") r=("+rx+";"+ry+") q=("+(px+sx)+";"+(py+sy)+")";
 
@@ -739,7 +739,7 @@ static void Test_26(void) {
 
    minEndPath(YAC_FALSE/*bClosed*/);
 
-   minStrokeWidth(3.5f*vpSclX);
+   minStrokeWidth( 2.0f * 3.5f*vpSclX);
    minColor(0xffffffffu);
    minJoinBevel();
    minCapNone();

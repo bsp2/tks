@@ -3958,7 +3958,7 @@ namespace setup {
    static sF32         cur_mirror_x;
    static sF32         cur_mirror_y;
    static sS16         cur_mask_idx;  // -1=none
-   static sF32         cur_stroke_w;
+   static sF32         cur_stroke_w;  // total width = (cur_stroke_w * 2)
    static sUI          cur_join_cap;  // (cap<<4)|join
    static sUI          cur_num_seg;
    static sF32         cur_miter_limit;
@@ -12427,7 +12427,7 @@ void minEndSubClosed(void) {
 /* @function minStrokeWidth,float w
 Set line stroke width.
 
-The total line width is (2 * strokeW).
+The total line width is w and the stroke radius is (0.5 * w).
 
 @group Attrib
 @groupref Path
@@ -12435,7 +12435,7 @@ The total line width is (2 * strokeW).
 */
 void minStrokeWidth(sF32 _w) {
    // (note) <0.001: enable fill mode  (see minFill())
-   minnie::setup::cur_stroke_w = _w * minnie::setup::stroke_scale + minnie::setup::stroke_offset;
+   minnie::setup::cur_stroke_w = 0.5f * _w * minnie::setup::stroke_scale + minnie::setup::stroke_offset;
 }
 
 /* @function minFill
