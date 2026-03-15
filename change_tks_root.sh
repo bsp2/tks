@@ -3,3 +3,4 @@ export TKS_ROOT=`pwd`
 else
 export TKS_ROOT="${1}"
 fi
+echo "TKS_ROOT is ${TKS_ROOT}"
