@@ -78,11 +78,10 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
       sF32 aaRange;
       sUI vbOff;
       sUI numVerts;
-      sF32 r, g, b, a;
-      sUI c32;
+      sU32 c32Fill;
+      sU32 c32Stroke;
       sF32 strokeW;
       sF32 miterLimit;
-      sUI c32Stroke;
       sU8 flags;
       sF32 cx;
       sF32 cy;
@@ -93,6 +92,15 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
       sUI vbOffBorder;
       sUI numVertsBorder;
       sUI glPrimType;
+      sF32 paintStartX;
+      sF32 paintStartY;
+      sF32 paintEndX;
+      sF32 paintEndY;
+      sF32 paintRadiusX;
+      sF32 paintRadiusY;
+      sF32 paintSizeX;
+      sF32 paintSizeY;
+      sF32 paintAngle01;
 
       switch(op)
       {
@@ -106,14 +114,12 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            r        = Dstream_read_f32(_bufDraw);
-            g        = Dstream_read_f32(_bufDraw);
-            b        = Dstream_read_f32(_bufDraw);
-            a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat-uniform<f32>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
-            sdvg_SetFillColor4f(r, g, b, a);
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat-uniform<f32>-paint: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawTrianglesFillFlatUniformVBO32(_glBufId,
                                                    vbOff,
                                                    numVerts
@@ -122,14 +128,12 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            r        = Dstream_read_f32(_bufDraw);
-            g        = Dstream_read_f32(_bufDraw);
-            b        = Dstream_read_f32(_bufDraw);
-            a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat-uniform<14_2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
-            sdvg_SetFillColor4f(r, g, b, a);
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-triangles-fill-flat-uniform<s14.2>-paint: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawTrianglesFillFlatUniformVBO14_2(_glBufId,
                                                      vbOff,
                                                      numVerts
@@ -206,12 +210,10 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
-            r        = Dstream_read_f32(_bufDraw);
-            g        = Dstream_read_f32(_bufDraw);
-            b        = Dstream_read_f32(_bufDraw);
-            a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<f32>: vbOff=%u numVerts=%u rgba=(%f;%f;%f;%f)\n", vbOff, numVerts, r,g,b,a);
-            sdvg_SetFillColor4f(r, g, b, a);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<f32>: vbOff=%u numVerts=%u c32Fill=#%08x\n", vbOff, numVerts, c32Fill);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawPolygonFillFlatUniformVBO32(_glBufId,
                                                  vbOff,
                                                  numVerts
@@ -222,12 +224,10 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
-            r        = Dstream_read_f32(_bufDraw);
-            g        = Dstream_read_f32(_bufDraw);
-            b        = Dstream_read_f32(_bufDraw);
-            a        = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<14.2>: vbOff=%u numVerts=%u rgba=(%f;%f;%f;%f)\n", vbOff, numVerts, r,g,b,a);
-            sdvg_SetFillColor4f(r, g, b, a);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<14.2>: vbOff=%u numVerts=%u c32Fill=#%08x\n", vbOff, numVerts, c32Fill);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawPolygonFillFlatUniformVBO14_2(_glBufId,
                                                    vbOff,
                                                    numVerts
@@ -240,7 +240,8 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             cy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);  // radius, not size
             ry             = Dstream_read_f32(_bufDraw);
-            c32            = Dstream_read_i32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
+            c32Stroke      = Dstream_read_i32(_bufDraw);
             aaRange        = Dstream_read_i16(_bufDraw) * (1.0f / 256);
             vbOff          = Dstream_read_i32(_bufDraw);
             numVerts       = Dstream_read_i16(_bufDraw);
@@ -248,7 +249,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-rect-fill<f32>: vbOff=%u numVerts=%u numVertsBorder=%u\n", vbOff, numVerts, numVertsBorder);
-            sdvg_SetFillColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetAARange(aaRange);
             sdvg_DrawRectFillAAVBO32(_glBufId,
                                      vbOff,
@@ -267,6 +268,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             cy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);  // radius, not size
             ry             = Dstream_read_f32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
             c32Stroke      = Dstream_read_i32(_bufDraw);
             strokeW        = Dstream_read_f32(_bufDraw);
             aaRange        = Dstream_read_i16(_bufDraw) * (1.0f / 256);
@@ -274,7 +276,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-rect-stroke<f32>: vbOffBorder=%u numVertsBorder=%u\n", vbOffBorder, numVertsBorder);
-            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_SetAARange(aaRange);
             sdvg_DrawRectStrokeAAVBO32(_glBufId,
@@ -292,7 +294,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             cy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);  // radius, not size
             ry             = Dstream_read_f32(_bufDraw);
-            c32            = Dstream_read_i32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
             c32Stroke      = Dstream_read_i32(_bufDraw);
             strokeW        = Dstream_read_f32(_bufDraw);
             aaRange        = Dstream_read_i16(_bufDraw) * (1.0f / 256);
@@ -302,8 +304,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-rect-fill-stroke<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
-            sdvg_SetFillColorARGB(c32);
-            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_SetAARange(aaRange);
             sdvg_DrawRectFillStrokeAAVBO32(_glBufId,
@@ -323,14 +324,15 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             cy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);
             ry             = Dstream_read_f32(_bufDraw);
-            c32            = Dstream_read_i32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
+            c32Stroke      = Dstream_read_i32(_bufDraw);
             vbOff          = Dstream_read_i32(_bufDraw);
             numVerts       = Dstream_read_i16(_bufDraw);
             vbOffBorder    = Dstream_read_i32(_bufDraw);
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-ellipse-fill<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
-            sdvg_SetFillColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawEllipseFillAAVBO32(_glBufId,
                                         vbOff,
                                         numVerts,
@@ -348,13 +350,14 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             cy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);
             ry             = Dstream_read_f32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
             c32Stroke      = Dstream_read_i32(_bufDraw);
             strokeW        = Dstream_read_f32(_bufDraw);
             vbOffBorder    = Dstream_read_i32(_bufDraw);
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-ellipse-stroke<f32>: vbOffBorder=%u numVertsBorder=%u\n", vbOffBorder, numVertsBorder);
-            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_DrawEllipseStrokeAAVBO32(_glBufId,
                                           vbOffBorder,
@@ -371,7 +374,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             cy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);
             ry             = Dstream_read_f32(_bufDraw);
-            c32            = Dstream_read_i32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
             c32Stroke      = Dstream_read_i32(_bufDraw);
             strokeW        = Dstream_read_f32(_bufDraw);
             vbOff          = Dstream_read_i32(_bufDraw);
@@ -380,8 +383,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-ellipse-fill-stroke<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
-            sdvg_SetFillColorARGB(c32);
-            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_DrawEllipseFillStrokeAAVBO32(_glBufId,
                                               vbOff,
@@ -402,7 +404,8 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             sy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);  // corner radius
             ry             = Dstream_read_f32(_bufDraw);
-            c32            = Dstream_read_i32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
+            c32Stroke      = Dstream_read_i32(_bufDraw);
             aaRange        = Dstream_read_i16(_bufDraw) * (1.0f / 256);
             vbOff          = Dstream_read_i32(_bufDraw);
             numVerts       = Dstream_read_i16(_bufDraw);
@@ -410,7 +413,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-roundrect-fill<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
-            sdvg_SetFillColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetAARange(aaRange);
             sdvg_DrawRoundRectFillAAVBO32(_glBufId,
                                           vbOff,
@@ -432,6 +435,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             sy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);  // corner radius
             ry             = Dstream_read_f32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
             c32Stroke      = Dstream_read_i32(_bufDraw);
             strokeW        = Dstream_read_f32(_bufDraw);
             aaRange        = Dstream_read_i16(_bufDraw) * (1.0f / 256);
@@ -439,7 +443,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-roundrect-stroke<f32>: vbOffBorder=%u numVertsBorder=%u\n", vbOffBorder, numVertsBorder);
-            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_SetAARange(aaRange);
             sdvg_DrawRoundRectStrokeAAVBO32(_glBufId,
@@ -460,7 +464,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             sy             = Dstream_read_f32(_bufDraw);
             rx             = Dstream_read_f32(_bufDraw);  // corner radius
             ry             = Dstream_read_f32(_bufDraw);
-            c32            = Dstream_read_i32(_bufDraw);
+            c32Fill        = Dstream_read_i32(_bufDraw);
             c32Stroke      = Dstream_read_i32(_bufDraw);
             strokeW        = Dstream_read_f32(_bufDraw);
             aaRange        = Dstream_read_i16(_bufDraw) * (1.0f / 256);
@@ -470,8 +474,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVertsBorder = Dstream_read_i16(_bufDraw);
             glPrimType     = Dstream_read_i16(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-roundrect-fill-stroke<f32>: vbOff=%u numVerts=%u vbOffBorder=%u numVertsBorder=%u\n", vbOff, numVerts, vbOffBorder, numVertsBorder);
-            sdvg_SetFillColorARGB(c32);
-            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_SetAARange(aaRange);
             sdvg_DrawRoundRectFillStrokeAAVBO32(_glBufId,
@@ -507,12 +510,89 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             sdvg_SetTextureDecalAlpha(dlTexDecalAlpha);
             break;
 
+         case MINNIE_DRAWOP_PAINT_SOLID:
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-solid\n");
+            sdvg_PaintSolid();
+            break;
+
+         case MINNIE_DRAWOP_PAINT_LINEAR:
+            paintStartX = Dstream_read_f32(_bufDraw);
+            paintStartY = Dstream_read_f32(_bufDraw);
+            paintEndX   = Dstream_read_f32(_bufDraw);
+            paintEndY   = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-linear: start=(%f;%f) end=(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY);
+            sdvg_PaintLinear(paintStartX, paintStartY, paintEndX, paintEndY);
+            break;
+
+         case MINNIE_DRAWOP_PAINT_RADIAL:
+            paintStartX  = Dstream_read_f32(_bufDraw);
+            paintStartY  = Dstream_read_f32(_bufDraw);
+            paintRadiusX = Dstream_read_f32(_bufDraw);
+            paintRadiusY = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-radial: start=(%f;%f) radius=(%f;%f)\n", paintStartX, paintStartY, paintRadiusX, paintRadiusY);
+            sdvg_PaintRadial(paintStartX, paintStartY, paintRadiusX, paintRadiusY);
+            break;
+
+         case MINNIE_DRAWOP_PAINT_CONIC:
+            paintStartX  = Dstream_read_f32(_bufDraw);
+            paintStartY  = Dstream_read_f32(_bufDraw);
+            paintRadiusX = Dstream_read_f32(_bufDraw);
+            paintRadiusY = Dstream_read_f32(_bufDraw);
+            paintAngle01 = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-radial: start=(%f;%f) radius=(%f;%f) angle01=%f\n", paintStartX, paintStartY, paintRadiusX, paintRadiusY, paintAngle01);
+            sdvg_PaintConic(paintStartX, paintStartY, paintRadiusX, paintRadiusY, paintAngle01);
+            break;
+
+         case MINNIE_DRAWOP_PAINT_PATTERN:
+            paintStartX = Dstream_read_f32(_bufDraw);
+            paintStartY = Dstream_read_f32(_bufDraw);
+            paintEndX   = Dstream_read_f32(_bufDraw);
+            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintSizeX  = Dstream_read_f32(_bufDraw);
+            paintSizeY  = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            sdvg_PaintPattern(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            break;
+
+         case MINNIE_DRAWOP_PAINT_PATTERN_ALPHA:
+            paintStartX = Dstream_read_f32(_bufDraw);
+            paintStartY = Dstream_read_f32(_bufDraw);
+            paintEndX   = Dstream_read_f32(_bufDraw);
+            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintSizeX  = Dstream_read_f32(_bufDraw);
+            paintSizeY  = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-alpha: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            sdvg_PaintPatternAlpha(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            break;
+
+         case MINNIE_DRAWOP_PAINT_PATTERN_DECAL:
+            paintStartX = Dstream_read_f32(_bufDraw);
+            paintStartY = Dstream_read_f32(_bufDraw);
+            paintEndX   = Dstream_read_f32(_bufDraw);
+            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintSizeX  = Dstream_read_f32(_bufDraw);
+            paintSizeY  = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-decal: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            sdvg_PaintPatternDecal(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            break;
+
+         case MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA:
+            paintStartX = Dstream_read_f32(_bufDraw);
+            paintStartY = Dstream_read_f32(_bufDraw);
+            paintEndX   = Dstream_read_f32(_bufDraw);
+            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintSizeX  = Dstream_read_f32(_bufDraw);
+            paintSizeY  = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-decal-alpha: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            sdvg_PaintPatternDecalAlpha(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            break;
+
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
-            c32      = Dstream_read_i32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-flat<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d c32=#%08x\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter, c32);
-            sdvg_SetFillColorARGB(c32);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-flat<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d c32Fill=#%08x\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter, c32Fill);
+            sdvg_SetFillColorARGB(c32Fill);
             sdvg_DrawTrianglesTexUVFlatVBO32(_glBufId,
                                              vbOff,
                                              numVerts
@@ -521,11 +601,12 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            c32      = Dstream_read_i32(_bufDraw);
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-flat-decal<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
-            sdvg_SetFillColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawTrianglesTexUVFlatDecalVBO32(_glBufId,
                                                   vbOff,
                                                   numVerts
@@ -536,9 +617,9 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32:
             vbOff    = Dstream_read_i32(_bufDraw);
             numVerts = Dstream_read_i32(_bufDraw);
-            c32      = Dstream_read_i32(_bufDraw);
+            c32Fill  = Dstream_read_i32(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-gouraud<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
-            sdvg_SetFillColorARGB(c32);
+            sdvg_SetFillColorARGB(c32Fill);
             sdvg_DrawTrianglesTexUVGouraudVBO32(_glBufId,
                                                 vbOff,
                                                 numVerts
@@ -547,11 +628,12 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32:
-            vbOff   = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            c32     = Dstream_read_i32(_bufDraw);
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-tri-tex-uv-gouraud-decal<f32>: vbOff=%u numVerts=%u texId=%u texRep=%d texFlt=%d\n", vbOff, numVerts, dlTexId, dlTexRepeat, dlTexFilter);
-            sdvg_SetFillColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawTrianglesTexUVGouraudDecalVBO32(_glBufId,
                                                      vbOff,
                                                      numVerts
@@ -560,13 +642,14 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            c32      = Dstream_read_i32(_bufDraw);
-            strokeW  = Dstream_read_f32(_bufDraw);
-            flags    = Dstream_read_i8(_bufDraw);
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
-            sdvg_SetStrokeColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_DrawLineStripFlatAAVBO14_2(_glBufId,
                                             vbOff,
@@ -614,13 +697,14 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2:
-            vbOff    = Dstream_read_i32(_bufDraw);
-            numVerts = Dstream_read_i32(_bufDraw);
-            c32      = Dstream_read_i32(_bufDraw);
-            strokeW  = Dstream_read_f32(_bufDraw);
-            flags    = Dstream_read_i8(_bufDraw);
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f flags=0x%02x\n", vbOff, numVerts, strokeW, flags);
-            sdvg_SetStrokeColorARGB(c32);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_DrawLineStripFlatBevelAAVBO14_2(_glBufId,
                                                  vbOff,
@@ -643,12 +727,12 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
             vbOff      = Dstream_read_i32(_bufDraw);
             numVerts   = Dstream_read_i32(_bufDraw);
-            c32        = Dstream_read_i32(_bufDraw);
+            c32Stroke  = Dstream_read_i32(_bufDraw);
             strokeW    = Dstream_read_f32(_bufDraw);
             miterLimit = Dstream_read_f32(_bufDraw);
             flags      = Dstream_read_i8(_bufDraw);
             Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-miter<s14.2>: vbOff=%u numVerts=%u strokeW=%f flags=0x%02x\n", vbOff, numVerts, strokeW, flags);
-            sdvg_SetStrokeColorARGB(c32);
+            sdvg_SetStrokeColorARGB(c32Stroke);
             sdvg_SetStrokeRadius(strokeW);
             sdvg_SetLineMiterLimit(miterLimit);
             sdvg_DrawLineStripFlatMiterAAVBO14_2(_glBufId,

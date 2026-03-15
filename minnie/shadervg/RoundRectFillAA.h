@@ -256,4 +256,6 @@ class RoundRectFillAA : public ShaderVG_Shape {
       }
    }
 
+   // see also: ShaderVG_Shape::drawRoundRectFillAAVBO32Paint()
+
 };

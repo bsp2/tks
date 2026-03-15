@@ -265,4 +265,6 @@ class EllipseFillAA : public ShaderVG_Shape {
       }
    }
 
+   // see also: ShaderVG_Shape::drawEllipseFillAAVBO32Paint()
+
 };

@@ -106,6 +106,11 @@ static MinnieDrawable *drawable;
 
 static sUI tex_id = 0u;
 
+static sU32 gradient_colors[5] = {0xFFFF0000u, 0xFFFFFF00u, 0xFF00FF00u, 0xFF00FFffu, 0xFF0000ffu};
+static sSI  gradient_starts[5] = {0,           200,         400,         500,         1000};
+static sU32 tex_gradient[256];
+static sUI tex_gradient_id = 0u;
+
 static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 ticks_start = 0u;
 static sUI num_frames_rendered = 0u;
@@ -714,6 +719,13 @@ static void Test_26(void) {
    const sF32 vpSclX = VP_W / 454.0f;
    const sF32 vpSclY = VP_H / 454.0f;
 
+   sSI paintId = minPaintBegin();
+   minPaintPattern(0.0f, 0.0f,
+                   VP_W, 0.0f,
+                   1.0f, 1.0f
+                   );
+   minPaintEnd();
+
    sSI pid = minBeginPath();
    minSeg(20);
 
@@ -740,6 +752,8 @@ static void Test_26(void) {
    minEndPath(YAC_FALSE/*bClosed*/);
 
    minStrokeWidth( 2.0f * 3.5f*vpSclX);
+   minBindTexture(tex_gradient_id, YAC_TRUE/*bRepeat*/, b_tex_filter);
+   minPaint(paintId);
    minColor(0xffffffffu);
    minJoinBevel();
    minCapNone();
@@ -1055,6 +1069,13 @@ int main(int argc, char**argv) {
                                     (const void*)mem_base_tex_escher_argb32,
                                     mem_size_tex_escher_argb32
                                     );
+
+      sdvg_GradientToTexture(tex_gradient, 256u,
+                             gradient_colors, 5u,
+                             gradient_starts, 5u,
+                             YAC_TRUE/*bSmoothStep*/
+                             );
+      tex_gradient_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ARGB32, 256u, 1u, (const void*)tex_gradient, 256*sizeof(sU32));
 
       Dprintf("[...] initializing shaders and VBOs..\n");
       {

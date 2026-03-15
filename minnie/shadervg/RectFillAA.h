@@ -235,4 +235,6 @@ class RectFillAA : public ShaderVG_Shape {
       }
    }
 
+   // (note) see also: ShaderVG_Shape::drawRectFillAAVBO32Paint()
+
 };

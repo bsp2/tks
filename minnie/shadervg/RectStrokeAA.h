@@ -199,4 +199,6 @@ class RectStrokeAA : public ShaderVG_Shape {
       }
    }
 
+   // see also: ShaderVG_Shape::drawRectStrokeAAPaint()
+
 };

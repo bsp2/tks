@@ -268,4 +268,6 @@ class EllipseStrokeAA : public ShaderVG_Shape {
       }
    }
 
+   // see also: ShaderVG_Shape::drawEllipseStrokeAAPaint()
+
 };

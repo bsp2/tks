@@ -593,7 +593,9 @@ The offset is applied after the line pattern scaling factor.
 YF void YAC_CALL sdvg_SetLinePatternOffset (sF32 _offset);
 
 /* @function sdvg_SetMiterLimit,float miterLimit
-Set line miter limit
+Set line miter limit.
+
+This is the maximum distance of the center control point v2 (between three adjacent vertices v1,v2,v3) and the intersection of the outer, extruded edges.
 
 @arg miterLimit Line Miter limit (at which line joint reverts to bevel) (def=32)
 
@@ -663,6 +665,18 @@ Set stroke color
 @group Decal
 */
 YF void YAC_CALL sdvg_SetStrokeColorARGB (sU32 _c32);
+
+/* @function sdvg_SetFillAndStrokeColorsARGB,int c32Fill,int c32Stroke
+Set fill and stroke colors
+
+@arg c32Fill Packed ARGB32 fill color
+@arg c32Stroke Packed ARGB32 stroke color
+
+@group Stroke
+@group Color
+@group Decal
+*/
+YF void YAC_CALL sdvg_SetFillAndStrokeColorsARGB (sU32 _c32Fill, sU32 _c32Stroke);
 
 /* @function sdvg_SetGlobalAlpha,float a
 Set global alpha. Applied to all draw calls.
@@ -1134,6 +1148,7 @@ YF void YAC_CALL sdvg_BufferRectTexUVGouraud32 (YAC_Buffer *_b,  sF32 _x, sF32 _
 
 
 // -------- (low level) draw functions --------
+
 /* @function sdvg_DrawTrianglesFillFlatVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (32bit float format)
 
@@ -1221,7 +1236,7 @@ YF void YAC_CALL sdvg_DrawTrianglesFillFlatModulateVBO14_2 (sUI _vboId, sUI _byt
 /* @function sdvg_DrawTrianglesFillFlatUniformVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (32bit float format)
 
-Uses uniform color.
+Apply current paint.
 
 <pre>
 VBO vertex format (8 bytes per vertex):<br>
@@ -1232,13 +1247,14 @@ VBO vertex format (8 bytes per vertex):<br>
 @group Triangle
 @groupref Fill
 @groupref Color
-*/
-YF void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+@groupref Paint
+ */
+void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawTrianglesFillFlatUniformVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
 
-Uses uniform color.
+Apply current paint.
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
@@ -1249,8 +1265,9 @@ VBO vertex format (4 bytes per vertex):<br>
 @group Triangle
 @groupref Fill
 @groupref Color
-*/
-YF void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+@groupref Paint
+ */
+void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawTrianglesFillGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bit float format)
@@ -1401,11 +1418,33 @@ Draw previously prepared vertex buffer as filled, anti-aliased rectangle (32bit 
 */
 YF void YAC_CALL sdvg_DrawRectFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
-/* @function sdvg_DrawRectFillAA,float centerX,float centerY,float sizeX,float sizeY
-Draw filled, anti-aliased rectangle via scratch buffer (32 bit float format)
+/* @function sdvg_DrawRectFillAAVBO32Paint,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY
+Draw previously prepared vertex buffer as filled, anti-aliased rectangle (32bit float format)
+
+Apply current paint.
 
 @group Rect
 @groupref Fill
+@groupref Paint
+*/
+void YAC_CALL sdvg_DrawRectFillAAVBO32Paint (sUI _vboId,
+                                             sUI _byteOffsetInner,
+                                             sUI _numVertsInner,
+                                             sUI _byteOffsetBorder,
+                                             sUI _numVertsBorder,
+                                             sUI _glPrimTypeBorder,
+                                             sF32 _centerX, sF32 _centerY,
+                                             sF32 _sizeX,   sF32 _sizeY
+                                             );
+
+/* @function sdvg_DrawRectFillAA,float centerX,float centerY,float sizeX,float sizeY
+Draw filled, anti-aliased rectangle via scratch buffer (32 bit float format)
+
+Apply current paint.
+
+@group Rect
+@groupref Fill
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawRectFillAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
@@ -1452,11 +1491,25 @@ Draw previously prepared vertex buffer as stroked, anti-aliased rectangle (32bit
 */
 YF void YAC_CALL sdvg_DrawRectStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
-/* @function sdvg_DrawRectStrokeAA,float centerX,float centerY,float sizeX,float sizeY
-Draw stroked, anti-aliased rectangle via scratch buffer (32 bit float format)
+/* @function sdvg_DrawRectStrokeAAVBO32Paint,int vboId,int byteOffsetBorder,int numVertesBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY
+Draw previously prepared vertex buffer as stroked, anti-aliased rectangle (32bit float format)
+
+Apply current paint.
 
 @group Rect
 @groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawRectStrokeAAVBO32Paint (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
+
+/* @function sdvg_DrawRectStrokeAA,float centerX,float centerY,float sizeX,float sizeY
+Draw stroked, anti-aliased rectangle via scratch buffer (32 bit float format)
+
+Apply current paint.
+
+@group Rect
+@groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawRectStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
@@ -1476,11 +1529,25 @@ Draw previously prepared vertex buffer as filled, anti-aliased ellipse (32bit fl
 */
 YF void YAC_CALL sdvg_DrawEllipseFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawEllipseFillAA,float centerX,float centerY,float sizeX,float sizeY
-Draw filled, anti-aliased ellipse via scratch buffer (32 bit float format)
+/* @function sdvg_DrawEllipseFillAAVBO32Paint,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float radiusX,float radiusY
+Draw previously prepared vertex buffer as filled, anti-aliased ellipse (32bit float format)
+
+Apply current paint.
 
 @group Ellipse
 @groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawEllipseFillAAVBO32Paint (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
+
+/* @function sdvg_DrawEllipseFillAA,float centerX,float centerY,float sizeX,float sizeY
+Draw filled, anti-aliased ellipse via scratch buffer (32 bit float format)
+
+Apply current paint.
+
+@group Ellipse
+@groupref Fill
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawEllipseFillAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
@@ -1527,11 +1594,25 @@ Draw previously prepared vertex buffer as stroked, anti-aliased ellipse (32bit f
 */
 YF void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawEllipseStrokeAA,float centerX,float centerY,float sizeX,float sizeY
-Draw stroked, anti-aliased ellipse via scratch buffer (32 bit float format)
+/* @function sdvg_DrawEllipseStrokeAAVBO32Paint,int vboId,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float radiusX,float radiusY
+Draw previously prepared vertex buffer as stroked, anti-aliased ellipse (32bit float format)
+
+Apply current paint.
 
 @group Ellipse
 @groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32Paint (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
+
+/* @function sdvg_DrawEllipseStrokeAA,float centerX,float centerY,float sizeX,float sizeY
+Draw stroked, anti-aliased ellipse via scratch buffer (32 bit float format)
+
+Apply current paint.
+
+@group Ellipse
+@groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawEllipseStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
@@ -1551,11 +1632,25 @@ Draw previously prepared vertex buffer as filled, anti-aliased rounded rectangle
 */
 YF void YAC_CALL sdvg_DrawRoundRectFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawRoundRectFillAA,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
-Draw filled, anti-aliased rounded rectangle via scratch buffer (32 bit float format)
+/* @function sdvg_DrawRoundRectFillAAVBO32Paint,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+Draw previously prepared vertex buffer as filled, anti-aliased rounded rectangle (32bit float format)
+
+Apply current paint.
 
 @group RoundRect
 @groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawRoundRectFillAAVBO32Paint (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
+
+/* @function sdvg_DrawRoundRectFillAAPaint,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+Draw filled, anti-aliased rounded rectangle via scratch buffer (32 bit float format)
+
+Apply current paint.
+
+@group RoundRect
+@groupref Fill
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawRoundRectFillAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
@@ -1612,11 +1707,25 @@ Draw previously prepared vertex buffer as stroked, anti-aliased rounded rectangl
 */
 YF void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32(sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawRoundRectStrokeAA,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+/* @function sdvg_DrawRoundRectStrokeAAVBO32Paint,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+Draw previously prepared vertex buffer as stroked, anti-aliased rounded rectangle (32bit float format)
+
+Apply current paint.
+
+@group RoundRect
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32Paint (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
+
+/* @function sdvg_DrawRoundRectStrokeAAPaint,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Draw stroked, anti-aliased rounded rectangle via scratch buffer (32 bit float format)
+
+Apply current paint.
 
 @group RoundRect
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawRoundRectStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
@@ -1998,35 +2107,35 @@ Draw previously prepared vertex buffer as line strip (32 bit float format)
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-/* @function sdvg_DrawLineStripFlatAAVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased line strip (14.2 fixed point format)
-
-<pre>
-VBO vertex format (4 bytes per vertex):<br>
-  +0 s14.2 x<br>
-  +2 s14.2 y<br>
-</pre>
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
-
-@group Line
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
-
 /* @function sdvg_DrawLineStripFlatAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased line strip (32 bit float format)
 
+Apply current paint.
+
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripFlatAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased line strip (14.2 fixed point format)
+
+Apply current paint.
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
+@group Line
+@groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripPatternVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
@@ -2144,28 +2253,17 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-/* @function sdvg_DrawLineStripFlatBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
-
-<pre>
-VBO vertex format (4 bytes per vertex):<br>
-  +0 s14.2 x<br>
-  +2 s14.2 y<br>
-</pre>
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
 /* @function sdvg_DrawLineStripFlatBevelVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as line strip with bevel line joints (32 bit float format)
 
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
@@ -2173,11 +2271,14 @@ Draw previously prepared vertex buffer as line strip with bevel line joints (32 
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatBevelAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (14.2 fixed point format)
+/* @function sdvg_DrawLineStripFlatBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
+
+Apply current paint.
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
@@ -2192,12 +2293,21 @@ VBO vertex format (4 bytes per vertex):<br>
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripFlatBevelAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (32 bit float format)
 
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
@@ -2205,76 +2315,11 @@ Draw previously prepared vertex buffer as anti-aliased line strip with bevel lin
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatBevelVBO32Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as line strip with bevel line joints (32 bit float format)
-
-Apply current paint.
-
-<pre>
-VBO vertex format (8 bytes per vertex):<br>
-  +0 f32 x<br>
-  +4 f32 y<br>
-</pre>
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref Stroke
-@groupref Paint
-*/
-YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO32Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
-/* @function sdvg_DrawLineStripFlatBevelVBO14_2Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as line strip with bevel line joints (14.2 fixed point format)
-
-Apply current paint.
-
-<pre>
-VBO vertex format (4 bytes per vertex):<br>
-  +0 s14.2 x<br>
-  +2 s14.2 y<br>
-</pre>
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref Stroke
-@groupref Paint
-*/
-YF void YAC_CALL sdvg_DrawLineStripFlatBevelVBO14_2Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
-/* @function sdvg_DrawLineStripFlatBevelAAVBO32Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (32 bit float format)
-
-Apply current paint.
-
-<pre>
-VBO vertex format (8 bytes per vertex):<br>
-  +0 f32 x<br>
-  +4 f32 y<br>
-</pre>
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref Stroke
-@groupref Paint
-*/
-YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO32Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
-/* @function sdvg_DrawLineStripFlatBevelAAVBO14_2Paint,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+/* @function sdvg_DrawLineStripFlatBevelAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased line strip with bevel line joints (14.2 fixed point format)
 
 Apply current paint.
@@ -2294,7 +2339,7 @@ VBO vertex format (4 bytes per vertex):<br>
 @groupref Stroke
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2Paint (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripPatternBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
@@ -3334,7 +3379,7 @@ Begin preparation or rendering of triangle-strip via user-defined shader (14.2 f
 YF sBool YAC_CALL sdvg_BeginTriangleStrip14_2 (sUI _numVertices, sUI _stride);
 
 /* @function sdvg_BeginFilledTriangles,int numVertices:boolean
-Begin preparation or rendering of filled triangles via user-defined shader
+Begin preparation or rendering of filled triangles
 
 @arg numVertices Number of vertices
 
@@ -3732,6 +3777,8 @@ YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalAA (sUI _numPoints);
 /* @function sdvg_BeginLineStripBevel,int numPoints:boolean
 Begin preparation or rendering of line strip with bevel line joints (open polyline).
 
+Apply current paint.
+
 One extra point must be added after the last control point (will be ignored for open polylines, though).
 Skips line joint after last line segment.
 
@@ -3741,12 +3788,15 @@ Skips line joint after last line segment.
 @group Line
 @groupref Stroke
 @group LineJoint
+@group Paint
 */
 YF sBool YAC_CALL sdvg_BeginLineStripBevel (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripBevelClosed,int numPoints:boolean
 Begin preparation or rendering of line strip with bevel line joints (closed polyline).
 
+Apply current paint.
+
 The last two points must equal the first two.
 Renders line joint after last segment.
 
@@ -3756,11 +3806,14 @@ Renders line joint after last segment.
 @group Line
 @groupref Stroke
 @group LineJoint
+@group Paint
 */
 YF sBool YAC_CALL sdvg_BeginLineStripBevelClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripBevelAA,int numPoints:boolean
 Begin preparation or rendering of anti-aliased line strip with bevel line joints (open polyline).
+
+Apply current paint.
 
 One extra point must be added after the last control point (will be ignored for open polylines, though).
 Skips line joint after last line segment.
@@ -3771,11 +3824,14 @@ Skips line joint after last line segment.
 @group Line
 @groupref Stroke
 @group LineJoint
+@group Paint
 */
 YF sBool YAC_CALL sdvg_BeginLineStripBevelAA (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripBevelAAClosed,int numPoints:boolean
 Begin preparation or rendering of anti-aliased line strip with bevel line joints (closed polyline).
+
+Apply current paint.
 
 The last two points must equal the first two.
 Renders line joint after last segment.
@@ -3786,6 +3842,7 @@ Renders line joint after last segment.
 @group Line
 @groupref Stroke
 @group LineJoint
+@group Paint
 */
 YF sBool YAC_CALL sdvg_BeginLineStripBevelAAClosed (sUI _numPoints);
 
@@ -3932,78 +3989,6 @@ Renders line joint after last segment.
 @group Decal
 */
 YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalBevelAAClosed (sUI _numPoints);
-
-/* @function sdvg_BeginLineStripBevelPaint,int numPoints:boolean
-Begin preparation or rendering of line strip with bevel line joints (open polyline).
-
-One extra point must be added after the last control point (will be ignored for open polylines, though).
-Skips line joint after last line segment.
-
-Apply current paint.
-
-@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
-
-@group Begin
-@group Line
-@groupref Stroke
-@group LineJoint
-@groupref Paint
-*/
-YF sBool YAC_CALL sdvg_BeginLineStripBevelPaint (sUI _numPoints);
-
-/* @function sdvg_BeginLineStripBevelPaintClosed,int numPoints:boolean
-Begin preparation or rendering of line strip with bevel line joints (closed polyline).
-
-The last two points must equal the first two.
-Renders line joint after last segment.
-
-Apply current paint.
-
-@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
-
-@group Begin
-@group Line
-@groupref Stroke
-@group LineJoint
-@groupref Paint
-*/
-YF sBool YAC_CALL sdvg_BeginLineStripBevelPaintClosed (sUI _numPoints);
-
-/* @function sdvg_BeginLineStripBevelAAPaint,int numPoints:boolean
-Begin preparation or rendering of anti-aliased line strip with bevel line joints (open polyline).
-
-One extra point must be added after the last control point (will be ignored for open polylines, though).
-Skips line joint after last line segment.
-
-Apply current paint.
-
-@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
-
-@group Begin
-@group Line
-@groupref Stroke
-@group LineJoint
-@groupref Paint
-*/
-YF sBool YAC_CALL sdvg_BeginLineStripBevelAAPaint (sUI _numPoints);
-
-/* @function sdvg_BeginLineStripBevelAAPaintClosed,int numPoints:boolean
-Begin preparation or rendering of anti-aliased line strip with bevel line joints (closed polyline).
-
-The last two points must equal the first two.
-Renders line joint after last segment.
-
-Apply current paint.
-
-@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
-
-@group Begin
-@group Line
-@groupref Stroke
-@group LineJoint
-@groupref Paint
-*/
-YF sBool YAC_CALL sdvg_BeginLineStripBevelAAPaintClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLineStripMiter,int numPoints:boolean
 Begin preparation or rendering of line strip with miter line joints (open polyline)
