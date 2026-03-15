@@ -56,7 +56,7 @@ void MinnieVG_Init(void) {
    minSetEnableEdgeAA(0);                  // 'e'
    minSetStrokeWLineStripThreshold(0.0f);  // 's'
    minSetStrokeWLineJoinThreshold(0.0f);
-   minSetEnableUniformColors(0);           // 'u'
+   minSetEnableUniformColors(1);           // 'u'
 
    if(0)
    {
