@@ -233,33 +233,35 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2      0x0A
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32            0x0B
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2          0x0C
-#define MINNIE_DRAWOP_RECT_FILL                               0x0D
-#define MINNIE_DRAWOP_RECT_STROKE                             0x0E
-#define MINNIE_DRAWOP_RECT_FILL_STROKE                        0x0F
-#define MINNIE_DRAWOP_ELLIPSE_FILL                            0x10
-#define MINNIE_DRAWOP_ELLIPSE_STROKE                          0x11
-#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                     0x12
-#define MINNIE_DRAWOP_ROUNDRECT_FILL                          0x13
-#define MINNIE_DRAWOP_ROUNDRECT_STROKE                        0x14
-#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                   0x15
-#define MINNIE_DRAWOP_BIND_TEXTURE                            0x16
-#define MINNIE_DRAWOP_UNBIND_TEXTURE                          0x17
-#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                     0x18
-#define MINNIE_DRAWOP_PAINT_SOLID                             0x19
-#define MINNIE_DRAWOP_PAINT_LINEAR                            0x1A
-#define MINNIE_DRAWOP_PAINT_RADIAL                            0x1B
-#define MINNIE_DRAWOP_PAINT_CONIC                             0x1C
-#define MINNIE_DRAWOP_PAINT_PATTERN                           0x1D
-#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                     0x1E
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                     0x1F
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA               0x20
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                0x21
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32          0x22
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32             0x23
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32       0x24
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                    0x25
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2              0x26
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2              0x27
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA         0x0D
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA       0x0E
+#define MINNIE_DRAWOP_RECT_FILL                               0x0F
+#define MINNIE_DRAWOP_RECT_STROKE                             0x10
+#define MINNIE_DRAWOP_RECT_FILL_STROKE                        0x11
+#define MINNIE_DRAWOP_ELLIPSE_FILL                            0x12
+#define MINNIE_DRAWOP_ELLIPSE_STROKE                          0x13
+#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                     0x14
+#define MINNIE_DRAWOP_ROUNDRECT_FILL                          0x15
+#define MINNIE_DRAWOP_ROUNDRECT_STROKE                        0x16
+#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                   0x17
+#define MINNIE_DRAWOP_BIND_TEXTURE                            0x18
+#define MINNIE_DRAWOP_UNBIND_TEXTURE                          0x19
+#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                     0x1A
+#define MINNIE_DRAWOP_PAINT_SOLID                             0x1B
+#define MINNIE_DRAWOP_PAINT_LINEAR                            0x1C
+#define MINNIE_DRAWOP_PAINT_RADIAL                            0x1D
+#define MINNIE_DRAWOP_PAINT_CONIC                             0x1E
+#define MINNIE_DRAWOP_PAINT_PATTERN                           0x1F
+#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                     0x20
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                     0x21
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA               0x22
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                0x23
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32          0x24
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32             0x25
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32       0x26
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                    0x27
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2              0x28
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2              0x29
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE           0x00
@@ -4065,6 +4067,7 @@ namespace setup {
    static sBool b_render_fill_concave;
    static sBool b_render_fill_evenodd;
    static sBool b_uniform_colors;       // 1=set path colors via uniforms    0=store colors in vertex attribs [default]
+   static sBool b_polygon_aa;
    static sF32  stroke_w_line_strip_threshold;  // use line strips if stroke_w <= threshold  (0.0f == off)
    static sF32  stroke_w_line_join_threshold;   // disable BEVEL/ROUND line joins if stroke_w <= threshold  (0.0f == off)
 
@@ -4268,6 +4271,16 @@ namespace setup {
    // <method_get.png>
    static sBool getEnableUniformColors(void) {
       return b_uniform_colors;
+   }
+
+   // <method_set.png>
+   static void setEnablePolygonAA(sBool _bEnable) {
+      b_polygon_aa = _bEnable;
+   }
+
+   // <method_get.png>
+   static sBool getEnablePolygonAA(void) {
+      return b_polygon_aa;
    }
 
    // <method_set.png>
@@ -6093,6 +6106,8 @@ namespace setup {
 
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2:
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA:
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA:
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly> start_offset=%u num_verts=%u c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32_fill);
             if(active_dl_num_verts >= 3u)
             {
@@ -6501,9 +6516,17 @@ namespace setup {
       sUI op = 0u;
 
 #if MINNIE_EXPORT_VERTEX_16BIT
-      op = MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2;
+      op =
+         b_polygon_aa
+         ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA
+         : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2
+         ;
 #else
-      op = MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32;
+      op =
+         b_polygon_aa
+         ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA
+         : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32
+         ;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
 
       return beginDrawListOp(op);
@@ -6511,6 +6534,7 @@ namespace setup {
 
    // <method.png>
    static sUI calcCurJoinCap(void) {
+      /* Dprintf("xxx calcCurJoinCap: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold); */
       if(cur_stroke_w <= stroke_w_line_join_threshold)
       {
          return (cur_join_cap & 0xF0u);
@@ -6521,7 +6545,7 @@ namespace setup {
    // <method.png>
    static sBool beginDrawListOpLineStrip(sBool _bClosed) {
       const sUI curJoinCap = calcCurJoinCap();
-      // Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w);
+      /* Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w); */
       active_dl_line_strip_flags = _bClosed ? MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED : 0u;
 
       sUI op;
@@ -7539,15 +7563,23 @@ namespace setup {
    }
 
    // <method.png>
+   static sBool isDrawOpPolygon(void) {
+      return
+         (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA) ||
+         (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA)   ||
+         (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)    ||
+         (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)
+         ;
+   }
+
+   // <method.png>
    static void drawPathFillConcave(Path *p) {
       if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcave: path_idx=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       /* Dprintf("xxx drawPathFillConcave: b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa); */
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
-             (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
-             )
+         if(!isDrawOpPolygon())
          {
             Dprintf("[!!!] Minnie::drawPathFillConcave: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -7665,9 +7697,7 @@ namespace setup {
 
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
-             (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
-             )
+         if(!isDrawOpPolygon())
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -7845,9 +7875,7 @@ namespace setup {
 
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
-             (active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
-             )
+         if(!isDrawOpPolygon())
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -7975,9 +8003,7 @@ namespace setup {
 
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
       {
-         if( !(active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)   &&
-             !(active_dl_op != MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)
-             )
+         if(!isDrawOpPolygon())
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
@@ -10063,6 +10089,7 @@ namespace setup {
 
             case 0x0Eu:  // h <join> <cap>
                cur_join_cap = ifs.getU8();
+               /* Dprintf("xxx h joincap=0x%02x\n", cur_join_cap); */
                if(!b_render_join_cap)
                   cur_join_cap = 0u;
                {
@@ -11305,6 +11332,8 @@ YF void YAC_CALL minSetEnableForceEvenOddConcave (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableForceEvenOddConcave (void);
 YF void YAC_CALL minSetEnableUniformColors (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableUniformColors (void);
+YF void YAC_CALL minSetEnablePolygonAA (sBool _bEnable);
+YF sBool YAC_CALL minGetEnablePolygonAA (void);
 YF void YAC_CALL minSetStrokeWLineStripThreshold (sF32 _threshold);
 YF sF32 YAC_CALL minGetStrokeWLineStripThreshold (void);
 YF void YAC_CALL minSetStrokeWLineJoinThreshold (sF32 _threshold);
@@ -11919,6 +11948,26 @@ Query uniform-colors enable-state.
 */
 sBool minGetEnableUniformColors(void) {
    return minnie::setup::getEnableUniformColors();
+}
+
+/* @function minSetEnablePolygonAA,boolean bEnable
+Enable or disable anti-aliased polygons.
+
+@see minGetEnablePolygonAA
+@group Config
+*/
+void minSetEnablePolygonAA(sBool _bEnable) {
+   minnie::setup::setEnablePolygonAA(_bEnable);
+}
+
+/* @function minGetEnablePolygonAA:boolean
+Query antialiased-polygons enable-state.
+
+@see minSetEnablePolygonAA
+@group Config
+*/
+sBool minGetEnablePolygonAA(void) {
+   return minnie::setup::getEnablePolygonAA();
 }
 
 /* @function minSetStrokeWLineStripThreshold,float threshold

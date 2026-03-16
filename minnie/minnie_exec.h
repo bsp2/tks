@@ -226,12 +226,42 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numVerts = Dstream_read_i32(_bufDraw);
             c32Fill   = Dstream_read_i32(_bufDraw);
             c32Stroke = Dstream_read_i32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<14.2>: vbOff=%u numVerts=%u c32Fill=#%08x\n", vbOff, numVerts, c32Fill);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat<s14.2>: vbOff=%u numVerts=%u c32Fill=#%08x\n", vbOff, numVerts, c32Fill);
             sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
             sdvg_DrawPolygonFillFlatUniformVBO14_2(_glBufId,
                                                    vbOff,
                                                    numVerts
                                                    );
+            numOpsPoly++;
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA:
+            vbOff    = Dstream_read_i32(_bufDraw);
+            numVerts = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat-aa<f32>: vbOff=%u numVerts=%u c32Fill=#%08x\n", vbOff, numVerts, c32Fill);
+            /* sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke); */  // (todo) fix pattern decal colors
+            sdvg_SetColorARGB(c32Fill);
+            sdvg_DrawPolygonFillFlatUniformAAVBO32(_glBufId,
+                                                   vbOff,
+                                                   numVerts
+                                                   );
+            numOpsPoly++;
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA:
+            vbOff    = Dstream_read_i32(_bufDraw);
+            numVerts = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-polygon-fill-flat-aa<s14.2>: vbOff=%u numVerts=%u c32Fill=#%08x\n", vbOff, numVerts, c32Fill);
+            /* sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke); */  // (todo) fix pattern decal colors
+            sdvg_SetColorARGB(c32Fill);
+            sdvg_DrawPolygonFillFlatUniformAAVBO14_2(_glBufId,
+                                                     vbOff,
+                                                     numVerts
+                                                     );
             numOpsPoly++;
             break;
 
