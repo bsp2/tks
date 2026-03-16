@@ -57,6 +57,7 @@ void MinnieVG_Init(void) {
    minSetStrokeWLineStripThreshold(0.0f);  // 's'
    minSetStrokeWLineJoinThreshold(0.0f);
    minSetEnableUniformColors(1);           // 'u'
+   minSetEnablePolygonAA(1);               // 
 
    if(0)
    {
@@ -66,7 +67,7 @@ void MinnieVG_Init(void) {
       minSetEnableTesselateConcave(0);          // 'i'  0=GPU tesselation  1=CPU tesselation
       minSetSwTesselateSizeThreshold(128*8*8);  // 0=disable   >0: force concave path if concave or evenodd-without-subpaths bbox is <= sizeThreshold, else force evenodd path (SW tesselate)
    }
-   else if(1)
+   else if(0)
    {
       // use SW tesselator for all path types
       minSetEnableForceConcaveEvenOdd(1);
@@ -355,6 +356,11 @@ sBool MinnieVG_HandleDebugKey(sU32 _code, sU32 _mod) {
       case 'i':
          minSetEnableTesselateConcave(!minGetEnableTesselateConcave());
          Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enableTesselateConcave is %d\n", minGetEnableTesselateConcave());
+         return YAC_TRUE;
+
+      case 'l':
+         minSetEnablePolygonAA(!minGetEnablePolygonAA());
+         Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enablePolygonAA is %d\n", minGetEnablePolygonAA());
          return YAC_TRUE;
 
       case 's':

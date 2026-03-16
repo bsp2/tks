@@ -268,7 +268,8 @@ void hal_on_draw(void) {
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
       minSetStrokeWLineStripThreshold(b_line_strip*99.0f);  // 0=tesselate to triangles
-      minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
+      // minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
+      minSetStrokeWLineJoinThreshold(0.2f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
       if(MinnieVG_SetupDrawableFromBuffer(drawable, &fileBuf))
