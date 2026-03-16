@@ -70,6 +70,7 @@
 #define SHADERVG_ROUNDRECT_AA_SIZE_OFFSET       0.75f
 #define SHADERVG_ROUNDRECT_AA_STROKE_OFFSET     0.25f
 #define SHADERVG_POINTS_AA_RADIUS_OFFSET        0.5f  // 1.5f
+#define SHADERVG_POLYGON_AA_STROKE_W            1.0f
 
 #define Dsdvg_pixel_scl(a) ((a) * sdvg_pixel_scl)
 
@@ -1935,6 +1936,211 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_uniform_shape_14
    return shape;
 }
 
+static sBool loc_UpdateShaderUniforms(void) {
+   Dsdvg_tracecallv("[trc] sdvg:UpdateShaderUniforms: current_shape=%p\n", current_shape);
+   if(NULL != current_shape)
+   {
+      sSI loc;
+
+      loc = current_shape->shape_u_color_fill;
+      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_color_fill=%d\n", current_shape->shape_u_color_fill);
+      if(loc >= 0)
+      {
+         Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: fill=(%f; %f; %f; %f) global_a=%f\n", fill_r, fill_g, fill_b, fill_a, global_a);
+         Dsdvg_uniform_4f(loc, fill_r, fill_g, fill_b, fill_a * global_a);
+      }
+
+      loc = current_shape->shape_u_color_stroke;
+      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_color_stroke=%d\n", current_shape->shape_u_color_stroke);
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_4f(loc, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
+      }
+
+      loc = current_shape->shape_u_global_alpha;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, global_a);
+      }
+
+      loc = current_shape->shape_u_decal_alpha;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, texture_decal_alpha);
+      }
+
+      loc = current_shape->shape_u_debug;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, ellipse_fill_aa.b_debug ? 1.0f : 0.0f);
+      }
+
+      loc = current_shape->shape_u_sampler;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1i(loc, 0);
+      }
+
+      loc = current_shape->shape_u_tex_0;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1i(loc, 0);
+      }
+
+      loc = current_shape->shape_u_tex_1;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1i(loc, 1);
+      }
+
+      // (note) TrianglesTexUVFlat32AlphaSDF
+      loc = current_shape->shape_u_a_min;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_min);
+      }
+
+      loc = current_shape->shape_u_a_max;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_max);
+      }
+
+      loc = current_shape->shape_u_a_maxmin_scale;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_maxmin_scale);
+      }
+
+      loc = current_shape->shape_u_a_exp;
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_1f(loc, alpha_sdf_exp);
+      }
+
+      if(PAINT_SOLID != paint.mode)
+         current_shape->updatePaintUniforms(&paint);
+
+      loc = current_shape->shape_u_transform;
+      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_transform=%d\n", current_shape->shape_u_transform);
+      if(loc >= 0)
+      {
+         Dsdvg_uniform_mat4(loc, mvp_matrix);
+
+         // (todo) unmap / remap scratch ?
+         return YAC_TRUE;
+      }
+   }
+   return YAC_FALSE;
+}
+
+static void loc_drawStencilPolygon(sUI _numVerts) {
+   // (note) for use with sdvg_BeginFilledPolygon()
+   // (note) shader is selected in loc_bind_default_triangles_fill_flat_uniform_shape_*() (or use custom shader)
+   // (note) uniforms are set in loc_UpdateShaderUniforms()
+
+   Dsdvg_stencil_poly_pass1();
+   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+   Dsdvg_stencil_poly_pass2();
+   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+
+   Dsdvg_stencil_poly_end();
+}
+
+static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
+                                            ShaderVG_Shape *_shape,
+                                            sUI _byteOffset, sUI _numPoints,
+                                            sBool _b14_2,
+                                            sBool _bBevel,
+                                            sBool _bAA,
+                                            sBool _bSkipLastLineJoint
+                                            ) {
+   const sF32 aaOff = _bAA ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
+
+   if(0u != _vboId)
+      sdvg_BindVBO(_vboId);
+
+   ShaderVG_Shader *shapeShader = &_shape->shape_shader;
+   shapeShader->bind();
+
+   Dsdvg_uniform_mat4(_shape->shape_u_transform, mvp_matrix);
+   Dsdvg_uniform_4f(_shape->shape_u_color_stroke, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
+   if(-1 != _shape->shape_u_color_fill)
+   {
+      Dsdvg_uniform_4f(_shape->shape_u_color_fill, fill_r, fill_g, fill_b, fill_a * global_a);
+   }
+   if(-1 != _shape->shape_u_decal_alpha)
+   {
+      Dsdvg_uniform_1f(_shape->shape_u_decal_alpha, texture_decal_alpha);
+   }
+   Dsdvg_uniform_1f(_shape->shape_u_stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff);
+   Dsdvg_uniform_1f(_shape->shape_u_aa_range, _bAA ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF);
+   if(-1 != _shape->shape_u_debug)
+   {
+      Dsdvg_uniform_1f(_shape->shape_u_debug, _shape->b_debug ? 1.0f : 0.0f);
+   }
+
+   if(PAINT_SOLID != paint.mode)
+      _shape->updatePaintUniforms(&paint);
+
+   if(_b14_2)
+   {
+      Dsdvg_attrib_offset(_shape->shape_a_vertex,   2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(_shape->shape_a_vertex_n, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset + 4);
+      if(_bBevel)
+      {
+         Dsdvg_attrib_offset(_shape->shape_a_vertex_nn, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset + 2*4);
+      }
+   }
+   else
+   {
+      Dsdvg_attrib_offset(_shape->shape_a_vertex,   2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 0);
+      Dsdvg_attrib_offset(_shape->shape_a_vertex_n, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 8);
+      if(_bBevel)
+      {
+         Dsdvg_attrib_offset(_shape->shape_a_vertex_nn, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 2*8);
+      }
+   }
+
+   Dsdvg_attrib_enable(_shape->shape_a_vertex);
+   Dsdvg_attrib_enable(_shape->shape_a_vertex_n);
+
+   Dsdvg_attrib_divisor(_shape->shape_a_vertex, 1);
+   Dsdvg_attrib_divisor(_shape->shape_a_vertex_n, 1);
+
+   if(_bBevel)
+   {
+      Dsdvg_attrib_enable(_shape->shape_a_vertex_nn);
+      Dsdvg_attrib_divisor(_shape->shape_a_vertex_nn, 1);
+
+      const sSI numInstances = (_numPoints - 2u);
+      Dsdvg_uniform_1i(_shape->shape_u_last_instance, sSI(numInstances - sSI(_bSkipLastLineJoint)));
+#ifdef SHADERVG_HIRES_GEO
+      Dsdvg_draw_triangles_instanced_vbo(15, numInstances);
+#else
+      Dsdvg_draw_triangles_instanced_vbo(9, numInstances);
+#endif // SHADERVG_HIRES_GEO
+   }
+   else
+   {
+      const sUI numInstances = (_numPoints - 1u);
+      Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
+   }
+
+   Dsdvg_attrib_disable(_shape->shape_a_vertex_n);
+   Dsdvg_attrib_disable(_shape->shape_a_vertex);
+
+   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex);
+   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_n);
+
+   if(_bBevel)
+   {
+      Dsdvg_attrib_disable(_shape->shape_a_vertex_nn);
+      Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_nn);
+   }
+}
+
 void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (8 bytes per vertex):
@@ -2596,6 +2802,94 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2(sUI _vboId, sUI _byteOffset
                                                                       mvp_matrix,
                                                                       fill_r, fill_g, fill_b, fill_a * global_a
                                                                       );
+#else
+#error polygon rasterizer n/a
+   polygon_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
+                                                                    _byteOffset,
+                                                                    _numVerts,
+                                                                    mvp_matrix,
+                                                                    fill_r, fill_g, fill_b, fill_a * global_a
+                                                                    );
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
+void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 f32 x
+   //   +4 f32 y
+   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   Dprintf("xxx (todo) sdvg_DrawPolygonFillFlatUniformAAVBO32\n");
+   // Draw interior
+   sdvg_BindVBO(_vboId);
+   loc_bind_default_triangles_fill_flat_uniform_shape_32();
+   sdvg_VertexOffset2f();
+   loc_drawStencilPolygon(_numVerts);
+   // Draw AA outline
+   sF32 oldStrokeW = stroke_w;
+   ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
+   stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
+   loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
+                                   shape,
+                                   _byteOffset,
+                                   _numVerts,
+                                   YAC_FALSE/*b14_2*/,
+                                   YAC_FALSE/*bBevel*/,
+                                   b_aa/*bAA*/,
+                                   YAC_FALSE/*bSkipLastLineJoint*/
+                                   );
+   stroke_w = oldStrokeW;
+   loc_RebindCurrentShape();
+#else
+#error polygon rasterizer n/a
+   polygon_fill_flat_uniform_32.drawPolygonFillFlatUniformVBO32(_vboId,
+                                                                _byteOffset,
+                                                                _numVerts,
+                                                                mvp_matrix,
+                                                                fill_r, fill_g, fill_b, fill_a * global_a
+                                                                );
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
+void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +4 s14.2 y
+   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   // Draw interior
+   sdvg_BindVBO(_vboId);
+   ShaderVG_Shape *oldShape = current_shape;
+   current_shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+   sSI a = current_shape->bindAndReturnVertexAttrib();
+   if(loc_UpdateShaderUniforms())
+   {
+      Dsdvg_attrib_offset(a, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+      Dsdvg_attrib_enable(a);
+      loc_drawStencilPolygon(_numVerts);
+      Dsdvg_attrib_disable(a);
+   }
+   current_shape = oldShape;
+#if 1
+   // Draw AA outline
+   sF32 oldStrokeW = stroke_w;
+   // ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
+   ShaderVG_Shape *shape = loc_get_default_line_strip_flat_bevel_aa_uniform_shape_14_2();
+   stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
+   loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
+                                   shape,
+                                   _byteOffset,
+                                   _numVerts,
+                                   YAC_TRUE/*b14_2*/,
+                                   YAC_TRUE/*bBevel*/,
+                                   b_aa/*bAA*/,
+                                   YAC_FALSE/*bSkipLastLineJoint*/
+                                   );
+   stroke_w = oldStrokeW;
+#endif
+   loc_RebindCurrentShape();
 #else
 #error polygon rasterizer n/a
    polygon_fill_flat_uniform_14_2.drawPolygonFillFlatUniformVBO14_2(_vboId,
@@ -3368,99 +3662,6 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAA(sF32 _centerX, sF32 _centerY,
                                      aa_exp,
                                      &paint
                                      );
-}
-
-static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
-                                            ShaderVG_Shape *_shape,
-                                            sUI _byteOffset, sUI _numPoints,
-                                            sBool _b14_2,
-                                            sBool _bBevel,
-                                            sBool _bAA,
-                                            sBool _bSkipLastLineJoint
-                                            ) {
-   const sF32 aaOff = _bAA ? Dsdvg_pixel_scl(stroke_w_aa_off) : 0.0f;
-
-   if(0u != _vboId)
-      sdvg_BindVBO(_vboId);
-
-   ShaderVG_Shader *shapeShader = &_shape->shape_shader;
-   shapeShader->bind();
-
-   Dsdvg_uniform_mat4(_shape->shape_u_transform, mvp_matrix);
-   Dsdvg_uniform_4f(_shape->shape_u_color_stroke, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
-   if(-1 != _shape->shape_u_color_fill)
-   {
-      Dsdvg_uniform_4f(_shape->shape_u_color_fill, fill_r, fill_g, fill_b, fill_a * global_a);
-   }
-   if(-1 != _shape->shape_u_decal_alpha)
-   {
-      Dsdvg_uniform_1f(_shape->shape_u_decal_alpha, texture_decal_alpha);
-   }
-   Dsdvg_uniform_1f(_shape->shape_u_stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff);
-   Dsdvg_uniform_1f(_shape->shape_u_aa_range, _bAA ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF);
-   if(-1 != _shape->shape_u_debug)
-   {
-      Dsdvg_uniform_1f(_shape->shape_u_debug, _shape->b_debug ? 1.0f : 0.0f);
-   }
-
-   if(PAINT_SOLID != paint.mode)
-      _shape->updatePaintUniforms(&paint);
-
-   if(_b14_2)
-   {
-      Dsdvg_attrib_offset(_shape->shape_a_vertex,   2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset + 0);
-      Dsdvg_attrib_offset(_shape->shape_a_vertex_n, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset + 4);
-      if(_bBevel)
-      {
-         Dsdvg_attrib_offset(_shape->shape_a_vertex_nn, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset + 2*4);
-      }
-   }
-   else
-   {
-      Dsdvg_attrib_offset(_shape->shape_a_vertex,   2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 0);
-      Dsdvg_attrib_offset(_shape->shape_a_vertex_n, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 8);
-      if(_bBevel)
-      {
-         Dsdvg_attrib_offset(_shape->shape_a_vertex_nn, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset + 2*8);
-      }
-   }
-
-   Dsdvg_attrib_enable(_shape->shape_a_vertex);
-   Dsdvg_attrib_enable(_shape->shape_a_vertex_n);
-
-   Dsdvg_attrib_divisor(_shape->shape_a_vertex, 1);
-   Dsdvg_attrib_divisor(_shape->shape_a_vertex_n, 1);
-
-   if(_bBevel)
-   {
-      Dsdvg_attrib_enable(_shape->shape_a_vertex_nn);
-      Dsdvg_attrib_divisor(_shape->shape_a_vertex_nn, 1);
-
-      const sSI numInstances = (_numPoints - 2u);
-      Dsdvg_uniform_1i(_shape->shape_u_last_instance, sSI(numInstances - sSI(_bSkipLastLineJoint)));
-#ifdef SHADERVG_HIRES_GEO
-      Dsdvg_draw_triangles_instanced_vbo(15, numInstances);
-#else
-      Dsdvg_draw_triangles_instanced_vbo(9, numInstances);
-#endif // SHADERVG_HIRES_GEO
-   }
-   else
-   {
-      const sUI numInstances = (_numPoints - 1u);
-      Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
-   }
-
-   Dsdvg_attrib_disable(_shape->shape_a_vertex_n);
-   Dsdvg_attrib_disable(_shape->shape_a_vertex);
-
-   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex);
-   Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_n);
-
-   if(_bBevel)
-   {
-      Dsdvg_attrib_disable(_shape->shape_a_vertex_nn);
-      Dsdvg_attrib_divisor_reset(_shape->shape_a_vertex_nn);
-   }
 }
 
 void YAC_CALL sdvg_DrawLineStripFlatVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -7470,20 +7671,6 @@ sBool YAC_CALL sdvg_BeginFilledPolygonAA(sUI _numVertices) {
    return loc_BeginFilledPolygon(_numVertices, YAC_TRUE/*bAA*/);
 }
 
-static void loc_drawStencilPolygon(sUI _numVerts) {
-   // (note) for use with sdvg_BeginFilledPolygon()
-   // (note) shader is selected in loc_bind_default_triangles_fill_flat_uniform_shape_*() (or use custom shader)
-   // (note) uniforms are set in UpdateShaderUniforms()
-
-   Dsdvg_stencil_poly_pass1();
-   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
-
-   Dsdvg_stencil_poly_pass2();
-   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
-
-   Dsdvg_stencil_poly_end();
-}
-
 void YAC_CALL sdvg_VertexOffset2f(void) {
    if(NULL != current_shape && 0u == mapped_user_vbo_id)
    {
@@ -8146,104 +8333,6 @@ void YAC_CALL sdvg_ColorARGB(sUI _c32) {
    sdvg_AttribARGB(_c32);
 }
 
-static sBool UpdateShaderUniforms(void) {
-   Dsdvg_tracecallv("[trc] sdvg:UpdateShaderUniforms: current_shape=%p\n", current_shape);
-   if(NULL != current_shape)
-   {
-      sSI loc;
-
-      loc = current_shape->shape_u_color_fill;
-      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_color_fill=%d\n", current_shape->shape_u_color_fill);
-      if(loc >= 0)
-      {
-         Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: fill=(%f; %f; %f; %f) global_a=%f\n", fill_r, fill_g, fill_b, fill_a, global_a);
-         Dsdvg_uniform_4f(loc, fill_r, fill_g, fill_b, fill_a * global_a);
-      }
-
-      loc = current_shape->shape_u_color_stroke;
-      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_color_stroke=%d\n", current_shape->shape_u_color_stroke);
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_4f(loc, stroke_r, stroke_g, stroke_b, stroke_a * global_a);
-      }
-
-      loc = current_shape->shape_u_global_alpha;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, global_a);
-      }
-
-      loc = current_shape->shape_u_decal_alpha;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, texture_decal_alpha);
-      }
-
-      loc = current_shape->shape_u_debug;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, ellipse_fill_aa.b_debug ? 1.0f : 0.0f);
-      }
-
-      loc = current_shape->shape_u_sampler;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1i(loc, 0);
-      }
-
-      loc = current_shape->shape_u_tex_0;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1i(loc, 0);
-      }
-
-      loc = current_shape->shape_u_tex_1;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1i(loc, 1);
-      }
-
-      // (note) TrianglesTexUVFlat32AlphaSDF
-      loc = current_shape->shape_u_a_min;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, alpha_sdf_min);
-      }
-
-      loc = current_shape->shape_u_a_max;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, alpha_sdf_max);
-      }
-
-      loc = current_shape->shape_u_a_maxmin_scale;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, alpha_sdf_maxmin_scale);
-      }
-
-      loc = current_shape->shape_u_a_exp;
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_1f(loc, alpha_sdf_exp);
-      }
-
-      if(PAINT_SOLID != paint.mode)
-         current_shape->updatePaintUniforms(&paint);
-
-      loc = current_shape->shape_u_transform;
-      Dsdvg_debugprintfvv("[trc] sdvg:UpdateShaderUniforms: shape_u_transform=%d\n", current_shape->shape_u_transform);
-      if(loc >= 0)
-      {
-         Dsdvg_uniform_mat4(loc, mvp_matrix);
-
-         // (todo) unmap / remap scratch ?
-         return YAC_TRUE;
-      }
-   }
-   return YAC_FALSE;
-}
-
 #ifdef SHADERVG_USE_SCRATCHBUFFERSUBDATA
 void sdvg_int_UploadScratchToVBO(void) {
    const sUI off = current_draw_start_offset;
@@ -8334,52 +8423,52 @@ void YAC_CALL sdvg_End(void) {
                case DRAW_MODE_TRIANGLES:
                case DRAW_MODE_TRIANGLES_32:
                case DRAW_MODE_TRIANGLES_14_2:
-                  // Dprintf("xxx sdvg_End: call UpdateShaderUniforms\n");
-                  if(UpdateShaderUniforms())
+                  // Dprintf("xxx sdvg_End: call loc_UpdateShaderUniforms\n");
+                  if(loc_UpdateShaderUniforms())
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
                      Dsdvg_glcall(glDrawArrays(GL_TRIANGLES, 0/*first*/, current_draw_vertex_index));
                   }
                   else
                   {
-                     // Dprintf("xxx sdvg_End: UpdateShaderUniforms FAILED\n");
+                     // Dprintf("xxx sdvg_End: loc_UpdateShaderUniforms FAILED\n");
                   }
                   break;
 
                case DRAW_MODE_TRIANGLE_STRIP:
                case DRAW_MODE_TRIANGLE_STRIP_32:
                case DRAW_MODE_TRIANGLE_STRIP_14_2:
-                  // Dprintf("xxx sdvg_End: call UpdateShaderUniforms\n");
-                  if(UpdateShaderUniforms())
+                  // Dprintf("xxx sdvg_End: call loc_UpdateShaderUniforms\n");
+                  if(loc_UpdateShaderUniforms())
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
                      Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_STRIP, 0/*first*/, current_draw_vertex_index));
                   }
                   else
                   {
-                     // Dprintf("xxx sdvg_End: UpdateShaderUniforms FAILED\n");
+                     // Dprintf("xxx sdvg_End: loc_UpdateShaderUniforms FAILED\n");
                   }
                   break;
 
                case DRAW_MODE_TRIANGLE_FAN:
                case DRAW_MODE_TRIANGLE_FAN_32:
                case DRAW_MODE_TRIANGLE_FAN_14_2:
-                  // Dprintf("xxx sdvg_End: call UpdateShaderUniforms\n");
-                  if(UpdateShaderUniforms())
+                  // Dprintf("xxx sdvg_End: call loc_UpdateShaderUniforms\n");
+                  if(loc_UpdateShaderUniforms())
                   {
                      // Dprintf("xxx sdvg_End: call glDrawArrays mode=%d current_draw_vertex_index=%u\n", current_draw_mode, current_draw_vertex_index);
                      Dsdvg_glcall(glDrawArrays(GL_TRIANGLE_FAN, 0/*first*/, current_draw_vertex_index));
                   }
                   else
                   {
-                     // Dprintf("xxx sdvg_End: UpdateShaderUniforms FAILED\n");
+                     // Dprintf("xxx sdvg_End: loc_UpdateShaderUniforms FAILED\n");
                   }
                   break;
 
                case DRAW_MODE_POLYGON:
                case DRAW_MODE_POLYGON_32:
                case DRAW_MODE_POLYGON_14_2:
-                  if(UpdateShaderUniforms())
+                  if(loc_UpdateShaderUniforms())
                   {
 #ifdef SHADERVG_STENCIL_POLYGONS
                      loc_drawStencilPolygon(current_draw_vertex_index/*numVerts*/);
@@ -8390,7 +8479,7 @@ void YAC_CALL sdvg_End(void) {
                   break;
 
                case DRAW_MODE_POLYGON_AA:
-                  if(UpdateShaderUniforms())
+                  if(loc_UpdateShaderUniforms())
                   {
 #ifdef SHADERVG_STENCIL_POLYGONS
                      if(current_draw_vertex_index >= 4u)
@@ -8400,7 +8489,7 @@ void YAC_CALL sdvg_End(void) {
                         // Draw AA outline
                         sF32 oldStrokeW = stroke_w;
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
-                        stroke_w = 1.0f;
+                        stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
                                                         shape,
                                                         current_draw_start_offset,
@@ -8424,7 +8513,7 @@ void YAC_CALL sdvg_End(void) {
                   break;
 
                case DRAW_MODE_POLYGON_AA_32:
-                  if(UpdateShaderUniforms())
+                  if(loc_UpdateShaderUniforms())
                   {
 #ifdef SHADERVG_STENCIL_POLYGONS
                      if(current_draw_vertex_index >= 4u)
@@ -8434,7 +8523,7 @@ void YAC_CALL sdvg_End(void) {
                         // Draw AA outline
                         sF32 oldStrokeW = stroke_w;
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
-                        stroke_w = 1.0f;
+                        stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
                                                         shape,
                                                         current_draw_start_offset,
@@ -8454,7 +8543,7 @@ void YAC_CALL sdvg_End(void) {
                   break;
 
                case DRAW_MODE_POLYGON_AA_14_2:
-                  if(UpdateShaderUniforms())
+                  if(loc_UpdateShaderUniforms())
                   {
 #ifdef SHADERVG_STENCIL_POLYGONS
                      if(current_draw_vertex_index >= 4u)
@@ -8464,7 +8553,7 @@ void YAC_CALL sdvg_End(void) {
                         // Draw AA outline
                         sF32 oldStrokeW = stroke_w;
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
-                        stroke_w = 1.0f;
+                        stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
                                                         shape,
                                                         current_draw_start_offset,

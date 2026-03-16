@@ -1402,6 +1402,40 @@ VBO vertex format (4 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_DrawPolygonFillFlatUniformAAVBO32,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled, anti-aliased n-polygon (32bit float format)
+
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_DrawPolygonFillFlatUniformAAVBO14_2,int vboId,int byteOffset,int numVerts
+Draw previously prepared vertex buffer as filled, anti-aliased n-polygon (14.2 fixed point format)
+
+Apply current paint.
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_SetupRectFillAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float sizeX,float sizeY
 Set up vertex buffer and draw list for filled, anti-aliased rectangle (32bit float format)
 
