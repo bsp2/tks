@@ -1249,7 +1249,7 @@ VBO vertex format (8 bytes per vertex):<br>
 @groupref Color
 @groupref Paint
  */
-void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawTrianglesFillFlatUniformVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled triangles (14.2 fixed point format)
@@ -1267,7 +1267,7 @@ VBO vertex format (4 bytes per vertex):<br>
 @groupref Color
 @groupref Paint
  */
-void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+YF void YAC_CALL sdvg_DrawTrianglesFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_DrawTrianglesFillGouraudVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, gouraud shaded triangles (32bit float format)
