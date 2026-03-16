@@ -1803,15 +1803,18 @@ sBool            YAC_String::append                   (YAC_String *o)           
       {
          sUI nl = k;
          sU8 *nc = Dyacallocchars(nl);
-         sBool ret = (nc != 0) ? YAC_TRUE : YAC_FALSE;
+         sBool ret = (NULL != nc) ? YAC_TRUE : YAC_FALSE;
          if(ret)
          {
             sU32 i = 0u;
             if(chars)
             {
-               for(;i<length-1; i++)
+               if(length > 1u)
                {
-                  nc[i] = chars[i];
+                  for(; i < length - 1u; i++)
+                  {
+                     nc[i] = chars[i];
+                  }
                }
                if((bflags&DEL))
                {
@@ -1819,9 +1822,10 @@ sBool            YAC_String::append                   (YAC_String *o)           
                   Dyacfreechars(chars);
                   // Dyac_host_printf("free old chars 2\n");
                }
-               length--;
+               if(length > 0u)
+                  length--;
             }
-            for(k=0; i < (length/*-1*/+o->length); i++, k++)
+            for(k = 0u; i < (length/*-1*/ + o->length); i++, k++)
             {
                nc[i] = o->chars[k];
             }
