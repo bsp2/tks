@@ -203,15 +203,18 @@ typedef struct YAC_String_s {
          {
             sUI nl = k;
             sU8 *nc = Dyacallocchars(nl);
-            sBool ret = (nc != 0) ? YAC_TRUE : YAC_FALSE;
+            sBool ret = (NULL != nc) ? YAC_TRUE : YAC_FALSE;
             if(ret)
             {
                sUI i = 0u;
                if(chars)
                {
-                  for(; i < length - 1u; i++)
+                  if(length > 1u)
                   {
-                     nc[i] = chars[i];
+                     for(; i < length - 1u; i++)
+                     {
+                        nc[i] = chars[i];
+                     }
                   }
                   if((bflags & YAC_STRING_DEL))
                   {
@@ -219,7 +222,8 @@ typedef struct YAC_String_s {
                      Dyacfreechars(chars);
                      /* Dyac_host_printf("free old chars 2\n"); */
                   }
-                  length--;
+                  if(length > 0u)
+                     length--;
                }
                for(k=0; i < (length/*-1*/+o->length); i++, k++)
                {

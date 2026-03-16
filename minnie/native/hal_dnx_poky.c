@@ -69,8 +69,8 @@ static sF64 loc_time_get_milliseconds_f64(void) {
 }
 
 // ---------------------------------------------------------------------------- loc_map_key_sym
-static sU32 loc_map_key_sym(sU32 _sym) {
 #if 0
+static sU32 loc_map_key_sym(sU32 _sym) {
    switch(_sym)
    {
       case SDLK_BACKSPACE: _sym = VKEY_BACKSPACE; break;
@@ -88,11 +88,12 @@ static sU32 loc_map_key_sym(sU32 _sym) {
       case SDLK_PAGEUP:    _sym = VKEY_PAGEUP;    break;
       case SDLK_PAGEDOWN:  _sym = VKEY_PAGEDOWN;  break;
    }
-#endif
    return _sym;
 }
+#endif // 0
 
 // ---------------------------------------------------------------------------- loc_map_key_mod
+#if 0
 static sU32 loc_map_key_mod(sU32 _mod) {
 #if 0
    switch(_mod)
@@ -107,6 +108,7 @@ static sU32 loc_map_key_mod(sU32 _mod) {
 #endif
    return _mod;
 }
+#endif // 0
 
 
 // ---------------------------------------------------------------------------- loc_config_init

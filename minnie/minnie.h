@@ -2236,6 +2236,7 @@ class ShapePolyline {
       vEndLastR.init(0.0f, 0.0f); // fix GCC warning
 
       Vector2f vDirLast;
+      vDirLast.init(0.0f, 0.0f); // fix GCC warning
       int skipQuad = 0;
       /* int segIdx = 0; */
 

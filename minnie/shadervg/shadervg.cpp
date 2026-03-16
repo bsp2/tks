@@ -1804,6 +1804,7 @@ static ShaderVG_Shape *loc_get_default_roundrect_stroke_aa_shape_32(sF32 *fillA,
    ShaderVG_Shape *shape;
    switch(paint.mode)
    {
+      default:
       case PAINT_SOLID:               shape = &roundrect_stroke_aa;                     break;
       case PAINT_LINEAR:              shape = &roundrect_stroke_aa_linear;              break;
       case PAINT_RADIAL:              shape = &roundrect_stroke_aa_radial;              break;

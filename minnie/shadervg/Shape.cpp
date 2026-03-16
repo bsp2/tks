@@ -713,7 +713,7 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO32Paint(sUI              _vb
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-   if(shape_u_color_stroke >= 0u)
+   if(shape_u_color_stroke >= 0)
    {
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
    }
@@ -748,7 +748,7 @@ void ShaderVG_Shape::drawTrianglesFillFlatUniformVBO14_2Paint(sUI              _
 
    Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
-   if(shape_u_color_stroke >= 0u)
+   if(shape_u_color_stroke >= 0)
    {
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
    }
