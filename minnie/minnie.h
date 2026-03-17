@@ -220,48 +220,53 @@ typedef int             sBool;
 #define Dexport_dl_vboffset32() Dstream_write_i32(minnie::setup::loc_dl_export_ofs, Dexport_vb_get_offset())
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ draw ops
-#define MINNIE_DRAWOP_END                                     0x00
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32          0x01
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2        0x02
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32                  0x03
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2                0x04
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32               0x05
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2             0x06
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32           0x07
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2         0x08
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32        0x09
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2      0x0A
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32            0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2          0x0C
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA         0x0D
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA       0x0E
-#define MINNIE_DRAWOP_RECT_FILL                               0x0F
-#define MINNIE_DRAWOP_RECT_STROKE                             0x10
-#define MINNIE_DRAWOP_RECT_FILL_STROKE                        0x11
-#define MINNIE_DRAWOP_ELLIPSE_FILL                            0x12
-#define MINNIE_DRAWOP_ELLIPSE_STROKE                          0x13
-#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                     0x14
-#define MINNIE_DRAWOP_ROUNDRECT_FILL                          0x15
-#define MINNIE_DRAWOP_ROUNDRECT_STROKE                        0x16
-#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                   0x17
-#define MINNIE_DRAWOP_BIND_TEXTURE                            0x18
-#define MINNIE_DRAWOP_UNBIND_TEXTURE                          0x19
-#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                     0x1A
-#define MINNIE_DRAWOP_PAINT_SOLID                             0x1B
-#define MINNIE_DRAWOP_PAINT_LINEAR                            0x1C
-#define MINNIE_DRAWOP_PAINT_RADIAL                            0x1D
-#define MINNIE_DRAWOP_PAINT_CONIC                             0x1E
-#define MINNIE_DRAWOP_PAINT_PATTERN                           0x1F
-#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                     0x20
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                     0x21
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA               0x22
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                0x23
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32          0x24
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32             0x25
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32       0x26
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                    0x27
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2              0x28
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2              0x29
+#define MINNIE_DRAWOP_END                                      0x00
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32           0x01
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2         0x02
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32                   0x03
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2                 0x04
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32                0x05
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2              0x06
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32            0x07
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2          0x08
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32         0x09
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2       0x0A
+#define MINNIE_DRAWOP_POLYGON_FIRST                            0x0A
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32             0x0B
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2           0x0C
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA          0x0D
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA        0x0E
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_BEGIN  0x0F
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_SUB    0x10
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_END    0x11
+#define MINNIE_DRAWOP_POLYGON_LAST                             0x11
+#define MINNIE_DRAWOP_RECT_FILL                                0x12
+#define MINNIE_DRAWOP_RECT_STROKE                              0x13
+#define MINNIE_DRAWOP_RECT_FILL_STROKE                         0x14
+#define MINNIE_DRAWOP_ELLIPSE_FILL                             0x15
+#define MINNIE_DRAWOP_ELLIPSE_STROKE                           0x16
+#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                      0x17
+#define MINNIE_DRAWOP_ROUNDRECT_FILL                           0x18
+#define MINNIE_DRAWOP_ROUNDRECT_STROKE                         0x19
+#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                    0x1A
+#define MINNIE_DRAWOP_BIND_TEXTURE                             0x1B
+#define MINNIE_DRAWOP_UNBIND_TEXTURE                           0x1C
+#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                      0x1D
+#define MINNIE_DRAWOP_PAINT_SOLID                              0x1E
+#define MINNIE_DRAWOP_PAINT_LINEAR                             0x1F
+#define MINNIE_DRAWOP_PAINT_RADIAL                             0x20
+#define MINNIE_DRAWOP_PAINT_CONIC                              0x21
+#define MINNIE_DRAWOP_PAINT_PATTERN                            0x22
+#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                      0x23
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                      0x24
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA                0x25
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                 0x26
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32           0x27
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32              0x28
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32        0x29
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                     0x2A
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2               0x2B
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2               0x2C
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE           0x00
@@ -838,6 +843,7 @@ static sBool b_debug_arc        = 0;
 static sBool b_debug_clip2d     = 0;
 static sBool b_debug_clip3d     = 0;
 static sBool b_debug_fill       = 0;  // 1=show batch draw calls  2=also show individual tri draw calls   3=debug 3d transform
+static sBool b_debug_multipath  = 0;
 static sBool b_debug_extrude    = 0;  // 2=verbose
 static sBool b_debug_line_strip = 0;  // 2=verbose
 static sBool b_debug_line       = 0;
@@ -3357,16 +3363,16 @@ class Path {
    }
 
    // <method.png>
-   void exportConcaveVertices(void *_ofs, const FloatArray *_va, const sU32 _c32Fill,
-                              const sF32 _tx, const sF32 _ty, const sF32 _geoScale,
-                              const sBool _bUniformColors
-                              ) {
+   void exportVertices(void *_ofs, const FloatArray *_va, const sU32 _c32Fill,
+                       const sF32 _tx, const sF32 _ty, const sF32 _geoScale,
+                       const sBool _bUniformColors
+                       ) {
       // export path points (will later be tesselated by GPU)
       const sUI numVerts = _va->num_elements >> 1u;
       if(numVerts >= 3u)
       {
          const sF32 *va = _va->elements.f32;
-         Dexportprintfv("[trc] minnie::Path::exportConcaveVertices: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32Fill=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32Fill);
+         Dexportprintfv("[trc] minnie::Path::exportVertices: write %u vertices at vboffset=%u 16bit=%d bUniformColors=%d c32Fill=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32Fill);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
             if(!_bUniformColors)
@@ -3395,16 +3401,16 @@ class Path {
    }
 
    // <method.png>
-   void exportConcaveVerticesTransform2d(void *_ofs, const FloatArray *_va, const sU32 _c32Fill,
-                                         const Matrix2x3f *_mat2d, const sF32 _tx, const sF32 _ty, const sF32 _geoScale,
-                                         const sBool _bUniformColors
-                                         ) {
+   void exportVerticesTransform2d(void *_ofs, const FloatArray *_va, const sU32 _c32Fill,
+                                  const Matrix2x3f *_mat2d, const sF32 _tx, const sF32 _ty, const sF32 _geoScale,
+                                  const sBool _bUniformColors
+                                  ) {
       // export path points (will later be tesselated by GPU)
       const sUI numVerts = _va->num_elements >> 1u;
       if(numVerts >= 3u)
       {
          const sF32 *va = _va->elements.f32;
-         Dexportprintfv("[trc] minnie::Path::exportConcaveVerticesTransform2d: write %u concave vertices at vboffset=%u 16bit=%d bUniformColors=%d c32Fill=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32Fill);
+         Dexportprintfv("[trc] minnie::Path::exportVerticesTransform2d: write %u vertices at vboffset=%u 16bit=%d bUniformColors=%d c32Fill=#%08x\n", numVerts, Dstream_get_offset(_ofs), MINNIE_EXPORT_VERTEX_16BIT, _bUniformColors, _c32Fill);
          for(sUI vtxIdx = 0u; vtxIdx < numVerts; vtxIdx++)
          {
             if(!_bUniformColors)
@@ -3736,7 +3742,6 @@ class Path {
       {
          Dprintf("xxx tesselateEvenOdd: ENTER\n");
       }
-      /* return YAC_FALSE;//xxxxxxxxxxxxxxxxxxxxxxx */
 #ifdef HAVE_VGTESSELATE
 
       debug_num_swtess_paths++;
@@ -4061,6 +4066,7 @@ namespace setup {
    static sBool b_tesselate_concave;    // def=1 (tesselate to triangles).  0=export as-is (and later tesselate via GPU)
    static sBool b_force_concave_evenodd;  // def=0  (1=treat concave paths as evenodd paths via SGI tesselator)
    static sBool b_force_evenodd_concave;  // def=0  (1=treat evenodd (sub-)paths as concave paths)
+   static sBool b_multipath_hw_polygons;  // 1=draw filled multipath polygons via GPU and skip SW tesselation
    static sUI   sw_tesselate_size_threshold;
    static sBool b_render_strokes;
    static sBool b_render_join_cap;
@@ -4081,6 +4087,7 @@ namespace setup {
       b_tesselate_concave           = YAC_TRUE;
       b_force_concave_evenodd       = YAC_FALSE;
       b_force_evenodd_concave       = YAC_FALSE;
+      b_multipath_hw_polygons       = YAC_FALSE;
       sw_tesselate_size_threshold   = 0u;
       b_render_strokes              = YAC_TRUE;
       b_render_join_cap             = YAC_TRUE;
@@ -4281,6 +4288,16 @@ namespace setup {
    // <method_get.png>
    static sBool getEnablePolygonAA(void) {
       return b_polygon_aa;
+   }
+
+   // <method_set.png>
+   static void setEnableMultiPathHWPolygons(sBool _bEnable) {
+      b_multipath_hw_polygons = _bEnable;
+   }
+
+   // <method_get.png>
+   static sBool getEnableMultiPathHWPolygons(void) {
+      return b_multipath_hw_polygons;
    }
 
    // <method_set.png>
@@ -6119,6 +6136,22 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_BEGIN:
+            Dexport_dl_i16(active_dl_op);
+            Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
+            Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_SUB:
+            Dexport_dl_i16(active_dl_op);
+            Dexport_dl_i32(active_dl_start_offset);
+            Dexport_dl_i32(active_dl_num_verts);
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_END:
+            Dexport_dl_i16(active_dl_op);
+            break;
+
          case MINNIE_DRAWOP_RECT_FILL:
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<rect_fill> start_offset=%u c=(%f;%f) s=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_sx, active_dl_sy, active_dl_c32_fill);
             {
@@ -6531,6 +6564,15 @@ namespace setup {
 
       return beginDrawListOp(op);
    }
+
+   static sBool beginDrawListOpPolygonSub(void) {
+#if MINNIE_EXPORT_VERTEX_16BIT
+      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_SUB);
+#else
+      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA_SUB);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+   }
+
 
    // <method.png>
    static sUI calcCurJoinCap(void) {
@@ -7564,12 +7606,18 @@ namespace setup {
 
    // <method.png>
    static sBool isDrawOpPolygon(void) {
+#if 0
       return
          (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA) ||
          (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA)   ||
          (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2)    ||
          (active_dl_op == MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32)
          ;
+#else
+      return (active_dl_op >= MINNIE_DRAWOP_POLYGON_FIRST &&
+              active_dl_op <= MINNIE_DRAWOP_POLYGON_LAST
+              );
+#endif
    }
 
    // <method.png>
@@ -7583,14 +7631,14 @@ namespace setup {
          {
             Dprintf("[!!!] Minnie::drawPathFillConcave: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
-         p->exportConcaveVertices(loc_vb_export_ofs,
-                                  &p->points,
-                                  cur_c32_fill,
-                                  cur_x,
-                                  cur_y,
-                                  geo_scale,
-                                  YAC_TRUE/*bUniformColors*/
-                                  );
+         p->exportVertices(loc_vb_export_ofs,
+                           &p->points,
+                           cur_c32_fill,
+                           cur_x,
+                           cur_y,
+                           geo_scale,
+                           YAC_TRUE/*bUniformColors*/
+                           );
          active_dl_num_verts += p->points.num_elements >> 1u;
          return;
       }
@@ -7637,8 +7685,31 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOdd(Path *p) {
+   static void drawPathFillEvenOdd(Path *p, sBool _bMultiPathHWPolygon) {
       if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOdd: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      if(_bMultiPathHWPolygon)
+      {
+         if(!isDrawOpPolygon())
+         {
+            Dprintf("[!!!] Minnie::drawPathFillEvenOdd: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+         }
+         beginDrawListOpPolygonSub();
+         p->exportVertices(loc_vb_export_ofs,
+                           &p->points,
+                           cur_c32_fill,
+                           cur_x,
+                           cur_y,
+                           geo_scale,
+                           YAC_TRUE/*bUniformColors*/
+                           );
+         active_dl_num_verts += p->points.num_elements >> 1u;
+         if(b_debug_multipath)
+         {
+            Dprintf("[trc] Minnie::drawPathFillEvenOdd: add sub #verts=%u\n", active_dl_num_verts);
+         }
+         return;
+      }
 
       // (note) iterates parent+sub paths, generate vaPoints and p.ia_fill
       FloatArray *vaPoints = &tmpfa_points2;
@@ -7702,14 +7773,14 @@ namespace setup {
             Dprintf("[!!!] Minnie::drawPathFillConcaveClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          // (note) translation + scaling already applied in translateAndScalePoints()
-         p->exportConcaveVertices(loc_vb_export_ofs,
-                                  va,
-                                  cur_c32_fill,
-                                  0.0f/*tx*/,
-                                  0.0f/*ty*/,
-                                  1.0f/*geoScale*/,
-                                  YAC_TRUE/*bUniformColors*/
-                                  );
+         p->exportVertices(loc_vb_export_ofs,
+                           va,
+                           cur_c32_fill,
+                           0.0f/*tx*/,
+                           0.0f/*ty*/,
+                           1.0f/*geoScale*/,
+                           YAC_TRUE/*bUniformColors*/
+                           );
          active_dl_num_verts += va->num_elements >> 1u;
          return;
       }
@@ -7752,7 +7823,7 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddClipPre(Path *p, FloatArray *_vaClip) {
+   static void drawPathFillEvenOddClipPre(Path *p, FloatArray *_vaClip, sBool _bMultiPathHWPolygon) {
       if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddClipPre: path_idx=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
@@ -7760,6 +7831,29 @@ namespace setup {
 
       FloatArray *va = &tmpfa_clip2;
       Clip2D(vaPoints, _vaClip, va);
+
+      if(_bMultiPathHWPolygon)
+      {
+         if(!isDrawOpPolygon())
+         {
+            Dprintf("[!!!] Minnie::drawPathFillEvenOddClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+         }
+         beginDrawListOpPolygonSub();
+         p->exportVertices(loc_vb_export_ofs,
+                           va,
+                           cur_c32_fill,
+                           0.0f/*cur_x*/,
+                           0.0f/*cur_y*/,
+                           1.0f/*geo_scale*/,
+                           YAC_TRUE/*bUniformColors*/
+                           );
+         active_dl_num_verts += va->num_elements >> 1u;
+         if(b_debug_multipath)
+         {
+            Dprintf("[trc] Minnie::drawPathFillEvenOddClipPre: add sub #verts=%u\n", active_dl_num_verts);
+         }
+         return;
+      }
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
       if(!p->tesselateEvenOdd(va/*in*/, va/*out*/))
@@ -7879,15 +7973,15 @@ namespace setup {
          {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
-         p->exportConcaveVerticesTransform2d(loc_vb_export_ofs,
-                                             &p->points,
-                                             cur_c32_fill,
-                                             &cur_mat_2d,
-                                             cur_x,
-                                             cur_y,
-                                             geo_scale,
-                                             YAC_TRUE/*bUniformColors*/
-                                             );
+         p->exportVerticesTransform2d(loc_vb_export_ofs,
+                                      &p->points,
+                                      cur_c32_fill,
+                                      &cur_mat_2d,
+                                      cur_x,
+                                      cur_y,
+                                      geo_scale,
+                                      YAC_TRUE/*bUniformColors*/
+                                      );
          active_dl_num_verts += p->points.num_elements >> 1u;
          return;
       }
@@ -7940,8 +8034,32 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform2d(Path *p) {
+   static void drawPathFillEvenOddTransform2d(Path *p, sBool _bMultiPathHWPolygon) {
       if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform2d: path_idx=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      if(_bMultiPathHWPolygon)
+      {
+         if(!isDrawOpPolygon())
+         {
+            Dprintf("[!!!] Minnie::drawPathFillEvenOddTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+         }
+         beginDrawListOpPolygonSub();
+         p->exportVerticesTransform2d(loc_vb_export_ofs,
+                                      &p->points,
+                                      cur_c32_fill,
+                                      &cur_mat_2d,
+                                      cur_x,
+                                      cur_y,
+                                      geo_scale,
+                                      YAC_TRUE/*bUniformColors*/
+                                      );
+         active_dl_num_verts += p->points.num_elements >> 1u;
+         if(b_debug_multipath)
+         {
+            Dprintf("[trc] Minnie::drawPathFillEvenOddTransform2d: add sub #verts=%u\n", active_dl_num_verts);
+         }
+         return;
+      }
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
       FloatArray *vaPoints = &tmpfa_points2;
@@ -8008,14 +8126,14 @@ namespace setup {
             Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          // (note) translation and scaling already applied in transform2DAndTranslateAndScale()
-         p->exportConcaveVertices(loc_vb_export_ofs,
-                                  vaClip,
-                                  cur_c32_fill,
-                                  cur_x,
-                                  cur_y,
-                                  geo_scale,
-                                  YAC_TRUE/*bUniformColors*/
-                                  );
+         p->exportVertices(loc_vb_export_ofs,
+                           vaClip,
+                           cur_c32_fill,
+                           0.0f/*cur_x*/,
+                           0.0f/*cur_y*/,
+                           1.0f/*geo_scale*/,
+                           YAC_TRUE/*bUniformColors*/
+                           );
          active_dl_num_verts += vaClip->num_elements >> 1u;
          return;
       }
@@ -8056,7 +8174,7 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform2dClipPre(Path *p, const FloatArray *_vaClip) {
+   static void drawPathFillEvenOddTransform2dClipPre(Path *p, const FloatArray *_vaClip, sBool _bMultiPathHWPolygon) {
       if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform2dClipPre: path_idx=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
@@ -8064,6 +8182,29 @@ namespace setup {
 
       FloatArray *vaClip = &tmpfa_clip2;
       Clip2D(vaPoints, _vaClip, vaClip/*out*/);
+
+      if(_bMultiPathHWPolygon)
+      {
+         if(!isDrawOpPolygon())
+         {
+            Dprintf("[!!!] Minnie::drawPathFillEvenOddTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+         }
+         beginDrawListOpPolygonSub();
+         p->exportVertices(loc_vb_export_ofs,
+                           vaClip,
+                           cur_c32_fill,
+                           0.0f/*cur_x*/,
+                           0.0f/*cur_y*/,
+                           1.0f/*geo_scale*/,
+                           YAC_TRUE/*bUniformColors*/
+                           );
+         active_dl_num_verts += vaClip->num_elements >> 1u;
+         if(b_debug_multipath)
+         {
+            Dprintf("[trc] Minnie::drawPathFillEvenOddTransform2dClipPre: add sub #verts=%u\n", active_dl_num_verts);
+         }
+         return;
+      }
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
       if(!p->tesselateEvenOdd(vaClip/*in*/, vaClip/*out*/))
@@ -9221,26 +9362,29 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPath(Path *p, sSI mode, const sUI _forcedPathTypeOr0) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPath: mode=%d p->path_idx=%u p->type=%u cur_stroke_w=%f\n", mode, p->path_idx, p->type, cur_stroke_w); }
+   static void drawPath(Path *p, sSI mode, const sUI _forcedPathTypeOr0, sBool _bMultiPathHWPolygon) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPath: mode=%d p->path_idx=%u p->type=%u cur_stroke_w=%f bMultiPathHWPolygon=%d\n", mode, p->path_idx, p->type, cur_stroke_w, _bMultiPathHWPolygon); }
 
       if(p->points.num_elements >= (2u*2u))
       {
-         // Start or continue draw-triangles op
+         if(!_bMultiPathHWPolygon)
+         {
+            // Start or continue draw-triangles op
 #if MINNIE_EXPORT_TRIS_EDGEAA
          /* Dprintf("xxx b_edge_aa=%d\n", b_edge_aa); */
-         if(b_edge_aa)
-         {
-            // edgeAA
-            edgeAABeginPath();
+            if(b_edge_aa)
+            {
+               // edgeAA
+               edgeAABeginPath();
 
-            (void)beginDrawListOpTriEdgeAA();
-         }
-         else
+               (void)beginDrawListOpTriEdgeAA();
+            }
+            else
 #endif // MINNIE_EXPORT_TRIS_EDGEAA
-         {
-            // MSAA / noAA
-            (void)beginDrawListOpTri();
+            {
+               // MSAA / noAA
+               (void)beginDrawListOpTri();
+            }
          }
 
          const sUI pathType = (0u != _forcedPathTypeOr0) ? _forcedPathTypeOr0 : p->type;
@@ -9261,13 +9405,25 @@ namespace setup {
                         if(NULL != cur_clip2d_path)
                         {
                            if(b_cur_clip2d_pre)
-                              drawPathFillEvenOddClipPre(p, &cur_clip2d_path->points);
+                           {
+                              drawPathFillEvenOddClipPre(p, &cur_clip2d_path->points, _bMultiPathHWPolygon);
+                           }
                            else
-                              drawPathFillEvenOddClip(p, &cur_clip2d_path->points);
+                           {
+                              if(!_bMultiPathHWPolygon)
+                              {
+                                 drawPathFillEvenOddClip(p, &cur_clip2d_path->points);
+                              }
+                              else
+                              {
+                                 // (todo) implement me
+                                 Derrorprintf("[---] drawPath: drawPathFillEvenOddClip() not supported for HW polygons\n");
+                              }
+                           }
                         }
                         else
                         {
-                           drawPathFillEvenOdd(p);
+                           drawPathFillEvenOdd(p, _bMultiPathHWPolygon);
                         }
                      }
                   }
@@ -9382,12 +9538,21 @@ namespace setup {
                         if(NULL != cur_clip2d_path)
                         {
                            if(b_cur_clip2d_pre)
-                              drawPathFillEvenOddTransform2dClipPre(p, &cur_clip2d_path->points);
-                           else
+                           {
+                              drawPathFillEvenOddTransform2dClipPre(p, &cur_clip2d_path->points, _bMultiPathHWPolygon);
+                           }
+                           else if(!_bMultiPathHWPolygon)
+                           {
                               drawPathFillEvenOddTransform2dClip(p, &cur_clip2d_path->points);
+                           }
+                           else
+                           {
+                              // (todo) implement me
+                              Derrorprintf("[---] drawPath: drawPathFillEvenOddTransform2dClip() not supported for HW polygons\n");
+                           }
                         }
                         else
-                           drawPathFillEvenOddTransform2d(p);
+                           drawPathFillEvenOddTransform2d(p, _bMultiPathHWPolygon);
                      }
                   }
                   else if(MINNIE_PATH_TYPE_CONCAVE == pathType)
@@ -9496,6 +9661,12 @@ namespace setup {
 
             case 2:
                // transform 3d
+               if(_bMultiPathHWPolygon)
+               {
+                  // (todo) implement me
+                  Derrorprintf("[---] drawPath: TRANSFORM_3D not supported for HW polygons\n");
+                  return;
+               }
                if(0.0f == cur_stroke_w)
                {
                   if(MINNIE_PATH_TYPE_EVENODD == pathType)
@@ -9590,8 +9761,38 @@ namespace setup {
 
    // <method.png>
    static void drawMultiPath(Path *p, sSI mode) {
+      // mode 0: notransform
+      //      1: transform2d
+      //      2: transform3d
+
+      if(b_debug_multipath)
+      {
+         Dprintf("[trc] drawMultiPath: p->type=%d #points=%u #sub=%u mode=%d b_tesselate_concave=%d sw_tesselate_size_threshold=%u\n", p->type, p->points.num_elements, p->sub_paths.num_elements, mode, b_tesselate_concave, sw_tesselate_size_threshold);
+      }
 
       debug_num_paths++;
+
+      if(b_multipath_hw_polygons && !b_edge_aa && p->sub_paths.num_elements > 0u && cur_stroke_w < 0.001f/*fill?*/)
+      {
+         if(b_debug_multipath)
+         {
+            Dprintf("[trc] drawMultiPath: HW polygon #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
+         }
+
+         beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_BEGIN);
+
+         drawPath(p, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
+
+         for(sUI spIdx = 0u; spIdx < p->sub_paths.num_elements; spIdx++)
+         {
+            Path *sp = p->sub_paths.elements[spIdx];
+            drawPath(sp, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
+         }
+
+         beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_END);
+
+         return;
+      }
 
       // concave (n-polygon) GPU tesselation enabled and auto-redirect
       //  PATH_TYPE_EVENODD(without subpaths) to PATH_TYPE_CONCAVE ?
@@ -9615,14 +9816,14 @@ namespace setup {
                   {
                      debug_num_small_paths++;
                      debug_num_small_path_points += (p->points.num_elements >> 1);
-                     drawPath(p, mode, MINNIE_PATH_TYPE_CONCAVE);
+                     drawPath(p, mode, MINNIE_PATH_TYPE_CONCAVE, YAC_FALSE/*bMultiPathHWPolygon*/);
                      return;
                   }
                   else
                   {
                      debug_num_large_paths++;
                      debug_num_large_path_points += (p->points.num_elements >> 1);
-                     drawPath(p, mode, MINNIE_PATH_TYPE_EVENODD);
+                     drawPath(p, mode, MINNIE_PATH_TYPE_EVENODD, YAC_FALSE/*bMultiPathHWPolygon*/);
                      return;
                   }
                }
@@ -9633,7 +9834,7 @@ namespace setup {
                for(sUI spIdx = 0u; spIdx < p->sub_paths.num_elements; spIdx++)
                {
                   Path *sp = p->sub_paths.elements[spIdx];
-                  drawPath(sp, mode, MINNIE_PATH_TYPE_CONCAVE/*forcedPathTypeOr0*/);
+                  drawPath(sp, mode, MINNIE_PATH_TYPE_CONCAVE/*forcedPathTypeOr0*/, YAC_FALSE/*bMultiPathHWPolygon*/);
                }
                return;
             }
@@ -9646,10 +9847,11 @@ namespace setup {
          }
       }
 
-      drawPath(p, mode, 0u/*forcedPathTypeOr0*/);
+      drawPath(p, mode, 0u/*forcedPathTypeOr0*/, YAC_FALSE/*bMultiPathHWPolygon*/);
 
       if(MINNIE_PATH_TYPE_EVENODD != p->type || cur_stroke_w > 0.0f)
       {
+         // stroked sub paths
          if(b_debug_fill && (p->sub_paths.num_elements > 0u))
          {
             Dprintf("[trc] drawMultiPath: #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
@@ -9658,7 +9860,7 @@ namespace setup {
          for(sUI spIdx = 0u; spIdx < p->sub_paths.num_elements; spIdx++)
          {
             Path *sp = p->sub_paths.elements[spIdx];
-            drawPath(sp, mode, 0u/*forcedPathTypeOr0*/);
+            drawPath(sp, mode, 0u/*forcedPathTypeOr0*/, YAC_FALSE/*bMultiPathHWPolygon*/);
          }
       }
    }
@@ -11334,6 +11536,8 @@ YF void YAC_CALL minSetEnableUniformColors (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableUniformColors (void);
 YF void YAC_CALL minSetEnablePolygonAA (sBool _bEnable);
 YF sBool YAC_CALL minGetEnablePolygonAA (void);
+YF void YAC_CALL minSetEnableMultiPathHWPolygons (sBool _bEnable);
+YF sBool YAC_CALL minGetEnableMultiPathHWPolygons (void);
 YF void YAC_CALL minSetStrokeWLineStripThreshold (sF32 _threshold);
 YF sF32 YAC_CALL minGetStrokeWLineStripThreshold (void);
 YF void YAC_CALL minSetStrokeWLineJoinThreshold (sF32 _threshold);
@@ -11968,6 +12172,26 @@ Query antialiased-polygons enable-state.
 */
 sBool minGetEnablePolygonAA(void) {
    return minnie::setup::getEnablePolygonAA();
+}
+
+/* @function minSetEnableMultiPathHWPolygons,boolean bEnable
+Enable or disable GPU-accelerated filled multipath polygons.
+
+@see minGetEnableMultiPathHWPolygons
+@group Config
+*/
+void minSetEnableMultiPathHWPolygons(sBool _bEnable) {
+   minnie::setup::setEnableMultiPathHWPolygons(_bEnable);
+}
+
+/* @function minGetEnableMultiPathHWPolygons:boolean
+Query GPU-accelerated-filled-multipath-polygons enable-state.
+
+@see minSetEnableMultiPathHWPolygons
+@group Config
+*/
+sBool minGetEnableMultiPathHWPolygons(void) {
+   return minnie::setup::getEnableMultiPathHWPolygons();
 }
 
 /* @function minSetStrokeWLineStripThreshold,float threshold

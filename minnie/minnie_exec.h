@@ -28,6 +28,13 @@
 #define Ddebug_draw_list_printfv      if(1);else Dprintf
 #define Ddebug_draw_list_errorprintfv if(0);else Dprintf
 
+typedef struct minnie_subpath_s {
+   sUI vb_off;
+   sUI num_verts;
+} minnie_subpath_t;
+
+static minnie_subpath_t loc_minnie_subpaths[MINNIE_MAX_SUB_PATHS];  // temporary during exec
+
 /* @function minExecDrawListEx,Buffer bufDraw,int glBufId,boolean bDebug
 Execute draw-list
 @arg bufDraw Draw-list buffer (offset determines size) (in system RAM)
@@ -51,6 +58,9 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
    Dstream_set_offset(_bufDraw, 0u);
    Ddebug_draw_list_printfv("[trc] ~~~~~~~~~~~~~~~~~~~~~~~~~~ draw-list dlSize=%u\n", dlSize);
    sUI numOpsPoly                = 0u;
+   sUI numOpsPolyBegin           = 0u;
+   sUI numOpsPolySub             = 0u;
+   sUI numOpsPolyEnd             = 0u;
    sUI numOpsTri                 = 0u;
    sUI numOpsTriTex              = 0u;
    sUI numOpsLineStrip           = 0u;
@@ -70,6 +80,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
    sBool dlTexRepeat;
    sBool dlTexFilter;
    sF32 dlTexDecalAlpha;
+   sUI polySubIdx = 0u;
 
    while(Dstream_get_offset(_bufDraw) < dlSize)
    {
@@ -263,6 +274,53 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
                                                      numVerts
                                                      );
             numOpsPoly++;
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_BEGIN:
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: polygon-fill-flat-aa-begin<s14.2>: c32Fill=#%08x\n", c32Fill);
+            /* sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke); */  // (todo) fix pattern decal colors
+            sdvg_SetColorARGB(c32Fill);
+            sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass1(_glBufId);
+            loc_minnie_subpaths[0].num_verts = 0u;
+            polySubIdx = 0u;
+            numOpsPolyBegin++;
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_SUB:
+            vbOff    = Dstream_read_i32(_bufDraw);
+            numVerts = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: polygon-fill-flat-aa-sub<s14.2>: vbOff=%u numVerts=%u\n", vbOff, numVerts);
+            if(polySubIdx < MINNIE_MAX_SUB_PATHS)
+            {
+               sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass1(vbOff,
+                                                              numVerts
+                                                              );
+               loc_minnie_subpaths[polySubIdx].vb_off    = vbOff;
+               loc_minnie_subpaths[polySubIdx].num_verts = numVerts;
+               polySubIdx++;
+            }
+            else
+            {
+               Ddebug_draw_list_errorprintfv("[---] minExecDrawList: max sub-paths(%u) exceeded\n", MINNIE_MAX_SUB_PATHS);
+            }
+            numOpsPolySub++;
+            break;
+
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA_END:
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: polygon-fill-flat-aa-end<s14.2>\n");
+            sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass2();
+            for(sUI subPathIdx = 0u; subPathIdx < polySubIdx; subPathIdx++)
+            {
+               sUI vbOff    = loc_minnie_subpaths[subPathIdx].vb_off;
+               sUI numVerts = loc_minnie_subpaths[subPathIdx].num_verts;
+               sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass2(vbOff,
+                                                              numVerts
+                                                              );
+            }
+            sdvg_PolygonFillFlatUniformAAVBO14_2_End();
+            numOpsPolyEnd++;
             break;
 
          case MINNIE_DRAWOP_RECT_FILL:
@@ -788,7 +846,7 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
 
    if(_bDebug)
    {
-      Dprintf("[dbg] minExecDrawList: #Tri=%u #Poly=%u #TriTex=%u #LineStrip=%u #LineStripBevel=%u #LineStripMiter=%u #RectFill=%u #RectStroke=%u #RectFillStroke=%u #EllipseFill=%u #EllipseStroke=%u #EllipseFillStroke=%u #RoundRectFill=%u #RoundRectStroke=%u #RoundRectFillStroke=%u dl-size=%u\n", numOpsTri, numOpsPoly, numOpsTriTex, numOpsLineStrip, numOpsLineStripBevel, numOpsLineStripMiter, numOpsRectFill, numOpsRectStroke, numOpsRectFillStroke, numOpsEllipseFill, numOpsEllipseStroke, numOpsEllipseFillStroke, numOpsRoundRectFill, numOpsRoundRectStroke, numOpsRoundRectFillStroke, Dstream_get_offset(_bufDraw));
+      Dprintf("[dbg] minExecDrawList: #Tri=%u #Poly=%u #PolyBegin=%u (#sub=%u #end=%u) #TriTex=%u #LineStrip=%u #LineStripBevel=%u #LineStripMiter=%u #RectFill=%u #RectStroke=%u #RectFillStroke=%u #EllipseFill=%u #EllipseStroke=%u #EllipseFillStroke=%u #RoundRectFill=%u #RoundRectStroke=%u #RoundRectFillStroke=%u dl-size=%u\n", numOpsTri, numOpsPoly, numOpsPolyBegin, numOpsPolySub, numOpsPolyEnd, numOpsTriTex, numOpsLineStrip, numOpsLineStripBevel, numOpsLineStripMiter, numOpsRectFill, numOpsRectStroke, numOpsRectFillStroke, numOpsEllipseFill, numOpsEllipseStroke, numOpsEllipseFillStroke, numOpsRoundRectFill, numOpsRoundRectStroke, numOpsRoundRectFillStroke, Dstream_get_offset(_bufDraw));
    }
 }
 
