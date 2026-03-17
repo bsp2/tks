@@ -2852,6 +2852,75 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
 #endif // SHADERVG_STENCIL_POLYGONS
 }
 
+void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass1(sUI _vboId) {
+#ifdef SHADERVG_STENCIL_POLYGONS
+   // Bind VBO, bind shader, update uniforms, enable vertex attribute, setup pass1 stencil test
+   sdvg_BindVBO(_vboId);
+   ShaderVG_Shape *oldShape = current_shape;
+   current_shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+   sSI a = current_shape->bindAndReturnVertexAttrib();
+   if(loc_UpdateShaderUniforms())
+   {
+      Dsdvg_attrib_enable(a);
+
+      Dsdvg_stencil_poly_pass1();
+   }
+   current_shape = oldShape;
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
+void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass1(sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +4 s14.2 y
+   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+   Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
+void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass2(void) {
+#ifdef SHADERVG_STENCIL_POLYGONS
+   // setup pass2 stencil test
+   Dsdvg_stencil_poly_pass2();
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
+void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass2(sUI _byteOffset, sUI _numVerts) {
+   //
+   // VBO vertex format (4 bytes per vertex):
+   //   +0 s14.2 x
+   //   +4 s14.2 y
+   //
+#ifdef SHADERVG_STENCIL_POLYGONS
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+   Dsdvg_attrib_offset(shape->shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4, _byteOffset);
+   Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
+void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_End(void) {
+#ifdef SHADERVG_STENCIL_POLYGONS
+   // Disable vertex attribute and stencil test
+   ShaderVG_Shape *shape = loc_get_default_triangles_fill_flat_uniform_shape_14_2();
+   Dsdvg_attrib_disable(shape->shape_a_vertex);
+   Dsdvg_stencil_poly_end();
+#else
+#error polygon rasterizer n/a
+#endif // SHADERVG_STENCIL_POLYGONS
+}
+
 void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numVerts) {
    //
    // VBO vertex format (4 bytes per vertex):

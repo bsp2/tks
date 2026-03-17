@@ -1419,6 +1419,31 @@ VBO vertex format (8 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass1,int vboId
+Begin filled multipath n-polygon (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass1 (sUI _vboId);
+
+/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass1,int byteOffset,int numVerts
+Render first pass of filled multipath n-polygon sub-path (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass1 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass2
+Begin second pass of filled multipath n-polygon (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass2 (void);
+
+/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass2,int byteOffset,int numVerts
+Render second pass of filled multipath n-polygon sub-path (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass2 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_End
+Finish filled multipath n-polygon (14.2 fixed point format)
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_End (void);
+
 /* @function sdvg_DrawPolygonFillFlatUniformAAVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, anti-aliased n-polygon (14.2 fixed point format)
 
