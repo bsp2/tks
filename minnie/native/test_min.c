@@ -722,8 +722,8 @@ static void Test_26(void) {
 
    sSI paintId = minPaintCreate();
    minPaintPattern(0.0f, 0.0f,
-                   VP_W, 0.0f,
-                   1.0f, 1.0f
+                   1.0f, 0.0f,
+                   VP_W, VP_H
                    );
 
    sSI pid = minBeginPath();
@@ -805,7 +805,7 @@ static void Test_27(void) {
 
             minPaintUpdate(paintId);
             minPaintPattern(px, py,
-                            px+1.0f, py+0.0f,
+                            1.0f, 0.0f,
                             w, h
                             );
             minPaint(paintId);

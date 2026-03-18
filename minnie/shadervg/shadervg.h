@@ -3125,16 +3125,21 @@ Select solid paint
 */
 YF void YAC_CALL sdvg_PaintSolid (void);
 
-/* @function sdvg_PaintLinear,float startX,float startY,float endX,float endY
+/* @function sdvg_PaintLinear,float startX,float startY,float dirX,float dirY
 Select linear paint.
 
 The currently bound texture (nx1) is used as a gradient lookup table.
+
+@arg startX Origin X
+@arg startY Origin Y
+@arg dirX Direction and size X
+@arg dirY Direction and size Y
 
 @group Paint
 @group Gradient
 @groupref Texture
 */
-YF void YAC_CALL sdvg_PaintLinear (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY);
+YF void YAC_CALL sdvg_PaintLinear (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY);
 
 /* @function sdvg_PaintRadial,float startX,float startY,float radiusX,float radiusY
 Select radial paint.
@@ -3169,15 +3174,15 @@ The currently bound texture (nx1) is used as a gradient lookup table.
 */
 YF void YAC_CALL sdvg_PaintConic (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01);
 
-/* @function sdvg_PaintPattern,float startX,float startY,float endX,float endY,float sizeX,float sizeY
+/* @function sdvg_PaintPattern,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Select pattern paint.
 
 The currently bound texture is used as the pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg endX End point X
-@arg endY End point Y
+@arg dirX Direction X
+@arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
 
@@ -3185,17 +3190,17 @@ The currently bound texture is used as the pattern.
 @group Pattern
 @groupref Texture
 */
-YF void YAC_CALL sdvg_PaintPattern (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_PaintPattern (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
 
-/* @function sdvg_PaintPatternAlpha,float startX,float startY,float endX,float endY,float sizeX,float sizeY
+/* @function sdvg_PaintPatternAlpha,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Select alpha pattern paint.
 
 The currently bound texture is used as the alpha channel pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg endX End point X
-@arg endY End point Y
+@arg dirX Direction X
+@arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
 
@@ -3203,17 +3208,17 @@ The currently bound texture is used as the alpha channel pattern.
 @group Pattern
 @groupref Texture
 */
-YF void YAC_CALL sdvg_PaintPatternAlpha (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_PaintPatternAlpha (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
 
-/* @function sdvg_PaintPatternDecal,float startX,float startY,float endX,float endY,float sizeX,float sizeY
+/* @function sdvg_PaintPatternDecal,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Select pattern paint.
 
 The currently bound texture is used as the pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg endX End point X
-@arg endY End point Y
+@arg dirX Direction X
+@arg dirY Direction Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
 
@@ -3222,17 +3227,17 @@ The currently bound texture is used as the pattern.
 @groupref Texture
 @group Decal
 */
-YF void YAC_CALL sdvg_PaintPatternDecal (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_PaintPatternDecal (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
 
-/* @function sdvg_PaintPatternDecalAlpha,float startX,float startY,float endX,float endY,float sizeX,float sizeY
+/* @function sdvg_PaintPatternDecalAlpha,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Select alpha pattern paint.
 
 The currently bound texture is used as the alpha channel pattern.
 
 @arg startX Start point X
 @arg startY Start point Y
-@arg endX End point X
-@arg endY End point Y
+@arg dirX End point X
+@arg dirY End point Y
 @arg sizeX Pattern size X
 @arg sizeY Pattern size Y
 
@@ -3241,7 +3246,7 @@ The currently bound texture is used as the alpha channel pattern.
 @groupref Texture
 @group Decal
 */
-YF void YAC_CALL sdvg_PaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_PaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
 
 /* @function sdvg_BeginVBO,int numVertices,int stride:boolean
 Begin preparation of mapped vertex buffer

@@ -56,8 +56,8 @@ typedef struct shadervg_paint_s {
    sSI  mode;
    sF32 start_x;
    sF32 start_y;
-   sF32 end_x;
-   sF32 end_y;
+   sF32 dir_x;
+   sF32 dir_y;
    sF32 angle01;    // 0..1 => 0..2PI
    sF32 ob_size_x;  // PAINT_PATTERN*
    sF32 ob_size_y;  // PAINT_PATTERN*

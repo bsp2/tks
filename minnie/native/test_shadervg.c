@@ -1987,7 +1987,7 @@ void SetupPaintPattern(void) {
    sF32 x = VP_W*0.5f;
    sF32 y = VP_H*0.5f;
 
-   sdvg_PaintPattern(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_PaintPattern(x, y, rx, ry, 256.0f, 256.0f);
    sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
@@ -1999,7 +1999,7 @@ void SetupPaintPatternAlpha(void) {
    sF32 x = VP_W*0.5f;
    sF32 y = VP_H*0.5f;
 
-   sdvg_PaintPatternAlpha(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_PaintPatternAlpha(x, y, rx, ry, 256.0f, 256.0f);
    sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
@@ -2011,7 +2011,7 @@ void SetupPaintPatternDecal(void) {
    sF32 x = VP_W*0.5f;
    sF32 y = VP_H*0.5f;
 
-   sdvg_PaintPatternDecal(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_PaintPatternDecal(x, y, rx, ry, 256.0f, 256.0f);
    sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
    sdvg_SetTextureDecalAlpha(decal_alpha);
 }
@@ -2024,7 +2024,7 @@ void SetupPaintPatternDecalAlpha(void) {
    sF32 x = VP_W*0.5f;
    sF32 y = VP_H*0.5f;
 
-   sdvg_PaintPatternDecalAlpha(x, y, x+rx, y+ry, 256.0f, 256.0f);
+   sdvg_PaintPatternDecalAlpha(x, y, rx, ry, 256.0f, 256.0f);
    sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
    sdvg_SetTextureDecalAlpha(decal_alpha);
 }
@@ -2036,7 +2036,7 @@ void SetupPaintPatternGradientStatic(void) {
    sF32 x = 0.0f;
    sF32 y = 0.0f;
 
-   sdvg_PaintPattern(x, y, x+rx, y+ry, 1.0f, 1.0f);
+   sdvg_PaintPattern(x, y, rx, ry, 1.0f, 1.0f);
    sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
@@ -2047,7 +2047,7 @@ void SetupPaintPatternStatic(void) {
    sF32 x = 0.0f;
    sF32 y = 0.0f;
 
-   sdvg_PaintPattern(x, y, x+rx, y+ry, VP_W, VP_H);
+   sdvg_PaintPattern(x, y, rx, ry, VP_W, VP_H);
    sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
@@ -2058,7 +2058,7 @@ void SetupPaintPatternGradientStaticDiagonal(void) {
    sF32 x = 0.0f;
    sF32 y = 0.0f;
 
-   sdvg_PaintPattern(x, y, x+rx, y+ry, 1.0f, 1.0f);
+   sdvg_PaintPattern(x, y, rx, ry, 1.0f, 1.0f);
    sdvg_BindTexture2D(tex_gradient_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 

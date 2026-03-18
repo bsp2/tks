@@ -1001,11 +1001,11 @@ sBool YAC_CALL sdvg_Init(sBool _bGLCore) {
    paint.mode      = PAINT_SOLID;
    paint.start_x   = 0.0f;
    paint.start_y   = 0.0f;
-   paint.end_x     = 640.0f;
-   paint.end_y     = 480.0f;
+   paint.dir_x     = 1.0f;
+   paint.dir_y     = 0.0f;
    paint.angle01   = 0.0f;
-   paint.ob_size_x = 1.0f;
-   paint.ob_size_y = 1.0f;
+   paint.ob_size_x = 1.0f / 256.0f;
+   paint.ob_size_y = 1.0f / 256.0f;
 
    return r;
 }
@@ -6362,67 +6362,67 @@ void YAC_CALL sdvg_PaintSolid(void) {
    paint.mode = PAINT_SOLID;
 }
 
-void YAC_CALL sdvg_PaintLinear(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY) {
+void YAC_CALL sdvg_PaintLinear(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY) {
    paint.mode    = PAINT_LINEAR;
    paint.start_x = _startX;
    paint.start_y = _startY;
-   paint.end_x   = _endX;
-   paint.end_y   = _endY;
+   paint.dir_x   = _dirX;
+   paint.dir_y   = _dirY;
 }
 
 void YAC_CALL sdvg_PaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
    paint.mode    = PAINT_RADIAL;
    paint.start_x = _startX;
    paint.start_y = _startY;
-   paint.end_x   = _startX + _radiusX;
-   paint.end_y   = _startY + _radiusY;
+   paint.dir_x   = _radiusX;
+   paint.dir_y   = _radiusY;
 }
 
 void YAC_CALL sdvg_PaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01) {
    paint.mode = PAINT_CONIC;
    paint.start_x = _startX;
    paint.start_y = _startY;
-   paint.end_x   = _startX + _radiusX;
-   paint.end_y   = _startY + _radiusY;
+   paint.dir_x   = _radiusX;
+   paint.dir_y   = _radiusY;
    paint.angle01 = _angle01 + 0.25f/*north*/;
 }
 
-void YAC_CALL sdvg_PaintPattern(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void YAC_CALL sdvg_PaintPattern(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    paint.mode       = PAINT_PATTERN;
    paint.start_x    = _startX;
    paint.start_y    = _startY;
-   paint.end_x      = _endX;
-   paint.end_y      = _endY;
+   paint.dir_x      = _dirX;
+   paint.dir_y      = _dirY;
    paint.ob_size_x  = (0.0f != _sizeX) ? (1.0f / _sizeX) : 0.0f;
    paint.ob_size_y  = (0.0f != _sizeY) ? (1.0f / _sizeY) : 0.0f;
 }
 
-void YAC_CALL sdvg_PaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void YAC_CALL sdvg_PaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    paint.mode       = PAINT_PATTERN_ALPHA;
    paint.start_x    = _startX;
    paint.start_y    = _startY;
-   paint.end_x      = _endX;
-   paint.end_y      = _endY;
+   paint.dir_x      = _dirX;
+   paint.dir_y      = _dirY;
    paint.ob_size_x  = (0.0f != _sizeX) ? (1.0f / _sizeX) : 0.0f;
    paint.ob_size_y  = (0.0f != _sizeY) ? (1.0f / _sizeY) : 0.0f;
 }
 
-void YAC_CALL sdvg_PaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void YAC_CALL sdvg_PaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    paint.mode       = PAINT_PATTERN_DECAL;
    paint.start_x    = _startX;
    paint.start_y    = _startY;
-   paint.end_x      = _endX;
-   paint.end_y      = _endY;
+   paint.dir_x      = _dirX;
+   paint.dir_y      = _dirY;
    paint.ob_size_x  = (0.0f != _sizeX) ? (1.0f / _sizeX) : 0.0f;
    paint.ob_size_y  = (0.0f != _sizeY) ? (1.0f / _sizeY) : 0.0f;
 }
 
-void YAC_CALL sdvg_PaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void YAC_CALL sdvg_PaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    paint.mode       = PAINT_PATTERN_DECAL_ALPHA;
    paint.start_x    = _startX;
    paint.start_y    = _startY;
-   paint.end_x      = _endX;
-   paint.end_y      = _endY;
+   paint.dir_x      = _dirX;
+   paint.dir_y      = _dirY;
    paint.ob_size_x  = (0.0f != _sizeX) ? (1.0f / _sizeX) : 0.0f;
    paint.ob_size_y  = (0.0f != _sizeY) ? (1.0f / _sizeY) : 0.0f;
 }

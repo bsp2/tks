@@ -893,8 +893,8 @@ struct Paint { // 28 bytes
    struct linear_t {
       sF32 start_x;
       sF32 start_y;
-      sF32 end_x;
-      sF32 end_y;
+      sF32 dir_x;
+      sF32 dir_y;
    };
 
    struct radial_t {
@@ -914,8 +914,8 @@ struct Paint { // 28 bytes
    struct pattern_t {
       sF32 start_x;
       sF32 start_y;
-      sF32 end_x;
-      sF32 end_y;
+      sF32 dir_x;
+      sF32 dir_y;
       sF32 size_x;
       sF32 size_y;
    };
@@ -11595,13 +11595,13 @@ YF void YAC_CALL minRectTexUVGouraud (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _
 YF void YAC_CALL minRectTexUVGouraudDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
 YF sUI  YAC_CALL minPaintCreate (void);
 YF void YAC_CALL minPaintSolid (void);
-YF void YAC_CALL minPaintLinear (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY);
+YF void YAC_CALL minPaintLinear (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY);
 YF void YAC_CALL minPaintRadial (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY);
 YF void YAC_CALL minPaintConic (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01);
-YF void YAC_CALL minPaintPattern (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
-YF void YAC_CALL minPaintPatternAlpha (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
-YF void YAC_CALL minPaintPatternDecal (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
-YF void YAC_CALL minPaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL minPaintPattern (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL minPaintPatternAlpha (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL minPaintPatternDecal (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL minPaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
 YF void YAC_CALL minPaintDefault (void);
 YF void YAC_CALL minPaintUpdate (sUI _paintId);
 YF void YAC_CALL minPaint (sUI _paintId);
@@ -13562,27 +13562,27 @@ void minPaintSolid(void) {
    }
 }
 
-/* @function minPaintLinear
+/* @function minPaintLinear,float startX,float startY,float dirX,float dirY
 Set active paint to linear gradient
 
 The currently bound texture (n x 1) is used as a gradient table.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg endX Paint direction and scaling (endX - startX)
-@arg endY Paint direction and scaling (endX - startX)
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg dirX Paint direction and scaling X
+@arg dirY Paint direction and scaling Y
 
 @group Paint
 @groupref Texture
 */
-void minPaintLinear(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY) {
+void minPaintLinear(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_LINEAR;
       minnie::setup::cur_paint->linear.start_x = _startX;
       minnie::setup::cur_paint->linear.start_y = _startY;
-      minnie::setup::cur_paint->linear.end_x   = _endX;
-      minnie::setup::cur_paint->linear.end_y   = _endY;
+      minnie::setup::cur_paint->linear.dir_x   = _dirX;
+      minnie::setup::cur_paint->linear.dir_y   = _dirY;
    }
    else
    {
@@ -13590,15 +13590,15 @@ void minPaintLinear(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY) {
    }
 }
 
-/* @function minPaintRadial
+/* @function minPaintRadial,float startX,float startY,float radiusX,float radiusY
 Set active paint to radial gradient
 
 The currently bound texture (n x 1) is used as a gradient table.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg radiusX Paint scaling
-@arg radiusY Paint scaling
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg radiusX Paint radius X
+@arg radiusY Paint radius Y
 
 @group Paint
 @groupref Texture
@@ -13618,15 +13618,15 @@ void minPaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
    }
 }
 
-/* @function minPaintConic
+/* @function minPaintConic,float startX,float startY,float radiusX,float radiusY,float angle01
 Set active paint to conic gradient
 
 The currently bound texture (n x 1) is used as a gradient table.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg radiusX Paint scaling
-@arg radiusY Paint scaling
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg radiusX Paint scaling X
+@arg radiusY Paint scaling Y
 @arg angle01 Normalized rotation angle (0..1)
 
 @group Paint
@@ -13648,29 +13648,29 @@ void minPaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF3
    }
 }
 
-/* @function minPaintPattern
+/* @function minPaintPattern,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Set active paint to pattern
 
 The currently bound texture (n x 1) is used as pattern.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg endX Paint direction and scaling (endX - startX)
-@arg endY Paint direction and scaling (endX - startX)
-@arg sizeX Paint scaling
-@arg sizeY Paint scaling
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg dirX Paint direction X
+@arg dirY Paint direction Y
+@arg sizeX Paint scaling X
+@arg sizeY Paint scaling Y
 
 @group Paint
 @groupref Texture
 */
-void minPaintPattern(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void minPaintPattern(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN;
       minnie::setup::cur_paint->pattern.start_x = _startX;
       minnie::setup::cur_paint->pattern.start_y = _startY;
-      minnie::setup::cur_paint->pattern.end_x   = _endX;
-      minnie::setup::cur_paint->pattern.end_y   = _endY;
+      minnie::setup::cur_paint->pattern.dir_x   = _dirX;
+      minnie::setup::cur_paint->pattern.dir_y   = _dirY;
       minnie::setup::cur_paint->pattern.size_x  = _sizeX;
       minnie::setup::cur_paint->pattern.size_y  = _sizeY;
    }
@@ -13680,29 +13680,29 @@ void minPaintPattern(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _s
    }
 }
 
-/* @function minPaintPatternAlpha
+/* @function minPaintPatternAlpha,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Set active paint to pattern (alpha channel only)
 
 The currently bound texture (n x 1) is used as alpha channel pattern.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg endX Paint direction and scaling (endX - startX)
-@arg endY Paint direction and scaling (endX - startX)
-@arg sizeX Paint scaling
-@arg sizeY Paint scaling
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg dirX Paint direction X
+@arg dirY Paint direction Y
+@arg sizeX Paint scaling X
+@arg sizeY Paint scaling Y
 
 @group Paint
 @groupref Texture
 */
-void minPaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void minPaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN_ALPHA;
       minnie::setup::cur_paint->pattern.start_x = _startX;
       minnie::setup::cur_paint->pattern.start_y = _startY;
-      minnie::setup::cur_paint->pattern.end_x   = _endX;
-      minnie::setup::cur_paint->pattern.end_y   = _endY;
+      minnie::setup::cur_paint->pattern.dir_x   = _dirX;
+      minnie::setup::cur_paint->pattern.dir_y   = _dirY;
       minnie::setup::cur_paint->pattern.size_x  = _sizeX;
       minnie::setup::cur_paint->pattern.size_y  = _sizeY;
    }
@@ -13712,7 +13712,7 @@ void minPaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF
    }
 }
 
-/* @function minPaintPatternDecal
+/* @function minPaintPatternDecal,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Set active paint to decal pattern
 
 The currently bound texture (n x 1) is used as pattern.
@@ -13723,24 +13723,24 @@ I.e. this blends a stroke-color-modulated pattern texture against a constant fil
 
 The output alpha channel is set to the fill color alpha.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg endX Paint direction and scaling (endX - startX)
-@arg endY Paint direction and scaling (endX - startX)
-@arg sizeX Paint scaling
-@arg sizeY Paint scaling
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg dirX Paint direction X
+@arg dirY Paint direction Y
+@arg sizeX Paint scaling X
+@arg sizeY Paint scaling Y
 
 @group Paint
 @groupref Texture
 */
-void minPaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void minPaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN_DECAL;
       minnie::setup::cur_paint->pattern.start_x = _startX;
       minnie::setup::cur_paint->pattern.start_y = _startY;
-      minnie::setup::cur_paint->pattern.end_x   = _endX;
-      minnie::setup::cur_paint->pattern.end_y   = _endY;
+      minnie::setup::cur_paint->pattern.dir_x   = _dirX;
+      minnie::setup::cur_paint->pattern.dir_y   = _dirY;
       minnie::setup::cur_paint->pattern.size_x  = _sizeX;
       minnie::setup::cur_paint->pattern.size_y  = _sizeY;
    }
@@ -13750,7 +13750,7 @@ void minPaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF
    }
 }
 
-/* @function minPaintPatternDecal
+/* @function minPaintPatternDecal,float startX,float startY,float dirX,float dirY,float sizeX,float sizeY
 Set active paint to alpha decal pattern
 
 The currently bound texture (n x 1) is used as pattern.
@@ -13761,24 +13761,24 @@ I.e. this blends the stroke color(alpha=1) against the fill color(alpha=0) in a 
 
 The output alpha channel is set to the fill color alpha.
 
-@arg startX Paint origin x
-@arg startY Paint origin y
-@arg endX Paint direction and scaling (endX - startX)
-@arg endY Paint direction and scaling (endX - startX)
-@arg sizeX Paint scaling
-@arg sizeY Paint scaling
+@arg startX Paint origin X
+@arg startY Paint origin Y
+@arg dirX Paint direction X
+@arg dirY Paint direction Y
+@arg sizeX Paint scaling X
+@arg sizeY Paint scaling Y
 
 @group Paint
 @groupref Texture
 */
-void minPaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
+void minPaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN_DECAL_ALPHA;
       minnie::setup::cur_paint->pattern.start_x = _startX;
       minnie::setup::cur_paint->pattern.start_y = _startY;
-      minnie::setup::cur_paint->pattern.end_x   = _endX;
-      minnie::setup::cur_paint->pattern.end_y   = _endY;
+      minnie::setup::cur_paint->pattern.dir_x   = _dirX;
+      minnie::setup::cur_paint->pattern.dir_y   = _dirY;
       minnie::setup::cur_paint->pattern.size_x  = _sizeX;
       minnie::setup::cur_paint->pattern.size_y  = _sizeY;
    }
@@ -13787,16 +13787,6 @@ void minPaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _end
       Derrorprintf("[---] minPaintPatternDecalAlpha: no active Paint\n");
    }
 }
-
-// (todo) delete
-/* @function minPaintEnd
-Finish paint definition
-
-@group Paint
-@groupref Texture
-*/
-/* void minPaintEnd(void) { */
-/* } */
 
 /* @function minPaintDefault
 Select default solid paint
@@ -13877,8 +13867,8 @@ void minPaint(sUI _paintId) {
                   Dexport_dl_i16(MINNIE_DRAWOP_PAINT_LINEAR);
                   Dexport_dl_f32(p->linear.start_x);
                   Dexport_dl_f32(p->linear.start_y);
-                  Dexport_dl_f32(p->linear.end_x);
-                  Dexport_dl_f32(p->linear.end_y);
+                  Dexport_dl_f32(p->linear.dir_x);
+                  Dexport_dl_f32(p->linear.dir_y);
                   break;
 
                case MINNIE_PAINT_RADIAL:
@@ -13902,8 +13892,8 @@ void minPaint(sUI _paintId) {
                   Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN);
                   Dexport_dl_f32(p->pattern.start_x);
                   Dexport_dl_f32(p->pattern.start_y);
-                  Dexport_dl_f32(p->pattern.end_x);
-                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.dir_x);
+                  Dexport_dl_f32(p->pattern.dir_y);
                   Dexport_dl_f32(p->pattern.size_x);
                   Dexport_dl_f32(p->pattern.size_y);
                   break;
@@ -13912,8 +13902,8 @@ void minPaint(sUI _paintId) {
                   Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_ALPHA);
                   Dexport_dl_f32(p->pattern.start_x);
                   Dexport_dl_f32(p->pattern.start_y);
-                  Dexport_dl_f32(p->pattern.end_x);
-                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.dir_x);
+                  Dexport_dl_f32(p->pattern.dir_y);
                   Dexport_dl_f32(p->pattern.size_x);
                   Dexport_dl_f32(p->pattern.size_y);
                   break;
@@ -13922,8 +13912,8 @@ void minPaint(sUI _paintId) {
                   Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_DECAL);
                   Dexport_dl_f32(p->pattern.start_x);
                   Dexport_dl_f32(p->pattern.start_y);
-                  Dexport_dl_f32(p->pattern.end_x);
-                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.dir_x);
+                  Dexport_dl_f32(p->pattern.dir_y);
                   Dexport_dl_f32(p->pattern.size_x);
                   Dexport_dl_f32(p->pattern.size_y);
                   break;
@@ -13932,8 +13922,8 @@ void minPaint(sUI _paintId) {
                   Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA);
                   Dexport_dl_f32(p->pattern.start_x);
                   Dexport_dl_f32(p->pattern.start_y);
-                  Dexport_dl_f32(p->pattern.end_x);
-                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.dir_x);
+                  Dexport_dl_f32(p->pattern.dir_y);
                   Dexport_dl_f32(p->pattern.size_x);
                   Dexport_dl_f32(p->pattern.size_y);
                   break;

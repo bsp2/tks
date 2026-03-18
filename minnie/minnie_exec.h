@@ -108,8 +108,8 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
       sUI glPrimType;
       sF32 paintStartX;
       sF32 paintStartY;
-      sF32 paintEndX;
-      sF32 paintEndY;
+      sF32 paintDirX;
+      sF32 paintDirY;
       sF32 paintRadiusX;
       sF32 paintRadiusY;
       sF32 paintSizeX;
@@ -597,10 +597,10 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_PAINT_LINEAR:
             paintStartX = Dstream_read_f32(_bufDraw);
             paintStartY = Dstream_read_f32(_bufDraw);
-            paintEndX   = Dstream_read_f32(_bufDraw);
-            paintEndY   = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-linear: start=(%f;%f) end=(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY);
-            sdvg_PaintLinear(paintStartX, paintStartY, paintEndX, paintEndY);
+            paintDirX   = Dstream_read_f32(_bufDraw);
+            paintDirY   = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-linear: start=(%f;%f) dir=(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY);
+            sdvg_PaintLinear(paintStartX, paintStartY, paintDirX, paintDirY);
             break;
 
          case MINNIE_DRAWOP_PAINT_RADIAL:
@@ -625,45 +625,45 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_PAINT_PATTERN:
             paintStartX = Dstream_read_f32(_bufDraw);
             paintStartY = Dstream_read_f32(_bufDraw);
-            paintEndX   = Dstream_read_f32(_bufDraw);
-            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintDirX   = Dstream_read_f32(_bufDraw);
+            paintDirY   = Dstream_read_f32(_bufDraw);
             paintSizeX  = Dstream_read_f32(_bufDraw);
             paintSizeY  = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
-            sdvg_PaintPattern(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern: start=(%f;%f) dir=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
+            sdvg_PaintPattern(paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
             break;
 
          case MINNIE_DRAWOP_PAINT_PATTERN_ALPHA:
             paintStartX = Dstream_read_f32(_bufDraw);
             paintStartY = Dstream_read_f32(_bufDraw);
-            paintEndX   = Dstream_read_f32(_bufDraw);
-            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintDirX   = Dstream_read_f32(_bufDraw);
+            paintDirY   = Dstream_read_f32(_bufDraw);
             paintSizeX  = Dstream_read_f32(_bufDraw);
             paintSizeY  = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-alpha: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
-            sdvg_PaintPatternAlpha(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-alpha: start=(%f;%f) dir=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
+            sdvg_PaintPatternAlpha(paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
             break;
 
          case MINNIE_DRAWOP_PAINT_PATTERN_DECAL:
             paintStartX = Dstream_read_f32(_bufDraw);
             paintStartY = Dstream_read_f32(_bufDraw);
-            paintEndX   = Dstream_read_f32(_bufDraw);
-            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintDirX   = Dstream_read_f32(_bufDraw);
+            paintDirY   = Dstream_read_f32(_bufDraw);
             paintSizeX  = Dstream_read_f32(_bufDraw);
             paintSizeY  = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-decal: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
-            sdvg_PaintPatternDecal(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-decal: start=(%f;%f) dir=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
+            sdvg_PaintPatternDecal(paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
             break;
 
          case MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA:
             paintStartX = Dstream_read_f32(_bufDraw);
             paintStartY = Dstream_read_f32(_bufDraw);
-            paintEndX   = Dstream_read_f32(_bufDraw);
-            paintEndY   = Dstream_read_f32(_bufDraw);
+            paintDirX   = Dstream_read_f32(_bufDraw);
+            paintDirY   = Dstream_read_f32(_bufDraw);
             paintSizeX  = Dstream_read_f32(_bufDraw);
             paintSizeY  = Dstream_read_f32(_bufDraw);
-            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-decal-alpha: start=(%f;%f) end=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
-            sdvg_PaintPatternDecalAlpha(paintStartX, paintStartY, paintEndX, paintEndY, paintSizeX, paintSizeY);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: paint-pattern-decal-alpha: start=(%f;%f) dir=(%f;%f) size(%f;%f)\n", paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
+            sdvg_PaintPatternDecalAlpha(paintStartX, paintStartY, paintDirX, paintDirY, paintSizeX, paintSizeY);
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32:

@@ -101,7 +101,6 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_a_exp            = -1;
    shape_u_paint_tex        = -1;
    shape_u_paint_start      = -1;
-   shape_u_paint_end        = -1;
    shape_u_paint_scale      = -1;
    shape_u_paint_ndir       = -1;
    shape_u_paint_ob_len     = -1;
@@ -587,7 +586,6 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_a_exp            = shape_shader.getUniformLocation("u_a_exp");             // optional
    shape_u_paint_tex        = shape_shader.getUniformLocation("u_paint_tex");         // optional
    shape_u_paint_start      = shape_shader.getUniformLocation("u_paint_start");       // optional
-   shape_u_paint_end        = shape_shader.getUniformLocation("u_paint_end");         // optional
    shape_u_paint_scale      = shape_shader.getUniformLocation("u_paint_scale");       // optional
    shape_u_paint_ndir       = shape_shader.getUniformLocation("u_paint_ndir");        // optional
    shape_u_paint_ob_len     = shape_shader.getUniformLocation("u_paint_ob_len");      // optional
@@ -617,18 +615,11 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
       Dsdvg_uniform_2f(loc, _paint->start_x, _paint->start_y);
    }
 
-   loc = shape_u_paint_end;
-   if(loc >= 0)
-   {
-      Dpaintprintf("[trc] paint_end=(%f;%f)\n", _paint->end_x, _paint->end_y);
-      Dsdvg_uniform_2f(loc, _paint->end_x, _paint->end_y);
-   }
-
    loc = shape_u_paint_scale;
    if(loc >= 0)
    {
-      const sF32 sclX = (_paint->end_x - _paint->start_x != 0.0f) ? (1.0f / (_paint->end_x - _paint->start_x)) : 0.0f;
-      const sF32 sclY = (_paint->end_y - _paint->start_y != 0.0f) ? (1.0f / (_paint->end_y - _paint->start_y)) : 0.0f;
+      const sF32 sclX = (0.0f != _paint->dir_x) ? (1.0f / _paint->dir_x) : 0.0f;
+      const sF32 sclY = (0.0f != _paint->dir_y) ? (1.0f / _paint->dir_y) : 0.0f;
       Dpaintprintf("[trc] paint_scale=(%f;%f)\n", sclX, sclY);
       Dsdvg_uniform_2f(loc, sclX, sclY);
    }
@@ -636,8 +627,8 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
    loc = shape_u_paint_ndir;
    if(loc >= 0)
    {
-      sF32 dx = _paint->end_x - _paint->start_x;
-      sF32 dy = _paint->end_y - _paint->start_y;
+      sF32 dx = _paint->dir_x;
+      sF32 dy = _paint->dir_y;
       sF32 l = sqrtf(dx*dx + dy*dy);
       if(l > 0.0f)
       {
@@ -650,15 +641,15 @@ void ShaderVG_Shape::updatePaintUniforms(const shadervg_paint_t *_paint) {
          dx = 0.0f;
          dy = 0.0f;
       }
-      Dpaintprintf("[trc] paint_ndir=(%f; %f)  (start=(%f;%f) end=(%f;%f))\n", dx, dy, _paint->start_x, _paint->start_y, _paint->end_x, _paint->end_y);
+      Dpaintprintf("[trc] paint_ndir=(%f; %f)  (start=(%f;%f) dir=(%f;%f))\n", dx, dy, _paint->start_x, _paint->start_y, _paint->dir_x, _paint->dir_y);
       Dsdvg_uniform_2f(loc, dx, -dy);
    }
 
    loc = shape_u_paint_ob_len;
    if(loc >= 0)
    {
-      const sF32 dx = _paint->end_x - _paint->start_x;
-      const sF32 dy = _paint->end_y - _paint->start_y;
+      const sF32 dx = _paint->dir_x;
+      const sF32 dy = _paint->dir_y;
       sF32 l = sqrtf(dx*dx + dy*dy);
       if(l > 0.0f)
       {
