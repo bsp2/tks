@@ -151,6 +151,7 @@ static const char *test_names[] = {
    "24: arc stroked",
    "25: arc filled+stroked",
    "26: arc stroke+pattern",
+   "27: textured, flat shaded AA rectangles",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -719,12 +720,11 @@ static void Test_26(void) {
    const sF32 vpSclX = VP_W / 454.0f;
    const sF32 vpSclY = VP_H / 454.0f;
 
-   sSI paintId = minPaintBegin();
+   sSI paintId = minPaintCreate();
    minPaintPattern(0.0f, 0.0f,
                    VP_W, 0.0f,
                    1.0f, 1.0f
                    );
-   minPaintEnd();
 
    sSI pid = minBeginPath();
    minSeg(20);
@@ -737,8 +737,6 @@ static void Test_26(void) {
    const sF32 dy =  71;
 
    minMoveTo(px*vpSclX, py*vpSclY);
-
-   // trace "xxx p=("+px+";"+py+") r=("+rx+";"+ry+") q=("+(px+sx)+";"+(py+sy)+")";
 
    float rot = 0;
 
@@ -758,6 +756,72 @@ static void Test_26(void) {
    minJoinBevel();
    minCapNone();
    minDrawPath(pid);
+}
+
+// ----------------------------------------------------------------------------
+static void Test_27(void) {
+   // textured, flat shaded AA rectangles
+
+   minBindTexture(tex_id, 0/*bRepeat*/, b_tex_filter);
+   sSI paintId = minPaintCreate();
+   minColor(0xffffffffu);
+   minFill();
+
+   float aaBorder = 1.5f;
+   minAARange(aaBorder);
+
+   minBeginImmediate();
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
+   sF32 x = sinf(anim_1) * 400.0f - 400.0f + 125.0f/4;
+   sF32 y = cosf(anim_2) * 300.0f - 300.0f + 100.0f/4;
+   sF32 ty = y;
+   sF32 ang5 = anim_5;
+   for(sUI iy = 0u; iy < 16u; iy++)
+   {
+      sF32 tx = x;
+      sF32 ang4 = anim_4;
+      for(sUI ix = 0u; ix < 16u; ix++)
+      {
+         sF32 nx = sABS((tx - 400.0f) / 400.0f);
+         sF32 ny = sABS((ty - 300.0f) / 300.0f);
+         nx = 1.0f - nx;
+         ny = 1.0f - ny;
+         nx = 2.0f * nx - 1.0f;
+         ny = 2.0f * ny - 1.0f;
+
+         ang4 = sM_PI_2f;
+         ang5 = 0.0f;
+         sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
+         sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
+         if(w > 0.0f && h > 0.0f)
+         {
+            sF32 wh = w * 0.5f;
+            sF32 hh = h * 0.5f;
+            sF32 px = (tx - wh)*vpSclX;
+            sF32 py = (ty - hh)*vpSclY;
+
+            minPaintUpdate(paintId);
+            minPaintPattern(px, py,
+                            px+1.0f, py+0.0f,
+                            w, h
+                            );
+            minPaint(paintId);
+
+            minMoveTo(px+aaBorder, py+aaBorder);
+            minRect((w*vpSclX)-aaBorder*2.0f, (h*vpSclY)-aaBorder*2.0f);
+         }
+
+         tx += 200.0f/2;
+         ang4 += 0.9323f;
+      }
+      ty += 150.0f/2;
+      ang5 += 0.715f;
+   }
+
+   minEndImmediate();
 }
 
 // ---------------------------------------------------------------------------- SelectTest
@@ -828,6 +892,7 @@ void hal_on_draw(void) {
          case 24: Test_23(YAC_FALSE/*bFill*/, YAC_TRUE/*bStroke*/); break;  // arc stroked
          case 25: Test_23(YAC_TRUE/*bFill*/, YAC_TRUE/*bStroke*/); break;   // arc filled+stroked
          case 26: Test_26(); break;                          // arc stroke+pattern (WIP)
+         case 27: Test_27(); break;                          // textured, flat shaded AA rectangles
       }
 
       minDrawableEnd(drawable);
