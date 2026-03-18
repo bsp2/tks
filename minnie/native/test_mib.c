@@ -295,6 +295,7 @@ void hal_on_draw(void) {
    {
       sF32 dw = minDrawableGetSizeX(drawable);
       sF32 dh = minDrawableGetSizeY(drawable);
+      // Dprintf("xxx dw=%f dh=%f VP_W=%d, VP_H=%d\n", dw, dh, VP_W, VP_H);
       if(1)
          sdvg_ProjInit2D(dw, dh);
       else
