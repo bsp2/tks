@@ -79,3 +79,6 @@
 - 26_arc_stroke+pattern
   
   ![screenhots](26_arc_stroke+pattern.png)
+- 27_textured_flat_shaded_AA_rectangles
+  
+  ![screenhots](27_textured_flat_shaded_AA_rectangles.png)
