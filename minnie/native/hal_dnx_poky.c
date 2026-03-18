@@ -20,7 +20,7 @@
 // ----          SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // ----
 // ---- info   : "minnie" test hardware abstraction layer
-// ---- note   : 
+// ---- note   :
 // ----
 // ----
 // ----
@@ -120,13 +120,16 @@ static EGLBoolean loc_config_init(EGLDisplay _display, EGLConfig *_config) {
       EGL_GREEN_SIZE,      6,
       EGL_BLUE_SIZE,       5,
       EGL_ALPHA_SIZE,      0,
-#ifdef SHADERVG_NO_ZS
-      EGL_DEPTH_SIZE,      0,
-      EGL_STENCIL_SIZE,    0,
-#else
+#ifdef SHADERVG_DEPTH
       EGL_DEPTH_SIZE,      16,
+#else
+      EGL_DEPTH_SIZE,      0,
+#endif // SHADERVG_DEPTH
+#ifdef SHADERVG_STENCIL
       EGL_STENCIL_SIZE,    8,
-#endif // SHADERVG_NO_ZS
+#else
+      EGL_STENCIL_SIZE,    0,
+#endif // SHADERVG_STENCIL
       EGL_SAMPLE_BUFFERS,  0,
 #ifdef SHADERVG_MSAA
       EGL_SAMPLES,         4,

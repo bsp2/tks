@@ -13047,8 +13047,10 @@ Change anti-aliasing border radius.
 
 @arg range Anti-aliasing border radius (def=1.5)
 
-@groupref Attrib
-@group Config
+@group Attrib
+@group Element
+@groupref Path
+@groupref Draw
 */
 void minAARange(sF32 _range) {
    minnie::setup::cur_aa_range = _range;

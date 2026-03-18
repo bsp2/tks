@@ -91,17 +91,20 @@ sBool hal_window_init(sUI _w, sUI _h) {
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#ifdef SHADERVG_DEPTH
+   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+#else
+   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+#endif // SHADERVG_DEPTH
+#ifdef SHADERVG_STENCIL
+   SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+#else
+   SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
+#endif // SHADERVG_STENCIL
 #ifdef SHADERVG_MSAA
    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
-#endif
-#ifdef SHADERVG_NO_ZS
-   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
-   SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
-#else
-   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
-   SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-#endif // SHADERVG_NO_ZS
+#endif // SHADERVG_MSAA
    sUI flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
    sdl_window = SDL_CreateWindow("minnie",
                                  SDL_WINDOWPOS_UNDEFINED,

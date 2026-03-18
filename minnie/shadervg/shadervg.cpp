@@ -5916,16 +5916,7 @@ void YAC_CALL sdvg_SetPixelScaling(sF32 _s) {
 
 void YAC_CALL sdvg_Clear4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
    Dsdvg_glcall(glClearColor(_r, _g, _b, _a));
-#ifndef SHADERVG_NO_ZS
-#ifdef SHADERVG_GLES
-   Dsdvg_glcall(glClearDepthf(1.0f));
-#else
-   Dsdvg_glcall(glClearDepth(1.0f));
-#endif // SHADERVG_GLES
-   Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
-#else
    Dsdvg_glcall(glClear(GL_COLOR_BUFFER_BIT));
-#endif // SHADERVG_NO_ZS
 }
 
 void YAC_CALL sdvg_ClearARGB(sUI _c32) {
@@ -5937,21 +5928,25 @@ void YAC_CALL sdvg_ClearARGB(sUI _c32) {
 }
 
 void YAC_CALL sdvg_ClearStencil(sUI _v) {
-#ifndef SHADERVG_NO_ZS
+#ifdef SHADERVG_STENCIL
    Dsdvg_glcall(glClearStencil(_v));
    Dsdvg_glcall(glClear(GL_STENCIL_BUFFER_BIT));
-#endif // SHADERVG_NO_ZS
+#else
+   (void)_v;
+#endif // SHADERVG_STENCIL
 }
 
 void YAC_CALL sdvg_ClearDepth(sF32 _v) {
-#ifndef SHADERVG_NO_ZS
+#ifdef SHADERVG_DEPTH
 #ifdef SHADERVG_GLES
    Dsdvg_glcall(glClearDepthf(_v));
 #else
    Dsdvg_glcall(glClearDepth(_v));
 #endif // SHADERVG_GLES
    Dsdvg_glcall(glClear(GL_DEPTH_BUFFER_BIT));
-#endif // SHADERVG_NO_ZS
+#else
+   (void)_v;
+#endif // SHADERVG_DEPTH
 }
 
 void YAC_CALL sdvg_EnableBlending(void) {
@@ -6026,17 +6021,17 @@ void YAC_CALL sdvg_AlphaWrite(sBool _bEnable) {
 }
 
 void YAC_CALL sdvg_EnableStencilMask(void) {
-#ifndef SHADERVG_NO_ZS
+#ifdef SHADERVG_STENCIL
    Dsdvg_glcall(glStencilFunc(GL_NOTEQUAL, 1/*ref*/, 1/*mask*/));
    Dsdvg_glcall(glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE));
    Dsdvg_glcall(glEnable(GL_STENCIL_TEST));
-#endif // SHADERVG_NO_ZS
+#endif // SHADERVG_STENCIL
 }
 
 void YAC_CALL sdvg_DisableStencilMask(void) {
-#ifndef SHADERVG_NO_ZS
+#ifdef SHADERVG_STENCIL
    Dsdvg_glcall(glDisable(GL_STENCIL_TEST));
-#endif // SHADERVG_NO_ZS
+#endif // SHADERVG_STENCIL
 }
 
 // ----------- custom shaders ------------
