@@ -2075,6 +2075,7 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
       Dsdvg_uniform_1f(_shape->shape_u_decal_alpha, texture_decal_alpha);
    }
    Dsdvg_uniform_1f(_shape->shape_u_stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff);
+   Dsdvg_debugprintfv("[trc] sdvg:loc_DrawLineStripFlatAAVBOPaint: uni_stroke_w=%f stroke_w=%f stroke_w_scale=%f Dsdvg_pixel_scl=%f aaOff=%f\n", (Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff), stroke_w, stroke_w_scale, Dsdvg_pixel_scl(1.0f), aaOff);
    Dsdvg_uniform_1f(_shape->shape_u_aa_range, _bAA ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF);
    if(-1 != _shape->shape_u_debug)
    {
@@ -2828,6 +2829,8 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
    loc_drawStencilPolygon(_numVerts);
    // Draw AA outline
    sF32 oldStrokeW = stroke_w;
+   sF32 oldStrokeWScale = stroke_w_scale;
+   stroke_w_scale = 1.0f;
    ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
    stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
    loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
@@ -2840,6 +2843,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32(sUI _vboId, sUI _byteOffset
                                    YAC_FALSE/*bSkipLastLineJoint*/
                                    );
    stroke_w = oldStrokeW;
+   stroke_w_scale = oldStrokeWScale;
    loc_RebindCurrentShape();
 #else
 #error polygon rasterizer n/a
@@ -2928,6 +2932,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
    //   +4 s14.2 y
    //
 #ifdef SHADERVG_STENCIL_POLYGONS
+   Dsdvg_debugprintfv("[trc] sdvg_DrawPolygonFillFlatUniformAAVBO14_2: stroke_w_scale=%f Dsdvg_pixel_scl=%f\n", stroke_w_scale, Dsdvg_pixel_scl(1.0f));
    // Draw interior
    sdvg_BindVBO(_vboId);
    ShaderVG_Shape *oldShape = current_shape;
@@ -2944,6 +2949,8 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
 #if 1
    // Draw AA outline
    sF32 oldStrokeW = stroke_w;
+   sF32 oldStrokeWScale = stroke_w_scale;
+   stroke_w_scale = 1.0f;
    // ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
    ShaderVG_Shape *shape = loc_get_default_line_strip_flat_bevel_aa_uniform_shape_14_2();
    stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
@@ -2957,6 +2964,7 @@ void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2(sUI _vboId, sUI _byteOffs
                                    YAC_FALSE/*bSkipLastLineJoint*/
                                    );
    stroke_w = oldStrokeW;
+   stroke_w_scale = oldStrokeWScale;
 #endif
    loc_RebindCurrentShape();
 #else
@@ -2992,31 +3000,6 @@ void YAC_CALL sdvg_DrawRectFillAAVBO32(sUI _vboId,
                                        sF32 _centerX, sF32 _centerY,
                                        sF32 _sizeX,   sF32 _sizeY
                                        ) {
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_FILL_AA_SIZE_OFFSET) : 0.0f;
-   rect_fill_aa.drawRectFillAAVBO32(_vboId,
-                                    _byteOffsetInner,
-                                    _numVertsInner,
-                                    _byteOffsetBorder,
-                                    _numVertsBorder,
-                                    _glPrimTypeBorder,
-                                    mvp_matrix,
-                                    _centerX, _centerY,
-                                    _sizeX + aaOff, _sizeY + aaOff,
-                                    fill_r, fill_g, fill_b, fill_a * global_a,
-                                    b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                    aa_exp
-                                    );
-}
-
-void YAC_CALL sdvg_DrawRectFillAAVBO32Paint(sUI _vboId,
-                                            sUI _byteOffsetInner,
-                                            sUI _numVertsInner,
-                                            sUI _byteOffsetBorder,
-                                            sUI _numVertsBorder,
-                                            sUI _glPrimTypeBorder,
-                                            sF32 _centerX, sF32 _centerY,
-                                            sF32 _sizeX,   sF32 _sizeY
-                                            ) {
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -3148,29 +3131,6 @@ void YAC_CALL sdvg_DrawRectStrokeAAVBO32(sUI _vboId,
                                          ) {
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
-   rect_stroke_aa.drawRectStrokeAAVBO32(_vboId,
-                                        _byteOffsetBorder,
-                                        _numVertsBorder,
-                                        _glPrimTypeBorder,
-                                        mvp_matrix,
-                                        _centerX, _centerY,
-                                        _sizeX + aaOffSize, _sizeY + aaOffSize,
-                                        stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                        Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
-                                        b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                        aa_exp
-                                        );
-}
-
-void YAC_CALL sdvg_DrawRectStrokeAAVBO32Paint(sUI _vboId,
-                                              sUI _byteOffsetBorder,
-                                              sUI _numVertsBorder,
-                                              sUI _glPrimTypeBorder,
-                                              sF32 _centerX, sF32 _centerY,
-                                              sF32 _sizeX,   sF32 _sizeY
-                                              ) {
-   const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_SIZE_OFFSET)   : 0.0f;
-   const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_RECT_AA_STROKE_OFFSET) : 0.0f;
    sF32 fillA = fill_a;
    sF32 strokeA = stroke_a * global_a;
    ShaderVG_Shape *shape =
@@ -3240,31 +3200,6 @@ void YAC_CALL sdvg_DrawEllipseFillAAVBO32(sUI _vboId,
                                           sF32 _centerX, sF32 _centerY,
                                           sF32 _radiusX, sF32 _radiusY
                                           ) {
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_FILL_AA_SIZE_OFFSET) : 0.0f;
-   ellipse_fill_aa.drawEllipseFillAAVBO32(_vboId,
-                                          _byteOffsetInner,
-                                          _numVertsInner,
-                                          _byteOffsetBorder,
-                                          _numVertsBorder,
-                                          _glPrimTypeBorder,
-                                          mvp_matrix,
-                                          _centerX, _centerY,
-                                          _radiusX + aaOff, _radiusY + aaOff,
-                                          fill_r, fill_g, fill_b, fill_a * global_a,
-                                          b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                          aa_exp
-                                          );
-}
-
-void YAC_CALL sdvg_DrawEllipseFillAAVBO32Paint(sUI _vboId,
-                                               sUI _byteOffsetInner,
-                                               sUI _numVertsInner,
-                                               sUI _byteOffsetBorder,
-                                               sUI _numVertsBorder,
-                                               sUI _glPrimTypeBorder,
-                                               sF32 _centerX, sF32 _centerY,
-                                               sF32 _radiusX, sF32 _radiusY
-                                               ) {
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -3392,29 +3327,6 @@ void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32(sUI _vboId,
                                             ) {
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
-   ellipse_stroke_aa.drawEllipseStrokeAAVBO32(_vboId,
-                                              _byteOffsetBorder,
-                                              _numVertsBorder,
-                                              _glPrimTypeBorder,
-                                              mvp_matrix,
-                                              _centerX, _centerY,
-                                              _radiusX + aaOffSize, _radiusY + aaOffSize,
-                                              stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                              Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
-                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                              aa_exp
-                                              );
-}
-
-void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32Paint(sUI _vboId,
-                                                 sUI _byteOffsetBorder,
-                                                 sUI _numVertsBorder,
-                                                 sUI _glPrimTypeBorder,
-                                                 sF32 _centerX, sF32 _centerY,
-                                                 sF32 _radiusX, sF32 _radiusY
-                                                 ) {
-   const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_SIZE_OFFSET)   : 0.0f;
-   const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ELLIPSE_AA_STROKE_OFFSET) : 0.0f;
    sF32 fillA = fill_a;
    sF32 strokeA = stroke_a * global_a;
    ShaderVG_Shape *shape =
@@ -3488,33 +3400,6 @@ void YAC_CALL sdvg_DrawRoundRectFillAAVBO32(sUI _vboId,
                                             sF32 _sizeX,   sF32 _sizeY,
                                             sF32 _radiusX, sF32 _radiusY
                                             ) {
-   const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET) : 0.0f;
-   roundrect_fill_aa.drawRoundRectFillAAVBO32(_vboId,
-                                              _byteOffsetInner,
-                                              _numVertsInner,
-                                              _byteOffsetBorder,
-                                              _numVertsBorder,
-                                              _glPrimTypeBorder,
-                                              mvp_matrix,
-                                              _centerX, _centerY,
-                                              _sizeX + aaOff, _sizeY + aaOff,
-                                              _radiusX, _radiusY,
-                                              fill_r, fill_g, fill_b, fill_a * global_a,
-                                              b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                              aa_exp
-                                              );
-}
-
-void YAC_CALL sdvg_DrawRoundRectFillAAVBO32Paint(sUI _vboId,
-                                                 sUI _byteOffsetInner,
-                                                 sUI _numVertsInner,
-                                                 sUI _byteOffsetBorder,
-                                                 sUI _numVertsBorder,
-                                                 sUI _glPrimTypeBorder,
-                                                 sF32 _centerX, sF32 _centerY,
-                                                 sF32 _sizeX,   sF32 _sizeY,
-                                                 sF32 _radiusX, sF32 _radiusY
-                                                 ) {
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_FILL_AA_SIZE_OFFSET) : 0.0f;
    ShaderVG_Shape *shape =
       (NULL != current_shape)
@@ -3654,31 +3539,6 @@ void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32(sUI _vboId,
                                               sF32 _sizeX,   sF32 _sizeY,
                                               sF32 _radiusX, sF32 _radiusY
                                               ) {
-   const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
-   const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
-   roundrect_stroke_aa.drawRoundRectStrokeAAVBO32(_vboId,
-                                                  _byteOffsetBorder,
-                                                  _numVertsBorder,
-                                                  _glPrimTypeBorder,
-                                                  mvp_matrix,
-                                                  _centerX, _centerY,
-                                                  _sizeX + aaOffSize, _sizeY + aaOffSize,
-                                                  _radiusX, _radiusY,
-                                                  stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                  Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOffStroke,
-                                                  b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
-                                                  aa_exp
-                                                  );
-}
-
-void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32Paint(sUI _vboId,
-                                                   sUI _byteOffsetBorder,
-                                                   sUI _numVertsBorder,
-                                                   sUI _glPrimTypeBorder,
-                                                   sF32 _centerX, sF32 _centerY,
-                                                   sF32 _sizeX,   sF32 _sizeY,
-                                                   sF32 _radiusX, sF32 _radiusY
-                                                   ) {
    const sF32 aaOffSize   = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_SIZE_OFFSET)   : 0.0f;
    const sF32 aaOffStroke = b_aa ? Dsdvg_pixel_scl(SHADERVG_ROUNDRECT_AA_STROKE_OFFSET) : 0.0f;
    sF32 fillA = fill_a;
@@ -8557,6 +8417,8 @@ void YAC_CALL sdvg_End(void) {
                         loc_drawStencilPolygon(current_draw_vertex_index - 1u/*numVerts*/);
                         // Draw AA outline
                         sF32 oldStrokeW = stroke_w;
+                        sF32 oldStrokeWScale = stroke_w_scale;
+                        stroke_w_scale = 1.0f;
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
                         stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
@@ -8573,6 +8435,7 @@ void YAC_CALL sdvg_End(void) {
                                                         YAC_FALSE/*bSkipLastLineJoint*/
                                                         );
                         stroke_w = oldStrokeW;
+                        stroke_w_scale = oldStrokeWScale;
                         loc_RebindCurrentShape();
                      }
 #else
@@ -8591,6 +8454,8 @@ void YAC_CALL sdvg_End(void) {
                         loc_drawStencilPolygon(current_draw_vertex_index - 1u/*numVerts*/);
                         // Draw AA outline
                         sF32 oldStrokeW = stroke_w;
+                        sF32 oldStrokeWScale = stroke_w_scale;
+                        stroke_w_scale = 1.0f;
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
                         stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
@@ -8603,6 +8468,7 @@ void YAC_CALL sdvg_End(void) {
                                                         YAC_FALSE/*bSkipLastLineJoint*/
                                                         );
                         stroke_w = oldStrokeW;
+                        stroke_w_scale = oldStrokeWScale;
                         loc_RebindCurrentShape();
                      }
 #else
@@ -8621,6 +8487,8 @@ void YAC_CALL sdvg_End(void) {
                         loc_drawStencilPolygon(current_draw_vertex_index - 1u/*numVerts*/);
                         // Draw AA outline
                         sF32 oldStrokeW = stroke_w;
+                        sF32 oldStrokeWScale = stroke_w_scale;
+                        stroke_w_scale = 1.0f;
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
                         stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
@@ -8633,6 +8501,7 @@ void YAC_CALL sdvg_End(void) {
                                                         YAC_FALSE/*bSkipLastLineJoint*/
                                                         );
                         stroke_w = oldStrokeW;
+                        stroke_w_scale = oldStrokeWScale;
                         loc_RebindCurrentShape();
                      }
 #else

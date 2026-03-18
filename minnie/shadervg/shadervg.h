@@ -1472,29 +1472,21 @@ YF void YAC_CALL sdvg_SetupRectFillAAVBO32 (YAC_Buffer *_vb, YAC_Buffer *_dl, sF
 /* @function sdvg_DrawRectFillAAVBO32,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY
 Draw previously prepared vertex buffer as filled, anti-aliased rectangle (32bit float format)
 
-@group Rect
-@groupref Fill
-*/
-YF void YAC_CALL sdvg_DrawRectFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
-
-/* @function sdvg_DrawRectFillAAVBO32Paint,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY
-Draw previously prepared vertex buffer as filled, anti-aliased rectangle (32bit float format)
-
 Apply current paint.
 
 @group Rect
 @groupref Fill
 @groupref Paint
 */
-void YAC_CALL sdvg_DrawRectFillAAVBO32Paint (sUI _vboId,
-                                             sUI _byteOffsetInner,
-                                             sUI _numVertsInner,
-                                             sUI _byteOffsetBorder,
-                                             sUI _numVertsBorder,
-                                             sUI _glPrimTypeBorder,
-                                             sF32 _centerX, sF32 _centerY,
-                                             sF32 _sizeX,   sF32 _sizeY
-                                             );
+void YAC_CALL sdvg_DrawRectFillAAVBO32 (sUI _vboId,
+                                        sUI _byteOffsetInner,
+                                        sUI _numVertsInner,
+                                        sUI _byteOffsetBorder,
+                                        sUI _numVertsBorder,
+                                        sUI _glPrimTypeBorder,
+                                        sF32 _centerX, sF32 _centerY,
+                                        sF32 _sizeX,   sF32 _sizeY
+                                        );
 
 /* @function sdvg_DrawRectFillAA,float centerX,float centerY,float sizeX,float sizeY
 Draw filled, anti-aliased rectangle via scratch buffer (32 bit float format)
@@ -1545,21 +1537,13 @@ YF void YAC_CALL sdvg_SetupRectStrokeAAVBO32 (YAC_Buffer *_vb, YAC_Buffer *_dl, 
 /* @function sdvg_DrawRectStrokeAAVBO32,int vboId,int byteOffsetBorder,int numVertesBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY
 Draw previously prepared vertex buffer as stroked, anti-aliased rectangle (32bit float format)
 
-@group Rect
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawRectStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
-
-/* @function sdvg_DrawRectStrokeAAVBO32Paint,int vboId,int byteOffsetBorder,int numVertesBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY
-Draw previously prepared vertex buffer as stroked, anti-aliased rectangle (32bit float format)
-
 Apply current paint.
 
 @group Rect
 @groupref Stroke
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawRectStrokeAAVBO32Paint (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
+YF void YAC_CALL sdvg_DrawRectStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY);
 
 /* @function sdvg_DrawRectStrokeAA,float centerX,float centerY,float sizeX,float sizeY
 Draw stroked, anti-aliased rectangle via scratch buffer (32 bit float format)
@@ -1583,21 +1567,13 @@ YF void YAC_CALL sdvg_SetupEllipseFillAAVBO32 (YAC_Buffer *_vb, YAC_Buffer *_dl,
 /* @function sdvg_DrawEllipseFillAAVBO32,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float radiusX,float radiusY
 Draw previously prepared vertex buffer as filled, anti-aliased ellipse (32bit float format)
 
-@group Ellipse
-@groupref Fill
-*/
-YF void YAC_CALL sdvg_DrawEllipseFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
-
-/* @function sdvg_DrawEllipseFillAAVBO32Paint,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float radiusX,float radiusY
-Draw previously prepared vertex buffer as filled, anti-aliased ellipse (32bit float format)
-
 Apply current paint.
 
 @group Ellipse
 @groupref Fill
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawEllipseFillAAVBO32Paint (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
+YF void YAC_CALL sdvg_DrawEllipseFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
 /* @function sdvg_DrawEllipseFillAA,float centerX,float centerY,float sizeX,float sizeY
 Draw filled, anti-aliased ellipse via scratch buffer (32 bit float format)
@@ -1648,21 +1624,13 @@ YF void YAC_CALL sdvg_SetupEllipseStrokeAAVBO32 (YAC_Buffer *_vb, YAC_Buffer *_d
 /* @function sdvg_DrawEllipseStrokeAAVBO32,int vboId,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float radiusX,float radiusY
 Draw previously prepared vertex buffer as stroked, anti-aliased ellipse (32bit float format)
 
-@group Ellipse
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
-
-/* @function sdvg_DrawEllipseStrokeAAVBO32Paint,int vboId,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float radiusX,float radiusY
-Draw previously prepared vertex buffer as stroked, anti-aliased ellipse (32bit float format)
-
 Apply current paint.
 
 @group Ellipse
 @groupref Stroke
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32Paint (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
+YF void YAC_CALL sdvg_DrawEllipseStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _radiusX, sF32 _radiusY);
 
 /* @function sdvg_DrawEllipseStrokeAA,float centerX,float centerY,float sizeX,float sizeY
 Draw stroked, anti-aliased ellipse via scratch buffer (32 bit float format)
@@ -1686,23 +1654,15 @@ YF void YAC_CALL sdvg_SetupRoundRectFillAAVBO32 (YAC_Buffer *_vb, YAC_Buffer *_d
 /* @function sdvg_DrawRoundRectFillAAVBO32,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Draw previously prepared vertex buffer as filled, anti-aliased rounded rectangle (32bit float format)
 
-@group RoundRect
-@groupref Fill
-*/
-YF void YAC_CALL sdvg_DrawRoundRectFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
-
-/* @function sdvg_DrawRoundRectFillAAVBO32Paint,int vboId,int byteOffsetInner,int numVertsInner,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
-Draw previously prepared vertex buffer as filled, anti-aliased rounded rectangle (32bit float format)
-
 Apply current paint.
 
 @group RoundRect
 @groupref Fill
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawRoundRectFillAAVBO32Paint (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
+YF void YAC_CALL sdvg_DrawRoundRectFillAAVBO32 (sUI _vboId, sUI _byteOffsetInner, sUI _numVertsInner, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawRoundRectFillAAPaint,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+/* @function sdvg_DrawRoundRectFillAA,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Draw filled, anti-aliased rounded rectangle via scratch buffer (32 bit float format)
 
 Apply current paint.
@@ -1750,23 +1710,7 @@ Draw filled, stroked, anti-aliased rounded rectangle via scratch buffer (32 bit 
 */
 YF void YAC_CALL sdvg_DrawRoundRectFillStrokeAA (sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_SetupRoundRectStrokeAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY,float strokeW
-Set up vertex buffer and draw list for stroked, anti-aliased rounded rectangle (32bit float format)
-
-@group RoundRect
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_SetupRoundRectStrokeAAVBO32 (YAC_Buffer *_vb, YAC_Buffer *_dl, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY, sF32 _strokeW);
-
-/* @function sdvg_DrawRoundRectStrokeAAVBO32,int vboId,int byteOffsetBorder,int numVertsBorder,int glPrimTypeBorder,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
-Draw previously prepared vertex buffer as stroked, anti-aliased rounded rectangle (32bit float format)
-
-@group RoundRect
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32(sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
-
-/* @function sdvg_DrawRoundRectStrokeAAVBO32Paint,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+/* @function sdvg_DrawRoundRectStrokeAAVBO32,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Draw previously prepared vertex buffer as stroked, anti-aliased rounded rectangle (32bit float format)
 
 Apply current paint.
@@ -1775,9 +1719,9 @@ Apply current paint.
 @groupref Fill
 @groupref Paint
 */
-YF void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32Paint (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
+YF void YAC_CALL sdvg_DrawRoundRectStrokeAAVBO32 (sUI _vboId, sUI _byteOffsetBorder, sUI _numVertsBorder, sUI _glPrimTypeBorder, sF32 _centerX, sF32 _centerY, sF32 _sizeX, sF32 _sizeY, sF32 _radiusX, sF32 _radiusY);
 
-/* @function sdvg_DrawRoundRectStrokeAAPaint,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
+/* @function sdvg_DrawRoundRectStrokeAA,float centerX,float centerY,float sizeX,float sizeY,float radiusX,float radiusY
 Draw stroked, anti-aliased rounded rectangle via scratch buffer (32 bit float format)
 
 Apply current paint.
