@@ -769,6 +769,7 @@ static void Test_27(void) {
 
    float aaBorder = 1.5f;
    minAARange(aaBorder);
+   sF32 numPix = 0.0f;
 
    minBeginImmediate();
 
@@ -811,7 +812,10 @@ static void Test_27(void) {
             minPaint(paintId);
 
             minMoveTo(px+aaBorder, py+aaBorder);
-            minRect((w*vpSclX)-aaBorder*2.0f, (h*vpSclY)-aaBorder*2.0f);
+            sF32 sw = (w*vpSclX);
+            sF32 sh = (h*vpSclY);
+            numPix += sw * sh;
+            minRect(sw-aaBorder*2.0f, sh-aaBorder*2.0f);
          }
 
          tx += 200.0f/2;
@@ -822,6 +826,11 @@ static void Test_27(void) {
    }
 
    minEndImmediate();
+
+   if(0)
+   {
+      Dprintf("[trc] test_27: mpix=%3.2f\n", (numPix/1000000.0f));  // => 0.23 (first frame / b_anim=0)
+   }
 }
 
 // ---------------------------------------------------------------------------- SelectTest
@@ -852,6 +861,7 @@ void hal_on_draw(void) {
    // sdvg_ClearARGB(0x00ffffffu);
    // sdvg_ClearARGB(0x00e1cdb7u);
    sdvg_ClearARGB(minDrawableGetBackgroundColor(drawable));
+   sdvg_ClearDepth(1.0f);
    sdvg_ClearStencil(0);
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))

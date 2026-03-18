@@ -289,6 +289,7 @@ void hal_on_draw(void) {
    // sdvg_ClearARGB(0x00e1cdb7u);
    // clear color+stencil  (#00e1cdb7)
    sdvg_ClearARGB(minDrawableGetBackgroundColor(drawable));
+   sdvg_ClearDepth(1.0f);
    sdvg_ClearStencil(0);
 
    if(1 && b_draw_gl)

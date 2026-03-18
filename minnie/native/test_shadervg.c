@@ -4768,6 +4768,7 @@ void hal_on_draw(void) {
          sdvg_Clear4f(0.1f, 0.15f, 0.3f, 1.0f);
          // sdvg_ClearARGB(0xff000064u);
       }
+      sdvg_ClearDepth(1.0f);
       sdvg_ClearStencil(0);
 
       DrawTest();
