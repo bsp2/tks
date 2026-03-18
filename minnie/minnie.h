@@ -267,6 +267,7 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                     0x2A
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2               0x2B
 #define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2               0x2C
+#define MINNIE_DRAWOP_AA_RANGE                                 0x2D
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE           0x00
@@ -3962,9 +3963,6 @@ namespace setup {
    static sF32 stroke_scale;
    static sF32 stroke_offset;
 
-// (note) see shadervg::Shape
-#define MINNIE_SHAPE_AA_RANGE  1.5f
-
 #define MINNIE_RECT_SINGLE_AREA_THRESHOLD  256
 #define MINNIE_ROUNDRECT_SINGLE_AREA_THRESHOLD  256
 
@@ -3976,6 +3974,10 @@ namespace setup {
    static PointerArray<Paint> paints;
    static Paint *cur_paint;  // NULL(solid) or ref to paints[1..MINNIE_MAX_PAINTS]
    static sUI cur_paint_id;  // 0=solid(def), or 1..MINNIE_MAX_PAINTS
+
+// (note) see shadervg::Shape
+#define MINNIE_SHAPE_AA_RANGE  1.5f
+   static sF32 cur_aa_range;
 
    static sUI   active_dl_op;            // MINNIE_DRAWOP_xxx
    static sUI   active_dl_num_tris;
@@ -3993,6 +3995,7 @@ namespace setup {
    static sF32  active_dl_sx;
    static sF32  active_dl_sy;
    static sUI   active_dl_paint_id;
+   static sF32  active_dl_aa_range;
 
    static sSI   dl_tex_id;
    static sBool dl_tex_repeat;
@@ -4153,6 +4156,7 @@ namespace setup {
       cur_y              = 0.0f;
       cur_mask_idx       = -1;
       cur_stroke_w       = 0.0f;
+      cur_aa_range       = MINNIE_SHAPE_AA_RANGE;
       cur_num_seg        = 6u;
       cur_pal_idx        = 1u;
       cur_c32_fill       = 0xFFffffffu;
@@ -5065,17 +5069,14 @@ namespace setup {
 
    // <method.png>
    static void setupRectFillVBO32(sF32 _centerX, sF32 _centerY,
-                                  sF32 _sizeX,   sF32 _sizeY
+                                  sF32 _sizeX,   sF32 _sizeY,
+                                  sF32 _aaRange
                                   ) {
-      //  +0  u16 aaRange * 256
-      //  +2  i32 vbOffInner
-      //  +6  u16 numVertsInner  (0 or 6. GL_TRIANGLES)
-      //  +8  i32 vbOffBorder
-      //  +12 u16 numVertsBorder
-      //  +14 u16 primTypeBorder
-
-      const sF32 aaRange = MINNIE_SHAPE_AA_RANGE;   // (todo) make configurable
-      Dexport_dl_i16(sU16(aaRange * 256));
+      //  +0  i32 vbOffInner
+      //  +4  u16 numVertsInner  (0 or 6. GL_TRIANGLES)
+      //  +6  i32 vbOffBorder
+      //  +10 u16 numVertsBorder
+      //  +12 u16 primTypeBorder
 
       const sBool bSingle = ((_sizeX*_sizeY) <= MINNIE_RECT_SINGLE_AREA_THRESHOLD);
       sUI numVerts;
@@ -5095,24 +5096,24 @@ namespace setup {
          Dexport_dl_i16(numVerts);
 
          // left/top
-         Dexport_vb_f32(_centerX - _sizeX + aaRange);
-         Dexport_vb_f32(_centerY - _sizeY + aaRange);
+         Dexport_vb_f32(_centerX - _sizeX + _aaRange);
+         Dexport_vb_f32(_centerY - _sizeY + _aaRange);
 
-         Dexport_vb_f32(_centerX + _sizeX - aaRange);
-         Dexport_vb_f32(_centerY - _sizeY + aaRange);
+         Dexport_vb_f32(_centerX + _sizeX - _aaRange);
+         Dexport_vb_f32(_centerY - _sizeY + _aaRange);
 
-         Dexport_vb_f32(_centerX - _sizeX + aaRange);
-         Dexport_vb_f32(_centerY + _sizeY - aaRange);
+         Dexport_vb_f32(_centerX - _sizeX + _aaRange);
+         Dexport_vb_f32(_centerY + _sizeY - _aaRange);
 
          // right/bottom
-         Dexport_vb_f32(_centerX - _sizeX + aaRange);
-         Dexport_vb_f32(_centerY + _sizeY - aaRange);
+         Dexport_vb_f32(_centerX - _sizeX + _aaRange);
+         Dexport_vb_f32(_centerY + _sizeY - _aaRange);
 
-         Dexport_vb_f32(_centerX + _sizeX - aaRange);
-         Dexport_vb_f32(_centerY - _sizeY + aaRange);
+         Dexport_vb_f32(_centerX + _sizeX - _aaRange);
+         Dexport_vb_f32(_centerY - _sizeY + _aaRange);
 
-         Dexport_vb_f32(_centerX + _sizeX - aaRange);
-         Dexport_vb_f32(_centerY + _sizeY - aaRange);
+         Dexport_vb_f32(_centerX + _sizeX - _aaRange);
+         Dexport_vb_f32(_centerY + _sizeY - _aaRange);
       }
       else
       {
@@ -5145,7 +5146,7 @@ namespace setup {
          emitRectBorderVertices(_centerX, _centerY,
                                 _sizeX, _sizeY,
                                 0.0f/*_strokeW*/,
-                                aaRange
+                                _aaRange
                                 );
       }
 
@@ -5154,17 +5155,13 @@ namespace setup {
    // <method.png>
    static void setupRectFillStrokeVBO32(sF32 _centerX, sF32 _centerY,
                                         sF32 _sizeX,   sF32 _sizeY,
-                                        sF32 _strokeW
+                                        sF32 _strokeW, sF32 _aaRange
                                         ) {
-      //  +0  u16 aaRange * 256
-      //  +2  i32 vbOffInner
-      //  +6  u16 numVertsInner  (0 or 6. GL_TRIANGLES)
-      //  +8  i32 vbOffBorder
-      //  +12 u16 numVertsBorder
-      //  +14 u16 primTypeBorder
-
-      const sF32 aaRange = MINNIE_SHAPE_AA_RANGE;   // (todo) make configurable
-      Dexport_dl_i16(sU16(aaRange * 256));
+      //  +0  i32 vbOffInner
+      //  +4  u16 numVertsInner  (0 or 6. GL_TRIANGLES)
+      //  +6  i32 vbOffBorder
+      //  +10 u16 numVertsBorder
+      //  +12 u16 primTypeBorder
 
       const sBool bSingle = ((_sizeX*_sizeY) <= MINNIE_RECT_SINGLE_AREA_THRESHOLD);
       sSI numVerts;
@@ -5184,24 +5181,24 @@ namespace setup {
          Dexport_dl_i16(numVerts);
 
          // left/top
-         Dexport_vb_f32(_centerX - _sizeX + _strokeW + aaRange);
-         Dexport_vb_f32(_centerY - _sizeY + _strokeW + aaRange);
+         Dexport_vb_f32(_centerX - _sizeX + _strokeW + _aaRange);
+         Dexport_vb_f32(_centerY - _sizeY + _strokeW + _aaRange);
 
-         Dexport_vb_f32(_centerX + _sizeX - _strokeW - aaRange);
-         Dexport_vb_f32(_centerY - _sizeY + _strokeW + aaRange);
+         Dexport_vb_f32(_centerX + _sizeX - _strokeW - _aaRange);
+         Dexport_vb_f32(_centerY - _sizeY + _strokeW + _aaRange);
 
-         Dexport_vb_f32(_centerX - _sizeX + _strokeW + aaRange);
-         Dexport_vb_f32(_centerY + _sizeY - _strokeW - aaRange);
+         Dexport_vb_f32(_centerX - _sizeX + _strokeW + _aaRange);
+         Dexport_vb_f32(_centerY + _sizeY - _strokeW - _aaRange);
 
          // right/bottom
-         Dexport_vb_f32(_centerX - _sizeX + _strokeW + aaRange);
-         Dexport_vb_f32(_centerY + _sizeY - _strokeW - aaRange);
+         Dexport_vb_f32(_centerX - _sizeX + _strokeW + _aaRange);
+         Dexport_vb_f32(_centerY + _sizeY - _strokeW - _aaRange);
 
-         Dexport_vb_f32(_centerX + _sizeX - _strokeW - aaRange);
-         Dexport_vb_f32(_centerY - _sizeY + _strokeW + aaRange);
+         Dexport_vb_f32(_centerX + _sizeX - _strokeW - _aaRange);
+         Dexport_vb_f32(_centerY - _sizeY + _strokeW + _aaRange);
 
-         Dexport_vb_f32(_centerX + _sizeX - _strokeW - aaRange);
-         Dexport_vb_f32(_centerY + _sizeY - _strokeW - aaRange);
+         Dexport_vb_f32(_centerX + _sizeX - _strokeW - _aaRange);
+         Dexport_vb_f32(_centerY + _sizeY - _strokeW - _aaRange);
       }
       else
       {
@@ -5234,7 +5231,7 @@ namespace setup {
          emitRectBorderVertices(_centerX, _centerY,
                                 _sizeX, _sizeY,
                                 _strokeW,
-                                aaRange
+                                _aaRange
                                 );
       }
 
@@ -5243,15 +5240,11 @@ namespace setup {
    // <method.png>
    static void setupRectStrokeVBO32(sF32 _centerX, sF32 _centerY,
                                     sF32 _sizeX,   sF32 _sizeY,
-                                    sF32 _strokeW
+                                    sF32 _strokeW, sF32 _aaRange
                                     ) {
-      //  +0  u16 aaRange * 256
-      //  +2  i32 vbOffBorder
-      //  +6  u16 numVertsBorder
-      //  +8  u16 primTypeBorder
-
-      const sF32 aaRange = MINNIE_SHAPE_AA_RANGE;   // (todo) make configurable
-      Dexport_dl_i16(sU16(aaRange * 256));
+      //  +0  i32 vbOffBorder
+      //  +4  u16 numVertsBorder
+      //  +6  u16 primTypeBorder
 
       const sBool bSingle = ((_sizeX*_sizeY) <= MINNIE_RECT_SINGLE_AREA_THRESHOLD);
       sUI numVerts;
@@ -5281,7 +5274,7 @@ namespace setup {
          emitRectBorderVertices(_centerX, _centerY,
                                 _sizeX, _sizeY,
                                 _strokeW,
-                                aaRange
+                                _aaRange
                                 );
       }
 
@@ -5846,17 +5839,14 @@ namespace setup {
 
    static void setupRoundRectFillVBO32(sF32 _centerX, sF32 _centerY,
                                        sF32 _sizeX,   sF32 _sizeY,
-                                       sF32 _radiusX, sF32 _radiusY
+                                       sF32 _radiusX, sF32 _radiusY,
+                                       sF32 _aaRange
                                        ) {
-      //  +0  u16 aaRange * 256
-      //  +2  i32 vbOffInner
-      //  +6  u16 numVertsInner  (GL_TRIANGLES)
-      //  +8  i32 vbOffBorder
-      //  +12 u16 numVertsBorder
-      //  +14 u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
-
-      const sF32 aaRange = MINNIE_SHAPE_AA_RANGE;   // (todo) make configurable
-      Dexport_dl_i16(sU16(aaRange * 256));
+      //  +0  i32 vbOffInner
+      //  +4  u16 numVertsInner  (GL_TRIANGLES)
+      //  +6  i32 vbOffBorder
+      //  +10 u16 numVertsBorder
+      //  +12 u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
 
       if(_radiusX > _sizeX)
          _radiusX = _sizeX;
@@ -5881,7 +5871,7 @@ namespace setup {
                                               _sizeX,   _sizeY,
                                               _radiusX, _radiusY,
                                               0.0f/*strokeW*/,
-                                              aaRange
+                                              _aaRange
                                               );
 
          numVerts = numTris * 3u;
@@ -5919,7 +5909,7 @@ namespace setup {
                                                _sizeX,   _sizeY,
                                                _radiusX, _radiusY,
                                                0.0f/*strokeW*/,
-                                               aaRange
+                                               _aaRange
                                                );
          numVerts = numTris * 3u;
 
@@ -5932,15 +5922,11 @@ namespace setup {
    static void setupRoundRectStrokeVBO32(sF32 _centerX, sF32 _centerY,
                                          sF32 _sizeX,   sF32 _sizeY,
                                          sF32 _radiusX, sF32 _radiusY,
-                                         sF32 _strokeW
+                                         sF32 _strokeW, sF32 _aaRange
                                          ) {
-      //  +0  u16 aaRange * 256
-      //  +2  i32 vbOffBorder
-      //  +6  u16 numVertsBorder
-      //  +8  u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
-
-      const sF32 aaRange = MINNIE_SHAPE_AA_RANGE;   // (todo) make configurable
-      Dexport_dl_i16(sU16(aaRange * 256));
+      //  +0  i32 vbOffBorder
+      //  +4  u16 numVertsBorder
+      //  +6  u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
 
       if(_radiusX > _sizeX)
          _radiusX = _sizeX;
@@ -5977,7 +5963,7 @@ namespace setup {
                                                _sizeX,   _sizeY,
                                                _radiusX, _radiusY,
                                                _strokeW,
-                                               aaRange
+                                               _aaRange
                                                );
          numVerts = numTris * 3u;
 
@@ -5990,17 +5976,13 @@ namespace setup {
    static void setupRoundRectFillStrokeVBO32(sF32 _centerX, sF32 _centerY,
                                              sF32 _sizeX,   sF32 _sizeY,
                                              sF32 _radiusX, sF32 _radiusY,
-                                             sF32 _strokeW
+                                             sF32 _strokeW, sF32 _aaRange
                                              ) {
-      //  +0  u16 aaRange * 256
-      //  +2  i32 vbOffInner
-      //  +6  u16 numVertsInner  (GL_TRIANGLES)
-      //  +8  i32 vbOffBorder
-      //  +12 u16 numVertsBorder
-      //  +14 u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
-
-      const sF32 aaRange = MINNIE_SHAPE_AA_RANGE;   // (todo) make configurable
-      Dexport_dl_i16(sU16(aaRange * 256));
+      //  +0  i32 vbOffInner
+      //  +4  u16 numVertsInner  (GL_TRIANGLES)
+      //  +6  i32 vbOffBorder
+      //  +10 u16 numVertsBorder
+      //  +12 u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
 
       if(_radiusX > _sizeX)
          _radiusX = _sizeX;
@@ -6025,7 +6007,7 @@ namespace setup {
                                               _sizeX,   _sizeY,
                                               _radiusX, _radiusY,
                                               _strokeW,
-                                              aaRange
+                                              _aaRange
                                               );
 
          numVerts = numTris * 3u;
@@ -6063,7 +6045,7 @@ namespace setup {
                                                _sizeX,   _sizeY,
                                                _radiusX, _radiusY,
                                                _strokeW,
-                                               aaRange
+                                               _aaRange
                                                );
          numVerts = numTris * 3u;
 
@@ -6169,7 +6151,8 @@ namespace setup {
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_RECT_FILL_AA_SIZE_OFFSET : 0.0f;
                setupRectFillVBO32(cxc, cyc,
-                                  sxh + aaOff, syh + aaOff
+                                  sxh + aaOff, syh + aaOff,
+                                  active_dl_aa_range
                                   );
             }
             total_num_rects++;
@@ -6195,7 +6178,8 @@ namespace setup {
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_RECT_AA_STROKE_OFFSET : 0.0f;
                setupRectStrokeVBO32(cxc, cyc,
                                     sxh + aaOffSize, syh + aaOffSize,
-                                    active_dl_stroke_w + aaOffStroke
+                                    active_dl_stroke_w + aaOffStroke,
+                                    active_dl_aa_range
                                     );
             }
             total_num_rects++;
@@ -6221,7 +6205,8 @@ namespace setup {
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_RECT_AA_STROKE_OFFSET : 0.0f;
                setupRectFillStrokeVBO32(cxc, cyc,
                                         sxh + aaOffSize, syh + aaOffSize,
-                                        active_dl_stroke_w + aaOffStroke
+                                        active_dl_stroke_w + aaOffStroke,
+                                        active_dl_aa_range
                                         );
             }
             total_num_rects++;
@@ -6307,7 +6292,8 @@ namespace setup {
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;
                setupRoundRectFillVBO32(cxc, cyc,
                                        sxh + aaOff, syh + aaOff,
-                                       active_dl_rx, active_dl_ry
+                                       active_dl_rx, active_dl_ry,
+                                       active_dl_aa_range
                                        );
             }
             total_num_roundrects++;
@@ -6336,7 +6322,8 @@ namespace setup {
                setupRoundRectStrokeVBO32(cxc, cyc,
                                          sxh + aaOffSize, syh + aaOffSize,
                                          active_dl_rx, active_dl_ry,
-                                         active_dl_stroke_w + aaOffStroke
+                                         active_dl_stroke_w + aaOffStroke,
+                                         active_dl_aa_range
                                          );
             }
             total_num_roundrects++;
@@ -6365,7 +6352,8 @@ namespace setup {
                setupRoundRectFillStrokeVBO32(cxc, cyc,
                                              sxh + aaOffSize, syh + aaOffSize,
                                              active_dl_rx, active_dl_ry,
-                                             active_dl_stroke_w + aaOffStroke
+                                             active_dl_stroke_w + aaOffStroke,
+                                             active_dl_aa_range
                                              );
             }
             total_num_roundrects++;
@@ -6479,7 +6467,8 @@ namespace setup {
          ((0u == cur_paint_id) || (active_dl_c32_stroke == cur_c32_stroke)) &&
          ((active_dl_op <= MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2) ||
           (active_dl_op == MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32)
-          )
+          ) &&
+         (active_dl_aa_range == cur_aa_range)
          ;
    }
 
@@ -6504,6 +6493,7 @@ namespace setup {
          active_dl_stroke_w     = cur_stroke_w;
          active_dl_miter_limit  = cur_miter_limit;
          active_dl_paint_id     = cur_paint_id;
+         active_dl_aa_range     = cur_aa_range;
 
          return YAC_TRUE;
       }
@@ -6644,7 +6634,7 @@ namespace setup {
              (_sx           == active_dl_sx) &&
              (_sy           == active_dl_sy) &&
              (cur_stroke_w > 0.0f) &&
-             (cur_paint_id == active_dl_paint_id)
+             (0u == cur_paint_id)
              )
          {
             // merge fill+stroke
@@ -6682,7 +6672,7 @@ namespace setup {
              (_rx           == active_dl_rx) &&
              (_ry           == active_dl_ry) &&
              (cur_stroke_w > 0.0f) &&
-             (cur_paint_id == active_dl_paint_id)
+             (0u == cur_paint_id)
              )
          {
             // merge fill+stroke
@@ -6722,7 +6712,7 @@ namespace setup {
              (_rx           == active_dl_rx) &&
              (_ry           == active_dl_ry) &&
              (cur_stroke_w > 0.0f) &&
-             (cur_paint_id == active_dl_paint_id)
+             (0u == cur_paint_id)
              )
          {
             // merge fill+stroke
@@ -11591,6 +11581,7 @@ YF void YAC_CALL minCapNone (void);
 YF void YAC_CALL minCapRound (void);
 YF void YAC_CALL minCapButt (void);
 YF void YAC_CALL minDrawPath (sSI _pathIdx);
+YF void YAC_CALL minAARange (sF32 _range);
 YF void YAC_CALL minBindTexture (sSI _texId, sBool _bRepeat, sBool _bFilter);
 YF void YAC_CALL minUnbindTexture (void);
 YF void YAC_CALL minTextureDecalAlpha (sF32 _decalAlpha);
@@ -11602,7 +11593,7 @@ YF void YAC_CALL minRectTexUVFlat (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul,
 YF void YAC_CALL minRectTexUVFlatDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb);
 YF void YAC_CALL minRectTexUVGouraud (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
 YF void YAC_CALL minRectTexUVGouraudDecal (sF32 _x, sF32 _y, sF32 _w, sF32 _h, sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb, sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb);
-YF sUI  YAC_CALL minPaintBegin (void);
+YF sUI  YAC_CALL minPaintCreate (void);
 YF void YAC_CALL minPaintSolid (void);
 YF void YAC_CALL minPaintLinear (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY);
 YF void YAC_CALL minPaintRadial (sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY);
@@ -11611,8 +11602,8 @@ YF void YAC_CALL minPaintPattern (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _
 YF void YAC_CALL minPaintPatternAlpha (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
 YF void YAC_CALL minPaintPatternDecal (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
 YF void YAC_CALL minPaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY);
-YF void YAC_CALL minPaintEnd (void);
 YF void YAC_CALL minPaintDefault (void);
+YF void YAC_CALL minPaintUpdate (sUI _paintId);
 YF void YAC_CALL minPaint (sUI _paintId);
 YF void YAC_CALL minExecDrawListEx (YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug);
 YF void YAC_CALL minExecDrawList (YAC_Buffer *_bufDraw, sUI _glBufId);
@@ -13051,6 +13042,19 @@ void minDrawPath(sSI _pathId) {
    }
 }
 
+/* @function minAARange,float range
+Change anti-aliasing border radius.
+
+@arg range Anti-aliasing border radius (def=1.5)
+
+@groupref Attrib
+@group Config
+*/
+void minAARange(sF32 _range) {
+   minnie::setup::cur_aa_range = _range;
+   (void)minnie::setup::beginDrawListOp(MINNIE_DRAWOP_AA_RANGE);
+}
+
 /* @function minBindTexture,int texId,boolean bRepeat,boolean bFilter
 Bind 2D texture.
 
@@ -13521,14 +13525,14 @@ void minRectTexUVGouraudDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
    }
 }
 
-/* @function minPaintBegin:int
+/* @function minPaintCreate:int
 Create new paint and return paint id
 
 @return new paint id, or 0 if paint could not be created.
 
 @group Paint
 */
-sUI minPaintBegin(void) {
+sUI minPaintCreate(void) {
    sUI retPaintId = 0u;
    minnie::setup::cur_paint = minnie::setup::paints.addNew();
    if(NULL != minnie::setup::cur_paint)
@@ -13569,7 +13573,7 @@ The currently bound texture (n x 1) is used as a gradient table.
 @arg endY Paint direction and scaling (endX - startX)
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintLinear(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY) {
    if(NULL != minnie::setup::cur_paint)
@@ -13597,7 +13601,7 @@ The currently bound texture (n x 1) is used as a gradient table.
 @arg radiusY Paint scaling
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
    if(NULL != minnie::setup::cur_paint)
@@ -13626,7 +13630,7 @@ The currently bound texture (n x 1) is used as a gradient table.
 @arg angle01 Normalized rotation angle (0..1)
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF32 _angle01) {
    if(NULL != minnie::setup::cur_paint)
@@ -13657,7 +13661,7 @@ The currently bound texture (n x 1) is used as pattern.
 @arg sizeY Paint scaling
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintPattern(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
@@ -13689,7 +13693,7 @@ The currently bound texture (n x 1) is used as alpha channel pattern.
 @arg sizeY Paint scaling
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
@@ -13727,7 +13731,7 @@ The output alpha channel is set to the fill color alpha.
 @arg sizeY Paint scaling
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
@@ -13765,7 +13769,7 @@ The output alpha channel is set to the fill color alpha.
 @arg sizeY Paint scaling
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _endY, sF32 _sizeX, sF32 _sizeY) {
    if(NULL != minnie::setup::cur_paint)
@@ -13784,20 +13788,21 @@ void minPaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _endX, sF32 _end
    }
 }
 
+// (todo) delete
 /* @function minPaintEnd
 Finish paint definition
 
 @group Paint
-@group Texture
+@groupref Texture
 */
-void minPaintEnd(void) {
-}
+/* void minPaintEnd(void) { */
+/* } */
 
 /* @function minPaintDefault
 Select default solid paint
 
 @group Paint
-@group Texture
+@groupref Texture
 */
 void minPaintDefault(void) {
    // select solid paint
@@ -13812,11 +13817,41 @@ void minPaintDefault(void) {
    }
 }
 
-/* @function minPaint
-Select custom paint
+/* @function minPaintUpdate,int paintId
+Select custom paint for subsequent paint attribute calls.
+
+After changing the paint attributes, call %minPaint to reselect the updated paint for subsequent draw calls.
+
+@arg paintId Id of previously created paint (see %minPaintCreate)
 
 @group Paint
-@group Texture
+@groupref Texture
+*/
+void minPaintUpdate(sUI _paintId) {
+   if(_paintId > 0u && _paintId <= minnie::setup::paints.num_elements)
+   {
+      minnie::setup::cur_paint = minnie::setup::paints.elements[_paintId - 1u];
+   }
+   else
+   {
+      if(_paintId <= minnie::setup::paints.max_elements)
+      {
+         Derrorprintf("[---] minPaintUpdate: undefined paint id %u (avail=%u), reverting to default..\n", _paintId, minnie::setup::paints.num_elements);
+      }
+      else
+      {
+         Derrorprintf("[---] minPaintUpdate: invalid paint id %u (max=%u), reverting to default..\n", _paintId, minnie::setup::paints.max_elements);
+      }
+   }
+}
+
+/* @function minPaint
+Select custom paint for subsequent draw calls
+
+@arg paintId Id of previously created paint (see %minPaintCreate)
+
+@group Paint
+@groupref Texture
 */
 void minPaint(sUI _paintId) {
    // select paint
@@ -13825,86 +13860,83 @@ void minPaint(sUI _paintId) {
       if(_paintId <= minnie::setup::paints.num_elements)
       {
          /* Dprintf("xxx minPaint(%u) cur_paint_id=%u\n", _paintId, minnie::setup::cur_paint_id); */
-         if(minnie::setup::cur_paint_id  != _paintId)
+         minnie::Paint *p = minnie::setup::paints.elements[_paintId - 1u];
+         minnie::setup::cur_paint_id = _paintId;
+
+         if(NULL != minnie::setup::loc_dl_export_ofs)
          {
-            minnie::Paint *p = minnie::setup::paints.elements[_paintId - 1u];
-            minnie::setup::cur_paint_id = _paintId;
-
-            if(NULL != minnie::setup::loc_dl_export_ofs)
+            minnie::setup::finishActiveDrawListOp();
+            switch(p->mode)
             {
-               minnie::setup::finishActiveDrawListOp();
-               switch(p->mode)
-               {
-                  default:
-                  case MINNIE_PAINT_SOLID:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_SOLID);
-                     break;
+               default:
+               case MINNIE_PAINT_SOLID:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_SOLID);
+                  break;
 
-                  case MINNIE_PAINT_LINEAR:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_LINEAR);
-                     Dexport_dl_f32(p->linear.start_x);
-                     Dexport_dl_f32(p->linear.start_y);
-                     Dexport_dl_f32(p->linear.end_x);
-                     Dexport_dl_f32(p->linear.end_y);
-                     break;
+               case MINNIE_PAINT_LINEAR:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_LINEAR);
+                  Dexport_dl_f32(p->linear.start_x);
+                  Dexport_dl_f32(p->linear.start_y);
+                  Dexport_dl_f32(p->linear.end_x);
+                  Dexport_dl_f32(p->linear.end_y);
+                  break;
 
-                  case MINNIE_PAINT_RADIAL:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_RADIAL);
-                     Dexport_dl_f32(p->radial.start_x);
-                     Dexport_dl_f32(p->radial.start_y);
-                     Dexport_dl_f32(p->radial.radius_x);
-                     Dexport_dl_f32(p->radial.radius_y);
-                     break;
+               case MINNIE_PAINT_RADIAL:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_RADIAL);
+                  Dexport_dl_f32(p->radial.start_x);
+                  Dexport_dl_f32(p->radial.start_y);
+                  Dexport_dl_f32(p->radial.radius_x);
+                  Dexport_dl_f32(p->radial.radius_y);
+                  break;
 
-                  case MINNIE_PAINT_CONIC:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_CONIC);
-                     Dexport_dl_f32(p->conic.start_x);
-                     Dexport_dl_f32(p->conic.start_y);
-                     Dexport_dl_f32(p->conic.radius_x);
-                     Dexport_dl_f32(p->conic.radius_y);
-                     Dexport_dl_f32(p->conic.angle01);
-                     break;
+               case MINNIE_PAINT_CONIC:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_CONIC);
+                  Dexport_dl_f32(p->conic.start_x);
+                  Dexport_dl_f32(p->conic.start_y);
+                  Dexport_dl_f32(p->conic.radius_x);
+                  Dexport_dl_f32(p->conic.radius_y);
+                  Dexport_dl_f32(p->conic.angle01);
+                  break;
 
-                  case MINNIE_PAINT_PATTERN:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN);
-                     Dexport_dl_f32(p->pattern.start_x);
-                     Dexport_dl_f32(p->pattern.start_y);
-                     Dexport_dl_f32(p->pattern.end_x);
-                     Dexport_dl_f32(p->pattern.end_y);
-                     Dexport_dl_f32(p->pattern.size_x);
-                     Dexport_dl_f32(p->pattern.size_y);
-                     break;
+               case MINNIE_PAINT_PATTERN:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN);
+                  Dexport_dl_f32(p->pattern.start_x);
+                  Dexport_dl_f32(p->pattern.start_y);
+                  Dexport_dl_f32(p->pattern.end_x);
+                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.size_x);
+                  Dexport_dl_f32(p->pattern.size_y);
+                  break;
 
-                  case MINNIE_PAINT_PATTERN_ALPHA:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_ALPHA);
-                     Dexport_dl_f32(p->pattern.start_x);
-                     Dexport_dl_f32(p->pattern.start_y);
-                     Dexport_dl_f32(p->pattern.end_x);
-                     Dexport_dl_f32(p->pattern.end_y);
-                     Dexport_dl_f32(p->pattern.size_x);
-                     Dexport_dl_f32(p->pattern.size_y);
-                     break;
+               case MINNIE_PAINT_PATTERN_ALPHA:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_ALPHA);
+                  Dexport_dl_f32(p->pattern.start_x);
+                  Dexport_dl_f32(p->pattern.start_y);
+                  Dexport_dl_f32(p->pattern.end_x);
+                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.size_x);
+                  Dexport_dl_f32(p->pattern.size_y);
+                  break;
 
-                  case MINNIE_PAINT_PATTERN_DECAL:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_DECAL);
-                     Dexport_dl_f32(p->pattern.start_x);
-                     Dexport_dl_f32(p->pattern.start_y);
-                     Dexport_dl_f32(p->pattern.end_x);
-                     Dexport_dl_f32(p->pattern.end_y);
-                     Dexport_dl_f32(p->pattern.size_x);
-                     Dexport_dl_f32(p->pattern.size_y);
-                     break;
+               case MINNIE_PAINT_PATTERN_DECAL:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_DECAL);
+                  Dexport_dl_f32(p->pattern.start_x);
+                  Dexport_dl_f32(p->pattern.start_y);
+                  Dexport_dl_f32(p->pattern.end_x);
+                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.size_x);
+                  Dexport_dl_f32(p->pattern.size_y);
+                  break;
 
-                  case MINNIE_PAINT_PATTERN_DECAL_ALPHA:
-                     Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA);
-                     Dexport_dl_f32(p->pattern.start_x);
-                     Dexport_dl_f32(p->pattern.start_y);
-                     Dexport_dl_f32(p->pattern.end_x);
-                     Dexport_dl_f32(p->pattern.end_y);
-                     Dexport_dl_f32(p->pattern.size_x);
-                     Dexport_dl_f32(p->pattern.size_y);
-                     break;
-               }
+               case MINNIE_PAINT_PATTERN_DECAL_ALPHA:
+                  Dexport_dl_i16(MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA);
+                  Dexport_dl_f32(p->pattern.start_x);
+                  Dexport_dl_f32(p->pattern.start_y);
+                  Dexport_dl_f32(p->pattern.end_x);
+                  Dexport_dl_f32(p->pattern.end_y);
+                  Dexport_dl_f32(p->pattern.size_x);
+                  Dexport_dl_f32(p->pattern.size_y);
+                  break;
             }
          }
       }
