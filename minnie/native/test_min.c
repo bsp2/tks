@@ -91,7 +91,6 @@ static sUI   auto_cycle_num_frames =  // >0:auto-cycle tests (any key stroke int
 
 static sBool b_sym_radius    = 1;     // 'l'  (rx=ry)
 static sF32  stroke_scale    = 1.0f;  // LEFT/RIGHT
-static sBool b_line_strip    = 1;     // 's'  (0=tesselate via CPU)
 static sBool b_tex_filter    = 1;     // 't'
 static sBool b_copy          = 0;     // 'c'  draw shifted copy (mvp translatef)
 
@@ -155,8 +154,42 @@ static const char *test_names[] = {
    "25: arc filled+stroked",
    "26: arc stroke+pattern",
    "27: textured, flat shaded AA rectangles",
+   "28: textured, flat shaded AA rectangles 200x200",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
+
+// ---------------------------------------------------------------------------- rand
+static sU32 loc_rand = 0u;
+static void loc_rand_seed(sU32 _seed) {
+   loc_rand = _seed ^ 78163u;
+}
+
+static sU32 loc_randu(void) {
+   sU32 x = ( (loc_rand >> 16) + 3715436908ul ) * 0x1fd8dae7u;
+   loc_rand += x;
+   return loc_rand;
+}
+
+#if 0
+static sS32 loc_rands(void) {
+   union {
+      sU32 u32;
+      sS32 s32;
+   } ret;
+   ret.u32 = loc_randu();
+   return ret.s32;
+}
+#endif
+
+static sF32 loc_randf(sF32 _max) {
+   union {
+      sU32 u32;
+      sF32 f32;
+   } ret;
+   ret.u32 = 0x3f800000u | (loc_randu() & ((1u << 23) - 1u));
+   ret.f32 = (ret.f32 - 1.0f) * _max;
+   return ret.f32;
+}
 
 // ----------------------------------------------------------------------------
 static void Test_00(void) {
@@ -836,6 +869,51 @@ static void Test_27(void) {
    }
 }
 
+// ----------------------------------------------------------------------------
+static void Test_28(void) {
+   // textured, flat shaded AA rectangles 200x200
+
+   minBindTexture(tex_id, 0/*bRepeat*/, b_tex_filter);
+   sSI paintId = minPaintCreate();
+   minColor(0xffffffffu);
+   minFill();
+
+   float aaBorder = 1.5f;
+   minAARange(aaBorder);
+   sF32 numPix = 0.0f;
+
+   minBeginImmediate();
+
+   loc_rand_seed(0x9123db1au);
+   sF32 tx = sinf(anim_1) * 4.0f + 2.0f;
+   sF32 ty = cosf(anim_2) * 4.0f + 2.0f;
+   const sF32 w = 200.0f;
+   const sF32 h = 200.0f;
+   for(sUI i = 0u; i < 128u; i++)
+   {
+      sF32 px = loc_randf(VP_W - w - aaBorder) + tx;
+      sF32 py = loc_randf(VP_H - h - aaBorder) + ty;
+
+      minPaintUpdate(paintId);
+      minPaintPattern(px, py,
+                      1.0f, 0.0f,
+                      w, h
+                      );
+      minPaint(paintId);
+
+      minMoveTo(px, py);
+      numPix += (w+aaBorder*2.0f) * (h+aaBorder*2.0f);
+      minRect(w, h);
+   }
+
+   minEndImmediate();
+
+   if(0)
+   {
+      Dprintf("[trc] test_28: mpix=%3.2f\n", (numPix/1000000.0f));  // => 5.27
+   }
+}
+
 // ---------------------------------------------------------------------------- SelectTest
 static void SelectTest(sSI _idx) {
    test_idx = _idx;
@@ -869,9 +947,6 @@ void hal_on_draw(void) {
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
-      minSetSwTesselateSizeThreshold(1*99999999);  // bounding box size
-      minSetStrokeWLineStripThreshold(b_line_strip*99.0f);  // 0=tesselate to triangles
-      minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
       minDrawableBegin(drawable);
@@ -906,6 +981,7 @@ void hal_on_draw(void) {
          case 25: Test_23(YAC_TRUE/*bFill*/, YAC_TRUE/*bStroke*/); break;   // arc filled+stroked
          case 26: Test_26(); break;                          // arc stroke+pattern (WIP)
          case 27: Test_27(); break;                          // textured, flat shaded AA rectangles
+         case 28: Test_28(); break;                          // textured, flat shaded AA rectangles 2
       }
 
       minDrawableEnd(drawable);
@@ -966,7 +1042,7 @@ void hal_on_draw(void) {
    {
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (1000.0 * auto_exit_frames * num_iter) / tDelta;
+      sF32 fps = (sF32)( (1000.0 * auto_exit_frames * num_iter) / tDelta );
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
@@ -1090,11 +1166,6 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          trace "[...] queue screenshot";
          break;
 #endif
-
-      case 's':
-         b_line_strip = !b_line_strip;
-         Dprintf("[...] b_line_strip is %d\n", b_line_strip);
-         break;
 
       case 't':
          b_tex_filter = !b_tex_filter;
