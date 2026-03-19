@@ -1377,6 +1377,8 @@ YF void YAC_CALL sdvg_DrawTrianglesFillGouraudEdgeAAVBO14_2 (sUI _vboId, sUI _by
 /* @function sdvg_DrawPolygonFillFlatUniformVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (32bit float format)
 
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
 <pre>
 VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
@@ -1390,6 +1392,8 @@ YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO32 (sUI _vboId, sUI _byteOffs
 
 /* @function sdvg_DrawPolygonFillFlatUniformVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled n-polygon (14.2 fixed point format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
@@ -1405,6 +1409,8 @@ YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformVBO14_2 (sUI _vboId, sUI _byteOf
 /* @function sdvg_DrawPolygonFillFlatUniformAAVBO32,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, anti-aliased n-polygon (32bit float format)
 
+Renders a polygon with (numVerts - 1) control points. The last two points must equal the first two.
+
 Apply current paint.
 
 <pre>
@@ -1419,33 +1425,10 @@ VBO vertex format (8 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
-/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass1,int vboId
-Begin filled multipath n-polygon (14.2 fixed point format)
-*/
-YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass1 (sUI _vboId);
-
-/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass1,int byteOffset,int numVerts
-Render first pass of filled multipath n-polygon sub-path (14.2 fixed point format)
-*/
-YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass1 (sUI _byteOffset, sUI _numVerts);
-
-/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass2
-Begin second pass of filled multipath n-polygon (14.2 fixed point format)
-*/
-YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_BeginPass2 (void);
-
-/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass2,int byteOffset,int numVerts
-Render second pass of filled multipath n-polygon sub-path (14.2 fixed point format)
-*/
-YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_DrawPass2 (sUI _byteOffset, sUI _numVerts);
-
-/* @function sdvg_PolygonFillFlatUniformAAVBO14_2_End
-Finish filled multipath n-polygon (14.2 fixed point format)
-*/
-YF void YAC_CALL sdvg_PolygonFillFlatUniformAAVBO14_2_End (void);
-
 /* @function sdvg_DrawPolygonFillFlatUniformAAVBO14_2,int vboId,int byteOffset,int numVerts
 Draw previously prepared vertex buffer as filled, anti-aliased n-polygon (14.2 fixed point format)
+
+Renders a polygon with (numVerts - 1) control points. The last two points must equal the first two.
 
 Apply current paint.
 
@@ -1460,6 +1443,67 @@ VBO vertex format (4 bytes per vertex):<br>
 @groupref Paint
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1,int vboId
+Begin filled multipath n-polygon (14.2 fixed point format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1 (sUI _vboId);
+
+/* @function sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1,int byteOffset,int numVerts
+Render first pass of filled multipath n-polygon sub-path (14.2 fixed point format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2
+Begin second pass of filled multipath n-polygon (14.2 fixed point format)
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2 (void);
+
+/* @function sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2,int byteOffset,int numVerts
+Render second pass of filled multipath n-polygon sub-path (14.2 fixed point format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO14_2_End
+Finish filled multipath n-polygon (14.2 fixed point format)
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_End (void);
 
 /* @function sdvg_SetupRectFillAAVBO32,Buffer vb,Buffer dl,float centerX,float centerY,float sizeX,float sizeY
 Set up vertex buffer and draw list for filled, anti-aliased rectangle (32bit float format)
