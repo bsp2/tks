@@ -346,7 +346,7 @@ void hal_on_draw(void) {
    {
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (1000.0 * auto_exit_frames * num_iter) / tDelta;
+      sF32 fps = (sF32)( (1000.0 * auto_exit_frames * num_iter) / tDelta );
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
