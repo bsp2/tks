@@ -115,6 +115,9 @@ static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 ticks_start = 0u;
 static sUI num_frames_rendered = 0u;
 static sUI total_num_frames_rendered = 0u;
+static sUI num_iter         = 1u;
+static sUI auto_exit_frames = 0u;  // auto-exit after <n> frames (benchmark single test)
+static sBool b_benchmark    = 0;
 
 static sF32 anim_1;
 static sF32 anim_2;
@@ -912,16 +915,6 @@ void hal_on_draw(void) {
          MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       }
 
-      if(0u == (total_num_frames_rendered & 127u))
-      {
-         sUI tDelta = hal_get_ticks() - ticks_start;
-         if(tDelta > 0u)
-         {
-            sF32 fps = (sF32)((1000.0 * total_num_frames_rendered) / tDelta);
-            Dprintf("[...] FPS=%f\n", fps);
-         }
-      }
-
       minDrawableSetSize2f(drawable, VP_W, VP_H);
    }
 
@@ -938,7 +931,12 @@ void hal_on_draw(void) {
       minDrawableSetEnableDebug(drawable, (0u == (num_frames_rendered & 255u)) );
 
       sdvg_SetGlobalAlpha(1.0f);
-      minDrawableDraw(drawable);
+
+      for(sUI iter = 0u; iter < num_iter; iter++)
+      {
+         minDrawableSetEnableDebug(drawable, (0u == iter) && (0u == (num_frames_rendered & 255u)));
+         minDrawableDraw(drawable);
+      }
 
       if(b_copy)
       {
@@ -964,16 +962,24 @@ void hal_on_draw(void) {
    num_frames_rendered++;
    total_num_frames_rendered++;
 
-#ifdef SHADERVG_AUTO_EXIT_FRAMES
-   if(SHADERVG_AUTO_EXIT_FRAMES == num_frames_rendered)
+   if(auto_exit_frames > 0u && auto_exit_frames == num_frames_rendered)
    {
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (1000.0 * SHADERVG_AUTO_EXIT_FRAMES) / tDelta;
+      sF32 fps = (1000.0 * auto_exit_frames * num_iter) / tDelta;
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
-#endif // SHADERVG_AUTO_EXIT_FRAMES
+   else if(0u == (num_frames_rendered & 63u))
+   {
+      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
+      sUI tDelta = hal_get_ticks() - ticks_start;
+      if(tDelta > 0u)
+      {
+         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * num_iter) / tDelta);
+         Dprintf("[...] FPS=%f\n", fps);
+      }
+   }
 
    if(b_anim)
    {
@@ -1099,6 +1105,9 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          b_vsync = !b_vsync;
          Dprintf("[...] b_vsync is %d\n", b_vsync);
          hal_set_swap_interval(b_vsync);
+         num_frames_rendered = 0u;
+         total_num_frames_rendered = 0u;
+         ticks_start = hal_get_ticks();
          break;
    }
 
@@ -1118,6 +1127,18 @@ int main(int argc, char**argv) {
       {
          Dprintf("[---] invalid test_idx=%d\n", test_idx);
          return 10;
+      }
+
+      if(argc >= 3)
+      {
+         auto_exit_frames = (sUI)atoi(argv[2]);
+
+         if(argc >= 4)
+         {
+            num_iter = (sUI)atoi(argv[3]);
+            b_benchmark = (num_iter > 1);
+            b_gl_buf_once = b_benchmark;
+         }
       }
    }
    else

@@ -21,11 +21,10 @@
 // ----
 // ---- info   : "minnie" binary (.mib) loader + OpenGL viewer
 // ----
+// ----          $ ./test_mib <testidx> [<num_frames> [<num_iter>]]
 // ----
 // ----
-
-/// When defined (in Makefile), auto-exit after <n> frames (benchmark single test)
-// #define SHADERVG_AUTO_EXIT_FRAMES  100
+// ----
 
 //    UP : select next test case
 //  DOWN : select previous test case
@@ -50,26 +49,17 @@
 #define VP_W  800
 #define VP_H  600
 
-#if 1
-#define NUM_ITER 1
-#else
-// benchmark
-#define NUM_ITER 10000
-#endif
-
 #include "../inc_minnie.h"
 #include "hal.h"
 #include "MinnieVG.h"
 
 
 // ---------------------------------------------------------------------------- config
-static sBool b_draw_gl     = 1;     // 'g'
-static sBool b_gl_buf_once = 1;     // 'o'  (0=update Drawable each frame)
-static sBool b_vsync       = 1;     // 'v'
-static sBool b_rotate      = 1;     // SPACE  (RETURN resets rot_angle)
-static sF32  stroke_scale  = 1.0f;  // LEFT/RIGHT
-static sBool b_line_strip  = 1;     // 's'  (0=tesselate via CPU)
-static sBool b_benchmark   = (NUM_ITER > 1);
+static sBool b_draw_gl        = 1;     // 'g'
+static sBool b_gl_buf_once    = 1;     // 'o'  (0=update Drawable each frame)
+static sBool b_vsync          = 1;     // 'v'
+static sBool b_rotate         = 1;     // SPACE  (RETURN resets rot_angle)
+static sF32  stroke_scale     = 1.0f;  // LEFT/RIGHT
 
 
 // ---------------------------------------------------------------------------- tests
@@ -189,6 +179,9 @@ static sU32 last_ticks = 0u;  // 1000 ticks per second
 static sU32 ticks_start = 0u;
 static sUI num_frames_rendered = 0u;
 static sUI total_num_frames_rendered = 0u;
+static sUI num_iter         = 1u;
+static sUI auto_exit_frames = 0u;  // auto-exit after <n> frames (benchmark single test)
+static sBool b_benchmark    = 0;
 
 static MinnieDrawable *drawable;
 
@@ -267,9 +260,6 @@ void hal_on_draw(void) {
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
-      minSetStrokeWLineStripThreshold(b_line_strip*99.0f);  // 0=tesselate to triangles
-      // minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
-      minSetStrokeWLineJoinThreshold(0.2f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
       if(MinnieVG_SetupDrawableFromBuffer(drawable, &fileBuf))
@@ -318,10 +308,9 @@ void hal_on_draw(void) {
       minDrawableSetTranslate2f(drawable, 0.0f, 0.0f);
       MinnieVG_SetTransformForDrawable(drawable);
 
-      minDrawableSetEnableDebug(drawable, !b_benchmark && (0u == (num_frames_rendered & 255u)));
-
-      for(sUI iter = 0u; iter < NUM_ITER; iter++)
+      for(sUI iter = 0u; iter < num_iter; iter++)
       {
+         minDrawableSetEnableDebug(drawable, (0u == iter) && (0u == (num_frames_rendered & 255u)));
          minDrawableDraw(drawable);
       }
    }
@@ -344,24 +333,6 @@ void hal_on_draw(void) {
    // if(b_glcore)
       glBindVertexArray(0);
 
-   if(0u == (num_frames_rendered & 255u))
-   {
-      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
-   }
-
-   if(b_benchmark)
-      glFinish();
-
-   if(b_benchmark || 0u == (total_num_frames_rendered & 127u))
-   {
-      sUI tDelta = hal_get_ticks() - ticks_start;
-      if(tDelta > 0u)
-      {
-         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * NUM_ITER) / tDelta);
-         Dprintf("[...] FPS=%f\n", fps);
-      }
-   }
-
 #ifdef SHADERVG_NO_DISPLAY
    glFlush();
 #else
@@ -371,16 +342,24 @@ void hal_on_draw(void) {
    num_frames_rendered++;
    total_num_frames_rendered++;
 
-#ifdef SHADERVG_AUTO_EXIT_FRAMES
-   if(SHADERVG_AUTO_EXIT_FRAMES == num_frames_rendered)
+   if(auto_exit_frames > 0u && auto_exit_frames == num_frames_rendered)
    {
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
-      sF32 fps = (1000.0 * SHADERVG_AUTO_EXIT_FRAMES) / tDelta;
+      sF32 fps = (1000.0 * auto_exit_frames * num_iter) / tDelta;
       Dprintf("[...] auto_exit after %u frames / %u millisec => %3.2f fps\n", num_frames_rendered, tDelta, ((sSI)(fps*100))/100.0f);
       hal_window_quit();
    }
-#endif // SHADERVG_AUTO_EXIT_FRAMES
+   else if(0u == (num_frames_rendered & 63u))
+   {
+      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
+      sUI tDelta = hal_get_ticks() - ticks_start;
+      if(tDelta > 0u)
+      {
+         sF32 fps = (sF32)((1000.0 * total_num_frames_rendered * num_iter) / tDelta);
+         Dprintf("[...] FPS=%f\n", fps);
+      }
+   }
 
    if(!b_benchmark && b_rotate)
    {
@@ -472,17 +451,13 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          break;
 #endif
 
-      case 's':
-         b_line_strip = !b_line_strip;
-         Dprintf("[...] b_line_strip is %d\n", b_line_strip);
-         minDrawableReset(drawable);
-         num_frames_rendered = 0u;
-         break;
-
       case 'v':
          b_vsync = !b_vsync;
          Dprintf("[...] b_vsync is %d\n", b_vsync);
          hal_set_swap_interval((b_vsync && !b_benchmark) ? 1 : 0);
+         num_frames_rendered = 0u;
+         total_num_frames_rendered = 0u;
+         ticks_start = hal_get_ticks();
          break;
 
       case VKEY_UP:
@@ -525,6 +500,18 @@ int main(int argc, char**argv) {
       {
          Dprintf("[---] invalid test_idx=%d\n", test_idx);
          return 10;
+      }
+
+      if(argc >= 3)
+      {
+         auto_exit_frames = (sUI)atoi(argv[2]);
+
+         if(argc >= 4)
+         {
+            num_iter = (sUI)atoi(argv[3]);
+            b_benchmark = (num_iter > 1);
+            b_gl_buf_once = b_benchmark;
+         }
       }
    }
    else

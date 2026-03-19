@@ -21,6 +21,8 @@
 // ----
 // ---- info   : "minnie" high-level API test case / benchmark
 // ----
+// ----          $ tks test_mib.tks <testidx> [<num_frames> [<num_iter>]]
+// ----
 // ----
 // ----
 
@@ -70,11 +72,15 @@ boolean b_anim          = 1;  // SPACE
 boolean b_slomo         = 0;  // lctrl-SPACE
 int     fill_mode       = 3;  // 'o'  bit0:fill bit1:stroke
 int     test_idx        = 0;  // UP/DOWN
+
 int     auto_cycle_num_frames = 0; //200;  // >0:auto-cycle tests (any key stroke interrupts this)
+
+int     auto_exit_frames  = 0;  // auto-exit after <n> frames (benchmark single test)
+int     num_iter          = 1;
+boolean b_benchmark       = 0;
 
 boolean b_sym_radius    = 1;     // 'l'  (rx=ry)
 float   stroke_scale    = 1.0f;  // LEFT/RIGHT
-boolean b_line_strip    = 1;     // 's'  (0=tesselate via CPU)
 boolean b_tex_filter    = 1;     // 't'
 boolean b_copy          = 0;     // 'c'  draw shifted copy (mvp translatef)
 
@@ -101,6 +107,8 @@ boolean b_reopen;  // 1=reopen window after exiting event loop (e.g. toggle MSAA
 
 // ---------------------------------------------------------------------------- vars
 int num_frames_rendered = 0;
+int total_num_frames_rendered = 0;
+int ticks_start;
 
 float anim_1;
 float anim_2;
@@ -844,9 +852,6 @@ function onDraw() {
 
    if(!b_gl_buf_once || !drawable.isComplete())
    {
-      minSetSwTesselateSizeThreshold(1*99999999);  // bounding box size
-      minSetStrokeWLineStripThreshold(b_line_strip*99);  // 0=tesselate to triangles
-      minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
       drawable.begin();
@@ -891,6 +896,8 @@ function onDraw() {
       }
 
       drawable.setSize2f(VP_W, VP_H);
+
+      ticks_start = milliSeconds();
    }
 
    if(b_draw_gl)
@@ -906,10 +913,16 @@ function onDraw() {
       drawable.setEnableDebug( (0 == (num_frames_rendered & 255)) );
 
       sdvg_SetGlobalAlpha(1.0f);
-      drawable.draw();
+
+      for(int iter = 0; iter < num_iter; iter++)
+      {
+         drawable.setEnableDebug( (0 == iter) && (0 == (num_frames_rendered & 255)) );
+         drawable.draw();
+      }
 
       if(b_copy)
       {
+         // (todo) test code, remove
          Matrix4f mvp <= sdvg_GetTransformRef();
          mvp.translatef(6,6,0);
          sdvg_SetGlobalAlpha(0.33f);
@@ -942,7 +955,25 @@ function onDraw() {
    }
 
    num_frames_rendered++;
-   if(b_anim)
+   total_num_frames_rendered++;
+
+   if(auto_exit_frames > 0 && auto_exit_frames == num_frames_rendered)
+   {
+      glFinish();
+      int tDelta = milliSeconds() - ticks_start;
+      float fps = ((1000.0 * total_num_frames_rendered * num_iter) / tDelta);
+      MinnieVG.DebugPrintMinnieAndDrawableStats(drawable);
+      trace "[...] FPS="+(int(fps*100)/100.0);
+      SDL.exitEventLoop();
+   }
+   else if(0 == (num_frames_rendered & 63))
+   {
+      if(!b_benchmark)
+         MinnieVG.DebugPrintMinnieAndDrawableStats(drawable);
+      trace "[...] FPS.real="+FPS.real;
+   }
+
+   if(b_anim && !b_benchmark)
    {
       float spd = b_slomo ? 0.1 : 0.7;
       anim_1 = mathWrapf(anim_1 + spd * 0.23*0.1,   0, 2PI*4);
@@ -1068,12 +1099,6 @@ function onKeyboard(Key _k) {
          trace "[...] queue screenshot";
          break;
 
-      case 's':
-         b_line_strip = !b_line_strip;
-         trace "[...] b_line_strip is "+b_line_strip;
-         num_frames_rendered = 0;
-         break;
-
       case 't':
          b_tex_filter = !b_tex_filter;
          trace "[...] b_tex_filter is "+b_tex_filter;
@@ -1093,9 +1118,20 @@ function onKeyboard(Key _k) {
 // ---------------------------------------------------------------------------- main
 function main() {
 
-   if(Arguments.numElements > 0)
+   if(Arguments.numElements >= 1)
    {
       test_idx = mathClampi(Arguments[0], 0, test_names.numElements-1);
+
+      if(Arguments.numElements >= 2)
+      {
+         auto_exit_frames = Arguments[1];
+
+         if(Arguments.numElements >= 3)
+         {
+            num_iter = Arguments[2];
+            b_benchmark = (num_iter > 1);
+         }
+      }
    }
 
    if(!tex_data.loadLocalImage(RES_PATH+"escher.png", 0,0,4))
@@ -1115,7 +1151,7 @@ function main() {
    }
    Viewport.stencilBits = 8;
    Viewport.openWindow(VP_W*vp_scale, VP_H*vp_scale);
-   Viewport.swapInterval(b_vsync);
+   Viewport.swapInterval(b_vsync && !b_benchmark);
    SelectTest(test_idx);
 
    for(;;)

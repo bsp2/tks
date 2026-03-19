@@ -44,7 +44,6 @@ static YAC_Buffer minnie_scratch;
 
 // ----------------------------------------------------------------------------
 void MinnieVG_Init(void) {
-
    minnie_impl_init();
 
    minSetEnableDraw(1);
@@ -53,15 +52,18 @@ void MinnieVG_Init(void) {
    minSetEnableRenderFillEvenOdd(1);       // '2'
    minSetEnableRenderStrokes(1);           // '3'
    minSetEnableRenderJoinCap(1);           // '4'
-   minSetEnableEdgeAA(0);                  // 'e'
-   minSetStrokeWLineStripThreshold(0.0f);  // 's'
-   minSetStrokeWLineJoinThreshold(0.0f);
-   minSetEnableUniformColors(1);           // 'u'
-   minSetEnablePolygonAA(1);               // 'l'
+   minSetEnableEdgeAA(0);                  // 'e'  (experimental)
+   minSetStrokeWLineStripThreshold(1*99);  // 's'  (0=tesselate to triangles)
+   minSetStrokeWLineJoinThreshold(0.2f);   //      (disable bevel+round line joins below this stroke-width threshold)
+   minSetEnableUniformColors(1);           // 'u'  (1=less VRAM/more draw calls  0=faster)
+   minSetEnablePolygonAA(1);               // 'l'  (requires GPU polygon tesselation)
 
    if(0)
    {
       // (note) 27Oct2025 used for mixed cpu/gpu benchmarks
+      // (note) UniformColors=off
+      // (note) LineStrip=off
+      // (note) should enable multisample-antialiasing
       minSetEnableForceConcaveEvenOdd(0);       // 'h'  (note) concave tesselator does not handle all paths (=> force SGI tesselator)
       minSetEnableForceEvenOddConcave(0);
       minSetEnableTesselateConcave(0);          // 'i'  0=GPU tesselation  1=CPU tesselation
@@ -71,6 +73,9 @@ void MinnieVG_Init(void) {
    else if(0)
    {
       // use SW tesselator for all path types
+      // (note) fastest rendering (m2pro: Tiger @~43000 fps)
+      // (note) longest setup time
+      // (note) should enable multisample-antialiasing
       minSetEnableForceConcaveEvenOdd(1);
       minSetEnableForceEvenOddConcave(0);
       minSetEnableTesselateConcave(1);
@@ -80,6 +85,9 @@ void MinnieVG_Init(void) {
    else
    {
       // use GPU tesselator for all path types
+      // (note) slowest rendering (m2pro: Tiger @~1200 fps)
+      // (note) fastest setup time
+      // (note) supports PolygonAA w/o MSAA
       minSetEnableForceConcaveEvenOdd(0);
       minSetEnableForceEvenOddConcave(0);
       minSetEnableTesselateConcave(0);

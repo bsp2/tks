@@ -21,6 +21,8 @@
 // ----
 // ---- info   : "minnie" binary (.mib) loader + OpenGL viewer
 // ----
+// ----          $ tks test_mib.tks <testidx> [<num_frames> [<num_iter>]]
+// ----
 // ----
 // ----
 
@@ -46,9 +48,7 @@ use tkopengl;
 use tkminnie;
 use tkmath;
 
-namespace sdvgcapi;
 namespace default;
-use namespace sdvgcapi;
 
 boolean b_glcore = 1;
 if(b_glcore) putenv("TKSDL_GLCORE=1");   // select 4.1 core profile on macOS
@@ -63,9 +63,6 @@ trace "#                                                                        
 trace "#                                                                                  #";
 trace "####################################################################################";
 
-int NUM_ITER = 1;
-// int NUM_ITER = 10000;  // benchmark
-
 float vp_scale = 1;
 
 boolean b_buf_file_export = 0;  // 1=export vertex and draw list buffers to files 'vb.dat' and 'dl.dat'
@@ -77,8 +74,6 @@ boolean b_fbo             = 0;  // 'f'
 boolean b_fbo_filter      = 1;  // 't'
 boolean b_rotate          = 1;  // SPACE  (RETURN resets rot_angle)
 boolean b_msaa            = 0;  // 'm'  (1=use MSAA)
-boolean b_line_strip      = 1;  // 's'  (0=tesselate via CPU)
-boolean b_benchmark       = (NUM_ITER > 1);
 
 
 // ---------------------------------------------------------------------------- tests
@@ -183,6 +178,10 @@ StringArray tests = [
 
 int test_idx = -1;
 int auto_cycle_num_frames = 0; //200;  // >0:auto-cycle tests (any key stroke interrupts this)
+
+int     auto_exit_frames  = 0;  // auto-exit after <n> frames (benchmark single test)
+int     num_iter          = 1;
+boolean b_benchmark       = 0;
 
 
 // ---------------------------------------------------------------------------- vars
@@ -350,9 +349,6 @@ function onDraw() {
 
    if(!b_gl_buf_once || !drawable.isComplete())
    {
-      minSetStrokeWLineStripThreshold(b_line_strip*99);  // 0=tesselate to triangles
-      // minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
-      minSetStrokeWLineJoinThreshold(0.2f);  // disable bevel+round line joins below this threshold
       minSetStrokeScale(stroke_scale);
 
       if(MinnieVG.SetupDrawableFromBuffer(drawable, fileBuf))
@@ -409,10 +405,11 @@ function onDraw() {
       drawable.setTranslate2f(0.0f, 0.0f);
       MinnieVG.SetTransformForDrawable(drawable);
 
-      drawable.setEnableDebug( !b_benchmark && (0 == (num_frames_rendered & 255)) );
-
-      loop(NUM_ITER)
+      for(int iter = 0; iter < num_iter; iter++)
+      {
+         drawable.setEnableDebug( (0 == iter) && (0 == (num_frames_rendered & 255)) );
          drawable.draw();
+      }
    }
 
    MinnieVG.EndFrame();
@@ -420,6 +417,7 @@ function onDraw() {
    if(b_fbo)
    {
       // Blit texture to back buffer
+      // (todo) experimental test code, remove
       sdvg_UnbindFBO();
       sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
       sdvg_SetViewport(0, 0, Viewport.width, Viewport.height);
@@ -458,20 +456,23 @@ function onDraw() {
    num_frames_rendered++;
    total_num_frames_rendered++;
 
-   if(b_benchmark)
+   if(auto_exit_frames > 0 && auto_exit_frames == num_frames_rendered)
    {
       glFinish();
       int tDelta = milliSeconds() - ticks_start;
-      float fps = ((1000.0 * total_num_frames_rendered * NUM_ITER) / tDelta);
-      trace "[...] FPS="+(int(fps*100)/100.0);
-   }
-   else if(0 == (num_frames_rendered & 255))
-   {
+      float fps = ((1000.0 * total_num_frames_rendered * num_iter) / tDelta);
       MinnieVG.DebugPrintMinnieAndDrawableStats(drawable);
+      trace "[...] FPS="+(int(fps*100)/100.0);
+      SDL.exitEventLoop();
+   }
+   else if(0 == (num_frames_rendered & 63))
+   {
+      if(!b_benchmark)
+         MinnieVG.DebugPrintMinnieAndDrawableStats(drawable);
       trace "[...] FPS.real="+FPS.real;
    }
 
-   if(b_rotate)
+   if(b_rotate && !b_benchmark)
    {
       rot_ang += dt * 0.0001023;
       wrap rot_ang 0 2PI;
@@ -628,13 +629,6 @@ function onKeyboard(Key _k) {
          trace "[...] queue screenshot";
          break;
 
-      case 's':
-         b_line_strip = !b_line_strip;
-         trace "[...] b_line_strip is "+b_line_strip;
-         drawable.reset();
-         num_frames_rendered = 0;
-         break;
-
       case 't':
          b_fbo_filter = !b_fbo_filter;
          trace "[...] b_fbo_filter is "+b_fbo_filter;
@@ -686,6 +680,17 @@ function main() {
       else
       {
          test_idx = tests.indexOfObject(pathNameIn, 0);
+      }
+
+      if(Arguments.numElements >= 2)
+      {
+         auto_exit_frames = Arguments[1];
+
+         if(Arguments.numElements >= 3)
+         {
+            num_iter = Arguments[2];
+            b_benchmark = (num_iter > 1);
+         }
       }
    }
    else
