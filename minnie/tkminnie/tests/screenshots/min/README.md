@@ -82,3 +82,6 @@
 - 27_textured_flat_shaded_AA_rectangles
   
   ![screenhots](27_textured_flat_shaded_AA_rectangles.png)
+- 28_textured_flat_shaded_AA_rectangles_200x200
+  
+  ![screenhots](28_textured_flat_shaded_AA_rectangles_200x200.png)
