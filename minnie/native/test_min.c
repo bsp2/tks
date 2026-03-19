@@ -37,7 +37,7 @@
 //       RIGHT : increment stroke scale
 //           c : toggle draw-copy
 //           g : toggle draw-gl
-//           l : toggle symmetry lock
+//           l : toggle symmetry lock (**removed**)
 //           m : toggle MSAA
 //           o : cycle fill/stroke modes
 //           p : save screenshot to "screenshots/api/minnie_api_test.png"
@@ -89,7 +89,7 @@ static sUI   auto_cycle_num_frames =  // >0:auto-cycle tests (any key stroke int
 #endif // AUTO_CYCLE_NUM_FRAMES
    ;
 
-static sBool b_sym_radius    = 1;     // 'l'  (rx=ry)
+static sBool b_sym_radius    = 1;     // 'l'(removed)  (rx=ry)
 static sF32  stroke_scale    = 1.0f;  // LEFT/RIGHT
 static sBool b_tex_filter    = 1;     // 't'
 static sBool b_copy          = 0;     // 'c'  draw shifted copy (mvp translatef)
@@ -986,7 +986,7 @@ void hal_on_draw(void) {
 
       minDrawableEnd(drawable);
 
-      if(0u == (num_frames_rendered & 255u))
+      if(!b_benchmark && 0u == (num_frames_rendered & 255u))
       {
          MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       }
@@ -1004,14 +1004,17 @@ void hal_on_draw(void) {
       minDrawableSetTranslate2f(drawable, 0.0f, 0.0f);
       MinnieVG_SetTransformForDrawable(drawable);
 
-      minDrawableSetEnableDebug(drawable, (0u == (num_frames_rendered & 255u)) );
-
       sdvg_SetGlobalAlpha(1.0f);
 
       for(sUI iter = 0u; iter < num_iter; iter++)
       {
          minDrawableSetEnableDebug(drawable, (0u == iter) && (0u == (num_frames_rendered & 255u)));
          minDrawableDraw(drawable);
+      }
+
+      if(0u == (num_frames_rendered & 255u))
+      {
+         MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       }
 
       if(b_copy)
@@ -1040,6 +1043,7 @@ void hal_on_draw(void) {
 
    if(auto_exit_frames > 0u && auto_exit_frames == num_frames_rendered)
    {
+      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       glFinish();
       sU32 tDelta = hal_get_ticks() - ticks_start;
       sF32 fps = (sF32)( (1000.0 * auto_exit_frames * num_iter) / tDelta );
@@ -1048,7 +1052,6 @@ void hal_on_draw(void) {
    }
    else if(0u == (num_frames_rendered & 63u))
    {
-      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
       {
@@ -1140,10 +1143,10 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
          Dprintf("[...] b_draw_gl is %d\n", b_draw_gl);
          break;
 
-      case 'l':
-         b_sym_radius = !b_sym_radius;
-         Dprintf("[...] b_sym_radius is %d\n", b_sym_radius);
-         break;
+      // // case 'l':
+      // //    b_sym_radius = !b_sym_radius;
+      // //    Dprintf("[...] b_sym_radius is %d\n", b_sym_radius);
+      // //    break;
 
 #if 0
       case 'm':

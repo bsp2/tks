@@ -313,6 +313,11 @@ void hal_on_draw(void) {
          minDrawableSetEnableDebug(drawable, (0u == iter) && (0u == (num_frames_rendered & 255u)));
          minDrawableDraw(drawable);
       }
+
+      if(0u == (num_frames_rendered & 255u))
+      {
+         MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
+      }
    }
    else
    {
@@ -352,7 +357,6 @@ void hal_on_draw(void) {
    }
    else if(0u == (num_frames_rendered & 63u))
    {
-      MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       sUI tDelta = hal_get_ticks() - ticks_start;
       if(tDelta > 0u)
       {
