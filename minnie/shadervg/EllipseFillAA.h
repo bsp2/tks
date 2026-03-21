@@ -221,7 +221,7 @@ class EllipseFillAA : public ShaderVG_Shape {
 
       sdvg_BindVBO(_vboId);
 
-      if(_numVertsInner > 0u)
+      if(_numVertsInner > 0u && b_draw_inner)
       {
          sSI aVertexFill = sdvg_int_BindFillShader();
 
@@ -232,7 +232,7 @@ class EllipseFillAA : public ShaderVG_Shape {
       }
 
       // Outer border
-      if(_numVertsBorder > 0u)
+      if(_numVertsBorder > 0u && b_draw_border)
       {
          shape_shader.bind();
 
