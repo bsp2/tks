@@ -37,7 +37,7 @@
 //       RIGHT : increment stroke scale
 //           c : toggle draw-copy
 //           g : toggle draw-gl
-//           l : toggle symmetry lock (**removed**)
+//           l : toggle polygon-AA
 //           m : toggle MSAA
 //           o : cycle fill/stroke modes
 //           p : save screenshot to "screenshots/api/minnie_api_test.png"
@@ -155,6 +155,8 @@ static const char *test_names[] = {
    "26: arc stroke+pattern",
    "27: textured, flat shaded AA rectangles",
    "28: textured, flat shaded AA rectangles 200x200",
+   "29: polygon even-odd",
+   "30: polygon non-zero",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -220,7 +222,7 @@ static void Test_00(void) {
 
    minEndPath(YAC_TRUE/*bClosed*/);
 
-   if(fill_mode & 1)
+   if(fill_mode & 1u)
    {
       // (note) should call minSetEnablePolygonAA(0) in production code
       //         (outline will be overwritten by stroke rendering)
@@ -229,7 +231,7 @@ static void Test_00(void) {
       minDrawPath(pid);
    }
 
-   if(fill_mode & 2)
+   if(fill_mode & 2u)
    {
       minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
       minColor(0xffffffffu);
@@ -282,7 +284,7 @@ static void Test_01(void) {
 
    minEndPathClosed();
 
-   if(fill_mode & 1)
+   if(fill_mode & 1u)
    {
       // (note) should call minSetEnablePolygonAA(0) in production code
       //         (outline will be overwritten by stroke rendering)
@@ -291,7 +293,7 @@ static void Test_01(void) {
       minDrawPath(pid);
    }
 
-   if(fill_mode & 2)
+   if(fill_mode & 2u)
    {
       minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) * vpSclX );
       minColor(0xffffffffu);
@@ -918,6 +920,52 @@ static void Test_28(void) {
    }
 }
 
+// ----------------------------------------------------------------------------
+static void Test_29(sBool _bNonZero) { // 29+30
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
+   const sF32 ctrX = 800.0f/2.0f;
+   const sF32 ctrY = 600.0f/2.0f;
+
+   sSI paintId = minPaintCreate();
+   sF32 px = sinf(anim_2*2.0f)*(VP_W*0.01f) + ctrX;
+   sF32 py = sinf(anim_3*2.0f)*(VP_H*0.01f) + ctrY;
+   minPaintRadial(px*vpSclX, py*vpSclY, VP_W*0.45f*vpSclX, VP_H*0.45f*vpSclY);
+
+   sSI pid = minBeginPath();
+   const sUI num = 16u;
+   const sF32 r = sMIN(800, 600) * 0.375f;
+   const sF32 w = sM_PIf*(((sF32)(num-2u))/((sF32)(num-1u)));
+   const sF32 aStart = anim_1 * 0.5f;
+   sF32 a = aStart;
+   for(sUI idx = 0u; idx < num; idx++)
+   {
+      const sF32 x = (cosf(a) * r + ctrX) * vpSclX;
+      const sF32 y = (sinf(a) * r + ctrY) * vpSclY;
+      if(0u == idx)
+         minMoveTo(x, y);
+      else
+         minLineTo(x, y);
+      a += w;
+   }
+   minEndPath(YAC_TRUE/*bClosed*/);
+
+   if(fill_mode & 1u)
+   {
+      minFill();
+      if(_bNonZero)
+         minFillRuleNonZero();
+      else
+         minFillRuleEvenOdd();
+      minColor(0xFFAFAF1Fu);
+      minBindTexture(tex_gradient_id, YAC_TRUE/*bRepeat*/, b_tex_filter);
+      minPaint(paintId);
+      minDrawPath(pid);
+   }
+}
+
 // ---------------------------------------------------------------------------- SelectTest
 static void SelectTest(sSI _idx) {
    test_idx = _idx;
@@ -989,6 +1037,8 @@ void hal_on_draw(void) {
          case 26: Test_26(); break;                          // arc stroke+pattern (WIP)
          case 27: Test_27(); break;                          // textured, flat shaded AA rectangles
          case 28: Test_28(); break;                          // textured, flat shaded AA rectangles 2
+         case 29: Test_29(YAC_FALSE/*bNonZero*/); break;     // polygon even-odd
+         case 30: Test_29(YAC_TRUE/*bNonZero*/); break;      // polygon non-zero
       }
 
       minDrawableEnd(drawable);
