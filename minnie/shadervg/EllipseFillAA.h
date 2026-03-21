@@ -49,9 +49,13 @@ class EllipseFillAA : public ShaderVG_Shape {
       "uniform float u_radius_max; \n"
       "uniform float u_ob_radius_max; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_fill; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       " \n"
       "VARYING_IN vec2 v_p; \n"
       " \n"
@@ -82,13 +86,15 @@ class EllipseFillAA : public ShaderVG_Shape {
       "   \n"
       "  float a = aRect * aRound; \n"
       "   \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  a = pow(a, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  FRAGCOLOR = vec4(color.xyz, color.a*a); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 

@@ -2,7 +2,7 @@
 // ---- file   : EllipseStrokeAAConic.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -60,9 +60,13 @@ class EllipseStrokeAAConic : public ShaderVG_Shape {
       "uniform float u_radius_i_max; \n"
       "uniform float u_radius_o_max; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_stroke; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
       "uniform float u_paint_angle01; \n"
       " \n"
@@ -120,15 +124,15 @@ class EllipseStrokeAAConic : public ShaderVG_Shape {
       "  float aI = 1.0 - aRectI * aRoundI; \n"
       "  float aO = aRectO * aRoundO; \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aI = pow(aI, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  // vec4 color = mix(colorO, vec4(0,0,0,0), aI); \n"
       "  vec4 color = vec4(colorO.xyz, colorO.a * aI); \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aO = pow(aO, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  vec2 n = normalize(abs(v_paint_pos)); \n"
       "  float ap = atan(n.y / n.x) * (1.0 / 6.2831853071795864); \n"
@@ -148,8 +152,10 @@ class EllipseStrokeAAConic : public ShaderVG_Shape {
       "  else if(ap < 0.0) ap += 1.0; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(ap, 0.0)); \n"
       "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * aO); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
