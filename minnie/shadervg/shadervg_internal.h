@@ -113,13 +113,13 @@ void sdvg_remap_scratch_after_draw (void);
 #define Dsdvg_attrib_disable(a) Dsdvg_glcall(glDisableVertexAttribArray(a))
 #define Dsdvg_attrib_divisor(a, n) Dsdvg_glcall(glVertexAttribDivisor((a), (n)))
 #define Dsdvg_attrib_divisor_reset(a) Dsdvg_glcall(glVertexAttribDivisor((a), 0))
-#define Dsdvg_stencil_poly_pass1()                                   \
+#define Dsdvg_stencil_poly_even_odd_pass1()                          \
    Dsdvg_glcall(glEnable(GL_STENCIL_TEST));                          \
    Dsdvg_glcall(glStencilMask(1));                                   \
    Dsdvg_glcall(glStencilFunc(GL_ALWAYS, 0/*ref*/, 1/*mask*/));      \
    Dsdvg_glcall(glStencilOp(GL_INCR, GL_INCR, GL_INCR));             \
    Dsdvg_glcall(glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE))
-#define Dsdvg_stencil_poly_pass2()                                \
+#define Dsdvg_stencil_poly_even_odd_pass2()                          \
    Dsdvg_glcall(glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE)); \
    Dsdvg_glcall(glStencilFunc(GL_EQUAL, 1/*ref*/, 1/*mask*/));    \
    Dsdvg_glcall(glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO))

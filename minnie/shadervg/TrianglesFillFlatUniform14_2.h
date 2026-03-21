@@ -96,7 +96,8 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
                                           sUI              _byteOffset,
                                           sUI              _numVerts,
                                           Dsdvg_mat4_ref_t _mvpMatrix,
-                                          sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA
+                                          sF32             _fillR, sF32 _fillG, sF32 _fillB, sF32 _fillA,
+                                          sBool            _bNonZero
                                           ) {
 
       // VBO vertex format (4 bytes per vertex):
@@ -113,10 +114,11 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
 
-      Dsdvg_stencil_poly_pass1();
+      (void)_bNonZero;  // (todo)
+      Dsdvg_stencil_poly_even_odd_pass1();
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
-      Dsdvg_stencil_poly_pass2();
+      Dsdvg_stencil_poly_even_odd_pass2();
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
       Dsdvg_stencil_poly_end();

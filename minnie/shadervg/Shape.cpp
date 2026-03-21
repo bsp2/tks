@@ -772,7 +772,7 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
 
    sdvg_BindVBO(_vboId);
 
-   if(_numVertsInner > 0u)
+   if(_numVertsInner > 0u && b_draw_inner)
    {
       sSI aVertexFill = sdvg_int_BindFillShader();
 
@@ -783,7 +783,7 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
    }
 
    // Outer border
-   if(_numVertsBorder > 0u)
+   if(_numVertsBorder > 0u && b_draw_border)
    {
       shape_shader.bind();
 
@@ -1079,7 +1079,7 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
 
    sdvg_BindVBO(_vboId);
 
-   if(_numVertsInner > 0u)
+   if(_numVertsInner > 0u && b_draw_inner)
    {
       sSI aVertexFill = sdvg_int_BindFillShader();
 
@@ -1090,7 +1090,7 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
    }
 
    // Outer border
-   if(_numVertsBorder > 0u)
+   if(_numVertsBorder > 0u && b_draw_border)
    {
       shape_shader.bind();
 
@@ -1487,7 +1487,7 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
 
    sdvg_BindVBO(_vboId);
 
-   if(_numVertsInner > 0u)
+   if(_numVertsInner > 0u && b_draw_inner)
    {
       sSI aVertexFill = sdvg_int_BindFillShader();
 
@@ -1498,7 +1498,7 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
    }
 
    // Outer border
-   if(_numVertsBorder > 0u)
+   if(_numVertsBorder > 0u && b_draw_border)
    {
       shape_shader.bind();
 

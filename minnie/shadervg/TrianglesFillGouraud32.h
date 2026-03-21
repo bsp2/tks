@@ -104,7 +104,8 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
    void drawPolygonFillGouraudVBO32(sUI              _vboId,
                                     sUI              _byteOffset,
                                     sUI              _numVerts,
-                                    Dsdvg_mat4_ref_t _projMatrix
+                                    Dsdvg_mat4_ref_t _projMatrix,
+                                    sBool            _bNonZero
                                     ) {
       //
       // VBO vertex format (12 bytes per vertex):
@@ -128,10 +129,11 @@ class TrianglesFillGouraud32 : public ShaderVG_Shape {
       Dsdvg_attrib_enable(shape_a_vertex);
       Dsdvg_attrib_enable(shape_a_color);
 
-      Dsdvg_stencil_poly_pass1();
+      (void)_bNonZero;
+      Dsdvg_stencil_poly_even_odd_pass1();
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
-      Dsdvg_stencil_poly_pass2();
+      Dsdvg_stencil_poly_even_odd_pass2();
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
       Dsdvg_stencil_poly_end();
