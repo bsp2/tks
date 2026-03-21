@@ -47,10 +47,14 @@ class RectFillStrokeAA : public ShaderVG_Shape {
       "uniform vec2  u_size_i; \n"
       "uniform vec2  u_size_o; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_fill; \n"
       "uniform vec4  u_color_stroke; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       " \n"
       "VARYING_IN vec2 v_p; \n"
       " \n"
@@ -81,19 +85,21 @@ class RectFillStrokeAA : public ShaderVG_Shape {
       "  float aI = aRectI; \n"
       "  float aO = aRectO; \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aI = pow(aI, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  vec4 color = mix(colorO, colorI, aI); \n"
       " \n"
       "  // a = smoothstep(0.0, 1.0, a); \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aO = pow(aO, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  FRAGCOLOR = vec4(color.xyz, color.a*aO); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 

@@ -2,7 +2,7 @@
 // ---- file   : RectFillAAPatternAlpha.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -51,9 +51,13 @@ class RectFillAAPatternAlpha : public ShaderVG_Shape {
       "uniform vec2  u_center; \n"
       "uniform vec2  u_size; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_fill; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
       "uniform vec2 u_paint_ndir; \n"
       " \n"
@@ -75,17 +79,19 @@ class RectFillAAPatternAlpha : public ShaderVG_Shape {
       "  float a = aRect; \n"
       "  \n"
       "  // a = smoothstep(0.0, 1.0, a); \n"
-      "#if 0 \n"
+#ifdef SHADERVG_AA_EXP
       "  a = pow(a, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  vec2 uv; \n"
       "  uv.x = v_paint_uv.x * u_paint_ndir.x - v_paint_uv.y * u_paint_ndir.y; \n"
       "  uv.y = v_paint_uv.x * u_paint_ndir.y + v_paint_uv.y * u_paint_ndir.x; \n"
       "  float ap = TEXTURE2D(u_paint_tex, uv).TEX_ALPHA; \n"
       "  FRAGCOLOR = vec4(color.rgb, color.a * a * ap); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 

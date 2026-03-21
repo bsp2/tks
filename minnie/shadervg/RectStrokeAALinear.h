@@ -2,7 +2,7 @@
 // ---- file   : RectStrokeAALinear.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -50,9 +50,13 @@ class RectStrokeAALinear : public ShaderVG_Shape {
       "uniform vec2  u_size_i; \n"
       "uniform vec2  u_size_o; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_stroke; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
       "uniform vec2  u_paint_ndir; \n"
       "uniform float u_paint_ob_len; \n"
@@ -85,20 +89,22 @@ class RectStrokeAALinear : public ShaderVG_Shape {
       "  float aI = 1.0 - aRectI; \n"
       "  float aO = aRectO; \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aI = pow(aI, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  vec4 color = vec4(colorO.xyz, colorO.a * aI); \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aO = pow(aO, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  float d = dot(v_paint_pos, u_paint_ndir) * u_paint_ob_len; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
       "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * aO); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 

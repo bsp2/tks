@@ -67,12 +67,14 @@ class RectFillAA : public ShaderVG_Shape {
       "  float a = aRect; \n"
       "  \n"
       "  // a = smoothstep(0.0, 1.0, a); \n"
-      "#if 0 \n"
+#ifdef SHADERVG_AA_EXP
       "  a = pow(a, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  FRAGCOLOR = vec4(color.xyz, color.a*a); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 

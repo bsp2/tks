@@ -49,9 +49,13 @@ class RectFillAALinear : public ShaderVG_Shape {
       "uniform vec2  u_center; \n"
       "uniform vec2  u_size; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_fill; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
       "uniform vec2  u_paint_ndir; \n"
       "uniform float u_paint_ob_len; \n"
@@ -74,14 +78,16 @@ class RectFillAALinear : public ShaderVG_Shape {
       "  float a = aRect; \n"
       "  \n"
       "  // a = smoothstep(0.0, 1.0, a); \n"
-      "#if 0 \n"
+#ifdef SHADERVG_AA_EXP
       "  a = pow(a, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  float d = dot(v_paint_pos, u_paint_ndir) * u_paint_ob_len; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
       "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * a); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
