@@ -287,8 +287,10 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_RADIAL                  197
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_CONIC_CLOSED               198
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_CONIC_CLOSED            199
+#define RENDER_BEGIN_POLYGON_EVENODD                             200
+#define RENDER_BEGIN_POLYGON_NONZERO                             201
 
-#define NUM_RENDER_MODES                                         200
+#define NUM_RENDER_MODES                                         202
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -500,6 +502,8 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 197 */ "begin_line_strip_bevel_aa_radial",
    /* 198 */ "begin_line_strip_bevel_conic_closed",
    /* 199 */ "begin_line_strip_bevel_aa_conic_closed",
+   /* 200 */ "begin_polygon_evenodd",
+   /* 201 */ "begin_polygon_nonzero",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2859,6 +2863,39 @@ static void TestBeginLineStripBevelClosed(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginPolygonComplex (200+201)
+static void TestBeginPolygonComplex(sBool _bNonZero) {
+   if(_bNonZero)
+      sdvg_SetFillRuleNonZero();
+   else
+      sdvg_SetFillRuleEvenOdd();
+
+   sdvg_ProjInit2D(VP_W, VP_H);
+   sdvg_ModelTranslate2f(VP_W*0.5f, VP_H*0.5f);
+
+   sdvg_SetColorARGB(0xFFAFAF1Fu);
+
+   const sUI num = 16u;
+   if(sdvg_BeginFilledPolygonAA(num + 2u/*numVertices*/))
+   {
+      const sF32 r = sMIN(VP_W, VP_H) * 0.375f;
+      const sF32 w = sM_PIf*(((sF32)(num-2u))/((sF32)(num-1u)));
+      const sF32 aStart = ang_w * 0.5f;
+      sF32 a = aStart;
+      for(sUI idx = 0u; idx < num; idx++)
+      {
+         const sF32 x = cosf(a) * r;
+         const sF32 y = sinf(a) * r;
+         sdvg_Vertex2f(x, y);
+         a += w;
+      }
+      sdvg_Vertex2f(cosf(aStart  )*r, sinf(aStart  )*r);
+      sdvg_Vertex2f(cosf(aStart+w)*r, sinf(aStart+w)*r);
+
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- SelectRenderMode
 static void SelectRenderMode(sSI _mode) {
    render_mode = _mode;
@@ -4707,6 +4744,14 @@ static void DrawTest(void) {
          SetupPaintConic();
          sdvg_SetStrokeWidth(stroke_w * 16.0f);
          TestBeginLineStripBevelClosed(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_EVENODD: // 200
+         TestBeginPolygonComplex(YAC_FALSE/*bNonZero*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_NONZERO: // 201
+         TestBeginPolygonComplex(YAC_TRUE/*bNonZero*/);
          break;
    }
 }
