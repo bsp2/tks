@@ -478,7 +478,7 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
 }
 
 // ----------------------------------------------------------------------------
-static void Test_06(sBool _bFill, sBool _bStroke) {
+static void Test_06(sBool _bFill, sBool _bStroke) {  // 10
    // round-rect filled+stroked (shadervg)
 
    const sF32 vpSclX = VP_W / 800.0f;
@@ -1089,7 +1089,7 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
    switch(_code)
    {
       default:
-         if(MinnieVG_HandleDebugKey(_code, _mod))  // 'a', 'd', 'e', 'h', 'i', 'l', 's', 'u', '1', '2', '3', '4', ..
+         if(MinnieVG_HandleDebugKey(_code, _mod))  // 'a', 'd', 'e', 'h', 'i', 'l', 's', 'u', '1'..'6', ..
          {
             minDrawableReset(drawable);
             num_frames_rendered = 0u;

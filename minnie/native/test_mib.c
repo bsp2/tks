@@ -405,7 +405,7 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
    switch(_code)
    {
       default:
-         if(MinnieVG_HandleDebugKey(_code, _mod))  // 'a', 'd', 'e', 'h', 'i', 'k', 'l', 'n', 'u', '1', '2', '3', '4', ..
+         if(MinnieVG_HandleDebugKey(_code, _mod))  // 'a', 'd', 'e', 'h', 'i', 'k', 'l', 'n', 'u', '1'..'6', ..
          {
             minDrawableReset(drawable);
             num_frames_rendered = 0u;

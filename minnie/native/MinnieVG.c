@@ -52,6 +52,8 @@ void MinnieVG_Init(void) {
    minSetEnableRenderFillEvenOdd(1);       // '2'
    minSetEnableRenderStrokes(1);           // '3'
    minSetEnableRenderJoinCap(1);           // '4'
+   sdvg_SetEnableDrawInner(1);             // '5'
+   sdvg_SetEnableDrawBorder(1);            // '6'
    minSetEnableEdgeAA(0);                  // 'e'  (experimental)
    minSetStrokeWLineStripThreshold(1*99);  // 's'  (0=tesselate to triangles)
    minSetStrokeWLineJoinThreshold(0.2f);   //      (disable bevel+round line joins below this stroke-width threshold)
@@ -334,6 +336,16 @@ sBool MinnieVG_HandleDebugKey(sU32 _code, sU32 _mod) {
       case '4':
          minSetEnableRenderJoinCap(!minGetEnableRenderJoinCap());
          Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enableRenderJoinCap is %d\n", minGetEnableRenderJoinCap());
+         return YAC_TRUE;
+
+      case '5':
+         sdvg_SetEnableDrawInner(!sdvg_GetEnableDrawInner());
+         Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enableDrawInner is %d\n", sdvg_GetEnableDrawInner());
+         return YAC_TRUE;
+
+      case '6':
+         sdvg_SetEnableDrawBorder(!sdvg_GetEnableDrawBorder());
+         Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enableDrawBorder is %d\n", sdvg_GetEnableDrawBorder());
          return YAC_TRUE;
 
       case 'a':

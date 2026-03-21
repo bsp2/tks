@@ -53,7 +53,7 @@ static sBool b_anim_whc   = 1;     // lctrl-TAB
 static sBool b_slomo      = 0;     // lctrl-SPACE
 static sBool b_aa         = 1;     // 'a'
 static sBool b_vsync      = 1;     // 'v'
-static sF32  aa_range     = 2.5f;  // (todo) m/lshift-m
+static sF32  aa_range     = 1.5f;  // (todo) m/lshift-m
 static sF32  aa_exp       = 1.0f;  // (todo) 'k', lshift-k
 static sF32  stroke_w     = 4.0f;  // LEFT/RIGHT   half width
 static sF32  fill_alpha   = 1.0f;  // 'r', 't'
@@ -2890,8 +2890,8 @@ static void DrawTest(void) {
    sF32 sizeX = VP_W*0.25f + 70.0f*sinf(ang_w);
    sF32 sizeY = VP_H*0.25f + 70.0f*sinf(ang_h);
 
-   sF32 cornerX = 80.0f + sinf(ang_x)*40.0f;
-   sF32 cornerY = 80.0f + sinf(ang_y)*40.0f;
+   sF32 cornerX = 80.0f + sinf(ang_x)*79.0f;
+   sF32 cornerY = 80.0f + sinf(ang_y)*79.0f;
 
    if(b_sym_radius)
    {
@@ -4920,7 +4920,7 @@ static void UpdateDiagonalLinePatternTex(void) {
 
 // ---------------------------------------------------------------------------- ResetParams
 static void ResetParams(void) {
-   aa_range    = 2.5f;
+   aa_range    = 1.5f;
    aa_exp      = 1.0f;
    stroke_w    = 4.0f;
    fill_alpha  = 1.0f;
@@ -5000,6 +5000,16 @@ void hal_on_key_down(sU32 _code, sU32 _mod) {
       case VKEY_LEFT:
          stroke_w = sMAX(stroke_w - 0.125f, 0.125f);
          Dprintf("[...] stroke_w is %f\n", stroke_w);
+         break;
+
+      case '5':
+         sdvg_SetEnableDrawInner(!sdvg_GetEnableDrawInner());
+         Dprintf("[...] enableDrawInner is %d\n", sdvg_GetEnableDrawInner());
+         break;
+
+      case '6':
+         sdvg_SetEnableDrawBorder(!sdvg_GetEnableDrawBorder());
+         Dprintf("[...] enableDrawBorder is %d\n", sdvg_GetEnableDrawBorder());
          break;
 
       case 'a':
