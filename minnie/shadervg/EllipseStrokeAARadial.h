@@ -59,9 +59,13 @@ class EllipseStrokeAARadial : public ShaderVG_Shape {
       "uniform float u_radius_i_max; \n"
       "uniform float u_radius_o_max; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_stroke; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
       "uniform float u_paint_ob_len; \n"
       " \n"
@@ -119,21 +123,23 @@ class EllipseStrokeAARadial : public ShaderVG_Shape {
       "  float aI = 1.0 - aRectI * aRoundI; \n"
       "  float aO = aRectO * aRoundO; \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aI = pow(aI, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  // vec4 color = mix(colorO, vec4(0,0,0,0), aI); \n"
       "  vec4 color = vec4(colorO.xyz, colorO.a * aI); \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aO = pow(aO, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  float d = length(v_paint_pos) * u_paint_ob_len; \n"
       "  vec4 c = TEXTURE2D(u_paint_tex, vec2(d, 0.0)); \n"
       "  FRAGCOLOR = vec4(c.rgb * color.rgb, c.a * color.a * aO); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
