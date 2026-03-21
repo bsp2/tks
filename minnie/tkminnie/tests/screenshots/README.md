@@ -598,3 +598,9 @@
 - test_199_begin_line_strip_bevel_aa_conic_closed
   
   ![screenhots](test_199_begin_line_strip_bevel_aa_conic_closed.png)
+- test_200_begin_polygon_evenodd
+  
+  ![screenhots](test_200_begin_polygon_evenodd.png)
+- test_201_begin_polygon_nonzero
+  
+  ![screenhots](test_201_begin_polygon_nonzero.png)
