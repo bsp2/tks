@@ -114,11 +114,25 @@ class TrianglesFillFlatUniform14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_SHORT, GL_FALSE/*normalize*/, 4/*stride*/, _byteOffset);
       Dsdvg_attrib_enable(shape_a_vertex);
 
-      (void)_bNonZero;  // (todo)
-      Dsdvg_stencil_poly_even_odd_pass1();
+      if(_bNonZero)
+      {
+         Dsdvg_stencil_poly_non_zero_pass1();
+      }
+      else
+      {
+         Dsdvg_stencil_poly_even_odd_pass1();
+      }
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
-      Dsdvg_stencil_poly_even_odd_pass2();
+      if(_bNonZero)
+      {
+         Dsdvg_stencil_poly_non_zero_pass2();
+      }
+      else
+      {
+         Dsdvg_stencil_poly_even_odd_pass2();
+      }
+
       Dsdvg_draw_triangle_fan_vbo(0, _numVerts);
 
       Dsdvg_stencil_poly_end();

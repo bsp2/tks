@@ -49,7 +49,7 @@ void MinnieVG_Init(void) {
    minSetEnableDraw(1);
    minSetEnableDrawSW(0);
    minSetEnableRenderFillConcave(1);       // '1'
-   minSetEnableRenderFillEvenOdd(1);       // '2'
+   minSetEnableRenderFillComplex(1);       // '2'
    minSetEnableRenderStrokes(1);           // '3'
    minSetEnableRenderJoinCap(1);           // '4'
    sdvg_SetEnableDrawInner(1);             // '5'
@@ -66,8 +66,8 @@ void MinnieVG_Init(void) {
       // (note) UniformColors=off
       // (note) LineStrip=off
       // (note) should enable multisample-antialiasing
-      minSetEnableForceConcaveEvenOdd(0);       // 'h'  (note) concave tesselator does not handle all paths (=> force SGI tesselator)
-      minSetEnableForceEvenOddConcave(0);
+      minSetEnableForceConcaveComplex(0);       // 'h'  (note) concave tesselator does not handle all paths (=> force SGI tesselator)
+      minSetEnableForceComplexConcave(0);
       minSetEnableTesselateConcave(0);          // 'i'  0=GPU tesselation  1=CPU tesselation
       minSetSwTesselateSizeThreshold(128*8*8);  // 0=disable   >0: force concave path if concave or evenodd-without-subpaths bbox is <= sizeThreshold, else force evenodd path (SW tesselate)
       minSetEnableMultiPathHWPolygons(0);
@@ -78,8 +78,8 @@ void MinnieVG_Init(void) {
       // (note) fastest rendering (m2pro: Tiger @~43000 fps)
       // (note) longest setup time
       // (note) should enable multisample-antialiasing
-      minSetEnableForceConcaveEvenOdd(1);
-      minSetEnableForceEvenOddConcave(0);
+      minSetEnableForceConcaveComplex(1);
+      minSetEnableForceComplexConcave(0);
       minSetEnableTesselateConcave(1);
       minSetSwTesselateSizeThreshold(0);
       minSetEnableMultiPathHWPolygons(0);
@@ -90,8 +90,8 @@ void MinnieVG_Init(void) {
       // (note) slowest rendering (m2pro: Tiger @~1200 fps)
       // (note) fastest setup time
       // (note) supports PolygonAA w/o MSAA
-      minSetEnableForceConcaveEvenOdd(0);
-      minSetEnableForceEvenOddConcave(0);
+      minSetEnableForceConcaveComplex(0);
+      minSetEnableForceComplexConcave(0);
       minSetEnableTesselateConcave(0);
       minSetSwTesselateSizeThreshold(9999999);
       minSetEnableMultiPathHWPolygons(1);
@@ -324,8 +324,8 @@ sBool MinnieVG_HandleDebugKey(sU32 _code, sU32 _mod) {
          return YAC_TRUE;
 
       case '2':
-         minSetEnableRenderFillEvenOdd(!minGetEnableRenderFillEvenOdd());
-         Dprintf("[...] MinnieVG:_HandleDebugKey: minnie::setup.enableRenderFillEvenOdd is %d\n", minGetEnableRenderFillEvenOdd());
+         minSetEnableRenderFillComplex(!minGetEnableRenderFillComplex());
+         Dprintf("[...] MinnieVG:_HandleDebugKey: minnie::setup.enableRenderFillComplex is %d\n", minGetEnableRenderFillComplex());
          return YAC_TRUE;
 
       case '3':
@@ -364,8 +364,8 @@ sBool MinnieVG_HandleDebugKey(sU32 _code, sU32 _mod) {
          return YAC_TRUE;
 
       case 'h':
-         minSetEnableForceConcaveEvenOdd(!minGetEnableForceConcaveEvenOdd());
-         Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enableForceConcaveEvenOdd is %d\n", minGetEnableForceConcaveEvenOdd());
+         minSetEnableForceConcaveComplex(!minGetEnableForceConcaveComplex());
+         Dprintf("[...] MinnieVG_HandleDebugKey: minnie::setup.enableForceConcaveComplex is %d\n", minGetEnableForceConcaveComplex());
          return YAC_TRUE;
 
       case 'k':

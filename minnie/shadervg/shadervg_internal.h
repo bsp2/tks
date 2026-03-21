@@ -119,9 +119,20 @@ void sdvg_remap_scratch_after_draw (void);
    Dsdvg_glcall(glStencilFunc(GL_ALWAYS, 0/*ref*/, 1/*mask*/));      \
    Dsdvg_glcall(glStencilOp(GL_INCR, GL_INCR, GL_INCR));             \
    Dsdvg_glcall(glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE))
-#define Dsdvg_stencil_poly_even_odd_pass2()                          \
+#define Dsdvg_stencil_poly_non_zero_pass1()                                               \
+   Dsdvg_glcall(glEnable(GL_STENCIL_TEST));                                               \
+   Dsdvg_glcall(glStencilMask(255));                                                      \
+   Dsdvg_glcall(glStencilFunc(GL_ALWAYS, 0/*ref*/, 255/*mask*/));                         \
+   Dsdvg_glcall(glStencilOpSeparate(GL_FRONT, GL_INCR_WRAP, GL_INCR_WRAP, GL_INCR_WRAP)); \
+   Dsdvg_glcall(glStencilOpSeparate(GL_BACK, GL_DECR_WRAP, GL_DECR_WRAP, GL_DECR_WRAP));  \
+   Dsdvg_glcall(glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE))
+#define Dsdvg_stencil_poly_even_odd_pass2()                       \
    Dsdvg_glcall(glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE)); \
    Dsdvg_glcall(glStencilFunc(GL_EQUAL, 1/*ref*/, 1/*mask*/));    \
+   Dsdvg_glcall(glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO))
+#define Dsdvg_stencil_poly_non_zero_pass2()                         \
+   Dsdvg_glcall(glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE));   \
+   Dsdvg_glcall(glStencilFunc(GL_NOTEQUAL, 0/*ref*/, 255/*mask*/)); \
    Dsdvg_glcall(glStencilOp(GL_ZERO, GL_ZERO, GL_ZERO))
 #define Dsdvg_stencil_poly_end() Dsdvg_glcall(glDisable(GL_STENCIL_TEST))
 

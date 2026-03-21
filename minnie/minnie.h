@@ -231,43 +231,48 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2          0x08
 #define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32         0x09
 #define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2       0x0A
-#define MINNIE_DRAWOP_POLYGON_FIRST                            0x0A
+#define MINNIE_DRAWOP_POLYGON_FIRST                            0x0B
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32             0x0B
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2           0x0C
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA          0x0D
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA        0x0E
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN     0x0F
 #define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB       0x10
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END       0x11
-#define MINNIE_DRAWOP_POLYGON_LAST                             0x11
-#define MINNIE_DRAWOP_RECT_FILL                                0x12
-#define MINNIE_DRAWOP_RECT_STROKE                              0x13
-#define MINNIE_DRAWOP_RECT_FILL_STROKE                         0x14
-#define MINNIE_DRAWOP_ELLIPSE_FILL                             0x15
-#define MINNIE_DRAWOP_ELLIPSE_STROKE                           0x16
-#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                      0x17
-#define MINNIE_DRAWOP_ROUNDRECT_FILL                           0x18
-#define MINNIE_DRAWOP_ROUNDRECT_STROKE                         0x19
-#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                    0x1A
-#define MINNIE_DRAWOP_BIND_TEXTURE                             0x1B
-#define MINNIE_DRAWOP_UNBIND_TEXTURE                           0x1C
-#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                      0x1D
-#define MINNIE_DRAWOP_PAINT_SOLID                              0x1E
-#define MINNIE_DRAWOP_PAINT_LINEAR                             0x1F
-#define MINNIE_DRAWOP_PAINT_RADIAL                             0x20
-#define MINNIE_DRAWOP_PAINT_CONIC                              0x21
-#define MINNIE_DRAWOP_PAINT_PATTERN                            0x22
-#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                      0x23
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                      0x24
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA                0x25
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                 0x26
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32           0x27
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32              0x28
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32        0x29
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                     0x2A
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2               0x2B
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2               0x2C
-#define MINNIE_DRAWOP_AA_RANGE                                 0x2D
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA    0x11
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END       0x12
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA    0x13
+#define MINNIE_DRAWOP_POLYGON_LAST                             0x13
+#define MINNIE_DRAWOP_RECT_FILL                                0x14
+#define MINNIE_DRAWOP_RECT_STROKE                              0x15
+#define MINNIE_DRAWOP_RECT_FILL_STROKE                         0x16
+#define MINNIE_DRAWOP_ELLIPSE_FILL                             0x17
+#define MINNIE_DRAWOP_ELLIPSE_STROKE                           0x18
+#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                      0x19
+#define MINNIE_DRAWOP_ROUNDRECT_FILL                           0x1A
+#define MINNIE_DRAWOP_ROUNDRECT_STROKE                         0x1B
+#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                    0x1C
+#define MINNIE_DRAWOP_BIND_TEXTURE                             0x1D
+#define MINNIE_DRAWOP_UNBIND_TEXTURE                           0x1E
+#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                      0x1F
+#define MINNIE_DRAWOP_PAINT_SOLID                              0x20
+#define MINNIE_DRAWOP_PAINT_LINEAR                             0x21
+#define MINNIE_DRAWOP_PAINT_RADIAL                             0x22
+#define MINNIE_DRAWOP_PAINT_CONIC                              0x23
+#define MINNIE_DRAWOP_PAINT_PATTERN                            0x24
+#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                      0x25
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                      0x26
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA                0x27
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                 0x28
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32           0x29
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32              0x2A
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32        0x2B
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                     0x2C
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2               0x2D
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2               0x2E
+#define MINNIE_DRAWOP_AA_RANGE                                 0x2F
+#define MINNIE_DRAWOP_FILLRULE_EVENODD                         0x30
+#define MINNIE_DRAWOP_FILLRULE_NONZERO                         0x31
+
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE           0x00
@@ -869,7 +874,7 @@ static sUI total_num_ellipses    = 0u;
 #define MINNIE_PATH_TYPE_DRAW       0  // 0x84: no points / no tesselator (main draw list)
 #define MINNIE_PATH_TYPE_CONVEX     1  // 0x84: no tesselator
 #define MINNIE_PATH_TYPE_CONCAVE    2  // 0x85: (simple) ear-clipping tesselator
-#define MINNIE_PATH_TYPE_EVENODD    3  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
+#define MINNIE_PATH_TYPE_COMPLEX    3  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
 #define MINNIE_PATH_TYPE_IMMEDIATE  4  // 0x8D: specialized render functions (rect, roundrect, ellipse, circle, ..)
 
 // https://www.w3.org/TR/SVG11/painting.html#StrokeLinecapProperty
@@ -3763,10 +3768,10 @@ class Path {
    }
 
    // <method.png>
-   sBool tesselateEvenOdd(const FloatArray *_vaIn, FloatArray *_vaOut) {
+   sBool tesselateComplex(const FloatArray *_vaIn, FloatArray *_vaOut, sBool _bNonZero) {
       if(b_debug_tess >= 2)
       {
-         Dprintf("xxx tesselateEvenOdd: ENTER\n");
+         Dprintf("xxx tesselateComplex: ENTER\n");
       }
 #ifdef HAVE_VGTESSELATE
 
@@ -3778,7 +3783,7 @@ class Path {
       sUI numElem = _vaIn->num_elements;
       if(numElem > 0u)
       {
-         /* Dprintf("xxx tesselateEvenOdd: 1\n"); */
+         /* Dprintf("xxx tesselateComplex: 1\n"); */
          if(1)
          {
             if(_vaIn->get(0) == _vaIn->getRev(1) &&  // first equals last point ?
@@ -3786,7 +3791,7 @@ class Path {
                numElem -= 2u;
             if(numElem >= (2u*3u))
             {
-               if(b_debug_tess >= 2) { Dprintf("[trc] minnie::Path::tesselateEvenOdd: add numVert=%u origNumVert=%u\n", (numElem/2u), (_vaIn->num_elements/2u)); }
+               if(b_debug_tess >= 2) { Dprintf("[trc] minnie::Path::tesselateComplex: add numVert=%u origNumVert=%u\n", (numElem/2u), (_vaIn->num_elements/2u)); }
                if(!vgtesselateAddPolygonRegion(_vaIn->elements.f32, numElem))
                {
                   vgtesselateFreeInput();
@@ -3795,7 +3800,7 @@ class Path {
             }
          }
 
-         /* Dprintf("xxx tesselateEvenOdd: 2\n"); */
+         /* Dprintf("xxx tesselateComplex: 2\n"); */
 
 #if 1 // xxxxxxxxxxxx
          if(_vaIn == &points)  // (todo) support 2d/3d transformed sub-paths
@@ -3811,7 +3816,7 @@ class Path {
                      numElem -= 2u;
                   if(numElem >= (2u*3u))
                   {
-                     if(b_debug_tess >= 2) { Dprintf("[trc] minnie::Path::tesselateEvenodd: add sp numVert=%u origNumVert=%u\n", (numElem/2), (sp->points.num_elements/2u)); }
+                     if(b_debug_tess >= 2) { Dprintf("[trc] minnie::Path::tesselateComplex: add sp numVert=%u origNumVert=%u\n", (numElem/2), (sp->points.num_elements/2u)); }
                      if(!vgtesselateAddPolygonRegion(sp->points.elements.f32, numElem))
                      {
                         vgtesselateFreeInput();
@@ -3823,11 +3828,11 @@ class Path {
          }
          else if(sub_paths.num_elements > 0u)
          {
-            Dprintf("[~~~] minnie::Path::tesselateEvenOdd: skipping 2d/3d transformed sub-paths (missing implementation)\n");
+            Dprintf("[~~~] minnie::Path::tesselateComplex: skipping 2d/3d transformed sub-paths (missing implementation)\n");
          }
 #endif
 
-         /* Dprintf("xxx tesselateEvenOdd: 3\n"); */
+         /* Dprintf("xxx tesselateComplex: 3\n"); */
 
 #if 0
          {
@@ -3841,7 +3846,7 @@ class Path {
          }
 #endif
 
-         /* Dprintf("xxx tesselateEvenOdd: 4\n"); */
+         /* Dprintf("xxx tesselateComplex: 4\n"); */
 
          sBool bOk = YAC_FALSE;
 
@@ -3857,7 +3862,11 @@ class Path {
             {
                Dprintf("xxx VGES_NewTesselator: tesselator=%p\n", tesselator);
             }
-            vgtesselate.output = VGES_TesselateElements(tesselator, vgtesselate.input, VG_EVEN_ODD, VG_FALSE/*CreateEdgeFlags*/);
+            vgtesselate.output = VGES_TesselateElements(tesselator,
+                                                        vgtesselate.input,
+                                                        _bNonZero ? VG_NON_ZERO : VG_EVEN_ODD,
+                                                        VG_FALSE/*CreateEdgeFlags*/
+                                                        );
             if(b_debug_tess >= 2)
             {
                Dprintf("xxx VGES_NewTesselator: end\n");
@@ -3865,7 +3874,7 @@ class Path {
             VGES_DeleteTesselator(tesselator);
             /* printf("xxx VGES_NewTesselator: end 2\n"); */
 
-            /* Dprintf("xxx tesselateEvenOdd: 5\n"); */
+            /* Dprintf("xxx tesselateComplex: 5\n"); */
 
             // Store (indexed) result in 'points' / 'ia_fill'
             //
@@ -3884,7 +3893,7 @@ class Path {
                {
                   if((numVertices*2u) <= _vaOut->max_elements)
                   {
-                     Dallocprintf("xxx minnie::Path::tesselateEvenOdd: ia_fill.alloc(numIndices=%u)\n", numIndices);
+                     Dallocprintf("xxx minnie::Path::tesselateComplex: ia_fill.alloc(numIndices=%u)\n", numIndices);
                      if(ia_fill.alloc(numIndices))
                      {
                         // Copy vertices
@@ -3897,24 +3906,24 @@ class Path {
                            ia_fill.elements.s32[idx] = (sS32)triIndices[idx];
                         ia_fill.num_elements = numIndices;
 
-                        if(b_debug_tess) { Dprintf("[trc] Path::tesselateEvenOdd: #vertices=%u #indices=%u\n", (_vaOut->num_elements/2u), ia_fill.num_elements); }
+                        if(b_debug_tess) { Dprintf("[trc] Path::tesselateComplex: #vertices=%u #indices=%u\n", (_vaOut->num_elements/2u), ia_fill.num_elements); }
                         // Succeeded
                         bOk = YAC_TRUE;
                         /* bOk = YAC_FALSE; */
                      }
                      else
                      {
-                        Derrorprintf("[---] Path::tesselateEvenOdd: failed to allocate %u result indices\n", numIndices);
+                        Derrorprintf("[---] Path::tesselateComplex: failed to allocate %u result indices\n", numIndices);
                      }
                   }
                   else
                   {
-                     Derrorprintf("[---] Path::tesselateEvenOdd: points array too small for result (%u < %u)\n", _vaOut->max_elements, numVertices*2u);
+                     Derrorprintf("[---] Path::tesselateComplex: points array too small for result (%u < %u)\n", _vaOut->max_elements, numVertices*2u);
                   }
                }
                else
                {
-                  if(b_debug_tess) { Derrorprintf("[---] minnie:Path::tesselateEvenOdd: number of result triangles is ZERO.\n"); }
+                  if(b_debug_tess) { Derrorprintf("[---] minnie:Path::tesselateComplex: number of result triangles is ZERO.\n"); }
                }
             }
 #endif
@@ -3933,7 +3942,7 @@ class Path {
 
          if(b_debug_tess >= 2)
          {
-            Dprintf("xxx tesselateEvenOdd: LEAVE bOk=%d\n", bOk);
+            Dprintf("xxx tesselateComplex: LEAVE bOk=%d\n", bOk);
          }
 
          return bOk;
@@ -3942,7 +3951,7 @@ class Path {
 
       if(b_debug_tess >= 2)
       {
-         Dprintf("xxx tesselateEvenOdd: LEAVE YAC_FALSE\n");
+         Dprintf("xxx tesselateComplex: LEAVE YAC_FALSE\n");
       }
       return YAC_FALSE;
    }
@@ -3957,7 +3966,7 @@ class Path {
  */
 /* @constant MINNIE_PATH_TYPE_CONCAVE
  */
-/* @constant MINNIE_PATH_TYPE_EVENODD
+/* @constant MINNIE_PATH_TYPE_COMPLEX
  */
 /* @constant MINNIE_PATH_TYPE_IMMEDIATE
  */
@@ -4004,6 +4013,8 @@ namespace setup {
 #define MINNIE_SHAPE_AA_RANGE  1.5f
    static sF32 cur_aa_range;
 
+   static sBool cur_fillrule_nonzero;  // 0=even/odd  1=non-zero
+
    static sUI   active_dl_op;            // MINNIE_DRAWOP_xxx
    static sUI   active_dl_num_tris;
    static sUI   active_dl_num_verts;
@@ -4021,6 +4032,7 @@ namespace setup {
    static sF32  active_dl_sy;
    static sUI   active_dl_paint_id;
    static sF32  active_dl_aa_range;
+   static sBool active_dl_fillrule_nonzero;
 
    static sSI   dl_tex_id;
    static sBool dl_tex_repeat;
@@ -4072,7 +4084,7 @@ namespace setup {
    static sUI max_extruded_vertices_per_path;
 
    static FloatArray tmpfa_extrude;            // maxExtrudedVerticesPerPath*2
-   static FloatArray tmpfa_points2;            // maxPointsPerPath*2. translateAndScalePoints(), transform2DAndTranslateAndScale(), p->tesselateEvenOdd()
+   static FloatArray tmpfa_points2;            // maxPointsPerPath*2. translateAndScalePoints(), transform2DAndTranslateAndScale(), p->tesselateComplex()
    static IntArray   tmpia_tesselate_concave;  // maxPointsPerPath*1
    static FloatArray tmpfa_clip2;              // maxClippedPointsPerPath*2
    static FloatArray tmpfa_clip2d_tmp1;        // maxClippedPointsPerPath*2
@@ -4090,16 +4102,16 @@ namespace setup {
    static sUI edgeaa_vertices_num;
 #endif // MINNIE_EXPORT_TRIS_EDGEAA
 
-   static sBool b_edge_aa;              // def=1  can be enabled/disabled per-path
-   static sBool b_tesselate_concave;    // def=1 (tesselate to triangles).  0=export as-is (and later tesselate via GPU)
-   static sBool b_force_concave_evenodd;  // def=0  (1=treat concave paths as evenodd paths via SGI tesselator)
-   static sBool b_force_evenodd_concave;  // def=0  (1=treat evenodd (sub-)paths as concave paths)
+   static sBool b_edge_aa;                // def=1  can be enabled/disabled per-path
+   static sBool b_tesselate_concave;      // def=1 (tesselate to triangles).  0=export as-is (and later tesselate via GPU)
+   static sBool b_force_concave_complex;  // def=0  (1=treat concave paths as complex paths via SGI tesselator)
+   static sBool b_force_complex_concave;  // def=0  (1=treat complex (sub-)paths as concave paths)
    static sBool b_multipath_hw_polygons;  // 1=draw filled multipath polygons via GPU and skip SW tesselation
    static sUI   sw_tesselate_size_threshold;
    static sBool b_render_strokes;
    static sBool b_render_join_cap;
    static sBool b_render_fill_concave;
-   static sBool b_render_fill_evenodd;
+   static sBool b_render_fill_complex;
    static sBool b_uniform_colors;       // 1=set path colors via uniforms    0=store colors in vertex attribs [default]
    static sBool b_polygon_aa;
    static sF32  stroke_w_line_strip_threshold;  // use line strips if stroke_w <= threshold  (0.0f == off)
@@ -4113,14 +4125,14 @@ namespace setup {
       loc_dl_export_ofs = NULL;
       b_edge_aa                     = YAC_FALSE;
       b_tesselate_concave           = YAC_TRUE;
-      b_force_concave_evenodd       = YAC_FALSE;
-      b_force_evenodd_concave       = YAC_FALSE;
+      b_force_concave_complex       = YAC_FALSE;
+      b_force_complex_concave       = YAC_FALSE;
       b_multipath_hw_polygons       = YAC_FALSE;
       sw_tesselate_size_threshold   = 0u;
       b_render_strokes              = YAC_TRUE;
       b_render_join_cap             = YAC_TRUE;
       b_render_fill_concave         = YAC_TRUE;
-      b_render_fill_evenodd         = YAC_TRUE;
+      b_render_fill_complex         = YAC_TRUE;
       b_uniform_colors              = YAC_TRUE;
       stroke_w_line_strip_threshold = 0.0f;
       stroke_w_line_join_threshold  = 0.0f;
@@ -4290,13 +4302,13 @@ namespace setup {
    }
 
    // <method_set.png>
-   static void setEnableRenderFillEvenOdd(sBool _bEnable) {
-      b_render_fill_evenodd = _bEnable;
+   static void setEnableRenderFillComplex(sBool _bEnable) {
+      b_render_fill_complex = _bEnable;
    }
 
    // <method_get.png>
-   static sBool getEnableRenderFillEvenOdd(void) {
-      return b_render_fill_evenodd;
+   static sBool getEnableRenderFillComplex(void) {
+      return b_render_fill_complex;
    }
 
    // <method_set.png>
@@ -4382,23 +4394,23 @@ namespace setup {
    }
 
    // <method_set.png>
-   static void setEnableForceConcaveEvenOdd(sBool _bEnable) {
-      b_force_concave_evenodd = _bEnable;
+   static void setEnableForceConcaveComplex(sBool _bEnable) {
+      b_force_concave_complex = _bEnable;
    }
 
    // <method_get.png>
-   static sBool getEnableForceConcaveEvenOdd(void) {
-      return b_force_concave_evenodd;
+   static sBool getEnableForceConcaveComplex(void) {
+      return b_force_concave_complex;
    }
 
    // <method_set.png>
-   static void setEnableForceEvenOddConcave(sBool _bEnable) {
-      b_force_evenodd_concave = _bEnable;
+   static void setEnableForceComplexConcave(sBool _bEnable) {
+      b_force_complex_concave = _bEnable;
    }
 
    // <method_get.png>
-   static sBool getEnableForceEvenOddConcave(void) {
-      return b_force_evenodd_concave;
+   static sBool getEnableForceComplexConcave(void) {
+      return b_force_complex_concave;
    }
 
    // <method.png>
@@ -6170,14 +6182,24 @@ namespace setup {
             break;
 
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_sub> start_offset=%u num_verts=%u\n", active_dl_op, active_dl_start_offset, active_dl_num_verts);
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_sub%s> start_offset=%u num_verts=%u\n",
+                          active_dl_op,
+                          ((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA == active_dl_op)?"_aa":""),
+                          active_dl_start_offset,
+                          active_dl_num_verts
+                          );
             Dexport_dl_i16(active_dl_op);
             Dexport_dl_i32(active_dl_start_offset);
             Dexport_dl_i32(active_dl_num_verts);
             break;
 
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_end>\n", active_dl_op);
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_end%s>\n",
+                          active_dl_op,
+                          ((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA == active_dl_op)?"_aa":"")
+                          );
             Dexport_dl_i16(active_dl_op);
             break;
 
@@ -6507,6 +6529,15 @@ namespace setup {
             Dexport_dl_f32(active_dl_aa_range);
             break;
 
+         case MINNIE_DRAWOP_FILLRULE_EVENODD:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<evenodd>\n", active_dl_op);
+            Dexport_dl_i16(active_dl_op);
+            break;
+
+         case MINNIE_DRAWOP_FILLRULE_NONZERO:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<nonzero>\n", active_dl_op);
+            Dexport_dl_i16(active_dl_op);
+            break;
       }
       active_dl_op = 0x00u;
    }
@@ -6516,12 +6547,12 @@ namespace setup {
       return
          (active_dl_op == _op) &&
          (active_dl_paint_id == cur_paint_id) &&
-         (!b_uniform_colors || (active_dl_c32_fill == cur_c32_fill)) &&
-         ((0u == cur_paint_id) || (active_dl_c32_stroke == cur_c32_stroke)) &&
+         (!b_uniform_colors || ((active_dl_c32_fill == cur_c32_fill) && (active_dl_c32_stroke == cur_c32_stroke))) &&
          ((active_dl_op <= MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2) ||
           (active_dl_op == MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32)
           ) &&
-         (active_dl_aa_range == cur_aa_range)
+         (active_dl_aa_range == cur_aa_range) &&
+         (active_dl_fillrule_nonzero == cur_fillrule_nonzero)
          ;
    }
 
@@ -6537,17 +6568,18 @@ namespace setup {
 
          finishActiveDrawListOp();
 
-         active_dl_op           = _op;
-         active_dl_start_offset = Dexport_vb_get_offset();
-         active_dl_num_tris     = 0u;
-         active_dl_num_verts    = 0u;
-         active_dl_c32_fill     = cur_c32_fill;
-         active_dl_c32_stroke   = cur_c32_stroke;
-         active_dl_stroke_w     = cur_stroke_w;
-         active_dl_miter_limit  = cur_miter_limit;
-         active_dl_paint_id     = cur_paint_id;
-         active_dl_aa_range     = cur_aa_range;
+         active_dl_op               = _op;
+         active_dl_start_offset     = Dexport_vb_get_offset();
+         active_dl_num_tris         = 0u;
+         active_dl_num_verts        = 0u;
+         active_dl_c32_fill         = cur_c32_fill;
+         active_dl_c32_stroke       = cur_c32_stroke;
+         active_dl_stroke_w         = cur_stroke_w;
+         active_dl_miter_limit      = cur_miter_limit;
+         active_dl_paint_id         = cur_paint_id;
+         active_dl_aa_range         = cur_aa_range;
          Ddebugprintfv("[trc] beginDrawListOp: active_dl_aa_range=%f\n", active_dl_aa_range);
+         active_dl_fillrule_nonzero = cur_fillrule_nonzero;
 
          return YAC_TRUE;
       }
@@ -6611,9 +6643,15 @@ namespace setup {
 
    static sBool beginDrawListOpPolygonSub(void) {
 #if MINNIE_EXPORT_VERTEX_16BIT
-      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB);
+      return beginDrawListOp(b_polygon_aa
+                             ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA
+                             : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB
+                             );
 #else
-      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB);
+      return beginDrawListOp(b_polygon_aa
+                             ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB_AA
+                             : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB
+                             );
 #endif // MINNIE_EXPORT_VERTEX_16BIT
    }
 
@@ -7743,40 +7781,41 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOdd(Path *p, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOdd: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+   static void drawPathFillComplex(Path *p, sBool _bMultiPathHWPolygon) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplex: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(_bMultiPathHWPolygon)
       {
          if(!isDrawOpPolygon())
          {
-            Dprintf("[!!!] Minnie::drawPathFillEvenOdd: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+            Dprintf("[!!!] Minnie::drawPathFillComplex: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          beginDrawListOpPolygonSub();
-         // (note) last point equals first point
+         // (note) last point equals first point (add one extra when AA is enabled)
+         const sUI numWrap = (b_polygon_aa ? 2u : 1u);
          p->exportVertices(loc_vb_export_ofs,
                            p->points.elements.f32,
-                           p->points.num_elements,
+                           p->points.num_elements - 2u,
                            cur_c32_fill,
                            cur_x,
                            cur_y,
                            geo_scale,
                            YAC_TRUE/*bUniformColors*/,
-                           0u/*numWrap*/
+                           numWrap
                            );
-         active_dl_num_verts += p->points.num_elements >> 1u;
+         active_dl_num_verts += (p->points.num_elements >> 1u) - 1u + numWrap;
          if(b_debug_multipath)
          {
-            Dprintf("[trc] Minnie::drawPathFillEvenOdd: add sub #verts=%u\n", active_dl_num_verts);
+            Dprintf("[trc] Minnie::drawPathFillComplex: add sub #verts=%u\n", active_dl_num_verts);
          }
          return;
       }
 
       // (note) iterates parent+sub paths, generate vaPoints and p.ia_fill
       FloatArray *vaPoints = &tmpfa_points2;
-      if(!p->tesselateEvenOdd(&p->points/*in*/, vaPoints/*out*/))
+      if(!p->tesselateComplex(&p->points/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOdd: tesselateEvenOdd() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplex: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -7814,7 +7853,7 @@ namespace setup {
          idxOff += 3u;
          /* triIdx++;  // debugColor */
       }
-      /* printf("xxx drawPathFillEvenodd: LEAVE\n"); */
+      /* printf("xxx drawPathFillComplex: LEAVE\n"); */
    }
 
    // <method.png>
@@ -7893,8 +7932,8 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+   static void drawPathFillComplexClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -7908,32 +7947,33 @@ namespace setup {
          {
             if(!isDrawOpPolygon())
             {
-               Dprintf("[!!!] Minnie::drawPathFillEvenOddClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+               Dprintf("[!!!] Minnie::drawPathFillComplexClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             beginDrawListOpPolygonSub();
-            // (note) last point does NOT equal first point
+            // (note) last point does NOT equal first point (add one extra when AA is enabled)
+            const sUI numWrap = (b_polygon_aa ? 2u : 1u);
             p->exportVertices(loc_vb_export_ofs,
                               va->elements.f32,
-                              va->num_elements,
+                              va->num_elements - 0u,
                               cur_c32_fill,
                               0.0f/*cur_x*/,
                               0.0f/*cur_y*/,
                               1.0f/*geo_scale*/,
                               YAC_TRUE/*bUniformColors*/,
-                              YAC_FALSE/*bWrap2*/
+                              numWrap
                               );
-            active_dl_num_verts += va->num_elements >> 1u;
+            active_dl_num_verts += (va->num_elements >> 1u) - 0u + numWrap;
             if(b_debug_multipath)
             {
-               Dprintf("[trc] Minnie::drawPathFillEvenOddClipPre: add sub #verts=%u\n", active_dl_num_verts);
+               Dprintf("[trc] Minnie::drawPathFillComplexClipPre: add sub #verts=%u\n", active_dl_num_verts);
             }
             return;
          }
 
          // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
-         if(!p->tesselateEvenOdd(va/*in*/, va/*out*/))
+         if(!p->tesselateComplex(va/*in*/, va/*out*/, cur_fillrule_nonzero))
          {
-            if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddClipPre: tesselateEvenOdd() failed\n"); }
+            if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexClipPre: tesselateComplex() failed\n"); }
             return;
          }
 
@@ -8019,16 +8059,16 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+   static void drawPathFillComplexClip(Path *p, const Path *pClip) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
 
       // (note) vertices remain unchanged, generates p.ia_fill
-      if(!p->tesselateEvenOdd(vaPoints/*in*/, vaPoints/*out*/))
+      if(!p->tesselateComplex(vaPoints/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddClip: tesselateEvenOdd() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexClip: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8043,7 +8083,7 @@ namespace setup {
    static void drawPathFillConcaveTransform2d(Path *p) {
       if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
-      if(p->points.num_elements >= 2u)
+      if(p->points.num_elements >= 2u)  // (todo) already checked by caller
       {
          if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
          {
@@ -8117,41 +8157,42 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform2d(Path *p, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+   static void drawPathFillComplexTransform2d(Path *p, sBool _bMultiPathHWPolygon) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(_bMultiPathHWPolygon)
       {
          if(!isDrawOpPolygon())
          {
-            Dprintf("[!!!] Minnie::drawPathFillEvenOddTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
+            Dprintf("[!!!] Minnie::drawPathFillComplexTransform2d: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
          }
          beginDrawListOpPolygonSub();
-         // (note) last point equals first point
+         // (note) last point equals first point (add one extra when AA is enabled)
+         const sUI numWrap = (b_polygon_aa ? 2u : 1u);
          p->exportVerticesTransform2d(loc_vb_export_ofs,
                                       p->points.elements.f32,
-                                      p->points.num_elements,
+                                      p->points.num_elements - 2u,
                                       cur_c32_fill,
                                       &cur_mat_2d,
                                       cur_x,
                                       cur_y,
                                       geo_scale,
                                       YAC_TRUE/*bUniformColors*/,
-                                      0u/*numWrap*/
+                                      numWrap
                                       );
-         active_dl_num_verts += p->points.num_elements >> 1u;
+         active_dl_num_verts += (p->points.num_elements >> 1u) - 1u + numWrap;
          if(b_debug_multipath)
          {
-            Dprintf("[trc] Minnie::drawPathFillEvenOddTransform2d: add sub #verts=%u\n", active_dl_num_verts);
+            Dprintf("[trc] Minnie::drawPathFillComplexTransform2d: add sub #verts=%u\n", active_dl_num_verts);
          }
          return;
       }
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
       FloatArray *vaPoints = &tmpfa_points2;
-      if(!p->tesselateEvenOdd(&p->points/*in*/, vaPoints/*out*/))
+      if(!p->tesselateComplex(&p->points/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddTransform2d: tesselateEvenOdd() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform2d: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8214,7 +8255,7 @@ namespace setup {
                Dprintf("[!!!] Minnie::drawPathFillConcaveTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
             // (note) translation and scaling already applied in transform2DAndTranslateAndScale()
-            // (note) last point does NOT equal first point (add two extra when AA is enabled)
+            // (note) last point does NOT equal first point (add one extra when AA is enabled)
             const sUI numWrap = (b_polygon_aa ? 2u : 1u);
             p->exportVertices(loc_vb_export_ofs,
                               vaClip->elements.f32,
@@ -8267,8 +8308,8 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform2dClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform2dClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+   static void drawPathFillComplexTransform2dClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -8278,67 +8319,65 @@ namespace setup {
 
       if(vaClip->num_elements >= 2u)
       {
-         if(vaClip->num_elements >= 2u)
+         if(_bMultiPathHWPolygon)
          {
-            if(_bMultiPathHWPolygon)
+            if(!isDrawOpPolygon())
             {
-               if(!isDrawOpPolygon())
-               {
-                  Dprintf("[!!!] Minnie::drawPathFillEvenOddTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
-               }
-               beginDrawListOpPolygonSub();
-               // (note) last point does NOT equal first point
-               p->exportVertices(loc_vb_export_ofs,
-                                 vaClip->elements.f32,
-                                 vaClip->num_elements,
-                                 cur_c32_fill,
-                                 0.0f/*cur_x*/,
-                                 0.0f/*cur_y*/,
-                                 1.0f/*geo_scale*/,
-                                 YAC_TRUE/*bUniformColors*/,
-                                 0u/*numWrap*/
-                                 );
-               active_dl_num_verts += vaClip->num_elements >> 1u;
-               if(b_debug_multipath)
-               {
-                  Dprintf("[trc] Minnie::drawPathFillEvenOddTransform2dClipPre: add sub #verts=%u\n", active_dl_num_verts);
-               }
-               return;
+               Dprintf("[!!!] Minnie::drawPathFillComplexTransform2dClipPre: INTERNAL ERROR: active_dl_op(0x%02x) != MINNIE_DRAWOP_POLYGON_FILL_*\n", active_dl_op);
             }
-
-            // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
-            if(!p->tesselateEvenOdd(vaClip/*in*/, vaClip/*out*/))
+            beginDrawListOpPolygonSub();
+            // (note) last point does NOT equal first point (add one extra when AA is enabled)
+            const sUI numWrap = (b_polygon_aa ? 2u : 1u);
+            p->exportVertices(loc_vb_export_ofs,
+                              vaClip->elements.f32,
+                              vaClip->num_elements,
+                              cur_c32_fill,
+                              0.0f/*cur_x*/,
+                              0.0f/*cur_y*/,
+                              1.0f/*geo_scale*/,
+                              YAC_TRUE/*bUniformColors*/,
+                              numWrap
+                              );
+            active_dl_num_verts += (vaClip->num_elements >> 1u) - 0u + numWrap;
+            if(b_debug_multipath)
             {
-               if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddTransform2dClipPre: tesselateEvenOdd() failed\n"); }
-               return;
+               Dprintf("[trc] Minnie::drawPathFillComplexTransform2dClipPre: add sub #verts=%u\n", active_dl_num_verts);
             }
+            return;
+         }
 
-            const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
+         // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
+         if(!p->tesselateComplex(vaClip/*in*/, vaClip/*out*/, cur_fillrule_nonzero))
+         {
+            if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform2dClipPre: tesselateComplex() failed\n"); }
+            return;
+         }
 
-            Vector2f v1;
-            Vector2f v2;
-            Vector2f v3;
-            FloatArray *va = vaClip;
-            IntArray *ia = &p->ia_fill;
-            sUI idxOff = 0u;
-            /* sUI triIdx = 0u;  // debug color */
-            while(idxOff < ia->num_elements)
-            {
-               sUI vaOff1 = sUI(ia->get(idxOff+0u))*2u;
-               sUI vaOff2 = sUI(ia->get(idxOff+1u))*2u;
-               sUI vaOff3 = sUI(ia->get(idxOff+2u))*2u;
-               v1.init(va->get(vaOff1+0u), va->get(vaOff1+1u));
-               v2.init(va->get(vaOff2+0u), va->get(vaOff2+1u));
-               v3.init(va->get(vaOff3+0u), va->get(vaOff3+1u));
+         const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
-               /* if(b_debug_fill >= 2) */
-               /*    c32 = palette.get( (1 + triIdx) & 7 ); */
+         Vector2f v1;
+         Vector2f v2;
+         Vector2f v3;
+         FloatArray *va = vaClip;
+         IntArray *ia = &p->ia_fill;
+         sUI idxOff = 0u;
+         /* sUI triIdx = 0u;  // debug color */
+         while(idxOff < ia->num_elements)
+         {
+            sUI vaOff1 = sUI(ia->get(idxOff+0u))*2u;
+            sUI vaOff2 = sUI(ia->get(idxOff+1u))*2u;
+            sUI vaOff3 = sUI(ia->get(idxOff+2u))*2u;
+            v1.init(va->get(vaOff1+0u), va->get(vaOff1+1u));
+            v2.init(va->get(vaOff2+0u), va->get(vaOff2+1u));
+            v3.init(va->get(vaOff3+0u), va->get(vaOff3+1u));
 
-               drawTri(&v1, &v2, &v3, cur_c32_fill, c32Mask);
+            /* if(b_debug_fill >= 2) */
+            /*    c32 = palette.get( (1 + triIdx) & 7 ); */
 
-               idxOff += 3u;
-               /* triIdx++;  // debugColor */
-            }
+            drawTri(&v1, &v2, &v3, cur_c32_fill, c32Mask);
+
+            idxOff += 3u;
+            /* triIdx++;  // debugColor */
          }
       }
    }
@@ -8365,16 +8404,16 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform2dClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+   static void drawPathFillComplexTransform2dClip(Path *p, const Path *pClip) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints/*out*/);
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
-      if(!p->tesselateEvenOdd(vaPoints/*in*/, vaPoints/*out*/))
+      if(!p->tesselateComplex(vaPoints/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddTransform2dClip: tesselateEvenOdd() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform2dClip: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8446,14 +8485,14 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform3d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+   static void drawPathFillComplexTransform3d(Path *p) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
       FloatArray *vaPoints = &tmpfa_points2;
-      if(!p->tesselateEvenOdd(&p->points/*in*/, vaPoints/*out*/))
+      if(!p->tesselateComplex(&p->points/*in*/, vaPoints/*out*/, cur_fillrule_nonzero))
       {
-         if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddTransform3d: tesselateEvenOdd() failed\n"); }
+         if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform3d: tesselateComplex() failed\n"); }
          return;
       }
 
@@ -8634,8 +8673,8 @@ namespace setup {
    }
 
    // <method.png>
-   static void drawPathFillEvenOddTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillEvenOddTransform3dClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+   static void drawPathFillComplexTransform3dClip(Path *p) {
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3dClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       // Transform points from 2D to 3D
       FloatArray *vaPoints = &p->points;
@@ -8656,8 +8695,8 @@ namespace setup {
          va3->add3(v1.x, v1.y, v1.z);
          va3->add3(v2.x, v2.y, v2.z);
 
-         /* if(b_debug_fill >= 3) trace "xxx drawPathFillEvenOddTransform3dClip: v1="+v1+" cur_mat_3d="+cur_mat_3d; */
-         /* if(b_debug_fill >= 3) trace "xxx drawPathFillEvenOddTransform3dClip: v1_3d="+v1; */
+         /* if(b_debug_fill >= 3) trace "xxx drawPathFillComplexTransform3dClip: v1="+v1+" cur_mat_3d="+cur_mat_3d; */
+         /* if(b_debug_fill >= 3) trace "xxx drawPathFillComplexTransform3dClip: v1_3d="+v1; */
 
          sUI vaOff = 4u;
          while(vaOff < vaPoints->num_elements)
@@ -8673,7 +8712,7 @@ namespace setup {
          // Clip 3D points against near plane
          FloatArray *vaClip3 = &tmpfa_clip3;
          vaClip3->empty();
-         /* if(b_debug_clip3d >= 3) trace "xxx drawPathFillEvenOddTransform3dClip: va3="+va3.string3; */
+         /* if(b_debug_clip3d >= 3) trace "xxx drawPathFillComplexTransform3dClip: va3="+va3.string3; */
          Clip3DZNear(va3, 0.01f/*znear*/, vaClip3);
          /* if(b_debug_clip3d >= 3) trace "xxx drawPathFillConcaveTransform3dClip: vaClip3="+vaClip3.string3; */
 
@@ -8714,9 +8753,9 @@ namespace setup {
          /* if(b_debug_clip3d >= 2) trace "xxx drawPathFillConcaveTransform3dClip: va="+va; */
 
          // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
-         if(!p->tesselateEvenOdd(va/*in*/, va/*out*/))
+         if(!p->tesselateComplex(va/*in*/, va/*out*/, cur_fillrule_nonzero))
          {
-            if(b_debug_tess) { Derrorprintf("[---] drawPathFillEvenOddTransform3dClip: tesselateEvenOdd() failed\n"); }
+            if(b_debug_tess) { Derrorprintf("[---] drawPathFillComplexTransform3dClip: tesselateComplex() failed\n"); }
             return;
          }
 
@@ -9509,32 +9548,32 @@ namespace setup {
                if(0.0f == cur_stroke_w)
                {
                   // fill
-                  if(MINNIE_PATH_TYPE_EVENODD == pathType)
+                  if(MINNIE_PATH_TYPE_COMPLEX == pathType)
                   {
-                     if(b_render_fill_evenodd)
+                     if(b_render_fill_complex)
                      {
                         if(NULL != cur_clip2d_path)
                         {
                            if(b_cur_clip2d_pre)
                            {
-                              drawPathFillEvenOddClipPre(p, cur_clip2d_path, _bMultiPathHWPolygon);
+                              drawPathFillComplexClipPre(p, cur_clip2d_path, _bMultiPathHWPolygon);
                            }
                            else
                            {
                               if(!_bMultiPathHWPolygon)
                               {
-                                 drawPathFillEvenOddClip(p, cur_clip2d_path);
+                                 drawPathFillComplexClip(p, cur_clip2d_path);
                               }
                               else
                               {
                                  // (todo) implement me
-                                 Derrorprintf("[---] drawPath: drawPathFillEvenOddClip() not supported for HW polygons\n");
+                                 Derrorprintf("[---] drawPath: drawPathFillComplexClip() not supported for HW polygons\n");
                               }
                            }
                         }
                         else
                         {
-                           drawPathFillEvenOdd(p, _bMultiPathHWPolygon);
+                           drawPathFillComplex(p, _bMultiPathHWPolygon);
                         }
                      }
                   }
@@ -9551,7 +9590,7 @@ namespace setup {
                                  // Start draw-concave op
                                  (void)beginDrawListOpPolygon();
                               }
-                              
+
                               drawPathFillConcaveClipPre(p, cur_clip2d_path);
                            }
                            else
@@ -9646,28 +9685,28 @@ namespace setup {
                if(0.0f == cur_stroke_w)
                {
                   // fill
-                  if(MINNIE_PATH_TYPE_EVENODD == pathType)
+                  if(MINNIE_PATH_TYPE_COMPLEX == pathType)
                   {
-                     if(b_render_fill_evenodd)
+                     if(b_render_fill_complex)
                      {
                         if(NULL != cur_clip2d_path)
                         {
                            if(b_cur_clip2d_pre)
                            {
-                              drawPathFillEvenOddTransform2dClipPre(p, cur_clip2d_path, _bMultiPathHWPolygon);
+                              drawPathFillComplexTransform2dClipPre(p, cur_clip2d_path, _bMultiPathHWPolygon);
                            }
                            else if(!_bMultiPathHWPolygon)
                            {
-                              drawPathFillEvenOddTransform2dClip(p, cur_clip2d_path);
+                              drawPathFillComplexTransform2dClip(p, cur_clip2d_path);
                            }
                            else
                            {
                               // (todo) implement me
-                              Derrorprintf("[---] drawPath: drawPathFillEvenOddTransform2dClip() not supported for HW polygons\n");
+                              Derrorprintf("[---] drawPath: drawPathFillComplexTransform2dClip() not supported for HW polygons\n");
                            }
                         }
                         else
-                           drawPathFillEvenOddTransform2d(p, _bMultiPathHWPolygon);
+                           drawPathFillComplexTransform2d(p, _bMultiPathHWPolygon);
                      }
                   }
                   else if(MINNIE_PATH_TYPE_CONCAVE == pathType)
@@ -9783,17 +9822,17 @@ namespace setup {
                }
                if(0.0f == cur_stroke_w)
                {
-                  if(MINNIE_PATH_TYPE_EVENODD == pathType)
+                  if(MINNIE_PATH_TYPE_COMPLEX == pathType)
                   {
-                     if(b_render_fill_evenodd)
+                     if(b_render_fill_complex)
                      {
                         if(b_cur_clip_3d)
                         {
-                           drawPathFillEvenOddTransform3dClip(p);
+                           drawPathFillComplexTransform3dClip(p);
                         }
                         else
                         {
-                           drawPathFillEvenOddTransform3d(p);
+                           drawPathFillComplexTransform3d(p);
                         }
                      }
                   }
@@ -9903,13 +9942,16 @@ namespace setup {
             drawPath(sp, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
          }
 
-         beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END);
+         beginDrawListOp(b_polygon_aa
+                         ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA
+                         : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END
+                         );
 
          return;
       }
 
       // concave (n-polygon) GPU tesselation enabled and auto-redirect
-      //  PATH_TYPE_EVENODD(without subpaths) to PATH_TYPE_CONCAVE ?
+      //  PATH_TYPE_COMPLEX(without subpaths) to PATH_TYPE_CONCAVE ?
       if( !(b_tesselate_concave || b_edge_aa) && sw_tesselate_size_threshold > 0u )
       {
          if(cur_stroke_w < 0.001f) // fill ?
@@ -9917,9 +9959,9 @@ namespace setup {
             if(0u == p->sub_paths.num_elements)
             {
                /* Dprintf("xxx p->type=%d\n", p->type); */
-               if(MINNIE_PATH_TYPE_EVENODD == p->type || MINNIE_PATH_TYPE_CONCAVE == p->type)
+               if(MINNIE_PATH_TYPE_COMPLEX == p->type || MINNIE_PATH_TYPE_CONCAVE == p->type)
                {
-                  sBool bConcave = b_force_evenodd_concave;
+                  sBool bConcave = b_force_complex_concave;
                   if(!bConcave)
                   {
                      const sUI bbNumPixels = Path::CalcBBoxNumPixels(&p->points);
@@ -9937,12 +9979,12 @@ namespace setup {
                   {
                      debug_num_large_paths++;
                      debug_num_large_path_points += (p->points.num_elements >> 1);
-                     drawPath(p, mode, MINNIE_PATH_TYPE_EVENODD, YAC_FALSE/*bMultiPathHWPolygon*/);
+                     drawPath(p, mode, MINNIE_PATH_TYPE_COMPLEX, YAC_FALSE/*bMultiPathHWPolygon*/);
                      return;
                   }
                }
             }
-            else if(b_force_evenodd_concave)
+            else if(b_force_complex_concave)
             {
                // (todo) join paths
                for(sUI spIdx = 0u; spIdx < p->sub_paths.num_elements; spIdx++)
@@ -9963,7 +10005,7 @@ namespace setup {
 
       drawPath(p, mode, 0u/*forcedPathTypeOr0*/, YAC_FALSE/*bMultiPathHWPolygon*/);
 
-      if(MINNIE_PATH_TYPE_EVENODD != p->type || cur_stroke_w > 0.0f)
+      if(MINNIE_PATH_TYPE_COMPLEX != p->type || cur_stroke_w > 0.0f)
       {
          // stroked sub paths
          if(b_debug_fill && (p->sub_paths.num_elements > 0u))
@@ -10178,7 +10220,7 @@ namespace setup {
 
    // <method.png>
    static sBool newPath(sUI _type, const char *_debugCmd, const char *_debugName) {
-      // type: MINNIE_PATH_TYPE_CONVEX|CONCAVE|EVENODD
+      // type: MINNIE_PATH_TYPE_CONVEX|CONCAVE|COMPLEX
       cur_path = paths.addNew();
       if(NULL != cur_path)
       {
@@ -10807,9 +10849,9 @@ namespace setup {
                break;
 
             case 0x85u:  // pt <idx>  (concave)
-               if(b_force_concave_evenodd)
+               if(b_force_concave_complex)
                {
-                  if(!newPath(MINNIE_PATH_TYPE_EVENODD, "ph", "evenodd"))
+                  if(!newPath(MINNIE_PATH_TYPE_COMPLEX, "ph", "complex"))
                      return YAC_FALSE;
                }
                else
@@ -10849,9 +10891,8 @@ namespace setup {
                }
                break;
 
-            case 0x87u:  // ph <idx>  (evenodd)
-               if(!newPath(MINNIE_PATH_TYPE_EVENODD, "ph", "evenodd"))
-               /* /\* if(!newPath(b_force_evenodd_concave ? MINNIE_PATH_TYPE_CONCAVE : MINNIE_PATH_TYPE_EVENODD, "ph", "evenodd")) *\/ */
+            case 0x87u:  // ph <idx>  (evenodd/nonzero)
+               if(!newPath(MINNIE_PATH_TYPE_COMPLEX, "ph", "complex"))
                   return YAC_FALSE;
                break;
 
@@ -11634,18 +11675,18 @@ YF void YAC_CALL minSetEnableRenderJoinCap (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableRenderJoinCap (void);
 YF void YAC_CALL minSetEnableRenderFillConcave (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableRenderFillConcave (void);
-YF void YAC_CALL minSetEnableRenderFillEvenOdd (sBool _bEnable);
-YF sBool YAC_CALL minGetEnableRenderFillEvenOdd (void);
+YF void YAC_CALL minSetEnableRenderFillComplex (sBool _bEnable);
+YF sBool YAC_CALL minGetEnableRenderFillComplex (void);
 YF void YAC_CALL minSetEnableEdgeAA (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableEdgeAA (void);
 YF void YAC_CALL minSetEnableTesselateConcave (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableTesselateConcave (void);
 YF void YAC_CALL minSetSwTesselateSizeThreshold (sUI _sizeThreshold);
 YF sUI YAC_CALL minGetSwTesselateSizeThreshold (void);
-YF void YAC_CALL minSetEnableForceConcaveEvenOdd (sBool _bEnable);
-YF sBool YAC_CALL minGetEnableForceConcaveEvenOdd (void);
-YF void YAC_CALL minSetEnableForceEvenOddConcave (sBool _bEnable);
-YF sBool YAC_CALL minGetEnableForceEvenOddConcave (void);
+YF void YAC_CALL minSetEnableForceConcaveComplex (sBool _bEnable);
+YF sBool YAC_CALL minGetEnableForceConcaveComplex (void);
+YF void YAC_CALL minSetEnableForceComplexConcave (sBool _bEnable);
+YF sBool YAC_CALL minGetEnableForceComplexConcave (void);
 YF void YAC_CALL minSetEnableUniformColors (sBool _bEnable);
 YF sBool YAC_CALL minGetEnableUniformColors (void);
 YF void YAC_CALL minSetEnablePolygonAA (sBool _bEnable);
@@ -11674,7 +11715,7 @@ YF sSI YAC_CALL minBeginPathEx (sSI _pathType);
 YF sSI YAC_CALL minBeginPath (void);
 YF sSI YAC_CALL minBeginPathConvex (void);
 YF sSI YAC_CALL minBeginPathConcave (void);
-YF sSI YAC_CALL minBeginPathEvenOdd (void);
+YF sSI YAC_CALL minBeginPathComplex (void);
 YF void YAC_CALL minBeginImmediate (void);
 YF void YAC_CALL minEndImmediate (void);
 YF void YAC_CALL minEndPath (sBool _bClosed);
@@ -11684,12 +11725,14 @@ YF sSI YAC_CALL minBeginSubEx (sSI _pathType);
 YF sSI YAC_CALL minBeginSub (void);
 YF sSI YAC_CALL minBeginSubConvex (void);
 YF sSI YAC_CALL minBeginSubConcave (void);
-YF sSI YAC_CALL minBeginSubEvenOdd (void);
+YF sSI YAC_CALL minBeginSubComplex (void);
 YF void YAC_CALL minEndSub (sBool _bClosed);
 YF void YAC_CALL minEndSubOpen (void);
 YF void YAC_CALL minEndSubClosed (void);
 YF void YAC_CALL minStrokeWidth (sF32 _w);
 YF void YAC_CALL minFill (void);
+YF void YAC_CALL minFillRuleEvenOdd (void);
+YF void YAC_CALL minFillRuleNonZero (void);
 YF void YAC_CALL minMiterLimit (sF32 _l);
 YF void YAC_CALL minColor (sUI _c32);
 YF void YAC_CALL minColorFill (sUI _c32);
@@ -12126,24 +12169,24 @@ sBool minGetEnableRenderFillConcave(void) {
    return minnie::setup::getEnableRenderFillConcave();
 }
 
-/* @function minSetEnableRenderFillEvenOdd,boolean bEnable
+/* @function minSetEnableRenderFillComplex,boolean bEnable
 Enable or disable even-odd path rendering (debug)
 
 @groupref Debug
 @group Config
 */
-void minSetEnableRenderFillEvenOdd(sBool _bEnable) {
-   minnie::setup::setEnableRenderFillEvenOdd(_bEnable);
+void minSetEnableRenderFillComplex(sBool _bEnable) {
+   minnie::setup::setEnableRenderFillComplex(_bEnable);
 }
 
-/* @function minGetEnableRenderFillEvenOdd:boolean
+/* @function minGetEnableRenderFillComplex:boolean
 Query even-odd path rendering enable-state (debug)
 
 @groupref Debug
 @group Config
 */
-sBool minGetEnableRenderFillEvenOdd(void) {
-   return minnie::setup::getEnableRenderFillEvenOdd();
+sBool minGetEnableRenderFillComplex(void) {
+   return minnie::setup::getEnableRenderFillComplex();
 }
 
 /* @function minSetEnableEdgeAA,boolean bEnable
@@ -12206,44 +12249,44 @@ sUI minGetSwTesselateSizeThreshold(void) {
    return minnie::setup::getSwTesselateSizeThreshold();
 }
 
-/* @function minSetEnableForceConcaveEvenOdd,boolean bEnable
+/* @function minSetEnableForceConcaveComplex,boolean bEnable
 Force concave polygons to be rendered using the even-odd code paths
 
-@see minGetEnableForceConcaveEvenOdd
+@see minGetEnableForceConcaveComplex
 @group Config
 */
-void minSetEnableForceConcaveEvenOdd(sBool _bEnable) {
-   minnie::setup::setEnableForceConcaveEvenOdd(_bEnable);
+void minSetEnableForceConcaveComplex(sBool _bEnable) {
+   minnie::setup::setEnableForceConcaveComplex(_bEnable);
 }
 
-/* @function minGetEnableForceConcaveEvenOdd:boolean
+/* @function minGetEnableForceConcaveComplex:boolean
 Query concave-polygons-via-even-odd-code-path enable-state
 
-@see minSetEnableForceConcaveEvenOdd
+@see minSetEnableForceConcaveComplex
 @group Config
 */
-sBool minGetEnableForceConcaveEvenOdd(void) {
-   return minnie::setup::getEnableForceConcaveEvenOdd();
+sBool minGetEnableForceConcaveComplex(void) {
+   return minnie::setup::getEnableForceConcaveComplex();
 }
 
-/* @function minSetEnableForceEvenOddConcave,boolean bEnable
+/* @function minSetEnableForceComplexConcave,boolean bEnable
 Force enve-odd polygons to be rendered using the concave code paths
 
-@see minGetEnableForceEvenOddConcave
+@see minGetEnableForceComplexConcave
 @group Config
 */
-void minSetEnableForceEvenOddConcave(sBool _bEnable) {
-   minnie::setup::setEnableForceEvenOddConcave(_bEnable);
+void minSetEnableForceComplexConcave(sBool _bEnable) {
+   minnie::setup::setEnableForceComplexConcave(_bEnable);
 }
 
-/* @function minGetEnableForceEvenOddConcave:boolean
+/* @function minGetEnableForceComplexConcave:boolean
 Query concave-polygons-via-concave-code-path enable-state
 
-@see minSetEnableForceEvenOddConcave
+@see minSetEnableForceComplexConcave
 @group Config
 */
-sBool minGetEnableForceEvenOddConcave(void) {
-   return minnie::setup::getEnableForceEvenOddConcave();
+sBool minGetEnableForceComplexConcave(void) {
+   return minnie::setup::getEnableForceComplexConcave();
 }
 
 /* @function minSetEnableUniformColors,boolean bEnable
@@ -12712,18 +12755,18 @@ void minCircle(sF32 _r) {
 /* @function minBeginPathEx,int pathType:int
 Begin new path definition.
 
-@arg pathType See %MINNIE_PATH_TYPE_CONVEX, %MINNIE_PATH_TYPE_CONCAVE, %MINNIE_PATH_TYPE_EVENODD, %MINNIE_PATH_TYPE_IMMEDIATE
+@arg pathType See %MINNIE_PATH_TYPE_CONVEX, %MINNIE_PATH_TYPE_CONCAVE, %MINNIE_PATH_TYPE_COMPLEX, %MINNIE_PATH_TYPE_IMMEDIATE
 
 @return Path id
 
-@see minBeginPath, minBeginPathConvex, minBeginPathConcave, minBeginPathEvenOdd, minEndPath
+@see minBeginPath, minBeginPathConvex, minBeginPathConcave, minBeginPathComplex, minEndPath
 
 @group Path
 @groupref Element
 */
 sSI minBeginPathEx(sSI _pathType) {
    // begin new path declaration. returns path_idx or -1 (error)
-   //   pathType: MINNIE_PATH_TYPE_xxx (CONVEX|CONCAVE|EVENODD|IMMEDIATE)
+   //   pathType: MINNIE_PATH_TYPE_xxx (CONVEX|CONCAVE|COMPLEX|IMMEDIATE)
    if(minnie::setup::newPath(_pathType, "api"/*debugCmd*/, "apiPathBegin"/*debugName*/))
    {
       return sSI(minnie::setup::cur_path->path_idx);
@@ -12740,7 +12783,7 @@ Begin new Even-Odd path definition
 @groupref Element
 */
 sSI minBeginPath(void) {
-   return minBeginPathEx(MINNIE_PATH_TYPE_EVENODD);
+   return minBeginPathEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
 /* @function minBeginPathConvex:int
@@ -12767,7 +12810,7 @@ sSI minBeginPathConcave(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_CONCAVE);
 }
 
-/* @function minBeginPathEvenOdd:int
+/* @function minBeginPathComplex:int
 Begin new Even-Odd path definition
 @return Path id
 
@@ -12775,8 +12818,8 @@ Begin new Even-Odd path definition
 @group Path
 @groupref Element
 */
-sSI minBeginPathEvenOdd(void) {
-   return minBeginPathEx(MINNIE_PATH_TYPE_EVENODD);
+sSI minBeginPathComplex(void) {
+   return minBeginPathEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
 /* @function minBeginImmediate
@@ -12883,7 +12926,7 @@ Begin new Even-Odd sub-path definition
 @groupref Element
 */
 sSI minBeginSub(void) {
-   return minBeginSubEx(MINNIE_PATH_TYPE_EVENODD);
+   return minBeginSubEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
 /* @function minBeginSubConvex:int
@@ -12908,15 +12951,15 @@ sSI minBeginSubConcave(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_CONCAVE);
 }
 
-/* @function minBeginSubEvenOdd:int
+/* @function minBeginSubComplex:int
 Begin new Even-Odd sub-path definition
 @return Sub-path id
 
 @group Path
 @groupref Element
 */
-sSI minBeginSubEvenOdd(void) {
-   return minBeginSubEx(MINNIE_PATH_TYPE_EVENODD);
+sSI minBeginSubComplex(void) {
+   return minBeginSubEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
 /* @function minEndSub,boolean bClosed
@@ -12972,6 +13015,32 @@ Select fill mode for next path draw call
 */
 void minFill(void) {
    minnie::setup::cur_stroke_w = 0.0f;
+}
+
+/* @function minFillRuleEvenOdd
+Select even-odd fill rule
+
+@group Attrib
+@group Element
+@groupref Path
+@groupref Draw
+*/
+void minFillRuleEvenOdd(void) {
+   minnie::setup::cur_fillrule_nonzero = YAC_FALSE;
+   (void)minnie::setup::beginDrawListOp(MINNIE_DRAWOP_FILLRULE_EVENODD);
+}
+
+/* @function minFillRuleNonZero
+Select non-zero fill rule
+
+@group Attrib
+@group Element
+@groupref Path
+@groupref Draw
+*/
+void minFillRuleNonZero(void) {
+   minnie::setup::cur_fillrule_nonzero = YAC_TRUE;
+   (void)minnie::setup::beginDrawListOp(MINNIE_DRAWOP_FILLRULE_NONZERO);
 }
 
 /* @function minMiterLimit,float l

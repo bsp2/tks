@@ -499,6 +499,20 @@ Set fill color
 */
 YF void YAC_CALL sdvg_SetFillColorARGB (sUI _c32);
 
+/* @function sdvg_SetFillRuleEvenOdd
+Select even-odd fill rule
+
+@group Fill
+*/
+YF void YAC_CALL sdvg_SetFillRuleEvenOdd (void);
+
+/* @function sdvg_SetFillRuleNonZero
+Select non-zero fill rule
+
+@group Fill
+*/
+YF void YAC_CALL sdvg_SetFillRuleNonZero (void);
+
 /* @function sdvg_SetColor4f,float r,float g,float b,float a
 Set fill and stroke colors
 
@@ -1493,6 +1507,20 @@ Apply current paint.
 @groupref Paint
 */
 YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA,int byteOffset,int numVerts
+Render third pass of filled multipath n-polygon sub-path (14.2 fixed point format)
+
+Renders an anti-aliased, closed linestrip with (numVerts - 2) line segments. The last two points must equal the first two.
+
+Apply current paint.
+Note: Paint is not really applicable for self-intersecting polygons and should be set to 'solid' in that case.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA (sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_End
 Finish filled multipath n-polygon (14.2 fixed point format)
