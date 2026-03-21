@@ -5882,6 +5882,8 @@ namespace setup {
       //  +10 u16 numVertsBorder
       //  +12 u16 primTypeBorder (GL_TRIANGLE_FAN(0x0006) or GL_TRIANGLES(0x0004))
 
+      Ddebugprintf("[trc] minnie::setupRoundRectFillVBO32: sz=(%f; %f) r=(%f; %f) aaRange=%f\n", _sizeX, _sizeY, _radiusX, _radiusY, _aaRange);
+
       if(_radiusX > _sizeX)
          _radiusX = _sizeX;
 
@@ -6334,11 +6336,11 @@ namespace setup {
                Dexport_dl_f32(active_dl_ry);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
-               const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;
+               const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;  // (todo) Dsdvg_pixel_scl
                setupRoundRectFillVBO32(cxc, cyc,
                                        sxh + aaOff, syh + aaOff,
                                        active_dl_rx, active_dl_ry,
-                                       active_dl_aa_range
+                                       active_dl_aa_range  // (todo) Dsdvg_pixel_scl
                                        );
             }
             total_num_roundrects++;
@@ -6545,6 +6547,7 @@ namespace setup {
          active_dl_miter_limit  = cur_miter_limit;
          active_dl_paint_id     = cur_paint_id;
          active_dl_aa_range     = cur_aa_range;
+         Ddebugprintfv("[trc] beginDrawListOp: active_dl_aa_range=%f\n", active_dl_aa_range);
 
          return YAC_TRUE;
       }
@@ -6669,7 +6672,7 @@ namespace setup {
             break;
       }
 
-      if( MINNIE_LINECAP_ROUND == (curJoinCap >> 4) )
+      if( !_bClosed && MINNIE_LINECAP_ROUND == (curJoinCap >> 4) )
          active_dl_line_strip_flags |= MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP;
 
       return beginDrawListOp(op);
@@ -6707,6 +6710,7 @@ namespace setup {
          active_dl_sx           = _sx;
          active_dl_sy           = _sy;
          active_dl_paint_id     = cur_paint_id;
+         active_dl_aa_range     = cur_aa_range;
 
          return YAC_TRUE;
       }
@@ -6745,6 +6749,7 @@ namespace setup {
          active_dl_rx           = _rx;
          active_dl_ry           = _ry;
          active_dl_paint_id     = cur_paint_id;
+         active_dl_aa_range     = cur_aa_range;
 
          return YAC_TRUE;
       }
@@ -6784,9 +6789,11 @@ namespace setup {
          active_dl_cy           = cur_y;
          active_dl_sx           = _sx;
          active_dl_sy           = _sy;
-         active_dl_rx           = _rx;
-         active_dl_ry           = _ry;
+         active_dl_rx           = (_rx > _sx) ? _sx : _rx;
+         active_dl_ry           = (_ry > _sy) ? _sy : _ry;
+         /* Dprintf("xxx active_dl_r=(%f;%f) active_dl_s=(%f;%f)\n", active_dl_rx, active_dl_ry, active_dl_sx, active_dl_sy); */
          active_dl_paint_id     = cur_paint_id;
+         active_dl_aa_range     = cur_aa_range;
 
          return YAC_TRUE;
       }
