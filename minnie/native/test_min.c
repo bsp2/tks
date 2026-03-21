@@ -157,6 +157,7 @@ static const char *test_names[] = {
    "28: textured, flat shaded AA rectangles 200x200",
    "29: polygon even-odd",
    "30: polygon non-zero",
+   "31: flat shaded AA rectangles 200x200",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -757,7 +758,7 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 
 // ----------------------------------------------------------------------------
 static void Test_26(void) {
-   // arc stroke+pattern (WIP)
+   // arc stroke+pattern
 
    const sF32 vpSclX = VP_W / 454.0f;
    const sF32 vpSclY = VP_H / 454.0f;
@@ -780,7 +781,7 @@ static void Test_26(void) {
 
    minMoveTo(px*vpSclX, py*vpSclY);
 
-   float rot = 0;
+   sF32 rot = 0;
 
    minArcTo(rx*vpSclX, ry*vpSclY,
             rot,
@@ -798,6 +799,8 @@ static void Test_26(void) {
    minJoinBevel();
    minCapNone();
    minDrawPath(pid);
+
+   // (note) m2pro: ~391 kArcs/sec (CPU/script-limited)
 }
 
 // ----------------------------------------------------------------------------
@@ -809,7 +812,7 @@ static void Test_27(void) {
    minColor(0xffffffffu);
    minFill();
 
-   float aaBorder = 1.5f;
+   const sF32 aaBorder = 1.5f;
    minAARange(aaBorder);
    sF32 numPix = 0.0f;
 
@@ -884,7 +887,7 @@ static void Test_28(void) {
    minColor(0xffffffffu);
    minFill();
 
-   float aaBorder = 1.5f;
+   const sF32 aaBorder = 1.5f;
    minAARange(aaBorder);
    sF32 numPix = 0.0f;
 
@@ -917,6 +920,7 @@ static void Test_28(void) {
    if(0)
    {
       Dprintf("[trc] test_28: mpix=%3.2f\n", (numPix/1000000.0f));  // => 5.27
+      // (note) m2pro: 2135.47 fps * 5.27 mpix/frame = ~11254 mpix/sec (CPU/script-limited)
    }
 }
 
@@ -963,6 +967,43 @@ static void Test_29(sBool _bNonZero) { // 29+30
       minBindTexture(tex_gradient_id, YAC_TRUE/*bRepeat*/, b_tex_filter);
       minPaint(paintId);
       minDrawPath(pid);
+   }
+}
+
+// ----------------------------------------------------------------------------
+static void Test_31(void) {
+   // flat shaded AA rectangles 200x200
+
+   minColor(0x3fffffffu);
+   minFill();
+
+   const sF32 aaBorder = 1.5f;
+   minAARange(aaBorder);
+   sF32 numPix = 0.0f;
+
+   minBeginImmediate();
+
+   loc_rand_seed(0x9123db1au);
+   sF32 tx = sinf(anim_1) * 4.0f + 2.0f;
+   sF32 ty = cosf(anim_2) * 4.0f + 2.0f;
+   const sF32 w = 200.0f;
+   const sF32 h = 200.0f;
+   for(sUI i = 0u; i < 128u; i++)
+   {
+      sF32 px = loc_randf(VP_W - w - aaBorder) + tx;
+      sF32 py = loc_randf(VP_H - h - aaBorder) + ty;
+
+      minMoveTo(px, py);
+      numPix += (w+aaBorder*2.0f) * (h+aaBorder*2.0f);
+      minRect(w, h);
+   }
+
+   minEndImmediate();
+
+   if(0)
+   {
+      Dprintf("[trc] test_31: mpix=%3.2f\n", (numPix/1000000.0f));  // => 5.27
+      // (note) m2pro: 3439.97 fps * 5.27 mpix/frame = ~18129 mpix/sec
    }
 }
 
@@ -1039,6 +1080,7 @@ void hal_on_draw(void) {
          case 28: Test_28(); break;                          // textured, flat shaded AA rectangles 2
          case 29: Test_29(YAC_FALSE/*bNonZero*/); break;     // polygon even-odd
          case 30: Test_29(YAC_TRUE/*bNonZero*/); break;      // polygon non-zero
+         case 31: Test_31(); break;                          // flat shaded AA rectangles 200x200
       }
 
       minDrawableEnd(drawable);
