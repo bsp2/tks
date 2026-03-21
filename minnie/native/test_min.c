@@ -222,6 +222,8 @@ static void Test_00(void) {
 
    if(fill_mode & 1)
    {
+      // (note) should call minSetEnablePolygonAA(0) in production code
+      //         (outline will be overwritten by stroke rendering)
       minFill();
       minColor(0xff324f75u);
       minDrawPath(pid);
@@ -282,6 +284,8 @@ static void Test_01(void) {
 
    if(fill_mode & 1)
    {
+      // (note) should call minSetEnablePolygonAA(0) in production code
+      //         (outline will be overwritten by stroke rendering)
       minFill();
       minColor(0xff324f75u);
       minDrawPath(pid);
@@ -924,7 +928,10 @@ static void SelectTest(sSI _idx) {
 
 // ---------------------------------------------------------------------------- hal_on_draw
 void hal_on_draw(void) {
-   // trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw";
+   if(sdvg_GetEnableDebug())
+   {
+      Dprintf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw\n");
+   }
 
    sU32 ticks = hal_get_ticks();
    // Dprintf("xxx ticks=%u last_ticks=%u\n", ticks, last_ticks);
@@ -1008,7 +1015,7 @@ void hal_on_draw(void) {
 
       for(sUI iter = 0u; iter < num_iter; iter++)
       {
-         minDrawableSetEnableDebug(drawable, (0u == iter) && (0u == (num_frames_rendered & 255u)));
+         minDrawableSetEnableDebug(drawable, sdvg_GetEnableDebug() || ((0u == iter) && (0u == (num_frames_rendered & 255u))));
          minDrawableDraw(drawable);
       }
 
