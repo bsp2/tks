@@ -656,15 +656,15 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_199_begin_line_strip_bevel_aa_conic_closed
   
   ![screenhots](tests/screenshots/test_199_begin_line_strip_bevel_aa_conic_closed.png)
-- test_200_begin_polygon_evenodd.png
+- test_200_begin_polygon_evenodd
   
   ![screenhots](tests/screenshots/test_200_begin_polygon_evenodd.png)
-- test_201_begin_polygon_nonzero.png
+- test_201_begin_polygon_nonzero
   
   ![screenhots](tests/screenshots/test_201_begin_polygon_nonzero.png)
-- test_202_begin_polygon_evenodd_radial.png
+- test_202_begin_polygon_evenodd_radial
   
   ![screenhots](tests/screenshots/test_202_begin_polygon_evenodd_radial.png)
-- test_203_begin_polygon_nonzero_radial.png
+- test_203_begin_polygon_nonzero_radial
   
   ![screenhots](tests/screenshots/test_203_begin_polygon_nonzero_radial.png)

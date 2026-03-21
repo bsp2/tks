@@ -642,10 +642,10 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
   ![screenhots](../tkminnie/tests/screenshots/test_200_begin_polygon_evenodd.png)
 - test_201_begin_polygon_nonzero
   
-  ![screenhots](../tkminnie/tests/screenshots/test_201_begin_polygon_nonzero.png.png)
+  ![screenhots](../tkminnie/tests/screenshots/test_201_begin_polygon_nonzero.png)
 - test_202_begin_polygon_evenodd_radial
   
-  ![screenhots](../tkminnie/tests/tests/screenshots/test_202_begin_polygon_evenodd_radial.png)
+  ![screenhots](../tkminnie/tests/screenshots/test_202_begin_polygon_evenodd_radial.png)
 - test_203_begin_polygon_nonzero_radial
   
-  ![screenhots](../tkminnie/tests/tests/screenshots/test_203_begin_polygon_nonzero_radial.png)
+  ![screenhots](../tkminnie/tests/screenshots/test_203_begin_polygon_nonzero_radial.png)
