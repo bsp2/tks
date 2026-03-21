@@ -85,3 +85,9 @@
 - 28_textured_flat_shaded_AA_rectangles_200x200
   
   ![screenhots](28_textured_flat_shaded_AA_rectangles_200x200.png)
+- 29_polygon_even-odd
+  
+  ![screenhots](29_polygon_even-odd.png)
+- 30_polygon_non-zero
+  
+  ![screenhots](30_polygon_non-zero.png)
