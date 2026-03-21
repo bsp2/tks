@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 202 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 204 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -637,9 +637,15 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_199_begin_line_strip_bevel_aa_conic_closed
   
   ![screenhots](../tkminnie/tests/screenshots/test_199_begin_line_strip_bevel_aa_conic_closed.png)
-- test_200_begin_polygon_evenodd.png
+- test_200_begin_polygon_evenodd
   
   ![screenhots](../tkminnie/tests/screenshots/test_200_begin_polygon_evenodd.png)
-- test_201_begin_polygon_nonzero.png
+- test_201_begin_polygon_nonzero
   
   ![screenhots](../tkminnie/tests/screenshots/test_201_begin_polygon_nonzero.png.png)
+- test_202_begin_polygon_evenodd_radial
+  
+  ![screenhots](../tkminnie/tests/tests/screenshots/test_202_begin_polygon_evenodd_radial.png)
+- test_203_begin_polygon_nonzero_radial
+  
+  ![screenhots](../tkminnie/tests/tests/screenshots/test_203_begin_polygon_nonzero_radial.png)

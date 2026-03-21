@@ -289,8 +289,10 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_LINE_STRIP_BEVEL_AA_CONIC_CLOSED            199
 #define RENDER_BEGIN_POLYGON_EVENODD                             200
 #define RENDER_BEGIN_POLYGON_NONZERO                             201
+#define RENDER_BEGIN_POLYGON_EVENODD_RADIAL                      202
+#define RENDER_BEGIN_POLYGON_NONZERO_RADIAL                      203
 
-#define NUM_RENDER_MODES                                         202
+#define NUM_RENDER_MODES                                         204
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -504,6 +506,8 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 199 */ "begin_line_strip_bevel_aa_conic_closed",
    /* 200 */ "begin_polygon_evenodd",
    /* 201 */ "begin_polygon_nonzero",
+   /* 202 */ "begin_polygon_evenodd_radial",
+   /* 203 */ "begin_polygon_nonzero_radial",
 };
 
 static YAC_Buffer buf_vbo;
@@ -1970,6 +1974,15 @@ void SetupPaintRadial(void) {
    sF32 py = sinf(ang_h*2.0f)*(VP_H*0.5f) + (VP_H*0.5f);
 
    sdvg_PaintRadial(px, py, VP_W, VP_H);
+   sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+}
+
+void SetupPaintRadialCenter(void) {
+   // tests 202+203
+   sF32 px = sinf(ang_w*2.0f)*(VP_W*0.01f);
+   sF32 py = sinf(ang_h*2.0f)*(VP_H*0.01f);
+
+   sdvg_PaintRadial(px, py, VP_W*0.45, VP_H*0.45);
    sdvg_BindTexture2D(tex_gradient_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
 }
 
@@ -4751,6 +4764,16 @@ static void DrawTest(void) {
          break;
 
       case RENDER_BEGIN_POLYGON_NONZERO: // 201
+         TestBeginPolygonComplex(YAC_TRUE/*bNonZero*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_EVENODD_RADIAL: // 202
+         SetupPaintRadialCenter();
+         TestBeginPolygonComplex(YAC_FALSE/*bNonZero*/);
+         break;
+
+      case RENDER_BEGIN_POLYGON_NONZERO_RADIAL: // 203
+         SetupPaintRadialCenter();
          TestBeginPolygonComplex(YAC_TRUE/*bNonZero*/);
          break;
    }

@@ -604,3 +604,9 @@
 - test_201_begin_polygon_nonzero
   
   ![screenhots](test_201_begin_polygon_nonzero.png)
+- test_202_begin_polygon_evenodd_radial
+  
+  ![screenhots](test_202_begin_polygon_evenodd_radial.png)
+- test_203_begin_polygon_nonzero_radial
+  
+  ![screenhots](test_203_begin_polygon_nonzero_radial.png)
