@@ -797,7 +797,10 @@ static void Test_26(void) {
    minPaint(paintId);
    minColor(0xffffffffu);
    minJoinBevel();
-   minCapNone();
+   if(1)
+      minCapRound();
+   else
+      minCapNone();
    minDrawPath(pid);
 
    // (note) m2pro: ~391 kArcs/sec (CPU/script-limited)
