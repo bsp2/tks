@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 204 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 211 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -668,3 +668,24 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_203_begin_polygon_nonzero_radial
   
   ![screenhots](tests/screenshots/test_203_begin_polygon_nonzero_radial.png)
+- test_204_begin_points_round_aa_linear
+  
+  ![screenhots](tests/screenshots/test_204_begin_points_round_aa_linear.png)
+- test_205_begin_points_round_aa_radial
+  
+  ![screenhots](tests/screenshots/test_205_begin_points_round_aa_radial.png)
+- test_206_begin_points_round_aa_conic
+  
+  ![screenhots](tests/screenshots/test_206_begin_points_round_aa_conic.png)
+- test_207_begin_points_round_aa_pattern
+  
+  ![screenhots](tests/screenshots/test_207_begin_points_round_aa_pattern.png)
+- test_208_begin_points_round_aa_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_208_begin_points_round_aa_pattern_alpha.png)
+- test_209_begin_points_round_aa_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_209_begin_points_round_aa_pattern_decal.png)
+- test_210_begin_points_round_aa_pattern_decal_alpha
+  
+  ![screenhots](tests/screenshots/test_210_begin_points_round_aa_pattern_decal_alpha.png)

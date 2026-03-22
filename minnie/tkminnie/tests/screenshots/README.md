@@ -610,3 +610,24 @@
 - test_203_begin_polygon_nonzero_radial
   
   ![screenhots](test_203_begin_polygon_nonzero_radial.png)
+- test_204_begin_points_round_aa_linear
+  
+  ![screenhots](test_204_begin_points_round_aa_linear.png)
+- test_205_begin_points_round_aa_radial
+  
+  ![screenhots](test_205_begin_points_round_aa_radial.png)
+- test_206_begin_points_round_aa_conic
+  
+  ![screenhots](test_206_begin_points_round_aa_conic.png)
+- test_207_begin_points_round_aa_pattern
+  
+  ![screenhots](test_207_begin_points_round_aa_pattern.png)
+- test_208_begin_points_round_aa_pattern_alpha
+  
+  ![screenhots](test_208_begin_points_round_aa_pattern_alpha.png)
+- test_209_begin_points_round_aa_pattern_decal
+  
+  ![screenhots](test_209_begin_points_round_aa_pattern_decal.png)
+- test_210_begin_points_round_aa_pattern_decal_alpha
+  
+  ![screenhots](test_210_begin_points_round_aa_pattern_decal_alpha.png)
