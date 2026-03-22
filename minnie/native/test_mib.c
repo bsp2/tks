@@ -544,7 +544,7 @@ int main(int argc, char**argv) {
       minDrawableInit(drawable);
       if(!minDrawableAlloc(drawable,
                            6*1024*1024/*maxGLBufSize*/,
-                           32*1024/*maxDrawBufSize*/
+                           64*1024/*maxDrawBufSize*/
                            )
          )
       {
