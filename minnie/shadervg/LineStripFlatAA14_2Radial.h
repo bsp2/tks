@@ -31,7 +31,7 @@ class LineStripFlatAA14_2Radial : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform float u_stroke_w; \n"
-      "uniform vec2 u_paint_start; \n"
+      "uniform vec2  u_paint_start; \n"
       " \n"
       "ATTRIBUTE vec2  a_vertex; \n"
       "ATTRIBUTE vec2  a_vertex_n; \n"

@@ -110,7 +110,6 @@ class LineStripFlatAA14_2PatternDecal : public ShaderVG_Shape {
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(u_color_fill.r, a, u_color_fill.b, u_color_fill.a); \n"
-      "    FRAGCOLOR = cp; \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
