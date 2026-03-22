@@ -1,18 +1,18 @@
 // ----
 // ---- file   : minnie.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : Copyright 2020-2025 by Bastian Spiegel.
+// ---- legal  : Copyright 2020-2026 by Bastian Spiegel.
 // ----
 // ----           This program is free software; you can redistribute it and/or modify
 // ----           it under the terms of the GNU General Public License as published by
 // ----           the Free Software Foundation; either version 2 of the License, or
 // ----           (at your option) any later version.
-// ----       
+// ----
 // ----           This program is distributed in the hope that it will be useful,
 // ----           but WITHOUT ANY WARRANTY; without even the implied warranty of
 // ----           MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // ----           GNU General Public License for more details.
-// ----       
+// ----
 // ----           You should have received a copy of the GNU General Public License
 // ----           along with this program; if not, write to the Free Software
 // ----           Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -787,6 +787,30 @@ class DrawOpJoinCap : DrawOp {
 
          ofs.i8 = 0x0E;
          ofs.i8 = mode;
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpFillRule : DrawOp {
+   boolean b_nonzero;  // 0=even-odd  1=non-zero
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      if(b_nonzero)
+         _buf.append("nz\n");
+      else
+         _buf.append("eo\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(b_nonzero != _cstate.cur_nonzero)
+      {
+         _cstate.cur_nonzero = b_nonzero;
+
+         ofs.i8 = 0x0F;
+         ofs.i8 = b_nonzero;
       }
    }
 }
@@ -1974,7 +1998,7 @@ class Path {
    define int TYPE_DRAW      = 0;  // 0x84: no points / no tesselator (main draw list)
    define int TYPE_CONVEX    = 1;  // 0x84: no tesselator
    define int TYPE_CONCAVE   = 2;  // 0x85: (simple) ear-clipping tesselator
-   define int TYPE_HOLES     = 3;  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
+   define int TYPE_COMPLEX   = 3;  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
    define int TYPE_IMMEDIATE = 4;  // 0x8D: specialized render functions (rect, roundrect, ellipse, circle, ..)
 
    // https://www.w3.org/TR/SVG11/painting.html#StrokeLinecapProperty
@@ -2023,7 +2047,7 @@ class Path {
 
    public method tryConvertToPT() {
       // trace "xxx minnie::Path::tryConvertToPT: path_idx="+path_idx+" type="+type;
-      if(Path.TYPE_HOLES == type)
+      if(Path.TYPE_COMPLEX == type)
       {
          if(null == parent_path)
          {
@@ -2406,7 +2430,7 @@ class Path {
             ofs.i8 = 0x85;
             break;
 
-         case TYPE_HOLES:
+         case TYPE_COMPLEX:
             ofs.i8 = 0x87;
             break;
 
@@ -2450,6 +2474,7 @@ class RenderState {
    float        ideal_cur_y;
    float        cur_stroke_w;
    byte         cur_join_cap;
+   byte         cur_nonzero;
    int          cur_num_seg;
    float        cur_miter_limit;
    int          cur_clip2d_path_idx;
@@ -2471,6 +2496,7 @@ class RenderState {
       quant_cur_y         = 0.0f;
       cur_stroke_w        = 0;
       cur_join_cap        = Path.LINEJOIN_BEVEL | (Path.LINECAP_ROUND << 4);
+      cur_nonzero         = false;
       cur_num_seg         = 8;
       cur_miter_limit     = 32.0;
       cur_clip2d_path_idx = 0;
@@ -3360,6 +3386,15 @@ class Minnie {
    }
 
    // <method_parse.png>
+   public method parseFillRule(boolean _bNonZero) {
+      DrawOpFillRule op <= new DrawOpFillRule;
+      op.b_nonzero = _bNonZero;
+      cur_path.addDrawOp(deref op);
+      if(0 == cur_path.path_idx)
+         cstate.cur_nonzero = op.b_nonzero;
+   }
+
+   // <method_parse.png>
    public method parseMoveAbs() {
       DrawOpMoveAbs op <= new DrawOpMoveAbs;
       op.x = (((float(words.get(1)) + pre_tx) * scale_x) + post_tx);
@@ -3630,7 +3665,6 @@ class Minnie {
    // <method_parse.png>
    public method parsePath(boolean _type) {
       newPath(words.get(1), _type);
-
       // die "xxx def_path_seg="+def_path_seg;
 
       if( (Path.TYPE_IMMEDIATE != _type) && (def_path_seg >= 1) )
@@ -4770,6 +4804,16 @@ class Minnie {
                      parseJoinCap();
                      break;
 
+                  case "eo":
+                  case "even_odd":
+                     parseFillRule(false/*bNonZero*/);
+                     break;
+
+                  case "nz":
+                  case "non_zero":
+                     parseFillRule(true/*bNonZero*/);
+                     break;
+
                   case "ml":
                   case "miter_limit":
                      parseMiterLimit();
@@ -4868,7 +4912,7 @@ class Minnie {
                   case "ph":
                   case "path_vgtesselate":
                      // path with holes (requires SGI/VG tesselator)
-                     parsePath(Path.TYPE_HOLES);
+                     parsePath(Path.TYPE_COMPLEX);
                      break;
 
                   case "pi":
@@ -5242,6 +5286,14 @@ class Minnie {
          if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: joincap new="+_n.cur_join_cap;
       }
 
+      if(_n.cur_nonzero != _c.cur_nonzero)
+      {
+         DrawOpFillRule opFillRule <= new DrawOpFillRule;
+         opFillRule.b_nonzero = _n.cur_nonzero;
+         _drawOpsNew.add(#(deref opFillRule));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: nonzero new="+_n.cur_nonzero;
+      }
+
       if(_n.cur_num_seg != _c.cur_num_seg)
       {
          DrawOpNumSeg opNumSeg <= new DrawOpNumSeg;
@@ -5300,7 +5352,7 @@ class Minnie {
              (op instanceof DrawOpTransform2D) ||
              (op instanceof DrawOpTransform3D) ||
              (op instanceof DrawOpJoinCap)     ||
-             (op instanceof DrawOpJoinCap)     ||
+             (op instanceof DrawOpFillRule)    ||
              (op instanceof DrawOpMoveRel)     ||
              (op instanceof DrawOpMoveAbs)     ||
              (op instanceof DrawOpTarget)      ||
@@ -5391,7 +5443,7 @@ class Minnie {
          if(b_debug_paths)
          {
             numSub += p.sub_paths.numElements;
-            if(Path.TYPE_HOLES == p.type)
+            if(Path.TYPE_COMPLEX == p.type)
                numHoles += 1 + p.sub_paths.numElements;
             else if(Path.TYPE_CONCAVE == p.type)
                numConcave += 1 + p.sub_paths.numElements;

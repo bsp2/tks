@@ -10473,6 +10473,14 @@ namespace setup {
                }
                break;
 
+            case 0x0Fu:  // eo / nz
+               cur_fillrule_nonzero = ifs.getU8();
+               if(cur_fillrule_nonzero)
+                  beginDrawListOp(MINNIE_DRAWOP_FILLRULE_NONZERO);
+               else
+                  beginDrawListOp(MINNIE_DRAWOP_FILLRULE_EVENODD);
+               break;
+
             case 0x10u:
             case 0x11u:
             case 0x12u:

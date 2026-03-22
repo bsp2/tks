@@ -11,7 +11,7 @@
 // ----          04Jun2024, 05Jun2024, 07Jun2024, 08Jun2024, 09Jun2024, 10Jun2024, 11Jun2024
 // ----          05Jul2025, 06Jul2025, 12Jul2025, 01Aug2025, 02Aug2025, 03Aug2025, 04Aug2025
 // ----          05Aug2025, 08Aug2025, 09Aug2025, 10Aug2025, 11Aug2025, 16Aug2025, 17Aug2025
-// ----          24Aug2025, 01Sep2025, 07Sep2025
+// ----          24Aug2025, 01Sep2025, 07Sep2025, 22Mar2026
 // ----
 // ----
 // ----
@@ -126,6 +126,9 @@ StringArray tests = [
    "mib/test089_roundrect_fill_stroke.mib",  // see tkminnie/test.tks. not handled by this test script
    "mib/test090_roundrect_fill.mib",         // see tkminnie/test.tks. not handled by this test script
    "mib/test091_roundrect_stroke.mib",       // see tkminnie/test.tks. not handled by this test script
+   "mib/test092_linejoin_round.mib",         // see tkminnie/test.tks. not handled by this test script
+   "mib/test093_polygon_evenodd.mib",        // see tkminnie/test.tks. not handled by this test script
+   "mib/test094_polygon_nonzero.mib",        // see tkminnie/test.tks. not handled by this test script
                      ];
 
 int test_idx = -1;
@@ -291,7 +294,7 @@ class Path {
    define int TYPE_DRAW      = 0;  // 0x84: no points / no tesselator (main draw list)
    define int TYPE_CONVEX    = 1;  // 0x84: no tesselator
    define int TYPE_CONCAVE   = 2;  // 0x85: (simple) ear-clipping tesselator
-   define int TYPE_EVENODD   = 3;  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
+   define int TYPE_COMPLEX   = 3;  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
    define int TYPE_IMMEDIATE = 4;  // 0x8D: specialized render functions (rect, roundrect, ellipse, circle, ..)  (todo) render (only implemented in tkminnie for now)
 
    // https://www.w3.org/TR/SVG11/painting.html#StrokeLinecapProperty
@@ -1171,6 +1174,7 @@ class MinnieBin {
    short        cur_mask_idx;  // -1=none
    float        cur_stroke_w;
    byte         cur_join_cap;
+   byte         cur_nonzero;
    int          cur_num_seg;
    float        cur_miter_limit;
    Path        *cur_clip2d_path;
@@ -1219,6 +1223,7 @@ class MinnieBin {
       cur_pal_idx        = 1;
       cur_c32            = #FFffffff;
       cur_join_cap       = Path.LINEJOIN_BEVEL | (Path.LINECAP_ROUND << 4);
+      cur_nonzero        = false;
       cur_clip2d_path   <= null;
       b_cur_clip2d_pre   = false;
       // b_cur_clip_fb      = false;
@@ -3528,7 +3533,7 @@ class MinnieBin {
             // trace "xxx cur_stroke_w="+cur_stroke_w;
             if(0.0f == cur_stroke_w)
             {
-               if(Path.TYPE_EVENODD == p.type)
+               if(Path.TYPE_COMPLEX == p.type)
                {
                   if(null != cur_clip2d_path)
                   {
@@ -3589,7 +3594,7 @@ class MinnieBin {
             // transform 2d
             if(0.0f == cur_stroke_w)
             {
-               if(Path.TYPE_EVENODD == p.type)
+               if(Path.TYPE_COMPLEX == p.type)
                {
                   if(null != cur_clip2d_path)
                   {
@@ -3650,7 +3655,7 @@ class MinnieBin {
             // transform 3d
             if(0.0f == cur_stroke_w)
             {
-               if(Path.TYPE_EVENODD == p.type)
+               if(Path.TYPE_COMPLEX == p.type)
                {
                   if(b_cur_clip_3d)
                   {
@@ -3716,7 +3721,7 @@ class MinnieBin {
 
       // trace "xxx drawMultiPath: mode="+mode+" p.type="+p.type;
 
-      if(Path.TYPE_EVENODD != p.type || cur_stroke_w > 0.0f)
+      if(Path.TYPE_COMPLEX != p.type || cur_stroke_w > 0.0f)
       {
          if(b_debug_paths && !(p.sub_paths.isEmpty()))
             trace "[trc] drawMultiPath: p="+#(p)+" p.sub_paths="+#(p.sub_paths)+" mode="+mode;
@@ -4013,6 +4018,11 @@ class MinnieBin {
                      default:                  sCap <= "?";      break;
                   }
                   if(b_debug_op) trace "[dbg] h "+sJoin+" "+sCap;
+                  break;
+
+               case 0x0F:  // eo / nz
+                  cur_nonzero = ifs.u8;
+                  if(b_debug_op) trace "[dbg] "+(cur_nonzero?"nz":"eo");
                   break;
 
                case 0x10:
@@ -4383,7 +4393,7 @@ class MinnieBin {
 
                case 0x85:  // pt <idx>  (concave)
                   cur_path <= new Path;
-                  cur_path.init(paths.numElements/*pathIdx*/, b_force_convert_pt_to_ph ? Path.TYPE_EVENODD : Path.TYPE_CONCAVE);
+                  cur_path.init(paths.numElements/*pathIdx*/, b_force_convert_pt_to_ph ? Path.TYPE_COMPLEX : Path.TYPE_CONCAVE);
                   paths.add(#(deref cur_path));
                   last_parent_path <= cur_path;
                   sub_path_rel_idx = 0;  // (todo) REMOVE
@@ -4409,7 +4419,7 @@ class MinnieBin {
 
                case 0x87:  // ph <idx>  (holes)
                   cur_path <= new Path;
-                  cur_path.init(paths.numElements/*pathIdx*/, Path.TYPE_EVENODD);
+                  cur_path.init(paths.numElements/*pathIdx*/, Path.TYPE_COMPLEX);
                   paths.add(#(deref cur_path));
                   last_parent_path <= cur_path;
                   sub_path_rel_idx = 0;  // (todo) REMOVE
