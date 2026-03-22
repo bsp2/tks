@@ -10476,9 +10476,15 @@ namespace setup {
             case 0x0Fu:  // eo / nz
                cur_fillrule_nonzero = ifs.getU8();
                if(cur_fillrule_nonzero)
+               {
                   beginDrawListOp(MINNIE_DRAWOP_FILLRULE_NONZERO);
+                  if(b_debug_op) { Dprintf("[dbg] nz\n"); }
+               }
                else
+               {
                   beginDrawListOp(MINNIE_DRAWOP_FILLRULE_EVENODD);
+                  if(b_debug_op) { Dprintf("[dbg] eo\n"); }
+               }
                break;
 
             case 0x10u:
@@ -10852,8 +10858,19 @@ namespace setup {
                break;
 
             case 0x84u:  // p <idx>  (convex)
-               if(!newPath(MINNIE_PATH_TYPE_CONVEX, "p", "convex"))
-                  return YAC_FALSE;
+               if(b_polygon_aa)
+               {
+                  // force concave path when anti-aliasing is enabled
+                  //  (note) may considerably increase the number of draw calls (3 per path/polygon)
+                  //  (note) this could be optimized to two per path (+ skip stencil)
+                  if(!newPath(MINNIE_PATH_TYPE_CONCAVE, "pt", "concave"))
+                     return YAC_FALSE;
+               }
+               else
+               {
+                  if(!newPath(MINNIE_PATH_TYPE_CONVEX, "p", "convex"))
+                     return YAC_FALSE;
+               }
                break;
 
             case 0x85u:  // pt <idx>  (concave)
