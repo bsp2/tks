@@ -2876,7 +2876,7 @@ static void TestBeginLineStripBevelClosed(sBool _bAA) {
    }
 }
 
-// ---------------------------------------------------------------------------- TestBeginPolygonComplex (200+201)
+// ---------------------------------------------------------------------------- TestBeginPolygonComplex (200+201+202+203)
 static void TestBeginPolygonComplex(sBool _bNonZero) {
    if(_bNonZero)
       sdvg_SetFillRuleNonZero();
