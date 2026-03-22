@@ -236,6 +236,13 @@
 #include "PointsSquareGouraudAA14_2.h"
 #include "PointsRoundAA32.h"
 #include "PointsRoundAA14_2.h"
+#include "PointsRoundAA14_2Linear.h"
+#include "PointsRoundAA14_2Radial.h"
+#include "PointsRoundAA14_2Conic.h"
+#include "PointsRoundAA14_2Pattern.h"
+#include "PointsRoundAA14_2PatternAlpha.h"
+#include "PointsRoundAA14_2PatternDecal.h"
+#include "PointsRoundAA14_2PatternDecalAlpha.h"
 #include "PointsRoundGouraudAA32.h"
 #include "PointsRoundGouraudAA14_2.h"
 
@@ -423,6 +430,13 @@ static PointsSquareGouraudAA32                       points_square_gouraud_aa_32
 static PointsSquareGouraudAA14_2                     points_square_gouraud_aa_14_2;
 static PointsRoundAA32                               points_round_aa_32;
 static PointsRoundAA14_2                             points_round_aa_14_2;
+static PointsRoundAA14_2Linear                       points_round_aa_14_2_linear;
+static PointsRoundAA14_2Radial                       points_round_aa_14_2_radial;
+static PointsRoundAA14_2Conic                        points_round_aa_14_2_conic;
+static PointsRoundAA14_2Pattern                      points_round_aa_14_2_pattern;
+static PointsRoundAA14_2PatternAlpha                 points_round_aa_14_2_pattern_alpha;
+static PointsRoundAA14_2PatternDecal                 points_round_aa_14_2_pattern_decal;
+static PointsRoundAA14_2PatternDecalAlpha            points_round_aa_14_2_pattern_decal_alpha;
 static PointsRoundGouraudAA32                        points_round_gouraud_aa_32;
 static PointsRoundGouraudAA14_2                      points_round_gouraud_aa_14_2;
 
@@ -585,6 +599,13 @@ static ShaderVG_Shape *all_shapes[] = {
    &points_square_gouraud_aa_14_2,
    &points_round_aa_32,
    /*150*/&points_round_aa_14_2,
+   &points_round_aa_14_2_linear,
+   &points_round_aa_14_2_radial,
+   &points_round_aa_14_2_conic,
+   &points_round_aa_14_2_pattern,
+   &points_round_aa_14_2_pattern_alpha,
+   &points_round_aa_14_2_pattern_decal,
+   &points_round_aa_14_2_pattern_decal_alpha,
    &points_round_gouraud_aa_32,
    &points_round_gouraud_aa_14_2,
 };
@@ -1934,6 +1955,23 @@ static ShaderVG_Shape *loc_get_default_line_strip_flat_bevel_aa_uniform_shape_14
       case PAINT_PATTERN_ALPHA:       shape = &line_strip_flat_bevel_aa_14_2_pattern_alpha;       break;
       case PAINT_PATTERN_DECAL:       shape = &line_strip_flat_bevel_aa_14_2_pattern_decal;       break;
       case PAINT_PATTERN_DECAL_ALPHA: shape = &line_strip_flat_bevel_aa_14_2_pattern_decal_alpha; break;
+   }
+   return shape;
+}
+
+static ShaderVG_Shape *loc_get_default_points_round_aa_shape_14_2(sF32 *fillA, sF32 *strokeA) {
+   ShaderVG_Shape *shape;
+   switch(paint.mode)
+   {
+      default:
+      case PAINT_SOLID:               shape = &points_round_aa_14_2;                     break;
+      case PAINT_LINEAR:              shape = &points_round_aa_14_2_linear;              break;
+      case PAINT_RADIAL:              shape = &points_round_aa_14_2_radial;              break;
+      case PAINT_CONIC:               shape = &points_round_aa_14_2_conic;               break;
+      case PAINT_PATTERN:             shape = &points_round_aa_14_2_pattern;             break;
+      case PAINT_PATTERN_ALPHA:       shape = &points_round_aa_14_2_pattern_alpha;       break;
+      case PAINT_PATTERN_DECAL:       shape = &points_round_aa_14_2_pattern_decal;       *fillA = fill_a * global_a; *strokeA = stroke_a; break;
+      case PAINT_PATTERN_DECAL_ALPHA: shape = &points_round_aa_14_2_pattern_decal_alpha; *fillA = fill_a * global_a; *strokeA = stroke_a; break;
    }
    return shape;
 }
@@ -4777,14 +4815,20 @@ void YAC_CALL sdvg_DrawPointsRoundVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numP
    //   +2 s14.2 y
    //
    Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
-   points_round_aa_14_2.drawPointsRoundAAVBO14_2(_vboId,
-                                                 _byteOffset,
-                                                 _numPoints,
-                                                 mvp_matrix,
-                                                 stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                 Dsdvg_pixel_scl(point_radius * point_scale),
-                                                 SHADERVG_AA_RANGE_OFF
-                                                 );
+   sF32 fillA = fill_a;
+   sF32 strokeA = stroke_a * global_a;
+   ShaderVG_Shape *shape = loc_get_default_points_round_aa_shape_14_2(&fillA, &strokeA);
+   shape->drawPointsRoundAAVBO14_2Paint(_vboId,
+                                        _byteOffset,
+                                        _numPoints,
+                                        mvp_matrix,
+                                        fill_r,   fill_g,   fill_b,   fillA,
+                                        stroke_r, stroke_g, stroke_b, strokeA,
+                                        texture_decal_alpha,
+                                        Dsdvg_pixel_scl(point_radius * point_scale),
+                                        SHADERVG_AA_RANGE_OFF,
+                                        &paint
+                                        );
 }
 
 void YAC_CALL sdvg_DrawPointsRoundAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -4795,14 +4839,20 @@ void YAC_CALL sdvg_DrawPointsRoundAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _nu
    //
    const sF32 aaOff = b_aa ? Dsdvg_pixel_scl(SHADERVG_POINTS_AA_RADIUS_OFFSET) : 0.0f;
    Dsdvg_tracecallv("[trc] sdvg_DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u point_radius=%f (scaled=%f)\n", _vboId, _byteOffset, _numPoints, point_radius, Dsdvg_pixel_scl(point_radius));
-   points_round_aa_14_2.drawPointsRoundAAVBO14_2(_vboId,
-                                                 _byteOffset,
-                                                 _numPoints,
-                                                 mvp_matrix,
-                                                 stroke_r, stroke_g, stroke_b, stroke_a * global_a,
-                                                 Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
-                                                 b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF
-                                                 );
+   sF32 fillA = fill_a;
+   sF32 strokeA = stroke_a * global_a;
+   ShaderVG_Shape *shape = loc_get_default_points_round_aa_shape_14_2(&fillA, &strokeA);
+   shape->drawPointsRoundAAVBO14_2Paint(_vboId,
+                                        _byteOffset,
+                                        _numPoints,
+                                        mvp_matrix,
+                                        fill_r,   fill_g,   fill_b,   fillA,
+                                        stroke_r, stroke_g, stroke_b, strokeA,
+                                        texture_decal_alpha,
+                                        Dsdvg_pixel_scl(point_radius * point_scale) + aaOff,
+                                        b_aa ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF,
+                                        &paint
+                                        );
 }
 
 void YAC_CALL sdvg_DrawPointsRoundGouraudVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints) {
@@ -8537,7 +8587,11 @@ void YAC_CALL sdvg_End(void) {
                         const sF32 oldStrokeW = stroke_w;
                         const sF32 oldStrokeWScale = stroke_w_scale;
                         stroke_w_scale = 1.0f;
+#ifdef SHADERVG_USE_DEFAULT_POLYGON_14_2
+                        ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_14_2();
+#else
                         ShaderVG_Shape *shape = loc_get_default_line_strip_flat_aa_shape_32();
+#endif // SHADERVG_USE_DEFAULT_POLYGON_14_2
                         stroke_w = SHADERVG_POLYGON_AA_STROKE_W;
                         loc_DrawLineStripFlatAAVBOPaint(0u/*vboId*/,
                                                         shape,

@@ -2966,13 +2966,18 @@ VBO vertex format (4 bytes per vertex):<br>
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints points will be drawn).
 
+Apply current paint.
+
 @group Point
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawPointsRoundVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsRoundAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, round points (14.2 fixed point format)
+
+Apply current paint.
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
@@ -2982,6 +2987,7 @@ VBO vertex format (4 bytes per vertex):<br>
 
 @group Point
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawPointsRoundAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 

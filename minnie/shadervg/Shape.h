@@ -360,6 +360,18 @@ class ShaderVG_Shape {
                                     const shadervg_paint_t *_paint
                                     );
 
+   void drawPointsRoundAAVBO14_2Paint (sUI              _vboId,
+                                       sUI              _byteOffset,
+                                       sUI              _numPoints,
+                                       Dsdvg_mat4_ref_t _mvpMatrix,
+                                       sF32             _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
+                                       sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                       sF32             _decalAlpha,
+                                       sF32             _pointRadius,
+                                       sF32             _aaRange,
+                                       const shadervg_paint_t *_paint
+                                       );
+
 };
 
 
