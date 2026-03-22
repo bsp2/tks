@@ -64,7 +64,9 @@ class ShaderVG_Shape {
    sSI shape_u_last_instance;    // optional
    sSI shape_u_aa;               // optional
    sSI shape_u_aa_range;         // optional for non-AA shader
+#ifdef SHADERVG_AA_EXP
    sSI shape_u_aa_exp;           // optional
+#endif // SHADERVG_AA_EXP
    sSI shape_u_center;           // optional for non-AA shader
    sSI shape_u_size;             // optional
    sSI shape_u_size_i;           // optional
@@ -91,7 +93,9 @@ class ShaderVG_Shape {
    sSI shape_u_line_pattern_scl; // optional
    sSI shape_u_line_pattern_off; // optional
    sSI shape_u_line_miter_limit; // optional
+#ifdef SHADERVG_DEBUG_FRAG
    sSI shape_u_debug;            // optional
+#endif // SHADERVG_DEBUG_FRAG
    sSI shape_u_tex_0;            // optional
    sSI shape_u_tex_1;            // optional
    sSI shape_u_a_min;            // optional

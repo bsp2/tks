@@ -2,7 +2,7 @@
 // ---- file   : PointsSquareAA32.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2014-2025 by bsp
+// ----          Copyright 2014-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -71,7 +71,9 @@ class PointsSquareAA32 : public ShaderVG_Shape {
       "uniform vec4  u_color_stroke; \n"
       "uniform float u_point_radius; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
       " \n"
@@ -82,9 +84,11 @@ class PointsSquareAA32 : public ShaderVG_Shape {
       // aa
       "  float a = 1.0 - smoothstep(0.0, u_aa_range, d); \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(1.0, a, a, 1.0); \n"
       "  } \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
@@ -128,10 +132,12 @@ class PointsSquareAA32 : public ShaderVG_Shape {
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/,  8/*stride*/, _byteOffset + 0);
 

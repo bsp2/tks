@@ -89,7 +89,9 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       "uniform vec4  u_color_stroke; \n"
       "uniform float u_stroke_w; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       " \n"
       "VARYING_IN vec2 v_vertex_mp_1; \n"
       "VARYING_IN vec2 v_vertex_mp_2; \n"
@@ -107,9 +109,11 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       "  float a2 = smoothstep(0.0, u_aa_range, d2); \n"
       "  a *= a2; \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
@@ -156,10 +160,12 @@ class LinesFlatAA32 : public ShaderVG_Shape {
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 0);
       Dsdvg_attrib_offset(shape_a_vertex_n, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 16/*stride*/, _byteOffset + 8);

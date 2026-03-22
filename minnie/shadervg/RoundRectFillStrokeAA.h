@@ -57,10 +57,14 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
       "uniform float u_radius_i_max; \n"
       "uniform float u_radius_o_max; \n"
       "uniform float u_aa_range; \n"
+#ifdef SHADERVG_AA_EXP
       "uniform float u_aa_exp; \n"
+#endif // SHADERVG_AA_EXP
       "uniform vec4  u_color_fill; \n"
       "uniform vec4  u_color_stroke; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       " \n"
       "VARYING_IN vec2 v_p; \n"
       " \n"
@@ -117,18 +121,20 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
       "  float aI = aRectI * aRoundI; \n"
       "  float aO = aRectO * aRoundO; \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aI = pow(aI, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       "  vec4 color = mix(colorO, colorI, aI); \n"
       " \n"
-      "#if 1 \n"
+#ifdef SHADERVG_AA_EXP
       "  aO = pow(aO, u_aa_exp); \n"
-      "#endif \n"
+#endif // SHADERVG_AA_EXP
       " \n"
       "  FRAGCOLOR = vec4(color.xyz, color.a*aO); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) \n"
       "    FRAGCOLOR = vec4(1,0,0,1); \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
@@ -288,18 +294,22 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
          Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
          Dsdvg_uniform_1f(shape_u_aa_range,        _aaRange);
 
+#ifdef SHADERVG_AA_EXP
          if(-1 != shape_u_aa_exp)
          {
             Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
          }
+#endif // SHADERVG_AA_EXP
 
          Dsdvg_uniform_4f(shape_u_color_fill,   _fillR,   _fillG,   _fillB,   _fillA);
          Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
+#ifdef SHADERVG_DEBUG_FRAG
          if(-1 != shape_u_debug)
          {
             Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
          }
+#endif // SHADERVG_DEBUG_FRAG
 
          Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
          Dsdvg_attrib_enable(shape_a_vertex);
@@ -378,18 +388,22 @@ class RoundRectFillStrokeAA : public ShaderVG_Shape {
       Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
       Dsdvg_uniform_1f(shape_u_aa_range,        _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_fill,   _fillR, _fillG, _fillB, _fillA);
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       Dsdvg_attrib_enable(shape_a_vertex);
 

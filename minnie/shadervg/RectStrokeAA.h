@@ -183,17 +183,21 @@ class RectStrokeAA : public ShaderVG_Shape {
          Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
          Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
          if(-1 != shape_u_aa_exp)
          {
             Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
          }
+#endif // SHADERVG_AA_EXP
 
          Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
+#ifdef SHADERVG_DEBUG_FRAG
          if(-1 != shape_u_debug)
          {
             Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
          }
+#endif // SHADERVG_DEBUG_FRAG
 
          Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 0/*stride*/, _byteOffsetBorder);
 

@@ -2,7 +2,7 @@
 // ---- file   : LineStripPatternAA14_2.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
 // ---- legal  : Distributed under terms of the MIT license (https://opensource.org/licenses/MIT)
-// ----          Copyright 2025 by bsp
+// ----          Copyright 2025-2026 by bsp
 // ----
 // ----          Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // ----          associated documentation files (the "Software"), to deal in the Software without restriction, including
@@ -98,7 +98,9 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "uniform vec4      u_color_stroke; \n"
       "uniform float     u_stroke_w; \n"
       "uniform float     u_aa_range; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float     u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_sampler; \n"
       " \n"
       "VARYING_IN vec2 v_vertex_mp; \n"
@@ -110,9 +112,11 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       "  float a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
       "  } \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 
@@ -166,10 +170,12 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
       Dsdvg_uniform_1i(shape_u_sampler, 0);
       Dsdvg_uniform_1f(shape_u_line_pattern_scl, _linePatternScale * 0.25f);
       Dsdvg_uniform_1f(shape_u_line_pattern_off, _linePatternOffset);

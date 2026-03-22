@@ -84,7 +84,9 @@ class LineStripFlatAA14_2Linear : public ShaderVG_Shape {
       "uniform vec4      u_color_stroke; \n"
       "uniform float     u_stroke_w; \n"
       "uniform float     u_aa_range; \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "uniform float     u_debug; \n"
+#endif // SHADERVG_DEBUG_FRAG
       "uniform sampler2D u_paint_tex; \n"
       "uniform vec2      u_paint_ndir; \n"
       "uniform float     u_paint_ob_len; \n"
@@ -99,9 +101,11 @@ class LineStripFlatAA14_2Linear : public ShaderVG_Shape {
       "  float dp = dot(v_paint_pos, u_paint_ndir) * u_paint_ob_len; \n"
       "  vec4 cp = TEXTURE2D(u_paint_tex, vec2(dp, 0.0)); \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb * cp.rgb, u_color_stroke.a * cp.a * a); \n"
+#ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
       "    FRAGCOLOR = vec4(u_color_stroke.r, a, u_color_stroke.b, u_color_stroke.a); \n"
       "  } \n"
+#endif // SHADERVG_DEBUG_FRAG
       "} \n"
       ;
 

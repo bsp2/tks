@@ -427,7 +427,7 @@ static PointsRoundGouraudAA32                        points_round_gouraud_aa_32;
 static PointsRoundGouraudAA14_2                      points_round_gouraud_aa_14_2;
 
 static ShaderVG_Shape *all_shapes[] = {
-   &triangles_fill_flat_32,
+   /*0*/&triangles_fill_flat_32,
    &triangles_fill_flat_14_2,
    &triangles_fill_flat_uniform_32,
    &triangles_fill_flat_uniform_14_2,
@@ -437,7 +437,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_uniform_14_2_radial,
    &triangles_fill_flat_uniform_32_conic,
    &triangles_fill_flat_uniform_14_2_conic,
-   &triangles_fill_flat_uniform_32_pattern,
+   /*10*/&triangles_fill_flat_uniform_32_pattern,
    &triangles_fill_flat_uniform_14_2_pattern,
    &triangles_fill_flat_uniform_32_pattern_alpha,
    &triangles_fill_flat_uniform_14_2_pattern_alpha,
@@ -447,7 +447,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_fill_flat_uniform_14_2_pattern_decal_alpha,
    &triangles_fill_gouraud_32,
    &triangles_fill_gouraud_14_2,
-   &triangles_fill_gouraud_modulate_32,
+   /*20*/&triangles_fill_gouraud_modulate_32,
    &triangles_fill_gouraud_modulate_14_2,
    &triangles_fill_flat_edgeaa_32,
    &triangles_fill_flat_edgeaa_14_2,
@@ -457,7 +457,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_tex_uv_flat_14_2,
    &triangles_tex_uv_gouraud_32,
    &triangles_tex_uv_gouraud_14_2,
-   &triangles_tex_uv_flat_decal_32,
+   /*30*/&triangles_tex_uv_flat_decal_32,
    &triangles_tex_uv_flat_decal_14_2,
    &triangles_tex_uv_gouraud_decal_32,
    &triangles_tex_uv_gouraud_decal_14_2,
@@ -467,7 +467,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &triangles_tex_uv_gouraud_14_2_alpha,
    &triangles_tex_uv_flat_decal_32_alpha,
    &triangles_tex_uv_flat_decal_14_2_alpha,
-   &triangles_tex_uv_gouraud_decal_32_alpha,
+   /*40*/&triangles_tex_uv_gouraud_decal_32_alpha,
    &triangles_tex_uv_gouraud_decal_14_2_alpha,
    &triangles_tex_uv_flat_32_alpha_sdf,
    &triangles_tex_uv_flat_14_2_alpha_sdf,
@@ -483,7 +483,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_fill_aa_conic,
    &rect_fill_aa_pattern,
    &rect_fill_aa_pattern_alpha,
-   &rect_fill_aa_pattern_decal,
+   /*50*/&rect_fill_aa_pattern_decal,
    &rect_fill_aa_pattern_decal_alpha,
    &rect_stroke_aa,
    &rect_stroke_aa_linear,
@@ -493,7 +493,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &rect_stroke_aa_pattern_alpha,
    &rect_stroke_aa_pattern_decal,
    &rect_stroke_aa_pattern_decal_alpha,
-   &rect_fill_stroke_aa,
+   /*60*/&rect_fill_stroke_aa,
    &ellipse_fill_aa,
    &ellipse_fill_aa_linear,
    &ellipse_fill_aa_radial,
@@ -503,7 +503,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_fill_aa_pattern_decal,
    &ellipse_fill_aa_pattern_decal_alpha,
    &ellipse_stroke_aa,
-   &ellipse_stroke_aa_linear,
+   /*70*/&ellipse_stroke_aa_linear,
    &ellipse_stroke_aa_radial,
    &ellipse_stroke_aa_conic,
    &ellipse_stroke_aa_pattern,
@@ -513,7 +513,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &ellipse_fill_stroke_aa,
    &roundrect_fill_aa,
    &roundrect_fill_aa_linear,
-   &roundrect_fill_aa_radial,
+   /*80*/&roundrect_fill_aa_radial,
    &roundrect_fill_aa_conic,
    &roundrect_fill_aa_pattern,
    &roundrect_fill_aa_pattern_alpha,
@@ -523,7 +523,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &roundrect_stroke_aa_linear,
    &roundrect_stroke_aa_radial,
    &roundrect_stroke_aa_conic,
-   &roundrect_stroke_aa_pattern,
+   /*90*/&roundrect_stroke_aa_pattern,
    &roundrect_stroke_aa_pattern_alpha,
    &roundrect_stroke_aa_pattern_decal,
    &roundrect_stroke_aa_pattern_decal_alpha,
@@ -534,7 +534,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_aa_32,
    &line_strip_flat_aa_14_2,
    &line_strip_flat_aa_32_linear,
-   &line_strip_flat_aa_14_2_linear,
+   /*100*/&line_strip_flat_aa_14_2_linear,
    &line_strip_flat_aa_32_radial,
    &line_strip_flat_aa_14_2_radial,
    &line_strip_flat_aa_32_conic,
@@ -544,7 +544,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_aa_32_pattern_alpha,
    &line_strip_flat_aa_14_2_pattern_alpha,
    &line_strip_flat_aa_32_pattern_decal,
-   &line_strip_flat_aa_14_2_pattern_decal,
+   /*110*/&line_strip_flat_aa_14_2_pattern_decal,
    &line_strip_flat_aa_32_pattern_decal_alpha,
    &line_strip_flat_aa_14_2_pattern_decal_alpha,
    &line_strip_pattern_aa_32,
@@ -554,7 +554,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_bevel_aa_32,
    &line_strip_flat_bevel_aa_14_2,
    &line_strip_pattern_bevel_aa_32,
-   &line_strip_pattern_bevel_aa_14_2,
+   /*120*/&line_strip_pattern_bevel_aa_14_2,
    &line_strip_pattern_decal_bevel_aa_32,
    &line_strip_pattern_decal_bevel_aa_14_2,
    &line_strip_flat_bevel_aa_32_linear,
@@ -564,7 +564,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_bevel_aa_32_conic,
    &line_strip_flat_bevel_aa_14_2_conic,
    &line_strip_flat_bevel_aa_32_pattern,
-   &line_strip_flat_bevel_aa_14_2_pattern,
+   /*130*/&line_strip_flat_bevel_aa_14_2_pattern,
    &line_strip_flat_bevel_aa_32_pattern_alpha,
    &line_strip_flat_bevel_aa_14_2_pattern_alpha,
    &line_strip_flat_bevel_aa_32_pattern_decal,
@@ -574,7 +574,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &line_strip_flat_miter_aa_32,
    &line_strip_flat_miter_aa_14_2,
    &lines_flat_aa_32,
-   &lines_flat_aa_14_2,
+   /*140*/&lines_flat_aa_14_2,
    &lines_gouraud_aa_32,
    &lines_gouraud_aa_14_2,
    &lines_pattern_aa_32,
@@ -584,7 +584,7 @@ static ShaderVG_Shape *all_shapes[] = {
    &points_square_gouraud_aa_32,
    &points_square_gouraud_aa_14_2,
    &points_round_aa_32,
-   &points_round_aa_14_2,
+   /*150*/&points_round_aa_14_2,
    &points_round_gouraud_aa_32,
    &points_round_gouraud_aa_14_2,
 };
@@ -1971,11 +1971,13 @@ static sBool loc_UpdateShaderUniforms(void) {
          Dsdvg_uniform_1f(loc, texture_decal_alpha);
       }
 
+#ifdef SHADERVG_DEBUG_FRAG
       loc = current_shape->shape_u_debug;
       if(loc >= 0)
       {
          Dsdvg_uniform_1f(loc, ellipse_fill_aa.b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       loc = current_shape->shape_u_sampler;
       if(loc >= 0)
@@ -2093,10 +2095,13 @@ static void loc_DrawLineStripFlatAAVBOPaint(sUI _vboId,
    Dsdvg_uniform_1f(_shape->shape_u_stroke_w, Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff);
    Dsdvg_debugprintfv("[trc] sdvg:loc_DrawLineStripFlatAAVBOPaint: uni_stroke_w=%f stroke_w=%f stroke_w_scale=%f Dsdvg_pixel_scl=%f aaOff=%f\n", (Dsdvg_pixel_scl(stroke_w * stroke_w_scale) + aaOff), stroke_w, stroke_w_scale, Dsdvg_pixel_scl(1.0f), aaOff);
    Dsdvg_uniform_1f(_shape->shape_u_aa_range, _bAA ? Dsdvg_pixel_scl(aa_range) : SHADERVG_AA_RANGE_OFF);
+
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != _shape->shape_u_debug)
    {
       Dsdvg_uniform_1f(_shape->shape_u_debug, _shape->b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    if(PAINT_SOLID != paint.mode)
       _shape->updatePaintUniforms(&paint);

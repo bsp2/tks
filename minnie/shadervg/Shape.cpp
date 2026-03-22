@@ -65,7 +65,9 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_last_instance    = -1;
    shape_u_aa               = -1;
    shape_u_aa_range         = -1;
+#ifdef SHADERVG_AA_EXP
    shape_u_aa_exp           = -1;
+#endif // SHADERVG_AA_EXP
    shape_u_center           = -1;
    shape_u_size             = -1;
    shape_u_size_i           = -1;
@@ -92,7 +94,9 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_line_pattern_scl = -1;
    shape_u_line_pattern_off = -1;
    shape_u_line_miter_limit = -1;
+#ifdef SHADERVG_DEBUG_FRAG
    shape_u_debug            = -1;
+#endif // SHADERVG_DEBUG_FRAG
    shape_u_tex_0            = -1;
    shape_u_tex_1            = -1;
    shape_u_a_min            = -1;
@@ -550,7 +554,9 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_last_instance    = shape_shader.getUniformLocation("u_last_instance");     // optional
    shape_u_aa               = shape_shader.getUniformLocation("u_aa");                // optional
    shape_u_aa_range         = shape_shader.getUniformLocation("u_aa_range");          // optional for non-AA shader
+#ifdef SHADERVG_AA_EXP
    shape_u_aa_exp           = shape_shader.getUniformLocation("u_aa_exp");            // optional
+#endif // SHADERVG_AA_EXP
    shape_u_center           = shape_shader.getUniformLocation("u_center");            // optional for non-AA shader
    shape_u_size             = shape_shader.getUniformLocation("u_size");              // optional
    shape_u_size_i           = shape_shader.getUniformLocation("u_size_i");            // optional
@@ -577,7 +583,9 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_line_pattern_scl = shape_shader.getUniformLocation("u_line_pattern_scl");  // optional
    shape_u_line_pattern_off = shape_shader.getUniformLocation("u_line_pattern_off");  // optional
    shape_u_line_miter_limit = shape_shader.getUniformLocation("u_line_miter_limit");  // optional
+#ifdef SHADERVG_DEBUG_FRAG
    shape_u_debug            = shape_shader.getUniformLocation("u_debug");             // optional
+#endif // SHADERVG_DEBUG_FRAG
    shape_u_tex_0            = shape_shader.getUniformLocation("u_tex_0");             // optional
    shape_u_tex_1            = shape_shader.getUniformLocation("u_tex_1");             // optional
    shape_u_a_min            = shape_shader.getUniformLocation("u_a_min");             // optional
@@ -792,17 +800,21 @@ void ShaderVG_Shape::drawRectFillAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_2f(shape_u_size,     _sizeX, _sizeY);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       updatePaintUniforms(_paint);
 
@@ -876,10 +888,12 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_uniform_2f(shape_u_size,     _sizeX, _sizeY);
    Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
    if(-1 != shape_u_aa_exp)
    {
       Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
    }
+#endif // SHADERVG_AA_EXP
 
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
@@ -893,10 +907,12 @@ void ShaderVG_Shape::drawRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
    {
       Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    updatePaintUniforms(_paint);
 
@@ -957,17 +973,21 @@ void ShaderVG_Shape::drawRectStrokeAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       updatePaintUniforms(_paint);
 
@@ -1007,10 +1027,12 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_uniform_2f(shape_u_size_o,   _sizeX + _strokeW, _sizeY + _strokeW);
    Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
    if(-1 != shape_u_aa_exp)
    {
       Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
    }
+#endif // SHADERVG_AA_EXP
 
    if(-1 != shape_u_color_fill)
    {
@@ -1024,10 +1046,12 @@ void ShaderVG_Shape::drawRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
    {
       Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    updatePaintUniforms(_paint);
 
@@ -1102,17 +1126,21 @@ void ShaderVG_Shape::drawEllipseFillAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
       Dsdvg_uniform_1f(shape_u_aa_range,      _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       updatePaintUniforms(_paint);
 
@@ -1196,10 +1224,12 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_uniform_1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
    Dsdvg_uniform_1f(shape_u_aa_range,      _aaRange);
 
+#ifdef SHADERVG_AA_EXP
    if(-1 != shape_u_aa_exp)
    {
       Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
    }
+#endif // SHADERVG_AA_EXP
 
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
@@ -1213,10 +1243,12 @@ void ShaderVG_Shape::drawEllipseFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
    {
       Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    Dsdvg_attrib_enable(shape_a_vertex);
 
@@ -1316,17 +1348,21 @@ void ShaderVG_Shape::drawEllipseStrokeAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       updatePaintUniforms(_paint);
 
@@ -1395,10 +1431,12 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
    Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 
+#ifdef SHADERVG_AA_EXP
    if(-1 != shape_u_aa_exp)
    {
       Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
    }
+#endif // SHADERVG_AA_EXP
 
    if(-1 != shape_u_color_fill)
    {
@@ -1412,10 +1450,12 @@ void ShaderVG_Shape::drawEllipseStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
    {
       Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    updatePaintUniforms(_paint);
 
@@ -1511,17 +1551,21 @@ void ShaderVG_Shape::drawRoundRectFillAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
       Dsdvg_uniform_1f(shape_u_aa_range,      _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       updatePaintUniforms(_paint);
 
@@ -1593,10 +1637,12 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_uniform_1f(shape_u_radius_max,    (_radiusX > _radiusY) ? _radiusX : _radiusY);
    Dsdvg_uniform_1f(shape_u_aa_range,      _aaRange);
 
+#ifdef SHADERVG_AA_EXP
    if(-1 != shape_u_aa_exp)
    {
       Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
    }
+#endif // SHADERVG_AA_EXP
 
    Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
 
@@ -1610,10 +1656,12 @@ void ShaderVG_Shape::drawRoundRectFillAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
    {
       Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    updatePaintUniforms(_paint);
 
@@ -1692,17 +1740,21 @@ void ShaderVG_Shape::drawRoundRectStrokeAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
       Dsdvg_uniform_1f(shape_u_aa_range,         _aaRange);
 
+#ifdef SHADERVG_AA_EXP
       if(-1 != shape_u_aa_exp)
       {
          Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
       }
+#endif // SHADERVG_AA_EXP
 
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
 
+#ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
       {
          Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
       }
+#endif // SHADERVG_DEBUG_FRAG
 
       updatePaintUniforms(_paint);
 
@@ -1765,10 +1817,12 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_uniform_1f(shape_u_radius_o_max,    (radiusOx > radiusOy) ? radiusOx : radiusOy);
    Dsdvg_uniform_1f(shape_u_aa_range,        _aaRange);
 
+#ifdef SHADERVG_AA_EXP
    if(-1 != shape_u_aa_exp)
    {
       Dsdvg_uniform_1f(shape_u_aa_exp, _aaExp);
    }
+#endif // SHADERVG_AA_EXP
 
    if(-1 != shape_u_color_fill)
    {
@@ -1782,10 +1836,12 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
 
+#ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
    {
       Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
    }
+#endif // SHADERVG_DEBUG_FRAG
 
    updatePaintUniforms(_paint);
 
