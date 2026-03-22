@@ -456,6 +456,12 @@ typedef struct YAC_Buffer_s {
    void writeI8(sU8 _value) {
       if(io_offset < size)
          buffer[io_offset++] = (sU8)_value;
+#ifdef YAC_NATIVE_WARN_BUFFER_OOB
+      else
+      {
+         printf("[---] YAC_Buffer::writeI8: out of bounds (io_offset=%u size=%u)\n", io_offset, size);
+      }
+#endif // YAC_NATIVE_WARN_BUFFER_OOB
    }
 
    void writeI16(sU16 _value) {
@@ -469,6 +475,12 @@ typedef struct YAC_Buffer_s {
          buffer[io_offset++] = (sU8)(_value & 255u);
 #endif // YAC_LITTLE_ENDIAN
       }
+#ifdef YAC_NATIVE_WARN_BUFFER_OOB
+      else
+      {
+         printf("[---] YAC_Buffer::writeI16: out of bounds (io_offset=%u size=%u)\n", io_offset, size);
+      }
+#endif // YAC_NATIVE_WARN_BUFFER_OOB
    }
 
    void writeI32(sU32 _value) {
@@ -486,12 +498,12 @@ typedef struct YAC_Buffer_s {
          buffer[io_offset++] = (sU8)(_value & 255u);
 #endif // YAC_LITTLE_ENDIAN
       }
-#if 0
+#ifdef YAC_NATIVE_WARN_BUFFER_OOB
       else
       {
          printf("[---] YAC_Buffer::writeI32: out of bounds (io_offset=%u size=%u)\n", io_offset, size);
       }
-#endif
+#endif // YAC_NATIVE_WARN_BUFFER_OOB
    }
 
    void writeF32(sF32 _value) {
@@ -505,6 +517,12 @@ typedef struct YAC_Buffer_s {
          m.u8[3] = v.au8[3];
          io_offset += 4u;
       }
+#ifdef YAC_NATIVE_WARN_BUFFER_OOB
+      else
+      {
+         printf("[---] YAC_Buffer::writeF32: out of bounds (io_offset=%u size=%u)\n", io_offset, size);
+      }
+#endif // YAC_NATIVE_WARN_BUFFER_OOB
    }
 
    sU8 readI8(void) {
