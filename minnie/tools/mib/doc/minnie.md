@@ -1,15 +1,15 @@
 % minnie
 % bsp
-% 08-Jan-2026
+% 22-Mar-2026
 >>>
 04Jul2025, 05Jul2025, 06Jul2025, 12Jul2025, 13Jul2025, 02Aug2025, 03Aug2025
-04Aug2025, 16Aug2025, 17Aug2025, 08Jan2026
+04Aug2025, 16Aug2025, 17Aug2025, 08Jan2026, 22Mar2026
 <<<
 $(var:header)
 
 # About
 
-![]("../../../screenshots/minnie_017.png" "minnie" w=320)
+![]("screenshots/minnie_017.png" "minnie" w=320)
 
 `minnie` is a 2D / 2.5D vector graphics API with a simplified OpenVG / SVG like feature subset, distributed under terms of the [MIT license](https://opensource.org/license/mit).
 
@@ -127,7 +127,7 @@ c8 c8 14 0f ff 84 40 96 9f 77 d0 01 e0
 ~~~
 ] test079_minimal.mib
 <<<
-- example: $(buf!test079) => $(buf!test079bin) => ![]("../../../screenshots/gles_edgeaa_v01/minnie_079.png" "test079_minimal.min" w=320)
+- example: $(buf!test079) => $(buf!test079bin) => ![]("screenshots/gles_edgeaa_v01/minnie_079.png" "test079_minimal.min" w=320)
 
 
 ## Size-optimized binary stream format (.mib)
@@ -169,38 +169,38 @@ c8 c8 14 0f ff 84 40 96 9f 77 d0 01 e0
 ## Paths
       - path types
          - convex
-            - ![]("../../../screenshots/minnie_004_lores.png" "test004_fill.min" w=160) ![]("../../../screenshots/minnie_002_lores.png" "test002_fill.min" w=160)
+            - ![]("screenshots/minnie_004_lores.png" "test004_fill.min" w=160) ![]("screenshots/minnie_002_lores.png" "test002_fill.min" w=160)
          - concave
-            - ![]("../../../screenshots/minnie_005_lores.png" "test005_concave.min" w=160) ![]("../../../screenshots/minnie_013_lores.png" "test013_reverse.min" w=160)
+            - ![]("screenshots/minnie_005_lores.png" "test005_concave.min" w=160) ![]("screenshots/minnie_013_lores.png" "test013_reverse.min" w=160)
          - concave with holes
             - `HAVE_VGTESSELATE` build option (SGI tesselator that supports even-odd fill rule)
-            - ![]("../../../screenshots/minnie_035_lores.png" "test035_bicycle.min" w=160) ![]("../screenshots/minnie_046_lores.png" "test046_evenodd.min" w=160)
+            - ![]("screenshots/minnie_035_lores.png" "test035_bicycle.min" w=160) ![]("../screenshots/minnie_046_lores.png" "test046_evenodd.min" w=160)
       - sub paths
-         - ![]("../../../screenshots/minnie_032_lores.png" "test032_subpaths.min" w=160) ![]("../screenshots/minnie_048_lores.png" "test048_nano.min" w=160)
+         - ![]("screenshots/minnie_032_lores.png" "test032_subpaths.min" w=160) ![]("../screenshots/minnie_048_lores.png" "test048_nano.min" w=160)
       - per (sub-)path spline / arc / ellipse tesselation granularity
-         - ![]("../../../screenshots/minnie_018_lores.png" "test018_cake_aa.min" w=160)
+         - ![]("screenshots/minnie_018_lores.png" "test018_cake_aa.min" w=160)
       - open and closed paths
-         - ![]("../../../screenshots/minnie_007_lores.png" "test007_svg.min" w=160) ![]("../../../screenshots/minnie_033_lores.png" "test033_valentines.min" w=160)
+         - ![]("screenshots/minnie_007_lores.png" "test007_svg.min" w=160) ![]("screenshots/minnie_033_lores.png" "test033_valentines.min" w=160)
 
 ### Path elements
       - lines
-         - ![]("../../../screenshots/minnie_001_crop.png" "test001_lines.min" w=160)
+         - ![]("screenshots/minnie_001_crop.png" "test001_lines.min" w=160)
          - horizontal lines (`h` / `H` in SVG)
          - vertical lines (`v` / `V` in SVG)
       - rectangles
-         - ![]("../../../screenshots/minnie_000.png" "test000_rect.min" w=160)
+         - ![]("screenshots/minnie_000.png" "test000_rect.min" w=160)
       - rounded rectangles
-         - ![]("../../../screenshots/gles_edgeaa_v01/minnie_074.png" "test074_roundrect.min" w=160)
+         - ![]("screenshots/gles_edgeaa_v01/minnie_074.png" "test074_roundrect.min" w=160)
       - ellipses
-         - ![]("../../../screenshots/minnie_008_lores.png" "test008_ellipse.min" w=160)
+         - ![]("screenshots/minnie_008_lores.png" "test008_ellipse.min" w=160)
       - cubic and quadratic splines / bezier curves
       - mirrored cubic and quadratic splines
       - elliptic arcs
-         - ![]("../../../screenshots/minnie_039_lores.png" "test039_wildboard.min" w=160)
+         - ![]("screenshots/minnie_039_lores.png" "test039_wildboard.min" w=160)
 
 ### SVG paths
       - full support for SVG path definition syntax (`.min` format)
-         - ![]("../../../screenshots/minnie_036_lores.png" "test036_crab.min" w=160) ![]("../screenshots/minnie_040_hires.png" "test040_tiger.min" w=160) ![]("../../../screenshots/gles_edgeaa_v01/minnie_066.png" "test066_cat" w=160) ![]("../../../screenshots/gles_edgeaa_v01/minnie_069.png" "test069_bluejay" w=160)
+         - ![]("screenshots/minnie_036_lores.png" "test036_crab.min" w=160) ![]("../screenshots/minnie_040_hires.png" "test040_tiger.min" w=160) ![]("screenshots/gles_edgeaa_v01/minnie_066.png" "test066_cat" w=160) ![]("screenshots/gles_edgeaa_v01/minnie_069.png" "test069_bluejay" w=160)
 
 
 ## Path instancing
@@ -213,35 +213,36 @@ Each path instance can be assigned an individual stroke width and line join / ca
 
 ### No matrix transformation
       - simply translate to cursor position
-      - ![]("../../../screenshots/minnie_011_lores.png" "test011_cursor.min" w=160)
+      - ![]("screenshots/minnie_011_lores.png" "test011_cursor.min" w=160)
 
 ### 2D matrix transformation
       - apply 2D matrix (2x3)
       - translate to cursor position
-      - ![]("../../../screenshots/minnie_016_lores.png" "test016_aa.min" w=160)
+      - ![]("screenshots/minnie_016_lores.png" "test016_aa.min" w=160)
 
 ### 3D matrix transformation
       - apply projective 3D matrix (4x4)
       - translate to cursor position
-      - ![]("../../../screenshots/minnie_030_lores.png" "test030_minnie_3d.min" w=160)
+      - ![]("screenshots/minnie_030_lores.png" "test030_minnie_3d.min" w=160)
 
 ## Clipping
 
 ### Clip to framebuffer
-         - ![]("../../../screenshots/minnie_027_lores.png" "test027_clip2dfb.min" w=160) ![]("../../../screenshots/minnie_029_lores.png" "test029_3d.min" w=160)
+         - ![]("screenshots/minnie_027_lores.png" "test027_clip2dfb.min" w=160) ![]("screenshots/minnie_029_lores.png" "test029_3d.min" w=160)
 
 ### Clip to path
          - pre tesselation
-            - ![]("../../../screenshots/minnie_023_lores.png" "test023_clip2d.min" w=160)
+            - ![]("screenshots/minnie_023_lores.png" "test023_clip2d.min" w=160)
          - post tesselation
-            - ![]("../../../screenshots/minnie_024_lores.png" "test024_clip2d.min" w=160)
+            - ![]("screenshots/minnie_024_lores.png" "test024_clip2d.min" w=160)
 
 ## Filled and stroked rendering
       - color
       - stroke width
+      - fill rules (even-odd, non-zero)
       - butt, round, square line caps
       - miter, round, bevel line joins
-      - ![]("../../../screenshots/minnie_010_lores.png" "test010_d2d.min" w=160)
+      - ![]("screenshots/minnie_010_lores.png" "test010_d2d.min" w=160)
 >>>
 ![]("../screenshots/minnie_044_lores.png" "test044_linejoin_miterlimit.min" w=160) ![]("../screenshots/minnie_045_lores.png" "test045_linejoin.min" w=160) ![]("../screenshots/minnie_047_lores.png" "test047_shapes" w=160)
 <<<
@@ -251,7 +252,7 @@ Each path instance can be assigned an individual stroke width and line join / ca
 
 ## Stencil masking
 - stencil color
-- ![]("../../../screenshots/minnie_014_lores.png" "test014_mask.min" w=160)
+- ![]("screenshots/minnie_014_lores.png" "test014_mask.min" w=160)
 
 ## Framebuffers
 - implicit main framebuffer
@@ -309,8 +310,9 @@ The first byte in a `.mib` stream is the header byte (def=0x01)
 - join / cap byte follows (MSB4=join, LSB4=cap)
 
 ## 0x0F
-] RESVD
-- *RESVD*
+] eo / nz
+- select fill rule
+- fill rule byte follows (0=even-odd, 1=non-zero)
 
 ## 0x10 .. 0x1F
 ] i \<palIdx\> (0..15)
@@ -1014,7 +1016,7 @@ The first byte in a `.mib` stream is the header byte (def=0x01)
 <<<
    - portable to GPU-accelerated APIs
       - screenshots from OpenGL (ES) 2.0 edge-AA shader
-         - ![]("../../../screenshots/gles_edgeaa_v01/minnie_040-800x600-edgeaa.png" "test040_tiger.min" w=160) ![]("../../../screenshots/gles_edgeaa_v01/minnie_036.png" "test036_crab.min" w=160) ![]("../../../screenshots/gles_edgeaa_v01/minnie_046.png" "test046_evenodd.min" w=160) ![]("../../../screenshots/gles_edgeaa_v01/minnie_033.png" "test033_valentines.min" w=160) ![]("../../../screenshots/gles_edgeaa_v01/minnie_017.png" "test017_minnie.min" w=160)
+         - ![]("screenshots/gles_edgeaa_v01/minnie_040-800x600-edgeaa.png" "test040_tiger.min" w=160) ![]("screenshots/gles_edgeaa_v01/minnie_036.png" "test036_crab.min" w=160) ![]("screenshots/gles_edgeaa_v01/minnie_046.png" "test046_evenodd.min" w=160) ![]("screenshots/gles_edgeaa_v01/minnie_033.png" "test033_valentines.min" w=160) ![]("screenshots/gles_edgeaa_v01/minnie_017.png" "test017_minnie.min" w=160)
            - Ghostscript Tiger (@640x480) runs at..
               - 247 mio tris/sec (\~17240 fps) on a 1398MHz Apple M2pro GPU (19 cores * 16 execution units * 8 ALUs = 2432 ALUs)
               - 1195 mio tris/sec (\~83330 fps) on a 1582Mhz NVidia 1080 TI GPU (28 streaming multiprocessors * 128 cores = 3584 CUDA cores)
@@ -1103,6 +1105,11 @@ In addition, almost all of these render paths have dedicated FixPoint14:2 and Fl
 # GitHub
 - [TKS](https://github.com/bsp2/tks) (main repository)
 - [Minnie](https://github.com/bsp2/minnie) (standalone Minnie, copied from TKS repo)
+
+# Screenshot galleries
+- [low-level API](https://github.com/bsp2/tks/tree/main/minnie/tkminnie/tests/screenshots)
+- [high-level API](https://github.com/bsp2/tks/tree/main/minnie/tkminnie/tests/screenshots/min)
+- [MIB viewer](https://github.com/bsp2/tks/tree/main/minnie/tkminnie/tests/screenshots/mib)
 
 # License
 ~~~
