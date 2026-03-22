@@ -891,15 +891,18 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
          case MINNIE_DRAWOP_AA_RANGE:
             aaRange = Dstream_read_f32(_bufDraw);
             sdvg_SetAARange(aaRange);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: aa_range: aaRange=%f\n", aaRange);
             numOpsAARange++;
             break;
 
          case MINNIE_DRAWOP_FILLRULE_EVENODD:
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: fillrule-evenodd:\n");
             sdvg_SetFillRuleEvenOdd();
             numOpsFillRule++;
             break;
 
          case MINNIE_DRAWOP_FILLRULE_NONZERO:
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: fillrule-nonzero:\n");
             sdvg_SetFillRuleNonZero();
             numOpsFillRule++;
             break;
