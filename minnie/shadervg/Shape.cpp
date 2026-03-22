@@ -1877,6 +1877,63 @@ void ShaderVG_Shape::drawRoundRectStrokeAAPaint(Dsdvg_buffer_ref_t _scratchBuf,
    Dsdvg_attrib_disable(shape_a_vertex);
 }
 
+void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
+                                                 sUI              _byteOffset,
+                                                 sUI              _numPoints,
+                                                 Dsdvg_mat4_ref_t _mvpMatrix,
+                                                 sF32             _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
+                                                 sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                                 sF32             _decalAlpha,
+                                                 sF32             _pointRadius,
+                                                 sF32             _aaRange,
+                                                 const shadervg_paint_t *_paint
+                                                 ) {
+   //
+   // VBO vertex format (8 bytes per vertex):
+   //   +0 f32 x
+   //   +4 f32 y
+   //
+
+   // Dprintf("xxx drawPointsRoundAAVBO32Paint: vboId=%u byteOffset=%u numPoints=%u pointRadius=%f aaRange=%f\n", _vboId, _byteOffset, _numPoints, _pointRadius, _aaRange);
+
+   if(0u != _vboId)
+      sdvg_BindVBO(_vboId);
+
+   shape_shader.bind();
+
+   Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
+   if(shape_u_color_fill >= 0)
+   {
+      Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
+   }
+   Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+   if(-1 != shape_u_decal_alpha)
+   {
+      Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
+   }
+   Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
+   Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
+#ifdef SHADERVG_DEBUG_FRAG
+   if(-1 != shape_u_debug)
+   {
+      Dsdvg_uniform_1f(shape_u_debug, b_debug ? 1.0f : 0.0f);
+   }
+#endif // SHADERVG_DEBUG_FRAG
+
+   updatePaintUniforms(_paint);
+
+   Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT, GL_FALSE/*normalize*/, 8/*stride*/, _byteOffset);
+
+   Dsdvg_attrib_enable(shape_a_vertex);
+   Dsdvg_attrib_divisor(shape_a_vertex, 1);
+
+   const sUI numInstances = _numPoints;
+   Dsdvg_draw_triangles_instanced_vbo(6, numInstances);
+
+   Dsdvg_attrib_disable(shape_a_vertex);
+   Dsdvg_attrib_divisor_reset(shape_a_vertex);
+}
+
 void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
                                                    sUI              _byteOffset,
                                                    sUI              _numPoints,

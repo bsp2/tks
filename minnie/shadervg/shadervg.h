@@ -2924,6 +2924,8 @@ YF void YAC_CALL sdvg_DrawPointsSquareGouraudAAVBO14_2 (sUI _vboId, sUI _byteOff
 /* @function sdvg_DrawPointsRoundVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as round points (32 bit float format)
 
+Apply current paint.
+
 <pre>
 VBO vertex format (8 bytes per vertex):<br>
   +0 f32 x<br>
@@ -2936,11 +2938,14 @@ VBO vertex format (8 bytes per vertex):<br>
 
 @group Point
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawPointsRoundVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsRoundAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, round points (32 bit float format)
+
+Apply current paint.
 
 <pre>
 VBO vertex format (8 bytes per vertex):<br>
@@ -2950,6 +2955,7 @@ VBO vertex format (8 bytes per vertex):<br>
 
 @group Point
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawPointsRoundAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
