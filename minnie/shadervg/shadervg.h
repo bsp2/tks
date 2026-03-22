@@ -138,6 +138,11 @@ Must be called at the beginning of a new frame
 */
 YF void YAC_CALL sdvg_BeginFrame (void);
 
+/* @function sdvg_Flush
+Flush pending GL state changes and draw calls to GPU
+*/
+YF void YAC_CALL sdvg_Flush (void);
+
 /* @function sdvg_ReturnToGL
 Should be called before issueing OpenGL calls (unmaps / unbinds current VBO, unbind shader)
 */
@@ -191,6 +196,13 @@ Query current viewport height
 */
 YF sUI YAC_CALL sdvg_GetViewportHeight (void);
 
+/* @function sdvg_SetPixelScaling,float s
+Set pixel scaling for analytical anti-aliasing draw calls.
+
+This is only required in rare corner cases, i.e. when using non-pixel-based coordinate systems.
+*/
+YF void YAC_CALL sdvg_SetPixelScaling (sF32 _s);
+
 // -------- scissor --------
 /* @function sdvg_SetScissor,int x,int y,int w,int h
 Set current scissor clipping rectangle
@@ -236,11 +248,6 @@ Disable scissor test (clipping rectangle)
 @group Scissor
 */
 YF void YAC_CALL sdvg_DisableScissor (void);
-
-/* @function sdvg_Flush
-Flush pending GL state changes and draw calls to GPU
-*/
-YF void YAC_CALL sdvg_Flush (void);
 
 // -------- transform --------
 /* @function sdvg_SetTransform,Matrix4f mat4
@@ -647,13 +654,6 @@ Set AA point size scaling factor.
 @group Point
 */
 YF void YAC_CALL sdvg_SetPointScale (sF32 _scale);
-
-/* @function sdvg_SetPixelScaling,float s
-Set pixel scaling for analytical anti-aliasing draw calls.
-
-This is only required in rare corner cases, i.e. when using non-pixel-based coordinate systems.
-*/
-YF void YAC_CALL sdvg_SetPixelScaling (sF32 _s);
 
 /* @function sdvg_SetStrokeColor4f,float strokeR,float strokeG,float strokeB, float strokeA
 Set stroke color (normalized floats)
@@ -3077,7 +3077,8 @@ VBO vertex format (8 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-// ----------- custom shaders and (scratch) draw functions ------------
+// ----------- custom shaders ------------
+
 /* @function sdvg_CreateShader,String vs,String fs:int
 Create user-defined shader program
 
@@ -3188,7 +3189,7 @@ YF void YAC_CALL _sdvg_Uniform4f (YAC_String *_name, sF32 _f1, sF32 _f2, sF32 _f
 YF void YAC_CALL _sdvg_Uniform1i (YAC_String *_name, sSI _i);
 #endif // SHADERVG_SCRIPT_API
 
-// -------- (high level) draw functions --------
+// -------- paint --------
 
 /* @function sdvg_PaintSolid
 Select solid paint
@@ -3319,6 +3320,8 @@ The currently bound texture is used as the alpha channel pattern.
 @group Decal
 */
 YF void YAC_CALL sdvg_PaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _sizeX, sF32 _sizeY);
+
+// ----------- (scratchbuffer) draw functions ------------
 
 /* @function sdvg_BeginVBO,int numVertices,int stride:boolean
 Begin preparation of mapped vertex buffer
@@ -4664,7 +4667,7 @@ Finalize vertex buffer and start rendering (unless buffer is currently mapped).
 */
 YF void YAC_CALL sdvg_End (void);
 
-// ----------- additional (scratch) draw functions ------------
+// ----------- additional (scratchbuffer) draw functions ------------
 /* @function sdvg_DrawFilledRectangle,float x,float y,float w,float h
 Render a filled rectangle via scratch buffer
 
@@ -4790,7 +4793,7 @@ Tint color
 
 @group Color
 */
-sU32 sdvg_TintRGBAlpha (sU32 _x, sU32 _y, sU8 _a8);
+sU32 YAC_CALL sdvg_TintRGBAlpha (sU32 _x, sU32 _y, sU8 _a8);
 
 /* @function sdvg_RGBAlpha,int c32,byte a8:int
 Replace alpha channel of packed ARGB32 color
@@ -4802,7 +4805,7 @@ Replace alpha channel of packed ARGB32 color
 
 @group Color
 */
-sU32 sdvg_RGBAlpha (sU32 _c32, sU8 _a8);
+sU32 YAC_CALL sdvg_RGBAlpha (sU32 _c32, sU8 _a8);
 
 /* @function sdvg_HSVAToARGB,float h,float s,float v,byte a8:int
 Convert hue / saturation / value / alpha into packed ARGB32 color
@@ -4816,7 +4819,7 @@ Convert hue / saturation / value / alpha into packed ARGB32 color
 
 @group Color
 */
-sU32 sdvg_HSVAToARGB (sF32 _h, sF32 _s, sF32 _v, sU8 _a8);
+sU32 YAC_CALL sdvg_HSVAToARGB (sF32 _h, sF32 _s, sF32 _v, sU8 _a8);
 
 /* @function sdvg_ARGBToHSVA,int c32,Float retH,Float retS,Float retV:byte
 Split packed ARGB32 color into hue / saturation / value / alpha components
@@ -4830,7 +4833,7 @@ Split packed ARGB32 color into hue / saturation / value / alpha components
 
 @group Color
 */
-sU8 sdvg_ARGBToHSVA (sU32 _c32, sF32 *_retH, sF32 *_retS, sF32 *_retV);
+sU8 YAC_CALL sdvg_ARGBToHSVA (sU32 _c32, sF32 *_retH, sF32 *_retS, sF32 *_retV);
 
 /* @function sdvg_GradientToTexture,Texture dst,IntArray colors,IntArray starts
 Convert gradient (colors + start positions) to ARGB32 texture.

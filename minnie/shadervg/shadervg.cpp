@@ -5485,6 +5485,10 @@ sUI YAC_CALL sdvg_GetViewportHeight(void) {
    return sUI(viewport_h);
 }
 
+void YAC_CALL sdvg_SetPixelScaling(sF32 _s) {
+   sdvg_pixel_scl = _s;
+}
+
 void YAC_CALL sdvg_SetScissor(sUI _x, sUI _y, sUI _w, sUI _h) {
 
    // (note) (0;0) = left/top  =>  (0;0) = left/bottom (GL)
@@ -6020,10 +6024,6 @@ void YAC_CALL sdvg_SetPointSize(sF32 _size) {
 
 void YAC_CALL sdvg_SetPointScale(sF32 _scale) {
    point_scale = _scale;
-}
-
-void YAC_CALL sdvg_SetPixelScaling(sF32 _s) {
-   sdvg_pixel_scl = _s;
 }
 
 void YAC_CALL sdvg_Clear4f(sF32 _r, sF32 _g, sF32 _b, sF32 _a) {
