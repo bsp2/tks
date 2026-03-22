@@ -291,8 +291,15 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_POLYGON_NONZERO                             201
 #define RENDER_BEGIN_POLYGON_EVENODD_RADIAL                      202
 #define RENDER_BEGIN_POLYGON_NONZERO_RADIAL                      203
+#define RENDER_BEGIN_POINTS_ROUND_AA_LINEAR                      204
+#define RENDER_BEGIN_POINTS_ROUND_AA_RADIAL                      205
+#define RENDER_BEGIN_POINTS_ROUND_AA_CONIC                       206
+#define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN                     207
+#define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_ALPHA               208
+#define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_DECAL               209
+#define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_DECAL_ALPHA         210
 
-#define NUM_RENDER_MODES                                         204
+#define NUM_RENDER_MODES                                         211
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -508,6 +515,13 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 201 */ "begin_polygon_nonzero",
    /* 202 */ "begin_polygon_evenodd_radial",
    /* 203 */ "begin_polygon_nonzero_radial",
+   /* 204 */ "begin_points_round_aa_linear",
+   /* 205 */ "begin_points_round_aa_radial",
+   /* 206 */ "begin_points_round_aa_conic",
+   /* 207 */ "begin_points_round_aa_pattern",
+   /* 208 */ "begin_points_round_aa_pattern_alpha",
+   /* 209 */ "begin_points_round_aa_pattern_decal",
+   /* 210 */ "begin_points_round_aa_pattern_decal_alpha",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2909,6 +2923,32 @@ static void TestBeginPolygonComplex(sBool _bNonZero) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginPointsRoundSpiral (204..210)
+static void TestBeginPointsRoundSpiral(sBool _bAA) {
+   sdvg_SetPointRadius(stroke_w * 2.0f);
+   sUI numPoints = 128u;
+   sF32 w = ((sM_2PIf * (3.0f + (2.0f * sinf(ang_y*0.0625f) + 2.0f))) / numPoints);
+   sF32 a = ang_x * 0.5f;
+   if(_bAA
+      ? sdvg_BeginPointsRoundAA(numPoints)
+      : sdvg_BeginPointsRound(numPoints)
+      )
+   {
+      sF32 d = 30.0f;
+      sF32 dw = 170.0f / numPoints;
+      for(sUI i = 0u; i < numPoints; i++)
+      {
+         sF32 x = sinf(a) * d + (VP_W*0.5f);
+         sF32 y = cosf(a) * d + (VP_H*0.5f);
+         sdvg_Vertex2f(x, y);
+
+         a += w;
+         d += dw;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- SelectRenderMode
 static void SelectRenderMode(sSI _mode) {
    render_mode = _mode;
@@ -4776,6 +4816,44 @@ static void DrawTest(void) {
          SetupPaintRadialCenter();
          TestBeginPolygonComplex(YAC_TRUE/*bNonZero*/);
          break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_LINEAR: // 204
+         SetupPaintLinear();
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_RADIAL: // 205
+         SetupPaintRadial();
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_CONIC: // 206
+         SetupPaintConic();
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_PATTERN: // 207
+         SetupPaintPattern();
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_ALPHA: // 208
+         SetupPaintPatternAlpha();
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_DECAL: // 209
+         SetupPaintPatternDecal();
+         sdvg_SetColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_DECAL_ALPHA: // 210
+         SetupPaintPatternDecalAlpha();
+         sdvg_SetFillColorARGB(0x1c3976u | (((sUI)(fill_alpha*255))<<24));
+         sdvg_SetStrokeColorARGB(0xffffffu | (((sUI)(fill_alpha*255))<<24));
+         TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
+         break;
    }
 }
 
@@ -4853,10 +4931,10 @@ void hal_on_draw(void) {
    {
       ang_x += dt * spd * 0.03f;
       ang_y += dt * spd * 0.02634f;
-      if(ang_x >= 2*sM_2PIf)
-         ang_x -= 2*sM_2PIf;
-      if(ang_y >= 2*sM_2PIf)
-         ang_y -= 2*sM_2PIf;
+      if(ang_x >= 16*sM_2PIf)
+         ang_x -= 16*sM_2PIf;
+      if(ang_y >= 16*sM_2PIf)
+         ang_y -= 16*sM_2PIf;
    }
 
    if(b_anim_whc)
