@@ -172,3 +172,9 @@
 - minnievg_092
   
   ![screenhots](minnievg_092.png)
+- minnievg_093
+  
+  ![screenhots](minnievg_093.png)
+- minnievg_094
+  
+  ![screenhots](minnievg_094.png)

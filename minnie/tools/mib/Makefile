@@ -104,7 +104,9 @@ ALL_MIB= \
    mib/test089_roundrect_fill_stroke.mib \
    mib/test090_roundrect_fill.mib \
    mib/test091_roundrect_stroke.mib \
-   mib/test092_linejoin_round.mib
+   mib/test092_linejoin_round.mib \
+   mib/test093_polygon_evenodd.mib \
+   mib/test094_polygon_nonzero.mib
 
 
 # (note) paths are reversed when (SW-)AA is enabled
@@ -207,4 +209,6 @@ debug:
 #	rm mib/test089_roundrect_fill_stroke.mib; make mib/test089_roundrect_fill_stroke.mib #; tks draw 89
 #	rm mib/test090_roundrect_fill.mib; make mib/test090_roundrect_fill.mib #; tks draw 90
 #	rm mib/test091_roundrect_stroke.mib; make mib/test091_roundrect_stroke.mib #; tks draw 91
-	rm mib/test092_linejoin_round.mib; make mib/test092_linejoin_round.mib ; tks draw 92
+#	rm mib/test092_linejoin_round.mib; make mib/test092_linejoin_round.mib ; tks draw 92
+#	rm mib/test093_polygon_evenodd.mib; make mib/test093_polygon_evenodd.mib ; tks draw 93
+	rm mib/test094_polygon_nonzero.mib; make mib/test094_polygon_nonzero.mib ; tks draw 94
