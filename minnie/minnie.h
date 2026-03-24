@@ -220,65 +220,75 @@ typedef int             sBool;
 #define Dexport_dl_vboffset32() Dstream_write_i32(minnie::setup::loc_dl_export_ofs, Dexport_vb_get_offset())
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ draw ops
-#define MINNIE_DRAWOP_END                                      0x00
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32           0x01
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2         0x02
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32                   0x03
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2                 0x04
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32                0x05
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2              0x06
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32            0x07
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2          0x08
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32         0x09
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2       0x0A
-#define MINNIE_DRAWOP_POLYGON_FIRST                            0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32             0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2           0x0C
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA          0x0D
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA        0x0E
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN     0x0F
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB       0x10
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA    0x11
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END       0x12
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA    0x13
-#define MINNIE_DRAWOP_POLYGON_LAST                             0x13
-#define MINNIE_DRAWOP_RECT_FILL                                0x14
-#define MINNIE_DRAWOP_RECT_STROKE                              0x15
-#define MINNIE_DRAWOP_RECT_FILL_STROKE                         0x16
-#define MINNIE_DRAWOP_ELLIPSE_FILL                             0x17
-#define MINNIE_DRAWOP_ELLIPSE_STROKE                           0x18
-#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                      0x19
-#define MINNIE_DRAWOP_ROUNDRECT_FILL                           0x1A
-#define MINNIE_DRAWOP_ROUNDRECT_STROKE                         0x1B
-#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                    0x1C
-#define MINNIE_DRAWOP_BIND_TEXTURE                             0x1D
-#define MINNIE_DRAWOP_UNBIND_TEXTURE                           0x1E
-#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                      0x1F
-#define MINNIE_DRAWOP_PAINT_SOLID                              0x20
-#define MINNIE_DRAWOP_PAINT_LINEAR                             0x21
-#define MINNIE_DRAWOP_PAINT_RADIAL                             0x22
-#define MINNIE_DRAWOP_PAINT_CONIC                              0x23
-#define MINNIE_DRAWOP_PAINT_PATTERN                            0x24
-#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                      0x25
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                      0x26
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA                0x27
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32                 0x28
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32           0x29
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32              0x2A
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32        0x2B
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                     0x2C
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2               0x2D
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2               0x2E
-#define MINNIE_DRAWOP_AA_RANGE                                 0x2F
-#define MINNIE_DRAWOP_FILLRULE_EVENODD                         0x30
-#define MINNIE_DRAWOP_FILLRULE_NONZERO                         0x31
+#define MINNIE_DRAWOP_END                                    0x00
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32         0x01
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2       0x02
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32                 0x03
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2               0x04
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32              0x05
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2            0x06
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32          0x07
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2        0x08
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32       0x09
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2     0x0A
+#define MINNIE_DRAWOP_POLYGON_FIRST                          0x0B
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32           0x0B
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2         0x0C
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA        0x0D
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA      0x0E
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN   0x0F
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB     0x10
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA  0x11
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END     0x12
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA  0x13
+#define MINNIE_DRAWOP_POLYGON_LAST                           0x13
+#define MINNIE_DRAWOP_RECT_FILL                              0x14
+#define MINNIE_DRAWOP_RECT_STROKE                            0x15
+#define MINNIE_DRAWOP_RECT_FILL_STROKE                       0x16
+#define MINNIE_DRAWOP_ELLIPSE_FILL                           0x17
+#define MINNIE_DRAWOP_ELLIPSE_STROKE                         0x18
+#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                    0x19
+#define MINNIE_DRAWOP_ROUNDRECT_FILL                         0x1A
+#define MINNIE_DRAWOP_ROUNDRECT_STROKE                       0x1B
+#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                  0x1C
+#define MINNIE_DRAWOP_BIND_TEXTURE                           0x1D
+#define MINNIE_DRAWOP_UNBIND_TEXTURE                         0x1E
+#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                    0x1F
+#define MINNIE_DRAWOP_PAINT_SOLID                            0x20
+#define MINNIE_DRAWOP_PAINT_LINEAR                           0x21
+#define MINNIE_DRAWOP_PAINT_RADIAL                           0x22
+#define MINNIE_DRAWOP_PAINT_CONIC                            0x23
+#define MINNIE_DRAWOP_PAINT_PATTERN                          0x24
+#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                    0x25
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                    0x26
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA              0x27
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32               0x28
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32         0x29
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32            0x2A
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32      0x2B
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_32                     0x2C
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                   0x2D
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_32                  0x2E
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2                0x2F
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32               0x30
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2             0x31
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32            0x32
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2          0x33
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2             0x34
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32               0x35
+#define MINNIE_DRAWOP_AA_RANGE                               0x36
+#define MINNIE_DRAWOP_FILLRULE_EVENODD                       0x37
+#define MINNIE_DRAWOP_FILLRULE_NONZERO                       0x38
+#define MINNIE_DRAWOP_LINE_PATTERN_TEX                       0x39
+#define MINNIE_DRAWOP_LINE_PATTERN_SCALE                     0x3A
+#define MINNIE_DRAWOP_LINE_PATTERN_OFFSET                    0x3B
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE           0x00
-#define MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED               0x01
-#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP            0x02
-#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN           0x04
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_NONE  0x00
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED      0x01
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP   0x02
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN  0x04
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // (note) must match shadervg settings
@@ -4015,6 +4025,11 @@ namespace setup {
 
    static sBool cur_fillrule_nonzero;  // 0=even/odd  1=non-zero
 
+   static sUI  cur_linepattern_len;
+   static sUI  cur_linepattern_bits;
+   static sF32 cur_linepattern_scale;
+   static sF32 cur_linepattern_offset;
+
    static sUI   active_dl_op;            // MINNIE_DRAWOP_xxx
    static sUI   active_dl_num_tris;
    static sUI   active_dl_num_verts;
@@ -4033,6 +4048,10 @@ namespace setup {
    static sUI   active_dl_paint_id;
    static sF32  active_dl_aa_range;
    static sBool active_dl_fillrule_nonzero;
+   static sU8   active_dl_linepattern_len;
+   static sUI   active_dl_linepattern_bits;
+   static sF32  active_dl_linepattern_scale;
+   static sF32  active_dl_linepattern_offset;
 
    static sSI   dl_tex_id;
    static sBool dl_tex_repeat;
@@ -4186,25 +4205,29 @@ namespace setup {
 
       aspect = (600.0f / 800.0f);
 
-      cur_fb             = NULL;
-      cur_src_fb         = NULL;
-      cur_path           = NULL;
-      cur_x              = 0.0f;
-      cur_y              = 0.0f;
-      cur_mask_idx       = -1;
-      cur_stroke_w       = 0.0f;
-      cur_aa_range       = MINNIE_SHAPE_AA_RANGE;
-      cur_num_seg        = 6u;
-      cur_pal_idx        = 1u;
-      cur_c32_fill       = 0xFFffffffu;
-      cur_c32_stroke     = 0xFFffffffu;
-      cur_join_cap       = MINNIE_LINEJOIN_BEVEL | (MINNIE_LINECAP_ROUND << 4);
-      cur_miter_limit    = 32.0f;
-      cur_clip2d_path    = NULL;
-      b_cur_clip2d_pre   = YAC_FALSE;
-      b_cur_clip_fb      = YAC_FALSE;
-      b_cur_clip_3d      = YAC_FALSE;
-      cubic_min_dist_sqr = 4.0f;
+      cur_fb                 = NULL;
+      cur_src_fb             = NULL;
+      cur_path               = NULL;
+      cur_x                  = 0.0f;
+      cur_y                  = 0.0f;
+      cur_mask_idx           = -1;
+      cur_stroke_w           = 0.0f;
+      cur_aa_range           = MINNIE_SHAPE_AA_RANGE;
+      cur_num_seg            = 6u;
+      cur_pal_idx            = 1u;
+      cur_c32_fill           = 0xFFffffffu;
+      cur_c32_stroke         = 0xFFffffffu;
+      cur_join_cap           = MINNIE_LINEJOIN_BEVEL | (MINNIE_LINECAP_ROUND << 4);
+      cur_miter_limit        = 32.0f;
+      cur_clip2d_path        = NULL;
+      b_cur_clip2d_pre       = YAC_FALSE;
+      b_cur_clip_fb          = YAC_FALSE;
+      b_cur_clip_3d          = YAC_FALSE;
+      cubic_min_dist_sqr     = 4.0f;
+      cur_linepattern_len    = 0u;
+      cur_linepattern_bits   = 0u;
+      cur_linepattern_scale  = 0.0f;
+      cur_linepattern_offset = 1.0f;
 
       total_num_points      = 0u;
       total_num_lines       = 0u;
@@ -6478,8 +6501,29 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_32:
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_14_2> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32_fill, active_dl_c32_stroke);
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_32:
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_%s_%s> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x\n",
+                          active_dl_op,
+                          (((MINNIE_DRAWOP_LINE_STRIP_PATTERN_32   == active_dl_op) ||
+                            (MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2 == active_dl_op)
+                            )
+                           ? "pattern"
+                           : "flat"
+                           ),
+                          (((MINNIE_DRAWOP_LINE_STRIP_FLAT_32    == active_dl_op) ||
+                            (MINNIE_DRAWOP_LINE_STRIP_PATTERN_32 == active_dl_op)
+                            )
+                           ? "32"
+                           : "14_2"
+                           ),
+                          active_dl_start_offset,
+                          active_dl_num_verts,
+                          active_dl_c32_fill,
+                          active_dl_c32_stroke
+                          );
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6493,8 +6537,30 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32:
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_bevel_14_2_paint> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x flags=0x%02x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32_fill, active_dl_c32_stroke, active_dl_line_strip_flags);
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32:
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_%s_bevel_%s_paint> start_offset=%u num_verts=%u c32Fill=#%08x c32Stroke=#%08x flags=0x%02x\n",
+                          active_dl_op,
+                          (((MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32   == active_dl_op) ||
+                            (MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2 == active_dl_op)
+                            )
+                           ? "pattern"
+                           : "flat"
+                           ),
+                          (((MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32    == active_dl_op) ||
+                            (MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32 == active_dl_op)
+                            )
+                           ? "32"
+                           : "14_2"
+                           ),
+                          active_dl_start_offset,
+                          active_dl_num_verts,
+                          active_dl_c32_fill,
+                          active_dl_c32_stroke,
+                          active_dl_line_strip_flags
+                          );
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6508,8 +6574,20 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32:
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_14_2> start_offset=%u num_verts=%u c32Stroke=#%08x flags=0x%02x\n", active_dl_op, active_dl_start_offset, active_dl_num_verts, active_dl_c32_stroke, active_dl_line_strip_flags);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_strip_flat_miter_%s> start_offset=%u num_verts=%u c32Stroke=#%08x flags=0x%02x\n",
+                          active_dl_op,
+                          (((MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32  == active_dl_op)
+                            )
+                           ? "32"
+                           : "14_2"
+                           ),
+                          active_dl_start_offset,
+                          active_dl_num_verts,
+                          active_dl_c32_stroke,
+                          active_dl_line_strip_flags
+                          );
             if(active_dl_num_verts >= 2u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6538,6 +6616,25 @@ namespace setup {
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<nonzero>\n", active_dl_op);
             Dexport_dl_i16(active_dl_op);
             break;
+
+         case MINNIE_DRAWOP_LINE_PATTERN_TEX:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_tex>: len=%u bits=%u\n", active_dl_op, active_dl_linepattern_len, active_dl_linepattern_bits);
+            Dexport_dl_i16(active_dl_op);
+            Dexport_dl_i8((sU8)active_dl_linepattern_len);
+            Dexport_dl_i32(active_dl_linepattern_bits);
+            break;
+
+         case MINNIE_DRAWOP_LINE_PATTERN_SCALE:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_scale>: scale=%f\n", active_dl_op, active_dl_linepattern_scale);
+            Dexport_dl_i16(active_dl_op);
+            Dexport_dl_f32(active_dl_linepattern_scale);
+            break;
+
+         case MINNIE_DRAWOP_LINE_PATTERN_OFFSET:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_offset>: offset=%f\n", active_dl_op, active_dl_linepattern_offset);
+            Dexport_dl_i16(active_dl_op);
+            Dexport_dl_f32(active_dl_linepattern_offset);
+            break;
       }
       active_dl_op = 0x00u;
    }
@@ -6560,34 +6657,42 @@ namespace setup {
    static sBool beginDrawListOp(sUI _op) {
       if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
       {
-         if(canContinueDrawListOpTri(_op))
-         {
-            // continue previous draw-triangles[-edgeAA] op
-            return YAC_TRUE;
-         }
-
          finishActiveDrawListOp();
 
-         active_dl_op               = _op;
-         active_dl_start_offset     = Dexport_vb_get_offset();
-         active_dl_num_tris         = 0u;
-         active_dl_num_verts        = 0u;
-         active_dl_c32_fill         = cur_c32_fill;
-         active_dl_c32_stroke       = cur_c32_stroke;
-         active_dl_stroke_w         = cur_stroke_w;
-         active_dl_miter_limit      = cur_miter_limit;
-         active_dl_paint_id         = cur_paint_id;
-         active_dl_aa_range         = cur_aa_range;
+         active_dl_op                 = _op;
+         active_dl_start_offset       = Dexport_vb_get_offset();
+         active_dl_num_tris           = 0u;
+         active_dl_num_verts          = 0u;
+         active_dl_c32_fill           = cur_c32_fill;
+         active_dl_c32_stroke         = cur_c32_stroke;
+         active_dl_stroke_w           = cur_stroke_w;
+         active_dl_miter_limit        = cur_miter_limit;
+         active_dl_paint_id           = cur_paint_id;
+         active_dl_aa_range           = cur_aa_range;
          Ddebugprintfv("[trc] beginDrawListOp: active_dl_aa_range=%f\n", active_dl_aa_range);
-         active_dl_fillrule_nonzero = cur_fillrule_nonzero;
+         active_dl_fillrule_nonzero   = cur_fillrule_nonzero;
 
          return YAC_TRUE;
       }
       return YAC_FALSE;
    }
 
+   static void lazyUnbindLinePattern(void) {
+      if(0u != active_dl_linepattern_len)
+      {
+         Ddebugprintfv("[trc] lazyUnbindLinePattern: active_dl_linepattern_len=%u\n", active_dl_linepattern_len);
+         if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
+         {
+            finishActiveDrawListOp();
+            active_dl_linepattern_len = 0u;
+            active_dl_op = MINNIE_DRAWOP_LINE_PATTERN_TEX;
+         }
+      }
+   }
+
    static sBool beginDrawListOpTri(void) {
       sUI op = 0u;
+      lazyUnbindLinePattern();
 
       if(b_uniform_colors)
       {
@@ -6606,11 +6711,18 @@ namespace setup {
 #endif // MINNIE_EXPORT_VERTEX_16BIT
       }
 
+      if(canContinueDrawListOpTri(op))
+      {
+         // continue previous draw-triangles[-edgeAA] op
+         return YAC_TRUE;
+      }
+
       return beginDrawListOp(op);
    }
 
    static sBool beginDrawListOpTriEdgeAA(void) {
       sUI op;
+      lazyUnbindLinePattern();
 
 #if MINNIE_EXPORT_VERTEX_16BIT
       op = MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2;
@@ -6618,12 +6730,30 @@ namespace setup {
       op = MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
 
+      if(canContinueDrawListOpTri(op))
+      {
+         // continue previous draw-triangles[-edgeAA] op
+         return YAC_TRUE;
+      }
+
       return beginDrawListOp(op);
+   }
+
+   static sBool beginDrawListOpTriTex(sUI _op) {
+      // (todo) continue
+      lazyUnbindLinePattern();
+      return beginDrawListOp(_op);
+   }
+
+   static sBool beginDrawListOpTriGouraud(sUI _op) {
+      // (todo) continue
+      lazyUnbindLinePattern();
+      return beginDrawListOp(_op);
    }
 
    static sBool beginDrawListOpPolygon(void) {
       sUI op = 0u;
-
+      lazyUnbindLinePattern();
 #if MINNIE_EXPORT_VERTEX_16BIT
       op =
          b_polygon_aa
@@ -6641,7 +6771,13 @@ namespace setup {
       return beginDrawListOp(op);
    }
 
+   static sBool beginDrawListOpPolygonMulti(sUI _op) {
+      lazyUnbindLinePattern();
+      return beginDrawListOp(_op);
+   }
+
    static sBool beginDrawListOpPolygonSub(void) {
+      lazyUnbindLinePattern();
 #if MINNIE_EXPORT_VERTEX_16BIT
       return beginDrawListOp(b_polygon_aa
                              ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA
@@ -6655,7 +6791,6 @@ namespace setup {
 #endif // MINNIE_EXPORT_VERTEX_16BIT
    }
 
-
    // <method.png>
    static sUI calcCurJoinCap(void) {
       /* Dprintf("xxx calcCurJoinCap: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold); */
@@ -6667,7 +6802,40 @@ namespace setup {
    }
 
    // <method.png>
+   static sBool beginDrawListOpLinePatternTex(void) {
+      if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
+      {
+         finishActiveDrawListOp();
+         active_dl_linepattern_len  = cur_linepattern_len;
+         active_dl_linepattern_bits = cur_linepattern_bits;
+         active_dl_op = MINNIE_DRAWOP_LINE_PATTERN_TEX;
+         return YAC_TRUE;
+      }
+      return YAC_FALSE;
+   }
+
+   // <method.png>
+   static sBool beginDrawListOpLinePattern(sUI _op) {
+      if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
+      {
+         finishActiveDrawListOp();
+         active_dl_linepattern_scale  = cur_linepattern_scale;
+         active_dl_linepattern_offset = cur_linepattern_offset;
+         active_dl_op = _op;
+         return YAC_TRUE;
+      }
+      return YAC_FALSE;
+   }
+
+   // <method.png>
    static sBool beginDrawListOpLineStrip(sBool _bClosed) {
+      Ddebugprintfv("[trc] beginDrawListOpLineStrip: bClosed=%d\n", _bClosed);
+
+      if(active_dl_linepattern_len != cur_linepattern_len)
+      {
+         (void)beginDrawListOpLinePatternTex();
+      }
+
       const sUI curJoinCap = calcCurJoinCap();
       /* Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w); */
       active_dl_line_strip_flags = _bClosed ? MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED : 0u;
@@ -6677,35 +6845,69 @@ namespace setup {
       {
          default:
          case MINNIE_LINEJOIN_NONE:
+            if(0u != cur_linepattern_len)
+            {
 #if MINNIE_EXPORT_VERTEX_16BIT
-            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2;
 #else
-#error (todo) MINNIE_DRAWOP_LINE_STRIP_FLAT_32
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
+            else
+            {
+#if MINNIE_EXPORT_VERTEX_16BIT
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
+#else
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_32;
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
             break;
 
          case MINNIE_LINEJOIN_ROUND:
+            if(0u != cur_linepattern_len)
+            {
 #if MINNIE_EXPORT_VERTEX_16BIT
-            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2;
 #else
-#error (todo) MINNIE_DRAWOP_LINE_STRIP_FLAT_32
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
+            else
+            {
+#if MINNIE_EXPORT_VERTEX_16BIT
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2;
+#else
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_32;
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
             active_dl_line_strip_flags |= MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN;
             break;
 
          case MINNIE_LINEJOIN_BEVEL:
+            if(0u != cur_linepattern_len)
+            {
 #if MINNIE_EXPORT_VERTEX_16BIT
-            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2;
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2;
 #else
-#error (todo) MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
+            else
+            {
+#if MINNIE_EXPORT_VERTEX_16BIT
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2;
+#else
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32;
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
             break;
 
          case MINNIE_LINEJOIN_MITER:
+            // (todo) line patterns
 #if MINNIE_EXPORT_VERTEX_16BIT
             op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2;
 #else
-#error (todo) MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32
+            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
             break;
       }
@@ -6720,6 +6922,8 @@ namespace setup {
    static sBool beginDrawListOpRect(const sF32 _sx, const sF32 _sy) {
       if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
       {
+         lazyUnbindLinePattern();
+
          if( (active_dl_op  == MINNIE_DRAWOP_RECT_FILL) &&
              (cur_x         == active_dl_cx) &&
              (cur_y         == active_dl_cy) &&
@@ -6759,6 +6963,8 @@ namespace setup {
    static sBool beginDrawListOpEllipse(const sF32 _rx, const sF32 _ry) {
       if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
       {
+         lazyUnbindLinePattern();
+
          if( (active_dl_op  == MINNIE_DRAWOP_ELLIPSE_FILL) &&
              (cur_x         == active_dl_cx) &&
              (cur_y         == active_dl_cy) &&
@@ -6798,6 +7004,8 @@ namespace setup {
    static sBool beginDrawListOpRoundRect(const sF32 _sx, const sF32 _sy, const sF32 _rx, const sF32 _ry) {
       if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
       {
+         lazyUnbindLinePattern();
+
          if( (active_dl_op  == MINNIE_DRAWOP_ROUNDRECT_FILL) &&
              (cur_x         == active_dl_cx) &&
              (cur_y         == active_dl_cy) &&
@@ -9059,9 +9267,104 @@ namespace setup {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
          const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
          const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale;
-         Dexportprintfvv("[>>>] minnie::exportLineStripPoints: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScale: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
+      }
+   }
+
+   // <method.png>
+   static void exportLineStripPointsPattern(const FloatArray *_va, sBool _bClosed) {
+      // (note) when path is closed, last vertex may equal first vertex (=> skip it)
+      // (todo) this is the case for regular paths but currently not for ellipses
+      sUI vaNum = (_va->num_elements >> 1);
+      if(_bClosed)
+      {
+         if(vaNum >= 2u)
+         {
+            if(_va->elements.f32[_va->num_elements-2u] == _va->elements.f32[0u] &&
+               _va->elements.f32[_va->num_elements-1u] == _va->elements.f32[1u]
+               )
+            {
+               vaNum--;
+            }
+         }
+      }
+      const sUI vaWrap = (vaNum << 1);
+      const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
+      sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
+      active_dl_num_verts += num;
+      num = (num << 1);
+      sUI vtxIdx = 0u;
+      sF32 lastX = 0.0f;
+      sF32 lastY = 0.0f;
+      sF32 patOff = 0.0f;
+      for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
+      {
+         const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
+         const sF32 x = _va->elements.f32[idxOff + 0u];
+         const sF32 y = _va->elements.f32[idxOff + 1u];
+         if(idxOffM > 0u)
+         {
+            sF32 dx = x - lastX;
+            sF32 dy = y - lastY;
+            sF32 d = sqrtf(dx*dx + dy*dy);
+            patOff += d;
+         }
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, x, y, patOff);
+         Dexport_vb_i16(sSI(x * 4.0f));
+         Dexport_vb_i16(sSI(y * 4.0f));
+         Dexport_vb_i16(sSI(patOff * 4.0f));
+         lastX = x;
+         lastY = y;
+      }
+   }
+
+   // <method.png>
+   static void exportLineStripPointsTranslateScalePattern(const FloatArray *_va, sBool _bClosed) {
+      // (note) when path is closed, last vertex may equal first vertex (=> skip it)
+      // (todo) this is the case for regular paths but currently not for ellipses
+      sUI vaNum = (_va->num_elements >> 1);
+      if(_bClosed)
+      {
+         if(vaNum >= 2u)
+         {
+            if(_va->elements.f32[_va->num_elements-2u] == _va->elements.f32[0u] &&
+               _va->elements.f32[_va->num_elements-1u] == _va->elements.f32[1u]
+               )
+            {
+               vaNum--;
+            }
+         }
+      }
+      const sUI vaWrap = (vaNum << 1);
+      const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
+      sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
+      /* Dprintf("xxx exportLineStripPointsTranslateScalePattern: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num); */
+      active_dl_num_verts += num;
+      num = (num << 1);
+      sUI vtxIdx = 0u;
+      sF32 lastX = 0.0f;
+      sF32 lastY = 0.0f;
+      sF32 patOff = 0.0f;
+      for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
+      {
+         const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
+         const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
+         const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale;
+         if(idxOffM > 0u)
+         {
+            sF32 dx = x - lastX;
+            sF32 dy = y - lastY;
+            sF32 d = sqrtf(dx*dx + dy*dy);
+            patOff += d;
+         }
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, x, y, patOff);
+         Dexport_vb_i16(sSI(x * 4.0f));
+         Dexport_vb_i16(sSI(y * 4.0f));
+         Dexport_vb_i16(sSI(patOff * 4.0f));
+         lastX = x;
+         lastY = y;
       }
    }
 
@@ -9069,7 +9372,10 @@ namespace setup {
    static void drawPathLineStrip(Path *p) {
       if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStrip: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
-      exportLineStripPointsTranslateScale(&p->points, p->b_closed);
+      if(0u == cur_linepattern_len)
+         exportLineStripPointsTranslateScale(&p->points, p->b_closed);
+      else
+         exportLineStripPointsTranslateScalePattern(&p->points, p->b_closed);
    }
 
    // <method.png>
@@ -9124,7 +9430,10 @@ namespace setup {
          FloatArray *vaOut = &tmpfa_clip2;
          Clip2D(vaPoints, &pClip->points, pClip->b_closed, vaOut);
 
-         exportLineStripPoints(vaOut, p->b_closed);
+         if(0u == cur_linepattern_len)
+            exportLineStripPoints(vaOut, p->b_closed);
+         else
+            exportLineStripPointsPattern(vaOut, p->b_closed);
       }
    }
 
@@ -9204,7 +9513,10 @@ namespace setup {
          FloatArray *vaPoints = &tmpfa_points2;
          transform2DAndTranslateAndScale(&p->points, vaPoints);
 
-         exportLineStripPoints(vaPoints, p->b_closed);
+         if(0u == cur_linepattern_len)
+            exportLineStripPoints(vaPoints, p->b_closed);
+         else
+            exportLineStripPointsPattern(vaPoints, p->b_closed);
       }
    }
 
@@ -9267,7 +9579,10 @@ namespace setup {
          FloatArray *vaClip = &tmpfa_clip2;
          Clip2D(vaPoints, &pClip->points, pClip->b_closed, vaClip/*out*/);
 
-         exportLineStripPoints(vaClip, p->b_closed);
+         if(0u == cur_linepattern_len)
+            exportLineStripPoints(vaClip, p->b_closed);
+         else
+            exportLineStripPointsPattern(vaClip, p->b_closed);
       }
    }
 
@@ -9932,7 +10247,7 @@ namespace setup {
             Dprintf("[trc] drawMultiPath: HW polygon #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
          }
 
-         beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN);
+         beginDrawListOpPolygonMulti(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN);
 
          drawPath(p, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
 
@@ -9942,10 +10257,10 @@ namespace setup {
             drawPath(sp, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
          }
 
-         beginDrawListOp(b_polygon_aa
-                         ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA
-                         : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END
-                         );
+         beginDrawListOpPolygonMulti(b_polygon_aa
+                                     ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA
+                                     : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END
+                                     );
 
          return;
       }
@@ -11759,6 +12074,9 @@ YF void YAC_CALL minFill (void);
 YF void YAC_CALL minFillRuleEvenOdd (void);
 YF void YAC_CALL minFillRuleNonZero (void);
 YF void YAC_CALL minMiterLimit (sF32 _l);
+YF void YAC_CALL minLinePattern (sUI _patternLen, sUI _patternBits);
+YF void YAC_CALL minLinePatternScale (sF32 _patternScale);
+YF void YAC_CALL minLinePatternOffset (sF32 _patternOffset);
 YF void YAC_CALL minColor (sUI _c32);
 YF void YAC_CALL minColorFill (sUI _c32);
 YF void YAC_CALL minColorStroke (sUI _c32);
@@ -13081,6 +13399,48 @@ void minMiterLimit(sF32 _l) {
    minnie::setup::cur_miter_limit = _l;
 }
 
+/* @function minLinePattern,int patternLen,int patternBits
+Set line pattern
+
+@arg patternLen Pattern length (num bits) (7,8,14,16,28,32) (0=off)
+@arg patternBits Pattern bits
+*/
+void minLinePattern(sUI _patternLen, sUI _patternBits) {
+   if(minnie::setup::cur_linepattern_len != _patternLen ||
+      ((0u != _patternLen) && minnie::setup::cur_linepattern_bits != _patternBits)
+      )
+   {
+      minnie::setup::cur_linepattern_len  = _patternLen;
+      minnie::setup::cur_linepattern_bits = _patternBits;
+   }
+}
+
+/* @function minLinePatternScale,float patternScale
+Set line pattern scaling
+
+@arg patternScale Line pattern scaling (>1: stretch)
+*/
+void minLinePatternScale(sF32 _patternScale) {
+   if(minnie::setup::cur_linepattern_scale != _patternScale)
+   {
+      minnie::setup::cur_linepattern_scale = _patternScale;
+      (void)minnie::setup::beginDrawListOpLinePattern(MINNIE_DRAWOP_LINE_PATTERN_SCALE);
+   }
+}
+
+/* @function minLinePatternOffset,float patternOffset
+Set line pattern offset
+
+@arg patternOffset Line pattern offset (0..1, applied after scaling)
+*/
+void minLinePatternOffset(sF32 _patternOffset) {
+   if(minnie::setup::cur_linepattern_offset != _patternOffset)
+   {
+      minnie::setup::cur_linepattern_offset = _patternOffset;
+      (void)minnie::setup::beginDrawListOpLinePattern(MINNIE_DRAWOP_LINE_PATTERN_OFFSET);
+   }
+}
+
 /* @function minColor
 Set ARGB32 fill and stroke color for next path draw call
 
@@ -13378,7 +13738,7 @@ void minTriangleTexUVFlat(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
                           sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2,
                           sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3
                           ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
+   if(minnie::setup::beginDrawListOpTriTex(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
    {
       Dexport_vb_add2f(_u1, _v1);
       Dexport_vb_add2f(_x1, _y1);
@@ -13420,7 +13780,7 @@ void minTriangleTexUVFlatDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
                                sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2,
                                sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3
                                ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
+   if(minnie::setup::beginDrawListOpTriTex(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
    {
       Dexport_vb_add2f(_u1, _v1);
       Dexport_vb_add2f(_x1, _y1);
@@ -13465,7 +13825,7 @@ void minTriangleTexUVGouraud(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1
                              sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sU32 _c32v2,
                              sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3, sU32 _c32v3
                              ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
+   if(minnie::setup::beginDrawListOpTriGouraud(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
    {
       Dexport_vb_add2f(_u1, _v1);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v1));
@@ -13513,7 +13873,7 @@ void minTriangleTexUVGouraudDecal(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _
                                   sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sU32 _c32v2,
                                   sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3, sU32 _c32v3
                                   ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
+   if(minnie::setup::beginDrawListOpTriGouraud(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
    {
       Dexport_vb_add2f(_u1, _v1);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32v1));
@@ -13553,7 +13913,7 @@ Multiple consecutive draw calls will be merged automatically.
 void minRectTexUVFlat(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                       sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb
                       ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
+   if(minnie::setup::beginDrawListOpTriTex(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
    {
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
@@ -13601,7 +13961,7 @@ Multiple consecutive draw calls will be merged automatically.
 void minRectTexUVFlatDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                            sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb
                            ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
+   if(minnie::setup::beginDrawListOpTriTex(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
    {
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
@@ -13654,7 +14014,7 @@ void minRectTexUVGouraud(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                          sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb,
                          sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb
                          ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
+   if(minnie::setup::beginDrawListOpTriGouraud(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
    {
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
@@ -13713,7 +14073,7 @@ void minRectTexUVGouraudDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                               sF32 _ul, sF32 _vt, sF32 _ur, sF32 _vb,
                               sU32 _c32lt, sU32 _c32rt, sU32 _c32rb, sU32 _c32lb
                               ) {
-   if(minnie::setup::beginDrawListOp(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
+   if(minnie::setup::beginDrawListOpTriGouraud(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
    {
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);

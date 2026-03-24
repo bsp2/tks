@@ -35,6 +35,56 @@ typedef struct minnie_subpath_s {
 
 static minnie_subpath_t loc_minnie_subpaths[MINNIE_MAX_SUB_PATHS];  // temporary during exec
 
+#define LINE_PATTERN_TEX_W  112
+static sUI tex_line_pattern_alpha_id = 0u;
+static sU8 tex_line_pattern_alpha_data[LINE_PATTERN_TEX_W];
+static sUI line_pattern_len = 0u;
+static sUI line_pattern_bits = 0u;
+
+static void loc_CalcLinePatternTex(sU8 *_tex, sUI _patternLen, sUI _patternBits) {
+   for(sUI x = 0u; x < LINE_PATTERN_TEX_W; x++)
+      _tex[x] = (_patternBits & (1u << (x % _patternLen))) ? 255u : 0u;
+}
+
+static void loc_BindLinePatternTex(sUI _patternLen, sUI _patternBits) {
+   // (todo) cache multiple patterns
+   if(0u != _patternLen)
+   {
+      const sBool bUpdate =
+         (line_pattern_len  != _patternLen)  ||
+         (line_pattern_bits != _patternBits) ;
+      if(bUpdate)
+      {
+         line_pattern_len  = _patternLen;
+         line_pattern_bits = _patternBits;
+         loc_CalcLinePatternTex(tex_line_pattern_alpha_data,
+                                _patternLen, _patternBits
+                                );
+         if(0u == tex_line_pattern_alpha_id)
+         {
+            tex_line_pattern_alpha_id =
+               sdvg_CreateTexture2D(SDVG_TEXFMT_ALPHA8, LINE_PATTERN_TEX_W, 1u,
+                                    tex_line_pattern_alpha_data, LINE_PATTERN_TEX_W
+                                    );
+            sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+         }
+         else
+         {
+            sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+            sdvg_UpdateTexture2D(SDVG_TEXFMT_ALPHA8, LINE_PATTERN_TEX_W, 1u, tex_line_pattern_alpha_data, LINE_PATTERN_TEX_W);
+         }
+      }
+      else
+      {
+         sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
+      }
+   }
+   else
+   {
+      sdvg_UnbindTexture2D();
+   }
+}
+
 /* @function minExecDrawListEx,Buffer bufDraw,int glBufId,boolean bDebug
 Execute draw-list
 @arg bufDraw Draw-list buffer (offset determines size) (in system RAM)
@@ -55,6 +105,8 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
 
    sdvg_SetAARange(MINNIE_SHAPE_AA_RANGE);
    sdvg_SetFillRuleEvenOdd();
+   sdvg_SetLinePatternScale(1.0f / LINE_PATTERN_TEX_W);
+   sdvg_SetLinePatternOffset(0.0f);
 
    // Parse draw-list
    sUI dlSize = Dstream_get_offset(_bufDraw);
@@ -83,6 +135,9 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
    sUI numOpsEllipseFillStroke   = 0u;
    sUI numOpsAARange             = 0u;
    sUI numOpsFillRule            = 0u;
+   sUI numOpsLinePatternTex      = 0u;
+   sUI numOpsLinePatternScale    = 0u;
+   sUI numOpsLinePatternOffset   = 0u;
 
    sUI dlTexId = 0;
    sBool dlTexRepeat;
@@ -121,6 +176,10 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
       sF32 paintSizeX;
       sF32 paintSizeY;
       sF32 paintAngle01;
+      sUI  linePatternLen;
+      sUI  linePatternBits;
+      sF32 linePatternScale;
+      sF32 linePatternOffset;
 
       switch(op)
       {
@@ -778,6 +837,61 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numOpsTriTex++;
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_32:
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat<f32>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripFlatAAVBO32(_glBufId,
+                                          vbOff,
+                                          numVerts/*numPoints*/
+                                          );
+            sdvg_SetPointRadius(strokeW);
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))
+            {
+               // closed polyline
+               if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN))
+               {
+                  sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, numVerts);
+               }
+            }
+            else
+            {
+               // open polyline
+               if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN))
+               {
+                  if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+                  {
+                     // round line joints and caps
+                     sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, numVerts);
+                  }
+                  else
+                  {
+                     // round line joints, no caps
+                     if(numVerts > 2u)
+                     {
+                        sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + (1u*8u), numVerts-2u);
+                     }
+                  }
+               }
+               else if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+               {
+                  // round line caps
+                  if(numVerts >= 2u)
+                  {
+                     sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, 1u);
+                     sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + ((numVerts-1u)*8u), 1u);
+                  }
+               }
+            }
+            numOpsLineStrip++;
+            break;
+
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2:
             vbOff     = Dstream_read_i32(_bufDraw);
             numVerts  = Dstream_read_i32(_bufDraw);
@@ -833,6 +947,144 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numOpsLineStrip++;
             break;
 
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_32:
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-pattern<f32>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripPatternAAVBO32(_glBufId,
+                                             vbOff,
+                                             numVerts/*numPoints*/
+                                             );
+            sdvg_SetPointRadius(strokeW);
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))
+            {
+               // closed polyline  (todo) pattern
+               if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN))
+               {
+                  sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, numVerts);
+               }
+            }
+            else
+            {
+               // open polyline
+               if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN))
+               {
+                  if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+                  {
+                     // round line joints and caps
+                     /* sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, numVerts); */
+                  }
+                  else
+                  {
+                     // round line joints, no caps  (todo) pattern
+                     if(numVerts > 2u)
+                     {
+                        /* sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + (1u*12u), numVerts-2u); */
+                     }
+                  }
+               }
+               else if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+               {
+                  // round line caps  (todo) pattern
+                  if(numVerts >= 2u)
+                  {
+                     /* sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, 1u); */
+                     /* sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + ((numVerts-1u)*12u), 1u); */
+                  }
+               }
+            }
+            numOpsLineStrip++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2:
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-pattern<s14.2>: vbOff=%u numVerts=%u strokeW=%f\n", vbOff, numVerts, strokeW);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripPatternAAVBO14_2(_glBufId,
+                                               vbOff,
+                                               numVerts/*numPoints*/
+                                               );
+            sdvg_SetPointRadius(strokeW);
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))
+            {
+               // closed polyline  (todo) pattern
+               if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN))
+               {
+                  sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff, numVerts);
+               }
+            }
+            else
+            {
+               // open polyline
+               if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN))
+               {
+                  if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+                  {
+                     // round line joints and caps  (todo) pattern
+                     /* sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff, numVerts); */
+                  }
+                  else
+                  {
+                     // round line joints, no caps  (todo) pattern
+                     if(numVerts > 2u)
+                     {
+                        /* sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff + (1u*6u), numVerts-2u); */
+                     }
+                  }
+               }
+               else if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+               {
+                  // round line caps  (todo) pattern
+                  if(numVerts >= 2u)
+                  {
+                     /* sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff, 1u); */
+                     /* sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff + ((numVerts-1u)*6u), 1u); */
+                  }
+               }
+            }
+            numOpsLineStrip++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32:
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f flags=0x%02x\n", vbOff, numVerts, strokeW, flags);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripFlatBevelAAVBO32(_glBufId,
+                                               vbOff,
+                                               numVerts,  // includes 2 wrap-around vertices
+                                               (0u == (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))/*bSkipLastLineJoint*/
+                                               );
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+            {
+               // round line caps
+               if(numVerts >= 3u)
+               {
+                  sdvg_SetPointRadius(strokeW);
+                  sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, 1u);
+                  sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + ((numVerts-2u)*8u), 1u);
+               }
+            }
+            numOpsLineStripBevel++;
+            break;
+
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2:
             vbOff     = Dstream_read_i32(_bufDraw);
             numVerts  = Dstream_read_i32(_bufDraw);
@@ -859,6 +1111,91 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
                }
             }
             numOpsLineStripBevel++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32:
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-pattern-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f flags=0x%02x\n", vbOff, numVerts, strokeW, flags);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripPatternBevelAAVBO32(_glBufId,
+                                                  vbOff,
+                                                  numVerts,  // includes 2 wrap-around vertices
+                                                  (0u == (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))/*bSkipLastLineJoint*/
+                                                  );
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+            {
+               // round line caps  (todo) pattern
+               if(numVerts >= 3u)
+               {
+                  sdvg_SetPointRadius(strokeW);
+                  /* sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, 1u); */
+                  /* sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + ((numVerts-2u)*12u), 1u); */
+               }
+            }
+            numOpsLineStripBevel++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2:
+            vbOff     = Dstream_read_i32(_bufDraw);
+            numVerts  = Dstream_read_i32(_bufDraw);
+            c32Fill   = Dstream_read_i32(_bufDraw);
+            c32Stroke = Dstream_read_i32(_bufDraw);
+            strokeW   = Dstream_read_f32(_bufDraw);
+            flags     = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-pattern-bevel<s14.2>: vbOff=%u numVerts=%u strokeW=%f flags=0x%02x\n", vbOff, numVerts, strokeW, flags);
+            sdvg_SetFillAndStrokeColorsARGB(c32Fill, c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_DrawLineStripPatternBevelAAVBO14_2(_glBufId,
+                                                    vbOff,
+                                                    numVerts,  // includes 2 wrap-around vertices
+                                                    (0u == (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))/*bSkipLastLineJoint*/
+                                                    );
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+            {
+               // round line caps  // (todo) pattern
+               if(numVerts >= 3u)
+               {
+                  sdvg_SetPointRadius(strokeW);
+                  /* sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff, 1u); */
+                  /* sdvg_DrawPointsRoundAAVBO14_2(_glBufId, vbOff + ((numVerts-2u)*6u), 1u); */
+               }
+            }
+            numOpsLineStripBevel++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32:
+            vbOff      = Dstream_read_i32(_bufDraw);
+            numVerts   = Dstream_read_i32(_bufDraw);
+            c32Stroke  = Dstream_read_i32(_bufDraw);
+            strokeW    = Dstream_read_f32(_bufDraw);
+            miterLimit = Dstream_read_f32(_bufDraw);
+            flags      = Dstream_read_i8(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: draw-line-strip-flat-miter<f32>: vbOff=%u numVerts=%u strokeW=%f flags=0x%02x\n", vbOff, numVerts, strokeW, flags);
+            sdvg_SetStrokeColorARGB(c32Stroke);
+            sdvg_SetStrokeRadius(strokeW);
+            sdvg_SetLineMiterLimit(miterLimit);
+            sdvg_DrawLineStripFlatMiterAAVBO32(_glBufId,
+                                               vbOff,
+                                               numVerts,  // includes 2 wrap-around vertices
+                                               (0u == (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED))/*bSkipLastLineJoint*/
+                                               );
+            if(0u != (flags & MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP))
+            {
+               // round line caps
+               if(numVerts >= 3u)
+               {
+                  sdvg_SetPointRadius(strokeW);
+                  sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff, 1u);
+                  sdvg_DrawPointsRoundAAVBO32(_glBufId, vbOff + ((numVerts-2u)*8u), 1u);
+               }
+            }
+            numOpsLineStripMiter++;
             break;
 
          case MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2:
@@ -909,12 +1246,41 @@ void minExecDrawListEx(YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug) {
             numOpsFillRule++;
             break;
 
+         case MINNIE_DRAWOP_LINE_PATTERN_TEX:
+            linePatternLen  = Dstream_read_i8(_bufDraw);
+            linePatternBits = Dstream_read_i32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: line-pattern: len=%u bits=0x%08x\n", linePatternLen, linePatternBits);
+            loc_BindLinePatternTex(linePatternLen, linePatternBits);
+            numOpsLinePatternTex++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_PATTERN_SCALE:
+            linePatternScale = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: line-pattern-scale: scale=%f\n", linePatternScale);
+            if(linePatternScale > 0.0f)
+            {
+               sdvg_SetLinePatternScale(1.0f / (LINE_PATTERN_TEX_W * linePatternScale));
+            }
+            else
+            {
+               sdvg_SetLinePatternScale(1.0f / LINE_PATTERN_TEX_W);
+            }
+            numOpsLinePatternScale++;
+            break;
+
+         case MINNIE_DRAWOP_LINE_PATTERN_OFFSET:
+            linePatternOffset = Dstream_read_f32(_bufDraw);
+            Ddebug_draw_list_printfv("[trc] minExecDrawList: line-pattern-offset: scale=%f\n", linePatternOffset);
+            sdvg_SetLinePatternOffset(linePatternOffset);
+            numOpsLinePatternOffset++;
+            break;
+
       } // switch op
    } // iterate draw ops
 
    if(_bDebug)
    {
-      Dprintf("[dbg] minExecDrawList: #Tri=%u #Poly=%u #PolyBegin=%u (#sub=%u #end=%u #subAA=%u #endAA=%u) #TriTex=%u #LineStrip=%u #LineStripBevel=%u #LineStripMiter=%u #RectFill=%u #RectStroke=%u #RectFillStroke=%u #EllipseFill=%u #EllipseStroke=%u #EllipseFillStroke=%u #RoundRectFill=%u #RoundRectStroke=%u #RoundRectFillStroke=%u #AARange=%u #FillRule=%u #Ops=%u dl-size=%u\n", numOpsTri, numOpsPoly, numOpsPolyBegin, numOpsPolySub, numOpsPolyEnd, numOpsPolySubAA, numOpsPolyEndAA, numOpsTriTex, numOpsLineStrip, numOpsLineStripBevel, numOpsLineStripMiter, numOpsRectFill, numOpsRectStroke, numOpsRectFillStroke, numOpsEllipseFill, numOpsEllipseStroke, numOpsEllipseFillStroke, numOpsRoundRectFill, numOpsRoundRectStroke, numOpsRoundRectFillStroke, numOpsAARange, numOpsFillRule, numOps, Dstream_get_offset(_bufDraw));
+      Dprintf("[dbg] minExecDrawList: #Tri=%u #Poly=%u #PolyBegin=%u (#sub=%u #end=%u #subAA=%u #endAA=%u) #TriTex=%u #LineStrip=%u #LineStripBevel=%u #LineStripMiter=%u #RectFill=%u #RectStroke=%u #RectFillStroke=%u #EllipseFill=%u #EllipseStroke=%u #EllipseFillStroke=%u #RoundRectFill=%u #RoundRectStroke=%u #RoundRectFillStroke=%u #AARange=%u #FillRule=%u #LinePatternTex=%u #LinePatternScale=%u #LinePatternOffset=%u #Ops=%u dl-size=%u\n", numOpsTri, numOpsPoly, numOpsPolyBegin, numOpsPolySub, numOpsPolyEnd, numOpsPolySubAA, numOpsPolyEndAA, numOpsTriTex, numOpsLineStrip, numOpsLineStripBevel, numOpsLineStripMiter, numOpsRectFill, numOpsRectStroke, numOpsRectFillStroke, numOpsEllipseFill, numOpsEllipseStroke, numOpsEllipseFillStroke, numOpsRoundRectFill, numOpsRoundRectStroke, numOpsRoundRectFillStroke, numOpsAARange, numOpsFillRule, numOpsLinePatternTex, numOpsLinePatternScale, numOpsLinePatternOffset, numOps, Dstream_get_offset(_bufDraw));
    }
 }
 
