@@ -94,3 +94,6 @@
 - 31_flat_shaded_AA_rectangles_200x200
   
   ![screenhots](31_flat_shaded_AA_rectangles_200x200.png)
+- 32_stippled_sine_lines
+  
+  ![screenhots](32_stippled_sine_lines.png)

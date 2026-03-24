@@ -158,6 +158,7 @@ static const char *test_names[] = {
    "29: polygon even-odd",
    "30: polygon non-zero",
    "31: flat shaded AA rectangles 200x200",
+   "32: stippled sine lines",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -433,7 +434,7 @@ static void Test_04(void) {
    minEndPathOpen();
 
    minColor(0xffffffffu);
-   minStrokeWidth( 2.0f * 4.0f*vpSclX);
+   minStrokeWidth(2.0f * 4.0f*vpSclX);
    minJoinBevel();
    minCapNone();
    minDrawPath(pid);
@@ -749,7 +750,7 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 
    if(_bStroke)
    {
-      minStrokeWidth( 2.0f * 2.0f*vpSclX);
+      minStrokeWidth(2.0f * 2.0f*vpSclX);
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -792,7 +793,7 @@ static void Test_26(void) {
 
    minEndPath(YAC_FALSE/*bClosed*/);
 
-   minStrokeWidth( 2.0f * 3.5f*vpSclX);
+   minStrokeWidth(2.0f * 3.5f*vpSclX);
    minBindTexture(tex_gradient_id, YAC_TRUE/*bRepeat*/, b_tex_filter);
    minPaint(paintId);
    minColor(0xffffffffu);
@@ -1010,6 +1011,44 @@ static void Test_31(void) {
    }
 }
 
+// ----------------------------------------------------------------------------
+static void Test_32(void) {
+   // stippled sine lines
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
+   sSI pid = minBeginPath();
+
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 1u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = anim_1;
+   sF32 x = 100.0f;
+   sF32 xStep = 600.0f / numSeg;
+   for(sUI segIdx = 0u; segIdx < numPoints; segIdx++)
+   {
+      sF32 y = sinf(a) * 150.0f + 300.0f;
+      if(0u == segIdx)
+         minMoveTo(x*vpSclX, y*vpSclY);
+      else
+         minLineTo(x*vpSclX, y*vpSclY);
+      a += w;
+      x += xStep;
+   }
+
+   minEndPathOpen();
+
+   minColor(0xffffffffu);
+   minStrokeWidth(2.0f * 8.0f*vpSclX);
+   minLinePattern(16u, 0x00FFu);
+   minLinePatternScale(2.0f);
+   minLinePatternOffset(anim_2 * (0.5f / sM_2PIf*4.0f));
+   minJoinBevel();
+   minCapNone();
+   minDrawPath(pid);
+}
+
 // ---------------------------------------------------------------------------- SelectTest
 static void SelectTest(sSI _idx) {
    test_idx = _idx;
@@ -1084,6 +1123,7 @@ void hal_on_draw(void) {
          case 29: Test_29(YAC_FALSE/*bNonZero*/); break;     // polygon even-odd
          case 30: Test_29(YAC_TRUE/*bNonZero*/); break;      // polygon non-zero
          case 31: Test_31(); break;                          // flat shaded AA rectangles 200x200
+         case 32: Test_32(); break;                          // stippled sine lines
       }
 
       minDrawableEnd(drawable);
