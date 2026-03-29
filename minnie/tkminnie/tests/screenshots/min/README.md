@@ -97,3 +97,12 @@
 - 32_stippled_sine_lines
   
   ![screenhots](32_stippled_sine_lines.png)
+- 33_stippled_circle
+  
+  ![screenhots](33_stippled_circle.png)
+- 34_stippled_sine_lines_decal
+  
+  ![screenhots](34_stippled_sine_lines_decal.png)
+- 35_stippled_circle_decal
+  
+  ![screenhots](35_stippled_circle_decal.png)

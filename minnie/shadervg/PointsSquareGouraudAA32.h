@@ -31,6 +31,9 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform float u_point_radius; \n"
+#ifdef SHADERVG_UNIFORM_ARRAY
+      "uniform vec2  u_a_offset[6]; \n"
+#endif // SHADERVG_UNIFORM_ARRAY
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       "ATTRIBUTE vec4 a_color; \n"
@@ -42,6 +45,9 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
       "  vec2 vCtr = a_vertex; \n"
       "  vec2 v; \n"
       " \n"
+#ifdef SHADERVG_UNIFORM_ARRAY
+      "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
+#else
       "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 5.9) { \n"
@@ -65,6 +71,7 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
       "  else { \n"
       "    v = vCtr - vec2(u_point_radius, u_point_radius); \n"  // LT
       "  } \n"
+#endif // SHADERVG_UNIFORM_ARRAY
       " \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - vCtr; \n"
@@ -106,6 +113,9 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_point_radius)
+#ifdef SHADERVG_UNIFORM_ARRAY
+         && (-1 != shape_u_a_offset)
+#endif // SHADERVG_UNIFORM_ARRAY
          && (-1 != shape_u_aa_range)
          ;
    }
@@ -143,6 +153,9 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
+#ifdef SHADERVG_UNIFORM_ARRAY
+      updateUniformOffsetArray(_pointRadius);
+#endif // SHADERVG_UNIFORM_ARRAY
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
@@ -151,8 +164,8 @@ class PointsSquareGouraudAA32 : public ShaderVG_Shape {
       }
 #endif // SHADERVG_DEBUG_FRAG
 
-      Dsdvg_attrib_offset(shape_a_color,    4/*size*/, GL_UNSIGNED_BYTE,  GL_TRUE/*normalize*/,  12/*stride*/, _byteOffset +  0);
-      Dsdvg_attrib_offset(shape_a_vertex,   2/*size*/, GL_FLOAT,          GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  4);
+      Dsdvg_attrib_offset(shape_a_color,  4/*size*/, GL_UNSIGNED_BYTE, GL_TRUE/*normalize*/,  12/*stride*/, _byteOffset +  0);
+      Dsdvg_attrib_offset(shape_a_vertex, 2/*size*/, GL_FLOAT,         GL_FALSE/*normalize*/, 12/*stride*/, _byteOffset +  4);
 
       Dsdvg_attrib_enable(shape_a_color);
       Dsdvg_attrib_enable(shape_a_vertex);

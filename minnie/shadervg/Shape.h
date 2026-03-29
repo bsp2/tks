@@ -109,6 +109,9 @@ class ShaderVG_Shape {
    sSI shape_u_paint_ob_len;     // optional
    sSI shape_u_paint_angle01;    // optional
    sSI shape_u_paint_ob_size;    // optional
+#ifdef SHADERVG_UNIFORM_ARRAY
+   sSI shape_u_a_offset;         // optional
+#endif // SHADERVG_UNIFORM_ARRAY
 
    // debug:
    sBool b_draw_inner;
@@ -384,6 +387,10 @@ class ShaderVG_Shape {
                                        const shadervg_paint_t *_paint
                                        );
 
+
+#ifdef SHADERVG_UNIFORM_ARRAY
+   void updateUniformOffsetArray (sF32 _pointRadius) const;
+#endif // SHADERVG_UNIFORM_ARRAY
 };
 
 

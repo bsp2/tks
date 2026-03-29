@@ -631,3 +631,81 @@
 - test_210_begin_points_round_aa_pattern_decal_alpha
   
   ![screenhots](test_210_begin_points_round_aa_pattern_decal_alpha.png)
+- test_211_begin_line_strip_pattern_miter
+  
+  ![screenhots](test_211_begin_line_strip_pattern_miter.png)
+- test_212_begin_line_strip_pattern_miter_aa
+  
+  ![screenhots](test_212_begin_line_strip_pattern_miter_aa.png)
+- test_213_begin_line_strip_pattern_decal_miter
+  
+  ![screenhots](test_213_begin_line_strip_pattern_decal_miter.png)
+- test_214_begin_line_strip_pattern_decal_miter_aa
+  
+  ![screenhots](test_214_begin_line_strip_pattern_decal_miter_aa.png)
+- test_215_begin_line_strip_pattern_miter_diagonal
+  
+  ![screenhots](test_215_begin_line_strip_pattern_miter_diagonal.png)
+- test_216_begin_line_strip_pattern_miter_diagonal_aa
+  
+  ![screenhots](test_216_begin_line_strip_pattern_miter_diagonal_aa.png)
+- test_217_begin_line_strip_pattern_decal_miter_diagonal
+  
+  ![screenhots](test_217_begin_line_strip_pattern_decal_miter_diagonal.png)
+- test_218_begin_line_strip_pattern_decal_miter_diagonal_aa
+  
+  ![screenhots](test_218_begin_line_strip_pattern_decal_miter_diagonal_aa.png)
+- test_219_begin_line_strip_miter_pattern
+  
+  ![screenhots](test_219_begin_line_strip_miter_pattern.png)
+- test_220_begin_line_strip_miter_aa_pattern
+  
+  ![screenhots](test_220_begin_line_strip_miter_aa_pattern.png)
+- test_221_begin_line_strip_miter_pattern_closed
+  
+  ![screenhots](test_221_begin_line_strip_miter_pattern_closed.png)
+- test_222_begin_line_strip_miter_aa_pattern_closed
+  
+  ![screenhots](test_222_begin_line_strip_miter_aa_pattern_closed.png)
+- test_223_begin_line_strip_miter_pattern_alpha
+  
+  ![screenhots](test_223_begin_line_strip_miter_pattern_alpha.png)
+- test_224_begin_line_strip_miter_aa_pattern_alpha
+  
+  ![screenhots](test_224_begin_line_strip_miter_aa_pattern_alpha.png)
+- test_225_begin_line_strip_miter_pattern_alpha_closed
+  
+  ![screenhots](test_225_begin_line_strip_miter_pattern_alpha_closed.png)
+- test_226_begin_line_strip_miter_aa_pattern_alpha_closed
+  
+  ![screenhots](test_226_begin_line_strip_miter_aa_pattern_alpha_closed.png)
+- test_227_begin_line_strip_miter_pattern_decal
+  
+  ![screenhots](test_227_begin_line_strip_miter_pattern_decal.png)
+- test_228_begin_line_strip_miter_aa_pattern_decal
+  
+  ![screenhots](test_228_begin_line_strip_miter_aa_pattern_decal.png)
+- test_229_begin_line_strip_miter_pattern_decal_closed
+  
+  ![screenhots](test_229_begin_line_strip_miter_pattern_decal_closed.png)
+- test_230_begin_line_strip_miter_aa_pattern_decal_closed
+  
+  ![screenhots](test_230_begin_line_strip_miter_aa_pattern_decal_closed.png)
+- test_231_begin_line_strip_miter_linear
+  
+  ![screenhots](test_231_begin_line_strip_miter_linear.png)
+- test_232_begin_line_strip_miter_aa_linear
+  
+  ![screenhots](test_232_begin_line_strip_miter_aa_linear.png)
+- test_233_begin_line_strip_miter_radial
+  
+  ![screenhots](test_233_begin_line_strip_miter_radial.png)
+- test_234_begin_line_strip_miter_aa_radial
+  
+  ![screenhots](test_234_begin_line_strip_miter_aa_radial.png)
+- test_235_begin_line_strip_miter_conic_closed
+  
+  ![screenhots](test_235_begin_line_strip_miter_conic_closed.png)
+- test_236_begin_line_strip_miter_aa_conic_closed
+  
+  ![screenhots](test_236_begin_line_strip_miter_aa_conic_closed.png)

@@ -1,6 +1,6 @@
 These are the `TKS` language bindings for the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[](tests/test_shadervg.tks) contains a set of 211 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[](tests/test_shadervg.tks) contains a set of 237 test cases for Minnie's ShaderVG render backend ([screenshots](tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../native/README.md) for the native C / C++ version of the library and test cases.
 
@@ -689,3 +689,81 @@ See [here](../native/README.md) for the native C / C++ version of the library an
 - test_210_begin_points_round_aa_pattern_decal_alpha
   
   ![screenhots](tests/screenshots/test_210_begin_points_round_aa_pattern_decal_alpha.png)
+- test_211_begin_line_strip_pattern_miter
+  
+  ![screenhots](tests/screenshots/test_211_begin_line_strip_pattern_miter.png)
+- test_212_begin_line_strip_pattern_miter_aa
+  
+  ![screenhots](tests/screenshots/test_212_begin_line_strip_pattern_miter_aa.png)
+- test_213_begin_line_strip_pattern_decal_miter
+  
+  ![screenhots](tests/screenshots/test_213_begin_line_strip_pattern_decal_miter.png)
+- test_214_begin_line_strip_pattern_decal_miter_aa
+  
+  ![screenhots](tests/screenshots/test_214_begin_line_strip_pattern_decal_miter_aa.png)
+- test_215_begin_line_strip_pattern_miter_diagonal
+  
+  ![screenhots](tests/screenshots/test_215_begin_line_strip_pattern_miter_diagonal.png)
+- test_216_begin_line_strip_pattern_miter_diagonal_aa
+  
+  ![screenhots](tests/screenshots/test_216_begin_line_strip_pattern_miter_diagonal_aa.png)
+- test_217_begin_line_strip_pattern_decal_miter_diagonal
+  
+  ![screenhots](tests/screenshots/test_217_begin_line_strip_pattern_decal_miter_diagonal.png)
+- test_218_begin_line_strip_pattern_decal_miter_diagonal_aa
+  
+  ![screenhots](tests/screenshots/test_218_begin_line_strip_pattern_decal_miter_diagonal_aa.png)
+- test_219_begin_line_strip_miter_pattern
+  
+  ![screenhots](tests/screenshots/test_219_begin_line_strip_miter_pattern.png)
+- test_220_begin_line_strip_miter_aa_pattern
+  
+  ![screenhots](tests/screenshots/test_220_begin_line_strip_miter_aa_pattern.png)
+- test_221_begin_line_strip_miter_pattern_closed
+  
+  ![screenhots](tests/screenshots/test_221_begin_line_strip_miter_pattern_closed.png)
+- test_222_begin_line_strip_miter_aa_pattern_closed
+  
+  ![screenhots](tests/screenshots/test_222_begin_line_strip_miter_aa_pattern_closed.png)
+- test_223_begin_line_strip_miter_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_223_begin_line_strip_miter_pattern_alpha.png)
+- test_224_begin_line_strip_miter_aa_pattern_alpha
+  
+  ![screenhots](tests/screenshots/test_224_begin_line_strip_miter_aa_pattern_alpha.png)
+- test_225_begin_line_strip_miter_pattern_alpha_closed
+  
+  ![screenhots](tests/screenshots/test_225_begin_line_strip_miter_pattern_alpha_closed.png)
+- test_226_begin_line_strip_miter_aa_pattern_alpha_closed
+  
+  ![screenhots](tests/screenshots/test_226_begin_line_strip_miter_aa_pattern_alpha_closed.png)
+- test_227_begin_line_strip_miter_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_227_begin_line_strip_miter_pattern_decal.png)
+- test_228_begin_line_strip_miter_aa_pattern_decal
+  
+  ![screenhots](tests/screenshots/test_228_begin_line_strip_miter_aa_pattern_decal.png)
+- test_229_begin_line_strip_miter_pattern_decal_closed
+  
+  ![screenhots](tests/screenshots/test_229_begin_line_strip_miter_pattern_decal_closed.png)
+- test_230_begin_line_strip_miter_aa_pattern_decal_closed
+  
+  ![screenhots](tests/screenshots/test_230_begin_line_strip_miter_aa_pattern_decal_closed.png)
+- test_231_begin_line_strip_miter_linear
+  
+  ![screenhots](tests/screenshots/test_231_begin_line_strip_miter_linear.png)
+- test_232_begin_line_strip_miter_aa_linear
+  
+  ![screenhots](tests/screenshots/test_232_begin_line_strip_miter_aa_linear.png)
+- test_233_begin_line_strip_miter_radial
+  
+  ![screenhots](tests/screenshots/test_233_begin_line_strip_miter_radial.png)
+- test_234_begin_line_strip_miter_aa_radial
+  
+  ![screenhots](tests/screenshots/test_234_begin_line_strip_miter_aa_radial.png)
+- test_235_begin_line_strip_miter_conic_closed
+  
+  ![screenhots](tests/screenshots/test_235_begin_line_strip_miter_conic_closed.png)
+- test_236_begin_line_strip_miter_aa_conic_closed
+  
+  ![screenhots](tests/screenshots/test_236_begin_line_strip_miter_aa_conic_closed.png)

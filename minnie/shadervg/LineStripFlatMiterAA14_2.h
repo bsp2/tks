@@ -339,6 +339,8 @@ class LineStripFlatMiterAA14_2 : public ShaderVG_Shape {
       " \n"
       "  if(gl_InstanceID == u_last_instance && index > 5.9) { \n"
       "    gl_Position = vec4(0,0,0,1); \n"  // skip last line joint
+      "    v_plane_n = vec2(0,0); \n"
+      "    v_join = 0.0; \n"
       "  } else { \n"
       "    gl_Position = u_transform * vec4(v,0,1); \n"
       "    if(index > 11.9) { \n"

@@ -701,7 +701,7 @@ Set global alpha. Applied to all draw calls.
 */
 YF void YAC_CALL sdvg_SetGlobalAlpha (sF32 _a);
 
-/* @function sdvg_SetTextureDecalAlpha,float decalAlpha
+/* @function sdvg_SetDecalAlpha,float decalAlpha
 Set texture opacity in Decal draw calls
 
 @arg decalAlpha normalized opacity (0..1)
@@ -709,7 +709,7 @@ Set texture opacity in Decal draw calls
 @group Texture
 @group Decal
 */
-YF void YAC_CALL sdvg_SetTextureDecalAlpha (sF32 _decalAlpha);
+YF void YAC_CALL sdvg_SetDecalAlpha (sF32 _decalAlpha);
 
 // -------- clear --------
 /* @function sdvg_Clear4f,float r,float g,float b,float a
@@ -1411,8 +1411,8 @@ Renders a polygon with numVerts control points. The last point must equal the fi
 
 <pre>
 VBO vertex format (4 bytes per vertex):<br>
-  s14.2 x<br>
-  s14.2 y<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
 </pre>
 
 @group Polygon
@@ -1458,6 +1458,19 @@ VBO vertex format (4 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawPolygonFillFlatUniformAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVerts);
 
+/* @function sdvg_PolygonFillFlatUniformVBO32_BeginPass1,int vboId
+Begin filled multipath n-polygon (32bit float format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass1 (sUI _vboId);
+
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1,int vboId
 Begin filled multipath n-polygon (14.2 fixed point format)
 
@@ -1471,6 +1484,25 @@ Apply current paint.
 */
 YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass1 (sUI _vboId);
 
+/* @function sdvg_PolygonFillFlatUniformVBO32_DrawPass1,int byteOffset,int numVerts
+Render first pass of filled multipath n-polygon sub-path (32bit float format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass1 (sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1,int byteOffset,int numVerts
 Render first pass of filled multipath n-polygon sub-path (14.2 fixed point format)
 
@@ -1478,11 +1510,28 @@ Renders a polygon with numVerts control points. The last point must equal the fi
 
 Apply current paint.
 
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
 @group Polygon
 @groupref Fill
 @groupref Paint
 */
 YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass1 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO32_BeginPass2
+Begin second pass of filled multipath n-polygon (32bit float format)
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_BeginPass2 (void);
 
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2
 Begin second pass of filled multipath n-polygon (14.2 fixed point format)
@@ -1495,6 +1544,25 @@ Apply current paint.
 */
 YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_BeginPass2 (void);
 
+/* @function sdvg_PolygonFillFlatUniformVBO32_DrawPass2,int byteOffset,int numVerts
+Render second pass of filled multipath n-polygon sub-path (32bit float format)
+
+Renders a polygon with numVerts control points. The last point must equal the first one.
+
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass2 (sUI _byteOffset, sUI _numVerts);
+
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2,int byteOffset,int numVerts
 Render second pass of filled multipath n-polygon sub-path (14.2 fixed point format)
 
@@ -1502,11 +1570,36 @@ Renders a polygon with numVerts control points. The last point must equal the fi
 
 Apply current paint.
 
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
+
 @group Polygon
 @groupref Fill
 @groupref Paint
 */
 YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass2 (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA,int byteOffset,int numVerts
+Render third pass of filled multipath n-polygon sub-path (32bit float format)
+
+Renders an anti-aliased, closed linestrip with (numVerts - 2) line segments. The last two points must equal the first two.
+
+Apply current paint.
+
+<pre>
+VBO vertex format (8 bytes per vertex):<br>
+  +0 f32 x<br>
+  +4 f32 y<br>
+</pre>
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_DrawPass3_AA (sUI _byteOffset, sUI _numVerts);
 
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA,int byteOffset,int numVerts
 Render third pass of filled multipath n-polygon sub-path (14.2 fixed point format)
@@ -1514,13 +1607,29 @@ Render third pass of filled multipath n-polygon sub-path (14.2 fixed point forma
 Renders an anti-aliased, closed linestrip with (numVerts - 2) line segments. The last two points must equal the first two.
 
 Apply current paint.
-Note: Paint is not really applicable for self-intersecting polygons and should be set to 'solid' in that case.
+
+<pre>
+VBO vertex format (4 bytes per vertex):<br>
+  +0 s14.2 x<br>
+  +2 s14.2 y<br>
+</pre>
 
 @group Polygon
 @groupref Fill
 @groupref Paint
 */
 YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO14_2_DrawPass3_AA (sUI _byteOffset, sUI _numVerts);
+
+/* @function sdvg_PolygonFillFlatUniformVBO32_End
+Finish filled multipath n-polygon (32bit float format)
+
+Apply current paint.
+
+@group Polygon
+@groupref Fill
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_PolygonFillFlatUniformVBO32_End (void);
 
 /* @function sdvg_PolygonFillFlatUniformVBO14_2_End
 Finish filled multipath n-polygon (14.2 fixed point format)
@@ -2212,19 +2321,6 @@ Apply current paint.
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-/* @function sdvg_DrawLineStripPatternVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
-
-@group Line
-@groupref LinePattern
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawLineStripPatternVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
-
 /* @function sdvg_DrawLineStripPatternVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (32 bit float format)
 
@@ -2238,7 +2334,7 @@ Draw previously prepared vertex buffer as patterned line strip (32 bit float for
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-/* @function sdvg_DrawLineStripPatternDecalVBO14_2,int vboId,int byteOffset,int numPoints
+/* @function sdvg_DrawLineStripPatternVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
@@ -2248,10 +2344,8 @@ Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point
 @group Line
 @groupref LinePattern
 @groupref Stroke
-@groupref Fill
-@group Decal
 */
-YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripPatternVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripPatternDecalVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned line strip (32 bit float format)
@@ -2268,8 +2362,8 @@ Draw previously prepared vertex buffer as patterned line strip (32 bit float for
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-/* @function sdvg_DrawLineStripPatternAAVBO14_2,int vboId,int byteOffset,int numPoints
-Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
+/* @function sdvg_DrawLineStripPatternDecalVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as patterned line strip (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
@@ -2281,7 +2375,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14
 @groupref Fill
 @group Decal
 */
-YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripPatternAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32 bit float format)
@@ -2298,7 +2392,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
-/* @function sdvg_DrawLineStripPatternDecalAAVBO14_2,int vboId,int byteOffset,int numPoints
+/* @function sdvg_DrawLineStripPatternAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
@@ -2311,7 +2405,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14
 @groupref Fill
 @group Decal
 */
-YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLineStripPatternAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripPatternDecalAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32 bit float format)
@@ -2327,6 +2421,21 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip (32
 @group Decal
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawLineStripPatternDecalAAVBO14_2,int vboId,int byteOffset,int numPoints
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-1 line segments will be drawn). For closed line loops, the last point must equal the first one.
+
+@group Line
+@groupref LinePattern
+@groupref Stroke
+@groupref Fill
+@group Decal
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLineStripFlatBevelVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as line strip with bevel line joints (32 bit float format)
@@ -2416,20 +2525,6 @@ VBO vertex format (4 bytes per vertex):<br>
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripPatternBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref LinePattern
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
 /* @function sdvg_DrawLineStripPatternBevelVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as patterned line strip with bevel line joints (32 bit float format)
 
@@ -2444,7 +2539,7 @@ Draw previously prepared vertex buffer as patterned line strip with bevel line j
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternBevelVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripPatternDecalBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+/* @function sdvg_DrawLineStripPatternBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
@@ -2456,37 +2551,7 @@ Draw previously prepared vertex buffer as patterned line strip with bevel line j
 @groupref LinePattern
 @groupref Stroke
 */
-YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
-/* @function sdvg_DrawLineStripPatternDecalBevelVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as patterned line strip with bevel line joints (32 bit float format)
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref LinePattern
-@group LineJoint
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
-
-/* @function sdvg_DrawLineStripPatternBevelAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (14.2 fixed point format)
-
-@arg vboId Vertex buffer object id
-@arg byteOffset Vertex buffer start offset
-@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
-@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
-
-@group Line
-@groupref LinePattern
-@group LineJoint
-@groupref Stroke
-*/
-YF void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+YF void YAC_CALL sdvg_DrawLineStripPatternBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripPatternBevelAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (32 bit float format)
@@ -2503,7 +2568,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripPatternDecalBevelAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+/* @function sdvg_DrawLineStripPatternBevelAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
@@ -2515,10 +2580,37 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 @groupref LinePattern
 @group LineJoint
 @groupref Stroke
-@groupref Fill
-@group Decal
 */
-YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+YF void YAC_CALL sdvg_DrawLineStripPatternBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripPatternDecalBevelVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as patterned line strip with bevel line joints (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref LinePattern
+@group LineJoint
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripPatternDecalBevelVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as patterned line strip with bevel line joints (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref LinePattern
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripPatternDecalBevelAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (32 bit float format)
@@ -2537,8 +2629,8 @@ Draw previously prepared vertex buffer as anti-aliased, patterned line strip wit
 */
 YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatMiterVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as line strip with miter line joints (14.2 fixed point format)
+/* @function sdvg_DrawLineStripPatternDecalBevelAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with bevel line joints (14.2 fixed point format)
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
@@ -2546,13 +2638,19 @@ Draw previously prepared vertex buffer as line strip with miter line joints (14.
 @arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
 
 @group Line
+@groupref LinePattern
+@group LineJoint
 @groupref Stroke
+@groupref Fill
+@group Decal
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalBevelAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripFlatMiterVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as line strip with miter line joints (32 bit float format)
 
+Apply current paint.
+
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
@@ -2560,11 +2658,14 @@ Draw previously prepared vertex buffer as line strip with miter line joints (32 
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
-/* @function sdvg_DrawLineStripFlatMiterAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
-Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (14.2 fixed point format)
+/* @function sdvg_DrawLineStripFlatMiterVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as line strip with miter line joints (14.2 fixed point format)
+
+Apply current paint.
 
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
@@ -2573,12 +2674,15 @@ Draw previously prepared vertex buffer as anti-aliased line strip with miter lin
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
-YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLineStripFlatMiterAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
 Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (32 bit float format)
 
+Apply current paint.
+
 @arg vboId Vertex buffer object id
 @arg byteOffset Vertex buffer start offset
 @arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
@@ -2586,8 +2690,85 @@ Draw previously prepared vertex buffer as anti-aliased line strip with miter lin
 
 @group Line
 @groupref Stroke
+@groupref Paint
 */
 YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripFlatMiterAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased line strip with miter line joints (14.2 fixed point format)
+
+Apply current paint.
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref Stroke
+@groupref Paint
+*/
+YF void YAC_CALL sdvg_DrawLineStripFlatMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripPatternMiterAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with miter line joints (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref LinePattern
+@group LineJoint
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripPatternMiterAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with miter line joints (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref LinePattern
+@group LineJoint
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripPatternDecalMiterAAVBO32,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with miter line joints (32 bit float format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref LinePattern
+@group LineJoint
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalMiterAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
+
+/* @function sdvg_DrawLineStripPatternDecalMiterAAVBO14_2,int vboId,int byteOffset,int numPoints,boolean bSkipLastLineJoint
+Draw previously prepared vertex buffer as anti-aliased, patterned line strip with miter line joints (14.2 fixed point format)
+
+@arg vboId Vertex buffer object id
+@arg byteOffset Vertex buffer start offset
+@arg numPoints Number of vertices (numPoints-2 line segments will be drawn). For closed line loops, the last two points must equal the first two.
+@arg bSkipLastLineJoint Must be true for closed line loops. false=do not render line joint at end of polyline.
+
+@group Line
+@groupref LinePattern
+@group LineJoint
+@groupref Stroke
+*/
+YF void YAC_CALL sdvg_DrawLineStripPatternDecalMiterAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints, sBool _bSkipLastLineJoint);
 
 /* @function sdvg_DrawLinesFlatVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as lines (14.2 fixed point format)
@@ -2713,7 +2894,7 @@ Draw previously prepared vertex buffer as patterned lines (14.2 fixed point form
 @groupref LinePattern
 @groupref Texture
 */
-YF void YAC_CALL sdvg_DrawLinesPatternVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLinesPatternVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternAAVBO14_2,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned lines (14.2 fixed point format)
@@ -2727,7 +2908,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned lines (14.2 fi
 @groupref LinePattern
 @groupref Texture
 */
-YF void YAC_CALL sdvg_DrawLinesPatternAAVBO14_2(sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLinesPatternAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as patterned lines (32 bit float format)
@@ -2741,7 +2922,7 @@ Draw previously prepared vertex buffer as patterned lines (32 bit float format)
 @groupref LinePattern
 @groupref Texture
 */
-YF void YAC_CALL sdvg_DrawLinesPatternVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLinesPatternVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawLinesPatternAAVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as anti-aliased, patterned lines (32 bit float format)
@@ -2755,7 +2936,7 @@ Draw previously prepared vertex buffer as anti-aliased, patterned lines (32 bit 
 @groupref LinePattern
 @groupref Texture
 */
-YF void YAC_CALL sdvg_DrawLinesPatternAAVBO32(sUI _vboId, sUI _byteOffset, sUI _numPoints);
+YF void YAC_CALL sdvg_DrawLinesPatternAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
 
 /* @function sdvg_DrawPointsSquareVBO32,int vboId,int byteOffset,int numPoints
 Draw previously prepared vertex buffer as square points (32 bit float format)
@@ -3088,6 +3269,82 @@ VBO vertex format (8 bytes per vertex):<br>
 @group Gouraud
 */
 YF void YAC_CALL sdvg_DrawPointsRoundGouraudAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numPoints);
+
+/* @function sdvg_DrawPointsRoundPatternAAVBO32,int vboId,int byteOffset,int numVertices
+Draw previously prepared vertex buffer as anti-aliased, stippled round points (32 bit float format)
+
+(numVertices - 1) points will be drawn.
+
+<pre>
+VBO vertex format (12 bytes per vertex):
+  +0 f32 x
+  +4 f32 y
+  +8 f32 patternOff
+</pre>
+
+@group Line
+@groupref LinePattern
+@groupref Stroke
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundPatternAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVertices);
+
+/* @function sdvg_DrawPointsRoundPatternAAVBO14_2,int vboId,int byteOffset,int numVertices
+Draw previously prepared vertex buffer as anti-aliased, stippled round points (14.2 fixed point format)
+
+(numVertices - 1) points will be drawn.
+
+<pre>
+VBO vertex format (6 bytes per vertex):
+  +0 s14.2 x
+  +2 s14.2 y
+  +4 s14.2 patternOff
+</pre>
+
+@group Line
+@groupref LinePattern
+@groupref Stroke
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundPatternAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVertices);
+
+/* @function sdvg_DrawPointsRoundPatternDecalAAVBO32,int vboId,int byteOffset,int numVertices
+Draw previously prepared vertex buffer as anti-aliased, stippled round points (32 bit float format)
+
+(numVertices - 1) points will be drawn.
+
+<pre>
+VBO vertex format (12 bytes per vertex):
+  +0 f32 x
+  +4 f32 y
+  +8 f32 patternOff
+</pre>
+
+@group Line
+@groupref LinePattern
+@groupref Stroke
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundPatternDecalAAVBO32 (sUI _vboId, sUI _byteOffset, sUI _numVertices);
+
+/* @function sdvg_DrawPointsRoundPatternDecalAAVBO14_2,int vboId,int byteOffset,int numVertices
+Draw previously prepared vertex buffer as anti-aliased, stippled round points (14.2 fixed point format)
+
+(numVertices - 1) points will be drawn.
+
+<pre>
+VBO vertex format (6 bytes per vertex):
+  +0 s14.2 x
+  +2 s14.2 y
+  +4 s14.2 patternOff
+</pre>
+
+@group Line
+@groupref LinePattern
+@groupref Stroke
+@groupref Fill
+*/
+YF void YAC_CALL sdvg_DrawPointsRoundPatternDecalAAVBO14_2 (sUI _vboId, sUI _byteOffset, sUI _numVertices);
 
 // ----------- custom shaders ------------
 
@@ -3484,6 +3741,28 @@ Begin preparation or rendering of filled triangles
 */
 YF sBool YAC_CALL sdvg_BeginFilledTriangles (sUI _numVertices);
 
+/* @function sdvg_BeginFilledTriangles32,int numVertices:boolean
+Begin preparation or rendering of filled triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+*/
+YF sBool YAC_CALL sdvg_BeginFilledTriangles32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledTriangles14_2,int numVertices:boolean
+Begin preparation or rendering of filled triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+*/
+YF sBool YAC_CALL sdvg_BeginFilledTriangles14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginFilledTriangleFan,int numVertices:boolean
 Begin preparation or rendering of filled triangle-fan
 
@@ -3495,6 +3774,28 @@ Begin preparation or rendering of filled triangle-fan
 */
 YF sBool YAC_CALL sdvg_BeginFilledTriangleFan (sUI _numVertices);
 
+/* @function sdvg_BeginFilledTriangleFan32,int numVertices:boolean
+Begin preparation or rendering of filled triangle-fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+*/
+YF sBool YAC_CALL sdvg_BeginFilledTriangleFan32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledTriangleFan14_2,int numVertices:boolean
+Begin preparation or rendering of filled triangle-fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+*/
+YF sBool YAC_CALL sdvg_BeginFilledTriangleFan14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginFilledTriangleStrip,int numVertices:boolean
 Begin preparation or rendering of filled triangle-strip
 
@@ -3505,6 +3806,28 @@ Begin preparation or rendering of filled triangle-strip
 @groupref Fill
 */
 YF sBool YAC_CALL sdvg_BeginFilledTriangleStrip (sUI _numVertices);
+
+/* @function sdvg_BeginFilledTriangleStrip32,int numVertices:boolean
+Begin preparation or rendering of filled triangle-strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+*/
+YF sBool YAC_CALL sdvg_BeginFilledTriangleStrip32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledTriangleStrip14_2,int numVertices:boolean
+Begin preparation or rendering of filled triangle-strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+*/
+YF sBool YAC_CALL sdvg_BeginFilledTriangleStrip14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginFilledGouraudTriangles,int numVertices:boolean
 Begin preparation or rendering of filled, gouraud shaded triangles
@@ -3518,6 +3841,30 @@ Begin preparation or rendering of filled, gouraud shaded triangles
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangles (sUI _numVertices);
 
+/* @function sdvg_BeginFilledGouraudTriangles32,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangles32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudTriangles14_2,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangles14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginFilledGouraudTriangleFan,int numVertices:boolean
 Begin preparation or rendering of filled, gouraud shaded triangle-fan
 
@@ -3529,6 +3876,30 @@ Begin preparation or rendering of filled, gouraud shaded triangle-fan
 @group Gouraud
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudTriangleFan32,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudTriangleFan14_2,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginFilledGouraudTriangleStrip,int numVertices:boolean
 Begin preparation or rendering of filled, gouraud shaded triangle-strip
@@ -3542,6 +3913,30 @@ Begin preparation or rendering of filled, gouraud shaded triangle-strip
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip (sUI _numVertices);
 
+/* @function sdvg_BeginFilledGouraudTriangleStrip32,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudTriangleStrip14_2,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginFilledGouraudModulateTriangles,int numVertices:boolean
 Begin preparation or rendering of filled, gouraud shaded triangles
 
@@ -3553,6 +3948,30 @@ Begin preparation or rendering of filled, gouraud shaded triangles
 @group Gouraud
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangles32,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangles14_2,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginFilledGouraudModulateTriangleFan,int numVertices:boolean
 Begin preparation or rendering of filled, gouraud shaded triangle-fan
@@ -3566,6 +3985,30 @@ Begin preparation or rendering of filled, gouraud shaded triangle-fan
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan (sUI _numVertices);
 
+/* @function sdvg_BeginFilledGouraudModulateTriangleFan32,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangleFan14_2,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginFilledGouraudModulateTriangleStrip,int numVertices:boolean
 Begin preparation or rendering of filled, gouraud shaded triangle-strip
 
@@ -3577,6 +4020,30 @@ Begin preparation or rendering of filled, gouraud shaded triangle-strip
 @group Gouraud
 */
 YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangleStrip32,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip32 (sUI _numVertices);
+
+/* @function sdvg_BeginFilledGouraudModulateTriangleStrip14_2,int numVertices:boolean
+Begin preparation or rendering of filled, gouraud shaded triangle-strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedTriangles,int numVertices:boolean
 Begin preparation or rendering of textured triangles
@@ -3590,6 +4057,30 @@ Begin preparation or rendering of textured triangles
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTriangles (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedTriangles32,int numVertices:boolean
+Begin preparation or rendering of textured triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangles32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangles14_2,int numVertices:boolean
+Begin preparation or rendering of textured triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangles14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedTriangleFan,int numVertices:boolean
 Begin preparation or rendering of textured triangle fan
 
@@ -3602,6 +4093,30 @@ Begin preparation or rendering of textured triangle fan
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTriangleFan (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedTriangleFan32,int numVertices:boolean
+Begin preparation or rendering of textured triangle fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleFan32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangleFan14_2,int numVertices:boolean
+Begin preparation or rendering of textured triangle fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleFan14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedTriangleStrip,int numVertices:boolean
 Begin preparation or rendering of textured triangle strip
 
@@ -3613,6 +4128,30 @@ Begin preparation or rendering of textured triangle strip
 @groupref Texture
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTriangleStrip (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangleStrip32,int numVertices:boolean
+Begin preparation or rendering of textured triangle strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleStrip32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangleStrip14_2,int numVertices:boolean
+Begin preparation or rendering of textured triangle strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleStrip14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedGouraudTriangles,int numVertices:boolean
 Begin preparation or rendering of textured, gouraud shaded triangles
@@ -3627,6 +4166,32 @@ Begin preparation or rendering of textured, gouraud shaded triangles
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangles (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedGouraudTriangles32,int numVertices:boolean
+Begin preparation or rendering of textured, gouraud shaded triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangles32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangles14_2,int numVertices:boolean
+Begin preparation or rendering of textured, gouraud shaded triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangles14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedGouraudTriangleFan,int numVertices:boolean
 Begin preparation or rendering of textured, gouraud shaded triangle-fan
 
@@ -3640,6 +4205,32 @@ Begin preparation or rendering of textured, gouraud shaded triangle-fan
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleFan (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedGouraudTriangleFan32,int numVertices:boolean
+Begin preparation or rendering of textured, gouraud shaded triangle-fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleFan32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangleFan14_2,int numVertices:boolean
+Begin preparation or rendering of textured, gouraud shaded triangle-fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleFan14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedGouraudTriangleStrip,int numVertices:boolean
 Begin preparation or rendering of textured, gouraud shaded triangle-strip
 
@@ -3652,6 +4243,32 @@ Begin preparation or rendering of textured, gouraud shaded triangle-strip
 @group Gouraud
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStrip (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangleStrip32,int numVertices:boolean
+Begin preparation or rendering of textured, gouraud shaded triangle-strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStrip32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangleStrip14_2,int numVertices:boolean
+Begin preparation or rendering of textured, gouraud shaded triangle-strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStrip14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedTrianglesAlpha,int numVertices:boolean
 Begin preparation or rendering of alpha-channel-only textured triangles
@@ -3701,6 +4318,30 @@ Begin preparation or rendering of alpha-channel-only textured triangle-fan
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTriangleFanAlpha (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedTriangleFanAlpha32,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured triangle-fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleFanAlpha32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangleFanAlpha14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured triangle-fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleFanAlpha14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedTriangleStripAlpha,int numVertices:boolean
 Begin preparation or rendering of alpha-channel-only textured triangle-strip
 
@@ -3712,6 +4353,30 @@ Begin preparation or rendering of alpha-channel-only textured triangle-strip
 @groupref Texture
 */
 YF sBool YAC_CALL sdvg_BeginTexturedTriangleStripAlpha (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangleStripAlpha32,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured triangle-strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleStripAlpha32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedTriangleStripAlpha14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured triangle-strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedTriangleStripAlpha14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedGouraudTrianglesAlpha,int numVertices:boolean
 Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangles
@@ -3726,6 +4391,32 @@ Begin preparation or rendering of alpha-channel-only textured, gouraud shaded tr
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTrianglesAlpha (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedGouraudTrianglesAlpha32,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangles (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTrianglesAlpha32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTrianglesAlpha14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangles (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTrianglesAlpha14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedGouraudTriangleFanAlpha,int numVertices:boolean
 Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangle-fan
 
@@ -3739,6 +4430,32 @@ Begin preparation or rendering of alpha-channel-only textured, gouraud shaded tr
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleFanAlpha (sUI _numVertices);
 
+/* @function sdvg_BeginTexturedGouraudTriangleFanAlpha32,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangle-fan (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleFanAlpha32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangleFanAlpha14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangle-fan (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleFanAlpha14_2 (sUI _numVertices);
+
 /* @function sdvg_BeginTexturedGouraudTriangleStripAlpha,int numVertices:boolean
 Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangle-strip
 
@@ -3751,6 +4468,32 @@ Begin preparation or rendering of alpha-channel-only textured, gouraud shaded tr
 @group Gouraud
 */
 YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangleStripAlpha32,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangle-strip (32bit float format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha32 (sUI _numVertices);
+
+/* @function sdvg_BeginTexturedGouraudTriangleStripAlpha14_2,int numVertices:boolean
+Begin preparation or rendering of alpha-channel-only textured, gouraud shaded triangle-strip (14.2 fixed point format)
+
+@arg numVertices Number of vertices
+
+@group Begin
+@group Triangle
+@groupref Fill
+@groupref Texture
+@group Gouraud
+*/
+YF sBool YAC_CALL sdvg_BeginTexturedGouraudTriangleStripAlpha14_2 (sUI _numVertices);
 
 /* @function sdvg_BeginTexturedTrianglesAlphaSDF,int numVertices:boolean
 Begin preparation or rendering of alpha-SDF-channel-only textured triangles
@@ -4144,6 +4887,150 @@ Renders line joint after last segment.
 @group LineJoint
 */
 YF sBool YAC_CALL sdvg_BeginLineStripMiterAAClosed (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternMiter,int numPoints:boolean
+Begin preparation or rendering of patterned line strip with miter line joints (open polyline).
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
+
+@arg numPoints Number of vertices ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternMiter (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternMiterClosed,int numPoints:boolean
+Begin preparation or rendering of patterned line strip with miter line joints (closed polyline)
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+@arg numPoints Number of vertices ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternMiterClosed (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternMiterAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, patterned line strip with miter line joints (open polyline).
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternMiterAA (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternMiterAAClosed,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, patterned line strip with miter line joints (closed polyline).
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternMiterAAClosed (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalMiter,int numPoints:boolean
+Begin preparation or rendering of patterned line strip with miter line joints (open polyline).
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
+
+@arg numPoints Number of vertices
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalMiter (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalMiterClosed,int numPoints:boolean
+Begin preparation or rendering of patterned line strip with miter line joints (closed polyline).
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+@arg numPoints Number of vertices ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalMiterClosed (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalMiterAA,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, patterned line strip with miter line joints (open polyline).
+
+One extra point must be added after the last control point (will be ignored for open polylines, though).
+Skips line joint after last line segment.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalMiterAA (sUI _numPoints);
+
+/* @function sdvg_BeginLineStripPatternDecalMiterAAClosed,int numPoints:boolean
+Begin preparation or rendering of anti-aliased, patterned line strip with miter line joints (closed polyline).
+
+The last two points must equal the first two.
+Renders line joint after last segment.
+
+@arg numPoints Number of points ((numPoints-2) line segments will be drawn)
+
+@group Begin
+@group Line
+@groupref Stroke
+@group LineJoint
+@groupref LinePattern
+@groupref Texture
+@groupref Fill
+@group Decal
+*/
+YF sBool YAC_CALL sdvg_BeginLineStripPatternDecalMiterAAClosed (sUI _numPoints);
 
 /* @function sdvg_BeginLines,int numPoints:boolean
 Begin preparation or rendering of line segments

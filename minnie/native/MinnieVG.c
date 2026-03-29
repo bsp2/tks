@@ -32,6 +32,8 @@
 #include "../inc_minnie.h"
 #include "hal.h"
 
+#include "MinnieVG.h"
+
 
 // ----------------------------------------------------------------------------
 static sBool b_profile = 1;
@@ -41,9 +43,24 @@ static sF32  aa_exp    = 1.0f;  // (todo) 'k', lshift-k
 
 static YAC_Buffer minnie_scratch;
 
+// ----------------------------------------------------------------------------
+void MinnieVG_Init(sBool _bGLCore) {
+   MinnieVG_InitShaderVG(_bGLCore);
+   MinnieVG_InitMinnie();
+   MinnieVG_InitMinnieScratchBuffers();
+}
 
 // ----------------------------------------------------------------------------
-void MinnieVG_Init(void) {
+void MinnieVG_InitShaderVG(sBool _bGLCore) {
+   sdvg_SetScratchBufferSize(64*1024);
+#if 0
+   sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
+#endif // 0
+   sdvg_Init(_bGLCore);
+}
+
+// ----------------------------------------------------------------------------
+void MinnieVG_InitMinnie(void) {
    minnie_impl_init();
 
    minSetEnableDraw(1);
@@ -163,14 +180,14 @@ static sUI loc_MinnieVG_InitScratchBuffers_int(void) {
 }
 
 // ----------------------------------------------------------------------------
-sBool MinnieVG_InitScratchBuffers(void) {
+sBool MinnieVG_InitMinnieScratchBuffers(void) {
    // (todo) add defPointsPerPath / maxPointsPerPath / maxClippedTrisPerPath / maxExtrudedVerticesPerPath / maxClippedTrisPerPath args
    memset(&minnie_scratch, 0, sizeof(minnie_scratch));
 
    sUI reqSz = loc_MinnieVG_InitScratchBuffers_int();
    if(minnie_scratch.size < reqSz)
    {
-      Dprintf("[...] MinnieVG_InitScratchBuffers: adjusting scratch.size=%u to reqSz=%u\n", minnie_scratch.size, reqSz);
+      Dprintf("[...] MinnieVG_InitMinnieScratchBuffers: adjusting scratch.size=%u to reqSz=%u\n", minnie_scratch.size, reqSz);
       (void)yac_buffer_alloc(&minnie_scratch, reqSz);
    }
    reqSz = loc_MinnieVG_InitScratchBuffers_int();
@@ -178,19 +195,19 @@ sBool MinnieVG_InitScratchBuffers(void) {
    if(minnie_scratch.size >= reqSz)
    {
       // Succeeded
-      Dprintf("[...] MinnieVG_InitScratchBuffers: using %u/%u scratch bytes\n", reqSz, minnie_scratch.size);
+      Dprintf("[...] MinnieVG_InitMinnieScratchBuffers: using %u/%u scratch bytes\n", reqSz, minnie_scratch.size);
       return YAC_TRUE;
    }
    else
    {
-      Dprintf("[---] MinnieVG_InitScratchBuffers: insufficient scratch size. have=%u need=%u\n", minnie_scratch.size, reqSz);
+      Dprintf("[---] MinnieVG_InitMinnieScratchBuffers: insufficient scratch size. have=%u need=%u\n", minnie_scratch.size, reqSz);
    }
 
    return YAC_FALSE;
 }
 
 // ----------------------------------------------------------------------------
-sBool MinnieVG_OnOpen() {
+sBool MinnieVG_OnOpen(void) {
 
    // zglLoadExtensions();
 

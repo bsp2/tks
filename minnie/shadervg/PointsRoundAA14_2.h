@@ -31,6 +31,9 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
    const char *vs_src =
       "uniform mat4  u_transform; \n"
       "uniform float u_point_radius; \n"
+#ifdef SHADERVG_UNIFORM_ARRAY
+      "uniform vec2  u_a_offset[6]; \n"
+#endif // SHADERVG_UNIFORM_ARRAY
       " \n"
       "ATTRIBUTE vec2 a_vertex; \n"
       " \n"
@@ -40,6 +43,9 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       "  vec2 vCtr = a_vertex * 0.25; \n"
       "  vec2 v; \n"
       " \n"
+#ifdef SHADERVG_UNIFORM_ARRAY
+      "  v = vCtr + u_a_offset[int(gl_VertexID)]; \n"
+#else
       "  float index = float(gl_VertexID); \n"
       " \n"
       "  if(index > 4.9) { \n"
@@ -60,6 +66,7 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       "  else { \n"
       "    v = vCtr - vec2(u_point_radius, u_point_radius); \n"  // LT
       "  } \n"
+#endif // SHADERVG_UNIFORM_ARRAY
       " \n"
       "  gl_Position = u_transform * vec4(v,0,1); \n"
       "  v_vertex_mp = v - vCtr; \n"
@@ -97,6 +104,9 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
          && (-1 != shape_u_transform)
          && (-1 != shape_u_color_stroke)
          && (-1 != shape_u_point_radius)
+#ifdef SHADERVG_UNIFORM_ARRAY
+         && (-1 != shape_u_a_offset)
+#endif // SHADERVG_UNIFORM_ARRAY
          && (-1 != shape_u_aa_range)
          ;
    }
@@ -109,6 +119,7 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       return YAC_FALSE;
    }
 
+#if 0
    void drawPointsRoundAAVBO14_2(sUI              _vboId,
                                  sUI              _byteOffset,
                                  sUI              _numPoints,
@@ -123,7 +134,7 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       //   +2 s14.2 y
       //
 
-      /* Dprintf("xxx DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u pointRadius=%f aaRange=%f\n", _vboId, _byteOffset, _numPoints, _pointRadius, _aaRange); */
+      Dprintf("xxx DrawPointsRoundAAVBO14_2: vboId=%u byteOffset=%u numPoints=%u pointRadius=%f aaRange=%f\n", _vboId, _byteOffset, _numPoints, _pointRadius, _aaRange);
 
       sdvg_BindVBO(_vboId);
 
@@ -132,6 +143,9 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
       Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
       Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
+#ifdef SHADERVG_UNIFORM_ARRAY
+      updateUniformOffsetArray(_pointRadius);
+#endif // SHADERVG_UNIFORM_ARRAY
       Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG
       if(-1 != shape_u_debug)
@@ -151,5 +165,6 @@ class PointsRoundAA14_2 : public ShaderVG_Shape {
       Dsdvg_attrib_disable(shape_a_vertex);
       Dsdvg_attrib_divisor_reset(shape_a_vertex);
    }
+#endif // 0
 
 };

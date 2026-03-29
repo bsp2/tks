@@ -1,6 +1,6 @@
 This is the standalone C / C++ build of the `Minnie` vector graphics API (distributed under terms of the [MIT license](../LICENSE)).
 
-[main.c](main.c) contains a set of 211 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
+[main.c](main.c) contains a set of 237 test cases for Minnie's ShaderVG render backend ([screenshots](../tkminnie/tests/screenshots/), [API docs](https://html-preview.github.io/?url=https://raw.githubusercontent.com/bsp2/tks/main/apidocs/ee/ShaderVG.html)).
 
 See [here](../tkminnie/README.md) for `TKS` language bindings and script version of the test cases.
 
@@ -670,3 +670,81 @@ See [here](../tkminnie/README.md) for `TKS` language bindings and script version
 - test_210_begin_points_round_aa_pattern_decal_alpha
   
   ![screenhots](../tkminnie/tests/screenshots/test_210_begin_points_round_aa_pattern_decal_alpha.png)
+- test_211_begin_line_strip_pattern_miter
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_211_begin_line_strip_pattern_miter.png)
+- test_212_begin_line_strip_pattern_miter_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_212_begin_line_strip_pattern_miter_aa.png)
+- test_213_begin_line_strip_pattern_decal_miter
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_213_begin_line_strip_pattern_decal_miter.png)
+- test_214_begin_line_strip_pattern_decal_miter_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_214_begin_line_strip_pattern_decal_miter_aa.png)
+- test_215_begin_line_strip_pattern_miter_diagonal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_215_begin_line_strip_pattern_miter_diagonal.png)
+- test_216_begin_line_strip_pattern_miter_diagonal_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_216_begin_line_strip_pattern_miter_diagonal_aa.png)
+- test_217_begin_line_strip_pattern_decal_miter_diagonal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_217_begin_line_strip_pattern_decal_miter_diagonal.png)
+- test_218_begin_line_strip_pattern_decal_miter_diagonal_aa
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_218_begin_line_strip_pattern_decal_miter_diagonal_aa.png)
+- test_219_begin_line_strip_miter_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_219_begin_line_strip_miter_pattern.png)
+- test_220_begin_line_strip_miter_aa_pattern
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_220_begin_line_strip_miter_aa_pattern.png)
+- test_221_begin_line_strip_miter_pattern_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_221_begin_line_strip_miter_pattern_closed.png)
+- test_222_begin_line_strip_miter_aa_pattern_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_222_begin_line_strip_miter_aa_pattern_closed.png)
+- test_223_begin_line_strip_miter_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_223_begin_line_strip_miter_pattern_alpha.png)
+- test_224_begin_line_strip_miter_aa_pattern_alpha
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_224_begin_line_strip_miter_aa_pattern_alpha.png)
+- test_225_begin_line_strip_miter_pattern_alpha_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_225_begin_line_strip_miter_pattern_alpha_closed.png)
+- test_226_begin_line_strip_miter_aa_pattern_alpha_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_226_begin_line_strip_miter_aa_pattern_alpha_closed.png)
+- test_227_begin_line_strip_miter_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_227_begin_line_strip_miter_pattern_decal.png)
+- test_228_begin_line_strip_miter_aa_pattern_decal
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_228_begin_line_strip_miter_aa_pattern_decal.png)
+- test_229_begin_line_strip_miter_pattern_decal_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_229_begin_line_strip_miter_pattern_decal_closed.png)
+- test_230_begin_line_strip_miter_aa_pattern_decal_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_230_begin_line_strip_miter_aa_pattern_decal_closed.png)
+- test_231_begin_line_strip_miter_linear
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_231_begin_line_strip_miter_linear.png)
+- test_232_begin_line_strip_miter_aa_linear
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_232_begin_line_strip_miter_aa_linear.png)
+- test_233_begin_line_strip_miter_radial
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_233_begin_line_strip_miter_radial.png)
+- test_234_begin_line_strip_miter_aa_radial
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_234_begin_line_strip_miter_aa_radial.png)
+- test_235_begin_line_strip_miter_conic_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_235_begin_line_strip_miter_conic_closed.png)
+- test_236_begin_line_strip_miter_aa_conic_closed
+  
+  ![screenhots](../tkminnie/tests/screenshots/test_236_begin_line_strip_miter_aa_conic_closed.png)

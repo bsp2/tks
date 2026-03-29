@@ -223,6 +223,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
    const char *fs_src =
       "uniform vec4      u_color_fill; \n"
       "uniform vec4      u_color_stroke; \n"
+      "uniform float     u_decal_alpha; \n"
       "uniform float     u_stroke_w; \n"
       "uniform float     u_aa_range; \n"
 #ifdef SHADERVG_DEBUG_FRAG
@@ -245,7 +246,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
       "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  } \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
-      "  vec4 c = mix(u_color_fill.rgba, u_color_stroke.rgba, patA); \n"
+      "  vec4 c = mix(u_color_fill.rgba, u_color_stroke.rgba, patA * u_decal_alpha); \n"
       "  FRAGCOLOR = vec4(c.rgb, c.a * a); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
@@ -264,6 +265,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
          && (-1 != shape_u_last_instance)
          && (-1 != shape_u_color_fill)
          && (-1 != shape_u_color_stroke)
+         && (-1 != shape_u_decal_alpha)
          && (-1 != shape_u_stroke_w)
          && (-1 != shape_u_aa_range)
          && (-1 != shape_u_sampler)
@@ -287,6 +289,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
                                                 Dsdvg_mat4_ref_t _mvpMatrix,
                                                 sF32             _fillR,   sF32 _fillG,   sF32 _fillB,   sF32 _fillA,
                                                 sF32             _strokeR, sF32 _strokeG, sF32 _strokeB, sF32 _strokeA,
+                                                sF32             _decalAlpha,
                                                 sF32             _strokeW,
                                                 sF32             _aaRange,
                                                 sF32             _linePatternScale,
@@ -312,6 +315,7 @@ class LineStripPatternDecalBevelAA14_2 : public ShaderVG_Shape {
          Dsdvg_uniform_mat4(shape_u_transform, _mvpMatrix);
          Dsdvg_uniform_4f(shape_u_color_fill, _fillR, _fillG, _fillB, _fillA);
          Dsdvg_uniform_4f(shape_u_color_stroke, _strokeR, _strokeG, _strokeB, _strokeA);
+         Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
          Dsdvg_uniform_1f(shape_u_stroke_w, _strokeW);
          Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG

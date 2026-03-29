@@ -159,6 +159,9 @@ static const char *test_names[] = {
    "30: polygon non-zero",
    "31: flat shaded AA rectangles 200x200",
    "32: stippled sine lines",
+   "33: stippled circle",
+   "34: stippled sine lines decal",
+   "35: stippled circle decal",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -199,7 +202,7 @@ static sF32 loc_randf(sF32 _max) {
 static void Test_00(void) {
    // concave path
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    minSeg(32u);
 
    const sF32 vpSclX = VP_W / 800.0f;
@@ -222,7 +225,7 @@ static void Test_00(void) {
               (100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY   // dst
               );
 
-   minEndPath(YAC_TRUE/*bClosed*/);
+   minEndPathClosed();
 
    if(fill_mode & 1u)
    {
@@ -246,7 +249,7 @@ static void Test_00(void) {
 static void Test_01(void) {
    // sub-path
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
 
    sF32 segAmt = 0.5f + 0.5f*sinf(anim_6);
    segAmt *= segAmt;
@@ -279,7 +282,7 @@ static void Test_01(void) {
               );
 
    // sub 1
-   minBeginSub();
+   (void)minBeginSub();
    minMoveTo((300.0f-ry)*vpSclX, (250.0f+rx)*vpSclY);
    minEllipse(150.0f*vpSclX, 150.0f*vpSclY);
    minEndSubClosed();
@@ -412,7 +415,7 @@ static void Test_04(void) {
    const sF32 vpSclX = VP_W / 800.0f;
    const sF32 vpSclY = VP_H / 600.0f;
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
 
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
@@ -436,7 +439,7 @@ static void Test_04(void) {
    minColor(0xffffffffu);
    minStrokeWidth(2.0f * 4.0f*vpSclX);
    minJoinBevel();
-   minCapNone();
+   minCapRound();
    minDrawPath(pid);
 }
 
@@ -463,11 +466,11 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
    if(ry > (sy*0.495f))
       ry = (sy*0.495f);
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    minSeg(8u);
    minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
    minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
-   minEndPath(YAC_TRUE/*bClosed*/);
+   minEndPathClosed();
 
    if(_bFill)
    {
@@ -551,11 +554,11 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
    if(ry > (sy*0.495f))
       ry = (sy*0.495f);
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    minSeg(8u);
    minMoveTo( (400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY );
    minRect(sx*vpSclX, sy*vpSclY);
-   minEndPath(YAC_TRUE/*bClosed*/);
+   minEndPathClosed();
 
    if(_bFill)
    {
@@ -642,11 +645,11 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
    if(ry > (sy*0.495f))
       ry = (sy*0.495f);
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    minSeg(64u);
    minMoveTo(400.0f*vpSclX, 300.0f*vpSclY);
    minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
-   minEndPath(YAC_TRUE/*bClosed*/);
+   minEndPathClosed();
 
    if(_bFill)
    {
@@ -714,7 +717,7 @@ static void Test_18(sBool _bFill, sBool _bStroke) {
 static void Test_23(sBool _bFill, sBool _bStroke) {
    // arc path
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    minSeg(32u);
 
    const sF32 vpSclX = VP_W / 800.0f;
@@ -739,7 +742,7 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
             (px + sx)*vpSclX, (py + sy)*vpSclY
             );
 
-   minEndPath(YAC_TRUE/*bClosed*/);
+   minEndPathClosed();
 
    if(_bFill)
    {
@@ -764,13 +767,13 @@ static void Test_26(void) {
    const sF32 vpSclX = VP_W / 454.0f;
    const sF32 vpSclY = VP_H / 454.0f;
 
-   sSI paintId = minPaintCreate();
+   MinPaintId paintId = minPaintCreate();
    minPaintPattern(0.0f, 0.0f,
                    1.0f, 0.0f,
                    VP_W, VP_H
                    );
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    minSeg(20);
 
    const sF32 px =  71;
@@ -791,7 +794,7 @@ static void Test_26(void) {
             dx*vpSclX, dy*vpSclY
             );
 
-   minEndPath(YAC_FALSE/*bClosed*/);
+   minEndPathOpen();
 
    minStrokeWidth(2.0f * 3.5f*vpSclX);
    minBindTexture(tex_gradient_id, YAC_TRUE/*bRepeat*/, b_tex_filter);
@@ -812,7 +815,7 @@ static void Test_27(void) {
    // textured, flat shaded AA rectangles
 
    minBindTexture(tex_id, 0/*bRepeat*/, b_tex_filter);
-   sSI paintId = minPaintCreate();
+   MinPaintId paintId = minPaintCreate();
    minColor(0xffffffffu);
    minFill();
 
@@ -887,7 +890,7 @@ static void Test_28(void) {
    // textured, flat shaded AA rectangles 200x200
 
    minBindTexture(tex_id, 0/*bRepeat*/, b_tex_filter);
-   sSI paintId = minPaintCreate();
+   MinPaintId paintId = minPaintCreate();
    minColor(0xffffffffu);
    minFill();
 
@@ -937,12 +940,12 @@ static void Test_29(sBool _bNonZero) { // 29+30
    const sF32 ctrX = 800.0f/2.0f;
    const sF32 ctrY = 600.0f/2.0f;
 
-   sSI paintId = minPaintCreate();
+   MinPaintId paintId = minPaintCreate();
    sF32 px = sinf(anim_2*2.0f)*(VP_W*0.01f) + ctrX;
    sF32 py = sinf(anim_3*2.0f)*(VP_H*0.01f) + ctrY;
    minPaintRadial(px*vpSclX, py*vpSclY, VP_W*0.45f*vpSclX, VP_H*0.45f*vpSclY);
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
    const sUI num = 16u;
    const sF32 r = sMIN(800, 600) * 0.375f;
    const sF32 w = sM_PIf*(((sF32)(num-2u))/((sF32)(num-1u)));
@@ -958,7 +961,7 @@ static void Test_29(sBool _bNonZero) { // 29+30
          minLineTo(x, y);
       a += w;
    }
-   minEndPath(YAC_TRUE/*bClosed*/);
+   minEndPathClosed();
 
    if(fill_mode & 1u)
    {
@@ -1012,18 +1015,18 @@ static void Test_31(void) {
 }
 
 // ----------------------------------------------------------------------------
-static void Test_32(void) {
-   // stippled sine lines
+static void Test_32(sBool _bDecal) {  // 32+34
+   // stippled sine lines / round line caps
 
    const sF32 vpSclX = VP_W / 800.0f;
    const sF32 vpSclY = VP_H / 600.0f;
 
-   sSI pid = minBeginPath();
+   MinPathId pid = minBeginPath();
 
    sUI numSeg = 64u;
    sUI numPoints = numSeg + 1u;
    sF32 w = (sM_2PIf / numSeg);
-   sF32 a = anim_1;
+   sF32 a = anim_1 * 0.25f;
    sF32 x = 100.0f;
    sF32 xStep = 600.0f / numSeg;
    for(sUI segIdx = 0u; segIdx < numPoints; segIdx++)
@@ -1039,12 +1042,94 @@ static void Test_32(void) {
 
    minEndPathOpen();
 
-   minColor(0xffffffffu);
+   minColorFill(0xff1f5f5fu);
+   minColorStroke(0xffffffffu);
+   minDecalAlpha(1.0f);
    minStrokeWidth(2.0f * 8.0f*vpSclX);
-   minLinePattern(16u, 0x00FFu);
-   minLinePatternScale(2.0f);
-   minLinePatternOffset(anim_2 * (0.5f / sM_2PIf*4.0f));
-   minJoinBevel();
+   minLinePattern(16u, 0x00FFu,
+                  (2.0f * stroke_scale)/*patternScale*/,
+                  (anim_2 * (14.0f / sM_2PIf))/*patternOffset*/,
+                  _bDecal
+                  );
+   if(1)
+      minJoinBevel();
+   else
+      minJoinRound();  // (note) for testing purposes only. actual applications should use bevel joints (=>faster).
+   if(1)
+      minCapRound();
+   else
+      minCapNone();
+   minDrawPath(pid);
+}
+
+// ----------------------------------------------------------------------------
+static void Test_33(sBool _bDecal) { // 33+35
+   // stippled circle / round line joints
+
+   const sF32 vpSclX = VP_W / 800.0f;
+   const sF32 vpSclY = VP_H / 600.0f;
+
+   MinPathId pid = minBeginPath();
+
+   const sUI numSeg = 64u;
+   const sUI numPoints = numSeg + 1;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = anim_1 * 0.5f;
+   sF32 r = sinf(anim_3) * 80.0f + 140.0f;
+   sF32 lastX = 0.0f;
+   sF32 lastY = 0.0f;
+   sF32 l = 0.0f;
+   for(sUI segIdx = 0u; segIdx < numPoints; segIdx++)
+   {
+      sF32 x = cosf(a) * r + 400.0f;
+      sF32 y = sinf(a) * r + 300.0f;
+      if(0u == segIdx)
+      {
+         minMoveTo(x*vpSclX, y*vpSclY);
+      }
+      else
+      {
+         minLineTo(x*vpSclX, y*vpSclY);
+         sF32 dx = (x - lastX)*vpSclX;
+         sF32 dy = (y - lastY)*vpSclY;
+         l += sqrtf(dx*dx + dy*dy);
+      }
+      a += w;
+      lastX = x;
+      lastY = y;
+   }
+   minEndPathClosed();
+
+   minColorFill(0xff1f5f5fu);
+   minColorStroke(0xffffffffu);
+   minDecalAlpha(1.0f);
+   minStrokeWidth(2.5f * vpSclX);
+   sF32 patternOffset = (anim_2 * (15.0f / sM_2PIf));
+   patternOffset = 0.0f;
+   if(1)
+   {
+      // fit pattern repeats
+      int numRepeats = (sSI)(l / 16.0f);
+      float patternScale = l / (numRepeats * 16.0f);
+      minLinePattern(16u, 0x00FFu,
+                     patternScale,
+                     patternOffset,
+                     _bDecal
+                     );
+   }
+   else
+   {
+      // stretch constant pattern repeats
+      minLinePattern(16u, 0x00FFu,
+                     1.0f * (l / (64.0f*16.0f)),
+                     patternOffset,
+                     _bDecal
+                     );
+   }
+   if(1)
+      minJoinRound();  // (note) for testing purposes only. actual applications should use bevel joints (=>faster).
+   else
+      minJoinBevel();
    minCapNone();
    minDrawPath(pid);
 }
@@ -1123,7 +1208,10 @@ void hal_on_draw(void) {
          case 29: Test_29(YAC_FALSE/*bNonZero*/); break;     // polygon even-odd
          case 30: Test_29(YAC_TRUE/*bNonZero*/); break;      // polygon non-zero
          case 31: Test_31(); break;                          // flat shaded AA rectangles 200x200
-         case 32: Test_32(); break;                          // stippled sine lines
+         case 32: Test_32(YAC_FALSE/*bDecal*/); break;       // stippled sine lines
+         case 33: Test_33(YAC_FALSE/*bDecal*/); break;       // stippled circle
+         case 34: Test_32(YAC_TRUE/*bDecal*/); break;        // stippled sine lines decal
+         case 35: Test_33(YAC_TRUE/*bDecal*/); break;        // stippled circle decal
       }
 
       minDrawableEnd(drawable);
@@ -1364,17 +1452,9 @@ int main(int argc, char**argv) {
 
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
-      sdvg_SetScratchBufferSize(64*1024);
-#if 0
-      sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
-#endif // 0
-      sdvg_Init(1/*b_glcore*/);
+      MinnieVG_Init(1/*b_glcore*/);
       sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
-      sdvg_SetViewport(0, 0, VP_W, VP_H);
       sdvg_SetStrokeRadiusAAOffset(1.5f);
-
-      MinnieVG_Init();
-      MinnieVG_InitScratchBuffers();
 
       Dprintf("[...] init OK, initializing textures..\n");
       tex_id = sdvg_CreateTexture2D(SDVG_TEXFMT_ARGB32, TEX_SX, TEX_SY,
@@ -1392,9 +1472,9 @@ int main(int argc, char**argv) {
       Dprintf("[...] initializing shaders and VBOs..\n");
       {
          sUI t = hal_get_ticks();
-         sdvg_OnOpen();
+         MinnieVG_OnOpen();
          t = hal_get_ticks() - t;
-         Dprintf("[...] sdvg_onOpen took %u ms\n", t);
+         Dprintf("[...] MinnieVG_OnOpen took %u ms\n", t);
       }
 
       drawable = minDrawableNew();

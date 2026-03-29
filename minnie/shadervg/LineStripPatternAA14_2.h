@@ -162,6 +162,8 @@ class LineStripPatternAA14_2 : public ShaderVG_Shape {
       // (note) numTri = numSeg * 2
       //
 
+      /* Dprintf("xxx drawLineStripPatternAAVBO14_2: strokeW=%f\n", _strokeW); */
+
       sdvg_BindVBO(_vboId);
 
       shape_shader.bind();

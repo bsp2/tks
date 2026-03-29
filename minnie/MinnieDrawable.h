@@ -30,6 +30,9 @@
 YG("minnie")
 
 
+// <class.png>
+/* @class MinnieDrawable
+ */
 #if defined(__cplusplus)
 #define MinnieDrawable _MinnieDrawable
 YC class _MinnieDrawable
@@ -139,41 +142,238 @@ struct MinnieDrawable_s {
    YM void init (void);
 
   public:
+   /* @method alloc:int maxGLBufSize,int maxDrawBufSize:boolean
+      Allocate drawable buffers
+      @return true when allocation succeeded
+   */
    YM sBool alloc (sUI _maxGLBufSize, sUI _maxDrawBufSize);
+
+   /* @method reset
+      Reset drawable buffer offsets
+   */
    YM void reset (void);
+
+   /* @method setEnableDebug,boolean bEnable
+      Enable / disable debug mode (draw-list execution)
+      @arg bEnable Debug mode
+   */
    YM void setEnableDebug (sBool _bEnable);
+
+   /* @method getEnableDebug:boolean
+      Query debug mode (draw-list execution)
+      @return Debug mode
+   */
    YM sBool getEnableDebug (void);
+
+   /* @method freeGL
+      Free vertex buffer object
+   */
    YM void freeGL (void);
+
+   /* @method free
+      Free vertex buffer object and client-side system memory buffers
+   */
    YM void free (void);
+
+   /* @method lazyAllocGL
+      Allocate vertex buffer object
+   */
    YM void lazyAllocGL (void);
+
+   /* @method getGLBuffer:Buffer
+      Query vertex attribute buffer
+   */
    YM YAC_Buffer *getGLBuffer (void);
+
+   /* @method getGLOffset:int
+      Query vertex attribute buffer write offset
+   */
    YM sUI getGLOffset (void);
+
+   /* @method getDrawBuffer:Buffer
+      Query draw-list write offset
+   */
    YM YAC_Buffer *getDrawBuffer (void);
+
+   /* @method getDrawOffset:int
+      Query draw-list buffer write offset
+   */
    YM sUI getDrawOffset (void);
+
+   /* @method onOpen
+      Must be called after GL context was (re-)created (force VBO to be re-allocated)
+   */
    YM void onOpen (void);
+
+   /* @method setSize2f,float w,float h
+      Set drawable size
+
+      @arg w Width
+      @arg h Height
+   */
    YM void setSize2f (sF32 _w, sF32 _h);
+
+   /* @method setSizeX,float w
+      Set drawable width
+
+      @arg w Width
+   */
    YM void setSizeX (sF32 _w);
+
+   /* @method setSizeY,float h
+      Set drawable height
+
+      @arg h Height
+   */
    YM void setSizeY (sF32 _h);
+
+   /* @method getSizeX:float
+      Query drawable width
+
+      @return Width
+   */
    YM sF32 getSizeX (void);
+
+   /* @method getSizeY:float
+      Query drawable height
+
+      @return Height
+   */
    YM sF32 getSizeY (void);
+
+   /* @method setBackgroundColor,int c32
+      Set background color in packed ARGB32 format
+
+      @arg c32 Background color in packed ARGB32 format
+   */
    YM void setBackgroundColor (sUI _c32);
+
+   /* @method getBackgroundColor:int
+      Query background color in packed ARGB32 format
+
+      @return Background color in packed ARGB32 format
+   */
    YM sUI getBackgroundColor (void);
+
+   /* @method setScale2f,float sx,float sy
+      Set drawable scaling factors
+
+      @arg sx Horizontal scaling factor
+      @arg sy Vertical scaling factor
+   */
    YM void setScale2f (sF32 _sx, sF32 _sy);
+
+   /* @method setScaleX,float s
+      Set horizontal scaling factor
+
+      @arg s Horizontal scaling factor
+   */
    YM void setScaleX (sF32 _s);
+
+   /* @method setScaleY,float s
+      Set vertical scaling factor
+
+      @arg s Vertical scaling factor
+   */
    YM void setScaleY (sF32 _s);
+
+   /* @method getScaleX:float
+      Query horizontal scaling factor
+
+      @return Horizontal scaling factor
+   */
    YM sF32 getScaleX (void);
+
+   /* @method getScaleX:float
+      Query vertical scaling factor
+
+      @return Vertical scaling factor
+   */
    YM sF32 getScaleY (void);
+
+   /* @method setRotation,float a
+      Set rotation angle (radian measure)
+
+      @arg rotation Rotation angle (radian measure)
+   */
    YM void setRotation (sF32 _a);
+
+   /* @method getRotation:float
+      Query rotation angle
+
+      @return Rotation angle (radian measure)
+   */
    YM sF32 getRotation (void);
+
+   /* @method setTranslation2f,float tx,float ty
+      Set drawable translation
+
+      @arg tx Horizontal translation
+      @arg ty Vertical translation
+   */
    YM void setTranslate2f (sF32 _tx, sF32 _ty);
+
+   /* @method setTranslationX,float tx
+      Set horizontal translation
+
+      @arg tx Horizontal translation
+   */
    YM void setTranslateX (sF32 _tx);
+
+   /* @method setTranslationY,float ty
+      Set vertical translation
+
+      @arg ty Vertical translation
+   */
    YM void setTranslateY (sF32 _ty);
+
+   /* @method getTranslationX:float
+      Query horizontal translation
+
+      @return Horizontal translation
+   */
    YM sF32 getTranslateX (void);
+
+   /* @method getTranslationY:float
+      Query vertical translation
+
+      @return Vertical translation
+   */
    YM sF32 getTranslateY (void);
+
+   /* @method queueGLBufUpdate
+      Queue GL vertex buffer object update
+
+      Called by %end internally.
+   */
    YM void queueGLBufUpdate (void);
+
+   /* @method isComplete:boolean
+      Check if vertex and draw-list buffers have been filled
+
+      @return true if vertex and draw-list buffers have been filled
+   */
    YM sBool isComplete (void);
+
+   /* @method begin
+      Begin drawable setup.
+
+      Free dynamic allocations, reset allocation stats, reset buffer write offsets, call %minBegin.
+   */
    YM void begin (void);
+
+   /* @method end
+      Finish drawable setup.
+
+      Call %minEnd, update size and background color (first palette index), queue GL vertex buffer object update.
+   */
    YM void end (void);
+
+   /* @method draw
+      Render drawable.
+
+      Lazy-alloc and update vertex buffer object, and execute draw-list.
+   */
    YM void draw (void);
 #endif // __cplusplus
 

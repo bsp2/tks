@@ -110,6 +110,9 @@ ShaderVG_Shape::ShaderVG_Shape(void) {
    shape_u_paint_ob_len     = -1;
    shape_u_paint_angle01    = -1;
    shape_u_paint_ob_size    = -1;
+#ifdef SHADERVG_UNIFORM_ARRAY
+   shape_u_a_offset         = -1;
+#endif // SHADERVG_DEBUG_FRAG
 
    // debug:
    b_draw_inner  = YAC_TRUE;
@@ -599,6 +602,9 @@ sBool ShaderVG_Shape::createShapeShader(const char *_sVS, const char *_sFS) {
    shape_u_paint_ob_len     = shape_shader.getUniformLocation("u_paint_ob_len");      // optional
    shape_u_paint_angle01    = shape_shader.getUniformLocation("u_paint_angle01");     // optional
    shape_u_paint_ob_size    = shape_shader.getUniformLocation("u_paint_ob_size");     // optional
+#ifdef SHADERVG_UNIFORM_ARRAY
+   shape_u_a_offset         = shape_shader.getUniformLocation("u_a_offset");          // optional
+#endif // SHADERVG_UNIFORM_ARRAY
 
    sBool r = validateShapeShader();
    if(!r)
@@ -1912,6 +1918,10 @@ void ShaderVG_Shape::drawPointsRoundAAVBO32Paint(sUI              _vboId,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
    Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
+#ifdef SHADERVG_UNIFORM_ARRAY
+   if(shape_u_a_offset >= 0)
+      updateUniformOffsetArray(_pointRadius);
+#endif // SHADERVG_UNIFORM_ARRAY
    Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
@@ -1969,6 +1979,10 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
       Dsdvg_uniform_1f(shape_u_decal_alpha, _decalAlpha);
    }
    Dsdvg_uniform_1f(shape_u_point_radius, _pointRadius);
+#ifdef SHADERVG_UNIFORM_ARRAY
+   if(shape_u_a_offset >= 0)
+      updateUniformOffsetArray(_pointRadius);
+#endif // SHADERVG_UNIFORM_ARRAY
    Dsdvg_uniform_1f(shape_u_aa_range, _aaRange);
 #ifdef SHADERVG_DEBUG_FRAG
    if(-1 != shape_u_debug)
@@ -1990,3 +2004,17 @@ void ShaderVG_Shape::drawPointsRoundAAVBO14_2Paint(sUI              _vboId,
    Dsdvg_attrib_disable(shape_a_vertex);
    Dsdvg_attrib_divisor_reset(shape_a_vertex);
 }
+
+#ifdef SHADERVG_UNIFORM_ARRAY
+void ShaderVG_Shape::updateUniformOffsetArray(sF32 _pointRadius) const {
+   sF32 aOffset[2*6] = {
+      -_pointRadius, -_pointRadius,  // LT
+      _pointRadius, -_pointRadius,  // RT
+      _pointRadius,  _pointRadius,  // RB
+      -_pointRadius, -_pointRadius,  // LT
+      _pointRadius,  _pointRadius,  // RB
+      -_pointRadius,  _pointRadius   // LB
+   };
+   Dsdvg_uniform_2fv(shape_u_a_offset, 6, aOffset);
+}
+#endif // SHADERVG_UNIFORM_ARRAY

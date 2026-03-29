@@ -528,16 +528,8 @@ int main(int argc, char**argv) {
 
    if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
    {
-      sdvg_SetScratchBufferSize(64*1024);
-#if 0
-      sdvg_SetGLSLVersion(1/*b_glcore*//*bV3*/, YAC_FALSE/*bGLES*/, NULL/*sVersionStringOrNull*/);
-#endif // 0
-      sdvg_Init(1/*b_glcore*/);
+      MinnieVG_Init(1/*b_glcore*/);
       sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
-      sdvg_SetViewport(0, 0, VP_W, VP_H);
-
-      MinnieVG_Init();
-      MinnieVG_InitScratchBuffers();
       MinnieVG_OnOpen();
 
       drawable = minDrawableNew();

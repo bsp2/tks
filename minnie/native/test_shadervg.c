@@ -298,8 +298,33 @@ static sF32 ang_c = 0.0f;
 #define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_ALPHA               208
 #define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_DECAL               209
 #define RENDER_BEGIN_POINTS_ROUND_AA_PATTERN_DECAL_ALPHA         210
-
-#define NUM_RENDER_MODES                                         211
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_MITER                    211
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_MITER_AA                 212
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER              213
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER_AA           214
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_MITER_DIAGONAL           215
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_MITER_DIAGONAL_AA        216
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER_DIAGONAL     217
+#define RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER_DIAGONAL_AA  218
+#define RENDER_BEGIN_LINE_STRIP_MITER_PATTERN                    219
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN                 220
+#define RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_CLOSED             221
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_CLOSED          222
+#define RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_ALPHA              223
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_ALPHA           224
+#define RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_ALPHA_CLOSED       225
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_ALPHA_CLOSED    226
+#define RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_DECAL              227
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_DECAL           228
+#define RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_DECAL_CLOSED       229
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_DECAL_CLOSED    230
+#define RENDER_BEGIN_LINE_STRIP_MITER_LINEAR                     231
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_LINEAR                  232
+#define RENDER_BEGIN_LINE_STRIP_MITER_RADIAL                     233
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_RADIAL                  234
+#define RENDER_BEGIN_LINE_STRIP_MITER_CONIC_CLOSED               235
+#define RENDER_BEGIN_LINE_STRIP_MITER_AA_CONIC_CLOSED            236
+#define NUM_RENDER_MODES                                         237
 
 static sSI render_mode = RENDER_RECT_FILL_AA;  // UP/DOWN
 static sUI auto_cycle_num_frames =     // >0:auto-cycle tests (any key stroke interrupts this)
@@ -522,6 +547,32 @@ static const char *mode_names[NUM_RENDER_MODES] = {
    /* 208 */ "begin_points_round_aa_pattern_alpha",
    /* 209 */ "begin_points_round_aa_pattern_decal",
    /* 210 */ "begin_points_round_aa_pattern_decal_alpha",
+   /* 211 */ "begin_line_strip_pattern_miter",
+   /* 212 */ "begin_line_strip_pattern_miter_aa",
+   /* 213 */ "begin_line_strip_pattern_decal_miter",
+   /* 214 */ "begin_line_strip_pattern_decal_miter_aa",
+   /* 215 */ "begin_line_strip_pattern_miter_diagonal",
+   /* 216 */ "begin_line_strip_pattern_miter_diagonal_aa",
+   /* 217 */ "begin_line_strip_pattern_decal_miter_diagonal",
+   /* 218 */ "begin_line_strip_pattern_decal_miter_diagonal_aa",
+   /* 219 */ "begin_line_strip_miter_pattern",
+   /* 220 */ "begin_line_strip_miter_aa_pattern",
+   /* 221 */ "begin_line_strip_miter_pattern_closed",
+   /* 222 */ "begin_line_strip_miter_aa_pattern_closed",
+   /* 223 */ "begin_line_strip_miter_pattern_alpha",
+   /* 224 */ "begin_line_strip_miter_aa_pattern_alpha",
+   /* 225 */ "begin_line_strip_miter_pattern_alpha_closed",
+   /* 226 */ "begin_line_strip_miter_aa_pattern_alpha_closed",
+   /* 227 */ "begin_line_strip_miter_pattern_decal",
+   /* 228 */ "begin_line_strip_miter_aa_pattern_decal",
+   /* 229 */ "begin_line_strip_miter_pattern_decal_closed",
+   /* 230 */ "begin_line_strip_miter_aa_pattern_decal_closed",
+   /* 231 */ "begin_line_strip_miter_linear",
+   /* 232 */ "begin_line_strip_miter_aa_linear",
+   /* 233 */ "begin_line_strip_miter_radial",
+   /* 234 */ "begin_line_strip_miter_aa_radial",
+   /* 235 */ "begin_line_strip_miter_conic_closed",
+   /* 236 */ "begin_line_strip_miter_aa_conic_closed",
 };
 
 static YAC_Buffer buf_vbo;
@@ -2044,7 +2095,7 @@ void SetupPaintPatternDecal(void) {
 
    sdvg_PaintPatternDecal(x, y, rx, ry, 256.0f, 256.0f);
    sdvg_BindTexture2D(tex_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
-   sdvg_SetTextureDecalAlpha(decal_alpha);
+   sdvg_SetDecalAlpha(decal_alpha);
 }
 
 void SetupPaintPatternDecalAlpha(void) {
@@ -2057,7 +2108,7 @@ void SetupPaintPatternDecalAlpha(void) {
 
    sdvg_PaintPatternDecalAlpha(x, y, rx, ry, 256.0f, 256.0f);
    sdvg_BindTexture2D(tex_pattern_1_alpha_id, YAC_TRUE/*bRepeat*/, YAC_TRUE/*bFilter*/);
-   sdvg_SetTextureDecalAlpha(decal_alpha);
+   sdvg_SetDecalAlpha(decal_alpha);
 }
 
 void SetupPaintPatternGradientStatic(void) {
@@ -2949,6 +3000,125 @@ static void TestBeginPointsRoundSpiral(sBool _bAA) {
    }
 }
 
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternMiter (211+212)
+static void TestBeginLineStripPatternMiter(sBool _bAA) {
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternScale(0.5f / 112.0f);
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PIf));
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternMiterAA(numPoints)
+      : sdvg_BeginLineStripPatternMiter(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalMiter (213+214)
+static void TestBeginLineStripPatternDecalMiter(sBool _bAA) {
+   sdvg_BindTexture2D(tex_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternScale(0.5f / 112.0f);
+   sdvg_SetLinePatternOffset(ang_w * (4.0f / sM_2PIf));
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sdvg_SetFillColor4f(0.9f, 0.6f, 0.2f, fill_alpha);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternDecalMiterAA(numPoints)
+      : sdvg_BeginLineStripPatternDecalMiter(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternMiterDiagonal (215+216)
+static void TestBeginLineStripPatternMiterDiagonal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternScale(1.0f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PIf));
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sdvg_SetFillColor4f(0.4f, 0.4f, 0.4f, 0.5f*fill_alpha);
+   sUI numSeg = 64u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x;
+   sF32 x = 100.0f;
+   sF32 xStep = 440.0f / numSeg;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternMiterAA(numPoints)
+      : sdvg_BeginLineStripPatternMiter(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 y = sinf(a) * 120.0f + 240.0f;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         x += xStep;
+      }
+      sdvg_End();
+   }
+}
+
+// ---------------------------------------------------------------------------- TestBeginLineStripPatternDecalMiterDiagonal (217+218)
+static void TestBeginLineStripPatternDecalMiterDiagonal(sBool _bAA) {
+   sdvg_BindTexture2D(tex_diagonal_line_pattern_alpha_id, YAC_TRUE/*bRepeat*/, _bAA/*bFilter*/);
+   sdvg_SetLinePatternScale(0.5f / (16.0f * diagonal_line_patterns[diagonal_line_pattern_idx*3+1]));
+   sdvg_SetLinePatternOffset(ang_w * (16.0f / sM_2PIf));
+   sdvg_SetStrokeWidth(stroke_w * 4.0f);
+   sdvg_SetFillColorARGB(sdvg_RGBAlpha(0xa6d475u, (sU8)(fill_alpha*255)));
+   sUI numSeg = 192u;
+   sUI numPoints = numSeg + 2u;
+   sF32 w = (sM_2PIf / numSeg);
+   sF32 a = ang_x * 0.5f;
+   sF32 wd = ((3.0f*sM_2PIf) / numSeg);
+   sF32 ad = ang_y;
+   sF32 ctrX = VP_W*0.5f;
+   sF32 ctrY = VP_H*0.5f;
+   if(_bAA
+      ? sdvg_BeginLineStripPatternDecalMiterAAClosed(numPoints)
+      : sdvg_BeginLineStripPatternDecalMiterClosed(numPoints)
+      )
+   {
+      for(sUI pointIdx = 0u; pointIdx < numPoints; pointIdx++)
+      {
+         sF32 dist = sinf(ad) * sinf(a*4.0f) * 75.0f + 150.0f;
+         sF32 x = cosf(a) * dist + ctrX;
+         sF32 y = sinf(a) * dist + ctrY;
+         sdvg_Vertex2f(x, y);
+         a += w;
+         ad += wd;
+      }
+      sdvg_End();
+   }
+}
+
 // ---------------------------------------------------------------------------- SelectRenderMode
 static void SelectRenderMode(sSI _mode) {
    render_mode = _mode;
@@ -3099,7 +3269,7 @@ static void DrawTest(void) {
                                     );
          sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, 0u/*numBytes=buf_vbo.size*/, &buf_vbo);
          sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
-         sdvg_SetTextureDecalAlpha(decal_alpha);
+         sdvg_SetDecalAlpha(decal_alpha);
          sdvg_DrawTrianglesTexUVFlatDecalVBO32(buf_vbo_id, 0u, 2u*3u);
          sdvg_UnbindTexture2D();
          break;
@@ -3116,7 +3286,7 @@ static void DrawTest(void) {
                                        );
          sdvg_UpdateVBO(buf_vbo_id, 0u/*offset*/, 0u/*numBytes=buf_vbo.size*/, &buf_vbo);
          sdvg_BindTexture2D(tex_id, YAC_FALSE/*bRepeat*/, YAC_TRUE/*bFilter*/);
-         sdvg_SetTextureDecalAlpha(decal_alpha);
+         sdvg_SetDecalAlpha(decal_alpha);
          sdvg_DrawTrianglesTexUVGouraudDecalVBO32(buf_vbo_id, 0u, 2u*3u);
          sdvg_UnbindTexture2D();
          break;
@@ -4854,6 +5024,166 @@ static void DrawTest(void) {
          sdvg_SetStrokeColorARGB(0xffffffu | (((sUI)(fill_alpha*255))<<24));
          TestBeginPointsRoundSpiral(YAC_TRUE/*bAA*/);
          break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_MITER: // 211
+         TestBeginLineStripPatternMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_MITER_AA: // 212
+         TestBeginLineStripPatternMiter(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER: // 213
+         TestBeginLineStripPatternDecalMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER_AA: // 214
+         TestBeginLineStripPatternDecalMiter(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_MITER_DIAGONAL: // 215
+         TestBeginLineStripPatternMiterDiagonal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_MITER_DIAGONAL_AA: // 216
+         TestBeginLineStripPatternMiterDiagonal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER_DIAGONAL: // 217
+         TestBeginLineStripPatternDecalMiterDiagonal(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_PATTERN_DECAL_MITER_DIAGONAL_AA: // 218
+         TestBeginLineStripPatternDecalMiterDiagonal(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_PATTERN: // 219
+         SetupPaintPatternGradientStatic();
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         TestBeginLineStripFlatMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN: // 220
+         SetupPaintPatternGradientStatic();
+         sdvg_SetStrokeWidth(stroke_w * 4.0f);
+         TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_CLOSED: // 221
+         SetupPaintPatternGradientStaticDiagonal();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatMiterClosed(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_CLOSED: // 222
+#if 0
+         SetupPaintPatternStatic();
+#else
+         SetupPaintPatternGradientStaticDiagonal();
+#endif
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatMiterClosed(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_ALPHA: // 223
+         SetupPaintPatternAlpha();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         sdvg_EnableStencilMask();
+         TestBeginLineStripFlatMiter(YAC_FALSE/*bAA*/);
+         sdvg_DisableStencilMask();
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_ALPHA: // 224
+         SetupPaintPatternAlpha();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         sdvg_EnableStencilMask();
+         TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
+         sdvg_DisableStencilMask();
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_ALPHA_CLOSED: // 225
+         SetupPaintPatternAlpha();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         sdvg_EnableStencilMask();
+         TestBeginLineStripFlatMiterClosed(YAC_FALSE/*bAA*/);
+         sdvg_DisableStencilMask();
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_ALPHA_CLOSED: // 226
+         SetupPaintPatternAlpha();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         sdvg_EnableStencilMask();
+         TestBeginLineStripFlatMiterClosed(YAC_TRUE/*bAA*/);
+         sdvg_DisableStencilMask();
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_DECAL: // 227
+         SetupPaintPatternDecal();
+         sdvg_SetStrokeWidth(stroke_w * 12.0f);
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.75f, 1.0f, 1.0f, 1.0f);
+         TestBeginLineStripFlatMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_DECAL: // 228
+         SetupPaintPatternDecal();
+         sdvg_SetStrokeWidth(stroke_w * 12.0f);
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.75f, 1.0f, 1.0f, 1.0f);
+         TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_PATTERN_DECAL_CLOSED: // 229
+         SetupPaintPatternDecal();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.75f, 1.0f, 1.0f, 1.0f);
+         TestBeginLineStripFlatMiterClosed(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_PATTERN_DECAL_CLOSED: // 230
+         SetupPaintPatternDecal();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         sdvg_SetFillColor4f(0.2f, 0.2f, 0.5f, fill_alpha);
+         sdvg_SetStrokeColor4f(0.75f, 1.0f, 1.0f, 1.0f);
+         TestBeginLineStripFlatMiterClosed(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_LINEAR: // 231
+         SetupPaintLinear();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_LINEAR: // 232
+         SetupPaintLinear();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_RADIAL: // 233
+         SetupPaintRadial();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatMiter(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_RADIAL: // 234
+         SetupPaintRadial();
+         sdvg_SetStrokeWidth(stroke_w * 8.0f);
+         TestBeginLineStripFlatMiter(YAC_TRUE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_CONIC_CLOSED: // 235
+         SetupPaintConic();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         TestBeginLineStripFlatMiterClosed(YAC_FALSE/*bAA*/);
+         break;
+
+      case RENDER_BEGIN_LINE_STRIP_MITER_AA_CONIC_CLOSED: // 236
+         SetupPaintConic();
+         sdvg_SetStrokeWidth(stroke_w * 16.0f);
+         TestBeginLineStripFlatMiterClosed(YAC_TRUE/*bAA*/);
+         break;
    }
 }
 
@@ -4907,6 +5237,7 @@ void hal_on_draw(void) {
       sdvg_SetFillColor4f(0.1f, 0.4f, 0.25f, fill_alpha);
       sdvg_SetStrokeColor4f(1.0f, 1.0f, 1.0f, fill_alpha);
       sdvg_SetGlobalAlpha(1.0f);
+      sdvg_SetDecalAlpha(1.0f);
       sdvg_PaintSolid();
 
       if(0u == iter)

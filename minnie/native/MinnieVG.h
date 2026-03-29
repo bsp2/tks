@@ -31,8 +31,10 @@
 extern "C" {
 #endif // __cplusplus
 
-extern void  MinnieVG_Init (void);
-extern sBool MinnieVG_InitScratchBuffers (void);
+extern void  MinnieVG_Init (sBool _bGLCore);
+extern void  MinnieVG_InitShaderVG (sBool _bGLCore);
+extern void  MinnieVG_InitMinnie (void);
+extern sBool MinnieVG_InitMinnieScratchBuffers (void);
 extern sBool MinnieVG_OnOpen (void);
 extern void  MinnieVG_Exit (void);
 

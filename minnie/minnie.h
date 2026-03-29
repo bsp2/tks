@@ -201,6 +201,8 @@ typedef int             sBool;
 #define Dstream_read_f32(s) ((YAC_Buffer*)(s))->readF32()
 #endif // SHADERVG_SCRIPT_API
 
+#define Dstream_dec_i16(s,off) { sUI cur = Dstream_get_offset(s); Dstream_set_offset(s,off); sU16 vCur = Dstream_read_i16(s); Dstream_set_offset(s,off); Dstream_write_i16(s,vCur-1u); Dstream_set_offset(s,cur); } while(0)
+
 
 // helper macros for writing to vertex buffer stream
 #define Dexport_vb_i8(a)  Dstream_write_i8(minnie::setup::loc_vb_export_ofs, a)
@@ -218,6 +220,9 @@ typedef int             sBool;
 #define Dexport_dl_i32(a) Dstream_write_i32(minnie::setup::loc_dl_export_ofs, a)
 #define Dexport_dl_f32(a) Dstream_write_f32(minnie::setup::loc_dl_export_ofs, a)
 #define Dexport_dl_vboffset32() Dstream_write_i32(minnie::setup::loc_dl_export_ofs, Dexport_vb_get_offset())
+#define Dexport_dl_get_offset() Dstream_get_offset(minnie::setup::loc_dl_export_ofs)
+
+#define Dexport_dl_dec_i16(off) Dstream_dec_i16(minnie::setup::loc_dl_export_ofs,off)
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ draw ops
 #define MINNIE_DRAWOP_END                                    0x00
@@ -232,56 +237,61 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32       0x09
 #define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2     0x0A
 #define MINNIE_DRAWOP_POLYGON_FIRST                          0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32           0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2         0x0C
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA        0x0D
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA      0x0E
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN   0x0F
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB     0x10
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA  0x11
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END     0x12
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA  0x13
-#define MINNIE_DRAWOP_POLYGON_LAST                           0x13
-#define MINNIE_DRAWOP_RECT_FILL                              0x14
-#define MINNIE_DRAWOP_RECT_STROKE                            0x15
-#define MINNIE_DRAWOP_RECT_FILL_STROKE                       0x16
-#define MINNIE_DRAWOP_ELLIPSE_FILL                           0x17
-#define MINNIE_DRAWOP_ELLIPSE_STROKE                         0x18
-#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                    0x19
-#define MINNIE_DRAWOP_ROUNDRECT_FILL                         0x1A
-#define MINNIE_DRAWOP_ROUNDRECT_STROKE                       0x1B
-#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                  0x1C
-#define MINNIE_DRAWOP_BIND_TEXTURE                           0x1D
-#define MINNIE_DRAWOP_UNBIND_TEXTURE                         0x1E
-#define MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA                    0x1F
-#define MINNIE_DRAWOP_PAINT_SOLID                            0x20
-#define MINNIE_DRAWOP_PAINT_LINEAR                           0x21
-#define MINNIE_DRAWOP_PAINT_RADIAL                           0x22
-#define MINNIE_DRAWOP_PAINT_CONIC                            0x23
-#define MINNIE_DRAWOP_PAINT_PATTERN                          0x24
-#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                    0x25
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                    0x26
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA              0x27
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32               0x28
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32         0x29
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32            0x2A
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32      0x2B
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_32                     0x2C
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                   0x2D
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_32                  0x2E
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2                0x2F
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32               0x30
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2             0x31
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32            0x32
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2          0x33
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2             0x34
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32               0x35
-#define MINNIE_DRAWOP_AA_RANGE                               0x36
-#define MINNIE_DRAWOP_FILLRULE_EVENODD                       0x37
-#define MINNIE_DRAWOP_FILLRULE_NONZERO                       0x38
-#define MINNIE_DRAWOP_LINE_PATTERN_TEX                       0x39
-#define MINNIE_DRAWOP_LINE_PATTERN_SCALE                     0x3A
-#define MINNIE_DRAWOP_LINE_PATTERN_OFFSET                    0x3B
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32           0x0C
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA        0x0D  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2         0x0E
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA      0x0F  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN     0x10
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN   0x11
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB       0x12
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB     0x13
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END       0x14
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA    0x15  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END     0x16
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA  0x17  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_LAST                           0x17
+#define MINNIE_DRAWOP_RECT_FILL                              0x18
+#define MINNIE_DRAWOP_RECT_STROKE                            0x19
+#define MINNIE_DRAWOP_RECT_FILL_STROKE                       0x1A
+#define MINNIE_DRAWOP_ELLIPSE_FILL                           0x1B
+#define MINNIE_DRAWOP_ELLIPSE_STROKE                         0x1C
+#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                    0x1D
+#define MINNIE_DRAWOP_ROUNDRECT_FILL                         0x1E
+#define MINNIE_DRAWOP_ROUNDRECT_STROKE                       0x1F
+#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                  0x20
+#define MINNIE_DRAWOP_BIND_TEXTURE                           0x21
+#define MINNIE_DRAWOP_UNBIND_TEXTURE                         0x22
+#define MINNIE_DRAWOP_DECAL_ALPHA                            0x23
+#define MINNIE_DRAWOP_PAINT_SOLID                            0x24
+#define MINNIE_DRAWOP_PAINT_LINEAR                           0x25
+#define MINNIE_DRAWOP_PAINT_RADIAL                           0x26
+#define MINNIE_DRAWOP_PAINT_CONIC                            0x27
+#define MINNIE_DRAWOP_PAINT_PATTERN                          0x28
+#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                    0x29
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                    0x2A
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA              0x2B
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32               0x2C
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32         0x2D
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32            0x2E
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32      0x2F
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_32                     0x30
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                   0x31
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_32                  0x32
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2                0x33
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_DECAL_32            0x34
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_DECAL_14_2          0x35
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32               0x36
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2             0x37
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32            0x38
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2          0x39
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32               0x3A
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2             0x3B
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_32            0x3C
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_14_2          0x3D
+#define MINNIE_DRAWOP_AA_RANGE                               0x3E
+#define MINNIE_DRAWOP_FILLRULE_EVENODD                       0x3F
+#define MINNIE_DRAWOP_FILLRULE_NONZERO                       0x40
+#define MINNIE_DRAWOP_LINE_PATTERN                           0x41
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -289,6 +299,7 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_CLOSED      0x01
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP   0x02
 #define MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_JOIN  0x04
+#define MINNIE_DRAWOP_LINE_STRIP_FLAG_DECAL       0x08
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // (note) must match shadervg settings
@@ -302,6 +313,12 @@ typedef int             sBool;
 #define MINNIE_ROUNDRECT_FILL_AA_SIZE_OFFSET  1.0f
 #define MINNIE_ROUNDRECT_AA_SIZE_OFFSET       0.75f
 #define MINNIE_ROUNDRECT_AA_STROKE_OFFSET     0.25f
+
+#define MINNIE_LINE_PATTERN_TEX_W  112
+
+typedef sUI MinPathId;
+typedef sUI MinSubPathId;
+typedef sUI MinPaintId;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ rasterizer
 #if defined(MINNIE_IMPLEMENTATION) && MINNIE_SW_RENDER
@@ -329,21 +346,27 @@ typedef int             sBool;
 #undef Dprintfmissing
 #endif // MINNIE_IMPLEMENTATION && MINNIE_SW_RENDER
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /rasterizer
-
+#ifdef SHADERVG_SCRIPT_API
+#define Dprintf         if(!MINNIE_PRINTF);else Dyac_host_printf
+#else
 #define Dprintf         if(!MINNIE_PRINTF);else printf
-#define Derrorprintf    if(!MINNIE_PRINTF);else printf
-#define Ddebugprintf    if( MINNIE_PRINTF);else printf
-#define Ddebugprintfv   if( MINNIE_PRINTF);else printf
-#define Dtorprintf      if( MINNIE_PRINTF);else printf  // Constructor / Destructor debug
-#define Dinitprintf     if( MINNIE_PRINTF);else printf  // object init debug
-#define Dallocprintf    if( MINNIE_PRINTF);else printf  // object alloc debug
-#define Dedgeaaprintfv  if( MINNIE_PRINTF);else printf
-#define Dedgeaaprintf   if( MINNIE_PRINTF);else printf
-#define Dexportprintf   if( MINNIE_PRINTF);else printf
-#define Dexportprintfv  if( MINNIE_PRINTF);else printf
-#define Dexportprintfvv if( MINNIE_PRINTF);else printf
-#define Dapiprintf      if(!MINNIE_PRINTF);else printf
-#define Dapierror       if(!MINNIE_PRINTF);else printf
+#endif // SHADERVG_SCRIPT_API
+
+#define Derrorprintf     if(!MINNIE_PRINTF);else Dprintf
+#define Ddebugprintf     if( MINNIE_PRINTF);else Dprintf
+#define Ddebugprintfv    if( MINNIE_PRINTF);else Dprintf
+#define Dtorprintf       if( MINNIE_PRINTF);else Dprintf  // Constructor / Destructor debug
+#define Dinitprintf      if( MINNIE_PRINTF);else Dprintf  // object init debug
+#define Dallocprintf     if( MINNIE_PRINTF);else Dprintf  // object alloc debug
+#define Dpathprintf      if( MINNIE_PRINTF);else Dprintf  // path alloc/begin/end/draw debug
+#define Dfixpolyaaprintf if( MINNIE_PRINTF);else Dprintf  // filled polygon AA-fix debug
+#define Dedgeaaprintfv   if( MINNIE_PRINTF);else Dprintf
+#define Dedgeaaprintf    if( MINNIE_PRINTF);else Dprintf
+#define Dexportprintf    if( MINNIE_PRINTF);else Dprintf
+#define Dexportprintfv   if( MINNIE_PRINTF);else Dprintf
+#define Dexportprintfvv  if( MINNIE_PRINTF);else Dprintf
+#define Dapiprintf       if(!MINNIE_PRINTF);else Dprintf
+#define Dapierror        if(!MINNIE_PRINTF);else Dprintf
 
 #define Dkbytes(a)  (sSI(a*(100.0f/1024.0f))/100.0f)
 
@@ -1287,7 +1310,7 @@ struct StreamReader {
    }
 
    sF32 getF32(void) {
-      /* yac_host->printf("xxx getF32: data.u8=%p\n", data.u8); */
+      /* Dprintf("xxx getF32: data.u8=%p\n", data.u8); */
 #if 1
       union {
          sF32 f32;
@@ -2942,7 +2965,7 @@ class ShapePolyline {
 class Path {
   public:
    minnie_allocator_handle_t allocator;
-   sUI        path_idx;
+   sUI        path_id;  // 0=main path, 1..n=user defined path
    FloatArray points;  // vec2
    sBool      b_closed;  // (note) last point of closed path must equal first point (fixed in end())
    sUI        type;  // see MINNIE_PATH_TYPE_xxx
@@ -2965,7 +2988,7 @@ class Path {
 
   public:
    Path() {
-      path_idx = 0u;
+      path_id = 0u;
       parent_path = NULL;
    }
 
@@ -2983,17 +3006,21 @@ class Path {
    }
 
    void init(minnie_allocator_handle_t _allocator,
-             const sUI _pathIdx, const sU8 _type,
+             const sUI _pathId, const sU8 _type,
              void *_pointsDataOrNull, const sU32 _pointsMaxElements,
              void *_vaExtrudeData, const sU32 _maxExtrudedElements
              ) {
-      Dinitprintf("xxx Path::init: this=%p pathIdx=%u pointsMax=%u\n", this, _pathIdx, _pointsMaxElements);
+      Dinitprintf("xxx Path::init: this=%p pathId=%u pointsMax=%u\n", this, _pathId, _pointsMaxElements);
       allocator = _allocator;
       points.init(_allocator, _pointsMaxElements, _pointsDataOrNull);
       va_extrude.init(_allocator, _maxExtrudedElements, _vaExtrudeData);
-      path_idx  = _pathIdx;
+      path_id   = _pathId;
       type      = _type;
       sub_paths.init(_allocator, MINNIE_MAX_SUB_PATHS, NULL/*elementsOrNull*/);
+   }
+
+   sBool isAllocated (void) const {
+      return (points.max_elements > 0u);
    }
 
    void updateFromFbRect(const sUI _w, const sUI _h) {
@@ -3348,7 +3375,7 @@ class Path {
    }
 
    void end(const sBool _bClosed) {
-      /* if(b_debug_paths && path_idx > 0) trace "[dbg] path idx="+path_idx+" has "+(points.numElements/2)+" points"; */
+      /* if(b_debug_paths && path_id > 0) trace "[dbg] path_id="+path_id+" has "+(points.numElements/2)+" points"; */
       /* Dprintf("xxx end(bClosed=%d)\n", _bClosed); */
       total_num_points += (points.num_elements / 2u);
       b_closed = _bClosed;
@@ -3357,8 +3384,8 @@ class Path {
       {
          // [19Mar2026] filled arcs
          const sF32 *pe = points.elements.f32;
-         if(sSI(pe[points.num_elements - 2u]*16.0f) != sSI(pe[0u]*16.0f) ||
-            sSI(pe[points.num_elements - 1u]*16.0f) != sSI(pe[1u]*16.0f)
+         if(sSI(round(pe[points.num_elements - 2u]*16.0f)) != sSI(round(pe[0u]*16.0f)) ||
+            sSI(round(pe[points.num_elements - 1u]*16.0f)) != sSI(round(pe[1u]*16.0f))
             )
          {
             Ddebugprintf("[dbg] minnie::Path::end: close path: points.num_elements=%u points.max_elements=%u\n", points.num_elements, points.max_elements);
@@ -4025,10 +4052,14 @@ namespace setup {
 
    static sBool cur_fillrule_nonzero;  // 0=even/odd  1=non-zero
 
-   static sUI  cur_linepattern_len;
-   static sUI  cur_linepattern_bits;
-   static sF32 cur_linepattern_scale;
-   static sF32 cur_linepattern_offset;
+   static sUI   cur_linepattern_len;
+   static sUI   cur_linepattern_bits;
+   static sF32  cur_linepattern_scale;
+   static sF32  cur_linepattern_offset;
+   static sBool cur_linepattern_decal;
+
+   static sUI last_polygon_aa_path_id;    // 0u=none, 1..n otherwise
+   static sUI last_polygon_aa_dl_offset;  // location of concave polygon or polygon_end draw-op
 
    static sUI   active_dl_op;            // MINNIE_DRAWOP_xxx
    static sUI   active_dl_num_tris;
@@ -4037,6 +4068,7 @@ namespace setup {
    static sUI   active_dl_c32_fill;
    static sUI   active_dl_c32_stroke;
    static sF32  active_dl_stroke_w;
+   static sF32  active_dl_decal_alpha;
    static sF32  active_dl_miter_limit;
    static sBool active_dl_line_strip_flags;  // MINNIE_DRAWOP_LINE_STRIP_FLAG_xxx
    static sF32  active_dl_cx;
@@ -4052,11 +4084,11 @@ namespace setup {
    static sUI   active_dl_linepattern_bits;
    static sF32  active_dl_linepattern_scale;
    static sF32  active_dl_linepattern_offset;
+   static sBool active_dl_linepattern_decal;
 
    static sSI   dl_tex_id;
    static sBool dl_tex_repeat;
    static sBool dl_tex_filter;
-   static sF32  dl_tex_decal_alpha;
 
    static sUI geo_w;
    static sUI geo_h;
@@ -4079,6 +4111,7 @@ namespace setup {
    static sU32         cur_pal_idx;  // 8bit
    static sU32         cur_c32_fill;
    static sU32         cur_c32_stroke;
+   static sF32         cur_decal_alpha;
    static Matrix2x3f   cur_mat_2d;
    static Matrix4f     cur_mat_3d;
    static sBool        b_aa;
@@ -4217,6 +4250,7 @@ namespace setup {
       cur_pal_idx            = 1u;
       cur_c32_fill           = 0xFFffffffu;
       cur_c32_stroke         = 0xFFffffffu;
+      cur_decal_alpha        = 1.0f;
       cur_join_cap           = MINNIE_LINEJOIN_BEVEL | (MINNIE_LINECAP_ROUND << 4);
       cur_miter_limit        = 32.0f;
       cur_clip2d_path        = NULL;
@@ -4226,8 +4260,9 @@ namespace setup {
       cubic_min_dist_sqr     = 4.0f;
       cur_linepattern_len    = 0u;
       cur_linepattern_bits   = 0u;
-      cur_linepattern_scale  = 0.0f;
-      cur_linepattern_offset = 1.0f;
+      cur_linepattern_scale  = 1.0f;
+      cur_linepattern_offset = 0.0f;
+      cur_linepattern_decal  = YAC_FALSE;
 
       total_num_points      = 0u;
       total_num_lines       = 0u;
@@ -4238,25 +4273,33 @@ namespace setup {
       total_num_roundrects  = 0u;
       total_num_ellipses    = 0u;
 
-      active_dl_op           = 0u;
-      active_dl_num_tris     = 0u;
-      active_dl_num_verts    = 0u;
-      active_dl_start_offset = 0u;
-      active_dl_c32_fill     = 0x12CD34EFu;
-      active_dl_c32_stroke   = 0x12CD34EFu;
-      active_dl_stroke_w     = 0.0f;
-      active_dl_miter_limit  = 32.0f;
-      active_dl_cx           = 0.0f;
-      active_dl_cy           = 0.0f;
-      active_dl_rx           = 0.0f;
-      active_dl_ry           = 0.0f;
-      active_dl_sx           = 0.0f;
-      active_dl_sy           = 0.0f;
+      last_polygon_aa_path_id = 0u;
+      last_polygon_aa_dl_offset = 0u;
+
+      active_dl_op                 = 0u;
+      active_dl_num_tris           = 0u;
+      active_dl_num_verts          = 0u;
+      active_dl_start_offset       = 0u;
+      active_dl_c32_fill           = 0x12CD34EFu;
+      active_dl_c32_stroke         = 0x12CD34EFu;
+      active_dl_decal_alpha        = 1.0f;
+      active_dl_stroke_w           = 0.0f;
+      active_dl_miter_limit        = 32.0f;
+      active_dl_cx                 = 0.0f;
+      active_dl_cy                 = 0.0f;
+      active_dl_rx                 = 0.0f;
+      active_dl_ry                 = 0.0f;
+      active_dl_sx                 = 0.0f;
+      active_dl_sy                 = 0.0f;
+      active_dl_linepattern_len    = 0u;
+      active_dl_linepattern_bits   = 0u;
+      active_dl_linepattern_scale  = 1.0f;
+      active_dl_linepattern_offset = 0.0f;
+      active_dl_linepattern_decal  = YAC_FALSE;
 
       dl_tex_id          = 0;
       dl_tex_repeat      = YAC_FALSE;
       dl_tex_filter      = YAC_FALSE;
-      dl_tex_decal_alpha = 1.0f;
 
       debug_num_paths                     = 0u;
       debug_num_swtess_paths              = 0u;
@@ -6197,18 +6240,29 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_begin> c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_c32_fill, active_dl_c32_stroke);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_begin_%s> c32Fill=#%08x c32Stroke=#%08x\n",
+                          active_dl_op,
+                          ((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN == active_dl_op)
+                           ?"32":"14_2"
+                           ),
+                          active_dl_c32_fill,
+                          active_dl_c32_stroke
+                          );
             Dexport_dl_i16(active_dl_op);
             Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
             Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
             break;
 
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB:
-         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_sub%s> start_offset=%u num_verts=%u\n",
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_sub_%s> start_offset=%u num_verts=%u\n",
                           active_dl_op,
-                          ((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA == active_dl_op)?"_aa":""),
+                          (((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB == active_dl_op)
+                            )
+                            ?"32":"14_2"
+                           ),
                           active_dl_start_offset,
                           active_dl_num_verts
                           );
@@ -6217,11 +6271,22 @@ namespace setup {
             Dexport_dl_i32(active_dl_num_verts);
             break;
 
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END:
+         case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END:
          case MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_end%s>\n",
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<poly_fill_end%s_%s>\n",
                           active_dl_op,
-                          ((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA == active_dl_op)?"_aa":"")
+                          (((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA   == active_dl_op) ||
+                            (MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA == active_dl_op)
+                            )
+                            ?"_aa":""
+                            ),
+                          (((MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END    == active_dl_op) ||
+                            (MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA == active_dl_op)
+                            )
+                           ?"32":"14_2"
+                           )
                           );
             Dexport_dl_i16(active_dl_op);
             break;
@@ -6451,6 +6516,12 @@ namespace setup {
             total_num_roundrects++;
             break;
 
+         case MINNIE_DRAWOP_DECAL_ALPHA:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<decal_alpha> decal_alpha=%f\n", active_dl_op, active_dl_decal_alpha);
+            Dexport_dl_i16(active_dl_op);
+            Dexport_dl_f32(active_dl_decal_alpha);
+            break;
+
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32:
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat> start_offset=%u num_tris=%u c32=#%08x texId=%d texRep=%d texFlt=%d\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter);
             if(active_dl_num_tris >= 1u)
@@ -6464,7 +6535,7 @@ namespace setup {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d texDecalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, dl_tex_decal_alpha);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_flat_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d decalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, active_dl_decal_alpha);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6489,7 +6560,7 @@ namespace setup {
             break;
 
          case MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_gouraud_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d texDecalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, dl_tex_decal_alpha);
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<tri_tex_uv_gouraud_decal> start_offset=%u num_tris=%u c32Fill=#%08x texId=%d texRep=%d texFlt=%d decalAlpha=%f\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, dl_tex_id, dl_tex_repeat, dl_tex_filter, active_dl_decal_alpha);
             if(active_dl_num_tris >= 1u)
             {
                Dexport_dl_i16(active_dl_op);
@@ -6617,22 +6688,12 @@ namespace setup {
             Dexport_dl_i16(active_dl_op);
             break;
 
-         case MINNIE_DRAWOP_LINE_PATTERN_TEX:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_tex>: len=%u bits=%u\n", active_dl_op, active_dl_linepattern_len, active_dl_linepattern_bits);
+         case MINNIE_DRAWOP_LINE_PATTERN:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_tex>: len=%u bits=%u scl=%f off=%f bDecal=%d\n", active_dl_op, active_dl_linepattern_len, active_dl_linepattern_bits, active_dl_linepattern_scale, active_dl_linepattern_offset, active_dl_linepattern_decal);
             Dexport_dl_i16(active_dl_op);
             Dexport_dl_i8((sU8)active_dl_linepattern_len);
             Dexport_dl_i32(active_dl_linepattern_bits);
-            break;
-
-         case MINNIE_DRAWOP_LINE_PATTERN_SCALE:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_scale>: scale=%f\n", active_dl_op, active_dl_linepattern_scale);
-            Dexport_dl_i16(active_dl_op);
             Dexport_dl_f32(active_dl_linepattern_scale);
-            break;
-
-         case MINNIE_DRAWOP_LINE_PATTERN_OFFSET:
-            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<line_pattern_offset>: offset=%f\n", active_dl_op, active_dl_linepattern_offset);
-            Dexport_dl_i16(active_dl_op);
             Dexport_dl_f32(active_dl_linepattern_offset);
             break;
       }
@@ -6685,8 +6746,17 @@ namespace setup {
          {
             finishActiveDrawListOp();
             active_dl_linepattern_len = 0u;
-            active_dl_op = MINNIE_DRAWOP_LINE_PATTERN_TEX;
+            active_dl_op = MINNIE_DRAWOP_LINE_PATTERN;
          }
+      }
+   }
+
+   static void lazyBeginDrawListOpDecalAlpha(void) {
+      if(cur_decal_alpha != active_dl_decal_alpha)
+      {
+         finishActiveDrawListOp();
+         active_dl_decal_alpha = cur_decal_alpha;
+         active_dl_op = MINNIE_DRAWOP_DECAL_ALPHA;
       }
    }
 
@@ -6742,16 +6812,18 @@ namespace setup {
    static sBool beginDrawListOpTriTex(sUI _op) {
       // (todo) continue
       lazyUnbindLinePattern();
+      lazyBeginDrawListOpDecalAlpha();
       return beginDrawListOp(_op);
    }
 
    static sBool beginDrawListOpTriGouraud(sUI _op) {
       // (todo) continue
       lazyUnbindLinePattern();
+      lazyBeginDrawListOpDecalAlpha();
       return beginDrawListOp(_op);
    }
 
-   static sBool beginDrawListOpPolygon(void) {
+   static sBool beginDrawListOpPolygon(Path *p) {
       sUI op = 0u;
       lazyUnbindLinePattern();
 #if MINNIE_EXPORT_VERTEX_16BIT
@@ -6768,27 +6840,59 @@ namespace setup {
          ;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
 
-      return beginDrawListOp(op);
+      sBool r = beginDrawListOp(op);
+      if(r)
+      {
+         if(NULL != minnie::setup::loc_dl_export_ofs)
+         {
+            last_polygon_aa_path_id   = p->path_id;
+            last_polygon_aa_dl_offset = Dexport_dl_get_offset();
+            Dfixpolyaaprintf("[trc] minnie::beginDrawListOpPolygon: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
+         }
+      }
+      return r;
    }
 
-   static sBool beginDrawListOpPolygonMulti(sUI _op) {
+   static sBool beginDrawListOpPolygonBegin(void) {
       lazyUnbindLinePattern();
-      return beginDrawListOp(_op);
+#if MINNIE_EXPORT_VERTEX_16BIT
+      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN);
+#else
+      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
    }
 
    static sBool beginDrawListOpPolygonSub(void) {
-      lazyUnbindLinePattern();
 #if MINNIE_EXPORT_VERTEX_16BIT
-      return beginDrawListOp(b_polygon_aa
-                             ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB_AA
-                             : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB
-                             );
+      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB);
 #else
-      return beginDrawListOp(b_polygon_aa
-                             ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB_AA
-                             : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB
-                             );
+      return beginDrawListOp(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB);
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+   }
+
+   static sBool beginDrawListOpPolygonEnd(Path *p) {
+      sBool r;
+#if MINNIE_EXPORT_VERTEX_16BIT
+      r = beginDrawListOp(b_polygon_aa
+                          ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA
+                          : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END
+                          );
+#else
+      r = beginDrawListOp(b_polygon_aa
+                          ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA
+                          : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END
+                          );
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+      if(r)
+      {
+         if(NULL != minnie::setup::loc_dl_export_ofs)
+         {
+            last_polygon_aa_path_id   = p->path_id;
+            last_polygon_aa_dl_offset = Dexport_dl_get_offset();
+            Dfixpolyaaprintf("[trc] minnie::beginDrawListOpPolygonEnd: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
+         }
+      }
+      return r;
    }
 
    // <method.png>
@@ -6802,26 +6906,15 @@ namespace setup {
    }
 
    // <method.png>
-   static sBool beginDrawListOpLinePatternTex(void) {
+   static sBool beginDrawListOpLinePattern(void) {
       if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
       {
          finishActiveDrawListOp();
-         active_dl_linepattern_len  = cur_linepattern_len;
-         active_dl_linepattern_bits = cur_linepattern_bits;
-         active_dl_op = MINNIE_DRAWOP_LINE_PATTERN_TEX;
-         return YAC_TRUE;
-      }
-      return YAC_FALSE;
-   }
-
-   // <method.png>
-   static sBool beginDrawListOpLinePattern(sUI _op) {
-      if(NULL != loc_dl_export_ofs && NULL != loc_vb_export_ofs)
-      {
-         finishActiveDrawListOp();
+         active_dl_linepattern_len    = cur_linepattern_len;
+         active_dl_linepattern_bits   = cur_linepattern_bits;
          active_dl_linepattern_scale  = cur_linepattern_scale;
          active_dl_linepattern_offset = cur_linepattern_offset;
-         active_dl_op = _op;
+         active_dl_op = MINNIE_DRAWOP_LINE_PATTERN;
          return YAC_TRUE;
       }
       return YAC_FALSE;
@@ -6833,8 +6926,10 @@ namespace setup {
 
       if(active_dl_linepattern_len != cur_linepattern_len)
       {
-         (void)beginDrawListOpLinePatternTex();
+         (void)beginDrawListOpLinePattern();
       }
+
+      lazyBeginDrawListOpDecalAlpha();
 
       const sUI curJoinCap = calcCurJoinCap();
       /* Dprintf("xxx beginDrawListOpLineStrip: cur_stroke_w=%f\n", cur_stroke_w); */
@@ -6903,17 +6998,30 @@ namespace setup {
             break;
 
          case MINNIE_LINEJOIN_MITER:
-            // (todo) line patterns
+            if(0u != cur_linepattern_len)
+            {
 #if MINNIE_EXPORT_VERTEX_16BIT
-            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2;
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_14_2;
 #else
-            op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32;
+               op = MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
+            else
+            {
+#if MINNIE_EXPORT_VERTEX_16BIT
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2;
+#else
+               op = MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32;
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+            }
             break;
       }
 
       if( !_bClosed && MINNIE_LINECAP_ROUND == (curJoinCap >> 4) )
          active_dl_line_strip_flags |= MINNIE_DRAWOP_LINE_STRIP_FLAG_ROUND_CAP;
+
+      if(cur_linepattern_decal)
+         active_dl_line_strip_flags |= MINNIE_DRAWOP_LINE_STRIP_FLAG_DECAL;
 
       return beginDrawListOp(op);
    }
@@ -6930,7 +7038,8 @@ namespace setup {
              (_sx           == active_dl_sx) &&
              (_sy           == active_dl_sy) &&
              (cur_stroke_w > 0.0f) &&
-             (0u == cur_paint_id)
+             (0u == cur_paint_id) &&
+             (0u == cur_linepattern_len)
              )
          {
             // merge fill+stroke
@@ -6971,7 +7080,8 @@ namespace setup {
              (_rx           == active_dl_rx) &&
              (_ry           == active_dl_ry) &&
              (cur_stroke_w > 0.0f) &&
-             (0u == cur_paint_id)
+             (0u == cur_paint_id) &&
+             (0u == cur_linepattern_len)
              )
          {
             // merge fill+stroke
@@ -7014,7 +7124,8 @@ namespace setup {
              (_rx           == active_dl_rx) &&
              (_ry           == active_dl_ry) &&
              (cur_stroke_w > 0.0f) &&
-             (0u == cur_paint_id)
+             (0u == cur_paint_id) &&
+             (0u == cur_linepattern_len)
              )
          {
             // merge fill+stroke
@@ -7044,6 +7155,28 @@ namespace setup {
          return YAC_TRUE;
       }
       return YAC_FALSE;
+   }
+
+   // <method.png>
+   static void cancelFixPolygonAAStroke(void) {
+      Dfixpolyaaprintf("[trc] minnie::cancelFixPolygonAAStroke: last_polygon_aa_path_id=%u last_polygon_aa_dl_offset=%u\n", last_polygon_aa_path_id, last_polygon_aa_dl_offset);
+      last_polygon_aa_path_id = 0u;
+      last_polygon_aa_dl_offset = 0u;
+   }
+
+   // <method.png>
+   static void fixPolygonAAStroke(Path *p) {
+      Dfixpolyaaprintf("[trc] minnie::fixPolygonAAStroke: last_polygon_aa_path_id=%u p->path_id=%u\n", last_polygon_aa_path_id, p->path_id);
+      if( last_polygon_aa_path_id == p->path_id &&
+          0u == cur_linepattern_len &&
+          NULL != loc_dl_export_ofs
+          )
+      {
+         Dfixpolyaaprintf("[trc] minnie::fixPolygonAAStroke:   last_polygon_aa_dl_offset=%u\n", last_polygon_aa_dl_offset);
+         Dexport_dl_dec_i16(last_polygon_aa_dl_offset);  // AA => no-AA (polygon or polygon_sub)
+      }
+      last_polygon_aa_path_id = 0u;
+      last_polygon_aa_dl_offset = 0u;
    }
 
    // <method.png>
@@ -7079,7 +7212,7 @@ namespace setup {
          v->scale_t = (1.0f / DMIN);
          v->scale_u = (1.0f / DMIN);
 #endif
-         /* yac_host->printf("xxx edgeAAAddVertex: p=(%f; %f) c32=#%08x\n", _x, _y, _c32); */
+         /* Dprintf("xxx edgeAAAddVertex: p=(%f; %f) c32=#%08x\n", _x, _y, _c32); */
       }
       else
       {
@@ -7600,9 +7733,11 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConvex(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvex: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvex: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
+
+      cancelFixPolygonAAStroke();
 
       /* if(b_debug_fill) trace "[trc] drawPathFillConvex: vertices:"; */
       Vector2f v1;
@@ -7632,9 +7767,11 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConvexClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       // if(b_debug_fill >= 2) p->points.debugPrint2("[trc] drawPathFillConvexClip: points=");
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -7673,7 +7810,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConvexTransform2d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -7716,7 +7855,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConvexTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform2dClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform2dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -7750,7 +7891,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConvexTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform3d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -7798,7 +7941,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConvexTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform3dClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConvexTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // Transform points from 2D to 3D
       const FloatArray *vaPoints = &p->points;
@@ -7916,7 +8061,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcave(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcave: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d b_tesselate_concave=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx, b_tesselate_concave); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcave: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d b_tesselate_concave=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx, b_tesselate_concave); }
 
       /* Dprintf("xxx drawPathFillConcave: b_tesselate_concave=%d b_edge_aa=%d\n", b_tesselate_concave, b_edge_aa); */
       if( !(b_tesselate_concave || b_edge_aa) && (NULL != loc_vb_export_ofs) )
@@ -7990,7 +8135,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplex(Path *p, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplex: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplex: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(_bMultiPathHWPolygon)
       {
@@ -8066,7 +8211,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveClipPre(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8141,7 +8286,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8218,7 +8363,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathIndexedTris2D(const FloatArray *va, const IntArray *ia, sU32 _c32) {
-      /* if(b_debug_fill) { Dprintf("[dbg] drawPathIndexedTris2D: path_idx=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_mask_idx); } */
+      /* if(b_debug_fill) { Dprintf("[dbg] drawPathIndexedTris2D: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); } */
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -8247,7 +8392,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8268,7 +8413,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -8289,7 +8436,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveTransform2d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(p->points.num_elements >= 2u)  // (todo) already checked by caller
       {
@@ -8366,7 +8513,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexTransform2d(Path *p, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       if(_bMultiPathHWPolygon)
       {
@@ -8446,7 +8593,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveTransform2dClipPre(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2dClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -8517,7 +8664,7 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexTransform2dClipPre(Path *p, const Path *pClip, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClipPre: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -8592,7 +8739,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2dClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform2dClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints/*out*/);
@@ -8613,7 +8762,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClip: path_idx=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform2dClip: path_id=%u #points=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints/*out*/);
@@ -8634,7 +8785,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform3d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // (note) vertices remain unchanged, generates p.ia_fill
       if(!p->tesselateConcave(&p->points, &tmpia_tesselate_concave))
@@ -8694,7 +8847,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3d: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3d: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // (note) iterates parent+sub paths, replaces p->points, generates p->ia_fill
       FloatArray *vaPoints = &tmpfa_points2;
@@ -8755,7 +8910,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillConcaveTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform3dClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillConcaveTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // Transform points from 2D to 3D
       FloatArray *vaPoints = &p->points;
@@ -8882,7 +9039,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathFillComplexTransform3dClip(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3dClip: path_idx=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathFillComplexTransform3dClip: path_id=%u #points=%u pal_idx=%u (c32Fill=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_fill, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // Transform points from 2D to 3D
       FloatArray *vaPoints = &p->points;
@@ -9009,7 +9168,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathLine(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLine: path_idx=%u #points=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathLine: path_id=%u #points=%u pal_idx=%u (c32=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       const FloatArray *va = &p->points;
       if(va->num_elements >= 4u)
@@ -9043,7 +9204,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineClip: path_idx=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathLineClip: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       if(p->points.num_elements >= 4u)
       {
@@ -9078,7 +9241,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineTransform2d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform2d: path_idx=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform2d: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *va = &p->points;
       /* if(b_debug_line >= 2) trace "[trc] drawPathLineTransform2d: points="+va.string2; */
@@ -9117,7 +9282,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform2dClip: path_idx=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform2dClip: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -9155,7 +9322,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineTransform3d(Path *p) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform3d: path_idx=%u pal_idx=%u cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_mask_idx); }
+      if(b_debug_fill) { Dprintf("[dbg] drawPathLineTransform3d: path_id=%u pal_idx=%u cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       FloatArray *va = &p->points;
       /* if(b_debug_line >= 2) trace "[trc] drawPathLineTransform3d: points="+va.string2; */
@@ -9213,8 +9382,8 @@ namespace setup {
       {
          if(vaNum >= 2u)
          {
-            if(_va->elements.f32[_va->num_elements-2u] == _va->elements.f32[0u] &&
-               _va->elements.f32[_va->num_elements-1u] == _va->elements.f32[1u]
+            if(sSI(round(_va->elements.f32[_va->num_elements-2u] * 16.0f)) == sSI(round(_va->elements.f32[0u] * 16.0f)) &&
+               sSI(round(_va->elements.f32[_va->num_elements-1u] * 16.0f)) == sSI(round(_va->elements.f32[1u] * 16.0f))
                )
             {
                vaNum--;
@@ -9233,8 +9402,13 @@ namespace setup {
          const sF32 x = _va->elements.f32[idxOff + 0u];
          const sF32 y = _va->elements.f32[idxOff + 1u];
          Dexportprintfvv("[>>>] minnie::exportLineStripPoints: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+#if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
+#else
+         Dexport_vb_f32(x);
+         Dexport_vb_f32(y);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
       }
    }
 
@@ -9247,8 +9421,8 @@ namespace setup {
       {
          if(vaNum >= 2u)
          {
-            if(_va->elements.f32[_va->num_elements-2u] == _va->elements.f32[0u] &&
-               _va->elements.f32[_va->num_elements-1u] == _va->elements.f32[1u]
+            if(sSI(round(_va->elements.f32[_va->num_elements-2u] * 16.0f)) == sSI(round(_va->elements.f32[0u] * 16.0f)) &&
+               sSI(round(_va->elements.f32[_va->num_elements-1u] * 16.0f)) == sSI(round(_va->elements.f32[1u] * 16.0f))
                )
             {
                vaNum--;
@@ -9268,8 +9442,13 @@ namespace setup {
          const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
          const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale;
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScale: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
+#if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
+#else
+         Dexport_vb_f32(x);
+         Dexport_vb_f32(y);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
       }
    }
 
@@ -9282,8 +9461,8 @@ namespace setup {
       {
          if(vaNum >= 2u)
          {
-            if(_va->elements.f32[_va->num_elements-2u] == _va->elements.f32[0u] &&
-               _va->elements.f32[_va->num_elements-1u] == _va->elements.f32[1u]
+            if(sSI(round(_va->elements.f32[_va->num_elements-2u] * 16.0f)) == sSI(round(_va->elements.f32[0u] * 16.0f)) &&
+               sSI(round(_va->elements.f32[_va->num_elements-1u] * 16.0f)) == sSI(round(_va->elements.f32[1u] * 16.0f))
                )
             {
                vaNum--;
@@ -9292,31 +9471,80 @@ namespace setup {
       }
       const sUI vaWrap = (vaNum << 1);
       const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
-      sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
-      active_dl_num_verts += num;
+      const sUI numClosed = vaNum + sUI(_bClosed);
+      sUI num = numClosed + sUI(bBevelOrMiter);
+      active_dl_num_verts += num + 2u/*pattern line-cap*/;
+      Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: vaNum=%u num=%u #verts=%u\n", vaNum, num, active_dl_num_verts);
       num = (num << 1);
       sUI vtxIdx = 0u;
       sF32 lastX = 0.0f;
       sF32 lastY = 0.0f;
       sF32 patOff = 0.0f;
-      for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
+      sF32 pointLastX = 0.0f;
+      sF32 pointLastY = 0.0f;
+      sF32 pointLastXPrev = 0.0f;
+      sF32 pointLastYPrev = 0.0f;
+      sF32 pointPatOff = 0.0f;
+      for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u, vtxIdx++)
       {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
          const sF32 x = _va->elements.f32[idxOff + 0u];
          const sF32 y = _va->elements.f32[idxOff + 1u];
-         if(idxOffM > 0u)
+         if(vtxIdx > 0u)
          {
             sF32 dx = x - lastX;
             sF32 dy = y - lastY;
             sF32 d = sqrtf(dx*dx + dy*dy);
             patOff += d;
          }
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, x, y, patOff);
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
+#if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
          Dexport_vb_i16(sSI(patOff * 4.0f));
+#else
+         Dexport_vb_f32(x);
+         Dexport_vb_f32(y);
+         Dexport_vb_f32(patOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
          lastX = x;
          lastY = y;
+         /* /\* if(vtxIdx < numClosed) *\/ */
+         if(vtxIdx < vaNum)
+         {
+            pointLastXPrev = pointLastX;
+            pointLastYPrev = pointLastY;
+            pointLastX = x;
+            pointLastY = y;
+            pointPatOff = patOff;
+         }
+      }
+      // add 2 extra pattern line-cap vertices
+      {
+#if MINNIE_EXPORT_VERTEX_16BIT
+         Dexport_vb_i16(sSI(pointLastX * 4.0f));
+         Dexport_vb_i16(sSI(pointLastY * 4.0f));
+         Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+         Dexport_vb_f32(pointLastX);
+         Dexport_vb_f32(pointLastY);
+         Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
+         const sF32 dx = (pointLastX - pointLastXPrev);
+         const sF32 dy = (pointLastY - pointLastYPrev);
+         const sF32 x = pointLastX + dx;
+         const sF32 y = pointLastY + dy;
+#if MINNIE_EXPORT_VERTEX_16BIT
+         Dexport_vb_i16(sSI(x * 4.0f));
+         Dexport_vb_i16(sSI(y * 4.0f));
+         Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+         Dexport_vb_f32(x);
+         Dexport_vb_f32(y);
+         Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsPattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, pointPatOff);
       }
    }
 
@@ -9329,8 +9557,8 @@ namespace setup {
       {
          if(vaNum >= 2u)
          {
-            if(_va->elements.f32[_va->num_elements-2u] == _va->elements.f32[0u] &&
-               _va->elements.f32[_va->num_elements-1u] == _va->elements.f32[1u]
+            if(sSI(round(_va->elements.f32[_va->num_elements-2u] * 16.0f)) == sSI(round(_va->elements.f32[0u] * 16.0f)) &&
+               sSI(round(_va->elements.f32[_va->num_elements-1u] * 16.0f)) == sSI(round(_va->elements.f32[1u] * 16.0f))
                )
             {
                vaNum--;
@@ -9339,15 +9567,22 @@ namespace setup {
       }
       const sUI vaWrap = (vaNum << 1);
       const sBool bBevelOrMiter = isLineJoinBevelOrMiter();
-      sUI num = vaNum + sUI(bBevelOrMiter) + sUI(_bClosed);
+      const sUI numClosed = vaNum + sUI(_bClosed);
+      sUI num = numClosed + sUI(bBevelOrMiter);
       /* Dprintf("xxx exportLineStripPointsTranslateScalePattern: bClosed=%d bBevelOrMiter=%d vaNum=%u => num=%u\n", _bClosed, bBevelOrMiter, vaNum, num); */
-      active_dl_num_verts += num;
+      active_dl_num_verts += num + 2u/*pattern line-cap*/;
+      Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: vaNum=%u numClosed=%u num=%u #verts=%u\n", vaNum, numClosed, num, active_dl_num_verts);
       num = (num << 1);
       sUI vtxIdx = 0u;
       sF32 lastX = 0.0f;
       sF32 lastY = 0.0f;
       sF32 patOff = 0.0f;
-      for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
+      sF32 pointLastX = 0.0f;
+      sF32 pointLastY = 0.0f;
+      sF32 pointLastXPrev = 0.0f;
+      sF32 pointLastYPrev = 0.0f;
+      sF32 pointPatOff = 0.0f;
+      for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u, vtxIdx++)
       {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
          const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
@@ -9359,18 +9594,62 @@ namespace setup {
             sF32 d = sqrtf(dx*dx + dy*dy);
             patOff += d;
          }
-         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, x, y, patOff);
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, patOff);
+#if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
          Dexport_vb_i16(sSI(y * 4.0f));
          Dexport_vb_i16(sSI(patOff * 4.0f));
+#else
+         Dexport_vb_f32(x);
+         Dexport_vb_f32(y);
+         Dexport_vb_f32(patOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
          lastX = x;
          lastY = y;
+         /* /\* if(vtxIdx < numClosed) *\/ */
+         if(vtxIdx < vaNum)
+         {
+            pointLastXPrev = pointLastX;
+            pointLastYPrev = pointLastY;
+            pointLastX = x;
+            pointLastY = y;
+            pointPatOff = patOff;
+         }
+      }
+      // add 2 extra pattern line-cap vertices
+      {
+#if MINNIE_EXPORT_VERTEX_16BIT
+         Dexport_vb_i16(sSI(pointLastX * 4.0f));
+         Dexport_vb_i16(sSI(pointLastY * 4.0f));
+         Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+         Dexport_vb_f32(pointLastX);
+         Dexport_vb_f32(pointLastY);
+         Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx++, pointLastX, pointLastY, pointPatOff);
+         const sF32 dx = (pointLastX - pointLastXPrev);
+         const sF32 dy = (pointLastY - pointLastYPrev);
+         const sF32 x = pointLastX + dx;
+         const sF32 y = pointLastY + dy;
+#if MINNIE_EXPORT_VERTEX_16BIT
+         Dexport_vb_i16(sSI(x * 4.0f));
+         Dexport_vb_i16(sSI(y * 4.0f));
+         Dexport_vb_i16(sSI(pointPatOff * 4.0f));
+#else
+         Dexport_vb_f32(x);
+         Dexport_vb_f32(y);
+         Dexport_vb_f32(pointPatOff);
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScalePattern<cap>: va[%u]=(%f;%f) patOff=%f\n", vtxIdx, x, y, pointPatOff);
       }
    }
 
    // <method.png>
    static void drawPathLineStrip(Path *p) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStrip: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStrip: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      fixPolygonAAStroke(p);
 
       if(0u == cur_linepattern_len)
          exportLineStripPointsTranslateScale(&p->points, p->b_closed);
@@ -9380,9 +9659,11 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShape(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShape: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShape: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       // Dprintf("xxx drawPathExtrudeShape: cur_stroke_w=%f stroke_w_line_join_threshold=%f\n", cur_stroke_w, stroke_w_line_join_threshold);
+
+      fixPolygonAAStroke(p);
 
       const sUI curJoinCap = calcCurJoinCap();
       p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
@@ -9420,10 +9701,12 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineStripClipPre(Path *p, const Path *pClip) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripClipPre: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       if(NULL != loc_vb_export_ofs)
       {
+         fixPolygonAAStroke(p);  // (note) assumes that fill area was clipped against same path
+
          FloatArray *vaPoints = &tmpfa_points2;
          translateAndScalePoints(&p->points, vaPoints/*out*/);
 
@@ -9439,7 +9722,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeClipPre(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeClipPre: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      fixPolygonAAStroke(p);  // (note) assumes that fill area was clipped against same path
 
       FloatArray *vaPoints = &tmpfa_points2;
       translateAndScalePoints(&p->points, vaPoints/*out*/);
@@ -9480,7 +9765,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeClip(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeClip: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeClip: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       IntArray *ia = &tmpia_clip2;
       ia->empty();
@@ -9506,10 +9793,12 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineStripTransform2d(Path *p) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripTransform2d: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripTransform2d: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       if(NULL != loc_vb_export_ofs)
       {
+         fixPolygonAAStroke(p);
+
          FloatArray *vaPoints = &tmpfa_points2;
          transform2DAndTranslateAndScale(&p->points, vaPoints);
 
@@ -9522,7 +9811,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeTransform2d(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2d: path_idx=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2d: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      fixPolygonAAStroke(p);
 
       const sUI curJoinCap = calcCurJoinCap();
       p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
@@ -9569,10 +9860,12 @@ namespace setup {
 
    // <method.png>
    static void drawPathLineStripTransform2dClipPre(Path *p, const Path *pClip) {
-      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripTransform2dClipPre: path_idx=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_line_strip) { Dprintf("[dbg] drawPathLineStripTransform2dClipPre: path_id=%u #points=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, p->points.num_elements/2u, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
 
       if(NULL != loc_vb_export_ofs)
       {
+         fixPolygonAAStroke(p);  // (note) assumes that fill area was clipped against same path
+
          FloatArray *vaPoints = &tmpfa_points2;
          transform2DAndTranslateAndScale(&p->points, vaPoints);
 
@@ -9588,7 +9881,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeTransform2dClipPre(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2dClipPre: path_idx=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2dClipPre: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      fixPolygonAAStroke(p);  // (note) assumes that fill area was clipped against same path
 
       FloatArray *vaPoints = &tmpfa_points2;
       transform2DAndTranslateAndScale(&p->points, vaPoints);
@@ -9629,7 +9924,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeTransform2dClip(Path *p, const Path *pClip) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2dClip: path_idx=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform2dClip: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // Create va_extrude / ia_extrude
       const sUI curJoinCap = calcCurJoinCap();
@@ -9671,7 +9968,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeTransform3d(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3d: path_idx=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3d: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       const sUI curJoinCap = calcCurJoinCap();
       p->extrudeShape(&p->points, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
@@ -9728,7 +10027,9 @@ namespace setup {
 
    // <method.png>
    static void drawPathExtrudeShapeTransform3dClip(Path *p) {
-      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3dClip: path_idx=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_idx, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+      if(b_debug_extrude) { Dprintf("[dbg] drawPathExtrudeShapeTransform3dClip: path_id=%u pal_idx=%u (c32Stroke=#%08x) cur_mask_idx=%d\n", p->path_id, cur_pal_idx, cur_c32_stroke, cur_mask_idx); }
+
+      cancelFixPolygonAAStroke();
 
       // Create va_extrude / ia_extrude
       const sUI curJoinCap = calcCurJoinCap();
@@ -9828,7 +10129,7 @@ namespace setup {
 
    // <method.png>
    static void drawPath(Path *p, sSI mode, const sUI _forcedPathTypeOr0, sBool _bMultiPathHWPolygon) {
-      if(b_debug_fill) { Dprintf("[dbg] drawPath: mode=%d p->path_idx=%u p->type=%u #points=%u cur_stroke_w=%f bMultiPathHWPolygon=%d\n", mode, p->path_idx, p->type, p->points.num_elements/2u, cur_stroke_w, _bMultiPathHWPolygon); }
+      Dpathprintf("[dbg] drawPath: mode=%d p->path_id=%u p->type=%u #points=%u cur_stroke_w=%f bMultiPathHWPolygon=%d\n", mode, p->path_id, p->type, p->points.num_elements/2u, cur_stroke_w, _bMultiPathHWPolygon);
 
       if(p->points.num_elements >= (2u*2u))
       {
@@ -9903,7 +10204,7 @@ namespace setup {
                               if( !(b_tesselate_concave || b_edge_aa) )
                               {
                                  // Start draw-concave op
-                                 (void)beginDrawListOpPolygon();
+                                 (void)beginDrawListOpPolygon(p);
                               }
 
                               drawPathFillConcaveClipPre(p, cur_clip2d_path);
@@ -9919,7 +10220,7 @@ namespace setup {
                            if( !(b_tesselate_concave || b_edge_aa) )
                            {
                               // Start draw-concave op
-                              (void)beginDrawListOpPolygon();
+                              (void)beginDrawListOpPolygon(p);
                            }
                            drawPathFillConcave(p);
                         }
@@ -10036,7 +10337,7 @@ namespace setup {
                               if( !(b_tesselate_concave || b_edge_aa) )
                               {
                                  // Start draw-concave op
-                                 (void)beginDrawListOpPolygon();
+                                 (void)beginDrawListOpPolygon(p);
                               }
                               drawPathFillConcaveTransform2dClipPre(p, cur_clip2d_path);
                            }
@@ -10051,7 +10352,7 @@ namespace setup {
                            if( !(b_tesselate_concave || b_edge_aa) )
                            {
                               // Start draw-concave op
-                              (void)beginDrawListOpPolygon();
+                              (void)beginDrawListOpPolygon(p);
                            }
                            drawPathFillConcaveTransform2d(p);
                         }
@@ -10233,10 +10534,7 @@ namespace setup {
       //      1: transform2d
       //      2: transform3d
 
-      if(b_debug_multipath)
-      {
-         Dprintf("[trc] drawMultiPath: p->type=%d #points=%u #sub=%u mode=%d b_tesselate_concave=%d sw_tesselate_size_threshold=%u\n", p->type, p->points.num_elements, p->sub_paths.num_elements, mode, b_tesselate_concave, sw_tesselate_size_threshold);
-      }
+      Dpathprintf("[trc] drawMultiPath: p->type=%d #points=%u #sub=%u mode=%d b_tesselate_concave=%d sw_tesselate_size_threshold=%u\n", p->type, p->points.num_elements, p->sub_paths.num_elements, mode, b_tesselate_concave, sw_tesselate_size_threshold);
 
       debug_num_paths++;
 
@@ -10247,7 +10545,7 @@ namespace setup {
             Dprintf("[trc] drawMultiPath: HW polygon #sub=%u mode=%d\n", p->sub_paths.num_elements, mode);
          }
 
-         beginDrawListOpPolygonMulti(MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN);
+         beginDrawListOpPolygonBegin();
 
          drawPath(p, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
 
@@ -10257,11 +10555,7 @@ namespace setup {
             drawPath(sp, mode, 0u/*forcedPathTypeOr0*/, YAC_TRUE/*bMultiPathHWPolygon*/);
          }
 
-         beginDrawListOpPolygonMulti(b_polygon_aa
-                                     ? MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA
-                                     : MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END
-                                     );
-
+         beginDrawListOpPolygonEnd(p);
          return;
       }
 
@@ -10536,11 +10830,37 @@ namespace setup {
    // <method.png>
    static sBool newPath(sUI _type, const char *_debugCmd, const char *_debugName) {
       // type: MINNIE_PATH_TYPE_CONVEX|CONCAVE|COMPLEX
-      cur_path = paths.addNew();
+      sUI pathId = 0u;
+      cur_path = NULL;
+      {
+         // Try to reallocate previously freed path
+         Path *p;
+         for(sUI i = 1u; i < paths.num_elements; i++)
+         {
+            p = paths.elements[i];
+            if(!p->isAllocated())
+            {
+               cur_path = p;
+               pathId = i;
+               Dpathprintf("[dbg] minnie::newPath: reallocate pathId=%u (num=%u) type=%u debugName=\"%s\"\n", pathId, paths.num_elements, _type, _debugName);
+               break;
+            }
+         }
+      }
+      if(NULL == cur_path)
+      {
+         // Append new path
+         cur_path = paths.addNew();
+         if(NULL != cur_path)
+         {
+            pathId = paths.num_elements - 1u;
+            Dpathprintf("[dbg] minnie::newPath: add pathId=%u type=%u debugName=\"%s\"\n", pathId, _type, _debugName);
+         }
+      }
       if(NULL != cur_path)
       {
          /* Dprintf("xxx 0x84: def_points_per_path=%u\n", def_points_per_path); */
-         cur_path->init(allocator, paths.num_elements/*path_idx*/, _type/*type*/,
+         cur_path->init(allocator, pathId, _type/*type*/,
                         NULL/*pointsData*/, def_points_per_path*2u/*pointsMaxElements*/,
                         tmpfa_extrude.elements.any, max_extruded_vertices_per_path*2u/*maxExtrudedElements*/
                         );
@@ -10549,7 +10869,7 @@ namespace setup {
          cur_y = 0.0f;
          cur_mirror_x = 0.0f;
          cur_mirror_y = 0.0f;
-         if(b_debug_op) { Dprintf("[dbg] Minnie::newPath: %s %u  (%s)\n", _debugCmd, cur_path->path_idx, _debugName); }
+         if(b_debug_op) { Dprintf("[dbg] Minnie::newPath: %s %u  (%s)\n", _debugCmd, cur_path->path_id, _debugName); }
          return YAC_TRUE;
       }
       else
@@ -10563,6 +10883,7 @@ namespace setup {
    static void endPath(sBool _bClosed) {
       if(NULL != cur_path)
       {
+         Dpathprintf("[dbg] minnie::endPath: pathId=%u bClosed=%u\n", cur_path->path_id, _bClosed);
          cur_path->end(_bClosed);
          cur_path = paths.getRev(0);
          cur_x = 0.0f;
@@ -11050,28 +11371,28 @@ namespace setup {
                cur_clip2d_path = paths.getRev(ifs.getU8() + 1);
                b_cur_clip2d_pre = YAC_TRUE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2p %u  (u8)\n", cur_clip2d_path->path_idx); }
+               if(b_debug_op) { Dprintf("[dbg] w2p %u  (u8)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x53u:  // w2p <pathIdx.u16>
                cur_clip2d_path  = paths.getRev(ifs.getU16() + 1u);
                b_cur_clip2d_pre = YAC_TRUE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2p %u  (u16)\n", cur_clip2d_path->path_idx); }
+               if(b_debug_op) { Dprintf("[dbg] w2p %u  (u16)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x54u:  // w2 <pathIdx.u8>
                cur_clip2d_path  = paths.getRev(ifs.getU8() + 1u);
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2 %u  (u8)\n", cur_clip2d_path->path_idx); }
+               if(b_debug_op) { Dprintf("[dbg] w2 %u  (u8)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x55u:  // w2 <pathIdx.u16>
                cur_clip2d_path  = paths.getRev(ifs.getU16() + 1u);
                b_cur_clip2d_pre = YAC_FALSE;
                b_cur_clip_3d    = YAC_FALSE;
-               if(b_debug_op) { Dprintf("[dbg] w2 %u  (u16)\n", cur_clip2d_path->path_idx); }
+               if(b_debug_op) { Dprintf("[dbg] w2 %u  (u16)\n", cur_clip2d_path->path_id); }
                break;
 
             case 0x56u:  // w3fb
@@ -11216,7 +11537,7 @@ namespace setup {
                      cur_y = 0.0f;
                      cur_mirror_x = 0.0f;
                      cur_mirror_y = 0.0f;
-                     if(b_debug_op) { Dprintf("[dbg] psub   (parent_path_idx=%u)\n", last_parent_path->path_idx); }
+                     if(b_debug_op) { Dprintf("[dbg] psub   (parent_path_id=%u)\n", last_parent_path->path_id); }
                   }
                   else
                   {
@@ -11758,7 +12079,7 @@ namespace setup {
                /* sx  =  ifs.getS16() / 4096.0f; */
                /* sy  =  ifs.getS16() / 4096.0f; */
                /* ang = (ifs.getU16() & 16383) * (360.0f / 16384.0f); */
-               /* if(b_debug_op) trace "[dbg] v "+opath->path_idx+" "+sx+" "+sy+" "+ang+"  (u8)"; */
+               /* if(b_debug_op) trace "[dbg] v "+opath->path_id+" "+sx+" "+sy+" "+ang+"  (u8)"; */
                break;
 
             case 0xC1u: // v <pathIdx> <sx> <sy> <ang> (scale+rotate)
@@ -11767,19 +12088,19 @@ namespace setup {
                /* sx  =  ifs.getS16() / 4096.0f; */
                /* sy  =  ifs.getS16() / 4096.0f; */
                /* ang = (ifs.getU16() & 16383) * (360.0f / 16384.0f); */
-               /* if(b_debug_op) trace "[dbg] v "+opath->path_idx+" "+sx+" "+sy+" "+ang+"  (u16)"; */
+               /* if(b_debug_op) trace "[dbg] v "+opath->path_id+" "+sx+" "+sy+" "+ang+"  (u16)"; */
                break;
 
             case 0xC2u: // v <pathIdx>
                // (todo) remove
                /* oPath <= paths.get(ifs.getU8()); */
-               /* if(b_debug_op) trace "[dbg] v "+opath->path_idx+" "+sx+" "+sy+" "+ang+"  (u8)"; */
+               /* if(b_debug_op) trace "[dbg] v "+opath->path_id+" "+sx+" "+sy+" "+ang+"  (u8)"; */
                break;
 
             case 0xC3u: // v <pathIdx>
                // (todo) remove
                /* oPath <= paths.get(ifs.getU16()); */
-               /* if(b_debug_op) trace "[dbg] v "+opath->path_idx+" "+sx+" "+sy+" "+ang+"  (u16)"; */
+               /* if(b_debug_op) trace "[dbg] v "+opath->path_id+" "+sx+" "+sy+" "+ang+"  (u16)"; */
                break;
 
             case 0xD0u: // d <pathIdx>
@@ -12051,21 +12372,21 @@ YF void YAC_CALL minRect (sF32 _w, sF32 _h);
 YF void YAC_CALL minRoundRect (sF32 _w, sF32 _h, sF32 _rx, sF32 _ry);
 YF void YAC_CALL minEllipse (sF32 _rx, sF32 _ry);
 YF void YAC_CALL minCircle (sF32 _r);
-YF sSI YAC_CALL minBeginPathEx (sSI _pathType);
-YF sSI YAC_CALL minBeginPath (void);
-YF sSI YAC_CALL minBeginPathConvex (void);
-YF sSI YAC_CALL minBeginPathConcave (void);
-YF sSI YAC_CALL minBeginPathComplex (void);
+YF sUI YAC_CALL minBeginPathEx (sSI _pathType);
+YF sUI YAC_CALL minBeginPath (void);
+YF sUI YAC_CALL minBeginPathConvex (void);
+YF sUI YAC_CALL minBeginPathConcave (void);
+YF sUI YAC_CALL minBeginPathComplex (void);
 YF void YAC_CALL minBeginImmediate (void);
 YF void YAC_CALL minEndImmediate (void);
 YF void YAC_CALL minEndPath (sBool _bClosed);
 YF void YAC_CALL minEndPathOpen (void);
 YF void YAC_CALL minEndPathClosed (void);
-YF sSI YAC_CALL minBeginSubEx (sSI _pathType);
-YF sSI YAC_CALL minBeginSub (void);
-YF sSI YAC_CALL minBeginSubConvex (void);
-YF sSI YAC_CALL minBeginSubConcave (void);
-YF sSI YAC_CALL minBeginSubComplex (void);
+YF sUI YAC_CALL minBeginSubEx (sSI _pathType);
+YF sUI YAC_CALL minBeginSub (void);
+YF sUI YAC_CALL minBeginSubConvex (void);
+YF sUI YAC_CALL minBeginSubConcave (void);
+YF sUI YAC_CALL minBeginSubComplex (void);
 YF void YAC_CALL minEndSub (sBool _bClosed);
 YF void YAC_CALL minEndSubOpen (void);
 YF void YAC_CALL minEndSubClosed (void);
@@ -12074,12 +12395,11 @@ YF void YAC_CALL minFill (void);
 YF void YAC_CALL minFillRuleEvenOdd (void);
 YF void YAC_CALL minFillRuleNonZero (void);
 YF void YAC_CALL minMiterLimit (sF32 _l);
-YF void YAC_CALL minLinePattern (sUI _patternLen, sUI _patternBits);
-YF void YAC_CALL minLinePatternScale (sF32 _patternScale);
-YF void YAC_CALL minLinePatternOffset (sF32 _patternOffset);
+YF void YAC_CALL minLinePattern (sUI _patternLen, sUI _patternBits, sF32 _patternScale, sF32 _patternOffset, sBool _bDecal);
 YF void YAC_CALL minColor (sUI _c32);
 YF void YAC_CALL minColorFill (sUI _c32);
 YF void YAC_CALL minColorStroke (sUI _c32);
+YF void YAC_CALL minDecalAlpha (sF32 _decalAlpha);
 YF void YAC_CALL minJoinCap (sUI _joinCap);
 YF void YAC_CALL minJoin (sUI _joinType);
 YF void YAC_CALL minJoinNone (void);
@@ -12090,11 +12410,11 @@ YF void YAC_CALL minCap (sUI _capType);
 YF void YAC_CALL minCapNone (void);
 YF void YAC_CALL minCapRound (void);
 YF void YAC_CALL minCapButt (void);
-YF void YAC_CALL minDrawPath (sSI _pathIdx);
+YF void YAC_CALL minDrawPath (sUI _pathId);
+YF void YAC_CALL minFreePath (sUI _pathId);
 YF void YAC_CALL minAARange (sF32 _range);
 YF void YAC_CALL minBindTexture (sSI _texId, sBool _bRepeat, sBool _bFilter);
 YF void YAC_CALL minUnbindTexture (void);
-YF void YAC_CALL minTextureDecalAlpha (sF32 _decalAlpha);
 YF void YAC_CALL minTriangleTexUVFlat (sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3);
 YF void YAC_CALL minTriangleTexUVFlatDecal (sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3);
 YF void YAC_CALL minTriangleTexUVGouraud (sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1, sF32 _x2, sF32 _y2, sF32 _u2, sF32 _v2, sU32 _c32v2, sF32 _x3, sF32 _y3, sF32 _u3, sF32 _v3, sU32 _c32v3);
@@ -12129,6 +12449,8 @@ extern "C" {
 /* @function minBegin
 Free paths, reset state and start new drawing.
 
+Called by %MinnieDrawable.begin and %minParseBuffer.
+
 @see minEnd
 @group Drawable
 @groupref Path
@@ -12139,7 +12461,9 @@ void minBegin(void) {
 }
 
 /* @function minEnd
-End drawing
+End drawing.
+
+Called by %MinnieDrawable.end and %minParseBuffer (0xE0 end op).
 
 @see minBegin
 @group Drawable
@@ -12315,6 +12639,8 @@ Parse MIB stream.
 
 The MIB data can either be generated by the application, or be converted from e.g. an SVG file via an offline preprocessor.
 
+Calls %minBegin.
+
 @arg buf %File or %Buffer stream
 
 @group Drawable
@@ -12347,7 +12673,7 @@ Debug-print path statistics to the console
 @groupref Config
 */
 void minDebugPrintPathStats(void) {
-   Dyac_host_printf("[dbg] Minnie::debugPrintPathStats: ~~~~~~~~~~~~~ #paths=%u #strokeC=%u(%u pts) #strokeO=%u(%u pts) #fillSmall=%u(%u pts) #fillLarge=%u(%u pts) #swTess=%u\n", minnie::debug_num_paths, minnie::debug_num_stroke_closed_paths, minnie::debug_num_stroke_closed_path_points, minnie::debug_num_stroke_open_paths, minnie::debug_num_stroke_open_path_points, minnie::debug_num_small_paths, minnie::debug_num_small_path_points, minnie::debug_num_large_paths, minnie::debug_num_large_path_points, minnie::debug_num_swtess_paths);
+   Dprintf("[dbg] Minnie::debugPrintPathStats: ~~~~~~~~~~~~~ #paths=%u #strokeC=%u(%u pts) #strokeO=%u(%u pts) #fillSmall=%u(%u pts) #fillLarge=%u(%u pts) #swTess=%u\n", minnie::debug_num_paths, minnie::debug_num_stroke_closed_paths, minnie::debug_num_stroke_closed_path_points, minnie::debug_num_stroke_open_paths, minnie::debug_num_stroke_open_path_points, minnie::debug_num_small_paths, minnie::debug_num_small_path_points, minnie::debug_num_large_paths, minnie::debug_num_large_path_points, minnie::debug_num_swtess_paths);
 }
 
 /* @function minResetAllocStats
@@ -13100,68 +13426,72 @@ Begin new path definition.
 
 @arg pathType See %MINNIE_PATH_TYPE_CONVEX, %MINNIE_PATH_TYPE_CONCAVE, %MINNIE_PATH_TYPE_COMPLEX, %MINNIE_PATH_TYPE_IMMEDIATE
 
-@return Path id
+@return Path id (1..n), or 0 when an error occured
 
 @see minBeginPath, minBeginPathConvex, minBeginPathConcave, minBeginPathComplex, minEndPath
 
 @group Path
 @groupref Element
 */
-sSI minBeginPathEx(sSI _pathType) {
-   // begin new path declaration. returns path_idx or -1 (error)
+sUI minBeginPathEx(sSI _pathType) {
+   // begin new path declaration. returns path_id (1..n) or <=0 (error)
    //   pathType: MINNIE_PATH_TYPE_xxx (CONVEX|CONCAVE|COMPLEX|IMMEDIATE)
    if(minnie::setup::newPath(_pathType, "api"/*debugCmd*/, "apiPathBegin"/*debugName*/))
    {
-      return sSI(minnie::setup::cur_path->path_idx);
+      return sSI(minnie::setup::cur_path->path_id);
    }
-   return -1;
+   return 0u;
 }
 
 /* @function minBeginPath:int
 Begin new Even-Odd path definition
-@return Path id
+
+@return Path id (1..n), or 0 when an error occured
 
 @see minEndPath
 @group Path
 @groupref Element
 */
-sSI minBeginPath(void) {
+sUI minBeginPath(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
 /* @function minBeginPathConvex:int
 Begin new Convex path definition
-@return Path id
+
+@return Path id (1..n), or 0 when an error occured
 
 @see minEndPath
 @group Path
 @groupref Element
 */
-sSI minBeginPathConvex(void) {
+sUI minBeginPathConvex(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_CONVEX);
 }
 
 /* @function minBeginPathConcave:int
 Begin new Concave path definition
-@return Path id
+
+@return Path id (1..n), or 0 when an error occured
 
 @see minEndPath
 @group Path
 @groupref Element
 */
-sSI minBeginPathConcave(void) {
+sUI minBeginPathConcave(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_CONCAVE);
 }
 
 /* @function minBeginPathComplex:int
 Begin new Even-Odd path definition
-@return Path id
+
+@return Path id (1..n), or 0 when an error occured
 
 @see minEndPath
 @group Path
 @groupref Element
 */
-sSI minBeginPathComplex(void) {
+sUI minBeginPathComplex(void) {
    return minBeginPathEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
@@ -13223,85 +13553,89 @@ void minEndPathClosed(void) {
 Begin new sub-path definition.
 
 Sub paths can e.g. be used to cut holes into the parent (even-odd type) path.
-@return Sub-path id
+@return Sub-path id (or 0 on error)
 
 @group Path
 @groupref Element
 */
-sSI minBeginSubEx(sSI _pathType) {
-   // (note) return value: >=0 if subpath was created, -1 on error
+sUI minBeginSubEx(sSI _pathType) {
+   // (note) return value: >=1 if subpath was created, 0 on error
    if(NULL != minnie::setup::last_parent_path)
    {
       minnie::setup::cur_path = minnie::setup::last_parent_path->sub_paths.addNew();
       if(NULL != minnie::setup::cur_path)
       {
          minnie::setup::cur_path->init(minnie::setup::allocator,
-                                     999999u/*pathIdx*/,
-                                     minnie::setup::last_parent_path->type,
-                                     NULL/*pointsData*/, minnie::setup::def_points_per_path*2u/*pointsMaxElements*/,
-                                     minnie::setup::tmpfa_extrude.elements.any, minnie::setup::max_extruded_vertices_per_path*2u/*maxExtrudedElements*/
-                                     );
+                                       999999u/*pathIdx*/,
+                                       minnie::setup::last_parent_path->type,
+                                       NULL/*pointsData*/, minnie::setup::def_points_per_path*2u/*pointsMaxElements*/,
+                                       minnie::setup::tmpfa_extrude.elements.any, minnie::setup::max_extruded_vertices_per_path*2u/*maxExtrudedElements*/
+                                       );
          minnie::setup::cur_path->parent_path = minnie::setup::last_parent_path;
          minnie::setup::cur_x = 0.0f;
          minnie::setup::cur_y = 0.0f;
          minnie::setup::cur_mirror_x = 0.0f;
          minnie::setup::cur_mirror_y = 0.0f;
-         return minnie::setup::cur_path->path_idx;
+         return minnie::setup::cur_path->path_id;
       }
       else
       {
          Dapierror("[---] Minnie::apiPathBeginSub: max sub paths(%u) exceeded\n", minnie::setup::last_parent_path->sub_paths.max_elements);
-         return -1;
+         return 0u;
       }
    }
    else
    {
       Dapierror("[---] Minnie::apiPathBeginSub: no parent path\n");
-      return -1;
+      return 0u;
    }
 }
 
 /* @function minBeginSub:int
 Begin new Even-Odd sub-path definition
-@return Sub-path id
+
+@return Sub-path id (or 0 on error)
 
 @group Path
 @groupref Element
 */
-sSI minBeginSub(void) {
+sUI minBeginSub(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
 /* @function minBeginSubConvex:int
 Begin new Convex sub-path definition
-@return Sub-path id
+
+@return Sub-path id (or 0 on error)
 
 @group Path
 @groupref Element
 */
-sSI minBeginSubConvex(void) {
+sUI minBeginSubConvex(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_CONVEX);
 }
 
 /* @function minBeginSubConcave:int
 Begin new Concave sub-path definition
-@return Sub-path id
+
+@return Sub-path id (0 on error)
 
 @group Path
 @groupref Element
 */
-sSI minBeginSubConcave(void) {
+sUI minBeginSubConcave(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_CONCAVE);
 }
 
 /* @function minBeginSubComplex:int
 Begin new Even-Odd sub-path definition
-@return Sub-path id
+
+@return Sub-path id (or 0 on error)
 
 @group Path
 @groupref Element
 */
-sSI minBeginSubComplex(void) {
+sUI minBeginSubComplex(void) {
    return minBeginSubEx(MINNIE_PATH_TYPE_COMPLEX);
 }
 
@@ -13399,45 +13733,31 @@ void minMiterLimit(sF32 _l) {
    minnie::setup::cur_miter_limit = _l;
 }
 
-/* @function minLinePattern,int patternLen,int patternBits
+/* @function minLinePattern,int patternLen,int patternBits,float patternScale,float patternOffset,boolean bDecal
 Set line pattern
 
 @arg patternLen Pattern length (num bits) (7,8,14,16,28,32) (0=off)
 @arg patternBits Pattern bits
+@arg patternScale Line pattern scaling (1: 1:1 pixel mapping, >1: stretch)
+@arg patternOffset Line pattern offset (0..1, applied after scaling)
+@arg bDecal 1=render cleared linepattern bits with fill color, and set bits with stroke color (the line pattern is crossfaded with the current fill color according to %minDecalAlpha). 0=render cleared bits as transparent
+
+@group LinePattern
+@groupref Texture
 */
-void minLinePattern(sUI _patternLen, sUI _patternBits) {
+void minLinePattern(sUI _patternLen, sUI _patternBits, sF32 _patternScale, sF32 _patternOffset, sBool _bDecal) {
    if(minnie::setup::cur_linepattern_len != _patternLen ||
-      ((0u != _patternLen) && minnie::setup::cur_linepattern_bits != _patternBits)
+      ((0u != _patternLen) && minnie::setup::cur_linepattern_bits != _patternBits) ||
+      (minnie::setup::cur_linepattern_scale != _patternScale) ||
+      (minnie::setup::cur_linepattern_offset != _patternOffset) ||
+      (minnie::setup::cur_linepattern_decal != _bDecal)
       )
    {
-      minnie::setup::cur_linepattern_len  = _patternLen;
-      minnie::setup::cur_linepattern_bits = _patternBits;
-   }
-}
-
-/* @function minLinePatternScale,float patternScale
-Set line pattern scaling
-
-@arg patternScale Line pattern scaling (>1: stretch)
-*/
-void minLinePatternScale(sF32 _patternScale) {
-   if(minnie::setup::cur_linepattern_scale != _patternScale)
-   {
-      minnie::setup::cur_linepattern_scale = _patternScale;
-      (void)minnie::setup::beginDrawListOpLinePattern(MINNIE_DRAWOP_LINE_PATTERN_SCALE);
-   }
-}
-
-/* @function minLinePatternOffset,float patternOffset
-Set line pattern offset
-
-@arg patternOffset Line pattern offset (0..1, applied after scaling)
-*/
-void minLinePatternOffset(sF32 _patternOffset) {
-   if(minnie::setup::cur_linepattern_offset != _patternOffset)
-   {
+      minnie::setup::cur_linepattern_len    = _patternLen;
+      minnie::setup::cur_linepattern_bits   = _patternBits;
+      minnie::setup::cur_linepattern_scale  = _patternScale;
       minnie::setup::cur_linepattern_offset = _patternOffset;
-      (void)minnie::setup::beginDrawListOpLinePattern(MINNIE_DRAWOP_LINE_PATTERN_OFFSET);
+      minnie::setup::cur_linepattern_decal  = _bDecal;
    }
 }
 
@@ -13473,6 +13793,18 @@ Set ARGB32 stroke color for next path draw call
 */
 void minColorStroke(sUI _c32) {
    minnie::setup::cur_c32_stroke = _c32;
+}
+
+/* @function minDecalAlpha,float decalAlpha
+Select alpha for 'decal' textured triangle and line strip draw calls
+
+@groupref Path
+@groupref Element
+@groupref Draw
+@group Texture
+*/
+void minDecalAlpha(sF32 _decalAlpha) {
+   minnie::setup::cur_decal_alpha = _decalAlpha;
 }
 
 /* @function minJoinCap,int joinCap
@@ -13603,21 +13935,52 @@ void minCapButt(void) {
 /* @function minDrawPath,int pathId
 Draw previously defined path
 
+@arg pathId Path id (1..n)
+
 @groupref Path
 @group Draw
 @groupref Element
 */
-void minDrawPath(sSI _pathId) {
-   /* yac_host->printf("xxx apiDraw: pathId=%u #paths=%u\n", _pathId, paths.num_elements); */
-   minnie::Path *oPath = minnie::setup::paths.get(sUI(_pathId - 1));
-   if(NULL != oPath)
+void minDrawPath(sUI _pathId) {
+   Dpathprintf("[dbg] minDrawPath: pathId=%u/%u\n", _pathId, minnie::setup::paths.num_elements - 1u);
+   if(_pathId > 0u)
    {
-      minnie::setup::drawMultiPath(oPath, 0/*mode=notransform*/);
+      minnie::Path *oPath = minnie::setup::paths.get(_pathId);
+      if(NULL != oPath)
+      {
+         minnie::setup::drawMultiPath(oPath, 0/*mode=notransform*/);
+         return;
+      }
    }
-   else
+   Dapierror("[---] minDrawPath: invalid pathId=%u\n", _pathId);
+}
+
+/* @function minFreePath,int pathId
+Free previously defined path
+
+@arg pathId Path id (1..n)
+
+@groupref Path
+@group Draw
+@groupref Element
+*/
+void minFreePath(sUI _pathId) {
+   Dpathprintf("[dbg] minFreePath: pathId=%u/%u\n", _pathId, minnie::setup::paths.num_elements - 1u);
+   if(_pathId > 0u)
    {
-      Dapierror("[---] Minnie::apiDrawPath: invalid pathId=%d\n", _pathId);
+      minnie::Path *oPath = minnie::setup::paths.get(_pathId);
+      if(NULL != oPath)
+      {
+         Dpathprintf("[dbg] minFreePath: pathId=%u (path->path_id=%u)\n", _pathId, oPath->path_id);
+         if(minnie::setup::last_polygon_aa_path_id == _pathId)
+         {
+            minnie::setup::cancelFixPolygonAAStroke();
+         }
+         oPath->free();
+      }
+      return;
    }
+   Dapierror("[---] Minnie::apiDrawPath: invalid pathId=%d\n", _pathId);
 }
 
 /* @function minAARange,float range
@@ -13690,27 +14053,6 @@ void minUnbindTexture(void) {
    }
 }
 
-/* @function minTextureDecalAlpha,float decalAlpha
-Select alpha for 'decal' texture draw calls
-
-@groupref Path
-@groupref Immediate
-@group Attrib
-@group Texture
-*/
-void minTextureDecalAlpha(sF32 _decalAlpha) {
-   if(NULL != minnie::setup::loc_dl_export_ofs)
-   {
-      if(minnie::setup::dl_tex_decal_alpha != _decalAlpha)
-      {
-         minnie::setup::finishActiveDrawListOp();
-         Dexport_dl_i16(MINNIE_DRAWOP_TEXTURE_DECAL_ALPHA);
-         Dexport_dl_f32(_decalAlpha);
-         minnie::setup::dl_tex_decal_alpha = _decalAlpha;
-      }
-   }
-}
-
 /* @function minTriangleTexUVFlat,float x1,float y1,float u1,float v1,float x2,float y2,float u2,float v2,float x3,float y3,float u3,float v3
 Draw a texture mapped triangle.
 
@@ -13754,7 +14096,7 @@ void minTriangleTexUVFlat(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1,
 }
 
 /* @function minTriangleTexUVFlatDecal,float x1,float y1,float u1,float v1,float x2,float y2,float u2,float v2,float x3,float y3,float u3,float v3
-Draw a texture mapped triangle. The texture is crossfaded with the current fill color according to %minTextureDecalAlpha.
+Draw a texture mapped triangle. The texture is crossfaded with the current fill color according to %minDecalAlpha.
 
 Multiple consecutive draw calls will be merged automatically.
 
@@ -13844,7 +14186,7 @@ void minTriangleTexUVGouraud(sF32 _x1, sF32 _y1, sF32 _u1, sF32 _v1, sU32 _c32v1
 }
 
 /* @function minTriangleTexUVGouraudDecal,float x1,float y1,float u1,float v1,int c32v1,float x2,float y2,float u2,float v2,int c32v2,float x3,float y3,float u3,float v3,int c32v3
-Draw a texture mapped, gouraud shaded triangle. The texture is crossfaded with the current fill color according to %minTextureDecalAlpha.
+Draw a texture mapped, gouraud shaded triangle. The texture is crossfaded with the current fill color according to %minDecalAlpha.
 
 Multiple consecutive draw calls will be merged automatically.
 
@@ -13940,7 +14282,7 @@ void minRectTexUVFlat(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
 }
 
 /* @function minRectTexUVFlatDecal,float x,float y,float w,float h,float ul,float vt,float ur,float vb
-Draw a texture mapped rectangle. The texture is crossfaded with the current fill color according to %minTextureDecalAlpha.
+Draw a texture mapped rectangle. The texture is crossfaded with the current fill color according to %minDecalAlpha.
 
 Multiple consecutive draw calls will be merged automatically.
 
@@ -14047,7 +14389,7 @@ void minRectTexUVGouraud(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
 }
 
 /* @function minRectTexUVGouraudDecal,float x,float y,float w,float h,float ul,float vt,float ur,float vb,int c32lt,int c32rt,int c32rb,int c32lb
-Draw a texture mapped, gouraud shaded rectangle. The texture is crossfaded with the current fill color according to %minTextureDecalAlpha.
+Draw a texture mapped, gouraud shaded rectangle. The texture is crossfaded with the current fill color according to %minDecalAlpha.
 
 Multiple consecutive draw calls will be merged automatically.
 
@@ -14298,7 +14640,7 @@ Set active paint to decal pattern
 The currently bound texture (n x 1) is used as pattern.
 
 The final color is a mix between the fill color rgb and (stroke color rgb modulated by the pattern rgb).
-The mix factor is the product of the stroke color alpha, pattern alpha, and the %minTextureDecalAlpha setting.
+The mix factor is the product of the stroke color alpha, pattern alpha, and the %minDecalAlpha setting.
 I.e. this blends a stroke-color-modulated pattern texture against a constant fill color in a single render pass.
 
 The output alpha channel is set to the fill color alpha.
@@ -14336,7 +14678,7 @@ Set active paint to alpha decal pattern
 The currently bound texture (n x 1) is used as pattern.
 
 The final color is a mix between the fill color rgb and stroke color rgb.
-The mix factor is the product of the stroke color alpha, pattern alpha, and the %minTextureDecalAlpha setting.
+The mix factor is the product of the stroke color alpha, pattern alpha, and the %minDecalAlpha setting.
 I.e. this blends the stroke color(alpha=1) against the fill color(alpha=0) in a single render pass.
 
 The output alpha channel is set to the fill color alpha.

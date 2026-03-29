@@ -236,19 +236,18 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       " \n"
       "void main(void) { \n"
       "  float a; \n"
+      "  float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "  if(v_join > 0.0) { \n"
-      "    float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "    a = smoothstep(0.0, u_aa_range, d); \n"
       "  } \n"
       "  else { \n"
-      "    float d = abs(dot(v_vertex_mp, v_plane_n)); \n"
       "    a = 1.0 - smoothstep(u_stroke_w - u_aa_range, u_stroke_w, d); \n"
       "  } \n"
       "  float patA = TEXTURE2D(u_sampler, v_uv).TEX_ALPHA; \n"
       "  FRAGCOLOR = vec4(u_color_stroke.rgb, u_color_stroke.a * a * patA); \n"
 #ifdef SHADERVG_DEBUG_FRAG
       "  if(u_debug > 0.0) { \n"
-      "    FRAGCOLOR = vec4(a, fract(v_uv.x), fract(v_uv.y), 1); \n"
+      "    FRAGCOLOR = vec4(v_join, fract(v_uv.x), fract(v_uv.y), 1); \n"
       "  } \n"
 #endif // SHADERVG_DEBUG_FRAG
       "} \n"
@@ -299,6 +298,8 @@ class LineStripPatternBevelAA14_2 : public ShaderVG_Shape {
       // (note) numTri = numSeg * 3 - 1
       // (note)          SHADERVG_HIRES_GEO: (numSeg * 5 - 1)
       //
+
+      Ddebugprintf("xxx drawLineStripPatternBevelAAVBO14_2: strokeW=%f\n", _strokeW);
 
       sdvg_BindVBO(_vboId);
 
