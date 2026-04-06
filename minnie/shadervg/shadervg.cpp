@@ -11356,3 +11356,44 @@ void YAC_CALL _sdvg_GradientToTexture(YAC_Object *_tex, YAC_Object *_colors, YAC
 }
 
 #endif // SHADERVG_SCRIPT_API
+
+sF32 YAC_CALL sdvg_SmoothStepf(sF32 _a, sF32 _b, sF32 _s) {
+   sF32 t = _s * _s * (3.0f - 2.0f * _s);
+   return _a + (_b - _a) * t;
+}
+
+sF32 YAC_CALL sdvg_Wrapf(sF32 _a, sF32 _b, sF32 _c) {
+   sF32 b, c;
+   if(_b < _c)
+   {
+      b = _b;
+      c = _c;
+   }
+   else
+   {
+      b = _c;
+      c = _b;
+   }
+   sF32 r = (c - b);
+   if(0.0f != r)
+   {
+      if(_a < b)
+      {
+         sF32 d = b - _a;
+         if(d > r)
+            d = d - r * floorf(d / r);
+         if(d <= YAC_FLT_EPSILON)
+            return b;
+         return c - d;
+      }
+      else
+      {
+         sF32 d = _a - b;
+         if(d >= r)
+            d = d - r * floorf(d / r);
+         return b + d;
+      }
+   }
+   // b == c
+   return _b;
+}

@@ -5760,6 +5760,28 @@ YF sUI YAC_CALL _sdvg_ARGBToHSVA (sU32 _c32, YAC_Object *_retH, YAC_Object *_ret
 YF void YAC_CALL _sdvg_GradientToTexture (YAC_Object *_tex, YAC_Object *_colors, YAC_Object *_starts, sBool _bSmoothStep);
 #endif // SHADERVG_SCRIPT_API
 
+/* @function sdvg_SmoothStepf,float a,float b,float s
+Perform smooth hermite interpolation between %a and %b
+
+@arg a Range start
+@arg b Range end
+@arg s 0..1
+
+@group Math
+*/
+YF sF32 YAC_CALL sdvg_SmoothStepf (sF32 _a, sF32 _b, sF32 _s);
+
+/* @function sdvg_Wrapf,float a,float b,float c
+Wrap float value around min / max range
+
+@arg a Range start
+@arg b Range end
+@arg c Value
+
+@group Math
+*/
+YF sF32 YAC_CALL sdvg_Wrapf (sF32 _a, sF32 _b, sF32 _c);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
