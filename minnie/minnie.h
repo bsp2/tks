@@ -228,70 +228,72 @@ typedef int             sBool;
 #define MINNIE_DRAWOP_END                                    0x00
 #define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32         0x01
 #define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2       0x02
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32                 0x03
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2               0x04
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32              0x05
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2            0x06
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32          0x07
-#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2        0x08
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32       0x09
-#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2     0x0A
-#define MINNIE_DRAWOP_POLYGON_FIRST                          0x0B
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32           0x0C
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA        0x0D  // must follow no-AA draw-op
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2         0x0E
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA      0x0F  // must follow no-AA draw-op
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN     0x10
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN   0x11
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB       0x12
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB     0x13
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END       0x14
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA    0x15  // must follow no-AA draw-op
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END     0x16
-#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA  0x17  // must follow no-AA draw-op
-#define MINNIE_DRAWOP_POLYGON_LAST                           0x17
-#define MINNIE_DRAWOP_RECT_FILL                              0x18
-#define MINNIE_DRAWOP_RECT_STROKE                            0x19
-#define MINNIE_DRAWOP_RECT_FILL_STROKE                       0x1A
-#define MINNIE_DRAWOP_ELLIPSE_FILL                           0x1B
-#define MINNIE_DRAWOP_ELLIPSE_STROKE                         0x1C
-#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                    0x1D
-#define MINNIE_DRAWOP_ROUNDRECT_FILL                         0x1E
-#define MINNIE_DRAWOP_ROUNDRECT_STROKE                       0x1F
-#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                  0x20
-#define MINNIE_DRAWOP_BIND_TEXTURE                           0x21
-#define MINNIE_DRAWOP_UNBIND_TEXTURE                         0x22
-#define MINNIE_DRAWOP_DECAL_ALPHA                            0x23
-#define MINNIE_DRAWOP_PAINT_SOLID                            0x24
-#define MINNIE_DRAWOP_PAINT_LINEAR                           0x25
-#define MINNIE_DRAWOP_PAINT_RADIAL                           0x26
-#define MINNIE_DRAWOP_PAINT_CONIC                            0x27
-#define MINNIE_DRAWOP_PAINT_PATTERN                          0x28
-#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                    0x29
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                    0x2A
-#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA              0x2B
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32               0x2C
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32         0x2D
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32            0x2E
-#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32      0x2F
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_32                     0x30
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                   0x31
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_32                  0x32
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2                0x33
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_DECAL_32            0x34
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_DECAL_14_2          0x35
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32               0x36
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2             0x37
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32            0x38
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2          0x39
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32               0x3A
-#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2             0x3B
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_32            0x3C
-#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_14_2          0x3D
-#define MINNIE_DRAWOP_AA_RANGE                               0x3E
-#define MINNIE_DRAWOP_FILLRULE_EVENODD                       0x3F
-#define MINNIE_DRAWOP_FILLRULE_NONZERO                       0x40
-#define MINNIE_DRAWOP_LINE_PATTERN                           0x41
+#define MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_32       0x03
+#define MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_14_2     0x04
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32                 0x05
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2               0x06
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32              0x07
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_14_2            0x08
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_32          0x09
+#define MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_EDGEAA_14_2        0x0A
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_32       0x0B
+#define MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_EDGEAA_14_2     0x0C
+#define MINNIE_DRAWOP_POLYGON_FIRST                          0x0D
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32           0x0D
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_AA        0x0E  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2         0x0F
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_AA      0x10  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_BEGIN     0x11
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_BEGIN   0x12
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_SUB       0x13
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_SUB     0x14
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END       0x15
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_32_END_AA    0x16  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END     0x17
+#define MINNIE_DRAWOP_POLYGON_FILL_FLAT_UNIFORM_14_2_END_AA  0x18  // must follow no-AA draw-op
+#define MINNIE_DRAWOP_POLYGON_LAST                           0x18
+#define MINNIE_DRAWOP_RECT_FILL                              0x19
+#define MINNIE_DRAWOP_RECT_STROKE                            0x1A
+#define MINNIE_DRAWOP_RECT_FILL_STROKE                       0x1B
+#define MINNIE_DRAWOP_ELLIPSE_FILL                           0x1C
+#define MINNIE_DRAWOP_ELLIPSE_STROKE                         0x1D
+#define MINNIE_DRAWOP_ELLIPSE_FILL_STROKE                    0x1E
+#define MINNIE_DRAWOP_ROUNDRECT_FILL                         0x1F
+#define MINNIE_DRAWOP_ROUNDRECT_STROKE                       0x20
+#define MINNIE_DRAWOP_ROUNDRECT_FILL_STROKE                  0x21
+#define MINNIE_DRAWOP_BIND_TEXTURE                           0x22
+#define MINNIE_DRAWOP_UNBIND_TEXTURE                         0x23
+#define MINNIE_DRAWOP_DECAL_ALPHA                            0x24
+#define MINNIE_DRAWOP_PAINT_SOLID                            0x25
+#define MINNIE_DRAWOP_PAINT_LINEAR                           0x26
+#define MINNIE_DRAWOP_PAINT_RADIAL                           0x27
+#define MINNIE_DRAWOP_PAINT_CONIC                            0x28
+#define MINNIE_DRAWOP_PAINT_PATTERN                          0x29
+#define MINNIE_DRAWOP_PAINT_PATTERN_ALPHA                    0x2A
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL                    0x2B
+#define MINNIE_DRAWOP_PAINT_PATTERN_DECAL_ALPHA              0x2C
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32               0x2D
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32         0x2E
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32            0x2F
+#define MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32      0x30
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_32                     0x31
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_14_2                   0x32
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_32                  0x33
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_14_2                0x34
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_DECAL_32            0x35
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_DECAL_14_2          0x36
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_32               0x37
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_BEVEL_14_2             0x38
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_32            0x39
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_BEVEL_14_2          0x3A
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_32               0x3B
+#define MINNIE_DRAWOP_LINE_STRIP_FLAT_MITER_14_2             0x3C
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_32            0x3D
+#define MINNIE_DRAWOP_LINE_STRIP_PATTERN_MITER_14_2          0x3E
+#define MINNIE_DRAWOP_AA_RANGE                               0x3F
+#define MINNIE_DRAWOP_FILLRULE_EVENODD                       0x40
+#define MINNIE_DRAWOP_FILLRULE_NONZERO                       0x41
+#define MINNIE_DRAWOP_LINE_PATTERN                           0x42
 
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -462,6 +464,11 @@ struct Vector2f {
    void mulfFrom(const Vector2f *_o, const sF32 _s) {
       x = _o->x * _s;
       y = _o->y * _s;
+   }
+
+   void mul2f(const sF32 _sx, const sF32 _sy) {
+      x *= _sx;
+      y *= _sy;
    }
 
    void lerpFrom(const Vector2f *_a, const Vector2f *_b, const sF32 _s) {
@@ -866,8 +873,9 @@ extern void minnie_matrix4f_rotatef (Matrix4f *_this, sF32 _x, sF32 _y, sF32 _z)
 
 namespace minnie {
 
-static sF32 fb_scale      = 1.0f;      // (todo) REMOVE (must be 1.0)
-static sF32 geo_scale     = fb_scale;  // (todo) REMOVE (must be 1.0)
+static sF32 fb_scale      = 1.0f;  // (todo) REMOVE (must be 1.0)
+static sF32 geo_scale_x   = 1.0f;  // remove ?
+static sF32 geo_scale_y   = 1.0f;  // remove ?
 
 static sBool b_draw_tri  = YAC_TRUE;
 static sBool b_draw_line = YAC_TRUE;
@@ -3114,6 +3122,7 @@ class Path {
    }
 
    void ellipse(const sF32 _cx, const sF32 _cy, const sF32 _rx, const sF32 _ry, const sUI _numSeg) {
+      Dpathprintf("[trc] minnie::ellipse: c=(%f;%f) r=(%f;%f)\n", _cx, _cy, _rx, _ry);
       const sF32 step = (sF32)(sM_2PI / _numSeg);
       sF32 a = 0.0f;
       for(sUI segIdx = 0u; segIdx < _numSeg; segIdx++)
@@ -3426,7 +3435,8 @@ class Path {
 
    // <method.png>
    void exportVertices(void *_ofs, const sF32 *_va, const sUI _vaNumElements, const sU32 _c32Fill,
-                       const sF32 _tx, const sF32 _ty, const sF32 _geoScale,
+                       const sF32 _tx, const sF32 _ty,
+                       const sF32 _geoScaleX, const sF32 _geoScaleY,
                        const sBool _bUniformColors,
                        const sUI _numWrap
                        ) {
@@ -3448,8 +3458,8 @@ class Path {
                Dstream_write_i8(_ofs, (_c32Fill >> 24) & 255 );  // a
             }
 
-            sF32 x = (_va[(vtxIdx<<1)+0] + _tx) * _geoScale;
-            sF32 y = (_va[(vtxIdx<<1)+1] + _ty) * _geoScale;
+            sF32 x = (_va[(vtxIdx<<1)+0] + _tx) * _geoScaleX;
+            sF32 y = (_va[(vtxIdx<<1)+1] + _ty) * _geoScaleY;
 
             Dexportprintfvv("[>>>] minnie::Path::exportVertices: va[%u]=(%f;%f)\n", vtxIdxWrap, x, y);
 
@@ -3466,7 +3476,8 @@ class Path {
 
    // <method.png>
    void exportVerticesTransform2d(void *_ofs, const sF32 *_va, const sUI _vaNumElements, const sU32 _c32Fill,
-                                  const Matrix2x3f *_mat2d, const sF32 _tx, const sF32 _ty, const sF32 _geoScale,
+                                  const Matrix2x3f *_mat2d, const sF32 _tx, const sF32 _ty,
+                                  const sF32 _geoScaleX, const sF32 _geoScaleY,
                                   const sBool _bUniformColors,
                                   const sUI _numWrap
                                   ) {
@@ -3494,7 +3505,7 @@ class Path {
             _mat2d->mulv(&v);
             v.x += _tx;
             v.y += _ty;
-            v.mulf(_geoScale);
+            v.mul2f(_geoScaleX, _geoScaleY);
 
             Dexportprintfvv("[>>>] minnie::Path::exportVerticesTransform2d: va[%u]=(%f;%f)\n", vtxIdxWrap, v.x, v.y);
 
@@ -4484,8 +4495,8 @@ namespace setup {
       _vaOut->empty();
       for(sUI vaOff = 0u; vaOff < _vaPoints->num_elements; vaOff += 2u)
       {
-         _vaOut->add2((_vaPoints->get(vaOff+0u) + cur_x) * geo_scale,
-                     (_vaPoints->get(vaOff+1u) + cur_y) * geo_scale
+         _vaOut->add2((_vaPoints->get(vaOff+0u) + cur_x) * geo_scale_x,
+                     (_vaPoints->get(vaOff+1u) + cur_y) * geo_scale_y
                      );
       }
    }
@@ -4512,7 +4523,7 @@ namespace setup {
          FloatArray *vaIn = &tmpfa_clip2d_tmp1;
          vaIn->copyFrom(_vaIn);
 
-         Vector2f e1; e1.init(_clipPath->get(0) * geo_scale, _clipPath->get(1) * fb_scale);
+         Vector2f e1; e1.init(_clipPath->get(0) * geo_scale_x, _clipPath->get(1) * geo_scale_y);
          sUI clipOff = 2u;
 
          /* if(b_debug_clip2d) trace "[dbg] Clip2D: loop "+(_clipPath.numElements/2)+" clip path vertices"; */
@@ -4521,7 +4532,7 @@ namespace setup {
          {
             _vaOut->empty();
 
-            Vector2f e2; e2.init(_clipPath->get(clipOff+0u) * geo_scale, _clipPath->get(clipOff+1u) * fb_scale);
+            Vector2f e2; e2.init(_clipPath->get(clipOff+0u) * geo_scale_x, _clipPath->get(clipOff+1u) * geo_scale_y);
 
             Vector2f vN; vN.init( (e2.y - e1.y),
                                   -(e2.x - e1.x)
@@ -4657,7 +4668,7 @@ namespace setup {
             iaTriIn->add(_iaIn->get(triOff + 1u));
             iaTriIn->add(_iaIn->get(triOff + 2u));
 
-            Vector2f e1; e1.init(_clipPath->get(0) * geo_scale, _clipPath->get(1) * fb_scale);
+            Vector2f e1; e1.init(_clipPath->get(0) * geo_scale_x, _clipPath->get(1) * geo_scale_y);
 
             /* if(b_debug_clip2d >= 2) trace "[trc] ClipIndexedTris2D: loop "+(_clipPath.numElements/2)+" clip path vertices"; */
             sUI clipOff = 2u;
@@ -4668,7 +4679,7 @@ namespace setup {
                // Dprintf("xxx 1 iaTriIn->num_elements=%u iaTriOut->num=%u/max=%u\n", iaTriIn->num_elements, iaTriOut->num_elements, iaTriOut->max_elements);
                iaTriOut->empty();
 
-               Vector2f e2; e2.init(_clipPath->get(clipOff+0u) * geo_scale, _clipPath->get(clipOff+1u) * fb_scale);
+               Vector2f e2; e2.init(_clipPath->get(clipOff+0u) * geo_scale_x, _clipPath->get(clipOff+1u) * geo_scale_y);
                Vector2f vN; vN.init( (e2.y - e1.y),
                                      -(e2.x - e1.x)
                                      );
@@ -4857,8 +4868,8 @@ namespace setup {
                 );
          cur_mat_2d.mulv(&v);
 
-         _vaOut->add2( (v.x + cur_x) * geo_scale,
-                       (v.y + cur_y) * geo_scale
+         _vaOut->add2( (v.x + cur_x) * geo_scale_x,
+                       (v.y + cur_y) * geo_scale_y
                        );
          vaOff += 2u;
       }
@@ -6202,6 +6213,19 @@ namespace setup {
             }
             break;
 
+         case MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_32:
+         case MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_14_2:
+            Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%02x<tri_stroke_flat_uniform> start_offset=%u num_tris=%u c32Fill=#%08x c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_num_tris, active_dl_c32_fill, active_dl_c32_stroke);
+            if(active_dl_num_tris >= 1u)
+            {
+               Dexport_dl_i16(active_dl_op);
+               Dexport_dl_i32(active_dl_start_offset);
+               Dexport_dl_i32(active_dl_num_tris * 3u);
+               Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
+               Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
+            }
+            break;
+
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32:
          case MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2:
          case MINNIE_DRAWOP_TRIANGLES_FILL_GOURAUD_32:
@@ -6296,10 +6320,10 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
-               const sF32 sxh = active_dl_sx * 0.5f;
-               const sF32 syh = active_dl_sy * 0.5f;
-               const sF32 cxc = active_dl_cx + sxh;
-               const sF32 cyc = active_dl_cy + syh;
+               const sF32 sxh = active_dl_sx * 0.5f * geo_scale_x;
+               const sF32 syh = active_dl_sy * 0.5f * geo_scale_y;
+               const sF32 cxc = active_dl_cx * geo_scale_x + sxh;
+               const sF32 cyc = active_dl_cy * geo_scale_y + syh;
                Dexport_dl_f32(cxc);
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
@@ -6320,10 +6344,10 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
-               const sF32 sxh = active_dl_sx * 0.5f;
-               const sF32 syh = active_dl_sy * 0.5f;
-               const sF32 cxc = active_dl_cx + sxh;
-               const sF32 cyc = active_dl_cy + syh;
+               const sF32 sxh = active_dl_sx * 0.5f * geo_scale_x;
+               const sF32 syh = active_dl_sy * 0.5f * geo_scale_y;
+               const sF32 cxc = active_dl_cx * geo_scale_x + sxh;
+               const sF32 cyc = active_dl_cy * geo_scale_y + syh;
                Dexport_dl_f32(cxc);
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
@@ -6347,10 +6371,10 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
-               const sF32 sxh = active_dl_sx * 0.5f;
-               const sF32 syh = active_dl_sy * 0.5f;
-               const sF32 cxc = active_dl_cx + sxh;
-               const sF32 cyc = active_dl_cy + syh;
+               const sF32 sxh = active_dl_sx * 0.5f * geo_scale_x;
+               const sF32 syh = active_dl_sy * 0.5f * geo_scale_y;
+               const sF32 cxc = active_dl_cx * geo_scale_x + sxh;
+               const sF32 cyc = active_dl_cy * geo_scale_y + syh;
                Dexport_dl_f32(cxc);
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
@@ -6373,15 +6397,17 @@ namespace setup {
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<ellipse_fill> start_offset=%u c=(%f;%f) r=(%f;%f) c32Fill=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_c32_fill);
             {
                Dexport_dl_i16(active_dl_op);
-               Dexport_dl_f32(active_dl_cx);
-               Dexport_dl_f32(active_dl_cy);
-               Dexport_dl_f32(active_dl_rx);
-               Dexport_dl_f32(active_dl_ry);
+               Dexport_dl_f32(active_dl_cx * geo_scale_x);
+               Dexport_dl_f32(active_dl_cy * geo_scale_y);
+               Dexport_dl_f32(active_dl_rx * geo_scale_x);
+               Dexport_dl_f32(active_dl_ry * geo_scale_y);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ELLIPSE_FILL_AA_SIZE_OFFSET : 0.0f;
-               setupEllipseFillVBO32(active_dl_cx, active_dl_cy,
-                                     active_dl_rx + aaOff, active_dl_ry + aaOff
+               setupEllipseFillVBO32(active_dl_cx * geo_scale_x,
+                                     active_dl_cy * geo_scale_y,
+                                     active_dl_rx * geo_scale_x + aaOff,
+                                     active_dl_ry * geo_scale_y + aaOff
                                      );
             }
             total_num_ellipses++;
@@ -6391,17 +6417,19 @@ namespace setup {
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<ellipse_stroke> start_offset=%u c=(%f;%f) r=(%f;%f) strokeW=%f c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_stroke_w, active_dl_c32_stroke);
             {
                Dexport_dl_i16(active_dl_op);
-               Dexport_dl_f32(active_dl_cx);
-               Dexport_dl_f32(active_dl_cy);
-               Dexport_dl_f32(active_dl_rx);
-               Dexport_dl_f32(active_dl_ry);
+               Dexport_dl_f32(active_dl_cx * geo_scale_x);
+               Dexport_dl_f32(active_dl_cy * geo_scale_y);
+               Dexport_dl_f32(active_dl_rx * geo_scale_x);
+               Dexport_dl_f32(active_dl_ry * geo_scale_y);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_STROKE_OFFSET : 0.0f;
-               setupEllipseStrokeVBO32(active_dl_cx, active_dl_cy,
-                                       active_dl_rx + aaOffSize, active_dl_ry + aaOffSize,
+               setupEllipseStrokeVBO32(active_dl_cx * geo_scale_x,
+                                       active_dl_cy * geo_scale_y,
+                                       active_dl_rx * geo_scale_x + aaOffSize,
+                                       active_dl_ry * geo_scale_y + aaOffSize,
                                        active_dl_stroke_w + aaOffStroke
                                        );
             }
@@ -6412,17 +6440,19 @@ namespace setup {
             Dexportprintf("[trc] Minnie::finishActiveDrawListOp: op=0x%03x<ellipse_fill_stroke> start_offset=%u c=(%f;%f) r=(%f;%f) c32Fill=#%08x strokeW=%f c32Stroke=#%08x\n", active_dl_op, active_dl_start_offset, active_dl_cx, active_dl_cy, active_dl_rx, active_dl_ry, active_dl_c32_fill, active_dl_stroke_w, active_dl_c32_stroke);
             {
                Dexport_dl_i16(active_dl_op);
-               Dexport_dl_f32(active_dl_cx);
-               Dexport_dl_f32(active_dl_cy);
-               Dexport_dl_f32(active_dl_rx);
-               Dexport_dl_f32(active_dl_ry);
+               Dexport_dl_f32(active_dl_cx * geo_scale_x);
+               Dexport_dl_f32(active_dl_cy * geo_scale_y);
+               Dexport_dl_f32(active_dl_rx * geo_scale_x);
+               Dexport_dl_f32(active_dl_ry * geo_scale_y);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ELLIPSE_AA_STROKE_OFFSET : 0.0f;
-               setupEllipseFillStrokeVBO32(active_dl_cx, active_dl_cy,
-                                           active_dl_rx + aaOffSize, active_dl_ry + aaOffSize,
+               setupEllipseFillStrokeVBO32(active_dl_cx * geo_scale_x,
+                                           active_dl_cy * geo_scale_y,
+                                           active_dl_rx * geo_scale_x + aaOffSize,
+                                           active_dl_ry * geo_scale_y + aaOffSize,
                                            active_dl_stroke_w + aaOffStroke
                                            );
             }
@@ -6434,22 +6464,23 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
-               const sF32 sxh = active_dl_sx * 0.5f;
-               const sF32 syh = active_dl_sy * 0.5f;
-               const sF32 cxc = active_dl_cx + sxh;
-               const sF32 cyc = active_dl_cy + syh;
+               const sF32 sxh = active_dl_sx * 0.5f * geo_scale_x;
+               const sF32 syh = active_dl_sy * 0.5f * geo_scale_y;
+               const sF32 cxc = active_dl_cx * geo_scale_x + sxh;
+               const sF32 cyc = active_dl_cy * geo_scale_y + syh;
                Dexport_dl_f32(cxc);
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
                Dexport_dl_f32(syh);
-               Dexport_dl_f32(active_dl_rx);
-               Dexport_dl_f32(active_dl_ry);
+               Dexport_dl_f32(active_dl_rx * geo_scale_x);
+               Dexport_dl_f32(active_dl_ry * geo_scale_y);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                const sF32 aaOff = 1/*b_aa*/ ? MINNIE_ROUNDRECT_FILL_AA_SIZE_OFFSET : 0.0f;  // (todo) Dsdvg_pixel_scl
                setupRoundRectFillVBO32(cxc, cyc,
                                        sxh + aaOff, syh + aaOff,
-                                       active_dl_rx, active_dl_ry,
+                                       active_dl_rx * geo_scale_x,
+                                       active_dl_ry * geo_scale_y,
                                        active_dl_aa_range  // (todo) Dsdvg_pixel_scl
                                        );
             }
@@ -6461,24 +6492,26 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
-               const sF32 sxh = active_dl_sx * 0.5f;
-               const sF32 syh = active_dl_sy * 0.5f;
-               const sF32 cxc = active_dl_cx + sxh;
-               const sF32 cyc = active_dl_cy + syh;
+               const sF32 sxh = active_dl_sx * 0.5f * geo_scale_x;
+               const sF32 syh = active_dl_sy * 0.5f * geo_scale_y;
+               const sF32 cxc = active_dl_cx * geo_scale_x + sxh;
+               const sF32 cyc = active_dl_cy * geo_scale_y + syh;
                Dexport_dl_f32(cxc);
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
                Dexport_dl_f32(syh);
-               Dexport_dl_f32(active_dl_rx);
-               Dexport_dl_f32(active_dl_ry);
+               Dexport_dl_f32(active_dl_rx * geo_scale_x);
+               Dexport_dl_f32(active_dl_ry * geo_scale_y);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
                setupRoundRectStrokeVBO32(cxc, cyc,
-                                         sxh + aaOffSize, syh + aaOffSize,
-                                         active_dl_rx, active_dl_ry,
+                                         sxh + aaOffSize,
+                                         syh + aaOffSize,
+                                         active_dl_rx * geo_scale_x,
+                                         active_dl_ry * geo_scale_y,
                                          active_dl_stroke_w + aaOffStroke,
                                          active_dl_aa_range
                                          );
@@ -6491,24 +6524,26 @@ namespace setup {
             {
                Dexport_dl_i16(active_dl_op);
                // (note) ShaderVG renderer treats cx/cy as center and sx/sy as radii
-               const sF32 sxh = active_dl_sx * 0.5f;
-               const sF32 syh = active_dl_sy * 0.5f;
-               const sF32 cxc = active_dl_cx + sxh;
-               const sF32 cyc = active_dl_cy + syh;
+               const sF32 sxh = active_dl_sx * 0.5f * geo_scale_x;
+               const sF32 syh = active_dl_sy * 0.5f * geo_scale_y;
+               const sF32 cxc = active_dl_cx * geo_scale_x + sxh;
+               const sF32 cyc = active_dl_cy * geo_scale_y + syh;
                Dexport_dl_f32(cxc);
                Dexport_dl_f32(cyc);
                Dexport_dl_f32(sxh);
                Dexport_dl_f32(syh);
-               Dexport_dl_f32(active_dl_rx);
-               Dexport_dl_f32(active_dl_ry);
+               Dexport_dl_f32(active_dl_rx * geo_scale_x);
+               Dexport_dl_f32(active_dl_ry * geo_scale_y);
                Dexport_dl_i32(active_dl_c32_fill);    // ARGB32
                Dexport_dl_i32(active_dl_c32_stroke);  // ARGB32
                Dexport_dl_f32(active_dl_stroke_w);
                const sF32 aaOffSize   = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_SIZE_OFFSET   : 0.0f;
                const sF32 aaOffStroke = 1/*b_aa*/ ? MINNIE_ROUNDRECT_AA_STROKE_OFFSET : 0.0f;
                setupRoundRectFillStrokeVBO32(cxc, cyc,
-                                             sxh + aaOffSize, syh + aaOffSize,
-                                             active_dl_rx, active_dl_ry,
+                                             sxh + aaOffSize,
+                                             syh + aaOffSize,
+                                             active_dl_rx * geo_scale_x,
+                                             active_dl_ry * geo_scale_y,
                                              active_dl_stroke_w + aaOffStroke,
                                              active_dl_aa_range
                                              );
@@ -6766,19 +6801,42 @@ namespace setup {
 
       if(b_uniform_colors)
       {
+         if(cur_stroke_w > 0.0f)
+         {
 #if MINNIE_EXPORT_VERTEX_16BIT
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2;
+            op = MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_14_2;
 #else
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32;
+            op = MINNIE_DRAWOP_TRIANGLES_STROKE_FLAT_UNIFORM_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+         else
+         {
+#if MINNIE_EXPORT_VERTEX_16BIT
+            op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_14_2;
+#else
+            op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_UNIFORM_32;
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
       }
       else
       {
+         if(cur_stroke_w > 0.0f)
+         {
+            // (todo) DRAWOP_TRIANGLES_STROKE_FLAT_*  (drawTint32())
 #if MINNIE_EXPORT_VERTEX_16BIT
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2;
+            op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2;
 #else
-         op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32;
+            op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32;
 #endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
+         else
+         {
+#if MINNIE_EXPORT_VERTEX_16BIT
+            op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_14_2;
+#else
+            op = MINNIE_DRAWOP_TRIANGLES_FILL_FLAT_32;
+#endif // MINNIE_EXPORT_VERTEX_16BIT
+         }
       }
 
       if(canContinueDrawListOpTri(op))
@@ -7748,14 +7806,14 @@ namespace setup {
       {
          v1.init(va->get(0) + cur_x, va->get(1) + cur_y);
          v2.init(va->get(2) + cur_x, va->get(3) + cur_y);
-         v1.mulf(geo_scale);
-         v2.mulf(geo_scale);
+         v1.mul2f(geo_scale_x, geo_scale_y);
+         v2.mul2f(geo_scale_x, geo_scale_y);
 
          sUI vaOff = 4u;
          while(vaOff < va->num_elements)
          {
             v3.init(va->get(vaOff+0u) + cur_x, va->get(vaOff+1u) + cur_y);
-            v3.mulf(geo_scale);
+            v3.mul2f(geo_scale_x, geo_scale_y);
 
             drawTri(&v1, &v2, &v3, cur_c32_fill, c32Mask);
 
@@ -7827,13 +7885,13 @@ namespace setup {
          cur_mat_2d.mulv(&v1);
          v1.x = v1.x + cur_x;
          v1.y = v1.y + cur_y;
-         v1.mulf(geo_scale);
+         v1.mul2f(geo_scale_x, geo_scale_y);
 
          v2.init(va->get(2), va->get(3));
          cur_mat_2d.mulv(&v2);
          v2.x = v2.x + cur_x;
          v2.y = v2.y + cur_y;
-         v2.mulf(geo_scale);
+         v2.mul2f(geo_scale_x, geo_scale_y);
 
          sUI vaOff = 4u;
          while(vaOff < va->num_elements)
@@ -7842,7 +7900,7 @@ namespace setup {
             cur_mat_2d.mulv(&v3);
             v3.x = v3.x + cur_x;
             v3.y = v3.y + cur_y;
-            v3.mulf(geo_scale);
+            v3.mul2f(geo_scale_x, geo_scale_y);
 
             drawTri(&v1, &v2, &v3, cur_c32_fill, c32Mask);
 
@@ -7912,14 +7970,14 @@ namespace setup {
          v1.divzTo(&v1s);
          v1s.x = v1s.x + cur_x;
          v1s.y = v1s.y + cur_y;
-         v1s.mulf(geo_scale);
+         v1s.mul2f(geo_scale_x, geo_scale_y);
 
          v2.init(va->get(2), va->get(3), 0.0f, 1.0f);
          cur_mat_3d.mulv(&v2);
          v2.divzTo(&v2s);
          v2s.x = v2s.x + cur_x;
          v2s.y = v2s.y + cur_y;
-         v2s.mulf(geo_scale);
+         v2s.mul2f(geo_scale_x, geo_scale_y);
 
          sUI vaOff = 4u;
          while(vaOff < va->num_elements)
@@ -7929,7 +7987,7 @@ namespace setup {
             v3.divzTo(&v3s);
             v3s.x = v3s.x + cur_x;
             v3s.y = v3s.y + cur_y;
-            v3s.mulf(geo_scale);
+            v3s.mul2f(geo_scale_x, geo_scale_y);
 
             drawTri(&v1s, &v2s, &v3s, cur_c32_fill, c32Mask);
 
@@ -7998,8 +8056,8 @@ namespace setup {
             Vector2f vProj2;
             vProj.divzTo(&vProj2);
 
-            vaProj->add2( (vProj2.x + cur_x) * geo_scale,
-                          (vProj2.y + cur_y) * geo_scale
+            vaProj->add2( (vProj2.x + cur_x) * geo_scale_x,
+                          (vProj2.y + cur_y) * geo_scale_y
                           );
 
             // Next clipped 3D vertex
@@ -8073,10 +8131,10 @@ namespace setup {
          // (note) last point equals first point (add one extra when AA is enabled)
          const sUI numWrap = (b_polygon_aa ? 2u : 1u);
          Dexportprintfvv("xxx drawPathFillConcave: first vtx=(%f;%f) skip last vtx=(%f;%f)\n",
-                         (p->points.elements.f32[0] + cur_x) * geo_scale,
-                         (p->points.elements.f32[1] + cur_y) * geo_scale,
-                         (p->points.elements.f32[(p->points.num_elements - 2u)+0] + cur_x) * geo_scale,
-                         (p->points.elements.f32[(p->points.num_elements - 2u)+1] + cur_y) * geo_scale
+                         (p->points.elements.f32[0] + cur_x) * geo_scale_x,
+                         (p->points.elements.f32[1] + cur_y) * geo_scale_y,
+                         (p->points.elements.f32[(p->points.num_elements - 2u)+0] + cur_x) * geo_scale_x,
+                         (p->points.elements.f32[(p->points.num_elements - 2u)+1] + cur_y) * geo_scale_y
                          );
          p->exportVertices(loc_vb_export_ofs,
                            p->points.elements.f32,
@@ -8084,7 +8142,7 @@ namespace setup {
                            cur_c32_fill,
                            cur_x,
                            cur_y,
-                           geo_scale,
+                           geo_scale_x, geo_scale_y,
                            YAC_TRUE/*bUniformColors*/,
                            numWrap
                            );
@@ -8119,9 +8177,9 @@ namespace setup {
             v1.init(va->get(vaOff1+0) + cur_x, va->get(vaOff1+1) + cur_y);
             v2.init(va->get(vaOff2+0) + cur_x, va->get(vaOff2+1) + cur_y);
             v3.init(va->get(vaOff3+0) + cur_x, va->get(vaOff3+1) + cur_y);
-            v1.mulf(geo_scale);
-            v2.mulf(geo_scale);
-            v3.mulf(geo_scale);
+            v1.mul2f(geo_scale_x, geo_scale_y);
+            v2.mul2f(geo_scale_x, geo_scale_y);
+            v3.mul2f(geo_scale_x, geo_scale_y);
 
             /* if(b_debug_fill >= 2) */
             /*    c32 = palette.get( 1 + (triIdx & 3) ); */
@@ -8152,7 +8210,7 @@ namespace setup {
                            cur_c32_fill,
                            cur_x,
                            cur_y,
-                           geo_scale,
+                           geo_scale_x, geo_scale_y,
                            YAC_TRUE/*bUniformColors*/,
                            numWrap
                            );
@@ -8194,9 +8252,9 @@ namespace setup {
             v1.init(va->get(vaOff1+0) + cur_x, va->get(vaOff1+1) + cur_y);
             v2.init(va->get(vaOff2+0) + cur_x, va->get(vaOff2+1) + cur_y);
             v3.init(va->get(vaOff3+0) + cur_x, va->get(vaOff3+1) + cur_y);
-            v1.mulf(geo_scale);
-            v2.mulf(geo_scale);
-            v3.mulf(geo_scale);
+            v1.mul2f(geo_scale_x, geo_scale_y);
+            v2.mul2f(geo_scale_x, geo_scale_y);
+            v3.mul2f(geo_scale_x, geo_scale_y);
 
             /* if(b_debug_fill >= 2) */
             /*    c32 = palette.get( 1 + (triIdx & 3) ); */
@@ -8238,7 +8296,7 @@ namespace setup {
                               cur_c32_fill,
                               0.0f/*tx*/,
                               0.0f/*ty*/,
-                              1.0f/*geoScale*/,
+                              1.0f/*geoScaleX*/, 1.0f/*geoScaleY*/,
                               YAC_TRUE/*bUniformColors*/,
                               numWrap
                               );
@@ -8311,7 +8369,7 @@ namespace setup {
                               cur_c32_fill,
                               0.0f/*cur_x*/,
                               0.0f/*cur_y*/,
-                              1.0f/*geo_scale*/,
+                              1.0f/*geo_scale_x*/, 1.0f/*geo_scale_y*/,
                               YAC_TRUE/*bUniformColors*/,
                               numWrap
                               );
@@ -8455,7 +8513,7 @@ namespace setup {
                                          &cur_mat_2d,
                                          cur_x,
                                          cur_y,
-                                         geo_scale,
+                                         geo_scale_x, geo_scale_y,
                                          YAC_TRUE/*bUniformColors*/,
                                          numWrap
                                          );
@@ -8496,9 +8554,9 @@ namespace setup {
             v2.y = v2.y + cur_y;
             v3.x = v3.x + cur_x;
             v3.y = v3.y + cur_y;
-            v1.mulf(geo_scale);
-            v2.mulf(geo_scale);
-            v3.mulf(geo_scale);
+            v1.mul2f(geo_scale_x, geo_scale_y);
+            v2.mul2f(geo_scale_x, geo_scale_y);
+            v3.mul2f(geo_scale_x, geo_scale_y);
 
             /* if(b_debug_fill >= 2) */
             /*    c32 = palette.get( (1 + triIdx) & 7 ); */
@@ -8531,7 +8589,7 @@ namespace setup {
                                       &cur_mat_2d,
                                       cur_x,
                                       cur_y,
-                                      geo_scale,
+                                      geo_scale_x, geo_scale_y,
                                       YAC_TRUE/*bUniformColors*/,
                                       numWrap
                                       );
@@ -8577,9 +8635,9 @@ namespace setup {
          v2.y = v2.y + cur_y;
          v3.x = v3.x + cur_x;
          v3.y = v3.y + cur_y;
-         v1.mulf(geo_scale);
-         v2.mulf(geo_scale);
-         v3.mulf(geo_scale);
+         v1.mul2f(geo_scale_x, geo_scale_y);
+         v2.mul2f(geo_scale_x, geo_scale_y);
+         v3.mul2f(geo_scale_x, geo_scale_y);
 
          /* if(b_debug_fill >= 2) */
          /*    c32 = palette.get( (1 + triIdx) & 7 ); */
@@ -8618,7 +8676,7 @@ namespace setup {
                               cur_c32_fill,
                               0.0f/*cur_x*/,
                               0.0f/*cur_y*/,
-                              1.0f/*geo_scale*/,
+                              1.0f/*geo_scale_x*/, 1.0f/*geo_scale_y*/,
                               YAC_TRUE/*bUniformColors*/,
                               numWrap
                               );
@@ -8689,7 +8747,7 @@ namespace setup {
                               cur_c32_fill,
                               0.0f/*cur_x*/,
                               0.0f/*cur_y*/,
-                              1.0f/*geo_scale*/,
+                              1.0f/*geo_scale_x*/, 1.0f/*geo_scale_y*/,
                               YAC_TRUE/*bUniformColors*/,
                               numWrap
                               );
@@ -8823,17 +8881,17 @@ namespace setup {
          v1.divzTo(&v1s);
          v1s.x = v1s.x + cur_x;
          v1s.y = v1s.y + cur_y;
-         v1s.mulf(geo_scale);
+         v1s.mul2f(geo_scale_x, geo_scale_y);
 
          v2.divzTo(&v2s);
          v2s.x = v2s.x + cur_x;
          v2s.y = v2s.y + cur_y;
-         v2s.mulf(geo_scale);
+         v2s.mul2f(geo_scale_x, geo_scale_y);
 
          v3.divzTo(&v3s);
          v3s.x = v3s.x + cur_x;
          v3s.y = v3s.y + cur_y;
-         v3s.mulf(geo_scale);
+         v3s.mul2f(geo_scale_x, geo_scale_y);
 
          /* if(b_debug_fill >= 2) */
          /*    c32 = palette.get( (1 + triIdx) & 7 ); */
@@ -8886,17 +8944,17 @@ namespace setup {
          v1.divzTo(&v1s);
          v1s.x = v1s.x + cur_x;
          v1s.y = v1s.y + cur_y;
-         v1s.mulf(geo_scale);
+         v1s.mul2f(geo_scale_x, geo_scale_y);
 
          v2.divzTo(&v2s);
          v2s.x = v2s.x + cur_x;
          v2s.y = v2s.y + cur_y;
-         v2s.mulf(geo_scale);
+         v2s.mul2f(geo_scale_x, geo_scale_y);
 
          v3.divzTo(&v3s);
          v3s.x = v3s.x + cur_x;
          v3s.y = v3s.y + cur_y;
-         v3s.mulf(geo_scale);
+         v3s.mul2f(geo_scale_x, geo_scale_y);
 
          /* if(b_debug_fill >= 2) */
          /*    c32 = palette.get( (1 + triIdx) & 7 ); */
@@ -8971,8 +9029,8 @@ namespace setup {
             vProj.divzTo(&vProj2);
             // // trace "xxx va["+(vaOff/2)+"] = "+v3+" (xform) mat_2d="+cur_mat_2d;
 
-            vaProj->add2( (vProj2.x + cur_x) * geo_scale,
-                          (vProj2.y + cur_y) * geo_scale
+            vaProj->add2( (vProj2.x + cur_x) * geo_scale_x,
+                          (vProj2.y + cur_y) * geo_scale_y
                           );
 
             // Next clipped 3D vertex
@@ -9100,8 +9158,8 @@ namespace setup {
             vProj.divzTo(&vProj2);
             // // trace "xxx va["+(vaOff/2)+"] = "+v3+" (xform) mat_2d="+cur_mat_2d;
 
-            vaProj->add2( (vProj2.x + cur_x) * geo_scale,
-                          (vProj2.y + cur_y) * geo_scale
+            vaProj->add2( (vProj2.x + cur_x) * geo_scale_x,
+                          (vProj2.y + cur_y) * geo_scale_y
                           );
 
             // Next clipped 3D vertex
@@ -9178,8 +9236,8 @@ namespace setup {
          /* if(b_debug_line >= 2) trace "[trc] drawPathLine: points="+va.string2; */
          sF32 lx = va->get(0) + cur_x;
          sF32 ly = va->get(1) + cur_y;
-         lx *= geo_scale;
-         ly *= geo_scale;
+         lx *= geo_scale_x;
+         ly *= geo_scale_y;
          sF32 firstX = lx;
          sF32 firstY = ly;
          sUI vaOff = 2u;
@@ -9188,8 +9246,8 @@ namespace setup {
          {
             sF32 cx = va->get(vaOff+0u) + cur_x;
             sF32 cy = va->get(vaOff+1u) + cur_y;
-            cx *= geo_scale;
-            cy *= geo_scale;
+            cx *= geo_scale_x;
+            cy *= geo_scale_y;
             /* if(b_debug_line >= 2) */
             /*    trace "[trc] drawPathLine: l=("+lx+";"+ly+") c=("+cx+";"+cy+")"; */
             opLine(lx, ly, cx, cy);
@@ -9253,7 +9311,7 @@ namespace setup {
       /* if(b_debug_line >= 3) */
       /*    trace "[trc] drawPathLineTransform2d: vfirst raw="+vl; */
       cur_mat_2d.mulv(&vl);
-      vl.mulf(geo_scale);
+      vl.mul2f(geo_scale_x, geo_scale_y);
       vFirst = vl;
       sUI vaOff = 2u;
       const sUI vaNumVertsM1 = (va->num_elements / 2u) - 1u;
@@ -9265,7 +9323,7 @@ namespace setup {
          cur_mat_2d.mulv(&vc);
          vc.x = vc.x + cur_x;
          vc.y = vc.y + cur_y;
-         vc.mulf(geo_scale);
+         vc.mul2f(geo_scale_x, geo_scale_y);
          /* if(b_debug_line >= 2) */
          /*    trace "[trc] drawPathLineTransform2d: l="+vl+" c="+vc; */
          opLine(vl.x, vl.y, vc.x, vc.y);
@@ -9338,7 +9396,7 @@ namespace setup {
       vFirst.divzTo(&vFirsts);
       vFirsts.x = vFirsts.x + cur_x;
       vFirsts.y = vFirsts.y + cur_y;
-      vFirsts.mulf(geo_scale);
+      vFirsts.mul2f(geo_scale_x, geo_scale_y);
       vls = vFirsts;
       sUI vaOff = 2u;
       const sUI vaNumVertsM1 = (va->num_elements / 2u) - 1u;
@@ -9352,7 +9410,7 @@ namespace setup {
          vc.divzTo(&vcs);
          vcs.x = vcs.x + cur_x;
          vcs.y = vcs.y + cur_y;
-         vcs.mulf(geo_scale);
+         vcs.mul2f(geo_scale_x, geo_scale_y);
          /* if(b_debug_line >= 2) */
          /*    trace "[trc] drawPathLineTransform3d: l="+vls+" c="+vcs; */
          opLine(vls.x, vls.y, vcs.x, vcs.y);
@@ -9439,8 +9497,8 @@ namespace setup {
       for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u)
       {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
-         const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
-         const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale;
+         const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale_x;
+         const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale_y;
          Dexportprintfvv("[>>>] minnie::exportLineStripPointsTranslateScale: va[%u]=(%f;%f)\n", vtxIdx++, x, y);
 #if MINNIE_EXPORT_VERTEX_16BIT
          Dexport_vb_i16(sSI(x * 4.0f));
@@ -9585,8 +9643,8 @@ namespace setup {
       for(sUI idxOffM = 0u; idxOffM < num; idxOffM += 2u, vtxIdx++)
       {
          const sUI idxOff = (idxOffM >= vaWrap) ? (idxOffM - vaWrap) : idxOffM;
-         const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale;
-         const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale;
+         const sF32 x = (_va->elements.f32[idxOff + 0u] + cur_x) * geo_scale_x;
+         const sF32 y = (_va->elements.f32[idxOff + 1u] + cur_y) * geo_scale_y;
          if(idxOffM > 0u)
          {
             sF32 dx = x - lastX;
@@ -9686,9 +9744,9 @@ namespace setup {
          v1.init(va->get(vaOff1+0u) + cur_x, va->get(vaOff1+1u) + cur_y);
          v2.init(va->get(vaOff2+0u) + cur_x, va->get(vaOff2+1u) + cur_y);
          v3.init(va->get(vaOff3+0u) + cur_x, va->get(vaOff3+1u) + cur_y);
-         v1.mulf(geo_scale);
-         v2.mulf(geo_scale);
-         v3.mulf(geo_scale);
+         v1.mul2f(geo_scale_x, geo_scale_y);
+         v2.mul2f(geo_scale_x, geo_scale_y);
+         v3.mul2f(geo_scale_x, geo_scale_y);
          /* if(b_debug_extrude >= 2) */
          /*    c32 = palette.get( (1 + triIdx) & 7 ); */
 
@@ -9778,7 +9836,7 @@ namespace setup {
       // Dprintf("xxx vaPoints->num_elements=%u\n", vaPoints->num_elements);
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(vaPoints, cur_stroke_w * geo_scale, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
+      p->extrudeShape(vaPoints, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       // Dprintf("xxx ia_extrude.num_elements=%u\n", p->ia_extrude.num_elements);
       // Dprintf("xxx _vaClip->num_elements=%u\n", _vaClip->num_elements);
@@ -9844,9 +9902,9 @@ namespace setup {
          v2.y = v2.y + cur_y;
          v3.x = v3.x + cur_x;
          v3.y = v3.y + cur_y;
-         v1.mulf(geo_scale);
-         v2.mulf(geo_scale);
-         v3.mulf(geo_scale);
+         v1.mul2f(geo_scale_x, geo_scale_y);
+         v2.mul2f(geo_scale_x, geo_scale_y);
+         v3.mul2f(geo_scale_x, geo_scale_y);
 
          /* if(b_debug_extrude >= 2) */
          /*    c32 = palette.get( (1 + triIdx) & 7 ); */
@@ -9892,7 +9950,7 @@ namespace setup {
       Clip2D(vaPoints, &pClip->points, pClip->b_closed, vaClip/*out*/);
 
       const sUI curJoinCap = calcCurJoinCap();
-      p->extrudeShape(vaClip, cur_stroke_w * geo_scale, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
+      p->extrudeShape(vaClip, cur_stroke_w, curJoinCap, cur_num_seg/*roundNumSeg*/, cur_miter_limit);
 
       const sU32 c32Mask = (cur_mask_idx >= 0) ? palette.getU32(cur_mask_idx) : 0u;
 
@@ -10011,9 +10069,9 @@ namespace setup {
          v2s.y = v2s.y + cur_y;
          v3s.y = v3s.y + cur_y;
 
-         v1s.mulf(geo_scale);
-         v2s.mulf(geo_scale);
-         v3s.mulf(geo_scale);
+         v1s.mul2f(geo_scale_x, geo_scale_y);
+         v2s.mul2f(geo_scale_x, geo_scale_y);
+         v3s.mul2f(geo_scale_x, geo_scale_y);
 
          /* if(b_debug_extrude >= 2) */
          /*    c32 = palette.get( (1 + triIdx) & 7 ); */
@@ -10086,8 +10144,8 @@ namespace setup {
             vProj.divzTo(&vProj2);
             // // trace "xxx va["+(vaOff/2)+"] = "+v3+" (xform) mat_2d="+cur_mat_2d;
 
-            vaProj->add2( (vProj2.x + cur_x) * geo_scale,
-                          (vProj2.y + cur_y) * geo_scale
+            vaProj->add2( (vProj2.x + cur_x) * geo_scale_x,
+                          (vProj2.y + cur_y) * geo_scale_y
                           );
 
             // Next clipped 3D vertex
@@ -11411,28 +11469,28 @@ namespace setup {
                break;
 
             case 0x60u:  // b dstX dstY
-               blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale);
-               blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale);
+               blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_x);
+               blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_y);
                if(b_debug_op >= 2) { Dprintf("[dbg] b %d %d [%u %u 0 0]\n", blitDstX, blitDstY, cur_src_fb->w, cur_src_fb->h); }
                break;
 
             case 0x61u:  // b dstX dstY w h srcX srcY (u8)
-               blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale);
-               blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale);
-               blitW = sU16(ifs.getU8() * geo_scale);
-               blitH = sU16(ifs.getU8() * geo_scale);
-               blitSrcX = sU16(ifs.getU8() * geo_scale);
-               blitSrcY = sU16(ifs.getU8() * geo_scale);
+               blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_x);
+               blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_y);
+               blitW = sU16(ifs.getU8() * geo_scale_x);
+               blitH = sU16(ifs.getU8() * geo_scale_y);
+               blitSrcX = sU16(ifs.getU8() * geo_scale_x);
+               blitSrcY = sU16(ifs.getU8() * geo_scale_y);
                if(b_debug_op >= 2) { Dprintf("[dbg] b %d %d %u %u %u %u  (u8)\n", blitDstX, blitDstY, blitW, blitH, blitSrcX, blitSrcY); }
                break;
 
             case 0x62u:  // b dstX dstY w h srcX srcY (u16)
-               blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale);
-               blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale);
-               blitW = sU16(ifs.getU16() * geo_scale);
-               blitH = sU16(ifs.getU16() * geo_scale);
-               blitSrcX = sU16(ifs.getU16() * geo_scale);
-               blitSrcY = sU16(ifs.getU16() * geo_scale);
+               blitDstX = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_x);
+               blitDstY = sS16((ifs.getS16() * (1.0f / 4.0f)) * geo_scale_y);
+               blitW = sU16(ifs.getU16() * geo_scale_x);
+               blitH = sU16(ifs.getU16() * geo_scale_y);
+               blitSrcX = sU16(ifs.getU16() * geo_scale_x);
+               blitSrcY = sU16(ifs.getU16() * geo_scale_y);
                if(b_debug_op >= 2) { Dprintf("[dbg] b %d %d %u %u %u %u  (u16)\n", blitDstX, blitDstY, blitW, blitH, blitSrcX, blitSrcY); }
                break;
 
@@ -12305,6 +12363,7 @@ namespace setup {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+YF void YAC_CALL minOnOpen (void);
 YF void YAC_CALL minBegin (void);
 YF void YAC_CALL minEnd (void);
 YF void YAC_CALL minFreeDynamic (void);
@@ -12410,6 +12469,7 @@ YF void YAC_CALL minCap (sUI _capType);
 YF void YAC_CALL minCapNone (void);
 YF void YAC_CALL minCapRound (void);
 YF void YAC_CALL minCapButt (void);
+YF void YAC_CALL minSetGeoScale2f (sF32 _sx, sF32 _sy);
 YF void YAC_CALL minDrawPath (sUI _pathId);
 YF void YAC_CALL minFreePath (sUI _pathId);
 YF void YAC_CALL minAARange (sF32 _range);
@@ -12435,7 +12495,7 @@ YF void YAC_CALL minPaintPatternDecalAlpha (sF32 _startX, sF32 _startY, sF32 _di
 YF void YAC_CALL minPaintDefault (void);
 YF void YAC_CALL minPaintUpdate (sUI _paintId);
 YF void YAC_CALL minPaint (sUI _paintId);
-YF void YAC_CALL minExecDrawListEx (YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug);
+YF void YAC_CALL minExecDrawListEx (YAC_Buffer *_bufDraw, sUI _glBufId, sBool _bDebug, sU32 _tint32Fill, sU32 _tint32Stroke);
 YF void YAC_CALL minExecDrawList (YAC_Buffer *_bufDraw, sUI _glBufId);
 #ifdef __cplusplus
 } // extern "C"
@@ -13381,9 +13441,10 @@ void minEllipse(sF32 _rx, sF32 _ry) {
       else
       {
          minnie::setup::cur_path->ellipse(minnie::setup::cur_x, minnie::setup::cur_y,
-                                           _rx, _ry,
-                                           minnie::setup::cur_num_seg
-                                           );
+                                          _rx, _ry,
+                                          minnie::setup::cur_num_seg
+                                          );
+         // (note) endPath() moves pen back to (0;0)
       }
    }
    else
@@ -13410,9 +13471,10 @@ void minCircle(sF32 _r) {
       else
       {
          minnie::setup::cur_path->ellipse(minnie::setup::cur_x, minnie::setup::cur_y,
-                                        _r, _r,
-                                        minnie::setup::cur_num_seg
-                                        );
+                                          _r, _r,
+                                          minnie::setup::cur_num_seg
+                                          );
+         // (note) endPath() moves pen back to (0;0)
       }
    }
    else
@@ -13932,6 +13994,23 @@ void minCapButt(void) {
    minCap(MINNIE_LINECAP_BUTT);
 }
 
+/* @function minSetGeoScale2f,float sx,float sy
+Set geometry scaling
+
+Applied when path is drawn.
+
+@arg sx Horizontal scaling
+@arg sy Vertical scaling
+
+@groupref Path
+@group Draw
+@groupref Element
+*/
+void YAC_CALL minSetGeoScale2f(sF32 _sx, sF32 _sy) {
+   minnie::geo_scale_x = _sx;
+   minnie::geo_scale_y = _sy;
+}
+
 /* @function minDrawPath,int pathId
 Draw previously defined path
 
@@ -14257,6 +14336,11 @@ void minRectTexUVFlat(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                       ) {
    if(minnie::setup::beginDrawListOpTriTex(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_32))
    {
+      _x *= minnie::geo_scale_x;
+      _y *= minnie::geo_scale_y;
+      _w *= minnie::geo_scale_x;
+      _h *= minnie::geo_scale_y;
+
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_add2f(_x,      _y );
@@ -14305,6 +14389,11 @@ void minRectTexUVFlatDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                            ) {
    if(minnie::setup::beginDrawListOpTriTex(MINNIE_DRAWOP_TRIANGLES_TEX_UV_FLAT_DECAL_32))
    {
+      _x *= minnie::geo_scale_x;
+      _y *= minnie::geo_scale_y;
+      _w *= minnie::geo_scale_x;
+      _h *= minnie::geo_scale_y;
+
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_add2f(_x,      _y );
@@ -14358,6 +14447,11 @@ void minRectTexUVGouraud(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                          ) {
    if(minnie::setup::beginDrawListOpTriGouraud(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_32))
    {
+      _x *= minnie::geo_scale_x;
+      _y *= minnie::geo_scale_y;
+      _w *= minnie::geo_scale_x;
+      _h *= minnie::geo_scale_y;
+
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lt));
@@ -14417,6 +14511,11 @@ void minRectTexUVGouraudDecal(sF32 _x, sF32 _y, sF32 _w, sF32 _h,
                               ) {
    if(minnie::setup::beginDrawListOpTriGouraud(MINNIE_DRAWOP_TRIANGLES_TEX_UV_GOURAUD_DECAL_32))
    {
+      _x *= minnie::geo_scale_x;
+      _y *= minnie::geo_scale_y;
+      _w *= minnie::geo_scale_x;
+      _h *= minnie::geo_scale_y;
+
       // tri 1
       Dexport_vb_add2f(_ul,     _vt);
       Dexport_vb_i32  (minnie::i32rgba8_from_argb32(_c32lt));
@@ -14501,8 +14600,8 @@ void minPaintLinear(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_LINEAR;
-      minnie::setup::cur_paint->linear.start_x = _startX;
-      minnie::setup::cur_paint->linear.start_y = _startY;
+      minnie::setup::cur_paint->linear.start_x = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->linear.start_y = _startY * minnie::geo_scale_y;
       minnie::setup::cur_paint->linear.dir_x   = _dirX;
       minnie::setup::cur_paint->linear.dir_y   = _dirY;
    }
@@ -14529,10 +14628,10 @@ void minPaintRadial(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY) {
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_RADIAL;
-      minnie::setup::cur_paint->radial.start_x  = _startX;
-      minnie::setup::cur_paint->radial.start_y  = _startY;
-      minnie::setup::cur_paint->radial.radius_x = _radiusX;
-      minnie::setup::cur_paint->radial.radius_y = _radiusY;
+      minnie::setup::cur_paint->radial.start_x  = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->radial.start_y  = _startY * minnie::geo_scale_y;
+      minnie::setup::cur_paint->radial.radius_x = _radiusX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->radial.radius_y = _radiusY * minnie::geo_scale_y;
    }
    else
    {
@@ -14558,10 +14657,10 @@ void minPaintConic(sF32 _startX, sF32 _startY, sF32 _radiusX, sF32 _radiusY, sF3
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_CONIC;
-      minnie::setup::cur_paint->conic.start_x  = _startX;
-      minnie::setup::cur_paint->conic.start_y  = _startY;
-      minnie::setup::cur_paint->conic.radius_x = _radiusX;
-      minnie::setup::cur_paint->conic.radius_y = _radiusY;
+      minnie::setup::cur_paint->conic.start_x  = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->conic.start_y  = _startY * minnie::geo_scale_y;
+      minnie::setup::cur_paint->conic.radius_x = _radiusX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->conic.radius_y = _radiusY * minnie::geo_scale_y;
       minnie::setup::cur_paint->conic.angle01  = _angle01;
    }
    else
@@ -14589,12 +14688,12 @@ void minPaintPattern(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF32 _s
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN;
-      minnie::setup::cur_paint->pattern.start_x = _startX;
-      minnie::setup::cur_paint->pattern.start_y = _startY;
+      minnie::setup::cur_paint->pattern.start_x = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.start_y = _startY * minnie::geo_scale_y;
       minnie::setup::cur_paint->pattern.dir_x   = _dirX;
       minnie::setup::cur_paint->pattern.dir_y   = _dirY;
-      minnie::setup::cur_paint->pattern.size_x  = _sizeX;
-      minnie::setup::cur_paint->pattern.size_y  = _sizeY;
+      minnie::setup::cur_paint->pattern.size_x  = _sizeX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.size_y  = _sizeY * minnie::geo_scale_y;
    }
    else
    {
@@ -14621,12 +14720,12 @@ void minPaintPatternAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN_ALPHA;
-      minnie::setup::cur_paint->pattern.start_x = _startX;
-      minnie::setup::cur_paint->pattern.start_y = _startY;
+      minnie::setup::cur_paint->pattern.start_x = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.start_y = _startY * minnie::geo_scale_y;
       minnie::setup::cur_paint->pattern.dir_x   = _dirX;
       minnie::setup::cur_paint->pattern.dir_y   = _dirY;
-      minnie::setup::cur_paint->pattern.size_x  = _sizeX;
-      minnie::setup::cur_paint->pattern.size_y  = _sizeY;
+      minnie::setup::cur_paint->pattern.size_x  = _sizeX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.size_y  = _sizeY * minnie::geo_scale_y;
    }
    else
    {
@@ -14659,12 +14758,12 @@ void minPaintPatternDecal(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dirY, sF
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN_DECAL;
-      minnie::setup::cur_paint->pattern.start_x = _startX;
-      minnie::setup::cur_paint->pattern.start_y = _startY;
+      minnie::setup::cur_paint->pattern.start_x = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.start_y = _startY * minnie::geo_scale_y;
       minnie::setup::cur_paint->pattern.dir_x   = _dirX;
       minnie::setup::cur_paint->pattern.dir_y   = _dirY;
-      minnie::setup::cur_paint->pattern.size_x  = _sizeX;
-      minnie::setup::cur_paint->pattern.size_y  = _sizeY;
+      minnie::setup::cur_paint->pattern.size_x  = _sizeX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.size_y  = _sizeY * minnie::geo_scale_y;
    }
    else
    {
@@ -14697,12 +14796,12 @@ void minPaintPatternDecalAlpha(sF32 _startX, sF32 _startY, sF32 _dirX, sF32 _dir
    if(NULL != minnie::setup::cur_paint)
    {
       minnie::setup::cur_paint->mode = MINNIE_PAINT_PATTERN_DECAL_ALPHA;
-      minnie::setup::cur_paint->pattern.start_x = _startX;
-      minnie::setup::cur_paint->pattern.start_y = _startY;
+      minnie::setup::cur_paint->pattern.start_x = _startX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.start_y = _startY * minnie::geo_scale_y;
       minnie::setup::cur_paint->pattern.dir_x   = _dirX;
       minnie::setup::cur_paint->pattern.dir_y   = _dirY;
-      minnie::setup::cur_paint->pattern.size_x  = _sizeX;
-      minnie::setup::cur_paint->pattern.size_y  = _sizeY;
+      minnie::setup::cur_paint->pattern.size_x  = _sizeX * minnie::geo_scale_x;
+      minnie::setup::cur_paint->pattern.size_y  = _sizeY * minnie::geo_scale_y;
    }
    else
    {

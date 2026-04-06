@@ -273,6 +273,7 @@ sBool MinnieVG_SetupDrawableFromBuffer(MinnieDrawable *_drawable, YAC_Buffer *_m
                  );
       }
 
+      minDrawableSetSize2f(_drawable, (sF32)minGetWidth(), (sF32)minGetHeight());
       minDrawableEnd(_drawable);
 
       // Succeeded

@@ -373,8 +373,20 @@ struct MinnieDrawable_s {
       Render drawable.
 
       Lazy-alloc and update vertex buffer object, and execute draw-list.
+
+      @see drawTint32
    */
    YM void draw (void);
+
+   /* @method drawTint32,int tint32Fill,int tint32Stroke
+      Render drawable and tint fill + stroke colors.
+
+      @arg tint32Fill Fill color tint. Alpha=Tint amount
+      @arg tint32Stroke Stroke color tint. Alpha=Tint amount
+
+      @see draw
+   */
+   YM void drawTint32 (sU32 _tint32Fill, sU32 _tint32Stroke);
 #endif // __cplusplus
 
 };
@@ -422,6 +434,7 @@ sBool minDrawableIsComplete (MinnieDrawable *_drawable);
 void minDrawableBegin (MinnieDrawable *_drawable);
 void minDrawableEnd (MinnieDrawable *_drawable);
 void minDrawableDraw (MinnieDrawable *_drawable);
+void minDrawableDrawTint32 (MinnieDrawable *_drawable, sU32 _tint32Fill, sU32 _tint32Stroke);
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus

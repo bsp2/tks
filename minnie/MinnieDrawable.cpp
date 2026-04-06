@@ -275,12 +275,12 @@ void _MinnieDrawable::begin(void) {
 
 void _MinnieDrawable::end(void) {
    minEnd();
-   setSize2f((sF32)minGetWidth(), (sF32)minGetHeight());
+   // // setSize2f((sF32)minGetWidth(), (sF32)minGetHeight());
    setBackgroundColor(minGetColorByIndex(0));
    queueGLBufUpdate();
 }
 
-void _MinnieDrawable::draw() {
+void _MinnieDrawable::drawTint32(sU32 _tint32Fill, sU32 _tint32Stroke) {
    // Dyac_host_printf("xxx _MinnieDrawable::draw()\n");
    lazyAllocGL();
 
@@ -294,8 +294,12 @@ void _MinnieDrawable::draw() {
          Dsdvg_glcall(glBindBuffer(GL_ARRAY_BUFFER, 0));
       }
 
-      minExecDrawListEx(buf_draw, gl_buf_id, b_debug);
+      minExecDrawListEx(buf_draw, gl_buf_id, b_debug, _tint32Fill, _tint32Stroke);
    }
+}
+
+void _MinnieDrawable::draw(void) {
+   drawTint32(0u, 0u);
 }
 
 // ---------------------------------------------------------------------------- C API
@@ -458,6 +462,10 @@ void minDrawableEnd(MinnieDrawable *_drawable) {
 
 void minDrawableDraw(MinnieDrawable *_drawable) {
    _drawable->draw();
+}
+
+void minDrawableDrawTint32(MinnieDrawable *_drawable, sU32 _tint32Fill, sU32 _tint32Stroke) {
+   _drawable->drawTint32(_tint32Fill, _tint32Stroke);
 }
 
 #endif // MINNIE_SKIP_DRAWABLE_C_API
