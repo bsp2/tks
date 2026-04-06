@@ -1,13 +1,13 @@
 /// CLAPPlugin.cpp
 ///
-/// (c) 2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 24Sep2024, 27Sep2024
-///          29Nov2024
+///          29Nov2024, 06Apr2026
 ///
 ///
 ///
@@ -2075,11 +2075,13 @@ void CLAPPlugin::process(sUI _numFrames) {
       ::memset((void*)&evTransport, 0, sizeof(evTransport));
 
       evTransport.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE;
-      if(tkclap_song_playing)
-         evTransport.flags |= CLAP_TRANSPORT_IS_PLAYING;
 
       evTransport.tempo          = (sF64)tkclap_bpm;
       evTransport.song_pos_beats = (int64_t)tkclap_song_pos_beats;
+      // Dprintf("xxx evTransport.song_pos_beats=%f playing=%d report=%d\n", tkclap_song_pos_beats, tkclap_song_playing, b_report_transport_playing);
+
+      if(tkclap_song_playing && b_report_transport_playing)
+         evTransport.flags |= CLAP_TRANSPORT_IS_PLAYING;
 
       process.steady_time         = -1;  // n/a
       process.frames_count        = _numFrames;

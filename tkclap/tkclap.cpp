@@ -32,7 +32,7 @@ void tkclap_set_bpm(sF32 _bpm) {
 
 void tkclap_set_song_pos_beats(sF32 _songPosBeats, sBool _bPlaying) {
    tkclap_song_pos_beats = _songPosBeats;
-   tkclap_song_playing   = _bPlaying;
+   tkclap_song_playing   = (1 == _bPlaying);
 }
 
 void YAC_CALL YAC_Init(YAC_Host *_host) {
