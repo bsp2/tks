@@ -30,8 +30,8 @@
 ///
 ///
 
-#ifndef __TKCHIPMUNK_H__
-#define __TKCHIPMUNK_H__
+#ifndef TKCHIPMUNK_H__
+#define TKCHIPMUNK_H__
 
 YG("cp");
 
@@ -459,6 +459,7 @@ YC class CpSpace : public YAC_Object {
    //
   public:
    cpSpace *cp_space;
+   CpBody *static_body;
 
    CpVect *vec_gravity;
 
@@ -565,7 +566,7 @@ YC class CpSpace : public YAC_Object {
    //     onCollPreSolve (CpArbiter _arb, CpSpace _space, Object _userData) : boolean
    //     onCollPostSolve(CpArbiter _arb, CpSpace _space, Object _userData)
    //     onCollSeparate (CpArbiter _arb, CpSpace _space, Object _userData)
-   YM sBool _addCollisionHandlers (sUI _collisionTypeA, sUI _collisionTypeB, YAC_Object *_funBeginOrNull, YAC_Object *_funPreSolveOrNull, YAC_Object *_funPostSolveOrNull, YAC_Object *_funSeparateOrNull, YAC_Object *_userData);
+   YM sBool _setCollisionHandlers (sUI _collisionTypeA, sUI _collisionTypeB, YAC_Object *_funBeginOrNull, YAC_Object *_funPreSolveOrNull, YAC_Object *_funPostSolveOrNull, YAC_Object *_funSeparateOrNull, YAC_Object *_userData);
 
    YM void _bbQuery (CpBB *_bb, YAC_Object *_funMatch, YAC_Object *_userData);
 
@@ -627,6 +628,10 @@ YC class CpBody : public YAC_Object {
    CpVect *vec_rot;
 
    YAC_String *id;
+
+  protected:
+   void initBodyInt (void);
+   void freeBodyInt (void);
 
   public:
    CpBody(void);
@@ -786,6 +791,18 @@ YC class CpBody : public YAC_Object {
 
    YM void        _setId (YAC_Object *_s);
    YM YAC_Object *_getId (void);
+};
+
+
+// ---------------------------------------------------------------------------- CpStaticBody
+YC class CpStaticBody : public CpBody {
+   // cp_body references cpSpaceGetStaticBody()
+
+  public:
+   CpStaticBody(void);
+   ~CpStaticBody();
+
+   YAC(CpStaticBody);
 };
 
 
@@ -1262,4 +1279,4 @@ YF sF32 YAC_CALL _cpMomentForPoly(sF32 _m, YAC_Object *_vertArray, CpVect *_offs
 YF void YAC_CALL _cpSpaceGetStaticBody(CpSpace *_space, YAC_Value *_r);
 
 
-#endif // __TKCHIPMUNK_H__
+#endif // TKCHIPMUNK_H__

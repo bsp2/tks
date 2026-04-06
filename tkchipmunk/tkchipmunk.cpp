@@ -27,7 +27,7 @@
 ///
 /// created: 06May2008
 /// changed: 07May2008, 08May2008, 12Jun2018, 13Jun2018, 14Jun2018, 18Jun2018, 19Jul2018
-///          19Sep2021, 22Sep2021, 23Sep2021, 24Sep2021, 21Dec2024
+///          19Sep2021, 22Sep2021, 23Sep2021, 24Sep2021, 21Dec2024, 03Apr2026, 04Apr2026
 ///
 ///
 ///
@@ -53,6 +53,7 @@ Dyac_std_exid_impl;
 #include "ying_cp_CpBB.cpp"
 #include "ying_cp_CpTransform.cpp"
 #include "ying_cp_CpBody.cpp"
+#include "ying_cp_CpStaticBody.cpp"
 #include "ying_cp_CpShape.cpp"
 #include "ying_cp_CpCircleShape.cpp"
 #include "ying_cp_CpSegmentShape.cpp"
@@ -1103,6 +1104,7 @@ CpSpace::CpSpace(void) {
    arbiter = NULL;
    shape_remove_queue = NULL;
    body_remove_queue = NULL;
+   static_body = NULL;
 }
 
 CpSpace::~CpSpace() {
@@ -1113,11 +1115,6 @@ CpSpace::~CpSpace() {
 }
 
 void CpSpace::_free(void) {
-   if(NULL != cp_space)
-   {
-      cpSpaceFree(cp_space);
-      cp_space = NULL;
-   }
 
 //    DebugPA(shapes);
 //    DebugPA(bodies);
@@ -1129,6 +1126,13 @@ void CpSpace::_free(void) {
    Dsafedelete(constraints);
    Dsafedelete(shape_remove_queue);
    Dsafedelete(body_remove_queue);
+   Dsafedelete(static_body);
+
+   if(NULL != cp_space)
+   {
+      cpSpaceFree(cp_space);
+      cp_space = NULL;
+   }
 }
 
 void CpSpace::_init(void) {
@@ -1137,6 +1141,11 @@ void CpSpace::_init(void) {
    shapes      = YAC_New_PointerArray();
    bodies      = YAC_New_PointerArray();
    constraints = YAC_New_PointerArray();
+
+   // Create static body wrapper object
+   static_body = YAC_NEW(CpStaticBody);
+   static_body->cp_body = cpSpaceGetStaticBody(cp_space);
+   static_body->cp_body->userData = (void*)static_body;
 }
 
 void CpSpace::_New(YAC_Value *_r) {
@@ -1511,7 +1520,7 @@ void tkchipmunk_coll_separate(cpArbiter *arb, cpSpace *space, cpDataPointer user
    }
 }
 
-sBool CpSpace::_addCollisionHandlers(sUI _collisionTypeA,
+sBool CpSpace::_setCollisionHandlers(sUI _collisionTypeA,
                                      sUI _collisionTypeB,
                                      YAC_Object *_funBeginOrNull,
                                      YAC_Object *_funPreSolveOrNull,
@@ -1594,7 +1603,7 @@ sBool CpSpace::_addCollisionHandlers(sUI _collisionTypeA,
    }
    else
    {
-      yac_host->printf("[---] CpSpace::addCollisionHandlers: CPSPACE_MAX_COLLISION_HANDLERS(%u) exceeded\n", CPSPACE_MAX_COLLISION_HANDLERS);
+      yac_host->printf("[---] CpSpace::setCollisionHandlers: CPSPACE_MAX_COLLISION_HANDLERS(%u) exceeded\n", CPSPACE_MAX_COLLISION_HANDLERS);
    }
    return YAC_FALSE;
 }
@@ -1684,37 +1693,43 @@ CpBody::CpBody(void) {
    cp_body = cpBodyAlloc();
    cp_body->userData = (void*)this;
    b_delete_body = YAC_TRUE;
+   initBodyInt();
+   oc_cpbody++;
+}
+
+CpBody::~CpBody() {
+   freeBodyInt();
+   freeBody();
+   oc_cpbody--;
+}
+
+void CpBody::initBodyInt(void) {
    vec_p   = NULL;
    vec_cog = NULL;
    vec_v   = NULL;
    vec_f   = NULL;
    vec_rot = NULL;
    id      = NULL;
-   oc_cpbody++;
 }
 
-CpBody::~CpBody() {
+void CpBody::freeBodyInt(void) {
    Dsafedelete(vec_p);
    Dsafedelete(vec_cog);
    Dsafedelete(vec_v);
    Dsafedelete(vec_f);
    Dsafedelete(vec_rot);
    Dsafedelete(id);
-
-   freeBody();
-
-   oc_cpbody--;
 }
 
 void CpBody::freeBody(void) {
-   if(b_delete_body)
+   if(NULL != cp_body)
    {
-      if(NULL != cp_body)
+      if(b_delete_body)
       {
          cpBodyFree(cp_body);
-         cp_body = NULL;
+         b_delete_body = YAC_FALSE;
       }
-      b_delete_body = YAC_FALSE;
+      cp_body = NULL;
    }
 }
 
@@ -2029,6 +2044,21 @@ void CpBody::_setId(YAC_Object *_s) {
 
 YAC_Object *CpBody::_getId(void) {
    return id;
+}
+
+
+// ---------------------------------------------------------------------------- CpStaticBody
+CpStaticBody::CpStaticBody(void) {
+   cp_body = NULL;  // see CpSpace::_init()
+   b_delete_body = YAC_FALSE;
+   initBodyInt();
+   oc_cpbody++;
+}
+
+CpStaticBody::~CpStaticBody() {
+   freeBodyInt();
+   freeBody();
+   oc_cpbody--;
 }
 
 
@@ -3007,11 +3037,7 @@ sF32 YAC_CALL _cpMomentForPoly(sF32 _m, YAC_Object *_vertArray, CpVect *_offset,
 }
 
 YF void YAC_CALL _cpSpaceGetStaticBody(CpSpace *_space, YAC_Value *_r) {
-   CpBody *b = YAC_NEW(CpBody);
-   b->freeBody();
-   b->cp_body = cpSpaceGetStaticBody(_space->cp_space);
-   b->cp_body->userData = (void*)b;
-   YAC_RETO(b, 1);
+   YAC_RETO(_space->static_body, 0);
 }
 
 void YAC_CALL YAC_Init(YAC_Host *_host) {
@@ -3022,6 +3048,8 @@ void YAC_CALL YAC_Init(YAC_Host *_host) {
    YAC_Init_cp(_host);
 
    // Setup class inheritance
+   yac_host->cpp_typecast_map[clid_CpStaticBody]       [clid_CpBody]  = 1;
+
    yac_host->cpp_typecast_map[clid_CpCircleShape]      [clid_CpShape] = 1;
    yac_host->cpp_typecast_map[clid_CpSegmentShape]     [clid_CpShape] = 1;
    yac_host->cpp_typecast_map[clid_CpPolyShape]        [clid_CpShape] = 1;
