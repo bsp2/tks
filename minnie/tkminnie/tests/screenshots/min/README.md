@@ -106,3 +106,9 @@
 - 35_stippled_circle_decal
   
   ![screenhots](35_stippled_circle_decal.png)
+- 36_arc_circle_segments
+  
+  ![screenhots](36_arc_circle_segments.png)
+- 37_star_tunnel
+  
+  ![screenhots](37_star_tunnel.png)

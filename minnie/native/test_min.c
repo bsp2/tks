@@ -51,18 +51,11 @@
 #include <math.h>
 
 #if 1
-#define DISPLAY_WIDTH  800
-#define DISPLAY_HEIGHT 600
-
 #define VP_W 800
 #define VP_H 600
-
 #else
-#define DISPLAY_WIDTH  454
-#define DISPLAY_HEIGHT 454
-
-#define VP_W DISPLAY_WIDTH
-#define VP_H DISPLAY_HEIGHT
+#define VP_W 454
+#define VP_H 454
 #endif
 
 #include "../inc_minnie.h"
@@ -102,6 +95,7 @@ static sBool b_copy          = 0;     // 'c'  draw shifted copy (mvp translatef)
 #undef BIN2C_DECL
 
 static MinnieDrawable *drawable;
+static MinnieDrawable *drawable_star;
 
 static sUI tex_id = 0u;
 
@@ -118,12 +112,13 @@ static sUI num_iter         = 1u;
 static sUI auto_exit_frames = 0u;  // auto-exit after <n> frames (benchmark single test)
 static sBool b_benchmark    = 0;
 
-static sF32 anim_1;
-static sF32 anim_2;
-static sF32 anim_3;  // w
-static sF32 anim_4;
-static sF32 anim_5;
-static sF32 anim_6;  // seg
+static sF32 anim_1 = 0.0f;
+static sF32 anim_2 = 0.0f;
+static sF32 anim_3 = 0.0f;  // w
+static sF32 anim_4 = 0.0f;
+static sF32 anim_5 = 0.0f;
+static sF32 anim_6 = 0.0f;  // seg
+static sF32 anim_lin16 = 0.0f;
 
 static const char *test_names[] = {
    "00: concave path",
@@ -162,6 +157,8 @@ static const char *test_names[] = {
    "33: stippled circle",
    "34: stippled sine lines decal",
    "35: stippled circle decal",
+   "36: arc circle segments",
+   "37: star tunnel",
 };
 #define NUM_TESTS  (sizeof(test_names)/sizeof(const char *))
 
@@ -201,36 +198,31 @@ static sF32 loc_randf(sF32 _max) {
 // ----------------------------------------------------------------------------
 static void Test_00(void) {
    // concave path
-
+   
    MinPathId pid = minBeginPath();
    minSeg(32u);
-
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = sinf(anim_1) *  40.0f;
    sF32 ry = cosf(anim_2) *  30.0f;
    sF32 sx = sinf(anim_4) * 140.0f;
    sF32 sy = cosf(anim_5) * 130.0f;
 
-   minMoveTo((100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY);
+   minMoveTo(100.0f + rx, 300.0f + ry);
 
-   minCubicTo((300.0f+sx)*vpSclX, (100.0f+sy)*vpSclY,  // c1
-              (500.0f-sy)*vpSclX, (100.0f-sx)*vpSclY,  // c2
-              (700.0f-ry)*vpSclX, (300.0f-rx)*vpSclY   // dst
+   minCubicTo(300.0f + sx, 100.0f + sy,  // c1
+              500.0f - sy, 100.0f - sx,  // c2
+              700.0f - ry, 300.0f - rx   // dst
               );
 
-   minCubicTo((500.0f+sx)*vpSclX, (300.0f+sy)*vpSclY,  // c1
-              (250.0f-sy)*vpSclX, (500.0f-sx)*vpSclY,  // c2
-              (100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY   // dst
+   minCubicTo(500.0f + sx, 300.0f + sy,  // c1
+              250.0f - sy, 500.0f - sx,  // c2
+              100.0f + rx, 300.0f + ry   // dst
               );
 
    minEndPathClosed();
 
    if(fill_mode & 1u)
    {
-      // (note) should call minSetEnablePolygonAA(0) in production code
-      //         (outline will be overwritten by stroke rendering)
       minFill();
       minColor(0xff324f75u);
       minDrawPath(pid);
@@ -238,7 +230,7 @@ static void Test_00(void) {
 
    if(fill_mode & 2u)
    {
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -256,43 +248,38 @@ static void Test_01(void) {
    segAmt *= segAmt;
    minSeg((sUI)(8 + 120*segAmt));
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    sF32 rx = sinf(anim_1) *  40.0f;
    sF32 ry = cosf(anim_2) *  30.0f;
    sF32 sx = sinf(anim_4) * 140.0f;
    sF32 sy = cosf(anim_5) * 130.0f;
 
    // main
-   minMoveTo((100.0f+rx)*vpSclX, (300.0f+ry)*vpSclY);
+   minMoveTo(100.0f + rx, 300.0f + ry);
 
-   sF32 relx1 = (300.0f+sx) - (100.0f+rx);
-   sF32 rely1 = (100.0f+sy) - (300.0f+ry);
-   minCubicTo((300.0f+sx)*vpSclX, (100.0f+sy)*vpSclY,
-              (500.0f-sy)*vpSclX, (100.0f-sx)*vpSclY,
-              (700.0f-ry)*vpSclX, (300.0f-rx)*vpSclY
+   sF32 relx1 = (300.0f + sx) - (100.0f + rx);
+   sF32 rely1 = (100.0f + sy) - (300.0f + ry);
+   minCubicTo(300.0f + sx, 100.0f + sy,
+              500.0f - sy, 100.0f - sx,
+              700.0f - ry, 300.0f - rx
               );
 
-   sF32 relx2 = (700.0f-ry) - (500.0f-sy);
-   sF32 rely2 = (300.0f-rx) - (100.0f-sx);
-   minCubicTo((700.0f-ry+relx2)*vpSclX, (300.0f-rx+rely2)*vpSclY,
-              (100.0f+rx-relx1)*vpSclX, (300.0f+ry-rely1)*vpSclY,
-              (100.0f+rx)*vpSclX,       (300.0f+ry)*vpSclY
+   sF32 relx2 = (700.0f - ry) - (500.0f - sy);
+   sF32 rely2 = (300.0f - rx) - (100.0f - sx);
+   minCubicTo(700.0f - ry + relx2, 300.0f - rx + rely2,
+              100.0f + rx - relx1, 300.0f + ry - rely1,
+              100.0f + rx,         300.0f + ry
               );
 
    // sub 1
    (void)minBeginSub();
-   minMoveTo((300.0f-ry)*vpSclX, (250.0f+rx)*vpSclY);
-   minEllipse(150.0f*vpSclX, 150.0f*vpSclY);
+   minMoveTo(300.0f - ry, 250.0f + rx);
+   minEllipse(150.0f, 150.0f);
    minEndSubClosed();
 
    minEndPathClosed();
 
    if(fill_mode & 1u)
    {
-      // (note) should call minSetEnablePolygonAA(0) in production code
-      //         (outline will be overwritten by stroke rendering)
       minFill();
       minColor(0xff324f75u);
       minDrawPath(pid);
@@ -300,7 +287,7 @@ static void Test_01(void) {
 
    if(fill_mode & 2u)
    {
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) * vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -313,9 +300,6 @@ static void Test_02(void) {
 
    minBindTexture(tex_id, YAC_FALSE/*bRepeat*/, b_tex_filter);
    minColor(0xffffffffu);
-
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 x = sinf(anim_1) * 400.0f - 400.0f + 125.0f/4;
    sF32 y = cosf(anim_2) * 300.0f - 300.0f + 100.0f/4;
@@ -339,7 +323,8 @@ static void Test_02(void) {
          sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
          sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
 
-         minRectTexUVFlat( (tx - w*0.5f)*vpSclX, (ty - h*0.5f)*vpSclY, w*vpSclX, h*vpSclY,
+         minRectTexUVFlat(tx - w*0.5f, ty - h*0.5f,
+                          w, h,
                           0.0f, 0.0f,
                           1.0f, 1.0f
                           );
@@ -367,9 +352,6 @@ static void Test_03(void) {
    minBindTexture(tex_id, YAC_FALSE/*bRepeat*/, b_tex_filter);
    minColor(0xffffffffu);
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    sF32 x = sinf(anim_1) * 400.0f - 400.0f + 125.0f/4;
    sF32 y = cosf(anim_2) * 300.0f - 300.0f + 100.0f/4;
    sF32 ty = y;
@@ -392,7 +374,8 @@ static void Test_03(void) {
          sF32 w = 125.0f/2 + (sinf(ang4) *  75.0f/2)*nx;
          sF32 h = 100.0f/2 + (cosf(ang5) *  50.0f/2)*ny;
 
-         minRectTexUVGouraud((tx - w*0.5f)*vpSclX, (ty - h*0.5f)*vpSclY, w*vpSclX, h*vpSclY,
+         minRectTexUVGouraud(tx - w * 0.5f, ty - h * 0.5f,
+                             w, h,
                              0.0f, 0.0f,
                              1.0f, 1.0f,
                              Test_03_calc_c32_at(tx - w*0.5f, ty - h*0.5f),  // lt
@@ -412,9 +395,6 @@ static void Test_03(void) {
 static void Test_04(void) {
    // sine lines
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    MinPathId pid = minBeginPath();
 
    sUI numSeg = 64u;
@@ -427,9 +407,9 @@ static void Test_04(void) {
    {
       sF32 y = sinf(a) * 150.0f + 300.0f;
       if(0u == segIdx)
-         minMoveTo(x*vpSclX, y*vpSclY);
+         minMoveTo(x, y);
       else
-         minLineTo(x*vpSclX, y*vpSclY);
+         minLineTo(x, y);
       a += w;
       x += xStep;
    }
@@ -437,7 +417,7 @@ static void Test_04(void) {
    minEndPathOpen();
 
    minColor(0xffffffffu);
-   minStrokeWidth(2.0f * 4.0f*vpSclX);
+   minStrokeWidth(2.0f * 4.0f);
    minJoinBevel();
    minCapRound();
    minDrawPath(pid);
@@ -447,9 +427,6 @@ static void Test_04(void) {
 static void Test_05(sBool _bFill, sBool _bStroke) {
    // round-rect filled+stroked (tesselated)
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
    sF32 sx = 320.0f + sinf(anim_4*0.25f) * 200.0f;
@@ -468,8 +445,8 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
 
    MinPathId pid = minBeginPath();
    minSeg(8u);
-   minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
-   minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
+   minMoveTo(400.0f - sx * 0.5f, 300.0f - sy * 0.5f);
+   minRoundRect(sx, sy, rx, ry);
    minEndPathClosed();
 
    if(_bFill)
@@ -482,7 +459,7 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
       minJoinMiter();
       minDrawPath(pid);
    }
@@ -492,9 +469,6 @@ static void Test_05(sBool _bFill, sBool _bStroke) {
 static void Test_06(sBool _bFill, sBool _bStroke) {  // 10
    // round-rect filled+stroked (shadervg)
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
    sF32 sx = 320.0f + sinf(anim_4*0.25f) * 200.0f;
@@ -512,20 +486,22 @@ static void Test_06(sBool _bFill, sBool _bStroke) {  // 10
       ry = (sy*0.495f);
 
    minBeginImmediate();
-   minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
+   minMoveTo(400.0f - sx * 0.5f,
+             300.0f - sy * 0.5f
+             );
 
    if(_bFill)
    {
       minColor(0xff324f75u);
       minFill();
-      minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
+      minRoundRect(sx, sy, rx, ry);
    }
 
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
-      minRoundRect(sx*vpSclX, sy*vpSclY, rx*vpSclX, ry*vpSclY);
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
+      minRoundRect(sx, sy, rx, ry);
    }
 
    minEndImmediate();
@@ -534,9 +510,6 @@ static void Test_06(sBool _bFill, sBool _bStroke) {  // 10
 // ----------------------------------------------------------------------------
 static void Test_11(sBool _bFill, sBool _bStroke) {
    // rect filled+stroked (tesselated)
-
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -556,8 +529,10 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
 
    MinPathId pid = minBeginPath();
    minSeg(8u);
-   minMoveTo( (400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY );
-   minRect(sx*vpSclX, sy*vpSclY);
+   minMoveTo(400.0f - sx * 0.5f,
+             300.0f - sy * 0.5f
+             );
+   minRect(sx, sy);
    minEndPathClosed();
 
    if(_bFill)
@@ -570,7 +545,7 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
       minJoinMiter();
       minDrawPath(pid);
    }
@@ -579,9 +554,6 @@ static void Test_11(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_12(sBool _bFill, sBool _bStroke) {
    // rect filled+stroked (shadervg)
-
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -600,20 +572,22 @@ static void Test_12(sBool _bFill, sBool _bStroke) {
       ry = (sy*0.495f);
 
    minBeginImmediate();
-   minMoveTo((400.0f-sx*0.5f)*vpSclX, (300.0f-sy*0.5f)*vpSclY);
+   minMoveTo(400.0f - sx * 0.5f,
+             300.0f - sy * 0.5f
+             );
 
    if(_bFill)
    {
       minColor(0xff324f75u);
       minFill();
-      minRect(sx*vpSclX, sy*vpSclY);
+      minRect(sx, sy);
    }
 
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
-      minRect(sx*vpSclX, sy*vpSclY);
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
+      minRect(sx, sy);
    }
 
    minEndImmediate();
@@ -622,9 +596,6 @@ static void Test_12(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_17(sBool _bFill, sBool _bStroke) {
    // ellipse filled+stroked (tesselated)
-
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -647,8 +618,8 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
 
    MinPathId pid = minBeginPath();
    minSeg(64u);
-   minMoveTo(400.0f*vpSclX, 300.0f*vpSclY);
-   minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
+   minMoveTo(400.0f, 300.0f);
+   minEllipse(sx * 0.5f, sy * 0.5f);
    minEndPathClosed();
 
    if(_bFill)
@@ -661,7 +632,7 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
       minJoinBevel();
       minDrawPath(pid);
    }
@@ -670,9 +641,6 @@ static void Test_17(sBool _bFill, sBool _bStroke) {
 // ----------------------------------------------------------------------------
 static void Test_18(sBool _bFill, sBool _bStroke) {
    // ellipse filled+stroked (shadervg)
-
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
 
    sF32 rx = 4.0f+40.0f + sinf(anim_1) * 40.0f;
    sF32 ry = 4.0f+30.0f + cosf(anim_2) * 30.0f;
@@ -694,20 +662,20 @@ static void Test_18(sBool _bFill, sBool _bStroke) {
       ry = (sy*0.495f);
 
    minBeginImmediate();
-   minMoveTo(400.0f*vpSclX, 300.0f*vpSclY);
+   minMoveTo(400.0f, 300.0f);
 
    if(_bFill)
    {
       minColor(0xff324f75u);
       minFill();
-      minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
+      minEllipse(sx * 0.5f, sy * 0.5f);
    }
 
    if(_bStroke)
    {
       minColor(0xffffffffu);
-      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f)*vpSclX );
-      minEllipse(sx*0.5f*vpSclX, sy*0.5f*vpSclY);
+      minStrokeWidth( 2.0f * (sinf(anim_3)*2.0f+3.0f) );
+      minEllipse(sx * 0.5f, sy * 0.5f);
    }
 
    minEndImmediate();
@@ -720,9 +688,6 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
    MinPathId pid = minBeginPath();
    minSeg(32u);
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    sF32 rx = sinf(anim_1) * 40.0f + 41.0f;
    sF32 ry = cosf(anim_2) * 30.0f + 31.0f;
    sF32 sx = sinf(anim_4) * 240.0f;
@@ -731,15 +696,15 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
    sF32 px = 800.0f/2;
    sF32 py = 400.0f/2;
 
-   minMoveTo(px*vpSclX, py*vpSclY);
+   minMoveTo(px, py);
 
    sF32 rot = 0.0f;
 
-   minArcTo(rx*vpSclX, ry*vpSclY,
+   minArcTo(rx, ry,
             rot,
             YAC_FALSE/*bLargeArc*/,
             YAC_FALSE/*bArcSweep*/,
-            (px + sx)*vpSclX, (py + sy)*vpSclY
+            px + sx, py + sy
             );
 
    minEndPathClosed();
@@ -753,7 +718,7 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 
    if(_bStroke)
    {
-      minStrokeWidth(2.0f * 2.0f*vpSclX);
+      minStrokeWidth(2.0f * 2.0f);
       minColor(0xffffffffu);
       minJoinBevel();
       minDrawPath(pid);
@@ -764,8 +729,8 @@ static void Test_23(sBool _bFill, sBool _bStroke) {
 static void Test_26(void) {
    // arc stroke+pattern
 
-   const sF32 vpSclX = VP_W / 454.0f;
-   const sF32 vpSclY = VP_H / 454.0f;
+   minSetGeoScale2f(VP_W/454.0f, VP_H/454.0f);
+   minSetStrokeScale(stroke_scale * (VP_W / 454.0f));
 
    MinPaintId paintId = minPaintCreate();
    minPaintPattern(0.0f, 0.0f,
@@ -783,20 +748,20 @@ static void Test_26(void) {
    const sF32 dx = 385;
    const sF32 dy =  71;
 
-   minMoveTo(px*vpSclX, py*vpSclY);
+   minMoveTo(px, py);
 
    sF32 rot = 0;
 
-   minArcTo(rx*vpSclX, ry*vpSclY,
+   minArcTo(rx, ry,
             rot,
             YAC_FALSE/*bLargeArc*/,
             YAC_TRUE/*bArcSweep*/,
-            dx*vpSclX, dy*vpSclY
+            dx, dy
             );
 
    minEndPathOpen();
 
-   minStrokeWidth(2.0f * 3.5f*vpSclX);
+   minStrokeWidth(2.0f * 3.5f);
    minBindTexture(tex_gradient_id, YAC_TRUE/*bRepeat*/, b_tex_filter);
    minPaint(paintId);
    minColor(0xffffffffu);
@@ -825,9 +790,6 @@ static void Test_27(void) {
 
    minBeginImmediate();
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    sF32 x = sinf(anim_1) * 400.0f - 400.0f + 125.0f/4;
    sF32 y = cosf(anim_2) * 300.0f - 300.0f + 100.0f/4;
    sF32 ty = y;
@@ -853,8 +815,8 @@ static void Test_27(void) {
          {
             sF32 wh = w * 0.5f;
             sF32 hh = h * 0.5f;
-            sF32 px = (tx - wh)*vpSclX;
-            sF32 py = (ty - hh)*vpSclY;
+            sF32 px = tx - wh;
+            sF32 py = ty - hh;
 
             minPaintUpdate(paintId);
             minPaintPattern(px, py,
@@ -863,11 +825,13 @@ static void Test_27(void) {
                             );
             minPaint(paintId);
 
-            minMoveTo(px+aaBorder, py+aaBorder);
-            sF32 sw = (w*vpSclX);
-            sF32 sh = (h*vpSclY);
-            numPix += sw * sh;
-            minRect(sw-aaBorder*2.0f, sh-aaBorder*2.0f);
+            minMoveTo(px + aaBorder,
+                      py + aaBorder
+                      );
+            minRect(w - aaBorder*2.0f,
+                    h - aaBorder*2.0f
+                    );
+            numPix += w * h;
          }
 
          tx += 200.0f/2;
@@ -888,6 +852,8 @@ static void Test_27(void) {
 // ----------------------------------------------------------------------------
 static void Test_28(void) {
    // textured, flat shaded AA rectangles 200x200
+
+   minSetGeoScale2f(1.0f, 1.0f);
 
    minBindTexture(tex_id, 0/*bRepeat*/, b_tex_filter);
    MinPaintId paintId = minPaintCreate();
@@ -934,16 +900,13 @@ static void Test_28(void) {
 // ----------------------------------------------------------------------------
 static void Test_29(sBool _bNonZero) { // 29+30
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    const sF32 ctrX = 800.0f/2.0f;
    const sF32 ctrY = 600.0f/2.0f;
 
    MinPaintId paintId = minPaintCreate();
-   sF32 px = sinf(anim_2*2.0f)*(VP_W*0.01f) + ctrX;
-   sF32 py = sinf(anim_3*2.0f)*(VP_H*0.01f) + ctrY;
-   minPaintRadial(px*vpSclX, py*vpSclY, VP_W*0.45f*vpSclX, VP_H*0.45f*vpSclY);
+   sF32 px = sinf(anim_2*2.0f)*(800.0f*0.01f) + ctrX;
+   sF32 py = sinf(anim_3*2.0f)*(600.0f*0.01f) + ctrY;
+   minPaintRadial(px, py, 800.0f*0.45f, 600.0f*0.45f);
 
    MinPathId pid = minBeginPath();
    const sUI num = 16u;
@@ -953,8 +916,8 @@ static void Test_29(sBool _bNonZero) { // 29+30
    sF32 a = aStart;
    for(sUI idx = 0u; idx < num; idx++)
    {
-      const sF32 x = (cosf(a) * r + ctrX) * vpSclX;
-      const sF32 y = (sinf(a) * r + ctrY) * vpSclY;
+      const sF32 x = cosf(a) * r + ctrX;
+      const sF32 y = sinf(a) * r + ctrY;
       if(0u == idx)
          minMoveTo(x, y);
       else
@@ -980,6 +943,8 @@ static void Test_29(sBool _bNonZero) { // 29+30
 // ----------------------------------------------------------------------------
 static void Test_31(void) {
    // flat shaded AA rectangles 200x200
+
+   minSetGeoScale2f(1.0f, 1.0f);
 
    minColor(0x3fffffffu);
    minFill();
@@ -1018,9 +983,6 @@ static void Test_31(void) {
 static void Test_32(sBool _bDecal) {  // 32+34
    // stippled sine lines / round line caps
 
-   const sF32 vpSclX = VP_W / 800.0f;
-   const sF32 vpSclY = VP_H / 600.0f;
-
    MinPathId pid = minBeginPath();
 
    sUI numSeg = 64u;
@@ -1033,9 +995,9 @@ static void Test_32(sBool _bDecal) {  // 32+34
    {
       sF32 y = sinf(a) * 150.0f + 300.0f;
       if(0u == segIdx)
-         minMoveTo(x*vpSclX, y*vpSclY);
+         minMoveTo(x, y);
       else
-         minLineTo(x*vpSclX, y*vpSclY);
+         minLineTo(x, y);
       a += w;
       x += xStep;
    }
@@ -1045,7 +1007,7 @@ static void Test_32(sBool _bDecal) {  // 32+34
    minColorFill(0xff1f5f5fu);
    minColorStroke(0xffffffffu);
    minDecalAlpha(1.0f);
-   minStrokeWidth(2.0f * 8.0f*vpSclX);
+   minStrokeWidth(2.0f * 8.0f);
    minLinePattern(16u, 0x00FFu,
                   (2.0f * stroke_scale)/*patternScale*/,
                   (anim_2 * (14.0f / sM_2PIf))/*patternOffset*/,
@@ -1066,6 +1028,8 @@ static void Test_32(sBool _bDecal) {  // 32+34
 static void Test_33(sBool _bDecal) { // 33+35
    // stippled circle / round line joints
 
+   minSetGeoScale2f(1.0f, 1.0f);
+
    const sF32 vpSclX = VP_W / 800.0f;
    const sF32 vpSclY = VP_H / 600.0f;
 
@@ -1085,13 +1049,13 @@ static void Test_33(sBool _bDecal) { // 33+35
       sF32 y = sinf(a) * r + 300.0f;
       if(0u == segIdx)
       {
-         minMoveTo(x*vpSclX, y*vpSclY);
+         minMoveTo(x * vpSclX, y * vpSclY);
       }
       else
       {
-         minLineTo(x*vpSclX, y*vpSclY);
-         sF32 dx = (x - lastX)*vpSclX;
-         sF32 dy = (y - lastY)*vpSclY;
+         minLineTo(x * vpSclX, y * vpSclY);
+         sF32 dx = (x - lastX) * vpSclX;
+         sF32 dy = (y - lastY) * vpSclY;
          l += sqrtf(dx*dx + dy*dy);
       }
       a += w;
@@ -1103,7 +1067,7 @@ static void Test_33(sBool _bDecal) { // 33+35
    minColorFill(0xff1f5f5fu);
    minColorStroke(0xffffffffu);
    minDecalAlpha(1.0f);
-   minStrokeWidth(2.5f * vpSclX);
+   minStrokeWidth(2.5f);
    sF32 patternOffset = (anim_2 * (15.0f / sM_2PIf));
    patternOffset = 0.0f;
    if(1)
@@ -1132,6 +1096,241 @@ static void Test_33(sBool _bDecal) { // 33+35
       minJoinBevel();
    minCapNone();
    minDrawPath(pid);
+}
+
+// ----------------------------------------------------------------------------
+static sSI test_36_max_seg = 0;
+static void Test_36(void) {
+   // arc circle segments
+
+   sF32 aspect = ((sF32)VP_H) / VP_W;
+   aspect *= 800.0f / 600.0f;
+   minSetGeoScale2f( (VP_W/800.0f) * aspect, VP_H/600.0f);
+
+   sF32 ctrX = 400.0f/aspect;
+   sF32 ctrY = 300.0f;
+
+   sF32 x;
+   sF32 y;
+
+   sF32 aAng[] = { anim_1 * 0.5f, anim_2 * 0.5f,    anim_3,      anim_4,      anim_5,  anim_6*2.0f };
+   sF32 aAngOff[] = { 
+      sM_PIf * (1.0f + sinf(anim_2)*1.0f),
+      sM_PIf * (1.0f + sinf(anim_1)*1.0f),
+      sM_PIf * (1.0f + sinf(anim_6)*1.0f),
+      sM_PIf * (1.0f + sinf(anim_3)*1.0f),
+      sM_PIf * (1.0f + sinf(anim_4)*1.0f),
+      sM_PIf * (1.0f + sinf(anim_5)*1.0f)
+   };
+   sF32 aRx[]  = {          350,          300,         250,         200,         150,         100 };
+   sF32 aRy[]  = {          250,          200,         150,         100,          75,          50 };
+   sUI  aCol[] = {  0xffffffffu,  0xffff0000u, 0xff00ff00u, 0xff00ffffu, 0xff0000ffu, 0xff7d1c8bu };
+
+   minStrokeWidth(2.0f * 8.0f);
+   minJoinBevel();
+   minCapRound();
+
+   sSI totalNumSeg = 0;
+   for(sUI idx = 0u; idx < 6u; idx++)
+   {
+      MinPathId pid = minBeginPath();
+
+      sF32 rx = aRx[idx];
+      sF32 ry = aRy[idx];
+      sF32 a1 = aAng[idx];
+      sF32 aOff = aAngOff[idx];
+      sF32 rMax = sMAX(rx, ry);
+      rx = sMIN(rx, ry);
+      ry = rx;
+
+      int numSeg = (aOff / (sM_PIf/4.0f)) * (rMax/32.0f);
+      // int numSeg = (aOff / (PI/8)) * (rMax/64.0f);
+      minSeg(1 + numSeg);
+      totalNumSeg += numSeg;
+
+      if(aOff >= (sM_2PIf*0.9999f))
+      {
+         minMoveTo(ctrX, ctrY);
+         minEllipse(rx, ry);
+      }
+      else
+      {
+         sF32 a2 = a1 + aOff;
+
+         x = cosf(a1) * rx + ctrX;
+         y = sinf(a1) * ry + ctrY;
+         minMoveTo(x, y);
+
+         x = cosf(a2) * rx + ctrX;
+         y = sinf(a2) * ry + ctrY;
+
+         minArcTo(rx, ry,
+                  0.0f/*rot*/,
+                  (aOff >= sM_PIf)/*bLargeArc*/,
+                  YAC_TRUE/*bArcSweep*/,
+                  x, y
+                  );
+         minEndPath((aOff >= (sM_2PIf*0.9999f)));
+      }
+
+      minColor(aCol[idx]);
+      minMoveTo(0,0);
+      minDrawPath(pid);
+   }
+
+   test_36_max_seg = sMAX(test_36_max_seg, totalNumSeg);
+   // Dprintf("xxx maxSeg=%d totalNumSeg=%d\n", test_36_max_seg, totalNumSeg);
+}
+
+// ----------------------------------------------------------------------------
+static void Test_37_InitDrawable(void) {
+
+   MinnieDrawable *d = drawable_star;
+   minSetGeoScale2f(1,1);
+   minSetStrokeScale(stroke_scale * sMIN(1.0f, VP_W / 800.0f));
+   sF32 oldStrokeWLineStripThreshold = minGetStrokeWLineStripThreshold();
+   minSetStrokeWLineStripThreshold(0*99);
+
+   // Create drawable
+   const sF32 sz = 256.0f;
+   minDrawableBegin(d);
+   minDrawableSetSize2f(d, sz, sz);
+   const sF32 ctrX = sz * 0.5f;
+   const sF32 ctrY = sz * 0.5f;
+
+   MinPathId pid = minBeginPath();
+   const sSI num = 10;
+   const sF32 ro = sz * 0.5f;
+   const sF32 ri = sz * 0.5f * 0.375f;
+   const sF32 w = sM_2PIf / num;
+   sF32 a = 0.0f;
+   for(sSI idx = 0; idx < num; idx++)
+   {
+      sF32 r = (idx & 1) ? ro : ri;
+      sF32 x = cosf(a) * r + ctrX;
+      sF32 y = sinf(a) * r + ctrY;
+      if(0 == idx)
+         minMoveTo(x, y);
+      else
+         minLineTo(x, y);
+      a += w;
+   }
+   minEndPathClosed();
+
+   if(1)
+   {
+      minFill();
+      minColorFill(0x1F000000u);
+      minDrawPath(pid);
+   }
+
+   minMiterLimit(64);
+   minStrokeWidth(4.0f*5.0f);
+   minColorStroke(0xFFFFFFFFu);
+   minMoveTo(0,0);
+   minJoinMiter();
+   minCapNone();
+   minDrawPath(pid);
+
+   minDrawableEnd(d);
+
+   minSetStrokeWLineStripThreshold(oldStrokeWLineStripThreshold);
+}
+
+static sF32 test_37_rot_outer = 0.0f;
+static void Test_37(void) {
+
+   minDrawableEnd(drawable);
+
+   MinnieDrawable *d = drawable_star;
+
+   if(0u == num_frames_rendered)
+   {
+      Test_37_InitDrawable();
+   }
+
+   sF32 vpw = VP_W;
+   sF32 vph = VP_H;
+
+   sdvg_ProjInit2D(vpw, vph);
+  
+   sF32 tAngX = anim_1;
+   sF32 tAngY = anim_2;
+   sF32 twx = 0.123132f*3.0f*1.3f;
+   sF32 twy = 0.121265f*3.0f*1.3f;
+   sF32 tscl = 0.15f;
+   sF32 rotW2 = sinf(anim_5*0.25f)*0.5f;
+   rotW2 *= rotW2;
+   rotW2 *= rotW2;
+   rotW2 *= 1.3f;
+   sF32 rotW = 0.123546f*0.1f * 3.0f*(0.5f+0.75f*sinf(anim_4)) + rotW2;
+
+   sSI numInst = 16;
+
+   sF32 rot = test_37_rot_outer;
+   sF32 scl = 0.03f;
+   sF32 a = 0.05f;
+   sF32 t = sFRAC(anim_lin16);
+   scl *= 1.0f + 0.33f * t;
+   rot += rotW * t;
+   a *= 1.0f + 0.25f * t;
+   tAngX += twx * t;
+   tAngY += twy * t;
+
+   sF32 tAngXLast = tAngX + (numInst - t) * twx;
+   sF32 tAngYLast = tAngY + (numInst - t) * twy;
+   sF32 txg = cosf(tAngXLast) * vpw * tscl;
+   sF32 tyg = sinf(tAngYLast) * vph * tscl;
+
+   sF32 hueStep = (360.0f / numInst);
+   sF32 hue = ((int)-anim_lin16) * hueStep + 360.0f;
+   sF32 sat = 1.0f;
+   sF32 val = 1.0f;
+
+   for(sSI idx = 0; idx < numInst; idx++)
+   {
+      minDrawableSetScale2f(d, scl, scl);
+      minDrawableSetRotation(d, rot);
+      sF32 tx = cosf(tAngX)*vpw*tscl*scl;
+      sF32 ty = sinf(tAngY)*vph*tscl*scl;
+      tx -= txg * scl;
+      ty -= tyg * scl;
+      minDrawableSetTranslate2f(d,
+                                (vpw-minDrawableGetSizeX(d))*0.5f + tx,
+                                (vph-minDrawableGetSizeY(d))*0.5f + ty
+                                );
+      MinnieVG_SetTransformForDrawable(d);
+      if(idx == (numInst-1))
+      {
+         sdvg_SetGlobalAlpha(sdvg_SmoothStepf(0.0f, 1.0f, 1.0f - t));
+      }
+      else
+      {
+         sdvg_SetGlobalAlpha(a);
+      }
+      sU32 c32Fill   = sdvg_HSVAToARGB(hue, sat, val, 112u);
+      sU32 c32Stroke = sdvg_HSVAToARGB(hue, sat, val, 255u);
+      minDrawableDrawTint32(d, c32Fill, c32Stroke);
+
+      rot += rotW;
+      scl *= 1.33f;
+      tAngX += twx;
+      tAngY += twy;
+      a *= 1.25f;
+      if(a > 1.0f)
+         a = 1.0f;
+      hue = sdvg_Wrapf(hue + hueStep, 0.0f, 360.0f);
+   }
+
+   if(b_anim)
+   {
+      sF32 spd = b_slomo ? 0.1f : 0.7f;
+
+      test_37_rot_outer += spd * 0.0123f;
+      if(test_37_rot_outer > sM_2PIf)
+         test_37_rot_outer -= sM_2PIf;
+   }
+
 }
 
 // ---------------------------------------------------------------------------- SelectTest
@@ -1170,9 +1369,10 @@ void hal_on_draw(void) {
 
    if(!b_gl_buf_once || !minDrawableIsComplete(drawable))
    {
-      minSetStrokeScale(stroke_scale);
-
       minDrawableBegin(drawable);
+      minDrawableSetSize2f(drawable, VP_W, VP_H);
+      minSetGeoScale2f(VP_W/800.0f, VP_H/600.0f);
+      minSetStrokeScale(stroke_scale * (VP_W / 800.0f));
 
       switch(test_idx)
       {
@@ -1212,6 +1412,10 @@ void hal_on_draw(void) {
          case 33: Test_33(YAC_FALSE/*bDecal*/); break;       // stippled circle
          case 34: Test_32(YAC_TRUE/*bDecal*/); break;        // stippled sine lines decal
          case 35: Test_33(YAC_TRUE/*bDecal*/); break;        // stippled circle decal
+         case 36: Test_36(); break;                          // arc circle segments
+         case 37: for(sUI i = 0u; i < (num_frames_rendered > 0 ? num_iter : 1); i++)
+                     Test_37();                              // star tunnel
+                  break;
       }
 
       minDrawableEnd(drawable);
@@ -1220,8 +1424,6 @@ void hal_on_draw(void) {
       {
          MinnieVG_DebugPrintMinnieAndDrawableStats(drawable);
       }
-
-      minDrawableSetSize2f(drawable, VP_W, VP_H);
    }
 
    if(b_draw_gl)
@@ -1299,6 +1501,7 @@ void hal_on_draw(void) {
       anim_4 = sWRAP(anim_4 + spd * 0.3f*0.123f,  0.0f, sM_2PIf*4.0f);
       anim_5 = sWRAP(anim_5 + spd * 0.3f*0.112f,  0.0f, sM_2PIf*4.0f);
       anim_6 = sWRAP(anim_6 + spd * 0.1f*0.1f,    0.0f, sM_2PIf*4.0f);
+      anim_lin16 = sWRAP(anim_lin16 + spd * 0.055f, 0, 16.0f);
    }
 
    if(auto_cycle_num_frames > 0u)
@@ -1450,10 +1653,10 @@ int main(int argc, char**argv) {
       test_idx = 0;
    }
 
-   if(hal_window_init(DISPLAY_WIDTH, DISPLAY_HEIGHT))
+   if(hal_window_init(VP_W, VP_H))
    {
       MinnieVG_Init(1/*b_glcore*/);
-      sdvg_SetFramebufferSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);
+      sdvg_SetFramebufferSize(VP_W, VP_H);
       sdvg_SetStrokeRadiusAAOffset(1.5f);
 
       Dprintf("[...] init OK, initializing textures..\n");
@@ -1486,6 +1689,18 @@ int main(int argc, char**argv) {
          )
       {
          Derrorprintf("[---] failed to allocate drawable\n");
+         exit(10);
+      }
+
+      drawable_star = minDrawableNew();
+      minDrawableInit(drawable_star);
+      if(!minDrawableAlloc(drawable_star,
+                           1*1024/*maxGLBufSize*/,
+                           1*1024/*maxDrawBufSize*/
+                           )
+         )
+      {
+         Derrorprintf("[---] failed to allocate drawable_star\n");
          exit(10);
       }
 
