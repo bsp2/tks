@@ -5,7 +5,7 @@ The documentation is work-in-progress. Also [see here](http://tkscript.org/minni
 See `native/build/` for Linux / macOS / Windows(msvc) Makefiles.
 
 
-# Debian Linux build instructions
+# Debian GNU/Linux build instructions
 
 ## Install package dependencies
 ~~~
