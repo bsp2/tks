@@ -171,7 +171,7 @@ static bool CLAP_ABI loc_clap_host_thread_check_is_main_thread(const clap_host_t
 
 static bool CLAP_ABI loc_clap_host_thread_check_is_audio_thread(const clap_host_t *host) {
    (void)host;
-   return !yac_host->yacThreadIsMain();
+   return tkclap_process_from_main_thread || !yac_host->yacThreadIsMain();
 }
 
 // ---------------------------------------------------------------------------- clap_host_t
@@ -2168,6 +2168,12 @@ void CLAPPlugin::process(sUI _numFrames) {
       process.audio_outputs       = clap_audio_buffers_out;
       process.audio_inputs_count  = num_audio_in;
       process.audio_outputs_count = num_audio_out;
+#if 0
+      if(input_events.num_ev > 0u)
+      {
+         Dprintf("xxx process: #clap_input_events=%u\n", input_events.num_ev);
+      }
+#endif
       process.in_events           = &input_events.clap_input_events;
       process.out_events          = &output_events.clap_output_events;
 

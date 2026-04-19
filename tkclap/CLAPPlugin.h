@@ -1,12 +1,13 @@
 /// CLAPPlugin.h
 ///
-/// (c) 2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 22Sep2024, 27Sep2024
+///          19Apr2026
 ///
 ///
 ///
@@ -453,7 +454,7 @@ YC class CLAPPlugin : public YAC_Object {
 
    // Queue flushParameters() call (handled in next process() call)
    //  (note) safe to call from main or audio thread
-   void queueFlushParameters (void);
+   YM void queueFlushParameters (void);
 
    // Called when plugin is not processing (i/o events are handled in audio thread process() otherwise)
    //  (note) must be called in audio-thread

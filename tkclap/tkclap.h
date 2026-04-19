@@ -44,6 +44,8 @@ YG("clap");
 extern sF32  tkclap_bpm;
 extern sF32  tkclap_song_pos_beats;  // #quarter notes since replay start
 extern sBool tkclap_song_playing;
+extern sBool tkclap_process_from_main_thread;
+
 
 /* @function tkclap_set_bpm,float bpm
  */
@@ -52,6 +54,9 @@ YF void YAC_CALL tkclap_set_bpm (sF32 _bpm);
 /* @function tkclap_set_song_pos_beats,float songPosBeats,boolean bPlaying
  */
 YF void YAC_CALL tkclap_set_song_pos_beats (sF32 _songPosBeats, sBool _bPlaying);
+
+YF void YAC_CALL tkclap_begin_process_from_main_thread (void);
+YF void YAC_CALL tkclap_end_process_from_main_thread (void);
 
 #define Dprintf         if(0);else yac_host->printf
 #define Dprintf_error   if(0);else yac_host->printf
