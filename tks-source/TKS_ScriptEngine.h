@@ -1,6 +1,6 @@
 /// TKS_ScriptEngine.h
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
 
@@ -130,6 +130,7 @@ public:
    void             YAC_VCALL yacThreadWait              (YAC_ThreadHandle _thread);
    void             YAC_VCALL yacThreadDelete            (YAC_ThreadHandle _thread);
    YAC_ThreadHandle YAC_VCALL yacThreadNewFromCurrent    (void);
+   sBool            YAC_VCALL yacThreadIsMain            (void);
 
 
    //

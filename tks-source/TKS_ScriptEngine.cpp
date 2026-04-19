@@ -1,6 +1,6 @@
 /// TKS_ScriptEngine.cpp
 ///
-/// (c) 2001-2025 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2001-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under terms of the GNU general public license (GPL).
 ///
 ///
@@ -4306,6 +4306,10 @@ YAC_ThreadHandle TKS_ScriptEngine::yacThreadNewFromCurrent(void) {
 #endif // HAVE_TLS
    }
    return (YAC_ThreadHandle)th;
+}
+
+sBool TKS_ScriptEngine::yacThreadIsMain(void) {
+   return TKS_Thread::IsMain();
 }
 
 

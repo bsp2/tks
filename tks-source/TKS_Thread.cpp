@@ -77,6 +77,11 @@ _syscall0(pid_t, gettid)
 #include "TKS_FunctionObject.h"
 
 
+#ifdef DX_PTHREADS
+pthread_t TKS_Thread::main_pthread_id;
+#endif // DX_PTHREADS
+
+
 // // #if defined(YAC_WIN32) && defined(HAVE_WIN10)
 // // #include <Processthreadsapi.h>
 // // #if 0
@@ -89,6 +94,9 @@ _syscall0(pid_t, gettid)
 // // #endif
 
 #ifdef YAC_WIN32
+
+DWORD TKS_Thread::main_dwThreadId;
+
 typedef BOOL (*SetThreadSelectedCpuSets_fxn_t) (
    _In_       HANDLE Thread,
    _In_ const ULONG  *CpuSetIds,
@@ -226,7 +234,7 @@ static void *tksvm__threadentry(void *_TKS_Thread) {
 static sBool loc_b_have_procinfo = YAC_FALSE;
 static sUI loc_num_proc = 0u;
 
-#define TKS_MAX_LOGICAL_CORES 64u
+#define TKS_MAX_LOGICAL_CORES 512u
 
 #define TKS_PROCINFO_FLAG_PRESENT  (1u << 0)  // is available / present
 #define TKS_PROCINFO_FLAG_HT       (1u << 1)  // set for first shared logical processor, e.g. CPU1=PRESENT, CPU2=PRESENT,HT
@@ -237,10 +245,10 @@ typedef struct tks_procinfo_s {
    sU64 processor_mask;
 } tks_procinfo_t;
 
-static tks_procinfo_t loc_tks_procinfo[TKS_MAX_LOGICAL_CORES];
+static tks_procinfo_t loc_tks_procinfo[TKS_MAX_LOGICAL_CORES * 8/*win11*/];
 
 #ifdef YAC_WIN32
-static SYSTEM_LOGICAL_PROCESSOR_INFORMATION loc_procinfo_win32[TKS_MAX_LOGICAL_CORES];
+static SYSTEM_LOGICAL_PROCESSOR_INFORMATION loc_procinfo_win32[TKS_MAX_LOGICAL_CORES * 8/*win11*/];
 
 // https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getlogicalprocessorinformation
 static DWORD CountSetBits(ULONG_PTR bitMask)
@@ -408,7 +416,7 @@ void TKS_Thread::LazyGetProcessorInformation(void) {
       }
       else
       {
-         yac_host->printf("[~~~] Thread::LazyGetProcessorInformation: GetLogicalProcessorInformation() failed.\n");
+         yac_host->printf("[~~~] Thread::LazyGetProcessorInformation: GetLogicalProcessorInformation() failed. LastError=%d\n", GetLastError());
       }
       // }
       // }
@@ -598,7 +606,25 @@ void TKS_Thread::initFromCurrent2(void) {
 
 void TKS_Thread::initMain(void) {
    initFromCurrent2();
+#ifdef DX_PTHREADS
+   main_pthread_id = pthread_id;
+   // Dprintf("[trc] TKS_Thread::initMain: main_pthread_id=%p\n", (void*)main_pthread_id);
+#elif defined(YAC_WIN32)
+   main_dwThreadId = dwThreadId;
+#endif
    context = (TKS_Context*) tkscript->main_context;
+}
+
+sBool TKS_Thread::IsMain(void) {
+#ifdef DX_PTHREADS
+   // Dprintf("[trc] TKS_Thread::IsMain: main_pthread_id=%p pthread_self()=%p\n", (void*)main_pthread_id, (void*)pthread_self());
+   return (main_pthread_id == pthread_self());
+#elif defined(YAC_WIN32)
+   return (main_dwThreadId == GetCurrentThreadId());
+#else
+#error "missing IsMain() implementation"
+   return 0;
+#endif
 }
 
 void TKS_Thread::initFromCurrent(void) {

@@ -20,7 +20,7 @@
 /// ----          06-Jan-2023 / 16-Jan-2023 / 26-Jan-2023 / 05-Feb-2023 / 12-Apr-2023 / 14-Apr-2023
 /// ----          17-Jul-2023 / 24-Jul-2023 / 26-Jul-2023 / 13-Jan-2024 / 07-Jun-2024 / 17-Aug-2024
 /// ----          20-Aug-2024 / 22-Aug-2024 / 10-Oct-2024 / 20-Oct-2024 / 14-Mar-2025 / 01-Oct-2025
-/// ----          03-Oct-2025 / 22-Feb-2026
+/// ----          03-Oct-2025 / 22-Feb-2026 / 09-Apr-2026
 /// ----
 /// ---- info   : YAC - Yet Another Component object model.  YAC is a self contained, binary level
 /// ----          C++ component/reflectance model and plugin SDK.
@@ -2223,6 +2223,7 @@ public:
     // ----
     virtual sSI              YAC_VCALL yacAtomicInc               (volatile sSI *_v, sSI _inc) = 0;
     virtual sSI              YAC_VCALL yacAtomicDec               (volatile sSI *_v, sSI _dec) = 0;
+    // compare 'v' to 'old' and set to 'new' if equal, return (v == old)
     virtual sBool            YAC_VCALL yacAtomicCompareAndSwap    (volatile sSI *_v, sSI _old, sSI _new) = 0;
     virtual void             YAC_VCALL yacAtomicSet               (volatile sSI *_v, sSI _new) = 0;
     virtual sSI              YAC_VCALL yacAtomicGet               (volatile sSI *_v) = 0;
@@ -2257,7 +2258,7 @@ public:
     virtual void             YAC_VCALL yacThreadWait              (YAC_ThreadHandle _thread) = 0;
     virtual void             YAC_VCALL yacThreadDelete            (YAC_ThreadHandle _thread) = 0;
     virtual YAC_ThreadHandle YAC_VCALL yacThreadNewFromCurrent    (void) = 0;
-    virtual void             YAC_VCALL vtable_entry_9_18_reserved (void) = 0;
+    virtual sBool            YAC_VCALL yacThreadIsMain            (void) = 0;
     virtual void             YAC_VCALL vtable_entry_9_19_reserved (void) = 0;
     virtual void             YAC_VCALL vtable_entry_9_20_reserved (void) = 0;
 

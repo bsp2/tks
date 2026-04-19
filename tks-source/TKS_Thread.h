@@ -56,11 +56,13 @@ public:
    thread_t mach_thread_id;
 #endif // YAC_MACOS
    volatile sBool b_pthread_started;
+   static pthread_t main_pthread_id;
 #else
 #ifdef YAC_WIN32
    HANDLE hThread;
    DWORD  dwThreadId;
    win32_yac_threadentry_userdata_t win32_yac_threadentry_userdata;
+   static DWORD main_dwThreadId;
 #endif
 #endif
 
@@ -87,17 +89,19 @@ public:
 	TKS_Thread(void);
 	~TKS_Thread();
 
-   void initFromCurrent2(); // helper
-   void initFromCurrent(void); // Used for on-the-fly "unknown" (pooled) thread context initialization. allocates script context.
-   void initMain(void);        // Usually only called for the main thread, use static script context.
+   void initFromCurrent2 (void); // helper
+   void initFromCurrent (void); // Used for on-the-fly "unknown" (pooled) thread context initialization. allocates script context.
+   void initMain (void);        // Usually only called for the main thread, use static script context.
 
    sBool create2 (yac_thread_fxn_t _threadFxn, void *_userData);
    sSI sendEvent2 (YAC_Event *_ev);
    static sBool Yield2 (void);
    static sBool Delay2 (void);
 
+   static sBool IsMain (void);
+
 #ifdef DX_PTHREADS
-   void setSchedFIFOPriority(sUI _prio);
+   void setSchedFIFOPriority (sUI _prio);
 #endif // DX_PTHREADS
 
    void lazyCleanUpTerminatedThread (void);

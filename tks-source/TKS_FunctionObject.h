@@ -3,10 +3,10 @@
 /// (c) 2005-2023 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
-#ifndef __TKS_FUNCTIONOBJECT_H__
-#define __TKS_FUNCTIONOBJECT_H__
+#ifndef TKS_FUNCTIONOBJECT_H__
+#define TKS_FUNCTIONOBJECT_H__
 
- 
+
 class TKS_FunctionObject : public YAC_Object {
 public:
    PTN_Function *fun; // inner PTN_Function object
@@ -27,4 +27,4 @@ public:
 };
 
 
-#endif // __TKS_FUNCTIONOBJECT_H__
+#endif // TKS_FUNCTIONOBJECT_H__
