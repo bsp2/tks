@@ -1,6 +1,6 @@
 /// VST2Plugin.cpp
 ///
-/// (c) 2010-2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2010-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
@@ -12,7 +12,7 @@
 ///          31Jan2018, 12Feb2018, 14Feb2018, 15Feb2018, 23Feb2018, 27Feb2018, 28Feb2018
 ///          02Mar2018, 03Apr2018, 22Jun2018, 29Jun2018, 06Jul2018, 19Aug2018, 07Jul2019
 ///          17Jul2019, 30Jul2019, 05Aug2019, 26Aug2019, 20May2021, 31Dec2021, 08Jan2022
-///          11Jan2022, 27Feb2022, 01Jul2024
+///          11Jan2022, 27Feb2022, 01Jul2024, 07Apr2026
 ///
 ///
 ///
@@ -4795,7 +4795,7 @@ sUI VST2Plugin::getNativeWindowHandle(void) {
 }
 
 void VST2Plugin::setEnableReportTransportPlaying(sBool _bEnable) {
-   b_report_transport_playing = _bEnable;
+   b_report_transport_playing = (1 == _bEnable);
 }
 
 sBool VST2Plugin::getEnableReportTransportPlaying(void) {

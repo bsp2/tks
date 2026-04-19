@@ -43,10 +43,10 @@ void tkvst2_set_song_pos_ppq(sF32 _songPosPPQ, sBool _bPlaying) {
 
 void YAC_CALL YAC_Init(YAC_Host *_host) {
 	yac_host = _host;
-   
-	if(yac_host->yacGetDebugLevel()) 
+
+	if(yac_host->yacGetDebugLevel())
       yac_host->printf("[dbg] tkvst2::YAC_Init called.\n");
-   
+
    YAC_Init_vst2(_host);
 
    for(sUI i = 0u; i < VST2PLUGIN_NUM_SIGNALS; i++)
