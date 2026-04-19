@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 Ross Bencina and Phil Burk, TkScript bindings by Bastian Spiegel
+ * Copyright (c) 2009-2026 Ross Bencina and Phil Burk, TkScript bindings by Bastian Spiegel
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -60,6 +60,7 @@ _PaStream::_PaStream(void) {
 
 #ifdef YAC_MACOS
    ::memset(&macos_audio_workgroup,  0, sizeof(os_workgroup_t));
+   b_macos_audio_workgroup_valid = YAC_FALSE;
 #endif // YAC_MACOS
 }
 
@@ -208,13 +209,36 @@ void _PaStream::_macOSAudioWorkgroupJoin(YAC_Value *_r) {
       _PaStreamMacOSWorkgroupJoinToken *joinToken = YAC_NEW_POOLED(PaStreamMacOSWorkgroupJoinToken);
       if(NULL != joinToken)
       {
-         AudioDeviceID audioDeviceID = PaMacCore_GetStreamOutputDevice(stream);
+         if(yac_host->yacAtomicCompareAndSwap((sSI*)&b_macos_audio_workgroup_valid, 0, 1))
+         {
+            AudioDeviceID audioDeviceID = PaMacCore_GetStreamOutputDevice(stream);
 
-         UInt32 count = sizeof(os_workgroup_t);
-         ::AudioDeviceGetProperty(audioDeviceID, 0, 0,
-                                  kAudioDevicePropertyIOThreadOSWorkgroup, &count, &macos_audio_workgroup
-                                  );
+            if(Dyac_host_yacGetDebugLevel() >= 10)
+            {
+               Dyac_host_printf("[dbg] PaStream::macOSAudioWorkgroupJoin: audioDeviceID=%u\n", audioDeviceID);
+            }
+            UInt32 propertyDataSize = sizeof(os_workgroup_t);
+            ::AudioDeviceGetProperty(audioDeviceID, 0, 0,
+                                     kAudioDevicePropertyIOThreadOSWorkgroup, &propertyDataSize, &macos_audio_workgroup
+                                     );
+            if(Dyac_host_yacGetDebugLevel() >= 10)
+            {
+               Dyac_host_printf("[dbg] PaStream::macOSAudioWorkgroupJoin: propertyDataSize=%u\n", propertyDataSize);
+               Dyac_host_printf("[dbg] PaStream::macOSAudioWorkgroupJoin: new macos_audio_workgroup=%p\n", macos_audio_workgroup);
+            }
+         }
+         else
+         {
+            if(Dyac_host_yacGetDebugLevel() >= 10)
+            {
+               Dyac_host_printf("[dbg] PaStream::macOSAudioWorkgroupJoin: use macos_audio_workgroup=%p\n", macos_audio_workgroup);
+            }
+         }
          int result = ::os_workgroup_join(macos_audio_workgroup, &joinToken->join_token);
+         if(Dyac_host_yacGetDebugLevel() >= 10)
+         {
+            Dyac_host_printf("[dbg] PaStream::macOSAudioWorkgroupJoin: os_workgroup_join() result=%d\n", result);
+         }
          if( (0 == result) || (EALREADY == result) )
          {
             // Succeeded

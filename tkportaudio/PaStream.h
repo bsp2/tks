@@ -72,6 +72,7 @@ YC class _PaStream : public YAC_Object {
 
 #ifdef YAC_MACOS
    os_workgroup_t macos_audio_workgroup;
+   sBool b_macos_audio_workgroup_valid;
 #endif // YAC_MACOS
 
 
