@@ -31,7 +31,7 @@
 // ----          07Sep2023, 14Sep2023, 17Sep2023, 18Nov2023, 09Jan2024, 10Jan2024, 13Jan2024
 // ----          14Jan2024, 15Jan2024, 16Jan2024, 19Jan2024, 28Sep2024, 30Sep2024, 03Oct2024
 // ----          31Oct2024, 03Nov2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 04Jan2025
-// ----          12Jan2025, 09Jan2026, 11Jan2026
+// ----          12Jan2025, 09Jan2026, 11Jan2026, 10Apr2026
 // ----
 // ----
 // ----
@@ -373,6 +373,7 @@ void StSampleVoice::_resetVoice(void) {
    b_alloc                     = YAC_FALSE;
    b_glide                     = YAC_FALSE;
    b_allow_smpoff              = YAC_TRUE;
+   b_realloc                   = YAC_FALSE;
    replay_ticks                = 0;
    voice_key                   = 0;
    last_voice_key              = 0;
@@ -990,6 +991,11 @@ void StSampleVoice::reallyStartVoice(const StSampleVoiceNoteOnParams *_params,
    mix_rate     = _params->_mixRate;
    note         = _params->_note;
    replay_ticks = 0;
+
+   sample_player->incGlobalRegs();
+
+   for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_GLOBAL_REGS; i++)
+      global_reg_values_on[i] = sample_player->global_reg_values[i];
 
    play_offset_orig_speed = 0.0;
    play_offset_actual     = 0.0;
@@ -1847,7 +1853,7 @@ void StSampleVoice::prepareToPlay(StSample *_sample, sSI _voiceKey, sUI _voiceAl
    last_voice_key  = _voiceKey;
    voice_alloc_idx = _voiceAllocIdx;
    b_used          = YAC_TRUE;
-   b_allow_smpoff  = YAC_TRUE;
+   b_allow_smpoff  = !b_realloc;/////YAC_TRUE;
 
    for(sUI mmIdx = 0u; mmIdx < STSAMPLE_NUM_MODMATRIX_ENTRIES; mmIdx++)
    {
@@ -2140,7 +2146,7 @@ void StSampleVoice::noteOff(sF32 _vel) {
 
    release_velocity = _vel;
 
-   b_allow_smpoff = !b_glide;  // [03Nov2024]
+   b_allow_smpoff = !(b_glide || b_realloc);  // [03Nov2024]
    b_glide = YAC_FALSE;
 
    if( (current_delay_countdown > 0) || (NULL == sample) )
@@ -2788,7 +2794,7 @@ void StSampleVoice::calcNextBlockState(sBool _bNext) {
          [voice_alloc_idx % sample->voice_calibration_modulo[3/*flt cutoff*/]];
    }
 
-   fltCutOff += next_aux_adsr * (sample->filter_aux_env_amount + (sample->filter_aux_env_velocity_amount * queued_noteon._vel));
+   fltCutOff += next_aux_adsr * (sample->filter_aux_env_amount + mmdst.flt_aux_env_amt + (sample->filter_aux_env_velocity_amount * queued_noteon._vel));
    sF32 auxLFOFltAmt = sample->filter_aux_lfo_amount * sample_player->mod_lfo_aux_flt_amt * mod_lfo_aux_flt_amt * mmdst.aux_lfo_flt_amt;
    // // auxLFOFltAmt = sRANGE(auxLFOFltAmt, 0.0f, 1.0f);
    fltCutOff += next_aux_lfo * auxLFOFltAmt;

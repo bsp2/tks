@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StSampleBank.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -12,7 +12,7 @@
 // ---- changed: 26Dec2009, 27Dec2009, 29Dec2009, 02Jan2010, 05Jan2010, 07Jan2010, 15Jan2010
 // ----          19Jan2010, 21Jan2010, 29Apr2010, 24Mar2013, 23Dec2018, 27Dec2018, 31Dec2018
 // ----          17Jan2019, 23Apr2019, 15Feb2020, 25Feb2020, 08Aug2021, 18Nov2023, 15Aug2024
-// ----          28Sep2024, 30Sep2024, 12Nov2024
+// ----          28Sep2024, 30Sep2024, 12Nov2024, 10Apr2026
 // ----
 // ----
 // ----
@@ -117,6 +117,7 @@ YC class StSampleBank : public YAC_Object {
    YM void        _setSampleOffsetRandAmount (sF32 _amt);
    YM sF32        _getSampleOffsetRandAmount (void);
 
+   // (note) tri-state (-1/maybe = realloc and don't change sample offset (free running osc))
    YM void        _setEnableRealloc (sBool _bEnable);
    YM sSI         _getEnableRealloc (void);
 

@@ -58,6 +58,7 @@ typedef void(StSampleVoice::*stsamplevoice_process_alg_fxn_t)(void);
 #define STSAMPLEVOICE_AI_MAX_POLES  8
 
 
+
 class StSampleVoiceNoteOnParams {
    // Used for delayed note-ons (if voice is still playing-> fadeout first)
   public:
@@ -163,6 +164,7 @@ struct tksampler_mmdst_t {
    sF32  flt_pan;
    sF32  flt_offset;
    sF32  flt_res;
+   sF32  flt_aux_env_amt;  // added to base sample->filter_aux_env_amount
 
    sF32  jumptoloop;
    sBool b_jumptoloop_valid;
@@ -290,6 +292,8 @@ YC class StSampleVoice : public YAC_Object {
 #define STSAMPLEPLAYER_PERFCTL_CC83_GENERAL_8   YCI 17
 #define STSAMPLEPLAYER_NUM_PERFCTL              YCI 18
 
+#define STSAMPLEPLAYER_NUM_GLOBAL_REGS  YCI 4
+
   public:
    StSample       *sample;        // ref, currently playing sample
    StSamplePlayer *sample_player; // set after voice allocation in StSamplePlayer
@@ -325,6 +329,7 @@ YC class StSampleVoice : public YAC_Object {
    sBool b_alloc;      // 1=voice has just been allocated (valid for current tick)
    sBool b_glide;      // 1=voice has been allocated via allocSampleVoiceGlide() (=> apply retrig flags in initStartedVoicesByKey())
    sBool b_allow_smpoff;  // [03Nov2024] workaround for glide+smpoff modmatrix mod (becomes 0 when note is released)
+   sBool b_realloc;    // 1=(mono-)voice has been re-allocated and uses free-running osc (skip smpoff) (see StSample::b_free_running_osc)
 
    sUI voice_key;       // used to identify voices after (samplebank-) noteon. >0: voice is active. assigned in prepareToPlay()
    sUI last_voice_key;  // valid after noteoff/stop. used by findLastStartedVoiceBySample()
@@ -585,6 +590,9 @@ YC class StSampleVoice : public YAC_Object {
    sBool b_voiceplugin_osc_hint;
 
    sF64 modmatrix_slewed_src_values[STSAMPLE_NUM_MODMATRIX_ENTRIES];
+
+   sF32 global_reg_values_on[STSAMPLEPLAYER_NUM_GLOBAL_REGS];  // global reg values at note-on
+
 
   public:
    static void calc_mm_curve (sF32 _c, sUI _off);

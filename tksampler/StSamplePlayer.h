@@ -18,7 +18,7 @@
 // ----          28Apr2021, 20May2021, 17Jul2021, 01Aug2021, 10Aug2021, 30Aug2021, 10Dec2022
 // ----          20Dec2022, 12Apr2023, 20Aug2023, 07Sep2023, 21Jan2024, 28Sep2024, 01Oct2024
 // ----          03Oct2024, 31Oct2024, 15Nov2024, 14Jan2025, 28May2025, 29May2025, 30May2025
-// ----          13Jun2025, 16Jan2026
+// ----          13Jun2025, 16Jan2026, 09Apr2026
 // ----
 // ----
 // ----
@@ -190,6 +190,10 @@ YC class StSamplePlayer : public YAC_Object {
       st_plugin_cache_entry_t *first;
    } plugin_cache;
 
+   sF32 global_reg_values[STSAMPLEPLAYER_NUM_GLOBAL_REGS];
+   sF32 global_reg_incs  [STSAMPLEPLAYER_NUM_GLOBAL_REGS];
+   sF32 global_reg_decays[STSAMPLEPLAYER_NUM_GLOBAL_REGS];
+
   public:
    StSamplePlayer(void);
    ~StSamplePlayer();
@@ -203,6 +207,11 @@ YC class StSamplePlayer : public YAC_Object {
    st_plugin_cache_entry_t *findOrCreatePluginCacheEntry (st_plugin_info_t *_info, sUI _voiceIdx);
    void lazyCreateVoicePlugins (StSample *_sample, StSampleVoice *_nv);
    void freePluginCache (void);
+
+   void resetGlobalRegs (void);
+   void incGlobalReg (sUI _regIdx, sF32 _inc);  // @note-on
+   void incGlobalRegs (void);
+   void decayGlobalRegs (void);
 
    void addToNoteHistory (sSI _note);
 

@@ -19,7 +19,7 @@
 // ----          12Sep2020, 28Apr2021, 20May2021, 26Jun2021, 17Jul2021, 01Aug2021, 10Aug2021
 // ----          10Dec2022, 20Dec2022, 05Feb2023, 12Apr2023, 07Sep2023, 08Sep2023, 17Sep2023
 // ----          21Jan2024, 20Sep2024, 28Sep2024, 01Oct2024, 31Oct2024, 15Nov2024, 11Dec2024
-// ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026
+// ----          14Jan2025, 28May2025, 30May2025, 13Jun2025, 16Jan2026, 09Apr2026, 10Apr2026
 // ----
 // ----
 // ----
@@ -313,6 +313,53 @@ void StSamplePlayer::resetModulators(void) {
    note_history_write_idx = 0u;
 
    global_tick_advance = 0u;
+
+   resetGlobalRegs();
+}
+
+void StSamplePlayer::resetGlobalRegs(void) {
+   for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_GLOBAL_REGS; i++)
+   {
+      global_reg_values[i] = 0.0f;
+   }
+
+   global_reg_incs[0] = 0.3f;
+   global_reg_incs[1] = 0.24f;
+   global_reg_incs[2] = 0.17f;
+   global_reg_incs[3] = 0.09f;
+
+   global_reg_decays[0] = 0.8f;
+   global_reg_decays[1] = 0.93f;
+   global_reg_decays[2] = 0.955f;
+   global_reg_decays[3] = 0.97f;
+}
+
+void StSamplePlayer::incGlobalReg(sUI _regIdx, sF32 _inc) {
+   if(_regIdx < STSAMPLEPLAYER_NUM_GLOBAL_REGS)
+   {
+      global_reg_values[_regIdx] += _inc;
+      if(global_reg_values[_regIdx] > 1.0f)
+         global_reg_values[_regIdx] = 1.0f;
+   }
+}
+
+void StSamplePlayer::incGlobalRegs(void) {
+   for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_GLOBAL_REGS; i++)
+   {
+      incGlobalReg(i, global_reg_incs[i]);
+   }
+}
+
+void StSamplePlayer::decayGlobalRegs(void) {
+   for(sUI i = 0u; i < STSAMPLEPLAYER_NUM_GLOBAL_REGS; i++)
+   {
+      sF64 dcy = 1.0 - global_reg_decays[i];
+      dcy *= dcy;
+      global_reg_values[i] = sF32( (1.0 - dcy) * global_reg_values[i] );
+      // Dyac_host_printf("xxx global_reg_values[%u]=%f\n", i, global_reg_values[i]);
+      if(global_reg_values[i] < 0.000001f)
+         global_reg_values[i] = 0.0f;
+   }
 }
 
 void StSamplePlayer::freeVoices(void) {
@@ -1116,6 +1163,7 @@ StSampleVoice *StSamplePlayer::allocSampleVoice(StSample *_sample, sSI _note) {
 
       lazyCreateVoicePlugins(_sample, nv);
 
+      nv->b_realloc = YAC_FALSE;
       nv->prepareToPlay(_sample, next_voice_key, next_voice_alloc_idx++);
    }
 
@@ -1445,6 +1493,20 @@ sSI StSamplePlayer::startSample(YAC_Object *_sample, YAC_Object *_freqTableOrNul
             }
          }
 
+         if(sample->b_free_running_osc)
+         {
+            // Find voice that is already playing the sample
+            //  (note) e.g. when using mono analog-style envelopes
+            v = findActiveVoiceBySample(sample, YAC_TRUE/*bAllowInRelease*/);
+            // Dyac_host_printf("[~~~] StSamplePlayer::startSample: realloc v=%p\n", v);
+            if(NULL != v)
+            {
+               lazyCreateVoicePlugins(sample, v);  // should already exist
+               v->b_realloc = YAC_TRUE;
+               v->prepareToPlay(sample, next_voice_key, next_voice_alloc_idx++);
+            }
+         }
+
          if(NULL == v)
          {
             v = allocSampleVoice(sample, _note);
@@ -1660,6 +1722,7 @@ sSI StSamplePlayer::startSampleBank(YAC_Object *_sampleBank, YAC_Object *_freqTa
                         if(NULL != v)
                         {
                            lazyCreateVoicePlugins(c, v);  // should already exist
+                           v->b_realloc = c->b_free_running_osc;
                            v->prepareToPlay(c, next_voice_key, next_voice_alloc_idx++);
                         }
                      }
@@ -2140,6 +2203,7 @@ void StSamplePlayer::renderInt(YAC_FloatArray *buf, const sF32*const*_inputsOrNu
       {
          global_tick_advance++;
          float_block_off -= float_block_size;
+         decayGlobalRegs();
       }
 
       if(global_tick_advance > 0u)

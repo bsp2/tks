@@ -23,7 +23,8 @@
 // ----          30Aug2021, 05Sep2021, 24Nov2022, 20Dec2022, 21Dec2022, 22Dec2022, 23Dec2022
 // ----          27Dec2022, 30Dec2022, 07Apr2023, 12Apr2023, 18Jul2023, 01Sep2023, 08Sep2023
 // ----          19Sep2023, 18Nov2023, 08Jan2024, 10Jan2024, 15Jan2024, 16Jan2024, 26Apr2024
-// ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026
+// ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026, 09Apr2026
+// ----          10Apr2026
 // ----
 // ----
 // ----
@@ -279,10 +280,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
    mmdst.note_2         = 0.0f;
    mmdst.freq_2         = 0.0f;
 
-   mmdst.flt_cutoff   = 0.0f;
-   mmdst.flt_pan      = 0.0f;
-   mmdst.flt_offset   = 0.0f;
-   mmdst.flt_res      = 0.0f;
+   mmdst.flt_cutoff      = 0.0f;
+   mmdst.flt_pan         = 0.0f;
+   mmdst.flt_offset      = 0.0f;
+   mmdst.flt_res         = 0.0f;
+   mmdst.flt_aux_env_amt = 0.0f;
 
    mmdst_sampleoff    = 0.0f;
    mmdst_sampleshift  = 0.0f;
@@ -1837,6 +1839,38 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   }
                }
                break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG1:
+               srcVal = sample_player->global_reg_values[0];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG1_ON:
+               srcVal = global_reg_values_on[0];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG2:
+               srcVal = sample_player->global_reg_values[1];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG2_ON:
+               srcVal = global_reg_values_on[1];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG3:
+               srcVal = sample_player->global_reg_values[2];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG3_ON:
+               srcVal = global_reg_values_on[2];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG4:
+               srcVal = sample_player->global_reg_values[3];
+               break;
+
+            case STSAMPLE_MM_SRC_GLOBAL_REG4_ON:
+               srcVal = global_reg_values_on[3];
+               break;
          }
 
          if(bSrcValid)
@@ -2291,6 +2325,15 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   mmdst.flt_res *= srcValDef;
                Delse_mm_lerp(mmdst.flt_res);
                Dsignaltap(mmdst.flt_res);
+               break;
+
+               case STSAMPLE_MM_DST_FILTER_AUX_ENV_AMOUNT:
+               if(bAutoAdd)
+                  mmdst.flt_aux_env_amt += srcValDef;
+               else if(bAutoMul)
+                  mmdst.flt_aux_env_amt *= srcValDef;
+               Delse_mm_lerp(mmdst.flt_aux_env_amt);
+               Dsignaltap(mmdst.flt_aux_env_amt);
                break;
 
                case STSAMPLE_MM_DST_SAMPLE_OFFSET:
@@ -4283,6 +4326,94 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                      mmdst_var *= srcValDef;
                   Delse_mm_lerp(mmdst_var);
                   Dsignaltap(mmdst_var);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG1_INC:
+                  if(bAutoRep)
+                     sample_player->global_reg_incs[0] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_incs[0] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_incs[0] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_incs[0]);
+                  Dsignaltap(sample_player->global_reg_incs[0]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG1_DCY:
+                  if(bAutoRep)
+                     sample_player->global_reg_decays[0] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_decays[0] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_decays[0] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_decays[0]);
+                  Dsignaltap(sample_player->global_reg_decays[0]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG2_INC:
+                  if(bAutoRep)
+                     sample_player->global_reg_incs[1] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_incs[1] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_incs[1] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_incs[1]);
+                  Dsignaltap(sample_player->global_reg_incs[1]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG2_DCY:
+                  if(bAutoRep)
+                     sample_player->global_reg_decays[1] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_decays[1] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_decays[1] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_decays[1]);
+                  Dsignaltap(sample_player->global_reg_decays[1]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG3_INC:
+                  if(bAutoRep)
+                     sample_player->global_reg_incs[2] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_incs[2] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_incs[2] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_incs[2]);
+                  Dsignaltap(sample_player->global_reg_incs[2]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG3_DCY:
+                  if(bAutoRep)
+                     sample_player->global_reg_decays[2] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_decays[2] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_decays[2] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_decays[2]);
+                  Dsignaltap(sample_player->global_reg_decays[2]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG4_INC:
+                  if(bAutoRep)
+                     sample_player->global_reg_incs[3] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_incs[3] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_incs[3] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_incs[3]);
+                  Dsignaltap(sample_player->global_reg_incs[3]);
+                  break;
+
+               case STSAMPLE_MM_DST_GLOBAL_REG4_DCY:
+                  if(bAutoRep)
+                     sample_player->global_reg_decays[3] = srcValDef;
+                  else if(bAutoAdd)
+                     sample_player->global_reg_decays[3] += srcValDef;
+                  else if(bAutoMul)
+                     sample_player->global_reg_decays[3] *= srcValDef;
+                  Delse_mm_lerp(sample_player->global_reg_decays[3]);
+                  Dsignaltap(sample_player->global_reg_decays[3]);
                   break;
             }
          } // if bSrcValid

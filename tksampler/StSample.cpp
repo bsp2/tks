@@ -26,7 +26,7 @@
 // ----          11Aug2023, 16Aug2023, 13Sep2023, 19Sep2023, 22Sep2023, 17Nov2023, 18Nov2023
 // ----          10Jan2024, 13Jan2024, 14Jan2024, 15Jan2024, 16Jan2024, 19Apr2024, 04Aug2024
 // ----          15Aug2024, 28Sep2024, 30Sep2024, 01Oct2024, 03Oct2024, 05Oct2024, 13Oct2024
-// ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026
+// ----          14Oct2024, 08Nov2024, 09Nov2024, 11Dec2024, 03Jan2025, 09Jan2026, 10Apr2026
 // ----
 // ----
 // ----
@@ -364,6 +364,8 @@ void StSample::reinit(void) {
    ai_exp_down  = 0.2f;
    ai_lin_oct   = 3.0f;
    ai_lin_max   = 0.0f;
+
+   b_free_running_osc = YAC_FALSE;
 }
 
 StSample::~StSample() {
@@ -6479,4 +6481,12 @@ void StSample::_mmVarGetData(YAC_Value *_r) {
    fa->num_elements = fa->max_elements;
    fa->elements = mmvar_data;
    _r->initObject(fa, 1);
+}
+
+void StSample::_setEnableFreeRunningOsc(sBool _bEnable) {
+   b_free_running_osc = _bEnable;
+}
+
+sBool StSample::_getEnableFreeRunningOsc(void) {
+   return b_free_running_osc;
 }
