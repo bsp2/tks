@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StModSeqPlayer.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2023 by Bastian Spiegel.
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- created: 15Feb2020
 // ---- changed: 16Feb2020, 17Feb2020, 18Feb2020, 19Feb2020, 05Jun2020, 03Sep2020, 12Sep2020
-// ----          01Aug2021, 30Aug2021, 12Apr2023
+// ----          01Aug2021, 30Aug2021, 12Apr2023, 10Apr2026
 // ----
 // ----
 // ----
@@ -482,9 +482,31 @@ sF32 StModSeqPlayer::tick(sBool _bPulseGate) {
             stepT = 0.0f;
          else if(stepT > 1.0f)
             stepT = 1.0f;
-         stepT *= float(numSteps + 1u);
+         // // stepT *= float(numSteps + 1u);
+         stepT *= float(numSteps);  // [10Apr2026] vel 0..1 => steps0..16 (b_oneshot clips to 15)
          sUI stepC = (sUI)stepT;
          sUI stepN = stepC + 1u;
+
+         if(modseq->slew_amt >= 1.0f)
+         {
+            stepT = stepT - sF32(stepC);
+         }
+         else
+         {
+            // (note) slew 0%=s&h, slew 100%=smooth interpolation
+            stepT = stepT - sF32(sSI(stepT));
+            sF32 shAmt = powf(10.0f, (-1.0f + modseq->slew_amt) * 6.0f);
+            if(stepT >= 0.5f)
+            {
+               stepT = 1.0f - (0.5f-(stepT-0.5f))*shAmt;
+            }
+            else
+            {
+               stepT *= shAmt;
+            }
+         }
+         // Dyac_host_printf("xxx modseq->slew_amt=%f stepC=%u stepN=%u stepT=%f\n", modseq->slew_amt, stepC, stepN, stepT);
+
          if(modseq->b_oneshot)
          {
             // no loop (hold last step value)
@@ -497,21 +519,11 @@ sF32 StModSeqPlayer::tick(sBool _bPulseGate) {
          {
             // loop
             if(stepC >= numSteps)
-               stepC = 0u;
+               stepC -= numSteps;
             if(stepN >= numSteps)
-               stepN = 0u;
+               stepN -= numSteps;
          }
-         // (note) slew 0%=s&h, slew 100%=smooth interpolation
-         stepT = stepT - sF32(sSI(stepT));
-         sF32 shAmt = powf(10.0f, (-1.0f + modseq->slew_amt) * 6.0f);
-         if(stepT >= 0.5f)
-         {
-            stepT = 1.0f - (0.5f-(stepT-0.5f))*shAmt;
-         }
-         else
-         {
-            stepT *= shAmt;
-         }
+         // else: linear interpolation
          sF32 valC = modseq->step_values[stepC];
          sF32 valN = modseq->step_values[stepN];
          r = valC + (valN - valC) * stepT;
