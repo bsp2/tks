@@ -14,14 +14,14 @@ $ sudo apt-get install build-essential libsdl2-dev
 
 ## Clone the repo
 ~~~
-$ git clone https://github.com/bsp2/tks.git
+$ git clone https://github.com/bsp2/minnie.git
 ~~~
 
 ## Build the test cases
 ~~~
-$ cd tks
+$ cd minnie
 $ . ./setenv_linux.sh
-$ cd minnie/native/build/linux/`
+$ cd native/build/linux/`
 $ m clean ; m bin
 ~~~
 
