@@ -1,7 +1,7 @@
 // ----
 // ---- file   : fm_stack.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2023-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -11,7 +11,7 @@
 // ---- changed: 22Aug2023, 23Aug2023, 24Aug2023, 25Aug2023, 26Aug2023, 01Sep2023, 03Sep2023
 // ----          06Sep2023, 07Sep2023, 08Sep2023, 09Sep2023, 10Sep2023, 11Sep2023, 12Sep2023
 // ----          13Sep2023, 16Sep2023, 19Sep2023, 20Sep2023, 21Sep2023, 11Nov2023, 30Nov2023
-// ----          15Dec2023, 11Jan2024, 21Jan2024, 07Feb2024, 28Apr2024, 14Oct2024
+// ----          15Dec2023, 11Jan2024, 21Jan2024, 07Feb2024, 28Apr2024, 14Oct2024, 17Apr2026
 // ----
 // ----
 // ----
@@ -19,6 +19,7 @@
 // defined before #include (see lores.cpp, hires.cpp, medres.cpp, ..):
 //
 //   FMSTACK_LORES              // low resolution tables, logmul
+//   FMSTACK_LORESH             // low resolution tables
 //   FMSTACK_HIRES              // high resolution tables
 //   FMSTACK_MEDRES             // medium resolution tables, logmul
 //   FMSTACK_MEDRESH            // medium resolution tables
@@ -98,6 +99,8 @@ typedef float        sF32;
 #include <stdlib.h>
 #include <stdio.h>
 #endif
+
+#define NUM_WAVES 283
 
 // -------------------------------------------------
 
@@ -1082,270 +1085,290 @@ static const char *loc_mod_names[NUM_MODS] = {
    "MG8",            // 7: MOD_MGRP8
 };
 
-static const char *loc_wave_names[] = {
-   "  0: zero",      //   0
-   "  1: sin",       //   1
-   "  2: tx2",       //   2
-   "  3: tx3",       //   3
-   "  4: tx4",       //   4
-   "  5: tx5",       //   5
-   "  6: tx6",       //   6
-   "  7: tx7",       //   7
-   "  8: tx8",       //   8
-   "  9: tri",       //   9
-   " 10: tri90",     //  10
-   " 11: tri180",    //  11
-   " 12: tri270",    //  12
-   " 13: p1",        //  13
-   " 14: p2",        //  14
-   " 15: p3",        //  15
-   " 16: p4",        //  16
-   " 17: p5",        //  17
-   " 18: p6",        //  18
-   " 19: p7",        //  19
-   " 20: p8",        //  20
-   " 21: p9",        //  21
-   " 22: p10",       //  22
-   " 23: p11",       //  23
-   " 24: p12",       //  24
-   " 25: p13",       //  25
-   " 26: p14",       //  26
-   " 27: p15",       //  27
-   " 28: p16",       //  28
-   " 29: p17",       //  29
-   " 30: p18",       //  30
-   " 31: p19",       //  31
-   " 32: p20",       //  32
-   " 33: ep1",       //  33
-   " 34: ep2",       //  34
-   " 35: ep3",       //  35
-   " 36: ep4",       //  36
-   " 37: ep5",       //  37
-   " 38: ep6",       //  38
-   " 39: ep7",       //  39
-   " 40: ep8",       //  40
-   " 41: ep9",       //  41
-   " 42: ep10",      //  42
-   " 43: ep11",      //  43
-   " 44: ep12",      //  44
-   " 45: ep13",      //  45
-   " 46: ep14",      //  46
-   " 47: ep15",      //  47
-   " 48: ep16",      //  48
-   " 49: ep17",      //  49
-   " 50: ep18",      //  50
-   " 51: ep19",      //  51
-   " 52: ep20",      //  52
-   " 53: sq1",       //  53
-   " 54: sq2",       //  54
-   " 55: sq3",       //  55
-   " 56: sq4",       //  56
-   " 57: sq5",       //  57
-   " 58: sq6",       //  58
-   " 59: sq7",       //  59
-   " 60: sq8",       //  60
-   " 61: sq9",       //  61
-   " 62: sq10",      //  62
-   " 63: gap1",      //  63
-   " 64: gap2",      //  64
-   " 65: gap3",      //  65
-   " 66: gap4",      //  66
-   " 67: gap5",      //  67
-   " 68: gap6",      //  68
-   " 69: gap7",      //  69
-   " 70: gap8",      //  70
-   " 71: gap9",      //  71
-   " 72: gap10",     //  72
-   " 73: dbl1",      //  73
-   " 74: dbl2",      //  74
-   " 75: dbl3",      //  75
-   " 76: dbl4",      //  76
-   " 77: dbl5",      //  77
-   " 78: dbl6",      //  78
-   " 79: dbl7",      //  79
-   " 80: dbl8",      //  80
-   " 81: dbl9",      //  81
-   " 82: dbl10",     //  82
-   " 83: sync1",     //  83
-   " 84: sync2",     //  84
-   " 85: sync3",     //  85
-   " 86: sync4",     //  86
-   " 87: sync5",     //  87
-   " 88: sync6",     //  88
-   " 89: sync7",     //  89
-   " 90: sync8",     //  90
-   " 91: sync9",     //  91
-   " 92: sync10",    //  92
-   " 93: sync11",    //  93
-   " 94: sync12",    //  94
-   " 95: sync13",    //  95
-   " 96: sync14",    //  96
-   " 97: sync15",    //  97
-   " 98: sync16",    //  98
-   " 99: sync17",    //  99
-   "100: sync18",    // 100
-   "101: sync19",    // 101
-   "102: sync20",    // 102
-   "103: drive1",    // 103
-   "104: drive2",    // 104
-   "105: drive3",    // 105
-   "106: drive4",    // 106
-   "107: drive5",    // 107
-   "108: drive6",    // 108
-   "109: drive7",    // 109
-   "110: drive8",    // 110
-   "111: drive9",    // 111
-   "112: drive10",   // 112
-   "113: drive11",   // 113
-   "114: drive12",   // 114
-   "115: drive13",   // 115
-   "116: drive14",   // 116
-   "117: drive15",   // 117
-   "118: drive16",   // 118
-   "119: drive17",   // 119
-   "120: drive18",   // 120
-   "121: drive19",   // 121
-   "122: drive20",   // 122
-   "123: sawup1",    // 123
-   "124: sawup2",    // 124
-   "125: sawup3",    // 125
-   "126: sawup4",    // 126
-   "127: sawup5",    // 127
-   "128: sawup6",    // 128
-   "129: sawup7",    // 129
-   "130: sawup8",    // 130
-   "131: sawup9",    // 131
-   "132: sawup10",   // 132
-   "133: sawdn1",    // 133
-   "134: sawdn2",    // 134
-   "135: sawdn3",    // 135
-   "136: sawdn4",    // 136
-   "137: sawdn5",    // 137
-   "138: sawdn6",    // 138
-   "139: sawdn7",    // 139
-   "140: sawdn8",    // 140
-   "141: sawdn9",    // 141
-   "142: sawdn10",   // 142
-   "143: br1",       // 143
-   "144: br2",       // 144
-   "145: br3",       // 145
-   "146: br4",       // 146
-   "147: br5",       // 147
-   "148: br6",       // 148
-   "149: br7",       // 149
-   "150: br8",       // 150
-   "151: br9",       // 151
-   "152: br10",      // 152
-   "153: br11",      // 153
-   "154: br12",      // 154
-   "155: br13",      // 155
-   "156: br14",      // 156
-   "157: br15",      // 157
-   "158: br16",      // 158
-   "159: br17",      // 159
-   "160: br18",      // 160
-   "161: br19",      // 161
-   "162: br20",      // 162
-   "163: sr1",       // 163
-   "164: sr2",       // 164
-   "165: sr3",       // 165
-   "166: sr4",       // 166
-   "167: sr5",       // 167
-   "168: sr6",       // 168
-   "169: sr7",       // 169
-   "170: sr8",       // 170
-   "171: sr9",       // 171
-   "172: sr10",      // 172
-   "173: sr11",      // 173
-   "174: sr12",      // 174
-   "175: sr13",      // 175
-   "176: sr14",      // 176
-   "177: sr15",      // 177
-   "178: sr16",      // 178
-   "179: sr17",      // 179
-   "180: sr18",      // 180
-   "181: sr19",      // 181
-   "182: sr20",      // 182
-   "183: sawsq1",    // 183
-   "184: sawsq2",    // 184
-   "185: sawsq3",    // 185
-   "186: sawsq4",    // 186
-   "187: sawsq5",    // 187
-   "188: sawsq6",    // 188
-   "189: sawsq7",    // 189
-   "190: sawsq8",    // 190
-   "191: sawsq9",    // 191
-   "192: sawsq10",   // 192
-   "193: sawsq11",   // 193
-   "194: sawsq12",   // 194
-   "195: sawsq13",   // 195
-   "196: sawsq14",   // 196
-   "197: sawsq15",   // 197
-   "198: sawsq16",   // 198
-   "199: sawsq17",   // 199
-   "200: sawsq18",   // 200
-   "201: sawsq19",   // 201
-   "202: sawsq20",   // 202
-   "203: bend1",     // 203
-   "204: bend2",     // 204
-   "205: bend3",     // 205
-   "206: bend4",     // 206
-   "207: bend5",     // 207
-   "208: bend6",     // 208
-   "209: bend7",     // 209
-   "210: bend8",     // 210
-   "211: bend9",     // 211
-   "212: bend10",    // 212
-   "213: bend11",    // 213
-   "214: bend12",    // 214
-   "215: bend13",    // 215
-   "216: bend14",    // 216
-   "217: bend15",    // 217
-   "218: bend16",    // 218
-   "219: bend17",    // 219
-   "220: bend18",    // 220
-   "221: bend19",    // 221
-   "222: bend20",    // 222
-   "223: warp1",     // 223
-   "224: warp2",     // 224
-   "225: warp3",     // 225
-   "226: warp4",     // 226
-   "227: warp5",     // 227
-   "228: warp6",     // 228
-   "229: warp7",     // 229
-   "230: warp8",     // 230
-   "231: warp9",     // 231
-   "232: warp10",    // 232
-   "233: warp11",    // 233
-   "234: warp12",    // 234
-   "235: warp13",    // 235
-   "236: warp14",    // 236
-   "237: warp15",    // 237
-   "238: warp16",    // 238
-   "239: warp17",    // 239
-   "240: warp18",    // 240
-   "241: warp19",    // 241
-   "242: warp20",    // 242
-   "243: phase1",    // 243
-   "244: phase2",    // 244
-   "245: phase3",    // 245
-   "246: phase4",    // 246
-   "247: phase5",    // 247
-   "248: phase6",    // 248
-   "249: phase7",    // 249
-   "250: phase8",    // 250
-   "251: phase9",    // 251
-   "252: phase10",   // 252
-   "253: phase11",   // 253
-   "254: phase12",   // 254
-   "255: phase13",   // 255
-   "256: phase14",   // 256
-   "257: phase15",   // 257
-   "258: phase16",   // 258
-   "259: phase17",   // 259
-   "260: phase18",   // 260
-   "261: phase19",   // 261
-   "262: phase20",   // 262
+static const char *loc_wave_names[NUM_WAVES] = {
+   "  0: zero",       //   0
+   "  1: sin",        //   1
+   "  2: tx2",        //   2
+   "  3: tx3",        //   3
+   "  4: tx4",        //   4
+   "  5: tx5",        //   5
+   "  6: tx6",        //   6
+   "  7: tx7",        //   7
+   "  8: tx8",        //   8
+   "  9: tri",        //   9
+   " 10: tri90",      //  10
+   " 11: tri180",     //  11
+   " 12: tri270",     //  12
+   " 13: p1",         //  13
+   " 14: p2",         //  14
+   " 15: p3",         //  15
+   " 16: p4",         //  16
+   " 17: p5",         //  17
+   " 18: p6",         //  18
+   " 19: p7",         //  19
+   " 20: p8",         //  20
+   " 21: p9",         //  21
+   " 22: p10",        //  22
+   " 23: p11",        //  23
+   " 24: p12",        //  24
+   " 25: p13",        //  25
+   " 26: p14",        //  26
+   " 27: p15",        //  27
+   " 28: p16",        //  28
+   " 29: p17",        //  29
+   " 30: p18",        //  30
+   " 31: p19",        //  31
+   " 32: p20",        //  32
+   " 33: ep1",        //  33
+   " 34: ep2",        //  34
+   " 35: ep3",        //  35
+   " 36: ep4",        //  36
+   " 37: ep5",        //  37
+   " 38: ep6",        //  38
+   " 39: ep7",        //  39
+   " 40: ep8",        //  40
+   " 41: ep9",        //  41
+   " 42: ep10",       //  42
+   " 43: ep11",       //  43
+   " 44: ep12",       //  44
+   " 45: ep13",       //  45
+   " 46: ep14",       //  46
+   " 47: ep15",       //  47
+   " 48: ep16",       //  48
+   " 49: ep17",       //  49
+   " 50: ep18",       //  50
+   " 51: ep19",       //  51
+   " 52: ep20",       //  52
+   " 53: sq1",        //  53
+   " 54: sq2",        //  54
+   " 55: sq3",        //  55
+   " 56: sq4",        //  56
+   " 57: sq5",        //  57
+   " 58: sq6",        //  58
+   " 59: sq7",        //  59
+   " 60: sq8",        //  60
+   " 61: sq9",        //  61
+   " 62: sq10",       //  62
+   " 63: gap1",       //  63
+   " 64: gap2",       //  64
+   " 65: gap3",       //  65
+   " 66: gap4",       //  66
+   " 67: gap5",       //  67
+   " 68: gap6",       //  68
+   " 69: gap7",       //  69
+   " 70: gap8",       //  70
+   " 71: gap9",       //  71
+   " 72: gap10",      //  72
+   " 73: dbl1",       //  73
+   " 74: dbl2",       //  74
+   " 75: dbl3",       //  75
+   " 76: dbl4",       //  76
+   " 77: dbl5",       //  77
+   " 78: dbl6",       //  78
+   " 79: dbl7",       //  79
+   " 80: dbl8",       //  80
+   " 81: dbl9",       //  81
+   " 82: dbl10",      //  82
+   " 83: sync1",      //  83
+   " 84: sync2",      //  84
+   " 85: sync3",      //  85
+   " 86: sync4",      //  86
+   " 87: sync5",      //  87
+   " 88: sync6",      //  88
+   " 89: sync7",      //  89
+   " 90: sync8",      //  90
+   " 91: sync9",      //  91
+   " 92: sync10",     //  92
+   " 93: sync11",     //  93
+   " 94: sync12",     //  94
+   " 95: sync13",     //  95
+   " 96: sync14",     //  96
+   " 97: sync15",     //  97
+   " 98: sync16",     //  98
+   " 99: sync17",     //  99
+   "100: sync18",     // 100
+   "101: sync19",     // 101
+   "102: sync20",     // 102
+   "103: drive1",     // 103
+   "104: drive2",     // 104
+   "105: drive3",     // 105
+   "106: drive4",     // 106
+   "107: drive5",     // 107
+   "108: drive6",     // 108
+   "109: drive7",     // 109
+   "110: drive8",     // 110
+   "111: drive9",     // 111
+   "112: drive10",    // 112
+   "113: drive11",    // 113
+   "114: drive12",    // 114
+   "115: drive13",    // 115
+   "116: drive14",    // 116
+   "117: drive15",    // 117
+   "118: drive16",    // 118
+   "119: drive17",    // 119
+   "120: drive18",    // 120
+   "121: drive19",    // 121
+   "122: drive20",    // 122
+   "123: sawup1",     // 123
+   "124: sawup2",     // 124
+   "125: sawup3",     // 125
+   "126: sawup4",     // 126
+   "127: sawup5",     // 127
+   "128: sawup6",     // 128
+   "129: sawup7",     // 129
+   "130: sawup8",     // 130
+   "131: sawup9",     // 131
+   "132: sawup10",    // 132
+   "133: sawdn1",     // 133
+   "134: sawdn2",     // 134
+   "135: sawdn3",     // 135
+   "136: sawdn4",     // 136
+   "137: sawdn5",     // 137
+   "138: sawdn6",     // 138
+   "139: sawdn7",     // 139
+   "140: sawdn8",     // 140
+   "141: sawdn9",     // 141
+   "142: sawdn10",    // 142
+   "143: br1",        // 143
+   "144: br2",        // 144
+   "145: br3",        // 145
+   "146: br4",        // 146
+   "147: br5",        // 147
+   "148: br6",        // 148
+   "149: br7",        // 149
+   "150: br8",        // 150
+   "151: br9",        // 151
+   "152: br10",       // 152
+   "153: br11",       // 153
+   "154: br12",       // 154
+   "155: br13",       // 155
+   "156: br14",       // 156
+   "157: br15",       // 157
+   "158: br16",       // 158
+   "159: br17",       // 159
+   "160: br18",       // 160
+   "161: br19",       // 161
+   "162: br20",       // 162
+   "163: sr1",        // 163
+   "164: sr2",        // 164
+   "165: sr3",        // 165
+   "166: sr4",        // 166
+   "167: sr5",        // 167
+   "168: sr6",        // 168
+   "169: sr7",        // 169
+   "170: sr8",        // 170
+   "171: sr9",        // 171
+   "172: sr10",       // 172
+   "173: sr11",       // 173
+   "174: sr12",       // 174
+   "175: sr13",       // 175
+   "176: sr14",       // 176
+   "177: sr15",       // 177
+   "178: sr16",       // 178
+   "179: sr17",       // 179
+   "180: sr18",       // 180
+   "181: sr19",       // 181
+   "182: sr20",       // 182
+   "183: sawsq1",     // 183
+   "184: sawsq2",     // 184
+   "185: sawsq3",     // 185
+   "186: sawsq4",     // 186
+   "187: sawsq5",     // 187
+   "188: sawsq6",     // 188
+   "189: sawsq7",     // 189
+   "190: sawsq8",     // 190
+   "191: sawsq9",     // 191
+   "192: sawsq10",    // 192
+   "193: sawsq11",    // 193
+   "194: sawsq12",    // 194
+   "195: sawsq13",    // 195
+   "196: sawsq14",    // 196
+   "197: sawsq15",    // 197
+   "198: sawsq16",    // 198
+   "199: sawsq17",    // 199
+   "200: sawsq18",    // 200
+   "201: sawsq19",    // 201
+   "202: sawsq20",    // 202
+   "203: bend1",      // 203
+   "204: bend2",      // 204
+   "205: bend3",      // 205
+   "206: bend4",      // 206
+   "207: bend5",      // 207
+   "208: bend6",      // 208
+   "209: bend7",      // 209
+   "210: bend8",      // 210
+   "211: bend9",      // 211
+   "212: bend10",     // 212
+   "213: bend11",     // 213
+   "214: bend12",     // 214
+   "215: bend13",     // 215
+   "216: bend14",     // 216
+   "217: bend15",     // 217
+   "218: bend16",     // 218
+   "219: bend17",     // 219
+   "220: bend18",     // 220
+   "221: bend19",     // 221
+   "222: bend20",     // 222
+   "223: warp1",      // 223
+   "224: warp2",      // 224
+   "225: warp3",      // 225
+   "226: warp4",      // 226
+   "227: warp5",      // 227
+   "228: warp6",      // 228
+   "229: warp7",      // 229
+   "230: warp8",      // 230
+   "231: warp9",      // 231
+   "232: warp10",     // 232
+   "233: warp11",     // 233
+   "234: warp12",     // 234
+   "235: warp13",     // 235
+   "236: warp14",     // 236
+   "237: warp15",     // 237
+   "238: warp16",     // 238
+   "239: warp17",     // 239
+   "240: warp18",     // 240
+   "241: warp19",     // 241
+   "242: warp20",     // 242
+   "243: phase1",     // 243
+   "244: phase2",     // 244
+   "245: phase3",     // 245
+   "246: phase4",     // 246
+   "247: phase5",     // 247
+   "248: phase6",     // 248
+   "249: phase7",     // 249
+   "250: phase8",     // 250
+   "251: phase9",     // 251
+   "252: phase10",    // 252
+   "253: phase11",    // 253
+   "254: phase12",    // 254
+   "255: phase13",    // 255
+   "256: phase14",    // 256
+   "257: phase15",    // 257
+   "258: phase16",    // 258
+   "259: phase17",    // 259
+   "260: phase18",    // 260
+   "261: phase19",    // 261
+   "262: phase20",    // 262
+   "263: taylor3:1",  // 263
+   "264: taylor3:2",  // 264
+   "265: taylor3:3",  // 265
+   "266: taylor3:4",  // 266
+   "267: taylor3:5",  // 267
+   "268: taylor3:6",  // 268
+   "269: taylor3:7",  // 269
+   "270: taylor3:8",  // 270
+   "271: taylor3:9",  // 271
+   "272: taylor3:10", // 272
+   "273: taylor3:11", // 273
+   "274: taylor3:12", // 274
+   "275: taylor3:13", // 275
+   "276: taylor3:14", // 276
+   "277: taylor3:15", // 277
+   "278: taylor3:16", // 278
+   "279: taylor3:17", // 279
+   "280: taylor3:18", // 280
+   "281: taylor3:19", // 281
+   "282: taylor3:20", // 282
 };
 
 // -------------------------------------------------
@@ -1754,8 +1777,27 @@ static float loc_lut_logsinph17    [LOGWAV_TBLSZ];
 static float loc_lut_logsinph18    [LOGWAV_TBLSZ];
 static float loc_lut_logsinph19    [LOGWAV_TBLSZ];
 static float loc_lut_logsinph20    [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph1 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph2 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph3 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph4 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph5 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph6 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph7 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph8 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph9 [LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph10[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph11[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph12[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph13[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph14[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph15[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph16[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph17[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph18[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph19[LOGWAV_TBLSZ];
+static float loc_lut_logtaylor3ph20[LOGWAV_TBLSZ];
 
-#define NUM_WAVES 263
 static float *loc_waves[NUM_WAVES] = {
    loc_lut_logzero,         //   0
    loc_lut_logsin,          //   1
@@ -2020,6 +2062,26 @@ static float *loc_waves[NUM_WAVES] = {
    loc_lut_logsinph18,      // 260
    loc_lut_logsinph19,      // 261
    loc_lut_logsinph20,      // 262
+   loc_lut_logtaylor3ph1,   // 263
+   loc_lut_logtaylor3ph2,   // 264
+   loc_lut_logtaylor3ph3,   // 265
+   loc_lut_logtaylor3ph4,   // 266
+   loc_lut_logtaylor3ph5,   // 267
+   loc_lut_logtaylor3ph6,   // 268
+   loc_lut_logtaylor3ph7,   // 269
+   loc_lut_logtaylor3ph8,   // 270
+   loc_lut_logtaylor3ph9,   // 271
+   loc_lut_logtaylor3ph10,  // 272
+   loc_lut_logtaylor3ph11,  // 273
+   loc_lut_logtaylor3ph12,  // 274
+   loc_lut_logtaylor3ph13,  // 275
+   loc_lut_logtaylor3ph14,  // 276
+   loc_lut_logtaylor3ph15,  // 277
+   loc_lut_logtaylor3ph16,  // 278
+   loc_lut_logtaylor3ph17,  // 279
+   loc_lut_logtaylor3ph18,  // 280
+   loc_lut_logtaylor3ph19,  // 281
+   loc_lut_logtaylor3ph20,  // 282
 };
 
 #ifdef LOGMUL
@@ -2924,6 +2986,7 @@ static void loc_calc_lut_logsinsr    (float *_d, sF32 _f);
 static void loc_calc_lut_logsinsawsq (float *_d, sF32 _f);
 static void loc_calc_lut_logsinbd    (float *_d, sF32 _exp);
 static void loc_calc_lut_logsinwarp  (float *_d, sF32 _exp);
+static void loc_calc_lut_logtaylor3  (float *_d, sF32 _phase);
 
 #ifdef LOGMUL
 static void loc_calc_lut_exp (float *_d);
@@ -3668,6 +3731,30 @@ static void loc_calc_lut_logsinwarp(float *_d, sF32 _exp) {
       x += (1.0f / LOGWAV_TBLMASK);
    } // loop LOGWAV_TBLSZ
 } /* end loc_calc_lut_logsinwarp() */
+
+static void loc_calc_lut_taylor3(float *_d, float _phase) {
+   float x = 0.0f;
+   loop(LOGWAV_TBLSZ)
+   {
+      float ph = ffrac_s(x);
+      ph += _phase;
+      if(ph >= 1.0f)
+         ph -= 1.0f;
+      ph *= 6.28318530718f;
+      ph -= 3.14159265359f;
+      ph *= 0.78f;
+      float out = ph - (ph*ph*ph * (1.0f/6.0f));
+
+#ifdef LOGMUL
+      out = loc_level_to_lut_log(out);
+#endif // LOGMUL
+
+      _d[i] = out;
+
+      // Next x
+      x += (1.0f / LOGWAV_TBLMASK);
+   } // loop LOGWAV_TBLSZ
+} /* end loc_calc_lut_taylor3() */
 
 static void loc_prepare(st_plugin_voice_t *_voice,
                         const sUI  _numFramesOrig,
@@ -4727,6 +4814,27 @@ st_plugin_info_t *FMSTACK_INIT(void) {
       loc_calc_lut_logsin(loc_lut_logsinph18, 0.0f + (17.0f / 20.0f));
       loc_calc_lut_logsin(loc_lut_logsinph19, 0.0f + (18.0f / 20.0f));
       loc_calc_lut_logsin(loc_lut_logsinph20, 0.0f + (19.0f / 20.0f));
+      // taylor3:
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph1,  0.0f + ( 0.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph2,  0.0f + ( 1.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph3,  0.0f + ( 2.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph4,  0.0f + ( 3.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph5,  0.0f + ( 4.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph6,  0.0f + ( 5.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph7,  0.0f + ( 6.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph8,  0.0f + ( 7.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph9,  0.0f + ( 8.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph10, 0.0f + ( 9.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph11, 0.0f + (10.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph12, 0.0f + (11.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph13, 0.0f + (12.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph14, 0.0f + (13.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph15, 0.0f + (14.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph16, 0.0f + (15.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph17, 0.0f + (16.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph18, 0.0f + (17.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph19, 0.0f + (18.0f / 20.0f));
+      loc_calc_lut_taylor3(loc_lut_logtaylor3ph20, 0.0f + (19.0f / 20.0f));
 
 
 #ifdef SAVE
@@ -5010,6 +5118,27 @@ st_plugin_info_t *FMSTACK_INIT(void) {
       loc_save_lut(loc_lut_logsinph18);
       loc_save_lut(loc_lut_logsinph19);
       loc_save_lut(loc_lut_logsinph20);
+      // taylor3:
+      loc_save_lut(loc_lut_logtaylor3ph1);
+      loc_save_lut(loc_lut_logtaylor3ph2);
+      loc_save_lut(loc_lut_logtaylor3ph3);
+      loc_save_lut(loc_lut_logtaylor3ph4);
+      loc_save_lut(loc_lut_logtaylor3ph5);
+      loc_save_lut(loc_lut_logtaylor3ph6);
+      loc_save_lut(loc_lut_logtaylor3ph7);
+      loc_save_lut(loc_lut_logtaylor3ph8);
+      loc_save_lut(loc_lut_logtaylor3ph9);
+      loc_save_lut(loc_lut_logtaylor3ph10);
+      loc_save_lut(loc_lut_logtaylor3ph11);
+      loc_save_lut(loc_lut_logtaylor3ph12);
+      loc_save_lut(loc_lut_logtaylor3ph13);
+      loc_save_lut(loc_lut_logtaylor3ph14);
+      loc_save_lut(loc_lut_logtaylor3ph15);
+      loc_save_lut(loc_lut_logtaylor3ph16);
+      loc_save_lut(loc_lut_logtaylor3ph17);
+      loc_save_lut(loc_lut_logtaylor3ph18);
+      loc_save_lut(loc_lut_logtaylor3ph19);
+      loc_save_lut(loc_lut_logtaylor3ph20);
 
       loc_save_file_close();
 

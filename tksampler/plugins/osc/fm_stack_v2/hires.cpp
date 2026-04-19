@@ -16,7 +16,7 @@
 
 #include "../../../plugin.h"
 
-// #define FMSTACK_SAVE               defined
+#define FMSTACK_SAVE               defined
 #define FMSTACK_HIRES              defined
 #define FMSTACK_HIRES_AENV         defined
 #define FMSTACK_HIRES_PENV         defined
