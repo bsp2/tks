@@ -195,6 +195,10 @@ YC class CLAPPlugin : public YAC_Object {
 
    // true=startProcessing() called. false=initial (or stopProcessing() called)
    sBool b_processing;
+   sBool b_queued_start_processing;
+   sBool b_queued_stop_processing;
+
+   sBool b_queued_flush_parameters;
 
    sBool b_debug;
 
@@ -379,7 +383,20 @@ YC class CLAPPlugin : public YAC_Object {
    YM sBool loadState (YAC_Object *_ifs);
 
   public:
+   // Queue startProcessing() call (handled in next process() call)
+   //  (note) safe to call from main or audio thread
+   YM void queueStartProcessing (void);
+
+   // Queue stopProcessing() call (handled in next process() call)
+   //  (note) safe to call from main or audio thread
+   YM void queueStopProcessing (void);
+
+   YM sBool isProcessing (void);
+
+   // [audio-thread] (auto-called called by process() when queued)
    YM void startProcessing (void);
+
+   // [audio-thread] (auto-called called by process() when queued)
    YM void stopProcessing (void);
 
    // see clap-main/include/clap/plugin.h
@@ -434,7 +451,12 @@ YC class CLAPPlugin : public YAC_Object {
    //  (note) clears the event list afterwards
    void processOutputEvents (void);
 
+   // Queue flushParameters() call (handled in next process() call)
+   //  (note) safe to call from main or audio thread
+   void queueFlushParameters (void);
+
    // Called when plugin is not processing (i/o events are handled in audio thread process() otherwise)
+   //  (note) must be called in audio-thread
    void flushParameters (void);
 
    // Process events and fill output buffers with 0

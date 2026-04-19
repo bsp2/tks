@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 24Sep2024, 27Sep2024
-///          29Nov2024, 06Apr2026
+///          29Nov2024, 06Apr2026, 09Apr2026
 ///
 ///
 ///
@@ -66,8 +66,7 @@ static void CLAP_ABI loc_clap_host_params_request_flush(const clap_host_t *host)
    const char *pluginId = clapPlugin->plugin_desc->id;
    Dprintf_verbose("[>>>] [\"%s\":\"%s\"] clap_host_params.request_flush()\n", pathName, pluginId);
    // (note) param flush must be handled in audio thread while plugin is active (=> process())
-   if(!clapPlugin->b_processing)
-      clapPlugin->flushParameters();
+   clapPlugin->queueFlushParameters();
 }
 
 
@@ -161,6 +160,20 @@ static void CLAP_ABI loc_clap_host_gui_closed(const clap_host_t *host, bool was_
 
 #endif // SKIP_CLAP_UI
 
+
+// ---------------------------------------------------------------------------- clap_host_thread_check_t (CLAP_EXT_THREAD_CHECK)
+static clap_host_thread_check_t loc_ext_clap_host_thread_check;
+
+static bool CLAP_ABI loc_clap_host_thread_check_is_main_thread(const clap_host_t *host) {
+   (void)host;
+   return yac_host->yacThreadIsMain();
+}
+
+static bool CLAP_ABI loc_clap_host_thread_check_is_audio_thread(const clap_host_t *host) {
+   (void)host;
+   return !yac_host->yacThreadIsMain();
+}
+
 // ---------------------------------------------------------------------------- clap_host_t
 
 // Query an extension.
@@ -205,6 +218,12 @@ const void *CLAP_ABI loc_host_get_extension(const struct clap_host *host, const 
       return &loc_ext_clap_host_gui;
    }
 #endif // SKIP_CLAP_UI
+
+   if(!strncmp(extension_id, CLAP_EXT_THREAD_CHECK, 17))
+   {
+      Dprintf("[trc] CLAPPlugin:loc_host_get_extension:   return &loc_ext_clap_host_thread_check\n");
+      return &loc_ext_clap_host_thread_check;
+   }
 
    return NULL;
 }
@@ -324,6 +343,9 @@ CLAPPluginBundle::CLAPPluginBundle(void) {
    loc_ext_clap_host_gui.request_hide         = &loc_clap_host_gui_request_hide;
    loc_ext_clap_host_gui.closed               = &loc_clap_host_gui_closed;
 #endif // SKIP_CLAP_UI
+
+   loc_ext_clap_host_thread_check.is_main_thread  = &loc_clap_host_thread_check_is_main_thread;
+   loc_ext_clap_host_thread_check.is_audio_thread = &loc_clap_host_thread_check_is_audio_thread;
 
    num_open_plugins = 0;
 }
@@ -677,6 +699,10 @@ CLAPPlugin::CLAPPlugin(void) {
    tkclap_window_lazy_init_mtx_windows();
 
    b_processing = YAC_FALSE;
+   b_queued_start_processing = YAC_FALSE;
+   b_queued_stop_processing = YAC_FALSE;
+
+   b_queued_flush_parameters = YAC_FALSE;
 
    b_report_transport_playing = YAC_TRUE;
 }
@@ -700,7 +726,7 @@ void CLAPPlugin::destroyPluginInstance(void) {
       const char *pluginId = plugin_desc->id;
 
       if(b_processing)
-         stopProcessing();
+         queueStopProcessing();  // stopProcessing() only allowed on audio-thread
 
       closeEditor();
 
@@ -1662,7 +1688,26 @@ sBool CLAPPlugin::loadState(YAC_Object *_ifs) {
    return YAC_FALSE;
 }
 
+void CLAPPlugin::queueStartProcessing(void) {
+   if(NULL != plugin)
+   {
+      b_queued_start_processing = YAC_TRUE;
+   }
+}
+
+void CLAPPlugin::queueStopProcessing(void) {
+   if(NULL != plugin)
+   {
+      b_queued_stop_processing = YAC_TRUE;
+   }
+}
+
+sBool CLAPPlugin::isProcessing(void) {
+   return (NULL != plugin) && b_processing;
+}
+
 void CLAPPlugin::startProcessing(void) {
+   // [audio-thread]
    if(NULL != plugin && !b_processing)
    {
       plugin->start_processing(plugin);
@@ -1671,6 +1716,7 @@ void CLAPPlugin::startProcessing(void) {
 }
 
 void CLAPPlugin::stopProcessing(void) {
+   // [audio-thread]
    if(NULL != plugin && b_processing)
    {
       plugin->stop_processing(plugin);
@@ -2015,6 +2061,13 @@ void CLAPPlugin::processOutputEvents(void) {
    output_events.num_ev = 0u;
 }
 
+void CLAPPlugin::queueFlushParameters(void) {
+   if(NULL != plugin)
+   {
+      b_queued_flush_parameters = YAC_TRUE;
+   }
+}
+
 void CLAPPlugin::flushParameters(void) {
    // (note) called by loc_clap_host_params_request_flush() or processSilence()
    if(NULL != ext_params)
@@ -2049,6 +2102,7 @@ void CLAPPlugin::processSilence(sUI _numFrames) {
 
       // (note) calls processOutputEvents()
       flushParameters();
+      b_queued_flush_parameters = YAC_FALSE;
 
       // Fill output buffers with 0
       for(sUI i = 0u; i < num_audio_out; i++)
@@ -2066,6 +2120,24 @@ void CLAPPlugin::processSilence(sUI _numFrames) {
 void CLAPPlugin::process(sUI _numFrames) {
    if(NULL != plugin)
    {
+      if(b_queued_stop_processing)
+      {
+         stopProcessing();
+         b_queued_stop_processing = YAC_FALSE;
+      }
+
+      if(b_queued_start_processing)
+      {
+         startProcessing();
+         b_queued_start_processing = YAC_FALSE;
+      }
+
+      if(b_queued_flush_parameters)
+      {
+         flushParameters();
+         b_queued_flush_parameters = YAC_FALSE;
+      }
+
       lockEvents();
 
       clap_process_t process;
@@ -2077,10 +2149,16 @@ void CLAPPlugin::process(sUI _numFrames) {
       evTransport.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_HAS_BEATS_TIMELINE;
 
       evTransport.tempo          = (sF64)tkclap_bpm;
-      evTransport.song_pos_beats = (int64_t)tkclap_song_pos_beats;
+      evTransport.song_pos_beats = (clap_beattime)round(CLAP_BEATTIME_FACTOR * tkclap_song_pos_beats);
       // Dprintf("xxx evTransport.song_pos_beats=%f playing=%d report=%d\n", tkclap_song_pos_beats, tkclap_song_playing, b_report_transport_playing);
 
-      if(tkclap_song_playing && b_report_transport_playing)
+#if 1
+      // (note) switching from not playing => playing causes first note to be cut in U-He plugins
+      //         => always report IS_PLAYING (song_pos_beats is frozen in not-playing state)
+      //           ==> it's also a plugin setting ("Auto Reset on Playback" => turn it off)
+      if(b_report_transport_playing && tkclap_song_playing)
+      // // if( (YAC_TRUE == b_report_transport_playing) || ((YAC_MAYBE == b_report_transport_playing) && tkclap_song_playing) )
+#endif
          evTransport.flags |= CLAP_TRANSPORT_IS_PLAYING;
 
       process.steady_time         = -1;  // n/a
@@ -2093,10 +2171,13 @@ void CLAPPlugin::process(sUI _numFrames) {
       process.in_events           = &input_events.clap_input_events;
       process.out_events          = &output_events.clap_output_events;
 
-      Dprintf_verbose("[trc] CLAPPlugin::process: BEGIN numFrames=%u\n", _numFrames);
-      // (note) status=1=CLAP_PROCESS_CONTINUE   see clap-main/include/clap/process.h
-      clap_process_status status = plugin->process(plugin, &process);
-      Dprintf_verbose("[trc] CLAPPlugin::process: END status=%d\n", status);
+      if(b_processing)
+      {
+         Dprintf_verbose("[trc] CLAPPlugin::process: BEGIN numFrames=%u\n", _numFrames);
+         // (note) status=1=CLAP_PROCESS_CONTINUE   see clap-main/include/clap/process.h
+         clap_process_status status = plugin->process(plugin, &process);
+         Dprintf_verbose("[trc] CLAPPlugin::process: END status=%d\n", status);
+      }
 
       input_events.num_ev = 0u;
 
