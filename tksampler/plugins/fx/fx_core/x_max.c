@@ -1,19 +1,20 @@
 // ----
 // ---- file   : x_max.c
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2020-2024 by Bastian Spiegel. 
-// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ---- legal  : (c) 2020-2026 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : a simple voice bus comparator
 // ----
 // ---- created: 08Jun2020
-// ---- changed: 14Jan2024, 19Jan2024, 21Jan2024
+// ---- changed: 14Jan2024, 19Jan2024, 21Jan2024, 21Apr2026
 // ----
 // ----
 // ----
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <math.h>
 
 #include "../../../plugin.h"
@@ -119,6 +120,22 @@ static float ST_PLUGIN_API loc_get_param_value(st_plugin_shared_t *_shared,
    return shared->params[_paramIdx];
 }
 
+static void ST_PLUGIN_API loc_get_param_value_string(st_plugin_shared_t  *_shared,
+                                                     unsigned int         _paramIdx,
+                                                     char                *_buf,
+                                                     unsigned int         _bufSize
+                                                     ) {
+   ST_PLUGIN_SHARED_CAST(x_max_shared_t);
+   if(PARAM_VOICEBUS == _paramIdx)
+   {
+      const int busIdx = (int)(shared->params[PARAM_VOICEBUS] * 100);
+      if(busIdx < 1 || busIdx > 32)
+         snprintf(_buf, _bufSize, "-");
+      else
+         snprintf(_buf, _bufSize, "bus %d", busIdx);
+   }
+}
+
 static void ST_PLUGIN_API loc_set_param_value(st_plugin_shared_t *_shared,
                                               unsigned int        _paramIdx,
                                               float               _value
@@ -221,7 +238,7 @@ static void ST_PLUGIN_API loc_prepare_block(st_plugin_voice_t *_voice,
 static void ST_PLUGIN_API loc_process_replace(st_plugin_voice_t  *_voice,
                                               int                 _bMonoIn,
                                               const float        *_samplesIn,
-                                              float              *_samplesOut, 
+                                              float              *_samplesOut,
                                               unsigned int        _numFrames
                                               ) {
    // Ring modulate at (modulated) note frequency
@@ -335,20 +352,21 @@ st_plugin_info_t *x_max_init(void) {
       ret->base.num_params  = NUM_PARAMS;
       ret->base.num_mods    = NUM_MODS;
 
-      ret->base.shared_new       = &loc_shared_new;
-      ret->base.shared_delete    = &loc_shared_delete;
-      ret->base.voice_new        = &loc_voice_new;
-      ret->base.voice_delete     = &loc_voice_delete;
-      ret->base.get_param_name   = &loc_get_param_name;
-      ret->base.get_param_reset  = &loc_get_param_reset;
-      ret->base.get_param_value  = &loc_get_param_value;
-      ret->base.set_param_value  = &loc_set_param_value;
-      ret->base.get_mod_name     = &loc_get_mod_name;
-      ret->base.note_on          = &loc_note_on;
-      ret->base.set_mod_value    = &loc_set_mod_value;
-      ret->base.prepare_block    = &loc_prepare_block;
-      ret->base.process_replace  = &loc_process_replace;
-      ret->base.plugin_exit      = &loc_plugin_exit;
+      ret->base.shared_new             = &loc_shared_new;
+      ret->base.shared_delete          = &loc_shared_delete;
+      ret->base.voice_new              = &loc_voice_new;
+      ret->base.voice_delete           = &loc_voice_delete;
+      ret->base.get_param_name         = &loc_get_param_name;
+      ret->base.get_param_reset        = &loc_get_param_reset;
+      ret->base.get_param_value        = &loc_get_param_value;
+      ret->base.get_param_value_string = &loc_get_param_value_string;
+      ret->base.set_param_value        = &loc_set_param_value;
+      ret->base.get_mod_name           = &loc_get_mod_name;
+      ret->base.note_on                = &loc_note_on;
+      ret->base.set_mod_value          = &loc_set_mod_value;
+      ret->base.prepare_block          = &loc_prepare_block;
+      ret->base.process_replace        = &loc_process_replace;
+      ret->base.plugin_exit            = &loc_plugin_exit;
    }
 
    return &ret->base;
