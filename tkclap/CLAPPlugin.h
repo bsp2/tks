@@ -221,6 +221,10 @@ YC class CLAPPlugin : public YAC_Object {
   public:
    sBool b_report_transport_playing;
 
+   // (note) CLAP parameters may be written but not read in the audio thread
+   //         => need to keep a copy of the current parameter state
+   sF32 *param_state;
+
   public:
    YAC(CLAPPlugin);
 
@@ -291,6 +295,8 @@ YC class CLAPPlugin : public YAC_Object {
    YM void rescanParamInfos (void);
 
   protected:
+   void queryParamStateByIndex (sUI _paramIdx);
+   void queryParamState (void);
    tkclap_event_t *getNextInputEvent (void);
 
   public:

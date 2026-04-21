@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 24Sep2024, 27Sep2024
-///          29Nov2024, 06Apr2026, 09Apr2026
+///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026
 ///
 ///
 ///
@@ -658,6 +658,7 @@ CLAPPlugin::CLAPPlugin(void) {
    ext_params  = NULL;
    num_params  = 0u;
    param_infos = NULL;
+   param_state = NULL;
 
    ext_state = NULL;
 
@@ -750,6 +751,12 @@ void CLAPPlugin::destroyPluginInstance(void) {
       ext_params = NULL;
       freeParamInfos();
 
+      if(NULL != param_state)
+      {
+         delete [] param_state;
+         param_state = NULL;
+      }
+
       ext_state = NULL;
 
       ext_latency = NULL;
@@ -781,8 +788,40 @@ void CLAPPlugin::rescanParamInfos(void) {
       const char *pathName = (const char*)plugin_bundle->path_name.chars;
       const char *pluginId = plugin_desc->id;
 
+#if 0
+      sUI oldNumParams = num_params;
+#endif
+
       num_params = ext_params->count(plugin);
       Dprintf_debug("[dbg] CLAPPlugin::rescanParamInfos: [\"%s\":\"%s\"] num_params=%u\n", pathName, pluginId, num_params);
+
+      // Resize / reallocate param_state
+      {
+         sF32 *paramState = NULL;
+         if(num_params > 0u)
+         {
+            paramState = new(std::nothrow)sF32[num_params];
+            if(NULL != paramState)
+            {
+#if 0
+               ::memset(paramState, 0, sizeof(sF32) * num_params);
+               if(0u != oldNumParams)
+               {
+                  ::memcpy(paramState, param_state, sizeof(sF32) * sMIN(num_params, oldNumParams));
+               }
+#endif
+            }
+            // else: allocation failed (should not be reachable)
+         }
+
+         if(NULL != param_state)
+         {
+            delete [] param_state;
+         }
+
+         param_state = paramState;
+      }
+
       if(num_params > 0u)
       {
          param_infos = new(std::nothrow)tkclap_param_info_t[num_params];
@@ -807,7 +846,10 @@ void CLAPPlugin::rescanParamInfos(void) {
                }
             }
          }
-      }
+
+         queryParamState();
+
+      } // if num_params
    }
 }
 
@@ -1364,6 +1406,8 @@ void CLAPPlugin::setParameter(sUI _index, sF32 _value) {
             ev->key         = -1;
             ev->value       = (sF64)_value;
          }
+
+         param_state[_index] = _value;
       }
    }
 }
@@ -1426,16 +1470,40 @@ void CLAPPlugin::resetParameterMods_Sync(void) {
    unlockEvents();
 }
 
+void CLAPPlugin::queryParamStateByIndex(sUI _paramIdx) {
+   sF64 val = 0.0;
+   if(ext_params->get_value(plugin, param_infos[_paramIdx].clap_param_info.id, &val))
+   {
+      param_state[_paramIdx] = sF32(val);
+   }
+   else
+   {
+      param_state[_paramIdx] = 0.0f;
+   }
+}
+
+void CLAPPlugin::queryParamState(void) {
+   for(sUI paramIdx = 0u; paramIdx < num_params; paramIdx++)
+   {
+      queryParamStateByIndex(paramIdx);
+   }
+}
+
 sF32 CLAPPlugin::getParameter(sUI _index) {
    if(NULL != plugin)
    {
       if(_index < num_params)
       {
+#if 0
+         // (note) not allowed in audio thread
          sF64 val = 0.0;
          if(ext_params->get_value(plugin, param_infos[_index].clap_param_info.id, &val))
          {
             return (sF32)val;
          }
+#else
+         return param_state[_index];
+#endif
       }
    }
    return 0.0f;
@@ -1676,6 +1744,7 @@ sBool CLAPPlugin::loadState(YAC_Object *_ifs) {
       if(ext_state->load(plugin, &istream))
       {
          // Succeeded
+         queryParamState();
          return YAC_TRUE;
       }
       else
@@ -1791,6 +1860,9 @@ void CLAPPlugin::callOnAutomate(sSI _paramIdx, sF32 _value) {
    ////yac_host->->printf("xxx callOnAudioMasterAutomate: f=0x%p\n", f);
    if(NULL != f)
    {
+      if(sUI(_paramIdx) < num_params)
+         param_state[_paramIdx] = _value;
+
       YAC_Value args[3];
       args[0].initObject(this, 0);
       args[1].initInt   (_paramIdx);
