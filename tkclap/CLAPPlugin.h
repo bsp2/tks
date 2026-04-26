@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 22Sep2024, 27Sep2024
-///          19Apr2026
+///          19Apr2026, 23Apr2026
 ///
 ///
 ///
@@ -21,7 +21,7 @@ YG("clap");
 #define CLAPPLUGIN_MAX_AUDIO_OUT  48
 #define CLAPPLUGIN_MAX_BLOCK_SIZE 256   // #frames (usually 64)
 
-#define CLAPPLUGIN_MAX_EVENTS 4096
+#define CLAPPLUGIN_MAX_EVENTS 64
 
 #define CLAPPLUGIN_SIGNAL_ONPARAMEDIT      0  // Gesture begin/end
 #define CLAPPLUGIN_SIGNAL_ONAUTOMATE       1  // param value change
@@ -107,7 +107,7 @@ typedef union tkclap_event_u {
    clap_event_note_t            note;
    clap_event_note_expression_t note_expr;
    clap_event_param_value_t     param_value;
-   clap_event_param_mod_t       mod;
+   clap_event_param_mod_t       param_mod;
    clap_event_param_gesture_t   gesture;
    clap_event_transport_t       transport;
    clap_event_midi_t            midi;
@@ -185,11 +185,11 @@ YC class CLAPPlugin : public YAC_Object {
 
    // Input event queue / list (param/mod changes, MIDI events, ..)
    tkclap_input_events_t input_events;         // process()
-   tkclap_input_events_t input_events_flush;   // flushParams()
+   tkclap_input_events_t input_events_flush;   // flushParameters()
 
    // Output event queue / list (sent from plugin)
    tkclap_output_events_t output_events;
-   tkclap_output_events_t output_events_flush; // flushParams()
+   tkclap_output_events_t output_events_flush; // flushParameters()
 
    // Synchronizes access to input_events / output_events
    tkclap_mutex_t mtx_events;
@@ -361,6 +361,7 @@ YC class CLAPPlugin : public YAC_Object {
    YM sF32 getParameter           (sUI _index);
 
    // Query current (last sent) parameter modulation offset value
+   //  (note) used by UI when querying param set (see ModParamSet::queryParameters())
    YM sF32 getParameterMod        (sUI _index);
 
    // Query parameter name
@@ -423,6 +424,7 @@ YC class CLAPPlugin : public YAC_Object {
    void callOnMacOSKeyDown (sUI _keyCode);
    void callOnRescanParams (void);
 
+   void flushInputEvents (void);
 
   public:
    // Usually called by plugin via host_request_callback()

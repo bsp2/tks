@@ -575,8 +575,18 @@ static uint32_t CLAP_ABI loc_input_events_size(const struct clap_input_events *_
 
 static const clap_event_header_t *CLAP_ABI loc_input_events_get(const struct clap_input_events *_list, uint32_t _index) {
    const tkclap_input_events_t *events = (const tkclap_input_events_t *)_list;
+   // Dyac_host_printf("xxx CLAP loc_input_events_get: index=%u num_ev=%u\n", _index, events->num_ev);
    if(_index < events->num_ev)
    {
+      // Dyac_host_printf("xxx CLAP loc_input_events_get: index=%u num_ev=%u type=%d\n", _index, events->num_ev, events->events[_index].header.type);
+      if(CLAP_EVENT_PARAM_MOD == events->events[_index].header.type)
+      {
+         const clap_event_param_mod_t *ev = &events->events[_index].param_mod;
+         if(ev->amount != 0.0f)
+         {
+            // Dyac_host_printf("xxx CLAP loc_input_events_get: type=PARAM_MOD index=%u num_ev=%u param_id=%u amount=%f\n", _index, events->num_ev, ev->param_id, ev->amount);
+         }
+      }
       return &events->events[_index].header;
    }
    return NULL;
@@ -1296,6 +1306,10 @@ void CLAPPlugin::unlockEvents(void) {
 
 tkclap_event_t *CLAPPlugin::getNextInputEvent(void) {
    tkclap_event_t *r = NULL;
+   if(input_events.num_ev >= CLAPPLUGIN_MAX_EVENTS)
+   {
+      flushInputEvents();
+   }
    if(input_events.num_ev < CLAPPLUGIN_MAX_EVENTS)
    {
       r = &input_events.events[input_events.num_ev++];
@@ -1423,22 +1437,45 @@ void CLAPPlugin::setParameterMod(sUI _index, sF32 _offset) {
    {
       if(_index < num_params)
       {
-         clap_event_param_mod_t *ev = (clap_event_param_mod_t*)getNextInputEvent();
-         if(NULL != ev)
+         tkclap_param_info_t *infoTK = &param_infos[_index];
+         clap_param_info_t *info = &infoTK->clap_param_info;
+         if(0u != (info->flags & CLAP_PARAM_IS_MODULATABLE))
          {
-            tkclap_param_info_t *infoTK = &param_infos[_index];
-            clap_param_info_t *info = &infoTK->clap_param_info;
-            ev->header.size = sizeof(clap_event_param_mod_t);
-            ev->header.type  = CLAP_EVENT_PARAM_MOD;
-            // // ev->flags       = CLAP_EVENT_IS_LIVE; // ??
-            ev->param_id    = info->id;
-            ev->cookie      = info->cookie;  // cached param ptr or NULL
-            ev->note_id     = -1;  // wildcard = all
-            ev->port_index  = -1;
-            ev->channel     = -1;
-            ev->key         = -1;
-            ev->amount      = (sF64)_offset;
-            infoTK->cur_mod = _offset;
+            clap_event_param_mod_t *ev = (clap_event_param_mod_t*)getNextInputEvent();
+            const sBool bDebug = YAC_FALSE;//(481 == _index);
+            if(bDebug)
+            {
+               Dyac_host_printf("xxx CLAPPlugin::setParameterMod: BEGIN index=%u offset=%f ev=%p\n", _index, _offset, ev);
+            }
+            if(NULL != ev)
+            {
+               ev->header.size = sizeof(clap_event_param_mod_t);
+               ev->header.type  = CLAP_EVENT_PARAM_MOD;
+               // // ev->flags       = CLAP_EVENT_IS_LIVE; // ??
+               ev->param_id    = info->id;
+               ev->cookie      = info->cookie;  // cached param ptr or NULL
+               if(bDebug)
+               {
+                  Dyac_host_printf("xxx CLAPPlugin::setParameterMod: index=%u offset=%f ev->param_id=%d #input_ev=%u\n", _index, _offset, ev->param_id, input_events.num_ev);
+               }
+               ev->note_id     = -1;  // wildcard = all
+               ev->port_index  = -1;
+               ev->channel     = -1;
+               ev->key         = -1;
+               sF64 newVal = param_state[_index] + _offset;
+               if(newVal < info->min_value)
+                  newVal = info->min_value;
+               else if(newVal > info->max_value)
+                  newVal = info->max_value;
+               ev->amount      = newVal - param_state[_index];
+               if(bDebug)
+               {
+                  // (note) [23Apr2026] Zebra2+3 report value out of range even though (param+mod) is within parameter range
+                  //                     (looks like it checks the mod value against the param range without adding the base value)
+                  Dyac_host_printf("xxx CLAPPlugin::setParameterMod: index=%u curVal=%f newVal=%f offset=%f min=%f max=%f => ev->amount=%f\n", _index, param_state[_index], newVal, _offset, info->min_value, info->max_value, ev->amount);
+               }
+               infoTK->cur_mod = ev->amount;
+            }
          }
       }
    }
@@ -1448,6 +1485,21 @@ void CLAPPlugin::setParameterMod_Sync(sUI _index, sF32 _offset) {
    lockEvents();
    setParameterMod(_index, _offset);
    unlockEvents();
+}
+
+sF32 CLAPPlugin::getParameterMod(sUI _index) {
+   sF32 r = 0.0f;
+   if(NULL != plugin)
+   {
+      if(_index < num_params)
+      {
+         tkclap_param_info_t *infoTK = &param_infos[_index];
+         lockEvents();
+         r = infoTK->cur_mod;
+         unlockEvents();
+      }
+   }
+   return r;
 }
 
 void CLAPPlugin::resetParameterMods(void) {
@@ -1504,18 +1556,6 @@ sF32 CLAPPlugin::getParameter(sUI _index) {
 #else
          return param_state[_index];
 #endif
-      }
-   }
-   return 0.0f;
-}
-
-sF32 CLAPPlugin::getParameterMod(sUI _index) {
-   if(NULL != plugin)
-   {
-      if(_index < num_params)
-      {
-         tkclap_param_info_t *infoTK = &param_infos[_index];
-         return infoTK->cur_mod;
       }
    }
    return 0.0f;
@@ -1854,10 +1894,10 @@ void CLAPPlugin::callOnParamEdit(sBool _bBegin, sSI _paramIdx) {
 }
 
 void CLAPPlugin::callOnAutomate(sSI _paramIdx, sF32 _value) {
-   // yac_host->printf("xxx CLAPPlugin::callOnAudioMasterAutomate: call setParameter: idx=%d val=%f\n", _paramIdx, _value);
+   // Dyac_host_printf("xxx CLAPPlugin::callOnAutomate: call setParameter: idx=%d val=%f\n", _paramIdx, _value);
    void *f = tkclap_signal_funs[CLAPPLUGIN_SIGNAL_ONAUTOMATE];
 
-   ////yac_host->->printf("xxx callOnAudioMasterAutomate: f=0x%p\n", f);
+   ////yac_host->->printf("xxx callOnAutomate: f=0x%p\n", f);
    if(NULL != f)
    {
       if(sUI(_paramIdx) < num_params)
@@ -2141,24 +2181,47 @@ void CLAPPlugin::queueFlushParameters(void) {
 }
 
 void CLAPPlugin::flushParameters(void) {
-   // (note) called by loc_clap_host_params_request_flush() or processSilence()
+   // (note) called by loc_clap_host_params_request_flush() and processSilence()
    if(NULL != ext_params)
    {
       // (note) executed when plugin events are not handled in audio thread process()
       lockEvents();
 
+#if 1
       input_events_flush.num_ev = 0u;
-      output_events_flush.num_ev = 0u;
+      output_events_flush.num_ev = 0u;  // flush() may add new events to output event queue
 
       ext_params->flush(plugin,
-                        &input_events_flush.clap_input_events,
+                        &input_events_flush.clap_input_events,   // ?input_events?
                         &output_events_flush.clap_output_events
                         );
+#else
+      ext_params->flush(plugin,
+                        &input_events.clap_input_events,
+                        &output_events.clap_output_events
+                        );
+      input_events.num_ev = 0u;
+      output_events.num_ev = 0u;
+#endif
 
       processOutputEvents();
 
       unlockEvents();
    }
+}
+
+void CLAPPlugin::flushInputEvents(void) {
+   // called while mtx_events is locked
+   if(input_events.num_ev > 0u)
+   {
+      // Dyac_host_printf("xxx CLAPPlugin::flushInputEvents: num_ev=%u\n", input_events.num_ev);
+   }
+   output_events_flush.num_ev = 0u;  // flush() may add new events to output event queue
+   ext_params->flush(plugin,
+                     &input_events.clap_input_events,
+                     &output_events_flush.clap_output_events
+                     );
+   input_events.num_ev = 0u;
 }
 
 void CLAPPlugin::processSilence(sUI _numFrames) {
@@ -2243,7 +2306,7 @@ void CLAPPlugin::process(sUI _numFrames) {
 #if 0
       if(input_events.num_ev > 0u)
       {
-         Dprintf("xxx process: #clap_input_events=%u\n", input_events.num_ev);
+         Dprintf("xxx CLAPPlugin::process: #clap_input_events=%u\n", input_events.num_ev);
       }
 #endif
       process.in_events           = &input_events.clap_input_events;
