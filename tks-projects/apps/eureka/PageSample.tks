@@ -41,7 +41,7 @@
 // ----          10Jan2025, 12Jan2025, 31Jan2025, 20Mar2025, 21Mar2025, 22Mar2025, 29Mar2025
 // ----          03Apr2025, 05Apr2025, 06Apr2025, 10Apr2025, 19May2025, 20May2025, 28May2025
 // ----          31May2025, 10Jun2025, 12Jun2025, 15Jun2025, 20Dec2025, 27Dec2025, 09Jan2026
-// ----          14Jan2026, 17Jan2026, 26Jan2026, 14Feb2026
+// ----          14Jan2026, 17Jan2026, 26Jan2026, 14Feb2026, 10Apr2026, 11Apr2026, 17Apr2026
 // ----
 // ----
 // ----
@@ -173,6 +173,7 @@ class PageSample : Page, SampleViewPlugin {
    protected ComboBox   *cm_zone_interpolation_order;
    protected Button     *bt_zone_lofi;
    protected PopupMenu  *pm_zone_lofi;
+   protected CheckBox   *cb_zone_free;
    protected ComboBox   *cm_zone_srr;
    protected FloatParam *fp_zone_srr_mask;
    protected ComboBox   *cm_zone_br;
@@ -705,7 +706,6 @@ class PageSample : Page, SampleViewPlugin {
       tv_zones.setTableModel((true == STConfig.b_pgsample_zone_names) ? tm_zones_names : tm_zones);
       tv_zones.tableModelChanged();
       bt_zone_names.setToggleState(true == STConfig.b_pgsample_zone_names);
-      updateZoneDblClickMode();
 
       tm_loops <= new SampleLoopsTM;
       tm_loops.initTableModel();
@@ -725,6 +725,8 @@ class PageSample : Page, SampleViewPlugin {
       tm_samples.initTableModel();
       tv_samples.setTableModel(tm_samples);
       tv_samples.tableModelChanged();
+
+      updateZoneDblClickMode();
 
       autoselect_sample_idx = -1;
 
@@ -802,6 +804,11 @@ class PageSample : Page, SampleViewPlugin {
          cf_nsp_flt.setSelectedOption(autoselect_namespace_idx);
          autoselect_namespace_idx = -1;
       }
+      else
+      {
+         cf_nsp_flt.setSelectedOption(0);
+         cb_filter_global_audio.setSelected(true);
+      }
 
       if(null != sample_timeline_editor_clip)
       {
@@ -858,7 +865,10 @@ class PageSample : Page, SampleViewPlugin {
       }
       else
       {
-         bt_sp.setCaption("TEMP");
+         if(null != sample_timeline_editor_clip)
+            bt_sp.setCaption("CLIP");
+         else
+            bt_sp.setCaption("TEMP");
          bt_sp.setEditable(false);
          bt_sp_prev.setEditable(false);
          bt_sp_next.setEditable(false);
@@ -1141,6 +1151,8 @@ class PageSample : Page, SampleViewPlugin {
                                  cm_zone_interpolation,
                                  cm_zone_interpolation_order,
                                  bt_zone_lofi,
+                                 cb_zone_free,
+
                                  cm_zone_srr,
                                  fp_zone_srr_mask,
                                  cm_zone_br,
@@ -2233,6 +2245,12 @@ class PageSample : Page, SampleViewPlugin {
       }
    }
 
+   // <ui_handle.png>
+   public method mmHandleClearInactive() {
+      SampleMMForm mmForm <= mm_forms.first;
+      mmForm.handleClearInactive();
+   }
+
    // <ui_show.png>
    public static ShowSampleAndSwitchToPage(Sample  _sampleOrNull,
                                            int     _prefNamespaceIdx,  // fallback if sample is null. -1=keep. 0=global
@@ -2495,6 +2513,8 @@ class PageSample : Page, SampleViewPlugin {
          updateSampleNameToolTip(sample);
 
          cb_synth_recalc_all.setSelected(sample.cycle_state.b_recalc_all);
+
+         updateZoneDblClickMode();
       }
       else
       {
@@ -2707,7 +2727,7 @@ class PageSample : Page, SampleViewPlugin {
                mod_sample <= modSampleInstances[_index];
                autoselect_sample_idx = mod_sample.sample_idx;
                pageEnter();
-               UI.SetKeyboardFocus(tv_samples);
+               pageFocusDefault();
             }
          }
       }
@@ -3227,6 +3247,7 @@ class PageSample : Page, SampleViewPlugin {
       cm_zone_interpolation          .setEditable(bEditable);
       cm_zone_interpolation_order    .setEditable(bEditable);
       bt_zone_lofi                   .setEditable(bEditable);
+      cb_zone_free                   .setEditable(bEditable);
       cm_zone_srr                    .setEditable(bEditable);
       fp_zone_srr_mask               .setEditable(bEditable);
       cm_zone_br                     .setEditable(bEditable);
@@ -3412,6 +3433,7 @@ class PageSample : Page, SampleViewPlugin {
          fp_zone_delay_mul.setValue(s.delayMultiplier);
          cm_zone_interpolation      .setSelectedOption(s.interpolType);
          cm_zone_interpolation_order.setSelectedOption(s.interpolOrder);
+         cb_zone_free     .setSelected(s.enableFreeRunningOsc);
          cm_zone_srr      .setSelectedOption(s.rateReduction);
          fp_zone_srr_mask .setValue         (s.rateReductionMask);
          cm_zone_br       .setSelectedOption(s.bitReduction);
@@ -3633,6 +3655,7 @@ class PageSample : Page, SampleViewPlugin {
          fp_zone_delay_mul              .setValue(0);
          cm_zone_interpolation          .setSelectedOption(-1);
          cm_zone_interpolation_order    .setSelectedOption(-1);
+         cb_zone_free                   .setSelected(false);
          cm_zone_srr                    .setSelectedOption(-1);
          fp_zone_srr_mask               .setValue(0);
          cm_zone_br                     .setSelectedOption(-1);
@@ -3841,9 +3864,34 @@ class PageSample : Page, SampleViewPlugin {
          Global.Print("Show zone velocity + mod ranges");
    }
 
+   // <method.png>
+   protected method getCurrentZoneDblClickMode() : int {
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         if(sample.b_audio_clip)
+            return STConfig.pgsample_zone_dblclick_mode_clip;
+      }
+      return STConfig.pgsample_zone_dblclick_mode_instr;
+   }
+
+   // <method.png>
+   protected method setCurrentZoneDblClickMode(int _mode) {
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         if(sample.b_audio_clip)
+         {
+            STConfig.pgsample_zone_dblclick_mode_clip = _mode;
+            return;
+         }
+      }
+      STConfig.pgsample_zone_dblclick_mode_instr = _mode;
+   }
+
    // <ui_update.png>
    protected method updateZoneDblClickMode() {
-      switch(STConfig.pgsample_zone_dblclick_mode)
+      switch(getCurrentZoneDblClickMode())
       {
          default:
          case 0:
@@ -3870,22 +3918,22 @@ class PageSample : Page, SampleViewPlugin {
 
    // <ui_handle.png>
    protected method handleZoneDblClickModeChanged() {
-      STConfig.pgsample_zone_dblclick_mode = (STConfig.pgsample_zone_dblclick_mode + 1) % 4;
+      setCurrentZoneDblClickMode((getCurrentZoneDblClickMode() + 1) % 4);
       updateZoneDblClickMode();
-      Global.Print("Zone double-click mode is \""+a_dblclick_mode_names.get(STConfig.pgsample_zone_dblclick_mode)+"\"");
+      Global.Print("Zone double-click mode is \""+a_dblclick_mode_names.get(getCurrentZoneDblClickMode())+"\"");
    }
 
    // <ui_handle.png>
    protected =replay= method playZone(StSample s, boolean _bNoteOn) {
       Sample sample <= getSelectedSample();
       StSamplePlayer sp <= getCurrentSamplePlayer();
-      if((null != sample) && (null != s) && (null != sp))
+      if(null != sample && null != s && null != sp)
       {
          StRange range <= s.getKeyRange();
          StRange rangeMod <= s.getModRange();
-         if((null != range) && (null != rangeMod))
+         if(null != range && null != rangeMod)
          {
-            int note = range.lo + (range.hi - range.lo) / 2;
+            int note = sample.b_audio_clip ? Sample.KEY_MIDDLE_C : (range.lo + (range.hi - range.lo) / 2);
             float mod = rangeMod.lo + (rangeMod.hi - rangeMod.lo) / 2;
 
             if(false != _bNoteOn)
@@ -4121,7 +4169,7 @@ class PageSample : Page, SampleViewPlugin {
 
    // <method.png>
    protected method execZoneRowClickDefaultAction() {
-      switch(STConfig.pgsample_zone_dblclick_mode)
+      switch(getCurrentZoneDblClickMode())
       {
          default:
          case 0:
@@ -4894,11 +4942,18 @@ class PageSample : Page, SampleViewPlugin {
       }
       sample.audio_clip_bpm = _audioClipBPMOr0;
 
+      StSample s <= sample.getZoneByIdx(0);
+
       if(!bPoly)
       {
-         StSample s <= sample.getZoneByIdx(0);
          s.maxVoices = 1;
       }
+
+      if(_bAudioClip)
+      {
+         s.volumeRampStepsMillisecIn = 0;
+      }
+
       tf_filter.setText("");
       updateSampleTable(sample);
       setLastSelectedSampleIdx(tm_samples.getCursorSampleIdx());
@@ -5487,7 +5542,7 @@ class PageSample : Page, SampleViewPlugin {
          if(!_bMustBeAudio || sample.b_audio_clip)
          {
             int numRefs = current_project.findNumSampleRefsBySample(sample);
-            // // trace "[trc] sample.unique_name=\""+sample.unique_name+"\" numRefs="+numRefs;
+            trace "[trc] sample.unique_name=\""+sample.unique_name+"\" numRefs="+numRefs;
             if(0 == numRefs)
             {
                if( (!_bSkipPrgChgAssigned    || (-1    == sample.prg_id)       ) &&
@@ -5996,6 +6051,7 @@ class PageSample : Page, SampleViewPlugin {
          sample.markParamsAsModified();
 
          Global.Print("Audio-Clip Sample Mode is "+Utils.GetEnableString(cb_audio.isSelected()));
+         updateSampleTable(null/*reselectSample*/);
       }
    }
 
@@ -6859,6 +6915,23 @@ class PageSample : Page, SampleViewPlugin {
    }
 
    // <ui_handle.png>
+   protected =replay= method handleZoneFreeChanged() {
+      Sample sample <= getSelectedSample();
+      if(null != sample)
+      {
+         local PointerArray zones <= getSelectedZones();
+         StSample *s;
+         boolean bEnable = cb_zone_free.isSelected();
+         foreach s in zones
+         {
+            s.enableFreeRunningOsc = bEnable;
+         }
+         Global.Print("Zone free-running osc mode is "+Utils.GetEnableString(bEnable)+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+         sample.markParamsAsModified();
+      }
+   }
+
+   // <ui_handle.png>
    protected =replay= method handleZoneSampleOffVelAmtInvertChanged() {
       Sample sample <= getSelectedSample();
       if(null != sample)
@@ -7375,22 +7448,40 @@ class PageSample : Page, SampleViewPlugin {
       Sample sample <= getSelectedSample();
       if(null != sample)
       {
-         lazySelectFirstZoneOnly();
+         // // lazySelectFirstZoneOnly();
          local PointerArray zones <= getSelectedZones();
          if(zones.numElements > 0)
          {
+            int firstZoneLoopOffset = -1;
+            int firstZoneLoopLen;
             StSample *s;
             int start = fp_zone_offset.getFloatValue();
             local Integer newStart = start;
             int idx = 0;
             foreach s in zones
             {
-               s.firstLoopOffset = start;
-               s.verifySampleAreas();
-               if(0 == idx++)
+               boolean bUpdate;
+               if(-1 == firstZoneLoopOffset)
                {
-                  newStart = s.firstLoopOffset;
-                  fp_zone_len.setValue(s.firstLoopLen);
+                  firstZoneLoopOffset = s.firstLoopOffset;
+                  firstZoneLoopLen    = s.firstLoopLen;
+                  bUpdate = true;
+               }
+               else
+               {
+                  bUpdate =
+                     (s.firstLoopOffset == firstZoneLoopOffset) &&
+                     (s.firstLoopLen    == firstZoneLoopLen)    ;
+               }
+               if(bUpdate)
+               {
+                  s.firstLoopOffset = start;
+                  s.verifySampleAreas();
+                  if(0 == idx++)
+                  {
+                     newStart = s.firstLoopOffset;
+                     fp_zone_len.setValue(s.firstLoopLen);
+                  }
                }
             }
 
@@ -7427,20 +7518,38 @@ class PageSample : Page, SampleViewPlugin {
       Sample sample <= getSelectedSample();
       if(null != sample)
       {
-         lazySelectFirstZoneOnly();
+         // // lazySelectFirstZoneOnly();
          local PointerArray zones <= getSelectedZones();
          if(zones.numElements > 0)
          {
+            int firstZoneLoopOffset = -1;
+            int firstZoneLoopLen;
             StSample *s;
             int len = fp_zone_len.getFloatValue();
             local Integer newLen = len;
             int idx = 0;
             foreach s in zones
             {
-               s.firstLoopLen = len;
-               s.verifySampleAreas();
-               if(0 == idx++)
-                  newLen = s.firstLoopLen;
+               boolean bUpdate;
+               if(-1 == firstZoneLoopOffset)
+               {
+                  firstZoneLoopOffset = s.firstLoopOffset;
+                  firstZoneLoopLen    = s.firstLoopLen;
+                  bUpdate = true;
+               }
+               else
+               {
+                  bUpdate =
+                     (s.firstLoopOffset == firstZoneLoopOffset) &&
+                     (s.firstLoopLen    == firstZoneLoopLen)    ;
+               }
+               if(bUpdate)
+               {
+                  s.firstLoopLen = len;
+                  s.verifySampleAreas();
+                  if(0 == idx++)
+                     newLen = s.firstLoopLen;
+               }
             }
 
             s <= zones.get(0);
@@ -7481,13 +7590,31 @@ class PageSample : Page, SampleViewPlugin {
       Sample sample <= getSelectedSample();
       if(null != sample)
       {
-         lazySelectFirstZoneOnly();
+         // // lazySelectFirstZoneOnly();
          local PointerArray zones <= getSelectedZones();
+         int firstZoneLoopRep = -1;
          StSample *s;
          int rep = fp_zone_rep.getFloatValue();
          foreach s in zones
-            s.firstLoopRep = rep;
-         Global.Print("Zone num repeats is "+rep+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
+         {
+            boolean bUpdate;
+            if(-1 == firstZoneLoopRep)
+            {
+               firstZoneLoopRep = s.firstLoopRep;
+               bUpdate = true;
+            }
+            else
+            {
+               bUpdate =
+                  (s.firstLoopRep == firstZoneLoopRep)
+                  ;
+            }
+            if(bUpdate)
+            {
+               s.firstLoopRep = rep;
+            }
+         }
+         Global.Print("Zone #repeats is "+rep+" (update "+zones.numElements+" zone"+Utils.GetPluralString(zones.numElements)+")");
          tv_loops.tableModelChanged();
          sample.markParamsAsModified();
       }
@@ -7504,20 +7631,39 @@ class PageSample : Page, SampleViewPlugin {
       Sample sample <= getSelectedSample();
       if(null != sample)
       {
-         lazySelectFirstZoneOnly();
+         // // lazySelectFirstZoneOnly();
          local PointerArray zones <= getSelectedZones();
-         if(1 == zones.numElements)
+         // // if(1 == zones.numElements)
+         if(zones.numElements >= 1)
          {
+            int firstZoneLoopOffset = -1;
+            int firstZoneLoopLen;
             if(_len > 0)
             {
                StSample *s;
                foreach s in zones
                {
-                  s.firstLoopOffset = _off;
-                  s.firstLoopLen = _len;
-                  s.verifySampleAreas();
-                  fp_zone_offset.setValue(s.firstLoopOffset);
-                  fp_zone_len.setValue(s.firstLoopLen);
+                  boolean bUpdate;
+                  if(-1 == firstZoneLoopOffset)
+                  {
+                     firstZoneLoopOffset = s.firstLoopOffset;
+                     firstZoneLoopLen    = s.firstLoopLen;
+                     bUpdate = true;
+                  }
+                  else
+                  {
+                     bUpdate =
+                        (s.firstLoopOffset == firstZoneLoopOffset) &&
+                        (s.firstLoopLen    == firstZoneLoopLen)    ;
+                  }
+                  if(bUpdate)
+                  {
+                     s.firstLoopOffset = _off;
+                     s.firstLoopLen = _len;
+                     s.verifySampleAreas();
+                     fp_zone_offset.setValue(s.firstLoopOffset);
+                     fp_zone_len.setValue(s.firstLoopLen);
+                  }
                }
 
                s <= zones.get(0);
@@ -11040,7 +11186,7 @@ class PageSample : Page, SampleViewPlugin {
       tf_filter.setText("");
       updateSampleTable(null/*reselectSample*/);
       moveCursorToSampleIdxNoAction(pre_filter_sample_idx);
-      UI.SetKeyboardFocus(tv_samples);
+      pageFocusDefault();
    }
 
    // <method.png>
@@ -11188,7 +11334,7 @@ class PageSample : Page, SampleViewPlugin {
          handleSelectSample(true/*bStopAudio*/);
       }
 
-      UI.SetKeyboardFocus(tv_samples);
+      pageFocusDefault();
    }
 
    // <ui_cmd.png>
@@ -14004,7 +14150,7 @@ class PageSample : Page, SampleViewPlugin {
       else if(tv_zones.hierarchyHasKeyboardFocus())
       {
          ts_zone.setActiveTabIndex(ZONE_TAB_LOOPS);
-         UI.SetKeyboardFocus(tv_samples);
+         pageFocusDefault();
          tv_samples.redraw();
          return true;
       }
@@ -14022,7 +14168,7 @@ class PageSample : Page, SampleViewPlugin {
       else if(f_plugin.tv_plugins.hierarchyHasKeyboardFocus())
       {
          ts_zone.setActiveTabIndex(ZONE_TAB_LOOPS);
-         UI.SetKeyboardFocus(tv_samples);
+         pageFocusDefault();
          tv_samples.redraw();
          return true;
       }
@@ -14089,8 +14235,8 @@ class PageSample : Page, SampleViewPlugin {
 
    // <ui_mouse.png>
    public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
-      if(UI.mouse_layer instanceof Panel)
-         return handleKeyEscape();
+      // // if(UI.mouse_layer instanceof Panel)
+      // //    return handleKeyEscape();
       return false;
    }
 
@@ -14150,8 +14296,29 @@ class PageSample : Page, SampleViewPlugin {
    }
 
    // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      switch(_k.code)
+      {
+         case VKEY_SPACE:
+            return false;
+      }
+      return Page::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
    public virtual onKey(Key _k) : boolean {
       // trace "[>>>] PageSample: key="+_k.name+" pressed="+_k.pressed+" mod="+_k.mod;
+
+      switch(_k.released)
+      {
+         case VKEY_SPACE:
+            if(_k.modNone())
+            {
+               playFirstSelectedZone(false/*bNoteOn*/);
+               return true;
+            }
+            return false;
+      }
 
       switch(_k.pressed)
       {
@@ -14159,6 +14326,14 @@ class PageSample : Page, SampleViewPlugin {
             if(0 != _k.mod)  // lshift-q ? (quit dialog)
               return false;
             break;
+
+         case VKEY_SPACE:
+            if(_k.modNone())
+            {
+               playFirstSelectedZone(true/*bNoteOn*/);
+               return true;
+            }
+            return false;
 
          case VKEY_ESCAPE:
             handleKeyEscape();
@@ -14681,7 +14856,7 @@ class PageSample : Page, SampleViewPlugin {
          {
             dlg_new_sample_name <= null;
          }
-         UI.SetKeyboardFocus(tv_samples);
+         pageFocusDefault();
          return true;
       }
 
@@ -14844,26 +15019,26 @@ class PageSample : Page, SampleViewPlugin {
                case PopupMenu.ACTION_CANCEL:
                case "":
                   Global.Print("Close tags menu.");
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   break;
 
                case "tags_auto":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   handleTagsAutoAdd();
                   break;
 
                case "tags_copy":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   handleTagsCopy(null/*other*/);
                   break;
 
                case "tags_paste":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   handleTagsPaste();
                   break;
 
                case "tags_clear":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   handleTagsClear();
                   break;
             }
@@ -15142,7 +15317,7 @@ class PageSample : Page, SampleViewPlugin {
          case @(cf_nsp_flt):
             if(ComboField.ACTION_CURSORUP == acName)
             {
-               UI.SetKeyboardFocus(tv_samples);
+               pageFocusDefault();
                tv_samples.redraw();
             }
             else if(ComboField.ACTION_HIDE == acName)
@@ -15185,7 +15360,7 @@ class PageSample : Page, SampleViewPlugin {
          case @(cf_nsp_cur):
             if(ComboField.ACTION_CURSORUP == acName)
             {
-               UI.SetKeyboardFocus(tv_samples);
+               pageFocusDefault();
                tv_samples.redraw();
             }
             else if(ComboField.ACTION_HIDE == acName)
@@ -15241,7 +15416,7 @@ class PageSample : Page, SampleViewPlugin {
 
             if(acName <= "user_")
             {
-               UI.SetKeyboardFocus(tv_samples);
+               pageFocusDefault();
                new_sample_user_idx = int(acName.replace("user_",""));
                createSampleDialog(NEWSMP_USER);
                return true;
@@ -15252,41 +15427,41 @@ class PageSample : Page, SampleViewPlugin {
                case PopupMenu.ACTION_CANCEL:
                case "":
                   Global.Print("Close Add Sample menu.");
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   return true;
 
                case "empty":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_EMPTY);
                   return true;
 
                case "sine":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_SINE);
                   return true;
 
                case "sine_amiga":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_SINE_AMIGA);
                   return true;
 
                case "cycle":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_CYCLE);
                   return true;
 
                case "cycle_amiga":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_CYCLE_AMIGA);
                   return true;
 
                case "patch_plugin":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_PATCHPLUGIN);
                   return true;
 
                case "fm_stack":
-                  UI.SetKeyboardFocus(tv_samples);
+                  pageFocusDefault();
                   createSampleDialog(NEWSMP_FMSTACK);
                   return true;
             }
@@ -15375,7 +15550,7 @@ class PageSample : Page, SampleViewPlugin {
                switch(dlg_filename_mode)
                {
                   case DLG_FILENAME_MODE_SAVE:
-                     UI.SetKeyboardFocus(tv_samples);
+                     pageFocusDefault();
                      break;
 
                   case DLG_FILENAME_MODE_LOAD:
@@ -15461,7 +15636,7 @@ class PageSample : Page, SampleViewPlugin {
                   return true;
 
                case "samples_remove_unref_audio":
-                  handleRemoveUnreferencedSamples1(true/*bSkipPrgChgAssigned*/, true/*bSkipNamespaceAssigned*/,
+                  handleRemoveUnreferencedSamples1(false/*bSkipPrgChgAssigned*/, false/*bSkipNamespaceAssigned*/,
                                                    false/*bSkipAudio*/, true/*bMustBeAudio*/
                                                    );
                   // (note) focus set to SampleSelectionDialog
@@ -15861,6 +16036,10 @@ class PageSample : Page, SampleViewPlugin {
 
          case @(bt_zone_lofi):
             showZoneLoFiMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(cb_zone_free):
+            handleZoneFreeChanged();
             return true;
 
          case @(fp_zone_sampleoff_rel):
