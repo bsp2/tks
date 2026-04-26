@@ -1,7 +1,7 @@
 // ----
 // ---- file   : RootForm.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -16,7 +16,7 @@
 // ----          04Oct2023, 23Oct2023, 24Oct2023, 04Nov2023, 18Nov2023, 02Dec2023, 17Jan2024
 // ----          21Jan2024, 22Mar2024, 02Jul2024, 12Aug2024, 22Aug2024, 23Aug2024, 04Oct2024
 // ----          05Oct2024, 22Dec2024, 31Jan2025, 16Mar2025, 01May2025, 03May2025, 16Jun2025
-// ----          20Dec2025
+// ----          20Dec2025, 14Apr2026
 // ----
 // ----
 // ----
@@ -112,7 +112,9 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
    AudioScriptHost *script_host;
 
    int rec_start_ms;
-   int rec_count;
+   int rec_count;  // periodic [rec] message
+
+   public int recalc_procedural_waveforms_idle_timeout;
 
 
    // <ui_init.png>
@@ -318,6 +320,11 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
    // <ui_page.png>
    public method isAudioPage() : boolean {
       return (@(pg_audio) == @(getCurrentPage()));
+   }
+
+   // <ui_page.png>
+   public method isSamplePage() : boolean {
+      return (@(pg_sample) == @(getCurrentPage()));
    }
 
    // <ui_page.png>
@@ -817,6 +824,7 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
    public method handleStopSeq() {
       // called from UI thread when sequencer replay has stopped
       Global.Print("Stop seq");
+      current_project.stopProcTrackVoices();     
    }
 
    // <method_handle.png>
@@ -835,11 +843,16 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
       Global.Debug("RootForm::handleStopRecord");
       cb_rec.setSelected(false);
       pg_audio.handleStopRecord();
+      pg_track.handleStopRecord();
    }
 
    // <ui_handle.png>
    public method handleToggleRecording() {
       // trace "xxx RootForm::handleToggleRecording";
+      if(cb_rec.isSelected())
+      {
+         current_project.prepareRecord();
+      }
       replay.setEnableRecording(cb_rec.isSelected());
 
       if(replay.b_recording)
@@ -870,6 +883,16 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
    // <ui_handle.png>
    public method toggleAudioRecording() {
       cb_rec.toggleSelectionAction();
+   }
+
+   // <ui_handle.png>
+   public method enableRecCheckBoxForClipRecording() {
+      cb_rec.setSelected(true);
+   }
+
+   // <ui_handle.png>
+   public method isAudioRecording() : boolean {
+      return cb_rec.isSelected();
    }
 
    // <ui_handle.png>
@@ -1303,6 +1326,22 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
          {
             rec_count = recCount;
             Global.Print("[rec] "+Utils.MillisecondsToCompactHMSString(tRec));
+         }
+      }
+
+      if(recalc_procedural_waveforms_idle_timeout > 0)
+      {
+         // after loading project
+         recalc_procedural_waveforms_idle_timeout--;
+         int numProc = current_project.findNumProceduralSamples();
+         if(0 == recalc_procedural_waveforms_idle_timeout)
+         {
+            current_project.recalcProceduralWaveforms();
+            Global.Success("Project loaded ("+numProc+" procedural sample"+Utils.GetPluralString(numProc)+")");
+         }
+         else if(15 == recalc_procedural_waveforms_idle_timeout)
+         {
+            Global.Print("Synthesizing "+numProc+" procedural sample"+Utils.GetPluralString(numProc)+"..");
          }
       }
 
@@ -1824,10 +1863,6 @@ class RootForm : XMLForm, ActionProvider, StatusBarListener {
             return true;
 
          case @(cb_rec):
-            if(cb_rec.isSelected())
-            {
-               current_project.prepareRecord();
-            }
             handleToggleRecording();
             return true;
 

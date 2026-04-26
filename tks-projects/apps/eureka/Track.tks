@@ -20,7 +20,8 @@
 // ----          12Aug2024, 11Sep2024, 12Sep2024, 13Sep2024, 18Sep2024, 21Sep2024, 22Sep2024
 // ----          23Sep2024, 04Oct2024, 03Jan2025, 07Jan2025, 04Apr2025, 05Apr2025, 03May2025
 // ----          22May2025, 29May2025, 30May2025, 10Jun2025, 13Jun2025, 21Jun2025, 16Dec2025
-// ----          17Dec2025, 18Dec2025, 19Dec2025, 20Dec2025, 27Dec2025, 03Jan2026
+// ----          17Dec2025, 18Dec2025, 19Dec2025, 20Dec2025, 27Dec2025, 03Jan2026, 12Apr2026
+// ----          14Apr2026, 18Apr2026, 24Apr2026
 // ----
 // ----
 // ----
@@ -34,7 +35,8 @@ namespace st2;
 
 // <callback.png>
 function track_writer_thread_entry(local Thread _th) {
-   // Global.Debug3("Track: started writer thread th="+#(_th)+"\n");
+   Global.Debug3("Track: started writer thread th="+#(_th)+"\n");
+   // trace "xxx Track: started writer thread th="+#(_th);
    local Track thiz <= _th.userdata;
 
    local Mutex out_mutex <= thiz.out_mutex;
@@ -54,8 +56,9 @@ function track_writer_thread_entry(local Thread _th) {
    local PaStreamMacOSWorkgroupJoinToken *macOSWorkgroupJoinToken;
    if(STConfig.b_macos_audio_workgroup)
    {
+      // trace "xxx Track<"+thiz.name+">: try Audio.MacOSAudioWorkgroupJoin()";
       macOSWorkgroupJoinToken <= Audio.MacOSAudioWorkgroupJoin();
-      trace "[...] Track<"+thiz.name+">: thizMacOSAudioWorkgroupJoinToken="+#(macOSWorkgroupJoinToken);
+      // trace "[...] Track<"+thiz.name+">: macOSWorkgroupJoinToken="+#(macOSWorkgroupJoinToken);
    }
 
    while(thiz.b_running)
@@ -764,7 +767,7 @@ class Track {
    FloatArray next_chunk_sc_input_buffer;  // interleaved stereo (side chain)
    Mutex mtx_next_chunk_sc_input_buffer;
 
-   namespace int cur_track_idx;  // only valid during process() and trackReorder*()
+   namespace int cur_track_idx;  // only valid during process() and between trackReorderBegin/End()
 
    protected Double profile_process_t_start;
    protected Double profile_process_t_end;
@@ -779,7 +782,10 @@ class Track {
    protected int vrr_note_on_idx;     // used for chords (simultaneous note-ons)
 
    public boolean b_bypass_fx;
-   public boolean b_proc;        // 1=only process during procedural sample rendering
+
+   // 1=only process during procedural sample rendering
+   // -1(maybe)=only process during procedural sample rendering or when replay is stopped
+   public boolean b_proc;
 
    public SamplePadKit *sample_pad_kit;     // reference to current TrackPatchVariation.sample_pad_kit
    public SampleTimeline *sample_timeline;  // reference to current TrackPatchVariation.sample_timeline
@@ -791,6 +797,8 @@ class Track {
    TrackCtlState ctl_state;
    boolean       b_reload_ctls;            // true=inject CC/RPN ctl state into MIDIPipeFrame on next replay tick
    MIDIPipeFrame reload_midi_input_frame;  // current input events merged with reload events
+
+   boolean b_proc_force_all_notes_off;  // procedural track rendering. temporarily valid for next process()
 
 
 
@@ -845,6 +853,16 @@ class Track {
       initMainPatchVariation();
 
       Project.QueueTrackFormUpdate();
+   }
+
+   // <method.png>
+   public =replay= method resetCtlState_Sync() {
+      ctl_state.reset();
+   }
+
+   // <method.png>
+   public =replay= method getCtlStateInfoString_Sync() : String {
+      return ctl_state.getInfoString();
    }
 
    // <method_get.png>
@@ -1928,7 +1946,7 @@ class Track {
       ofs.i8 = b_ui_browser_visible;
 
       // Controller state (v20+)
-      ctl_state.saveState(ofs);      
+      ctl_state.saveState(ofs);
    }
 
    // <method.png>
@@ -2246,7 +2264,7 @@ class Track {
          if(ver >= 18)
          {
             // Procedural-sample-render-mode (v18+)
-            b_proc = ifs.b8;
+            b_proc = ifs.s8;
          }
 
          boolean bMirrorTrackAndMultiModesToVariations = false;
@@ -2719,10 +2737,12 @@ class Track {
    }
 
    // <replay.png>
-   public =audio_in= method prepareProcess(local int _trackIdx, local int _numFrames) {
+   public =audio_in= method prepareProcess(local int _trackIdx, local int _numFrames, local boolean _bProcForceAllNotesOff) {
       cur_track_idx = _trackIdx;
       mix_buffer.numElements = _numFrames * 2;
       mix_buffer.fill(0);
+
+      b_proc_force_all_notes_off = _bProcForceAllNotesOff;
 
       if(STConfig.track_autoroute_focus_name == name)
          Track.focus_send_track_idx = _trackIdx;
@@ -3270,13 +3290,27 @@ class Track {
          ctl_state.reset();
       }
 
-      if(b_reload_ctls)
+      if(b_reload_ctls)//// || b_proc_force_all_notes_off)
       {
          b_reload_ctls = false;
          reload_midi_input_frame = replay.midi_input_frame;
          _frInput <= reload_midi_input_frame;
 
          ctl_state.reload(_frInput, dev_idx, (midi_ch < 0) ? 0 : midi_ch);
+
+         // trace "xxx Track::process_int: reload ctl_state: #cc="+_frInput.getNumEventsCCByFlt(dev_idx, (midi_ch < 0) ? 0 : midi_ch);
+
+         // // if(midi_ch < 0)
+         // // {
+         // //    local int allOffMidiCh = 0;
+         // //    loop(16)
+         // //       _frInput.allNotesOff(true/*bSet*/, dev_idx, allOffMidiCh++);
+         // // }
+         // // else
+         // // {
+         // //    trace "xxx force all notes off dev_idx="+dev_idx+" midi_ch="+midi_ch;
+         // //    _frInput.allNotesOff(true/*bSet*/, dev_idx, midi_ch);
+         // // }
 
          replay.b_have_events = true;  // (todo) unsychronized write
       }
@@ -3464,6 +3498,8 @@ class Track {
          laneIdx++;
 
       } // foreach lane
+
+      b_proc_force_all_notes_off = false;
 
       if(b_lane_fade)
       {
@@ -3704,6 +3740,27 @@ class Track {
          else
             _retNames.add("");
       }
+   }
+
+   // <method.png>
+   public method stopAllVoices() {
+      // called by Project::stopProcTrackVoices() while =replay= is locked
+
+      Lane *lane;
+      foreach lane in lanes
+      {
+         Mod *mod;
+         foreach mod in lane.mods
+         {
+            mod.stopVoices();
+         }
+      }
+
+      if(null != sample_timeline)
+         sample_timeline.stopVoices();
+
+      if(null != sample_pad_kit)
+         sample_pad_kit.resetAllSampleVoices(null/*sampleOrNull*/);
    }
 
 }

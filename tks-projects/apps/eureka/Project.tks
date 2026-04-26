@@ -27,7 +27,7 @@
 // ----          19Apr2024, 20Apr2024, 28Apr2024, 03Jul2024, 05Jul2024, 07Aug2024, 12Aug2024
 // ----          19Sep2024, 23Sep2024, 08Nov2024, 15Nov2024, 22Nov2024, 30Dec2024, 07Jan2025
 // ----          14Jan2025, 04Apr2025, 06Apr2025, 12Jun2025, 13Jun2025, 09Dec2025, 13Dec2025
-// ----          18Dec2025, 19Dec2025, 20Dec2025, 03Jan2026, 08Jan2026
+// ----          18Dec2025, 19Dec2025, 20Dec2025, 03Jan2026, 08Jan2026, 14Apr2026, 18Apr2026
 // ----
 // ----
 // ----
@@ -574,6 +574,7 @@ class Project {
       else
          tracks.insert(_idx, #(deref track));
       track.newLane();
+      track.cur_track_idx = getTrackIdx(track);  // temporary during trackReorderBegin/End()
 
       updateSharedCPUCoreFlags();
 
@@ -620,6 +621,7 @@ class Project {
       // Called before inserting/deleting/moving tracks
       tmp_track_reorder_map.alloc(tracks.numElements);
       tmp_track_reorder_map.useAll();
+      // trace "xxx Project::trackReorderBegin: tmp_track_reorder_map="+tmp_track_reorder_map;
 
       Track *t;
       int trackIdx = 0;
@@ -637,6 +639,8 @@ class Project {
       {
          tmp_track_reorder_map[t.cur_track_idx] = trackIdx++;
       }
+
+      // trace "xxx Project::trackReorderEnd: tmp_track_reorder_map="+tmp_track_reorder_map;
 
       foreach t in tracks
       {
@@ -4491,7 +4495,11 @@ class Project {
       if(r)
       {
          if(STConfig.b_cycle_recalc_on_load)
-            recalcProceduralWaveforms();
+         {
+            // (note) some plugins (e.g. D16 Nepheton) output silence when rendering shortly after instantiation (TBI)
+            // // recalcProceduralWaveforms();
+            root_form.recalc_procedural_waveforms_idle_timeout = 20;
+         }
 
          if(STConfig.b_patch_plugin_compile_on_load)
             recalcAndReloadPatchPlugins();
@@ -5059,6 +5067,20 @@ class Project {
       Global.Profile("Project::recalcProceduralWaveforms() took "+t+"ms");
    }
 
+   // <method_get.png>
+   public method findNumProceduralSamples() : int {
+      int r = 0;
+      Sample *sample;
+      foreach sample in samples
+      {
+         if(sample.b_procedural)
+         {
+            r++;
+         }
+      }
+      return r;
+   }
+
    // <method_update.png>
    public method recalcAndReloadPatchPlugins() {
       // lazy-recompile plugins
@@ -5259,7 +5281,7 @@ class Project {
             local StringArray timelineNames;
             track.queryTimelineNames(timelineNames);
             ofs << timelineNames;
-         }         
+         }
 
          // Output levels
          int outputIdx = 0;
@@ -5330,7 +5352,7 @@ class Project {
    }
 
    // <method.png>
-   public =replay= method handleUploadProcSampleSeq(int _smpUID) : boolean {
+   public =replay= method handleUploadProcSampleSeq(int _smpUID, boolean _bResynthesize) : boolean {
       // (note) see Synergy NodeTrackerEditor::cmd_pattern_capture_upload_to_eureka()
       Sample sample <= findSampleByUniqueID(_smpUID);
       Global.Debug("Project::handleUploadProcSampleSeq: smpUID="+_smpUID+" => sample="+#(sample));
@@ -5399,6 +5421,22 @@ class Project {
 
                   SysEx.QueueSendSmpUploadSeqAck(smpUID);
 
+                  if(_bResynthesize)
+                  {
+                     boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
+                     if(root_form.isSamplePage())
+                     {
+                        PageSample pgSample <= root_form.pg_sample;
+                        pgSample.recalcAllCyclePatchesOrRenderTrack();  // also updates SampleView
+                     }
+                     else
+                     {
+                        sample.renderProceduralTrack();  // only update waveform
+                     }
+                     Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
+                  }
+
+                  // Succeeded
                   return true;
                }
                else
@@ -5510,6 +5548,18 @@ class Project {
       Track *track;
       foreach track in tracks
          track.queueReloadCtls();
+   }
+
+   // <method.png>
+   public =replay= method stopProcTrackVoices() {
+      Track *track;
+      foreach track in tracks
+      {
+         if(maybe == track.b_proc)
+         {
+            track.stopAllVoices();
+         }
+      }
    }
 
 }
