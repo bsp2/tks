@@ -237,6 +237,8 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
                }
 
                pmb <= pm.addDefaultButton(en.unique_name+"\t     "+en.rel_path, "preset_"+presetIdx);
+               if(aFiltered.numElements < maxPresets)
+                  pmb.setEnableProvideRightClick(true);
 
                byte ratingIdx = mathClampi((en.rating + 10) / 20, 0, 5);  // 0..100 => 0..5
                if(ratingIdx > 0)
@@ -263,14 +265,16 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
    }
 
    // <ui_show.png>
-   protected virtual contextMenuAddPresetSubMenu(PopupMenu pm) {
+   protected virtual contextMenuAddPresetSubMenu(PopupMenu pm, boolean _bRand) {
       PopupMenuButton *pmb;
 
       PageTrack pgTrack <= root_form.pg_track;
       Track track <= pgTrack.track;
-      preset_entries <= new PointerArray;
+      Lane lane <= parent_modgrid.getLaneByIdx(grid_x);
 
-      local StringArray aTrackNameWords <= track.name.splitSpace(false);
+      preset_entries <= new PointerArray;
+      local String sName <= track.name+" "+lane.lane_name;
+      local StringArray aTrackNameWords <= sName.splitSpace(false);
       String *sWord;
       local String *sWordLC;
       foreach sWord in aTrackNameWords
@@ -279,7 +283,9 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
          if(sWordLC >= "2")
             sWordLC.replace("2", "");  // e.g. 'bd2' => 'bd'
          // trace "xxx sWordLC=\""+sWordLC+"\"";
+         int startNumEntries = preset_entries.numElements;
          Samples.FindCacheEntriesByCategoryNameOrFilterKeyword(preset_entries, sWordLC);
+         Global.Debug2("ModGridSampleButton::contextMenuAddPresetSubMenu:   => found "+(preset_entries.numElements - startNumEntries)+" entries (kw=\""+sWordLC+"\")");
       }
 
       // Add 'similar' samples by finding categories from the current sample's tags
@@ -295,6 +301,36 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
 
       if(preset_entries.numElements > 0)
       {
+         Global.Debug2("ModGridSampleButton::contextMenuAddPresetSubMenu:   => found "+preset_entries.numElements+" entries total");
+         int idx;
+         _bRand = _bRand && (preset_entries.numElements > STConfig.num_sample_preset_menu_entries);
+         if(_bRand)
+         {
+            // Randomize
+            PointerArray aRand <= new PointerArray;
+            idx = preset_entries.numElements - 1;
+            loop(preset_entries.numElements)
+            {
+               if(rand(2) & 1)
+                  aRand.add(#(preset_entries.getDeref(idx)));
+               else
+                  aRand.insert(0, #(preset_entries.getDeref(idx)));
+               idx--;
+            }
+            preset_entries <= deref aRand;
+         }
+         else
+         {
+            // Sort
+            local StringArray aUniqueNames;
+            idx = 0;
+            loop(preset_entries.numElements)
+               aUniqueNames.add(preset_entries[idx++].unique_name);
+            local IntArray aSort;
+            aUniqueNames.sortByValue(aSort, false/*bCS*/);
+            preset_entries.rearrange(aSort);
+         }
+
          pm.addSeparator();
          PopupMenu spm <= PopupMenu.New(pm);
          pmb <= pm.addMenu("Presets", deref spm);
@@ -308,6 +344,20 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
          Global.Warning("Preset menu: no entries found");
       }
 
+   }
+
+   // <ui_handle.png>
+   protected virtual handleRandPresetMenu() {
+      Global.Print("Show randomized preset menu");
+      float curX = pm_context.getPositionX();
+      float curY = pm_context.getPositionY();
+      pm_context.hide();
+      showContextMenu(true/*bRand*/);
+      pm_context.moveToClippedPosition2f(curX, curY);
+      pm_context.focusNextMenuItem();
+      PopupMenuFolderButton fb <= pm_context.focusPreviousMenuItem();
+      if(fb instanceof PopupMenuFolderButton)
+         fb.handleKeyRight();
    }
 
    // <ui_handle.png>
@@ -344,7 +394,7 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
    public virtual onMouseClick(MouseEvent _ev) : boolean {
       if(_ev.isRightButton())
       {
-         showContextMenu();
+         showContextMenu(false/*bRand*/);
          return true;
       }
       return Button::onMouseClick(_ev);
@@ -381,7 +431,7 @@ class ModGridSampleButton : ModGridButton, ActionConsumer {
          case @(bt_samplename):
             if(Button.ACTION_RIGHT_CLICK == acName)
             {
-               showContextMenu();
+               showContextMenu(false/*bRand*/);
             }
             else
             {

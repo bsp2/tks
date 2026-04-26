@@ -1,7 +1,7 @@
 // ----
 // ---- file   : ModGrid.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -16,7 +16,7 @@
 // ----          16Mar2023, 21Apr2023, 12May2023, 08Jul2023, 29Jul2023, 16Aug2023, 17Sep2023
 // ----          04Oct2023, 01Nov2023, 05Nov2023, 24Nov2023, 22Mar2024, 03Jul2024, 05Jul2024
 // ----          10Aug2024, 23Sep2024, 27Sep2024, 27Dec2024, 05Jan2025, 08Jan2025, 11Dec2025
-// ----          13Dec2025
+// ----          13Dec2025, 17Apr2026, 18Apr2026, 24Apr2026
 // ----
 // ----
 // ----
@@ -988,8 +988,9 @@ class ModGrid : Panel, Control {
    }
 
    // <ui_handle.png>
-   public method handleMoveLaneLeft(int _laneIdx) {
-      Global.Print("Move lane "+(_laneIdx+1)+"/"+(track.lanes.numElements)+" left");
+   public method handleMoveLaneLeft(int _laneIdx, boolean _bVerbose) {
+      if(_bVerbose)
+         Global.Print("Move lane "+(_laneIdx+1)+"/"+(track.lanes.numElements)+" left");
       prepareLaneReorderMap();
       track.moveLaneLeft(_laneIdx);
       updateLaneReorderMap();
@@ -1014,6 +1015,19 @@ class ModGrid : Panel, Control {
       boolean bRet = track.newLaneAfter(_laneIdx);
       updateLaneReorderMap();
       track.handleLaneReorder(lane_reorder_map);
+      if(!_bQuiet)
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
+      return bRet;
+   }
+
+   // <ui_handle.png>
+   public method handleInsertLaneLeft(int _laneIdx, boolean _bQuiet) : boolean {
+      Global.Print("Insert lane before lane "+(_laneIdx+1)+"/"+(track.lanes.numElements));
+      prepareLaneReorderMap();
+      boolean bRet = track.newLaneAfter(_laneIdx);
+      updateLaneReorderMap();
+      track.handleLaneReorder(lane_reorder_map);
+      handleMoveLaneLeft(_laneIdx + 1, false/*bVerbose*/);
       if(!_bQuiet)
          provideAction(IntAction.New(getProvidedActionAlias(ACTION_MODGRID_CHANGED), this, _laneIdx+1));
       return bRet;
@@ -1102,7 +1116,7 @@ class ModGrid : Panel, Control {
    }
 
    // <method.png>
-   public method handleCreateNewEQ3At(int _gridX, int _gridY) {
+   public method handleCreateNewEQ3At(int _gridX, int _gridY) : ModGridEQ3Button {
       Lane lane <= track.getLaneByIdx(_gridX);
 
       if(null != lane)
@@ -1116,9 +1130,11 @@ class ModGrid : Panel, Control {
                lane.insertModAtY(deref modNew, _gridY);
                updateGrid(true/*bRelayout*/);
                Global.Print("Create mod "+modNew.getName());
+               return findButtonByMod(modNew);
             }
          }
       }
+      return null;
    }
 
    // <method.png>
@@ -1294,6 +1310,10 @@ class ModGrid : Panel, Control {
                ModSample modNew <= new ModSample;
                modNew.init();
                lane.insertModAtY(deref modNew, _gridY);
+               PageSample pgSample <= root_form.pg_sample;
+               Sample sample <= pgSample.getSelectedSample();
+               if(null != sample)
+                  modNew.setSampleIdx(current_project.getSampleIdx(sample));
                updateGrid(true/*bRelayout*/);
                Global.Print("Create mod "+modNew.getName());
             }
@@ -1547,7 +1567,7 @@ class ModGrid : Panel, Control {
    }
 
    // <method.png>
-   protected method createModCLAPAt(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
+   public =replay= method createModCLAPAt(int _gridX, int _gridY, String _uid, String _filterHintOrNull) : boolean {
       Lane lane <= track.getOrCreateLaneByIdx_Sync(_gridX);
       int numCreated = 0;
       if(null != lane)
@@ -1590,11 +1610,13 @@ class ModGrid : Panel, Control {
          CLAP.PopIgnoreAutomation(bIgnoreAutoOrigCLAP);
          Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
          Global.Print("Create "+numCreated+" CLAP instance"+Utils.GetPluralString(numCreated)+" (uid="+_uid+")");
+         return true;
       }
+      return false;
    }
 
    // <method.png>
-   protected method createModVST2At(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
+   public =replay= method createModVST2At(int _gridX, int _gridY, String _uid, String _filterHintOrNull) : boolean {
       Lane lane <= track.getOrCreateLaneByIdx_Sync(_gridX);
       int numCreated = 0;
       if(null != lane)
@@ -1637,11 +1659,14 @@ class ModGrid : Panel, Control {
          VST2.PopIgnoreAutomation(bIgnoreAutoOrig);
          Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
          Global.Print("Create "+numCreated+" VST2 instance"+Utils.GetPluralString(numCreated)+" (uid="+_uid+")");
+
+         return true;
       }
+      return false;
    }
 
    // <method.png>
-   protected method createModSTFXAt(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
+   protected =replay= method createModSTFXAt(int _gridX, int _gridY, String _uid, String _filterHintOrNull) {
       Lane lane <= track.getOrCreateLaneByIdx_Sync(_gridX);
       int numCreated = 0;
       if(null != lane)
@@ -1885,6 +1910,11 @@ class ModGrid : Panel, Control {
          (_o instanceof CLAPPluginEntry) ||
          (_o instanceof VSTScanEntry)    ||
          (_o instanceof StPluginInfo)    ;
+   }
+
+   // <ui.png>
+   public method provideChanged(int _gridX) {
+      provideAction(IntAction.New(getProvidedActionAlias(ModGrid.ACTION_MODGRID_CHANGED), this, _gridX));
    }
 
    // <ui_consume.png>
