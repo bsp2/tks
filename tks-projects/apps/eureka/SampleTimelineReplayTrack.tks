@@ -1,7 +1,7 @@
 // ----
 // ---- file   : SampleTimelineReplayTrack.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ---- legal  : (c) 2025-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----           (note) adapted from DrumPadDialog
 // ----
 // ---- created: 07Apr2025
-// ---- changed: 09Apr2025, 01May2025, 13Jun2025
+// ---- changed: 09Apr2025, 01May2025, 13Jun2025, 07Apr2026, 08Apr2026
 // ----
 // ----
 // ----
@@ -30,7 +30,7 @@ class SampleTimelineReplayTrack {
    StSamplePlayer *sample_player;
    FloatArray mix_buffer;
 
-   float level;  // (todo) remove ? (currently always 1.0)
+   float level;  // (todo) remove ? level scale (all lane outputs)
    float pan;    // (todo) remove ? (currently always 0.0)
 
    FloatArray current_lane_sends_l;  // lane send levels (left channel)
@@ -44,6 +44,18 @@ class SampleTimelineReplayTrack {
    define float SEND_SLEW_MEDIUM = 0.01;   // ~1.5sec
    define float SEND_SLEW_SLOW   = 0.001;  // ~5sec
    static FloatArray send_slew_tbl = [ SEND_SLEW_OFF, SEND_SLEW_FAST, SEND_SLEW_MEDIUM, SEND_SLEW_SLOW ];
+
+   int last_voice_key;
+
+   int fade_in_start_units;
+   int fade_in_end_units;
+
+   int fade_out_start_units;
+   int fade_out_end_units;
+
+   float fade_vol;  // 0..1
+
+   float perf_vol;  // 0..1
 
 
    public method init(SampleTimeline _parent) {
@@ -72,6 +84,11 @@ class SampleTimelineReplayTrack {
 
       target_lane_sends_l[0] = 1.0f;
       target_lane_sends_r[0] = 1.0f;
+
+      last_voice_key = -1;
+      resetFadeInOut();
+
+      perf_vol = 1.0f;
    }
 
    // <method_exit.png>
@@ -90,8 +107,22 @@ class SampleTimelineReplayTrack {
    }
 
    // <replay.png>
+   public method resetFadeInOut() {
+      fade_in_start_units = 0;
+      fade_in_end_units   = 0;
+
+      fade_out_start_units = 0;
+      fade_out_end_units   = 0;
+
+      fade_vol = 1.0f;
+   }
+
+   // <replay.png>
    public method resetVoices() {
       sample_player.resetVoices();
+      last_voice_key = -1;
+
+      resetFadeInOut();
    }
 
    // <replay.png>
@@ -100,6 +131,8 @@ class SampleTimelineReplayTrack {
          sample_player.allNotesOffRelease();
       else
          sample_player.allNotesOff();
+      last_voice_key = -1;
+      resetFadeInOut();
    }
 
    // <replay.png>
@@ -117,6 +150,63 @@ class SampleTimelineReplayTrack {
       else
       {
          sample_player.resetVoices();
+         last_voice_key = -1;
+         resetFadeInOut();
+      }
+   }
+
+   // <replay.png>
+   public method calcFadingAndUpdateSP(local int _playPos, local float _masterVol) {
+      fade_vol = 1.0f;
+      if(last_voice_key >= 0)
+      {
+         /*
+set xrange [0:1]
+set yrange [0:1]
+set xtics 0.1
+set ytics 0.1
+set grid xtics ytics
+show grid
+plot (1-sin(((1-x)**1.6)*pi*0.5)) title "fade in",  cos( (1-((1-x)**1.6))*pi*0.5 ) title "fade out", (x*x*(3-2*x)) title "smoothstep in", (1-(x*x*(3-2*x))) title "smoothstep out"
+          */
+
+         // Fade In
+         if(fade_in_end_units > fade_in_start_units)
+         {
+            local float t;
+            if(fade_in_start_units <= _playPos < fade_in_end_units)
+            {
+               // // 1-sin(pow(1-x,1.6)*pi*0.5)     (~0.5 at x=0.5)
+               t = float(_playPos - fade_in_start_units) / (fade_in_end_units - fade_in_start_units);
+               // // fade_vol *= mathSmoothStepf(0,1,t);
+               fade_vol *= t;
+               // // t = 1.0f - t;
+               // // t = mathPowerf(t, 1.6f);
+               // // t = 1.0f - sin(t*PI2);
+               // // fade_vol *= t;
+            }
+         }
+
+         // Fade Out
+         if(fade_out_end_units > fade_out_start_units)
+         {
+            if(fade_out_start_units <= _playPos < fade_out_end_units)
+            {
+               // cos( (1-pow(1-x,1.6))*pi*0.5 )  (~0.5 at x=0.5)
+               t = float(_playPos - fade_out_start_units) / (fade_out_end_units - fade_out_start_units);
+               // // fade_vol *= mathSmoothStepf(1,0,t);
+               fade_vol *= 1.0f - t;
+               // // t = 1.0f - t;
+               // // t = mathPowerf(t, 1.6f);
+               // // t = cos((1.0f - t)*PI2);
+               // // fade_vol *= t;
+            }
+         }
+
+         fade_vol = mathPowerf(2.0f, mathLerpf(-10,0,fade_vol));  // -60..0dB
+
+         // trace "xxx last_voice_key="+last_voice_key+" fade_vol="+fade_vol+" perf_vol="+perf_vol+" masterVol="+_masterVol;
+         sample_player.updateVolByKey(last_voice_key, fade_vol * perf_vol * _masterVol);
       }
    }
 
@@ -180,10 +270,13 @@ class SampleTimelineReplayTrack {
                                            ),
                         0.0f, 8.0f
                         );
+
          local float tL = levelL * t;
          local float tR = levelR * t;
+
          target_lane_sends_l[sendIdx] = tL;
          target_lane_sends_r[sendIdx] = tR;
+
          if(_laneSendsSlewAmt < 1.0)
          {
             current_lane_sends_l[sendIdx] = mathLerpf(current_lane_sends_l[sendIdx], tL, _laneSendsSlewAmt);

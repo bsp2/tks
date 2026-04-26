@@ -12,7 +12,7 @@
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
 // ----          04Apr2025, 05Apr2025, 09Apr2025, 10Apr2025, 01May2025, 04May2025, 06May2025
 // ----          20May2025, 31May2025, 12Jun2025, 14Jun2025, 15Jun2025, 22Jun2025, 13Sep2025
-// ----          14Sep2025, 10Oct2025, 02Jan2026, 03Jan2026
+// ----          14Sep2025, 10Oct2025, 02Jan2026, 03Jan2026, 07Apr2026, 15Apr2026
 // ----
 // ----
 // ----
@@ -31,7 +31,10 @@ class SampleTimelineEditorClip : TimelineClip {
    public method initTimelineClip(TimelineTrack _track) {
       TimelineClip::initTimelineClip(_track);
 
-      setRequiredSizeY(parent_timeline.track_size_y);
+      setRequiredSizeY(_track.timelineTrackGetEnableMasterVolume()
+                       ? parent_timeline.track_master_volume_size_y
+                       : parent_timeline.track_size_y
+                       );
    }
 
    public method timelineClipGetUID() : int {
@@ -74,6 +77,22 @@ class SampleTimelineEditorClip : TimelineClip {
       return model_clip.b_mute;
    }
 
+   public =replay= virtual timelineClipSetFadeInBeats(float _numBeats) {
+      model_clip.fade_in_beats = _numBeats;
+   }
+
+   public virtual timelineClipGetFadeInBeats() : float {
+      return model_clip.fade_in_beats;
+   }
+
+   public =replay= virtual timelineClipSetFadeOutBeats(float _numBeats) {
+      model_clip.fade_out_beats = _numBeats;
+   }
+
+   public virtual timelineClipGetFadeOutBeats() : float {
+      return model_clip.fade_out_beats;
+   }
+
    public =replay= virtual timelineClipSetOffset(int _offset) {
       model_clip.offset = _offset;
    }
@@ -84,9 +103,7 @@ class SampleTimelineEditorClip : TimelineClip {
 
    public =replay= method timelineClipCopyExtDataFrom(SampleTimelineEditorClip _o) {
       SampleTimelineModelClip modelClipO <= _o.model_clip;
-      model_clip.sample_idx     = modelClipO.sample_idx;
-      model_clip.lane_level_mod = modelClipO.lane_level_mod;
-      model_clip.lane_pan_mod   = modelClipO.lane_pan_mod;
+      model_clip.copyExtDataFrom(modelClipO);
    }
 
    public virtual timelineClipMerge(SampleTimelineEditorClip _clipR) : boolean {
@@ -216,7 +233,17 @@ class SampleTimelineEditorTrack : TimelineTrack {
    public virtual initTimelineTrack(Timeline _timeline) {
       TimelineTrack::initTimelineTrack(_timeline);
 
-      setRequiredSizeY(parent_timeline.track_size_y);
+      // trace "xxx initTimelineTrack: model_track="+#(model_track)+" timeline="+#(_timeline);
+   }
+
+   public method setModelTrack(SampleTimelineModelTrack _track) {
+      // called directly after timelineCreateTrack()
+      model_track <= _track;
+
+      setRequiredSizeY( ((null != model_track) && model_track.b_master_volume)
+                       ? parent_timeline.track_master_volume_size_y
+                       : parent_timeline.track_size_y
+                       );
    }
 
    public virtual timelineTrackInitClips() {
@@ -243,16 +270,86 @@ class SampleTimelineEditorTrack : TimelineTrack {
       model_track.deleteClip(_clip.model_clip);
    }
 
-   public virtual timelineTrackModelCreateClip(int _start, int _end) : int {
+   protected method createAndAssignSampleToNewClip(SampleTimelineModelClip _clip) {
+
+      local String sName = model_track.name;
+      if(!sName.isBlank())
+      {
+         SampleTimelineEditor sampleTimelineEditor <= parent_timeline;
+         SampleTimeline parentSampleTimeline <= sampleTimelineEditor.sample_timeline;
+         float bpm = parentSampleTimeline.getCurrentEditBPM();
+         float numFramesPerBeat = Audio.mix_rate * (60.0f / bpm);
+         int numUnitsPerBeat = parent_timeline.num_units_per_beat;
+         int clipNumUnits = _clip.end - _clip.start;
+         int noteLen = mathClampi(4096/numUnitsPerBeat, 1, 32+1);
+         int numFrames = (numFramesPerBeat *
+                          (clipNumUnits + STConfig.sample_timeline_new_sample_extra_beats * numUnitsPerBeat)
+                          ) / numUnitsPerBeat;
+
+         int numCh = 2;
+         local FloatArray samples;
+         samples.allocAndFill(numCh * numFrames, 0.0f);  // (todo) createEmptySample()
+      
+         PageSample pgSample <= root_form.pg_sample;
+         Sample sample <= pgSample.createSingleSampleFromWaveform(samples,
+                                                                  numCh, 0/*chOff*/, numCh/*dstNumCh*/,
+                                                                  Audio.mix_rate/*sampleRate*/,
+                                                                  false/*bLoop*/,
+                                                                  true/*bAudioClip*/,
+                                                                  bpm/*audioClipBPMOr0*/
+                                                                  );
+         if(null != sample)
+         {
+            if(!sName.startsWith("a_"))
+               sName.insert(0, "a_");
+            sName.trim();
+            local String sNSPName = sName;
+            sName.append(" 1");
+            sName.toLower();
+            sample.assignUniqueName(sName);
+            sample.setNamespaceIdx(current_project.getOrCreateSampleNamespace(sNSPName));
+            _clip.name = sample.unique_name;
+            _clip.setSampleIdx(current_project.getSampleIdx(sample));
+            Global.Print("Create sample (#frames="+numFrames+" #ch="+numCh+" bpm="+bpm+")");
+         }
+         else
+         {
+            Global.Error("Failed to create sample (#frames="+numFrames+")");
+         }
+      }
+      else
+      {
+         Global.Warning("Create sample: Track name is empty");
+      }
+   }
+
+   public virtual timelineTrackModelCreateClip(int _start, int _end, boolean _bCreateSample) : int {
       // returns uid
       SampleTimelineModelClip clip <= model_track.newClipInitAutoId(_start, _end);
-      clip.autoGenName();
+
+      if(_bCreateSample)
+      {
+         createAndAssignSampleToNewClip(clip);
+      }
+      else
+      {
+         clip.autoGenName();
+      }
+
       return clip.uid;
    }
 
    // // public virtual timelineTrackModelMergeClips(int _uidL, int _uidR) : boolean {
    // //    return model_track.mergeClips(_uidL, _uidR);
    // // }
+
+   public virtual timelineTrackSetEnableMasterVolume(boolean _bEnable) {
+      model_track.b_master_volume = _bEnable;
+   }
+
+   public virtual timelineTrackGetEnableMasterVolume() : boolean {
+      return model_track.b_master_volume;
+   }
 
 }
 
@@ -373,7 +470,7 @@ class SampleTimelineEditor : Timeline {
          {
             // // trace "xxx timelineInitTracks: track="+#(track);
             trackDO <= timelineCreateTrack();
-            trackDO.model_track <= track;
+            trackDO.setModelTrack(track);
          }
       }
       else
@@ -475,6 +572,13 @@ class SampleTimelineEditor : Timeline {
       }
       sample_timeline.loop_start = _start;
       sample_timeline.loop_len   = _len;
+   }
+
+   public virtual timelineUpdate() {
+      Timeline::timelineUpdate();
+      PageTrack pgTrack <= root_form.pg_track;
+      SampleTimelineForm f <= pgTrack.f_sampletimeline;
+      f.updateModelOptions();
    }
 
    public virtual timelineHandleCursorTrackChanged() {

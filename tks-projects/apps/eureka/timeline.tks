@@ -11,7 +11,7 @@
 // ---- changed: 25Jun2022, 26Jun2022, 04Apr2025, 04Apr2025, 05Apr2025, 06Apr2025, 10Apr2025
 // ----          01May2025, 06May2025, 20May2025, 22May2025, 31May2025, 13Jun2025, 14Jun2025
 // ----          15Jun2025, 22Jun2025, 26Jun2025, 13Sep2025, 17Sep2025, 10Oct2025, 02Jan2026
-// ----          17Jan2026
+// ----          17Jan2026, 07Apr2026, 08Apr2026, 14Apr2026, 15Apr2026, 17Apr2026, 18Apr2026
 // ----
 // ----
 // ----
@@ -51,6 +51,7 @@ use namespace st2;
 //     lctrl - lshift - v : insert space on all tracks and paste clipboard
 //              lctrl - w : cut selected clips
 //                      w : set cursor to top/left selection OR draw clips when there's a selection
+//             lshift - w : create new sample(s) when drawing new clip(s)
 //              lctrl - z : undo
 //      lctrl - shift - z : redo
 //               lalt - z : select clips until end
@@ -92,22 +93,39 @@ class TimelineClip : Layer {
 
    static Font *font;
 
-   define int DRAG_NONE  = 0;
-   define int DRAG_MOVE  = 1;
-   define int DRAG_START = 2;
-   define int DRAG_END   = 3;
+   define int DRAG_NONE     = 0;
+   define int DRAG_MOVE     = 1;
+   define int DRAG_START    = 2;
+   define int DRAG_END      = 3;
+   define int DRAG_FADE_IN  = 4;
+   define int DRAG_FADE_OUT = 5;
    static int drag_mode;
+   define int DRAG_FADE_THRESHOLD_Y = 24;  // in pixels
    define int DRAG_EDGE_THRESHOLD = 16;  // in pixels. half is outside the visible clip widget area.
    define int DRAG_X_OFFSET = 8;  // small offset to prevent clip from moving left when mouse is dragged left just a single pixel
    static int drag_start_x;
    static int drag_start_y;
 
+   boolean b_drag_fade_mouseover;
+   int drag_fade_in_delta_units;  // used for rendering preview
+   int drag_fade_out_delta_units;
+
+   // protected Slider *sl_fade_out;
 
    public method initTimelineClip(TimelineTrack _track) {
       b_editable = true;
       parent_track <= _track;
       parent_timeline <= _track.parent_timeline;
       initLayer();
+
+      // sl_fade_out <= Slider.New(0, 16, 0, 0.5/*step*/);
+      // sl_fade_out.setEnableAdaptiveKnobSize(false);
+      // sl_fade_out.setKnobSize(4.0f);
+      // sl_fade_out.setCustomMinSize(64.0f, 12.0f);
+      // sl_fade_out.setRequiredSize2f(64.0f, 12.0f);
+
+      drag_fade_in_delta_units = 0;
+      drag_fade_out_delta_units = 0;
    }
 
    public method timelineClipGetUID() : int {
@@ -118,6 +136,24 @@ class TimelineClip : Layer {
    public method timelineClipIsSelected() : boolean {
       IntArray clipSelection <= parent_timeline.clip_selection;
       return clipSelection.contains(timelineClipGetUID());
+   }
+
+   public method timelineClipIsAt(int _units, int _trackIdx) : boolean {
+      int clipStart    = timelineClipGetStart();
+      int clipEnd      = timelineClipGetEnd();
+      int clipTrackIdx = parent_track.track_idx;
+      int cursorX      = _units;
+      int cursorY      = _trackIdx;
+      return
+         (clipStart <= cursorX < clipEnd) &&
+         (clipTrackIdx == cursorY)
+         ;
+   }
+
+   public method timelineClipIsUnderCursor() : boolean {
+      return timelineClipIsAt(parent_timeline.cursor_units,
+                              parent_timeline.cursor_track
+                              );
    }
 
    public method timelineClipSetPositionX(float _px) {
@@ -138,6 +174,14 @@ class TimelineClip : Layer {
 
    public method timelineClipSetSizeX(float _w) {
       setRequiredSizeX(_w + DRAG_EDGE_THRESHOLD);
+
+      // removeChildLayer(sl_fade_out);
+      // float fadeW = sl_fade_out.getRequiredSizeX();
+      // if(_w >= (2*fadeW))
+      // {
+      //    sl_fade_out.setPositionX(_w + DRAG_EDGE_THRESHOLD/2 - fadeW);
+      //    addLayer(sl_fade_out, 0);
+      // }
    }
 
    public method timelineClipGetSizeX() : float {
@@ -164,6 +208,10 @@ class TimelineClip : Layer {
       // must be implemented by derived classes
    }
 
+   public method timelineClipGetLen() : int {
+      return timelineClipGetEnd() - timelineClipGetStart();
+   }
+
    public method timelineClipGetMinLen() : int {
       // implemented by derived classes
       return 1;
@@ -184,6 +232,22 @@ class TimelineClip : Layer {
 
    public method timelineClipGetEnableMute() : boolean {
       // implemented by derived classes
+   }
+
+   public method timelineClipSetFadeInBeats(float _numBeats) {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetFadeInBeats() : float {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipSetFadeOutBeats(float _numBeats) {
+      // must be implemented by derived classes
+   }
+
+   public method timelineClipGetFadeOutBeats() : float {
+      // must be implemented by derived classes
    }
 
    public method timelineClipSetOffset(int _offset/*numUnits*/) {
@@ -235,7 +299,7 @@ class TimelineClip : Layer {
       trace "[trc] TimelineClip::zoomInToClipKbd: cursor_units="+parent_timeline.cursor_units+" clipStart="+clipStart+" clipLen="+clipLen;
       clipStart -= parent_timeline.cursor_units;
       relX = mathClampf(float(clipStart) / clipLen, 0.0f, 1.0f);
-            
+
       parent_timeline.zoomInToClip(this,
                                    relX,
                                    relY,
@@ -248,12 +312,14 @@ class TimelineClip : Layer {
       // trace "xxx TimelineClip::onMouseEnter";
       redraw();
       grabKeyboardFocus();
+      b_drag_fade_mouseover = false;
       return true;
    }
 
    public virtual onMouseLeave(MouseEvent _ev) : boolean {
       // trace "xxx TimelineClip::onMouseLeave";
       redraw();
+      b_drag_fade_mouseover = false;
       return true;
    }
 
@@ -337,6 +403,11 @@ class TimelineClip : Layer {
       TimelineData data <= parent_timeline.data;
       data.drag_clip <= null;
       data.b_drag_clip_overlap = false;
+
+      drag_fade_in_delta_units = 0;
+      drag_fade_out_delta_units = 0;
+      parent_timeline.timelineResetSelectedClipsFadeDeltaUnits();
+
       if(_ev.isLeftButtonDown())
       {
          parent_timeline.timelineKbdSelectNone();
@@ -355,6 +426,42 @@ class TimelineClip : Layer {
 
          float w = getSizeX();
          float h = getSizeY();
+
+         if(_dragStart.mouse_rel_y < DRAG_FADE_THRESHOLD_Y)
+         {
+            if(VMOD_LSHIFT == UI.GetKeyMod())
+            {
+               drag_mode = DRAG_FADE_OUT;
+               return true;
+            }
+
+            float offX = DRAG_EDGE_THRESHOLD / 2.0;
+            float sizeX = timelineClipGetSizeX();
+            float pixPerUnit = parent_timeline.timelineGetPixPerUnit();
+            int unitsPerBeat = parent_timeline.num_units_per_beat;
+            int unitsPerBar = unitsPerBeat * parent_timeline.num_beats_per_bar;
+            float pixPerBeat = unitsPerBeat * pixPerUnit;
+            float pxFadeIn  = timelineClipGetFadeInBeats()  * pixPerBeat + offX;
+            float pxFadeOut = (timelineClipGetLen() - timelineClipGetFadeOutBeats()*unitsPerBeat) * pixPerUnit + offX;
+
+            // trace "xxx pxFadeIn="+pxFadeIn+" pxFadeOut="+pxFadeOut+" mouse_rel_x="+_dragStart.mouse_rel_x;
+
+            if(abs(pxFadeIn - _dragStart.mouse_rel_x)
+               <=
+               abs(pxFadeOut - _dragStart.mouse_rel_x)
+               )
+            {
+               drag_mode = DRAG_FADE_IN;
+               // trace "xxx begin DRAG_FADE_IN";
+            }
+            else
+            {
+               drag_mode = DRAG_FADE_OUT;
+               // trace "xxx begin DRAG_FADE_OUT";
+            }
+
+            return true;
+         }
 
          if(VMOD_LSHIFT == UI.GetKeyMod())
          {
@@ -386,6 +493,8 @@ class TimelineClip : Layer {
 
    protected method clipDragDeltaUnits(int deltaUnits) : int {
       int clipLen;
+      int unitsPerBeat = parent_timeline.num_units_per_beat;
+      int fadeUnits;
 
       if(DRAG_MOVE == drag_mode)
       {
@@ -399,8 +508,7 @@ class TimelineClip : Layer {
             deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
          }
       }
-
-      if(DRAG_START == drag_mode)
+      else if(DRAG_START == drag_mode)
       {
          clipLen = timelineClipGetEnd() - timelineClipGetStart() - deltaUnits;
          if(clipLen <= timelineClipGetMinLen())
@@ -413,8 +521,7 @@ class TimelineClip : Layer {
             deltaUnits = -timelineClipGetStart();
          }
       }
-
-      if(DRAG_END == drag_mode)
+      else if(DRAG_END == drag_mode)
       {
          clipLen = timelineClipGetEnd() - timelineClipGetStart() + deltaUnits;
 
@@ -428,10 +535,47 @@ class TimelineClip : Layer {
             deltaUnits = parent_timeline.canvas_size - timelineClipGetEnd();
          }
       }
+      else if(DRAG_FADE_IN == drag_mode)
+      {
+         fadeUnits = timelineClipGetFadeInBeats() * unitsPerBeat;
+         clipLen = timelineClipGetEnd() - timelineClipGetStart();
+         // trace "xxx DRAG_FADE_IN: deltaUnits="+deltaUnits+" fadeUnits="+fadeUnits+" clipLen="+clipLen;
+         if((fadeUnits + deltaUnits) > clipLen)
+         {
+            deltaUnits = clipLen - fadeUnits;
+            fadeUnits = clipLen;
+         }
+         else if((fadeUnits + deltaUnits) < 0)
+         {
+            deltaUnits = -fadeUnits;
+            fadeUnits = 0;
+         }
+         drag_fade_in_delta_units = deltaUnits;
+      }
+      else if(DRAG_FADE_OUT == drag_mode)
+      {
+         fadeUnits = timelineClipGetFadeOutBeats() * unitsPerBeat;
+         clipLen = timelineClipGetEnd() - timelineClipGetStart();
+         // trace "xxx DRAG_FADE_OUT: deltaUnits="+deltaUnits+" fadeUnits="+fadeUnits+" clipLen="+clipLen;
+         if((fadeUnits + deltaUnits) > clipLen)
+         {
+            deltaUnits = clipLen - fadeUnits;
+            fadeUnits = clipLen;
+         }
+         else if((fadeUnits + deltaUnits) < 0)
+         {
+            deltaUnits = -fadeUnits;
+            fadeUnits = 0;
+         }
+         drag_fade_out_delta_units = deltaUnits;
+      }
       return deltaUnits;
    }
 
    protected method dragDeltaUnits(int deltaUnits) {
+      int unitsPerBeat = parent_timeline.num_units_per_beat;
+      int fadeUnits;
+
       switch(drag_mode)
       {
          case DRAG_MOVE:
@@ -445,6 +589,16 @@ class TimelineClip : Layer {
 
          case DRAG_END:
             timelineClipSetEnd(timelineClipGetEnd() + deltaUnits);
+            break;
+
+         case DRAG_FADE_IN:
+            fadeUnits = timelineClipGetFadeInBeats() * unitsPerBeat;
+            timelineClipSetFadeInBeats(float(fadeUnits + deltaUnits) / unitsPerBeat);
+            break;
+
+         case DRAG_FADE_OUT:
+            fadeUnits = timelineClipGetFadeOutBeats() * unitsPerBeat;
+            timelineClipSetFadeOutBeats(float(fadeUnits + deltaUnits) / unitsPerBeat);
             break;
       }
    }
@@ -511,6 +665,12 @@ class TimelineClip : Layer {
       TimelineData data <= parent_timeline.data;
       float trackHeaderH = Timeline.GetTrackHeaderH();
 
+      float sizeX = timelineClipGetSizeX();
+      float pixPerUnit = parent_timeline.timelineGetPixPerUnit();
+      int unitsPerBeat = parent_timeline.num_units_per_beat;
+      int unitsPerBar = unitsPerBeat * parent_timeline.num_beats_per_bar;
+      float pixPerBeat = unitsPerBeat * pixPerUnit;
+
       // trace "xxx TimelineClip::onMouseDrag: currentEv.p=("+_currentEv.mouse_rel_x+";"+_currentEv.mouse_rel_y+")";
       int dx = _currentEv.mouse_rel_x - drag_start_x;
       if(DRAG_START == drag_mode)
@@ -525,20 +685,29 @@ class TimelineClip : Layer {
       {
          dx += DRAG_X_OFFSET;
       }
+
       int newX = getPositionX() + parent.getPositionX()/*track*/ + dx;
       if(DRAG_END == drag_mode)
       {
          newX += getSizeX();
       }
+      else if(DRAG_FADE_IN == drag_mode)
+      {
+         newX += (pixPerBeat * timelineClipGetFadeInBeats()) + DRAG_EDGE_THRESHOLD/2;
+      }
+      else if(DRAG_FADE_OUT == drag_mode)
+      {
+         newX += sizeX - (pixPerBeat * timelineClipGetFadeOutBeats()) + DRAG_EDGE_THRESHOLD/2;
+      }
 
-      int dy = _currentEv.mouse_rel_y;// - drag_start_y;
+      int dy = _currentEv.mouse_rel_y;
       if(!parent_timeline.b_allow_cross_track_clip_drag || (DRAG_MOVE != drag_mode))
          dy = 0;
       // trace "xxx TimelineClip::onMouseDrag: delta=("+dx+";"+dy+") position="+getPositionString();
 
       int newY = getPositionY() + parent.getPositionY()/*track*/ + dy;
-      newY = int( (newY - trackHeaderH) / parent_timeline.track_size_y) * parent_timeline.track_size_y;
-      // // data.drag_delta_y = newY - (position_y + parent.position_y);
+      // newY = int( (newY - trackHeaderH) / parent_timeline.track_size_y) * parent_timeline.track_size_y;
+      // // newY -= trackHeaderH;
 
       int newUnits = parent_timeline.timelinePixToUnits(newX);
       if(newUnits < 0)
@@ -548,10 +717,14 @@ class TimelineClip : Layer {
 
       int deltaUnits;
       int deltaTrackIdx = 0;
+      // int parentTrackIdx = parent_timeline.timelineGetTrackIndex(parent_track);
+      int parentTrackIdx = parent_track.track_idx;
+
       if( (DRAG_MOVE == drag_mode) && parent_timeline.b_allow_cross_track_clip_drag )
       {
-         int newTrackIdx = newY / parent_timeline.track_size_y;
-         deltaTrackIdx = newTrackIdx - parent_timeline.timelineGetTrackIndex(parent_track);
+         // int newTrackIdx = newY / parent_timeline.track_size_y;
+         int newTrackIdx = parent_timeline.timelineFindTrackIdxAtY(newY);
+         deltaTrackIdx = newTrackIdx - parentTrackIdx;
       }
       int uid;
 
@@ -567,6 +740,15 @@ class TimelineClip : Layer {
 
          case DRAG_END:
             deltaUnits = newUnits - timelineClipGetEnd();
+            break;
+
+         case DRAG_FADE_IN:
+            // trace "xxx drag_fade_in: newUnits="+newUnits+" clipStart="+timelineClipGetStart()+" fadeUnits="+(parent_timeline.num_units_per_beat*timelineClipGetFadeInBeats());
+            deltaUnits = newUnits - (timelineClipGetStart() + (parent_timeline.num_units_per_beat*timelineClipGetFadeInBeats()));
+            break;
+
+         case DRAG_FADE_OUT:
+            deltaUnits = (timelineClipGetEnd() - (parent_timeline.num_units_per_beat*timelineClipGetFadeOutBeats())) - newUnits;
             break;
       }
 
@@ -590,31 +772,37 @@ class TimelineClip : Layer {
 
       // Check move to new track
       data.b_drag_clip_overlap = false;
-      if(!parent_timeline.b_allow_clip_overlap )
+      if([DRAG_MOVE,DRAG_START,DRAG_END].contains(drag_mode))
       {
-         TimelineTrack *destTrack;
-         if(clipSelection.isEmpty())
+         if(!parent_timeline.b_allow_clip_overlap )
          {
-            // Single clip
-            destTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
-            data.b_drag_clip_overlap = checkClipDragOverlap(destTrack, deltaUnits);
-         }
-         else
-         {
-            // Multiple selection
-            foreach uid in clipSelection
+            TimelineTrack *destTrack;
+            if(clipSelection.isEmpty())
             {
-               clip <= parent_timeline.timelineFindClipByUID(uid);
-               destTrack <= parent_timeline.timelineGetTrackByIndex(clip.parent_track.track_idx + deltaTrackIdx);
-               data.b_drag_clip_overlap = clip.checkClipDragOverlap(destTrack, deltaUnits);
-               if(data.b_drag_clip_overlap)
-                  break;
+               // Single clip
+               destTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
+               data.b_drag_clip_overlap = checkClipDragOverlap(destTrack, deltaUnits);
+            }
+            else
+            {
+               // Multiple selection
+               foreach uid in clipSelection
+               {
+                  clip <= parent_timeline.timelineFindClipByUID(uid);
+                  destTrack <= parent_timeline.timelineGetTrackByIndex(clip.parent_track.track_idx + deltaTrackIdx);
+                  data.b_drag_clip_overlap = clip.checkClipDragOverlap(destTrack, deltaUnits);
+                  if(data.b_drag_clip_overlap)
+                     break;
+               }
             }
          }
       }
 
       data.drag_delta_x = parent_timeline.timelineUnitsToPix(deltaUnits);
-      data.drag_delta_y = deltaTrackIdx * parent_timeline.track_size_y;
+      TimelineTrack deltaTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
+      // data.drag_delta_y = deltaTrackIdx * parent_timeline.track_size_y;
+      if(null != deltaTrack)
+         data.drag_delta_y = deltaTrack.getPositionY() - parent_track.getPositionY();
 
       UI.CompositeAll();
       return true;
@@ -625,24 +813,49 @@ class TimelineClip : Layer {
       TimelineData data <= parent_timeline.data;
       float trackHeaderH = Timeline.GetTrackHeaderH();
 
+      float sizeX = timelineClipGetSizeX();
+      float pixPerUnit = parent_timeline.timelineGetPixPerUnit();
+      int unitsPerBeat = parent_timeline.num_units_per_beat;
+      int unitsPerBar = unitsPerBeat * parent_timeline.num_beats_per_bar;
+      float pixPerBeat = unitsPerBeat * pixPerUnit;
+
       int dx = _ev.mouse_rel_x - drag_start_x;
       if(DRAG_START == drag_mode)
+      {
          dx += DRAG_EDGE_THRESHOLD/2;
+      }
       else if(DRAG_END == drag_mode)
+      {
          dx -= DRAG_EDGE_THRESHOLD/2;
+      }
       else if(DRAG_MOVE == drag_mode)
+      {
          dx += DRAG_X_OFFSET;
+      }
+
       int newX = position_x + parent.position_x/*track*/ + dx;
       if(DRAG_END == drag_mode)
+      {
          newX += getSizeX();
+      }
+      else if(DRAG_FADE_IN == drag_mode)
+      {
+         newX += (pixPerBeat * timelineClipGetFadeInBeats()) + DRAG_EDGE_THRESHOLD/2;
+      }
+      else if(DRAG_FADE_OUT == drag_mode)
+      {
+         newX += sizeX - (pixPerBeat * timelineClipGetFadeOutBeats()) + DRAG_EDGE_THRESHOLD/2;
+      }
 
       int dy = _ev.mouse_rel_y;// - drag_start_y;
       if(!parent_timeline.b_allow_cross_track_clip_drag || (DRAG_MOVE != drag_mode))
          dy = 0;
       if(b_debug)
          trace "[dbg] TimelineClip::onMouseEndDrag: delta=("+dx+";"+dy+")";
-      int newY = position_y + parent.position_y/*track*/ + dy;
-      newY = int( (newY - trackHeaderH) / parent_timeline.track_size_y) * parent_timeline.track_size_y;
+
+      // // int newY = position_y + parent.position_y/*track*/ + dy;
+      // // newY = int( (newY - trackHeaderH) / parent_timeline.track_size_y) * parent_timeline.track_size_y;
+      int newY = getPositionY() + parent.getPositionY()/*track*/ + dy;
 
       int newUnits = parent_timeline.timelinePixToUnits(newX);
       if(newUnits < 0)
@@ -654,6 +867,7 @@ class TimelineClip : Layer {
       int uid;
       TimelineClip *clip;
       local PointerArray tracks;
+      int parentTrackIdx = parent_track.track_idx;
 
       switch(drag_mode)
       {
@@ -667,6 +881,15 @@ class TimelineClip : Layer {
 
          case DRAG_END:
             deltaUnits = newUnits - timelineClipGetEnd();
+            break;
+
+         case DRAG_FADE_IN:
+            // trace "xxx end drag_fade_in: newUnits="+newUnits+" clipStart="+timelineClipGetStart()+" fadeUnits="+(parent_timeline.num_units_per_beat*timelineClipGetFadeInBeats());
+            deltaUnits = newUnits - (timelineClipGetStart() + (parent_timeline.num_units_per_beat*timelineClipGetFadeInBeats()));
+            break;
+
+         case DRAG_FADE_OUT:
+            deltaUnits = (timelineClipGetEnd() - (parent_timeline.num_units_per_beat*timelineClipGetFadeOutBeats())) - newUnits;
             break;
       }
 
@@ -688,7 +911,8 @@ class TimelineClip : Layer {
       }
 
       // Clip track move
-      int newTrackIdx = newY / parent_timeline.track_size_y;
+      // // int newTrackIdx = newY / parent_timeline.track_size_y;
+      int newTrackIdx = parent_timeline.timelineFindTrackIdxAtY(newY);
       int deltaTrackIdx = newTrackIdx - parent_timeline.timelineGetTrackIndex(parent_track);
       // trace "xxx newTrackIdx="+newTrackIdx+" deltaTrackIdx="+deltaTrackIdx;
       if( (DRAG_MOVE == drag_mode) && parent_timeline.b_allow_cross_track_clip_drag )
@@ -718,25 +942,28 @@ class TimelineClip : Layer {
 
       // Check overlap
       data.b_drag_clip_overlap = false;
-      if(!parent_timeline.b_allow_clip_overlap)
+      if([DRAG_MOVE,DRAG_START,DRAG_END].contains(drag_mode))
       {
-         TimelineTrack *destTrack;
-         if(clipSelection.isEmpty())
+         if(!parent_timeline.b_allow_clip_overlap)
          {
-            // Single clip
-            destTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
-            data.b_drag_clip_overlap = checkClipDragOverlap(destTrack, deltaUnits);
-         }
-         else
-         {
-            // Multiple selection
-            foreach uid in clipSelection
+            TimelineTrack *destTrack;
+            if(clipSelection.isEmpty())
             {
-               clip <= parent_timeline.timelineFindClipByUID(uid);
-               destTrack <= parent_timeline.timelineGetTrackByIndex(clip.parent_track.track_idx + deltaTrackIdx);
-               data.b_drag_clip_overlap = clip.checkClipDragOverlap(destTrack, deltaUnits);
-               if(data.b_drag_clip_overlap)
-                  break;
+               // Single clip
+               destTrack <= parent_timeline.timelineGetTrackByIndex(parent_track.track_idx + deltaTrackIdx);
+               data.b_drag_clip_overlap = checkClipDragOverlap(destTrack, deltaUnits);
+            }
+            else
+            {
+               // Multiple selection
+               foreach uid in clipSelection
+               {
+                  clip <= parent_timeline.timelineFindClipByUID(uid);
+                  destTrack <= parent_timeline.timelineGetTrackByIndex(clip.parent_track.track_idx + deltaTrackIdx);
+                  data.b_drag_clip_overlap = clip.checkClipDragOverlap(destTrack, deltaUnits);
+                  if(data.b_drag_clip_overlap)
+                     break;
+               }
             }
          }
       }
@@ -804,6 +1031,9 @@ class TimelineClip : Layer {
       data.drag_clip <= null;
       data.b_drag_clip_overlap = false;
       drag_mode = DRAG_NONE;
+      drag_fade_in_delta_units = 0;
+      drag_fade_out_delta_units = 0;
+      parent_timeline.timelineResetSelectedClipsFadeDeltaUnits();
       redraw();
 
       if(bUpdate)
@@ -828,6 +1058,9 @@ class TimelineClip : Layer {
       data.drag_clip <= null;
       data.b_drag_clip_overlap = false;
       drag_mode = DRAG_NONE;
+      drag_fade_in_delta_units = 0;
+      drag_fade_out_delta_units = 0;
+      parent_timeline.timelineResetSelectedClipsFadeDeltaUnits();
       UI.CompositeAll();
       UI.RevertCursor();
    }
@@ -905,12 +1138,25 @@ class TimelineClip : Layer {
       return false;
    }
 
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      boolean bMouseOver = (_ev.mouse_rel_y < DRAG_FADE_THRESHOLD_Y);
+      if(b_drag_fade_mouseover ^ bMouseOver)
+      {
+         b_drag_fade_mouseover = bMouseOver;
+         redraw();
+      }
+      return false;
+   }
+
    protected method timelineClipRenderWaveform(float _offX, float _offY, float _sizeX, float _sizeY) {
       // (optionally) implemented by derived classes
    }
 
    public virtual onDraw() {
       boolean bMouseOver = isMouseOver();
+
+      // if(null != first_child)
+      //    trace "xxx drawClip: first_child="+#(first_child)+" first_child.position="+first_child.getPositionString()+" first_child.size="+first_child.getSizeString();
 
       float offX = DRAG_EDGE_THRESHOLD / 2.0;
       float offY = 0;
@@ -920,6 +1166,13 @@ class TimelineClip : Layer {
       int bg32;
       int c32;
       boolean bSelected = timelineClipIsSelected();
+
+      float pixPerUnit = parent_timeline.timelineGetPixPerUnit();
+      int unitsPerBeat = parent_timeline.num_units_per_beat;
+      int unitsPerBar = unitsPerBeat * parent_timeline.num_beats_per_bar;
+      float pixPerBeat = unitsPerBeat * pixPerUnit;
+
+      boolean bUnderCursor = timelineClipIsUnderCursor();
 
       if(bSelected)
       {
@@ -931,9 +1184,74 @@ class TimelineClip : Layer {
             bg32 = parent_timeline.c32_clip_bg_mouseover;
          else
             bg32 = parent_timeline.c32_clip_bg;
+
+         if(bUnderCursor)
+            bg32 = UI.MixColor32(bg32, parent_timeline.c32_clip_bg_select, 0.82f);
       }
 
       UIRenderer.DrawFilledRectangle(offX, offY, sizeX, sizeY, bg32);
+
+      if(b_drag_fade_mouseover)
+      {
+         // trace "xxx TimelineClip::onDraw: b_drag_fade_mouseover=1";
+         sdvg_EnableBlending();
+         UIRenderer.DrawFilledRectangle(offX, offY, sizeX, DRAG_FADE_THRESHOLD_Y, #10FFFFFF);
+      }
+
+      if(1 || parent_timeline.b_draw_clip_labels)  // (todo) b_draw_clip_fade
+      {
+         float fadeInBeats = timelineClipGetFadeInBeats();
+         float fadeOutBeats = timelineClipGetFadeOutBeats();
+         sdvg_SetStrokeColorARGB(sdvg_MixRGBf(bg32,
+                                              bSelected
+                                              ? bUnderCursor?#ff00ffff:#ff00bfbf
+                                              : bUnderCursor?#ff00ffff:#ff000000,
+                                              bSelected
+                                              ? bUnderCursor?0.8:0.7f
+                                              : bUnderCursor?0.8:0.5f
+                                              )
+                                 );
+         sdvg_SetStrokeWidth(bUnderCursor?1.2f:1.4f);
+         sdvg_EnableBlending();
+         float fadeW;
+         int fadeNum = 16;
+         float fadeT;
+         float fadeStepT = 1.0f / fadeNum;
+         float fadeY;
+         if(fadeInBeats > 0.0f)
+         {
+            fadeW = mathMinf(sizeX, pixPerBeat * fadeInBeats) - 2;
+            if(sdvg_BeginLineStripAA(fadeNum+1))
+            {
+               sdvg_Vertex2f(offX, offY+1+sizeY-2);
+               fadeT = fadeStepT;
+               loop(fadeNum)
+               {
+                  fadeY = mathSmoothStepf(1,0,fadeT) * (sizeY-2);
+                  sdvg_Vertex2f(offX + 1+fadeT*fadeW, offY+1+fadeY);
+                  fadeT += fadeStepT;
+               }
+               sdvg_End();
+            }
+         }
+         if(fadeOutBeats > 0.0f)
+         {
+            fadeW = mathMinf(sizeX, pixPerBeat * fadeOutBeats) - 2;
+            if(sdvg_BeginLineStripAA(fadeNum+1))
+            {
+               sdvg_Vertex2f(offX + sizeX - fadeW + 1, offY + 1);
+               fadeT = fadeStepT;
+               loop(fadeNum)
+               {
+                  fadeY = mathSmoothStepf(0,1,fadeT) * (sizeY-2);
+                  sdvg_Vertex2f(offX + sizeX - fadeW + 1 + fadeT*fadeW, offY+1+fadeY);
+                  fadeT += fadeStepT;
+               }
+               sdvg_End();
+            }
+         }
+         sdvg_SetStrokeWidth(1.0f);
+      }
 
       timelineClipRenderWaveform(offX, offY, sizeX, sizeY);
 
@@ -1011,10 +1329,12 @@ class TimelineTrack : Composite {
    }
 
    public method timelineTrackGetName() : String {
+      // implemented by derived classes
       return "<no track name>";
    }
 
    public method timelineTrackSetName(String _name) {
+      // implemented by derived classes
    }
 
    public method timelineTrackInitClips() {
@@ -1025,6 +1345,14 @@ class TimelineTrack : Composite {
    // // public method timelineTrackHandleClipOrderChanged() {
    // //    // after clip move, insert, ..
    // // }
+
+   public method timelineTrackSetEnableMasterVolume(boolean _bEnable) {
+      // implemented by derived classes
+   }
+
+   public method timelineTrackGetEnableMasterVolume() : boolean {
+      // implemented by derived classes
+   }
 
    public method timelineTrackLayoutClips() {
       float cx = 0;
@@ -1064,7 +1392,7 @@ class TimelineTrack : Composite {
       // implemented by derived classes
    }
 
-   public method timelineTrackModelCreateClip(int _start, int _end) : int {
+   public method timelineTrackModelCreateClip(int _start, int _end, boolean _bCreateSample) : int {
       // implemented by derived classes
       // return uid
    }
@@ -1078,8 +1406,19 @@ class TimelineTrack : Composite {
       return null;
    }
 
+   public method timelineTrackGetClipAt(int _units) : TimelineClip {
+      TimelineClip *clip;
+      foreach clip in clips
+      {
+         if(clip.timelineClipIsAt(_units, track_idx))
+            return clip;
+      }
+      return null;
+   }
+
    public virtual onDraw() {
       UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), (track_idx&1) ? parent_timeline.c32_track_bg_odd : parent_timeline.c32_track_bg_even);
+      // trace "xxx TimelineTrack::onDraw: track_idx="+track_idx+" getSizeX="+getSizeX()+" getSizeY="+getSizeY()+" getRequiredSizeY="+getRequiredSizeY();
    }
 }
 
@@ -1184,6 +1523,11 @@ class TimelineData : Composite {
       // convert mouse selection to kbd selection (draw aligned selection outline)
       parent_timeline.timelineSetKbdSelectionFromPixelRectangle(rect);
 
+      int kbdSelNumUnits = (parent_timeline.kbd_selection_units_end - parent_timeline.kbd_selection_units_start);
+      float kbdSelNumBars = float(kbdSelNumUnits) / (parent_timeline.timelineGetDefaultNumUnitsPerBeat() * parent_timeline.timelineGetDefaultNumBeatsPerBar());
+      Global.PrintFast("Select "+kbdSelNumUnits+" unit"+Utils.GetPluralString(kbdSelNumUnits)+" ("+(int(kbdSelNumBars*100)/100.0)+" bar"+Utils.GetPluralStringFloat(kbdSelNumBars)+")");
+      parent_timeline.b_last_selection_via_mouse = true;
+      
       if(parent_timeline.updateClipSelectionFromPixelRectangle(rect, true/*bTouch*/))
       {
          parent_timeline.timelineCursorSetPositionTopLeftClipSelection();
@@ -1368,7 +1712,10 @@ class TimelineData : Composite {
             return true;
 
          case VKEY_RETURN:
-            parent_timeline.timelineEditModeExec(parent_timeline.edit_mode);
+            parent_timeline.timelineEditModeExec(parent_timeline.edit_mode,
+                                                 _k.modShift(),
+                                                 parent_timeline.b_last_selection_via_mouse/*bUpdateCursor*/
+                                                 );
             parent_timeline.timelineMarkAsModified();
             return true;
 
@@ -1530,9 +1877,9 @@ class TimelineData : Composite {
                parent_timeline.handleClipCut();
                return true;
             }
-            else if(0 == _k.mod)
+            else if(_k.modNone() || _k.modShift())
             {
-               if(parent_timeline.handleKeyW())
+               if(parent_timeline.handleKeyW(_k.modShift()))
                   return true;
             }
             break;
@@ -1602,6 +1949,88 @@ class TimelineData : Composite {
       }
    }
 
+   protected method drawDragFade(TimelineClip clip, float offX, float offY, boolean _bOut) {
+      offX += (TimelineClip.DRAG_EDGE_THRESHOLD / 2.0);
+      // // offY += Timeline.GetTrackHeaderH();
+      float sizeX = clip.timelineClipGetSizeX();
+      float sizeY = clip.timelineClipGetSizeY();
+
+      int bg32;
+      int c32;
+      boolean bSelected = clip.timelineClipIsSelected();
+      if(bSelected)
+      {
+         bg32 = parent_timeline.c32_clip_bg_select;
+      }
+      else
+      {
+         if(clip.isMouseOver())
+            bg32 = parent_timeline.c32_clip_bg_mouseover;
+         else
+            bg32 = parent_timeline.c32_clip_bg;
+      }
+
+      float pixPerUnit = parent_timeline.timelineGetPixPerUnit();
+      int unitsPerBeat = parent_timeline.num_units_per_beat;
+      int unitsPerBar = unitsPerBeat * parent_timeline.num_beats_per_bar;
+      float pixPerBeat = unitsPerBeat * pixPerUnit;
+
+      boolean bUnderCursor = clip.timelineClipIsUnderCursor();
+      float fadeInBeats = clip.timelineClipGetFadeInBeats() + float(clip.drag_fade_in_delta_units)/unitsPerBeat;
+      float fadeOutBeats = clip.timelineClipGetFadeOutBeats() + float(clip.drag_fade_out_delta_units)/unitsPerBeat;
+      sdvg_SetStrokeColorARGB(sdvg_MixRGBf(bg32,
+                                           bSelected
+                                           ? bUnderCursor?#ff00ffff:#ff00bfbf
+                                           : bUnderCursor?#ff00ffff:#ff000000,
+                                           bSelected
+                                           ? bUnderCursor?0.8:0.7f
+                                           : bUnderCursor?0.8:0.5f
+                                           )
+                              );
+      sdvg_SetStrokeWidth(bUnderCursor ? 1.2f : 1.4f);
+      sdvg_EnableBlending();
+      UIRenderer.BindLinePattern(UIRenderer.LINE_PATTERN_3333, 1.0/256/*scale*/, 0.0/*offset*/);
+      float fadeW;
+      int fadeNum = 16;
+      float fadeT;
+      float fadeStepT = 1.0f / fadeNum;
+      float fadeY;
+      if(!_bOut && fadeInBeats > 0.0f)
+      {
+         fadeW = mathMinf(sizeX, pixPerBeat * fadeInBeats) - 2;
+         if(sdvg_BeginLineStripPatternAA(fadeNum+1))
+         {
+            sdvg_Vertex2f(offX, offY+1+sizeY-2);
+            fadeT = fadeStepT;
+            loop(fadeNum)
+            {
+               fadeY = mathSmoothStepf(1,0,fadeT) * (sizeY-2);
+               sdvg_Vertex2f(offX + 1+fadeT*fadeW, offY+1+fadeY);
+               fadeT += fadeStepT;
+            }
+            sdvg_End();
+         }
+      }
+      if(_bOut && fadeOutBeats > 0.0f)
+      {
+         fadeW = mathMinf(sizeX, pixPerBeat * fadeOutBeats) - 2;
+         if(sdvg_BeginLineStripPatternAA(fadeNum+1))
+         {
+            sdvg_Vertex2f(offX + sizeX - fadeW + 1, offY + 1);
+            fadeT = fadeStepT;
+            loop(fadeNum)
+            {
+               fadeY = mathSmoothStepf(0,1,fadeT) * (sizeY-2);
+               sdvg_Vertex2f(offX + sizeX - fadeW + 1 + fadeT*fadeW, offY+1+fadeY);
+               fadeT += fadeStepT;
+            }
+            sdvg_End();
+         }
+      }
+      sdvg_SetStrokeWidth(1.0f);
+      UIRenderer.UnbindLinePattern();
+   }
+
    public virtual onDrawOverlays() {
       // trace "xxx TimelineData::onDrawOverlays";
       float trackHeaderH = Timeline.GetTrackHeaderH();
@@ -1610,18 +2039,24 @@ class TimelineData : Composite {
       {
          sdvg_EnableBlending();
 
-         float clipX;
-         float clipY;
-         float clipW;
-         float clipH;
+         // // float clipX;
+         // // float clipY;
+         // // float clipW;
+         // // float clipH;
+         float offY;
 
          IntArray clipSelection <= parent_timeline.clip_selection;
          if(clipSelection.isEmpty())
          {
             // Single clip
             // trace "xxx drag_delta=("+drag_delta_x+";"+drag_delta_y+")";
-
-            drawDragClipOutline(drag_clip);
+            offY = drag_clip.getPositionY() + drag_clip.parent.getPositionY();
+            if(TimelineClip.DRAG_FADE_IN == TimelineClip.drag_mode)
+               drawDragFade(drag_clip, drag_clip.getPositionX(), offY, false/*bOut*/);
+            else if(TimelineClip.DRAG_FADE_OUT == TimelineClip.drag_mode)
+               drawDragFade(drag_clip, drag_clip.getPositionX(), offY, true/*bOut*/);
+            else
+               drawDragClipOutline(drag_clip);
          }
          else
          {
@@ -1631,7 +2066,13 @@ class TimelineData : Composite {
                TimelineClip clip <= parent_timeline.timelineFindClipByUID(uid);
                if(null != clip) // should not be null
                {
-                  drawDragClipOutline(clip);
+                  offY = clip.getPositionY() + clip.parent.getPositionY();
+                  if(TimelineClip.DRAG_FADE_IN == TimelineClip.drag_mode)
+                     drawDragFade(clip, clip.getPositionX(), offY, false/*bOut*/);
+                  else if(TimelineClip.DRAG_FADE_OUT == TimelineClip.drag_mode)
+                     drawDragFade(clip, clip.getPositionX(), offY, true/*bOut*/);
+                  else
+                     drawDragClipOutline(clip);
                }
             }
          }
@@ -1651,15 +2092,26 @@ class TimelineData : Composite {
          // //                                  );
          // // sdvg_DisableBlending();
       }
+      else if(DRAG_NONE == drag_mode)
+      {
+      }
 
       if(parent_timeline.timelineHaveKbdSelection())
       {
-         // int viewX = parent_timeline.sp_clips.getViewOffsetX();
-         // int viewY = parent_timeline.sp_clips.getViewOffsetY();
          int kbdSelX1 = parent_timeline.timelineUnitsToPix(parent_timeline.kbd_selection_units_start_sorted) + 1;
-         int kbdSelY1 = parent_timeline.track_size_y * parent_timeline.kbd_selection_track_start_sorted      + 1 + trackHeaderH;
+         int kbdSelY1;
+         TimelineTrack kbdSelTrack1 <= parent_timeline.timelineGetTrackByIndex(parent_timeline.kbd_selection_track_start_sorted);
+         kbdSelY1 = (null != kbdSelTrack1)
+            ? (kbdSelTrack1.getPositionY() + 1)
+            : (parent_timeline.track_size_y * parent_timeline.kbd_selection_track_start_sorted + 1 + trackHeaderH)
+            ;
          int kbdSelX2 = parent_timeline.timelineUnitsToPix(parent_timeline.kbd_selection_units_end_sorted)   - 1;
-         int kbdSelY2 = parent_timeline.track_size_y * (parent_timeline.kbd_selection_track_end_sorted + 1)  - 1 + trackHeaderH;
+         int kbdSelY2;
+         TimelineTrack kbdSelTrack2 <= parent_timeline.timelineGetTrackByIndex(parent_timeline.kbd_selection_track_end_sorted);
+         kbdSelY2 = (null != kbdSelTrack2)
+            ? (kbdSelTrack2.getPositionY() + kbdSelTrack2.getSizeY() - 1)
+            : (parent_timeline.track_size_y * (parent_timeline.kbd_selection_track_end_sorted + 1)  - 1 + trackHeaderH)
+            ;
          sdvg_EnableBlending();
          UIRenderer.DrawFilledRectangle(kbdSelX1, kbdSelY1,
                                         (kbdSelX2 - kbdSelX1), (kbdSelY2 - kbdSelY1),
@@ -1678,23 +2130,30 @@ class TimelineData : Composite {
 
       // Cursor position
       float cursorX = parent_timeline.timelineUnitsToPix(parent_timeline.cursor_units);
-      float cursorY = parent_timeline.cursor_track * parent_timeline.track_size_y + trackHeaderH;
+      // // float cursorY = parent_timeline.cursor_track * parent_timeline.track_size_y + trackHeaderH;
+      float cursorY = parent_timeline.timelineCalcCursorPixelY();
+      TimelineTrack cursorTrack <= parent_timeline.timelineGetTrackByIndex(parent_timeline.cursor_track);
+      float cursorH = (null != cursorTrack) ? cursorTrack.getSizeY() : parent_timeline.track_size_y;
+      // trace "xxx onDrawOverlays: parent_timeline.cursor_track="+parent_timeline.cursor_track+" cursorH="+cursorH;
       float w = parent_timeline.b_snap ? parent_timeline.timelineUnitsToPix(parent_timeline.timelineGetSnapUnits()) : 1;
       UIRenderer.DrawFilledRectangle(cursorX, 0 + Timeline.GetTrackHeaderH(),
                                      w, parent_timeline.sp_clips.getViewSizeY()- trackHeaderH,
                                      parent_timeline.c32_cursor
                                      );
-      UIRenderer.DrawFilledRectangle(cursorX+1, cursorY, w-1, parent_timeline.track_size_y, parent_timeline.c32_cursor);
+      UIRenderer.DrawFilledRectangle(cursorX+1, cursorY, w-1, cursorH, parent_timeline.c32_cursor);
       int c32 = hierarchyHasKeyboardFocus() ? parent_timeline.c32_cursor_outline_active : parent_timeline.c32_cursor_outline_inactive;
-      UIRenderer.DrawRectangle(cursorX+1, cursorY, w-1, parent_timeline.track_size_y, 1.0, c32);
+      UIRenderer.DrawRectangle(cursorX+1, cursorY, w-1, cursorH, 1.0, c32);
 
       // Draw mouse position
+      cursorTrack <= parent_timeline.timelineGetTrackByIndex(parent_timeline.timelineFindTrackIdxAtY(parent_timeline.highlight_py));
+      cursorH = (null != cursorTrack) ? cursorTrack.getSizeY() : parent_timeline.track_size_y;
+      // trace "xxx onDrawOverlays: parent_timeline.highlight_py="+parent_timeline.highlight_py+" => cursorTrack="+#(cursorTrack)+" => cursorH="+cursorH;
       UIRenderer.DrawFilledRectangle(parent_timeline.highlight_px, 0 + trackHeaderH,
                                      w, parent_timeline.sp_clips.getViewSizeY() - trackHeaderH,
                                      parent_timeline.c32_mouse
                                      );
       UIRenderer.DrawFilledRectangle(parent_timeline.highlight_px+1, parent_timeline.highlight_py,
-                                     w-1, parent_timeline.track_size_y,
+                                     w-1, cursorH,
                                      parent_timeline.c32_mouse
                                      );
 
@@ -1865,6 +2324,7 @@ class Timeline : Composite {
 
    FloatArray track_size_tbl = [16,24,32,48,64,80,96,128,192,256];  // in pixels
    int track_size_y;          // scaled/hi-dpi
+   int track_master_volume_size_y;  // track_size_y/2
    int default_track_size_y;  // scaled/hi-dpi
    int zoom_track_size_y;  // when dbl-clicking clip
 
@@ -1935,6 +2395,7 @@ class Timeline : Composite {
    int kbd_selection_track_start;
    int kbd_selection_units_end;
    int kbd_selection_track_end;
+   boolean b_last_selection_via_mouse;
 
    int kbd_selection_units_start_sorted;
    int kbd_selection_track_start_sorted;
@@ -2012,6 +2473,7 @@ class Timeline : Composite {
       if(0 == zoom_track_size_y)
          zoom_track_size_y = track_size_tbl.last;
       track_size_y = default_track_size_y;
+      track_master_volume_size_y = track_size_y / 2;
 
       b_allow_swap_wheel_zoom = true;
       b_swap_wheel_zoom = false;
@@ -2057,6 +2519,16 @@ class Timeline : Composite {
    public method timelineSetTrackLabelWidth(float _w) {
       if(null != vp_tracks)
          vp_tracks.setRequiredSizeX(_w);
+   }
+
+   public method timelineCalcCursorPixelY() : float {
+      if(cursor_track < tracks.numElements)
+      {
+         TimelineTrack track <= tracks[cursor_track];
+         return track.getPositionY();
+      }
+      // should not be reachable
+      return cursor_track * track_size_y;
    }
 
    public method timelineInitPalette() {
@@ -2226,11 +2698,29 @@ class Timeline : Composite {
       if(track_size_y < track_size_tbl[0])
          track_size_y = track_size_tbl[0];
       // trace "xxx timelineResetView: clipped track_size_y="+track_size_y;
+      track_master_volume_size_y = track_size_y / 2;
 
       timelineUpdateLayout();
       timelineUpdateTrackHeight();
 
       sp_clips.setViewOffset(0, 0);
+
+      timelineRefocusCursorTrack();
+   }
+
+   public method timelineResetSelectedClipsFadeDeltaUnits() {
+      IntArray clipSelection <= clip_selection;
+      if(!clipSelection.isEmpty())
+      {
+         // Multiple selection
+         int uid;
+         foreach uid in clipSelection
+         {
+            TimelineClip clip <= timelineFindClipByUID(uid);
+            clip.drag_fade_in_delta_units = 0;
+            clip.drag_fade_out_delta_units = 0;
+         }
+      }
    }
 
    public method timelineSwapRects() {
@@ -2250,16 +2740,40 @@ class Timeline : Composite {
       {
          num_visible = cur_rect.num_visible;
          track_size_y = cur_rect.track_size_y;
+         track_master_volume_size_y = track_size_y / 2;
 
          timelineUpdateLayout();
          timelineUpdateTrackHeight();
 
          sp_clips.setViewOffset(cur_rect.view_top, cur_rect.view_left);
+
+         timelineRefocusCursorTrack();
       }
       else
       {
          saveCurrentRect();
       }
+   }
+
+   public method timelineFindTrackIdxAtY(float _py) : int {
+      // (note) py must include trackHeaderH
+      TimelineTrack *track;
+      int trackIdx = 0;
+      foreach track in tracks
+      {
+         // trace "xxx trackIdx="+trackIdx+" find track.getPositionY()="+track.getPositionY()+" py="+_py+" track.getSizeY()="+track.getSizeY();
+         if(track.getPositionY() <= _py < (track.getPositionY() + track.getSizeY()))
+            return trackIdx;
+         trackIdx++;
+      }
+      return -1;
+   }
+
+   public method timelineFindTrackYForIdx(int _idx) : float {
+      TimelineTrack track <= tracks.get(_idx);
+      if(null != track)
+         return track.getPositionY();
+      return Timeline.GetTrackHeaderH();
    }
 
    public method timelinePixToUnits(float _px) : float {
@@ -2318,7 +2832,27 @@ class Timeline : Composite {
       sp_clips.setViewOffsetX(sp_clips.getViewOffsetX() + w * 0.15f);
    }
 
+   public method timelineGetCursorTrack() : TimelineTrack {
+      return tracks.get(cursor_track);
+   }
+
+   public method timelineRefocusCursorTrack() {
+      TimelineTrack track <= timelineGetCursorTrack();
+      if(null != track)
+      {
+         UI.SetKeyboardFocus(track);
+      }
+      else
+      {
+         UI.SetKeyboardFocus(this);
+      }
+   }
+
    public method zoomIn(float _mouseX) {
+
+      if(STConfig.b_sample_timeline_zoom_to_cursor)
+         _mouseX = timelineUnitsToPix(cursor_units);
+
       float units = timelinePixToUnits(_mouseX);
       float viewOffX = sp_clips.getViewOffsetX();
       float relX = _mouseX - viewOffX;
@@ -2332,6 +2866,14 @@ class Timeline : Composite {
 
       float newMouseX = timelineUnitsToPix(units);
       sp_clips.setViewOffsetX(newMouseX - relX);
+
+      if(STConfig.b_sample_timeline_zoom_make_selection_visible)
+      {
+         if(!timelineMakeKbdSelectionVisible())
+            timelineMakeFirstSelectedClipVisible();
+      }
+
+      timelineRefocusCursorTrack();
    }
 
    public method zoomInToClip(TimelineClip _clip, float _relX, float _relY, boolean _bAllowResetView) {
@@ -2352,6 +2894,7 @@ class Timeline : Composite {
 
       if(track_size_y < zoom_track_size_y)
          track_size_y = zoom_track_size_y;
+      track_master_volume_size_y = track_size_y / 2;
 
       timelineUpdateLayout();
       timelineUpdateTrackHeight();
@@ -2396,10 +2939,16 @@ class Timeline : Composite {
       Mouse.warpTo(p.x + _clip.timelineClipGetSizeX()*_relX + TimelineClip.DRAG_EDGE_THRESHOLD/2,
                    p.y + _clip.getSizeY()*_relY
                    );
+
+      timelineRefocusCursorTrack();
+
    }
 
    public method zoomOut(float _mouseX) {
       // // trace "xxx zoomOut";
+
+      if(STConfig.b_sample_timeline_zoom_to_cursor)
+         _mouseX = timelineUnitsToPix(cursor_units);
 
       float units = timelinePixToUnits(_mouseX);
       float viewOffX = sp_clips.getViewOffsetX();
@@ -2414,6 +2963,14 @@ class Timeline : Composite {
 
       float newMouseX = timelineUnitsToPix(units);
       sp_clips.setViewOffsetX(newMouseX - relX);
+
+      timelineRefocusCursorTrack();
+
+      if(STConfig.b_sample_timeline_zoom_make_selection_visible)
+      {
+         if(!timelineMakeKbdSelectionVisible())
+            timelineMakeFirstSelectedClipVisible();
+      }
    }
 
    public method zoomInY(float _mouseY) {
@@ -2426,6 +2983,7 @@ class Timeline : Composite {
       if(idx >= track_size_tbl.numElements)
          idx = track_size_tbl.numElements - 1;
       track_size_y = track_size_tbl.get(idx);
+      track_master_volume_size_y = track_size_y / 2;
 
       // // trace "xxx zoomInY: track_size_y="+track_size_y+" idx="+idx;
 
@@ -2433,6 +2991,8 @@ class Timeline : Composite {
 
       float newMouseY = trackIdx * track_size_y;
       sp_clips.setViewOffsetY(newMouseY - relY);
+
+      timelineRefocusCursorTrack();
    }
 
    public method zoomOutY(float _mouseY) {
@@ -2446,11 +3006,14 @@ class Timeline : Composite {
       if(idx < 0)
          idx = 0;
       track_size_y = track_size_tbl.get(idx);
+      track_master_volume_size_y = track_size_y / 2;
 
       timelineUpdateTrackHeight();
 
       float newMouseY = trackIdx * track_size_y;
       sp_clips.setViewOffsetY(newMouseY - relY);
+
+      timelineRefocusCursorTrack();
    }
 
    public method scrollTrack(int _dir) {
@@ -2496,13 +3059,19 @@ class Timeline : Composite {
    public method timelineToggleSnap() {
       b_snap = !b_snap;
       Global.Debug("Timeline::timelineToggleSnap: b_snap is "+b_snap);
+      Global.Print("Snap-to-grid is "+Utils.GetEnableString(b_snap));
       UI.CompositeAll();
    }
 
    public method timelineCycleSnapUnits() {
       snap_tbl_idx = (snap_tbl_idx + 1) % snap_tbl.numElements;
       Global.Debug("Timeline::timelineCycleSnapUnits: snap_tbl_idx is "+snap_tbl_idx+" => "+snap_tbl.get(snap_tbl_idx)+" \""+snap_tbl_names.get(snap_tbl_idx)+"\"");
+      Global.Print("Snap-to-grid units is "+snap_tbl_names.get(snap_tbl_idx));
       UI.CompositeAll();
+   }
+
+   public method timelineGetSnapUnitsName() : String {
+      return snap_tbl_names.get(snap_tbl_idx);
    }
 
    protected method timelineNewTrack() : TimelineTrack {
@@ -2601,8 +3170,9 @@ class Timeline : Composite {
 
       if(_y >= trackHeaderH)
       {
-         _y -= trackHeaderH;
-         int trackIdx = _y / track_size_y;
+         // // _y -= trackHeaderH;
+         // // int trackIdx = _y / track_size_y;
+         int trackIdx = timelineFindTrackIdxAtY(_y);
 
          TimelineTrack track <= tracks.get(trackIdx);
          if(null != track)
@@ -2695,8 +3265,14 @@ class Timeline : Composite {
          x1 = timelineSnapUnits(x1, false/*bAlignRight*/);
          x2 = timelineSnapUnits(x2, bAlignRight);
       }
-      int y1 = (_rect.qy - trackHeaderH) / track_size_y;
-      int y2 = (_rect.py - trackHeaderH) / track_size_y;
+      // // int y1 = (_rect.qy - trackHeaderH) / track_size_y;
+      // // int y2 = (_rect.py - trackHeaderH) / track_size_y;
+      int y1 = timelineFindTrackIdxAtY(_rect.qy);
+      int y2 = timelineFindTrackIdxAtY(_rect.py);
+      if(-1 == y1)
+         y1 = 0;
+      if(-1 == y2)
+         y2 = tracks.numElements - 1;
       kbd_selection_units_start = x1;
       kbd_selection_units_end   = x2;
       kbd_selection_track_start = y1;
@@ -2912,9 +3488,11 @@ class Timeline : Composite {
       local Rectangle2f rect;
       float trackHeaderH = Timeline.GetTrackHeaderH();
       rect.qx = int(timelineUnitsToPix(kbd_selection_units_start_sorted));
-      rect.qy = int(track_size_y * kbd_selection_track_start_sorted + trackHeaderH);
+      // // // rect.qy = int(track_size_y * kbd_selection_track_start_sorted + trackHeaderH);
+      rect.qy = timelineFindTrackYForIdx(kbd_selection_track_start_sorted);
       rect.px = int(timelineUnitsToPix(kbd_selection_units_end_sorted));
-      rect.py = int(track_size_y * (kbd_selection_track_end_sorted + 1) + trackHeaderH);
+      // // rect.py = int(track_size_y * (kbd_selection_track_end_sorted + 1) + trackHeaderH);
+      rect.py = timelineFindTrackYForIdx(kbd_selection_track_end_sorted + 1);
       if(updateClipSelectionFromPixelRectangle(rect, _bTouch))
          redraw();
    }
@@ -3027,15 +3605,21 @@ class Timeline : Composite {
       foreach track in tracks
       {
          track.setPositionY(cy);
-         track.setRequiredSizeY(track_size_y);
+         float trackSy =
+            track.timelineTrackGetEnableMasterVolume()
+            ? track_master_volume_size_y
+            : track_size_y
+            ;
+         track.setRequiredSizeY(trackSy);
+         // trace "[trc] timelineUpdateTrackHeight: trackSy="+trackSy+" track_master_volume_size_y="+track_master_volume_size_y+" getRequiredSizeY()="+track.getRequiredSizeY();
 
          TimelineClip *clip;
          foreach clip in track.clips
          {
-            clip.setRequiredSizeY(track_size_y);
+            clip.setRequiredSizeY(trackSy);
          }
 
-         cy += track_size_y;
+         cy += trackSy;
       }
 
       timelineUpdateLayout();
@@ -3094,6 +3678,7 @@ class Timeline : Composite {
       if(b_debug) trace "[dbg] Timeline::timelineRestoreEditorState state="+#(_state);
       num_visible  = _state.num_visible;
       track_size_y = _state.track_size_y;
+      track_master_volume_size_y = track_size_y / 2;
       timelineUpdate();
       // // timelineUpdateTrackHeight();  // [01May2025]
       if(b_debug) trace "[dbg] timelineRestoreEditorState: view_units="+_state.view_units+" view_tracks="+_state.view_tracks+" track_size_y="+track_size_y;
@@ -3308,12 +3893,13 @@ class Timeline : Composite {
 
    public method timelineCursorSetPositionFromPix(int _x, int _y) {
       float trackHeaderH = Timeline.GetTrackHeaderH();
-      _y -= trackHeaderH;
       cursor_units = timelinePixToUnits(_x);
       if(b_snap)
          cursor_units = timelineSnapUnits(cursor_units, false/*bAlignRight*/);
       int oldCursorTrack = cursor_track;
-      cursor_track = _y / track_size_y;
+      // // _y -= trackHeaderH;
+      // // cursor_track = _y / track_size_y;
+      cursor_track = timelineFindTrackIdxAtY(_y);
       cursor_track = mathClampi(cursor_track, 0, tracks.numElements - 1);
       if(oldCursorTrack != cursor_track)
          timelineHandleCursorTrackChanged();
@@ -3343,12 +3929,70 @@ class Timeline : Composite {
    }
 
    public method timelineCursorMakeVisible() {
+      // (note) does not change zoom (only adjusts view offset)
       int snapUnits = timelineGetSnapUnits();
       int w = timelineUnitsToPix(snapUnits);
       Point2f p; p.init(timelineUnitsToPix(cursor_units), cursor_track * track_size_y);
       Size2f s; s.init(w, track_size_y);
+      TimelineTrack cursorTrack <= timelineGetTrackByIndex(cursor_track);
+      if(null != cursorTrack)
+      {
+         p.y = cursorTrack.getPositionY() - Timeline.GetTrackHeaderH();
+         s.y = cursorTrack.getSizeY();
+      }
       sp_clips.makeRectVisible(p, s);
       UI.CompositeAll();
+   }
+
+   public method timelineMakeKbdSelectionVisible() : boolean {
+      // (note) does not change zoom (only adjusts view offset)
+      if(timelineHaveKbdSelection())
+      {
+         TimelineTrack trackBeg <= timelineGetTrackByIndex(kbd_selection_track_start_sorted);
+         TimelineTrack trackEnd <= timelineGetTrackByIndex(kbd_selection_track_end_sorted);
+         if(null == trackBeg)
+            trackBeg <= trackEnd;
+         if(null == trackEnd)
+            trackEnd <= trackBeg;
+         if(null != trackBeg && null != trackEnd)
+         {
+            Point2f p; p.init(timelineUnitsToPix(kbd_selection_units_start_sorted),
+                              trackBeg.getPositionY() - Timeline.GetTrackHeaderH()
+                              );
+            Size2f s; s.init(timelineUnitsToPix(kbd_selection_units_end_sorted - kbd_selection_units_start_sorted),
+                             (trackEnd.getPositionY() + trackEnd.getSizeY()) - p.y
+                             );
+            // // trace "[trc] Timeline::timelineMakeKbdSelectionVisible: p="+p+" s="+s;
+            sp_clips.makeRectVisible(p, s);
+            UI.CompositeAll();
+         }
+         return true;
+      }
+      return false;
+   }
+
+   public method timelineMakeFirstSelectedClipVisible() {
+      TimelineClip clip <= timelineGetFirstSelectedClip();
+      TimelineTrack *track;
+      if(null == clip)
+      {
+         track <= timelineGetCursorTrack();
+         if(null != track)
+            clip <= track.timelineTrackGetClipAt(cursor_units);
+      }
+      if(null != clip)
+      {
+         track <= clip.parent_track;
+         Point2f p; p.init(timelineUnitsToPix(clip.timelineClipGetStart()),
+                           track.getPositionY() - Timeline.GetTrackHeaderH()
+                           );
+         Size2f s; s.init(timelineUnitsToPix(clip.timelineClipGetLen()),
+                          track.getSizeY()
+                          );
+         // // trace "[trc] Timeline::timelineMakeFirstSelectedClipVisible: p="+p+" s="+s;
+         sp_clips.makeRectVisible(p, s);
+         UI.CompositeAll();
+      }
    }
 
    public method timelineCursorMoveLeft(boolean _bSelect) {
@@ -3370,6 +4014,7 @@ class Timeline : Composite {
          kbd_selection_units_end = cursor_units;
          timelineSortKbdSelection();
          timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+         b_last_selection_via_mouse = false;
       }
       else
       {
@@ -3403,6 +4048,7 @@ class Timeline : Composite {
          kbd_selection_units_end = cursor_units;
          timelineSortKbdSelection();
          timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+         b_last_selection_via_mouse = false;
       }
       else
       {
@@ -3434,6 +4080,7 @@ class Timeline : Composite {
          kbd_selection_track_end = cursor_track;
          timelineSortKbdSelection();
          timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+         b_last_selection_via_mouse = false;
       }
       else
       {
@@ -3463,6 +4110,7 @@ class Timeline : Composite {
          kbd_selection_track_end = cursor_track;
          timelineSortKbdSelection();
          timelineClipSelectionFromKbdSelection(true/*bTouch*/);
+         b_last_selection_via_mouse = false;
       }
       else
       {
@@ -3581,7 +4229,13 @@ class Timeline : Composite {
       trace "[...] Timeline::timelineSetEditMode: edit_mode is "+edit_mode_names.get(edit_mode)+" ("+edit_mode+")";
    }
 
-   public method timelineDrawClip(int _units, int _trackIdx, int _numUnits, int _numTracks) {
+   public method timelineDrawClip(int _units,
+                                  int _trackIdx,
+                                  int _numUnits,
+                                  int _numTracks,
+                                  boolean _bCreateSample,
+                                  boolean _bUpdateCursor
+                                  ) {
       boolean bCanDraw = true;
 
       if(!b_allow_clip_overlap)
@@ -3599,7 +4253,10 @@ class Timeline : Composite {
             TimelineTrack track <= tracks.get(trackIdx);
             if(null != track)
             {
-               int uid = track.timelineTrackModelCreateClip(_units/*start*/, (_units + _numUnits)/*end*/);
+               int uid = track.timelineTrackModelCreateClip(_units/*start*/,
+                                                            (_units + _numUnits)/*end*/,
+                                                            _bCreateSample
+                                                            );
             }
             trackIdx++;
          }
@@ -3607,6 +4264,14 @@ class Timeline : Composite {
          if(timelineUndoEnd())
          {
             timelineUpdate();
+
+            if(_bUpdateCursor)
+            {
+               cursor_units = kbd_selection_units_start_sorted;
+               cursor_track = kbd_selection_track_start_sorted;
+               timelineShowCursorClipDetails();
+            }
+
             redraw();
          }
       }
@@ -3625,11 +4290,16 @@ class Timeline : Composite {
             int clipOffset = clip.timelineClipGetOffset();
             clip.timelineClipSetEnd(_units);
             TimelineTrack track <= clip.parent_track;
-            int uidR = track.timelineTrackModelCreateClip(_units, clipEnd);
+            int uidR = track.timelineTrackModelCreateClip(_units,
+                                                          clipEnd,
+                                                          false/*bCreateSample*/
+                                                          );
             addSelection.add(_bReturnR ? uidR : uid);
             timelineUpdate();
             clip <= timelineFindClipByUID(uid);
+            clip.timelineClipSetFadeOutBeats(0);
             TimelineClip clipR <= timelineFindClipByUID(uidR);
+            clipR.timelineClipSetFadeInBeats(0);
             clipR.timelineClipSetOffset(clipOffset + (_units - clipStart));
             clipR.timelineClipSetEnableMute(clip.timelineClipGetEnableMute());
             clipR.timelineClipCopyExtDataFrom(clip);
@@ -3777,7 +4447,10 @@ class Timeline : Composite {
             // Erase area inside the clip
             //  - split and create new clip
             clip.timelineClipSetEnd(uStart);
-            int uidR = track.timelineTrackModelCreateClip(uEnd, clipEnd);
+            int uidR = track.timelineTrackModelCreateClip(uEnd,
+                                                          clipEnd,
+                                                          false/*bCreateSample*/
+                                                          );
             timelineUpdate();  // invalidates 'clip' layer
             clip <= timelineFindClipByUID(uid);
             TimelineClip clipR <= timelineFindClipByUID(uidR);
@@ -3819,8 +4492,8 @@ class Timeline : Composite {
       }
    }
 
-   public method timelineEditModeExec(int _editMode) {
-      // via RETURN key
+   public method timelineEditModeExec(int _editMode, boolean _bShift, boolean _bUpdateCursor) {
+      // via RETURN / 'w' key
       switch(_editMode)
       {
          case EDIT_SELECT:
@@ -3833,7 +4506,9 @@ class Timeline : Composite {
                timelineDrawClip(kbd_selection_units_start_sorted,
                                 kbd_selection_track_start_sorted,
                                 (kbd_selection_units_end_sorted - kbd_selection_units_start_sorted),
-                                (kbd_selection_track_end_sorted - kbd_selection_track_start_sorted + 1)
+                                (kbd_selection_track_end_sorted - kbd_selection_track_start_sorted + 1),
+                                _bShift/*bCreateSample*/,
+                                _bUpdateCursor
                                 );
             }
             break;
@@ -3842,13 +4517,19 @@ class Timeline : Composite {
 
    public method timelineSetHighlightPos(int _x, int _y) {
       float trackHeaderH = Timeline.GetTrackHeaderH();
-      _y -= trackHeaderH;
       int units = timelinePixToUnits(_x);
       if(b_snap)
          units = timelineSnapUnits(units, false/*bAlignRight*/);
       int px = timelineUnitsToPix(units);
-      int py = int(_y / track_size_y) * track_size_y + trackHeaderH;
-      if((px != highlight_px) || (py != highlight_py))
+      // // _y -= trackHeaderH;
+      // // int py = int(_y / track_size_y) * track_size_y + trackHeaderH;
+      int py = timelineFindTrackIdxAtY(_y);
+      // trace "xxx timelineSetHighlightPos: y="+_y+" => trackIdx="+py;
+      if(-1 != py)
+         py = timelineFindTrackYForIdx(py);
+      else
+         py = 0;
+      if( px != highlight_px || py != highlight_py )
       {
          highlight_px = px;
          highlight_py = py;
@@ -4121,6 +4802,7 @@ class Timeline : Composite {
 
    public method handleClipCopy() {
       // lctrl-c
+      // trace "xxx handleClipCopy: timelineHaveSelection()="+timelineHaveSelection();
       if(!timelineHaveSelection())
          timelineSelectClipUnderCursor();
       timelineCopy(null/*singleClipOrNull*/);
@@ -4178,7 +4860,7 @@ class Timeline : Composite {
       timelineSetEditMode(Timeline.EDIT_SELECT);
    }
 
-   public method handleKeyW() : boolean {
+   public method handleKeyW(boolean _bShift) : boolean {
       if(timelineHaveSelection())
       {
          timelineCursorSetPositionTopLeftClipSelection();
@@ -4187,7 +4869,7 @@ class Timeline : Composite {
       }
       else if(timelineHaveKbdSelection())
       {
-         timelineEditModeExec(Timeline.EDIT_DRAW);
+         timelineEditModeExec(Timeline.EDIT_DRAW, _bShift, b_last_selection_via_mouse/*bUpdateCursor*/);
          timelineMarkAsModified();
          return true;
       }

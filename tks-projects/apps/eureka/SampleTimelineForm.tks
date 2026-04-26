@@ -11,13 +11,16 @@
 // ---- created: 04Apr2025
 // ---- changed: 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 10Apr2025, 01May2025, 03May2025
 // ----          04May2025, 20May2025, 31May2025, 14Jun2025, 15Jun2025, 22Jun2025, 26Jun2025
-// ----          02Jan2026, 03Jan2026, 17Jan2026
+// ----          02Jan2026, 03Jan2026, 17Jan2026, 07Apr2026, 14Apr2026, 15Apr2026, 16Apr2026
+// ----          17Apr2026
 // ----
 // ----
 // ----
 
-//         SPACE : start replay from loop start
-// lctrl - SPACE : start replay from edit cursor
+//           SPACE : start replay from loop start
+//   lctrl - SPACE : start replay from edit cursor
+// lctrl - x ENTER :
+// lctrl - x =     : start clip recording (via first record-enabled audio track)
 
 
 module MSampleTimelineForm;
@@ -42,6 +45,9 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    public SampleView *sv_wave;
    public Sample *current_sample;
 
+   public Sample     *current_rec_sample;
+   public AudioTrack *current_rec_atrack;
+
    protected Dial *[] lane_send_level_dials;
    protected Dial *[] lane_send_pan_dials;
 
@@ -55,10 +61,13 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected TextField *tf_track_name;
    protected Button    *bt_track_new;
    protected Button    *bt_track_delete;
+   protected CheckBox  *cb_track_master_volume;
 
    protected TextField  *tf_clip_name;
    protected Button     *bt_clip_name_from_sample;
    protected Label      *lb_clip_info;
+   protected FloatParam *fp_clip_fade_in;
+   protected FloatParam *fp_clip_fade_out;
    protected FloatParam *fp_clip_offset;
    protected CheckBox   *cb_clip_release;
    protected FloatParam *fp_clip_vel_on;
@@ -69,6 +78,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected FloatParam *fp_clip_cc_ex;
 
    protected Button     *bt_clip_sample;
+   protected Button     *bt_clip_sample_rec;
 
    static boolean b_debug = 0;
 
@@ -180,10 +190,16 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       layers.add(cb_use_project_bpm);
       layers.add(fp_sig_beats);
       layers.add(cm_sig_notelen);
+      layers.add(tf_track_name);
+      layers.add(bt_track_new);
+      layers.add(bt_track_delete);
+      layers.add(cb_track_master_volume);
 
       layers.add(sample_timeline_editor);
 
       layers.add(tf_clip_name);
+      layers.add(fp_clip_fade_in);
+      layers.add(fp_clip_fade_out);
       layers.add(fp_clip_offset);
       layers.add(cb_clip_release);
       layers.add(fp_clip_vel_on);
@@ -194,6 +210,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       layers.add(fp_clip_cc_ex);
 
       layers.add(bt_clip_sample);
+      layers.add(bt_clip_sample_rec);
    }
 
    // <method.png>
@@ -266,16 +283,21 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          cm_sig_notelen.setSelectedOptionAndDisable(-1);
 
          tf_clip_name.setTextAndDisable("");
-         fp_clip_offset .setValueAndDisable(0);
-         cb_clip_release.setSelectedAndDisable(false);
-         fp_clip_vel_on .setValueAndDisable(0);
-         fp_clip_vel_off.setValueAndDisable(0);
-         fp_clip_cc_mw  .setValueAndDisable(-1);
-         fp_clip_cc_bc  .setValueAndDisable(-1);
-         fp_clip_cc_fc  .setValueAndDisable(-1);
-         fp_clip_cc_ex  .setValueAndDisable(-1);
+         fp_clip_fade_in .setValueAndDisable(0);
+         fp_clip_fade_out.setValueAndDisable(0);
+         fp_clip_offset  .setValueAndDisable(0);
+         cb_clip_release .setSelectedAndDisable(false);
+         fp_clip_vel_on  .setValueAndDisable(0);
+         fp_clip_vel_off .setValueAndDisable(0);
+         fp_clip_cc_mw   .setValueAndDisable(-1);
+         fp_clip_cc_bc   .setValueAndDisable(-1);
+         fp_clip_cc_fc   .setValueAndDisable(-1);
+         fp_clip_cc_ex   .setValueAndDisable(-1);
 
-         bt_clip_sample.setEditable(false);
+         bt_clip_sample    .setEditable(false);
+         bt_clip_sample_rec.setEditable(false);
+
+         cb_track_master_volume.setSelectedAndDisable(false);
 
          sv_wave.setEditable(false);
       }
@@ -306,7 +328,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    }
 
    // <ui_update.png>
-   protected method updateModelOptions() {
+   public method updateModelOptions() {
       local StringArray aOpt;
       if(null != sample_timeline)
       {
@@ -358,6 +380,16 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    public method leaveForm() {
       removeOverlays();
       ta_redraw.cancel();
+
+      replay.unsetQueuedStartSampleTimeline_Sync();
+
+      if(null != current_rec_sample)
+      {
+         Global.Print("Cancel clip recording");
+         current_rec_sample.b_clip_recording = false;
+         current_rec_sample <= null;
+         current_rec_atrack <= null;
+      }
    }
 
    // <method.png>
@@ -467,8 +499,11 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                int numRefs = current_project.findNumSampleRefsBySampleIdx(modelClip.sample_idx);
                local Float numSec = wf.numFrames / wf.sampleRate;
                lb_clip_info.setCaption(wf.numFrames+" frames ("+numSec.printf("%3.2f")+"s, "+wf.numChannels+" ch, "+numRefs+" ref"+Utils.GetPluralString(numRefs)+")");  // +", clipUID="+modelClip.uid+" smpUID="+current_sample.unique_id
-               bt_clip_sample.setCaption(current_sample.unique_name);
+               local Integer ioUID = current_sample.unique_id;
+               bt_clip_sample.setCaption(current_sample.unique_name+" ("+ioUID.printf("0x%04x")+")");
                bt_clip_sample.setEditable(true);
+               bt_clip_sample_rec.setEditable(true);
+               bt_clip_sample_rec.setToggleState(current_sample.b_clip_recording);
             }
          }
          else
@@ -481,6 +516,8 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                lb_clip_info.setCaption("<invalid sample>");
                bt_clip_sample.setCaption("-");
                bt_clip_sample.setEditable(true);
+               bt_clip_sample_rec.setEditable(false);
+               bt_clip_sample_rec.setToggleState(false);
             }
          }
 
@@ -488,6 +525,8 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          {
             tf_clip_name.setTextAndEnable(modelClip.name);
 
+            fp_clip_fade_in .setValueAndEnable(modelClip.fade_in_beats);
+            fp_clip_fade_out.setValueAndEnable(modelClip.fade_out_beats);
             float numOffsetBeats = float(modelClip.offset) / sample_timeline_edit_model.num_units_per_beat;
             fp_clip_offset.setValueAndEnable(numOffsetBeats);
             cb_clip_release.setSelectedAndEnable(modelClip.b_release);
@@ -509,17 +548,21 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          {
             tf_clip_name.setTextAndDisable("");
             lb_clip_info.setCaption("-");
-            fp_clip_offset.setValueAndDisable(0);
-            cb_clip_release.setSelectedAndDisable(false);
-            fp_clip_vel_on .setValueAndDisable(0);
-            fp_clip_vel_off.setValueAndDisable(0);
-            fp_clip_cc_mw  .setValueAndDisable(-1);
-            fp_clip_cc_bc  .setValueAndDisable(-1);
-            fp_clip_cc_fc  .setValueAndDisable(-1);
-            fp_clip_cc_ex  .setValueAndDisable(-1);
+            fp_clip_fade_in .setValueAndDisable(0);
+            fp_clip_fade_out.setValueAndDisable(0);
+            fp_clip_offset  .setValueAndDisable(0);
+            cb_clip_release .setSelectedAndDisable(false);
+            fp_clip_vel_on  .setValueAndDisable(0);
+            fp_clip_vel_off .setValueAndDisable(0);
+            fp_clip_cc_mw   .setValueAndDisable(-1);
+            fp_clip_cc_bc   .setValueAndDisable(-1);
+            fp_clip_cc_fc   .setValueAndDisable(-1);
+            fp_clip_cc_ex   .setValueAndDisable(-1);
 
             bt_clip_sample.setCaption("-");
             bt_clip_sample.setEditable(false);
+            bt_clip_sample_rec.setEditable(false);
+            bt_clip_sample_rec.setToggleState(false);
          }
       }
       sv_wave.redraw();
@@ -703,6 +746,8 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
          bt_track_new.setEditable(true);
          bt_track_delete.setEditable(true);
+
+         cb_track_master_volume.setSelectedAndEnable(track.b_master_volume);
       }
       else
       {
@@ -711,7 +756,10 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
          bt_track_new.setEditable(true);
          bt_track_delete.setEditable(false);
+
+         cb_track_master_volume.setSelectedAndDisable(false);
       }
+
    }
 
    // <ui_update.png>
@@ -1050,12 +1098,35 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    }
 
    // <ui_handle.png>
+   protected method handleTrackMasterVolumeChanged() {
+      SampleTimelineModelTrack track <= getSelectedModelTrack();
+      if(null != track)
+      {
+         track.setEnableMasterVolume(cb_track_master_volume.isSelected());
+
+         Global.Print("Track master-volume-mode is "+Utils.GetEnableString(track.b_master_volume));
+         // // sample_timeline_editor.timelineUpdateLayout();
+         sample_timeline_editor.timelineUpdateTrackHeight();
+         sample_timeline_editor.timelineUpdate();
+         storeEditorState();
+         showTrack(parent_track);
+         current_project.markAsModified();
+      }
+      else
+      {
+         Global.Warning("No cursor track");
+      }
+   }
+
+   // <ui_handle.png>
    protected method handleClipNameChanged() {
       SampleTimelineModelClip modelClip <= getSelectedModelClip();
       if(null != modelClip)
       {
          modelClip.name = tf_clip_name.getText();
+         UI.SetEnableLockKeyboardFocus(true);
          sample_timeline_editor.timelineUpdate();
+         UI.SetEnableLockKeyboardFocus(false);
          current_project.markAsModified();
          Global.Print("Clip name is \""+modelClip.name+"\" (uid="+modelClip.uid+")");
       }
@@ -1079,6 +1150,34 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
          {
             Global.Warning("Copy clip name: invalid sample");
          }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipFadeInChanged() {
+      SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+      if(null != editorClip)
+      {
+         local Float numBeats = fp_clip_fade_in.getFloatValue();
+         editorClip.timelineClipSetFadeInBeats(numBeats);
+         showClipDetails(editorClip, false/*bWidgets*/, true/*bSampleView*/); // update SampleView highlight
+         current_project.markAsModified();
+         Global.Print("Clip fade-in #beats is "+numBeats.printf("%3.3f")+" beat"+Utils.GetPluralStringFloat(numBeats));
+         ta_redraw.schedule();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipFadeOutChanged() {
+      SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+      if(null != editorClip)
+      {
+         local Float numBeats = fp_clip_fade_out.getFloatValue();
+         editorClip.timelineClipSetFadeOutBeats(numBeats);
+         showClipDetails(editorClip, false/*bWidgets*/, true/*bSampleView*/); // update SampleView highlight
+         current_project.markAsModified();
+         Global.Print("Clip fade-out #beats is "+numBeats.printf("%3.3f")+" beat"+Utils.GetPluralStringFloat(numBeats));
+         ta_redraw.schedule();
       }
    }
 
@@ -1219,7 +1318,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       // copy timeline selection rectangle to SampleView selection
       int selStart = sample_timeline_editor.kbd_selection_units_start_sorted;
       int selEnd   = sample_timeline_editor.kbd_selection_units_end_sorted;
-      trace "[trc] SampleTimelineForm::handleTimelineKbdSelectionChanged: selStart="+selStart+" endEnd="+selEnd;
+      // trace "[trc] SampleTimelineForm::handleTimelineKbdSelectionChanged: selStart="+selStart+" endEnd="+selEnd;
 
       if(selEnd > selStart)
       {
@@ -1297,10 +1396,128 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
    protected method handleToggleReplay(boolean _bCursor) {
       if(null != sample_timeline)
       {
-         sample_timeline.toggleReplay(_bCursor
-                                      ? sample_timeline_editor.cursor_units/*playPos*/
-                                      : sample_timeline.loop_start
-                                      );
+         Global.Debug2("SampleTimelineForm::handleToggleReplay: current_rec_sample="+#(current_rec_sample));
+         if(null != current_rec_sample && replay.b_seq_playing)
+         {
+            // Stop (=> handleStopClipRec())
+            replay.toggleSeq(true/*bRec*/);
+         }
+         else
+         {
+            sample_timeline.toggleReplay(_bCursor
+                                         ? sample_timeline_editor.cursor_units/*playPos*/
+                                         : sample_timeline.loop_start
+                                         );
+         }
+
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleToggleClipRec() {
+      // called from UI thread by onTriadKey() handler
+      if(null != sample_timeline)
+      {
+         if(!root_form.isAudioRecording())
+         {
+            if(null != current_sample)
+            {
+               if(current_sample.b_audio_clip)
+               {
+                  // Find first record-enable audio track
+                  //  (todo) support recording to multiple clip samples from multiple audio tracks
+                  //  (todo) support audio track selection (TBD)
+                  AudioTrack *atrack;
+                  AudioTrack atrackRec <= null;
+                  foreach atrack in current_project.audio_tracks
+                  {
+                     if(atrack.b_record)
+                     {
+                        atrackRec <= atrack;
+                        break;
+                     }
+                  }
+                  if(null != atrackRec)
+                  {
+                     if(current_sample.waveform.getNumChannels() == (atrackRec.b_stereo ? 2 : 1))
+                     {
+                        current_rec_sample <= current_sample;
+                        current_rec_atrack <= atrackRec;
+                        current_rec_sample.b_clip_recording = true;
+                        Global.Debug("SampleTimelineForm::handleToggleClipRec: start");
+                        replay.queueStartSampleTimeline_Sync(sample_timeline);
+                        // // root_form.toggleAudioRecording();  // prepare recording
+                        root_form.enableRecCheckBoxForClipRecording();
+                        current_project.prepareRecord();
+                        bt_clip_sample_rec.setToggleState(true);
+
+                        SysEx.QueueSendSeqStart();
+                        // wait for SEQ_START_ACK before starting timeline replay and audio track recording
+
+                        // replay.toggleSeq(true/*bRec*/);
+                        // sample_timeline.toggleReplay(sample_timeline.loop_start, STConfig.sample_timeline_clip_rec_skip_num_frames);
+                        Global.Print("Start clip rec (src atrack=\""+atrackRec.name+"\")");
+                     }
+                     else
+                     {
+                        Global.Warning("Rec<start>: sample<=>atrack channel count mismatch");
+                     }
+                  }
+                  else
+                  {
+                     Global.Warning("Rec<start>: no record-enabled audio track found");
+                  }
+               }
+               else
+               {
+                  Global.Warning("Rec: sample must be an audio clip (\"A\")");
+               }
+            }
+            else
+            {
+               Global.Warning("Rec: no current sample");
+            }
+         }
+         else
+         {
+            // trace "[dbg] SampleTimelineForm::handleToggleClipRec: stop";
+            Global.Warning("Rec: audiotrack recording already active");
+         }
+      }
+      else
+      {
+         Global.Warning("Rec: no timeline");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleStopClipRec() {
+      // called from UI thread by RootForm::handleStopRecord()
+      if(null != current_rec_sample && null != current_rec_atrack)
+      {
+         AudioClip clip <= current_rec_atrack.clip;
+         clip.lazyMergeSegments();
+         FloatArray fa <= clip.getCurrentSampleData();
+         if(null != fa)
+         {
+            unsetCurrentSample();
+            current_rec_sample.replaceClipWaveformData_Sync(fa, STConfig.sample_timeline_clip_rec_skip_num_frames);
+            int newNumFrames = current_rec_sample.waveform.getNumFrames();
+            float newNumSec = newNumFrames / (current_rec_sample.waveform.getSampleRate());
+            current_rec_sample.b_clip_recording = false;
+            current_rec_sample <= null;
+            current_rec_atrack <= null;
+
+            SampleTimelineEditorClip editorClip <= getSelectedEditorClip();
+            if(null != editorClip)
+            {
+               showClipDetails(editorClip, false/*bWidgets*/, true/*bSampleView*/); // update SampleView highlight
+               ta_redraw.schedule();
+            }
+
+            Global.SuccessShort("Rec: finish clip recording ("+(int(newNumSec*100)/100.0f)+" sec)");
+         }
+         bt_clip_sample_rec.setToggleState(false);
       }
    }
 
@@ -1440,6 +1657,9 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
       pmb.setAccelerators("s", "");
       pmb.setToolTipCaption("Toggle snap-to-grid\n\n (note) cycle grid units with lshift-s");
 
+      pmb <= spm.addDefaultButton("Snap to grid units: "+sample_timeline_editor.timelineGetSnapUnitsName(), "misc_snap_units");
+      pmb.setAccelerators("lshift-s", "");
+
       pmb <= spm.addCheckButton("Normalize waveform display", STConfig.b_sample_timeline_normalize_waveform_display, "misc_normalize_waveform_display");
       pmb.setAccelerators("n", "");
 
@@ -1466,7 +1686,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                                   "mode_draw"
                                   );
       pmb.setAccelerators("w", "");
-      pmb.setToolTipCaption("Move cursor to top / left of selection OR create clip from selection OR select \'draw\' mode");
+      pmb.setToolTipCaption("Move cursor to top / left of selection OR create clip from selection OR select \'draw\' mode\n\n (note) lshift-w creates new empty clip sample(s) (name is \"a_<trackname> <nr>\")");
 
       pmb <= spm.addDefaultButton("Erase",
                                   "mode_erase"
@@ -1531,7 +1751,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             break;
 
          case VKEY_SPACE:
-            handleToggleReplay(!_k.modNone());
+            handleToggleReplay(!_k.modNone()/*bCursor*/);
             return true;
 
          case VKEY_HOME:
@@ -1704,6 +1924,11 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                   refocusDefault();
                   return true;
 
+               case "misc_snap_units":
+                  sample_timeline_editor.timelineCycleSnapUnits();
+                  refocusDefault();
+                  return true;
+
                case "misc_normalize_waveform_display":
                   sample_timeline_editor.toggleNormalizeClipWaveformDisplay();
                   refocusDefault();
@@ -1721,7 +1946,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
                   return true;
 
                case "mode_draw":
-                  sample_timeline_editor.handleKeyW();
+                  sample_timeline_editor.handleKeyW(false/*bShift*/);
                   refocusDefault();
                   return true;
 
@@ -1829,6 +2054,7 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
             return true;
 
          case @(tf_clip_name):
+            trace "xxx tf_clip_name: acName=\""+acName+"\"";
             handleClipNameChanged();
             if(TextField.ACTION_TEXTENTERED == acName)
                refocusDefault();
@@ -1836,6 +2062,18 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
          case @(bt_clip_name_from_sample):
             handleCopyClipNameFromSample();
+            return true;
+
+         case @(fp_clip_fade_in):
+            handleClipFadeInChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_clip_fade_out):
+            handleClipFadeOutChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
             return true;
 
          case @(fp_clip_offset):
@@ -1886,6 +2124,21 @@ class SampleTimelineForm : XMLForm, ActionProvider, SampleViewPlugin {
 
          case @(bt_clip_sample):
             handleEditClipSample();
+            return true;
+
+         case @(bt_clip_sample_rec):
+            if(bt_clip_sample_rec.getToggleState())
+            {
+               handleToggleClipRec();
+            }
+            else
+            {
+               handleToggleReplay(false/*bCursor*/);
+            }
+            return true;
+
+         case @(cb_track_master_volume):
+            handleTrackMasterVolumeChanged();
             return true;
 
          case @(sv_wave):

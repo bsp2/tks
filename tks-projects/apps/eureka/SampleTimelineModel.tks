@@ -11,7 +11,7 @@
 // ---- created: 27Jun2021
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 04Apr2025
 // ----          05Apr2025, 06Apr2025, 09Apr2025, 01May2025, 06May2025, 14Jun2025, 22Jun2025
-// ----          03Jan2026
+// ----          03Jan2026, 07Apr2026, 14Apr2026
 // ----
 // ----
 // ----
@@ -39,6 +39,8 @@ class SampleTimelineModelClip {
    float   cc_bc;       // -1=keep, 0..127
    float   cc_fc;       // -1=keep, 0..127
    float   cc_ex;       // -1=keep, 0..127
+   float   fade_in_beats;
+   float   fade_out_beats;
 
    FloatArray lane_level_mod;  // lane send level modulation (-1..1, relative to base send level)
    FloatArray lane_pan_mod;    // lane panning (stereo balance) (-1..1, relative to base pan)
@@ -58,6 +60,27 @@ class SampleTimelineModelClip {
       cc_bc     = -1.0f;
       cc_fc     = -1.0f;
       cc_ex     = -1.0f;
+      fade_in_beats  = 0.0f;
+      fade_out_beats = 0.0f;
+   }
+
+   // <method.png>
+   public method copyExtDataFrom(SampleTimelineModelClip _o) {
+      b_mute     = _o.b_mute;
+      sample_idx = _o.sample_idx;
+      b_release  = _o.b_release;
+      vel_on     = _o.vel_on;
+      vel_off    = _o.vel_off;
+      cc_mw      = _o.cc_mw;
+      cc_bc      = _o.cc_bc;
+      cc_fc      = _o.cc_fc;
+      cc_ex      = _o.cc_ex;
+
+      fade_in_beats  = _o.fade_in_beats;
+      fade_out_beats = _o.fade_out_beats;
+
+      lane_level_mod = _o.lane_level_mod;
+      lane_pan_mod   = _o.lane_pan_mod;
    }
 
    // <method.png>
@@ -69,18 +92,7 @@ class SampleTimelineModelClip {
       name       = _o.name;
       if(_bCopyTrackIdx)
          track_idx = _o.track_idx;
-      b_mute     = _o.b_mute;
-      sample_idx = _o.sample_idx;
-      b_release  = _o.b_release;
-      vel_on     = _o.vel_on;
-      vel_off    = _o.vel_off;
-      cc_mw      = _o.cc_mw;
-      cc_bc      = _o.cc_bc;
-      cc_fc      = _o.cc_fc;
-      cc_ex      = _o.cc_ex;
-
-      lane_level_mod = _o.lane_level_mod;
-      lane_pan_mod   = _o.lane_pan_mod;
+      copyExtDataFrom(_o);
    }
 
    // <method.png>
@@ -141,10 +153,20 @@ class SampleTimelineModelClip {
       cc_ex = _val;
    }
 
+   // <method_set.png>
+   public =replay= method setFadeInBeats(float _val) {
+      fade_in_beats = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setFadeOutBeats(float _val) {
+      fade_out_beats = _val;
+   }
+
    // <save.png>
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 2;  // [01May2025] was 3
+      ofs.i16 = 4;  // [01May2025] 3=>2   [07Apr2026] 4
 
       ofs.i32 = uid;
       ofs.i32 = start;
@@ -160,6 +182,8 @@ class SampleTimelineModelClip {
       ofs.f32 = cc_bc;
       ofs.f32 = cc_fc;
       ofs.f32 = cc_ex;
+      ofs.f32 = fade_in_beats;   // v4+
+      ofs.f32 = fade_out_beats;  // v4+
 
       // Lane send level mod
       boolean bHaveLevelMod = (-1 != lane_level_mod.indexOfNot(0.0f, 0));
@@ -206,6 +230,12 @@ class SampleTimelineModelClip {
             cc_ex     = ifs.f32;
          }
 
+         if(ver >= 4)
+         {
+            fade_in_beats  = ifs.f32;  // v4+
+            fade_out_beats = ifs.f32;  // v4+
+         }
+
          // Lane send level mod
          boolean bHaveLevelMod = ifs.b8;
          if(bHaveLevelMod)
@@ -247,6 +277,7 @@ class SampleTimelineModelTrack {
 
    int preferred_namespace_idx;  // namespace hint. 0=global
 
+   boolean b_master_volume;  // 1=apply clip volume (fade in/out) to following tracks
 
 
    // <method_init.png>
@@ -389,10 +420,15 @@ class SampleTimelineModelTrack {
       parentSampleTimeline.b_update_lane_sends = true;
    }
 
+   // <method_set.png>
+   public =replay= method setEnableMasterVolume(boolean _bEnable) {
+      b_master_volume = _bEnable;
+   }
+
    // <save.png>
    public method saveState(Stream ofs) {
       // ver
-      ofs.i16 = 2;
+      ofs.i16 = 3;
 
       // name
       name.yacSerialize(ofs, false/*bRTTI*/);
@@ -419,6 +455,9 @@ class SampleTimelineModelTrack {
 
       // Preferred namespace idx (v2+)
       ofs.i8 = preferred_namespace_idx;
+
+      // Master-Volume mode (v3+)
+      ofs.i8 = b_master_volume;
    }
 
    // <load.png>
@@ -485,6 +524,12 @@ class SampleTimelineModelTrack {
          {
             // Preferred namespace idx (v2+)
             preferred_namespace_idx = ifs.u8;
+         }
+
+         if(ver >= 3)
+         {
+            // Master-Volume mode (v3+)
+            b_master_volume = ifs.b8;
          }
 
          if(1) trace "[trc] SampleTimelineModelTrack::loadState: END read track_idx="+track_idx;

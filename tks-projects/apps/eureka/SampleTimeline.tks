@@ -11,7 +11,7 @@
 // ---- changed: 28Jun2021, 29Jun2021, 30Jun2021, 01Jul2021, 02Jul2021, 25Jun2022, 26Jun2022
 // ----          04Apr2025, 05Apr2025, 06Apr2025, 07Apr2025, 09Apr2025, 01May2025, 04May2025
 // ----          06May2025, 20May2025, 22May2025, 29May2025, 30May2025, 04Jun2025, 14Jun2025
-// ----          22Jun2025, 20Dec2025, 02Jan2026, 03Jan2026
+// ----          22Jun2025, 20Dec2025, 02Jan2026, 03Jan2026, 07Apr2026, 08Apr2026
 // ----
 // ----
 // ----
@@ -144,6 +144,15 @@ class SampleTimeline {
          replayTrack.exit();
       }
       replay_tracks.free();
+   }
+
+   // <method.png>
+   public method stopVoices() {
+      SampleTimelineReplayTrack *replayTrack;
+      foreach replayTrack in replay_tracks
+      {
+         replayTrack.resetVoices();
+      }
    }
 
    // <method_init.png>
@@ -431,7 +440,8 @@ class SampleTimeline {
    }
 
    // <replay.png>
-   public =replay= method toggleReplay(int _playPos) {
+   public =replay= method toggleReplay(int _playPos) {      // , int _preDelayFrames
+      int _preDelayFrames = 0;
       // called from UI (SPACE key)
       if(b_playing)
       {
@@ -451,10 +461,11 @@ class SampleTimeline {
          replay_model <= edit_model;
          if(null != replay_model)
             replay_model.invalidateClipIndexHints();
+         // // pre_delay_frames = _preDelayFrames;
          b_playing = true;
       }
       play_pos = _playPos;
-      Global.Debug("SampleTimeline::toggleReplay: b_playing="+b_playing);
+      Global.Debug("SampleTimeline::toggleReplay: b_playing="+b_playing+" preDelayFrames="+_preDelayFrames);
    }
 
    // <replay.png>
@@ -472,6 +483,8 @@ class SampleTimeline {
             sp.resetModulators();
             sp.updateVol(1.0);
             sp.updatePan(0.0);
+            replayTrack.resetFadeInOut();
+            replayTrack.perf_vol = 1.0;
          }
       }
       else
@@ -484,6 +497,8 @@ class SampleTimeline {
             sp.resetModulators();
             sp.updateVol(1.0);
             sp.updatePan(0.0);
+            replayTrack.resetFadeInOut();
+            replayTrack.perf_vol = 1.0;
          }
       }
    }
@@ -546,7 +561,8 @@ class SampleTimeline {
                newVol = sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
             else
                newVol = sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
-            sp.updateVol(newVol / 127.0f);
+            replayTrack.perf_vol = (newVol / 127.0f);
+            sp.updateVol( replayTrack.fade_vol * replayTrack.perf_vol );
          }
       }
       else
@@ -560,7 +576,8 @@ class SampleTimeline {
                newVol = sp.updatePerfCtlMSB7(_perfCtlIdx, _val7);
             else
                newVol = sp.updatePerfCtlLSB7(_perfCtlIdx, _val7);
-            sp.updateVol(newVol / 127.0f);
+            replayTrack.perf_vol = (newVol / 127.0f);
+            sp.updateVol( replayTrack.fade_vol * replayTrack.perf_vol );
          }
       }
    }
@@ -920,10 +937,13 @@ class SampleTimeline {
          {
             if(null != replay_model)
             {
-               // Start / stop clips at play_pos
+               // Start / stop clips at play_pos and update volume
+               local float masterVol = 1.0f;
                trackIdx = 0;
                foreach track in replay_model.tracks
                {
+                  // trace "xxx process trackIdx="+trackIdx+" --------------------------------------";
+
                   // can be null if SampleTimeline.MAX_REPLAY_TRACKS is exceeded
                   replayTrack <= replay_tracks.get(trackIdx);
                   local StSamplePlayer sp <= (null != replayTrack) ? replayTrack.sample_player : null;
@@ -945,36 +965,37 @@ class SampleTimeline {
                               if(null != sp)
                               {
                                  local Sample sample <= current_project.getSampleByIdx(clip.sample_idx);
-                                 if(null != sample)
+                                 if(null != sample && !sample.b_clip_recording)
                                  {
                                     sp.setLastStartedSampleBankHint(sample.sample_bank);
-                                    local int voiceKey;
                                     if(-1 == sample.solo_zone_idx)
                                     {
-                                       voiceKey = sp.startSampleBank(sample.sample_bank,
-                                                                     null/*freqTable*/,
-                                                                     SEQ_REPLAY_NOTE,
-                                                                     clip.vel_on/127.0f/*velocity*/,
-                                                                     0.0f/*modVal*/,
-                                                                     1.0f/*volume*/,
-                                                                     0.0f/*pan*/,
-                                                                     0/*freq*/
-                                                                     );
+                                       replayTrack.last_voice_key =
+                                          sp.startSampleBank(sample.sample_bank,
+                                                             null/*freqTable*/,
+                                                             SEQ_REPLAY_NOTE,
+                                                             clip.vel_on/127.0f/*velocity*/,
+                                                             0.0f/*modVal*/,
+                                                             1.0f/*volume*/,
+                                                             0.0f/*pan*/,
+                                                             0/*freq*/
+                                                             );
                                     }
                                     else
                                     {
                                        local StSample s <= sample.sample_bank.getSampleByIdx(sample.solo_zone_idx);
                                        if(null != s)
                                        {
-                                          voiceKey = sp.startSample(s,
-                                                                    null/*freqTable=default*/,
-                                                                    SEQ_REPLAY_NOTE,
-                                                                    clip.vel_on/127.0f/*velocity*/,
-                                                                    0.0f/*modVal*/,
-                                                                    1.0f/*volume*/,
-                                                                    0.0f/*pan*/,
-                                                                    0/*freq*/
-                                                                    );
+                                          replayTrack.last_voice_key =
+                                             sp.startSample(s,
+                                                            null/*freqTable=default*/,
+                                                            SEQ_REPLAY_NOTE,
+                                                            clip.vel_on/127.0f/*velocity*/,
+                                                            0.0f/*modVal*/,
+                                                            1.0f/*volume*/,
+                                                            0.0f/*pan*/,
+                                                            0/*freq*/
+                                                            );
                                        }
                                     }
 
@@ -982,8 +1003,8 @@ class SampleTimeline {
                                     if(bCalcStartOffset)
                                        offsetMS += (play_pos - clip.start) / numUnitsPerMS;  // after seek
                                     if(bDebug && offsetMS > 0)
-                                       trace "[>>>] SampleTimeline:: start clip noteOn voiceKey="+voiceKey+" offsetMs="+offsetMS;
-                                    sp.setInitialSampleOffsetMsByKey(voiceKey, offsetMS);
+                                       trace "[>>>] SampleTimeline:: start clip noteOn voiceKey="+replayTrack.last_voice_key+" offsetMs="+offsetMS;
+                                    sp.setInitialSampleOffsetMsByKey(replayTrack.last_voice_key, offsetMS);
 
                                     // Update initial performance controllers
                                     //  - baseline = sample clip perf.ctls
@@ -1005,7 +1026,22 @@ class SampleTimeline {
 
                                     processCCs(_frInput, devIdx, midiCh, trackIdx, false/*bAllowReset*/);
 
-                                    sp.initStartedVoicesByKey(voiceKey);
+                                    replayTrack.fade_in_start_units = clip.start;
+                                    replayTrack.fade_in_end_units   =
+                                       mathMini(clip.end, clip.start + clip.fade_in_beats * numUnitsPerBeat);
+
+                                    replayTrack.fade_out_start_units =
+                                       mathMaxi(clip.start, clip.end - clip.fade_out_beats * numUnitsPerBeat);
+                                    replayTrack.fade_out_end_units   = clip.end;
+
+                                    replayTrack.calcFadingAndUpdateSP(play_pos, masterVol * (clip.vel_on/127.0f));  // calc fade_vol
+                                    if(track.b_master_volume)
+                                    {
+                                       // trace "xxx start mastervol old="+masterVol+" new="+(masterVol * replayTrack.fade_vol * replayTrack.perf_vol * (clip.vel_on/127.0f));
+                                       masterVol *= replayTrack.fade_vol * replayTrack.perf_vol * (clip.vel_on/127.0f);
+                                    }
+
+                                    sp.initStartedVoicesByKey(replayTrack.last_voice_key);
                                  }
                               }
 
@@ -1028,6 +1064,26 @@ class SampleTimeline {
 
                            b_update_lane_sends = true;
                         }
+                        else
+                        {
+                           if(-1 != track.replay_clip_idx_hint)
+                           {
+                              if(clip.start <= play_pos < clip.end)
+                              {
+                                 replayTrack.calcFadingAndUpdateSP(play_pos, masterVol * (clip.vel_on/127.0f));  // calc fade_vol
+                                 // if(1 == trackIdx)
+                                 //    trace "xxx masterVol="+masterVol+" replayTrack.fade_vol="+replayTrack.fade_vol;
+                                 if(track.b_master_volume)
+                                 {
+                                    // local float masterVolOld = masterVol;
+                                    masterVol *= replayTrack.fade_vol * replayTrack.perf_vol;
+                                    masterVol *= (clip.vel_on/127.0f);
+                                    // trace "xxx trackIdx="+trackIdx+" update mastervol old="+masterVolOld+" new="+masterVol;
+                                 }
+                                 break;
+                              }
+                           }
+                        }
                      }
                      else
                      {
@@ -1038,7 +1094,7 @@ class SampleTimeline {
                      clipIdx++;
 
                   } // for ;;
-                  
+
                   // Next track
                   trackIdx++;
 

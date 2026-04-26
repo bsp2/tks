@@ -1,7 +1,7 @@
 // ----
 // ---- file   : replay.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -18,6 +18,7 @@
 // ----          22Jul2023, 26Jul2023, 29Jul2023, 08Sep2023, 02Oct2023, 03Oct2023, 04Oct2023
 // ----          05Nov2023, 01Jul2024, 05Jul2024, 07Jul2024, 17Sep2024, 18Sep2024, 23Sep2024
 // ----          24Sep2024, 14Jan2025, 29May2025, 21Jun2025, 22Jun2025, 16Dec2025, 17Dec2025
+// ----          14Apr2026, 16Apr2026
 // ----
 // ----
 // ----
@@ -315,10 +316,13 @@ class Replay {
    define int METAHOST_NUM_INPUTS  =  8;  // must be aligned with vst_eureka_plugin.cpp:NUM_INPUTS
    define int METAHOST_NUM_OUTPUTS = 16;  // must be aligned with vst_eureka_plugin.cpp:NUM_OUTPUTS
 
-   boolean b_playing;
+   // // boolean b_playing;
 
    boolean b_seq_playing;   // maybe=unknown state, true=seq is playing, true=seq stopped
+   boolean b_last_process_seq_playing;  // for mixed b_proc track mode (allNotesOff in first process() call after replay start)
    float   song_pos_beats;  // #quarter notes. increments while sequencer is running. resets when sequencer is started.
+
+   SampleTimeline *queued_start_sample_timeline;  // see SEQ_START_ACK
 
    boolean b_process_audio;  // true=process audio modules, false=process MIDI only
 
@@ -1173,6 +1177,10 @@ class Replay {
       process_size = _numFrames;
       process_ms = (process_size * 1000.0f) / Audio.mix_rate;
 
+      // (todo) remove, not working as expected
+      boolean bProcForceAllNotesOff = 0 && b_last_process_seq_playing && (true != b_seq_playing);
+      b_last_process_seq_playing = (true == b_seq_playing);
+
       process_tick_nr++;
 
       // Update clap_event_transport_t (see CLAPPlugin::process())
@@ -1210,8 +1218,8 @@ class Replay {
       curTrackIdx = 0;
       foreach track in current_project.tracks
       {
-         if(!track.b_proc)
-            track.prepareProcess(curTrackIdx++, _numFrames);
+         if(false == track.b_proc || (maybe == track.b_proc && (true != b_seq_playing)))
+            track.prepareProcess(curTrackIdx++, _numFrames, bProcForceAllNotesOff && (maybe == track.b_proc));
       }
 
       // Append to scope FFT ring buffer ?
@@ -1258,7 +1266,7 @@ class Replay {
             if(STConfig.b_force_single_thread || !track.sharesCPUCore())
             {
                // trace "xxx queueProcess(curTrackIdx="+curTrackIdx+")";
-               if(!track.b_proc)
+               if(false == track.b_proc || (maybe == track.b_proc && (true != b_seq_playing)))
                   track.queueProcess(curTrackIdx);
             }
             curTrackIdx++;
@@ -1272,7 +1280,7 @@ class Replay {
                if(!track.sharesCPUCore())
                {
                   // trace "xxx track waitProcess";
-                  if(!track.b_proc)
+                  if(false == track.b_proc || (maybe == track.b_proc && (true != b_seq_playing)))
                      track.waitProcess();
                   // trace "xxx END track waitProcess";
                }
@@ -1286,7 +1294,9 @@ class Replay {
          curTrackIdx = 0;
          foreach track in current_project.tracks
          {
-            if(track.isPlaying())
+            if(track.isPlaying() &&
+               (false == track.b_proc || (maybe == track.b_proc && (true != b_seq_playing)))
+               )
             {
                int srcSampleIdx;
                FloatArray trackMixBuf <= track.mix_buffer;
@@ -2126,6 +2136,18 @@ class Replay {
          }
       }
       return bestIdx1;
+   }
+
+   // <method.png>
+   public =replay= method queueStartSampleTimeline_Sync(SampleTimeline _stl) {
+      // trace "xxx queueStartSampleTimeline_Sync: stl="+#(_stl);
+      queued_start_sample_timeline <= _stl;
+   }
+
+   // <method.png>
+   public =replay= method unsetQueuedStartSampleTimeline_Sync() {
+      // trace "xxx unsetQueuedStartSampleTimeline_Sync: cur="+#(queued_start_sample_timeline);
+      queued_start_sample_timeline <= null;
    }
 
 }
