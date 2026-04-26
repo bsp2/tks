@@ -1,7 +1,7 @@
 // ----
 // ---- file   : clap.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2024-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- created: 03Jul2024
 // ---- changed: 04Jul2024, 05Jul2024, 06Jul2024, 15Sep2024, 22Sep2024, 24Sep2024, 27Sep2024
-// ----          16Mar2025
+// ----          16Mar2025, 17Apr2026
 // ----
 // ----
 // ----
@@ -285,8 +285,10 @@ class CLAP {
    static boolean b_scan_complete;  // false when scan was aborted due to crashes or max number of jobs exceeded (=> load partial cache and continue on next run)
 
    // static PointerArray updatedisplay_queue; // list of plugins (references)
-   static ClassArray automate_queue;
-   static boolean b_automate_event_sent;
+   static protected ClassArray  automate_queue_1;
+   static protected ClassArray  automate_queue_2;
+   static protected ClassArray *automate_queue;
+   static protected boolean b_automate_event_sent;
 
    static ClassArray keyevent_queue;
    static boolean b_key_event_sent;
@@ -301,8 +303,11 @@ class CLAP {
    // <method_init.png>
    static Init() {
 
-      automate_queue.template = CLAPAutomateEvent;
-      automate_queue.alloc(32);//256);
+      automate_queue_1.template = CLAPAutomateEvent;
+      automate_queue_2.template = CLAPAutomateEvent;
+      automate_queue_1.alloc(32);
+      automate_queue_2.alloc(32);
+      automate_queue <= automate_queue_1;
 
       keyevent_queue.template = CLAPKeyEvent;
       keyevent_queue.alloc(32);//256);
@@ -906,7 +911,6 @@ class CLAP {
 
    // <method_find.png>
    static FindCLAPPluginEntryByUniqueIDString(local String _uid) : CLAPPluginEntry {
-
       // Find by combination of "vendor`name`id"
       local CLAPPluginEntry *e;
       foreach e in clap_plugin_entries
@@ -915,7 +919,19 @@ class CLAP {
          if(str == _uid)
             return e;
       }
+      return null;
+   }
 
+   // <method_find.png>
+   static FindFirstCLAPPluginEntryByFilterString(local String _sFlt) : CLAPPluginEntry {
+      local CLAPPluginEntry *e;
+      foreach e in clap_plugin_entries
+      {
+         local String str <= e.getUniqueIDString().toLower();
+         // trace "xxx FindFirstCLAPPluginEntryByFilterString: sFlt=\""+_sFlt+"\" str=\""+str+"\"";
+         if(str & _sFlt)
+            return e;
+      }
       return null;
    }
 
@@ -1046,15 +1062,31 @@ class CLAP {
    }
 
    // <method.png>
-   static =clapautomate= ProcessAutomateQueue() {
-      // Called from UI thread
-      ////trace "xxx ProcessAutomateQueue: #elements="+automate_queue.numElements;
+   static =clapautomate= GetAutomateQueueForProcessingAndSwap() : ClassArray {
+      if(@(automate_queue) == @(automate_queue_1))
+      {
+         automate_queue <= automate_queue_2;
+         return automate_queue_1;
+      }
+      else
+      {
+         automate_queue <= automate_queue_1;
+         return automate_queue_2;
+      }
+   }
 
+   // <method.png>
+   static ProcessAutomateQueue() {
+      // Called from UI thread
+
+      ClassArray automateQueue <= GetAutomateQueueForProcessingAndSwap();
+      // // trace "xxx ProcessAutomateQueue: #elements="+automateQueue.numElements;
+      
       if(!b_ignore_automation)  // during plugin instantation + patch loading
       {
          CLAPAutomateEvent *ev;
          CLAPPlugin *plugin;
-         foreach ev in automate_queue
+         foreach ev in automateQueue
          {
             Global.Debug3("CLAP::ProcessAutomateQueue: plugin="+#(ev.plugin)+" paramIdx="+ev.param_idx+" value="+ev.value);
 
@@ -1079,6 +1111,7 @@ class CLAP {
                            if(-1 == ev.b_begin)
                            {
                               // Notify sequencer process
+                              // trace "xxx CLAP: automate paramIdx="+ev.param_idx+" value="+ev.value;
                               String paramName = plugin.getParameterName(ev.param_idx);
                               SysEx.SendRemoteParamNotify(track.dev_idx,
                                                           track.midi_ch,
@@ -1096,7 +1129,7 @@ class CLAP {
          }
       }
 
-      automate_queue.empty();
+      automateQueue.empty();
       b_automate_event_sent = false;
    }
 

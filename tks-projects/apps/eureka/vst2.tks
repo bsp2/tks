@@ -1,7 +1,7 @@
 // ----
 // ---- file   : vst2.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2010-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -13,7 +13,7 @@
 // ----          06Mar2018, 21Jul2018, 07Dec2018, 08Dec2018, 30Jul2019, 05Aug2019, 26Aug2019
 // ----          18Aug2020, 06Feb2023, 14Feb2023, 19Feb2023, 25Feb2023, 29Jul2023, 03Nov2023
 // ----          09Nov2023, 12Jan2024, 13Jan2024, 03Jul2024, 05Jul2024, 15Sep2024, 22Sep2024
-// ----          16Mar2025
+// ----          16Mar2025, 17Apr2026
 // ----
 // ----
 // ----
@@ -382,7 +382,9 @@ class VST2 {
    static InfoDialog *dlg_error;
 
    static VST2Plugin *[] updatedisplay_queue; // list of plugins (references)
-   static ClassArray automate_queue;
+   static ClassArray  automate_queue_1;
+   static ClassArray  automate_queue_2;
+   static ClassArray *automate_queue;
    static boolean b_automate_event_sent;
 
    static ClassArray keyevent_queue;
@@ -401,8 +403,11 @@ class VST2 {
 
       VST2Plugin.StaticInit();  // mainly for shell plugins, also init/open databridge host event
 
-      automate_queue.template = VSTAutomateEvent;
-      automate_queue.alloc(32);//256);
+      automate_queue_1.template = VSTAutomateEvent;
+      automate_queue_2.template = VSTAutomateEvent;
+      automate_queue_1.alloc(32);
+      automate_queue_2.alloc(32);
+      automate_queue <= automate_queue_1;
 
       keyevent_queue.template = VSTKeyEvent;
       keyevent_queue.alloc(32);//256);
@@ -1122,6 +1127,19 @@ class VST2 {
       return null;
    }
 
+   // <method_find.png>
+   static FindFirstVST2PluginEntryByFilterString(local String _sFlt) : VSTScanEntry {
+      local VSTScanEntry *e;
+      foreach e in vst_entries
+      {
+         local String str <= e.getUniqueIDString().toLower();
+         // trace "xxx FindFirstVST2PluginEntryByFilterString: sFlt=\""+_sFlt+"\" str=\""+str+"\"";
+         if(str & _sFlt)
+            return e;
+      }
+      return null;
+   }
+
    // <method.png>
    static SortByVendor(PointerArray _vendors, boolean _bEffect) {
 
@@ -1325,15 +1343,31 @@ class VST2 {
    }
 
    // <method.png>
-   static =vstautomate= ProcessAutomateQueue() {
+   static =vstautomate= GetAutomateQueueForProcessingAndSwap() : ClassArray {
+      if(@(automate_queue) == @(automate_queue_1))
+      {
+         automate_queue <= automate_queue_2;
+         return automate_queue_1;
+      }
+      else
+      {
+         automate_queue <= automate_queue_1;
+         return automate_queue_2;
+      }
+   }
+
+   // <method.png>
+   static ProcessAutomateQueue() {
       // Called from UI thread
-      ////trace "xxx ProcessAutomateQueue: #elements="+automate_queue.numElements;
+
+      ClassArray automateQueue <= GetAutomateQueueForProcessingAndSwap();
+      // // trace "xxx ProcessAutomateQueue: #elements="+automateQueue.numElements;
 
       if(!b_ignore_automation)  // during plugin instantation + patch loading
       {
          VSTAutomateEvent *ev;
          VST2Plugin *plugin;
-         foreach ev in automate_queue
+         foreach ev in automateQueue
          {
             Global.Debug3("VST2::ProcessAutomateQueue: plugin="+#(ev.plugin)+" paramIdx="+ev.param_idx+" value="+ev.value);
 
@@ -1381,7 +1415,7 @@ class VST2 {
          }
       }
 
-      automate_queue.empty();
+      automateQueue.empty();
       b_automate_event_sent = false;
    }
 
