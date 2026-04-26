@@ -1,6 +1,6 @@
 % Cycle Sample Generator / Soft Synth
 % bsp
-% 12-Jun-2025
+% 25-Apr-2026
 >>>
 11Oct2020, 13Oct2020, 14Oct2020, 31Jul2021, 12Aug2021, 24Aug2021, 16Jan2022,
 06Jan2023, 07Jan2023, 28Mar2023, 07Apr2023, 19Apr2023, 04May2023, 05May2023,
@@ -15,7 +15,7 @@
 10Nov2024, 30Nov2024, 04Dec2024, 06Dec2024, 13Dec2024, 15Dec2024, 17Dec2024,
 18Dec2024, 19Dec2024, 20Dec2024, 21Dec2024, 22Dec2024, 23Dec2024, 08Jan2025,
 09Jan2025, 13Jan2025, 14Jan2025, 15Jan2025, 29Jan2025, 29May2025, 31May2025,
-01Jun2025, 12Jun2025
+01Jun2025, 12Jun2025, 25Apr2026
 <<<
 $(var:header)
 
@@ -885,6 +885,83 @@ caution: only supported in float-mode (fall back to float in int mode)
 ] --reserved--
 
 **not implemented, yet**
+
+
+## cas
+] smoothed switch case
+
+Select input(s) at normalized input position and optionally perform linear interpolation.
+
+##-# Examples
+~~~
+arg p_amp 0.7 0 8
+arg p_lin 1   0 1
+arg p_pos 0   0 1
+
+<out:
+  pha
+  vst ph
+  cas p=$p_pos lin=$p_lin
+    0:
+      sin f=0 ph=$ph
+    1:
+      tri f=0
+        ph:
+          $ph
+          + 0.25   #start at level 0
+    2:
+      pul f=0
+        ph:
+          $ph
+          + 0.5    #start at level 1
+    3:
+      saw f=0
+        ph:
+          $ph
+          + 0.5    #start at level 0
+  * $p_amp
+  clp
+~~~ lang=cycle
+] interpolate sine / triangle / pulse / sawtooth oscillators
+
+~~~
+arg p_amp 0.7 0 8
+arg p_lin 1   0 1
+arg p_pos 0   0 1
+
+curve 0 w0
+curve 1 w1
+curve 2 w2
+curve 3 w3
+
+<out:
+  pha
+  vst ph
+  cas p=$p_pos lin=$p_lin
+    0:
+      $ph
+      lut w0 lin=1
+    1:
+      $ph
+      lut w1 lin=1
+    2:
+      $ph
+      lut w2 lin=1
+    3:
+      $ph
+      lut w3 lin=1
+  * $p_amp
+  clp
+~~~ lang=cycle
+] interpolate cubic spline waveforms
+
+
+##-# Inputs
+
+|noheader
+|:       |: `pos` / `p`  |: range is 0..1 (default=1) (when not connected, use previous output)
+|:       |: `lin` / `l` |: range is -1..1 (default=0)
+].table_inputs
 
 
 ## ceq
@@ -2595,35 +2672,6 @@ Calc right channel pan factor
 see also: [#wrr][]
 
 
-## pha
-] phase accumulator
-
-Generate phase output (0..1 normalized saw-wave).
-
-##-# Example
-~~~
-curve mywaveshape
-
-<out:
-  pha freq=1.5 phase=0.25
-  lut mywaveshape
-~~~ lang=cycle
-] phase table lookup (single-cycle bezier wave)
-
-##-# Inputs
-
-|noheader
-|:       |: `freq` / `f`      |: range is 0.25..4 (1.0=middle C in fixed frequency mode)   |: def=1.0
-|:       |: `phase` / `ph`    |: range is 0..1 (start phase)                               |: def=0.0
-|:       |: `vsync` / `vs`    |: range is 0.01..4 (virtual oscillator sync)                |: def=1.0 (off)
-|: const |: `cycle` / `cy`    |: range is 0/1 (0=disable wavetable cycle reset)            |: def=1 (on)
-|: const |: `reset` / `rs`    |: range is 0/1 (0=disable plugin voice note on reset        |: def=1 (on)
-|: const |: `fixed` / `fx`    |: range is 0..1 (1=enable fixed frequency mode)             |: def=0 (follow kbd)
-|:       |: `phasemod` / `pm` |: range is 0..1 (post vsync phase modulation)               |: def=0.0 (off)
-|:       |: `pd`              |: phase distortion insert (subtree). input is phase (0..1), output is new phase (0..1). only supported in float/hi-fi mode.
-].table_inputs
-
-
 ## p2s
 ] exponential power-of-two scaling
 
@@ -2677,6 +2725,73 @@ caution: when `kbd` is connected (in plugin mode), this factors in the current s
 caution: only supported in float-mode (fall back to float in int mode)
 
 tip: for keyboard tracking purposes, the [#kbd][] module is usually the preferred solution
+
+
+## pha
+] phase accumulator
+
+Generate phase output (0..1 normalized saw-wave).
+
+##-# Example
+~~~
+curve mywaveshape
+
+<out:
+  pha freq=1.5 phase=0.25
+  lut mywaveshape
+~~~ lang=cycle
+] phase table lookup (single-cycle bezier wave)
+
+##-# Inputs
+
+|noheader
+|:       |: `freq` / `f`      |: range is 0.25..4 (1.0=middle C in fixed frequency mode)   |: def=1.0
+|:       |: `phase` / `ph`    |: range is 0..1 (start phase)                               |: def=0.0
+|:       |: `vsync` / `vs`    |: range is 0.01..4 (virtual oscillator sync)                |: def=1.0 (off)
+|: const |: `cycle` / `cy`    |: range is 0/1 (0=disable wavetable cycle reset)            |: def=1 (on)
+|: const |: `reset` / `rs`    |: range is 0/1 (0=disable plugin voice note on reset        |: def=1 (on)
+|: const |: `fixed` / `fx`    |: range is 0..1 (1=enable fixed frequency mode)             |: def=0 (follow kbd)
+|:       |: `phasemod` / `pm` |: range is 0..1 (post vsync phase modulation)               |: def=0.0 (off)
+|:       |: `pd`              |: phase distortion insert (subtree). input is phase (0..1), output is new phase (0..1). only supported in float/hi-fi mode.
+].table_inputs
+
+
+## phd
+] phase distortion
+
+Bend or warp incoming phase.
+
+##-# Examples
+~~~
+arg p_amt 0.0 0 1
+
+<out:
+  sin f=0
+    ph:
+      pha
+      phd mode=bend amt=$p_amt
+~~~ lang=cycle
+] bend sine phase
+
+~~~
+arg p_amt 0.0 0 1
+
+<out:
+  tri f=0
+    ph:
+      pha
+      phd mode=warp amt=$p_amt
+~~~ lang=cycle
+] warp triangle phase
+
+
+##-# Inputs
+
+|noheader
+|:       |: `mode` / `m`  |: range is 0(bend), 1(warp), 2(rate), 3(sigmoid), 4(sigmodinv), 5(sigmoidc), 6(sigmodinvc), 7(hermite1), 8(hermite2), 9(hermite3) (default=warp)
+|:       |: `amount` / `amt` |: range is 0..1 (default=0)
+].table_inputs
+
 
 
 ## pow

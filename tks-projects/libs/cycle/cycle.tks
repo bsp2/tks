@@ -28,7 +28,7 @@
 // ----          09Nov2024, 22Nov2024, 03Dec2024, 04Dec2024, 06Dec2024, 12Dec2024, 13Dec2024
 // ----          15Dec2024, 17Dec2024, 19Dec2024, 20Dec2024, 21Dec2024, 22Dec2024, 23Dec2024
 // ----          09Jan2025, 10Jan2025, 11Jan2025, 13Jan2025, 15Jan2025, 29Jan2025, 31Jan2025
-// ----          17Jan2026, 31Jan2026
+// ----          17Jan2026, 31Jan2026, 25Apr2026
 // ----
 // ----
 // ----
@@ -232,7 +232,7 @@ class CyDefs {
    }
 
    // <function.png>
-   public static FloatToString(float f) {
+   public static FloatToString(float f) : String {
       local String s = f;
       if( !(s & ".") && !(s & "e") && !(s & "E") )
          s.append(".0");  // e.g. "0f" is not allowed in "C"
@@ -3707,6 +3707,284 @@ class CyModuleReadBus : CyModule {
    public virtual emitInt(CyScript _script, local String _out, local String _sDstVar) {
       trace "[~~~] warning: CyModuleReadBus<int>: falling back to float..";
       emitFloatFallback(_script, _out, _sDstVar);
+   }
+}
+
+
+// <class.png>
+class CyModuleCas : CyModule {
+   define int MAX_CASES = 16;
+
+   // <method_init.png>
+   public virtual init() {
+      CyModule::init();
+
+      addInput("pos", 0.0f, 0.0f, 1.0f);
+      addInputAlias("p", "pos");
+
+      addInput("lin", 0.0f, 0.0f, 1.0f);
+      addInputAlias("l", "lin");
+
+      int inIdx = 0;
+      loop(MAX_CASES)
+         addInput(String(inIdx++), 0.0f, 0.0f, 1.0f);
+   }
+
+   // <method.png>
+   public virtual emitFloat(CyScript _script, local String _out, local String _sDstVar) {
+      local int numInputs = 0;
+      local CyInput *input;
+
+      local CyInput inPos <= findInputById("pos");
+      local CyInput inLin <= findInputById("lin");
+
+      // Count number of connected inputs (0..15)
+      local int inIdx = 0;
+      local String sIndent;
+      local PointerArray aInputs;
+      loop(inputs.numElements)
+      {
+         input <= findInputById(String(inIdx++));
+         if(null != input)
+         {
+            if(input.isConnected())
+            {
+               aInputs.add(input);
+               numInputs++;
+            }
+         }
+      }
+      // // trace "xxx cas: #inputs="+numInputs;
+
+      if(numInputs > 0)
+      {
+         // "pos" input
+         local String sVarPos <= _script.allocTmpVar(_out, "cas_pos");
+         if(inPos.isConnected())
+         {
+            inPos.emitFloat(_script, _out, sVarPos);
+         }
+         else
+         {
+            _out.append(sVarPos+" = "+_sDstVar+";\n");
+         }
+
+         local boolean bLinear = (inLin.getConstVal() >= 0.5f);
+
+         // scale normalized pos by numInputs and clip (=> calc input index)
+         local String sVarIdx <= _script.allocTmpVarInt(_out, "cas_idx");
+         local String sVarIdxN <= _script.allocTmpVarInt(_out, "cas_idxn");
+         local String *sVarFrac;
+         local String *sVarResN;
+         if(bLinear)
+         {
+            local String sVarIdxF <= _script.allocTmpVar(_out, "cas_idxf");
+            sVarFrac <= _script.allocTmpVar(_out, "cas_frac");
+            _out.append(sVarIdxF+" = ("+sVarPos+" * "+numInputs+");\n");
+            _out.append(sVarIdx+" = (int)"+sVarIdxF+";\n");
+            _out.append(sVarFrac+" = "+sVarIdxF+" - "+sVarIdx+";\n");
+            _out.append(sVarIdxN+" = "+sVarIdx+" + 1;\n");
+            _script.freeTmpVar(sVarIdxF);
+            sVarResN <= _script.allocTmpVar(_out, "cas_resn");
+         }
+         else
+         {
+            _out.append(sVarIdx+" = (int)("+sVarPos+" * "+numInputs+");\n");
+         }
+         _out.append("if("+sVarIdx+" >= "+numInputs+") "+sVarIdx+" -= "+numInputs+";\n");
+         _out.append("else if("+sVarIdx+" < 0) "+sVarIdx+" += "+numInputs+";\n");
+         if(bLinear)
+         {
+            _out.append("if("+sVarIdxN+" >= "+numInputs+") "+sVarIdxN+" -= "+numInputs+";\n");
+            _out.append("else if("+sVarIdxN+" < 0) "+sVarIdxN+" += "+numInputs+";\n");
+         }
+
+         // Evaluate selected input(s)
+         inIdx = 0;
+         local String *sVarRes;
+         if(bLinear)
+            sVarRes <= _script.allocTmpVar(_out, "cas_res");
+         loop(numInputs)
+         {
+            input <= aInputs[inIdx];
+            if(bLinear)
+            {
+               _out.append("if( ("+sVarIdx+" == "+inIdx+") || ("+sVarIdxN+" == "+inIdx+") )\n");
+            }
+            else
+            {
+               _out.append("if("+sVarIdx+" == "+inIdx+")\n");
+            }
+            _out.append("{\n");
+            sIndent.empty();
+            if(bLinear)
+            {
+               input.emitFloat(_script, sIndent, sVarRes);
+               sIndent.append("if( ("+sVarIdxN+" == "+inIdx+") )\n");
+               sIndent.append("   "+sVarResN+" = "+sVarRes+";\n");
+               sIndent.append("else\n");
+               sIndent.append("   "+_sDstVar+" = "+sVarRes+";\n");
+               CyScript.AppendIndentedLines(_out, sIndent, 3);
+            }
+            else
+            {
+               input.emitFloat(_script, sIndent, _sDstVar);
+               CyScript.AppendIndentedLines(_out, sIndent, 3);
+            }
+            _out.append("}\n");
+
+            // Next input
+            inIdx++;
+         }
+         
+         if(bLinear)
+         {
+            // Lerp
+            _out.append(_sDstVar+" += ("+sVarResN+" - "+_sDstVar+") * "+sVarFrac+";\n");
+         }
+
+         if(null != sVarRes)
+            _script.freeTmpVar(sVarRes);
+         if(null != sVarResN)
+            _script.freeTmpVar(sVarResN);
+         if(null != sVarFrac)
+            _script.freeTmpVar(sVarFrac);
+         _script.freeTmpVarInt(sVarIdx);
+         _script.freeTmpVar(sVarPos);
+      }
+   }
+
+   // <method.png>
+   public virtual emitInt(CyScript _script, local String _out, local String _sDstVar) {
+      local int numInputs = 0;
+      local CyInput *input;
+
+      local CyInput inPos <= findInputById("pos");
+      local CyInput inLin <= findInputById("lin");
+
+      // Count number of connected inputs (0..15)
+      local int inIdx = 0;
+      local String sIndent;
+      local PointerArray aInputs;
+      loop(inputs.numElements)
+      {
+         input <= findInputById(String(inIdx++));
+         if(null != input)
+         {
+            if(input.isConnected())
+            {
+               aInputs.add(input);
+               numInputs++;
+            }
+         }
+      }
+      // // trace "xxx cas: #inputs="+numInputs;
+
+      if(numInputs > 0)
+      {
+         // "pos" input
+         local String sVarPos <= _script.allocTmpVarInt(_out, "cas_pos");
+         if(inPos.isConnected())
+         {
+            inPos.emitInt(_script, _out, sVarPos);
+         }
+         else
+         {
+            _out.append(sVarPos+" = "+_sDstVar+";\n");
+         }
+
+         local boolean bLinear = (inLin.getConstVal() >= 0.5f);
+
+         // scale normalized pos by numInputs and clip (=> calc input index)
+         local String sVarIdx <= _script.allocTmpVarInt(_out, "cas_idx");
+         local String sVarIdxN <= _script.allocTmpVarInt(_out, "cas_idxn");
+         local String *sVarFrac;
+         local String *sVarResN;
+         if(bLinear)
+         {
+            local String sVarIdxF <= _script.allocTmpVarInt(_out, "cas_idxf");
+            sVarFrac <= _script.allocTmpVarInt(_out, "cas_frac");
+            if(b_export_c)
+               _out.append(sVarIdxF+" = Dmulsw("+sVarPos+", "+numInputs+");\n");
+            else
+               _out.append(sVarIdxF+" = ("+sVarPos+" * "+numInputs+");\n");
+            _out.append(sVarFrac+" = "+sVarIdxF+" & "+int(FX_FRAC)+";\n");
+            _out.append(sVarIdx+" = "+sVarIdxF+" >> "+FX_SHR+";\n");
+            _out.append(sVarIdxN+" = "+sVarIdx+" + 1;\n");
+            _script.freeTmpVarInt(sVarIdxF);
+            sVarResN <= _script.allocTmpVarInt(_out, "cas_resn");
+         }
+         else
+         {
+            if(b_export_c)
+               _out.append(sVarIdx+" = Dmulsw("+sVarPos+", "+numInputs+") >> "+FX_SHR+";\n");
+            else
+               _out.append(sVarIdx+" = ("+sVarPos+" * "+numInputs+") >> "+FX_SHR+";\n");
+         }
+         _out.append("if("+sVarIdx+" >= "+numInputs+") "+sVarIdx+" -= "+numInputs+";\n");
+         _out.append("else if("+sVarIdx+" < 0) "+sVarIdx+" += "+numInputs+";\n");
+         if(bLinear)
+         {
+            _out.append("if("+sVarIdxN+" >= "+numInputs+") "+sVarIdxN+" -= "+numInputs+";\n");
+            _out.append("else if("+sVarIdxN+" < 0) "+sVarIdxN+" += "+numInputs+";\n");
+         }
+
+         // Evaluate selected input(s)
+         inIdx = 0;
+         local String *sVarRes;
+         if(bLinear)
+            sVarRes <= _script.allocTmpVarInt(_out, "cas_res");
+         loop(numInputs)
+         {
+            input <= aInputs[inIdx];
+            if(bLinear)
+            {
+               _out.append("if( ("+sVarIdx+" == "+inIdx+") || ("+sVarIdxN+" == "+inIdx+") )\n");
+            }
+            else
+            {
+               _out.append("if("+sVarIdx+" == "+inIdx+")\n");
+            }
+            _out.append("{\n");
+            sIndent.empty();
+            if(bLinear)
+            {
+               input.emitInt(_script, sIndent, sVarRes);
+               sIndent.append("if( ("+sVarIdxN+" == "+inIdx+") )\n");
+               sIndent.append("   "+sVarResN+" = "+sVarRes+";\n");
+               sIndent.append("else\n");
+               sIndent.append("   "+_sDstVar+" = "+sVarRes+";\n");
+               CyScript.AppendIndentedLines(_out, sIndent, 3);
+            }
+            else
+            {
+               input.emitInt(_script, sIndent, _sDstVar);
+               CyScript.AppendIndentedLines(_out, sIndent, 3);
+            }
+            _out.append("}\n");
+
+            // Next input
+            inIdx++;
+         }
+         
+         if(bLinear)
+         {
+            // Lerp
+            if(b_export_c)
+               _out.append(_sDstVar+" += Dmulsw_shr(("+sVarResN+" - "+_sDstVar+"), "+sVarFrac+");\n");
+            else
+               _out.append(_sDstVar+" += (("+sVarResN+" - "+_sDstVar+") * "+sVarFrac+") >> "+FX_SHR+";\n");
+         }
+
+         if(null != sVarRes)
+            _script.freeTmpVarInt(sVarRes);
+         if(null != sVarResN)
+            _script.freeTmpVarInt(sVarResN);
+         if(null != sVarFrac)
+            _script.freeTmpVarInt(sVarFrac);
+         _script.freeTmpVarInt(sVarIdx);
+         _script.freeTmpVarInt(sVarPos);
+      }
    }
 }
 
@@ -9259,6 +9537,161 @@ class CyModuleP2s : CyModule {
       trace "[~~~] warning: CyModuleP2s<int> falling back to float..";
       emitFloatFallback(_script, _out, _sDstVar);
    }
+}
+
+
+// <class.png>
+class CyModulePhd : CyModule {
+
+   // <method_init.png>
+   public virtual init() {
+      CyModule::init();
+
+      addInput("amount", 0.5, 0.0, 1.0);
+      addInputAlias("amt", "amount");
+
+      addInput("mode",   1.0, 0.0, 9.0);
+      addInputAlias("m", "mode");
+
+      // (note) remove ? already have sigmod/sigmodinv
+      addInput("invert", 0.0, 0.0, 1.0);
+      addInputAlias("inv", "invert");
+   }
+
+   // <method_get.png>
+   public virtual getInputConstants(String _input, StringArray _retNames, FloatArray _retValues) : boolean {
+      switch(_input)
+      {
+         case "mode":
+            _retNames  = ["bend", "warp", "rate", "sigmoid", "sigmoidinv", "sigmoidc", "sigmoidinvc", "hermite1", "hermite2", "hermite3"];
+            _retValues = [ 0,      1,      2,      3,         4,            5,          6,             7,          8           9        ];
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public virtual emitFloat(CyScript _script, local String _out, local String _sDstVar) {
+      local CyInput inAmount <= findInputById("amount");
+      local CyInput inMode   <= findInputById("mode");
+      local CyInput inInvert <= findInputById("invert");
+
+      local boolean bInvert = (inInvert.getConstVal() >= 0.5f);
+
+      local String sVarAmount <= _script.allocTmpVar(_out, "phd_amount");
+      inAmount.emitFloat(_script, _out, sVarAmount);
+
+      local String sVarExp <= _script.allocTmpVar(_out, "phd_exp");
+      local String sVarTmp <= _script.allocTmpVar(_out, "phd_tmp");
+      local String sVarX <= _script.allocTmpVar(_out, "phd_x");
+
+      parent_script.b_use_pow = true;
+
+      if(bInvert)
+         _out.append(sVarX+" = 1.0f - "+_sDstVar+";\n");
+      else
+         _out.append(sVarX+" = "+_sDstVar+";\n");
+
+      local int mode = inMode.getConstVal();
+      switch(mode)
+      {
+         case 0:  // bend
+         default:
+            _out.append(sVarExp+" = 0.05f + (1.0f - "+sVarAmount+") * 0.9f;\n");
+            _out.append(sVarX+" = ("+sVarX+" - 0.5f) * 2.0f;\n");
+            _out.append(sVarX+" = mathPowerf("+sVarX+", "+sVarExp+");\n");
+            _out.append(sVarX+" = "+sVarX+" * 0.5f + 0.5f;\n");
+            break;
+
+         case 1:  // warp
+            _out.append(sVarExp+" = "+sVarAmount+" * 7.0f + 1.0f;\n");
+            _out.append(sVarX+" = 2.0f * "+sVarX+" - 1.0f;\n");
+            _out.append("if("+sVarX+" < 0.0f)\n");
+            _out.append("{\n");
+            _out.append("   "+sVarX+" = 1.0f + "+sVarX+";\n");
+            _out.append("   "+sVarX+" = mathPowerf("+sVarX+", "+sVarExp+");\n");
+            _out.append("   "+sVarX+" = "+sVarX+" - 1.0f;\n");
+            _out.append("}\n");
+            _out.append("else\n");
+            _out.append("{\n");
+            _out.append("   "+sVarX+" = 1.0f - "+sVarX+";\n");
+            _out.append("   "+sVarX+" = mathPowerf("+sVarX+", "+sVarExp+");\n");
+            _out.append("   "+sVarX+" = 1.0f - "+sVarX+";\n");
+            _out.append("}\n");
+            _out.append(sVarX+" = "+sVarX+" * 0.5f + 0.5f;\n");
+            break;
+
+         case 2:  // rate
+            _out.append(sVarExp+" = mathPowerf(2.0f, 1.0f + "+sVarAmount+" * 11.0f);\n");
+            _out.append(sVarTmp+" = 16384.0f / "+sVarExp+";\n");
+            _out.append(sVarExp+" = "+sVarExp+" / 16384.0f;\n");
+            _out.append(sVarX+" = (((int)("+sVarX+" * "+sVarTmp+")) * "+sVarExp+");\n");
+            break;
+
+         case 3:  // sigmoid
+            _out.append(sVarX+" = 1.0f / (1.0f + mathPowerf(2.71828182846f,("+sVarX+" * -27.0f)));\n");
+            break;
+
+         case 4:  // sigmoidinv
+            _out.append(sVarX+" = 1.0f - (1.0f / (1.0f + mathPowerf(2.71828182846f,((1.0f - "+sVarX+") * -27.0f))));\n");
+            break;
+
+         case 5:  // sigmoidc (center)
+            _out.append(sVarX+" = 2.0f * "+sVarX+" - 1.0f;\n");
+            _out.append("if("+sVarX+" < 0.0f)\n");
+            _out.append("{\n");
+            _out.append("   "+sVarX+" = -1.0f / (1.0f + mathPowerf(2.71828182846f,("+sVarX+" * 27.0f)));\n");
+            _out.append("}\n");
+            _out.append("else\n");
+            _out.append("{\n");
+            _out.append("   "+sVarX+" = 1.0f / (1.0f + mathPowerf(2.71828182846f,("+sVarX+" * -27.0f)));\n");
+            _out.append("}\n");
+            _out.append(sVarX+" = "+sVarX+" * 0.5f + 0.5f;\n");
+            break;
+
+         case 6:  // sigmoidinvc (center)
+            _out.append(sVarX+" = 2.0f * "+sVarX+" - 1.0f;\n");
+            _out.append("if("+sVarX+" < 0.0f)\n");
+            _out.append("{\n");
+            _out.append("   "+sVarX+" = -(1.0f - 1.0f / (1.0f + mathPowerf(2.71828182846f,((1.0f - -"+sVarX+") * -27.0f))));\n");
+            _out.append("}\n");
+            _out.append("else\n");
+            _out.append("{\n");
+            _out.append("   "+sVarX+" = 1.0f - 1.0f / (1.0f + mathPowerf(2.71828182846f,((1.0f - "+sVarX+") * -27.0f)));\n");
+            _out.append("}\n");
+            _out.append(sVarX+" = "+sVarX+" * 0.5f + 0.5f;\n");
+            break;
+
+         case 7:  // hermite1
+            _out.append(sVarX+" = "+sVarX+" * "+sVarX+" * (3.0f - 2.0f * "+sVarX+");\n");
+            break;
+
+         case 8: // hermite2
+            _out.append(sVarExp+" = "+sVarX+" * "+sVarX+";\n");
+            _out.append(sVarX+" = ("+sVarExp+" * "+ sVarX+") * ((6.0f * "+sVarExp+") - (15.0f * "+sVarX+") + 10.0f);\n");
+            break;
+
+         case 9: // hermite3
+            _out.append(sVarExp+" = "+sVarX+" * "+sVarX+";\n");
+            _out.append(sVarExp+" *= "+sVarExp+";\n");
+            _out.append(sVarX+" = "+sVarExp+" * ((-20.0f * "+sVarX+" * "+sVarX+" * "+sVarX+") + (70.0f * "+sVarX+" * "+sVarX+") - (84.0f * "+sVarX+") + 35.0f);\n");
+            break;
+      }
+
+      if(bInvert)
+         _out.append(sVarX+" = 1.0f - "+sVarX+";\n");
+
+      _out.append(_sDstVar+" += ("+sVarX+" - "+_sDstVar+") * "+sVarAmount+";\n");
+
+      _script.freeTmpVar(sVarTmp);
+      _script.freeTmpVar(sVarExp);
+      _script.freeTmpVar(sVarX);
+      _script.freeTmpVar(sVarAmount);
+   }
+
+   // // <method.png>
+   // public virtual emitInt(CyScript _script, local String _out, local String _sDstVar) {
+   // }
 }
 
 
@@ -19050,6 +19483,7 @@ class CyScript : CyDefs {
          case "bts":  mod <= new CyModuleBts;  break;  // loc_bipolar_to_scale()
          case "buf":  mod <= new CyModuleBuf;  break;  // reserved
          case "bus":  mod <= new CyModuleReadBus;  break; // **deprecated** (=> use 'rbl'/'rbr' instead)
+         case "cas":  mod <= new CyModuleCas;  break;
          case "clk":  mod <= new CyModuleClk;  break;
          case "clp":  mod <= new CyModuleClp;  break;
          case "cmp":  mod <= new CyModuleCmp;  modCmp <= mod; modCmp.cmp_op = CyModuleCmp.CMP_OP_NONE; break;  // must be followed by <,<=,==,!=,>=,>
@@ -19115,6 +19549,7 @@ class CyScript : CyDefs {
          case "par":  mod <= new CyModulePan;  modPan <= mod; modPan.b_right = true; break;
          case "pha":  mod <= new CyModulePha;  break;  // emits 0..2047 in int mode, 0..0.999999 in float mode
          case "p2s":  mod <= new CyModuleP2s;  break;
+         case "phd":  mod <= new CyModulePhd;  break;
          case "pow":  mod <= new CyModulePow;  break;
          case "pre":  mod <= new CyModulePre;  break;
          case "pul":  mod <= new CyModulePul;  break;
