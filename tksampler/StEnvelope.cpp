@@ -1,14 +1,14 @@
 // ----
 // ---- file   : StEnvelope.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2010-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2010-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 14Feb2010
-// ---- changed: 23Aug2021, 12Apr2023, 03Oct2024
+// ---- changed: 23Aug2021, 12Apr2023, 03Oct2024, 22Apr2026
 // ----
 // ----
 // ----
@@ -27,6 +27,8 @@ StEnvelope::StEnvelope(void) {
    metadata_object   = NULL;
 
    ui_preset_name = NULL;
+
+   last_played_position = 0.0f;
 }
 
 StEnvelope::~StEnvelope() {
@@ -153,4 +155,9 @@ void StEnvelope::_setUiPresetName(YAC_Object *_s) {
 
 YAC_Object *StEnvelope::_getUiPresetName(void) {
    return ui_preset_name;
+}
+
+sF32 StEnvelope::_getLastPlayedPosition(void) {
+   // Dyac_host_printf("xxx StEnvelope::_getLastPlayedPosition: last_played_position=%f\n", last_played_position);
+   return last_played_position;
 }

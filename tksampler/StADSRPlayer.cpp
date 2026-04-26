@@ -1,7 +1,7 @@
 // ----
 // ---- file   : StADSRPlayer.cpp
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2009-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2009-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -11,7 +11,7 @@
 // ----
 // ---- changed: 21Jan2010, 14Feb2010, 29Jun2010, 01Aug2010, 15Dec2018, 28Dec2018, 17Jan2019
 // ----          11May2019, 12May2019, 13Jul2019, 25Jul2019, 23Aug2021, 12Apr2023, 29Sep2024
-// ----          03Oct2024
+// ----          03Oct2024, 22Apr2026
 // ----
 // ----
 // ----
@@ -212,8 +212,11 @@ void StADSRPlayer::noteOff(void) {
             env_index = ENV_RELEASE;
             time      = 0.0f;
 
+            orig_st_env->last_played_position = -1.0f;
+
             visitEnv(adsr->env_release);
             current_env->yacEnvSetTime(0.0f);
+            orig_st_env->last_played_position = -1.0f;
 
             if(0 == current_env->num_elements)
             {
@@ -228,6 +231,7 @@ void StADSRPlayer::noteOff(void) {
 
             visitEnv(adsr->env_sustain);
             current_env->yacEnvSetTime(0.0f);
+            orig_st_env->last_played_position = 0.0f;
 
             if(0 == current_env->num_elements)
             {
@@ -276,6 +280,8 @@ sF32 StADSRPlayer::tick(void) {
                   // End of AD envelope, begin sustain
                   // Determine exact attack_level at end of AD env
                   current_env->yacEnvSetTime(current_env_totaltime);
+                  orig_st_env->last_played_position = -1;
+
                   t = current_env->yacEnvGetValue();
                   t = loc_powxy(t, orig_st_env->exponent);
                   if(t < min_level)
@@ -298,6 +304,7 @@ sF32 StADSRPlayer::tick(void) {
                      visitEnv(adsr->env_sustain);
                      env_index++;
                      current_env->yacEnvSetTime((sF32)time);
+                     orig_st_env->last_played_position = time;
                   }
                }
                break;
@@ -312,11 +319,13 @@ sF32 StADSRPlayer::tick(void) {
                         // Loop sustain envelope
                         // Dyac_host_printf("xxx loop sustain env\n");
                         current_env->yacEnvSetTime((sF32)time);
+                        orig_st_env->last_played_position = time;
                      }
                      else
                      {
                         // Hold last value
                         b_sustain_finished = YAC_TRUE;
+                        orig_st_env->last_played_position = -1.0f;
                      }
                   }
                }
@@ -327,6 +336,7 @@ sF32 StADSRPlayer::tick(void) {
                   // End of release envelope
                   // Dyac_host_printf("xxx end of R envelope\n");
                   b_finished = 1;
+                  orig_st_env->last_played_position = -1.0f;
                }
                break;
             }
@@ -334,6 +344,8 @@ sF32 StADSRPlayer::tick(void) {
 
          if(!b_finished)
          {
+            orig_st_env->last_played_position = time;
+
             switch(env_index)
             {
                default:

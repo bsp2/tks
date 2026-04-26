@@ -69,7 +69,7 @@ class StADSRPlayer {
    sF32          default_level;  // volume:1.0 , freq:0.0, pan:0.0
    sF32          final_level;    // valid when all stages finished
 
-  public:// xxxxxxxxxxxxxxx should be protected
+  public:
    TKS_Envelope *current_env;           // temporary Envelope
    StEnvelope   *orig_st_env;
    TKS_Envelope *orig_env;

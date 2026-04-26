@@ -471,209 +471,213 @@ YC class StSample : public YAC_Object {
 #define STSAMPLE_MM_NUM_OP              YCI  13
 
 #define STSAMPLE_MM_SRC_NONE                  YCI    0
-#define STSAMPLE_MM_SRC_CONST_1               YCI    1
-#define STSAMPLE_MM_SRC_CONST_M1              YCI    2
-#define STSAMPLE_MM_SRC_CONST_0               YCI    3
-#define STSAMPLE_MM_SRC_CONST_4               YCI    4
-#define STSAMPLE_MM_SRC_CONST_16              YCI    5
-#define STSAMPLE_MM_SRC_CONST_100             YCI    6
-#define STSAMPLE_MM_SRC_CONST_127             YCI    7
-#define STSAMPLE_MM_SRC_CONST_255             YCI    8
-#define STSAMPLE_MM_SRC_RAND_1_PM             YCI    9
-#define STSAMPLE_MM_SRC_RAND_1_P              YCI   10
-#define STSAMPLE_MM_SRC_RAND_2_PM             YCI   11
-#define STSAMPLE_MM_SRC_RAND_2_P              YCI   12
-#define STSAMPLE_MM_SRC_RAND_3_PM             YCI   13
-#define STSAMPLE_MM_SRC_RAND_3_P              YCI   14
-#define STSAMPLE_MM_SRC_RAND_4_PM             YCI   15
-#define STSAMPLE_MM_SRC_RAND_4_P              YCI   16
-#define STSAMPLE_MM_SRC_KEYBOARD_PM           YCI   17
-#define STSAMPLE_MM_SRC_KEYBOARD_P            YCI   18
-#define STSAMPLE_MM_SRC_KEYBOARD_M            YCI   19
-#define STSAMPLE_MM_SRC_KEYBOARD_ABS          YCI   20
-#define STSAMPLE_MM_SRC_VOICE_NR              YCI   21
-#define STSAMPLE_MM_SRC_VOICE_NR_EVEN         YCI   22
-#define STSAMPLE_MM_SRC_VOICE_NR_ODD          YCI   23
-#define STSAMPLE_MM_SRC_VOICE_NR_EVENODD      YCI   24
-#define STSAMPLE_MM_SRC_VOICE_NR_ODDEVEN      YCI   25
-#define STSAMPLE_MM_SRC_ACTIVE_NOTES          YCI   26
-#define STSAMPLE_MM_SRC_ACTIVE_NOTE_EVEN      YCI   27
-#define STSAMPLE_MM_SRC_ACTIVE_NOTE_ODD       YCI   28
-#define STSAMPLE_MM_SRC_ACTIVE_NOTE_EVENODD   YCI   29
-#define STSAMPLE_MM_SRC_ACTIVE_NOTE_ODDEVEN   YCI   30
-#define STSAMPLE_MM_SRC_LAYER_NR              YCI   31
-#define STSAMPLE_MM_SRC_LAYER_NR_EVEN         YCI   32
-#define STSAMPLE_MM_SRC_LAYER_NR_ODD          YCI   33
-#define STSAMPLE_MM_SRC_LAYER_NR_EVENODD      YCI   34
-#define STSAMPLE_MM_SRC_LAYER_NR_ODDEVEN      YCI   35
-#define STSAMPLE_MM_SRC_VELOCITY              YCI   36
-#define STSAMPLE_MM_SRC_VELOCITY_HI           YCI   37
-#define STSAMPLE_MM_SRC_VELOCITY_EXP2         YCI   38
-#define STSAMPLE_MM_SRC_VELOCITY_EXP3         YCI   39
-#define STSAMPLE_MM_SRC_VELOCITY_SMOOTHSTEP   YCI   40
-#define STSAMPLE_MM_SRC_VELOCITY_INV          YCI   41   // (1-vel)
-#define STSAMPLE_MM_SRC_VELOCITY_BIP          YCI   42   // (vel*2-1)
-#define STSAMPLE_MM_SRC_RELEASE_VELOCITY      YCI   43
-#define STSAMPLE_MM_SRC_RELEASE_VELOCITY_HI   YCI   44
-#define STSAMPLE_MM_SRC_GATE                  YCI   45   // 1 while key is pressed, 0 otherwise. added in MM v32.
-#define STSAMPLE_MM_SRC_TRIG_PULSE            YCI   46   // 1 for one tick when voice starts (also in glide mode), 0 otherwise. added in MM v32.
-#define STSAMPLE_MM_SRC_RELEASE               YCI   47   // 1 when voice is in release phase, 0 otherwise
-#define STSAMPLE_MM_SRC_RELEASE_PULSE         YCI   48   // 1 for one tick when release phase starts, 0 otherwise
-#define STSAMPLE_MM_SRC_SUSTAIN_PEDAL         YCI   49   // added in MM v39  (CC#64)
-#define STSAMPLE_MM_SRC_SOFT_PEDAL            YCI   50   // added in MM v39  (CC#67)
-#define STSAMPLE_MM_SRC_PITCHBEND_PM          YCI   51
-#define STSAMPLE_MM_SRC_PITCHBEND_PM_ON       YCI   52
-#define STSAMPLE_MM_SRC_PITCHBEND_P           YCI   53
-#define STSAMPLE_MM_SRC_PITCHBEND_P_ON        YCI   54
-#define STSAMPLE_MM_SRC_PITCHBEND_M           YCI   55
-#define STSAMPLE_MM_SRC_PITCHBEND_M_ON        YCI   56
-#define STSAMPLE_MM_SRC_PRESSURE              YCI   57
-#define STSAMPLE_MM_SRC_PRESSURE_ON           YCI   58
-#define STSAMPLE_MM_SRC_PRESSURE_HI           YCI   59
-#define STSAMPLE_MM_SRC_PRESSURE_HI_ON        YCI   60
-#define STSAMPLE_MM_SRC_PRESSURE_MAX          YCI   61
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL          YCI   62
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL_ON       YCI   63
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL_INV      YCI   64  // added in MM v28
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL_INV_ON   YCI   65  // added in MM v28
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL_BIP      YCI   66  // added in MM v28
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL_BIP_ON   YCI   67  // added in MM v28
-#define STSAMPLE_MM_SRC_CC1_MODWHEEL_TRIG     YCI   68  // added in MM v41
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL         YCI   69
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_ON      YCI   70
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV     YCI   71  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV_ON  YCI   72  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP     YCI   73  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP_ON  YCI   74  // added in MM v29
-#define STSAMPLE_MM_SRC_CC2_BREATHCTL_TRIG    YCI   75  // added in MM v41
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL           YCI   76
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_ON        YCI   77
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV       YCI   78  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV_ON    YCI   79  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP       YCI   80  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP_ON    YCI   81  // added in MM v30
-#define STSAMPLE_MM_SRC_CC4_FOOTCTL_TRIG      YCI   82  // added in MM v41
-#define STSAMPLE_MM_SRC_CC7_VOLUME            YCI   83
-#define STSAMPLE_MM_SRC_CC7_VOLUME_ON         YCI   84
-#define STSAMPLE_MM_SRC_CC8_BALANCE           YCI   85
-#define STSAMPLE_MM_SRC_CC8_BALANCE_ON        YCI   86
-#define STSAMPLE_MM_SRC_CC10_PAN              YCI   87
-#define STSAMPLE_MM_SRC_CC10_PAN_ON           YCI   88
-#define STSAMPLE_MM_SRC_CC11_EXPR             YCI   89
-#define STSAMPLE_MM_SRC_CC11_EXPR_ON          YCI   90
-#define STSAMPLE_MM_SRC_CC11_EXPR_INV         YCI   91  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_INV_ON      YCI   92  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_BIP         YCI   93  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_BIP_ON      YCI   94  // added in MM v31
-#define STSAMPLE_MM_SRC_CC11_EXPR_TRIG        YCI   95  // added in MM v41
-#define STSAMPLE_MM_SRC_CC16_GENERAL_1        YCI   96
-#define STSAMPLE_MM_SRC_CC16_GENERAL_1_ON     YCI   97
-#define STSAMPLE_MM_SRC_CC16_GENERAL_1_TRIG   YCI   98  // added in MM v41
-#define STSAMPLE_MM_SRC_CC17_GENERAL_2        YCI   99
-#define STSAMPLE_MM_SRC_CC17_GENERAL_2_ON     YCI  100
-#define STSAMPLE_MM_SRC_CC17_GENERAL_2_TRIG   YCI  101  // added in MM v41
-#define STSAMPLE_MM_SRC_CC18_GENERAL_3        YCI  102
-#define STSAMPLE_MM_SRC_CC18_GENERAL_3_ON     YCI  103
-#define STSAMPLE_MM_SRC_CC18_GENERAL_3_TRIG   YCI  104  // added in MM v41
-#define STSAMPLE_MM_SRC_CC19_GENERAL_4        YCI  105
-#define STSAMPLE_MM_SRC_CC19_GENERAL_4_ON     YCI  106
-#define STSAMPLE_MM_SRC_CC19_GENERAL_4_TRIG   YCI  107  // added in MM v41
-#define STSAMPLE_MM_SRC_CC74_BRIGHT           YCI  108
-#define STSAMPLE_MM_SRC_CC74_BRIGHT_ON        YCI  109
-#define STSAMPLE_MM_SRC_CC80_GENERAL_5        YCI  110
-#define STSAMPLE_MM_SRC_CC80_GENERAL_5_ON     YCI  111
-#define STSAMPLE_MM_SRC_CC80_GENERAL_5_TRIG   YCI  112  // added in MM v41
-#define STSAMPLE_MM_SRC_CC81_GENERAL_6        YCI  113
-#define STSAMPLE_MM_SRC_CC81_GENERAL_6_ON     YCI  114
-#define STSAMPLE_MM_SRC_CC81_GENERAL_6_TRIG   YCI  115  // added in MM v41
-#define STSAMPLE_MM_SRC_CC82_GENERAL_7        YCI  116
-#define STSAMPLE_MM_SRC_CC82_GENERAL_7_ON     YCI  117
-#define STSAMPLE_MM_SRC_CC82_GENERAL_7_TRIG   YCI  118  // added in MM v41
-#define STSAMPLE_MM_SRC_CC83_GENERAL_8        YCI  119
-#define STSAMPLE_MM_SRC_CC83_GENERAL_8_ON     YCI  120
-#define STSAMPLE_MM_SRC_CC83_GENERAL_8_TRIG   YCI  121  // added in MM v41
-#define STSAMPLE_MM_SRC_LFO_FREQ              YCI  122
-#define STSAMPLE_MM_SRC_LFO_VOL               YCI  123
-#define STSAMPLE_MM_SRC_LFO_PAN               YCI  124
-#define STSAMPLE_MM_SRC_LFO_AUX               YCI  125
-#define STSAMPLE_MM_SRC_ENV_FREQ              YCI  126
-#define STSAMPLE_MM_SRC_ENV_VOL               YCI  127
-#define STSAMPLE_MM_SRC_ENV_PAN               YCI  128
-#define STSAMPLE_MM_SRC_ENV_AUX               YCI  129
-#define STSAMPLE_MM_SRC_MODSEQ1               YCI  130
-#define STSAMPLE_MM_SRC_MODSEQ2               YCI  131
-#define STSAMPLE_MM_SRC_MODSEQ3               YCI  132
-#define STSAMPLE_MM_SRC_MODSEQ4               YCI  133
-#define STSAMPLE_MM_SRC_MODSEQ1_BY_VOICEKEY   YCI  134
-#define STSAMPLE_MM_SRC_MODSEQ2_BY_VOICEKEY   YCI  135
-#define STSAMPLE_MM_SRC_MODSEQ3_BY_VOICEKEY   YCI  136
-#define STSAMPLE_MM_SRC_MODSEQ4_BY_VOICEKEY   YCI  137
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_1        YCI  138  // v36+
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_2        YCI  139  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_3        YCI  140  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_4        YCI  141  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_5        YCI  142  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_6        YCI  143  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_7        YCI  144  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_8        YCI  145  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_9        YCI  146  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_10       YCI  147  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_11       YCI  148  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_12       YCI  149  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_13       YCI  150  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_14       YCI  151  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_15       YCI  152  // ..
-#define STSAMPLE_MM_SRC_MODSEQ4_STEP_16       YCI  153  // ..
-#define STSAMPLE_MM_SRC_REG1                  YCI  154
-#define STSAMPLE_MM_SRC_REG2                  YCI  155
-#define STSAMPLE_MM_SRC_REG3                  YCI  156
-#define STSAMPLE_MM_SRC_REG4                  YCI  157
-#define STSAMPLE_MM_SRC_CC                    YCI  158
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1   YCI  159
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1_R YCI  160
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2   YCI  161
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2_R YCI  162
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3   YCI  163
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3_R YCI  164
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4   YCI  165
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4_R YCI  166
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5   YCI  167
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5_R YCI  168
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6   YCI  169
-#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6_R YCI  170
-#define STSAMPLE_MM_SRC_PLAYPOS_Z1            YCI  171
-#define STSAMPLE_MM_SRC_PLAYPOS_Z2            YCI  172
-#define STSAMPLE_MM_SRC_PLAYPOS_Z3            YCI  173
-#define STSAMPLE_MM_SRC_PLAYPOS_Z4            YCI  174
-#define STSAMPLE_MM_SRC_GLIDE_TIME            YCI  175  // 0..1 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_GLIDE_TIME_INV        YCI  176  // 1..0 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI        YCI  177  // 0..1..0 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI_INV    YCI  178  // 1..0..1 while gliding towards target note. added in MM v31.
-#define STSAMPLE_MM_SRC_VOICE_BUS_1           YCI  179  // VOICE_BUS_1..8(_ABS) added in MM v34
-#define STSAMPLE_MM_SRC_VOICE_BUS_1_ABS       YCI  180
-#define STSAMPLE_MM_SRC_VOICE_BUS_2           YCI  181
-#define STSAMPLE_MM_SRC_VOICE_BUS_2_ABS       YCI  182
-#define STSAMPLE_MM_SRC_VOICE_BUS_3           YCI  183
-#define STSAMPLE_MM_SRC_VOICE_BUS_3_ABS       YCI  184
-#define STSAMPLE_MM_SRC_VOICE_BUS_4           YCI  185
-#define STSAMPLE_MM_SRC_VOICE_BUS_4_ABS       YCI  186
-#define STSAMPLE_MM_SRC_VOICE_BUS_5           YCI  187
-#define STSAMPLE_MM_SRC_VOICE_BUS_5_ABS       YCI  188
-#define STSAMPLE_MM_SRC_VOICE_BUS_6           YCI  189
-#define STSAMPLE_MM_SRC_VOICE_BUS_6_ABS       YCI  190
-#define STSAMPLE_MM_SRC_VOICE_BUS_7           YCI  191
-#define STSAMPLE_MM_SRC_VOICE_BUS_7_ABS       YCI  192
-#define STSAMPLE_MM_SRC_VOICE_BUS_8           YCI  193
-#define STSAMPLE_MM_SRC_VOICE_BUS_8_ABS       YCI  194
-#define STSAMPLE_MM_SRC_GLOBAL_REG1           YCI  195
-#define STSAMPLE_MM_SRC_GLOBAL_REG1_ON        YCI  196
-#define STSAMPLE_MM_SRC_GLOBAL_REG2           YCI  197
-#define STSAMPLE_MM_SRC_GLOBAL_REG2_ON        YCI  198
-#define STSAMPLE_MM_SRC_GLOBAL_REG3           YCI  199
-#define STSAMPLE_MM_SRC_GLOBAL_REG3_ON        YCI  200
-#define STSAMPLE_MM_SRC_GLOBAL_REG4           YCI  201
-#define STSAMPLE_MM_SRC_GLOBAL_REG4_ON        YCI  202
-#define STSAMPLE_MM_NUM_SRC                   YCI  203
+#define STSAMPLE_MM_SRC_CONST_0_125           YCI    1  // v43+
+#define STSAMPLE_MM_SRC_CONST_0_25            YCI    2  // v43+
+#define STSAMPLE_MM_SRC_CONST_0_5             YCI    3  // v43+
+#define STSAMPLE_MM_SRC_CONST_0_75            YCI    4  // v43+
+#define STSAMPLE_MM_SRC_CONST_1               YCI    5
+#define STSAMPLE_MM_SRC_CONST_M1              YCI    6
+#define STSAMPLE_MM_SRC_CONST_0               YCI    7
+#define STSAMPLE_MM_SRC_CONST_4               YCI    8
+#define STSAMPLE_MM_SRC_CONST_16              YCI    9  
+#define STSAMPLE_MM_SRC_CONST_100             YCI   10  
+#define STSAMPLE_MM_SRC_CONST_127             YCI   11  
+#define STSAMPLE_MM_SRC_CONST_255             YCI   12  
+#define STSAMPLE_MM_SRC_RAND_1_PM             YCI   13
+#define STSAMPLE_MM_SRC_RAND_1_P              YCI   14
+#define STSAMPLE_MM_SRC_RAND_2_PM             YCI   15
+#define STSAMPLE_MM_SRC_RAND_2_P              YCI   16
+#define STSAMPLE_MM_SRC_RAND_3_PM             YCI   17
+#define STSAMPLE_MM_SRC_RAND_3_P              YCI   18
+#define STSAMPLE_MM_SRC_RAND_4_PM             YCI   19
+#define STSAMPLE_MM_SRC_RAND_4_P              YCI   20
+#define STSAMPLE_MM_SRC_KEYBOARD_PM           YCI   21
+#define STSAMPLE_MM_SRC_KEYBOARD_P            YCI   22
+#define STSAMPLE_MM_SRC_KEYBOARD_M            YCI   23
+#define STSAMPLE_MM_SRC_KEYBOARD_ABS          YCI   24
+#define STSAMPLE_MM_SRC_VOICE_NR              YCI   25
+#define STSAMPLE_MM_SRC_VOICE_NR_EVEN         YCI   26
+#define STSAMPLE_MM_SRC_VOICE_NR_ODD          YCI   27
+#define STSAMPLE_MM_SRC_VOICE_NR_EVENODD      YCI   28
+#define STSAMPLE_MM_SRC_VOICE_NR_ODDEVEN      YCI   29
+#define STSAMPLE_MM_SRC_ACTIVE_NOTES          YCI   30
+#define STSAMPLE_MM_SRC_ACTIVE_NOTE_EVEN      YCI   31
+#define STSAMPLE_MM_SRC_ACTIVE_NOTE_ODD       YCI   32
+#define STSAMPLE_MM_SRC_ACTIVE_NOTE_EVENODD   YCI   33
+#define STSAMPLE_MM_SRC_ACTIVE_NOTE_ODDEVEN   YCI   34
+#define STSAMPLE_MM_SRC_LAYER_NR              YCI   35
+#define STSAMPLE_MM_SRC_LAYER_NR_EVEN         YCI   36
+#define STSAMPLE_MM_SRC_LAYER_NR_ODD          YCI   37
+#define STSAMPLE_MM_SRC_LAYER_NR_EVENODD      YCI   38
+#define STSAMPLE_MM_SRC_LAYER_NR_ODDEVEN      YCI   39
+#define STSAMPLE_MM_SRC_VELOCITY              YCI   40
+#define STSAMPLE_MM_SRC_VELOCITY_HI           YCI   41
+#define STSAMPLE_MM_SRC_VELOCITY_EXP2         YCI   42
+#define STSAMPLE_MM_SRC_VELOCITY_EXP3         YCI   43
+#define STSAMPLE_MM_SRC_VELOCITY_SMOOTHSTEP   YCI   44
+#define STSAMPLE_MM_SRC_VELOCITY_INV          YCI   45   // (1-vel)
+#define STSAMPLE_MM_SRC_VELOCITY_BIP          YCI   46   // (vel*2-1)
+#define STSAMPLE_MM_SRC_RELEASE_VELOCITY      YCI   47
+#define STSAMPLE_MM_SRC_RELEASE_VELOCITY_HI   YCI   48
+#define STSAMPLE_MM_SRC_GATE                  YCI   49   // 1 while key is pressed, 0 otherwise. added in MM v32.
+#define STSAMPLE_MM_SRC_TRIG_PULSE            YCI   50   // 1 for one tick when voice starts (also in glide mode), 0 otherwise. added in MM v32.
+#define STSAMPLE_MM_SRC_RELEASE               YCI   51   // 1 when voice is in release phase, 0 otherwise
+#define STSAMPLE_MM_SRC_RELEASE_PULSE         YCI   52   // 1 for one tick when release phase starts, 0 otherwise
+#define STSAMPLE_MM_SRC_SUSTAIN_PEDAL         YCI   53   // added in MM v39  (CC#64)
+#define STSAMPLE_MM_SRC_SOFT_PEDAL            YCI   54   // added in MM v39  (CC#67)
+#define STSAMPLE_MM_SRC_PITCHBEND_PM          YCI   55
+#define STSAMPLE_MM_SRC_PITCHBEND_PM_ON       YCI   56
+#define STSAMPLE_MM_SRC_PITCHBEND_P           YCI   57
+#define STSAMPLE_MM_SRC_PITCHBEND_P_ON        YCI   58
+#define STSAMPLE_MM_SRC_PITCHBEND_M           YCI   59
+#define STSAMPLE_MM_SRC_PITCHBEND_M_ON        YCI   60
+#define STSAMPLE_MM_SRC_PRESSURE              YCI   61
+#define STSAMPLE_MM_SRC_PRESSURE_ON           YCI   62
+#define STSAMPLE_MM_SRC_PRESSURE_HI           YCI   63
+#define STSAMPLE_MM_SRC_PRESSURE_HI_ON        YCI   64
+#define STSAMPLE_MM_SRC_PRESSURE_MAX          YCI   65
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL          YCI   66
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_ON       YCI   67
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_INV      YCI   68  // added in MM v28
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_INV_ON   YCI   69  // added in MM v28
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_BIP      YCI   70  // added in MM v28
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_BIP_ON   YCI   71  // added in MM v28
+#define STSAMPLE_MM_SRC_CC1_MODWHEEL_TRIG     YCI   72  // added in MM v41
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL         YCI   73
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_ON      YCI   74
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV     YCI   75  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_INV_ON  YCI   76  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP     YCI   77  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_BIP_ON  YCI   78  // added in MM v29
+#define STSAMPLE_MM_SRC_CC2_BREATHCTL_TRIG    YCI   79  // added in MM v41
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL           YCI   80
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_ON        YCI   81
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV       YCI   82  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_INV_ON    YCI   83  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP       YCI   84  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_BIP_ON    YCI   85  // added in MM v30
+#define STSAMPLE_MM_SRC_CC4_FOOTCTL_TRIG      YCI   86  // added in MM v41
+#define STSAMPLE_MM_SRC_CC7_VOLUME            YCI   87
+#define STSAMPLE_MM_SRC_CC7_VOLUME_ON         YCI   88
+#define STSAMPLE_MM_SRC_CC8_BALANCE           YCI   89
+#define STSAMPLE_MM_SRC_CC8_BALANCE_ON        YCI   90
+#define STSAMPLE_MM_SRC_CC10_PAN              YCI   91
+#define STSAMPLE_MM_SRC_CC10_PAN_ON           YCI   92
+#define STSAMPLE_MM_SRC_CC11_EXPR             YCI   93
+#define STSAMPLE_MM_SRC_CC11_EXPR_ON          YCI   94
+#define STSAMPLE_MM_SRC_CC11_EXPR_INV         YCI   95  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_INV_ON      YCI   96  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_BIP         YCI   97  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_BIP_ON      YCI   98  // added in MM v31
+#define STSAMPLE_MM_SRC_CC11_EXPR_TRIG        YCI   99  // added in MM v41
+#define STSAMPLE_MM_SRC_CC16_GENERAL_1        YCI  100
+#define STSAMPLE_MM_SRC_CC16_GENERAL_1_ON     YCI  101
+#define STSAMPLE_MM_SRC_CC16_GENERAL_1_TRIG   YCI  102  // added in MM v41
+#define STSAMPLE_MM_SRC_CC17_GENERAL_2        YCI  103
+#define STSAMPLE_MM_SRC_CC17_GENERAL_2_ON     YCI  104
+#define STSAMPLE_MM_SRC_CC17_GENERAL_2_TRIG   YCI  105  // added in MM v41
+#define STSAMPLE_MM_SRC_CC18_GENERAL_3        YCI  106
+#define STSAMPLE_MM_SRC_CC18_GENERAL_3_ON     YCI  107
+#define STSAMPLE_MM_SRC_CC18_GENERAL_3_TRIG   YCI  108  // added in MM v41
+#define STSAMPLE_MM_SRC_CC19_GENERAL_4        YCI  109
+#define STSAMPLE_MM_SRC_CC19_GENERAL_4_ON     YCI  110
+#define STSAMPLE_MM_SRC_CC19_GENERAL_4_TRIG   YCI  111  // added in MM v41
+#define STSAMPLE_MM_SRC_CC74_BRIGHT           YCI  112
+#define STSAMPLE_MM_SRC_CC74_BRIGHT_ON        YCI  113
+#define STSAMPLE_MM_SRC_CC80_GENERAL_5        YCI  114
+#define STSAMPLE_MM_SRC_CC80_GENERAL_5_ON     YCI  115
+#define STSAMPLE_MM_SRC_CC80_GENERAL_5_TRIG   YCI  116  // added in MM v41
+#define STSAMPLE_MM_SRC_CC81_GENERAL_6        YCI  117
+#define STSAMPLE_MM_SRC_CC81_GENERAL_6_ON     YCI  118
+#define STSAMPLE_MM_SRC_CC81_GENERAL_6_TRIG   YCI  119  // added in MM v41
+#define STSAMPLE_MM_SRC_CC82_GENERAL_7        YCI  120
+#define STSAMPLE_MM_SRC_CC82_GENERAL_7_ON     YCI  121
+#define STSAMPLE_MM_SRC_CC82_GENERAL_7_TRIG   YCI  122  // added in MM v41
+#define STSAMPLE_MM_SRC_CC83_GENERAL_8        YCI  123
+#define STSAMPLE_MM_SRC_CC83_GENERAL_8_ON     YCI  124
+#define STSAMPLE_MM_SRC_CC83_GENERAL_8_TRIG   YCI  125  // added in MM v41
+#define STSAMPLE_MM_SRC_LFO_FREQ              YCI  126
+#define STSAMPLE_MM_SRC_LFO_VOL               YCI  127
+#define STSAMPLE_MM_SRC_LFO_PAN               YCI  128
+#define STSAMPLE_MM_SRC_LFO_AUX               YCI  129
+#define STSAMPLE_MM_SRC_ENV_FREQ              YCI  130
+#define STSAMPLE_MM_SRC_ENV_VOL               YCI  131
+#define STSAMPLE_MM_SRC_ENV_PAN               YCI  132
+#define STSAMPLE_MM_SRC_ENV_AUX               YCI  133
+#define STSAMPLE_MM_SRC_MODSEQ1               YCI  134
+#define STSAMPLE_MM_SRC_MODSEQ2               YCI  135
+#define STSAMPLE_MM_SRC_MODSEQ3               YCI  136
+#define STSAMPLE_MM_SRC_MODSEQ4               YCI  137
+#define STSAMPLE_MM_SRC_MODSEQ1_BY_VOICEKEY   YCI  138
+#define STSAMPLE_MM_SRC_MODSEQ2_BY_VOICEKEY   YCI  139
+#define STSAMPLE_MM_SRC_MODSEQ3_BY_VOICEKEY   YCI  140
+#define STSAMPLE_MM_SRC_MODSEQ4_BY_VOICEKEY   YCI  141
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_1        YCI  142  // v36+
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_2        YCI  143  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_3        YCI  144  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_4        YCI  145  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_5        YCI  146  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_6        YCI  147  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_7        YCI  148  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_8        YCI  149  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_9        YCI  150  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_10       YCI  151  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_11       YCI  152  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_12       YCI  153  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_13       YCI  154  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_14       YCI  155  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_15       YCI  156  // ..
+#define STSAMPLE_MM_SRC_MODSEQ4_STEP_16       YCI  157  // ..
+#define STSAMPLE_MM_SRC_REG1                  YCI  158
+#define STSAMPLE_MM_SRC_REG2                  YCI  159
+#define STSAMPLE_MM_SRC_REG3                  YCI  160
+#define STSAMPLE_MM_SRC_REG4                  YCI  161
+#define STSAMPLE_MM_SRC_CC                    YCI  162
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1   YCI  163
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_1_R YCI  164
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2   YCI  165
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_2_R YCI  166
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3   YCI  167
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_3_R YCI  168
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4   YCI  169
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_4_R YCI  170
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5   YCI  171
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_5_R YCI  172
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6   YCI  173
+#define STSAMPLE_MM_SRC_VOICE_CALIBRATION_6_R YCI  174
+#define STSAMPLE_MM_SRC_PLAYPOS_Z1            YCI  175
+#define STSAMPLE_MM_SRC_PLAYPOS_Z2            YCI  176
+#define STSAMPLE_MM_SRC_PLAYPOS_Z3            YCI  177
+#define STSAMPLE_MM_SRC_PLAYPOS_Z4            YCI  178
+#define STSAMPLE_MM_SRC_GLIDE_TIME            YCI  179  // 0..1 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_GLIDE_TIME_INV        YCI  180  // 1..0 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI        YCI  181  // 0..1..0 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_GLIDE_TIME_TRI_INV    YCI  182  // 1..0..1 while gliding towards target note. added in MM v31.
+#define STSAMPLE_MM_SRC_VOICE_BUS_1           YCI  183  // VOICE_BUS_1..8(_ABS) added in MM v34
+#define STSAMPLE_MM_SRC_VOICE_BUS_1_ABS       YCI  184
+#define STSAMPLE_MM_SRC_VOICE_BUS_2           YCI  185
+#define STSAMPLE_MM_SRC_VOICE_BUS_2_ABS       YCI  186
+#define STSAMPLE_MM_SRC_VOICE_BUS_3           YCI  187
+#define STSAMPLE_MM_SRC_VOICE_BUS_3_ABS       YCI  188
+#define STSAMPLE_MM_SRC_VOICE_BUS_4           YCI  189
+#define STSAMPLE_MM_SRC_VOICE_BUS_4_ABS       YCI  190
+#define STSAMPLE_MM_SRC_VOICE_BUS_5           YCI  191
+#define STSAMPLE_MM_SRC_VOICE_BUS_5_ABS       YCI  192
+#define STSAMPLE_MM_SRC_VOICE_BUS_6           YCI  193
+#define STSAMPLE_MM_SRC_VOICE_BUS_6_ABS       YCI  194
+#define STSAMPLE_MM_SRC_VOICE_BUS_7           YCI  195
+#define STSAMPLE_MM_SRC_VOICE_BUS_7_ABS       YCI  196
+#define STSAMPLE_MM_SRC_VOICE_BUS_8           YCI  197
+#define STSAMPLE_MM_SRC_VOICE_BUS_8_ABS       YCI  198
+#define STSAMPLE_MM_SRC_GLOBAL_REG1           YCI  199
+#define STSAMPLE_MM_SRC_GLOBAL_REG1_ON        YCI  200
+#define STSAMPLE_MM_SRC_GLOBAL_REG2           YCI  201
+#define STSAMPLE_MM_SRC_GLOBAL_REG2_ON        YCI  202
+#define STSAMPLE_MM_SRC_GLOBAL_REG3           YCI  203
+#define STSAMPLE_MM_SRC_GLOBAL_REG3_ON        YCI  204
+#define STSAMPLE_MM_SRC_GLOBAL_REG4           YCI  205
+#define STSAMPLE_MM_SRC_GLOBAL_REG4_ON        YCI  206
+#define STSAMPLE_MM_NUM_SRC                   YCI  207
 
 #define STSAMPLE_MM_DST_NONE                        YCI   0
 #define STSAMPLE_MM_DST_FREQ                        YCI   1

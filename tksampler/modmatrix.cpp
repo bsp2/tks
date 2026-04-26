@@ -24,7 +24,7 @@
 // ----          27Dec2022, 30Dec2022, 07Apr2023, 12Apr2023, 18Jul2023, 01Sep2023, 08Sep2023
 // ----          19Sep2023, 18Nov2023, 08Jan2024, 10Jan2024, 15Jan2024, 16Jan2024, 26Apr2024
 // ----          30Sep2024, 02Oct2024, 03Jan2025, 04Jan2025, 28May2025, 16Jan2026, 09Apr2026
-// ----          10Apr2026
+// ----          10Apr2026, 23Apr2026, 24Apr2026
 // ----
 // ----
 // ----
@@ -401,8 +401,6 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
       mmdst.retrig_modseq[i] = 0.0f;
    }
 
-   sBool mmWriteMask[STSAMPLE_NUM_MODMATRIX_ENTRIES] = { 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 };
-
    for(sUI pluginIdx = 0u; pluginIdx < STSAMPLE_NUM_PLUGINS; pluginIdx++)
    {
       mmdst.plugin_levels[pluginIdx] = 1.0f;
@@ -417,6 +415,10 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
 #define Dstr(d) #d
 #define Dsignaltap(d) if(mm->b_signal_tap) Dyac_host_printf("[>>>] voice_idx=%u ticks=%u signal_tap[%u]<%s>=%f\n", voice_idx, replay_ticks, signalTapIdx++, Dstr(d), (d))
 
+   for(sUI mmIdx = 0u; mmIdx < STSAMPLE_NUM_MODMATRIX_ENTRIES; mmIdx++)
+   {
+      modmatrix_amt[mmIdx] = sample->modmatrix[mmIdx].amt;
+   }
 
    for(sUI mmIdx = 0u; mmIdx < STSAMPLE_NUM_MODMATRIX_ENTRIES; mmIdx++)
    {
@@ -432,6 +434,22 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
             default:
             case STSAMPLE_MM_SRC_NONE:
                srcVal = 0.0f;
+               break;
+
+            case STSAMPLE_MM_SRC_CONST_0_125:
+               srcVal = 0.125f;
+               break;
+
+            case STSAMPLE_MM_SRC_CONST_0_25:
+               srcVal = 0.25f;
+               break;
+
+            case STSAMPLE_MM_SRC_CONST_0_5:
+               srcVal = 0.5f;
+               break;
+
+            case STSAMPLE_MM_SRC_CONST_0_75:
+               srcVal = 0.75f;
                break;
 
             case STSAMPLE_MM_SRC_CONST_1:
@@ -1944,7 +1962,8 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                }
                // Dyac_host_printf("  => srcVal=%f\n", srcVal);
             }
-            sF32 mmAmt = mm->amt + modmatrix_amt[mmIdx];
+            // // sF32 mmAmt = mm->amt + modmatrix_amt[mmIdx];
+            sF32 mmAmt = modmatrix_amt[mmIdx];
 
             if(sample->b_mmvar_enable)
             {
@@ -3117,26 +3136,11 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
                   sUI mmDestIdx = (mm->dst - STSAMPLE_MM_DST_MOD_1_AMOUNT);
                   if(mmIdx != mmDestIdx)
                   {
-                     if(mmWriteMask[mmDestIdx])
-                     {
-                        // Mod Matrix amount has already been written by another mod matrix entry
-                        if(bAutoAdd)
-                           modmatrix_amt[mmDestIdx] += srcValDef;
-                        else if(bAutoMul)
-                           modmatrix_amt[mmDestIdx] *= srcValDef;
-                        Delse_mm_lerp(modmatrix_amt[mmDestIdx]);
-                     }
-                     else
-                     {
-                        // Mod Matrix amount has not been written, yet
-                        if(bAutoAdd)
-                           modmatrix_amt[mmDestIdx] = srcValDef;
-                        else if(bAutoMul)
-                           modmatrix_amt[mmDestIdx] = 0.0f;
-                        Delse_mm_lerp(modmatrix_amt[mmDestIdx]);
-
-                        mmWriteMask[mmDestIdx] = YAC_TRUE;
-                     }
+                     if(bAutoAdd)
+                        modmatrix_amt[mmDestIdx] += srcValDef;
+                     else if(bAutoMul)
+                        modmatrix_amt[mmDestIdx] *= srcValDef;
+                     Delse_mm_lerp(modmatrix_amt[mmDestIdx]);
                      Dsignaltap(modmatrix_amt[mmDestIdx]);
                   }
                }
@@ -4419,13 +4423,6 @@ void StSampleVoice::calcModMatrix(tksampler_mmdst_t &mmdst) {
          } // if bSrcValid
       } // if mm->b_enable
    } // loop modmatrix entries
-
-   for(sUI mmIdx = 0u; mmIdx < STSAMPLE_NUM_MODMATRIX_ENTRIES; mmIdx++)
-   {
-      if(!mmWriteMask[mmIdx])
-         modmatrix_amt[mmIdx] = 0.0f;  // e.g. after modmatrix was edited
-      // else: keep for next tick()
-   }
 
    mmdst.lfo.freq = mmsrc.lfo.freq * mmdst.lfo_freq_level;
    mmdst.lfo.vol  = mmsrc.lfo.vol  * mmdst.lfo_vol_level;

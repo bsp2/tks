@@ -1,14 +1,14 @@
 // ----
 // ---- file   : StEnvelope.h
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2010-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : This is part of the "syntracker" midi sequencer.
 // ----
 // ---- created: 14Feb2010
-// ---- changed: 23Aug2021, 03Oct2024
+// ---- changed: 23Aug2021, 03Oct2024, 22Apr2026
 // ----
 // ----
 // ----
@@ -44,6 +44,8 @@ YC class StEnvelope : public YAC_Object {
 
    YAC_String *ui_preset_name;
 
+   sF32 last_played_position;  // UI
+
   protected:
    void deleteMetaData (void);
    void deleteUIPresetName (void);
@@ -74,6 +76,8 @@ YC class StEnvelope : public YAC_Object {
 
    YM void        _setUiPresetName (YAC_Object *_s);
    YM YAC_Object *_getUiPresetName (void);
+
+   YM sF32 _getLastPlayedPosition (void);
 
 };
 
