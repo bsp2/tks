@@ -1,8 +1,8 @@
 % Eureka Sampler / DAW
 % bsp
-% 26-Jan-2026
+% 26-Apr-2026
 >>>
-17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026
+17Nov2019, 15May2020, 16Oct2020, 06Feb2021, 31May2021, 04Jan2023, 18Mar2023, 24Mar2023, 31Mar2023, 04Aug2023, 05Aug2023, 10Aug2023, 16Aug2023, 18Aug2023, 19Aug2023, 07Dec2023, 14Dec2023, 15Dec2023, 16Dec2023, 03Feb2024, 27Apr2024, 07Jul2024, 04Aug2024, 06Aug2024, 10Aug2024, 12Aug2024, 28Sep2024, 30Sep2024, 03Oct2024, 04Oct2024, 05Oct2024, 28Nov2024, 30Nov2024, 23Dec2024, 26Dec2024, 28Dec2024, 31Dec2024, 04Jan2025, 20Mar2025, 21Mar2025, 22May2025, 28May2025, 29May2025, 30May2025, 07Jun2025, 11Jun2025, 12Jun2025, 15Jun2025, 20Jun2025, 21Jun2025, 11Dec2025, 02Jan2026, 17Jan2026, 26Jan2026, 09Apr2026, 10Apr2026, 15Apr2026, 16Apr2026, 23Apr2026, 26Apr2026
 <<<
 $(var:header)
 
@@ -60,12 +60,13 @@ $(buf!toc)
    - extensive (per voice) mod matrix
       - up to 16 entries per sample zone
       - up to 16 matrix variations per sample zone
-      - 195 sources
-      - 204 destinations
+      - 207 sources
+      - 213 destinations
       - log / lin / exp curve per entry
       - slew per entry
          - can also be used to generate attack / decay mini-envelopes
-      - 4 scratch registers
+      - 4 per-voice scratch registers
+      - 4 per-samplebank global registers
       - 13 op modes per entry (add, mul, replace, blend, compare, step, ..)
       - support for 14 bit hi-res continuous controllers (CCs)
          - modwheel (CC#1), breath control (CC#2), foot control (CC#4), expression (CC#11)
@@ -81,10 +82,12 @@ $(buf!toc)
       - pitch or time based number of repeats
       - oneshot, forward, backward, pingpong, xfade loop modes
       - loops can be selected and switched via MIDI and mod matrix
+      - modulatable granular/overlap loops
    - monophonic and polyphonic glide
       - time or pitch based
       - separate up / down settings
       - sample / envelope / LFO / modseq legato retrig settings
+      - free-running sample option
    - 1D / 2D wavetables
       - static cycle length (2..4096 frames)
       - dynamic, pitch-dependent cycle length ("lo-fi timestretch")
@@ -114,9 +117,17 @@ $(buf!toc)
          - update rate is ~300Hz
    - sample start and loop point modulation
       - random, velocity-based, and / or mod matrix controlled
+      - snap to zero-crossing (optionally)
+   - per-sample-frame volume and pitch interpolation
+   - volume ramping (fade in and out)
+   - sample and bit rate reduction
+   - linear, Lancsoz and variable-sample-rate (VSR) interpolation modes
+   - configurable anti-aliasing / anti-imaging filter
    - voice calibration tables
       - for (subtle) voice modulation
       - up to 6 lanes
+   - microtuning
+      - import `.scl` and `.tun` files
    - per-voice plugins
       - free and open source [STFX](https://github.com/bsp2/stfx/) plugin format
       - filters, waveshapers, ring-modulation, distortion, oscillators, ..
@@ -126,6 +137,9 @@ $(buf!toc)
    - [Cycle](cycle.html) software modular
       - "offline" sample synthesis
       - can also generate native code / realtime [STFX](https://github.com/bsp2/stfx/) voice plugins
+   - procedural mono+stereo track rendering
+      - zero disk space audio clips
+      - can also be used for generating multi-samples
 
 - sample editor
    - cut / copy / paste / trim / fade-in+out / crossfade / invert / reverse / normalize / declick / ..
@@ -683,6 +697,7 @@ when CLAP / VST2 editor window is focused:
    |noheader
    |:SPACE                |:start/stop replay (start from left loop locator, rewind to selection/clip start)
    |:lctrl - SPACE        |:start/stop replay (start from cursor pos, rewind to cursor position)
+   |:lctrl - x SPACE      |:start replay and record to selected clip sample (input=first record-enable audio track)
    |:LEFT                 |:move edit cursor left
    |:lctrl - LEFT         |:move edit cursor left (fast)
    |:lshift - LEFT        |:extend / start selection to previous grid unit
@@ -716,6 +731,7 @@ when CLAP / VST2 editor window is focused:
    |:t                    |:toggle mute selected clips or select 'mute' mode
    |:q                    |:select 'edit' mode
    |:w                    |:move cursor to top/left of selection OR create clip from selection OR select 'draw' mode
+   |:lshift - w           |:create new (empty) clip sample(s) when drawing new clip(s)
    |:lctrl - w            |:cut selected clips to clipboard
    |:lctrl - y            |:undo (lctrl-z on german kbd)
    |:lctrl - lshift - y   |:redo (lctrl-lshift-z on german kbd)
