@@ -1,7 +1,7 @@
 // ----
 // ---- file   : ModGain.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- changed: 24Feb2018, 27Feb2018, 02Mar2018, 17Mar2018, 26Mar2018, 21Jul2018, 29Mar2019
 // ----          30Jul2019, 06Feb2021, 27Dec2021, 10Jan2022, 06Mar2023, 19Sep2024, 23Sep2024
-// ----          07Jan2025, 13Dec2025, 20Dec2025
+// ----          07Jan2025, 13Dec2025, 20Dec2025, 24Apr2026
 // ----
 // ----
 // ----
@@ -25,12 +25,12 @@ namespace st2;
 class ModGain : Mod {
 
    define int PARAM_NONE         = 0;
-   define int PARAM_LEVEL        = 1;  // 0..1
-   define int PARAM_PAN          = 2;  // 0..1 => -1..1
+   define int PARAM_LEVEL        = 1;  // -50..50
+   define int PARAM_PAN          = 2;  // -1..1
    define int PARAM_STEREO_WIDTH = 3;  // 0..1 => 0..2
    define int NUM_PARAMS         = 4;
 
-   float level; // 0..1
+   float level; // 0..322(+50dB)
    float pan;   // -1..1
    float stereo_width; // 0..2
 
@@ -132,6 +132,11 @@ class ModGain : Mod {
       return true;
    }
 
+   // <method_get.png>
+   public virtual isParameterIgnored(local int _paramIdx) : boolean {
+      return (PARAM_NONE == _paramIdx);
+   }
+
    // <method_set.png>
    public virtual setParameterValue(local int _idx, local float _value) {
       // trace "xxx ModGain::setParameterValue: idx="+_idx+" value="+_value;
@@ -139,12 +144,12 @@ class ModGain : Mod {
       switch(_idx)
       {
          case PARAM_LEVEL:
-            setLevel(_value);
+            setLevel(Utils.DBToLevel(_value));
             queueUIUpdate();
             break;
 
          case PARAM_PAN:
-            setPan((_value - 0.5f) * 2.0f);
+            setPan(_value);
             queueUIUpdate();
             break;
 
@@ -161,16 +166,39 @@ class ModGain : Mod {
       switch(_idx)
       {
          case PARAM_LEVEL:
-            return level;
+            return Utils.LevelToDB(level);
 
          case PARAM_PAN:
             return pan;
 
          case PARAM_STEREO_WIDTH:
-            return stereo_width;
+            return stereo_width * 0.5f;
       }
 
       return 0.0f;
+   }
+
+   // <method_get.png>
+   public virtual getParameterMinValue(local int _idx) : float {
+      switch(_idx)
+      {
+         case PARAM_LEVEL:
+            return -50.0f;
+
+         case PARAM_PAN:
+            return -1.0f;
+      }
+      return 0.0f;
+   }
+
+   // <method_get.png>
+   public virtual getParameterMaxValue(local int _idx) : float {
+      switch(_idx)
+      {
+         case PARAM_LEVEL:
+            return 50.0f;
+      }
+      return 1.0f;
    }
 
    // <method_set.png>
@@ -178,7 +206,7 @@ class ModGain : Mod {
 
       mtx_param.lock();
 
-      _level = mathClampf(_level, 0.0f, 300.0f);
+      _level = mathClampf(_level, 0.0f, 322.0f);
 
       if(level != _level)
       {
@@ -384,10 +412,13 @@ class ModGain : Mod {
       {
          mtx_param.lock();
 
-         if(replay.b_have_events)
+         if(replay.b_have_events || (queued_editor_param_set_idx >= 0) || (queued_param_set_smooth >= 0))
          {
             processParamSetChange(_frInput, _fltDev, _fltCh);
+         }
 
+         if(replay.b_have_events)
+         {
             // Calc modmatrix, update params via setParameterValue()
             processModMatrixEvents(_frInput, _fltDev, _fltCh, _globalCh);
          }
