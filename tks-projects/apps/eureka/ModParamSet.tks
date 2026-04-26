@@ -1,14 +1,14 @@
 // ----
 // ---- file   : ModParamSet.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2023-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
 // ---- info   : This is part of the "syntracker" sequencer.
 // ----
 // ---- changed: 04Mar2023, 06Mar2023, 07Mar2023, 08Mar2023, 29Jul2023, 05Nov2023, 09Nov2023
-// ----          06Jan2024, 02Jul2024
+// ----          06Jan2024, 02Jul2024, 23Apr2026, 24Apr2026
 // ----
 // ----
 // ----
@@ -43,18 +43,54 @@ class ModParamSet {
    }
 
    // <method.png>
-   public method loadParameters(local Mod _mod) {
-      local int relParamIdx;
-      loop(param_numbers.numElements)
+   public method loadParameters(local Mod _mod, local boolean _bResetMod) {
+      local int relParamIdx = 0;
+      local int paramIdx;
+
+      if(_mod.b_param_set_relative)
       {
-         local int paramIdx = param_numbers[relParamIdx];
-         _mod.setParameterValue(paramIdx, param_values[relParamIdx]);
-         relParamIdx++;
+         // (note) [23Apr2026] Zebra3: not slewed
+         // (note) [23Apr2026] Zebra3: does not always work (=> must reduce #params in set)
+         loop(param_numbers.numElements)
+         {
+            paramIdx = param_numbers[relParamIdx];
+            // if( (param_values[relParamIdx]- _mod.getParameterValue(paramIdx)) != 0.0f )
+            // {
+            //    trace "xxx setParameterMod: paramIdx="+paramIdx+" curValue="+_mod.getParameterValue(paramIdx)+" newValue="+param_values[relParamIdx]+" delta="+(param_values[relParamIdx]- _mod.getParameterValue(paramIdx));
+            // }
+            _mod.setParameterMod(paramIdx,
+                                 (param_values[relParamIdx]
+                                  - _mod.getParameterValue(paramIdx)
+                                  )
+                                 );
+            relParamIdx++;
+         }
+      }
+      else
+      {
+         loop(param_numbers.numElements)
+         {
+            // (note) [23Apr2026] Zebra3: slewed
+            paramIdx = param_numbers[relParamIdx];
+
+            // if( (param_values[relParamIdx]- _mod.getParameterValue(paramIdx)) != 0.0f )
+            //    trace "xxx setParameter<ABS>: paramIdx="+paramIdx+" curValue="+_mod.getParameterValue(paramIdx)+" newValue="+param_values[relParamIdx]+" delta="+(param_values[relParamIdx]- _mod.getParameterValue(paramIdx));
+
+            if(_bResetMod)
+               _mod.setParameterMod(paramIdx, 0.0f);
+            _mod.setParameterValue(paramIdx, param_values[relParamIdx]);
+            relParamIdx++;
+         }
       }
    }
 
    // <method.png>
-   public method loadParametersSmooth(local Mod _mod, local ModParamSet _psB, local float _frac, int _order) {
+   public method loadParametersSmooth(local Mod         _mod,
+                                      local ModParamSet _psB,
+                                      local float       _frac,
+                                      local int         _order,
+                                      local boolean     _bResetMod
+                                      ) {
       local int relParamIdxA;
       local IntArray pnB <= _psB.param_numbers;
       local IntArray pvB <= _psB.param_values;
@@ -62,20 +98,28 @@ class ModParamSet {
       {
          local int paramIdx = param_numbers[relParamIdxA];
          local int relParamIdxB = pnB.indexOf(paramIdx, 0);
+         local float newVal;
          if(-1 != relParamIdxB)
          {
             // Interpolate between sets
-            _mod.setParameterValue(paramIdx, mathSmoothStepNf(param_values[relParamIdxA],
-                                                              pvB[relParamIdxB],
-                                                              _frac,
-                                                              _order
-                                                              )
-                                   );
+            newVal = mathSmoothStepNf(param_values[relParamIdxA],
+                                      pvB[relParamIdxB],
+                                      _frac,
+                                      _order
+                                      );
          }
          else
          {
             // Not available in set B
-            _mod.setParameterValue(paramIdx, param_values[relParamIdxA]);
+            newVal = param_values[relParamIdxA];
+         }
+         if(_mod.b_param_set_relative)
+            _mod.setParameterMod(paramIdx, newVal - _mod.getParameterValue(paramIdx));
+         else
+         {
+            if(_bResetMod)
+               _mod.setParameterMod(paramIdx, 0.0f);
+            _mod.setParameterValue(paramIdx, newVal);
          }
          relParamIdxA++;
       }
@@ -95,8 +139,13 @@ class ModParamSet {
       int paramIdx = 0;
       loop(numParams)
       {
-         param_numbers.add(paramIdx);
-         param_values .add(_mod.getParameterValue(paramIdx));
+         if(!_mod.isParameterIgnored(paramIdx))
+         {
+            param_numbers.add(paramIdx);
+            param_values .add(_mod.getParameterValue(paramIdx)
+                              + _mod.getParameterMod(paramIdx)
+                              );
+         }
 
          // Next param
          paramIdx++;

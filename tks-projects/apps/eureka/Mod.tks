@@ -1,7 +1,7 @@
 // ----
 // ---- file   : Mod.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2018-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -15,7 +15,7 @@
 // ----          06Feb2021, 25Apr2021, 12Dec2021, 26Dec2021, 27Dec2021, 31Dec2021, 04Mar2023
 // ----          06Mar2023, 07Mar2023, 08Mar2023, 29Jul2023, 05Nov2023, 09Nov2023, 06Jan2024
 // ----          02Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 17Sep2024, 19Sep2024, 07Jan2025
-// ----          08Jan2025, 21Jun2025, 20Dec2025
+// ----          08Jan2025, 21Jun2025, 20Dec2025, 14Apr2026, 23Apr2026, 24Apr2026
 // ----
 // ----
 // ----
@@ -137,9 +137,12 @@ abstract class Mod {
    ModParamSet *[] param_sets;
    byte       param_set_rpn_group;
    boolean    b_param_set_rpn;
+   boolean    b_param_set_relative;  // 0=absolute modulation  1=use relative modulation (CLAP)
    byte       param_set_interpolation_order;  // 0=linear .. 6=steep
    byte       ui_param_set_edit_idx;
    FloatArray param_set_baseline;
+   int        queued_editor_param_set_idx;
+   int        queued_param_set_smooth;
 
    byte ui_mutex_group_id;  // -1=none, 0=1A, 1=1B, 2=2A, 3=2B, 4=3A, ..
 
@@ -178,6 +181,9 @@ abstract class Mod {
 
       param_set_rpn_group = 0;  // see Synergy internal.msp (70..74 are reserved for Mods 1..5, i.e. up to 5 mods can share the same MIDI channel and still receive separate param set changes. 75..79 are used for smooth param set interpolation)
       b_param_set_rpn = true;
+      b_param_set_relative = false;
+      queued_editor_param_set_idx = -1;
+      queued_param_set_smooth = -1;
 
       ui_param_set_edit_idx = 0;
 
@@ -270,11 +276,12 @@ abstract class Mod {
 
    // <method.png>
    public method modCopyParamSetsFrom(Mod _o) {
-      param_set_rpn_group   = _o.param_set_rpn_group;
-      b_param_set_rpn       = _o.b_param_set_rpn;
+      param_set_rpn_group           = _o.param_set_rpn_group;
+      b_param_set_rpn               = _o.b_param_set_rpn;
+      b_param_set_relative          = _o.b_param_set_relative;
       param_set_interpolation_order = _o.param_set_interpolation_order;
-      ui_param_set_edit_idx = _o.ui_param_set_edit_idx;
-      param_set_baseline    = _o.param_set_baseline;
+      ui_param_set_edit_idx         = _o.ui_param_set_edit_idx;
+      param_set_baseline            = _o.param_set_baseline;
 
       param_sets.free();
       ModParamSet *ops;
@@ -639,6 +646,13 @@ abstract class Mod {
    }
 
    // <method_get.png>
+   public method isParameterIgnored(local int _paramIdx) : boolean {
+      // (note) overridden by ModSample,ModGain,ModEQ3
+      // (note) used by ModParamSetDialog when importing params
+      return false;
+   }
+
+   // <method_get.png>
    public method isParameterModulatable(local int _paramIdx) : boolean {
       // (note) overridden by ModCLAP
       return false;
@@ -681,6 +695,22 @@ abstract class Mod {
       // called internally / implemented by derived classes
    }
 
+   // <method_set.png>
+   public method setParameterMod(local int _idx, local float _deltaValue) {
+      // called internally / implemented by derived classes (ModCLAP)
+   }
+
+   // <method_get.png>
+   public method getParameterMod(local int _idx) : float {
+      // implemented by derived classes (ModCLAP)
+   }
+
+   // <replay.png>
+   public method resetParameterMods() {
+      // called internally / implemented by derived classes (ModCLAP)
+      // must synchronize event queue (call CLAPPlugin.resetParameterMods_Sync())
+   }
+
    // <method.png>
    public method parameterValueToText(local int _idx, local float _value) : String {
       // implemented by ModCLAP
@@ -696,6 +726,7 @@ abstract class Mod {
    // <method.png>
    public =replay= method stopVoices() {
       // Stop all voices and reverb/delay trails
+      // called by Project::stopProcTrackVoices() (while =replay= is locked)
    }
 
    // <method_set.png>
@@ -731,6 +762,16 @@ abstract class Mod {
       return param_sets.numElements;
    }
 
+   // <replay.png>
+   public =replay= method queueEditorParamSetIdx(int _idx) {
+      queued_editor_param_set_idx = _idx;
+   }
+
+   // <replay.png>
+   public =replay= method queueEditorParamSetSmooth(short _relIdx) {
+      queued_param_set_smooth = _relIdx;
+   }
+
    // <method.png>
    public =replay= method queryParamSetBaseLine() {
       int numParams = getNumParameters();
@@ -760,10 +801,15 @@ abstract class Mod {
       b_param_set_rpn = _bEnable;
    }
 
+   // <method.png>
+   public =replay= method setEnableParamSetRelative(boolean _bEnable) {
+      b_param_set_relative = _bEnable;
+   }
+
    // <save.png>
    public method saveState(Stream _ofs) : boolean {
 
-      _ofs.i16 = 20;  // version
+      _ofs.i16 = 21;  // version
 
       // Instance-ID (v12+)
       _ofs.i32 = instance_id;
@@ -850,6 +896,9 @@ abstract class Mod {
 
       // Enable Param set change RPN (v17+)
       _ofs.i8 = b_param_set_rpn;
+
+      // Enable Param set relative parameter modulation (v21+)
+      _ofs.i8 = b_param_set_relative;
 
       // Currently edited param set (v16+)
       _ofs.i8 = ui_param_set_edit_idx;
@@ -1083,6 +1132,12 @@ abstract class Mod {
             {
                // Enable Param set change RPN (v17+)
                b_param_set_rpn = _ifs.b8;
+            }
+
+            if(ver >= 21)
+            {
+               // Enable Param set relative parameter modulation (v21+)
+               b_param_set_relative = _ifs.b8;
             }
 
             // Currently edited param set (v16+)
@@ -1341,22 +1396,42 @@ abstract class Mod {
 
    // <replay.png>
    public method processParamSetChange(local MIDIPipeFrame _frInput, local int _fltDev, local int _fltCh) {
+      local short psIdx = -1;
+      local boolean bEditor = false;
+
       if(b_param_set_rpn)
       {
-         local short psIdx = _frInput.getFilteredRPN(_fltDev, _fltCh, param_set_rpn_group + 70/*paramset_1*/);
-         local ModParamSet *ps;
-         if(psIdx > 0)
-         {
-            if(STConfig.b_debug_rt)
-               trace "[>>>] Mod::processParamSetChange: select ABS param set "+psIdx;
-            ps <= param_sets.get(psIdx - 1);
-            if(null != ps)
-            {
-               ps.loadParameters(this);
-            }
-         }
+         psIdx = _frInput.getFilteredRPN(_fltDev, _fltCh, param_set_rpn_group + 70/*paramset_1*/);
+         psIdx--;
+      }
 
+      if(psIdx < 0 && queued_editor_param_set_idx >= 0)
+      {
+         psIdx = queued_editor_param_set_idx;
+         queued_editor_param_set_idx = -1;
+         bEditor = true;
+      }
+
+      if(psIdx >= 0)
+      {
+         local ModParamSet *ps;
+         ps <= param_sets.get(psIdx);
+         if(STConfig.b_debug_rt)
+            trace "[>>>] Mod::processParamSetChange: select ABS param set idx="+psIdx+" this="+#(this)+" ps="+#(ps);
+         if(null != ps)
+         {
+            ps.loadParameters(this, bEditor/*bResetMod*/);
+         }
+      }
+
+      if(b_param_set_rpn || (queued_param_set_smooth >= 0))
+      {
          psIdx = _frInput.getFilteredRPN(_fltDev, _fltCh, param_set_rpn_group + 75/*paramset_smooth_1*/);
+         if(psIdx < 0)
+         {
+            psIdx = queued_param_set_smooth;
+            queued_param_set_smooth = -1;
+         }
          if(psIdx >= 0)
          {
             // (note) 0..16383 => (16384/32) = 512 fraction steps between two adjacent param sets
@@ -1368,11 +1443,11 @@ abstract class Mod {
                local ModParamSet psB <= param_sets.get( ((psIdx >> 9) + 1) & 31 );
                if(null != psB)
                {
-                  ps.loadParametersSmooth(this, psB, (psIdx&511) / 512.0, param_set_interpolation_order);
+                  ps.loadParametersSmooth(this, psB, (psIdx&511) / 512.0, param_set_interpolation_order, bEditor/*bResetMod*/);
                }
                else
                {
-                  ps.loadParameters(this);
+                  ps.loadParameters(this, bEditor/*bResetMod*/);
                }
             }
          }

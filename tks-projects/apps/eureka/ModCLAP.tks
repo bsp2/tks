@@ -1,7 +1,7 @@
 // ----
 // ---- file   : ModCLAP.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ---- legal  : (c) 2024-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- created: 03Jul2024
 // ---- changed: 04Jul2024, 05Jul2024, 06Jul2024, 13Sep2024, 17Sep2024, 19Sep2024, 22Sep2024
-// ----          07Jan2025, 08Jan2025, 21Jun2025, 20Dec2025
+// ----          07Jan2025, 08Jan2025, 21Jun2025, 20Dec2025, 23Apr2026
 // ----
 // ----
 // ----
@@ -93,7 +93,11 @@ class ModCLAP : Mod {
    protected method unloadPluginBackToPool() {
       if(null != plugin)
       {
-         plugin.stopProcessing();
+         if(plugin.isProcessing())
+         {
+            trace "[~~~] ModCLAP::unloadPluginBackToPool: plugin.isProcessing() == true !!!";
+            plugin.queueStopProcessing();
+         }
          plugin.closeEditor();
 
          if(STConfig.b_plugin_pooling)
@@ -113,7 +117,11 @@ class ModCLAP : Mod {
 
       if(null != plugin)
       {
-         plugin.stopProcessing();
+         if(plugin.isProcessing())
+         {
+            trace "[~~~] ModCLAP::freePlugin: plugin.isProcessing() == true !!!";
+            plugin.queueStopProcessing();
+         }
          plugin.closeEditor();
          plugin.destroyPluginInstance();
          plugin <= null;
@@ -436,7 +444,7 @@ class ModCLAP : Mod {
             updatePluginTransportPlaying(plugin);
 
             // Start processing
-            plugin.startProcessing();
+            plugin.queueStartProcessing();
 
             msInit = milliSeconds() - msInit;
             Global.Debug("msInit: "+msInit);
@@ -577,8 +585,33 @@ class ModCLAP : Mod {
    public virtual setParameterValue(local int _idx, local float _value) {
       mtx_param.lock();
       if(null != plugin)
+      {
+         // trace "xxx ModCLAP: setParameterValue(idx="+_idx+" value="+_value+")";
          plugin.setParameter(_idx, _value);
+      }
       mtx_param.unlock();
+   }
+
+   // <method_set.png>
+   public virtual setParameterMod(local int _idx, local float _deltaValue) {
+      mtx_param.lock();
+      if(null != plugin)
+      {
+         // if(_deltaValue != 0.0f)
+         //    trace "xxx ModCLAP: setParameterMod(idx="+_idx+" deltaValue="+_deltaValue+")";
+         plugin.setParameterMod(_idx, _deltaValue);
+      }
+      mtx_param.unlock();
+   }
+
+   // <method_get.png>
+   public method getParameterMod(local int _idx) : float {
+      local float r = 0.0f;
+      mtx_param.lock();
+      if(null != plugin)
+         r = plugin.getParameterMod(_idx);
+      mtx_param.unlock();
+      return r;
    }
 
    // <method.png>
@@ -1137,6 +1170,14 @@ class ModCLAP : Mod {
       }
    }
 
+   // <replay.png>
+   public virtual resetParameterMods() {
+      if(null != plugin)
+      {
+         plugin.resetParameterMods_Sync();
+      }
+   }
+
    // <method.png>
    public method handleAutomateEvent(CLAPAutomateEvent _ev, Track _track, Lane _lane) {
 
@@ -1353,10 +1394,14 @@ class ModCLAP : Mod {
          if(replay.b_reset_all_controllers)
             resetAllControllers();
 
+         if(replay.b_have_events || (queued_editor_param_set_idx >= 0) || (queued_param_set_smooth >= 0))
+         {
+            // trace "xxx call processParamSetChange";
+            processParamSetChange(_frInput, _fltDev, _fltCh);
+         }
+
          if(replay.b_have_events)
          {
-            processParamSetChange(_frInput, _fltDev, _fltCh);
-
             processModMatrixEventsCLAP(_frInput, _fltDev, _fltCh, _globalCh);
 
             //

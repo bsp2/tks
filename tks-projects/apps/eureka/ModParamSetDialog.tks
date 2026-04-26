@@ -1,7 +1,7 @@
 // ----
 // ---- file   : ModParamSetDialog.tks
 // ---- author : Bastian Spiegel <bs@tkscript.de>
-// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ---- legal  : (c) 2023-2026 by Bastian Spiegel.
 // ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
 // ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
 // ----
@@ -9,7 +9,7 @@
 // ----
 // ---- created: 04Mar2023
 // ---- changed: 06Mar2023, 07Mar2023, 08Mar2023, 29Jul2023, 30Oct2023, 04Nov2023, 11Nov2023
-// ----          05Jul2024, 17Sep2024
+// ----          05Jul2024, 17Sep2024, 23Apr2026, 24Apr2026
 // ----
 // ----
 // ----
@@ -37,15 +37,18 @@ class ModParamSetDialog extends Dialog {
 
    protected Mod *mod;
 
-   protected ComboField *cf_paramset;
-   protected CheckBox   *cb_autoload;
-   protected Button     *bt_load;
-   protected Button     *bt_clear;
-   protected Button     *bt_reduce;
-   protected Button     *bt_get;
-   protected ComboBox   *cm_group;
-   protected CheckBox   *cb_rpn;
-   protected ComboBox   *cm_order;
+   protected ComboField  *cf_paramset;
+   protected CheckBox    *cb_autoload;
+   protected Button      *bt_load;
+   protected Button      *bt_clear;
+   protected Button      *bt_reduce;
+   protected Button      *bt_get;
+   protected ComboBox    *cm_group;
+   protected CheckBox    *cb_rpn;
+   protected ComboBox    *cm_order;
+   protected FloatParam  *fp_smooth;
+   protected LayerSwitch *ls_relative;
+   protected CheckBox    *cb_relative;  // CLAP
 
    protected Button     *bt_baseline;
    protected Button     *bt_diff;
@@ -65,6 +68,8 @@ class ModParamSetDialog extends Dialog {
    protected Slider *[]     pa_sliders;
    protected FloatParam *[] pa_floatparams;
    protected Button *[]     pa_removebuttons;
+
+   int last_visible_param_warning;
 
 
    // <ui_init.png>
@@ -115,21 +120,44 @@ class ModParamSetDialog extends Dialog {
       mod <= _mod;
 
       if(mod instanceof ModSTFX)
+      {
          setWindowTitle("STFX Param Modulation Set Editor: "+mod.getName());
+         ls_relative.switchToLayerNr(1);
+         cb_relative.setSelectedAndDisable(true);
+      }
       else if(mod instanceof ModCLAP)
+      {
          setWindowTitle("CLAP Param Set Editor: "+mod.getName());
+         ls_relative.switchToLayerNr(1);
+         boolean bAnyMod = _mod.isAnyParameterModulatable();
+         cb_relative.setSelected(_mod.b_param_set_relative && bAnyMod);
+         cb_relative.setEditable(bAnyMod);
+         if(!bAnyMod)
+            _mod.setEnableParamSetRelative(false);
+      }
       else if(mod instanceof ModVST2)
+      {
          setWindowTitle("VST2 Param Set Editor: "+mod.getName());
+         ls_relative.switchToLayerNr(0);
+      }
       else
+      {
          setWindowTitle("Param Set Editor: "+mod.getName());
+         ls_relative.switchToLayerNr(0);
+      }
       recursiveBuildTabCycleLists();
 
-      updateParamSetOptions();
+      last_visible_param_warning = -1;
+
+      updateParamSetOptions(false/*bCreateParamWidgets*/);
       cf_paramset.setSelectedOption(mod.ui_param_set_edit_idx);
+      createParamWidgets();
 
       cm_group.setSelectedOption(_mod.param_set_rpn_group);
       cb_rpn.setSelected(_mod.b_param_set_rpn);
       cm_order.setSelectedOption(_mod.param_set_interpolation_order);
+      fp_smooth.setValue(-1.0f);
+      updateSmoothRange();
 
       bt_add.setEditable(mod.hasUIParamHistory());
 
@@ -141,6 +169,8 @@ class ModParamSetDialog extends Dialog {
    // <ui_show.png>
    public virtual postShow() {
       Dialog::postShow();
+      if(resizeAtLeastToMinimum())
+         validateClippedPosition();
    }
 
    // <ui_hide.png>
@@ -174,7 +204,21 @@ class ModParamSetDialog extends Dialog {
    }
 
    // <ui_update.png>
-   protected method updateParamSetOptions() {
+   protected method updateSmoothRange() {
+      ModParamSet *ps;
+      int lastIdx = 0;
+      int idx = 0;
+      foreach ps in mod.param_sets
+      {
+         if(null != ps)
+            lastIdx = idx;
+         idx++;
+      }
+      fp_smooth.setMaxValue(lastIdx*512+511);
+   }
+
+   // <ui_update.png>
+   protected method updateParamSetOptions(boolean _bCreateParamWidgets) {
       local StringArray opt;
       local StringArray optLong;
       local Integer psNr = 1;
@@ -199,7 +243,8 @@ class ModParamSetDialog extends Dialog {
       cf_paramset.setOptions(opt);
       cf_paramset.setOptionsLong(optLong);
 
-      createParamWidgets();
+      if(_bCreateParamWidgets)
+         createParamWidgets();
 
       // // bt_add.setEditable(null != getEditParamSet());
 
@@ -212,10 +257,12 @@ class ModParamSetDialog extends Dialog {
       mod.ui_param_set_edit_idx = cf_paramset.getSelectedOption();
       current_project.markAsModified();
 
-      updateParamSetOptions();
+      updateParamSetOptions(true/*bCreateParamWidgets*/);
 
       if(cb_autoload.isSelected())
          handleLoad();
+      else
+         Global.PrintFast("Select param set "+(mod.ui_param_set_edit_idx+1)+" (RPN "+(70+cm_group.getSelectedOption())+")");
    }
 
    // <ui_handle.png>
@@ -227,9 +274,10 @@ class ModParamSetDialog extends Dialog {
          int numParams = ps.getNumParameters();
          if(numParams > 0)
          {
-            ps.loadParameters(mod);
-            Global.Print("Load param set \""+ps.name+"\" ("+numParams+" parameter"+Utils.GetPluralString(numParams)+")");
-            updateParamSetOptions();
+            // // ps.loadParameters(mod);
+            mod.queueEditorParamSetIdx(mod.ui_param_set_edit_idx);  //cf_paramset.getSelectedOption()
+            Global.Print("Load param set "+(mod.ui_param_set_edit_idx+1)+"(\""+ps.name+"\") ("+numParams+" parameter"+Utils.GetPluralString(numParams)+") (RPN "+(70+cm_group.getSelectedOption())+")");
+            updateParamSetOptions(true/*bCreateParamWidgets*/);
          }
          else
          {
@@ -252,7 +300,7 @@ class ModParamSetDialog extends Dialog {
          int numParams = ps.getNumParameters();
          ps.clearParameters();
          Global.Print("Clear: remove "+numParams+" parameter"+Utils.GetPluralString(numParams));
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
          if(numParams > 0)
             current_project.markAsModified();
       }
@@ -278,12 +326,15 @@ class ModParamSetDialog extends Dialog {
             ModParamSet *ops;
             foreach ops in mod.param_sets
             {
-               if(@(ops) != @(ps))
+               if(null != ops)
                {
-                  foreach paramIdx in ops.param_numbers
+                  if(@(ops) != @(ps))
                   {
-                     if(!otherParamNrs.contains(paramIdx))
-                        otherParamNrs.add(paramIdx);
+                     foreach paramIdx in ops.param_numbers
+                     {
+                        if(!otherParamNrs.contains(paramIdx))
+                           otherParamNrs.add(paramIdx);
+                     }
                   }
                }
             }
@@ -306,7 +357,7 @@ class ModParamSetDialog extends Dialog {
             }
 
             Global.Print("Reduce: remove "+numDeleted+", keep "+paramNrs.numElements+" parameter(s)");
-            updateParamSetOptions();
+            updateParamSetOptions(true/*bCreateParamWidgets*/);
             if(numDeleted > 0)
                current_project.markAsModified();
          }
@@ -332,14 +383,15 @@ class ModParamSetDialog extends Dialog {
          Global.Debug("ModParamSetDialog::handleGet: lazy-create param set idx="+cf_paramset.getSelectedOption());
          ps <= mod.newParamSetAtIdx(cf_paramset.getSelectedOption());
          ps.name = "get "+(cf_paramset.getSelectedOption()+1);
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
+         updateSmoothRange();
       }
       if(null != ps)
       {
          ps.queryParameters(mod);
          int numParams = ps.getNumParameters();
          Global.Print("Get: query "+numParams+" parameter"+Utils.GetPluralString(numParams));
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
          current_project.markAsModified();
       }
       else
@@ -350,23 +402,66 @@ class ModParamSetDialog extends Dialog {
    }
 
    // <ui_handle.png>
-   protected =replay= method handleRPNGroupChanged() {
+   protected method handleRPNGroupChanged() {
       mod.setParamSetRPNGroup(cm_group.getSelectedOption());
       Global.PrintShort("Param set MIDI RPN group is "+mod.param_set_rpn_group+" (abs RPN="+(70+mod.param_set_rpn_group)+", smooth RPN="+(75+mod.param_set_rpn_group)+")");
       current_project.markAsModified();
    }
 
    // <ui_handle.png>
-   protected =replay= method handleRPNEnableChanged() {
+   protected method handleRPNEnableChanged() {
       mod.setEnableParamSetRPN(cb_rpn.isSelected());
       Global.PrintShort("Param set MIDI RPNs are "+Utils.GetEnableString(mod.b_param_set_rpn));
       current_project.markAsModified();
    }
 
    // <ui_handle.png>
-   protected =replay= method handleOrderChanged() {
+   protected method handleOrderChanged() {
       mod.setParamSetInterpolationOrder(cm_order.getSelectedOption());
       Global.PrintShort("Param set interpolation order is "+mod.param_set_interpolation_order);
+      current_project.markAsModified();
+   }
+
+   // <ui_handle.png>
+   protected method handleSmoothChanged() {
+      int posShort = fp_smooth.getFloatValue();
+      if(posShort >= 0)
+      {
+         int psIdx = (posShort >> 9);
+         int psFrac = (posShort & 511);
+         mod.queueEditorParamSetSmooth(posShort);
+         Global.PrintFast("Test: Interpolation pos (RPN "+(75+cm_group.getSelectedOption())+") is "+(psIdx+1)+":"+psFrac+" ("+posShort+")");
+      }
+      else
+      {
+         Global.PrintFast("Test: Interpolation pos is -");
+      }
+   }
+
+   // // // <method.png>
+   // // protected =replay= method resetAndReloadParameters_Sync() {
+   // //    mod.resetParameterMods();
+
+   // //    ModParamSet ps <= getEditParamSet();
+   // //    if(null != ps)
+   // //    {
+   // //       int numParams = ps.getNumParameters();
+   // //       if(numParams > 0)
+   // //       {
+   // //          ps.loadParameters(mod);
+   // //       }
+   // //    }
+   // // }
+
+   // <ui_handle.png>
+   protected method handleRelativeChanged(boolean _bForceReload) {
+      mod.setEnableParamSetRelative(cb_relative.isSelected());
+      Global.PrintShort("Relative Param modulation is "+Utils.GetEnableString(mod.b_param_set_relative));
+      if(_bForceReload || cb_autoload.isSelected())
+      {
+         // // resetAndReloadParameters_Sync();
+         mod.queueEditorParamSetIdx(mod.ui_param_set_edit_idx);  //cf_paramset.getSelectedOption()
+      }
       current_project.markAsModified();
    }
 
@@ -377,7 +472,7 @@ class ModParamSetDialog extends Dialog {
       FloatArray fa <= mod.param_set_baseline;
       Global.Print("Set Diff base line ("+fa.numElements+" param"+Utils.GetPluralString(fa.numElements)+")");
       current_project.markAsModified();
-      updateParamSetOptions();
+      updateParamSetOptions(true/*bCreateParamWidgets*/);
       Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
    }
 
@@ -394,14 +489,15 @@ class ModParamSetDialog extends Dialog {
             Global.Debug("ModParamSetDialog::handleDiff: lazy-create param set idx="+cf_paramset.getSelectedOption());
             ps <= mod.newParamSetAtIdx(cf_paramset.getSelectedOption());
             ps.name = "diff "+(cf_paramset.getSelectedOption()+1);
-            updateParamSetOptions();
+            updateParamSetOptions(true/*bCreateParamWidgets*/);
+            updateSmoothRange();
          }
          if(null != ps)
          {
             ps.initParametersFromDiffToBaseLine(mod);
             int numParams = ps.getNumParameters();
             Global.Print("Diff: store "+numParams+" changed parameter"+Utils.GetPluralString(numParams));
-            updateParamSetOptions();
+            updateParamSetOptions(true/*bCreateParamWidgets*/);
             if(numParams > 0)
                current_project.markAsModified();
          }
@@ -422,7 +518,7 @@ class ModParamSetDialog extends Dialog {
          int numUpdated = ps.updateParameters(mod);
          int numParams = ps.getNumParameters();
          Global.Print("Update: update "+numUpdated+" / "+numParams+" parameter"+Utils.GetPluralString(numParams));
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
          current_project.markAsModified();
       }
       else
@@ -441,6 +537,7 @@ class ModParamSetDialog extends Dialog {
          // Lazy-create param set
          Global.Debug("ModParamSetDialog::handleParamSetNameChanged: lazy-create param set idx="+cf_paramset.getSelectedOption());
          ps <= mod.newParamSetAtIdx(cf_paramset.getSelectedOption());
+         updateSmoothRange();
       }
 
       if(null != ps)
@@ -453,7 +550,7 @@ class ModParamSetDialog extends Dialog {
          ps.name = _s;
 
          Global.PrintShort("Param set name is \""+ps.name+"\"");
-         updateParamSetOptions();
+         updateParamSetOptions(false/*bCreateParamWidgets*/);
          current_project.markAsModified();
       }
 
@@ -473,33 +570,39 @@ class ModParamSetDialog extends Dialog {
          {
             foreach ps in mod.param_sets
             {
-               if(ps.hasParam(paramIdx))
+               if(null != ps)
                {
-                  float sameVal = ps.getParamValue(paramIdx);
-                  boolean bSame = true;
-                  ModParamSet *ops;
-                  foreach ops in mod.param_sets
+                  if(ps.hasParam(paramIdx))
                   {
-                     if(@(ops) != @(ps))
+                     float sameVal = ps.getParamValue(paramIdx);
+                     boolean bSame = true;
+                     ModParamSet *ops;
+                     foreach ops in mod.param_sets
                      {
-                        if(ops.hasParam(paramIdx))
+                        if(null != ops)
                         {
-                           bSame = bSame && ops.hasParamWithValue(paramIdx, sameVal);
-                        }
-                        else
-                        {
-                           bSame = false;
-                           break;
+                           if(@(ops) != @(ps))
+                           {
+                              if(ops.hasParam(paramIdx))
+                              {
+                                 bSame = bSame && ops.hasParamWithValue(paramIdx, sameVal);
+                              }
+                              else
+                              {
+                                 bSame = false;
+                                 break;
+                              }
+                           }
                         }
                      }
-                  }
 
-                  if(bSame)
-                  {
-                     if(!deleteParamIndices.contains(paramIdx))
-                        deleteParamIndices.add(paramIdx);
-                  }
-               } // if ps.hasParam
+                     if(bSame)
+                     {
+                        if(!deleteParamIndices.contains(paramIdx))
+                           deleteParamIndices.add(paramIdx);
+                     }
+                  } // if ps.hasParam
+               } // if ps
             } // foreach ps
 
             // Next param
@@ -510,11 +613,16 @@ class ModParamSetDialog extends Dialog {
          foreach paramIdx in deleteParamIndices
          {
             foreach ps in mod.param_sets
-               ps.deleteParam(paramIdx);
+            {
+               if(null != ps)
+                  ps.deleteParam(paramIdx);
+            }
          }
 
          Global.Print("Unique: delete "+deleteParamIndices.numElements+" parameter"+Utils.GetPluralString(deleteParamIndices.numElements));
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
+         if(deleteParamIndices.numElements > 0)
+            current_project.markAsModified();
 
       } // if numParamSets > 1
       else
@@ -563,9 +671,12 @@ class ModParamSetDialog extends Dialog {
             psIdx = (psIdx + 1) & 31;
          }
 
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
 
          Global.Print("Replicate "+numRepl+" param value"+Utils.GetPluralString(numRepl));
+
+         if(numRepl > 0)
+            current_project.markAsModified();
       }
       else
       {
@@ -648,6 +759,7 @@ class ModParamSetDialog extends Dialog {
       widget_to_param_map.empty();
 
       ModParamSet ps <= getEditParamSet();
+      // // trace "xxx createParamWidgets: ps="+#(ps);
       if(null != ps)
       {
          local int paramIdx;
@@ -773,19 +885,24 @@ class ModParamSetDialog extends Dialog {
          }
          else
          {
-            if(mod instanceof ModCLAP)
+            if(numVisibleParams != last_visible_param_warning)
             {
-               ModCLAP modCLAP <= mod;
-               Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+") uid=\""+modCLAP.getUniqueIDString()+"\"");
-            }
-            else if(mod instanceof ModVST2)
-            {
-               ModVST2 modVST2 <= mod;
-               Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+") uid=\""+modVST2.getUniqueIDString()+"\"");
-            }
-            else
-            {
-               Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+")");
+               last_visible_param_warning = numVisibleParams;
+
+               if(mod instanceof ModCLAP)
+               {
+                  ModCLAP modCLAP <= mod;
+                  Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+") uid=\""+modCLAP.getUniqueIDString()+"\"");
+               }
+               else if(mod instanceof ModVST2)
+               {
+                  ModVST2 modVST2 <= mod;
+                  Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+") uid=\""+modVST2.getUniqueIDString()+"\"");
+               }
+               else
+               {
+                  Global.Warning("Too many visible params ("+numVisibleParams+" > "+MAX_VISIBLE_PARAMS+")");
+               }
             }
          }
       } // if ps
@@ -826,9 +943,17 @@ class ModParamSetDialog extends Dialog {
          fp.redraw();
          int paramIdx = widget_to_param_map[_idx];
          ps.setParamValue(paramIdx, paramVal);
-         mod.setParameterValue(paramIdx, paramVal);
-         queueAutomateEvent(paramIdx, paramVal);
+         if(!mod.b_param_set_relative)
+         {
+            mod.setParameterValue(paramIdx, paramVal);
+            queueAutomateEvent(paramIdx, paramVal);
+         }
+         else
+         {
+            mod.queueEditorParamSetIdx(mod.ui_param_set_edit_idx);
+         }
          printParamValue(paramIdx, paramVal);
+         current_project.markAsModified();
       }
    }
 
@@ -844,14 +969,23 @@ class ModParamSetDialog extends Dialog {
          sl.redraw();
          int paramIdx = widget_to_param_map[_idx];
          ps.setParamValue(paramIdx, paramVal);
-         mod.setParameterValue(paramIdx, paramVal);
-         queueAutomateEvent(paramIdx, paramVal);
+         if(!mod.b_param_set_relative)
+         {
+            mod.setParameterValue(paramIdx, paramVal);
+            queueAutomateEvent(paramIdx, paramVal);
+         }
+         else
+         {
+            mod.queueEditorParamSetIdx(mod.ui_param_set_edit_idx);
+         }
          printParamValue(paramIdx, paramVal);
+         current_project.markAsModified();
       }
    }
 
    // <ui_handle.png>
    protected =replay= method handleRemoveParam(int _idx) {
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
       ModParamSet ps <= getEditParamSet();
       if(null != ps)
       {
@@ -860,12 +994,15 @@ class ModParamSetDialog extends Dialog {
             mod.addToUIParamHistory(paramIdx);
          ps.deleteParam(paramIdx);
          Global.Print("Delete param "+paramIdx+" from param set");
-         updateParamSetOptions();
+         updateParamSetOptions(true/*bCreateParamWidgets*/);
+         current_project.markAsModified();
       }
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
    }
 
    // <ui_handle.png>
    protected =replay= method handleAddLastTouchedParam() {
+      boolean bOldSuppressUnderrunError = Audio.PushSuppressUnderrunError();
       ModParamSet ps <= getEditParamSet();
       if(null == ps)
       {
@@ -873,6 +1010,7 @@ class ModParamSetDialog extends Dialog {
          Global.Debug("ModParamSetDialog::handleAddLastTouchedParam: lazy-create param set idx="+cf_paramset.getSelectedOption());
          ps <= mod.newParamSetAtIdx(cf_paramset.getSelectedOption());
          ps.name = "last "+(cf_paramset.getSelectedOption()+1);
+         updateSmoothRange();
       }
       if(null != ps)
       {
@@ -884,8 +1022,9 @@ class ModParamSetDialog extends Dialog {
             {
                float paramVal = mod.getParameterValue(paramIdx);
                ps.addParam(paramIdx, paramVal);
-               updateParamSetOptions();
+               updateParamSetOptions(true/*bCreateParamWidgets*/);
                Global.Print("Add param "+paramIdx+" val="+paramVal);
+               current_project.markAsModified();
             }
             else
                Global.Warning("Add: param set already contains last touched paramIdx="+paramIdx);
@@ -893,6 +1032,7 @@ class ModParamSetDialog extends Dialog {
          else
             Global.Warning("Add: param history is empty");
       }
+      Audio.PopSuppressUnderrunError(bOldSuppressUnderrunError);
    }
 
    // <ui_kbd.png>
@@ -1024,6 +1164,14 @@ class ModParamSetDialog extends Dialog {
 
          case @(cm_order):
             handleOrderChanged();
+            return true;
+
+         case @(fp_smooth):
+            handleSmoothChanged();
+            return true;
+
+         case @(cb_relative):
+            handleRelativeChanged( (CheckBox.ACTION_HOLD_CLICK == acName)/*bForceReload*/ );
             return true;
 
          case @(bt_baseline):
