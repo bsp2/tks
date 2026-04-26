@@ -20,7 +20,8 @@
 // ----          05Jul2024, 06Jul2024, 07Jul2024, 12Aug2024, 13Sep2024, 15Sep2024, 20Sep2024
 // ----          21Sep2024, 22Sep2024, 24Sep2024, 04Oct2024, 05Oct2024, 22Dec2024, 29Dec2024
 // ----          30Dec2024, 01Jan2025, 04Apr2025, 06Apr2025, 10Apr2025, 01May2025, 10Jun2025
-// ----          13Jun2025, 14Jun2025, 09Sep2025, 18Dec2025, 14Feb2026, 15Feb2026
+// ----          13Jun2025, 14Jun2025, 09Sep2025, 18Dec2025, 14Feb2026, 15Feb2026, 14Apr2026
+// ----          24Apr2026
 // ----
 // ----
 // ----
@@ -307,6 +308,8 @@ class PageTrack : Page {
    public virtual pageLeave() {
 
       lazyStoreTimelineEditorState();
+
+      ls_samplepad.switchToLayerNr(0);  // [14Apr2026] fix/prevent crash when page is re-entered after deleting timeline track
 
       Page::pageLeave();
 
@@ -793,12 +796,20 @@ class PageTrack : Page {
    protected =replay= method handleBypassFXChanged() {
       track.b_bypass_fx = !cb_fx.isSelected();
       Global.Print("FX are "+Utils.GetEnableString(!track.b_bypass_fx));
+      current_project.markAsModified();
    }
 
    // <ui_handle.png>
    protected =replay= method handleProcChanged() {
       track.b_proc = cb_proc.isSelected();
-      Global.Print("procedural-sample-render-process-mode is "+Utils.GetEnableString(track.b_proc));
+      Global.Print("Process-track mode is \""+Utils.GetEnableStringMixed(track.b_proc,
+                                                                       "always",
+                                                                       "procedural",
+                                                                       "procedural / replay stopped"
+                                                                       )
+                   +"\""
+                   );
+      current_project.markAsModified();
    }
 
    // <ui_handle.png>
@@ -1842,6 +1853,15 @@ class PageTrack : Page {
       showTrack(track);
    }
 
+   // <method.png>
+   public method handleStopRecord() {
+      // called from UI thread by RootForm::handleStopRecord()
+      if(null != track && track.isTimelineMode())
+      {
+         f_sampletimeline.handleStopClipRec();
+      }
+   }
+
    // <ui_show.png>
    protected method showContextMenu() {
 
@@ -1903,6 +1923,16 @@ class PageTrack : Page {
       pmb.setToolTipCaption("Assign unique key-range to first ModSample instance of each lane (C,D,E,F,G,A,A#,B,..)");
       pmb.setActive(track.isDrumMode());
 
+      pm.addSeparator();
+
+      local String sCtlState <= track.getCtlStateInfoString_Sync();
+      pmb <= pm.addDefaultButton("Clear controller state ("+sCtlState+")",
+                                 "clear_ctl_state"
+                                 );
+      if(sCtlState.isBlank())
+         pmb.setCaption("Clear ctl state");
+      pmb.setToolTipCaption("Clear tracked controller state\n\n (note) CCs, paramset RPNs, lane fade RPN\n\n (note) ctl states have precedence over initial sample performance ctls when project is reloaded");
+      pmb.setActive(!sCtlState.isBlank());
 
       pm.resizeToMinimum();
       pm.showNearMouse(-10, -10);
@@ -2056,6 +2086,23 @@ class PageTrack : Page {
    public method ignoreNextKeyEscape() {
       // After pressing ESCAPE in plugin editor
       b_ignore_next_key_escape = true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "[trc] PageTrack::onTriadKey: name="+_k.name;
+      if(null != track && track.isTimelineMode())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_KP_ENTER:
+            case VKEY_EQUALS: // = on us kbd, Â´ on german kbd
+            case VKEY_SPACE:
+               f_sampletimeline.handleToggleClipRec();
+               return true;
+         }
+      }
+      return false;
    }
 
    // <ui_kbd.png>
@@ -2450,6 +2497,18 @@ class PageTrack : Page {
       return false;
    }
 
+   // <ui.png>
+   public method hideEditorWindows() {
+      modgrid.hideModParamSetDialog();
+
+      if(STConfig.b_auto_hide_plugin_editors &&
+         !((LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption()) && modmatrix.b_keep_plugin_editor_open)
+         )
+      {
+         current_project.hideAllPluginEditors(null/*except*/);
+      }
+   }
+
    // <ui_mouse.png>
    public virtual onMouseClick(MouseEvent _ev) : boolean {
 
@@ -2457,14 +2516,7 @@ class PageTrack : Page {
       {
          Global.Debug("PageTrack::onMouseClick: STConfig.b_auto_hide_plugin_editors="+STConfig.b_auto_hide_plugin_editors);
 
-         modgrid.hideModParamSetDialog();
-
-         if(STConfig.b_auto_hide_plugin_editors &&
-            !((LIST_TYPE_MODMATRIX == cm_list_type.getSelectedOption()) && modmatrix.b_keep_plugin_editor_open)
-            )
-         {
-            current_project.hideAllPluginEditors(null/*except*/);
-         }
+         hideEditorWindows();
       }
       else if(_ev.isRightButton())
       {
@@ -2507,11 +2559,12 @@ class PageTrack : Page {
 
    // <ui_mouse.png>
    public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
-      if(showDefaultBrowserOrModMatrix())
-         return true;
-      // let RootForm handle it (return to parent page)
-      root_form.showPageParentOrPrev();
-      return true;
+      // // if(showDefaultBrowserOrModMatrix())
+      // //    return true;
+      // // // let RootForm handle it (return to parent page)
+      // // root_form.showPageParentOrPrev();
+      // // return true;
+      return false;
    }
 
    // <ui_mouse.png>
@@ -2623,6 +2676,12 @@ class PageTrack : Page {
 
                case "convert_drumpads_to_modsample_lanes":
                   handleConvertDrumPadsToModSampleLanes();
+                  return true;
+
+               case "clear_ctl_state":
+                  track.resetCtlState_Sync();
+                  Global.Print("Clear track controller state");
+                  pageFocusDefault();
                   return true;
             }
             return true;
