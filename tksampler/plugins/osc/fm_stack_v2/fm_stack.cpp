@@ -12,6 +12,7 @@
 // ----          06Sep2023, 07Sep2023, 08Sep2023, 09Sep2023, 10Sep2023, 11Sep2023, 12Sep2023
 // ----          13Sep2023, 16Sep2023, 19Sep2023, 20Sep2023, 21Sep2023, 11Nov2023, 30Nov2023
 // ----          15Dec2023, 11Jan2024, 21Jan2024, 07Feb2024, 28Apr2024, 14Oct2024, 17Apr2026
+// ----          26Apr2026
 // ----
 // ----
 // ----
@@ -100,7 +101,7 @@ typedef float        sF32;
 #include <stdio.h>
 #endif
 
-#define NUM_WAVES 283
+#define NUM_WAVES 303
 
 // -------------------------------------------------
 
@@ -1369,6 +1370,26 @@ static const char *loc_wave_names[NUM_WAVES] = {
    "280: taylor3:18", // 280
    "281: taylor3:19", // 281
    "282: taylor3:20", // 282
+   "283: hermite:1",  // 283
+   "284: hermite:2",  // 284
+   "285: hermite:3",  // 285
+   "286: hermite:4",  // 286
+   "287: hermite:5",  // 287
+   "288: hermite:6",  // 288
+   "289: hermite:7",  // 289
+   "290: hermite:8",  // 290
+   "291: hermite:9",  // 291
+   "292: hermite:10", // 292
+   "293: hermite:11", // 293
+   "294: hermite:12", // 294
+   "295: hermite:13", // 295
+   "296: hermite:14", // 296
+   "297: hermite:15", // 297
+   "298: hermite:16", // 298
+   "299: hermite:17", // 299
+   "300: hermite:18", // 300
+   "301: hermite:19", // 301
+   "302: hermite:20", // 302
 };
 
 // -------------------------------------------------
@@ -1797,6 +1818,26 @@ static float loc_lut_logtaylor3ph17[LOGWAV_TBLSZ];
 static float loc_lut_logtaylor3ph18[LOGWAV_TBLSZ];
 static float loc_lut_logtaylor3ph19[LOGWAV_TBLSZ];
 static float loc_lut_logtaylor3ph20[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph1 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph2 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph3 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph4 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph5 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph6 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph7 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph8 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph9 [LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph10[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph11[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph12[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph13[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph14[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph15[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph16[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph17[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph18[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph19[LOGWAV_TBLSZ];
+static float loc_lut_loghermiteph20[LOGWAV_TBLSZ];
 
 static float *loc_waves[NUM_WAVES] = {
    loc_lut_logzero,         //   0
@@ -2082,6 +2123,26 @@ static float *loc_waves[NUM_WAVES] = {
    loc_lut_logtaylor3ph18,  // 280
    loc_lut_logtaylor3ph19,  // 281
    loc_lut_logtaylor3ph20,  // 282
+   loc_lut_loghermiteph1,   // 283
+   loc_lut_loghermiteph2,   // 284
+   loc_lut_loghermiteph3,   // 285
+   loc_lut_loghermiteph4,   // 286
+   loc_lut_loghermiteph5,   // 287
+   loc_lut_loghermiteph6,   // 288
+   loc_lut_loghermiteph7,   // 289
+   loc_lut_loghermiteph8,   // 290
+   loc_lut_loghermiteph9,   // 291
+   loc_lut_loghermiteph10,  // 292
+   loc_lut_loghermiteph11,  // 293
+   loc_lut_loghermiteph12,  // 294
+   loc_lut_loghermiteph13,  // 295
+   loc_lut_loghermiteph14,  // 296
+   loc_lut_loghermiteph15,  // 297
+   loc_lut_loghermiteph16,  // 298
+   loc_lut_loghermiteph17,  // 299
+   loc_lut_loghermiteph18,  // 300
+   loc_lut_loghermiteph19,  // 301
+   loc_lut_loghermiteph20,  // 302
 };
 
 #ifdef LOGMUL
@@ -2913,8 +2974,8 @@ void FMSTACK_VOICE_OP_T::calcOut(const FMSTACK_SHARED_T *_shared,
 #endif // FMSTACK_HIRES_PENV
 
       // Calc amplified sine value
-      const sF32 a = lut_logwav_a[((sUI)(curPhase * LOGWAV_TBLMASK)) & LOGWAV_TBLMASK];
-      const sF32 b = lut_logwav_b[((sUI)(curPhase * LOGWAV_TBLMASK)) & LOGWAV_TBLMASK];
+      const sF32 a = lut_logwav_a[((sUI)(curPhase * LOGWAV_TBLSZ)) & LOGWAV_TBLMASK];
+      const sF32 b = lut_logwav_b[((sUI)(curPhase * LOGWAV_TBLSZ)) & LOGWAV_TBLMASK];
       out = a + (b - a) * mod_wav_mix_cur;
 
 #ifdef MODFM
@@ -2987,6 +3048,7 @@ static void loc_calc_lut_logsinsawsq (float *_d, sF32 _f);
 static void loc_calc_lut_logsinbd    (float *_d, sF32 _exp);
 static void loc_calc_lut_logsinwarp  (float *_d, sF32 _exp);
 static void loc_calc_lut_logtaylor3  (float *_d, sF32 _phase);
+static void loc_calc_lut_loghermite  (float *_d, sF32 _amount);
 
 #ifdef LOGMUL
 static void loc_calc_lut_exp (float *_d);
@@ -3630,7 +3692,7 @@ static void loc_calc_lut_logsinsawsq(float *_d, sF32 _f) {
    loop(LOGWAV_TBLSZ)
    {
       float ph = ffrac_s(x);
-      ph = int(ph / _f) * _f;
+      ph = int(ph / _f) * _f;  // ?!
 
 #ifndef TRUE_SINE
       float out = loc_sine_tbl_f[(unsigned short)(16384 * ph)&16383u];
@@ -3732,7 +3794,7 @@ static void loc_calc_lut_logsinwarp(float *_d, sF32 _exp) {
    } // loop LOGWAV_TBLSZ
 } /* end loc_calc_lut_logsinwarp() */
 
-static void loc_calc_lut_taylor3(float *_d, float _phase) {
+static void loc_calc_lut_logtaylor3(float *_d, float _phase) {
    float x = 0.0f;
    loop(LOGWAV_TBLSZ)
    {
@@ -3754,7 +3816,36 @@ static void loc_calc_lut_taylor3(float *_d, float _phase) {
       // Next x
       x += (1.0f / LOGWAV_TBLMASK);
    } // loop LOGWAV_TBLSZ
-} /* end loc_calc_lut_taylor3() */
+} /* end loc_calc_lut_logtaylor3() */
+
+static void loc_calc_lut_loghermite(float *_d, float _amount) {
+   float x = 0.0f;
+   loop(LOGWAV_TBLSZ)
+   {
+      float ph = ffrac_s(x);
+
+      const float ph2 = ph * ph;
+      const float ph3 = ph2 * ph;
+      const float ph4 = ph2 * ph2;
+      float phs = ph4 * (-20.0f*ph3 + 70.0f*ph2 - 84.0f*ph + 35.0f);
+      phs += (phs - ph) * _amount;
+
+#ifndef TRUE_SINE
+      float out = loc_sine_tbl_f[(unsigned short)(16384 * phs)&16383u];
+#else
+      float out = Dsinf(phs);
+#endif // TRUE_SINE
+
+#ifdef LOGMUL
+      out = loc_level_to_lut_log(out);
+#endif // LOGMUL
+
+      _d[i] = out;
+
+      // Next x
+      x += (1.0f / LOGWAV_TBLMASK);
+   } // loop LOGWAV_TBLSZ
+} /* end loc_calc_lut_loghermite() */
 
 static void loc_prepare(st_plugin_voice_t *_voice,
                         const sUI  _numFramesOrig,
@@ -4815,26 +4906,47 @@ st_plugin_info_t *FMSTACK_INIT(void) {
       loc_calc_lut_logsin(loc_lut_logsinph19, 0.0f + (18.0f / 20.0f));
       loc_calc_lut_logsin(loc_lut_logsinph20, 0.0f + (19.0f / 20.0f));
       // taylor3:
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph1,  0.0f + ( 0.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph2,  0.0f + ( 1.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph3,  0.0f + ( 2.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph4,  0.0f + ( 3.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph5,  0.0f + ( 4.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph6,  0.0f + ( 5.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph7,  0.0f + ( 6.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph8,  0.0f + ( 7.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph9,  0.0f + ( 8.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph10, 0.0f + ( 9.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph11, 0.0f + (10.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph12, 0.0f + (11.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph13, 0.0f + (12.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph14, 0.0f + (13.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph15, 0.0f + (14.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph16, 0.0f + (15.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph17, 0.0f + (16.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph18, 0.0f + (17.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph19, 0.0f + (18.0f / 20.0f));
-      loc_calc_lut_taylor3(loc_lut_logtaylor3ph20, 0.0f + (19.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph1,  0.0f + ( 0.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph2,  0.0f + ( 1.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph3,  0.0f + ( 2.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph4,  0.0f + ( 3.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph5,  0.0f + ( 4.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph6,  0.0f + ( 5.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph7,  0.0f + ( 6.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph8,  0.0f + ( 7.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph9,  0.0f + ( 8.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph10, 0.0f + ( 9.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph11, 0.0f + (10.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph12, 0.0f + (11.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph13, 0.0f + (12.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph14, 0.0f + (13.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph15, 0.0f + (14.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph16, 0.0f + (15.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph17, 0.0f + (16.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph18, 0.0f + (17.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph19, 0.0f + (18.0f / 20.0f));
+      loc_calc_lut_logtaylor3(loc_lut_logtaylor3ph20, 0.0f + (19.0f / 20.0f));
+      // hermite:
+      loc_calc_lut_loghermite(loc_lut_loghermiteph1,  0.0f + ( 0.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph2,  0.0f + ( 1.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph3,  0.0f + ( 2.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph4,  0.0f + ( 3.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph5,  0.0f + ( 4.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph6,  0.0f + ( 5.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph7,  0.0f + ( 6.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph8,  0.0f + ( 7.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph9,  0.0f + ( 8.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph10, 0.0f + ( 9.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph11, 0.0f + (10.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph12, 0.0f + (11.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph13, 0.0f + (12.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph14, 0.0f + (13.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph15, 0.0f + (14.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph16, 0.0f + (15.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph17, 0.0f + (16.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph18, 0.0f + (17.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph19, 0.0f + (18.0f / 20.0f));
+      loc_calc_lut_loghermite(loc_lut_loghermiteph20, 0.0f + (19.0f / 20.0f));
 
 
 #ifdef SAVE
@@ -5139,6 +5251,27 @@ st_plugin_info_t *FMSTACK_INIT(void) {
       loc_save_lut(loc_lut_logtaylor3ph18);
       loc_save_lut(loc_lut_logtaylor3ph19);
       loc_save_lut(loc_lut_logtaylor3ph20);
+      // hermite:
+      loc_save_lut(loc_lut_loghermiteph1);
+      loc_save_lut(loc_lut_loghermiteph2);
+      loc_save_lut(loc_lut_loghermiteph3);
+      loc_save_lut(loc_lut_loghermiteph4);
+      loc_save_lut(loc_lut_loghermiteph5);
+      loc_save_lut(loc_lut_loghermiteph6);
+      loc_save_lut(loc_lut_loghermiteph7);
+      loc_save_lut(loc_lut_loghermiteph8);
+      loc_save_lut(loc_lut_loghermiteph9);
+      loc_save_lut(loc_lut_loghermiteph10);
+      loc_save_lut(loc_lut_loghermiteph11);
+      loc_save_lut(loc_lut_loghermiteph12);
+      loc_save_lut(loc_lut_loghermiteph13);
+      loc_save_lut(loc_lut_loghermiteph14);
+      loc_save_lut(loc_lut_loghermiteph15);
+      loc_save_lut(loc_lut_loghermiteph16);
+      loc_save_lut(loc_lut_loghermiteph17);
+      loc_save_lut(loc_lut_loghermiteph18);
+      loc_save_lut(loc_lut_loghermiteph19);
+      loc_save_lut(loc_lut_loghermiteph20);
 
       loc_save_file_close();
 
