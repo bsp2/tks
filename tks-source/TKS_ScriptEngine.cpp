@@ -3048,9 +3048,10 @@ sSI YAC_VCALL TKS_ScriptEngine::yacEvalMethodByName(YAC_Object *_o,
          return r;
       }
 
-      if(clid<YAC_MAX_CLASSES)
+      if(clid < YAC_MAX_CLASSES)
       {
-         TKS_ClassTemplate *clt=TKSCRIPT__ATOM_SPEEDPATH[clid];
+         TKS_ClassTemplate *clt = TKSCRIPT__ATOM_SPEEDPATH[clid];
+         // printf("xxx yacEvalMethodByName: clid=%u clt=%p\n", clid, clt);
          if(clt)
          {
             YAC_String t;
@@ -3058,7 +3059,7 @@ sSI YAC_VCALL TKS_ScriptEngine::yacEvalMethodByName(YAC_Object *_o,
             const YAC_CommandY *cmdy = clt->findCommandY(&t);
 
             // Handle case where function has RVAL variant and root command is unimplemented
-            sBool bRSELFEmul = 0;
+            sBool bRSELFEmul = YAC_FALSE;
             sBool bCRC = PTN_FunctionECallY::CheckRootCommand(0, &cmdy, 0, &bRSELFEmul);
             if(!bCRC || bRSELFEmul)
             {

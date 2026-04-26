@@ -1489,7 +1489,7 @@ void tks_lib_vst_set_program_chunk(YAC_ContextHandle _context, YAC_Object *_buff
 }
 #endif // TKS_VST
 #else
-extern "C" {
+// extern "C" {
 
    int main(int _argc, char **_argv) {
 
@@ -1497,5 +1497,5 @@ extern "C" {
 
       return ret;
    }
-}
+// }
 #endif // TKS_LIB

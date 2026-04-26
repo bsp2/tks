@@ -3,31 +3,31 @@
 /// (c) 2001-2023 Bastian Spiegel <bs@tkscript.de>
 ///     - distributed under the terms of the GNU general public license (GPL).
 ///
- 
-#include <math.h> 
+
+#include <math.h>
 
 #ifndef YAC_NO_HOST
-#include "tks.h" 
-#include "YAC_FloatArray.h" 
+#include "tks.h"
+#include "YAC_FloatArray.h"
 #else
 #include <yac.h>
 #endif // YAC_NO_HOST
 
- 
-#include "TKS_Envelope.h" 
- 
- 
-TKS_Envelope::TKS_Envelope(void) { 
-   abs_time      = 0.0; 
-   delta_time    = 0.0; 
-   current_index = 0; 
-   time_advance  = 1.0; 
-   b_shreset     = 1; 
-   env_fun       = TKS_ENVELOPE_LINEAR;
-} 
 
-TKS_Envelope::~TKS_Envelope() { 
-} 
+#include "TKS_Envelope.h"
+
+
+TKS_Envelope::TKS_Envelope(void) {
+   abs_time      = 0.0;
+   delta_time    = 0.0;
+   current_index = 0u;
+   time_advance  = 1.0;
+   b_shreset     = 1;
+   env_fun       = TKS_ENVELOPE_LINEAR;
+}
+
+TKS_Envelope::~TKS_Envelope() {
+}
 
 void TKS_Envelope::free(void) {
 
@@ -37,26 +37,26 @@ void TKS_Envelope::free(void) {
 
    YAC_FloatArray::free();
 
-   current_index = 0;
+   current_index = 0u;
 
    // // setTime(t);
 }
 
-void YAC_VCALL TKS_Envelope::yacGetConstantStringList(YAC_String *_c) { 
-   _c->append( 
-      "ENV_SH:$0 " 
-      "ENV_LINEAR:$1 " 
-      "ENV_COSINE:$2 " 
-      "ENV_QUADRATIC:$3 " 
-      "ENV_CUBIC:$4 " 
-      "ENV_QUINTIC:$5 " 
-      "ENV_SHRESET:$6 " 
-      "NUM_ENVELOPE_TYPES:$7 " 
-      ); 
-} 
+void YAC_VCALL TKS_Envelope::yacGetConstantStringList(YAC_String *_c) {
+   _c->append(
+      "ENV_SH:$0 "
+      "ENV_LINEAR:$1 "
+      "ENV_COSINE:$2 "
+      "ENV_QUADRATIC:$3 "
+      "ENV_CUBIC:$4 "
+      "ENV_QUINTIC:$5 "
+      "ENV_SHRESET:$6 "
+      "NUM_ENVELOPE_TYPES:$7 "
+      );
+}
 
 void YAC_VCALL TKS_Envelope::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r) {
-   if(_o!=((YAC_Object*)this)) 
+   if(_o!=((YAC_Object*)this))
    {
       if(YAC_OP_ASSIGN == _cmd)
       {
@@ -75,14 +75,14 @@ void YAC_VCALL TKS_Envelope::yacOperator(sSI _cmd, YAC_Object *_o, YAC_Value *_r
          }
       }
    }
-   YAC_FloatArray::yacOperator(_cmd, _o, _r); 
-} 
+   YAC_FloatArray::yacOperator(_cmd, _o, _r);
+}
 
-sF32 TKS_Envelope::get(void) { 
+sF32 TKS_Envelope::get(void) {
    return getAndResetNew(YAC_TRUE);
 }
 
-sF32 TKS_Envelope::yacEnvGetValue(void) { 
+sF32 TKS_Envelope::yacEnvGetValue(void) {
    // yac_host->printf("xxx TKS_Envelope::yacEnvGetValue: this=%p elements=%p &elements=%p\n", this, elements, &elements);
    // yac_host->printf("xxx TKS_Envelope::yacEnvGetValue: this=%p current_index=%u num_elements=%u delta_time=%f\n", this, current_index, num_elements);
    return getAndResetNew(YAC_TRUE);
@@ -100,46 +100,45 @@ sF32 TKS_Envelope::getAndResetNew(sBool _bResetNew) {
    }
    */
 
-
-   sUI ci=current_index<<1; 
-   if( ci <num_elements) 
-   { 
-      if(delta_time<0.0)
+   sUI ci = current_index << 1;
+   if(ci < num_elements)
+   {
+      if(delta_time < 0.0)
       {
          return 0.0f; // Wait until first event
       }
-      switch(env_fun) 
-      { 
-      default: 
-         return 0.0f; 
-         
-      case TKS_ENVELOPE_SH: 
-         // ---- sample and hold ---- 
+      switch(env_fun)
+      {
+      default:
+         return 0.0f;
+
+      case TKS_ENVELOPE_SH:
+         // ---- sample and hold ----
          if(_bResetNew)  // 17Dec2015
          {
             b_shreset = 0; // 04Dec2015
          }
-         return  elements[ci+1]; 
-         
-      case TKS_ENVELOPE_SHRESET: 
-         if(b_shreset)  
+         return elements[ci+1];
+
+      case TKS_ENVELOPE_SHRESET:
+         if(b_shreset)
          {
             if(_bResetNew)  // 17Dec2015
             {
                b_shreset = 0;
             }
-            return elements[ci+1]; 
+            return elements[ci+1];
          }
-         else  
+         else
          {
-            return 0.0f; 
+            return 0.0f;
          }
-         
-      case TKS_ENVELOPE_LINEAR: 
-         // ---- linear interpolation---- 
-         if( (ci+3) < num_elements ) 
-         { 
-            // --- interpolate to next point 
+
+      case TKS_ENVELOPE_LINEAR:
+         // ---- linear interpolation----
+         if( (ci+3) < num_elements )
+         {
+            // --- interpolate to next point
             sF32 nt = elements[ci+2+0];
             ////printf("xxx TKS_Envelope::get env linear nt=%f Dfltzero=%d\n", nt, Dfltzero(nt));
             if(Dfltzero(nt))
@@ -168,157 +167,157 @@ sF32 TKS_Envelope::getAndResetNew(sBool _bResetNew) {
                   }
                }
             }
-         } 
-         else 
-         { 
-            // ---- clamp to last value ---- 
-            return elements[ci+1]; 
          }
-         
-         
-      case TKS_ENVELOPE_COSINE: 
-         // ---- cosine interpolation---- 
-         // ---- y=y1+(y2-y1)*(1-cos(PI*x))/2 ---- 
-         if( (ci+3) < num_elements ) 
-         { 
-            // --- interpolate to next point 
+         else
+         {
+            // ---- clamp to last value ----
+            return elements[ci+1];
+         }
+
+
+      case TKS_ENVELOPE_COSINE:
+         // ---- cosine interpolation----
+         // ---- y=y1+(y2-y1)*(1-cos(PI*x))/2 ----
+         if( (ci+3) < num_elements )
+         {
+            // --- interpolate to next point
             return  (sF32) (
-               elements[ci+1] +	 
-               (elements[ci+2+1]-elements[ci+1]) *  
+               elements[ci+1] +
+               (elements[ci+2+1]-elements[ci+1]) *
                (1.0f-(sF32)::cos((sF32)sM_PI*(delta_time/elements[ci+2+0]))) * 0.5f
                             );
-         } 
-         else 
-         { 
-            // ---- clamp to last value ---- 
-            return elements[ci+1]; 
-         } 
-
-      case TKS_ENVELOPE_QUADRATIC: 
-         // ---- quadratic interpolation---- 
-         // ---- y= (y1+(y2-y1)*x) * (1-x*x) + (y2+(y3-y2)*(x-1))*x*x ---- 
-         if( (ci+5) < num_elements ) // right border 
-         { 
-            // --- interpolate to next point 
-            sF32 y1=elements[ci+0+1]; 
-            sF32 y2=elements[ci+2+1]; 
-            sF32 y3=elements[ci+4+1]; 
-            sF64 x=delta_time/elements[ci+2+0]; 
-            sF64 xx=x*x; 
-            return  (sF32) (
-               ( y1+(y2-y1)*x     ) * (1-xx) + 
-               ( y2+(y3-y2)*(x-1) ) * xx     
-                            );
-         } 
-         else 
-         { 
-            // ---- clamp to last value ---- 
-            return elements[ci+1]; 
          }
-         break; 
+         else
+         {
+            // ---- clamp to last value ----
+            return elements[ci+1];
+         }
 
-      case TKS_ENVELOPE_CUBIC: 
-         // ---- cubic interpolation---- 
-         // ---- y= (y1+y3-(y0+y2)*x*x*x + (2*(y0-y1)+y2-y3)*x*x + (y2-y0)*x + y1 ---- 
-         if( (ci+7) < num_elements ) 
-         { 
-            // --- interpolate to next point 
-            sF32 y0=elements[ci+0+1]; 
-            sF32 y1=elements[ci+2+1]; 
-            sF32 y2=elements[ci+4+1]; 
-            sF32 y3=elements[ci+6+1]; 
-            sF64 x=delta_time/elements[ci+2+0]; 
-            sF64 xx=x*x; 
-            return (sF32) (
-               (y1+y3-(y0+y2))      *xx*x +  
-               (2.0f*(y0-y1)+y2-y3) *xx   +  
-               (y2-y0)              *x    +  
-               y1                         );
-         } 
-         else 
-         { 
-            // ---- clamp to last value ---- 
-            return elements[ci+1]; 
-         } 
+      case TKS_ENVELOPE_QUADRATIC:
+         // ---- quadratic interpolation----
+         // ---- y= (y1+(y2-y1)*x) * (1-x*x) + (y2+(y3-y2)*(x-1))*x*x ----
+         if( (ci+5) < num_elements ) // right border
+         {
+            // --- interpolate to next point
+            sF32 y1=elements[ci+0+1];
+            sF32 y2=elements[ci+2+1];
+            sF32 y3=elements[ci+4+1];
+            sF64 x=delta_time/elements[ci+2+0];
+            sF64 xx=x*x;
+            return  (sF32) (
+               ( y1+(y2-y1)*x     ) * (1-xx) +
+               ( y2+(y3-y2)*(x-1) ) * xx
+                            );
+         }
+         else
+         {
+            // ---- clamp to last value ----
+            return elements[ci+1];
+         }
          break;
 
-      case TKS_ENVELOPE_QUINTIC: 
-         // ---- quintic interpolation---- 
-         // ---- y= 3*(y1+y3-y2-y4)      *x*x*x*x*x + 
-         // ----    (8*(y2-y1)+7*(y4-y3))*x*x*x*x   + 
-         // ----    (6*(y1-y2)+4*(y3-y4))*x*x*x     + 
-         // ----    (y3-y1)              *x         + 
-         // ----    y2 
-         if( (ci+7) < num_elements ) 
-         { 
-            // --- interpolate to next point 
-            sF32 y1=elements[ci+0+1]; 
-            sF32 y2=elements[ci+2+1]; 
-            sF32 y3=elements[ci+4+1]; 
-            sF32 y4=elements[ci+6+1]; 
-            sF64 x=delta_time/elements[ci+2+0]; 
-            sF64 xx=x*x; 
-            sF64 xxxx=xx*xx; 
+      case TKS_ENVELOPE_CUBIC:
+         // ---- cubic interpolation----
+         // ---- y= (y1+y3-(y0+y2)*x*x*x + (2*(y0-y1)+y2-y3)*x*x + (y2-y0)*x + y1 ----
+         if( (ci+7) < num_elements )
+         {
+            // --- interpolate to next point
+            sF32 y0=elements[ci+0+1];
+            sF32 y1=elements[ci+2+1];
+            sF32 y2=elements[ci+4+1];
+            sF32 y3=elements[ci+6+1];
+            sF64 x=delta_time/elements[ci+2+0];
+            sF64 xx=x*x;
             return (sF32) (
-               3.0f*(y1+y3-y2-y4)          *xxxx*x   + 
-               (8.0f*(y2-y1)+7.0f*(y4-y3)) *xxxx     + 
-               (6.0f*(y1-y2)+4.0f*(y3-y4)) *xx*x     + 
-               (y3-y1)                     *x        + 
-               y2                                    ); 
-         } 
-         else 
-         { 
-            // ---- clamp to last value ---- 
-            return elements[ci+1]; 
-         } 
-         break; 
-      } 
-   } 
-   else 
+               (y1+y3-(y0+y2))      *xx*x +
+               (2.0f*(y0-y1)+y2-y3) *xx   +
+               (y2-y0)              *x    +
+               y1                         );
+         }
+         else
+         {
+            // ---- clamp to last value ----
+            return elements[ci+1];
+         }
+         break;
+
+      case TKS_ENVELOPE_QUINTIC:
+         // ---- quintic interpolation----
+         // ---- y= 3*(y1+y3-y2-y4)      *x*x*x*x*x +
+         // ----    (8*(y2-y1)+7*(y4-y3))*x*x*x*x   +
+         // ----    (6*(y1-y2)+4*(y3-y4))*x*x*x     +
+         // ----    (y3-y1)              *x         +
+         // ----    y2
+         if( (ci+7) < num_elements )
+         {
+            // --- interpolate to next point
+            sF32 y1=elements[ci+0+1];
+            sF32 y2=elements[ci+2+1];
+            sF32 y3=elements[ci+4+1];
+            sF32 y4=elements[ci+6+1];
+            sF64 x=delta_time/elements[ci+2+0];
+            sF64 xx=x*x;
+            sF64 xxxx=xx*xx;
+            return (sF32) (
+               3.0f*(y1+y3-y2-y4)          *xxxx*x   +
+               (8.0f*(y2-y1)+7.0f*(y4-y3)) *xxxx     +
+               (6.0f*(y1-y2)+4.0f*(y3-y4)) *xx*x     +
+               (y3-y1)                     *x        +
+               y2                                    );
+         }
+         else
+         {
+            // ---- clamp to last value ----
+            return elements[ci+1];
+         }
+         break;
+      }
+   }
+   else
    {
       return 0.0f;
    }
-} 
+}
 
-void TKS_Envelope::reset(void) { 
-   abs_time=0.0f; 
-   delta_time=0.0f; 
-   current_index=0; 
-   b_shreset=1; 
-} 
+void TKS_Envelope::reset(void) {
+   abs_time = 0.0f;
+   delta_time = 0.0f;
+   current_index = 0u;
+   b_shreset = 1;
+}
 
-void TKS_Envelope::setSpeed(sF32 _a) { 
-   time_advance = (sF64) _a; 
-} 
+void TKS_Envelope::setSpeed(sF32 _a) {
+   time_advance = (sF64) _a;
+}
 
-sF32 TKS_Envelope::getSpeed(void) { 
-   return (sF32) time_advance; 
-} 
+sF32 TKS_Envelope::getSpeed(void) {
+   return (sF32) time_advance;
+}
 
-sF32 TKS_Envelope::getTime(void) { 
-   return (sF32) abs_time; 
-} 
+sF32 TKS_Envelope::getTime(void) {
+   return (sF32) abs_time;
+}
 
-sF32 TKS_Envelope::getDeltaTime(void) { 
-   return (sF32) delta_time; 
-} 
+sF32 TKS_Envelope::getDeltaTime(void) {
+   return (sF32) delta_time;
+}
 
-sUI TKS_Envelope::getCurrentIndex(void) { 
-   return current_index; 
-} 
+sUI TKS_Envelope::getCurrentIndex(void) {
+   return current_index;
+}
 
-void TKS_Envelope::setTime(sF32 _t) { 
+void TKS_Envelope::setTime(sF32 _t) {
    // yac_host->printf("xxx TKS_Envelope::setTime(%f)\n", _t);
-   
-   abs_time = 0.0; 
-   /** seek control point to find delta_time **/ 
-   current_index = 0; 
-   for(; current_index<(num_elements>>1); current_index++)
+
+   abs_time = 0.0;
+   /** seek control point to find delta_time **/
+   current_index = 0u;
+   for(; current_index < (num_elements>>1); current_index++)
    {
       sF64 dt = elements[current_index<<1];
       if(_t < (abs_time+dt))
       {
-         if( (current_index == 0) && (Dfltnonzero(dt)) )
+         if( (0u == current_index) && (Dfltnonzero(dt)) )
          {
             // First event is delayed
             b_shreset = 0;
@@ -327,7 +326,7 @@ void TKS_Envelope::setTime(sF32 _t) {
          }
          else
          {
-            if(current_index>0)
+            if(current_index > 0u)
             {
                current_index--;
             }
@@ -368,33 +367,33 @@ void TKS_Envelope::setTime(sF32 _t) {
       }
    }
    // No elements
-   current_index = 0;
+   current_index = 0u;
    abs_time      = _t;
-   delta_time    = 0.0; 
+   delta_time    = 0.0;
    b_shreset     = 1;
-} 
+}
 
-void TKS_Envelope::yacEnvSetTime(sF32 _t) { 
+void TKS_Envelope::yacEnvSetTime(sF32 _t) {
    setTime(_t);
 }
 
-void TKS_Envelope::setInterpolation(sSI _funid) { 
-   env_fun   = _funid; 
-   b_shreset = 1; 
-} 
+void TKS_Envelope::setInterpolation(sSI _funid) {
+   env_fun   = _funid;
+   b_shreset = 1;
+}
 
-sSI TKS_Envelope::getInterpolation(void) { 
-   return env_fun; 
-} 
+sSI TKS_Envelope::getInterpolation(void) {
+   return env_fun;
+}
 
 sSI TKS_Envelope::isNewEvent(void) {
    return b_shreset && (num_elements >= 2);
 }
 
-void TKS_Envelope::tickPrecise(sF32 _prec) { 
+void TKS_Envelope::tickPrecise(sF32 _prec) {
    sUI curIdx = current_index;
    tickPrecise2(_prec);
-   
+
    sBool bShReset = b_shreset;
 
    while(curIdx != current_index)
@@ -406,19 +405,19 @@ void TKS_Envelope::tickPrecise(sF32 _prec) {
    b_shreset = bShReset;
 }
 
-void TKS_Envelope::tickPrecise2(sF32 _prec) { 
+void TKS_Envelope::tickPrecise2(sF32 _prec) {
    sF64 tAdv = time_advance * _prec;
    ////printf("xxx tickPrecise2: delta_time=%f time_advance=%f prec=%f tAdv=%f\n", delta_time, time_advance, _prec, tAdv);
-   abs_time += tAdv; 
+   abs_time += tAdv;
    sF64 oldDT = delta_time;
-   delta_time += tAdv; 
+   delta_time += tAdv;
 
-   if(num_elements) 
-   { 
-      switch(env_fun) 
-      { 
-      case TKS_ENVELOPE_SH: 
-      case TKS_ENVELOPE_SHRESET: 
+   if(num_elements)
+   {
+      switch(env_fun)
+      {
+      case TKS_ENVELOPE_SH:
+      case TKS_ENVELOPE_SHRESET:
          if(oldDT < 0.0)
          {
             if(delta_time >= 0.0)
@@ -426,90 +425,90 @@ void TKS_Envelope::tickPrecise2(sF32 _prec) {
                b_shreset = 1;
             }
          }
-         else if( ((sUI)(current_index))!=((num_elements>>1)-1)) // is not last element? 
-         { 
+         else if( ((sUI)(current_index))!=((num_elements>>1)-1)) // is not last element?
+         {
             ////yac_host->printf("xxx TKS_Envelope: delta_time=%f shreset=1\n", delta_time);
-            if(delta_time >= elements[(current_index+1)*2]) // next element reached? 
-            { 
-               current_index++; 
-               delta_time -= elements[current_index<<1]; 
-               b_shreset = 1; 
-            } 
-            else 
+            if(delta_time >= elements[(current_index+1)*2]) // next element reached?
             {
-               b_shreset = 0; 
+               current_index++;
+               delta_time -= elements[current_index<<1];
+               b_shreset = 1;
             }
-         } 
-         else 
-         {
-            b_shreset = 0; 
-         }
-         break; 
-
-      case TKS_ENVELOPE_LINEAR: 
-      case TKS_ENVELOPE_COSINE: 
-         if(num_elements>=(2*2)) 
-         {
-            if( ((sUI)(current_index))!=((num_elements>>1)-2)) // is not last element? 
-            { 
-               if(delta_time>=elements[(current_index+1)*2]) // next element reached? 
-               { 
-                  current_index++; 
-                  delta_time -= elements[current_index<<1]; 
-                  b_shreset = 1;
-               } 
-            } 
             else
             {
-               // abs_time -= tAdv; 
-               // delta_time -= tAdv; 
+               b_shreset = 0;
             }
          }
-         break; 
-
-      case TKS_ENVELOPE_QUADRATIC: 
-         if(num_elements >= (3*2)) 
+         else
          {
-            if( ((sUI)(current_index))!=((num_elements>>1)-3)) // is not last element? 
-            { 
-               if(delta_time >= elements[(current_index+1)*2]) // next element reached? 
-               { 
-                  current_index++; 
-                  delta_time -= elements[current_index<<1]; 
+            b_shreset = 0;
+         }
+         break;
+
+      case TKS_ENVELOPE_LINEAR:
+      case TKS_ENVELOPE_COSINE:
+         if(num_elements>=(2*2))
+         {
+            if( ((sUI)(current_index))!=((num_elements>>1)-2)) // is not last element?
+            {
+               if(delta_time>=elements[(current_index+1)*2]) // next element reached?
+               {
+                  current_index++;
+                  delta_time -= elements[current_index<<1];
                   b_shreset = 1;
-               } 
-            } 
+               }
+            }
             else
             {
-               // abs_time -= tAdv; 
-               // delta_time -= tAdv; 
+               // abs_time -= tAdv;
+               // delta_time -= tAdv;
             }
          }
-         break; 
+         break;
 
-      case TKS_ENVELOPE_CUBIC: 
-      case TKS_ENVELOPE_QUINTIC: 
-         if(num_elements >= (4*2)) 
+      case TKS_ENVELOPE_QUADRATIC:
+         if(num_elements >= (3*2))
          {
-            if( ((sUI)(current_index))!=((num_elements>>1)-4)) // is not last element? 
-            { 
-               if(delta_time >= elements[(current_index+1)*2]) // next element reached? 
-               { 
-                  current_index++; 
-                  delta_time -= elements[current_index<<1]; 
+            if( ((sUI)(current_index))!=((num_elements>>1)-3)) // is not last element?
+            {
+               if(delta_time >= elements[(current_index+1)*2]) // next element reached?
+               {
+                  current_index++;
+                  delta_time -= elements[current_index<<1];
                   b_shreset = 1;
-               } 
-            } 
+               }
+            }
             else
             {
-               // abs_time -= tAdv; 
-               // delta_time -= tAdv; 
+               // abs_time -= tAdv;
+               // delta_time -= tAdv;
             }
          }
-         break; 
-      } // switch env_fun 
-   } // if num_elements 
-} 
+         break;
+
+      case TKS_ENVELOPE_CUBIC:
+      case TKS_ENVELOPE_QUINTIC:
+         if(num_elements >= (4*2))
+         {
+            if( ((sUI)(current_index))!=((num_elements>>1)-4)) // is not last element?
+            {
+               if(delta_time >= elements[(current_index+1)*2]) // next element reached?
+               {
+                  current_index++;
+                  delta_time -= elements[current_index<<1];
+                  b_shreset = 1;
+               }
+            }
+            else
+            {
+               // abs_time -= tAdv;
+               // delta_time -= tAdv;
+            }
+         }
+         break;
+      } // switch env_fun
+   } // if num_elements
+}
 
 void TKS_Envelope::valueAtTimeRaster(sF32 _t, sF32 _res, YAC_Value *_r) {
    _r->initVoid();
@@ -639,7 +638,7 @@ void TKS_Envelope::insertReplaceEvent(sF32 _t, sF32 _value, sF32 _windowSize) {
                else
                {
                   // Insert before current event
-                  sSI timeToEvent = t - et; 
+                  sSI timeToEvent = t - et;
                   insert(i, _value);
                   insert(i, elements[i+1+0] - (sF32)timeToEvent);
                   elements[i+2+0] = (sF32) timeToEvent;
@@ -700,7 +699,7 @@ void TKS_Envelope::insertReplaceEventMSB4(sF32 _t, sSI _value, sF32 _windowSize)
                {
                   // Insert before current event
                   insertReplaceEvent(_t, (sF32)_value, _windowSize);
-                  // // sSI timeToEvent = t - et; 
+                  // // sSI timeToEvent = t - et;
                   // // insert(i, (sF32)_value);
                   // // insert(i, elements[i+1+0] - (sF32)timeToEvent);
                   // // elements[i+2+0] = (sF32) timeToEvent;
@@ -764,7 +763,7 @@ void TKS_Envelope::insertReplaceEventLSB4(sF32 _t, sSI _value, sF32 _windowSize)
                {
                   // Insert before current event
                   insertReplaceEvent(_t, (sF32)_value, _windowSize);
-                  // // sSI timeToEvent = t - et; 
+                  // // sSI timeToEvent = t - et;
                   // // insert(i, (sF32)_value);
                   // // insert(i, elements[i+1+0] - (sF32)timeToEvent);
                   // // elements[i+2+0] = (sF32) timeToEvent;
@@ -810,7 +809,7 @@ void TKS_Envelope::insertReplaceEventPat1(sF32 _t, sSI _value, sF32 _windowSize)
       insVal -= 4; // 11A => 10A
    if(insVal > 127)
       insVal = 127;
-   
+
    if(et >= 0)
    {
       sSI t = 0;
@@ -840,7 +839,7 @@ void TKS_Envelope::insertReplaceEventPat1(sF32 _t, sSI _value, sF32 _windowSize)
                {
                   // Insert before current event
                   insertReplaceEvent(_t, (sF32)insVal, _windowSize);
-                  // // sSI timeToEvent = t - et; 
+                  // // sSI timeToEvent = t - et;
                   // // insert(i, (sF32)insVal);
                   // // insert(i, elements[i+1+0] - (sF32)timeToEvent);
                   // // elements[i+2+0] = (sF32) timeToEvent;
@@ -924,7 +923,7 @@ void TKS_Envelope::insertReplaceEventPat2(sF32 _t, sSI _value, sF32 _windowSize)
                {
                   // Insert before current event
                   insertReplaceEvent(_t, (sF32)insVal, _windowSize);
-                  // // sSI timeToEvent = t - et; 
+                  // // sSI timeToEvent = t - et;
                   // // insert(i, (sF32)insVal);
                   // // insert(i, elements[i+1+0] - (sF32)timeToEvent);
                   // // elements[i+2+0] = (sF32) timeToEvent;
@@ -1005,7 +1004,7 @@ void TKS_Envelope::insertReplaceEventPat3(sF32 _t, sSI _value, sF32 _windowSize)
                {
                   // Insert before current event
                   insertReplaceEvent(_t, (sF32)insVal, _windowSize);
-                  // // sSI timeToEvent = t - et; 
+                  // // sSI timeToEvent = t - et;
                   // // insert(i, (sF32)insVal);
                   // // insert(i, elements[i+1+0] - (sF32)timeToEvent);
                   // // elements[i+2+0] = (sF32) timeToEvent;
@@ -1167,7 +1166,7 @@ void TKS_Envelope::removeRangeSH(sF32 _t, sF32 _l) {
                      }
                      else
                      {
-                        // Only covered partially 
+                        // Only covered partially
                         elements[i+0] -= (t - et); // Shift this event
                         elements[i+2+0] -= (l - (t-et)); // Shift next event
                         t = et;
@@ -1206,7 +1205,7 @@ void TKS_Envelope::shiftEvents(sF32 _t, sF32 _l) {
             t += eventTimeDelta; // Calc absolute pattern time
             if(et <= t)
             {
-               // Shift current event 
+               // Shift current event
                elements[i+0] = elements[i+0] + _l;
                setTime((sF32)abs_time); // xxx 25Mar2015
                return;
@@ -1294,7 +1293,7 @@ void TKS_Envelope::shiftNextEvent(sF32 _t, sF32 _l, sF32 _maxT) {
             {
                if(et <= t)
                {
-                  // Shift current event 
+                  // Shift current event
                   if(_l >= 0.0f)
                   {
                      // Shift right
@@ -1421,18 +1420,18 @@ void TKS_Envelope::rotateEvents(sF32 _r, sF32 _startT, sF32 _maxT) {
                   src->yacOperatorAssign(this);
 
                   sSI numT = (maxT - startT);
-                  
+
                   sSI srcT = -r;
                   if(srcT < 0)
                      srcT += numT;
 
                   sSI t = 0;
-                  
+
                   while(t < numT)
                   {
                      YAC_Value r;
                      r.initVoid();
-                     
+
                      src->valueAtTimeRaster((sF32)(srcT + startT), 1.0f/*res*/, &r);
 
                      if(YAC_TYPE_FLOAT == r.type)
@@ -1444,13 +1443,13 @@ void TKS_Envelope::rotateEvents(sF32 _r, sF32 _startT, sF32 _maxT) {
                         removeRange((sF32)(t + startT), 1.0f);
                         shiftEvents((sF32)(t + startT), 1.0f);
                      }
-                     
+
                      t++;
                      srcT = (srcT + 1) % numT;
                   }
 
                   delete src;
-                  
+
                   setTime((sF32)abs_time);
                }
             }
