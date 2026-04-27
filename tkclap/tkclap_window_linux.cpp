@@ -1,18 +1,19 @@
-/// tkclap_window_stub.cpp
+/// tkclap_window_linux.cpp
 ///
-/// (c) 2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 06Jul2024
-/// changed: 
+/// changed: 27Apr2026
 ///
-///  !!! (todo) implement me (STUB) !!!
 ///
 
 #include "tkclap.h"
 
+
+void tkclap_window_remove_by_lglw (lglw_t _lglw);
 
 // ---------------------------------------------------------------------------- tkclap_mutex_init
 #if defined(YAC_MACOS) || defined(YAC_LINUX)
@@ -66,37 +67,42 @@ void tkclap_window_build_window_title(CLAPPlugin *thiz) {
 
 // ---------------------------------------------------------------------------- tkclap_window_get_geometry
 void tkclap_window_get_geometry(TKCLAPWindow *vw, sSI *x, sSI *y, sSI *w, sSI *h) {
-   (void)vw;
-   (void)x;
-   (void)y;
-   (void)w;
-   (void)h;
+   (void)lglw_window_size_get(vw->lglw, w, h);
+   (void)lglw_window_pos_get(vw->lglw, x, y);
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_set_geometry
 void tkclap_window_set_geometry(TKCLAPWindow *vw, sSI x, sSI y, sSI w, sSI h) {
-   (void)vw;
-   (void)x;
-   (void)y;
-   (void)w;
-   (void)h;
+   (void)lglw_window_size_set(vw->lglw, w, h);
+   (void)lglw_window_pos_set(vw->lglw, x, y);
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_set_visible
 void tkclap_window_set_visible(TKCLAPWindow *vw, sBool bVisible) {
    (void)vw;
    (void)bVisible;
+   // (todo)
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_is_visible
 sBool tkclap_window_is_visible(TKCLAPWindow *vw) {
    (void)vw;
+   // (todo)
    return YAC_FALSE;
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_close
+static void loc_on_lglw_close(lglw_t _lglw) {
+   Dprintf("[dbg] loc_on_lglw_close: lglw=%p\n", _lglw);
+   TKCLAPWindow *vw = (TKCLAPWindow*)lglw_userdata_get(_lglw);
+   vw->b_close_pending = true;
+}
+
+// ---------------------------------------------------------------------------- tkclap_window_close
 void tkclap_window_close(TKCLAPWindow *vw) {
-   (void)vw;
+   lglw_window_close(vw->lglw);
+   lglw_exit(vw->lglw);
+   vw->lglw = NULL;
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_create
@@ -105,7 +111,6 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
    Dprintf("[dbg] tkclap_window_create: ENTER.\n");
 
    TKCLAPWindow *vw = NULL;
-#if 0
 
    tkclap_window_build_window_title(thiz);
 
@@ -115,7 +120,7 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
    if(1)
    {
       // Create plugin editor
-      if(thiz->ext_gui->create(thiz->plugin, bParent?CLAP_WINDOW_API_COCOA:"", bParent?0:1/*is_floating=0=>embed in parent*/))
+      if(thiz->ext_gui->create(thiz->plugin, bParent?CLAP_WINDOW_API_X11:"", bParent?0:1/*is_floating=0=>embed in parent*/))
       {
          Dprintf("[dbg] tkclap_window_create: ext_gui->create() OK\n");
 
@@ -158,13 +163,16 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
 
             // Create toplevel window
             vw = new(std::nothrow) TKCLAPWindow;
-            tkclap_window_view_t windowView = {thiz, vw, NULL, NULL};
-            tkclap_macos_create_window_view(&windowView, sizeX, sizeY, loc_init_window_title);
+            lglw_t lglw = lglw_init(32,32);  // initial hidden window size=32x32 (remove??)
+            lglw_userdata_set(lglw, (void*)vw);
+            lglw_close_callback_set(lglw, &loc_on_lglw_close);
+            (void)lglw_window_open(lglw, NULL/*parent*/, uiWindowX/*x*/, uiWindowY/*y*/, sizeX, sizeY);
 
             // Remember in window list
             tkclap_window_lock();
             vw->next                           = first_window;
-            vw->window_view                    = windowView;
+            vw->lglw                           = lglw;
+            vw->clap_fd                        = -1;
             vw->plugin                         = thiz;
             vw->b_allow_redirect_close_to_hide = YAC_TRUE;
             ::strncpy(vw->window_title, loc_init_window_title, TKCLAP_MAX_WINDOWTITLE_SIZE);
@@ -173,8 +181,8 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
 
             // Set plugin editor parent
             clap_window_t clapParentWindow;
-            clapParentWindow.api   = CLAP_WINDOW_API_COCOA;
-            clapParentWindow.cocoa = vw->window_view.nsView;
+            clapParentWindow.api = CLAP_WINDOW_API_X11;
+            clapParentWindow.x11 = (Window)lglw_window_get_native_handle(lglw);
             if(thiz->ext_gui->set_parent(thiz->plugin, &clapParentWindow))
             {
                Dprintf("[dbg] tkclap_window_create: ext_gui->set_parent() OK\n");
@@ -218,6 +226,7 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
             //         (either ext_gui->create() fails or the window is not visible, despite ext_gui->show())
 
             // set_transient
+#if 0
             if(NULL != thiz->transient_native_window_handle)
             {
                clap_window_t windowBelow;
@@ -233,6 +242,7 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
                   Dprintf("[~~~] tkclap_window_create: ext_gui->set_transient() failed\n");
                }
             }
+#endif
 
             // suggest_title
             char windowTitle[512];
@@ -247,7 +257,6 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
       }
    }
 
-#endif // 0
    Dprintf("[dbg] tkclap_window_create: LEAVE. vw=%p\n", vw);
    return vw;
 }
@@ -272,37 +281,84 @@ TKCLAPWindow *tkclap_window_find_by_plugin(CLAPPlugin *_plugin, sBool _bLock) {
    return vw;
 }
 
-// ---------------------------------------------------------------------------- tkclap_window_remove_by_nsview
-#if 0
-void tkclap_window_remove_by_nsview(void *_nsView) {
-   // called by window_view.mm:CLAPView::windowWillClose
-
-   Dprintf("[dbg] tkclap_window_remove_by_nsview: nsView=%p\n", _nsView);
+// ---------------------------------------------------------------------------- tkclap_window_find_by_fd
+TKCLAPWindow *tkclap_window_find_by_fd(int _fd, sBool _bLock) {
+   if(_bLock)
+      tkclap_window_lock();
 
    TKCLAPWindow *vw = first_window;
    while(NULL != vw)
    {
-      if(vw->window_view.nsView == _nsView)
+      if(vw->clap_fd == _fd)
+         break;
+      else
+         vw = vw->next;
+   }
+
+   if(_bLock)
+      tkclap_window_unlock();
+
+   return vw;
+}
+
+// ---------------------------------------------------------------------------- tkclap_window_find_by_plugin
+void tkclap_window_process_events(void) {
+   tkclap_window_lock();
+
+   TKCLAPWindow *vw = first_window;
+   while(NULL != vw)
+   {
+      sBool bNext = true;
+      if(NULL != vw->lglw)
+      {
+         lglw_events(vw->lglw);
+         if(vw->b_close_pending)
+         {
+            vw->b_close_pending = false;
+
+            tkclap_window_remove_by_lglw(vw->lglw);
+
+            vw = first_window;
+            bNext = false;
+         }
+      }
+      if(bNext)
+         vw = vw->next;
+   }
+
+   tkclap_window_unlock();
+}
+
+// ---------------------------------------------------------------------------- tkclap_window_remove_by_lglw
+void tkclap_window_remove_by_lglw(lglw_t _lglw) {
+   // called by window_view.mm:CLAPView::windowWillClose
+
+   Dprintf("[dbg] tkclap_window_remove_by_lglw: lglw=%p\n", _lglw);
+
+   TKCLAPWindow *vw = first_window;
+   while(NULL != vw)
+   {
+      if(vw->lglw == _lglw)
       {
          // Remember window position and size
          {
-            Dprintf("[dbg] tkclap_window_remove_by_nsview: caching window geometry\n");
+            Dprintf("[dbg] tkclap_window_remove_by_lglw: caching window geometry\n");
             tkclap_window_get_geometry(vw,
                                        &vw->plugin->ui_window_x, &vw->plugin->ui_window_y,
                                        &vw->plugin->ui_window_w, &vw->plugin->ui_window_h
                                        );
-            Dprintf("[dbg] tkclap_window_remove_by_nsview: geo=(%d; %d; %d; %d)\n",
+            Dprintf("[dbg] tkclap_window_remove_by_lglw: geo=(%d; %d; %d; %d)\n",
                     vw->plugin->ui_window_x, vw->plugin->ui_window_y,
                     vw->plugin->ui_window_w, vw->plugin->ui_window_h
                     );
          }
 
          // Free plugin editor resources
-         Dprintf("[dbg] tkclap_window_remove_by_nsview: call ext_gui->destroy()\n");
+         Dprintf("[dbg] tkclap_window_remove_by_lglw: call ext_gui->destroy()\n");
          vw->plugin->ext_gui->destroy(vw->plugin->plugin);
-         Dprintf("[dbg] tkclap_window_remove_by_nsview: ext_gui->destroy() returned\n");
+         Dprintf("[dbg] tkclap_window_remove_by_lglw: ext_gui->destroy() returned\n");
 
-         Dprintf("[dbg] tkclap_window_remove_by_nsview: window nsView=0x%p destroyed\n", _nsView);
+         Dprintf("[dbg] tkclap_window_remove_by_lglw: window lglw=%p destroyed\n", _lglw);
 
          tkclap_window_lock();
 
@@ -321,6 +377,9 @@ void tkclap_window_remove_by_nsview(void *_nsView) {
             p->next = vw->next;
          }
 
+         lglw_exit(vw->lglw);
+         vw->lglw = NULL;
+
          // Free memory for TKCLAPWindow
          delete vw;
 
@@ -334,4 +393,3 @@ void tkclap_window_remove_by_nsview(void *_nsView) {
    } // while vw
 
 }
-#endif // 0

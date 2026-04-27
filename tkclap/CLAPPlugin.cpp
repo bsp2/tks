@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 24Sep2024, 27Sep2024
-///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026
+///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026, 27Apr2026
 ///
 ///
 ///
@@ -18,6 +18,7 @@
 
 #ifdef YAC_LINUX
 #include <dlfcn.h>
+#include "tkclap_window.h"
 #endif // YAC_LINUX
 
 #include "CLAPPlugin.h"
@@ -174,6 +175,78 @@ static bool CLAP_ABI loc_clap_host_thread_check_is_audio_thread(const clap_host_
    return tkclap_process_from_main_thread || !yac_host->yacThreadIsMain();
 }
 
+
+// ---------------------------------------------------------------------------- clap_host_posix_fd_support_t
+#ifdef YAC_LINUX
+static clap_host_posix_fd_support_t loc_ext_clap_host_posix_fd_support;  // see "clap-main/include/clap/ext/posix-fd-support.h"
+
+struct registered_plugin_fd_t {
+   CLAPPlugin *plugin;
+   int fd;
+   clap_posix_fd_flags_t flags;
+};
+
+static bool CLAP_ABI loc_clap_host_posix_fd_support_register_fd(const clap_host_t *host, int fd, clap_posix_fd_flags_t flags) {
+   /* "store the FD and watch it (readable/write/error).
+      When the FD becomes ready, call the plugin's clap_plugin_posix_fd_support.on_fd(plugin, fd, flags) on the main thread"
+
+      in host main loop:
+      "use [..] message loop integration (or a periodic timer) to poll() those fds.
+      When poll() indicates readable, call on_fd"
+
+   */
+   bool ret = false;
+   CLAPPlugin *plugin = (CLAPPlugin*)host->host_data;
+   TKCLAPWindow *vw = tkclap_window_find_by_fd(fd, 1/*bLock*/);
+   if(NULL == vw)
+   {
+      vw = tkclap_window_find_by_plugin(plugin, 1/*bLock*/);
+      vw->clap_fd       = fd;
+      vw->clap_fd_flags = flags;
+      Dprintf("[dbg] loc_clap_host_posix_fd_support_register_fd: register fd=%d flags=%u\n", fd, flags);
+      ret = true;
+   }
+   else
+   {
+      Dprintf("[---] loc_clap_host_posix_fd_support_register_fd: fd %d already registered\n", fd);
+   }
+   return ret;
+}
+
+static bool CLAP_ABI loc_clap_host_posix_fd_support_modify_fd(const clap_host_t *host, int fd, clap_posix_fd_flags_t flags) {
+   (void)host;
+   // (todo)
+   Dprintf("[~~~] loc_clap_host_posix_fd_support_modify_fd: IMPLEMENT ME  fd=%d\n", fd);
+   return false;
+}
+
+static bool CLAP_ABI loc_clap_host_posix_fd_support_unregister_fd(const clap_host_t *host, int fd) {
+   bool ret = false;
+   CLAPPlugin *plugin = (CLAPPlugin*)host->host_data;
+   TKCLAPWindow *vw = tkclap_window_find_by_fd(fd, 1/*bLock*/);
+   if(NULL != vw)
+   {
+      if(vw->plugin == plugin)
+      {
+         vw->clap_fd       = -1;
+         vw->clap_fd_flags = 0;
+         Dprintf("[dbg] loc_clap_host_posix_fd_support_unregister_fd: unregister fd=%d\n", fd);
+         ret = true;
+      }
+      else
+      {
+         Dprintf("[---] loc_clap_host_posix_fd_support_unregister_fd: fd %d has not been registered for plugin\n", fd);
+      }
+   }
+   else
+   {
+      Dprintf("[---] loc_clap_host_posix_fd_support_unregister_fd: fd %d has not been registered\n", fd);
+   }
+   return ret;
+}
+
+#endif // YAC_LINUX
+
 // ---------------------------------------------------------------------------- clap_host_t
 
 // Query an extension.
@@ -224,6 +297,14 @@ const void *CLAP_ABI loc_host_get_extension(const struct clap_host *host, const 
       Dprintf("[trc] CLAPPlugin:loc_host_get_extension:   return &loc_ext_clap_host_thread_check\n");
       return &loc_ext_clap_host_thread_check;
    }
+
+#ifdef YAC_LINUX
+   if(!strncmp(extension_id, CLAP_EXT_POSIX_FD_SUPPORT, 21))
+   {
+      Dprintf("[trc] CLAPPlugin:loc_host_get_extension:   return &loc_ext_clap_host_posix_fd_support\n");
+      return &loc_ext_clap_host_posix_fd_support;
+   }
+#endif // YAC_LINUX
 
    return NULL;
 }
@@ -346,6 +427,12 @@ CLAPPluginBundle::CLAPPluginBundle(void) {
 
    loc_ext_clap_host_thread_check.is_main_thread  = &loc_clap_host_thread_check_is_main_thread;
    loc_ext_clap_host_thread_check.is_audio_thread = &loc_clap_host_thread_check_is_audio_thread;
+
+#ifdef YAC_LINUX
+   loc_ext_clap_host_posix_fd_support.register_fd   = &loc_clap_host_posix_fd_support_register_fd;
+   loc_ext_clap_host_posix_fd_support.modify_fd     = &loc_clap_host_posix_fd_support_modify_fd;
+   loc_ext_clap_host_posix_fd_support.unregister_fd = &loc_clap_host_posix_fd_support_unregister_fd;
+#endif // YAC_LINUX
 
    num_open_plugins = 0;
 }
@@ -2326,4 +2413,10 @@ void CLAPPlugin::process(sUI _numFrames) {
 
       unlockEvents();
    }
+}
+
+void CLAPPlugin::ProcessUIEvents(void) {
+#ifdef YAC_LINUX
+   tkclap_window_process_events();
+#endif // YAC_LINUX
 }

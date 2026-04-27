@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 22Sep2024, 27Sep2024
-///          19Apr2026, 23Apr2026
+///          19Apr2026, 23Apr2026, 27Apr2026
 ///
 ///
 ///
@@ -53,7 +53,7 @@ YC class CLAPPluginBundle : public YAC_Object {
    clap_plugin_factory_t *plugin_factory;
    sUI                    num_plugins;
 
-   sSI num_open_plugins;  // 0=safe to unload bundle   
+   sSI num_open_plugins;  // 0=safe to unload bundle
 
    sBool b_debug;
 
@@ -473,6 +473,12 @@ YC class CLAPPlugin : public YAC_Object {
 
    // Process events and render buffer fragment
    YM void process (sUI _numFrames);
+
+   // Process UI events (Linux)
+   //  (note) should be called periodically by idle timer
+   //  (note) pseudo-static method. call once for all plugin(-window) instances
+   //  (note) no-op on macOS / Windows
+   YM void ProcessUIEvents (void);
 
 };
 

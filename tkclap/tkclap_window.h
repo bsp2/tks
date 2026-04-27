@@ -1,16 +1,17 @@
 /// tkclap_window.h
 ///
-/// (c) 2024 Bastian Spiegel <bs@tkscript.de>
+/// (c) 2024-2026 Bastian Spiegel <bs@tkscript.de>
 ///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
 ///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
 ///
 ///
 /// created: 01Jul2024
-/// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024
+/// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 27Apr2026
 ///
 ///
 ///
 #ifndef TKCLAP_WINDOW_H__
+#define TKCLAP_WINDOW_H__
 
 
 #if defined(YAC_MACOS) || defined(YAC_LINUX)
@@ -46,6 +47,18 @@ typedef struct tkclap_window_view_s {
 } tkclap_window_view_t;
 #endif // YAC_MACOS
 
+#ifdef YAC_LINUX
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#include <X11/Xatom.h>
+
+#include <GL/gl.h>
+#include <GL/glx.h>
+
+#include "lglw/lglw.h"
+#endif // YAC_LINUX
+
 #define TKCLAP_MAX_WINDOWTITLE_SIZE 256
 
 class TKCLAPWindow {
@@ -56,9 +69,13 @@ public:
    tkclap_window_view_t  window_view;
 #elif defined(YAC_WIN32)
    HWND                  hWnd;
+#elif defined(YAC_LINUX)
+   lglw_t                lglw;
+   int                   clap_fd;  // ConnectionNumber(display)
+   clap_posix_fd_flags_t clap_fd_flags;
+   sBool                 b_close_pending;
 #else
-   // (todo) Linux
-/* #error unhandled OS */
+#error unhandled OS
 #endif
    char                  window_title[TKCLAP_MAX_WINDOWTITLE_SIZE];
    sBool                 b_allow_redirect_close_to_hide;
@@ -69,10 +86,16 @@ extern void          tkclap_window_lazy_init_mtx_windows (void);
 extern void          tkclap_window_build_window_title    (CLAPPlugin *thiz);
 extern TKCLAPWindow *tkclap_window_create                (CLAPPlugin *thiz);
 extern TKCLAPWindow *tkclap_window_find_by_plugin        (CLAPPlugin *_plugin, sBool _bLock);
+#ifdef YAC_LINUX
+extern TKCLAPWindow *tkclap_window_find_by_fd            (int _fd, sBool _bLock);
+#endif // YAC_LINUX
 extern void          tkclap_window_get_geometry          (TKCLAPWindow *vw, sSI *x, sSI *y, sSI *w, sSI *h);
 extern void          tkclap_window_set_geometry          (TKCLAPWindow *vw, sSI x, sSI y, sSI w, sSI h);
 extern void          tkclap_window_set_visible           (TKCLAPWindow *vw, sBool bVisible);
 extern sBool         tkclap_window_is_visible            (TKCLAPWindow *vw);
+#ifdef YAC_LINUX
+extern void          tkclap_window_process_events        (void);
+#endif // YAC_LINUX
 extern void          tkclap_window_close                 (TKCLAPWindow *vw);
 
 #ifdef YAC_MACOS
