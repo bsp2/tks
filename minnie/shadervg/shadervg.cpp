@@ -7121,7 +7121,7 @@ static sBool BeginDraw(sUI _numVertices, sUI _stride) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] shadervg:BeginDraw: bufSize exceeded (%u > %u)\n", current_draw_num_bytes, bufSize);
+      Dsdvg_errorbeginprintf("[---] shadervg:BeginDraw: bufSize exceeded (%u > %u)\n", current_draw_num_bytes, bufSize);
       return YAC_FALSE;
    }
 }
@@ -7284,7 +7284,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangles(sUI _numVertices) {
 #endif // SHADERVG_USE_DEFAULT_TRIANGLE_14_2
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangles: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangles: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7305,7 +7305,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangles32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangles32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangles32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7326,7 +7326,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangles14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangles14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangles14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7356,7 +7356,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan(sUI _numVertices) {
 #endif // SHADERVG_USE_DEFAULT_TRIANGLE_14_2
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangleFan: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangleFan: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7376,7 +7376,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7396,7 +7396,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleFan14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7442,7 +7442,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleStrip32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7462,7 +7462,7 @@ sBool YAC_CALL sdvg_BeginFilledTriangleStrip14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7519,7 +7519,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangles32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangles32: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangles32: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7544,7 +7544,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangles14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangles14_2: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangles14_2: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7601,7 +7601,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudModulateTriangles32: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudModulateTriangles32: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7626,7 +7626,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangles14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangles14_2: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangles14_2: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7683,7 +7683,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7708,7 +7708,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleFan14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7765,7 +7765,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudModulateTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudModulateTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7790,7 +7790,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleFan14_2(sUI _numVertices) 
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudModulateTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudModulateTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7847,7 +7847,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip32(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7872,7 +7872,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudTriangleStrip14_2(sUI _numVertices) {
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7929,7 +7929,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip32(sUI _numVertices) 
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudModulateTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudModulateTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -7954,7 +7954,7 @@ sBool YAC_CALL sdvg_BeginFilledGouraudModulateTriangleStrip14_2(sUI _numVertices
    }
    else
    {
-      Dsdvg_errorprintf("[---] sdvg_BeginFilledGouraudModulateTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] sdvg_BeginFilledGouraudModulateTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8081,7 +8081,7 @@ static sBool loc_BeginTexturedTriangleFan32(sUI _numVertices, ShaderVG_Shape *_d
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8106,7 +8106,7 @@ static sBool loc_BeginTexturedTriangleFan14_2(sUI _numVertices, ShaderVG_Shape *
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8140,7 +8140,7 @@ static sBool loc_BeginTexturedTriangleStrip(sUI _numVertices, ShaderVG_Shape *_d
 #endif // SHADERVG_USE_DEFAULT_TRIANGLE_14_2
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedTriangleStrip: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedTriangleStrip: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8165,7 +8165,7 @@ static sBool loc_BeginTexturedTriangleStrip32(sUI _numVertices, ShaderVG_Shape *
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedTriangleStrip3: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedTriangleStrip3: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8190,7 +8190,7 @@ static sBool loc_BeginTexturedTriangleStrip14_2(sUI _numVertices, ShaderVG_Shape
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8230,7 +8230,7 @@ static sBool loc_BeginTexturedGouraudTriangles(sUI _numVertices, ShaderVG_Shape 
 #endif // SHADERVG_USE_DEFAULT_TRIANGLE_14_2
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangles: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangles: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8260,7 +8260,7 @@ static sBool loc_BeginTexturedGouraudTriangles32(sUI _numVertices, ShaderVG_Shap
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangles32: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangles32: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8290,7 +8290,7 @@ static sBool loc_BeginTexturedGouraudTriangles14_2(sUI _numVertices, ShaderVG_Sh
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangles14_2: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangles14_2: sdvg_BeginTriangles(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8330,7 +8330,7 @@ static sBool loc_BeginTexturedGouraudTriangleFan(sUI _numVertices, ShaderVG_Shap
 #endif // SHADERVG_USE_DEFAULT_TRIANGLE_14_2
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangleFan: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangleFan: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8360,7 +8360,7 @@ static sBool loc_BeginTexturedGouraudTriangleFan32(sUI _numVertices, ShaderVG_Sh
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangleFan32: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8390,7 +8390,7 @@ static sBool loc_BeginTexturedGouraudTriangleFan14_2(sUI _numVertices, ShaderVG_
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangleFan14_2: sdvg_BeginTriangleFan(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8430,7 +8430,7 @@ static sBool loc_BeginTexturedGouraudTriangleStrip(sUI _numVertices, ShaderVG_Sh
 #endif // SHADERVG_USE_DEFAULT_TRIANGLE_14_2
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangleStrip: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangleStrip: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8460,7 +8460,7 @@ static sBool loc_BeginTexturedGouraudTriangleStrip32(sUI _numVertices, ShaderVG_
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangleStrip32: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
@@ -8490,7 +8490,7 @@ static sBool loc_BeginTexturedGouraudTriangleStrip14_2(sUI _numVertices, ShaderV
    }
    else
    {
-      Dsdvg_errorprintf("[---] loc_BeginTexturedGouraudTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
+      Dsdvg_errorbeginprintf("[---] loc_BeginTexturedGouraudTriangleStrip14_2: sdvg_BeginTriangleStrip(numVertices=%u) failed\n", _numVertices);
    }
    return YAC_FALSE;
 }
