@@ -80,15 +80,19 @@ void tkclap_window_set_geometry(TKCLAPWindow *vw, sSI x, sSI y, sSI w, sSI h) {
 
 // ---------------------------------------------------------------------------- tkclap_window_set_visible
 void tkclap_window_set_visible(TKCLAPWindow *vw, sBool bVisible) {
-   (void)vw;
-   (void)bVisible;
-   // (todo)
+   if(NULL != vw->lglw)
+   {
+      if(bVisible)
+         lglw_window_show(vw->lglw);
+      else
+         lglw_window_hide(vw->lglw);
+   }
 }
 
 // ---------------------------------------------------------------------------- tkclap_window_is_visible
 sBool tkclap_window_is_visible(TKCLAPWindow *vw) {
-   (void)vw;
-   // (todo)
+   if(NULL != vw->lglw)
+      return lglw_window_is_visible(vw->lglw);
    return YAC_FALSE;
 }
 
