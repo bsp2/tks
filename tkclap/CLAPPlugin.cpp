@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 24Sep2024, 27Sep2024
-///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026, 27Apr2026
+///          29Nov2024, 06Apr2026, 09Apr2026, 21Apr2026, 27Apr2026, 28Apr2026
 ///
 ///
 ///
@@ -180,12 +180,6 @@ static bool CLAP_ABI loc_clap_host_thread_check_is_audio_thread(const clap_host_
 #ifdef YAC_LINUX
 static clap_host_posix_fd_support_t loc_ext_clap_host_posix_fd_support;  // see "clap-main/include/clap/ext/posix-fd-support.h"
 
-struct registered_plugin_fd_t {
-   CLAPPlugin *plugin;
-   int fd;
-   clap_posix_fd_flags_t flags;
-};
-
 static bool CLAP_ABI loc_clap_host_posix_fd_support_register_fd(const clap_host_t *host, int fd, clap_posix_fd_flags_t flags) {
    /* "store the FD and watch it (readable/write/error).
       When the FD becomes ready, call the plugin's clap_plugin_posix_fd_support.on_fd(plugin, fd, flags) on the main thread"
@@ -247,6 +241,19 @@ static bool CLAP_ABI loc_clap_host_posix_fd_support_unregister_fd(const clap_hos
 
 #endif // YAC_LINUX
 
+// ---------------------------------------------------------------------------- clap_host_timer_support_t
+static clap_host_timer_support_t loc_ext_clap_host_timer_support;  // see "clap-main/include/clap/ext/timer-support.h"
+
+static bool CLAP_ABI loc_clap_host_timer_support_register_timer(const clap_host_t *host, uint32_t period_ms, clap_id *timer_id) {
+   CLAPPlugin *plugin = (CLAPPlugin*)host->host_data;
+   return plugin->registerTimer(period_ms, timer_id);
+}
+
+static bool CLAP_ABI loc_clap_host_timer_support_unregister_timer(const clap_host_t *host, clap_id timer_id) {
+   CLAPPlugin *plugin = (CLAPPlugin*)host->host_data;
+   return plugin->unregisterTimer(timer_id);
+}
+
 // ---------------------------------------------------------------------------- clap_host_t
 
 // Query an extension.
@@ -305,6 +312,12 @@ const void *CLAP_ABI loc_host_get_extension(const struct clap_host *host, const 
       return &loc_ext_clap_host_posix_fd_support;
    }
 #endif // YAC_LINUX
+
+   if(!strncmp(extension_id, CLAP_EXT_TIMER_SUPPORT, 18))
+   {
+      Dprintf("[trc] CLAPPlugin:loc_host_get_extension:   return &loc_ext_clap_host_timer_support\n");
+      return &loc_ext_clap_host_timer_support;
+   }
 
    return NULL;
 }
@@ -433,6 +446,9 @@ CLAPPluginBundle::CLAPPluginBundle(void) {
    loc_ext_clap_host_posix_fd_support.modify_fd     = &loc_clap_host_posix_fd_support_modify_fd;
    loc_ext_clap_host_posix_fd_support.unregister_fd = &loc_clap_host_posix_fd_support_unregister_fd;
 #endif // YAC_LINUX
+
+   loc_ext_clap_host_timer_support.register_timer   = &loc_clap_host_timer_support_register_timer;
+   loc_ext_clap_host_timer_support.unregister_timer = &loc_clap_host_timer_support_unregister_timer;
 
    num_open_plugins = 0;
 }
@@ -772,6 +788,13 @@ CLAPPlugin::CLAPPlugin(void) {
    ui_window_h = 0;
 #endif // SKIP_CLAP_UI
 
+#ifdef YAC_LINUX
+   ext_posix_fd_support = NULL;
+#endif // YAC_LINUX
+
+   ext_timer = NULL;
+   ::memset(timers, 0, sizeof(timers));
+
    ::memset(&input_events, 0, sizeof(input_events));
    input_events.clap_input_events.ctx = (void*)this;
    input_events.clap_input_events.size = &loc_input_events_size;
@@ -861,6 +884,12 @@ void CLAPPlugin::destroyPluginInstance(void) {
 #ifndef SKIP_CLAP_UI
       ext_gui = NULL;
 #endif // SKIP_CLAP_UI
+
+#ifdef YAC_LINUX
+      ext_posix_fd_support = NULL;
+#endif // YAC_LINUX
+
+      ext_timer = NULL;
 
       input_events.num_ev = 0u;
       output_events.num_ev = 0u;
@@ -952,6 +981,64 @@ void CLAPPlugin::rescanParamInfos(void) {
 
 CLAPPluginBundle *CLAPPlugin::getPluginBundle(void) {
    return plugin_bundle;
+}
+
+sBool CLAPPlugin::registerTimer(uint32_t _periodMS, sUI *_retId) {
+   sBool ret = YAC_FALSE;
+   for(sUI i = 0u; i < MAX_TIMERS; i++)
+   {
+      clap_plugin_timer_t *ti = &timers[i];
+      if(0u == ti->period_ms)
+      {
+         if(_periodMS < (1000/100))
+            _periodMS = (1000/100);
+         ti->timer_id  = i;
+         ti->period_ms = _periodMS;
+         ti->next_ms   = yac_host->yacMilliSeconds() + _periodMS;
+         *_retId = i;
+         ret = YAC_TRUE;
+         break;
+      }
+   }
+   return ret;
+}
+
+sBool CLAPPlugin::unregisterTimer(sUI _id) {
+   sBool ret = YAC_FALSE;
+   if(_id < MAX_TIMERS)
+   {
+      clap_plugin_timer_t *ti = &timers[_id];
+      if(0u != ti->period_ms)
+      {
+         ti->timer_id  = ~0u;
+         ti->next_ms   = 0u;
+         ti->period_ms = 0u;
+         ret = YAC_TRUE;
+      }
+   }
+   return ret;
+}
+
+void CLAPPlugin::processTimers(uint32_t _currentMS) {
+   if(NULL != plugin && NULL != ext_timer)
+   {
+      for(sUI i = 0u; i< MAX_TIMERS; i++)
+      {
+         clap_plugin_timer_t *ti = &timers[i];
+         if(0u != ti->period_ms)
+         {
+            if(ti->next_ms <= _currentMS)
+            {
+               if(NULL != ext_timer->on_timer)
+               {
+                  // Dyac_host_printf("xxx CLAPPlugin::processTimers: plugin=%p currentMS=%u call on_timer id=%u\n", plugin, _currentMS, i);
+                  ext_timer->on_timer(plugin, i/*timer_id*/);
+               }
+               ti->next_ms = _currentMS + ti->period_ms;
+            }
+         }
+      }
+   }
 }
 
 void CLAPPlugin::setEnableDebug(sBool _bEnable) {
@@ -1314,6 +1401,13 @@ sBool CLAPPlugin::createPluginInstance(void) {
 
                         // Query GUI extension
                         ext_gui = (clap_plugin_gui_t *)plugin->get_extension(plugin, CLAP_EXT_GUI);
+
+#ifdef YAC_LINUX
+                        // Query posix-fd-support extension
+                        ext_posix_fd_support = (clap_plugin_posix_fd_support_t *)plugin->get_extension(plugin, CLAP_EXT_POSIX_FD_SUPPORT);
+#endif // YAC_LINUX
+
+                        ext_timer = (clap_plugin_timer_support_t *)plugin->get_extension(plugin, CLAP_EXT_TIMER_SUPPORT);
 
                         // Activate plugin
                         if(plugin->activate(plugin,
@@ -2042,7 +2136,28 @@ void CLAPPlugin::callOnRescanParams(void) {
    }
 }
 
-YM void CLAPPlugin::setTransientNativeWindowHandle(YAC_String *_handle) {
+#ifdef YAC_LINUX
+void CLAPPlugin::callPosixThreadSupportOnFD(int _fd, clap_posix_fd_flags_t _flags) {
+   if(NULL != plugin && NULL != ext_posix_fd_support)
+   {
+      if(NULL != ext_posix_fd_support->on_fd)
+      {
+         // Dyac_host_printf("xxx CLAPPlugin::callPosixThreadSupportOnFD: call plugin=%p fd=%d flags=%u\n", plugin, _fd, _flags);
+         ext_posix_fd_support->on_fd(plugin, _fd, _flags);
+      }
+      else
+      {
+         Dyac_host_printf("[~~~] CLAPPlugin::callPosixThreadSupportOnFD: ext_posix_fd_support->on_fd=%p\n", ext_posix_fd_support->on_fd);
+      }
+   }
+   else
+   {
+      Dyac_host_printf("[~~~] CLAPPlugin::callPosixThreadSupportOnFD: plugin=%p ext_posix_fd_support=%p\n", plugin, ext_posix_fd_support);
+   }
+}
+#endif // YAC_LINUX
+
+void CLAPPlugin::setTransientNativeWindowHandle(YAC_String *_handle) {
    // (todo) REMOVE
 #if defined(YAC_MACOS) && defined(USE_CLAP_GUI_TRANSIENT)
    transient_native_window_handle = NULL;

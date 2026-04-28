@@ -6,10 +6,11 @@
 ///
 ///
 /// created: 06Jul2024
-/// changed: 27Apr2026
+/// changed: 27Apr2026, 28Apr2026
 ///
 ///
 
+#include <poll.h>
 #include "tkclap.h"
 
 
@@ -170,10 +171,12 @@ TKCLAPWindow *tkclap_window_create(CLAPPlugin *thiz) {
 
             // Remember in window list
             tkclap_window_lock();
+            vw->plugin                         = thiz;
             vw->next                           = first_window;
             vw->lglw                           = lglw;
             vw->clap_fd                        = -1;
-            vw->plugin                         = thiz;
+            vw->clap_fd_flags                  = 0;
+            vw->b_close_pending                = YAC_FALSE;
             vw->b_allow_redirect_close_to_hide = YAC_TRUE;
             ::strncpy(vw->window_title, loc_init_window_title, TKCLAP_MAX_WINDOWTITLE_SIZE);
             first_window = vw;
@@ -312,6 +315,7 @@ void tkclap_window_process_events(void) {
       if(NULL != vw->lglw)
       {
          lglw_events(vw->lglw);
+
          if(vw->b_close_pending)
          {
             vw->b_close_pending = false;
@@ -320,6 +324,27 @@ void tkclap_window_process_events(void) {
 
             vw = first_window;
             bNext = false;
+         }
+         else
+         {
+            if(-1 != vw->clap_fd)
+            {
+               struct pollfd fds;
+               fds.fd = vw->clap_fd;
+               fds.events = POLLIN;
+               // (note) fds.revents written by poll()
+               int ready = poll(&fds, 1, 0/*timeout*/);
+               if(ready >= 1)
+               {
+                  // Dyac_host_printf("xxx poll fd=%d => ready=%d fds.revents=0x%08x (POLLIN=0x%08x) bCall=%d\n", fds.fd, ready, fds.revents, POLLIN, (fds.revents & POLLIN));
+                  if(fds.revents & POLLIN)
+                  {
+                     // (todo) only call when plugin requested it
+                     vw->plugin->callPosixThreadSupportOnFD(vw->clap_fd, CLAP_POSIX_FD_READ);
+                  }
+               }
+            }
+            vw->plugin->processTimers(yac_host->yacMilliSeconds());
          }
       }
       if(bNext)

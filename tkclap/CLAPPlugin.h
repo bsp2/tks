@@ -7,7 +7,7 @@
 ///
 /// created: 01Jul2024
 /// changed: 02Jul2024, 03Jul2024, 04Jul2024, 05Jul2024, 06Jul2024, 22Sep2024, 27Sep2024
-///          19Apr2026, 23Apr2026, 27Apr2026
+///          19Apr2026, 23Apr2026, 27Apr2026, 28Apr2026
 ///
 ///
 ///
@@ -140,6 +140,14 @@ typedef struct tkclap_param_info_s {
 
 
 // <class.png>
+typedef struct clap_plugin_timer_s {
+   clap_id  timer_id;
+   uint32_t period_ms;
+   uint32_t next_ms;
+} clap_plugin_timer_t;
+
+
+// <class.png>
 YC class CLAPPlugin : public YAC_Object {
 
   public:
@@ -182,6 +190,15 @@ YC class CLAPPlugin : public YAC_Object {
 
    // CLAP_EXT_GUI (see clap-main/include/clap/ext/gui.h)
    clap_plugin_gui_t *ext_gui;
+
+#ifdef YAC_LINUX
+   // CLAP_EXT_POSIX_FD_SUPPORT
+   clap_plugin_posix_fd_support_t *ext_posix_fd_support;
+#endif // YAC_LINUX
+
+   clap_plugin_timer_support_t *ext_timer;
+   static const sUI MAX_TIMERS = 16u;
+   clap_plugin_timer_s timers[MAX_TIMERS];
 
    // Input event queue / list (param/mod changes, MIDI events, ..)
    tkclap_input_events_t input_events;         // process()
@@ -260,6 +277,11 @@ YC class CLAPPlugin : public YAC_Object {
    sBool setExtChannelBuffer (const sUI _channelIdx, YAC_Object *_fa, CLAPAudioPort *_ports, const sUI _numPorts);
 
    void freeParamInfos (void);
+
+  public:
+   sBool registerTimer (uint32_t _periodMS, sUI *_retId);
+   sBool unregisterTimer (sUI _id);
+   void processTimers (uint32_t _currentMS);
 
   public:
    // Query number of input/output ports (mono or multichannel)
@@ -423,6 +445,9 @@ YC class CLAPPlugin : public YAC_Object {
    void callOnWin32KeyEvent (sUI _lparam);
    void callOnMacOSKeyDown (sUI _keyCode);
    void callOnRescanParams (void);
+#ifdef YAC_LINUX
+   void callPosixThreadSupportOnFD (int _fd, clap_posix_fd_flags_t _flags);
+#endif // YAC_LINUX
 
    void flushInputEvents (void);
 

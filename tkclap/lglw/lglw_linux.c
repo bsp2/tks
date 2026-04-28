@@ -128,6 +128,7 @@ typedef struct lglw_int_s {
       int32_t      swap_interval;
       lglw_bool_t  b_owner;
       Atom         atom_wm_delete;
+      Atom         atom_xembed;
    } win;
 
 #ifdef USE_GL_CONTEXT
@@ -1373,6 +1374,10 @@ lglw_bool_t lglw_window_open (lglw_t _lglw, void *_parentHWNDOrNull, int32_t _x,
          XSetWMProtocols(lglw->xdsp, lglw->win.xwnd, &lglw->win.atom_wm_delete, 1);
       }
 
+      // Create _XEMBED atom
+      lglw->win.atom_xembed = XInternAtom(lglw->xdsp, "_XEMBED", False/*only_if_exists*/);
+
+#if 1
       // Some hosts only check and store the callback when the Window is reparented
       // Since creating the Window with a Parent may or may not do that, but the callback is not set,
       // ... it's created as a root window, the callback is set, and then it's reparented
@@ -1381,6 +1386,7 @@ lglw_bool_t lglw_window_open (lglw_t _lglw, void *_parentHWNDOrNull, int32_t _x,
          Dlog_v("lglw:lglw_window_open: 8\n");
          XReparentWindow(lglw->xdsp, lglw->win.xwnd, lglw->parent_xwnd, 0, 0);
       }
+#endif
 
       lglw->win.b_owner = LGLW_TRUE;
 
